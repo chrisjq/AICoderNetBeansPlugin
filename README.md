@@ -196,4 +196,6 @@ Tests are in `src/test/java` and use JUnit 5. The `McpToolTest` suite verifies t
 
 ## License
 
-Proprietary — © Ingenuity Limited.
+Copyright (c) 2026 Chris Quin.
+
+This project is licensed under the [MIT License](LICENSE) — see the [LICENSE](LICENSE) file for details.
