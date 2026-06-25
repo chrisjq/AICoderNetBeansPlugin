@@ -5,11 +5,34 @@
     <modelVersion>4.0.0</modelVersion>
     <groupId>kiwi.ingenuity.aicoder</groupId>
     <artifactId>AiCoderNetbeansPlugin</artifactId>
-    <version>1.0.487</version>
+    <version>1.0.488</version>
     <packaging>nbm</packaging>
 
     <name>AI Coder for NetBeans</name>
     <description>Interactive AI coding assistant as a dockable panel in NetBeans. Supports Claude and GitHub Copilot backends. Provides streaming chat, context injection, and Accept/Reject diffs for file edits proposed by the AI.</description>
+    <url>https://github.com/chrisjq/AICoderNetBeansPlugin</url>
+    <inceptionYear>2026</inceptionYear>
+
+    <licenses>
+        <license>
+            <name>MIT License</name>
+            <url>https://github.com/chrisjq/AICoderNetBeansPlugin/blob/master/LICENSE</url>
+            <distribution>repo</distribution>
+        </license>
+    </licenses>
+
+    <developers>
+        <developer>
+            <name>Chris Quin</name>
+            <email>chrisq@ingenuity.kiwi</email>
+        </developer>
+    </developers>
+
+    <scm>
+        <connection>scm:git:git@github.com:chrisjq/AICoderNetBeansPlugin.git</connection>
+        <developerConnection>scm:git:git@github.com:chrisjq/AICoderNetBeansPlugin.git</developerConnection>
+        <url>https://github.com/chrisjq/AICoderNetBeansPlugin</url>
+    </scm>
 
     <build>
         <pluginManagement>
@@ -67,6 +90,13 @@
                 <configuration>
                     <useOSGiDependencies>false</useOSGiDependencies>
                     <verifyRuntime>false</verifyRuntime>
+                    <!-- Shown in the IDE plugin installer's license-agreement
+                    step and on the Plugin Portal. licenseFile is resolved
+                    relative to the project basedir. -->
+                    <licenseName>MIT License</licenseName>
+                    <licenseFile>LICENSE</licenseFile>
+                    <author>Chris Quin</author>
+                    <homePageUrl>https://github.com/chrisjq/AICoderNetBeansPlugin</homePageUrl>
                 </configuration>
             </plugin>
             <plugin>
