@@ -1,0 +1,51 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE filesystem PUBLIC "-//NetBeans//DTD Filesystem 1.2//EN" "http://www.netbeans.org/dtds/filesystem-1_2.dtd">
+<filesystem>
+    <!-- Explicit menu contributions for reliability with user-installed NBMs.
+    Using the standard alwaysEnabled wrapper + delegate so the ActionListener
+    class is properly turned into a menu action. -->
+    <folder name="Menu">
+        <folder name="Tools">
+            <file name="kiwi-ingenuity-netbeans-plugin-aicoder-ui-NewSessionAction-separatorBefore.instance">
+                <attr name="instanceCreate" newvalue="javax.swing.JSeparator"/>
+                <attr intvalue="4990" name="position"/>
+            </file>
+        </folder>
+    </folder>
+    <!--
+        Explicit Options registration (both under Miscellaneous and Advanced).
+
+        We use the *exact* form emitted by the OptionsPanelController annotation
+        processor (AdvancedOption.createSubCategory wrapper + controller attr).
+        This is done in the declared layer.xml (instead of relying on generated-layer.xml)
+        for the same reliability reasons that forced the alwaysEnabled + delegate
+        pattern for the Tools menu action.
+
+        "AI Coder" should now appear when you open Tools > Options and look in
+        the Miscellaneous section (or the Advanced section).
+    -->
+    <folder name="OptionsDialog">
+        <folder name="Miscellaneous">
+            <attr intvalue="900" name="position"/>
+            <file name="kiwi-ingenuity-netbeans-plugin-aicoder-settings-PluginSettingsPanelController.instance">
+                <attr methodvalue="org.netbeans.spi.options.AdvancedOption.createSubCategory" name="instanceCreate"/>
+                <attr name="controller" newvalue="kiwi.ingenuity.netbeans.plugin.aicoder.ui.settings.PluginSettingsPanelController"/>
+                <attr name="displayName" stringvalue="AI Coder"/>
+                <attr name="keywords" stringvalue="ai,llm,code"/>
+                <attr name="keywordsCategory" stringvalue="Miscellaneous/AI"/>
+                <attr intvalue="100" name="position"/>
+            </file>
+        </folder>
+        <folder name="Advanced">
+            <attr intvalue="1000" name="position"/>
+            <file name="kiwi-ingenuity-netbeans-plugin-aicoder-settings-AiCoderOptionsPanelController-Advanced.instance">
+                <attr methodvalue="org.netbeans.spi.options.AdvancedOption.createSubCategory" name="instanceCreate"/>
+                <attr name="controller" newvalue="kiwi.ingenuity.netbeans.plugin.aicoder.ui.settings.PluginSettingsPanelController"/>
+                <attr name="displayName" stringvalue="AI Coder"/>
+                <attr name="keywords" stringvalue="ai,llm,code"/>
+                <attr name="keywordsCategory" stringvalue="Advanced/AI"/>
+                <attr intvalue="100" name="position"/>
+            </file>
+        </folder>
+    </folder>
+</filesystem>

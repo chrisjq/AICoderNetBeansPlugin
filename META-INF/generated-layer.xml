@@ -1,0 +1,353 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE filesystem PUBLIC "-//NetBeans//DTD Filesystem 1.2//EN" "http://www.netbeans.org/dtds/filesystem-1_2.dtd">
+<filesystem>
+    <folder name="Editors">
+        <folder name="Actions">
+            <file name="remove-word-next.instance">
+                <!--org.netbeans.modules.editor.actions.CamelCaseActions.RemoveWordNextAction-->
+                <attr bundlevalue="org.netbeans.modules.editor.actions.Bundle#remove-word-next" name="displayName"/>
+                <attr bundlevalue="org.netbeans.modules.editor.actions.Bundle#remove-word-next" name="ShortDescription"/>
+                <attr bundlevalue="org.netbeans.modules.editor.actions.Bundle#remove-word-next" name="menuText"/>
+                <attr bundlevalue="org.netbeans.modules.editor.actions.Bundle#remove-word-next" name="popupText"/>
+                <attr name="Name" stringvalue="remove-word-next"/>
+                <attr name="helpID" stringvalue="remove-word-next"/>
+                <attr methodvalue="org.netbeans.modules.editor.lib2.actions.WrapperEditorAction.create" name="instanceCreate"/>
+                <attr boolvalue="true" name="WrapperActionKey"/>
+                <attr name="delegate" newvalue="org.netbeans.modules.editor.actions.CamelCaseActions$RemoveWordNextAction"/>
+            </file>
+            <file name="remove-word-previous.instance">
+                <!--org.netbeans.modules.editor.actions.CamelCaseActions.RemoveWordPreviousAction-->
+                <attr bundlevalue="org.netbeans.modules.editor.actions.Bundle#remove-word-previous" name="displayName"/>
+                <attr bundlevalue="org.netbeans.modules.editor.actions.Bundle#remove-word-previous" name="ShortDescription"/>
+                <attr bundlevalue="org.netbeans.modules.editor.actions.Bundle#remove-word-previous" name="menuText"/>
+                <attr bundlevalue="org.netbeans.modules.editor.actions.Bundle#remove-word-previous" name="popupText"/>
+                <attr name="Name" stringvalue="remove-word-previous"/>
+                <attr name="helpID" stringvalue="remove-word-previous"/>
+                <attr methodvalue="org.netbeans.modules.editor.lib2.actions.WrapperEditorAction.create" name="instanceCreate"/>
+                <attr boolvalue="true" name="WrapperActionKey"/>
+                <attr name="delegate" newvalue="org.netbeans.modules.editor.actions.CamelCaseActions$RemoveWordPreviousAction"/>
+            </file>
+            <file name="caret-next-word.instance">
+                <!--org.netbeans.modules.editor.actions.CamelCaseActions.NextCamelCasePosition-->
+                <attr bundlevalue="org.netbeans.modules.editor.actions.Bundle#caret-next-word" name="displayName"/>
+                <attr bundlevalue="org.netbeans.modules.editor.actions.Bundle#caret-next-word" name="ShortDescription"/>
+                <attr bundlevalue="org.netbeans.modules.editor.actions.Bundle#caret-next-word" name="menuText"/>
+                <attr bundlevalue="org.netbeans.modules.editor.actions.Bundle#caret-next-word" name="popupText"/>
+                <attr name="Name" stringvalue="caret-next-word"/>
+                <attr name="helpID" stringvalue="caret-next-word"/>
+                <attr methodvalue="org.netbeans.modules.editor.lib2.actions.WrapperEditorAction.create" name="instanceCreate"/>
+                <attr boolvalue="true" name="WrapperActionKey"/>
+                <attr name="delegate" newvalue="org.netbeans.modules.editor.actions.CamelCaseActions$NextCamelCasePosition"/>
+            </file>
+            <file name="caret-previous-word.instance">
+                <!--org.netbeans.modules.editor.actions.CamelCaseActions.PreviousCamelCasePosition-->
+                <attr bundlevalue="org.netbeans.modules.editor.actions.Bundle#caret-previous-word" name="displayName"/>
+                <attr bundlevalue="org.netbeans.modules.editor.actions.Bundle#caret-previous-word" name="ShortDescription"/>
+                <attr bundlevalue="org.netbeans.modules.editor.actions.Bundle#caret-previous-word" name="menuText"/>
+                <attr bundlevalue="org.netbeans.modules.editor.actions.Bundle#caret-previous-word" name="popupText"/>
+                <attr name="Name" stringvalue="caret-previous-word"/>
+                <attr name="helpID" stringvalue="caret-previous-word"/>
+                <attr methodvalue="org.netbeans.modules.editor.lib2.actions.WrapperEditorAction.create" name="instanceCreate"/>
+                <attr boolvalue="true" name="WrapperActionKey"/>
+                <attr name="delegate" newvalue="org.netbeans.modules.editor.actions.CamelCaseActions$PreviousCamelCasePosition"/>
+            </file>
+            <file name="selection-next-word.instance">
+                <!--org.netbeans.modules.editor.actions.CamelCaseActions.SelectNextCamelCasePosition-->
+                <attr bundlevalue="org.netbeans.modules.editor.actions.Bundle#selection-next-word" name="displayName"/>
+                <attr bundlevalue="org.netbeans.modules.editor.actions.Bundle#selection-next-word" name="ShortDescription"/>
+                <attr bundlevalue="org.netbeans.modules.editor.actions.Bundle#selection-next-word" name="menuText"/>
+                <attr bundlevalue="org.netbeans.modules.editor.actions.Bundle#selection-next-word" name="popupText"/>
+                <attr name="Name" stringvalue="selection-next-word"/>
+                <attr name="helpID" stringvalue="selection-next-word"/>
+                <attr methodvalue="org.netbeans.modules.editor.lib2.actions.WrapperEditorAction.create" name="instanceCreate"/>
+                <attr boolvalue="true" name="WrapperActionKey"/>
+                <attr name="delegate" newvalue="org.netbeans.modules.editor.actions.CamelCaseActions$SelectNextCamelCasePosition"/>
+            </file>
+            <file name="selection-previous-word.instance">
+                <!--org.netbeans.modules.editor.actions.CamelCaseActions.SelectPreviousCamelCasePosition-->
+                <attr bundlevalue="org.netbeans.modules.editor.actions.Bundle#selection-previous-word" name="displayName"/>
+                <attr bundlevalue="org.netbeans.modules.editor.actions.Bundle#selection-previous-word" name="ShortDescription"/>
+                <attr bundlevalue="org.netbeans.modules.editor.actions.Bundle#selection-previous-word" name="menuText"/>
+                <attr bundlevalue="org.netbeans.modules.editor.actions.Bundle#selection-previous-word" name="popupText"/>
+                <attr name="Name" stringvalue="selection-previous-word"/>
+                <attr name="helpID" stringvalue="selection-previous-word"/>
+                <attr methodvalue="org.netbeans.modules.editor.lib2.actions.WrapperEditorAction.create" name="instanceCreate"/>
+                <attr boolvalue="true" name="WrapperActionKey"/>
+                <attr name="delegate" newvalue="org.netbeans.modules.editor.actions.CamelCaseActions$SelectPreviousCamelCasePosition"/>
+            </file>
+            <file name="clipboard-lines.instance">
+                <!--org.netbeans.modules.editor.actions.PasteLinesAction-->
+                <attr bundlevalue="org.netbeans.modules.editor.actions.Bundle#clipboard-lines" name="displayName"/>
+                <attr bundlevalue="org.netbeans.modules.editor.actions.Bundle#clipboard-lines" name="ShortDescription"/>
+                <attr bundlevalue="org.netbeans.modules.editor.actions.Bundle#clipboard-lines" name="menuText"/>
+                <attr bundlevalue="org.netbeans.modules.editor.actions.Bundle#clipboard-lines" name="popupText"/>
+                <attr name="Name" stringvalue="clipboard-lines"/>
+                <attr name="helpID" stringvalue="clipboard-lines"/>
+                <attr methodvalue="org.netbeans.modules.editor.lib2.actions.WrapperEditorAction.create" name="instanceCreate"/>
+                <attr boolvalue="true" name="WrapperActionKey"/>
+                <attr name="delegate" newvalue="org.netbeans.modules.editor.actions.PasteLinesAction"/>
+            </file>
+            <file name="toggle-inline-hints.instance">
+                <!--org.netbeans.modules.editor.actions.ShowInlineHintsAction-->
+                <attr bundlevalue="org.netbeans.modules.editor.actions.Bundle#toggle-inline-hints" name="displayName"/>
+                <attr bundlevalue="org.netbeans.modules.editor.actions.Bundle#toggle-inline-hints" name="ShortDescription"/>
+                <attr bundlevalue="org.netbeans.modules.editor.actions.Bundle#toggle-inline-hints" name="menuText"/>
+                <attr bundlevalue="org.netbeans.modules.editor.actions.Bundle#toggle-inline-hints" name="popupText"/>
+                <attr name="preferencesKey" stringvalue="enable.inline.hints"/>
+                <attr methodvalue="org.netbeans.modules.editor.lib2.actions.EditorActionUtilities.getGlobalPreferences" name="preferencesNode"/>
+                <attr boolvalue="false" name="preferencesDefault"/>
+                <attr name="Name" stringvalue="toggle-inline-hints"/>
+                <attr name="helpID" stringvalue="toggle-inline-hints"/>
+                <attr methodvalue="org.netbeans.modules.editor.lib2.actions.WrapperEditorAction.create" name="instanceCreate"/>
+                <attr boolvalue="true" name="WrapperActionKey"/>
+                <attr name="delegate" newvalue="org.netbeans.modules.editor.actions.ShowInlineHintsAction"/>
+            </file>
+            <file name="toggle-lines-view.instance">
+                <!--org.netbeans.modules.editor.actions.ShowLinesAction-->
+                <attr bundlevalue="org.netbeans.modules.editor.actions.Bundle#toggle-lines-view" name="displayName"/>
+                <attr bundlevalue="org.netbeans.modules.editor.actions.Bundle#toggle-lines-view" name="ShortDescription"/>
+                <attr bundlevalue="org.netbeans.modules.editor.actions.Bundle#toggle-lines-view" name="menuText"/>
+                <attr bundlevalue="org.netbeans.modules.editor.actions.Bundle#toggle-lines-view" name="popupText"/>
+                <attr name="preferencesKey" stringvalue="enable.guide.lines"/>
+                <attr methodvalue="org.netbeans.modules.editor.lib2.actions.EditorActionUtilities.getGlobalPreferences" name="preferencesNode"/>
+                <attr boolvalue="true" name="preferencesDefault"/>
+                <attr name="Name" stringvalue="toggle-lines-view"/>
+                <attr name="helpID" stringvalue="toggle-lines-view"/>
+                <attr methodvalue="org.netbeans.modules.editor.lib2.actions.WrapperEditorAction.create" name="instanceCreate"/>
+                <attr boolvalue="true" name="WrapperActionKey"/>
+                <attr name="delegate" newvalue="org.netbeans.modules.editor.actions.ShowLinesAction"/>
+            </file>
+            <file name="toggle-typing-mode.instance">
+                <!--org.netbeans.modules.editor.actions.ToggleTypingModeAction-->
+                <attr bundlevalue="org.netbeans.modules.editor.actions.Bundle#toggle-typing-mode" name="displayName"/>
+                <attr bundlevalue="org.netbeans.modules.editor.actions.Bundle#toggle-typing-mode" name="ShortDescription"/>
+                <attr bundlevalue="org.netbeans.modules.editor.actions.Bundle#toggle-typing-mode" name="menuText"/>
+                <attr bundlevalue="org.netbeans.modules.editor.actions.Bundle#toggle-typing-mode" name="popupText"/>
+                <attr name="Name" stringvalue="toggle-typing-mode"/>
+                <attr name="helpID" stringvalue="toggle-typing-mode"/>
+                <attr methodvalue="org.netbeans.modules.editor.lib2.actions.WrapperEditorAction.create" name="instanceCreate"/>
+                <attr boolvalue="true" name="WrapperActionKey"/>
+                <attr name="delegate" newvalue="org.netbeans.modules.editor.actions.ToggleTypingModeAction"/>
+            </file>
+            <file name="transpose-letters.instance">
+                <!--org.netbeans.modules.editor.actions.TransposeLettersAction-->
+                <attr bundlevalue="org.netbeans.modules.editor.actions.Bundle#transpose-letters" name="displayName"/>
+                <attr bundlevalue="org.netbeans.modules.editor.actions.Bundle#transpose-letters" name="ShortDescription"/>
+                <attr bundlevalue="org.netbeans.modules.editor.actions.Bundle#transpose-letters" name="menuText"/>
+                <attr bundlevalue="org.netbeans.modules.editor.actions.Bundle#transpose-letters" name="popupText"/>
+                <attr name="Name" stringvalue="transpose-letters"/>
+                <attr name="helpID" stringvalue="transpose-letters"/>
+                <attr methodvalue="org.netbeans.modules.editor.lib2.actions.WrapperEditorAction.create" name="instanceCreate"/>
+                <attr boolvalue="true" name="WrapperActionKey"/>
+                <attr name="delegate" newvalue="org.netbeans.modules.editor.actions.TransposeLettersAction"/>
+            </file>
+            <file name="add-caret-up.instance">
+                <!--org.netbeans.modules.editor.actions.AddCaretAction-->
+                <attr bundlevalue="org.netbeans.modules.editor.actions.Bundle#add-caret-up" name="displayName"/>
+                <attr bundlevalue="org.netbeans.modules.editor.actions.Bundle#add-caret-up" name="ShortDescription"/>
+                <attr bundlevalue="org.netbeans.modules.editor.actions.Bundle#add-caret-up" name="menuText"/>
+                <attr bundlevalue="org.netbeans.modules.editor.actions.Bundle#add-caret-up" name="popupText"/>
+                <attr name="Name" stringvalue="add-caret-up"/>
+                <attr name="helpID" stringvalue="add-caret-up"/>
+                <attr methodvalue="org.netbeans.modules.editor.lib2.actions.WrapperEditorAction.create" name="instanceCreate"/>
+                <attr boolvalue="true" name="WrapperActionKey"/>
+                <attr name="delegate" newvalue="org.netbeans.modules.editor.actions.AddCaretAction"/>
+            </file>
+            <file name="add-caret-down.instance">
+                <!--org.netbeans.modules.editor.actions.AddCaretAction-->
+                <attr bundlevalue="org.netbeans.modules.editor.actions.Bundle#add-caret-down" name="displayName"/>
+                <attr bundlevalue="org.netbeans.modules.editor.actions.Bundle#add-caret-down" name="ShortDescription"/>
+                <attr bundlevalue="org.netbeans.modules.editor.actions.Bundle#add-caret-down" name="menuText"/>
+                <attr bundlevalue="org.netbeans.modules.editor.actions.Bundle#add-caret-down" name="popupText"/>
+                <attr name="Name" stringvalue="add-caret-down"/>
+                <attr name="helpID" stringvalue="add-caret-down"/>
+                <attr methodvalue="org.netbeans.modules.editor.lib2.actions.WrapperEditorAction.create" name="instanceCreate"/>
+                <attr boolvalue="true" name="WrapperActionKey"/>
+                <attr name="delegate" newvalue="org.netbeans.modules.editor.actions.AddCaretAction"/>
+            </file>
+            <file name="goto-declaration.instance">
+                <!--org.netbeans.modules.editor.actions.GotoAction-->
+                <attr bundlevalue="org.netbeans.modules.editor.actions.Bundle#goto-declaration" name="displayName"/>
+                <attr bundlevalue="org.netbeans.modules.editor.actions.Bundle#goto-declaration" name="ShortDescription"/>
+                <attr bundlevalue="org.netbeans.modules.editor.actions.Bundle#goto-declaration_menu_text" name="menuText"/>
+                <attr bundlevalue="org.netbeans.modules.editor.actions.Bundle#goto-declaration_menu_text" name="popupText"/>
+                <attr name="Name" stringvalue="goto-declaration"/>
+                <attr name="helpID" stringvalue="goto-declaration"/>
+                <attr methodvalue="org.netbeans.modules.editor.lib2.actions.WrapperEditorAction.create" name="instanceCreate"/>
+                <attr boolvalue="true" name="WrapperActionKey"/>
+                <attr name="delegate" newvalue="org.netbeans.modules.editor.actions.GotoAction"/>
+            </file>
+            <file name="move-code-element-up.instance">
+                <!--org.netbeans.modules.editor.actions.MoveCodeElementAction-->
+                <attr bundlevalue="org.netbeans.modules.editor.actions.Bundle#move-code-element-up" name="displayName"/>
+                <attr bundlevalue="org.netbeans.modules.editor.actions.Bundle#move-code-element-up" name="ShortDescription"/>
+                <attr bundlevalue="org.netbeans.modules.editor.actions.Bundle#move-code-element-up_menu_text" name="menuText"/>
+                <attr bundlevalue="org.netbeans.modules.editor.actions.Bundle#move-code-element-up_menu_text" name="popupText"/>
+                <attr name="Name" stringvalue="move-code-element-up"/>
+                <attr name="helpID" stringvalue="move-code-element-up"/>
+                <attr methodvalue="org.netbeans.modules.editor.lib2.actions.WrapperEditorAction.create" name="instanceCreate"/>
+                <attr boolvalue="true" name="WrapperActionKey"/>
+                <attr name="delegate" newvalue="org.netbeans.modules.editor.actions.MoveCodeElementAction"/>
+            </file>
+            <file name="move-code-element-down.instance">
+                <!--org.netbeans.modules.editor.actions.MoveCodeElementAction-->
+                <attr bundlevalue="org.netbeans.modules.editor.actions.Bundle#move-code-element-down" name="displayName"/>
+                <attr bundlevalue="org.netbeans.modules.editor.actions.Bundle#move-code-element-down" name="ShortDescription"/>
+                <attr bundlevalue="org.netbeans.modules.editor.actions.Bundle#move-code-element-down_menu_text" name="menuText"/>
+                <attr bundlevalue="org.netbeans.modules.editor.actions.Bundle#move-code-element-down_menu_text" name="popupText"/>
+                <attr name="Name" stringvalue="move-code-element-down"/>
+                <attr name="helpID" stringvalue="move-code-element-down"/>
+                <attr methodvalue="org.netbeans.modules.editor.lib2.actions.WrapperEditorAction.create" name="instanceCreate"/>
+                <attr boolvalue="true" name="WrapperActionKey"/>
+                <attr name="delegate" newvalue="org.netbeans.modules.editor.actions.MoveCodeElementAction"/>
+            </file>
+            <file name="remove-last-caret.instance">
+                <!--org.netbeans.modules.editor.actions.RemoveLastCaretAction-->
+                <attr bundlevalue="org.netbeans.modules.editor.actions.Bundle#remove-last-caret" name="displayName"/>
+                <attr bundlevalue="org.netbeans.modules.editor.actions.Bundle#remove-last-caret" name="ShortDescription"/>
+                <attr bundlevalue="org.netbeans.modules.editor.actions.Bundle#remove-last-caret" name="menuText"/>
+                <attr bundlevalue="org.netbeans.modules.editor.actions.Bundle#remove-last-caret" name="popupText"/>
+                <attr name="Name" stringvalue="remove-last-caret"/>
+                <attr name="helpID" stringvalue="remove-last-caret"/>
+                <attr methodvalue="org.netbeans.modules.editor.lib2.actions.WrapperEditorAction.create" name="instanceCreate"/>
+                <attr boolvalue="true" name="WrapperActionKey"/>
+                <attr name="delegate" newvalue="org.netbeans.modules.editor.actions.RemoveLastCaretAction"/>
+            </file>
+            <file name="toggle-toolbar.instance">
+                <!--org.netbeans.modules.editor.actions.ToggleAction.create(java.util.Map<java.lang.String,?>)-->
+                <attr bundlevalue="org.netbeans.modules.editor.actions.Bundle#toggle-toolbar" name="displayName"/>
+                <attr bundlevalue="org.netbeans.modules.editor.actions.Bundle#toggle-toolbar" name="ShortDescription"/>
+                <attr bundlevalue="org.netbeans.modules.editor.actions.Bundle#toggle-toolbar_menu_text" name="menuText"/>
+                <attr bundlevalue="org.netbeans.modules.editor.actions.Bundle#toggle-toolbar_menu_text" name="popupText"/>
+                <attr name="preferencesKey" stringvalue="toolbarVisible"/>
+                <attr methodvalue="org.netbeans.modules.editor.lib2.actions.EditorActionUtilities.getGlobalPreferences" name="preferencesNode"/>
+                <attr boolvalue="false" name="preferencesDefault"/>
+                <attr name="Name" stringvalue="toggle-toolbar"/>
+                <attr name="helpID" stringvalue="toggle-toolbar"/>
+                <attr methodvalue="org.netbeans.modules.editor.actions.ToggleAction.create" name="instanceCreate"/>
+            </file>
+            <file name="toggle-line-numbers.instance">
+                <!--org.netbeans.modules.editor.actions.ToggleAction.create(java.util.Map<java.lang.String,?>)-->
+                <attr bundlevalue="org.netbeans.modules.editor.actions.Bundle#toggle-line-numbers" name="displayName"/>
+                <attr bundlevalue="org.netbeans.modules.editor.actions.Bundle#toggle-line-numbers" name="ShortDescription"/>
+                <attr bundlevalue="org.netbeans.modules.editor.actions.Bundle#toggle-line-numbers_menu_text" name="menuText"/>
+                <attr bundlevalue="org.netbeans.modules.editor.actions.Bundle#toggle-line-numbers_menu_text" name="popupText"/>
+                <attr name="preferencesKey" stringvalue="line-number-visible"/>
+                <attr methodvalue="org.netbeans.modules.editor.lib2.actions.EditorActionUtilities.getGlobalPreferences" name="preferencesNode"/>
+                <attr boolvalue="false" name="preferencesDefault"/>
+                <attr name="Name" stringvalue="toggle-line-numbers"/>
+                <attr name="helpID" stringvalue="toggle-line-numbers"/>
+                <attr methodvalue="org.netbeans.modules.editor.actions.ToggleAction.create" name="instanceCreate"/>
+            </file>
+            <file name="toggle-non-printable-characters.instance">
+                <!--org.netbeans.modules.editor.actions.ToggleAction.create(java.util.Map<java.lang.String,?>)-->
+                <attr bundlevalue="org.netbeans.modules.editor.actions.Bundle#toggle-non-printable-characters" name="displayName"/>
+                <attr bundlevalue="org.netbeans.modules.editor.actions.Bundle#toggle-non-printable-characters" name="ShortDescription"/>
+                <attr bundlevalue="org.netbeans.modules.editor.actions.Bundle#toggle-non-printable-characters_menu_text" name="menuText"/>
+                <attr bundlevalue="org.netbeans.modules.editor.actions.Bundle#toggle-non-printable-characters_menu_text" name="popupText"/>
+                <attr name="preferencesKey" stringvalue="non-printable-characters-visible"/>
+                <attr methodvalue="org.netbeans.modules.editor.lib2.actions.EditorActionUtilities.getGlobalPreferences" name="preferencesNode"/>
+                <attr boolvalue="false" name="preferencesDefault"/>
+                <attr name="Name" stringvalue="toggle-non-printable-characters"/>
+                <attr name="helpID" stringvalue="toggle-non-printable-characters"/>
+                <attr methodvalue="org.netbeans.modules.editor.actions.ToggleAction.create" name="instanceCreate"/>
+            </file>
+            <file name="zoom-text-in.instance">
+                <!--org.netbeans.modules.editor.actions.ZoomTextAction-->
+                <attr bundlevalue="org.netbeans.modules.editor.actions.Bundle#zoom-text-in" name="displayName"/>
+                <attr bundlevalue="org.netbeans.modules.editor.actions.Bundle#zoom-text-in" name="ShortDescription"/>
+                <attr bundlevalue="org.netbeans.modules.editor.actions.Bundle#zoom-text-in" name="menuText"/>
+                <attr bundlevalue="org.netbeans.modules.editor.actions.Bundle#zoom-text-in" name="popupText"/>
+                <attr name="Name" stringvalue="zoom-text-in"/>
+                <attr name="helpID" stringvalue="zoom-text-in"/>
+                <attr methodvalue="org.netbeans.modules.editor.lib2.actions.WrapperEditorAction.create" name="instanceCreate"/>
+                <attr boolvalue="true" name="WrapperActionKey"/>
+                <attr name="delegate" newvalue="org.netbeans.modules.editor.actions.ZoomTextAction"/>
+            </file>
+            <file name="zoom-text-out.instance">
+                <!--org.netbeans.modules.editor.actions.ZoomTextAction-->
+                <attr bundlevalue="org.netbeans.modules.editor.actions.Bundle#zoom-text-out" name="displayName"/>
+                <attr bundlevalue="org.netbeans.modules.editor.actions.Bundle#zoom-text-out" name="ShortDescription"/>
+                <attr bundlevalue="org.netbeans.modules.editor.actions.Bundle#zoom-text-out" name="menuText"/>
+                <attr bundlevalue="org.netbeans.modules.editor.actions.Bundle#zoom-text-out" name="popupText"/>
+                <attr name="Name" stringvalue="zoom-text-out"/>
+                <attr name="helpID" stringvalue="zoom-text-out"/>
+                <attr methodvalue="org.netbeans.modules.editor.lib2.actions.WrapperEditorAction.create" name="instanceCreate"/>
+                <attr boolvalue="true" name="WrapperActionKey"/>
+                <attr name="delegate" newvalue="org.netbeans.modules.editor.actions.ZoomTextAction"/>
+            </file>
+        </folder>
+    </folder>
+    <folder name="OptionsDialog">
+        <folder name="Actions">
+            <folder name="edit.multicaret">
+                <file name="clipboard-lines">
+                    <!--org.netbeans.modules.editor.actions.PasteLinesAction-->
+                </file>
+                <file name="add-caret-up">
+                    <!--org.netbeans.modules.editor.actions.AddCaretAction-->
+                </file>
+                <file name="add-caret-down">
+                    <!--org.netbeans.modules.editor.actions.AddCaretAction-->
+                </file>
+                <file name="remove-last-caret">
+                    <!--org.netbeans.modules.editor.actions.RemoveLastCaretAction-->
+                </file>
+            </folder>
+        </folder>
+    </folder>
+    <folder name="Menu">
+        <folder name="Edit">
+            <file name="clipboard-lines.shadow">
+                <!--org.netbeans.modules.editor.actions.PasteLinesAction-->
+                <attr name="originalFile" stringvalue="Editors/Actions/clipboard-lines.instance"/>
+                <attr intvalue="1360" name="position"/>
+            </file>
+        </folder>
+        <folder name="View">
+            <file name="toggle-inline-hints.shadow">
+                <!--org.netbeans.modules.editor.actions.ShowInlineHintsAction-->
+                <attr name="originalFile" stringvalue="Editors/Actions/toggle-inline-hints.instance"/>
+                <attr intvalue="899" name="position"/>
+            </file>
+            <file name="toggle-lines-view.shadow">
+                <!--org.netbeans.modules.editor.actions.ShowLinesAction-->
+                <attr name="originalFile" stringvalue="Editors/Actions/toggle-lines-view.instance"/>
+                <attr intvalue="898" name="position"/>
+            </file>
+            <file name="toggle-toolbar.shadow">
+                <!--org.netbeans.modules.editor.actions.ToggleAction.create(java.util.Map<java.lang.String,?>)-->
+                <attr name="originalFile" stringvalue="Editors/Actions/toggle-toolbar.instance"/>
+                <attr intvalue="800" name="position"/>
+            </file>
+            <file name="toggle-line-numbers.shadow">
+                <!--org.netbeans.modules.editor.actions.ToggleAction.create(java.util.Map<java.lang.String,?>)-->
+                <attr name="originalFile" stringvalue="Editors/Actions/toggle-line-numbers.instance"/>
+                <attr intvalue="850" name="position"/>
+            </file>
+            <file name="toggle-non-printable-characters.shadow">
+                <!--org.netbeans.modules.editor.actions.ToggleAction.create(java.util.Map<java.lang.String,?>)-->
+                <attr name="originalFile" stringvalue="Editors/Actions/toggle-non-printable-characters.instance"/>
+                <attr intvalue="870" name="position"/>
+            </file>
+        </folder>
+        <folder name="GoTo">
+            <file name="goto-declaration.shadow">
+                <!--org.netbeans.modules.editor.actions.GotoAction-->
+                <attr name="originalFile" stringvalue="Editors/Actions/goto-declaration.instance"/>
+                <attr intvalue="900" name="position"/>
+            </file>
+        </folder>
+        <folder name="Source">
+            <file name="move-code-element-up.shadow">
+                <!--org.netbeans.modules.editor.actions.MoveCodeElementAction-->
+                <attr name="originalFile" stringvalue="Editors/Actions/move-code-element-up.instance"/>
+                <attr intvalue="840" name="position"/>
+            </file>
+            <file name="move-code-element-down.shadow">
+                <!--org.netbeans.modules.editor.actions.MoveCodeElementAction-->
+                <attr name="originalFile" stringvalue="Editors/Actions/move-code-element-down.instance"/>
+                <attr intvalue="860" name="position"/>
+            </file>
+        </folder>
+    </folder>
+</filesystem>
