@@ -5,7 +5,7 @@
     <modelVersion>4.0.0</modelVersion>
     <groupId>kiwi.ingenuity.aicoder</groupId>
     <artifactId>AiCoderNetbeansPlugin</artifactId>
-    <version>1.0.475</version>
+    <version>1.0.486</version>
     <packaging>nbm</packaging>
 
     <name>AI Coder for NetBeans</name>
@@ -14,11 +14,6 @@
     <build>
         <pluginManagement>
             <plugins>
-                <!--
-                    Pin plugin versions here for reproducibility and to suppress
-                    "Ignoring incompatible plugin version" warnings from Maven 3.9+
-                    when newer beta plugins require Maven 4.
-                -->
                 <plugin>
                     <groupId>org.apache.netbeans.utilities</groupId>
                     <artifactId>nbm-maven-plugin</artifactId>

@@ -62,6 +62,8 @@ Open **Tools > Options > AI Coder**. General settings apply to every backend; ea
 | Claude executable | auto-detect | Path to the `claude` CLI binary |
 | Model | claude-sonnet-4-6 | Model used for chat (opus / sonnet / haiku) |
 
+> Authentication for Claude Code is handled by the `claude` CLI itself. Logon via the claude cli before use.
+
 ### GitHub Copilot backend
 
 | Setting | Default | Description |
@@ -69,7 +71,7 @@ Open **Tools > Options > AI Coder**. General settings apply to every backend; ea
 | Copilot executable | auto-detect | Path to the `copilot` CLI binary |
 | Model | auto-discovered | Model list is fetched via the Copilot SDK at session start; falls back to a built-in list if discovery fails |
 
-> Authentication for GitHub Copilot is handled by the `copilot` CLI itself (e.g. `~/.copilot/settings.json`). Copilot runs in prompt mode with memory disabled; use `/compact` from the info bar to compress a long conversation.
+> Authentication for GitHub Copilot is handled by the `copilot` CLI itself. Logon via the copilot cli before use.
 
 ## MCP Tool Reference
 
