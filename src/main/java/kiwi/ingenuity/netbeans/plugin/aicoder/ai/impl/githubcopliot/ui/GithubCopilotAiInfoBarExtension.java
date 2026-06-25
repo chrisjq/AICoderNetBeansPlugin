@@ -8,6 +8,8 @@ import javax.swing.JButton;
 import javax.swing.JComboBox;
 import javax.swing.SwingUtilities;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.AiSessionHost;
+import kiwi.ingenuity.netbeans.plugin.aicoder.ai.events.AiPropertyEvent;
+import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.githubcopliot.events.GithubCopilotModelsEvent;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.githubcopliot.settings.GithubCopilotPluginSettings;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.session.AiSession;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.ui.AiInfoBarExtension;
@@ -162,7 +164,13 @@ public class GithubCopilotAiInfoBarExtension implements AiInfoBarExtension {
     }
 
     @Override
-    public void onPropertyEvent(kiwi.ingenuity.netbeans.plugin.aicoder.ai.events.AiPropertyEvent event) {
+    public void onPropertyEvent(AiPropertyEvent event) {
+        if (event instanceof GithubCopilotModelsEvent me) {
+            // Broadcast from GithubCopilotAiImplementation when the model list is
+            // discovered (or replayed from cache for a newly opened session).
+            // Delivered on the EDT; setAvailableModels also self-marshals.
+            setAvailableModels(me.models().toArray(String[]::new));
+        }
     }
 
     @Override

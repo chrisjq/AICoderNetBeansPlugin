@@ -1,12 +1,16 @@
 package kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.githubcopliot;
 
 import java.awt.Component;
+import java.util.Arrays;
 import java.util.List;
+import javax.swing.SwingUtilities;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.AiImplementation;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.AiSessionHost;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.AiTypeEnum;
+import kiwi.ingenuity.netbeans.plugin.aicoder.ai.AiTypePropertyBus;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.events.StatusEvent;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.events.StatusEventTypeEnum;
+import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.githubcopliot.events.GithubCopilotModelsEvent;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.githubcopliot.settings.GithubCopilotPluginSettings;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.githubcopliot.ui.GithubCopilotAiInfoBarExtension;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.githubcopliot.ui.GithubCopilotInfoBarListener;
@@ -28,6 +32,14 @@ import kiwi.ingenuity.netbeans.plugin.aicoder.process.events.AiProcessEventListe
 public class GithubCopilotAiImplementation extends AiImplementation {
 
     private final GithubCopilotProcessManager processManager;
+
+    // The discovered model list is shared across all Copilot sessions for the
+    // IDE run (like Claude): discover once, cache, and broadcast to every open
+    // session's dropdown via AiTypePropertyBus — so opening 4 sessions at once
+    // populates all four, not just the one that triggered discovery.
+    private static final Object MODEL_LOCK = new Object();
+    private static volatile List<String> cachedModels = null;
+    private static volatile boolean modelsFetched = false;
 
     public GithubCopilotAiImplementation(AiProcessEventListener listener) {
         super(AiTypeEnum.GitHubCoPilot, listener);
@@ -129,12 +141,45 @@ public class GithubCopilotAiImplementation extends AiImplementation {
             host.updateSessionSettings(modelSettings);
         }
 
-        // Phase 1: discover the real available model list via the official
-        // Copilot SDK and refresh the dropdown (best-effort; falls back silently
-        // to the hardcoded list). The -p runtime is unchanged.
-        GithubCopilotModelDiscovery.discoverAsync(GithubCopilotExecutableLocator.locate(),
-                models -> javax.swing.SwingUtilities.invokeLater(() -> provider.setAvailableModels(models)));
+        // Phase 1: discover the real available model list (best-effort; falls
+        // back silently to the hardcoded list). Discovery runs once per IDE run
+        // and the result is broadcast to EVERY open Copilot session's dropdown.
+        triggerModelDiscovery();
         return provider;
+    }
+
+    /**
+     * Discover the Copilot model list once per IDE run, then broadcast it to
+     * every open Copilot session's info bar via {@link AiTypePropertyBus} —
+     * mirroring the Claude flow. A session opened after discovery already
+     * completed replays the cached list immediately. Without this, only the
+     * session that happened to trigger discovery got the loaded list.
+     */
+    private void triggerModelDiscovery() {
+        if (modelsFetched) {
+            List<String> cached;
+            synchronized (MODEL_LOCK) {
+                cached = cachedModels;
+            }
+            if (cached != null) {
+                List<String> snapshot = cached;
+                SwingUtilities.invokeLater(() -> AiTypePropertyBus.getInstance()
+                        .fire(AiTypeEnum.GitHubCoPilot, new GithubCopilotModelsEvent(snapshot)));
+            }
+            return;
+        }
+        // discoverAsync coalesces concurrent calls (only the first runs) and
+        // invokes this callback off the EDT on success. Cache + broadcast so all
+        // open Copilot dropdowns update, not just the triggering session.
+        GithubCopilotModelDiscovery.discoverAsync(GithubCopilotExecutableLocator.locate(), models -> {
+            List<String> list = Arrays.asList(models);
+            synchronized (MODEL_LOCK) {
+                cachedModels = list;
+                modelsFetched = true;
+            }
+            SwingUtilities.invokeLater(() -> AiTypePropertyBus.getInstance()
+                    .fire(AiTypeEnum.GitHubCoPilot, new GithubCopilotModelsEvent(list)));
+        });
     }
 
     private void compact(AiSessionHost host) {

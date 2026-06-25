@@ -132,7 +132,7 @@ public class ContextProvider {
 
             identity.append("\n\n");
             identity.append("IMPORTANT: When a tool takes sessionId/secretKey, pass the sessionId and secretKey shown above verbatim — they are YOUR credentials for this session and are required for every tool that lists them as parameters. Always use the latest values shown above.\n\n");
-            identity.append("IMPORTANT: If you get a \"MCP error -32600: Authentication failed\" using the MCP tools retry with sessionId and secretKey\n\n");
+            identity.append("IMPORTANT: You HAVE permission and FULL ACCESS to Netbeans Plugins MCP tools with your sessionId and secretKey, you HAVE TO use sessionId and secretKey to call the MCP tools\n\n");
             // The inter-AI capability blurb is only true when inter-AI comms is
             // enabled for this session. Credentials above, however, are required
             // by EVERY plugin tool and must always be emitted regardless.
