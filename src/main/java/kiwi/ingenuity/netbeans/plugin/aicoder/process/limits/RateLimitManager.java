@@ -16,6 +16,14 @@ public class RateLimitManager {
 
     private static final Logger LOG = Logger.getLogger(RateLimitManager.class.getName());
     private static final long RATE_LIMIT_OFFSET_MS = 10_000;
+    /**
+     * Hard cap on how far into the future a single rate-limit window may
+     * extend. A malformed, absurdly large, or hostile {@code Retry-After} must
+     * never be able to brick usage/model fetching until the IDE restarts — the
+     * worst case is now a bounded wait rather than a permanent lockout of the
+     * shared, static rate-limit manager.
+     */
+    private static final long MAX_RATE_LIMIT_MS = 15L * 60L * 1000L; // 15 minutes
     private long rateLimitUntilMs = 0;
     private String rateLimitReason = null;
     private final ReentrantReadWriteLock lock = new ReentrantReadWriteLock();
@@ -69,14 +77,16 @@ public class RateLimitManager {
 
     public void setRateLimit(long retryAfterMs) {
         List<RateLimitListener> toNotify;
+        // Clamp to a sane range: never negative, never beyond the hard cap.
+        long capped = Math.max(0L, Math.min(retryAfterMs, MAX_RATE_LIMIT_MS));
         lock.writeLock().lock();
         try {
             long now = System.currentTimeMillis();
-            long deadline = now + retryAfterMs + RATE_LIMIT_OFFSET_MS;
+            long deadline = now + capped + RATE_LIMIT_OFFSET_MS;
             rateLimitUntilMs = Math.max(rateLimitUntilMs, deadline);
-            rateLimitReason = "API rate limit: retry after " + retryAfterMs + "ms";
+            rateLimitReason = "API rate limit: retry after " + capped + "ms";
             LOG.log(Level.WARNING, "Rate limit set until {0} ({1}ms from now)",
-                    new Object[]{deadline, retryAfterMs});
+                    new Object[]{deadline, capped});
             toNotify = new ArrayList<>(listeners);
         }
         finally {
@@ -84,7 +94,7 @@ public class RateLimitManager {
         }
         for (RateLimitListener listener : toNotify) {
             try {
-                listener.onRateLimited(retryAfterMs);
+                listener.onRateLimited(capped);
             }
             catch (Exception e) {
                 LOG.log(Level.WARNING, "Error notifying rate limit listener", e);

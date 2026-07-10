@@ -10,7 +10,7 @@ public final class PluginSettings {
 
     private static final Logger LOG = Logger.getLogger(PluginSettings.class.getName());
 
-    public static final int DEFAULT_MCP_SERVER_PORT = 6969;
+    public static final int DEFAULT_MCP_SERVER_PORT = 49167;
 
     // Cache the Preferences node. NbPreferences.forModule triggers NetBeans'
     // Repository/URL-factory lazy init the first time it is touched; on a JVM

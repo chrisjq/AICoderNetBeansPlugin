@@ -36,6 +36,49 @@ public class AnthropicApiClient {
         return RATE_LIMIT_MANAGER;
     }
 
+    /**
+     * Last-seen modification time of the OAuth credentials file, in millis.
+     */
+    private static volatile long lastCredsModifiedMs = credentialsModifiedMs();
+
+    private static Path credentialsPath() {
+        return Path.of(System.getProperty("user.home"), ".claude", ".credentials.json");
+    }
+
+    private static long credentialsModifiedMs() {
+        try {
+            Path creds = credentialsPath();
+            return Files.exists(creds) ? Files.getLastModifiedTime(creds).toMillis() : 0L;
+        }
+        catch (Exception e) {
+            return 0L;
+        }
+    }
+
+    /**
+     * Clears any active rate limit if the OAuth credentials file has changed
+     * since we last looked — i.e. the user re-authenticated (ran
+     * {@code claude login}) after the plugin started. A rate limit incurred
+     * with a missing or expired token must NOT keep blocking a freshly written,
+     * valid one: {@link #get} short-circuits on {@code isRateLimited()} before
+     * it ever reads the token, so without this a new key would never be picked
+     * up until the IDE restarts. Call from usage/model refresh triggers, off
+     * the deferred scheduler thread, so the clear happens before the next fetch
+     * is submitted.
+     *
+     * @return true if the credentials file changed since the last check (the
+     * caller may want to re-run a usage/model fetch), false otherwise.
+     */
+    public static boolean refreshCredentialsState() {
+        long current = credentialsModifiedMs();
+        if (current != lastCredsModifiedMs) {
+            lastCredsModifiedMs = current;
+            RATE_LIMIT_MANAGER.clearRateLimit();
+            return true;
+        }
+        return false;
+    }
+
     private static double getUtilization(JsonObject root, String key) {
         if (!root.has(key) || root.get(key).isJsonNull()) {
             return -1;
@@ -50,7 +93,7 @@ public class AnthropicApiClient {
     private long defaultRateLimit = 2L * 60L * 1000L; // 2 minutes — fallback when no usable Retry-After is supplied
 
     private String readOAuthToken() {
-        Path creds = Path.of(System.getProperty("user.home"), ".claude", ".credentials.json");
+        Path creds = credentialsPath();
         if (!Files.exists(creds)) {
             return null;
         }
@@ -107,7 +150,10 @@ public class AnthropicApiClient {
                 throw new IOException("API " + path + " returned HTTP " + code);
             }
             try (InputStream is = conn.getInputStream()) {
-                return new String(is.readNBytes(MAX_RESPONSE_BYTES), StandardCharsets.UTF_8);
+                String body = new String(is.readNBytes(MAX_RESPONSE_BYTES), StandardCharsets.UTF_8);
+                // A successful response means we are no longer rate limited.
+                RATE_LIMIT_MANAGER.clearRateLimit();
+                return body;
             }
         }
         finally {

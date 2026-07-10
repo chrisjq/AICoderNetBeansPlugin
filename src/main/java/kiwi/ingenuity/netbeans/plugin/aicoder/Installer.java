@@ -32,6 +32,8 @@ public class Installer extends ModuleInstall {
     @Override
     public void restored() {
         LOG.log(Level.INFO, StringConst.PLUGIN_NAME + " plugin v{0} activated. Use Tools > AI Coder to open the panel.", VERSION);
+        // Recover usage/model fetching when the user authenticates after startup.
+        kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.claude.ClaudeCredentialMonitor.getInstance().start();
     }
 
     @Override
@@ -54,6 +56,7 @@ public class Installer extends ModuleInstall {
         kiwi.ingenuity.netbeans.plugin.aicoder.ai.mail.AiSessionInboxBroker.getInstance().shutdownNotifier();
         kiwi.ingenuity.netbeans.plugin.aicoder.ai.mail.AiSessionInboxBroker.getInstance().shutdownSweeper();
         kiwi.ingenuity.netbeans.plugin.aicoder.process.locking.LockManager.getInstance().shutdown();
+        kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.claude.ClaudeCredentialMonitor.getInstance().stop();
         kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.claude.AnthropicApiClient.rateLimitManager().shutdown();
     }
 }

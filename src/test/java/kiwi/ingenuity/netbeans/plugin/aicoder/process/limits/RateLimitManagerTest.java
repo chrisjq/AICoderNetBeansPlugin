@@ -1,6 +1,5 @@
 package kiwi.ingenuity.netbeans.plugin.aicoder.process.limits;
 
-import kiwi.ingenuity.netbeans.plugin.aicoder.process.limits.RateLimitManager;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -78,6 +77,36 @@ class RateLimitManagerTest {
         assertTrue(accepted, "rate-limited task must be accepted (scheduled), not dropped");
         Thread.sleep(300);
         assertEquals(0, runs.get(), "task must be deferred, not run immediately");
+        rlm.shutdown();
+    }
+
+    @Test
+    void capsAbsurdlyLargeRateLimit() {
+        RateLimitManager rlm = new RateLimitManager();
+        // A hostile / malformed Retry-After that would otherwise brick the client
+        // until the IDE restarts.
+        rlm.setRateLimit(Long.MAX_VALUE / 2);
+        assertTrue(rlm.isRateLimited());
+        long remaining = rlm.getRetryAfterMs();
+        // 15 min cap + 10s offset; allow a little slack for scheduling.
+        long maxExpected = 15L * 60L * 1000L + 10_000L + 5_000L;
+        assertTrue(remaining <= maxExpected,
+                "rate-limit window must be capped, was " + remaining + "ms");
+        rlm.shutdown();
+    }
+
+    @Test
+    void clearRateLimitUnblocksAndAllowsImmediateRun() throws Exception {
+        RateLimitManager rlm = new RateLimitManager();
+        rlm.setRateLimit(60_000);
+        assertTrue(rlm.isRateLimited(), "precondition: rate limited");
+        // Simulates a re-auth clearing a stale lockout so a fresh token is retried.
+        rlm.clearRateLimit();
+        assertFalse(rlm.isRateLimited(), "clearRateLimit must lift the lockout");
+        CountDownLatch ran = new CountDownLatch(1);
+        assertTrue(rlm.submitWhenClear("usage", ran::countDown));
+        assertTrue(ran.await(1, TimeUnit.SECONDS),
+                "task must run immediately once the rate limit is cleared");
         rlm.shutdown();
     }
 
