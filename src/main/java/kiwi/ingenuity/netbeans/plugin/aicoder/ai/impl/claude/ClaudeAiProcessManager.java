@@ -126,6 +126,7 @@ public class ClaudeAiProcessManager extends AiProcessManager {
         boolean isFirst = firstMessage;
         firstMessage = false;
         ClaudeAiSession capturedAiSession = claudeAiSession;
+        List<File> projDirs = projectDirs != null ? projectDirs : List.of();
 
         Thread t = new Thread(() -> {
             Path capturedConfigDir;
@@ -153,6 +154,16 @@ public class ClaudeAiProcessManager extends AiProcessManager {
             args.add(model);
             args.add("--allowedTools");
             args.add("Read,Edit,Write,Bash,Glob,Grep," + McpToolEnum.allMcpNames());
+            // Grant access to every currently-open NetBeans project, not just the
+            // pinned session working directory, so a project opened after the
+            // session started is reachable by Claude's native Read/Edit/Bash
+            // tools too (mirrors GithubCopilotProcessManager's --add-dir usage).
+            for (File d : projDirs) {
+                if (d != null && d.isDirectory()) {
+                    args.add("--add-dir");
+                    args.add(d.getPath());
+                }
+            }
             if (capturedConfigDir != null) {
                 Path memoryDir = capturedConfigDir.resolve("memory");
                 try {
