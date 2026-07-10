@@ -70,6 +70,13 @@ public class ToolRequestArguments {
         return raw.getAsJsonArray(key);
     }
 
+    public JsonObject object(String key) {
+        if (!raw.has(key) || !raw.get(key).isJsonObject()) {
+            return null;
+        }
+        return raw.getAsJsonObject(key);
+    }
+
     public String require(String key) throws McpArgumentException {
         String value = str(key);
         if (value == null || value.isBlank()) {

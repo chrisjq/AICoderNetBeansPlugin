@@ -66,6 +66,7 @@ public enum McpToolEnum {
     FIND_USAGES("FindUsages"),
     // SYSTEM
     GET_FILE_CONTENT("GetFileContent"),
+    WEB_REQUEST("WebRequest"),
     GET_CLIPBOARD("GetClipboard"),
     SAVE_FILE("SaveFile"),
     APPLY_EDIT("ApplyEdit"),
