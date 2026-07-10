@@ -1,7 +1,9 @@
 package kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.git;
 
+import com.google.gson.JsonArray;
 import com.google.gson.JsonObject;
 import java.util.Set;
+import kiwi.ingenuity.netbeans.plugin.aicoder.process.McpArgumentException;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.McpSectionEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.McpToolEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.locking.LockTypeEnum;
@@ -24,7 +26,8 @@ public class GitRebaseTool implements McpToolInterface {
 
     @Override
     public String instruction() {
-        return "GitRebase -> INSTEAD OF Bash git rebase - rebases current branch onto upstream; supports BEGIN/CONTINUE/SKIP/ABORT";
+        return "GitRebase -> INSTEAD OF Bash git rebase - rebases current branch onto upstream; supports BEGIN/CONTINUE/SKIP/ABORT. "
+                + "Requires projectPath to select the target git repository or project root.";
     }
 
     @Override
@@ -46,7 +49,17 @@ public class GitRebaseTool implements McpToolInterface {
         operation.addProperty(ToolSchemaKeyEnum.TYPE.key(), "string");
         operation.addProperty(ToolSchemaKeyEnum.DESCRIPTION.key(), "Operation: BEGIN (default), CONTINUE, SKIP, ABORT.");
         props.add(GitRebaseParamEnum.OPERATION.key(), operation);
+        JsonObject projectPath = new JsonObject();
+        projectPath.addProperty(ToolSchemaKeyEnum.TYPE.key(), "string");
+        projectPath.addProperty(ToolSchemaKeyEnum.DESCRIPTION.key(),
+                "Path to the target git repository or project root (relative paths are resolved "
+                + "against the default project). Required — selects which project/repo to operate "
+                + "on when multiple are open, or when the repo lives outside any open project.");
+        props.add(GitCommonParamEnum.PROJECT_PATH.key(), projectPath);
         schema.add(ToolSchemaKeyEnum.PROPERTIES.key(), props);
+        JsonArray required = new JsonArray();
+        required.add(GitCommonParamEnum.PROJECT_PATH.key());
+        schema.add(ToolSchemaKeyEnum.REQUIRED.key(), required);
         tool.add(ToolSchemaKeyEnum.INPUT_SCHEMA.key(), schema);
         return tool;
     }
@@ -57,7 +70,7 @@ public class GitRebaseTool implements McpToolInterface {
     }
 
     @Override
-    public String handle(ToolRequestArguments args, AbstractAiSession session) {
+    public String handle(ToolRequestArguments args, AbstractAiSession session) throws McpArgumentException {
         String upstream = args.str(GitRebaseParamEnum.UPSTREAM.key());
         String operation = args.str(GitRebaseParamEnum.OPERATION.key());
 
@@ -68,6 +81,6 @@ public class GitRebaseTool implements McpToolInterface {
             return "Error: upstream is required for operation=BEGIN";
         }
 
-        return GitProvider.gitRebase(upstream, operation);
+        return GitProvider.gitRebase(args.require(GitCommonParamEnum.PROJECT_PATH.key()), upstream, operation);
     }
 }

@@ -26,7 +26,8 @@ public class GitAddTool implements McpToolInterface {
 
     @Override
     public String instruction() {
-        return "GitAdd -> INSTEAD OF Bash git add - stages files for commit; pass [\".\" ] to stage all";
+        return "GitAdd -> INSTEAD OF Bash git add - stages files for commit; pass [\".\" ] to stage all. "
+                + "Requires projectPath to select the target git repository or project root.";
     }
 
     @Override
@@ -46,9 +47,17 @@ public class GitAddTool implements McpToolInterface {
         files.add(ToolSchemaKeyEnum.ITEMS.key(), items);
         files.addProperty(ToolSchemaKeyEnum.DESCRIPTION.key(), "File paths to stage. Use [\".\" ] to stage all changes.");
         props.add(GitAddParamEnum.FILES.key(), files);
+        JsonObject projectPath = new JsonObject();
+        projectPath.addProperty(ToolSchemaKeyEnum.TYPE.key(), "string");
+        projectPath.addProperty(ToolSchemaKeyEnum.DESCRIPTION.key(),
+                "Path to the target git repository or project root (relative paths are resolved "
+                + "against the default project). Required — selects which project/repo to operate "
+                + "on when multiple are open, or when the repo lives outside any open project.");
+        props.add(GitCommonParamEnum.PROJECT_PATH.key(), projectPath);
         schema.add(ToolSchemaKeyEnum.PROPERTIES.key(), props);
         JsonArray required = new JsonArray();
         required.add(GitAddParamEnum.FILES.key());
+        required.add(GitCommonParamEnum.PROJECT_PATH.key());
         schema.add(ToolSchemaKeyEnum.REQUIRED.key(), required);
         tool.add(ToolSchemaKeyEnum.INPUT_SCHEMA.key(), schema);
         return tool;
@@ -75,6 +84,6 @@ public class GitAddTool implements McpToolInterface {
         if (files.isEmpty()) {
             throw new McpArgumentException(-32602, "files must contain at least one non-null string path");
         }
-        return GitProvider.gitAdd(files);
+        return GitProvider.gitAdd(args.require(GitCommonParamEnum.PROJECT_PATH.key()), files);
     }
 }

@@ -27,7 +27,8 @@ public class GitCommitTool implements McpToolInterface {
     @Override
     public String instruction() {
         return "GitCommit -> INSTEAD OF Bash git commit - commits staged changes with a message; "
-                + "optionally stages files first via the files parameter";
+                + "optionally stages files first via the files parameter. "
+                + "Requires projectPath to select the target git repository or project root.";
     }
 
     @Override
@@ -52,9 +53,17 @@ public class GitCommitTool implements McpToolInterface {
         files.add(ToolSchemaKeyEnum.ITEMS.key(), items);
         files.addProperty(ToolSchemaKeyEnum.DESCRIPTION.key(), "Optional file paths to stage before committing. Omit to commit already-staged changes.");
         props.add(GitCommitParamEnum.FILES.key(), files);
+        JsonObject projectPath = new JsonObject();
+        projectPath.addProperty(ToolSchemaKeyEnum.TYPE.key(), "string");
+        projectPath.addProperty(ToolSchemaKeyEnum.DESCRIPTION.key(),
+                "Path to the target git repository or project root (relative paths are resolved "
+                + "against the default project). Required — selects which project/repo to operate "
+                + "on when multiple are open, or when the repo lives outside any open project.");
+        props.add(GitCommonParamEnum.PROJECT_PATH.key(), projectPath);
         schema.add(ToolSchemaKeyEnum.PROPERTIES.key(), props);
         JsonArray required = new JsonArray();
         required.add(GitCommitParamEnum.MESSAGE.key());
+        required.add(GitCommonParamEnum.PROJECT_PATH.key());
         schema.add(ToolSchemaKeyEnum.REQUIRED.key(), required);
         tool.add(ToolSchemaKeyEnum.INPUT_SCHEMA.key(), schema);
         return tool;
@@ -79,6 +88,6 @@ public class GitCommitTool implements McpToolInterface {
                 }
             }
         }
-        return GitProvider.gitCommit(message, files);
+        return GitProvider.gitCommit(args.require(GitCommonParamEnum.PROJECT_PATH.key()), message, files);
     }
 }

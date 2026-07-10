@@ -70,14 +70,14 @@ public class GitProvider {
         }
     };
 
-    public static String getGitStatus() {
-        File root = getOpenProjectRoot();
+    public static String getGitStatus(String projectPath) {
+        File root = resolveRoot(projectPath);
         if (root == null) {
-            return "No open project found";
+            return noRepoError(projectPath);
         }
         File gitRoot = findGitRoot(root);
         if (gitRoot == null) {
-            return "Not a git repository";
+            return "Not a git repository: " + root;
         }
         try (GitClient client = GitRepository.getInstance(gitRoot).createClient()) {
             StringBuilder sb = new StringBuilder();
@@ -110,14 +110,14 @@ public class GitProvider {
         }
     }
 
-    public static String getGitDiff(boolean staged) {
-        File root = getOpenProjectRoot();
+    public static String getGitDiff(String projectPath, boolean staged) {
+        File root = resolveRoot(projectPath);
         if (root == null) {
-            return "No open project found";
+            return noRepoError(projectPath);
         }
         File gitRoot = findGitRoot(root);
         if (gitRoot == null) {
-            return "Not a git repository";
+            return "Not a git repository: " + root;
         }
         try (GitClient client = GitRepository.getInstance(gitRoot).createClient()) {
             ByteArrayOutputStream baos = new ByteArrayOutputStream();
@@ -134,14 +134,14 @@ public class GitProvider {
         }
     }
 
-    public static String gitAdd(List<String> files) {
-        File root = getOpenProjectRoot();
+    public static String gitAdd(String projectPath, List<String> files) {
+        File root = resolveRoot(projectPath);
         if (root == null) {
-            return "No open project found";
+            return noRepoError(projectPath);
         }
         File gitRoot = findGitRoot(root);
         if (gitRoot == null) {
-            return "Not a git repository";
+            return "Not a git repository: " + root;
         }
         try (GitClient client = GitRepository.getInstance(gitRoot).createClient()) {
             File[] toAdd = resolveFiles(root, files);
@@ -159,14 +159,14 @@ public class GitProvider {
         }
     }
 
-    public static String gitCommit(String message, List<String> files) {
-        File root = getOpenProjectRoot();
+    public static String gitCommit(String projectPath, String message, List<String> files) {
+        File root = resolveRoot(projectPath);
         if (root == null) {
-            return "No open project found";
+            return noRepoError(projectPath);
         }
         File gitRoot = findGitRoot(root);
         if (gitRoot == null) {
-            return "Not a git repository";
+            return "Not a git repository: " + root;
         }
         try (GitClient client = GitRepository.getInstance(gitRoot).createClient()) {
             if (files != null && !files.isEmpty()) {
@@ -194,14 +194,14 @@ public class GitProvider {
         }
     }
 
-    public static String gitLog(int limit) {
-        File root = getOpenProjectRoot();
+    public static String gitLog(String projectPath, int limit) {
+        File root = resolveRoot(projectPath);
         if (root == null) {
-            return "No open project found";
+            return noRepoError(projectPath);
         }
         File gitRoot = findGitRoot(root);
         if (gitRoot == null) {
-            return "Not a git repository";
+            return "Not a git repository: " + root;
         }
         try (GitClient client = GitRepository.getInstance(gitRoot).createClient()) {
             SearchCriteria criteria = new SearchCriteria();
@@ -224,14 +224,14 @@ public class GitProvider {
         }
     }
 
-    public static String gitPush(String remote, String branch) {
-        File root = getOpenProjectRoot();
+    public static String gitPush(String projectPath, String remote, String branch) {
+        File root = resolveRoot(projectPath);
         if (root == null) {
-            return "No open project found";
+            return noRepoError(projectPath);
         }
         File gitRoot = findGitRoot(root);
         if (gitRoot == null) {
-            return "Not a git repository";
+            return "Not a git repository: " + root;
         }
         String remoteName = (remote != null && !remote.isBlank()) ? remote : "origin";
         try (GitClient client = GitRepository.getInstance(gitRoot).createClient()) {
@@ -270,14 +270,14 @@ public class GitProvider {
         }
     }
 
-    public static String gitPull(String remote) {
-        File root = getOpenProjectRoot();
+    public static String gitPull(String projectPath, String remote) {
+        File root = resolveRoot(projectPath);
         if (root == null) {
-            return "No open project found";
+            return noRepoError(projectPath);
         }
         File gitRoot = findGitRoot(root);
         if (gitRoot == null) {
-            return "Not a git repository";
+            return "Not a git repository: " + root;
         }
         String remoteName = (remote != null && !remote.isBlank()) ? remote : "origin";
         try (GitClient client = GitRepository.getInstance(gitRoot).createClient()) {
@@ -307,14 +307,14 @@ public class GitProvider {
         }
     }
 
-    public static String gitCheckout(String branchOrRevision, boolean createNew) {
-        File root = getOpenProjectRoot();
+    public static String gitCheckout(String projectPath, String branchOrRevision, boolean createNew) {
+        File root = resolveRoot(projectPath);
         if (root == null) {
-            return "No open project found";
+            return noRepoError(projectPath);
         }
         File gitRoot = findGitRoot(root);
         if (gitRoot == null) {
-            return "Not a git repository";
+            return "Not a git repository: " + root;
         }
         if (!isValidBranchName(branchOrRevision)) {
             return "Invalid branch name: '" + branchOrRevision + "'";
@@ -333,14 +333,14 @@ public class GitProvider {
         }
     }
 
-    public static String gitBranch(boolean all, String newBranch) {
-        File root = getOpenProjectRoot();
+    public static String gitBranch(String projectPath, boolean all, String newBranch) {
+        File root = resolveRoot(projectPath);
         if (root == null) {
-            return "No open project found";
+            return noRepoError(projectPath);
         }
         File gitRoot = findGitRoot(root);
         if (gitRoot == null) {
-            return "Not a git repository";
+            return "Not a git repository: " + root;
         }
         try (GitClient client = GitRepository.getInstance(gitRoot).createClient()) {
             if (newBranch != null && !newBranch.isBlank()) {
@@ -417,6 +417,57 @@ public class GitProvider {
         return FileUtil.toFile(projects[0].getProjectDirectory());
     }
 
+    /**
+     * Resolves the working root for a git operation. {@code projectPath} is
+     * required and is used directly as the target project/repository root
+     * (relative paths are resolved against the default project root, as a
+     * convenience). This lets a caller always explicitly target any open
+     * project's repository, or any repo on disk — instead of relying on
+     * NetBeans' "main project" notion, which is ambiguous (and can be plain
+     * wrong) whenever multiple projects/repos are open at once, or when the
+     * git repository lives outside any open project's directory.
+     */
+    private static File resolveRoot(String projectPath) {
+        if (projectPath == null || projectPath.isBlank()) {
+            return null;
+        }
+        File dir = new File(projectPath);
+        if (dir.isAbsolute()) {
+            return dir;
+        }
+        File defaultRoot = getOpenProjectRoot();
+        return defaultRoot != null ? new File(defaultRoot, projectPath) : dir.getAbsoluteFile();
+    }
+
+    private static String noRepoError(String projectPath) {
+        return (projectPath != null && !projectPath.isBlank())
+                ? "Repository not found: " + projectPath
+                : "projectPath is required";
+    }
+
+    /**
+     * Resolves the best root directory for locating a specific file's git
+     * repository: the NetBeans project that owns the file (so a file in a
+     * non-default open project resolves to its own repo), falling back to
+     * the file's own directory so {@link #findGitRoot} can still walk
+     * upward to find {@code .git}. Only used by {@link #gitBlame} when
+     * projectPath is omitted, since blame is a single-file operation and the
+     * project can be determined from the file itself.
+     */
+    private static File resolveRootForFile(File file) {
+        FileObject fo = FileUtils.resolveByFile(file);
+        if (fo != null) {
+            Project owner = FileOwnerQuery.getOwner(fo);
+            if (owner != null) {
+                File dir = FileUtil.toFile(owner.getProjectDirectory());
+                if (dir != null) {
+                    return dir;
+                }
+            }
+        }
+        return file.isDirectory() ? file : file.getParentFile();
+    }
+
     private static File findGitRoot(File dir) {
         File f = dir;
         while (f != null) {
@@ -471,14 +522,14 @@ public class GitProvider {
         return ' ';
     }
 
-    public static String gitDeleteBranch(String branch, boolean force) {
-        File root = getOpenProjectRoot();
+    public static String gitDeleteBranch(String projectPath, String branch, boolean force) {
+        File root = resolveRoot(projectPath);
         if (root == null) {
-            return "No open project found";
+            return noRepoError(projectPath);
         }
         File gitRoot = findGitRoot(root);
         if (gitRoot == null) {
-            return "Not a git repository";
+            return "Not a git repository: " + root;
         }
         if (!isValidBranchName(branch)) {
             return "Invalid branch name: '" + branch + "'";
@@ -497,14 +548,14 @@ public class GitProvider {
         }
     }
 
-    public static String gitStash(String action, int index, String message, boolean includeUntracked) {
-        File root = getOpenProjectRoot();
+    public static String gitStash(String projectPath, String action, int index, String message, boolean includeUntracked) {
+        File root = resolveRoot(projectPath);
         if (root == null) {
-            return "No open project found";
+            return noRepoError(projectPath);
         }
         File gitRoot = findGitRoot(root);
         if (gitRoot == null) {
-            return "Not a git repository";
+            return "Not a git repository: " + root;
         }
         String act = action != null ? action.toLowerCase() : "push";
         try (GitClient client = GitRepository.getInstance(gitRoot).createClient()) {
@@ -550,14 +601,14 @@ public class GitProvider {
         }
     }
 
-    public static String gitFetch(String remote) {
-        File root = getOpenProjectRoot();
+    public static String gitFetch(String projectPath, String remote) {
+        File root = resolveRoot(projectPath);
         if (root == null) {
-            return "No open project found";
+            return noRepoError(projectPath);
         }
         File gitRoot = findGitRoot(root);
         if (gitRoot == null) {
-            return "Not a git repository";
+            return "Not a git repository: " + root;
         }
         String remoteName = (remote != null && !remote.isBlank()) ? remote : "origin";
         try (GitClient client = GitRepository.getInstance(gitRoot).createClient()) {
@@ -577,14 +628,14 @@ public class GitProvider {
         }
     }
 
-    public static String gitReset(List<String> files, String revision, String resetType) {
-        File root = getOpenProjectRoot();
+    public static String gitReset(String projectPath, List<String> files, String revision, String resetType) {
+        File root = resolveRoot(projectPath);
         if (root == null) {
-            return "No open project found";
+            return noRepoError(projectPath);
         }
         File gitRoot = findGitRoot(root);
         if (gitRoot == null) {
-            return "Not a git repository";
+            return "Not a git repository: " + root;
         }
         String rev = (revision != null && !revision.isBlank()) ? revision : "HEAD";
         try (GitClient client = GitRepository.getInstance(gitRoot).createClient()) {
@@ -616,14 +667,14 @@ public class GitProvider {
         }
     }
 
-    public static String gitMerge(String branch) {
-        File root = getOpenProjectRoot();
+    public static String gitMerge(String projectPath, String branch) {
+        File root = resolveRoot(projectPath);
         if (root == null) {
-            return "No open project found";
+            return noRepoError(projectPath);
         }
         File gitRoot = findGitRoot(root);
         if (gitRoot == null) {
-            return "Not a git repository";
+            return "Not a git repository: " + root;
         }
         if (!isValidBranchName(branch)) {
             return "Invalid branch name: '" + branch + "'";
@@ -648,14 +699,14 @@ public class GitProvider {
         }
     }
 
-    public static String gitShow(String revision) {
-        File root = getOpenProjectRoot();
+    public static String gitShow(String projectPath, String revision) {
+        File root = resolveRoot(projectPath);
         if (root == null) {
-            return "No open project found";
+            return noRepoError(projectPath);
         }
         File gitRoot = findGitRoot(root);
         if (gitRoot == null) {
-            return "Not a git repository";
+            return "Not a git repository: " + root;
         }
         String rev = (revision != null && !revision.isBlank()) ? revision : "HEAD";
         try (GitClient client = GitRepository.getInstance(gitRoot).createClient()) {
@@ -682,21 +733,33 @@ public class GitProvider {
         }
     }
 
-    public static String gitBlame(String filePath) {
-        File root = getOpenProjectRoot();
-        if (root == null) {
-            return "No open project found";
-        }
-        File gitRoot = findGitRoot(root);
-        if (gitRoot == null) {
-            return "Not a git repository";
-        }
+    public static String gitBlame(String projectPath, String filePath) {
         if (filePath == null || filePath.isBlank()) {
             return "filePath is required";
         }
         File file = new File(filePath);
+        File root;
+        if (projectPath != null && !projectPath.isBlank()) {
+            root = resolveRoot(projectPath);
+        }
+        else if (file.isAbsolute()) {
+            // projectPath omitted — this is a single-file operation, so the
+            // owning project (and therefore its repository) can be
+            // determined directly from the file itself.
+            root = resolveRootForFile(file);
+        }
+        else {
+            root = null;
+        }
+        if (root == null) {
+            return noRepoError(projectPath);
+        }
         if (!file.isAbsolute()) {
             file = new File(root, filePath);
+        }
+        File gitRoot = findGitRoot(root);
+        if (gitRoot == null) {
+            return "Not a git repository: " + root;
         }
         if (!isWithinRepository(gitRoot, file)) {
             return "File is outside repository: " + filePath;
@@ -734,14 +797,14 @@ public class GitProvider {
         }
     }
 
-    public static String gitRebase(String upstream, String operation) {
-        File root = getOpenProjectRoot();
+    public static String gitRebase(String projectPath, String upstream, String operation) {
+        File root = resolveRoot(projectPath);
         if (root == null) {
-            return "No open project found";
+            return noRepoError(projectPath);
         }
         File gitRoot = findGitRoot(root);
         if (gitRoot == null) {
-            return "Not a git repository";
+            return "Not a git repository: " + root;
         }
         GitClient.RebaseOperationType op;
         try {
@@ -774,14 +837,14 @@ public class GitProvider {
         }
     }
 
-    public static String gitCherryPick(String operation, List<String> revisions) {
-        File root = getOpenProjectRoot();
+    public static String gitCherryPick(String projectPath, String operation, List<String> revisions) {
+        File root = resolveRoot(projectPath);
         if (root == null) {
-            return "No open project found";
+            return noRepoError(projectPath);
         }
         File gitRoot = findGitRoot(root);
         if (gitRoot == null) {
-            return "Not a git repository";
+            return "Not a git repository: " + root;
         }
         GitClient.CherryPickOperation op;
         try {
@@ -811,14 +874,14 @@ public class GitProvider {
         }
     }
 
-    public static String gitTag(String action, String name, String revision, String message) {
-        File root = getOpenProjectRoot();
+    public static String gitTag(String projectPath, String action, String name, String revision, String message) {
+        File root = resolveRoot(projectPath);
         if (root == null) {
-            return "No open project found";
+            return noRepoError(projectPath);
         }
         File gitRoot = findGitRoot(root);
         if (gitRoot == null) {
-            return "Not a git repository";
+            return "Not a git repository: " + root;
         }
         String act = action != null ? action.toLowerCase() : "list";
         if (("create".equals(act) || "delete".equals(act)) && (name == null || name.isBlank())) {
@@ -856,14 +919,14 @@ public class GitProvider {
         }
     }
 
-    public static String gitRemote(String action, String name, String url) {
-        File root = getOpenProjectRoot();
+    public static String gitRemote(String projectPath, String action, String name, String url) {
+        File root = resolveRoot(projectPath);
         if (root == null) {
-            return "No open project found";
+            return noRepoError(projectPath);
         }
         File gitRoot = findGitRoot(root);
         if (gitRoot == null) {
-            return "Not a git repository";
+            return "Not a git repository: " + root;
         }
         String act = action != null ? action.toLowerCase() : "list";
         try (GitClient client = GitRepository.getInstance(gitRoot).createClient()) {
@@ -908,14 +971,14 @@ public class GitProvider {
         }
     }
 
-    public static String gitRevert(String revision) {
-        File root = getOpenProjectRoot();
+    public static String gitRevert(String projectPath, String revision) {
+        File root = resolveRoot(projectPath);
         if (root == null) {
-            return "No open project found";
+            return noRepoError(projectPath);
         }
         File gitRoot = findGitRoot(root);
         if (gitRoot == null) {
-            return "Not a git repository";
+            return "Not a git repository: " + root;
         }
         String rev = (revision != null && !revision.isBlank()) ? revision : "HEAD";
         try (GitClient client = GitRepository.getInstance(gitRoot).createClient()) {

@@ -1,5 +1,6 @@
 package kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.git;
 
+import com.google.gson.JsonArray;
 import com.google.gson.JsonObject;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.ToolSchemaKeyEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.providers.netbeans.GitProvider;
@@ -22,7 +23,8 @@ public class GitDeleteBranchTool implements McpToolInterface {
 
     @Override
     public String instruction() {
-        return "GitDeleteBranch -> INSTEAD OF Bash git branch -d/-D - deletes a local branch";
+        return "GitDeleteBranch -> INSTEAD OF Bash git branch -d/-D - deletes a local branch. "
+                + "Requires projectPath to select the target git repository or project root.";
     }
 
     @Override
@@ -41,9 +43,17 @@ public class GitDeleteBranchTool implements McpToolInterface {
         force.addProperty(ToolSchemaKeyEnum.TYPE.key(), "boolean");
         force.addProperty(ToolSchemaKeyEnum.DESCRIPTION.key(), "Force delete even if not merged. Default: false.");
         props.add(GitDeleteBranchParamEnum.FORCE.key(), force);
+        JsonObject projectPath = new JsonObject();
+        projectPath.addProperty(ToolSchemaKeyEnum.TYPE.key(), "string");
+        projectPath.addProperty(ToolSchemaKeyEnum.DESCRIPTION.key(),
+                "Path to the target git repository or project root (relative paths are resolved "
+                + "against the default project). Required — selects which project/repo to operate "
+                + "on when multiple are open, or when the repo lives outside any open project.");
+        props.add(GitCommonParamEnum.PROJECT_PATH.key(), projectPath);
         schema.add(ToolSchemaKeyEnum.PROPERTIES.key(), props);
-        com.google.gson.JsonArray req = new com.google.gson.JsonArray();
+        JsonArray req = new JsonArray();
         req.add(GitDeleteBranchParamEnum.BRANCH.key());
+        req.add(GitCommonParamEnum.PROJECT_PATH.key());
         schema.add(ToolSchemaKeyEnum.REQUIRED.key(), req);
         tool.add(ToolSchemaKeyEnum.INPUT_SCHEMA.key(), schema);
         return tool;
@@ -58,6 +68,6 @@ public class GitDeleteBranchTool implements McpToolInterface {
     public String handle(ToolRequestArguments args, AbstractAiSession session) throws McpArgumentException {
         String branch = args.require(GitDeleteBranchParamEnum.BRANCH.key());
         boolean force = args.bool(GitDeleteBranchParamEnum.FORCE.key());
-        return GitProvider.gitDeleteBranch(branch, force);
+        return GitProvider.gitDeleteBranch(args.require(GitCommonParamEnum.PROJECT_PATH.key()), branch, force);
     }
 }

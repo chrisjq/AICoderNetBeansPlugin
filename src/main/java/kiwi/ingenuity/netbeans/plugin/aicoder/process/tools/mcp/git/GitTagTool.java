@@ -22,7 +22,8 @@ public class GitTagTool implements McpToolInterface {
 
     @Override
     public String instruction() {
-        return "GitTag -> INSTEAD OF Bash git tag - list, create, or delete git tags";
+        return "GitTag -> INSTEAD OF Bash git tag - list, create, or delete git tags. "
+                + "Optionally pass repoPath to target a specific open project/repo.";
     }
 
     @Override
@@ -52,6 +53,13 @@ public class GitTagTool implements McpToolInterface {
         message.addProperty(ToolSchemaKeyEnum.TYPE.key(), "string");
         message.addProperty(ToolSchemaKeyEnum.DESCRIPTION.key(), "Annotation message for annotated tags.");
         props.add(GitTagParamEnum.MESSAGE.key(), message);
+        JsonObject projectPath = new JsonObject();
+        projectPath.addProperty(ToolSchemaKeyEnum.TYPE.key(), "string");
+        projectPath.addProperty(ToolSchemaKeyEnum.DESCRIPTION.key(),
+                "Path to the target git repository or project root (relative paths are resolved "
+                + "against the default project). Required — selects which project/repo to operate "
+                + "on when multiple are open, or when the repo lives outside any open project.");
+        props.add(GitCommonParamEnum.PROJECT_PATH.key(), projectPath);
         schema.add(ToolSchemaKeyEnum.PROPERTIES.key(), props);
         tool.add(ToolSchemaKeyEnum.INPUT_SCHEMA.key(), schema);
         return tool;
@@ -69,6 +77,7 @@ public class GitTagTool implements McpToolInterface {
         if (("create".equals(action) || "delete".equals(action)) && (name == null || name.isBlank())) {
             throw new McpArgumentException(-32602, "name is required for action=" + action);
         }
-        return GitProvider.gitTag(action, name, args.str(GitTagParamEnum.REVISION.key()), args.str(GitTagParamEnum.MESSAGE.key()));
+        return GitProvider.gitTag(args.str(GitCommonParamEnum.PROJECT_PATH.key()), action, name,
+                args.str(GitTagParamEnum.REVISION.key()), args.str(GitTagParamEnum.MESSAGE.key()));
     }
 }

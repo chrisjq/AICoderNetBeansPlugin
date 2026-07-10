@@ -1,5 +1,6 @@
 package kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.git;
 
+import com.google.gson.JsonArray;
 import com.google.gson.JsonObject;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.ToolSchemaKeyEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.providers.netbeans.GitProvider;
@@ -22,7 +23,8 @@ public class GitMergeTool implements McpToolInterface {
 
     @Override
     public String instruction() {
-        return "GitMerge -> INSTEAD OF Bash git merge - merges a branch into the current branch";
+        return "GitMerge -> INSTEAD OF Bash git merge - merges a branch into the current branch. "
+                + "Requires projectPath to select the target git repository or project root.";
     }
 
     @Override
@@ -37,9 +39,17 @@ public class GitMergeTool implements McpToolInterface {
         branch.addProperty(ToolSchemaKeyEnum.TYPE.key(), "string");
         branch.addProperty(ToolSchemaKeyEnum.DESCRIPTION.key(), "Branch name or revision to merge.");
         props.add(GitMergeParamEnum.BRANCH.key(), branch);
+        JsonObject projectPath = new JsonObject();
+        projectPath.addProperty(ToolSchemaKeyEnum.TYPE.key(), "string");
+        projectPath.addProperty(ToolSchemaKeyEnum.DESCRIPTION.key(),
+                "Path to the target git repository or project root (relative paths are resolved "
+                + "against the default project). Required — selects which project/repo to operate "
+                + "on when multiple are open, or when the repo lives outside any open project.");
+        props.add(GitCommonParamEnum.PROJECT_PATH.key(), projectPath);
         schema.add(ToolSchemaKeyEnum.PROPERTIES.key(), props);
-        com.google.gson.JsonArray req = new com.google.gson.JsonArray();
+        JsonArray req = new JsonArray();
         req.add(GitMergeParamEnum.BRANCH.key());
+        req.add(GitCommonParamEnum.PROJECT_PATH.key());
         schema.add(ToolSchemaKeyEnum.REQUIRED.key(), req);
         tool.add(ToolSchemaKeyEnum.INPUT_SCHEMA.key(), schema);
         return tool;
@@ -52,6 +62,6 @@ public class GitMergeTool implements McpToolInterface {
 
     @Override
     public String handle(ToolRequestArguments args, AbstractAiSession session) throws McpArgumentException {
-        return GitProvider.gitMerge(args.require(GitMergeParamEnum.BRANCH.key()));
+        return GitProvider.gitMerge(args.require(GitCommonParamEnum.PROJECT_PATH.key()), args.require(GitMergeParamEnum.BRANCH.key()));
     }
 }

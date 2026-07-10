@@ -1,8 +1,10 @@
 package kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.git;
 
+import com.google.gson.JsonArray;
 import com.google.gson.JsonObject;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.ToolSchemaKeyEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.providers.netbeans.GitProvider;
+import kiwi.ingenuity.netbeans.plugin.aicoder.process.McpArgumentException;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.McpSectionEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.McpToolEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.McpToolInterface;
@@ -21,7 +23,8 @@ public class GitRevertTool implements McpToolInterface {
 
     @Override
     public String instruction() {
-        return "GitRevert -> INSTEAD OF Bash git revert - creates a new commit that undoes a previous commit";
+        return "GitRevert -> INSTEAD OF Bash git revert - creates a new commit that undoes a previous commit. "
+                + "Requires projectPath to select the target git repository or project root.";
     }
 
     @Override
@@ -38,7 +41,17 @@ public class GitRevertTool implements McpToolInterface {
         revision.addProperty(ToolSchemaKeyEnum.TYPE.key(), "string");
         revision.addProperty(ToolSchemaKeyEnum.DESCRIPTION.key(), "Commit hash or ref to revert. Default: HEAD.");
         props.add(GitRevertParamEnum.REVISION.key(), revision);
+        JsonObject projectPath = new JsonObject();
+        projectPath.addProperty(ToolSchemaKeyEnum.TYPE.key(), "string");
+        projectPath.addProperty(ToolSchemaKeyEnum.DESCRIPTION.key(),
+                "Path to the target git repository or project root (relative paths are resolved "
+                + "against the default project). Required — selects which project/repo to operate "
+                + "on when multiple are open, or when the repo lives outside any open project.");
+        props.add(GitCommonParamEnum.PROJECT_PATH.key(), projectPath);
         schema.add(ToolSchemaKeyEnum.PROPERTIES.key(), props);
+        JsonArray required = new JsonArray();
+        required.add(GitCommonParamEnum.PROJECT_PATH.key());
+        schema.add(ToolSchemaKeyEnum.REQUIRED.key(), required);
         tool.add(ToolSchemaKeyEnum.INPUT_SCHEMA.key(), schema);
         return tool;
     }
@@ -49,11 +62,11 @@ public class GitRevertTool implements McpToolInterface {
     }
 
     @Override
-    public String handle(ToolRequestArguments args, AbstractAiSession session) {
+    public String handle(ToolRequestArguments args, AbstractAiSession session) throws McpArgumentException {
         String revision = args.str(GitRevertParamEnum.REVISION.key());
         if (revision == null) {
             revision = "HEAD";
         }
-        return GitProvider.gitRevert(revision);
+        return GitProvider.gitRevert(args.require(GitCommonParamEnum.PROJECT_PATH.key()), revision);
     }
 }

@@ -1,5 +1,6 @@
 package kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.git;
 
+import com.google.gson.JsonArray;
 import com.google.gson.JsonObject;
 import java.util.List;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.ToolSchemaKeyEnum;
@@ -23,7 +24,8 @@ public class GitStashTool implements McpToolInterface {
 
     @Override
     public String instruction() {
-        return "GitStash -> INSTEAD OF Bash git stash - stash, list, pop, apply, or drop stashed changes";
+        return "GitStash -> INSTEAD OF Bash git stash - stash, list, pop, apply, or drop stashed changes. "
+                + "Requires projectPath to select the target git repository or project root.";
     }
 
     @Override
@@ -52,7 +54,17 @@ public class GitStashTool implements McpToolInterface {
         includeUntracked.addProperty(ToolSchemaKeyEnum.TYPE.key(), "boolean");
         includeUntracked.addProperty(ToolSchemaKeyEnum.DESCRIPTION.key(), "Include untracked files in stash push. Default: false.");
         props.add(GitStashParamEnum.INCLUDE_UNTRACKED.key(), includeUntracked);
+        JsonObject projectPath = new JsonObject();
+        projectPath.addProperty(ToolSchemaKeyEnum.TYPE.key(), "string");
+        projectPath.addProperty(ToolSchemaKeyEnum.DESCRIPTION.key(),
+                "Path to the target git repository or project root (relative paths are resolved "
+                + "against the default project). Required — selects which project/repo to operate "
+                + "on when multiple are open, or when the repo lives outside any open project.");
+        props.add(GitCommonParamEnum.PROJECT_PATH.key(), projectPath);
         schema.add(ToolSchemaKeyEnum.PROPERTIES.key(), props);
+        JsonArray required = new JsonArray();
+        required.add(GitCommonParamEnum.PROJECT_PATH.key());
+        schema.add(ToolSchemaKeyEnum.REQUIRED.key(), required);
         tool.add(ToolSchemaKeyEnum.INPUT_SCHEMA.key(), schema);
         return tool;
     }
@@ -74,6 +86,6 @@ public class GitStashTool implements McpToolInterface {
         int index = args.intOr(GitStashParamEnum.INDEX.key(), 0, 0, Integer.MAX_VALUE);
         String message = args.str(GitStashParamEnum.MESSAGE.key());
         boolean includeUntracked = args.bool(GitStashParamEnum.INCLUDE_UNTRACKED.key());
-        return GitProvider.gitStash(action, index, message, includeUntracked);
+        return GitProvider.gitStash(args.require(GitCommonParamEnum.PROJECT_PATH.key()), action, index, message, includeUntracked);
     }
 }

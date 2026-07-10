@@ -23,7 +23,8 @@ public class GitCheckoutTool implements McpToolInterface {
 
     @Override
     public String instruction() {
-        return "GitCheckout -> INSTEAD OF Bash git checkout/switch - switches to a branch or revision";
+        return "GitCheckout -> INSTEAD OF Bash git checkout/switch - switches to a branch or revision. "
+                + "Requires projectPath to select the target git repository or project root.";
     }
 
     @Override
@@ -44,9 +45,17 @@ public class GitCheckoutTool implements McpToolInterface {
         create.addProperty(ToolSchemaKeyEnum.TYPE.key(), "boolean");
         create.addProperty(ToolSchemaKeyEnum.DESCRIPTION.key(), "If true, creates the branch before switching (git checkout -b). Default: false.");
         props.add(GitCheckoutParamEnum.CREATE.key(), create);
+        JsonObject projectPath = new JsonObject();
+        projectPath.addProperty(ToolSchemaKeyEnum.TYPE.key(), "string");
+        projectPath.addProperty(ToolSchemaKeyEnum.DESCRIPTION.key(),
+                "Path to the target git repository or project root (relative paths are resolved "
+                + "against the default project). Required — selects which project/repo to operate "
+                + "on when multiple are open, or when the repo lives outside any open project.");
+        props.add(GitCommonParamEnum.PROJECT_PATH.key(), projectPath);
         schema.add(ToolSchemaKeyEnum.PROPERTIES.key(), props);
         JsonArray required = new JsonArray();
         required.add(GitCheckoutParamEnum.BRANCH.key());
+        required.add(GitCommonParamEnum.PROJECT_PATH.key());
         schema.add(ToolSchemaKeyEnum.REQUIRED.key(), required);
         tool.add(ToolSchemaKeyEnum.INPUT_SCHEMA.key(), schema);
         return tool;
@@ -61,6 +70,6 @@ public class GitCheckoutTool implements McpToolInterface {
     public String handle(ToolRequestArguments args, AbstractAiSession session) throws McpArgumentException {
         String branch = args.require(GitCheckoutParamEnum.BRANCH.key());
         boolean create = args.bool(GitCheckoutParamEnum.CREATE.key());
-        return GitProvider.gitCheckout(branch, create);
+        return GitProvider.gitCheckout(args.require(GitCommonParamEnum.PROJECT_PATH.key()), branch, create);
     }
 }

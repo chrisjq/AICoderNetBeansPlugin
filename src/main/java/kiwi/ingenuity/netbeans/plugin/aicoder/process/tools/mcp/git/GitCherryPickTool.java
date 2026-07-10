@@ -1,9 +1,11 @@
 package kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.git;
 
+import com.google.gson.JsonArray;
 import com.google.gson.JsonObject;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Set;
+import kiwi.ingenuity.netbeans.plugin.aicoder.process.McpArgumentException;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.McpSectionEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.McpToolEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.locking.LockTypeEnum;
@@ -26,7 +28,8 @@ public class GitCherryPickTool implements McpToolInterface {
 
     @Override
     public String instruction() {
-        return "GitCherryPick -> INSTEAD OF Bash git cherry-pick - applies commits onto current branch; supports BEGIN/CONTINUE/QUIT/ABORT";
+        return "GitCherryPick -> INSTEAD OF Bash git cherry-pick - applies commits onto current branch; supports BEGIN/CONTINUE/QUIT/ABORT. "
+                + "Requires projectPath to select the target git repository or project root.";
     }
 
     @Override
@@ -51,7 +54,17 @@ public class GitCherryPickTool implements McpToolInterface {
         revisions.add(ToolSchemaKeyEnum.ITEMS.key(), items);
         revisions.addProperty(ToolSchemaKeyEnum.DESCRIPTION.key(), "Commit hashes to cherry-pick. Required for BEGIN.");
         props.add(GitCherryPickParamEnum.REVISIONS.key(), revisions);
+        JsonObject projectPath = new JsonObject();
+        projectPath.addProperty(ToolSchemaKeyEnum.TYPE.key(), "string");
+        projectPath.addProperty(ToolSchemaKeyEnum.DESCRIPTION.key(),
+                "Path to the target git repository or project root (relative paths are resolved "
+                + "against the default project). Required — selects which project/repo to operate "
+                + "on when multiple are open, or when the repo lives outside any open project.");
+        props.add(GitCommonParamEnum.PROJECT_PATH.key(), projectPath);
         schema.add(ToolSchemaKeyEnum.PROPERTIES.key(), props);
+        JsonArray required = new JsonArray();
+        required.add(GitCommonParamEnum.PROJECT_PATH.key());
+        schema.add(ToolSchemaKeyEnum.REQUIRED.key(), required);
         tool.add(ToolSchemaKeyEnum.INPUT_SCHEMA.key(), schema);
         return tool;
     }
@@ -62,9 +75,9 @@ public class GitCherryPickTool implements McpToolInterface {
     }
 
     @Override
-    public String handle(ToolRequestArguments args, AbstractAiSession session) {
+    public String handle(ToolRequestArguments args, AbstractAiSession session) throws McpArgumentException {
         String operation = args.str(GitCherryPickParamEnum.OPERATION.key());
-        com.google.gson.JsonArray arr = args.array(GitCherryPickParamEnum.REVISIONS.key());
+        JsonArray arr = args.array(GitCherryPickParamEnum.REVISIONS.key());
         List<String> revisions = null;
         if (arr != null) {
             revisions = new ArrayList<>();
@@ -80,6 +93,6 @@ public class GitCherryPickTool implements McpToolInterface {
             return "Error: revisions are required for operation=BEGIN";
         }
 
-        return GitProvider.gitCherryPick(operation, revisions);
+        return GitProvider.gitCherryPick(args.require(GitCommonParamEnum.PROJECT_PATH.key()), operation, revisions);
     }
 }
