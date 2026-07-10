@@ -1,5 +1,6 @@
 package kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.git;
 
+import com.google.gson.JsonArray;
 import com.google.gson.JsonObject;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.ToolSchemaKeyEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.providers.netbeans.GitProvider;
@@ -23,7 +24,7 @@ public class GitTagTool implements McpToolInterface {
     @Override
     public String instruction() {
         return "GitTag -> INSTEAD OF Bash git tag - list, create, or delete git tags. "
-                + "Optionally pass repoPath to target a specific open project/repo.";
+                + "Requires projectPath to select the target git repository or project root.";
     }
 
     @Override
@@ -61,6 +62,9 @@ public class GitTagTool implements McpToolInterface {
                 + "on when multiple are open, or when the repo lives outside any open project.");
         props.add(GitCommonParamEnum.PROJECT_PATH.key(), projectPath);
         schema.add(ToolSchemaKeyEnum.PROPERTIES.key(), props);
+        JsonArray required = new JsonArray();
+        required.add(GitCommonParamEnum.PROJECT_PATH.key());
+        schema.add(ToolSchemaKeyEnum.REQUIRED.key(), required);
         tool.add(ToolSchemaKeyEnum.INPUT_SCHEMA.key(), schema);
         return tool;
     }
@@ -77,7 +81,7 @@ public class GitTagTool implements McpToolInterface {
         if (("create".equals(action) || "delete".equals(action)) && (name == null || name.isBlank())) {
             throw new McpArgumentException(-32602, "name is required for action=" + action);
         }
-        return GitProvider.gitTag(args.str(GitCommonParamEnum.PROJECT_PATH.key()), action, name,
+        return GitProvider.gitTag(args.require(GitCommonParamEnum.PROJECT_PATH.key()), action, name,
                 args.str(GitTagParamEnum.REVISION.key()), args.str(GitTagParamEnum.MESSAGE.key()));
     }
 }

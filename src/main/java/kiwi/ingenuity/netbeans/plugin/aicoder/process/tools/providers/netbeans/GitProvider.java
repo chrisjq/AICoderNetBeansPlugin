@@ -432,11 +432,11 @@ public class GitProvider {
             return null;
         }
         File dir = new File(projectPath);
-        if (dir.isAbsolute()) {
-            return dir;
+        if (!dir.isAbsolute()) {
+            File defaultRoot = getOpenProjectRoot();
+            dir = defaultRoot != null ? new File(defaultRoot, projectPath) : dir.getAbsoluteFile();
         }
-        File defaultRoot = getOpenProjectRoot();
-        return defaultRoot != null ? new File(defaultRoot, projectPath) : dir.getAbsoluteFile();
+        return dir.isDirectory() ? dir : null;
     }
 
     private static String noRepoError(String projectPath) {

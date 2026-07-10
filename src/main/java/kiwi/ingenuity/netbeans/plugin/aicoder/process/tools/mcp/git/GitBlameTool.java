@@ -21,7 +21,8 @@ public class GitBlameTool implements McpToolInterface {
     @Override
     public String instruction() {
         return "GitBlame -> INSTEAD OF Bash git blame - shows per-line authorship and commit for a file. "
-                + "Requires projectPath to select the target git repository or project root.";
+                + "projectPath is optional when file is an absolute path — the owning project is inferred "
+                + "from the file; pass projectPath to disambiguate otherwise.";
     }
 
     @Override
@@ -42,13 +43,13 @@ public class GitBlameTool implements McpToolInterface {
         projectPath.addProperty(ToolSchemaKeyEnum.TYPE.key(), "string");
         projectPath.addProperty(ToolSchemaKeyEnum.DESCRIPTION.key(),
                 "Path to the target git repository or project root (relative paths are resolved "
-                + "against the default project). Required — selects which project/repo to operate "
-                + "on when multiple are open, or when the repo lives outside any open project.");
+                + "against the default project). Optional when file is absolute — the owning project "
+                + "is inferred from the file; required otherwise, or to disambiguate when multiple "
+                + "projects/repos are open.");
         props.add(GitCommonParamEnum.PROJECT_PATH.key(), projectPath);
         schema.add(ToolSchemaKeyEnum.PROPERTIES.key(), props);
         JsonArray req = new JsonArray();
         req.add(GitBlameParamEnum.FILE.key());
-        req.add(GitCommonParamEnum.PROJECT_PATH.key());
         schema.add(ToolSchemaKeyEnum.REQUIRED.key(), req);
         tool.add(ToolSchemaKeyEnum.INPUT_SCHEMA.key(), schema);
         return tool;
@@ -61,6 +62,6 @@ public class GitBlameTool implements McpToolInterface {
 
     @Override
     public String handle(ToolRequestArguments args, AbstractAiSession session) throws McpArgumentException {
-        return GitProvider.gitBlame(args.require(GitCommonParamEnum.PROJECT_PATH.key()), args.require(GitBlameParamEnum.FILE.key()));
+        return GitProvider.gitBlame(args.str(GitCommonParamEnum.PROJECT_PATH.key()), args.require(GitBlameParamEnum.FILE.key()));
     }
 }
