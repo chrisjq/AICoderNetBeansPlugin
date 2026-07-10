@@ -40,11 +40,17 @@ public class GithubCopilotAiInfoBarExtension implements AiInfoBarExtension {
     private final javax.swing.JProgressBar contextBar;
     private final JButton compactBtn;
     private final JComboBox<String> modelCombo;
+    private final javax.swing.JProgressBar quotaBar;
     private final List<GithubCopilotInfoBarListener> listeners = new ArrayList<>();
     private volatile int maxTokens = 0;
     private volatile int currentTokens = 0;
     private volatile boolean hasUsageData = false;
     private volatile String fatalError = null;
+    private volatile long quotaUsedRequests = 0;
+    private volatile long quotaEntitlementRequests = 0;
+    private volatile double quotaRemainingPercentage = 0;
+    private volatile String quotaResetDate = null;
+    private volatile boolean quotaUnlimited = false;
 
     public GithubCopilotAiInfoBarExtension(AiSession session, AiSessionHost host) {
         this.session = session;
@@ -84,6 +90,10 @@ public class GithubCopilotAiInfoBarExtension implements AiInfoBarExtension {
         // Always visible (like the Claude infobar); the string updates to real
         // token counts once a turn reports usage.
         contextBar.setVisible(true);
+        quotaBar = new javax.swing.JProgressBar(0, 100);
+        quotaBar.setPreferredSize(new Dimension(90, 14));
+        quotaBar.setStringPainted(true);
+        quotaBar.setVisible(false);
     }
 
     public void addListener(GithubCopilotInfoBarListener l) {
@@ -160,7 +170,7 @@ public class GithubCopilotAiInfoBarExtension implements AiInfoBarExtension {
 
     @Override
     public List<javax.swing.JComponent> createComponents() {
-        return List.of(modelCombo, compactBtn, contextBar, errorLabel);
+        return List.of(modelCombo, compactBtn, contextBar, quotaBar, errorLabel);
     }
 
     @Override
@@ -191,6 +201,34 @@ public class GithubCopilotAiInfoBarExtension implements AiInfoBarExtension {
         else if (event instanceof kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.githubcopliot.events.GithubCopilotFatalErrorEvent error) {
             fatalError = error.errorMessage();
             updateErrorLabel();
+        }
+        else if (event instanceof kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.githubcopliot.events.GithubCopilotQuotaEvent qe) {
+            quotaUnlimited = qe.unlimited();
+            quotaUsedRequests = qe.usedRequests();
+            quotaEntitlementRequests = qe.entitlementRequests();
+            quotaRemainingPercentage = qe.remainingPercentage();
+            quotaResetDate = qe.resetDate();
+            updateQuotaBar();
+        }
+    }
+
+    private void updateQuotaBar() {
+        if (!SwingUtilities.isEventDispatchThread()) {
+            SwingUtilities.invokeLater(this::updateQuotaBar);
+            return;
+        }
+        if (quotaUnlimited || quotaEntitlementRequests == 0) {
+            quotaBar.setVisible(false);
+        }
+        else {
+            int pct = (int) Math.round(100.0 - quotaRemainingPercentage);
+            quotaBar.setValue(Math.min(100, Math.max(0, pct)));
+            quotaBar.setString(pct + "%");
+            String resetDateFormatted = quotaResetDate != null ? quotaResetDate.split("T")[0] : "unknown";
+            quotaBar.setToolTipText(String.format(
+                    "Premium requests: %,d / %,d used (%d%%); resets %s",
+                    quotaUsedRequests, quotaEntitlementRequests, pct, resetDateFormatted));
+            quotaBar.setVisible(true);
         }
     }
 

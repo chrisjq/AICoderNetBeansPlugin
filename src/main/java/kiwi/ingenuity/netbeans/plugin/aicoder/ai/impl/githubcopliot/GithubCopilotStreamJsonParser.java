@@ -186,7 +186,9 @@ public class GithubCopilotStreamJsonParser {
                             ? obj.getAsJsonObject(GithubCopilotJsonKeyEnum.DATA.key()) : null;
                     String msg = data != null
                             ? getString(data, GithubCopilotJsonKeyEnum.ERROR_MESSAGE.key()) : null;
-                    reportError(extractApiError(msg));
+                    String extracted = extractApiError(msg);
+                    String quota = extractQuotaSummary(data);
+                    reportError(quota != null && extracted != null ? extracted + " (" + quota + ")" : extracted);
                 }
                 default ->
                     LOG.log(Level.FINE, "Unhandled GitHub Copilot event type: {0}", type);
@@ -239,6 +241,36 @@ public class GithubCopilotStreamJsonParser {
             }
         }
         return raw.strip();
+    }
+
+    /**
+     * The CLI has no non-interactive command for monthly usage (the
+     * "/usage"/"/context" and statusline "ai-credits"/"quota" options are
+     * interactive-only) but a quota-exceeded model.call_failure embeds the
+     * real billing snapshot in data.quotaSnapshots.premium_interactions —
+     * pulled out here so the user sees exactly how much quota is used and
+     * when it resets, instead of just "monthly quota exceeded".
+     */
+    private String extractQuotaSummary(JsonObject data) {
+        if (data == null || !data.has("quotaSnapshots") || !data.get("quotaSnapshots").isJsonObject()) {
+            return null;
+        }
+        JsonObject snapshots = data.getAsJsonObject("quotaSnapshots");
+        if (!snapshots.has("premium_interactions") || !snapshots.get("premium_interactions").isJsonObject()) {
+            return null;
+        }
+        JsonObject premium = snapshots.getAsJsonObject("premium_interactions");
+        if (premium.has("isUnlimitedEntitlement") && premium.get("isUnlimitedEntitlement").getAsBoolean()) {
+            return null;
+        }
+        int used = getInt(premium, "usedRequests");
+        int entitlement = getInt(premium, "entitlementRequests");
+        int usedPct = 100 - getInt(premium, "remainingPercentage");
+        String resetDate = getString(premium, "resetDate");
+        String resetDay = resetDate != null && resetDate.indexOf('T') > 0
+                ? resetDate.substring(0, resetDate.indexOf('T')) : resetDate;
+        String summary = "premium requests: " + used + "/" + entitlement + " used (" + usedPct + "%)";
+        return resetDay != null ? summary + ", resets " + resetDay : summary;
     }
 
     private String getString(JsonObject obj, String key) {

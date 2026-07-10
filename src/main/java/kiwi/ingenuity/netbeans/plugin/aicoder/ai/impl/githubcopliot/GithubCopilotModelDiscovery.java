@@ -227,7 +227,7 @@ public final class GithubCopilotModelDiscovery {
         return ids;
     }
 
-    private static void writeFramed(OutputStream out, String json) throws java.io.IOException {
+    static void writeFramed(OutputStream out, String json) throws java.io.IOException {
         byte[] body = json.getBytes(StandardCharsets.UTF_8);
         out.write(("Content-Length: " + body.length + "\r\n\r\n").getBytes(StandardCharsets.UTF_8));
         out.write(body);

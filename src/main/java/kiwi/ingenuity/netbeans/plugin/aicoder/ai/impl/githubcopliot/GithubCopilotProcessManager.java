@@ -10,15 +10,11 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
-import java.util.Comparator;
 import java.util.List;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.TimeUnit;
 import java.util.logging.Level;
 import java.util.logging.Logger;
-import java.util.regex.Matcher;
-import java.util.regex.Pattern;
-import java.util.stream.Stream;
 import kiwi.ingenuity.netbeans.plugin.aicoder.PluginSettings;
 import kiwi.ingenuity.netbeans.plugin.aicoder.PluginUtil;
 import kiwi.ingenuity.netbeans.plugin.aicoder.StringConst;
@@ -28,7 +24,7 @@ import kiwi.ingenuity.netbeans.plugin.aicoder.ai.events.StatusEvent;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.events.StatusEventTypeEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.events.TurnCompleteEvent;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.githubcopliot.events.GithubCopilotFatalErrorEvent;
-import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.githubcopliot.events.GithubCopilotTokenUsageEvent;
+import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.githubcopliot.events.GithubCopilotQuotaEvent;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.githubcopliot.session.GithubCopilotAiSession;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.githubcopliot.settings.GithubCopilotPluginSettings;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.session.InterruptTypeEnum;
@@ -47,13 +43,6 @@ import kiwi.ingenuity.netbeans.plugin.aicoder.utils.StatusMessageUtil;
 public class GithubCopilotProcessManager extends AiProcessManager {
 
     private static final Logger LOG = Logger.getLogger(GithubCopilotProcessManager.class.getName());
-
-    /**
-     * Matches the CLI's per-turn context-usage log line, e.g.
-     * {@code CompactionProcessor: Utilization 10.1% (20236/200000 tokens) below threshold 80%}.
-     * Group 1 = used tokens, group 2 = context-window total.
-     */
-    private static final Pattern UTILIZATION = Pattern.compile("Utilization\\s+[0-9.]+%\\s+\\((\\d+)/(\\d+)\\s+tokens\\)");
 
     // Copilot CLI --session-id (its own resume identifier). Normally equals the
     // plugin session id, but is replaced with a fresh UUID after a corrupted
@@ -134,6 +123,13 @@ public class GithubCopilotProcessManager extends AiProcessManager {
         running = true;
         listener.onAiProcessEvent(new StatusEvent(StatusEventTypeEnum.READY, StatusMessageUtil.formatReady("GitHub Copilot")));
         listener.onAiProcessEvent(new GithubCopilotFatalErrorEvent(null, null));
+        GithubCopilotQuotaService.getQuotaAsync(executablePath, quota -> {
+            if (quota != null) {
+                listener.onAiProcessEvent(new GithubCopilotQuotaEvent(
+                        quota.unlimited(), quota.usedRequests(), quota.entitlementRequests(),
+                        quota.remainingPercentage(), quota.resetDate()));
+            }
+        });
     }
 
     private String buildMcpConfigJson() {
@@ -156,59 +152,16 @@ public class GithubCopilotProcessManager extends AiProcessManager {
     }
 
     /**
-     * Reads the Copilot CLI's own log (written under {@code --log-dir}) and
-     * fires a {@link GithubCopilotTokenUsageEvent} carrying the real
-     * context-window usage. The CLI logs a line each turn like
-     * {@code CompactionProcessor: Utilization 10.1% (20236/200000 tokens) ...}
-     * — the only place it exposes used/total context tokens (the JSON stream
-     * omits them). Keeps only the newest log file (one is written per turn) so
-     * the working dir's {@code logs/} folder does not accumulate. Best-effort:
-     * silent on any failure, leaving the bar on its previous value.
+     * Fires a GithubCopilotTokenUsageEvent carrying real context-window usage
+     * for this turn. Currently a no-op / placeholder: GitHub Copilot CLI 1.0.70
+     * exposes no context-window data in non-interactive (-p) mode — confirmed
+     * empty in both the JSON stream (no session.shutdown event; result.usage
+     * has no inputTokens/outputTokens/maxTokens) and the --log-dir log (no
+     * CompactionProcessor "Utilization" line, at any log level or turn count).
+     * Implement here once the CLI exposes this again (or the plugin moves to
+     * --acp mode, which may carry it).
      */
-    private void fireContextUsageFromLog(Path logDir, String model) {
-        if (logDir == null) {
-            return;
-        }
-        try {
-            if (!Files.isDirectory(logDir)) {
-                return;
-            }
-            List<Path> logs;
-            try (Stream<Path> files = Files.list(logDir)) {
-                logs = files.filter(f -> f.getFileName().toString().endsWith(".log"))
-                        .sorted(Comparator.comparingLong((Path f) -> f.toFile().lastModified()).reversed())
-                        .toList();
-            }
-            if (logs.isEmpty()) {
-                return;
-            }
-            Path newest = logs.get(0);
-            // Prune older per-turn logs to keep <workdir>/logs tidy.
-            for (int i = 1; i < logs.size(); i++) {
-                try {
-                    Files.deleteIfExists(logs.get(i));
-                }
-                catch (IOException ignore) {
-                }
-            }
-            long used = -1;
-            long total = -1;
-            for (String line : Files.readAllLines(newest, StandardCharsets.UTF_8)) {
-                Matcher m = UTILIZATION.matcher(line);
-                if (m.find()) {
-                    used = Long.parseLong(m.group(1));
-                    total = Long.parseLong(m.group(2));
-                }
-            }
-            if (used >= 0 && total > 0) {
-                listener.onAiProcessEvent(
-                        new GithubCopilotTokenUsageEvent(
-                                (int) used, (int) total, model));
-            }
-        }
-        catch (Exception e) {
-            LOG.log(Level.FINE, "Could not read Copilot context usage from " + logDir, e);
-        }
+    private void fireContextUsage(Path logDir, String model) {
     }
 
     @Override
@@ -259,11 +212,10 @@ public class GithubCopilotProcessManager extends AiProcessManager {
                 args.add("create");
                 args.add("--no-color");
                 // Point the CLI's own log at the per-session config dir
-                // (~/.ai-coder/github_copilot/{sessionId}/logs) so after the turn
-                // we can read its "CompactionProcessor: Utilization X% (used/total
-                // tokens)" line — the only place Copilot exposes real context-
-                // window usage (the JSON stream omits it). This dir is removed when
-                // the session is deleted. Path.resolve keeps it platform-independent.
+                // (~/.ai-coder/github_copilot/{sessionId}/logs) for diagnostics.
+                // Not currently parsed for context-window usage — see
+                // fireContextUsage(). This dir is removed when the session is
+                // deleted. Path.resolve keeps it platform-independent.
                 if (pluginSessionId != null) {
                     try {
                         Path dir = PluginUtil.getPluginAiSessionConfigDir(AiTypeEnum.GitHubCoPilot, pluginSessionId).resolve("logs");
@@ -405,8 +357,15 @@ public class GithubCopilotProcessManager extends AiProcessManager {
                 if (deadSession != null) {
                     deadSession.dispose();
                 }
-                // Real context-window usage the CLI logged during this turn.
-                fireContextUsageFromLog(logDir, currentModel);
+                // Context-window usage hook — currently a no-op, see fireContextUsage().
+                fireContextUsage(logDir, currentModel);
+                GithubCopilotQuotaService.getQuotaAsync(executablePath, quota -> {
+                    if (quota != null) {
+                        listener.onAiProcessEvent(new GithubCopilotQuotaEvent(
+                                quota.unlimited(), quota.usedRequests(), quota.entitlementRequests(),
+                                quota.remainingPercentage(), quota.resetDate()));
+                    }
+                });
                 if (shouldReport && code != 0) {
                     String joined = String.join("\n", stderrLines);
                     if (joined.contains("could not be loaded") || joined.contains("corrupted")) {
