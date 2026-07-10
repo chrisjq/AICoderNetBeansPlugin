@@ -1,5 +1,6 @@
-package kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.githubcopliot;
+package kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.githubcopilot;
 
+import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.githubcopilot.GithubCopilotSessionEventBridge;
 import com.github.copilot.CopilotSession;
 import com.github.copilot.generated.AssistantTurnEndEvent;
 import com.github.copilot.generated.SessionEvent;
@@ -15,8 +16,8 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import org.junit.jupiter.api.Test;
 
 /**
- * The Copilot CLI's agentic loop emits one assistant.turn_end per internal
- * step (e.g. a tool-only step with no text output), not one per user-visible
+ * The Copilot CLI's agentic loop emits one assistant.turn_end per internal step
+ * (e.g. a tool-only step with no text output), not one per user-visible
  * response. The SDK's own sendAndWait() treats only session.idle as "the
  * response is actually finished" (see CopilotSession#sendAndWait). The bridge
  * must match that: AssistantTurnEndEvent alone must not surface

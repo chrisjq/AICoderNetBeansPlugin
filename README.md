@@ -1,6 +1,6 @@
 # AI Coder for NetBeans
 
-A NetBeans IDE plugin that embeds an AI coding assistant as a dockable chat panel with full IDE context awareness. It supports multiple AI backends — **[Claude Code](https://claude.ai/code)** and **GitHub Copilot** — behind a single shared chat UI and tool server. The assistant can read and edit your project files, run builds and tests, perform IDE refactorings, search your codebase, and ask you questions — all from within NetBeans.
+A NetBeans IDE plugin that embeds an AI coding assistant as a dockable chat panel with full IDE context awareness. It supports multiple AI backends — **[Claude Code](https://claude.ai/code)**, **[Grok](https://docs.x.ai/build/cli)**, and **GitHub Copilot** — behind a single shared chat UI and tool server. The assistant can read and edit your project files, run builds and tests, perform IDE refactorings, search your codebase, and ask you questions — all from within NetBeans.
 
 ## Supported backends
 
@@ -8,14 +8,14 @@ A NetBeans IDE plugin that embeds an AI coding assistant as a dockable chat pane
 |---|---|---|---|
 | **Claude** | `claude` CLI (`--output-format stream-json`) | opus / sonnet / haiku (default `claude-sonnet-4-6`) | Enabled by default |
 | **GitHub Copilot** | `copilot` CLI in prompt mode (`copilot -p --model …`) | discovered at runtime via the Copilot SDK (with a static fallback list) | Enabled by default |
-| **Grok** | `grok` CLI in prompt mode (`grok -p --model …`) | discovered at runtime via the Grok SDK (with a static fallback list) | Enabled by default |
+| **Grok** | `grok` CLI in headless prompt mode (`grok -p --model …`) | discovered at runtime via `grok models` (with a static fallback list) | Enabled by default |
 
 Each backend has its own process manager, executable locator, settings, and info bar, but they all share the same chat panel, MCP tool server, and Accept/Reject diff gate. You can run multiple sessions (and multiple backends) at once.
 
 ## Features
 
 - **Streaming chat panel** — dockable AI conversation window with Markdown rendering and syntax-highlighted code blocks
-- **Pluggable backends** — switch between Claude and GitHub Copilot; each session picks its backend and model
+- **Pluggable backends** — switch between Claude, Grok, and GitHub Copilot; each session picks its backend and model
 - **Accept / Reject diffs** — file edits proposed by the AI are shown as a diff panel; you approve or reject each change before it is applied
 - **MCP tool server** — exposes IDE tools (build, test, git, search, refactor, navigation, editor context) to the AI over a local HTTP/JSON-RPC 2.0 endpoint (port 6969 by default)
 - **PreToolUse hook** — intercepts the AI's write/edit/create file operations and routes them through the diff panel
@@ -25,10 +25,11 @@ Each backend has its own process manager, executable locator, settings, and info
 ## Requirements
 
 - NetBeans IDE 30.0+
-- Java 17+
+- Java 21+ (plugin is built with `maven.compiler.release` 21)
 - Maven (for Maven projects)
 - At least one backend CLI installed and on your `PATH` (or configured in settings):
   - **Claude** — the Claude Code CLI (`claude`)
+  - **Grok** — the xAI Grok CLI (`grok`), signed in via `grok login`
   - **GitHub Copilot** — the GitHub Copilot CLI (`copilot`), signed in to a Copilot-enabled GitHub account
 
 ## Installation
@@ -43,7 +44,7 @@ The built `.nbm` file is in `target/`. In NetBeans: **Tools > Plugins > Download
 
 ## Configuration
 
-Open **Tools > Options > AI Coder**. General settings apply to every backend; each backend also has its own tab (Claude, GitHub Copilot) for executable path and model selection.
+Open **Tools > Options > AI Coder**. General settings apply to every backend; each backend also has its own tab (Claude, Grok, GitHub Copilot) for executable path and model selection.
 
 ### General
 
@@ -79,13 +80,13 @@ Open **Tools > Options > AI Coder**. General settings apply to every backend; ea
 | Setting | Default | Description |
 |---|---|---|
 | Grok executable | auto-detect | Path to the `grok` CLI binary |
-| Model | auto-discovered | Model list is fetched via the Grok SDK at session start; falls back to a built-in list if discovery fails |
+| Model | auto-discovered | Model list is fetched via `grok models` at session start; falls back to a built-in list if discovery fails |
 
 > Authentication for Grok is handled by the `grok` CLI itself. Logon via the grok cli before use.
 
 ## MCP Tool Reference
 
-The plugin exposes the following tools to the AI assistant over the MCP endpoint at `http://127.0.0.1:<port>/mcp`. These tools are backend-agnostic — both Claude and GitHub Copilot use the same set.
+The plugin exposes the following tools to the AI assistant over the MCP endpoint at `http://127.0.0.1:<port>/mcp`. These tools are backend-agnostic — Claude, Grok, and GitHub Copilot use the same set.
 
 ### Build Code
 

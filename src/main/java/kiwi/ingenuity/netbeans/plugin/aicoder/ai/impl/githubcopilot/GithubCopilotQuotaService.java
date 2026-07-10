@@ -1,5 +1,7 @@
-package kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.githubcopliot;
+package kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.githubcopilot;
 
+import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.githubcopilot.GithubCopilotModelDiscovery;
+import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.githubcopilot.QuotaInfo;
 import com.github.copilot.CopilotClient;
 import com.github.copilot.generated.rpc.AccountGetQuotaResult;
 import com.github.copilot.generated.rpc.AccountQuotaSnapshot;

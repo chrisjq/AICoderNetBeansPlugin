@@ -1,5 +1,8 @@
-package kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.githubcopliot;
+package kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.githubcopilot;
 
+import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.githubcopilot.GithubCopilotProcessManager;
+import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.githubcopilot.GithubCopilotModelDiscovery;
+import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.githubcopilot.GithubCopilotExecutableLocator;
 import java.awt.Component;
 import java.util.Arrays;
 import java.util.List;
@@ -10,10 +13,10 @@ import kiwi.ingenuity.netbeans.plugin.aicoder.ai.AiTypeEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.AiTypePropertyBus;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.events.StatusEvent;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.events.StatusEventTypeEnum;
-import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.githubcopliot.events.GithubCopilotModelsEvent;
-import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.githubcopliot.settings.GithubCopilotPluginSettings;
-import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.githubcopliot.ui.GithubCopilotAiInfoBarExtension;
-import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.githubcopliot.ui.GithubCopilotInfoBarListener;
+import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.githubcopilot.events.GithubCopilotModelsEvent;
+import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.githubcopilot.settings.GithubCopilotPluginSettings;
+import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.githubcopilot.ui.GithubCopilotAiInfoBarExtension;
+import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.githubcopilot.ui.GithubCopilotInfoBarListener;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.session.AiSession;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.settings.AbstractAiModelSessionSettings;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.settings.AbstractAiSessionSettings;
@@ -69,7 +72,7 @@ public class GithubCopilotAiImplementation extends AiImplementation {
         listener.onAiProcessEvent(new kiwi.ingenuity.netbeans.plugin.aicoder.ai.events.StatusEvent(
                 kiwi.ingenuity.netbeans.plugin.aicoder.ai.events.StatusEventTypeEnum.FAILED,
                 "GitHub Copilot CLI not found — install it or set the path in Options"));
-        listener.onAiProcessEvent(new kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.githubcopliot.events.GithubCopilotFatalErrorEvent(
+        listener.onAiProcessEvent(new kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.githubcopilot.events.GithubCopilotFatalErrorEvent(
                 "EXECUTABLE_NOT_FOUND", "GitHub Copilot CLI not found"));
     }
 

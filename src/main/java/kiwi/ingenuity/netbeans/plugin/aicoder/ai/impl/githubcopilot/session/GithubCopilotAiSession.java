@@ -1,7 +1,7 @@
-package kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.githubcopliot.session;
+package kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.githubcopilot.session;
 
 import java.util.Map;
-import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.githubcopliot.GithubCopilotToolHandlerFactory;
+import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.githubcopilot.GithubCopilotToolHandlerFactory;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.session.AiSession;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.McpToolEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.SessionRegistry;

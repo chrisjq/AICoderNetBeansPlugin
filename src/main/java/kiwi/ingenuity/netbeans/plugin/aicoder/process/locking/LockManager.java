@@ -9,11 +9,23 @@ import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.logging.Level;
 import java.util.logging.Logger;
+import kiwi.ingenuity.netbeans.plugin.aicoder.PluginSettings;
 
 public class LockManager {
 
     private static final Logger LOG = Logger.getLogger(LockManager.class.getName());
     private static volatile LockManager instance;
+
+    /**
+     * Routine acquire/release chatter is gated by the same setting as MCP tool-use
+     * logging ({@link PluginSettings#isLogToolUse()}), so the NetBeans log stays
+     * quiet during normal operation. Warnings for contention/expiry stay always-on.
+     */
+    private static void logLockLifecycle(String message, Object... params) {
+        if (PluginSettings.isLogToolUse()) {
+            LOG.log(Level.INFO, message, params);
+        }
+    }
 
     public static LockManager getInstance() {
         LockManager lInstance = LockManager.instance;
@@ -74,7 +86,7 @@ public class LockManager {
         ResourceLock lock = new ResourceLock(lockType, sessionId, timeoutMillis);
         globalLocks.put(lockType, lock);
         sessionLocks.computeIfAbsent(sessionId, k -> new HashSet<>()).add(lock);
-        LOG.log(Level.INFO, "Acquired {0} for session {1}", new Object[]{lockType, sessionId});
+        logLockLifecycle("Acquired {0} for session {1}", lockType, sessionId);
         return true;
     }
 
@@ -132,7 +144,7 @@ public class LockManager {
             fileLocks.put(filePath, lock);
         }
         sessionLocks.computeIfAbsent(sessionId, k -> new HashSet<>()).add(lock);
-        LOG.log(Level.INFO, "Acquired file locks for {0} files by session {1}", new Object[]{filePaths.size(), sessionId});
+        logLockLifecycle("Acquired file locks for {0} files by session {1}", filePaths.size(), sessionId);
         return true;
     }
 
@@ -173,7 +185,7 @@ public class LockManager {
                 ResourceLock.LockScope.DIRECTORY, Set.of(dirPath));
         fileLocks.put(dirPath, lock);
         sessionLocks.computeIfAbsent(sessionId, k -> new HashSet<>()).add(lock);
-        LOG.log(Level.INFO, "Acquired directory lock for {0} by session {1}", new Object[]{dirPath, sessionId});
+        logLockLifecycle("Acquired directory lock for {0} by session {1}", dirPath, sessionId);
         return true;
     }
 
@@ -188,7 +200,7 @@ public class LockManager {
             if (sl != null && sl.remove(lock) && sl.isEmpty()) {
                 sessionLocks.remove(sessionId);
             }
-            LOG.log(Level.INFO, "Released {0} by session {1}", new Object[]{lockType, sessionId});
+            logLockLifecycle("Released {0} by session {1}", lockType, sessionId);
         }
     }
 
@@ -206,7 +218,7 @@ public class LockManager {
                     sessionLocks.remove(sessionId);
                 }
             }
-            LOG.log(Level.INFO, "Released file lock for {0} by session {1}", new Object[]{filePath, sessionId});
+            logLockLifecycle("Released file lock for {0} by session {1}", filePath, sessionId);
         }
     }
 
@@ -225,7 +237,7 @@ public class LockManager {
                 }
             }
         }
-        LOG.log(Level.INFO, "Released all locks for session {0}", sessionId);
+        logLockLifecycle("Released all locks for session {0}", sessionId);
     }
 
     public synchronized void releaseOrphanedLocks(Set<String> activeSessionIds) {

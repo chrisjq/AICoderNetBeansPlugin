@@ -5,7 +5,7 @@ import java.util.List;
 import kiwi.ingenuity.netbeans.plugin.aicoder.PluginSettings;
 import kiwi.ingenuity.netbeans.plugin.aicoder.Registry;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.claude.ClaudeAiImplementation;
-import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.githubcopliot.GithubCopilotAiImplementation;
+import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.githubcopilot.GithubCopilotAiImplementation;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.grok.GrokAiImplementation;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.settings.AiTypeSettings;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.events.AiProcessEventListener;

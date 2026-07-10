@@ -1,4 +1,4 @@
-package kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.githubcopliot.ui;
+package kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.githubcopilot.ui;
 
 /**
  *

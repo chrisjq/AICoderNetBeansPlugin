@@ -1,6 +1,6 @@
-package kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.githubcopliot;
+package kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.githubcopilot;
 
-import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.githubcopliot.settings.GithubCopilotPluginSettings;
+import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.githubcopilot.settings.GithubCopilotPluginSettings;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.settings.AbstractAiModelSessionSettings;
 
 public class GithubCopilotSessionSettings extends AbstractAiModelSessionSettings {

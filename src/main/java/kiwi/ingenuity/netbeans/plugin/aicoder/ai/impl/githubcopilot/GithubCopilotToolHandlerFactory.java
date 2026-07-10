@@ -1,4 +1,4 @@
-package kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.githubcopliot;
+package kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.githubcopilot;
 
 import java.util.Collections;
 import java.util.LinkedHashMap;

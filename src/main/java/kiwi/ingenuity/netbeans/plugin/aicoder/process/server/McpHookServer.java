@@ -238,9 +238,12 @@ public class McpHookServer {
         if (restrict == null || !restrict) {
             return true;
         }
+        // Restrict is on: require at least one registered project root. An empty
+        // dir list used to allow everything (fail-open); that could open the FS
+        // if scope was never populated. Fail closed instead.
         List<java.io.File> dirs = sessionProjectDirs.get(sessionId);
         if (dirs == null || dirs.isEmpty()) {
-            return true;
+            return false;
         }
         java.nio.file.Path resolvedFile = resolveRealPath(java.nio.file.Path.of(filePath));
         return dirs.stream().anyMatch(d -> {
@@ -337,7 +340,7 @@ public class McpHookServer {
         String hookEventName = McpHookServerUtil.str(req, "hook_event_name");
         if (hookEventName != null && !"PreToolUse".equals(hookEventName)) {
             // PostToolUse, Notification, Stop, etc. — not yet implemented, no-op
-            LOG.log(Level.WARNING, "Hook Event Not Implementented: {0}", hookEventName);
+            LOG.log(Level.WARNING, "Hook Event Not Implemented: {0}", hookEventName);
             McpHookServerUtil.sendJson(ex, 200, "{}");
             return;
         }
@@ -369,8 +372,10 @@ public class McpHookServer {
         }
 
         String filePath = McpHookServerUtil.str(input, "file_path");
+        // Edit/Write without a path cannot be previewed — fail closed.
         if (filePath == null || filePath.isBlank()) {
-            McpHookServerUtil.sendJson(ex, 200, McpHookServerUtil.hookAllow());
+            McpHookServerUtil.sendJson(ex, 200,
+                    McpHookServerUtil.hookDeny("Access denied: missing file_path"));
             return;
         }
         String oldString = McpHookServerUtil.str(input, "old_string");

@@ -42,4 +42,32 @@ class McpHookServerScopeTest {
             s.stop();
         }
     }
+
+    @Test
+    void isFileAllowed_restrictOnEmptyDirs_denies(@TempDir Path tmp) throws Exception {
+        Path file = Files.createFile(tmp.resolve("Secret.java"));
+        McpHookServer s = new McpHookServer(0);
+        s.init();
+        try {
+            s.registerSession("c1", "claude", List.of(), true);
+            assertFalse(s.isFileAllowed("c1", file.toString()));
+        }
+        finally {
+            s.stop();
+        }
+    }
+
+    @Test
+    void isFileAllowed_restrictOff_allowsOutsideProjects(@TempDir Path tmp) throws Exception {
+        Path file = Files.createFile(tmp.resolve("Anywhere.java"));
+        McpHookServer s = new McpHookServer(0);
+        s.init();
+        try {
+            s.registerSession("c1", "claude", List.of(), false);
+            assertTrue(s.isFileAllowed("c1", file.toString()));
+        }
+        finally {
+            s.stop();
+        }
+    }
 }

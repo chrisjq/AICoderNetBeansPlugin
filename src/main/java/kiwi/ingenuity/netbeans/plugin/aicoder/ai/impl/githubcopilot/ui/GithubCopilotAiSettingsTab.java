@@ -1,4 +1,4 @@
-package kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.githubcopliot.ui;
+package kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.githubcopilot.ui;
 
 import java.awt.Font;
 import java.awt.GridBagConstraints;
@@ -20,8 +20,8 @@ import javax.swing.event.DocumentEvent;
 import javax.swing.event.DocumentListener;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.AiTypeEnum;
 import static kiwi.ingenuity.netbeans.plugin.aicoder.ai.AiTypeEnum.GitHubCoPilot;
-import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.githubcopliot.GithubCopilotExecutableLocator;
-import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.githubcopliot.settings.GithubCopilotPluginSettings;
+import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.githubcopilot.GithubCopilotExecutableLocator;
+import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.githubcopilot.settings.GithubCopilotPluginSettings;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ui.SettingsTab;
 import org.openide.util.lookup.ServiceProvider;
 

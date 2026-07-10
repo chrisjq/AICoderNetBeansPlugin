@@ -1,4 +1,4 @@
-package kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.githubcopliot.events;
+package kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.githubcopilot.events;
 
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.events.AiProcessImplEvent;
 

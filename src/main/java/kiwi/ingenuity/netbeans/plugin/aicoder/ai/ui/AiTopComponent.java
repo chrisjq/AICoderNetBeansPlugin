@@ -1255,8 +1255,10 @@ public final class AiTopComponent extends TopComponent implements AiProcessEvent
         }
 
         String fp = pe.filePath();
+        // Fail closed: never allow a file mutation we cannot preview.
         if (fp == null || fp.isBlank()) {
-            pe.response().complete(true);
+            LOG.log(Level.WARNING, "Permission event missing file path — denying");
+            pe.response().complete(false);
             return;
         }
 
@@ -1269,8 +1271,13 @@ public final class AiTopComponent extends TopComponent implements AiProcessEvent
                 }
             }
             catch (IOException e) {
-                LOG.log(Level.WARNING, "Could not read file for permission diff: " + fp, e);
-                pe.response().complete(true);
+                LOG.log(Level.WARNING, "Could not read file for permission diff — denying: " + fp, e);
+                SwingUtilities.invokeLater(() -> {
+                    conversationPanel.addSystemMessage(
+                            NotificationUtil.formatPermissionDenied(shortPath(fp),
+                                    "could not read file for diff preview"));
+                    pe.response().complete(false);
+                });
                 return;
             }
             final String orig = original;
@@ -1279,23 +1286,29 @@ public final class AiTopComponent extends TopComponent implements AiProcessEvent
     }
 
     private void finishPermissionDiff(PermissionEvent pe, String fp, String original) {
-        String proposed;
-        if ("Write".equals(pe.toolName())) {
-            proposed = pe.writeContent() != null ? pe.writeContent() : "";
-        }
-        else {
-            String old = pe.oldString();
-            String neu = pe.newString();
-            if (old == null || neu == null || !original.contains(old)) {
+        PermissionDiffPolicy.Decision decision = PermissionDiffPolicy.decide(
+                pe.toolName(), fp, original, pe.oldString(), pe.newString(), pe.writeContent());
+        switch (decision.outcome()) {
+            case DENY -> {
+                LOG.log(Level.WARNING, "Permission denied for {0}: {1}",
+                        new Object[]{fp, decision.reason()});
+                conversationPanel.addSystemMessage(
+                        NotificationUtil.formatPermissionDenied(shortPath(fp), decision.reason()));
+                pe.response().complete(false);
+                return;
+            }
+            case ALLOW_SILENT -> {
                 pe.response().complete(true);
                 return;
             }
-            int idx = original.indexOf(old);
-            proposed = original.substring(0, idx) + neu + original.substring(idx + old.length());
+            case SHOW_DIFF -> {
+                // fall through to open the panel
+            }
         }
 
-        if (original.equals(proposed)) {
-            pe.response().complete(true);
+        final String prop = decision.proposedContent();
+        if (prop == null) {
+            pe.response().complete(false);
             return;
         }
 
@@ -1306,7 +1319,6 @@ public final class AiTopComponent extends TopComponent implements AiProcessEvent
         pendingResponseCancellers.add(canceller);
 
         final String orig = original;
-        final String prop = proposed;
 
         SwingUtilities.invokeLater(() -> {
             if (aiBackend == null) {

@@ -1,4 +1,4 @@
-package kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.githubcopliot;
+package kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.githubcopilot;
 
 import com.github.copilot.CopilotSession;
 import com.github.copilot.generated.AssistantMessageDeltaEvent;
@@ -9,7 +9,7 @@ import com.github.copilot.generated.SessionUsageInfoEvent;
 import java.util.function.Consumer;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.events.TextDeltaEvent;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.events.TurnCompleteEvent;
-import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.githubcopliot.events.GithubCopilotTokenUsageEvent;
+import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.githubcopilot.events.GithubCopilotTokenUsageEvent;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.events.AiProcessEventListener;
 
 /**

@@ -1,4 +1,4 @@
-package kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.githubcopliot.ui;
+package kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.githubcopilot.ui;
 
 import java.awt.Dimension;
 import java.awt.event.ActionListener;
@@ -9,8 +9,8 @@ import javax.swing.JComboBox;
 import javax.swing.SwingUtilities;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.AiSessionHost;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.events.AiPropertyEvent;
-import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.githubcopliot.events.GithubCopilotModelsEvent;
-import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.githubcopliot.settings.GithubCopilotPluginSettings;
+import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.githubcopilot.events.GithubCopilotModelsEvent;
+import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.githubcopilot.settings.GithubCopilotPluginSettings;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.session.AiSession;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.ui.AiInfoBarExtension;
 
@@ -185,7 +185,7 @@ public class GithubCopilotAiInfoBarExtension implements AiInfoBarExtension {
 
     @Override
     public void onAiProcessImplEvent(kiwi.ingenuity.netbeans.plugin.aicoder.process.events.AiProcessImplEvent event) {
-        if (event instanceof kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.githubcopliot.events.GithubCopilotTokenUsageEvent te) {
+        if (event instanceof kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.githubcopilot.events.GithubCopilotTokenUsageEvent te) {
             currentTokens = te.currentTokens();
             // Prefer the REAL context-window size read from the Copilot CLI log
             // (CompactionProcessor "used/total tokens"); only fall back to a
@@ -198,11 +198,11 @@ public class GithubCopilotAiInfoBarExtension implements AiInfoBarExtension {
             }
             updateContextBar();
         }
-        else if (event instanceof kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.githubcopliot.events.GithubCopilotFatalErrorEvent error) {
+        else if (event instanceof kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.githubcopilot.events.GithubCopilotFatalErrorEvent error) {
             fatalError = error.errorMessage();
             updateErrorLabel();
         }
-        else if (event instanceof kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.githubcopliot.events.GithubCopilotQuotaEvent qe) {
+        else if (event instanceof kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.githubcopilot.events.GithubCopilotQuotaEvent qe) {
             quotaUnlimited = qe.unlimited();
             quotaUsedRequests = qe.usedRequests();
             quotaEntitlementRequests = qe.entitlementRequests();

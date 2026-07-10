@@ -1,4 +1,4 @@
-package kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.githubcopliot;
+package kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.githubcopilot;
 
 import com.github.copilot.CopilotClient;
 import com.github.copilot.CopilotSession;
@@ -20,10 +20,10 @@ import kiwi.ingenuity.netbeans.plugin.aicoder.ai.AiProcessManager;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.AiTypeEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.events.StatusEvent;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.events.StatusEventTypeEnum;
-import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.githubcopliot.events.GithubCopilotFatalErrorEvent;
-import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.githubcopliot.events.GithubCopilotQuotaEvent;
-import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.githubcopliot.session.GithubCopilotAiSession;
-import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.githubcopliot.settings.GithubCopilotPluginSettings;
+import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.githubcopilot.events.GithubCopilotFatalErrorEvent;
+import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.githubcopilot.events.GithubCopilotQuotaEvent;
+import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.githubcopilot.session.GithubCopilotAiSession;
+import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.githubcopilot.settings.GithubCopilotPluginSettings;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.session.InterruptTypeEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.events.AiProcessEventListener;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.server.McpHookServer;

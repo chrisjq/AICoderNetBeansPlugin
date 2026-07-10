@@ -56,4 +56,10 @@ public class NotificationUtil {
     public static String formatToolAction(String toolName, String shortPath) {
         return toolName + ": " + shortPath;
     }
+
+    public static String formatPermissionDenied(String shortPath, String reason) {
+        String path = shortPath != null && !shortPath.isBlank() ? shortPath : "(unknown file)";
+        String detail = reason != null && !reason.isBlank() ? reason : "permission denied";
+        return path + " — denied (" + detail + ")";
+    }
 }
