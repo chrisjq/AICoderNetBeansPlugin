@@ -11,6 +11,7 @@ import java.nio.charset.StandardCharsets;
 import java.util.Map;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.AiTypeEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.session.AiSession;
+import kiwi.ingenuity.netbeans.plugin.aicoder.ai.settings.AbstractAiSessionSettings;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.McpToolEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.events.AiProcessEventListener;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.session.AbstractAiSession;
@@ -66,6 +67,12 @@ class WebRequestToolTest {
         }
     }
 
+    private static AiSession sessionAllowingWebRequests(boolean allow) {
+        AiSession session = AiSession.create(null, AiTypeEnum.CLAUDE);
+        session.setSettings(new AbstractAiSessionSettings(null, null, null, null, null, null, null, allow));
+        return session;
+    }
+
     @Test
     void fetchesPostRequestWithHeadersAndBody() throws Exception {
         WebRequestTool tool = new WebRequestTool();
@@ -78,7 +85,7 @@ class WebRequestToolTest {
         args.add(WebRequestParamEnum.HEADERS.key(), headers);
         args.addProperty(WebRequestParamEnum.MAX_CHARS.key(), 1000);
 
-        String raw = tool.handle(args(args), new FakeSession(AiSession.create(null, AiTypeEnum.CLAUDE)));
+        String raw = tool.handle(args(args), new FakeSession(sessionAllowingWebRequests(true)));
         JsonObject out = JsonParser.parseString(raw).getAsJsonObject();
 
         assertEquals(200, out.get("status").getAsInt());
@@ -97,8 +104,19 @@ class WebRequestToolTest {
         args.addProperty(WebRequestParamEnum.URL.key(), "file:///tmp/test.txt");
 
         Exception ex = assertThrows(Exception.class,
-                () -> tool.handle(args(args), new FakeSession(AiSession.create(null, AiTypeEnum.CLAUDE))));
+                () -> tool.handle(args(args), new FakeSession(sessionAllowingWebRequests(true))));
         assertTrue(ex.getMessage().contains("Only http:// and https:// URLs are supported"));
+    }
+
+    @Test
+    void rejectsWhenWebRequestsDisabledForSession() {
+        WebRequestTool tool = new WebRequestTool();
+        JsonObject args = new JsonObject();
+        args.addProperty(WebRequestParamEnum.URL.key(), baseUrl + "/echo");
+
+        Exception ex = assertThrows(Exception.class,
+                () -> tool.handle(args(args), new FakeSession(sessionAllowingWebRequests(false))));
+        assertTrue(ex.getMessage().contains("Web requests are disabled for this session"));
     }
 
     private static ToolRequestArguments args(JsonObject object) {

@@ -92,7 +92,7 @@ public class GithubCopilotAiImplementation extends AiImplementation {
                         = new AbstractAiModelSessionSettings(
                                 cfg.maxHistory(), cfg.restrictToProjectFiles(), cfg.allowInterAiComms(),
                                 cfg.autoNotifyInbox(), cfg.allowImportantMessages(), cfg.sessionInstructions(),
-                                model, cfg.autoAccept());
+                                model, cfg.autoAccept(), cfg.allowWebRequests());
                 currentSession.setSettings(newCfg);
             }
         }
@@ -125,7 +125,7 @@ public class GithubCopilotAiImplementation extends AiImplementation {
                         = new AbstractAiModelSessionSettings(
                                 cfg.maxHistory(), cfg.restrictToProjectFiles(), cfg.allowInterAiComms(),
                                 cfg.autoNotifyInbox(), cfg.allowImportantMessages(), cfg.sessionInstructions(),
-                                model, cfg.autoAccept());
+                                model, cfg.autoAccept(), cfg.allowWebRequests());
                 if (currentSession != null) {
                     currentSession.setSettings(newCfg);
                 }
@@ -142,7 +142,7 @@ public class GithubCopilotAiImplementation extends AiImplementation {
             AbstractAiModelSessionSettings modelSettings = new AbstractAiModelSessionSettings(
                     cfg.maxHistory(), cfg.restrictToProjectFiles(), cfg.allowInterAiComms(),
                     cfg.autoNotifyInbox(), cfg.allowImportantMessages(), cfg.sessionInstructions(),
-                    initialModel, cfg.autoAccept());
+                    initialModel, cfg.autoAccept(), cfg.allowWebRequests());
             session.setSettings(modelSettings);
             if (currentSession != null) {
                 currentSession.setSettings(modelSettings);

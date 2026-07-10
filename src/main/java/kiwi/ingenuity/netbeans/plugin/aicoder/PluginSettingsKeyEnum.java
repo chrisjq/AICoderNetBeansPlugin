@@ -13,6 +13,7 @@ public enum PluginSettingsKeyEnum {
     AI_MODEL_PREFIX("ai.model."),
     RESTRICT_TO_PROJECT("ai.session.restrictToProjectFiles"),
     ALLOW_INTER_AI_COMMS("ai.session.allowInterAiComms"),
+    ALLOW_WEB_REQUESTS("ai.session.allowWebRequests"),
     AUTO_NOTIFY_INBOX("ai.session.autoNotifyInbox"),
     ALLOW_IMPORTANT_MESSAGES("ai.session.allowImportantMessages"),
     INBOX_RETENTION_MINUTES("ai.inbox.retentionMinutes"),

@@ -15,6 +15,7 @@ public class AbstractAiSessionSettings {
     private final Boolean allowImportantMessages;
     private final String sessionInstructions;
     private final Boolean autoAccept;
+    private final Boolean allowWebRequests;
 
     public AbstractAiSessionSettings(Integer maxHistory, Boolean restrictToProjectFiles,
             Boolean allowInterAiComms, Boolean autoNotifyInbox,
@@ -26,6 +27,14 @@ public class AbstractAiSessionSettings {
     public AbstractAiSessionSettings(Integer maxHistory, Boolean restrictToProjectFiles,
             Boolean allowInterAiComms, Boolean autoNotifyInbox,
             Boolean allowImportantMessages, String sessionInstructions, Boolean autoAccept) {
+        this(maxHistory, restrictToProjectFiles, allowInterAiComms, autoNotifyInbox,
+                allowImportantMessages, sessionInstructions, autoAccept, null);
+    }
+
+    public AbstractAiSessionSettings(Integer maxHistory, Boolean restrictToProjectFiles,
+            Boolean allowInterAiComms, Boolean autoNotifyInbox,
+            Boolean allowImportantMessages, String sessionInstructions, Boolean autoAccept,
+            Boolean allowWebRequests) {
         this.maxHistory = maxHistory;
         this.restrictToProjectFiles = restrictToProjectFiles;
         this.allowInterAiComms = allowInterAiComms;
@@ -33,6 +42,7 @@ public class AbstractAiSessionSettings {
         this.allowImportantMessages = allowImportantMessages;
         this.sessionInstructions = sessionInstructions;
         this.autoAccept = autoAccept;
+        this.allowWebRequests = allowWebRequests;
     }
 
     public Integer maxHistory() {
@@ -63,6 +73,10 @@ public class AbstractAiSessionSettings {
         return autoAccept;
     }
 
+    public Boolean allowWebRequests() {
+        return allowWebRequests;
+    }
+
     public int effectiveMaxHistory() {
         return maxHistory != null ? maxHistory : PluginSettings.getMaxHistory();
     }
@@ -87,6 +101,10 @@ public class AbstractAiSessionSettings {
         return autoAccept != null ? autoAccept : PluginSettings.isAutoAccept();
     }
 
+    public boolean effectiveAllowWebRequests() {
+        return allowWebRequests != null ? allowWebRequests : PluginSettings.isAllowWebRequests();
+    }
+
     /**
      * Returns a copy of these settings with the autoAccept field replaced. Used
      * by the info bar checkbox to persist its state back to the session without
@@ -94,7 +112,7 @@ public class AbstractAiSessionSettings {
      */
     public AbstractAiSessionSettings withAutoAccept(Boolean newAutoAccept) {
         return new AbstractAiSessionSettings(maxHistory, restrictToProjectFiles, allowInterAiComms,
-                autoNotifyInbox, allowImportantMessages, sessionInstructions, newAutoAccept);
+                autoNotifyInbox, allowImportantMessages, sessionInstructions, newAutoAccept, allowWebRequests);
     }
 
     public String getAdditionalInfo() {

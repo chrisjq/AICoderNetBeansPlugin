@@ -95,6 +95,14 @@ public final class PluginSettings {
         prefs().putBoolean(PluginSettingsKeyEnum.RESTRICT_TO_PROJECT.key(), v);
     }
 
+    public static boolean isAllowWebRequests() {
+        return prefs().getBoolean(PluginSettingsKeyEnum.ALLOW_WEB_REQUESTS.key(), false);
+    }
+
+    public static void setAllowWebRequests(boolean v) {
+        prefs().putBoolean(PluginSettingsKeyEnum.ALLOW_WEB_REQUESTS.key(), v);
+    }
+
     public static boolean isAllowInterAiComms() {
         return prefs().getBoolean(PluginSettingsKeyEnum.ALLOW_INTER_AI_COMMS.key(), false);
     }

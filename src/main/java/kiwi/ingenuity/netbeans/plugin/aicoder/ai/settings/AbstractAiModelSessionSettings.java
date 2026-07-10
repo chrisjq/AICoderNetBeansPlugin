@@ -19,8 +19,16 @@ public class AbstractAiModelSessionSettings extends AbstractAiSessionSettings {
             Boolean allowInterAiComms, Boolean autoNotifyInbox,
             Boolean allowImportantMessages, String sessionInstructions, String model,
             Boolean autoAccept) {
+        this(maxHistory, restrictToProjectFiles, allowInterAiComms, autoNotifyInbox,
+                allowImportantMessages, sessionInstructions, model, autoAccept, null);
+    }
+
+    public AbstractAiModelSessionSettings(Integer maxHistory, Boolean restrictToProjectFiles,
+            Boolean allowInterAiComms, Boolean autoNotifyInbox,
+            Boolean allowImportantMessages, String sessionInstructions, String model,
+            Boolean autoAccept, Boolean allowWebRequests) {
         super(maxHistory, restrictToProjectFiles, allowInterAiComms, autoNotifyInbox,
-                allowImportantMessages, sessionInstructions, autoAccept);
+                allowImportantMessages, sessionInstructions, autoAccept, allowWebRequests);
         this.model = model;
         this.fallbackModel = model;
     }
@@ -29,7 +37,7 @@ public class AbstractAiModelSessionSettings extends AbstractAiSessionSettings {
     public AbstractAiSessionSettings withAutoAccept(Boolean newAutoAccept) {
         return new AbstractAiModelSessionSettings(maxHistory(), restrictToProjectFiles(),
                 allowInterAiComms(), autoNotifyInbox(), allowImportantMessages(),
-                sessionInstructions(), model(), newAutoAccept);
+                sessionInstructions(), model(), newAutoAccept, allowWebRequests());
     }
 
     public String model() {

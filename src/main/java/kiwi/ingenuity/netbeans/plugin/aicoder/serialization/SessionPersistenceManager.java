@@ -152,15 +152,16 @@ public class SessionPersistenceManager {
                                 ? cfgObj.get("sessionInstructions").getAsString()
                                 : cfgObj.has("toolInstructions") && cfgObj.get("toolInstructions").isJsonPrimitive() ? cfgObj.get("toolInstructions").getAsString() : null;
                         Boolean autoAccept = cfgObj.has("autoAccept") && cfgObj.get("autoAccept").isJsonPrimitive() ? cfgObj.get("autoAccept").getAsBoolean() : null;
+                        Boolean allowWebRequests = cfgObj.has("allowWebRequests") && cfgObj.get("allowWebRequests").isJsonPrimitive() ? cfgObj.get("allowWebRequests").getAsBoolean() : null;
                         String model = cfgObj.has("model") && cfgObj.get("model").isJsonPrimitive() ? cfgObj.get("model").getAsString() : null;
                         if (model != null) {
                             settings = new AbstractAiModelSessionSettings(maxHistory, restrictToProjectFiles,
                                     allowInterAiComms, autoNotifyInbox, allowImportantMessages, sessionInstructions,
-                                    model, autoAccept);
+                                    model, autoAccept, allowWebRequests);
                         }
                         else {
                             settings = new AbstractAiSessionSettings(maxHistory, restrictToProjectFiles,
-                                    allowInterAiComms, autoNotifyInbox, allowImportantMessages, sessionInstructions, autoAccept);
+                                    allowInterAiComms, autoNotifyInbox, allowImportantMessages, sessionInstructions, autoAccept, allowWebRequests);
                         }
                     }
                     if (!o.has("id") || !o.has("name") || !o.has("createdAt") || !o.has("lastUsedAt")) {
@@ -241,6 +242,9 @@ public class SessionPersistenceManager {
             }
             if (cfg.autoAccept() != null) {
                 cfgObj.addProperty("autoAccept", cfg.autoAccept());
+            }
+            if (cfg.allowWebRequests() != null) {
+                cfgObj.addProperty("allowWebRequests", cfg.allowWebRequests());
             }
             if (cfg instanceof AbstractAiModelSessionSettings modelCfg
                     && modelCfg.model() != null) {

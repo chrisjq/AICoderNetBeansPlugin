@@ -35,6 +35,7 @@ public class AiSessionSettingsDialog extends JDialog {
     private final JTextArea descriptionArea = new JTextArea(3, 24);
     private final JSpinner historySpinner;
     private final JCheckBox restrictCheckBox = new JCheckBox();
+    private final JCheckBox allowWebRequestsCheckBox = new JCheckBox();
     private final JCheckBox allowInterAiCheckBox = new JCheckBox();
     private final JCheckBox autoNotifyCheckBox = new JCheckBox();
     private final JCheckBox allowImportantCheckBox = new JCheckBox();
@@ -63,6 +64,10 @@ public class AiSessionSettingsDialog extends JDialog {
         boolean globalRestrict = PluginSettings.isRestrictToProjectFiles();
         restrictCheckBox.setText("Restrict to project files (global: " + (globalRestrict ? "on" : "off") + ")");
         restrictCheckBox.setSelected(cfg.effectiveRestrictToProjectFiles());
+
+        boolean globalAllowWebRequests = PluginSettings.isAllowWebRequests();
+        allowWebRequestsCheckBox.setText("Allow web requests (global: " + (globalAllowWebRequests ? "on" : "off") + ")");
+        allowWebRequestsCheckBox.setSelected(cfg.effectiveAllowWebRequests());
 
         boolean globalInterAi = PluginSettings.isAllowInterAiComms();
         allowInterAiCheckBox.setText("Allow inter-AI communication (global: " + (globalInterAi ? "on" : "off") + ")");
@@ -132,6 +137,7 @@ public class AiSessionSettingsDialog extends JDialog {
         addRow(p, c, row++, new JLabel("Description:"), new JScrollPane(descriptionArea));
         addRow(p, c, row++, new JLabel("History size:"), historySpinner);
         addFull(p, c, row++, restrictCheckBox);
+        addFull(p, c, row++, allowWebRequestsCheckBox);
         addFull(p, c, row++, allowInterAiCheckBox);
 
         JPanel autoNotifyRow = new JPanel(new BorderLayout(4, 0));
@@ -179,6 +185,9 @@ public class AiSessionSettingsDialog extends JDialog {
         boolean restrictSelected = restrictCheckBox.isSelected();
         Boolean restrictToProjectFiles = restrictSelected == PluginSettings.isRestrictToProjectFiles() ? null : restrictSelected;
 
+        boolean webRequestsSelected = allowWebRequestsCheckBox.isSelected();
+        Boolean allowWebRequests = webRequestsSelected == PluginSettings.isAllowWebRequests() ? null : webRequestsSelected;
+
         boolean interAiSelected = allowInterAiCheckBox.isSelected();
         Boolean allowInterAiComms = interAiSelected == PluginSettings.isAllowInterAiComms() ? null : interAiSelected;
 
@@ -204,11 +213,11 @@ public class AiSessionSettingsDialog extends JDialog {
                     maxHistory, restrictToProjectFiles, allowInterAiComms, autoNotifyInbox,
                     allowImportantMessages, sessionInstructions,
                     modelCfg.model(),
-                    original.autoAccept());
+                    original.autoAccept(), allowWebRequests);
         }
         else {
             result = new AbstractAiSessionSettings(maxHistory, restrictToProjectFiles, allowInterAiComms,
-                    autoNotifyInbox, allowImportantMessages, sessionInstructions, original.autoAccept());
+                    autoNotifyInbox, allowImportantMessages, sessionInstructions, original.autoAccept(), allowWebRequests);
         }
     }
 

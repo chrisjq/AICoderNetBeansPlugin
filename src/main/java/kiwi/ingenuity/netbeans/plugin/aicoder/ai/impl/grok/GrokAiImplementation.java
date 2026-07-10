@@ -138,7 +138,7 @@ public class GrokAiImplementation extends AiImplementation {
                 AbstractAiModelSessionSettings newCfg = new AbstractAiModelSessionSettings(
                         cfg.maxHistory(), cfg.restrictToProjectFiles(), cfg.allowInterAiComms(),
                         cfg.autoNotifyInbox(), cfg.allowImportantMessages(), cfg.sessionInstructions(),
-                        model, cfg.autoAccept());
+                        model, cfg.autoAccept(), cfg.allowWebRequests());
                 if (currentSession != null) {
                     currentSession.setSettings(newCfg);
                 }
@@ -154,7 +154,7 @@ public class GrokAiImplementation extends AiImplementation {
             AbstractAiModelSessionSettings modelSettings = new AbstractAiModelSessionSettings(
                     cfg.maxHistory(), cfg.restrictToProjectFiles(), cfg.allowInterAiComms(),
                     cfg.autoNotifyInbox(), cfg.allowImportantMessages(), cfg.sessionInstructions(),
-                    initialModel, cfg.autoAccept());
+                    initialModel, cfg.autoAccept(), cfg.allowWebRequests());
             session.setSettings(modelSettings);
             if (currentSession != null) {
                 currentSession.setSettings(modelSettings);

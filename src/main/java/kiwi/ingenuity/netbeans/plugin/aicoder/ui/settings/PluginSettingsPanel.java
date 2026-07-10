@@ -43,6 +43,7 @@ public class PluginSettingsPanel extends JPanel {
     private final JSpinner diffContextSpinner;
     private final JSpinner fontSizeSpinner;
     private final JCheckBox restrictToProjectCheckBox;
+    private final JCheckBox allowWebRequestsCheckBox;
     private final JCheckBox allowInterAiCheckBox;
     private final JCheckBox autoNotifyInboxCheckBox;
     private final JCheckBox allowImportantMessagesCheckBox;
@@ -139,9 +140,17 @@ public class PluginSettingsPanel extends JPanel {
         addTo(general, restrictToProjectCheckBox, c);
         c.gridwidth = 1;
 
-        // Allow inter-AI communication
+        // Allow web requests
         c.gridx = 0;
         c.gridy = 8;
+        c.gridwidth = 2;
+        allowWebRequestsCheckBox = new JCheckBox("Allow AI web requests by default");
+        addTo(general, allowWebRequestsCheckBox, c);
+        c.gridwidth = 1;
+
+        // Allow inter-AI communication
+        c.gridx = 0;
+        c.gridy = 9;
         c.gridwidth = 2;
         allowInterAiCheckBox = new JCheckBox("Allow inter-AI communication by default");
         addTo(general, allowInterAiCheckBox, c);
@@ -149,7 +158,7 @@ public class PluginSettingsPanel extends JPanel {
 
         // Auto-notify inbox
         c.gridx = 0;
-        c.gridy = 9;
+        c.gridy = 10;
         c.gridwidth = 2;
         autoNotifyInboxCheckBox = new JCheckBox("Auto-notify AI sessions on inbox messages");
         addTo(general, autoNotifyInboxCheckBox, c);
@@ -157,7 +166,7 @@ public class PluginSettingsPanel extends JPanel {
 
         // Allow important messages
         c.gridx = 0;
-        c.gridy = 10;
+        c.gridy = 11;
         c.gridwidth = 2;
         allowImportantMessagesCheckBox = new JCheckBox("Allow important messages (interrupt receiving session)");
         addTo(general, allowImportantMessagesCheckBox, c);
@@ -165,7 +174,7 @@ public class PluginSettingsPanel extends JPanel {
 
         // Inbox read-message retention (minutes, 0 = keep until deleted)
         c.gridx = 0;
-        c.gridy = 11;
+        c.gridy = 12;
         c.gridwidth = 1;
         c.weightx = 0;
         addTo(general, new JLabel("Inbox read retention (min, 0=keep):"), c);
@@ -176,7 +185,7 @@ public class PluginSettingsPanel extends JPanel {
 
         // Inbox max size
         c.gridx = 0;
-        c.gridy = 12;
+        c.gridy = 13;
         addTo(general, new JLabel("Inbox max size:"), c);
         inboxMaxSizeSpinner = new JSpinner(new SpinnerNumberModel(
                 PluginSettings.getInboxMaxSize(), 1, 100000, 50));
@@ -185,7 +194,7 @@ public class PluginSettingsPanel extends JPanel {
 
         // Filler for general tab
         c.gridx = 0;
-        c.gridy = 13;
+        c.gridy = 14;
         c.weighty = 1;
         c.gridwidth = 2;
         addTo(general, Box.createVerticalGlue(), c);
@@ -216,6 +225,7 @@ public class PluginSettingsPanel extends JPanel {
         diffContextSpinner.addChangeListener(e -> fireChanged());
         fontSizeSpinner.addChangeListener(e -> fireChanged());
         restrictToProjectCheckBox.addActionListener(e -> fireChanged());
+        allowWebRequestsCheckBox.addActionListener(e -> fireChanged());
         allowInterAiCheckBox.addActionListener(e -> fireChanged());
         autoNotifyInboxCheckBox.addActionListener(e -> fireChanged());
         allowImportantMessagesCheckBox.addActionListener(e -> fireChanged());
@@ -237,6 +247,7 @@ public class PluginSettingsPanel extends JPanel {
         diffContextSpinner.setValue(PluginSettings.getDiffContextLines());
         fontSizeSpinner.setValue(PluginSettings.getChatFontSize());
         restrictToProjectCheckBox.setSelected(PluginSettings.isRestrictToProjectFiles());
+        allowWebRequestsCheckBox.setSelected(PluginSettings.isAllowWebRequests());
         allowInterAiCheckBox.setSelected(PluginSettings.isAllowInterAiComms());
         autoNotifyInboxCheckBox.setSelected(PluginSettings.isAutoNotifyInbox());
         allowImportantMessagesCheckBox.setSelected(PluginSettings.isAllowImportantMessages());
@@ -256,6 +267,7 @@ public class PluginSettingsPanel extends JPanel {
         PluginSettings.setDiffContextLines((Integer) diffContextSpinner.getValue());
         PluginSettings.setChatFontSize((Integer) fontSizeSpinner.getValue());
         PluginSettings.setRestrictToProjectFiles(restrictToProjectCheckBox.isSelected());
+        PluginSettings.setAllowWebRequests(allowWebRequestsCheckBox.isSelected());
         PluginSettings.setAllowInterAiComms(allowInterAiCheckBox.isSelected());
         PluginSettings.setAutoNotifyInbox(autoNotifyInboxCheckBox.isSelected());
         PluginSettings.setAllowImportantMessages(allowImportantMessagesCheckBox.isSelected());

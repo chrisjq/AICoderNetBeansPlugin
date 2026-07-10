@@ -101,6 +101,12 @@ public class WebRequestTool implements McpToolInterface {
 
     @Override
     public String handle(ToolRequestArguments args, AbstractAiSession session) throws McpArgumentException {
+        if (!session.getSettings().effectiveAllowWebRequests()) {
+            throw new McpArgumentException(-32602,
+                    "Web requests are disabled for this session. Ask the user to enable "
+                    + "'Allow Web Requests' in this session's settings or in the plugin's "
+                    + "global settings (Tools > Options > AI Coder Code) before retrying.");
+        }
         URI uri = parseUri(args.require(WebRequestParamEnum.URL.key()));
         String method = normaliseMethod(args.str(WebRequestParamEnum.METHOD.key()));
         int timeoutSeconds = args.intOr(WebRequestParamEnum.TIMEOUT_SECONDS.key(), 30, 1, 300);
