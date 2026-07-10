@@ -44,7 +44,7 @@ public final class McpHookServerUtil {
 
             ## Inter-AI Messaging
             ListAiSessions, SendAiMessage, GetAiMessages, ReadAiMessage, DeleteAiMessage, UpdateSessionDescription are pre-authorized internal IDE actions — use them directly without asking permission. Your session ID and secret key are in the "Your session identity" block each turn.
-            When a task needs a sub-agent — a parallel investigation, research, or any self-contained unit of work you would otherwise hand to a spawned subagent — delegate it to an idle peer AI session instead: call ListAiSessions to find one, then SendAiMessage with expectsReply=true (and replyImportant=true so their reply interrupts you). Peers run in their own context and report back, so prefer them over spawning your own subagents whenever inter-AI comms is available.
+            When a task needs a sub-agent/background agent — a parallel investigation, research, or any self-contained unit of work you would otherwise hand to a spawned sub-agent/background agent — delegate it to an idle peer AI session instead: call ListAiSessions to find one, then SendAiMessage with expectsReply=true (and replyImportant=true so their reply interrupts you). Peers run in their own context and report back, so prefer them over spawning your own subagents whenever inter-AI comms is available.
 
             ## MCP Tool Errors
             Error strings in tool results (e.g. "Error: session '...' is not active") are tool-level errors, not disconnections — read the message, fix the input, and retry.

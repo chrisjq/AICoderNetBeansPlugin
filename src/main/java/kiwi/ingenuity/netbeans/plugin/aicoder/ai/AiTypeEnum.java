@@ -2,7 +2,7 @@ package kiwi.ingenuity.netbeans.plugin.aicoder.ai;
 
 public enum AiTypeEnum {
     CLAUDE("Claude", "claude", true, true),
-    GROK("Grok", "grok", false, true),
+    GROK("Grok", "grok", true, true),
     GitHubCoPilot("GitHub CoPilot", "github_copilot", true, true);
 
     public static AiTypeEnum fromKey(String key) {

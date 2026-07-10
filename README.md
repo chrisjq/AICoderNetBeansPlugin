@@ -8,6 +8,7 @@ A NetBeans IDE plugin that embeds an AI coding assistant as a dockable chat pane
 |---|---|---|---|
 | **Claude** | `claude` CLI (`--output-format stream-json`) | opus / sonnet / haiku (default `claude-sonnet-4-6`) | Enabled by default |
 | **GitHub Copilot** | `copilot` CLI in prompt mode (`copilot -p --model …`) | discovered at runtime via the Copilot SDK (with a static fallback list) | Enabled by default |
+| **Grok** | `grok` CLI in prompt mode (`grok -p --model …`) | discovered at runtime via the Grok SDK (with a static fallback list) | Enabled by default |
 
 Each backend has its own process manager, executable locator, settings, and info bar, but they all share the same chat panel, MCP tool server, and Accept/Reject diff gate. You can run multiple sessions (and multiple backends) at once.
 
@@ -23,7 +24,7 @@ Each backend has its own process manager, executable locator, settings, and info
 
 ## Requirements
 
-- NetBeans IDE 26.0+
+- NetBeans IDE 30.0+
 - Java 17+
 - Maven (for Maven projects)
 - At least one backend CLI installed and on your `PATH` (or configured in settings):
@@ -73,22 +74,31 @@ Open **Tools > Options > AI Coder**. General settings apply to every backend; ea
 
 > Authentication for GitHub Copilot is handled by the `copilot` CLI itself. Logon via the copilot cli before use.
 
+### Grok backend
+
+| Setting | Default | Description |
+|---|---|---|
+| Grok executable | auto-detect | Path to the `grok` CLI binary |
+| Model | auto-discovered | Model list is fetched via the Grok SDK at session start; falls back to a built-in list if discovery fails |
+
+> Authentication for Grok is handled by the `grok` CLI itself. Logon via the grok cli before use.
+
 ## MCP Tool Reference
 
 The plugin exposes the following tools to the AI assistant over the MCP endpoint at `http://127.0.0.1:<port>/mcp`. These tools are backend-agnostic — both Claude and GitHub Copilot use the same set.
 
-### Build
+### Build Code
 
 | Tool | Description |
 |---|---|
 | `BuildMavenProject` | Runs `mvn package` |
+| `CleanAndBuildMavenProject` | Runs `mvn clean package` |
 | `BuildGradleProject` | Runs `gradlew build` |
 | `BuildAntProject` | Runs `ant jar` |
-| `BuildProject` / `CleanProject` / `CleanAndBuildProject` | IDE build actions |
-| `DownloadMavenSources` | Downloads source JARs for library source browsing |
-| `DownloadMavenJavadoc` | Downloads Javadoc JARs (run before `GetJavadoc`) |
+| `DownloadMavenSources` | Downloads source JARs for all dependencies (enables source browsing) |
+| `DownloadMavenJavadoc` | Downloads Javadoc JARs for all dependencies (run before `GetJavadoc`) |
 
-### Test
+### Test Code
 
 | Tool | Description |
 |---|---|
@@ -100,70 +110,170 @@ The plugin exposes the following tools to the AI assistant over the MCP endpoint
 
 | Tool | Description |
 |---|---|
-| `GetGitStatus` | Branch name and file status |
+| `GetGitStatus` | Branch name and short file status |
 | `GetGitDiff` | Unstaged or staged changes |
+| `GitAdd` | Stages files for the next commit |
+| `GitCommit` | Commits staged changes with a message; can stage files first |
+| `GitLog` | Recent commit history (short hash + subject) |
+| `GitPush` | Pushes the current (or specified) branch to a remote |
+| `GitPull` | Fetches from a remote and merges into the current branch |
+| `GitCheckout` | Switches to a branch or revision (optionally creating it) |
+| `GitBranch` | Lists local branches or creates a new one from HEAD |
+| `GitDeleteBranch` | Deletes a local branch |
+| `GitStash` | Stash, list, pop, apply, or drop stashed changes |
+| `GitFetch` | Fetches from a remote without merging |
+| `GitReset` | Unstages files or resets HEAD (SOFT/MIXED/HARD) |
+| `GitMerge` | Merges a branch into the current branch |
+| `GitShow` | Full details (author, date, message, diff) for a commit |
+| `GitBlame` | Per-line commit hash, author, and content for a file |
+| `GitRebase` | Rebases the current branch onto an upstream; supports continue/skip/abort |
+| `GitCherryPick` | Cherry-picks one or more commits onto the current branch |
+| `GitTag` | Lists, creates, or deletes tags |
+| `GitRemote` | Lists, adds, or removes git remotes |
+| `GitRevert` | Reverts a commit by creating a new inverse commit |
 
-### Help & Navigation
+### Help & Information
 
 | Tool | Description |
 |---|---|
-| `GetProjectStructure` | Project layout overview |
+| `GetProjectStructure` | Project source-file layout, organised by source root |
 | `GetClassMembers` | Fields, methods, and constructors of a class |
-| `GetTypeHierarchy` | Full supertype/subtype tree |
-| `GetJavadoc` | Javadoc for any class or member |
-| `NavigateToLine` | Opens a file in the editor at a given line |
-
-### Search
-
-| Tool | Description |
-|---|---|
-| `SearchInFiles` | Full-text search across project files |
-| `SearchTypes` | Find types by name |
-| `SearchSymbols` | Find symbols by name |
-| `FindDeclaration` | Jump to declaration |
-| `FindImplementations` | Find all implementations of an interface/method |
-| `FindUsages` | Find all usages of a symbol |
+| `GetTypeHierarchy` | Full supertype/subtype tree for a class or interface |
+| `GetJavadoc` | Javadoc and method signatures for any class or member on the classpath |
 
 ### Refactoring (IDE-safe — all references updated automatically)
 
 | Tool | Description |
 |---|---|
-| `RenameSymbol` | Rename any identifier |
-| `MoveClass` | Move a class to a different package |
-| `InlineVariable` | Inline a local variable |
-| `ChangeMethodSignature` | Modify a method's parameters or return type |
+| `RenameSymbol` | Rename any identifier across all files in the project |
+| `MoveClass` | Move a Java class to a different package, updating imports |
+| `MoveFile` | Move a file; Java files use move refactoring (updates package + imports) |
+| `InlineVariable` | Inline a variable at all use sites and remove the declaration |
+| `ChangeMethodSignature` | Modify a method's parameters, name, or return type and update all callers |
 
-### Source Formatting
-
-| Tool | Description |
-|---|---|
-| `FixImports` | Add missing imports and remove unused ones |
-| `OrganiseImports` | Sort and group import statements |
-| `OrganiseMembers` | Sort class members by configured order |
-| `ReformatFile` | Apply project code-style formatting |
-
-### File & Editor Context
+### Search/Find (IDE-aware)
 
 | Tool | Description |
 |---|---|
-| `GetFileContent` | Read any file by absolute path |
-| `GetCurrentFile` | Path of the active editor tab |
-| `GetCurrentFileContent` | Content of the active editor tab |
-| `GetOpenFiles` | All currently open editor tabs |
-| `GetSelectedText` | Currently selected text |
-| `GetDiagnostics` | Compiler errors and warnings |
-| `GetClipboard` | Current clipboard text |
-| `SaveFile` | Save a file to disk |
+| `SearchInFiles` | Grep-style text/regex search across Java source files |
+| `SearchTypes` | Find Java types (class/interface/enum/annotation) by name pattern |
+| `SearchSymbols` | Find methods, fields, and nested types by name |
+| `FindDeclaration` | Go-to-definition: resolve a symbol to its declaration |
+| `FindImplementations` | Find all direct subtypes/implementors of a type |
+| `FindUsages` | Find all usages of a class or method across the project |
+
+### Core System Functions
+
+| Tool | Description |
+|---|---|
+| `GetFileContent` | Read a file's in-memory content, including unsaved editor changes |
+| `WebRequest` | Fetch an HTTP or HTTPS URL with optional method, headers, request body, timeout, and response truncation. Supports GET, POST, PUT, PATCH, DELETE, HEAD, and OPTIONS |
+| `GetClipboard` | Read the current system clipboard text |
+| `SaveFile` | Create/overwrite a file with content and save, or flush unsaved editor changes to disk |
+| `DeleteFile` | Permanently delete a file, closing its editor tab and refreshing VCS status |
+| `CopyFile` | Copy a file to a target directory, optionally renaming the copy |
+| `RefreshFileStatus` | Refreshes NetBeans' filesystem and VCS view — call after git commits and after creating or modifying files outside the IDE |
+
+### UI → Build
+
+| Tool | Description |
+|---|---|
+| `BuildProject` | IDE build action (auto-detects Maven/Gradle/Ant) |
+| `CleanProject` | IDE clean action for any project type |
+| `CleanAndBuildProject` | IDE clean+build action for any project type |
+
+### UI → Files & Text
+
+| Tool | Description |
+|---|---|
+| `WriteFile` | Create/overwrite a file with content, approved via the diff panel |
+| `ApplyEdit` | Replace an exact string in a file, approved via the diff panel |
+| `GetCurrentFile` | Path, line, and column of the active editor cursor |
+| `GetCurrentFileContent` | Full text content of the active editor tab |
+| `GetOpenFiles` | List of all files currently open in the IDE |
+| `GetSelectedText` | Currently selected/highlighted text in the active editor |
+| `GetDiagnostics` | Compiler errors and warnings for all open Java files |
 | `CloseFile` | Close an editor tab |
-| `RefreshFileStatus` | Refreshes NetBeans' filesystem and VCS view — call after git commits and after creating or modifying files outside the IDE so NetBeans detects them immediately |
 
-### Other
+### UI → Navigation
+
+| Tool | Description |
+|---|---|
+| `NavigateToLine` | Opens a file in the editor and jumps to a given line |
+
+### UI → Source Code Formatting
+
+| Tool | Description |
+|---|---|
+| `FixImports` | Removes unused imports and adds missing ones |
+| `OrganiseImports` | Sorts and groups existing import statements |
+| `OrganiseMembers` | Sorts class members according to configured member order |
+| `ReformatFile` | Reformats a file using the project's code style settings |
+
+### UI → Dialog Actions
+
+| Tool | Description |
+|---|---|
+| `RunInspect` | Opens the NetBeans Inspect dialog to run static analysis across the codebase |
+
+### Request Input from User
 
 | Tool | Description |
 |---|---|
 | `AskUserQuestion` | Present the user with a question and selectable options |
-| `RunInspect` | Run the IDE code inspection |
-| `GetPluginVersion` | Returns the running plugin version |
+
+### Plugin & Inter-AI Messaging
+
+| Tool | Description |
+|---|---|
+| `GetPluginVersion` | Returns the running version of the NetBeans plugin |
+| `GetInstructions` | Returns the full plugin usage guide (must be called once before other plugin tools) |
+| `ListAiSessions` | Discover peer AI sessions open in the IDE (excludes the caller) |
+| `SendAiMessage` | Send a message to another AI session's inbox |
+| `GetAiMessages` | List inbox message summaries (id, subject, from) |
+| `ReadAiMessage` | Read the full body of a specific inbox message and mark it read |
+| `DeleteAiMessage` | Delete one or more inbox messages by id |
+| `IsAiSessionActive` | Check whether a target AI session is idle or busy |
+| `UpdateSessionDescription` | Update your session's description visible to peer sessions |
+
+## WebRequest Tool Details
+
+The **WebRequest** tool allows the AI assistant to fetch external web resources. It supports full HTTP method control, custom headers, request bodies, timeouts, and response truncation.
+
+### Parameters
+
+| Parameter | Type | Required | Default | Description |
+|---|---|---|---|---|
+| `url` | string | ✓ | — | The HTTP or HTTPS URL to fetch |
+| `method` | string | — | GET | HTTP method (GET, POST, PUT, PATCH, DELETE, HEAD, OPTIONS) |
+| `headers` | object | — | none | Request headers as a JSON object of `headerName → value` |
+| `body` | string | — | none | Request body (primarily useful with POST, PUT, PATCH, DELETE) |
+| `timeoutSeconds` | integer | — | 30 | Request timeout in seconds (range: 1-300) |
+| `maxChars` | integer | — | 20000 | Maximum response body characters to return (range: 1-200,000) |
+
+### Response
+
+The tool returns a JSON object with:
+
+| Field | Description |
+|---|---|
+| `requestedUrl` | The original URL requested |
+| `finalUrl` | The final URL after following redirects |
+| `method` | The HTTP method used |
+| `status` | HTTP status code |
+| `headers` | Response headers (single-value as string, multi-value as array) |
+| `truncated` | Boolean indicating if response body was truncated |
+| `body` | Response body (UTF-8 decoded, with charset auto-detection from Content-Type) |
+
+### Example
+
+```json
+{
+  "url": "https://api.github.com/zen",
+  "method": "GET",
+  "maxChars": 500
+}
+```
 
 ## Architecture
 
