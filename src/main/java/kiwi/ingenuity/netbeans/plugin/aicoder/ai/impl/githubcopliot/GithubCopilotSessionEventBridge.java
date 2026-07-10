@@ -62,10 +62,15 @@ public final class GithubCopilotSessionEventBridge {
             }
             listener.onAiProcessEvent(new TextDeltaEvent(deltaContent, null));
         });
-        session.on(AssistantTurnEndEvent.class, e -> {
-            lastMessageId = null;
-            listener.onAiProcessEvent(new TurnCompleteEvent());
-        });
+        // assistant.turn_end fires once per internal agentic-loop step (e.g. a
+        // tool-only step with no text output), not once per user-visible
+        // response — a multi-step response fires it several times before the
+        // session actually goes idle. The SDK's own sendAndWait() treats only
+        // session.idle as "the response is finished" (see
+        // CopilotSession#sendAndWait), so only session.idle may surface
+        // TurnCompleteEvent; mapping turn_end to it re-enables the send button
+        // mid-response whenever a step produces no text.
+        session.on(AssistantTurnEndEvent.class, e -> lastMessageId = null);
         session.on(SessionIdleEvent.class, e -> listener.onAiProcessEvent(new TurnCompleteEvent()));
         session.on(SessionUsageInfoEvent.class, e -> {
             SessionUsageInfoEvent.SessionUsageInfoEventData data = e.getData();
