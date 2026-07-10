@@ -41,7 +41,7 @@ public abstract class AiImplementation {
     }
 
     public void cancel() {
-        delegate().cancel();
+        delegate().interrupt(InterruptTypeEnum.Cancel);
     }
 
     /**

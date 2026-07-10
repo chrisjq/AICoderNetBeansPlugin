@@ -379,66 +379,6 @@ public class ClaudeAiProcessManager extends AiProcessManager {
         t.start();
     }
 
-    @Override
-    public void cancel() {
-        OutputStream stdin;
-        Process proc;
-        synchronized (this) {
-            if (!processing) {
-                return;
-            }
-            cancelledByUser = true;
-            processing = false;
-            synchronized (stdinLock) {
-                stdin = currentStdin;
-                currentStdin = null;
-            }
-            proc = currentProcess;
-            currentProcess = null;
-        }
-        boolean interruptSent = false;
-        if (stdin != null) {
-            try {
-                // Graceful interrupt: Claude (with --input-format stream-json) aborts the
-                // in-flight turn cleanly. Closing stdin then sends EOF so it exits.
-                JsonObject interrupt = new JsonObject();
-                interrupt.addProperty(ClaudeJsonKeyEnum.TYPE.key(), "control_request");
-                interrupt.addProperty(ClaudeJsonKeyEnum.REQUEST_ID.key(), "req_cancel");
-                JsonObject request = new JsonObject();
-                request.addProperty(ClaudeJsonKeyEnum.SUBTYPE.key(), "interrupt");
-                interrupt.add(ClaudeJsonKeyEnum.REQUEST.key(), request);
-                stdin.write((GSON.toJson(interrupt) + "\n").getBytes(StandardCharsets.UTF_8));
-                stdin.flush();
-                stdin.close();
-                interruptSent = true;
-            }
-            catch (IOException e) {
-                LOG.log(Level.FINE, "Interrupt write failed, destroying process", e);
-            }
-        }
-        if (interruptSent && proc != null) {
-            // Don't block the EDT: give Claude up to 3s to exit after the interrupt,
-            // then force-kill from a daemon thread as a fallback.
-            Process toKill = proc;
-            Thread killer = new Thread(() -> {
-                try {
-                    if (!toKill.waitFor(3, TimeUnit.SECONDS)) {
-                        toKill.destroyForcibly();
-                    }
-                }
-                catch (InterruptedException ie) {
-                    Thread.currentThread().interrupt();
-                }
-            }, "ai-cancel-fallback");
-            killer.setDaemon(true);
-            killer.start();
-        }
-        else if (proc != null) {
-            proc.destroyForcibly();
-        }
-        listener.onAiProcessEvent(new StatusEvent(StatusEventTypeEnum.STOPPED, StatusMessageUtil.formatStopped()));
-    }
-
     /**
      * Graceful interrupt without suppressing partial output: unlike cancel()
      * this does not set cancelledByUser, so partial results are still emitted,
@@ -447,21 +387,83 @@ public class ClaudeAiProcessManager extends AiProcessManager {
      */
     @Override
     public void interrupt(InterruptTypeEnum type) {
-        synchronized (stdinLock) {
-            if (currentStdin == null) {
-                return;
+        switch (type) {
+            case Mail -> {
+                synchronized (stdinLock) {
+                    if (currentStdin == null) {
+                        return;
+                    }
+                    try {
+                        JsonObject interrupt = new JsonObject();
+                        interrupt.addProperty(ClaudeJsonKeyEnum.TYPE.key(), "control_request");
+                        interrupt.addProperty(ClaudeJsonKeyEnum.REQUEST_ID.key(), "req_interrupt");
+                        JsonObject request = new JsonObject();
+                        request.addProperty(ClaudeJsonKeyEnum.SUBTYPE.key(), "interrupt");
+                        interrupt.add(ClaudeJsonKeyEnum.REQUEST.key(), request);
+                        currentStdin.write((GSON.toJson(interrupt) + "\n").getBytes(StandardCharsets.UTF_8));
+                        currentStdin.flush();
+                    }
+                    catch (IOException ignored) {
+                    }
+                }
             }
-            try {
-                JsonObject interrupt = new JsonObject();
-                interrupt.addProperty(ClaudeJsonKeyEnum.TYPE.key(), "control_request");
-                interrupt.addProperty(ClaudeJsonKeyEnum.REQUEST_ID.key(), "req_interrupt");
-                JsonObject request = new JsonObject();
-                request.addProperty(ClaudeJsonKeyEnum.SUBTYPE.key(), "interrupt");
-                interrupt.add(ClaudeJsonKeyEnum.REQUEST.key(), request);
-                currentStdin.write((GSON.toJson(interrupt) + "\n").getBytes(StandardCharsets.UTF_8));
-                currentStdin.flush();
-            }
-            catch (IOException ignored) {
+            case Cancel -> {
+                OutputStream stdin;
+                Process proc;
+                synchronized (this) {
+                    if (!processing) {
+                        return;
+                    }
+                    cancelledByUser = true;
+                    processing = false;
+                    synchronized (stdinLock) {
+                        stdin = currentStdin;
+                        currentStdin = null;
+                    }
+                    proc = currentProcess;
+                    currentProcess = null;
+                }
+                boolean interruptSent = false;
+                if (stdin != null) {
+                    try {
+                        // Graceful interrupt: Claude (with --input-format stream-json) aborts the
+                        // in-flight turn cleanly. Closing stdin then sends EOF so it exits.
+                        JsonObject interrupt = new JsonObject();
+                        interrupt.addProperty(ClaudeJsonKeyEnum.TYPE.key(), "control_request");
+                        interrupt.addProperty(ClaudeJsonKeyEnum.REQUEST_ID.key(), "req_cancel");
+                        JsonObject request = new JsonObject();
+                        request.addProperty(ClaudeJsonKeyEnum.SUBTYPE.key(), "interrupt");
+                        interrupt.add(ClaudeJsonKeyEnum.REQUEST.key(), request);
+                        stdin.write((GSON.toJson(interrupt) + "\n").getBytes(StandardCharsets.UTF_8));
+                        stdin.flush();
+                        stdin.close();
+                        interruptSent = true;
+                    }
+                    catch (IOException e) {
+                        LOG.log(Level.FINE, "Interrupt write failed, destroying process", e);
+                    }
+                }
+                if (interruptSent && proc != null) {
+                    // Don't block the EDT: give Claude up to 3s to exit after the interrupt,
+                    // then force-kill from a daemon thread as a fallback.
+                    Process toKill = proc;
+                    Thread killer = new Thread(() -> {
+                        try {
+                            if (!toKill.waitFor(3, TimeUnit.SECONDS)) {
+                                toKill.destroyForcibly();
+                            }
+                        }
+                        catch (InterruptedException ie) {
+                            Thread.currentThread().interrupt();
+                        }
+                    }, "ai-cancel-fallback");
+                    killer.setDaemon(true);
+                    killer.start();
+                }
+                else if (proc != null) {
+                    proc.destroyForcibly();
+                }
+                listener.onAiProcessEvent(new StatusEvent(StatusEventTypeEnum.STOPPED, StatusMessageUtil.formatStopped()));
             }
         }
     }

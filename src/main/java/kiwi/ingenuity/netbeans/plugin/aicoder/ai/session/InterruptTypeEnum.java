@@ -6,5 +6,5 @@ package kiwi.ingenuity.netbeans.plugin.aicoder.ai.session;
  */
 public enum InterruptTypeEnum {
     Mail,
-    User,
+    Cancel,
 }

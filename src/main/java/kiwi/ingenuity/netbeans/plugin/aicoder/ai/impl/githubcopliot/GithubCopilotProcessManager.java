@@ -469,24 +469,6 @@ public class GithubCopilotProcessManager extends AiProcessManager {
         t.start();
     }
 
-    @Override
-    public void cancel() {
-        Process proc;
-        synchronized (this) {
-            if (!processing) {
-                return;
-            }
-            cancelledByUser = true;
-            processing = false;
-            proc = currentProcess;
-            currentProcess = null;
-        }
-        if (proc != null) {
-            proc.destroyForcibly();
-        }
-        listener.onAiProcessEvent(new StatusEvent(StatusEventTypeEnum.STOPPED, StatusMessageUtil.formatStopped()));
-    }
-
     /**
      * Graceful interrupt: sends SIGTERM so the Copilot CLI can flush its
      * session file before exiting, reducing the risk of session corruption.
@@ -496,14 +478,32 @@ public class GithubCopilotProcessManager extends AiProcessManager {
      */
     @Override
     public void interrupt(InterruptTypeEnum type) {
+
+        if (!processing) {
+            return;
+        }
+
+        Process proc = currentProcess;
+
+        boolean signal = false;
+        boolean kill = false;
         switch (type) {
-            case User -> {
-                Process proc = currentProcess;
-                if (proc == null) {
-                    return;
-                }
+            case Mail -> {
+                //Do nothing
+                signal = true;
+            }
+            case Cancel -> {
+                signal = true;
+                kill = true;
+                cancelledByUser = true;
+            }
+        }
+
+        if (proc != null) {
+            if (signal) {
                 proc.destroy();  // SIGTERM — graceful shutdown
-                Thread killer = new Thread(() -> {
+
+                if (kill) {
                     try {
                         if (!proc.waitFor(5, TimeUnit.SECONDS)) {
                             proc.destroyForcibly();
@@ -512,9 +512,22 @@ public class GithubCopilotProcessManager extends AiProcessManager {
                     catch (InterruptedException ie) {
                         Thread.currentThread().interrupt();
                     }
-                }, "copilot-interrupt-fallback");
-                killer.setDaemon(true);
-                killer.start();
+                }
+            }
+            else if (kill) {
+                proc.destroyForcibly();
+            }
+        }
+
+        processing = false;
+        currentProcess = null;
+
+        switch (type) {
+            case Mail -> {
+                //Do nothing
+            }
+            case Cancel -> {
+                listener.onAiProcessEvent(new StatusEvent(StatusEventTypeEnum.STOPPED, StatusMessageUtil.formatStopped()));
             }
         }
     }

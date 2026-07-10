@@ -107,8 +107,6 @@ public abstract class AiProcessManager {
 
     public abstract void sendPrompt(String text, File workingDir, List<File> projectDirs);
 
-    public abstract void cancel();
-
     /**
      * Abort the in-flight turn. Backends that support a graceful interrupt
      * (keeping partial output / context) do so; others terminate the process.
