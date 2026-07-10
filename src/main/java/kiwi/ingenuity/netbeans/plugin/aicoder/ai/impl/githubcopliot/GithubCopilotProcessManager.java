@@ -1,28 +1,25 @@
 package kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.githubcopliot;
 
-import com.google.gson.JsonArray;
-import com.google.gson.JsonObject;
-import java.io.BufferedReader;
+import com.github.copilot.CopilotClient;
+import com.github.copilot.CopilotSession;
+import com.github.copilot.rpc.CopilotClientOptions;
+import com.github.copilot.rpc.McpHttpServerConfig;
+import com.github.copilot.rpc.PermissionHandler;
+import com.github.copilot.rpc.ResumeSessionConfig;
+import com.github.copilot.rpc.SessionConfig;
 import java.io.File;
-import java.io.IOException;
-import java.io.InputStreamReader;
-import java.nio.charset.StandardCharsets;
-import java.nio.file.Files;
-import java.nio.file.Path;
-import java.util.ArrayList;
 import java.util.List;
-import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.Map;
+import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 import java.util.logging.Level;
 import java.util.logging.Logger;
-import kiwi.ingenuity.netbeans.plugin.aicoder.PluginSettings;
-import kiwi.ingenuity.netbeans.plugin.aicoder.PluginUtil;
 import kiwi.ingenuity.netbeans.plugin.aicoder.StringConst;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.AiProcessManager;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.AiTypeEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.events.StatusEvent;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.events.StatusEventTypeEnum;
-import kiwi.ingenuity.netbeans.plugin.aicoder.ai.events.TurnCompleteEvent;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.githubcopliot.events.GithubCopilotFatalErrorEvent;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.githubcopliot.events.GithubCopilotQuotaEvent;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.githubcopliot.session.GithubCopilotAiSession;
@@ -34,26 +31,28 @@ import kiwi.ingenuity.netbeans.plugin.aicoder.process.server.McpServerRegistry;
 import kiwi.ingenuity.netbeans.plugin.aicoder.utils.StatusMessageUtil;
 
 /**
- * Drives the GitHub Copilot CLI (`copilot -p ... --output-format json`) one
- * process per turn, mirroring the Claude CLI integration. Session continuity is
- * via --session-id (same UUID each turn: created on the first call, resumed
- * after). Plugin MCP tools are exposed to the CLI per-session via
- * --additional-mcp-config pointing at the shared McpHookServer endpoint.
+ * Drives GitHub Copilot via a persistent SDK session (one CopilotClient +
+ * CopilotSession per plugin AI session), replacing the previous one-shot
+ * `copilot -p ... --output-format json` process-per-turn model. The persistent
+ * session is what makes graceful mid-turn interrupt (session.abort()) and live
+ * context-window usage (session.usage_info) possible — neither is exposed by
+ * one-shot -p mode in CLI 1.0.70.
  */
 public class GithubCopilotProcessManager extends AiProcessManager {
 
     private static final Logger LOG = Logger.getLogger(GithubCopilotProcessManager.class.getName());
 
-    // Copilot CLI --session-id (its own resume identifier). Normally equals the
-    // plugin session id, but is replaced with a fresh UUID after a corrupted
-    // session so MCP routing (which keys on the plugin session id) is unaffected.
+    // Copilot's own resumable session id. Normally equals the plugin session id,
+    // but is replaced with a fresh UUID after a corrupted resume so MCP routing
+    // (which keys on the plugin session id) is unaffected.
     private String copilotSessionId = null;
-    // Set when the CLI reports the session file is corrupted / cannot be loaded.
-    // On the next start() we then use a fresh session id instead of reusing the
-    // broken one (which would fail every turn).
     private volatile boolean sessionCorrupted = false;
     private GithubCopilotMcpRegistrar registrar = null;
     private GithubCopilotAiSession copilotAiSession = null;
+    private GithubCopilotSessionEventBridge eventBridge = null;
+
+    private CopilotClient client = null;
+    private CopilotSession copilotSession = null;
 
     public GithubCopilotProcessManager(AiProcessEventListener listener) {
         super(listener);
@@ -78,10 +77,6 @@ public class GithubCopilotProcessManager extends AiProcessManager {
                     StatusMessageUtil.formatSessionNotConfigured()));
             return;
         }
-        // MCP endpoint path + SessionRegistry always key on the stable plugin
-        // session id so tool routing works. The Copilot CLI --session-id is a
-        // separate identifier that may be reset to a fresh UUID after a corrupted
-        // session, without disturbing MCP routing.
         sessionId = currentSession.id();
         if (sessionCorrupted) {
             copilotSessionId = java.util.UUID.randomUUID().toString();
@@ -95,9 +90,7 @@ public class GithubCopilotProcessManager extends AiProcessManager {
             McpServerRegistry.deregister(registrar);
             registrar = null;
         }
-
         GithubCopilotMcpRegistrar reg = new GithubCopilotMcpRegistrar(sessionId);
-        // The supervisor owns registration; wait on its future (2-minute cap).
         boolean mcpReady;
         try {
             mcpReady = McpServerRegistry.register(reg).get(2, TimeUnit.MINUTES);
@@ -116,10 +109,52 @@ public class GithubCopilotProcessManager extends AiProcessManager {
             return;
         }
         registrar = reg;
-        // Register the MCP-layer session so plugin tool calls route to this
-        // session, and so it is visible to peers (ListAiSessions) and can
-        // receive inbox messages.
         copilotAiSession = new GithubCopilotAiSession(currentSession, listener);
+        // session.send() is fire-and-forget: its future resolves as soon as the
+        // message is queued, long before the assistant finishes responding. The
+        // real end-of-turn signal is the bridge's TurnCompleteEvent, so clear
+        // `processing` there (before forwarding to the UI) — mirrors exactly how
+        // the old one-shot-process code cleared it on TurnCompleteEvent rather
+        // than on process exit.
+        AiProcessEventListener turnAwareListener = event -> {
+            boolean isTurnComplete = event instanceof kiwi.ingenuity.netbeans.plugin.aicoder.ai.events.TurnCompleteEvent;
+            boolean shouldFire;
+            synchronized (GithubCopilotProcessManager.this) {
+                if (isTurnComplete) {
+                    processing = false;
+                }
+                shouldFire = !cancelledByUser;
+            }
+            if (shouldFire) {
+                listener.onAiProcessEvent(event);
+            }
+            if (isTurnComplete) {
+                GithubCopilotQuotaService.getQuotaAsync(executablePath, quota -> {
+                    if (quota != null) {
+                        listener.onAiProcessEvent(new GithubCopilotQuotaEvent(
+                                quota.unlimited(), quota.usedRequests(), quota.entitlementRequests(),
+                                quota.remainingPercentage(), quota.resetDate()));
+                    }
+                });
+            }
+        };
+        eventBridge = new GithubCopilotSessionEventBridge(turnAwareListener);
+        eventBridge.setOnError(msg -> listener.onAiProcessEvent(
+                new StatusEvent(StatusEventTypeEnum.EXITED, "GitHub Copilot: " + msg)));
+
+        CopilotClientOptions opts = new CopilotClientOptions();
+        opts.setCliPath(executablePath);
+        client = new CopilotClient(opts);
+        try {
+            client.start().get(2, TimeUnit.MINUTES);
+            copilotSession = createOrResumeSession(client, model);
+            eventBridge.attach(copilotSession);
+        }
+        catch (Exception e) {
+            handleSessionStartFailure(e);
+            return;
+        }
+
         running = true;
         listener.onAiProcessEvent(new StatusEvent(StatusEventTypeEnum.READY, StatusMessageUtil.formatReady("GitHub Copilot")));
         listener.onAiProcessEvent(new GithubCopilotFatalErrorEvent(null, null));
@@ -132,379 +167,131 @@ public class GithubCopilotProcessManager extends AiProcessManager {
         });
     }
 
-    private String buildMcpConfigJson() {
+    /**
+     * Resumes copilotSessionId if it exists on disk, otherwise creates a new
+     * session with that id. A first-ever start() always attempts resume first
+     * because copilotSessionId is set from the stable plugin session id, and
+     * "resume a session that doesn't exist yet" fails cleanly (caught below and
+     * retried as create) rather than needing an explicit existence check.
+     */
+    private CopilotSession createOrResumeSession(CopilotClient client, String model)
+            throws ExecutionException, InterruptedException, TimeoutException {
+        Map<String, com.github.copilot.rpc.McpServerConfig> mcpServers = buildMcpServers();
+        try {
+            ResumeSessionConfig resumeConfig = new ResumeSessionConfig()
+                    .setModel(model)
+                    .setExcludedTools(List.of("edit", "create"))
+                    .setOnPermissionRequest(PermissionHandler.APPROVE_ALL)
+                    .setMcpServers(mcpServers);
+            return client.resumeSession(copilotSessionId, resumeConfig).get(2, TimeUnit.MINUTES);
+        }
+        catch (ExecutionException resumeFailure) {
+            LOG.log(Level.INFO, "Resume failed for " + copilotSessionId + ", creating instead", resumeFailure);
+            SessionConfig createConfig = new SessionConfig()
+                    .setModel(model)
+                    .setExcludedTools(List.of("edit", "create"))
+                    .setOnPermissionRequest(PermissionHandler.APPROVE_ALL)
+                    .setMcpServers(mcpServers);
+            return client.createSession(createConfig).get(2, TimeUnit.MINUTES);
+        }
+    }
+
+    private Map<String, com.github.copilot.rpc.McpServerConfig> buildMcpServers() {
         McpHookServer server = McpServerRegistry.getServer();
         if (server == null || sessionId == null) {
-            return null;
+            return Map.of();
         }
         String endpoint = server.getBaseUrl() + "/mcp/" + AiTypeEnum.GitHubCoPilot.key();
-        JsonObject inner = new JsonObject();
-        inner.addProperty("type", "http");
-        inner.addProperty("url", endpoint);
-        JsonArray tools = new JsonArray();
-        tools.add("*");
-        inner.add("tools", tools);
-        JsonObject servers = new JsonObject();
-        servers.add(StringConst.PLUGIN_ID, inner);
-        JsonObject root = new JsonObject();
-        root.add("mcpServers", servers);
-        return root.toString();
+        McpHttpServerConfig mcpServer = new McpHttpServerConfig().setUrl(endpoint).setTools(List.of("*"));
+        return Map.of(StringConst.PLUGIN_ID, mcpServer);
     }
 
     /**
-     * Fires a GithubCopilotTokenUsageEvent carrying real context-window usage
-     * for this turn. Currently a no-op / placeholder: GitHub Copilot CLI 1.0.70
-     * exposes no context-window data in non-interactive (-p) mode — confirmed
-     * empty in both the JSON stream (no session.shutdown event; result.usage
-     * has no inputTokens/outputTokens/maxTokens) and the --log-dir log (no
-     * CompactionProcessor "Utilization" line, at any log level or turn count).
-     * Implement here once the CLI exposes this again (or the plugin moves to
-     * --acp mode, which may carry it).
+     * Maps a session-start failure to the same fatal-error events the old
+     * process-based flow reported after a nonzero exit + stderr grep — now read
+     * directly off the failed future's message instead of joined stderr lines.
+     * Message text confirmed live against the real CLI (not guessed): "Not
+     * authenticated..." and "...is not available." respectively.
      */
-    private void fireContextUsage(Path logDir, String model) {
+    private void handleSessionStartFailure(Exception e) {
+        running = false;
+        String msg = e.getMessage() != null ? e.getMessage() : "";
+        String lower = msg.toLowerCase();
+        if (msg.contains("could not be loaded") || msg.contains("corrupted")) {
+            sessionCorrupted = true;
+        }
+        if (lower.contains("not authenticat") || lower.contains("unauthorized")) {
+            listener.onAiProcessEvent(new GithubCopilotFatalErrorEvent(
+                    "AUTHENTICATION_REQUIRED", "Not authenticated — run `copilot login` in a terminal"));
+        }
+        else if (lower.contains("is not available") && model != null && !"auto".equalsIgnoreCase(model)) {
+            model = "auto";
+            GithubCopilotPluginSettings.setModel("auto");
+            listener.onAiProcessEvent(new StatusEvent(StatusEventTypeEnum.INFO,
+                    "Model was not available for your account — switched to 'auto'. Please resend your message."));
+        }
+        listener.onAiProcessEvent(new StatusEvent(StatusEventTypeEnum.FAILED,
+                StatusMessageUtil.formatSendFailed(msg)));
+        LOG.log(Level.WARNING, "GitHub Copilot session start failed", e);
     }
 
     @Override
     public synchronized void sendPrompt(String text, File workingDir, List<File> projectDirs) {
-        if (pendingDiff || !running || processing) {
+        if (pendingDiff || !running || processing || copilotSession == null) {
             return;
         }
         cancelledByUser = false;
         processing = true;
-
         if (sessionWorkingDir == null && workingDir != null && workingDir.isDirectory()) {
             sessionWorkingDir = workingDir;
         }
-        File effectiveWorkDir = sessionWorkingDir != null ? sessionWorkingDir : workingDir;
-        String sid = copilotSessionId;
-        String currentModel = model;
-        // Stable plugin session id (NOT copilotSessionId, which may be reset to a
-        // fresh UUID after corruption) — keys the per-session config/log dir.
-        String pluginSessionId = currentSession != null ? currentSession.id() : null;
-        String mcpConfig = buildMcpConfigJson();
-        List<File> projDirs = projectDirs != null ? projectDirs : List.of();
-
-        Thread t = new Thread(() -> {
-            List<String> stderrLines = new CopyOnWriteArrayList<>();
-            Process p = null;
-            Path logDir = null;
-            try {
-                // Under Debug JSON, log the full outgoing prompt (the -p argument,
-                // which carries the session identity block) so it can be verified
-                // in the IDE log — only stdout responses were logged before.
-                if (PluginSettings.isDebugJson()) {
-                    LOG.log(Level.INFO, "copilot prompt (-p): {0}", text);
-                }
-                List<String> args = new ArrayList<>();
-                args.add("-p");
-                args.add(text);
-                args.add("--output-format");
-                args.add("json");
-                args.add("--stream");
-                args.add("on");
-                args.add("--allow-all-tools");
-                // Deny Copilot's native file-mutation tools so it edits via the
-                // plugin's permission-gated MCP tools (ApplyEdit/WriteFile), which
-                // route through the NetBeans Accept/Reject diff panel.
-                args.add("--deny-tool");
-                args.add("edit");
-                args.add("--deny-tool");
-                args.add("create");
-                args.add("--no-color");
-                // Point the CLI's own log at the per-session config dir
-                // (~/.ai-coder/github_copilot/{sessionId}/logs) for diagnostics.
-                // Not currently parsed for context-window usage — see
-                // fireContextUsage(). This dir is removed when the session is
-                // deleted. Path.resolve keeps it platform-independent.
-                if (pluginSessionId != null) {
-                    try {
-                        Path dir = PluginUtil.getPluginAiSessionConfigDir(AiTypeEnum.GitHubCoPilot, pluginSessionId).resolve("logs");
-                        Files.createDirectories(dir);
-                        logDir = dir;
-                        args.add("--log-dir");
-                        args.add(dir.toString());
-                    }
-                    catch (IOException ioe) {
-                        LOG.log(Level.FINE, "Could not create Copilot log dir", ioe);
-                    }
-                }
-                // Do NOT add --enable-memory: prompt mode (-p) has memory
-                // disabled by default, which is what we want. Adding it would
-                // turn Copilot's persistent memory back on for every turn.
-                if (currentModel != null && !currentModel.isBlank()) {
-                    args.add("--model");
-                    args.add(currentModel);
-                }
-                if (sid != null) {
-                    args.add("--session-id");
-                    args.add(sid);
-                }
-                if (effectiveWorkDir != null && effectiveWorkDir.isDirectory()) {
-                    args.add("-C");
-                    args.add(effectiveWorkDir.getPath());
-                }
-                for (File d : projDirs) {
-                    if (d != null && d.isDirectory()) {
-                        args.add("--add-dir");
-                        args.add(d.getPath());
-                    }
-                }
-                if (mcpConfig != null) {
-                    args.add("--additional-mcp-config");
-                    args.add(mcpConfig);
-                }
-
-                List<String> cmd = GithubCopilotExecutableLocator.buildHostCommand(executablePath, args.toArray(String[]::new));
-                ProcessBuilder pb = new ProcessBuilder(cmd);
-                if (effectiveWorkDir != null && effectiveWorkDir.isDirectory()) {
-                    pb.directory(effectiveWorkDir);
-                }
-                pb.redirectErrorStream(false);
-                p = pb.start();
+        CopilotSession session = copilotSession;
+        // session.send() only resolves once the message is queued (fire-and-forget) —
+        // it does NOT mean the turn finished. Only handle the failure-to-queue case
+        // here; the success path's `processing` reset happens on TurnCompleteEvent
+        // in the turnAwareListener built in start().
+        session.send(text).whenComplete((messageId, err) -> {
+            if (err != null) {
                 synchronized (GithubCopilotProcessManager.this) {
-                    if (!running) {
-                        p.destroyForcibly();
-                        return;
-                    }
-                    currentProcess = p;
-                }
-                p.getOutputStream().close();
-
-                final Process proc = p;
-                boolean debugJson = PluginSettings.isDebugJson();
-                Thread stderrThread = new Thread(() -> {
-                    try (BufferedReader r = new BufferedReader(new InputStreamReader(proc.getErrorStream(), StandardCharsets.UTF_8))) {
-                        String line;
-                        while ((line = r.readLine()) != null) {
-                            if (stderrLines.size() < 1000) {
-                                stderrLines.add(line);
-                            }
-                            if (debugJson) {
-                                LOG.log(Level.INFO, "copilot stderr: {0}", line);
-                            }
-                        }
-                    }
-                    catch (IOException ignored) {
-                    }
-                }, "copilot-stderr");
-                stderrThread.setDaemon(true);
-                stderrThread.start();
-
-                // Clear `processing` before TurnCompleteEvent reaches the UI so that
-                // refreshInputEnabled() (which calls setSendEnabled(!isProcessing())) re-enables
-                // the input box. Without this the event arrives while the process is still
-                // running, so the chat box stays disabled after the first reply.
-                AiProcessEventListener parserListener = event -> {
-                    boolean isTurnComplete = event instanceof TurnCompleteEvent;
-                    boolean shouldFire;
-                    synchronized (GithubCopilotProcessManager.this) {
-                        if (isTurnComplete) {
-                            processing = false;
-                        }
-                        shouldFire = !cancelledByUser;
-                    }
-                    if (shouldFire) {
-                        listener.onAiProcessEvent(event);
-                    }
-                };
-                GithubCopilotStreamJsonParser parser = new GithubCopilotStreamJsonParser(parserListener);
-                if (copilotAiSession != null) {
-                    parser.setOnSessionId(copilotAiSession::registerSessionAlias);
-                }
-                // Capture a human-readable error (e.g. quota exceeded) reported in
-                // the JSON stream so we can show it instead of a bare exit code.
-                final java.util.concurrent.atomic.AtomicReference<String> apiError
-                        = new java.util.concurrent.atomic.AtomicReference<>();
-                parser.setOnError(apiError::set);
-                try (BufferedReader r = new BufferedReader(new InputStreamReader(p.getInputStream(), StandardCharsets.UTF_8))) {
-                    String line;
-                    while ((line = r.readLine()) != null) {
-                        if (debugJson) {
-                            LOG.log(Level.INFO, "copilot json: {0}", line);
-                        }
-                        parser.parseLine(line);
-                    }
-                }
-
-                stderrThread.join(2000);
-                boolean exited = p.waitFor(120, TimeUnit.SECONDS);
-                if (!exited) {
-                    p.destroyForcibly();
-                }
-                int code = exited ? p.exitValue() : -1;
-
-                boolean shouldReport;
-                GithubCopilotMcpRegistrar deadReg = null;
-                GithubCopilotAiSession deadSession = null;
-                synchronized (GithubCopilotProcessManager.this) {
-                    shouldReport = (currentProcess == p) && !cancelledByUser;
-                    if (currentProcess == p) {
-                        processing = false;
-                        currentProcess = null;
-                        cancelledByUser = false;
-                        if (code != 0) {
-                            running = false;
-                            deadReg = registrar;
-                            registrar = null;
-                            deadSession = copilotAiSession;
-                            copilotAiSession = null;
-                        }
-                    }
-                }
-                if (deadReg != null) {
-                    McpServerRegistry.deregister(deadReg);
-                }
-                if (deadSession != null) {
-                    deadSession.dispose();
-                }
-                // Context-window usage hook — currently a no-op, see fireContextUsage().
-                fireContextUsage(logDir, currentModel);
-                GithubCopilotQuotaService.getQuotaAsync(executablePath, quota -> {
-                    if (quota != null) {
-                        listener.onAiProcessEvent(new GithubCopilotQuotaEvent(
-                                quota.unlimited(), quota.usedRequests(), quota.entitlementRequests(),
-                                quota.remainingPercentage(), quota.resetDate()));
-                    }
-                });
-                if (shouldReport && code != 0) {
-                    String joined = String.join("\n", stderrLines);
-                    if (joined.contains("could not be loaded") || joined.contains("corrupted")) {
-                        sessionCorrupted = true;
-                    }
-                    String lower = joined.toLowerCase();
-                    if (lower.contains("not logged in") || lower.contains("authenticat")
-                            || lower.contains("unauthorized") || lower.contains("copilot login")) {
-                        listener.onAiProcessEvent(new GithubCopilotFatalErrorEvent(
-                                "AUTHENTICATION_REQUIRED", "Not authenticated — run `copilot login` in a terminal"));
-                    }
-                    if (lower.contains("not available") && currentModel != null
-                            && !"auto".equalsIgnoreCase(currentModel)) {
-                        synchronized (GithubCopilotProcessManager.this) {
-                            model = "auto";
-                        }
-                        GithubCopilotPluginSettings.setModel("auto");
-                        listener.onAiProcessEvent(new StatusEvent(StatusEventTypeEnum.INFO,
-                                "Model '" + currentModel + "' is not available for your account — switched to 'auto'. Please resend your message."));
-                    }
-                    // Prefer the human-readable error from the JSON stream (e.g.
-                    // "You have exceeded your monthly quota") so the user sees why
-                    // the turn produced no output, not just a bare exit code.
-                    String apiErr = apiError.get();
-                    String message;
-                    if (apiErr != null && !apiErr.isBlank()) {
-                        message = "GitHub Copilot: " + apiErr;
-                    }
-                    else {
-                        String detail = stderrLines.isEmpty() ? ""
-                                : ": " + String.join("\n", stderrLines.subList(0, Math.min(stderrLines.size(), 10)));
-                        message = "GitHub Copilot exited (code " + code + ")" + detail;
-                    }
-                    listener.onAiProcessEvent(new StatusEvent(StatusEventTypeEnum.EXITED, message));
-                }
-            }
-            catch (Exception e) {
-                if (e instanceof InterruptedException) {
-                    Thread.currentThread().interrupt();
-                }
-                boolean wasUserCancel;
-                GithubCopilotMcpRegistrar failedReg = null;
-                GithubCopilotAiSession failedSession = null;
-                synchronized (GithubCopilotProcessManager.this) {
-                    wasUserCancel = cancelledByUser;
-                    cancelledByUser = false;
                     processing = false;
-                    currentProcess = null;
-                    running = false;
-                    if (!wasUserCancel) {
-                        failedReg = registrar;
-                        registrar = null;
-                        failedSession = copilotAiSession;
-                        copilotAiSession = null;
-                    }
                 }
-                if (p != null) {
-                    p.destroyForcibly();
-                }
-                if (failedReg != null) {
-                    McpServerRegistry.deregister(failedReg);
-                }
-                if (failedSession != null) {
-                    failedSession.dispose();
-                }
-                if (!wasUserCancel) {
+                if (!cancelledByUser) {
+                    LOG.log(Level.WARNING, "GitHub Copilot send failed", err);
                     listener.onAiProcessEvent(new StatusEvent(StatusEventTypeEnum.FAILED,
-                            StatusMessageUtil.formatSendFailed(e.getMessage())));
+                            StatusMessageUtil.formatSendFailed(err.getMessage())));
                 }
             }
-            finally {
-                synchronized (GithubCopilotProcessManager.this) {
-                    processing = false;
-                }
-            }
-        }, "copilot-prompt");
-        t.setDaemon(true);
-        t.start();
+        });
     }
 
     /**
-     * Graceful interrupt: sends SIGTERM so the Copilot CLI can flush its
-     * session file before exiting, reducing the risk of session corruption.
-     * Falls back to SIGKILL after 5 seconds if the process has not exited.
-     * Unlike Claude (which accepts a JSON interrupt on stdin), Copilot runs
-     * one-shot with stdin closed immediately, so no in-band signal is possible.
+     * Graceful interrupt: Cancel aborts the current turn without tearing down
+     * the session (session.abort()) — previously this had to kill the whole OS
+     * process since one-shot -p had no in-band signal. Mail interjects the
+     * inter-AI mail notification into the running turn via immediate-mode send
+     * instead of killing anything — Mail was always meant to interrupt and
+     * inject, never to kill (confirmed with Chris).
      */
     @Override
     public void interrupt(InterruptTypeEnum type) {
-
-        if (!processing) {
+        CopilotSession session = copilotSession;
+        if (session == null) {
             return;
         }
-
-        Process proc = currentProcess;
-
-        boolean signal = false;
-        boolean kill = false;
         switch (type) {
-            case Mail -> {
-                //Do nothing
-                signal = true;
-            }
             case Cancel -> {
-                signal = true;
-                kill = true;
                 cancelledByUser = true;
-            }
-        }
-
-        if (proc != null) {
-            if (signal) {
-                proc.destroy();  // SIGTERM — graceful shutdown
-
-                if (kill) {
-                    try {
-                        if (!proc.waitFor(5, TimeUnit.SECONDS)) {
-                            proc.destroyForcibly();
-                        }
-                    }
-                    catch (InterruptedException ie) {
-                        Thread.currentThread().interrupt();
-                    }
-                }
-            }
-            else if (kill) {
-                proc.destroyForcibly();
-            }
-        }
-
-        processing = false;
-        currentProcess = null;
-
-        switch (type) {
-            case Mail -> {
-                //Do nothing
-            }
-            case Cancel -> {
+                session.abort();
+                processing = false;
                 listener.onAiProcessEvent(new StatusEvent(StatusEventTypeEnum.STOPPED, StatusMessageUtil.formatStopped()));
+            }
+            case Mail -> {
+                if (processing) {
+                    com.github.copilot.rpc.MessageOptions options = new com.github.copilot.rpc.MessageOptions()
+                            .setPrompt("[inbox] You have a new message — check it when convenient.")
+                            .setMode("immediate");
+                    session.send(options);
+                }
             }
         }
     }
@@ -514,10 +301,6 @@ public class GithubCopilotProcessManager extends AiProcessManager {
         running = false;
         processing = false;
         cancelledByUser = true;
-        if (currentProcess != null) {
-            currentProcess.destroyForcibly();
-            currentProcess = null;
-        }
         GithubCopilotAiSession sess = copilotAiSession;
         copilotAiSession = null;
         if (sess != null) {
@@ -528,6 +311,12 @@ public class GithubCopilotProcessManager extends AiProcessManager {
         if (reg != null) {
             McpServerRegistry.deregister(reg);
         }
+        if (client != null) {
+            client.close();
+        }
+        client = null;
+        copilotSession = null;
+        eventBridge = null;
         sessionId = null;
         copilotSessionId = null;
         sessionWorkingDir = null;

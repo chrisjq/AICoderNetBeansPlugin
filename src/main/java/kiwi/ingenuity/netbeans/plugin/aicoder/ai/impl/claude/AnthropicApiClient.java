@@ -175,10 +175,10 @@ public class AnthropicApiClient {
             // it directly, with only a small 1s floor to avoid a busy-retry.
             if (header.matches("\\d+")) {
                 long seconds = Long.parseLong(header);
-                return Math.max(1000L, seconds * 1000L);
+                return Math.max(60000L, seconds * 1000L);
             }
             long retryTime = parseHttpDate(header);
-            return Math.max(1000L, retryTime - System.currentTimeMillis());
+            return Math.max(60000L, retryTime - System.currentTimeMillis());
         }
         catch (Exception e) {
             LOG.log(Level.WARNING, "Failed to parse Retry-After header: {0}", retryAfterHeader);
