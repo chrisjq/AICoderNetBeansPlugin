@@ -1,7 +1,13 @@
 package kiwi.ingenuity.netbeans.plugin.aicoder.process.server;
 
-import java.util.ArrayList;
+import java.net.InetAddress;
+import java.net.InetSocketAddress;
+import java.net.Socket;
 import java.util.List;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.AiTypeEnum;
 import org.junit.jupiter.api.AfterEach;
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -13,19 +19,27 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
 /**
- * Lifecycle tests for {@link McpServerRegistry}. Uses an ephemeral port
- * (portOverride = 0) and a fake registrar so no real AI CLI is invoked and no
- * fixed port is bound.
+ * Lifecycle tests for the rev-2 supervisor {@link McpServerRegistry}, where the
+ * supervisor owns ALL registration logic. {@code register()} returns a future
+ * (waited on via {@link #register}); {@code deregister()} and its per-type
+ * teardown are fire-and-forget on the supervisor thread, so teardown/stop
+ * assertions poll ({@link #awaitCount}/{@link #awaitServerStopped}). Liveness
+ * is a plain TCP connect to avoid the surefire/NbPreferences MCP-HTTP path.
  */
 class McpServerRegistryTest {
 
     /**
-     * Records which lifecycle callbacks the registry invoked.
+     * Records which lifecycle callbacks the registry invoked. {@code events} is
+     * written by the supervisor thread and read by the test thread, so it is
+     * thread-safe.
      */
     private static final class FakeRegistrar extends AiMcpRegistrar {
 
-        final List<String> events = new ArrayList<>();
-        boolean hooksResult = true;
+        final List<String> events = new CopyOnWriteArrayList<>();
+        volatile boolean hooksResult = true;
+        volatile boolean throwInRegisterHooks = false;
+        volatile CountDownLatch hookEntered = null;
+        volatile CountDownLatch hookGate = null;
 
         FakeRegistrar(String sessionId, AiTypeEnum type) {
             super(sessionId, type);
@@ -44,6 +58,20 @@ class McpServerRegistryTest {
         @Override
         public boolean registerHooks(String serverBaseUrl) {
             events.add("registerHooks");
+            if (throwInRegisterHooks) {
+                throw new RuntimeException("boom");
+            }
+            if (hookGate != null) {
+                if (hookEntered != null) {
+                    hookEntered.countDown();
+                }
+                try {
+                    hookGate.await(30, TimeUnit.SECONDS);
+                }
+                catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                }
+            }
             return hooksResult;
         }
 
@@ -61,18 +89,20 @@ class McpServerRegistryTest {
     void setUp() {
         McpServerRegistry.stopAll();
         McpServerRegistry.portOverride = 0;
+        McpServerRegistry.pollIntervalMillis = 100; // snappy health ticks for tests
     }
 
     @AfterEach
     void tearDown() {
         McpServerRegistry.stopAll();
         McpServerRegistry.portOverride = null;
+        McpServerRegistry.pollIntervalMillis = 5000;
     }
 
     @Test
     void firstSessionStartsServerAndRegistersTypeOnce() {
         FakeRegistrar claude = new FakeRegistrar("c1", AiTypeEnum.CLAUDE);
-        assertTrue(McpServerRegistry.register(claude));
+        assertTrue(register(claude));
         assertNotNull(McpServerRegistry.getServer());
         assertEquals(1, claude.count("registerHooks"));
         assertEquals(1, claude.count("add"));
@@ -82,179 +112,252 @@ class McpServerRegistryTest {
     void secondSessionOfSameTypeDoesNotReRegister() {
         FakeRegistrar c1 = new FakeRegistrar("c1", AiTypeEnum.CLAUDE);
         FakeRegistrar c2 = new FakeRegistrar("c2", AiTypeEnum.CLAUDE);
-        assertTrue(McpServerRegistry.register(c1));
-        assertTrue(McpServerRegistry.register(c2));
+        assertTrue(register(c1));
+        assertTrue(register(c2));
         assertEquals(0, c2.count("registerHooks"));
         assertEquals(0, c2.count("add"));
     }
 
     @Test
+    void duplicateSessionRegisterDedupes() {
+        FakeRegistrar c1 = new FakeRegistrar("c1", AiTypeEnum.CLAUDE);
+        assertTrue(register(c1));
+        // Same sessionId again: dedupe — completes true, no extra hooks/endpoint.
+        FakeRegistrar dup = new FakeRegistrar("c1", AiTypeEnum.CLAUDE);
+        assertTrue(register(dup));
+        assertEquals(0, dup.count("registerHooks"));
+        assertEquals(0, dup.count("add"));
+        assertNotNull(McpServerRegistry.getServer());
+    }
+
+    @Test
     void hooksRegisteredPerTypeRegardlessOfStartOrder() {
-        // Regression: a Copilot session starting first must not stop a later
-        // Claude session from registering Claude's diff-intercept hook.
         FakeRegistrar copilot = new FakeRegistrar("g1", AiTypeEnum.GitHubCoPilot);
         FakeRegistrar claude = new FakeRegistrar("c1", AiTypeEnum.CLAUDE);
-        assertTrue(McpServerRegistry.register(copilot));
-        assertTrue(McpServerRegistry.register(claude));
+        assertTrue(register(copilot));
+        assertTrue(register(claude));
         assertEquals(1, copilot.count("registerHooks"));
         assertEquals(1, claude.count("registerHooks"));
     }
 
     @Test
-    void lastSessionOfTypeTearsDownThatTypeOnly() {
+    void lastSessionOfTypeTearsDownThatTypeOnly() throws Exception {
         FakeRegistrar claude = new FakeRegistrar("c1", AiTypeEnum.CLAUDE);
         FakeRegistrar copilot = new FakeRegistrar("g1", AiTypeEnum.GitHubCoPilot);
-        assertTrue(McpServerRegistry.register(claude));
-        assertTrue(McpServerRegistry.register(copilot));
-        // Measure only teardown-phase callbacks. register() also calls
-        // removeMcpEndpoint() once as idempotent stale-cleanup before adding,
-        // so clear the recorded events after the registration phase.
+        assertTrue(register(claude));
+        assertTrue(register(copilot));
         claude.events.clear();
         copilot.events.clear();
 
-        McpServerRegistry.deregister(claude);
-        // Claude torn down; server still running for Copilot.
+        McpServerRegistry.deregister(claude); // fire-and-forget
+        awaitCount(claude, "unregisterHooks", 1, 3000);
         assertEquals(1, claude.count("remove"));
-        assertEquals(1, claude.count("unregisterHooks"));
-        assertNotNull(McpServerRegistry.getServer());
         assertEquals(0, copilot.count("unregisterHooks"));
+        assertNotNull(McpServerRegistry.getServer()); // still up for Copilot
 
         McpServerRegistry.deregister(copilot);
+        awaitCount(copilot, "unregisterHooks", 1, 3000);
         assertEquals(1, copilot.count("remove"));
-        assertEquals(1, copilot.count("unregisterHooks"));
-        assertNull(McpServerRegistry.getServer());
+        assertTrue(awaitServerStopped(3000));
     }
 
     @Test
-    void typeTornDownOnlyAfterAllItsSessionsClose() {
+    void typeTornDownOnlyAfterAllItsSessionsClose() throws Exception {
         FakeRegistrar c1 = new FakeRegistrar("c1", AiTypeEnum.CLAUDE);
         FakeRegistrar c2 = new FakeRegistrar("c2", AiTypeEnum.CLAUDE);
-        assertTrue(McpServerRegistry.register(c1));
-        assertTrue(McpServerRegistry.register(c2));
-        // Measure only teardown-phase callbacks (register() also calls
-        // removeMcpEndpoint() once as idempotent stale-cleanup).
+        assertTrue(register(c1));
+        assertTrue(register(c2));
         c1.events.clear();
         c2.events.clear();
 
         McpServerRegistry.deregister(c1);
-        // One Claude session remains: no teardown for c1, server stays up.
-        assertEquals(0, c1.count("remove"));
-        assertEquals(0, c1.count("unregisterHooks"));
-        assertNotNull(McpServerRegistry.getServer());
-
         McpServerRegistry.deregister(c2);
+        // Both processed in order: c1 is not last-of-type, c2 is.
+        awaitCount(c2, "unregisterHooks", 1, 3000);
+        assertEquals(0, c1.count("unregisterHooks"), "c1 was not the last of its type");
         assertEquals(1, c2.count("remove"));
-        assertEquals(1, c2.count("unregisterHooks"));
-        assertNull(McpServerRegistry.getServer());
+        assertTrue(awaitServerStopped(3000));
     }
 
     @Test
-    void failedHookRegistrationRollsBackAndStopsServer() {
+    void failedHookRegistrationRollsBackAndStopsServer() throws Exception {
         FakeRegistrar bad = new FakeRegistrar("c1", AiTypeEnum.CLAUDE);
         bad.hooksResult = false;
-        assertFalse(McpServerRegistry.register(bad));
+        assertFalse(register(bad));
         assertEquals(0, bad.count("add"));
-        assertNull(McpServerRegistry.getServer());
+        assertTrue(awaitServerStopped(3000), "failed registration must leave no running server");
+    }
+
+    @Test
+    void poisonedEventDoesNotKillSupervisor() throws Exception {
+        // A registrar that throws must not take the supervisor thread down.
+        FakeRegistrar poison = new FakeRegistrar("c1", AiTypeEnum.CLAUDE);
+        poison.throwInRegisterHooks = true;
+        assertFalse(register(poison), "poisoned register completes false");
+        assertTrue(awaitServerStopped(3000), "its bookkeeping is undone, server stops");
+
+        // Supervisor survived: a later good registration still works.
+        FakeRegistrar good = new FakeRegistrar("c2", AiTypeEnum.CLAUDE);
+        assertTrue(register(good));
+        assertNotNull(McpServerRegistry.getServer());
+    }
+
+    @Test
+    void stopAllCompletesPendingRegisterFutures() throws Exception {
+        // Block the supervisor inside registerHooks of the first registration so a
+        // second REGISTER stays pending in the queue; stopAll must complete that
+        // pending future (false) rather than leave the caller hanging.
+        FakeRegistrar blocker = new FakeRegistrar("c1", AiTypeEnum.CLAUDE);
+        blocker.hookEntered = new CountDownLatch(1);
+        blocker.hookGate = new CountDownLatch(1);
+        CompletableFuture<Boolean> f1 = McpServerRegistry.register(blocker);
+        assertTrue(blocker.hookEntered.await(3, TimeUnit.SECONDS), "supervisor should reach registerHooks");
+
+        FakeRegistrar pending = new FakeRegistrar("c2", AiTypeEnum.CLAUDE);
+        CompletableFuture<Boolean> f2 = McpServerRegistry.register(pending); // stuck behind blocker
+
+        McpServerRegistry.stopAll(); // interrupts blocker, drains queue completing f2
+
+        assertFalse(f2.get(3, TimeUnit.SECONDS), "pending REGISTER future must be completed, not hang");
+        blocker.hookGate.countDown(); // release in case the interrupt was missed
+        f1.getNow(false); // must not hang; value irrelevant
     }
 
     @Test
     void serverServesAgainAfterFullTeardownAndRestart() throws Exception {
-        // Reproduces "MCP server doesn't start again after all AIs close":
-        // verify the server actually SERVES HTTP both before and after a full
-        // teardown/restart cycle (the listener starts lazily in registerSession).
         FakeRegistrar r1 = new FakeRegistrar("c1", AiTypeEnum.CLAUDE);
-        assertTrue(McpServerRegistry.register(r1));
+        assertTrue(register(r1));
         McpHookServer s1 = McpServerRegistry.getServer();
         assertNotNull(s1);
-        s1.registerSession("c1", "claude", List.of(), false);
-        assertEquals(200, probeInitialize(s1), "server should serve before teardown");
+        assertTrue(isServing(s1), "server should serve before teardown");
 
         McpServerRegistry.deregister(r1);
-        assertNull(McpServerRegistry.getServer());
+        assertTrue(awaitServerStopped(3000));
 
         FakeRegistrar r2 = new FakeRegistrar("c2", AiTypeEnum.CLAUDE);
-        assertTrue(McpServerRegistry.register(r2));
+        assertTrue(register(r2));
         McpHookServer s2 = McpServerRegistry.getServer();
         assertNotNull(s2);
-        s2.registerSession("c2", "claude", List.of(), false);
-        assertEquals(200, probeInitialize(s2), "server should serve again after restart");
+        assertTrue(isServing(s2), "server should serve again after restart");
     }
 
     @Test
     void serverRebindsSameFixedPortAfterTeardown() throws Exception {
-        // Production uses a FIXED port and must rebind the SAME port after all
-        // AIs close. The ephemeral-port test can't catch a same-port rebind
-        // failure, so pin a known-free port and cycle it.
         int port;
-        try (java.net.ServerSocket probe = new java.net.ServerSocket(0)) {
+        try (java.net.ServerSocket probe = new java.net.ServerSocket()) {
+            probe.bind(new InetSocketAddress(InetAddress.getLoopbackAddress(), 0));
             port = probe.getLocalPort();
         }
         McpServerRegistry.portOverride = port;
 
         FakeRegistrar r1 = new FakeRegistrar("c1", AiTypeEnum.CLAUDE);
-        assertTrue(McpServerRegistry.register(r1));
-        McpServerRegistry.getServer().registerSession("c1", "claude", List.of(), false);
+        assertTrue(register(r1));
         McpServerRegistry.deregister(r1);
+        assertTrue(awaitServerStopped(3000));
 
         FakeRegistrar r2 = new FakeRegistrar("c2", AiTypeEnum.CLAUDE);
-        assertTrue(McpServerRegistry.register(r2), "must rebind the same fixed port after teardown");
+        assertTrue(register(r2), "must rebind the same fixed port after teardown");
         McpHookServer s2 = McpServerRegistry.getServer();
         assertNotNull(s2);
-        s2.registerSession("c2", "claude", List.of(), false);
-        assertEquals(200, probeInitialize(s2), "server should serve again on the same port");
+        assertEquals(port, s2.getPort());
+        assertTrue(isServing(s2), "server should serve again on the same port");
     }
 
     @Test
-    void registerReplacesAStoppedServerInstance() throws Exception {
-        // If the shared server ever ends up stopped-but-not-nulled (e.g. an
-        // exception during teardown skipped the null assignment), register()
-        // must replace it rather than hand back a dead server — otherwise the
-        // MCP server stays down until NetBeans restarts.
+    void healthTickResurrectsForceStoppedServer() throws Exception {
         FakeRegistrar r1 = new FakeRegistrar("c1", AiTypeEnum.CLAUDE);
-        assertTrue(McpServerRegistry.register(r1));
+        assertTrue(register(r1));
         McpHookServer s1 = McpServerRegistry.getServer();
-        s1.registerSession("c1", "claude", List.of(), false);
-        s1.stop(); // leaked: stopped but registry still references it
+        assertNotNull(s1);
+        s1.stop(); // kill the listener behind the registry's back
         assertTrue(s1.isStopped());
 
-        FakeRegistrar r2 = new FakeRegistrar("c2", AiTypeEnum.CLAUDE);
-        assertTrue(McpServerRegistry.register(r2));
+        assertTrue(awaitServerRunning(3000), "health tick should resurrect the server");
         McpHookServer s2 = McpServerRegistry.getServer();
         assertNotNull(s2);
-        assertFalse(s2.isStopped(), "register() should replace a stopped server");
-        s2.registerSession("c2", "claude", List.of(), false);
-        assertEquals(200, probeInitialize(s2), "replacement server should serve");
-    }
-
-    /**
-     * POSTs a minimal MCP initialize and returns the HTTP status code.
-     */
-    private static int probeInitialize(McpHookServer server) throws Exception {
-        java.net.URL url = java.net.URI.create(server.getBaseUrl() + "/mcp/claude").toURL();
-        java.net.HttpURLConnection con = (java.net.HttpURLConnection) url.openConnection();
-        con.setRequestMethod("POST");
-        con.setConnectTimeout(2000);
-        con.setReadTimeout(2000);
-        con.setDoOutput(true);
-        con.getOutputStream().write(
-                "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"initialize\",\"params\":{}}"
-                        .getBytes(java.nio.charset.StandardCharsets.UTF_8));
-        int code = con.getResponseCode();
-        con.disconnect();
-        return code;
+        assertFalse(s2.isStopped());
+        assertTrue(isServing(s2), "resurrected server should accept connections");
     }
 
     @Test
-    void reRegisteringTypeAfterTeardownReinstallsEndpoint() {
+    void stopAllStopsServerAndSupervisorThenRecovers() {
+        FakeRegistrar r1 = new FakeRegistrar("c1", AiTypeEnum.CLAUDE);
+        assertTrue(register(r1));
+        assertNotNull(McpServerRegistry.getServer());
+
+        McpServerRegistry.stopAll();
+        assertNull(McpServerRegistry.getServer(), "stopAll joins the supervisor and stops the server");
+
+        FakeRegistrar r2 = new FakeRegistrar("c2", AiTypeEnum.CLAUDE);
+        assertTrue(register(r2));
+        McpHookServer s2 = McpServerRegistry.getServer();
+        assertNotNull(s2);
+        assertFalse(s2.isStopped());
+    }
+
+    @Test
+    void reRegisteringTypeAfterTeardownReinstallsEndpoint() throws Exception {
         FakeRegistrar c1 = new FakeRegistrar("c1", AiTypeEnum.CLAUDE);
-        assertTrue(McpServerRegistry.register(c1));
+        assertTrue(register(c1));
         McpServerRegistry.deregister(c1);
-        assertNull(McpServerRegistry.getServer());
+        assertTrue(awaitServerStopped(3000));
 
         FakeRegistrar c2 = new FakeRegistrar("c2", AiTypeEnum.CLAUDE);
-        assertTrue(McpServerRegistry.register(c2));
+        assertTrue(register(c2));
         assertEquals(1, c2.count("registerHooks"));
         assertEquals(1, c2.count("add"));
         assertNotNull(McpServerRegistry.getServer());
+    }
+
+    // ---- helpers ----
+    private static boolean register(FakeRegistrar r) {
+        try {
+            return McpServerRegistry.register(r).get(5, TimeUnit.SECONDS);
+        }
+        catch (Exception e) {
+            return false;
+        }
+    }
+
+    private static void awaitCount(FakeRegistrar r, String event, long expected, long timeoutMs)
+            throws InterruptedException {
+        long deadline = System.currentTimeMillis() + timeoutMs;
+        while (System.currentTimeMillis() < deadline && r.count(event) != expected) {
+            Thread.sleep(20);
+        }
+        assertEquals(expected, r.count(event), "count of '" + event + "'");
+    }
+
+    private static boolean awaitServerRunning(long timeoutMs) throws InterruptedException {
+        long deadline = System.currentTimeMillis() + timeoutMs;
+        while (System.currentTimeMillis() < deadline) {
+            McpHookServer s = McpServerRegistry.getServer();
+            if (s != null && !s.isStopped()) {
+                return true;
+            }
+            Thread.sleep(20);
+        }
+        return false;
+    }
+
+    private static boolean awaitServerStopped(long timeoutMs) throws InterruptedException {
+        long deadline = System.currentTimeMillis() + timeoutMs;
+        while (System.currentTimeMillis() < deadline) {
+            if (McpServerRegistry.getServer() == null) {
+                return true;
+            }
+            Thread.sleep(20);
+        }
+        return false;
+    }
+
+    private static boolean isServing(McpHookServer server) {
+        try (Socket sock = new Socket()) {
+            sock.connect(new InetSocketAddress(InetAddress.getLoopbackAddress(), server.getPort()), 1000);
+            return true;
+        }
+        catch (Exception e) {
+            return false;
+        }
     }
 }

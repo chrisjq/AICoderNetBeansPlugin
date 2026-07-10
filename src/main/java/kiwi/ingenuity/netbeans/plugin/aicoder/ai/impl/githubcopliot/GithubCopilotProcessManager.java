@@ -102,8 +102,26 @@ public class GithubCopilotProcessManager extends AiProcessManager {
             copilotSessionId = currentSession.id();
         }
 
+        if (registrar != null) {
+            McpServerRegistry.deregister(registrar);
+            registrar = null;
+        }
+
         GithubCopilotMcpRegistrar reg = new GithubCopilotMcpRegistrar(sessionId);
-        if (!McpServerRegistry.register(reg)) {
+        // The supervisor owns registration; wait on its future (2-minute cap).
+        boolean mcpReady;
+        try {
+            mcpReady = McpServerRegistry.register(reg).get(2, TimeUnit.MINUTES);
+        }
+        catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            mcpReady = false;
+        }
+        catch (Exception e) {
+            LOG.log(Level.WARNING, "MCP registration failed for session " + sessionId, e);
+            mcpReady = false;
+        }
+        if (!mcpReady) {
             listener.onAiProcessEvent(new StatusEvent(StatusEventTypeEnum.FAILED,
                     StatusMessageUtil.formatMcpSetupFailed()));
             return;

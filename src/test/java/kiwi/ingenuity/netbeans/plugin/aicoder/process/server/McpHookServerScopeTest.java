@@ -1,6 +1,5 @@
 package kiwi.ingenuity.netbeans.plugin.aicoder.process.server;
 
-import kiwi.ingenuity.netbeans.plugin.aicoder.process.server.McpHookServer;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
@@ -18,6 +17,7 @@ class McpHookServerScopeTest {
         Path fileB = Files.createFile(dirB.resolve("Foo.java"));
 
         McpHookServer s = new McpHookServer(0);
+        s.init();
         try {
             s.registerSession("c1", "claude", List.of(dirA.toFile()), true);
             // Project B not in the start-time scope → rejected.
@@ -34,6 +34,7 @@ class McpHookServerScopeTest {
     @Test
     void updateSessionScope_unknownSession_isNoop() throws Exception {
         McpHookServer s = new McpHookServer(0);
+        s.init();
         try {
             s.updateSessionScope("never-registered", List.of(), true); // must not throw
         }

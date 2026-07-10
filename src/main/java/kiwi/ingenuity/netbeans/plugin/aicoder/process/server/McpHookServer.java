@@ -82,9 +82,9 @@ public class McpHookServer {
         return tool != McpToolEnum.GET_INSTRUCTIONS;
     }
 
-    private final HttpServer httpServer;
-    private final int port;
-    private final ExecutorService executor;
+    private HttpServer httpServer;
+    private int port;
+    private ExecutorService executor;
     private final Set<String> activeSessions = Collections.newSetFromMap(new ConcurrentHashMap<>());
     private final ReentrantLock mutationLock = new ReentrantLock(true);
     private final Map<String, ReentrantLock> hookLocks = new ConcurrentHashMap<>();
@@ -93,19 +93,72 @@ public class McpHookServer {
     private final Map<String, String> sessionAiTypeKey = new ConcurrentHashMap<>();
     private boolean started = false;
     private volatile boolean stopped = false;
+    private String name = "";
+    // Captured at init() so getBaseUrl()/getPort() stay valid after stop() nulls httpServer.
+    private volatile String baseUrl = null;
 
-    public McpHookServer(int port) throws IOException {
+    public McpHookServer(int port) {
+        this.port = port;
+    }
+
+    public void init() throws IOException {
         applyConnectionSettings();
-        httpServer = HttpServer.create(new InetSocketAddress(InetAddress.getLoopbackAddress(), port), 0);
-        this.port = httpServer.getAddress().getPort();
-        executor = Executors.newCachedThreadPool(r -> {
-            Thread t = new Thread(r, "hook-server-" + this.port);
-            t.setDaemon(true);
-            return t;
-        });
-        httpServer.setExecutor(executor);
-        httpServer.createContext("/", this::handle);
-        httpServer.createContext("/mcp", this::handleMcp);
+        try {
+            httpServer = HttpServer.create(new InetSocketAddress(InetAddress.getLoopbackAddress(), getPort()), 0);
+            this.port = httpServer.getAddress().getPort();
+            this.name = "hook-server-" + getPort();
+            InetAddress boundAddr = httpServer.getAddress().getAddress();
+            String host = boundAddr.getHostAddress();
+            if (boundAddr instanceof Inet6Address) {
+                host = "[" + host + "]";
+            }
+            this.baseUrl = "http://" + host + ":" + getPort();
+
+            executor = Executors.newCachedThreadPool(r -> {
+                Thread t = new Thread(r, StringConst.PLUGIN_ID + "-mcp-server-" + getPort());
+                t.setDaemon(true);
+                return t;
+            });
+
+            httpServer.setExecutor(executor);
+            httpServer.createContext("/", this::handle);
+            httpServer.createContext("/mcp", this::handleMcp);
+            LOG.log(Level.INFO, "Inited {0}", this.name);
+        }
+        catch (IOException e) {
+            if (httpServer != null) {
+                try {
+                    httpServer.stop(0);
+                }
+                catch (Exception ex1) {
+                }
+
+                httpServer = null;
+            }
+
+            if (executor != null) {
+                executor.shutdown();
+                executor = null;
+            }
+
+            throw e;
+        }
+    }
+
+    /**
+     * Start accepting connections. Called only by the {@link McpServerRegistry}
+     * supervisor after a successful {@link #init()}. Idempotent.
+     */
+    public void start() {
+        if (started) {
+            return;
+        }
+        if (httpServer == null) {
+            throw new IllegalStateException("start() called before init()");
+        }
+        httpServer.start();
+        started = true;
+        LOG.log(Level.INFO, "MCP hook server listening on port {0}", getPort());
     }
 
     /**
@@ -129,18 +182,15 @@ public class McpHookServer {
      * @param aiTypeKey AI type key from {@code AiTypeEnum.key()}, e.g.
      * {@code "claude"}
      */
-    public synchronized void registerSession(String sessionId, String aiTypeKey,
+    public void registerSession(String sessionId, String aiTypeKey,
             List<java.io.File> projectDirs, boolean restrictToProjectFiles) {
         if (sessionId == null) {
             return;
         }
-
-        if (!started) {
-            httpServer.start();
-            started = true;
-            LOG.log(Level.INFO, "MCP hook server listening on port {0}", this.port);
-        }
-
+        // Pure bookkeeping: the supervisor (McpServerRegistry) owns starting the
+        // HTTP listener via start(), so by the time a session registers here the
+        // server is already accepting connections. The backing maps are all
+        // concurrent, so no synchronization is required.
         sessionAiTypeKey.put(sessionId, aiTypeKey);
         sessionProjectDirs.put(sessionId, projectDirs);
         sessionRestrictToProject.put(sessionId, restrictToProjectFiles);
@@ -157,7 +207,7 @@ public class McpHookServer {
      * started then becomes reachable by the plugin's MCP tools (matching what
      * the CLI already sees via --add-dir). No-op for an unknown session.
      */
-    public synchronized void updateSessionScope(String sessionId,
+    public void updateSessionScope(String sessionId,
             List<java.io.File> projectDirs, boolean restrictToProjectFiles) {
         if (sessionId == null || !activeSessions.contains(sessionId)) {
             return;
@@ -166,7 +216,7 @@ public class McpHookServer {
         sessionRestrictToProject.put(sessionId, restrictToProjectFiles);
     }
 
-    public synchronized void unregisterSession(String sessionId) {
+    public void unregisterSession(String sessionId) {
         if (sessionId == null) {
             return;
         }
@@ -203,13 +253,13 @@ public class McpHookServer {
         return port;
     }
 
+    /**
+     * The server's base URL (e.g. {@code http://127.0.0.1:PORT}). Captured at
+     * {@link #init()} so it remains valid after {@link #stop()} nulls the
+     * underlying httpServer (finding 5). Null only if init() never ran.
+     */
     public String getBaseUrl() {
-        InetAddress addr = httpServer.getAddress().getAddress();
-        String host = addr.getHostAddress();
-        if (addr instanceof Inet6Address) {
-            host = "[" + host + "]";
-        }
-        return "http://" + host + ":" + port;
+        return baseUrl;
     }
 
     /**
@@ -220,22 +270,30 @@ public class McpHookServer {
     }
 
     public synchronized void stop() {
-        // Mark stopped first so it is always observable even if shutdown throws —
-        // this lets McpServerRegistry detect and replace a dead server instead of
-        // handing one back (which would leave MCP down until NetBeans restarts).
+        // Mark stopped first, unconditionally, so it is always observable even if
+        // shutdown throws — this lets the supervisor detect and replace a dead
+        // server instead of handing one back (which would leave MCP down until
+        // NetBeans restarts). Null-guard everything so a double stop() or a
+        // stop() after a failed init() cannot NPE.
         stopped = true;
         started = false;
-        try {
-            httpServer.stop(0);
+        if (httpServer != null) {
+            try {
+                httpServer.stop(0);
+            }
+            catch (Exception e) {
+                LOG.log(Level.FINE, "httpServer.stop threw", e);
+            }
+            httpServer = null;
         }
-        catch (Exception e) {
-            LOG.log(Level.FINE, "httpServer.stop threw", e);
-        }
-        try {
-            executor.shutdownNow();
-        }
-        catch (Exception e) {
-            LOG.log(Level.FINE, "executor.shutdownNow threw", e);
+        if (executor != null) {
+            try {
+                executor.shutdown();
+            }
+            catch (Exception e) {
+                LOG.log(Level.FINE, "executor.shutdown threw", e);
+            }
+            executor = null;
         }
     }
 

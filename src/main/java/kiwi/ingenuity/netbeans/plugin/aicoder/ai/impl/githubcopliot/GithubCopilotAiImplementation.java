@@ -18,6 +18,7 @@ import kiwi.ingenuity.netbeans.plugin.aicoder.ai.session.AiSession;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.settings.AbstractAiModelSessionSettings;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.settings.AbstractAiSessionSettings;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.events.AiProcessEventListener;
+import org.openide.util.RequestProcessor;
 
 /**
  * GitHub Copilot backend implementation for NetBeans.
@@ -32,6 +33,10 @@ import kiwi.ingenuity.netbeans.plugin.aicoder.process.events.AiProcessEventListe
 public class GithubCopilotAiImplementation extends AiImplementation {
 
     private final GithubCopilotProcessManager processManager;
+
+    // start() blocks on MCP registration (up to a 2-minute future wait); run it off
+    // the EDT on a dedicated processor so callers on the EDT never freeze the UI.
+    private static final RequestProcessor START_RP = new RequestProcessor("copilot-ai-start", 4);
 
     // The discovered model list is shared across all Copilot sessions for the
     // IDE run (like Claude): discover once, cache, and broadcast to every open
@@ -57,7 +62,8 @@ public class GithubCopilotAiImplementation extends AiImplementation {
                 ? model : GithubCopilotPluginSettings.getModel();
         String execPath = GithubCopilotExecutableLocator.locate();
         if (execPath != null) {
-            processManager.start(execPath, effectiveModel);
+            // start() can block on MCP registration, so run it off the EDT.
+            START_RP.post(() -> processManager.start(execPath, effectiveModel));
             return;
         }
         listener.onAiProcessEvent(new kiwi.ingenuity.netbeans.plugin.aicoder.ai.events.StatusEvent(

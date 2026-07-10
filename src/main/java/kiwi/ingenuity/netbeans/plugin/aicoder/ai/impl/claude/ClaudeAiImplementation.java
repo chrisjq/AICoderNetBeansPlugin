@@ -32,6 +32,7 @@ import kiwi.ingenuity.netbeans.plugin.aicoder.events.SessionLifecycleListener;
 import kiwi.ingenuity.netbeans.plugin.aicoder.events.SessionLifecycleSource;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.events.AiProcessEventListener;
 import kiwi.ingenuity.netbeans.plugin.aicoder.utils.StatusMessageUtil;
+import org.openide.util.RequestProcessor;
 
 /**
  * Thin adapter so the generic multi-AI system (AiSession, AiTopComponent, etc.)
@@ -41,6 +42,10 @@ import kiwi.ingenuity.netbeans.plugin.aicoder.utils.StatusMessageUtil;
 public class ClaudeAiImplementation extends AiImplementation {
 
     private static final Logger LOG = Logger.getLogger(ClaudeAiImplementation.class.getName());
+
+    // start() blocks on MCP registration (up to a 2-minute future wait); run it off
+    // the EDT on a dedicated processor so callers on the EDT never freeze the UI.
+    private static final RequestProcessor START_RP = new RequestProcessor("claude-ai-start", 4);
 
     private static final Object MODEL_LOCK = new Object();
     private static volatile List<String> cachedModels = null;
@@ -75,13 +80,14 @@ public class ClaudeAiImplementation extends AiImplementation {
             // failure via events. We must NOT fall through to a second start() here —
             // a failure unrelated to the executable (e.g. MCP port bind) would
             // otherwise trigger a duplicate MCP server start on the same port.
-            delegate.start(execPath, effectiveModel);
+            // start() can block on MCP registration, so run it off the EDT.
+            START_RP.post(() -> delegate.start(execPath, effectiveModel));
             return;
         }
         SwingUtilities.invokeLater(() -> {
-            String chosen = promptForExecutable(parent);
+            String chosen = promptForExecutable(parent); // JFileChooser stays on the EDT
             if (chosen != null) {
-                delegate.start(chosen, effectiveModel);
+                START_RP.post(() -> delegate.start(chosen, effectiveModel));
             }
             else {
                 listener.onAiProcessEvent(new StatusEvent(StatusEventTypeEnum.FAILED, StatusMessageUtil.formatExecutableNotFound(null)));
@@ -258,7 +264,25 @@ public class ClaudeAiImplementation extends AiImplementation {
         triggerUsageReplay();
     }
 
-    private void triggerModelDiscovery() {
+    /**
+     * Invoked by {@link ClaudeCredentialMonitor} when
+     * ~/.claude/.credentials.json changes (the user ran {@code claude login}
+     * after the plugin started). Runs a fresh usage + model fetch so the
+     * display recovers without waiting for a UI event —
+     * {@link #fetchUsageAsync} routes through {@link #triggerModelDiscovery},
+     * which drops any stale rate limit via
+     * {@link AnthropicApiClient#refreshCredentialsState()} before submitting.
+     */
+    public static void onCredentialsChanged() {
+        fetchUsageAsync();
+    }
+
+    private static void triggerModelDiscovery() {
+        // Every usage/model refresh trigger (tab activation, session start, turn
+        // complete) routes through here on the caller thread — the natural point
+        // to notice a re-auth and drop a stale rate limit so the new token is
+        // retried instead of staying locked out until an IDE restart.
+        AnthropicApiClient.refreshCredentialsState();
         if (modelsFetched) {
             // Already fetched; fire from cache so this new session's dropdown is populated.
             List<String> cached;
@@ -293,7 +317,7 @@ public class ClaudeAiImplementation extends AiImplementation {
         });
     }
 
-    private void fetchUsageAsync() {
+    private static void fetchUsageAsync() {
         triggerModelDiscovery();
         AnthropicApiClient.rateLimitManager().submitWhenClear("usage", () -> {
             try {
