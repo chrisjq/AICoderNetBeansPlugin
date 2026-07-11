@@ -96,7 +96,7 @@ class McpServerRegistryTest {
     void tearDown() {
         McpServerRegistry.stopAll();
         McpServerRegistry.portOverride = null;
-        McpServerRegistry.pollIntervalMillis = 5000;
+        McpServerRegistry.pollIntervalMillis = 60000;
     }
 
     @Test

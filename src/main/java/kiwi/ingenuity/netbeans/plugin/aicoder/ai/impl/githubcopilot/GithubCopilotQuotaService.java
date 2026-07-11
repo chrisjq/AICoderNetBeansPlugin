@@ -66,7 +66,14 @@ public final class GithubCopilotQuotaService {
         if (cliPath != null && !cliPath.isBlank()) {
             opts.setCliPath(cliPath);
         }
-        try (CopilotClient client = new CopilotClient(opts)) {
+        // Note: CopilotClient is deliberately NOT closed via try-with-resources here.
+        // The SDK's close() can race with in-flight RPC teardown and throw a benign
+        // "Client closed" CompletionException; with try-with-resources that exception
+        // would replace an already-successful return value. Instead we close in a
+        // finally block and swallow any close-time failure so it can never clobber
+        // a valid result or be mistaken for a fetch failure.
+        CopilotClient client = new CopilotClient(opts);
+        try {
             client.start().get(TIMEOUT_SECONDS, TimeUnit.SECONDS);
             AccountGetQuotaResult result = client.getRpc().account.getQuota().get(TIMEOUT_SECONDS, TimeUnit.SECONDS);
             if (result != null) {
@@ -85,6 +92,14 @@ public final class GithubCopilotQuotaService {
                         );
                     }
                 }
+            }
+        }
+        finally {
+            try {
+                client.close();
+            }
+            catch (Throwable closeEx) {
+                LOG.log(Level.FINE, "Ignoring benign error while closing Copilot client after quota fetch", closeEx);
             }
         }
         return null;

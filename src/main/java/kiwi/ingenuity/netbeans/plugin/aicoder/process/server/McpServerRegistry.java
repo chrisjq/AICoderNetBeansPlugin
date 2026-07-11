@@ -21,29 +21,33 @@ import kiwi.ingenuity.netbeans.plugin.aicoder.ai.AiTypeEnum;
  * events. The single thread gives a total order over every mutation, so there
  * are no locks in the registry beyond the event queue and one lazy-spawn guard.
  * <p>
- * {@link #register} enqueues a REGISTER and returns a future the caller waits on;
- * {@link #deregister} is fully fire-and-forget. The supervisor dedupes, tracks
- * per-type first/last-of-type (derived from its own registration map), installs
- * and tears down hooks/endpoints, and reconciles the server against desired
- * state: registrations non-empty → server up, empty → server down. Its queue
- * poll timeout doubles as a health tick that resurrects a dead/unresponsive
- * server, so MCP no longer stays down until an IDE restart.
+ * {@link #register} enqueues a REGISTER and returns a future the caller waits
+ * on; {@link #deregister} is fully fire-and-forget. The supervisor dedupes,
+ * tracks per-type first/last-of-type (derived from its own registration map),
+ * installs and tears down hooks/endpoints, and reconciles the server against
+ * desired state: registrations non-empty → server up, empty → server down. Its
+ * queue poll timeout doubles as a health tick that resurrects a
+ * dead/unresponsive server, so MCP no longer stays down until an IDE restart.
  */
 public final class McpServerRegistry {
 
     private static final Logger LOG = Logger.getLogger(McpServerRegistry.class.getName());
 
-    /** Event queue drained by the supervisor. Tiny, rare events — 128 is ample. */
+    /**
+     * Event queue drained by the supervisor. Tiny, rare events — 128 is ample.
+     */
     private static final BlockingQueue<McpRegistryEvent> QUEUE = new ArrayBlockingQueue<>(128);
 
     /**
-     * Desired state, touched ONLY by the supervisor thread (single-writer, so no
-     * concurrency needed): sessionId → its registrar. Non-empty → server up.
+     * Desired state, touched ONLY by the supervisor thread (single-writer, so
+     * no concurrency needed): sessionId → its registrar. Non-empty → server up.
      * Per-type counts are derived from this map in event order.
      */
     private static final Map<String, AiMcpRegistrar> registrations = new HashMap<>();
 
-    /** The running server, published by the supervisor; null when down. */
+    /**
+     * The running server, published by the supervisor; null when down.
+     */
     private static volatile McpHookServer sharedServer = null;
 
     private static final Object SUPERVISOR_LOCK = new Object();
@@ -51,23 +55,19 @@ public final class McpServerRegistry {
     private static volatile boolean shutdown = false; // supervisor stop signal
 
     /**
-     * Test seam: when non-null, overrides the configured hook-server port. Tests
-     * set this to 0 to bind an ephemeral port. Never set in production.
+     * Test seam: when non-null, overrides the configured hook-server port.
+     * Tests set this to 0 to bind an ephemeral port. Never set in production.
      */
     static volatile Integer portOverride = null;
 
     /**
      * Test seam: supervisor queue-poll / health-tick interval, in milliseconds.
-     * Shorten in tests to assert health-tick behaviour quickly. Production keeps
-     * the 5-second default.
+     * Shorten in tests to assert health-tick behaviour quickly. Production
+     * keeps the 60-second default.
      */
-    static volatile long pollIntervalMillis = 5000;
-
-    private McpServerRegistry() {
-    }
+    static volatile long pollIntervalMillis = 60000;
 
     // ---- Public API (thin — callers only fire events) ----
-
     /**
      * Enqueue a REGISTER and return immediately. The returned future completes
      * with {@code true} once the supervisor has the server running and this
@@ -101,8 +101,8 @@ public final class McpServerRegistry {
     }
 
     /**
-     * Enqueue a DEREGISTER and return immediately (fire-and-forget). No-op if no
-     * supervisor is running (nothing is registered).
+     * Enqueue a DEREGISTER and return immediately (fire-and-forget). No-op if
+     * no supervisor is running (nothing is registered).
      */
     public static void deregister(AiMcpRegistrar registrar) {
         synchronized (SUPERVISOR_LOCK) {
@@ -115,10 +115,10 @@ public final class McpServerRegistry {
     /**
      * Force everything down (Installer.uninstalled). Signals shutdown, enqueues
      * STOP_ALL, interrupts and briefly joins the supervisor, then drains the
-     * queue completing any pending REGISTER futures with false so no caller ever
-     * hangs. Never nulls the supervisor reference while its thread is still
-     * alive; a later {@link #register} lazily spawns a fresh one with clean
-     * state.
+     * queue completing any pending REGISTER futures with false so no caller
+     * ever hangs. Never nulls the supervisor reference while its thread is
+     * still alive; a later {@link #register} lazily spawns a fresh one with
+     * clean state.
      */
     public static void stopAll() {
         synchronized (SUPERVISOR_LOCK) {
@@ -152,15 +152,14 @@ public final class McpServerRegistry {
     }
 
     /**
-     * Returns the shared server, or null if no sessions are currently registered
-     * (or the supervisor has not yet brought it up).
+     * Returns the shared server, or null if no sessions are currently
+     * registered (or the supervisor has not yet brought it up).
      */
     public static McpHookServer getServer() {
         return sharedServer;
     }
 
     // ---- Enqueue helper (finding 4: never a silent drop) ----
-
     private static boolean enqueue(McpRegistryEvent event) {
         if (!QUEUE.offer(event)) {
             LOG.log(Level.WARNING, "MCP registry queue full; dropping {0} event", event.type());
@@ -179,8 +178,9 @@ public final class McpServerRegistry {
     }
 
     // ---- Supervisor thread ----
-
-    /** Must be called under SUPERVISOR_LOCK, only when no supervisor is alive. */
+    /**
+     * Must be called under SUPERVISOR_LOCK, only when no supervisor is alive.
+     */
     private static void spawnSupervisor() {
         Thread t = new Thread(McpServerRegistry::supervisorLoop, "mcp-registry-supervisor");
         t.setDaemon(true);
@@ -217,9 +217,9 @@ public final class McpServerRegistry {
     }
 
     /**
-     * Handle one event. Wrapped in catch(Throwable) so a poisoned event can never
-     * kill the supervisor (finding 3): the in-flight REGISTER future is completed
-     * false, the error logged SEVERE, and the loop continues.
+     * Handle one event. Wrapped in catch(Throwable) so a poisoned event can
+     * never kill the supervisor (finding 3): the in-flight REGISTER future is
+     * completed false, the error logged SEVERE, and the loop continues.
      */
     private static void handleEvent(McpRegistryEvent event) {
         try {
@@ -310,16 +310,20 @@ public final class McpServerRegistry {
         reconcile(false); // stop the server once no sessions remain
     }
 
-    /** Count of currently-registered sessions of the given AI type (supervisor thread only). */
+    /**
+     * Count of currently-registered sessions of the given AI type (supervisor
+     * thread only).
+     */
     private static long typeCount(AiTypeEnum type) {
         return registrations.values().stream().filter(r -> r.getAiType() == type).count();
     }
 
     /**
      * Enforces the one invariant: registrations non-empty → a running server;
-     * empty → no server. On a health tick, also replaces a server that no longer
-     * accepts connections. Any startup failure is logged and retried on the next
-     * tick (self-heal). Runs only on the supervisor thread and never throws.
+     * empty → no server. On a health tick, also replaces a server that no
+     * longer accepts connections. Any startup failure is logged and retried on
+     * the next tick (self-heal). Runs only on the supervisor thread and never
+     * throws.
      */
     private static void reconcile(boolean healthTick) {
         McpHookServer s = sharedServer;
@@ -375,9 +379,10 @@ public final class McpServerRegistry {
     }
 
     /**
-     * Create the hook server, retrying briefly on bind failure. After a previous
-     * server is stopped the OS may not release the socket instantly; a short
-     * bounded retry rides out that window so a restart on the same port succeeds.
+     * Create the hook server, retrying briefly on bind failure. After a
+     * previous server is stopped the OS may not release the socket instantly; a
+     * short bounded retry rides out that window so a restart on the same port
+     * succeeds.
      */
     private static McpHookServer createServerWithRetry(int port) throws IOException {
         IOException last = null;
@@ -401,5 +406,8 @@ public final class McpServerRegistry {
             }
         }
         throw last;
+    }
+
+    private McpServerRegistry() {
     }
 }

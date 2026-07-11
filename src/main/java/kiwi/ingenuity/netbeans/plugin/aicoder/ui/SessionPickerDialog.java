@@ -7,7 +7,6 @@ import java.awt.FlowLayout;
 import java.awt.GridBagConstraints;
 import java.awt.GridBagLayout;
 import java.awt.Insets;
-import java.awt.Rectangle;
 import java.io.IOException;
 import java.nio.file.Path;
 import java.util.ArrayList;
@@ -29,7 +28,6 @@ import javax.swing.JScrollPane;
 import javax.swing.JSpinner;
 import javax.swing.JTextField;
 import javax.swing.ListSelectionModel;
-import javax.swing.Scrollable;
 import javax.swing.SpinnerNumberModel;
 import javax.swing.SwingUtilities;
 import javax.swing.UIManager;
@@ -77,6 +75,7 @@ public class SessionPickerDialog extends JDialog {
     private final JSpinner countSpinner = new JSpinner(new SpinnerNumberModel(1, 1, MAX_CREATE_COUNT, 1));
     private final JComboBox<String> projectCombo = new JComboBox<>();
     private final JComboBox<AiTypeEnum> aiTypeCombo = new JComboBox<>();
+    private JButton createBtn;
 
     private SessionPickerDialog(SessionPersistenceManager spm) {
         super(WindowManager.getDefault().getMainWindow(), "AI Sessions", true);
@@ -116,7 +115,7 @@ public class SessionPickerDialog extends JDialog {
         p.setBorder(BorderFactory.createTitledBorder("New session"));
         GridBagConstraints c = new GridBagConstraints();
         c.insets = new Insets(4, 4, 4, 4);
-        c.anchor = GridBagConstraints.NORTH;
+        c.anchor = GridBagConstraints.NORTHWEST;
         c.fill = GridBagConstraints.HORIZONTAL;
         c.gridx = 0;
         c.gridy = 0;
@@ -139,11 +138,13 @@ public class SessionPickerDialog extends JDialog {
         c.gridy = 8;
         JButton createBtn = new JButton("Create & Open");
         createBtn.addActionListener(e -> onCreateNew());
+        this.createBtn = createBtn;
         p.add(createBtn, c);
 
         JScrollPane sp = new JScrollPane(p);
         sp.setPreferredSize(new Dimension(300, 0));
         sp.setHorizontalScrollBarPolicy(JScrollPane.HORIZONTAL_SCROLLBAR_NEVER);
+        sp.getVerticalScrollBar().setUnitIncrement(16);
         return sp;
     }
 
@@ -223,11 +224,12 @@ public class SessionPickerDialog extends JDialog {
             }
         }
 
-        if (created.isEmpty()) {
-            return;
-        }
-        dispose();
-        created.forEach(this::openSession);
+    private void setCreateControlsEnabled(boolean enabled) {
+        createBtn.setEnabled(enabled);
+        nameField.setEnabled(enabled);
+        countSpinner.setEnabled(enabled);
+        projectCombo.setEnabled(enabled);
+        aiTypeCombo.setEnabled(enabled);
     }
 
     private void onOpenSelected() {
@@ -310,38 +312,6 @@ public class SessionPickerDialog extends JDialog {
             tc.open();
             tc.requestActive();
         });
-    }
-
-    private static class ScrollablePanel extends JPanel implements Scrollable {
-
-        ScrollablePanel(java.awt.LayoutManager layout) {
-            super(layout);
-        }
-
-        @Override
-        public Dimension getPreferredScrollableViewportSize() {
-            return getPreferredSize();
-        }
-
-        @Override
-        public int getScrollableUnitIncrement(Rectangle visibleRect, int orientation, int direction) {
-            return 16;
-        }
-
-        @Override
-        public int getScrollableBlockIncrement(Rectangle visibleRect, int orientation, int direction) {
-            return 50;
-        }
-
-        @Override
-        public boolean getScrollableTracksViewportWidth() {
-            return true;
-        }
-
-        @Override
-        public boolean getScrollableTracksViewportHeight() {
-            return false;
-        }
     }
 
     private static class SessionCellRenderer extends DefaultListCellRenderer {

@@ -1,5 +1,6 @@
 package kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.githubcopilot.ui;
 
+import java.awt.Color;
 import java.awt.Dimension;
 import java.awt.event.ActionListener;
 import java.util.ArrayList;
@@ -57,8 +58,8 @@ public class GithubCopilotAiInfoBarExtension implements AiInfoBarExtension {
         this.host = host;
         errorLabel = new javax.swing.JLabel();
         errorLabel.setFont(errorLabel.getFont().deriveFont(11f).deriveFont(java.awt.Font.BOLD));
-        errorLabel.setForeground(java.awt.Color.WHITE);
-        errorLabel.setBackground(new java.awt.Color(200, 50, 50));
+        errorLabel.setForeground(Color.WHITE);
+        errorLabel.setBackground(new Color(200, 50, 50));
         errorLabel.setOpaque(true);
         errorLabel.setBorder(javax.swing.BorderFactory.createEmptyBorder(2, 4, 2, 4));
         errorLabel.setVisible(false);

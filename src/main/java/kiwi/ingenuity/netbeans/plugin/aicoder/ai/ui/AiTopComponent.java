@@ -19,6 +19,8 @@ import java.util.List;
 import java.util.Set;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 import javax.swing.BorderFactory;
@@ -93,16 +95,32 @@ public final class AiTopComponent extends TopComponent implements AiProcessEvent
     //   red    = not running — the plugin/tab just started, or a fatal error
     //            occurred (auth failure, abnormal process exit).
     // The icon and the HTML tab-name dot are both driven from setTabStatus() so
-    // the two renderers can never drift.
-    private static final Image STATUS_ICON_GREEN = makeStatusIcon(new java.awt.Color(0x4C, 0xAF, 0x50));
-    private static final Image STATUS_ICON_ORANGE = makeStatusIcon(new java.awt.Color(0xFF, 0x98, 0x00));
-    private static final Image STATUS_ICON_RED = makeStatusIcon(new java.awt.Color(0xF4, 0x43, 0x36));
+    // the two renderers can never drift. Each status has exactly one Color
+    // constant below; the icon and the HTML hex string are both derived from
+    // it so they can never go out of sync.
+    private static final Color STATUS_COLOR_GREEN = new Color(0x4C, 0xAF, 0x50);
+    private static final Color STATUS_COLOR_ORANGE = new Color(0xFF, 0x98, 0x00);
+    private static final Color STATUS_COLOR_RED = new Color(0xF4, 0x43, 0x36);
+    // Briefly shown in place of orange each time AI output arrives while the
+    // tab is THINKING. See flashThinking().
+    private static final Color THINKING_FLASH_COLOR = new Color(0xFF, 0xB7, 0x4D);
 
-    private static final String STATUS_HEX_GREEN = "#4CAF50";
-    private static final String STATUS_HEX_ORANGE = "#FF9800";
-    private static final String STATUS_HEX_RED = "#F44336";
+    private static final Image STATUS_ICON_GREEN = makeStatusIcon(STATUS_COLOR_GREEN);
+    private static final Image STATUS_ICON_ORANGE = makeStatusIcon(STATUS_COLOR_ORANGE);
+    private static final Image STATUS_ICON_RED = makeStatusIcon(STATUS_COLOR_RED);
+    private static final Image STATUS_ICON_YELLOW = makeStatusIcon(THINKING_FLASH_COLOR);
 
-    private static Image makeStatusIcon(java.awt.Color color) {
+    private static final String STATUS_HEX_GREEN = toHex(STATUS_COLOR_GREEN);
+    private static final String STATUS_HEX_ORANGE = toHex(STATUS_COLOR_ORANGE);
+    private static final String STATUS_HEX_RED = toHex(STATUS_COLOR_RED);
+    private static final String STATUS_HEX_ORANGE_LIGHT = toHex(THINKING_FLASH_COLOR);
+
+    /**
+     * Duration of the "AI output received" flash pulse, in milliseconds.
+     */
+    private static final int THINKING_FLASH_MS = 250;
+
+    private static Image makeStatusIcon(Color color) {
         int size = 12;
         BufferedImage img = new BufferedImage(
                 size, size, BufferedImage.TYPE_INT_ARGB);
@@ -113,6 +131,10 @@ public final class AiTopComponent extends TopComponent implements AiProcessEvent
         g.fillOval(1, 1, size - 2, size - 2);
         g.dispose();
         return img;
+    }
+
+    private static String toHex(Color color) {
+        return String.format("#%02X%02X%02X", color.getRed(), color.getGreen(), color.getBlue());
     }
 
     private final ConversationPanel conversationPanel;
@@ -190,6 +212,20 @@ public final class AiTopComponent extends TopComponent implements AiProcessEvent
     // Starts red: nothing is running until the AI process reports READY. Moves to
     // green/orange via setSendEnabled(), and back to red on a fatal error.
     private volatile TabStatus tabStatus = TabStatus.FATAL;
+
+    // Set while the THINKING dot is showing its brief yellow "flash" pulse
+    // (see flashThinking()). Only ever read/written on the EDT.
+    private boolean thinkingFlashActive = false;
+    // Single-shot timer backing the flash pulse; lazily created, reused, and
+    // restarted to the latest requested deadline so a burst of AI output just
+    // extends the pulse instead of stacking work or flickering.
+    private Timer thinkingFlashTimer;
+    // Monotonic deadline for when the current flash should end. Updated from
+    // any thread; the EDT reads it when (re)arming thinkingFlashTimer.
+    private volatile long thinkingFlashDeadlineNanos = 0L;
+    // Guards the single coalesced invokeLater used when non-EDT callers request
+    // a flash extension while one EDT update is already pending.
+    private final AtomicBoolean thinkingFlashRequestQueued = new AtomicBoolean(false);
 
     private volatile boolean skipClosePrompt = false;
 
@@ -465,6 +501,12 @@ public final class AiTopComponent extends TopComponent implements AiProcessEvent
         if (skipClosePrompt) {
             return true;
         }
+        if (PluginSettings.isSaveSessionOnCloseIfTicked()) {
+            if (!PluginSettings.isSaveHistory()) {
+                deleteSessionOnClose();
+            }
+            return true;
+        }
         Object[] options = {"Delete session", "Keep for later", "Cancel"};
         int choice = JOptionPane.showOptionDialog(
                 this,
@@ -479,15 +521,19 @@ public final class AiTopComponent extends TopComponent implements AiProcessEvent
             return false;
         }
         if (choice == 0) {
-            try {
-                historyManager = null; // prevent componentHidden/componentClosed from recreating deleted dir
-                sessionPersistenceManager.delete(session.id());
-            }
-            catch (IOException e) {
-                LOG.log(Level.WARNING, "Could not delete session " + session.id(), e);
-            }
+            deleteSessionOnClose();
         }
         return true;
+    }
+
+    private void deleteSessionOnClose() {
+        try {
+            historyManager = null; // prevent componentHidden/componentClosed from recreating deleted dir
+            sessionPersistenceManager.delete(session.id());
+        }
+        catch (IOException e) {
+            LOG.log(Level.WARNING, "Could not delete session " + session.id(), e);
+        }
     }
 
     @Override
@@ -788,7 +834,7 @@ public final class AiTopComponent extends TopComponent implements AiProcessEvent
 
     @Override
     public void setDisplayName(String name) {
-        super.setDisplayName(name);
+        super.setDisplayName(name + " - AI");
         updateTabHtmlName();
     }
 
@@ -817,9 +863,20 @@ public final class AiTopComponent extends TopComponent implements AiProcessEvent
             case READY ->
                 STATUS_HEX_GREEN;
             case THINKING ->
-                STATUS_HEX_ORANGE;
+                thinkingFlashActive ? STATUS_HEX_ORANGE_LIGHT : STATUS_HEX_ORANGE;
             case FATAL ->
                 STATUS_HEX_RED;
+        };
+    }
+
+    private Image currentStatusIcon() {
+        return switch (tabStatus) {
+            case READY ->
+                STATUS_ICON_GREEN;
+            case THINKING ->
+                thinkingFlashActive ? STATUS_ICON_YELLOW : STATUS_ICON_ORANGE;
+            case FATAL ->
+                STATUS_ICON_RED;
         };
     }
 
@@ -829,29 +886,107 @@ public final class AiTopComponent extends TopComponent implements AiProcessEvent
      */
     private void setTabStatus(TabStatus status) {
         tabStatus = status;
-        setIcon(switch (status) {
-            case READY ->
-                STATUS_ICON_GREEN;
-            case THINKING ->
-                STATUS_ICON_ORANGE;
-            case FATAL ->
-                STATUS_ICON_RED;
-        });
+        if (status != TabStatus.THINKING) {
+            // Leaving THINKING entirely cancels any in-flight flash pulse so it
+            // can't fire later and stomp on the new (non-orange) status.
+            thinkingFlashActive = false;
+            if (thinkingFlashTimer != null) {
+                thinkingFlashTimer.stop();
+            }
+        }
+        setIcon(currentStatusIcon());
         updateTabHtmlName();
     }
 
     /**
-     * Called from the stdout reader thread — dispatch to EDT.
+     * Records a THINKING-flash request. Non-EDT callers coalesce to at most one
+     * pending invokeLater; repeated requests while that runnable or the timer is
+     * already active just push the deadline out.
+     */
+    private void requestThinkingFlash() {
+        thinkingFlashDeadlineNanos = System.nanoTime()
+                + TimeUnit.MILLISECONDS.toNanos(THINKING_FLASH_MS);
+        if (SwingUtilities.isEventDispatchThread()) {
+            thinkingFlashRequestQueued.set(false);
+            flashThinking();
+            return;
+        }
+        if (thinkingFlashRequestQueued.compareAndSet(false, true)) {
+            SwingUtilities.invokeLater(() -> {
+                thinkingFlashRequestQueued.set(false);
+                flashThinking();
+            });
+        }
+    }
+
+    /**
+     * Briefly flashes the THINKING (orange) status dot yellow for
+     * {@link #THINKING_FLASH_MS} whenever AI output arrives while a turn is in
+     * flight, then reverts to plain orange. EDT-only: callers must use
+     * requestThinkingFlash() off-thread.
+     */
+    private void flashThinking() {
+        if (tabStatus != TabStatus.THINKING) {
+            return;
+        }
+        if (!thinkingFlashActive) {
+            thinkingFlashActive = true;
+            setIcon(currentStatusIcon());
+            updateTabHtmlName();
+        }
+        if (thinkingFlashTimer == null) {
+            thinkingFlashTimer = new Timer(THINKING_FLASH_MS, e -> {
+                thinkingFlashActive = false;
+                if (tabStatus == TabStatus.THINKING) {
+                    setIcon(currentStatusIcon());
+                    updateTabHtmlName();
+                }
+            });
+            thinkingFlashTimer.setRepeats(false);
+        }
+        long remainingNanos = Math.max(0L, thinkingFlashDeadlineNanos - System.nanoTime());
+        long delayMillis = TimeUnit.NANOSECONDS.toMillis(remainingNanos);
+        if (TimeUnit.MILLISECONDS.toNanos(delayMillis) < remainingNanos) {
+            delayMillis++;
+        }
+        int delay = (int) Math.max(1L, delayMillis);
+        thinkingFlashTimer.setInitialDelay(delay);
+        thinkingFlashTimer.setDelay(delay);
+        thinkingFlashTimer.restart();
+    }
+
+    /**
+     * Called from the backend event thread — coalesce the flash pulse request,
+     * then dispatch full event handling to the EDT.
      */
     @Override
     public void onAiProcessEvent(AiProcessEvent event) {
+        if (tabStatus == TabStatus.THINKING && isVisibleChatOutput(event)) {
+            requestThinkingFlash();
+        }
         SwingUtilities.invokeLater(() -> handleEvent(event));
+    }
+
+    /**
+     * True for events that actually render new AI-generated content in the
+     * chat panel. Internal/plumbing events (status updates, impl events, turn
+     * boundaries) must not trigger the THINKING flash pulse — only output the
+     * user can actually see arriving should.
+     */
+    private static boolean isVisibleChatOutput(AiProcessEvent event) {
+        return event instanceof TextDeltaEvent
+                || event instanceof ToolUseEvent
+                || event instanceof PermissionEvent
+                || event instanceof AskUserQuestionEvent;
     }
 
     private void handleEvent(AiProcessEvent event) {
         if (aiBackend == null) {
             return; // stale invokeLater fired after close
         }
+
+        // The flash pulse is requested in onAiProcessEvent() before this event
+        // is dispatched; handleEvent() only does the full per-event UI work.
 
         if (turnOutputSuppressed) {
             if (event instanceof TextDeltaEvent) {
