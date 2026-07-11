@@ -18,8 +18,8 @@ import javax.swing.JTextField;
 import javax.swing.SpinnerNumberModel;
 import kiwi.ingenuity.netbeans.plugin.aicoder.PluginSettings;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.session.AiSession;
-import kiwi.ingenuity.netbeans.plugin.aicoder.ai.settings.AbstractAiModelSessionSettings;
-import kiwi.ingenuity.netbeans.plugin.aicoder.ai.settings.AbstractAiSessionSettings;
+import kiwi.ingenuity.netbeans.plugin.aicoder.ai.settings.AiModelSessionSettings;
+import kiwi.ingenuity.netbeans.plugin.aicoder.ai.settings.AiSessionSettings;
 import org.openide.windows.WindowManager;
 
 public class AiSessionSettingsDialog extends JDialog {
@@ -44,13 +44,13 @@ public class AiSessionSettingsDialog extends JDialog {
     private boolean resetAutoNotify = false;
     private final boolean globalAutoNotify;
 
-    private AbstractAiSessionSettings result = null;
+    private AiSessionSettings result = null;
     private String resultName = null;
     private String resultDescription = null;
 
     private AiSessionSettingsDialog(AiSession session) {
         super(WindowManager.getDefault().getMainWindow(), "Session Configuration", true);
-        AbstractAiSessionSettings cfg = session.settings() != null ? session.settings() : AbstractAiSessionSettings.defaults();
+        AiSessionSettings cfg = session.settings();
         globalAutoNotify = PluginSettings.isAutoNotifyInbox();
 
         historySpinner = new JSpinner(new SpinnerNumberModel(
@@ -175,7 +175,7 @@ public class AiSessionSettingsDialog extends JDialog {
         p.add(comp, c);
     }
 
-    private void buildResult(AbstractAiSessionSettings original) {
+    private void buildResult(AiSessionSettings original) {
         resultName = nameField.getText().trim();
         resultDescription = descriptionArea.getText().trim();
 
@@ -208,20 +208,18 @@ public class AiSessionSettingsDialog extends JDialog {
             sessionInstructions = null;
         }
 
-        if (original instanceof AbstractAiModelSessionSettings modelCfg) {
-            result = new AbstractAiModelSessionSettings(
-                    maxHistory, restrictToProjectFiles, allowInterAiComms, autoNotifyInbox,
-                    allowImportantMessages, sessionInstructions,
-                    modelCfg.model(),
-                    original.autoAccept(), allowWebRequests);
-        }
-        else {
-            result = new AbstractAiSessionSettings(maxHistory, restrictToProjectFiles, allowInterAiComms,
-                    autoNotifyInbox, allowImportantMessages, sessionInstructions, original.autoAccept(), allowWebRequests);
-        }
+        original.setMaxHistory(maxHistory);
+        original.setRestrictToProjectFiles(restrictToProjectFiles);
+        original.setAllowInterAiComms(allowInterAiComms);
+        original.setAutoNotifyInbox(autoNotifyInbox);
+        original.setAllowImportantMessages(allowImportantMessages);
+        original.setSessionInstructions(sessionInstructions);
+        original.setAllowWebRequests(allowWebRequests);
+
+        result = original;
     }
 
-    public AbstractAiSessionSettings getResultConfig() {
+    public AiSessionSettings getResultConfig() {
         return result;
     }
 

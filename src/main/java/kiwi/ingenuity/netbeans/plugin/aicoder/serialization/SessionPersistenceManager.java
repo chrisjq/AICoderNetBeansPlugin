@@ -23,23 +23,43 @@ import java.util.logging.Logger;
 import kiwi.ingenuity.netbeans.plugin.aicoder.PluginUtil;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.AiTypeEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.session.AiSession;
-import kiwi.ingenuity.netbeans.plugin.aicoder.ai.settings.AbstractAiModelSessionSettings;
-import kiwi.ingenuity.netbeans.plugin.aicoder.ai.settings.AbstractAiSessionSettings;
+import kiwi.ingenuity.netbeans.plugin.aicoder.ai.settings.AiSessionSettings;
+import kiwi.ingenuity.netbeans.plugin.aicoder.ai.settings.AiSessionSettingsCreator;
 
+/**
+ * Manages persistent storage and retrieval of AI session data. Handles JSON
+ * serialization of sessions to disk with proper file locking and atomicity
+ * guarantees.
+ */
 public class SessionPersistenceManager {
 
+    /**
+     * Logger for this class
+     */
     private static final Logger LOG = Logger.getLogger(SessionPersistenceManager.class.getName());
+    /**
+     * Shared GSON instance for JSON serialization
+     */
     private static final Gson GSON = new GsonBuilder().setPrettyPrinting().create();
-    // Serializes all instances in this JVM before acquiring the cross-process file lock.
-    // FileChannel.lock() throws OverlappingFileLockException if the same JVM holds it twice,
-    // so we need intra-JVM serialization independently of per-instance synchronized methods.
+    /**
+     * Serializes all instances in this JVM before acquiring the cross-process
+     * file lock. FileChannel.lock() throws OverlappingFileLockException if the
+     * same JVM holds it twice, so we need intra-JVM serialization independently
+     * of per-instance synchronized methods.
+     */
     private static final Object JVM_LOCK = new Object();
 
     public static Path defaultBaseDir() {
         return Path.of(System.getProperty("user.home"), ".netbeans", ".aicoder");
     }
 
+    /**
+     * Base directory for all persisted data
+     */
     private final Path baseDir;
+    /**
+     * File path for the sessions JSON file
+     */
     private final Path sessionsFile;
 
     public SessionPersistenceManager() {
@@ -140,29 +160,11 @@ public class SessionPersistenceManager {
                         continue;
                     }
 
-                    AbstractAiSessionSettings settings = AbstractAiSessionSettings.defaults();
+                    AiSessionSettingsCreator creator = aiType.getSettingsCreator();
+                    AiSessionSettings settings = creator.create();
                     if (o.has("config") && o.get("config").isJsonObject()) {
                         JsonObject cfgObj = o.getAsJsonObject("config");
-                        Integer maxHistory = cfgObj.has("maxHistory") && cfgObj.get("maxHistory").isJsonPrimitive() ? cfgObj.get("maxHistory").getAsInt() : null;
-                        Boolean restrictToProjectFiles = cfgObj.has("restrictToProjectFiles") && cfgObj.get("restrictToProjectFiles").isJsonPrimitive() ? cfgObj.get("restrictToProjectFiles").getAsBoolean() : null;
-                        Boolean allowInterAiComms = cfgObj.has("allowInterAiComms") && cfgObj.get("allowInterAiComms").isJsonPrimitive() ? cfgObj.get("allowInterAiComms").getAsBoolean() : null;
-                        Boolean autoNotifyInbox = cfgObj.has("autoNotifyInbox") && cfgObj.get("autoNotifyInbox").isJsonPrimitive() ? cfgObj.get("autoNotifyInbox").getAsBoolean() : null;
-                        Boolean allowImportantMessages = cfgObj.has("allowImportantMessages") && cfgObj.get("allowImportantMessages").isJsonPrimitive() ? cfgObj.get("allowImportantMessages").getAsBoolean() : null;
-                        String sessionInstructions = cfgObj.has("sessionInstructions") && cfgObj.get("sessionInstructions").isJsonPrimitive()
-                                ? cfgObj.get("sessionInstructions").getAsString()
-                                : cfgObj.has("toolInstructions") && cfgObj.get("toolInstructions").isJsonPrimitive() ? cfgObj.get("toolInstructions").getAsString() : null;
-                        Boolean autoAccept = cfgObj.has("autoAccept") && cfgObj.get("autoAccept").isJsonPrimitive() ? cfgObj.get("autoAccept").getAsBoolean() : null;
-                        Boolean allowWebRequests = cfgObj.has("allowWebRequests") && cfgObj.get("allowWebRequests").isJsonPrimitive() ? cfgObj.get("allowWebRequests").getAsBoolean() : null;
-                        String model = cfgObj.has("model") && cfgObj.get("model").isJsonPrimitive() ? cfgObj.get("model").getAsString() : null;
-                        if (model != null) {
-                            settings = new AbstractAiModelSessionSettings(maxHistory, restrictToProjectFiles,
-                                    allowInterAiComms, autoNotifyInbox, allowImportantMessages, sessionInstructions,
-                                    model, autoAccept, allowWebRequests);
-                        }
-                        else {
-                            settings = new AbstractAiSessionSettings(maxHistory, restrictToProjectFiles,
-                                    allowInterAiComms, autoNotifyInbox, allowImportantMessages, sessionInstructions, autoAccept, allowWebRequests);
-                        }
+                        creator.update(settings, cfgObj);
                     }
                     if (!o.has("id") || !o.has("name") || !o.has("createdAt") || !o.has("lastUsedAt")) {
                         LOG.log(Level.WARNING, "Session missing required fields, skipping:\n{0}", o.toString());
@@ -221,35 +223,8 @@ public class SessionPersistenceManager {
                 o.addProperty("projectPath", s.projectPath());
             }
             JsonObject cfgObj = new JsonObject();
-            AbstractAiSessionSettings cfg = s.settings() != null ? s.settings() : AbstractAiSessionSettings.defaults();
-            if (cfg.maxHistory() != null) {
-                cfgObj.addProperty("maxHistory", cfg.maxHistory());
-            }
-            if (cfg.restrictToProjectFiles() != null) {
-                cfgObj.addProperty("restrictToProjectFiles", cfg.restrictToProjectFiles());
-            }
-            if (cfg.allowInterAiComms() != null) {
-                cfgObj.addProperty("allowInterAiComms", cfg.allowInterAiComms());
-            }
-            if (cfg.autoNotifyInbox() != null) {
-                cfgObj.addProperty("autoNotifyInbox", cfg.autoNotifyInbox());
-            }
-            if (cfg.allowImportantMessages() != null) {
-                cfgObj.addProperty("allowImportantMessages", cfg.allowImportantMessages());
-            }
-            if (cfg.sessionInstructions() != null) {
-                cfgObj.addProperty("sessionInstructions", cfg.sessionInstructions());
-            }
-            if (cfg.autoAccept() != null) {
-                cfgObj.addProperty("autoAccept", cfg.autoAccept());
-            }
-            if (cfg.allowWebRequests() != null) {
-                cfgObj.addProperty("allowWebRequests", cfg.allowWebRequests());
-            }
-            if (cfg instanceof AbstractAiModelSessionSettings modelCfg
-                    && modelCfg.model() != null) {
-                cfgObj.addProperty("model", modelCfg.model());
-            }
+            AiSessionSettings cfg = s.settings();
+            cfg.populateJsonObject(cfgObj);
             o.add("config", cfgObj);
             o.addProperty("createdAt", s.createdAt().toString());
             o.addProperty("lastUsedAt", s.lastUsedAt().toString());

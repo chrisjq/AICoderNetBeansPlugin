@@ -1,7 +1,7 @@
 package kiwi.ingenuity.netbeans.plugin.aicoder.ai;
 
-import kiwi.ingenuity.netbeans.plugin.aicoder.ai.settings.AbstractAiModelSessionSettings;
-import kiwi.ingenuity.netbeans.plugin.aicoder.ai.settings.AbstractAiSessionSettings;
+import kiwi.ingenuity.netbeans.plugin.aicoder.ai.settings.AiModelSessionSettings;
+import kiwi.ingenuity.netbeans.plugin.aicoder.ai.settings.AiSessionSettings;
 import static org.junit.jupiter.api.Assertions.*;
 import org.junit.jupiter.api.Test;
 
@@ -9,7 +9,7 @@ class AiSessionConfigTest {
 
     @Test
     void defaultsHasAllNullFields() {
-        AbstractAiSessionSettings cfg = AbstractAiSessionSettings.defaults();
+        AiSessionSettings cfg = new AiSessionSettings();
         assertNull(cfg.maxHistory());
         assertNull(cfg.restrictToProjectFiles());
         assertNull(cfg.allowInterAiComms());
@@ -20,29 +20,28 @@ class AiSessionConfigTest {
 
     @Test
     void explicitValueOverridesDefault() {
-        AbstractAiSessionSettings cfg = new AbstractAiSessionSettings(null, false, true, null, null, null);
+        AiSessionSettings cfg = new AiSessionSettings(null, false, true, null, null, null, null, null);
         assertFalse(cfg.restrictToProjectFiles());
         assertTrue(cfg.allowInterAiComms());
     }
 
     @Test
     void sessionInstructionsStoredAndReturned() {
-        AbstractAiSessionSettings cfg = new AbstractAiSessionSettings(null, null, null, null, null, "my instructions");
+        AiSessionSettings cfg = new AiSessionSettings(null, null, null, null, null, "my instructions", null, null);
         assertEquals("my instructions", cfg.sessionInstructions());
     }
 
     @Test
     void modelConfigGetModelFragmentIncludesModel() {
-        AbstractAiModelSessionSettings cfg = new AbstractAiModelSessionSettings(
-                null, null, null, null, null, null, "claude-opus-4-5", "default-model");
+        AiModelSessionSettings cfg = new AiModelSessionSettings(
+                null, null, null, null, null, null, "claude-opus-4-5", null, null);
         assertEquals(", model: claude-opus-4-5", cfg.getAdditionalInfo());
     }
 
     @Test
-    void modelConfigEffectiveModelFallsBackToDefault() {
-        AbstractAiModelSessionSettings cfg = new AbstractAiModelSessionSettings(
-                null, null, null, null, null, null, null, "fallback-model");
-        assertEquals("fallback-model", cfg.model());
-        assertEquals(", model: fallback-model", cfg.getAdditionalInfo());
+    void modelConfigModelIsNullWhenNotSet() {
+        AiModelSessionSettings cfg = new AiModelSessionSettings(
+                null, null, null, null, null, null, null, null, null);
+        assertNull(cfg.model());
     }
 }

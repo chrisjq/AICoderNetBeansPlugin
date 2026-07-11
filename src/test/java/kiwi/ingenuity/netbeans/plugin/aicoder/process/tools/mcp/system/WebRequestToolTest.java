@@ -11,7 +11,7 @@ import java.nio.charset.StandardCharsets;
 import java.util.Map;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.AiTypeEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.session.AiSession;
-import kiwi.ingenuity.netbeans.plugin.aicoder.ai.settings.AbstractAiSessionSettings;
+import kiwi.ingenuity.netbeans.plugin.aicoder.ai.settings.AiSessionSettings;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.McpToolEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.events.AiProcessEventListener;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.session.AbstractAiSession;
@@ -69,7 +69,7 @@ class WebRequestToolTest {
 
     private static AiSession sessionAllowingWebRequests(boolean allow) {
         AiSession session = AiSession.create(null, AiTypeEnum.CLAUDE);
-        session.setSettings(new AbstractAiSessionSettings(null, null, null, null, null, null, null, allow));
+        session.settings().setAllowWebRequests(allow);
         return session;
     }
 

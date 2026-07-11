@@ -2,7 +2,6 @@ package kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.githubcopilot.settings;
 
 import java.util.prefs.Preferences;
 import kiwi.ingenuity.netbeans.plugin.aicoder.PluginSettings;
-import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.githubcopilot.GithubCopilotPluginSettingsKeyEnum;
 import org.openide.util.NbPreferences;
 
 public final class GithubCopilotPluginSettings {

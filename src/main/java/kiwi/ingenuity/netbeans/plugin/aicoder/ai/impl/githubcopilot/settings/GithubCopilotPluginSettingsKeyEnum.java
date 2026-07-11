@@ -1,4 +1,4 @@
-package kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.githubcopilot;
+package kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.githubcopilot.settings;
 
 public enum GithubCopilotPluginSettingsKeyEnum {
     EXECUTABLE("ai.githubcopilot.executable"),

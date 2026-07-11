@@ -1,4 +1,4 @@
-package kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.grok;
+package kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.grok.settings;
 
 import java.util.prefs.Preferences;
 import kiwi.ingenuity.netbeans.plugin.aicoder.PluginSettings;

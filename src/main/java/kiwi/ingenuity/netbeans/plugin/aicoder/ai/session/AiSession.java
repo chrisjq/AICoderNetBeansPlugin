@@ -9,8 +9,8 @@ import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.AiTypeEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.notification.AbstractNotification;
-import kiwi.ingenuity.netbeans.plugin.aicoder.ai.settings.AbstractAiModelSessionSettings;
-import kiwi.ingenuity.netbeans.plugin.aicoder.ai.settings.AbstractAiSessionSettings;
+import kiwi.ingenuity.netbeans.plugin.aicoder.ai.settings.AiModelSessionSettings;
+import kiwi.ingenuity.netbeans.plugin.aicoder.ai.settings.AiSessionSettings;
 
 /**
  * Mutable session state shared by reference across AiTopComponent,
@@ -29,15 +29,16 @@ public class AiSession {
         Path pp = projectPath != null ? Path.of(projectPath) : null;
         String folder = pp != null && pp.getFileName() != null
                 ? pp.getFileName().toString()
-                : (aiType != null ? aiType.displayName() : "AI");
+                : aiType.displayName();
         Instant now = Instant.now();
+        AiSessionSettings settings = aiType.createDefaultSettings();
         return new AiSession(
                 UUID.randomUUID().toString(),
                 folder,
                 null,
                 aiType,
                 projectPath,
-                AbstractAiSessionSettings.defaults(),
+                settings,
                 now,
                 now);
     }
@@ -50,7 +51,7 @@ public class AiSession {
 
     private volatile String name;
     private volatile String description;
-    private volatile AbstractAiSessionSettings settings;
+    private final AiSessionSettings settings;
     private volatile Instant lastUsedAt;
     private volatile boolean instructionsLoaded = false;
 
@@ -58,7 +59,7 @@ public class AiSession {
     private volatile AiSessionCallback callback;
 
     public AiSession(String id, String name, String description, AiTypeEnum aiType,
-            String projectPath, AbstractAiSessionSettings settings,
+            String projectPath, AiSessionSettings settings,
             Instant createdAt, Instant lastUsedAt) {
         this.id = id;
         this.name = name;
@@ -91,7 +92,7 @@ public class AiSession {
         return projectPath;
     }
 
-    public AbstractAiSessionSettings settings() {
+    public AiSessionSettings settings() {
         return settings;
     }
 
@@ -114,10 +115,6 @@ public class AiSession {
 
     public void setDescription(String description) {
         this.description = description;
-    }
-
-    public void setSettings(AbstractAiSessionSettings settings) {
-        this.settings = settings;
     }
 
     public void touchLastUsed() {
@@ -160,7 +157,7 @@ public class AiSession {
         Map<String, String> map = new LinkedHashMap<>(extraData);
         map.put("name", name);
         map.put("type", aiType.key());
-        if (settings instanceof AbstractAiModelSessionSettings mc) {
+        if (settings instanceof AiModelSessionSettings mc) {
             String model = mc.model();
             if (model != null && !model.isBlank()) {
                 map.put("model", model);
@@ -207,12 +204,12 @@ public class AiSession {
      * per-session.
      */
     public boolean allowsInterAiComms() {
-        AbstractAiSessionSettings s = settings;
+        AiSessionSettings s = settings;
         return s != null && s.effectiveAllowInterAiComms();
     }
 
     public boolean allowsImportantMessages() {
-        AbstractAiSessionSettings s = settings;
+        AiSessionSettings s = settings;
         return s != null && s.effectiveAllowImportantMessages();
     }
 
@@ -225,11 +222,6 @@ public class AiSession {
 
     public AiSession withDescription(String newDescription) {
         this.description = newDescription;
-        return this;
-    }
-
-    public AiSession withConfig(AbstractAiSessionSettings newConfig) {
-        this.settings = newConfig;
         return this;
     }
 

@@ -1,4 +1,4 @@
-package kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.grok;
+package kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.grok.settings;
 
 public enum GrokPluginSettingsKeyEnum {
     MODEL("ai.grok.model"),

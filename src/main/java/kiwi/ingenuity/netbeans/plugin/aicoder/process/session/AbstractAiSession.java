@@ -3,7 +3,7 @@ package kiwi.ingenuity.netbeans.plugin.aicoder.process.session;
 import java.util.Map;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.AiTypeEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.session.AiSession;
-import kiwi.ingenuity.netbeans.plugin.aicoder.ai.settings.AbstractAiSessionSettings;
+import kiwi.ingenuity.netbeans.plugin.aicoder.ai.settings.AiSessionSettings;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.McpToolEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.events.AiProcessEventListener;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.McpToolInterface;
@@ -36,8 +36,8 @@ public abstract class AbstractAiSession {
     /**
      * Live — reads from the shared AiSession so settings changes propagate.
      */
-    public AbstractAiSessionSettings getSettings() {
-        return session.settings() != null ? session.settings() : AbstractAiSessionSettings.defaults();
+    public AiSessionSettings getSettings() {
+        return session.settings();
     }
 
     /**

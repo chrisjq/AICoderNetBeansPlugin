@@ -11,7 +11,7 @@ import kiwi.ingenuity.netbeans.plugin.aicoder.ai.notification.AbstractNotificati
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.session.AiSession;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.session.AiSessionCallback;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.session.InterruptTypeEnum;
-import kiwi.ingenuity.netbeans.plugin.aicoder.ai.settings.AbstractAiSessionSettings;
+import kiwi.ingenuity.netbeans.plugin.aicoder.ai.settings.AiSessionSettings;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.SessionRegistry;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.events.AiProcessEventListener;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.session.AbstractAiSession;
@@ -21,7 +21,7 @@ import org.junit.jupiter.api.Test;
 class InterAiToolsTest {
 
     private static AiSession stubSession(String id, String name, boolean commsAllowed, boolean importantAllowed, boolean running, int[] interruptCount) {
-        AbstractAiSessionSettings settings = new AbstractAiSessionSettings(null, null, commsAllowed, null, importantAllowed, null);
+        AiSessionSettings settings = new AiSessionSettings(null, null, commsAllowed, null, importantAllowed, null, null, null);
         AiSession s = new AiSession(id, name, null, AiTypeEnum.CLAUDE, null, settings, Instant.now(), Instant.now());
         s.setAiSessionCallback(new AiSessionCallback() {
             @Override
@@ -254,7 +254,7 @@ class InterAiToolsTest {
 
         // Sender has allowImportantMessages=false — must still be interrupted
         AiSession sender = new AiSession("sender", "SenderAI", null, AiTypeEnum.CLAUDE, null,
-                new AbstractAiSessionSettings(null, null, true, null, false, null),
+                new AiSessionSettings(null, null, true, null, false, null, null, null),
                 Instant.now(), Instant.now());
         sender.setAiSessionCallback(new AiSessionCallback() {
             @Override
@@ -296,7 +296,7 @@ class InterAiToolsTest {
         int[] interruptCount = {0};
 
         AiSession sender = new AiSession("sender", "SenderAI", null, AiTypeEnum.CLAUDE, null,
-                new AbstractAiSessionSettings(null, null, true, null, true, null),
+                new AiSessionSettings(null, null, true, null, true, null, null, null),
                 Instant.now(), Instant.now());
         sender.setAiSessionCallback(new AiSessionCallback() {
             @Override
@@ -380,7 +380,7 @@ class InterAiToolsTest {
         CountDownLatch latch = new CountDownLatch(1);
 
         AiSession sessionA = new AiSession("a", "A", null, AiTypeEnum.CLAUDE, null,
-                new AbstractAiSessionSettings(null, null, true, null, true, null),
+                new AiSessionSettings(null, null, true, null, true, null, null, null),
                 Instant.now(), Instant.now());
         sessionA.setAiSessionCallback(new AiSessionCallback() {
             @Override
@@ -426,7 +426,7 @@ class InterAiToolsTest {
 
         // allowsImportantMessages=false — must still be interrupted because replyImportant=true
         AiSession sessionA = new AiSession("a", "A", null, AiTypeEnum.CLAUDE, null,
-                new AbstractAiSessionSettings(null, null, true, null, false, null),
+                new AiSessionSettings(null, null, true, null, false, null, null, null),
                 Instant.now(), Instant.now());
         sessionA.setAiSessionCallback(new AiSessionCallback() {
             @Override

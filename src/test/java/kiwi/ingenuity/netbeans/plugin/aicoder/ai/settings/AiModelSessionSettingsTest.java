@@ -4,23 +4,22 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import org.junit.jupiter.api.Test;
 
-class AbstractAiModelSessionSettingsTest {
+class AiModelSessionSettingsTest {
 
     @Test
     void nineArgConstructor_setsAllowWebRequests() {
-        AbstractAiModelSessionSettings cfg = new AbstractAiModelSessionSettings(
+        AiModelSessionSettings cfg = new AiModelSessionSettings(
                 null, null, null, null, null, null, "gpt-5", true, false);
         assertEquals(false, cfg.effectiveAllowWebRequests());
         assertEquals("gpt-5", cfg.model());
     }
 
     @Test
-    void withAutoAccept_preservesAllowWebRequests() {
-        AbstractAiModelSessionSettings cfg = new AbstractAiModelSessionSettings(
+    void setAutoAccept_preservesAllowWebRequests() {
+        AiModelSessionSettings cfg = new AiModelSessionSettings(
                 null, null, null, null, null, null, "gpt-5", null, true);
-        AbstractAiSessionSettings updated = cfg.withAutoAccept(false);
-        assertTrue(updated instanceof AbstractAiModelSessionSettings);
-        assertEquals(true, updated.effectiveAllowWebRequests());
-        assertEquals("gpt-5", ((AbstractAiModelSessionSettings) updated).model());
+        cfg.setAutoAccept(false);
+        assertEquals(true, cfg.effectiveAllowWebRequests());
+        assertEquals("gpt-5", cfg.model());
     }
 }

@@ -1,7 +1,6 @@
 package kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.claude.settings;
 
 import java.util.prefs.Preferences;
-import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.claude.ClaudePluginSettingsKeyEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.PluginSettings;
 import org.openide.util.NbPreferences;
 

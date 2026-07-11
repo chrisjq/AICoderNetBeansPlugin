@@ -1,17 +1,13 @@
 package kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.githubcopilot;
 
-import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.githubcopilot.GithubCopilotModelDiscovery;
-import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.githubcopilot.QuotaInfo;
 import com.github.copilot.CopilotClient;
 import com.github.copilot.generated.rpc.AccountGetQuotaResult;
 import com.github.copilot.generated.rpc.AccountQuotaSnapshot;
 import com.github.copilot.rpc.CopilotClientOptions;
 import com.google.gson.Gson;
 import com.google.gson.JsonObject;
-import java.io.ByteArrayOutputStream;
 import java.io.InputStream;
 import java.io.OutputStream;
-import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;

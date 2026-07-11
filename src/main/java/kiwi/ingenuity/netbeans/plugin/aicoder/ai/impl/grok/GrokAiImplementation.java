@@ -1,5 +1,6 @@
 package kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.grok;
 
+import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.grok.settings.GrokPluginSettings;
 import java.awt.Component;
 import java.io.File;
 import java.util.Arrays;
@@ -16,8 +17,8 @@ import kiwi.ingenuity.netbeans.plugin.aicoder.ai.events.StatusEventTypeEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.grok.events.GrokModelsEvent;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.grok.ui.GrokAiInfoBarExtension;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.session.AiSession;
-import kiwi.ingenuity.netbeans.plugin.aicoder.ai.settings.AbstractAiModelSessionSettings;
-import kiwi.ingenuity.netbeans.plugin.aicoder.ai.settings.AbstractAiSessionSettings;
+import kiwi.ingenuity.netbeans.plugin.aicoder.ai.settings.AiModelSessionSettings;
+import kiwi.ingenuity.netbeans.plugin.aicoder.ai.settings.AiSessionSettings;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.ui.AiInfoBarExtension;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.events.AiProcessEventListener;
 import kiwi.ingenuity.netbeans.plugin.aicoder.utils.StatusMessageUtil;
@@ -57,7 +58,7 @@ public class GrokAiImplementation extends AiImplementation {
     }
 
     public String getCurrentModel() {
-        if (currentSession != null && currentSession.settings() instanceof AbstractAiModelSessionSettings mc) {
+        if (currentSession != null && currentSession.settings() instanceof AiModelSessionSettings mc && mc.model() != null) {
             return mc.model();
         }
         return GrokPluginSettings.getModel();
@@ -131,34 +132,21 @@ public class GrokAiImplementation extends AiImplementation {
                 return;
             }
             setModel(model);
-            AbstractAiSessionSettings cfg = host.getSessionSettings() != null
-                    ? host.getSessionSettings() : AbstractAiSessionSettings.defaults();
-            String currentModel = cfg instanceof AbstractAiModelSessionSettings mc ? mc.model() : null;
+            AiSessionSettings cfg = host.getSessionSettings();
+            String currentModel = cfg instanceof AiModelSessionSettings mc ? mc.model() : null;
             if (!model.equals(currentModel)) {
-                AbstractAiModelSessionSettings newCfg = new AbstractAiModelSessionSettings(
-                        cfg.maxHistory(), cfg.restrictToProjectFiles(), cfg.allowInterAiComms(),
-                        cfg.autoNotifyInbox(), cfg.allowImportantMessages(), cfg.sessionInstructions(),
-                        model, cfg.autoAccept(), cfg.allowWebRequests());
-                if (currentSession != null) {
-                    currentSession.setSettings(newCfg);
+                if (cfg instanceof AiModelSessionSettings modelCfg) {
+                    modelCfg.setModel(model);
                 }
                 delegate.setCurrentSession(currentSession);
-                host.updateSessionSettings(newCfg);
+                host.updateSessionSettings(cfg);
             }
         });
-        String initialModel = session.settings() instanceof AbstractAiModelSessionSettings modelCfg
+        String initialModel = session.settings() instanceof AiModelSessionSettings modelCfg && modelCfg.model() != null
                 ? modelCfg.model() : GrokPluginSettings.getModel();
         provider.setSelectedModel(initialModel);
-        if (initialModel != null && !(session.settings() instanceof AbstractAiModelSessionSettings)) {
-            AbstractAiSessionSettings cfg = session.settings() != null ? session.settings() : AbstractAiSessionSettings.defaults();
-            AbstractAiModelSessionSettings modelSettings = new AbstractAiModelSessionSettings(
-                    cfg.maxHistory(), cfg.restrictToProjectFiles(), cfg.allowInterAiComms(),
-                    cfg.autoNotifyInbox(), cfg.allowImportantMessages(), cfg.sessionInstructions(),
-                    initialModel, cfg.autoAccept(), cfg.allowWebRequests());
-            session.setSettings(modelSettings);
-            if (currentSession != null) {
-                currentSession.setSettings(modelSettings);
-            }
+        if (initialModel != null && session.settings() instanceof AiModelSessionSettings modelSettings && modelSettings.model() == null) {
+            modelSettings.setModel(initialModel);
             host.updateSessionSettings(modelSettings);
         }
 

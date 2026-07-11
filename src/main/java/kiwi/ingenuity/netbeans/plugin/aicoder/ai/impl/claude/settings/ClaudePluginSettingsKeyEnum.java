@@ -1,4 +1,4 @@
-package kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.claude;
+package kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.claude.settings;
 
 public enum ClaudePluginSettingsKeyEnum {
     EXECUTABLE("ai.claude.executable"),

@@ -18,8 +18,8 @@ import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.githubcopilot.settings.Git
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.githubcopilot.ui.GithubCopilotAiInfoBarExtension;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.githubcopilot.ui.GithubCopilotInfoBarListener;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.session.AiSession;
-import kiwi.ingenuity.netbeans.plugin.aicoder.ai.settings.AbstractAiModelSessionSettings;
-import kiwi.ingenuity.netbeans.plugin.aicoder.ai.settings.AbstractAiSessionSettings;
+import kiwi.ingenuity.netbeans.plugin.aicoder.ai.settings.AiModelSessionSettings;
+import kiwi.ingenuity.netbeans.plugin.aicoder.ai.settings.AiSessionSettings;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.events.AiProcessEventListener;
 import org.openide.util.RequestProcessor;
 
@@ -84,16 +84,12 @@ public class GithubCopilotAiImplementation extends AiImplementation {
         // only updated settings and the running session kept the old model.
         processManager.setModel(model);
         if (currentSession != null) {
-            AbstractAiSessionSettings cfg = currentSession.settings() != null
-                    ? currentSession.settings() : AbstractAiSessionSettings.defaults();
-            if (model != null && !model.equals(cfg instanceof AbstractAiModelSessionSettings mc
+            AiSessionSettings cfg = currentSession.settings();
+            if (model != null && !model.equals(cfg instanceof AiModelSessionSettings mc
                     ? mc.model() : null)) {
-                AbstractAiModelSessionSettings newCfg
-                        = new AbstractAiModelSessionSettings(
-                                cfg.maxHistory(), cfg.restrictToProjectFiles(), cfg.allowInterAiComms(),
-                                cfg.autoNotifyInbox(), cfg.allowImportantMessages(), cfg.sessionInstructions(),
-                                model, cfg.autoAccept(), cfg.allowWebRequests());
-                currentSession.setSettings(newCfg);
+                if (cfg instanceof AiModelSessionSettings modelCfg) {
+                    modelCfg.setModel(model);
+                }
             }
         }
     }
@@ -117,36 +113,22 @@ public class GithubCopilotAiImplementation extends AiImplementation {
                 return;
             }
             setModel(model);
-            AbstractAiSessionSettings cfg = host.getSessionSettings() != null
-                    ? host.getSessionSettings() : AbstractAiSessionSettings.defaults();
-            String currentModel = cfg instanceof AbstractAiModelSessionSettings mc ? mc.model() : null;
+            AiSessionSettings cfg = host.getSessionSettings();
+            String currentModel = cfg instanceof AiModelSessionSettings mc ? mc.model() : null;
             if (!model.equals(currentModel)) {
-                AbstractAiModelSessionSettings newCfg
-                        = new AbstractAiModelSessionSettings(
-                                cfg.maxHistory(), cfg.restrictToProjectFiles(), cfg.allowInterAiComms(),
-                                cfg.autoNotifyInbox(), cfg.allowImportantMessages(), cfg.sessionInstructions(),
-                                model, cfg.autoAccept(), cfg.allowWebRequests());
-                if (currentSession != null) {
-                    currentSession.setSettings(newCfg);
+                if (cfg instanceof AiModelSessionSettings modelCfg) {
+                    modelCfg.setModel(model);
                 }
                 processManager.setCurrentSession(currentSession);
-                host.updateSessionSettings(newCfg);
+                host.updateSessionSettings(cfg);
             }
         });
 
-        String initialModel = session.settings() instanceof AbstractAiModelSessionSettings modelCfg
+        String initialModel = session.settings() instanceof AiModelSessionSettings modelCfg && modelCfg.model() != null
                 ? modelCfg.model() : GithubCopilotPluginSettings.getModel();
         provider.setSelectedModel(initialModel);
-        if (initialModel != null && !(session.settings() instanceof AbstractAiModelSessionSettings)) {
-            AbstractAiSessionSettings cfg = session.settings() != null ? session.settings() : AbstractAiSessionSettings.defaults();
-            AbstractAiModelSessionSettings modelSettings = new AbstractAiModelSessionSettings(
-                    cfg.maxHistory(), cfg.restrictToProjectFiles(), cfg.allowInterAiComms(),
-                    cfg.autoNotifyInbox(), cfg.allowImportantMessages(), cfg.sessionInstructions(),
-                    initialModel, cfg.autoAccept(), cfg.allowWebRequests());
-            session.setSettings(modelSettings);
-            if (currentSession != null) {
-                currentSession.setSettings(modelSettings);
-            }
+        if (initialModel != null && session.settings() instanceof AiModelSessionSettings modelSettings && modelSettings.model() == null) {
+            modelSettings.setModel(initialModel);
             host.updateSessionSettings(modelSettings);
         }
 

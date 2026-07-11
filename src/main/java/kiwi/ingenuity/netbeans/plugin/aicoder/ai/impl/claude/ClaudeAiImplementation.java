@@ -25,8 +25,8 @@ import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.claude.settings.ClaudePlug
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.claude.ui.ClaudeAiInfoBarExtension;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.claude.ui.ClaudeInfoBarListener;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.session.AiSession;
-import kiwi.ingenuity.netbeans.plugin.aicoder.ai.settings.AbstractAiModelSessionSettings;
-import kiwi.ingenuity.netbeans.plugin.aicoder.ai.settings.AbstractAiSessionSettings;
+import kiwi.ingenuity.netbeans.plugin.aicoder.ai.settings.AiModelSessionSettings;
+import kiwi.ingenuity.netbeans.plugin.aicoder.ai.settings.AiSessionSettings;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.ui.AiInfoBarExtension;
 import kiwi.ingenuity.netbeans.plugin.aicoder.events.SessionLifecycleListener;
 import kiwi.ingenuity.netbeans.plugin.aicoder.events.SessionLifecycleSource;
@@ -65,7 +65,7 @@ public class ClaudeAiImplementation extends AiImplementation {
     }
 
     public String getCurrentModel() {
-        if (currentSession != null && currentSession.settings() instanceof AbstractAiModelSessionSettings mc) {
+        if (currentSession != null && currentSession.settings() instanceof AiModelSessionSettings mc && mc.model() != null) {
             return mc.model();
         }
         return ClaudePluginSettings.getModel();
@@ -197,34 +197,21 @@ public class ClaudeAiImplementation extends AiImplementation {
                 return;
             }
             setModel(model);
-            AbstractAiSessionSettings cfg = host.getSessionSettings() != null
-                    ? host.getSessionSettings() : AbstractAiSessionSettings.defaults();
-            String currentModel = cfg instanceof AbstractAiModelSessionSettings mc ? mc.model() : null;
+            AiSessionSettings cfg = host.getSessionSettings();
+            String currentModel = cfg instanceof AiModelSessionSettings mc ? mc.model() : null;
             if (!model.equals(currentModel)) {
-                AbstractAiModelSessionSettings newCfg = new AbstractAiModelSessionSettings(
-                        cfg.maxHistory(), cfg.restrictToProjectFiles(), cfg.allowInterAiComms(),
-                        cfg.autoNotifyInbox(), cfg.allowImportantMessages(), cfg.sessionInstructions(),
-                        model, cfg.autoAccept(), cfg.allowWebRequests());
-                if (currentSession != null) {
-                    currentSession.setSettings(newCfg);
+                if (cfg instanceof AiModelSessionSettings modelCfg) {
+                    modelCfg.setModel(model);
                 }
                 delegate.setCurrentSession(currentSession);
-                host.updateSessionSettings(newCfg);
+                host.updateSessionSettings(cfg);
             }
         });
-        String initialModel = session.settings() instanceof AbstractAiModelSessionSettings modelCfg
+        String initialModel = session.settings() instanceof AiModelSessionSettings modelCfg && modelCfg.model() != null
                 ? modelCfg.model() : ClaudePluginSettings.getModel();
         provider.setSelectedModel(initialModel);
-        if (initialModel != null && !(session.settings() instanceof AbstractAiModelSessionSettings)) {
-            AbstractAiSessionSettings cfg = session.settings() != null ? session.settings() : AbstractAiSessionSettings.defaults();
-            AbstractAiModelSessionSettings modelSettings = new AbstractAiModelSessionSettings(
-                    cfg.maxHistory(), cfg.restrictToProjectFiles(), cfg.allowInterAiComms(),
-                    cfg.autoNotifyInbox(), cfg.allowImportantMessages(), cfg.sessionInstructions(),
-                    initialModel, cfg.autoAccept(), cfg.allowWebRequests());
-            session.setSettings(modelSettings);
-            if (currentSession != null) {
-                currentSession.setSettings(modelSettings);
-            }
+        if (initialModel != null && session.settings() instanceof AiModelSessionSettings modelSettings && modelSettings.model() == null) {
+            modelSettings.setModel(initialModel);
             host.updateSessionSettings(modelSettings);
         }
         return provider;

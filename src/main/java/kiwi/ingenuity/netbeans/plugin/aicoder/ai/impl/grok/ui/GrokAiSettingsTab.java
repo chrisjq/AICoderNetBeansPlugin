@@ -21,7 +21,7 @@ import javax.swing.event.DocumentListener;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.AiTypeEnum;
 import static kiwi.ingenuity.netbeans.plugin.aicoder.ai.AiTypeEnum.GROK;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.grok.GrokExecutableLocator;
-import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.grok.GrokPluginSettings;
+import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.grok.settings.GrokPluginSettings;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ui.SettingsTab;
 import org.openide.util.lookup.ServiceProvider;
 

@@ -6,7 +6,8 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.session.AiSession;
-import kiwi.ingenuity.netbeans.plugin.aicoder.ai.settings.AbstractAiSessionSettings;
+import kiwi.ingenuity.netbeans.plugin.aicoder.ai.settings.AiModelSessionSettings;
+import kiwi.ingenuity.netbeans.plugin.aicoder.ai.settings.AiSessionSettings;
 import static org.junit.jupiter.api.Assertions.*;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
@@ -60,10 +61,34 @@ class SessionPersistenceManagerTest {
     }
 
     @Test
+    void modelRoundtrips() throws IOException {
+        SessionPersistenceManager m = mgr();
+        AiSession s = AiSession.create("/projects/MyApp", kiwi.ingenuity.netbeans.plugin.aicoder.ai.AiTypeEnum.CLAUDE);
+        ((AiModelSessionSettings) s.settings()).setModel("claude-opus-4-8");
+        m.save(s);
+        List<AiSession> all = m.loadAll();
+        assertEquals(1, all.size());
+        AiSessionSettings loaded = all.get(0).settings();
+        assertTrue(loaded instanceof AiModelSessionSettings);
+        assertEquals("claude-opus-4-8", ((AiModelSessionSettings) loaded).model());
+    }
+
+    @Test
+    void sessionInstructionsRoundtrip() throws IOException {
+        SessionPersistenceManager m = mgr();
+        AiSession s = AiSession.create("/projects/MyApp", kiwi.ingenuity.netbeans.plugin.aicoder.ai.AiTypeEnum.CLAUDE);
+        s.settings().setSessionInstructions("always answer in haiku");
+        m.save(s);
+        List<AiSession> all = m.loadAll();
+        assertEquals(1, all.size());
+        assertEquals("always answer in haiku", all.get(0).settings().sessionInstructions());
+    }
+
+    @Test
     void allowWebRequestsRoundtrips() throws IOException {
         SessionPersistenceManager m = mgr();
         AiSession s = AiSession.create("/projects/MyApp", kiwi.ingenuity.netbeans.plugin.aicoder.ai.AiTypeEnum.CLAUDE);
-        s.setSettings(new AbstractAiSessionSettings(null, null, null, null, null, null, null, true));
+        s.settings().setAllowWebRequests(true);
         m.save(s);
         List<AiSession> all = m.loadAll();
         assertEquals(1, all.size());

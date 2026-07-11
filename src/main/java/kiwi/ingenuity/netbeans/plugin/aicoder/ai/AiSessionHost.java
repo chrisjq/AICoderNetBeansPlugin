@@ -1,7 +1,7 @@
 package kiwi.ingenuity.netbeans.plugin.aicoder.ai;
 
 import java.io.File;
-import kiwi.ingenuity.netbeans.plugin.aicoder.ai.settings.AbstractAiSessionSettings;
+import kiwi.ingenuity.netbeans.plugin.aicoder.ai.settings.AiSessionSettings;
 
 public interface AiSessionHost {
 
@@ -9,7 +9,7 @@ public interface AiSessionHost {
 
     void suppressNextTurn(String statusMessage, String completionMessage);
 
-    AbstractAiSessionSettings getSessionSettings();
+    AiSessionSettings getSessionSettings();
 
-    void updateSessionSettings(AbstractAiSessionSettings newSettings);
+    void updateSessionSettings(AiSessionSettings newSettings);
 }

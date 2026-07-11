@@ -52,7 +52,7 @@ import kiwi.ingenuity.netbeans.plugin.aicoder.ai.notification.NotificationTypeEn
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.session.AiSession;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.session.AiSessionCallback;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.session.InterruptTypeEnum;
-import kiwi.ingenuity.netbeans.plugin.aicoder.ai.settings.AbstractAiSessionSettings;
+import kiwi.ingenuity.netbeans.plugin.aicoder.ai.settings.AiSessionSettings;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.ui.events.AiInfoBarListener;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.ui.events.DiffDecisionListener;
 import kiwi.ingenuity.netbeans.plugin.aicoder.events.GlobalPropertyBus;
@@ -236,9 +236,8 @@ public final class AiTopComponent extends TopComponent implements AiProcessEvent
 
             @Override
             public void onAutoAcceptChanged(boolean autoAccept) {
-                AbstractAiSessionSettings current = session.settings() != null
-                        ? session.settings() : AbstractAiSessionSettings.defaults();
-                updateSessionSettings(current.withAutoAccept(autoAccept));
+                session.settings().setAutoAccept(autoAccept);
+                updateSessionSettings(session.settings());
             }
         });
 
@@ -419,7 +418,6 @@ public final class AiTopComponent extends TopComponent implements AiProcessEvent
         if (dlg.getResultConfig() == null) {
             return;
         }
-        session.setSettings(dlg.getResultConfig());
         if (dlg.getResultName() != null && !dlg.getResultName().isBlank()) {
             setDisplayName(dlg.getResultName());
             setName(dlg.getResultName());
@@ -1128,13 +1126,12 @@ public final class AiTopComponent extends TopComponent implements AiProcessEvent
     }
 
     @Override
-    public AbstractAiSessionSettings getSessionSettings() {
+    public AiSessionSettings getSessionSettings() {
         return session.settings();
     }
 
     @Override
-    public void updateSessionSettings(AbstractAiSessionSettings newConfig) {
-        session.setSettings(newConfig);
+    public void updateSessionSettings(AiSessionSettings newConfig) {
         infoBar.setAutoAccept(newConfig.effectiveAutoAccept());
         try {
             sessionPersistenceManager.save(session);

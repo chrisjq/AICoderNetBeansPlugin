@@ -12,7 +12,7 @@ import kiwi.ingenuity.netbeans.plugin.aicoder.ai.notification.AbstractNotificati
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.session.AiSession;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.session.AiSessionCallback;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.session.InterruptTypeEnum;
-import kiwi.ingenuity.netbeans.plugin.aicoder.ai.settings.AbstractAiSessionSettings;
+import kiwi.ingenuity.netbeans.plugin.aicoder.ai.settings.AiSessionSettings;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.SessionRegistry;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.events.AiProcessEventListener;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.session.AbstractAiSession;
@@ -23,7 +23,7 @@ import org.junit.jupiter.api.Test;
 class AiSessionBrokerTest {
 
     private static AiSession stubSession(String id, String name) {
-        AbstractAiSessionSettings settings = new AbstractAiSessionSettings(null, null, true, null, true, null);
+        AiSessionSettings settings = new AiSessionSettings(null, null, true, null, true, null, null, null);
         AiSession s = new AiSession(id, name, null, AiTypeEnum.CLAUDE, null, settings, Instant.now(), Instant.now());
         s.setAiSessionCallback(new AiSessionCallback() {
             @Override
