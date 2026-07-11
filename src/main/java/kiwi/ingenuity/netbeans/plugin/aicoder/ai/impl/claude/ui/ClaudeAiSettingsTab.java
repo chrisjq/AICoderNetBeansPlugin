@@ -46,6 +46,13 @@ public class ClaudeAiSettingsTab implements SettingsTab {
 
         c.gridx = 0;
         c.gridy = 0;
+        c.gridwidth = 5;
+        c.weightx = 1;
+        panel.add(new JLabel("<html><b>Authentication:</b> Sign in through the Claude CLI in a terminal. Run <tt>claude</tt> and follow the prompts on first use, or run <tt>claude auth login</tt>.</html>"), c);
+        c.gridwidth = 1;
+
+        c.gridx = 0;
+        c.gridy = 1;
         c.weightx = 0;
         panel.add(new JLabel("Claude executable:"), c);
 
@@ -68,7 +75,7 @@ public class ClaudeAiSettingsTab implements SettingsTab {
         panel.add(testButton, c);
 
         c.gridx = 1;
-        c.gridy = 1;
+        c.gridy = 2;
         c.gridwidth = 4;
         testResultLabel = new JLabel(" ");
         testResultLabel.setFont(testResultLabel.getFont().deriveFont(Font.ITALIC, 11f));
@@ -76,7 +83,7 @@ public class ClaudeAiSettingsTab implements SettingsTab {
         c.gridwidth = 1;
 
         c.gridx = 0;
-        c.gridy = 2;
+        c.gridy = 3;
         c.weightx = 0;
         panel.add(new JLabel("Model:"), c);
         modelCombo = new JComboBox<>(ClaudePluginSettings.getKnownModels());
@@ -85,7 +92,7 @@ public class ClaudeAiSettingsTab implements SettingsTab {
         panel.add(modelCombo, c);
 
         c.gridx = 0;
-        c.gridy = 3;
+        c.gridy = 4;
         c.weighty = 1;
         c.gridwidth = 5;
         panel.add(Box.createVerticalGlue(), c);

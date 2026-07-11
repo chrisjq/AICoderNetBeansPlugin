@@ -706,7 +706,12 @@ public class McpHookServer {
             throw e;
         }
         catch (Exception e) {
-            Exceptions.printStackTrace(e);
+            if (PluginSettings.isLogToolUse()) {
+                Exceptions.printStackTrace(e);
+            }
+            else {
+                LOG.log(Level.FINE, "Tool failure: " + toolName, e);
+            }
             McpHookServerUtil.sendJson(ex, 200,
                     McpHookServerUtil.mcpTextResult(id,
                             "Error in " + toolName + ": internal error"));

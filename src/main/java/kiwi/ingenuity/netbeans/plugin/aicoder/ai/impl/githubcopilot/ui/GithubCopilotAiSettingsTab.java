@@ -45,6 +45,13 @@ public final class GithubCopilotAiSettingsTab implements SettingsTab {
 
         c.gridx = 0;
         c.gridy = 0;
+        c.gridwidth = 5;
+        c.weightx = 1;
+        panel.add(new JLabel("<html><b>Authentication:</b> Sign in through the GitHub Copilot CLI in a terminal. Run <tt>copilot login</tt> and complete the sign-in flow there.</html>"), c);
+        c.gridwidth = 1;
+
+        c.gridx = 0;
+        c.gridy = 1;
         c.weightx = 0;
         panel.add(new JLabel("Copilot executable:"), c);
 
@@ -67,7 +74,7 @@ public final class GithubCopilotAiSettingsTab implements SettingsTab {
         panel.add(testButton, c);
 
         c.gridx = 1;
-        c.gridy = 1;
+        c.gridy = 2;
         c.gridwidth = 4;
         testResultLabel = new JLabel(" ");
         testResultLabel.setFont(testResultLabel.getFont().deriveFont(Font.ITALIC, 11f));
@@ -75,7 +82,7 @@ public final class GithubCopilotAiSettingsTab implements SettingsTab {
         c.gridwidth = 1;
 
         c.gridx = 0;
-        c.gridy = 2;
+        c.gridy = 3;
         c.weightx = 0;
         panel.add(new JLabel("Model:"), c);
 
@@ -86,7 +93,7 @@ public final class GithubCopilotAiSettingsTab implements SettingsTab {
         panel.add(modelCombo, c);
 
         c.gridx = 0;
-        c.gridy = 3;
+        c.gridy = 4;
         c.weighty = 1;
         c.gridwidth = 5;
         panel.add(Box.createVerticalGlue(), c);
