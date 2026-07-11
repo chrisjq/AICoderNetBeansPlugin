@@ -42,6 +42,7 @@ import kiwi.ingenuity.netbeans.plugin.aicoder.ai.events.AiInboxMessageEvent;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.events.AiPropertyEvent;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.events.AiPropertyListener;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.events.AskUserQuestionEvent;
+import kiwi.ingenuity.netbeans.plugin.aicoder.ai.events.PermissionDecision;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.events.PermissionEvent;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.events.StatusEvent;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.events.StatusEventTypeEnum;
@@ -103,7 +104,7 @@ public final class AiTopComponent extends TopComponent implements AiProcessEvent
     private static final Color STATUS_COLOR_RED = new Color(0xF4, 0x43, 0x36);
     // Briefly shown in place of orange each time AI output arrives while the
     // tab is THINKING. See flashThinking().
-    private static final Color THINKING_FLASH_COLOR = new Color(0xFF, 0xB7, 0x4D);
+    private static final Color THINKING_FLASH_COLOR = new Color(0xFF, 0xC8, 0x55);
 
     private static final Image STATUS_ICON_GREEN = makeStatusIcon(STATUS_COLOR_GREEN);
     private static final Image STATUS_ICON_ORANGE = makeStatusIcon(STATUS_COLOR_ORANGE);
@@ -192,6 +193,13 @@ public final class AiTopComponent extends TopComponent implements AiProcessEvent
     private String pendingSubmitText = null;
 
     /**
+     * False until the first startup attempt resolves to READY or a fatal startup
+     * error. While false, the visible chat input/send controls stay disabled so
+     * the user cannot submit a prompt against a still-loading backend.
+     */
+    private boolean startupResolved = false;
+
+    /**
      * Outstanding AskUserQuestion/Permission cancellers and open diff windows.
      * Multiple can be in flight at once (e.g. AskUserQuestion overlapping a
      * Permission), so track all and complete/close every one on teardown.
@@ -256,6 +264,9 @@ public final class AiTopComponent extends TopComponent implements AiProcessEvent
         });
 
         inputField.setSubmitCallback(this::handleSubmit);
+        inputField.setEnabled(false);
+        inputField.setCanSend(false);
+        sendButton.setEnabled(false);
         infoBar.setAutoAccept(session.settings() != null
                 ? session.settings().effectiveAutoAccept()
                 : kiwi.ingenuity.netbeans.plugin.aicoder.PluginSettings.isAutoAccept());
@@ -576,11 +587,16 @@ public final class AiTopComponent extends TopComponent implements AiProcessEvent
         }
 
         startAiProcess();
-        loadHistory(); // may set chosenSessionDir from saved workingDir
-        // Deferred so loadHistory() runs first; skips chooser if chosenSessionDir already set
-        SwingUtilities.invokeLater(this::resolveSessionDir);
+        // loadHistory() now loads/parses off the EDT and resolves the session dir
+        // itself once it (asynchronously) finishes — see loadHistory() below.
+        loadHistory();
         if (aiBackend != null && lifecycleListeners.isEmpty()) {
-            aiBackend.registerLifecycleListeners(this);
+            // registerLifecycleListeners() (Claude) synchronously stats/reads
+            // ~/.claude/.credentials.json via AnthropicApiClient.refreshCredentialsState()
+            // before kicking off its own async model/usage fetches. lifecycleListeners
+            // is a CopyOnWriteArrayList so it's safe to populate off the EDT.
+            AiImplementation backendForListeners = aiBackend;
+            PERSIST_EXECUTOR.execute(() -> backendForListeners.registerLifecycleListeners(this));
         }
         SwingUtilities.invokeLater(() -> fireListenerEvent(SessionLifecycleListener::onSessionStarted));
         if (session.settings() != null && session.settings().effectiveAllowInterAiComms()) {
@@ -649,6 +665,8 @@ public final class AiTopComponent extends TopComponent implements AiProcessEvent
             if (conversationPanel != null) {
                 conversationPanel.addSystemMessage(msg);
             }
+            startupResolved = true;
+            refreshInputEnabled();
             return;
         }
         if (aiBackend != null) {
@@ -656,10 +674,17 @@ public final class AiTopComponent extends TopComponent implements AiProcessEvent
             if (parent == null) {
                 parent = WindowManager.getDefault().getMainWindow();
             }
-            aiBackend.setCurrentSession(session);
-            aiBackend.startWithDiscovery(null, parent);
+            AiImplementation backend = aiBackend;
+            backend.setCurrentSession(session);
+            Window finalParent = parent;
+            // startWithDiscovery() itself locates the CLI executable (PATH scan +
+            // well-known-location stat calls) on the calling thread before handing
+            // the actual process start off to its own background RequestProcessor.
+            // Run the whole call off the EDT so opening/creating a session never
+            // blocks the UI while that executable search runs.
+            PERSIST_EXECUTOR.execute(() -> backend.startWithDiscovery(null, finalParent));
             SwingUtilities.invokeLater(() -> {
-                aiBackend.onStarted(AiTopComponent.this);
+                backend.onStarted(AiTopComponent.this);
             });
         }
     }
@@ -900,8 +925,8 @@ public final class AiTopComponent extends TopComponent implements AiProcessEvent
 
     /**
      * Records a THINKING-flash request. Non-EDT callers coalesce to at most one
-     * pending invokeLater; repeated requests while that runnable or the timer is
-     * already active just push the deadline out.
+     * pending invokeLater; repeated requests while that runnable or the timer
+     * is already active just push the deadline out.
      */
     private void requestThinkingFlash() {
         thinkingFlashDeadlineNanos = System.nanoTime()
@@ -968,8 +993,8 @@ public final class AiTopComponent extends TopComponent implements AiProcessEvent
     }
 
     /**
-     * True for events that actually render new AI-generated content in the
-     * chat panel. Internal/plumbing events (status updates, impl events, turn
+     * True for events that actually render new AI-generated content in the chat
+     * panel. Internal/plumbing events (status updates, impl events, turn
      * boundaries) must not trigger the THINKING flash pulse — only output the
      * user can actually see arriving should.
      */
@@ -987,7 +1012,6 @@ public final class AiTopComponent extends TopComponent implements AiProcessEvent
 
         // The flash pulse is requested in onAiProcessEvent() before this event
         // is dispatched; handleEvent() only does the full per-event UI work.
-
         if (turnOutputSuppressed) {
             if (event instanceof TextDeltaEvent) {
                 return;
@@ -1087,6 +1111,8 @@ public final class AiTopComponent extends TopComponent implements AiProcessEvent
                 case READY -> {
                     infoBar.setStatusMessage(se.text());
                     infoBar.startSessionClock();
+                    startupResolved = true;
+                    refreshInputEnabled();
                     // Process is up and idle — clear any red/fatal state to green.
                     setTabStatus(TabStatus.READY);
                     if (pendingSubmitText != null) {
@@ -1107,6 +1133,7 @@ public final class AiTopComponent extends TopComponent implements AiProcessEvent
                 }
                 case EXITED, FAILED -> {
                     pendingSubmitText = null;
+                    startupResolved = true;
                     infoBar.setProcessing(false);
                     conversationPanel.addSystemMessage(se.text());
                     infoBar.setStatusMessage("Ready...");
@@ -1199,6 +1226,12 @@ public final class AiTopComponent extends TopComponent implements AiProcessEvent
 
     private void refreshInputEnabled() {
         boolean wasDisabled = !inputField.isEnabled();
+        if (!startupResolved) {
+            inputField.setEnabled(false);
+            inputField.setCanSend(false);
+            sendButton.setEnabled(false);
+            return;
+        }
         if (aiBackend == null) {
             inputField.setEnabled(true);
             setSendEnabled(true);
@@ -1209,6 +1242,7 @@ public final class AiTopComponent extends TopComponent implements AiProcessEvent
         }
         if (aiBackend.isPendingDiff()) {
             inputField.setEnabled(false);
+            inputField.setCanSend(false);
             sendButton.setEnabled(false);
         }
         else {
@@ -1524,43 +1558,91 @@ public final class AiTopComponent extends TopComponent implements AiProcessEvent
         }
     }
 
+    /**
+     * Loads and applies saved history for this session. Disk I/O and JSON
+     * parsing (and the stored-session-validity disk scan) run off the EDT on
+     * {@link #PERSIST_EXECUTOR} so opening or creating a session never blocks
+     * the UI while its (possibly large) history file loads; only the final
+     * UI/state mutations in {@link #applyLoadedHistory} run on the EDT.
+     */
     private void loadHistory() {
         if (historyManager == null || !PluginSettings.isSaveHistory()) {
+            SwingUtilities.invokeLater(this::resolveSessionDir);
             return;
         }
+        HistoryPersistenceManager manager = historyManager;
+        PERSIST_EXECUTOR.execute(() -> loadHistoryInBackground(manager));
+    }
+
+    /**
+     * Runs off the EDT (see {@link #PERSIST_EXECUTOR}). Reads and parses the
+     * history file and checks stored-session validity — both potentially slow
+     * disk operations — then hands the result to the EDT.
+     */
+    private void loadHistoryInBackground(HistoryPersistenceManager manager) {
+        LoadedHistory loaded;
         try {
-            LoadedHistory loaded = historyManager.load();
-            if (session != null) {
-                session.setInstructionsLoaded(loaded.instructionsLoaded());
-            }
-            if (loaded.messages().isEmpty() && loaded.sessionId() == null) {
-                return;
-            }
-            if (loaded.workingDir() != null) {
-                File savedDir = new File(loaded.workingDir());
-                if (savedDir.isDirectory()) {
-                    chosenSessionDir = savedDir;
-                }
-            }
-            if (!loaded.messages().isEmpty()) {
-                conversationPanel.restoreHistory(loaded.messages());
-            }
-            if (loaded.sessionId() != null && aiBackend != null) {
-                if (aiBackend.isStoredSessionValid(loaded.sessionId())) {
-                    aiBackend.resumeSession(loaded.sessionId());
-                    if (contextProvider != null) {
-                        contextProvider.resetSentContext();
-                    }
-                }
-                else {
-                    LOG.log(Level.INFO, "Saved session {0} not found in AI storage — history kept, session will not resume", loaded.sessionId());
-                    historyManager.save(loaded.messages(), null, loaded.workingDir(), loaded.instructionsLoaded());
-                }
-            }
+            loaded = manager.load();
         }
         catch (IOException e) {
             LOG.log(Level.WARNING, "Could not load history", e);
+            SwingUtilities.invokeLater(this::resolveSessionDir);
+            return;
         }
+        AiImplementation backend = aiBackend;
+        boolean storedSessionValid = loaded.sessionId() != null && backend != null
+                && backend.isStoredSessionValid(loaded.sessionId());
+        SwingUtilities.invokeLater(() -> applyLoadedHistory(loaded, storedSessionValid));
+    }
+
+    /**
+     * EDT-only: applies a background-loaded history result to this tab's
+     * conversation panel and session state, then resolves the session working
+     * directory (which depends on {@code chosenSessionDir} possibly having just
+     * been set from the loaded history). No-ops safely if the tab was closed
+     * while the history was loading.
+     */
+    private void applyLoadedHistory(LoadedHistory loaded, boolean storedSessionValid) {
+        if (aiBackend == null) {
+            resolveSessionDir();
+            return; // stale invokeLater fired after close
+        }
+        if (session != null) {
+            session.setInstructionsLoaded(loaded.instructionsLoaded());
+        }
+        if (loaded.messages().isEmpty() && loaded.sessionId() == null) {
+            resolveSessionDir();
+            return;
+        }
+        if (loaded.workingDir() != null) {
+            File savedDir = new File(loaded.workingDir());
+            if (savedDir.isDirectory()) {
+                chosenSessionDir = savedDir;
+            }
+        }
+        if (!loaded.messages().isEmpty()) {
+            conversationPanel.restoreHistory(loaded.messages());
+        }
+        if (loaded.sessionId() != null) {
+            if (storedSessionValid) {
+                aiBackend.resumeSession(loaded.sessionId());
+                if (contextProvider != null) {
+                    contextProvider.resetSentContext();
+                }
+            }
+            else {
+                LOG.log(Level.INFO, "Saved session {0} not found in AI storage — history kept, session will not resume", loaded.sessionId());
+                if (historyManager != null) {
+                    try {
+                        historyManager.save(loaded.messages(), null, loaded.workingDir(), loaded.instructionsLoaded());
+                    }
+                    catch (IOException e) {
+                        LOG.log(Level.WARNING, "Could not resave history after invalid stored session", e);
+                    }
+                }
+            }
+        }
+        resolveSessionDir();
     }
 
     private void saveHistory() {

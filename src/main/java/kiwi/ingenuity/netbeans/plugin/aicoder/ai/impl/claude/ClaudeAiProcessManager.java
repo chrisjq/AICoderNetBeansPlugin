@@ -40,14 +40,14 @@ public class ClaudeAiProcessManager extends AiProcessManager {
     private static final Logger LOG = Logger.getLogger(ClaudeAiProcessManager.class.getName());
     private static final Gson GSON = new GsonBuilder().disableHtmlEscaping().create();
 
-    private boolean firstMessage = true;
+    private volatile boolean firstMessage = true;
     private long cachedContextWindow = 0;
     // Kept open across the turn so cancel() can write a graceful interrupt to stdin.
     // Guarded by stdinLock (a separate lock from `this`) because cancel() holds `this`
     // while reading it and the process thread must write it without deadlocking on `this`.
     private volatile OutputStream currentStdin = null;
     private final Object stdinLock = new Object();
-    private ClaudeAiMcpRegistrar registrar = null;
+    private volatile ClaudeAiMcpRegistrar registrar = null;
     private ClaudeAiSession claudeAiSession = null;
 
     public ClaudeAiProcessManager(AiProcessEventListener listener) {
@@ -527,8 +527,14 @@ public class ClaudeAiProcessManager extends AiProcessManager {
         sessionConfigDir = null;
     }
 
+    // Called from the EDT (history load applies the stored session id; the
+    // diff/tool-use path checks MCP state). Deliberately NOT synchronized:
+    // start() holds this manager's monitor for seconds (CLI spawn + MCP
+    // registration), and sharing the monitor here froze the NetBeans UI
+    // whenever a tab opened while a start was in flight. All fields touched
+    // are volatile, so visibility is preserved without the lock.
     @Override
-    public synchronized void resumeSession(String existingSessionId) {
+    public void resumeSession(String existingSessionId) {
         if (existingSessionId == null || existingSessionId.isBlank()) {
             return;
         }
@@ -538,7 +544,7 @@ public class ClaudeAiProcessManager extends AiProcessManager {
     }
 
     @Override
-    public synchronized boolean isMcpActive() {
+    public boolean isMcpActive() {
         return registrar != null;
     }
 

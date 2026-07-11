@@ -46,9 +46,9 @@ public class GithubCopilotProcessManager extends AiProcessManager {
     // Copilot's own resumable session id. Normally equals the plugin session id,
     // but is replaced with a fresh UUID after a corrupted resume so MCP routing
     // (which keys on the plugin session id) is unaffected.
-    private String copilotSessionId = null;
+    private volatile String copilotSessionId = null;
     private volatile boolean sessionCorrupted = false;
-    private GithubCopilotMcpRegistrar registrar = null;
+    private volatile GithubCopilotMcpRegistrar registrar = null;
     private GithubCopilotAiSession copilotAiSession = null;
     private GithubCopilotSessionEventBridge eventBridge = null;
 
@@ -385,8 +385,15 @@ public class GithubCopilotProcessManager extends AiProcessManager {
         sessionConfigDir = null;
     }
 
+    // Called from the EDT (history load applies the stored session id; the
+    // diff/tool-use path checks MCP state). Deliberately NOT synchronized:
+    // start() holds this manager's monitor for seconds (copilot --server
+    // spawn + MCP registration + session handshake), and sharing the monitor
+    // here froze the NetBeans UI whenever a tab opened while a start was in
+    // flight. All fields touched are volatile, so visibility is preserved
+    // without the lock.
     @Override
-    public synchronized void resumeSession(String existingSessionId) {
+    public void resumeSession(String existingSessionId) {
         if (existingSessionId == null || existingSessionId.isBlank()) {
             return;
         }
@@ -395,7 +402,7 @@ public class GithubCopilotProcessManager extends AiProcessManager {
     }
 
     @Override
-    public synchronized boolean isMcpActive() {
+    public boolean isMcpActive() {
         return registrar != null;
     }
 

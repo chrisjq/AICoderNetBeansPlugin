@@ -30,27 +30,27 @@ public abstract class AiProcessManager {
     /**
      * Path/command of the backend CLI executable.
      */
-    protected String executablePath;
+    protected volatile String executablePath;
     /**
      * Currently selected model.
      */
-    protected String model;
+    protected volatile String model;
     /**
      * Plugin session id (the {@link AiSession#id()} UUID).
      */
-    protected String sessionId = null;
+    protected volatile String sessionId = null;
     /**
      * Working directory pinned on the first send of the session.
      */
-    protected File sessionWorkingDir = null;
+    protected volatile File sessionWorkingDir = null;
     /**
      * Per-session config dir ({@code ~/.ai-coder/{type}/{sessionId}/}).
      */
-    protected Path sessionConfigDir = null;
+    protected volatile Path sessionConfigDir = null;
     /**
      * The shared session model object.
      */
-    protected AiSession currentSession = null;
+    protected volatile AiSession currentSession = null;
 
     protected volatile boolean running = false;
     protected volatile boolean processing = false;
@@ -62,27 +62,33 @@ public abstract class AiProcessManager {
         this.listener = listener;
     }
 
-    public synchronized void setCurrentSession(AiSession session) {
+    // These accessors are called from the EDT (tab open, history save/load,
+    // diff-panel callbacks) and each guards a single volatile field, so they
+    // are deliberately NOT synchronized: the subclasses' synchronized start()
+    // holds the manager monitor for seconds (CLI spawn + MCP registration),
+    // and sharing that monitor here froze the whole NetBeans UI whenever a
+    // session tab opened while a start was in flight.
+    public void setCurrentSession(AiSession session) {
         this.currentSession = session;
     }
 
-    public synchronized void setSessionConfigDir(Path configDir) {
+    public void setSessionConfigDir(Path configDir) {
         this.sessionConfigDir = configDir;
     }
 
-    public synchronized String getSessionId() {
+    public String getSessionId() {
         return sessionId;
     }
 
-    public synchronized File getSessionWorkingDir() {
+    public File getSessionWorkingDir() {
         return sessionWorkingDir;
     }
 
-    public synchronized void setModel(String model) {
+    public void setModel(String model) {
         this.model = model;
     }
 
-    public synchronized void setPendingDiff(boolean pending) {
+    public void setPendingDiff(boolean pending) {
         this.pendingDiff = pending;
     }
 
@@ -98,7 +104,7 @@ public abstract class AiProcessManager {
         return pendingDiff;
     }
 
-    public synchronized McpHookServer getMcpServer() {
+    public McpHookServer getMcpServer() {
         return McpServerRegistry.getServer();
     }
 

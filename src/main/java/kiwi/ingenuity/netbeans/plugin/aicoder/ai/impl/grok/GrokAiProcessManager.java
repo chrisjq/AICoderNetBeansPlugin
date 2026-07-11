@@ -38,8 +38,8 @@ public class GrokAiProcessManager extends AiProcessManager {
 
     private static final Logger LOG = Logger.getLogger(GrokAiProcessManager.class.getName());
 
-    private boolean firstMessage = true;
-    private GrokAiMcpRegistrar registrar = null;
+    private volatile boolean firstMessage = true;
+    private volatile GrokAiMcpRegistrar registrar = null;
     private GrokAiSession grokAiSession = null;
 
     public GrokAiProcessManager(AiProcessEventListener listener) {
@@ -419,8 +419,14 @@ public class GrokAiProcessManager extends AiProcessManager {
         firstMessage = true;
     }
 
+    // Called from the EDT (history load applies the stored session id; the
+    // diff/tool-use path checks MCP state). Deliberately NOT synchronized:
+    // start() holds this manager's monitor for seconds (CLI spawn + MCP
+    // registration), and sharing the monitor here froze the NetBeans UI
+    // whenever a tab opened while a start was in flight. All fields touched
+    // are volatile, so visibility is preserved without the lock.
     @Override
-    public synchronized void resumeSession(String existingSessionId) {
+    public void resumeSession(String existingSessionId) {
         if (existingSessionId == null || existingSessionId.isBlank()) {
             return;
         }
@@ -430,7 +436,7 @@ public class GrokAiProcessManager extends AiProcessManager {
     }
 
     @Override
-    public synchronized boolean isMcpActive() {
+    public boolean isMcpActive() {
         return registrar != null;
     }
 }

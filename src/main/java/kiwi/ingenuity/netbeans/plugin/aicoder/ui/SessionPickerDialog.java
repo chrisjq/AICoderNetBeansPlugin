@@ -209,20 +209,38 @@ public class SessionPickerDialog extends JDialog {
         if (count < 1) {
             count = 1;
         }
+        int finalCount = count;
 
-        // count == 1 -> use the typed name as-is; count > 1 -> suffix each with _1.._N.
-        List<AiSession> created = new ArrayList<>();
-        for (int i = 1; i <= count; i++) {
-            String name = count == 1 ? typedName : typedName + "_" + i;
-            AiSession session = AiSession.create(projectPath, chosenType).withName(name);
-            try {
-                spm.save(session);
-                created.add(session);
+        // spm.save() takes a cross-process file lock and rewrites the whole
+        // sessions JSON file on every call, so doing this in a loop synchronously
+        // on the EDT (as before) could freeze the UI for a moment when creating
+        // several sessions at once. Run the save loop off the EDT, then dispose
+        // and open the created tabs back on the EDT.
+        setCreateControlsEnabled(false);
+        new Thread(() -> {
+            List<AiSession> created = new ArrayList<>();
+            // count == 1 -> use the typed name as-is; count > 1 -> suffix each with _1.._N.
+            for (int i = 1; i <= finalCount; i++) {
+                String name = finalCount == 1 ? typedName : typedName + "_" + i;
+                AiSession session = AiSession.create(projectPath, chosenType).withName(name);
+                try {
+                    spm.save(session);
+                    created.add(session);
+                }
+                catch (IOException e) {
+                    LOG.log(Level.WARNING, "Could not save new session " + name, e);
+                }
             }
-            catch (IOException e) {
-                LOG.log(Level.WARNING, "Could not save new session " + name, e);
-            }
-        }
+            SwingUtilities.invokeLater(() -> {
+                if (created.isEmpty()) {
+                    setCreateControlsEnabled(true);
+                    return;
+                }
+                dispose();
+                created.forEach(this::openSession);
+            });
+        }, "aicoder-session-create").start();
+    }
 
     private void setCreateControlsEnabled(boolean enabled) {
         createBtn.setEnabled(enabled);
