@@ -66,7 +66,22 @@ public class McpHookServer {
             return p.toRealPath();
         }
         catch (IOException e) {
-            return p.normalize();
+            // Path may not exist yet (e.g. WriteFile creating a new file).
+            // Resolve the deepest existing ancestor so symlinked paths still
+            // match the registered project dirs, then re-append the tail.
+            java.nio.file.Path abs = p.toAbsolutePath().normalize();
+            java.nio.file.Path tail = abs.getFileName();
+            java.nio.file.Path parent = abs.getParent();
+            while (parent != null) {
+                try {
+                    return parent.toRealPath().resolve(tail);
+                }
+                catch (IOException ex) {
+                    tail = parent.getFileName().resolve(tail);
+                    parent = parent.getParent();
+                }
+            }
+            return abs;
         }
     }
 

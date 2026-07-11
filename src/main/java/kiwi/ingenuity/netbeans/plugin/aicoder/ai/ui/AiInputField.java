@@ -325,13 +325,6 @@ public class AiInputField extends JTextArea {
         String next = older ? history.previous(current) : history.next(current);
         showingHint = false;
         setForeground(normalForeground);
-        if (next.isEmpty()) {
-            showingHint = true;
-            setText(HINT);
-            setForeground(HINT_COLOR);
-        }
-        else {
-            setText(next);
-        }
+        setText(next);
     }
 }
