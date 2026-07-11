@@ -109,6 +109,10 @@ public class SearchProvider {
         if (name == null || name.isBlank()) {
             return "name is required";
         }
+        String invalidPattern = validateNamePattern(name, kind);
+        if (invalidPattern != null) {
+            return invalidPattern;
+        }
         FileObject fo = resolveFileObject(filePath);
         if (fo == null) {
             return filePath != null && !filePath.isBlank()
@@ -152,6 +156,10 @@ public class SearchProvider {
     public static String searchSymbols(String filePath, String name, String kind, boolean includeDeps) {
         if (name == null || name.isBlank()) {
             return "name is required";
+        }
+        String invalidPattern = validateNamePattern(name, kind);
+        if (invalidPattern != null) {
+            return invalidPattern;
         }
         FileObject fo = resolveFileObject(filePath);
         if (fo == null) {
@@ -347,6 +355,19 @@ public class SearchProvider {
                             .append(f != null ? f.getPath() : "[binary]").append("\n");
                 });
         return sb.toString();
+    }
+
+    static String validateNamePattern(String name, String kind) {
+        if (name == null || name.isBlank() || kind == null || !"regexp".equalsIgnoreCase(kind)) {
+            return null;
+        }
+        try {
+            Pattern.compile(name);
+            return null;
+        }
+        catch (PatternSyntaxException e) {
+            return "Invalid regex: " + e.getMessage();
+        }
     }
 
     private static ClassIndex.NameKind toNameKind(String kind) {
