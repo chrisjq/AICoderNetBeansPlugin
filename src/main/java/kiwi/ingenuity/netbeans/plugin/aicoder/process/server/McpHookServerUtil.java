@@ -14,6 +14,7 @@ import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import kiwi.ingenuity.netbeans.plugin.aicoder.PluginSettings;
 import kiwi.ingenuity.netbeans.plugin.aicoder.StringConst;
@@ -188,10 +189,34 @@ public final class McpHookServerUtil {
     public static void sendJson(HttpExchange ex, int status, String json) throws IOException {
         byte[] bytes = json.getBytes(StandardCharsets.UTF_8);
         ex.getResponseHeaders().add("Content-Type", "application/json");
-        ex.sendResponseHeaders(status, bytes.length);
-        try (OutputStream out = ex.getResponseBody()) {
-            out.write(bytes);
+        try {
+            ex.sendResponseHeaders(status, bytes.length);
+            try (OutputStream out = ex.getResponseBody()) {
+                out.write(bytes);
+            }
         }
+        catch (IOException e) {
+            if (isPeerDisconnect(e)) {
+                return;
+            }
+            throw e;
+        }
+    }
+
+    static boolean isPeerDisconnect(IOException e) {
+        for (Throwable current = e; current != null; current = current.getCause()) {
+            String message = current.getMessage();
+            if (message == null) {
+                continue;
+            }
+            String normalized = message.toLowerCase(Locale.ROOT);
+            if (normalized.contains("broken pipe")
+                    || normalized.contains("connection reset")
+                    || normalized.contains("forcibly closed")) {
+                return true;
+            }
+        }
+        return false;
     }
 
     // ---- Decision helpers ----

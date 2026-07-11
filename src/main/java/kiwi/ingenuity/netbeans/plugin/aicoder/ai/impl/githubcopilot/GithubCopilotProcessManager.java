@@ -7,6 +7,7 @@ import com.github.copilot.rpc.McpHttpServerConfig;
 import com.github.copilot.rpc.PermissionHandler;
 import com.github.copilot.rpc.ResumeSessionConfig;
 import com.github.copilot.rpc.SessionConfig;
+import com.github.copilot.rpc.SessionMetadata;
 import java.io.File;
 import java.util.List;
 import java.util.Map;
@@ -148,6 +149,7 @@ public class GithubCopilotProcessManager extends AiProcessManager {
         try {
             client.start().get(2, TimeUnit.MINUTES);
             copilotSession = createOrResumeSession(client, model);
+            copilotSessionId = copilotSession.getSessionId();
             eventBridge.attach(copilotSession);
         }
         catch (Exception e) {
@@ -168,32 +170,91 @@ public class GithubCopilotProcessManager extends AiProcessManager {
     }
 
     /**
-     * Resumes copilotSessionId if it exists on disk, otherwise creates a new
-     * session with that id. A first-ever start() always attempts resume first
-     * because copilotSessionId is set from the stable plugin session id, and
-     * "resume a session that doesn't exist yet" fails cleanly (caught below and
-     * retried as create) rather than needing an explicit existence check.
+     * Resume an existing Copilot session only when it is actually present in the
+     * SDK session store; otherwise create a fresh one under the stable plugin
+     * session id so later reopen/resume uses the same id without a noisy
+     * "session not found" exception on first start.
      */
     private CopilotSession createOrResumeSession(CopilotClient client, String model)
             throws ExecutionException, InterruptedException, TimeoutException {
         Map<String, com.github.copilot.rpc.McpServerConfig> mcpServers = buildMcpServers();
+        if (!storedSessionExists(client, copilotSessionId)) {
+            return createSession(client, model, mcpServers, copilotSessionId);
+        }
         try {
-            ResumeSessionConfig resumeConfig = new ResumeSessionConfig()
-                    .setModel(model)
-                    .setExcludedTools(List.of("edit", "create"))
-                    .setOnPermissionRequest(PermissionHandler.APPROVE_ALL)
-                    .setMcpServers(mcpServers);
-            return client.resumeSession(copilotSessionId, resumeConfig).get(2, TimeUnit.MINUTES);
+            return client.resumeSession(copilotSessionId, buildResumeConfig(model, mcpServers)).get(2, TimeUnit.MINUTES);
         }
         catch (ExecutionException resumeFailure) {
-            LOG.log(Level.INFO, "Resume failed for " + copilotSessionId + ", creating instead", resumeFailure);
-            SessionConfig createConfig = new SessionConfig()
-                    .setModel(model)
-                    .setExcludedTools(List.of("edit", "create"))
-                    .setOnPermissionRequest(PermissionHandler.APPROVE_ALL)
-                    .setMcpServers(mcpServers);
-            return client.createSession(createConfig).get(2, TimeUnit.MINUTES);
+            if (isCorruptedSessionFailure(resumeFailure)) {
+                sessionCorrupted = true;
+                copilotSessionId = java.util.UUID.randomUUID().toString();
+            }
+            else if (!isSessionNotFoundFailure(resumeFailure)) {
+                LOG.log(Level.INFO, "Resume failed for " + copilotSessionId + ", creating instead", resumeFailure);
+            }
+            return createSession(client, model, mcpServers, copilotSessionId);
         }
+    }
+
+    private boolean storedSessionExists(CopilotClient client, String targetSessionId)
+            throws ExecutionException, InterruptedException, TimeoutException {
+        if (targetSessionId == null || targetSessionId.isBlank()) {
+            return false;
+        }
+        List<SessionMetadata> sessions = client.listSessions().get(2, TimeUnit.MINUTES);
+        return sessionListContains(sessions, targetSessionId);
+    }
+
+    private CopilotSession createSession(CopilotClient client, String model,
+            Map<String, com.github.copilot.rpc.McpServerConfig> mcpServers, String targetSessionId)
+            throws ExecutionException, InterruptedException, TimeoutException {
+        return client.createSession(buildCreateConfig(targetSessionId, model, mcpServers)).get(2, TimeUnit.MINUTES);
+    }
+
+    static SessionConfig buildCreateConfig(String sessionId, String model,
+            Map<String, com.github.copilot.rpc.McpServerConfig> mcpServers) {
+        return new SessionConfig()
+                .setSessionId(sessionId)
+                .setModel(model)
+                .setExcludedTools(List.of("edit", "create"))
+                .setOnPermissionRequest(PermissionHandler.APPROVE_ALL)
+                .setMcpServers(mcpServers);
+    }
+
+    static ResumeSessionConfig buildResumeConfig(String model,
+            Map<String, com.github.copilot.rpc.McpServerConfig> mcpServers) {
+        return new ResumeSessionConfig()
+                .setModel(model)
+                .setExcludedTools(List.of("edit", "create"))
+                .setOnPermissionRequest(PermissionHandler.APPROVE_ALL)
+                .setMcpServers(mcpServers);
+    }
+
+    static boolean sessionListContains(List<SessionMetadata> sessions, String targetSessionId) {
+        if (sessions == null || targetSessionId == null || targetSessionId.isBlank()) {
+            return false;
+        }
+        return sessions.stream().map(SessionMetadata::getSessionId).anyMatch(targetSessionId::equals);
+    }
+
+    static boolean isSessionNotFoundFailure(Throwable failure) {
+        String message = deepestMessage(failure);
+        return message != null && message.toLowerCase().contains("session not found");
+    }
+
+    private static boolean isCorruptedSessionFailure(Throwable failure) {
+        String message = deepestMessage(failure);
+        return message != null && (message.contains("could not be loaded") || message.contains("corrupted"));
+    }
+
+    private static String deepestMessage(Throwable failure) {
+        String lastMessage = null;
+        for (Throwable current = failure; current != null; current = current.getCause()) {
+            if (current.getMessage() != null && !current.getMessage().isBlank()) {
+                lastMessage = current.getMessage();
+            }
+        }
+        return lastMessage;
     }
 
     private Map<String, com.github.copilot.rpc.McpServerConfig> buildMcpServers() {

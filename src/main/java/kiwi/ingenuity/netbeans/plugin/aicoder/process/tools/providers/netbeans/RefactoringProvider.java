@@ -204,10 +204,23 @@ public class RefactoringProvider {
         File f = new File(filePath);
         if (!f.exists()) {
             try {
-                if (f.getParentFile() != null) {
-                    f.getParentFile().mkdirs();
+                File parentDir = f.getParentFile();
+                if (parentDir != null) {
+                    parentDir.mkdirs();
                 }
-                FileObject newFo = FileUtil.createData(f);
+                // Resolve the parent directory through NetBeans to handle symlinked paths.
+                // If the parent exists and is under a project root, create the file relative
+                // to the canonicalized parent FileObject so it inherits the correct root ancestry.
+                FileObject parentFO = null;
+                if (parentDir != null && parentDir.exists()) {
+                    parentFO = FileUtils.resolveByFile(parentDir);
+                }
+                FileObject newFo;
+                if (parentFO != null) {
+                    newFo = FileUtil.createData(parentFO, f.getName());
+                } else {
+                    newFo = FileUtil.createData(f);
+                }
                 try (OutputStream out = newFo.getOutputStream()) {
                     out.write(content.getBytes(StandardCharsets.UTF_8));
                 }

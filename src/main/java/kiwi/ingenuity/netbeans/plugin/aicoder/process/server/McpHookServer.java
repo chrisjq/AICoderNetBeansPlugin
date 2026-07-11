@@ -702,6 +702,9 @@ public class McpHookServer {
             McpHookServerUtil.sendJson(ex, 200,
                     McpHookServerUtil.mcpError(id, e.getCode(), e.getMessage()));
         }
+        catch (IOException e) {
+            throw e;
+        }
         catch (Exception e) {
             Exceptions.printStackTrace(e);
             McpHookServerUtil.sendJson(ex, 200,
