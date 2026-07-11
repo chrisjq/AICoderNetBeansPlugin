@@ -1323,6 +1323,13 @@ public final class AiTopComponent extends TopComponent implements AiProcessEvent
     }
 
     // --- end AiSessionHost ---
+    private static String appendDecisionMessage(String base, String message) {
+        if (message == null || message.isBlank()) {
+            return base;
+        }
+        return base + "\n\nUser note: " + message.trim();
+    }
+
     private void showDiff(ToolUseEvent tu) {
         String fp = tu.filePath();
         if (fp == null || fp.isBlank()) {
@@ -1350,18 +1357,18 @@ public final class AiTopComponent extends TopComponent implements AiProcessEvent
                 ? contextProvider.getAllOpenProjectDirs() : List.of();
         diff.addDecisionListener(new DiffDecisionListener() {
             @Override
-            public void onAccepted() {
+            public void onAccepted(String message) {
                 openDiffs.remove(diff);
                 if (backendSnap != null) {
                     backendSnap.setPendingDiff(false);
-                    backendSnap.sendPrompt("Changes accepted.", wd, pd);
+                    backendSnap.sendPrompt(appendDecisionMessage("Changes accepted.", message), wd, pd);
                 }
                 conversationPanel.addSystemMessage(NotificationUtil.formatFileAccepted(shortPath(fp)));
                 refreshInputEnabled();
             }
 
             @Override
-            public void onRejected() {
+            public void onRejected(String message) {
                 openDiffs.remove(diff);
                 try {
                     Files.writeString(Path.of(fp), original, StandardCharsets.UTF_8);
@@ -1372,9 +1379,9 @@ public final class AiTopComponent extends TopComponent implements AiProcessEvent
                 }
                 if (backendSnap != null) {
                     backendSnap.setPendingDiff(false);
-                    backendSnap.sendPrompt("Changes rejected, file reverted.", wd, pd);
+                    backendSnap.sendPrompt(appendDecisionMessage("Changes rejected, file reverted.", message), wd, pd);
                 }
-                conversationPanel.addSystemMessage(NotificationUtil.formatFileRejected(shortPath(fp)));
+                conversationPanel.addSystemMessage(NotificationUtil.formatFileRejected(shortPath(fp), message));
                 refreshInputEnabled();
             }
         });
@@ -1416,7 +1423,7 @@ public final class AiTopComponent extends TopComponent implements AiProcessEvent
             LOG.log(Level.INFO, "Auto-accepted: {0} {1}", new Object[]{pe.toolName(), pe.filePath()});
             finaliseActiveAssistantIfNeeded();
             conversationPanel.addSystemMessage(NotificationUtil.formatAutoAccepted(pe.toolName(), shortPath(pe.filePath())));
-            pe.response().complete(true);
+            pe.response().complete(PermissionDecision.allowed());
             return;
         }
 
@@ -1424,7 +1431,7 @@ public final class AiTopComponent extends TopComponent implements AiProcessEvent
         // Fail closed: never allow a file mutation we cannot preview.
         if (fp == null || fp.isBlank()) {
             LOG.log(Level.WARNING, "Permission event missing file path — denying");
-            pe.response().complete(false);
+            pe.response().complete(PermissionDecision.denied("Access denied: missing file path"));
             return;
         }
 
@@ -1442,7 +1449,7 @@ public final class AiTopComponent extends TopComponent implements AiProcessEvent
                     conversationPanel.addSystemMessage(
                             NotificationUtil.formatPermissionDenied(shortPath(fp),
                                     "could not read file for diff preview"));
-                    pe.response().complete(false);
+                    pe.response().complete(PermissionDecision.denied("Could not read file for diff preview"));
                 });
                 return;
             }
@@ -1460,11 +1467,11 @@ public final class AiTopComponent extends TopComponent implements AiProcessEvent
                         new Object[]{fp, decision.reason()});
                 conversationPanel.addSystemMessage(
                         NotificationUtil.formatPermissionDenied(shortPath(fp), decision.reason()));
-                pe.response().complete(false);
+                pe.response().complete(PermissionDecision.denied(decision.reason()));
                 return;
             }
             case ALLOW_SILENT -> {
-                pe.response().complete(true);
+                pe.response().complete(PermissionDecision.allowed());
                 return;
             }
             case SHOW_DIFF -> {
@@ -1474,14 +1481,14 @@ public final class AiTopComponent extends TopComponent implements AiProcessEvent
 
         final String prop = decision.proposedContent();
         if (prop == null) {
-            pe.response().complete(false);
+            pe.response().complete(PermissionDecision.denied("Could not build permission diff preview"));
             return;
         }
 
         diffShownForCurrentTurn = true;
         finaliseActiveAssistantIfNeeded();
         conversationPanel.addSystemMessage(NotificationUtil.formatToolAction(pe.toolName(), shortPath(fp)));
-        final Runnable canceller = () -> pe.response().complete(false);
+        final Runnable canceller = () -> pe.response().complete(PermissionDecision.denied("Permission request cancelled"));
         pendingResponseCancellers.add(canceller);
 
         final String orig = original;
@@ -1489,16 +1496,16 @@ public final class AiTopComponent extends TopComponent implements AiProcessEvent
         SwingUtilities.invokeLater(() -> {
             if (aiBackend == null) {
                 pendingResponseCancellers.remove(canceller);
-                pe.response().complete(false);
+                pe.response().complete(PermissionDecision.denied("Permission request cancelled"));
                 return;
             }
-            AiDiffTopComponent diff = new AiDiffTopComponent(fp, orig, prop, session.name());
+            AiDiffTopComponent diff = new AiDiffTopComponent(fp, orig, prop, session.name(), true);
             diff.addDecisionListener(new DiffDecisionListener() {
                 @Override
-                public void onAccepted() {
+                public void onAccepted(String message) {
                     openDiffs.remove(diff);
                     pendingResponseCancellers.remove(canceller);
-                    pe.response().complete(true);
+                    pe.response().complete(PermissionDecision.allowed());
                     conversationPanel.addSystemMessage(NotificationUtil.formatFileAccepted(shortPath(fp)));
                     new Timer(600, ev -> {
                         try {
@@ -1518,11 +1525,11 @@ public final class AiTopComponent extends TopComponent implements AiProcessEvent
                 }
 
                 @Override
-                public void onRejected() {
+                public void onRejected(String message) {
                     openDiffs.remove(diff);
                     pendingResponseCancellers.remove(canceller);
-                    pe.response().complete(false);
-                    conversationPanel.addSystemMessage(NotificationUtil.formatFileRejected(shortPath(fp)));
+                    pe.response().complete(PermissionDecision.denied(message));
+                    conversationPanel.addSystemMessage(NotificationUtil.formatFileRejected(shortPath(fp), message));
                 }
             });
             openDiffs.add(diff);

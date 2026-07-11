@@ -46,7 +46,13 @@ public class NotificationUtil {
     }
 
     public static String formatFileRejected(String shortPath) {
-        return shortPath + " — rejected";
+        return formatFileRejected(shortPath, null);
+    }
+
+    public static String formatFileRejected(String shortPath, String message) {
+        return message != null && !message.isBlank()
+                ? shortPath + " — rejected: " + message.trim()
+                : shortPath + " — rejected";
     }
 
     public static String formatAutoAccepted(String toolName, String shortPath) {

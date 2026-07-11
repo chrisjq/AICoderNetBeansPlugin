@@ -27,6 +27,7 @@ import java.util.logging.Logger;
 import kiwi.ingenuity.netbeans.plugin.aicoder.PluginSettings;
 import kiwi.ingenuity.netbeans.plugin.aicoder.StringConst;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.AiTypeEnum;
+import kiwi.ingenuity.netbeans.plugin.aicoder.ai.events.PermissionDecision;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.events.PermissionEvent;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.mail.AiSessionInboxBroker;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.McpArgumentException;
@@ -421,27 +422,27 @@ public class McpHookServer {
         }
         sessionHookLock.lock();
         try {
-            CompletableFuture<Boolean> future = new CompletableFuture<>();
+            CompletableFuture<PermissionDecision> future = new CompletableFuture<>();
             procListener.onAiProcessEvent(
                     new PermissionEvent(toolName, filePath, oldString, newString, writeContent, future));
 
-            boolean allowed;
+            PermissionDecision decision;
             try {
-                allowed = future.get(120, TimeUnit.SECONDS);
+                decision = future.get(120, TimeUnit.SECONDS);
             }
             catch (TimeoutException e) {
                 LOG.log(Level.WARNING, "Permission request timed out for: {0}", filePath);
-                allowed = false;
+                decision = PermissionDecision.denied(null);
             }
             catch (InterruptedException e) {
                 Thread.currentThread().interrupt();
-                allowed = false;
+                decision = PermissionDecision.denied(null);
             }
             catch (Exception e) {
                 Exceptions.printStackTrace(e);
-                allowed = false;
+                decision = PermissionDecision.denied(null);
             }
-            if (allowed) {
+            if (decision != null && decision.allow()) {
                 // Acquire mutationLock so hook-applied writes are mutually exclusive with
                 // MCP tool-call mutations (handleMcpToolCall also holds mutationLock).
                 mutationLock.lock();
@@ -461,7 +462,10 @@ public class McpHookServer {
                 McpHookServerUtil.sendJson(ex, 200, allowedResponse);
             }
             else {
-                String deniedResponse = McpHookServerUtil.hookDeny("User rejected - do not retry this change");
+                String deniedResponse = McpHookServerUtil.hookDeny(
+                        decision != null
+                                ? decision.effectiveDenyMessage("User rejected - do not retry this change")
+                                : "User rejected - do not retry this change");
                 if (PluginSettings.isDebugJson()) {
                     LOG.log(Level.INFO, "Hook response (denied): {0}", deniedResponse);
                 }

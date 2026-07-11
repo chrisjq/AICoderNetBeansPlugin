@@ -4,6 +4,7 @@ import com.google.gson.JsonArray;
 import com.google.gson.JsonObject;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
+import kiwi.ingenuity.netbeans.plugin.aicoder.ai.events.PermissionDecision;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.events.PermissionEvent;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.McpSectionEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.McpToolEnum;
@@ -83,17 +84,19 @@ public class ApplyEditTool extends AbstractActionTool {
         if (listener == null) {
             return RefactoringProvider.applyEdit(filePath, oldString, newString);
         }
-        CompletableFuture<Boolean> future = new CompletableFuture<>();
+        CompletableFuture<PermissionDecision> future = new CompletableFuture<>();
         listener.onAiProcessEvent(new PermissionEvent("Edit", filePath, oldString, newString, null, future));
-        boolean allowed;
+        PermissionDecision decision;
         try {
-            allowed = future.get(120, TimeUnit.SECONDS);
+            decision = future.get(120, TimeUnit.SECONDS);
         }
         catch (Exception e) {
-            allowed = false;
+            decision = PermissionDecision.denied(null);
         }
-        if (!allowed) {
-            return "User rejected the edit — do not retry this change";
+        if (decision == null || !decision.allow()) {
+            return decision != null && decision.message() != null && !decision.message().isBlank()
+                    ? "User rejected the edit: " + decision.message().trim() + " — do not retry this change"
+                    : "User rejected the edit — do not retry this change";
         }
         return RefactoringProvider.applyEdit(filePath, oldString, newString);
     }

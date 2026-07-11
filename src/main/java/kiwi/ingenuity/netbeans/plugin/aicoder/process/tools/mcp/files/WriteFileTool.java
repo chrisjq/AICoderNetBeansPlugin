@@ -4,6 +4,7 @@ import com.google.gson.JsonArray;
 import com.google.gson.JsonObject;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
+import kiwi.ingenuity.netbeans.plugin.aicoder.ai.events.PermissionDecision;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.events.PermissionEvent;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.McpSectionEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.McpToolEnum;
@@ -78,17 +79,19 @@ public class WriteFileTool extends AbstractActionTool {
         if (listener == null) {
             return RefactoringProvider.writeFileContent(filePath, content);
         }
-        CompletableFuture<Boolean> future = new CompletableFuture<>();
+        CompletableFuture<PermissionDecision> future = new CompletableFuture<>();
         listener.onAiProcessEvent(new PermissionEvent("Write", filePath, null, null, content, future));
-        boolean allowed;
+        PermissionDecision decision;
         try {
-            allowed = future.get(120, TimeUnit.SECONDS);
+            decision = future.get(120, TimeUnit.SECONDS);
         }
         catch (Exception e) {
-            allowed = false;
+            decision = PermissionDecision.denied(null);
         }
-        if (!allowed) {
-            return "User rejected the write — do not retry this change";
+        if (decision == null || !decision.allow()) {
+            return decision != null && decision.message() != null && !decision.message().isBlank()
+                    ? "User rejected the write: " + decision.message().trim() + " — do not retry this change"
+                    : "User rejected the write — do not retry this change";
         }
         return RefactoringProvider.writeFileContent(filePath, content);
     }

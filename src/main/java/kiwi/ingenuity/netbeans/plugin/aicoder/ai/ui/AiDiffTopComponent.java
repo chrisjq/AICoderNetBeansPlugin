@@ -35,6 +35,7 @@ import javax.swing.JPanel;
 import javax.swing.JScrollPane;
 import javax.swing.JTable;
 import javax.swing.JTextArea;
+import javax.swing.JTextField;
 import javax.swing.JToggleButton;
 import javax.swing.JViewport;
 import javax.swing.SwingConstants;
@@ -263,6 +264,7 @@ public class AiDiffTopComponent extends TopComponent {
      */
     private final String filePath;
     private final String sessionName;
+    private final boolean rejectNoteOnly;
     private DiffDecisionListener decisionListener;
     private boolean decided = false;
     private boolean compactView = true;
@@ -276,10 +278,16 @@ public class AiDiffTopComponent extends TopComponent {
     private JScrollPane leftScrollPane;
     private JScrollPane rightScrollPane;
     private DiffOverviewBar overviewBar;
+    private JTextField decisionMessageField;
 
     public AiDiffTopComponent(String filePath, String originalContent, String proposedContent, String sessionName) {
+        this(filePath, originalContent, proposedContent, sessionName, false);
+    }
+
+    public AiDiffTopComponent(String filePath, String originalContent, String proposedContent, String sessionName, boolean rejectNoteOnly) {
         this.filePath = filePath;
         this.sessionName = sessionName != null ? sessionName : "AI";
+        this.rejectNoteOnly = rejectNoteOnly;
         String displayPath = computeDisplayPath(filePath);
         String fileName = Path.of(filePath).getFileName().toString();
         boolean isNewFile = originalContent == null || originalContent.isBlank();
@@ -395,14 +403,7 @@ public class AiDiffTopComponent extends TopComponent {
         add(buildHeaderPanel(displayPath), BorderLayout.NORTH);
         add(centerPanel, BorderLayout.CENTER);
 
-        JPanel buttons = new JPanel(new FlowLayout(FlowLayout.RIGHT, 8, 4));
-        JButton rejectBtn = new JButton("Reject");
-        JButton acceptBtn = new JButton("Accept");
-        rejectBtn.addActionListener(e -> handleReject());
-        acceptBtn.addActionListener(e -> handleAccept());
-        buttons.add(rejectBtn);
-        buttons.add(acceptBtn);
-        add(buttons, BorderLayout.SOUTH);
+        add(buildDecisionPanel(), BorderLayout.SOUTH);
     }
 
     private void initNewFileComponents(String content) {
@@ -435,17 +436,9 @@ public class AiDiffTopComponent extends TopComponent {
                 JScrollPane.VERTICAL_SCROLLBAR_AS_NEEDED,
                 JScrollPane.HORIZONTAL_SCROLLBAR_AS_NEEDED);
 
-        JPanel buttons = new JPanel(new FlowLayout(FlowLayout.RIGHT, 8, 4));
-        JButton rejectBtn = new JButton("Reject");
-        JButton acceptBtn = new JButton("Accept");
-        rejectBtn.addActionListener(e -> handleReject());
-        acceptBtn.addActionListener(e -> handleAccept());
-        buttons.add(rejectBtn);
-        buttons.add(acceptBtn);
-
         add(header, BorderLayout.NORTH);
         add(contentScroll, BorderLayout.CENTER);
-        add(buttons, BorderLayout.SOUTH);
+        add(buildDecisionPanel(), BorderLayout.SOUTH);
     }
 
     private JPanel buildHeaderPanel(String displayPath) {
@@ -535,6 +528,40 @@ public class AiDiffTopComponent extends TopComponent {
         });
     }
 
+    private JPanel buildDecisionPanel() {
+        JPanel panel = new JPanel(new BorderLayout(8, 4));
+        panel.setBorder(BorderFactory.createEmptyBorder(4, 8, 4, 8));
+
+        JPanel messagePanel = new JPanel(new BorderLayout(4, 0));
+        JLabel messageLabel = new JLabel(rejectNoteOnly ? "Reject note:" : "Message:");
+        decisionMessageField = new JTextField();
+        decisionMessageField.setToolTipText(rejectNoteOnly
+                ? "Optional note returned only when rejecting this change"
+                : "Optional note sent back with Accept or Reject");
+        messagePanel.add(messageLabel, BorderLayout.WEST);
+        messagePanel.add(decisionMessageField, BorderLayout.CENTER);
+
+        JPanel buttons = new JPanel(new FlowLayout(FlowLayout.RIGHT, 8, 0));
+        JButton rejectBtn = new JButton("Reject");
+        JButton acceptBtn = new JButton("Accept");
+        rejectBtn.addActionListener(e -> handleReject());
+        acceptBtn.addActionListener(e -> handleAccept());
+        buttons.add(rejectBtn);
+        buttons.add(acceptBtn);
+
+        panel.add(messagePanel, BorderLayout.CENTER);
+        panel.add(buttons, BorderLayout.EAST);
+        return panel;
+    }
+
+    private String decisionMessage() {
+        if (decisionMessageField == null) {
+            return null;
+        }
+        String text = decisionMessageField.getText();
+        return text == null || text.isBlank() ? null : text.trim();
+    }
+
     private void switchView(boolean compact) {
         if (compactView == compact) {
             return;
@@ -571,7 +598,7 @@ public class AiDiffTopComponent extends TopComponent {
         decided = true;
         try {
             if (decisionListener != null) {
-                decisionListener.onAccepted();
+                decisionListener.onAccepted(rejectNoteOnly ? null : decisionMessage());
             }
         }
         finally {
@@ -583,7 +610,7 @@ public class AiDiffTopComponent extends TopComponent {
         decided = true;
         try {
             if (decisionListener != null) {
-                decisionListener.onRejected();
+                decisionListener.onRejected(decisionMessage());
             }
         }
         finally {
@@ -605,7 +632,7 @@ public class AiDiffTopComponent extends TopComponent {
     public void componentClosed() {
         if (!decided && decisionListener != null) {
             decided = true;
-            decisionListener.onRejected();
+            decisionListener.onRejected(decisionMessage());
         }
         decisionListener = null;
         fullRows = null;

@@ -2,7 +2,7 @@ package kiwi.ingenuity.netbeans.plugin.aicoder.ai.ui.events;
 
 public interface DiffDecisionListener {
 
-    void onAccepted();
+    void onAccepted(String message);
 
-    void onRejected();
+    void onRejected(String message);
 }
