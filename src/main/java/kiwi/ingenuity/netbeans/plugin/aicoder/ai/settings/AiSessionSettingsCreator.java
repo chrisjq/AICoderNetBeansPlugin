@@ -1,6 +1,7 @@
 package kiwi.ingenuity.netbeans.plugin.aicoder.ai.settings;
 
 import com.google.gson.JsonObject;
+import kiwi.ingenuity.netbeans.plugin.aicoder.WebRequestAccessOptionEnum;
 
 /**
  * Base class for creating and updating AI session settings. Implements a chain
@@ -43,6 +44,12 @@ public abstract class AiSessionSettingsCreator<E extends AiSessionSettings> {
         key = AiSessionSettingsKeyEnum.ALLOW_WEB_REQUESTS.key();
         if (cfgObj.has(key) && cfgObj.get(key).isJsonPrimitive()) {
             settings.setAllowWebRequests(cfgObj.get(key).getAsBoolean());
+        }
+        for (WebRequestAccessOptionEnum option : WebRequestAccessOptionEnum.values()) {
+            key = AiSessionSettingsKeyEnum.forWebRequestAccessOption(option).key();
+            if (cfgObj.has(key) && cfgObj.get(key).isJsonPrimitive()) {
+                settings.setAllowWebRequestAccess(option, cfgObj.get(key).getAsBoolean());
+            }
         }
     }
 

@@ -87,6 +87,7 @@ public class ClaudeAiSettingsTab implements SettingsTab {
         c.weightx = 0;
         panel.add(new JLabel("Model:"), c);
         modelCombo = new JComboBox<>(ClaudePluginSettings.getKnownModels());
+        modelCombo.setEditable(true);
         c.gridx = 1;
         c.weightx = 1;
         panel.add(modelCombo, c);

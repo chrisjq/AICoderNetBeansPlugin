@@ -2,6 +2,7 @@ package kiwi.ingenuity.netbeans.plugin.aicoder.ai.settings;
 
 import com.google.gson.JsonObject;
 import kiwi.ingenuity.netbeans.plugin.aicoder.PluginSettings;
+import kiwi.ingenuity.netbeans.plugin.aicoder.WebRequestAccessOptionEnum;
 
 public class AiSessionSettings {
 
@@ -16,11 +17,38 @@ public class AiSessionSettings {
     private volatile String sessionInstructions;
     private volatile Boolean autoAccept;
     private volatile Boolean allowWebRequests;
+    private volatile Boolean allowWebRequestGet;
+    private volatile Boolean allowWebRequestPost;
+    private volatile Boolean allowWebRequestPut;
+    private volatile Boolean allowWebRequestPatch;
+    private volatile Boolean allowWebRequestDelete;
+    private volatile Boolean allowWebRequestHead;
+    private volatile Boolean allowWebRequestOptions;
+    private volatile Boolean allowWebRequestHeaders;
+    private volatile Boolean allowWebRequestBody;
 
     public AiSessionSettings() {
     }
 
-    public AiSessionSettings(Integer maxHistory, Boolean restrictToProjectFiles, Boolean allowInterAiComms, Boolean autoNotifyInbox, Boolean allowImportantMessages, String sessionInstructions, Boolean autoAccept, Boolean allowWebRequests) {
+    public AiSessionSettings(Integer maxHistory, Boolean restrictToProjectFiles,
+            Boolean allowInterAiComms, Boolean autoNotifyInbox,
+            Boolean allowImportantMessages, String sessionInstructions,
+            Boolean autoAccept, Boolean allowWebRequests) {
+        this(maxHistory, restrictToProjectFiles, allowInterAiComms, autoNotifyInbox,
+                allowImportantMessages, sessionInstructions, autoAccept,
+                allowWebRequests, null, null, null, null, null, null, null, null,
+                null);
+    }
+
+    public AiSessionSettings(Integer maxHistory, Boolean restrictToProjectFiles,
+            Boolean allowInterAiComms, Boolean autoNotifyInbox,
+            Boolean allowImportantMessages, String sessionInstructions,
+            Boolean autoAccept, Boolean allowWebRequests,
+            Boolean allowWebRequestGet, Boolean allowWebRequestPost,
+            Boolean allowWebRequestPut, Boolean allowWebRequestPatch,
+            Boolean allowWebRequestDelete, Boolean allowWebRequestHead,
+            Boolean allowWebRequestOptions, Boolean allowWebRequestHeaders,
+            Boolean allowWebRequestBody) {
         this.maxHistory = maxHistory;
         this.restrictToProjectFiles = restrictToProjectFiles;
         this.allowInterAiComms = allowInterAiComms;
@@ -29,6 +57,15 @@ public class AiSessionSettings {
         this.sessionInstructions = sessionInstructions;
         this.autoAccept = autoAccept;
         this.allowWebRequests = allowWebRequests;
+        this.allowWebRequestGet = allowWebRequestGet;
+        this.allowWebRequestPost = allowWebRequestPost;
+        this.allowWebRequestPut = allowWebRequestPut;
+        this.allowWebRequestPatch = allowWebRequestPatch;
+        this.allowWebRequestDelete = allowWebRequestDelete;
+        this.allowWebRequestHead = allowWebRequestHead;
+        this.allowWebRequestOptions = allowWebRequestOptions;
+        this.allowWebRequestHeaders = allowWebRequestHeaders;
+        this.allowWebRequestBody = allowWebRequestBody;
     }
 
     public Integer maxHistory() {
@@ -63,6 +100,29 @@ public class AiSessionSettings {
         return allowWebRequests;
     }
 
+    public Boolean allowWebRequestAccess(WebRequestAccessOptionEnum option) {
+        return switch (option) {
+            case GET ->
+                allowWebRequestGet;
+            case POST ->
+                allowWebRequestPost;
+            case PUT ->
+                allowWebRequestPut;
+            case PATCH ->
+                allowWebRequestPatch;
+            case DELETE ->
+                allowWebRequestDelete;
+            case HEAD ->
+                allowWebRequestHead;
+            case OPTIONS ->
+                allowWebRequestOptions;
+            case HEADERS ->
+                allowWebRequestHeaders;
+            case BODY ->
+                allowWebRequestBody;
+        };
+    }
+
     public int effectiveMaxHistory() {
         return maxHistory != null ? maxHistory : PluginSettings.getMaxHistory();
     }
@@ -89,6 +149,11 @@ public class AiSessionSettings {
 
     public boolean effectiveAllowWebRequests() {
         return allowWebRequests != null ? allowWebRequests : PluginSettings.isAllowWebRequests();
+    }
+
+    public boolean effectiveAllowWebRequestAccess(WebRequestAccessOptionEnum option) {
+        Boolean value = allowWebRequestAccess(option);
+        return value != null ? value : PluginSettings.isAllowWebRequestAccess(option);
     }
 
     public void setAutoAccept(Boolean newAutoAccept) {
@@ -123,6 +188,29 @@ public class AiSessionSettings {
         this.allowWebRequests = newAllowWebRequests;
     }
 
+    public void setAllowWebRequestAccess(WebRequestAccessOptionEnum option, Boolean allowed) {
+        switch (option) {
+            case GET ->
+                allowWebRequestGet = allowed;
+            case POST ->
+                allowWebRequestPost = allowed;
+            case PUT ->
+                allowWebRequestPut = allowed;
+            case PATCH ->
+                allowWebRequestPatch = allowed;
+            case DELETE ->
+                allowWebRequestDelete = allowed;
+            case HEAD ->
+                allowWebRequestHead = allowed;
+            case OPTIONS ->
+                allowWebRequestOptions = allowed;
+            case HEADERS ->
+                allowWebRequestHeaders = allowed;
+            case BODY ->
+                allowWebRequestBody = allowed;
+        }
+    }
+
     public String getAdditionalInfo() {
         return "";
     }
@@ -155,6 +243,12 @@ public class AiSessionSettings {
         }
         if (allowWebRequests != null) {
             cfgObj.addProperty(AiSessionSettingsKeyEnum.ALLOW_WEB_REQUESTS.key(), allowWebRequests);
+        }
+        for (WebRequestAccessOptionEnum option : WebRequestAccessOptionEnum.values()) {
+            Boolean value = allowWebRequestAccess(option);
+            if (value != null) {
+                cfgObj.addProperty(AiSessionSettingsKeyEnum.forWebRequestAccessOption(option).key(), value);
+            }
         }
     }
 }

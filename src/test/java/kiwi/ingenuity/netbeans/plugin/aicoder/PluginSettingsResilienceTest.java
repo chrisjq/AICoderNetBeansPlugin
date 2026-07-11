@@ -1,7 +1,7 @@
 package kiwi.ingenuity.netbeans.plugin.aicoder;
 
-import kiwi.ingenuity.netbeans.plugin.aicoder.PluginSettings;
 import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import org.junit.jupiter.api.Test;
 
@@ -21,6 +21,7 @@ class PluginSettingsResilienceTest {
         assertDoesNotThrow(() -> {
             boolean v = PluginSettings.isDebugJson();
             assertFalse(v, "should default to false when prefs unavailable");
+            assertEquals(PluginSettingsKeyEnum.DEBUG_JSON.defaultBoolean(), v);
         });
     }
 
@@ -28,8 +29,16 @@ class PluginSettingsResilienceTest {
     void getHookServerPort_neverThrows_andReturnsDefault() {
         assertDoesNotThrow(() -> {
             int port = PluginSettings.getHookServerPort();
-            // Default when prefs unavailable.
-            assertFalse(port <= 0, "port should be a sane default");
+            assertEquals(PluginSettingsKeyEnum.MCP_SERVER_PORT.defaultInt(), port);
+        });
+    }
+
+    @Test
+    void isSaveSessionOnCloseIfTicked_neverThrows_andDefaultsFalse() {
+        assertDoesNotThrow(() -> {
+            boolean v = PluginSettings.isSaveSessionOnCloseIfTicked();
+            assertFalse(v, "should default to false when prefs unavailable");
+            assertEquals(PluginSettingsKeyEnum.SAVE_SESSION_ON_CLOSE_IF_TICKED.defaultBoolean(), v);
         });
     }
 }

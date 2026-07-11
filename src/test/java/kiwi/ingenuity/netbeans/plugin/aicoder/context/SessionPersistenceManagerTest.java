@@ -1,13 +1,14 @@
 package kiwi.ingenuity.netbeans.plugin.aicoder.context;
 
-import kiwi.ingenuity.netbeans.plugin.aicoder.serialization.SessionPersistenceManager;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
+import kiwi.ingenuity.netbeans.plugin.aicoder.WebRequestAccessOptionEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.session.AiSession;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.settings.AiModelSessionSettings;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.settings.AiSessionSettings;
+import kiwi.ingenuity.netbeans.plugin.aicoder.serialization.SessionPersistenceManager;
 import static org.junit.jupiter.api.Assertions.*;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
@@ -89,10 +90,13 @@ class SessionPersistenceManagerTest {
         SessionPersistenceManager m = mgr();
         AiSession s = AiSession.create("/projects/MyApp", kiwi.ingenuity.netbeans.plugin.aicoder.ai.AiTypeEnum.CLAUDE);
         s.settings().setAllowWebRequests(true);
+        s.settings().setAllowWebRequestAccess(WebRequestAccessOptionEnum.HEADERS, false);
         m.save(s);
         List<AiSession> all = m.loadAll();
         assertEquals(1, all.size());
         assertEquals(true, all.get(0).settings().allowWebRequests());
+        assertEquals(false, all.get(0).settings().allowWebRequestAccess(
+                WebRequestAccessOptionEnum.HEADERS));
     }
 
 }

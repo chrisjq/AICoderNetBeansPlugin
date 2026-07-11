@@ -10,8 +10,6 @@ public final class PluginSettings {
 
     private static final Logger LOG = Logger.getLogger(PluginSettings.class.getName());
 
-    public static final int DEFAULT_MCP_SERVER_PORT = 49167;
-
     // Cache the Preferences node. NbPreferences.forModule triggers NetBeans'
     // Repository/URL-factory lazy init the first time it is touched; on a JVM
     // without --add-opens java.base/java.net (e.g. some run/dev harnesses) that
@@ -44,16 +42,36 @@ public final class PluginSettings {
         }
     }
 
+    private static boolean getBoolean(PluginSettingsKeyEnum key) {
+        return prefs().getBoolean(key.key(), key.defaultBoolean());
+    }
+
+    private static int getInt(PluginSettingsKeyEnum key) {
+        return prefs().getInt(key.key(), key.defaultInt());
+    }
+
+    private static String getString(PluginSettingsKeyEnum key) {
+        return prefs().get(key.key(), key.defaultString());
+    }
+
     public static boolean isSaveHistory() {
-        return prefs().getBoolean(PluginSettingsKeyEnum.SAVE_HISTORY.key(), true);
+        return getBoolean(PluginSettingsKeyEnum.SAVE_HISTORY);
     }
 
     public static void setSaveHistory(boolean v) {
         prefs().putBoolean(PluginSettingsKeyEnum.SAVE_HISTORY.key(), v);
     }
 
+    public static boolean isSaveSessionOnCloseIfTicked() {
+        return getBoolean(PluginSettingsKeyEnum.SAVE_SESSION_ON_CLOSE_IF_TICKED);
+    }
+
+    public static void setSaveSessionOnCloseIfTicked(boolean v) {
+        prefs().putBoolean(PluginSettingsKeyEnum.SAVE_SESSION_ON_CLOSE_IF_TICKED.key(), v);
+    }
+
     public static int getDiffContextLines() {
-        return prefs().getInt(PluginSettingsKeyEnum.DIFF_CONTEXT_LINES.key(), 3);
+        return getInt(PluginSettingsKeyEnum.DIFF_CONTEXT_LINES);
     }
 
     public static void setDiffContextLines(int v) {
@@ -61,7 +79,7 @@ public final class PluginSettings {
     }
 
     public static int getChatFontSize() {
-        return prefs().getInt(PluginSettingsKeyEnum.CHAT_FONT_SIZE.key(), 13);
+        return getInt(PluginSettingsKeyEnum.CHAT_FONT_SIZE);
     }
 
     public static void setChatFontSize(int v) {
@@ -69,7 +87,7 @@ public final class PluginSettings {
     }
 
     public static boolean isAutoAccept() {
-        return prefs().getBoolean(PluginSettingsKeyEnum.AUTO_ACCEPT.key(), false);
+        return getBoolean(PluginSettingsKeyEnum.AUTO_ACCEPT);
     }
 
     public static void setAutoAccept(boolean v) {
@@ -88,7 +106,7 @@ public final class PluginSettings {
 
     // ---- Global session defaults ----
     public static boolean isRestrictToProjectFiles() {
-        return prefs().getBoolean(PluginSettingsKeyEnum.RESTRICT_TO_PROJECT.key(), true);
+        return getBoolean(PluginSettingsKeyEnum.RESTRICT_TO_PROJECT);
     }
 
     public static void setRestrictToProjectFiles(boolean v) {
@@ -96,15 +114,23 @@ public final class PluginSettings {
     }
 
     public static boolean isAllowWebRequests() {
-        return prefs().getBoolean(PluginSettingsKeyEnum.ALLOW_WEB_REQUESTS.key(), false);
+        return getBoolean(PluginSettingsKeyEnum.ALLOW_WEB_REQUESTS);
     }
 
     public static void setAllowWebRequests(boolean v) {
         prefs().putBoolean(PluginSettingsKeyEnum.ALLOW_WEB_REQUESTS.key(), v);
     }
 
+    public static boolean isAllowWebRequestAccess(WebRequestAccessOptionEnum option) {
+        return getBoolean(PluginSettingsKeyEnum.forWebRequestAccessOption(option));
+    }
+
+    public static void setAllowWebRequestAccess(WebRequestAccessOptionEnum option, boolean v) {
+        prefs().putBoolean(PluginSettingsKeyEnum.forWebRequestAccessOption(option).key(), v);
+    }
+
     public static boolean isAllowInterAiComms() {
-        return prefs().getBoolean(PluginSettingsKeyEnum.ALLOW_INTER_AI_COMMS.key(), false);
+        return getBoolean(PluginSettingsKeyEnum.ALLOW_INTER_AI_COMMS);
     }
 
     public static void setAllowInterAiComms(boolean v) {
@@ -112,7 +138,7 @@ public final class PluginSettings {
     }
 
     public static boolean isAutoNotifyInbox() {
-        return prefs().getBoolean(PluginSettingsKeyEnum.AUTO_NOTIFY_INBOX.key(), false);
+        return getBoolean(PluginSettingsKeyEnum.AUTO_NOTIFY_INBOX);
     }
 
     public static void setAutoNotifyInbox(boolean v) {
@@ -120,7 +146,7 @@ public final class PluginSettings {
     }
 
     public static boolean isAllowImportantMessages() {
-        return prefs().getBoolean(PluginSettingsKeyEnum.ALLOW_IMPORTANT_MESSAGES.key(), true);
+        return getBoolean(PluginSettingsKeyEnum.ALLOW_IMPORTANT_MESSAGES);
     }
 
     public static void setAllowImportantMessages(boolean v) {
@@ -128,7 +154,7 @@ public final class PluginSettings {
     }
 
     public static int getMaxHistory() {
-        return prefs().getInt(PluginSettingsKeyEnum.MAX_HISTORY.key(), 200);
+        return getInt(PluginSettingsKeyEnum.MAX_HISTORY);
     }
 
     public static void setMaxHistory(int v) {
@@ -136,7 +162,7 @@ public final class PluginSettings {
     }
 
     public static boolean isDebugJson() {
-        return prefs().getBoolean(PluginSettingsKeyEnum.DEBUG_JSON.key(), false);
+        return getBoolean(PluginSettingsKeyEnum.DEBUG_JSON);
     }
 
     public static void setDebugJson(boolean v) {
@@ -144,7 +170,7 @@ public final class PluginSettings {
     }
 
     public static int getHookServerPort() {
-        return prefs().getInt(PluginSettingsKeyEnum.MCP_SERVER_PORT.key(), DEFAULT_MCP_SERVER_PORT);
+        return getInt(PluginSettingsKeyEnum.MCP_SERVER_PORT);
     }
 
     public static void setHookServerPort(int v) {
@@ -152,7 +178,7 @@ public final class PluginSettings {
     }
 
     public static boolean isLogToolUse() {
-        return prefs().getBoolean(PluginSettingsKeyEnum.LOG_TOOL_USE.key(), false);
+        return getBoolean(PluginSettingsKeyEnum.LOG_TOOL_USE);
     }
 
     public static void setLogToolUse(boolean v) {
@@ -161,7 +187,7 @@ public final class PluginSettings {
 
     // ---- Inbox lifecycle ----
     public static int getInboxRetentionMinutes() {
-        return prefs().getInt(PluginSettingsKeyEnum.INBOX_RETENTION_MINUTES.key(), 60);
+        return getInt(PluginSettingsKeyEnum.INBOX_RETENTION_MINUTES);
     }
 
     public static void setInboxRetentionMinutes(int v) {
@@ -169,7 +195,7 @@ public final class PluginSettings {
     }
 
     public static int getInboxMaxSize() {
-        return prefs().getInt(PluginSettingsKeyEnum.INBOX_MAX_SIZE.key(), 1000);
+        return getInt(PluginSettingsKeyEnum.INBOX_MAX_SIZE);
     }
 
     public static void setInboxMaxSize(int v) {
@@ -178,7 +204,7 @@ public final class PluginSettings {
 
     // ---- New-session dialog memory ----
     public static AiTypeEnum getLastSessionAiType() {
-        return AiTypeEnum.fromKey(prefs().get(PluginSettingsKeyEnum.LAST_SESSION_AI_TYPE.key(), null));
+        return AiTypeEnum.fromKey(getString(PluginSettingsKeyEnum.LAST_SESSION_AI_TYPE));
     }
 
     public static void setLastSessionAiType(AiTypeEnum type) {

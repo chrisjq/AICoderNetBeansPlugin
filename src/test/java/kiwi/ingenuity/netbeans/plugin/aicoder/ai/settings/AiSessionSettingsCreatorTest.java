@@ -1,6 +1,7 @@
 package kiwi.ingenuity.netbeans.plugin.aicoder.ai.settings;
 
 import com.google.gson.JsonObject;
+import kiwi.ingenuity.netbeans.plugin.aicoder.WebRequestAccessOptionEnum;
 import static org.junit.jupiter.api.Assertions.*;
 import org.junit.jupiter.api.Test;
 
@@ -28,6 +29,10 @@ class AiSessionSettingsCreatorTest {
         cfg.addProperty("sessionInstructions", "be brief");
         cfg.addProperty("autoAccept", true);
         cfg.addProperty("allowWebRequests", false);
+        cfg.addProperty("allowWebRequestGet", true);
+        cfg.addProperty("allowWebRequestPost", false);
+        cfg.addProperty("allowWebRequestHeaders", false);
+        cfg.addProperty("allowWebRequestBody", true);
 
         AiSessionSettingsCreator<AiSessionSettings> creator = baseCreator();
         AiSessionSettings settings = creator.create();
@@ -41,6 +46,14 @@ class AiSessionSettingsCreatorTest {
         assertEquals("be brief", settings.sessionInstructions());
         assertEquals(true, settings.autoAccept());
         assertEquals(false, settings.allowWebRequests());
+        assertEquals(true,
+                settings.allowWebRequestAccess(WebRequestAccessOptionEnum.GET));
+        assertEquals(false,
+                settings.allowWebRequestAccess(WebRequestAccessOptionEnum.POST));
+        assertEquals(false,
+                settings.allowWebRequestAccess(WebRequestAccessOptionEnum.HEADERS));
+        assertEquals(true,
+                settings.allowWebRequestAccess(WebRequestAccessOptionEnum.BODY));
     }
 
     @Test
@@ -57,6 +70,9 @@ class AiSessionSettingsCreatorTest {
         assertNull(settings.sessionInstructions());
         assertNull(settings.autoAccept());
         assertNull(settings.allowWebRequests());
+        for (WebRequestAccessOptionEnum option : WebRequestAccessOptionEnum.values()) {
+            assertNull(settings.allowWebRequestAccess(option));
+        }
     }
 
     @Test
@@ -65,6 +81,7 @@ class AiSessionSettingsCreatorTest {
         cfg.add("maxHistory", new JsonObject());
         cfg.add("sessionInstructions", new JsonObject());
         cfg.add("autoAccept", new JsonObject());
+        cfg.add("allowWebRequestHeaders", new JsonObject());
 
         AiSessionSettingsCreator<AiSessionSettings> creator = baseCreator();
         AiSessionSettings settings = creator.create();
@@ -73,11 +90,17 @@ class AiSessionSettingsCreatorTest {
         assertNull(settings.maxHistory());
         assertNull(settings.sessionInstructions());
         assertNull(settings.autoAccept());
+        assertNull(settings.allowWebRequestAccess(WebRequestAccessOptionEnum.HEADERS));
     }
 
     @Test
     void populateJsonObjectThenUpdateRoundTrips() {
-        AiSessionSettings original = new AiSessionSettings(7, true, false, true, false, "round trip", true, false);
+        AiSessionSettings original = new AiSessionSettings(7, true, false, true,
+                false, "round trip", true, false);
+        original.setAllowWebRequestAccess(WebRequestAccessOptionEnum.GET, true);
+        original.setAllowWebRequestAccess(WebRequestAccessOptionEnum.POST, false);
+        original.setAllowWebRequestAccess(WebRequestAccessOptionEnum.HEADERS, false);
+        original.setAllowWebRequestAccess(WebRequestAccessOptionEnum.BODY, true);
         JsonObject cfg = new JsonObject();
         original.populateJsonObject(cfg);
 
@@ -93,6 +116,10 @@ class AiSessionSettingsCreatorTest {
         assertEquals(original.sessionInstructions(), loaded.sessionInstructions());
         assertEquals(original.autoAccept(), loaded.autoAccept());
         assertEquals(original.allowWebRequests(), loaded.allowWebRequests());
+        for (WebRequestAccessOptionEnum option : WebRequestAccessOptionEnum.values()) {
+            assertEquals(original.allowWebRequestAccess(option),
+                    loaded.allowWebRequestAccess(option));
+        }
     }
 
     @Test

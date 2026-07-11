@@ -2,6 +2,7 @@ package kiwi.ingenuity.netbeans.plugin.aicoder.ai.ui;
 
 import java.awt.BorderLayout;
 import java.awt.Component;
+import java.awt.Dimension;
 import java.awt.GridBagConstraints;
 import java.awt.GridBagLayout;
 import java.awt.Insets;
@@ -16,10 +17,14 @@ import javax.swing.JSpinner;
 import javax.swing.JTextArea;
 import javax.swing.JTextField;
 import javax.swing.SpinnerNumberModel;
+import kiwi.ingenuity.netbeans.plugin.aicoder.AccessControlLabelEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.PluginSettings;
+import kiwi.ingenuity.netbeans.plugin.aicoder.WebRequestAccessOptionEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.session.AiSession;
-import kiwi.ingenuity.netbeans.plugin.aicoder.ai.settings.AiModelSessionSettings;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.settings.AiSessionSettings;
+import kiwi.ingenuity.netbeans.plugin.aicoder.ui.ScrollablePanel;
+import kiwi.ingenuity.netbeans.plugin.aicoder.ui.settings.AiMessagingSettingsPanel;
+import kiwi.ingenuity.netbeans.plugin.aicoder.ui.settings.WebRequestAccessSettingsPanel;
 import org.openide.windows.WindowManager;
 
 public class AiSessionSettingsDialog extends JDialog {
@@ -35,10 +40,8 @@ public class AiSessionSettingsDialog extends JDialog {
     private final JTextArea descriptionArea = new JTextArea(3, 24);
     private final JSpinner historySpinner;
     private final JCheckBox restrictCheckBox = new JCheckBox();
-    private final JCheckBox allowWebRequestsCheckBox = new JCheckBox();
-    private final JCheckBox allowInterAiCheckBox = new JCheckBox();
-    private final JCheckBox autoNotifyCheckBox = new JCheckBox();
-    private final JCheckBox allowImportantCheckBox = new JCheckBox();
+    private final AiMessagingSettingsPanel aiMessagingPanel;
+    private final WebRequestAccessSettingsPanel webRequestAccessPanel;
     private final JTextArea sessionInstructionsArea = new JTextArea(4, 24);
 
     private boolean resetAutoNotify = false;
@@ -53,6 +56,9 @@ public class AiSessionSettingsDialog extends JDialog {
         AiSessionSettings cfg = session.settings();
         globalAutoNotify = PluginSettings.isAutoNotifyInbox();
 
+        aiMessagingPanel = new AiMessagingSettingsPanel(true);
+        webRequestAccessPanel = new WebRequestAccessSettingsPanel(true);
+
         historySpinner = new JSpinner(new SpinnerNumberModel(
                 cfg.effectiveMaxHistory(), 0, 10000, 10));
 
@@ -62,50 +68,32 @@ public class AiSessionSettingsDialog extends JDialog {
         descriptionArea.setWrapStyleWord(true);
 
         boolean globalRestrict = PluginSettings.isRestrictToProjectFiles();
-        restrictCheckBox.setText("Restrict to project files (global: " + (globalRestrict ? "on" : "off") + ")");
+        restrictCheckBox.setText(
+                AccessControlLabelEnum.RESTRICT_TO_PROJECT_FILES.sessionLabel(globalRestrict));
         restrictCheckBox.setSelected(cfg.effectiveRestrictToProjectFiles());
 
-        boolean globalAllowWebRequests = PluginSettings.isAllowWebRequests();
-        allowWebRequestsCheckBox.setText("Allow web requests (global: " + (globalAllowWebRequests ? "on" : "off") + ")");
-        allowWebRequestsCheckBox.setSelected(cfg.effectiveAllowWebRequests());
+        webRequestAccessPanel.setAllowWebRequestsSelected(cfg.effectiveAllowWebRequests());
+        for (WebRequestAccessOptionEnum option : WebRequestAccessOptionEnum.values()) {
+            webRequestAccessPanel.setOptionSelected(option,
+                    cfg.effectiveAllowWebRequestAccess(option));
+        }
 
-        boolean globalInterAi = PluginSettings.isAllowInterAiComms();
-        allowInterAiCheckBox.setText("Allow inter-AI communication (global: " + (globalInterAi ? "on" : "off") + ")");
-        allowInterAiCheckBox.setSelected(cfg.effectiveAllowInterAiComms());
-
-        autoNotifyCheckBox.setText("Auto-notify on incoming messages (global: " + (globalAutoNotify ? "on" : "off") + ")");
-        autoNotifyCheckBox.setSelected(cfg.effectiveAutoNotifyInbox());
-        autoNotifyCheckBox.setVisible(cfg.effectiveAllowInterAiComms());
-
-        boolean globalImportant = PluginSettings.isAllowImportantMessages();
-        allowImportantCheckBox.setText("Allow important messages, interrupt this session (global: " + (globalImportant ? "on" : "off") + ")");
-        allowImportantCheckBox.setSelected(cfg.effectiveAllowImportantMessages());
-        allowImportantCheckBox.setVisible(cfg.effectiveAllowInterAiComms());
+        aiMessagingPanel.setAllowInterAiSelected(cfg.effectiveAllowInterAiComms());
+        aiMessagingPanel.setAutoNotifySelected(cfg.effectiveAutoNotifyInbox());
+        aiMessagingPanel.setAllowImportantSelected(
+                cfg.effectiveAllowImportantMessages());
+        aiMessagingPanel.addChangeListener(e -> resetAutoNotify = false);
 
         sessionInstructionsArea.setText(cfg.sessionInstructions() != null ? cfg.sessionInstructions() : "");
         sessionInstructionsArea.setLineWrap(true);
         sessionInstructionsArea.setWrapStyleWord(true);
 
-        allowInterAiCheckBox.addActionListener(e -> {
-            autoNotifyCheckBox.setVisible(allowInterAiCheckBox.isSelected());
-            allowImportantCheckBox.setVisible(allowInterAiCheckBox.isSelected());
-            pack();
-        });
-
-        autoNotifyCheckBox.addActionListener(e -> resetAutoNotify = false);
-
-        JButton autoNotifyResetBtn = new JButton("Reset");
-        autoNotifyResetBtn.setToolTipText("Revert to global default");
-        autoNotifyResetBtn.addActionListener(e -> {
-            autoNotifyCheckBox.setSelected(globalAutoNotify);
-            resetAutoNotify = true;
-        });
+        aiMessagingPanel.setAutoNotifyAccessory(createAutoNotifyResetButton());
 
         JButton sessionInstructionsResetBtn = new JButton("Reset to default");
         sessionInstructionsResetBtn.addActionListener(e -> sessionInstructionsArea.setText(""));
 
-        JPanel form = buildForm(autoNotifyResetBtn, sessionInstructionsResetBtn);
-        add(form, BorderLayout.CENTER);
+        add(buildScrollableForm(sessionInstructionsResetBtn), BorderLayout.CENTER);
 
         JPanel buttons = new JPanel();
         JButton okBtn = new JButton("OK");
@@ -124,8 +112,31 @@ public class AiSessionSettingsDialog extends JDialog {
         setMinimumSize(getPreferredSize());
     }
 
-    private JPanel buildForm(JButton autoNotifyResetBtn, JButton sessionInstructionsResetBtn) {
-        JPanel p = new JPanel(new GridBagLayout());
+    private Component buildScrollableForm(JButton sessionInstructionsResetBtn) {
+        ScrollablePanel form = buildForm(sessionInstructionsResetBtn);
+        JScrollPane scrollPane = new JScrollPane(form);
+        scrollPane.setHorizontalScrollBarPolicy(JScrollPane.HORIZONTAL_SCROLLBAR_NEVER);
+        scrollPane.setBorder(null);
+        scrollPane.getVerticalScrollBar().setUnitIncrement(16);
+        Dimension preferred = form.getPreferredSize();
+        scrollPane.setPreferredSize(new Dimension(
+                Math.max(560, preferred.width + 24),
+                Math.min(520, preferred.height + 8)));
+        return scrollPane;
+    }
+
+    private JButton createAutoNotifyResetButton() {
+        JButton autoNotifyResetBtn = new JButton("Reset");
+        autoNotifyResetBtn.setToolTipText("Revert to global default");
+        autoNotifyResetBtn.addActionListener(e -> {
+            aiMessagingPanel.setAutoNotifySelected(globalAutoNotify);
+            resetAutoNotify = true;
+        });
+        return autoNotifyResetBtn;
+    }
+
+    private ScrollablePanel buildForm(JButton sessionInstructionsResetBtn) {
+        ScrollablePanel p = new ScrollablePanel(new GridBagLayout());
         p.setBorder(BorderFactory.createEmptyBorder(12, 12, 12, 12));
         GridBagConstraints c = new GridBagConstraints();
         c.insets = new Insets(4, 4, 4, 4);
@@ -137,22 +148,16 @@ public class AiSessionSettingsDialog extends JDialog {
         addRow(p, c, row++, new JLabel("Description:"), new JScrollPane(descriptionArea));
         addRow(p, c, row++, new JLabel("History size:"), historySpinner);
         addFull(p, c, row++, restrictCheckBox);
-        addFull(p, c, row++, allowWebRequestsCheckBox);
-        addFull(p, c, row++, allowInterAiCheckBox);
-
-        JPanel autoNotifyRow = new JPanel(new BorderLayout(4, 0));
-        autoNotifyRow.add(autoNotifyCheckBox, BorderLayout.CENTER);
-        autoNotifyRow.add(autoNotifyResetBtn, BorderLayout.EAST);
-        c.gridy = row++;
-        c.gridwidth = 2;
-        c.gridx = 0;
-        c.weightx = 1;
-        p.add(autoNotifyRow, c);
-
-        addFull(p, c, row++, allowImportantCheckBox);
-
+        addFull(p, c, row++, webRequestAccessPanel);
+        addFull(p, c, row++, aiMessagingPanel);
         addRow(p, c, row++, new JLabel("Session instructions:"), new JScrollPane(sessionInstructionsArea));
-        addFull(p, c, row, sessionInstructionsResetBtn);
+        addFull(p, c, row++, sessionInstructionsResetBtn);
+        c.gridx = 0;
+        c.gridy = row;
+        c.gridwidth = 2;
+        c.weightx = 1;
+        c.weighty = 1;
+        p.add(new JPanel(), c);
         return p;
     }
 
@@ -161,6 +166,7 @@ public class AiSessionSettingsDialog extends JDialog {
         c.gridx = 0;
         c.gridwidth = 1;
         c.weightx = 0;
+        c.weighty = 0;
         p.add(label, c);
         c.gridx = 1;
         c.weightx = 1;
@@ -172,6 +178,7 @@ public class AiSessionSettingsDialog extends JDialog {
         c.gridx = 0;
         c.gridwidth = 2;
         c.weightx = 1;
+        c.weighty = 0;
         p.add(comp, c);
     }
 
@@ -185,10 +192,10 @@ public class AiSessionSettingsDialog extends JDialog {
         boolean restrictSelected = restrictCheckBox.isSelected();
         Boolean restrictToProjectFiles = restrictSelected == PluginSettings.isRestrictToProjectFiles() ? null : restrictSelected;
 
-        boolean webRequestsSelected = allowWebRequestsCheckBox.isSelected();
+        boolean webRequestsSelected = webRequestAccessPanel.isAllowWebRequestsSelected();
         Boolean allowWebRequests = webRequestsSelected == PluginSettings.isAllowWebRequests() ? null : webRequestsSelected;
 
-        boolean interAiSelected = allowInterAiCheckBox.isSelected();
+        boolean interAiSelected = aiMessagingPanel.isAllowInterAiSelected();
         Boolean allowInterAiComms = interAiSelected == PluginSettings.isAllowInterAiComms() ? null : interAiSelected;
 
         Boolean autoNotifyInbox;
@@ -196,11 +203,11 @@ public class AiSessionSettingsDialog extends JDialog {
             autoNotifyInbox = null;
         }
         else {
-            boolean autoSelected = autoNotifyCheckBox.isSelected();
+            boolean autoSelected = aiMessagingPanel.isAutoNotifySelected();
             autoNotifyInbox = autoSelected == globalAutoNotify ? null : autoSelected;
         }
 
-        boolean importantSelected = allowImportantCheckBox.isSelected();
+        boolean importantSelected = aiMessagingPanel.isAllowImportantSelected();
         Boolean allowImportantMessages = importantSelected == PluginSettings.isAllowImportantMessages() ? null : importantSelected;
 
         String sessionInstructions = sessionInstructionsArea.getText().trim();
@@ -210,11 +217,17 @@ public class AiSessionSettingsDialog extends JDialog {
 
         original.setMaxHistory(maxHistory);
         original.setRestrictToProjectFiles(restrictToProjectFiles);
+        original.setAllowWebRequests(allowWebRequests);
+        for (WebRequestAccessOptionEnum option : WebRequestAccessOptionEnum.values()) {
+            boolean selected = webRequestAccessPanel.isOptionSelected(option);
+            Boolean override = selected == PluginSettings.isAllowWebRequestAccess(option)
+                    ? null : selected;
+            original.setAllowWebRequestAccess(option, override);
+        }
         original.setAllowInterAiComms(allowInterAiComms);
         original.setAutoNotifyInbox(autoNotifyInbox);
         original.setAllowImportantMessages(allowImportantMessages);
         original.setSessionInstructions(sessionInstructions);
-        original.setAllowWebRequests(allowWebRequests);
 
         result = original;
     }
