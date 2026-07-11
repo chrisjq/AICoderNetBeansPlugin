@@ -16,22 +16,25 @@
     <licenses>
         <license>
             <name>MIT License</name>
-            <url>https://github.com/chrisjq/AICoderNetBeansPlugin/blob/master/LICENSE</url>
+            <url>https://opensource.org/licenses/MIT</url>
             <distribution>repo</distribution>
         </license>
     </licenses>
 
     <developers>
         <developer>
+            <id>chrisjq</id>
             <name>Chris Quin</name>
             <email>chrisq@ingenuity.kiwi</email>
+            <url>https://github.com/chrisjq</url>
         </developer>
     </developers>
 
     <scm>
-        <connection>scm:git:git@github.com:chrisjq/AICoderNetBeansPlugin.git</connection>
-        <developerConnection>scm:git:git@github.com:chrisjq/AICoderNetBeansPlugin.git</developerConnection>
-        <url>https://github.com/chrisjq/AICoderNetBeansPlugin</url>
+        <connection>scm:git:https://github.com/chrisjq/AICoderNetBeansPlugin.git</connection>
+        <developerConnection>scm:git:ssh://git@github.com/chrisjq/AICoderNetBeansPlugin.git</developerConnection>
+        <url>https://github.com/chrisjq/AICoderNetBeansPlugin/tree/HEAD</url>
+        <tag>HEAD</tag>
     </scm>
 
     <build>
@@ -321,4 +324,69 @@
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
         <maven.compiler.release>21</maven.compiler.release>
     </properties>
+
+    <profiles>
+        <profile>
+            <id>central-release</id>
+            <build>
+                <plugins>
+                    <plugin>
+                        <groupId>org.apache.maven.plugins</groupId>
+                        <artifactId>maven-source-plugin</artifactId>
+                        <version>3.3.1</version>
+                        <executions>
+                            <execution>
+                                <id>attach-sources</id>
+                                <goals>
+                                    <goal>jar-no-fork</goal>
+                                </goals>
+                            </execution>
+                        </executions>
+                    </plugin>
+                    <plugin>
+                        <groupId>org.apache.maven.plugins</groupId>
+                        <artifactId>maven-javadoc-plugin</artifactId>
+                        <version>3.12.0</version>
+                        <configuration>
+                            <source>${maven.compiler.release}</source>
+                            <doclint>none</doclint>
+                        </configuration>
+                        <executions>
+                            <execution>
+                                <id>attach-javadocs</id>
+                                <goals>
+                                    <goal>jar</goal>
+                                </goals>
+                            </execution>
+                        </executions>
+                    </plugin>
+                    <plugin>
+                        <groupId>org.apache.maven.plugins</groupId>
+                        <artifactId>maven-gpg-plugin</artifactId>
+                        <version>3.2.8</version>
+                        <executions>
+                            <execution>
+                                <id>sign-artifacts</id>
+                                <phase>verify</phase>
+                                <goals>
+                                    <goal>sign</goal>
+                                </goals>
+                            </execution>
+                        </executions>
+                    </plugin>
+                    <plugin>
+                        <groupId>org.sonatype.central</groupId>
+                        <artifactId>central-publishing-maven-plugin</artifactId>
+                        <version>0.9.0</version>
+                        <extensions>true</extensions>
+                        <configuration>
+                            <publishingServerId>central</publishingServerId>
+                            <deploymentName>${project.artifactId}-${project.version}</deploymentName>
+                            <waitUntil>validated</waitUntil>
+                        </configuration>
+                    </plugin>
+                </plugins>
+            </build>
+        </profile>
+    </profiles>
 </project>
