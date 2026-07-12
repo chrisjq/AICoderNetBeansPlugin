@@ -35,14 +35,14 @@ public final class AiTypeRegistry implements Registry {
         PluginSettings.setAiEnabled(settings.type(), settings.enabled());
     }
 
-    public AiImplementation create(AiTypeEnum type, AiProcessEventListener listener) {
+    public AiImplementation create(AiTypeEnum type, AiProcessEventListener listener, ExecutablePrompter prompter) {
         return switch (type) {
             case CLAUDE ->
-                new ClaudeAiImplementation(listener);
+                new ClaudeAiImplementation(listener, prompter);
             case GROK ->
-                new GrokAiImplementation(listener);
+                new GrokAiImplementation(listener, prompter);
             case GitHubCoPilot ->
-                new GithubCopilotAiImplementation(listener);
+                new GithubCopilotAiImplementation(listener, prompter);
             default ->
                 throw new AssertionError("Unknown AiTypeEnum: " + type);
         };

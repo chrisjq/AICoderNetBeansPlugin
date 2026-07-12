@@ -305,12 +305,13 @@ public class GrokAiProcessManager extends AiProcessManager {
      * Grant the headless CLI access to every open NetBeans project, mirroring
      * Claude's {@code --add-dir} loop.
      *
-     * <p>Grok exposes no {@code --add-dir}. Instead:
+     * <p>
+     * Grok exposes no {@code --add-dir}. Instead:
      * <ul>
-     *   <li>{@code --cwd} pins the session working directory (also set on
-     *       {@link ProcessBuilder#directory(File)} for child processes)</li>
-     *   <li>path-scoped {@code --allow} rules grant native Read/Edit/Write/Grep
-     *       under each project root (repeatable; works with headless mode)</li>
+     * <li>{@code --cwd} pins the session working directory (also set on
+     * {@link ProcessBuilder#directory(File)} for child processes)</li>
+     * <li>path-scoped {@code --allow} rules grant native Read/Edit/Write/Grep
+     * under each project root (repeatable; works with headless mode)</li>
      * </ul>
      * MCP tools already receive the same list via
      * {@code McpHookServer.updateSessionScope}; these flags cover the CLI's own
@@ -354,15 +355,18 @@ public class GrokAiProcessManager extends AiProcessManager {
         }
     }
 
-    /** Clears {@code firstMessage} so the next prompt uses {@code -r}. */
+    /**
+     * Clears {@code firstMessage} so the next prompt uses {@code -r}.
+     */
     private synchronized void markFirstMessageDone() {
         firstMessage = false;
     }
 
     /**
-     * After a non-success first-turn attempt, keep {@code -s} if grok never created
-     * the session; switch to {@code -r} only when the session directory already exists
-     * (e.g. CLI created it then exited non-zero, or user cancelled mid-create).
+     * After a non-success first-turn attempt, keep {@code -s} if grok never
+     * created the session; switch to {@code -r} only when the session directory
+     * already exists (e.g. CLI created it then exited non-zero, or user
+     * cancelled mid-create).
      */
     private void resolveFirstMessageAfterAttempt(boolean wasFirst, String sid) {
         if (!wasFirst) {
@@ -415,7 +419,6 @@ public class GrokAiProcessManager extends AiProcessManager {
         sessionWorkingDir = null;
         pendingDiff = false;
         sessionConfigDir = null;
-        firstMessage = true;
     }
 
     // Called from the EDT (history load applies the stored session id; the

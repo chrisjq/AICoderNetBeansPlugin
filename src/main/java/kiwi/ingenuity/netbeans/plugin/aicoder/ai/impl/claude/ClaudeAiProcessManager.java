@@ -522,7 +522,6 @@ public class ClaudeAiProcessManager extends AiProcessManager {
 
         sessionId = null;
         sessionWorkingDir = null;
-        firstMessage = true;
         pendingDiff = false;
         cachedContextWindow = 0;
         sessionConfigDir = null;

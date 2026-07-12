@@ -1,7 +1,5 @@
 package kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.claude;
 
-import java.awt.Component;
-import java.io.File;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -10,13 +8,11 @@ import java.util.List;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 import java.util.stream.Stream;
-import javax.swing.JFileChooser;
-import javax.swing.SwingUtilities;
-import javax.swing.filechooser.FileFilter;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.AiImplementation;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.AiSessionHost;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.AiTypeEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.AiTypePropertyBus;
+import kiwi.ingenuity.netbeans.plugin.aicoder.ai.ExecutablePrompter;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.events.StatusEvent;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.events.StatusEventTypeEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.claude.events.ClaudeModelsEvent;
@@ -32,7 +28,6 @@ import kiwi.ingenuity.netbeans.plugin.aicoder.events.SessionLifecycleListener;
 import kiwi.ingenuity.netbeans.plugin.aicoder.events.SessionLifecycleSource;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.events.AiProcessEventListener;
 import kiwi.ingenuity.netbeans.plugin.aicoder.utils.StatusMessageUtil;
-import org.openide.util.RequestProcessor;
 
 /**
  * Thin adapter so the generic multi-AI system (AiSession, AiTopComponent, etc.)
@@ -43,10 +38,6 @@ public class ClaudeAiImplementation extends AiImplementation {
 
     private static final Logger LOG = Logger.getLogger(ClaudeAiImplementation.class.getName());
 
-    // start() blocks on MCP registration (up to a 2-minute future wait); run it off
-    // the EDT on a dedicated processor so callers on the EDT never freeze the UI.
-    private static final RequestProcessor START_RP = new RequestProcessor("claude-ai-start", 4);
-
     private static final Object MODEL_LOCK = new Object();
     private static volatile List<String> cachedModels = null;
     private static volatile boolean modelsFetched = false;
@@ -54,8 +45,8 @@ public class ClaudeAiImplementation extends AiImplementation {
 
     private final ClaudeAiProcessManager delegate;
 
-    public ClaudeAiImplementation(AiProcessEventListener listener) {
-        super(AiTypeEnum.CLAUDE, listener);
+    public ClaudeAiImplementation(AiProcessEventListener listener, ExecutablePrompter prompter) {
+        super(AiTypeEnum.CLAUDE, listener, prompter);
         this.delegate = new ClaudeAiProcessManager(listener);
     }
 
@@ -72,7 +63,7 @@ public class ClaudeAiImplementation extends AiImplementation {
     }
 
     @Override
-    public void startWithDiscovery(String model, Component parent) {
+    public void startWithDiscovery(String model) {
         String effectiveModel = (model != null && !model.isBlank()) ? model : getCurrentModel();
         String execPath = ClaudeExecutableLocator.locate();
         if (execPath != null) {
@@ -81,18 +72,24 @@ public class ClaudeAiImplementation extends AiImplementation {
             // a failure unrelated to the executable (e.g. MCP port bind) would
             // otherwise trigger a duplicate MCP server start on the same port.
             // start() can block on MCP registration, so run it off the EDT.
-            START_RP.post(() -> delegate.start(execPath, effectiveModel));
+            start(execPath, effectiveModel);
             return;
         }
-        SwingUtilities.invokeLater(() -> {
-            String chosen = promptForExecutable(parent); // JFileChooser stays on the EDT
-            if (chosen != null) {
-                START_RP.post(() -> delegate.start(chosen, effectiveModel));
-            }
-            else {
-                listener.onAiProcessEvent(new StatusEvent(StatusEventTypeEnum.FAILED, StatusMessageUtil.formatExecutableNotFound(null)));
-            }
-        });
+
+        String chosen;
+        try {
+            chosen = prompter.promptForExecutable("Locate claude executable", "claude").get();
+        }
+        catch (Exception ex) {
+            chosen = null;
+        }
+        if (chosen != null) {
+            ClaudePluginSettings.setExecutable(chosen);
+            start(chosen, effectiveModel);
+        }
+        else {
+            listener.onAiProcessEvent(new StatusEvent(StatusEventTypeEnum.FAILED, StatusMessageUtil.formatExecutableNotFound(null)));
+        }
     }
 
     private void applySessionPaths() {
@@ -120,36 +117,6 @@ public class ClaudeAiImplementation extends AiImplementation {
         if (currentSession != null && isStoredSessionValid(currentSession.id())) {
             delegate.resumeSession(currentSession.id());
         }
-    }
-
-    private String promptForExecutable(Component parent) {
-        JFileChooser fc = new JFileChooser();
-        fc.setDialogTitle("Locate claude executable");
-        fc.setFileSelectionMode(JFileChooser.FILES_ONLY);
-        fc.setFileFilter(new FileFilter() {
-            @Override
-            public boolean accept(File f) {
-                return f.isDirectory() || f.getName().equals("claude") || f.getName().startsWith("claude.");
-            }
-
-            @Override
-            public String getDescription() {
-                return "claude executable";
-            }
-        });
-        fc.setAcceptAllFileFilterUsed(true);
-        File startDir = new File("/usr/bin");
-        if (!startDir.isDirectory()) {
-            startDir = new File(System.getProperty("user.home"));
-        }
-        fc.setCurrentDirectory(startDir);
-        int result = fc.showOpenDialog(parent);
-        if (result == JFileChooser.APPROVE_OPTION) {
-            String path = fc.getSelectedFile().getAbsolutePath();
-            ClaudePluginSettings.setExecutable(path);
-            return path;
-        }
-        return null;
     }
 
     @Override
@@ -278,7 +245,7 @@ public class ClaudeAiImplementation extends AiImplementation {
             }
             if (cached != null) {
                 List<String> snapshot = cached;
-                SwingUtilities.invokeLater(() -> AiTypePropertyBus.getInstance().fire(AiTypeEnum.CLAUDE, new ClaudeModelsEvent(snapshot)));
+                AiTypePropertyBus.getInstance().fire(AiTypeEnum.CLAUDE, new ClaudeModelsEvent(snapshot));
             }
             return;
         }
@@ -294,8 +261,7 @@ public class ClaudeAiImplementation extends AiImplementation {
                     }
                     ClaudePluginSettings.setDiscoveredModels(modelList.toArray(String[]::new));
                     ClaudeModelsEvent event = new ClaudeModelsEvent(modelList);
-                    SwingUtilities.invokeLater(()
-                            -> AiTypePropertyBus.getInstance().fire(AiTypeEnum.CLAUDE, event));
+                    AiTypePropertyBus.getInstance().fire(AiTypeEnum.CLAUDE, event);
                 }
             }
             catch (Exception e) {
@@ -311,7 +277,7 @@ public class ClaudeAiImplementation extends AiImplementation {
                 AnthropicApiClient.UsageData data = new AnthropicApiClient().fetchUsage();
                 ClaudeUsageEvent event = new ClaudeUsageEvent(data.fiveHourPct(), data.sevenDayPct());
                 cachedUsageEvent = event;
-                SwingUtilities.invokeLater(() -> AiTypePropertyBus.getInstance().fire(AiTypeEnum.CLAUDE, event));
+                AiTypePropertyBus.getInstance().fire(AiTypeEnum.CLAUDE, event);
             }
             catch (Exception e) {
                 LOG.log(Level.WARNING, "Usage fetch failed: {0}", e.getMessage());
@@ -322,7 +288,7 @@ public class ClaudeAiImplementation extends AiImplementation {
     private void triggerUsageReplay() {
         ClaudeUsageEvent cached = cachedUsageEvent;
         if (cached != null) {
-            SwingUtilities.invokeLater(() -> AiTypePropertyBus.getInstance().fire(AiTypeEnum.CLAUDE, cached));
+            AiTypePropertyBus.getInstance().fire(AiTypeEnum.CLAUDE, cached);
         }
     }
 

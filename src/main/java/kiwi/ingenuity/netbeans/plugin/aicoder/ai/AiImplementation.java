@@ -1,6 +1,5 @@
 package kiwi.ingenuity.netbeans.plugin.aicoder.ai;
 
-import java.awt.Component;
 import java.io.File;
 import java.io.IOException;
 import java.nio.file.Path;
@@ -17,13 +16,20 @@ public abstract class AiImplementation {
     protected final AiTypeEnum type;
     protected final AiProcessEventListener listener;
     /**
+     * UI-side hook for locating a missing CLI executable (shows a file chooser)
+     * without this class needing to know about Swing/EDT. See
+     * {@link ExecutablePrompter}.
+     */
+    protected final ExecutablePrompter prompter;
+    /**
      * The session model object; set via {@link #setCurrentSession}.
      */
     protected volatile AiSession currentSession;
 
-    protected AiImplementation(AiTypeEnum type, AiProcessEventListener listener) {
+    protected AiImplementation(AiTypeEnum type, AiProcessEventListener listener, ExecutablePrompter prompter) {
         this.listener = listener;
         this.type = type;
+        this.prompter = prompter;
     }
 
     /**
@@ -108,7 +114,7 @@ public abstract class AiImplementation {
         return true;
     }
 
-    public void startWithDiscovery(String model, Component parent) {
+    public void startWithDiscovery(String model) {
         start(null, model);
     }
 

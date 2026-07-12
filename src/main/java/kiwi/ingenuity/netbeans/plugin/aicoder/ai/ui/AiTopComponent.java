@@ -14,6 +14,7 @@ import java.util.Arrays;
 import java.util.Collections;
 import java.util.List;
 import java.util.Set;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
@@ -22,6 +23,7 @@ import java.util.logging.Level;
 import java.util.logging.Logger;
 import javax.swing.BorderFactory;
 import javax.swing.JButton;
+import javax.swing.JFileChooser;
 import javax.swing.JLabel;
 import javax.swing.JOptionPane;
 import javax.swing.JPanel;
@@ -29,12 +31,14 @@ import javax.swing.JScrollPane;
 import javax.swing.SwingUtilities;
 import javax.swing.Timer;
 import javax.swing.UIManager;
+import javax.swing.filechooser.FileFilter;
 import kiwi.ingenuity.netbeans.plugin.aicoder.PluginSettings;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.AiImplementation;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.AiSessionHost;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.AiTypePropertyBus;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.AiTypeRegistry;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.ContextProvider;
+import kiwi.ingenuity.netbeans.plugin.aicoder.ai.ExecutablePrompter;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.events.AiInboxMessageEvent;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.events.AiPropertyEvent;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.events.AiPropertyListener;
@@ -79,10 +83,16 @@ import org.openide.windows.WindowManager;
         preferredID = "AiTopComponent",
         persistenceType = TopComponent.PERSISTENCE_NEVER
 )
-public final class AiTopComponent extends TopComponent implements AiProcessEventListener, SessionLifecycleSource, AiSessionHost {
+public final class AiTopComponent extends TopComponent implements AiProcessEventListener, SessionLifecycleSource, AiSessionHost, ExecutablePrompter {
 
     private static final Logger LOG = Logger.getLogger(AiTopComponent.class.getName());
-    private static final ExecutorService PERSIST_EXECUTOR = Executors.newSingleThreadExecutor(r -> {
+    // Shared across every open tab. Was single-threaded until start() moved onto
+    // it in full (including its up-to-2-minute MCP registration wait) — a fixed
+    // pool lets several tabs' start()/loadHistory() chains run concurrently again.
+    // Safe to parallelize because ordering *within* one tab's own chain is now
+    // enforced explicitly, not by relying on single-thread submission order — see
+    // the CompletableFuture threaded through startAiProcess()/loadHistory().
+    private static final ExecutorService PERSIST_EXECUTOR = Executors.newFixedThreadPool(4, r -> {
         Thread t = new Thread(r, "ai-session-persist");
         t.setDaemon(true);
         return t;
@@ -175,9 +185,10 @@ public final class AiTopComponent extends TopComponent implements AiProcessEvent
     private String pendingSubmitText = null;
 
     /**
-     * False until the first startup attempt resolves to READY or a fatal startup
-     * error. While false, the visible chat input/send controls stay disabled so
-     * the user cannot submit a prompt against a still-loading backend.
+     * False until the first startup attempt resolves to READY or a fatal
+     * startup error. While false, the visible chat input/send controls stay
+     * disabled so the user cannot submit a prompt against a still-loading
+     * backend.
      */
     private boolean startupResolved = false;
 
@@ -290,7 +301,7 @@ public final class AiTopComponent extends TopComponent implements AiProcessEvent
         bottom.add(inputRow, BorderLayout.CENTER);
         add(bottom, BorderLayout.SOUTH);
 
-        this.aiBackend = new AiTypeRegistry().create(session.aiType(), this);
+        this.aiBackend = new AiTypeRegistry().create(session.aiType(), this, this);
         AiInfoBarExtension ext = this.aiBackend.createInfoBarExtension(session, this);
         if (ext != null) {
             infoBar.setExtension(ext);
@@ -529,6 +540,36 @@ public final class AiTopComponent extends TopComponent implements AiProcessEvent
     }
 
     @Override
+    public CompletableFuture<String> promptForExecutable(String dialogTitle, String executableName) {
+        CompletableFuture<String> future = new CompletableFuture<>();
+        SwingUtilities.invokeLater(() -> {
+            JFileChooser fc = new JFileChooser();
+            fc.setDialogTitle(dialogTitle);
+            fc.setFileSelectionMode(JFileChooser.FILES_ONLY);
+            fc.setFileFilter(new FileFilter() {
+                @Override
+                public boolean accept(File f) {
+                    return f.isDirectory() || f.getName().equals(executableName) || f.getName().startsWith(executableName + ".");
+                }
+
+                @Override
+                public String getDescription() {
+                    return executableName + " executable";
+                }
+            });
+            fc.setAcceptAllFileFilterUsed(true);
+            File startDir = new File("/usr/bin");
+            if (!startDir.isDirectory()) {
+                startDir = new File(System.getProperty("user.home"));
+            }
+            fc.setCurrentDirectory(startDir);
+            int result = fc.showOpenDialog(this);
+            future.complete(result == JFileChooser.APPROVE_OPTION ? fc.getSelectedFile().getAbsolutePath() : null);
+        });
+        return future;
+    }
+
+    @Override
     public void componentOpened() {
         // Red until the AI process reports READY (or stays red on a startup failure).
         setTabStatus(TabStatus.FATAL);
@@ -536,7 +577,7 @@ public final class AiTopComponent extends TopComponent implements AiProcessEvent
         initializeSessionComponents();
 
         if (aiBackend == null) {
-            aiBackend = new AiTypeRegistry().create(session.aiType(), this);
+            aiBackend = new AiTypeRegistry().create(session.aiType(), this, this);
             AiInfoBarExtension ext = aiBackend.createInfoBarExtension(session, this);
             if (ext != null) {
                 infoBar.setExtension(ext);
@@ -567,10 +608,9 @@ public final class AiTopComponent extends TopComponent implements AiProcessEvent
             OpenProjects.getDefault().addPropertyChangeListener(openProjectsListener);
         }
 
-        startAiProcess();
         // loadHistory() now loads/parses off the EDT and resolves the session dir
         // itself once it (asynchronously) finishes — see loadHistory() below.
-        loadHistory();
+        loadHistory(startAiProcess());
         if (aiBackend != null && lifecycleListeners.isEmpty()) {
             // registerLifecycleListeners() (Claude) synchronously stats/reads
             // ~/.claude/.credentials.json via AnthropicApiClient.refreshCredentialsState()
@@ -637,7 +677,8 @@ public final class AiTopComponent extends TopComponent implements AiProcessEvent
         updateContextLabel(); // initial
     }
 
-    private void startAiProcess() {
+    private CompletableFuture<Void> startAiProcess() {
+        CompletableFuture<Void> ret = new CompletableFuture<>();
         if (!new AiTypeRegistry().getSettings(session.aiType()).enabled()) {
             String msg = session.aiType().displayName() + " is disabled — enable it in Tools > Options > Advanced > " + session.aiType().displayName();
             if (infoBar != null) {
@@ -648,26 +689,36 @@ public final class AiTopComponent extends TopComponent implements AiProcessEvent
             }
             startupResolved = true;
             refreshInputEnabled();
-            return;
+            ret.complete(null);
+            return ret;
         }
         if (aiBackend != null) {
-            Window parent = SwingUtilities.getWindowAncestor(this);
-            if (parent == null) {
-                parent = WindowManager.getDefault().getMainWindow();
-            }
             AiImplementation backend = aiBackend;
             backend.setCurrentSession(session);
-            Window finalParent = parent;
             // startWithDiscovery() itself locates the CLI executable (PATH scan +
-            // well-known-location stat calls) on the calling thread before handing
-            // the actual process start off to its own background RequestProcessor.
-            // Run the whole call off the EDT so opening/creating a session never
-            // blocks the UI while that executable search runs.
-            PERSIST_EXECUTOR.execute(() -> backend.startWithDiscovery(null, finalParent));
-            SwingUtilities.invokeLater(() -> {
-                backend.onStarted(AiTopComponent.this);
+            // well-known-location stat calls) and, if missing, blocks on the
+            // ExecutablePrompter dialog — all on the calling thread. Run the whole
+            // call off the EDT so opening/creating a session never blocks the UI.
+            PERSIST_EXECUTOR.execute(() -> {
+                try {
+                    backend.startWithDiscovery(null);
+                }
+                finally {
+                    // Must run even if startWithDiscovery() throws — otherwise `ret`
+                    // never completes and loadHistoryInBackground()'s future.get()
+                    // blocks its PERSIST_EXECUTOR thread forever (pool is bounded and
+                    // shared with history load/save, so repeated failures exhaust it).
+                    SwingUtilities.invokeLater(() -> {
+                        backend.onStarted(AiTopComponent.this);
+                        ret.complete(null);
+                    });
+                }
             });
+
+            return ret;
         }
+        ret.complete(null);
+        return ret;
     }
 
     /**
@@ -876,8 +927,8 @@ public final class AiTopComponent extends TopComponent implements AiProcessEvent
     }
 
     /**
-     * Single source of truth for the tab status circle (the HTML dot in the
-     * tab name — NetBeans's tab strip doesn't reliably honour setIcon() here).
+     * Single source of truth for the tab status circle (the HTML dot in the tab
+     * name — NetBeans's tab strip doesn't reliably honour setIcon() here).
      */
     private void setTabStatus(TabStatus status) {
         tabStatus = status;
@@ -1547,13 +1598,15 @@ public final class AiTopComponent extends TopComponent implements AiProcessEvent
      * the UI while its (possibly large) history file loads; only the final
      * UI/state mutations in {@link #applyLoadedHistory} run on the EDT.
      */
-    private void loadHistory() {
+    private void loadHistory(CompletableFuture<Void> future) {
         if (historyManager == null || !PluginSettings.isSaveHistory()) {
             SwingUtilities.invokeLater(this::resolveSessionDir);
             return;
         }
         HistoryPersistenceManager manager = historyManager;
-        PERSIST_EXECUTOR.execute(() -> loadHistoryInBackground(manager));
+        PERSIST_EXECUTOR.execute(() -> {
+            loadHistoryInBackground(manager, future);
+        });
     }
 
     /**
@@ -1561,7 +1614,7 @@ public final class AiTopComponent extends TopComponent implements AiProcessEvent
      * history file and checks stored-session validity — both potentially slow
      * disk operations — then hands the result to the EDT.
      */
-    private void loadHistoryInBackground(HistoryPersistenceManager manager) {
+    private void loadHistoryInBackground(HistoryPersistenceManager manager, CompletableFuture<Void> future) {
         LoadedHistory loaded;
         try {
             loaded = manager.load();
@@ -1571,6 +1624,18 @@ public final class AiTopComponent extends TopComponent implements AiProcessEvent
             SwingUtilities.invokeLater(this::resolveSessionDir);
             return;
         }
+
+        // Don't block this pool thread waiting for the AI backend to start —
+        // register a continuation instead, so the thread is released back to
+        // PERSIST_EXECUTOR while waiting and the stored-session check runs (as a
+        // fresh PERSIST_EXECUTOR task) only once start() actually completes.
+        // whenCompleteAsync (not thenRunAsync) so the check still runs even if
+        // start() completes exceptionally, matching the old swallow-and-proceed
+        // behavior of the blocking future.get().
+        future.whenCompleteAsync((ignored, ex) -> applyLoadedHistoryAfterStart(loaded), PERSIST_EXECUTOR);
+    }
+
+    private void applyLoadedHistoryAfterStart(LoadedHistory loaded) {
         AiImplementation backend = aiBackend;
         boolean storedSessionValid = loaded.sessionId() != null && backend != null
                 && backend.isStoredSessionValid(loaded.sessionId());

@@ -4,6 +4,8 @@ import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.UUID;
+import java.util.concurrent.CompletableFuture;
+import kiwi.ingenuity.netbeans.plugin.aicoder.ai.ExecutablePrompter;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.events.AiProcessEvent;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -44,7 +46,7 @@ class GrokAiImplementationTest {
 
     @Test
     void isStoredSessionValid_noOnDiskSession_returnsFalse() {
-        GrokAiImplementation impl = new GrokAiImplementation(noopListener());
+        GrokAiImplementation impl = new GrokAiImplementation(noopListener(), noopPrompter());
         assertFalse(impl.isStoredSessionValid(UUID.randomUUID().toString()));
     }
 
@@ -53,12 +55,16 @@ class GrokAiImplementationTest {
         String sessionId = UUID.randomUUID().toString();
         Files.createDirectories(tempHome.resolve(".grok").resolve("sessions")
                 .resolve("%2Fsome%2Fencoded%2Fcwd").resolve(sessionId));
-        GrokAiImplementation impl = new GrokAiImplementation(noopListener());
+        GrokAiImplementation impl = new GrokAiImplementation(noopListener(), noopPrompter());
         assertTrue(impl.isStoredSessionValid(sessionId));
     }
 
     private static kiwi.ingenuity.netbeans.plugin.aicoder.process.events.AiProcessEventListener noopListener() {
         return (AiProcessEvent event) -> {
         };
+    }
+
+    private static ExecutablePrompter noopPrompter() {
+        return (dialogTitle, executableName) -> CompletableFuture.completedFuture(null);
     }
 }

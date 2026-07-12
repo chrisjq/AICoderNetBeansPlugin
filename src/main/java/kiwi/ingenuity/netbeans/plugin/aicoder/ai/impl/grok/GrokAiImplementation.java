@@ -1,20 +1,16 @@
 package kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.grok;
 
-import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.grok.settings.GrokPluginSettings;
-import java.awt.Component;
-import java.io.File;
 import java.util.Arrays;
 import java.util.List;
-import javax.swing.JFileChooser;
-import javax.swing.SwingUtilities;
-import javax.swing.filechooser.FileFilter;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.AiImplementation;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.AiSessionHost;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.AiTypeEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.AiTypePropertyBus;
+import kiwi.ingenuity.netbeans.plugin.aicoder.ai.ExecutablePrompter;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.events.StatusEvent;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.events.StatusEventTypeEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.grok.events.GrokModelsEvent;
+import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.grok.settings.GrokPluginSettings;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.grok.ui.GrokAiInfoBarExtension;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.session.AiSession;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.settings.AiModelSessionSettings;
@@ -22,7 +18,6 @@ import kiwi.ingenuity.netbeans.plugin.aicoder.ai.settings.AiSessionSettings;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.ui.AiInfoBarExtension;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.events.AiProcessEventListener;
 import kiwi.ingenuity.netbeans.plugin.aicoder.utils.StatusMessageUtil;
-import org.openide.util.RequestProcessor;
 
 /**
  * Thin adapter so the generic multi-AI system (AiSession, AiTopComponent, etc.)
@@ -34,10 +29,6 @@ import org.openide.util.RequestProcessor;
  */
 public class GrokAiImplementation extends AiImplementation {
 
-    // start() blocks on MCP registration (up to a 2-minute future wait); run it
-    // off the EDT so callers on the EDT never freeze the UI.
-    private static final RequestProcessor START_RP = new RequestProcessor("grok-ai-start", 4);
-
     // The discovered model list is shared across all Grok sessions for the IDE
     // run (like Claude/Copilot): discover once via `grok models`, cache, and
     // broadcast to every open session's dropdown via AiTypePropertyBus.
@@ -47,8 +38,8 @@ public class GrokAiImplementation extends AiImplementation {
 
     private final GrokAiProcessManager delegate;
 
-    public GrokAiImplementation(AiProcessEventListener listener) {
-        super(AiTypeEnum.GROK, listener);
+    public GrokAiImplementation(AiProcessEventListener listener, ExecutablePrompter prompter) {
+        super(AiTypeEnum.GROK, listener, prompter);
         this.delegate = new GrokAiProcessManager(listener);
     }
 
@@ -65,52 +56,28 @@ public class GrokAiImplementation extends AiImplementation {
     }
 
     @Override
-    public void startWithDiscovery(String model, Component parent) {
+    public void startWithDiscovery(String model) {
         String effectiveModel = (model != null && !model.isBlank()) ? model : getCurrentModel();
         String execPath = GrokExecutableLocator.locate();
         if (execPath != null) {
-            START_RP.post(() -> delegate.start(execPath, effectiveModel));
+            start(execPath, effectiveModel);
             return;
         }
-        SwingUtilities.invokeLater(() -> {
-            String chosen = promptForExecutable(parent);
-            if (chosen != null) {
-                START_RP.post(() -> delegate.start(chosen, effectiveModel));
-            }
-            else {
-                listener.onAiProcessEvent(new StatusEvent(StatusEventTypeEnum.FAILED, StatusMessageUtil.formatExecutableNotFound(null)));
-            }
-        });
-    }
 
-    private String promptForExecutable(Component parent) {
-        JFileChooser fc = new JFileChooser();
-        fc.setDialogTitle("Locate grok executable");
-        fc.setFileSelectionMode(JFileChooser.FILES_ONLY);
-        fc.setFileFilter(new FileFilter() {
-            @Override
-            public boolean accept(File f) {
-                return f.isDirectory() || f.getName().equals("grok") || f.getName().startsWith("grok.");
-            }
-
-            @Override
-            public String getDescription() {
-                return "grok executable";
-            }
-        });
-        fc.setAcceptAllFileFilterUsed(true);
-        File startDir = new File("/usr/bin");
-        if (!startDir.isDirectory()) {
-            startDir = new File(System.getProperty("user.home"));
+        String chosen;
+        try {
+            chosen = prompter.promptForExecutable("Locate grok executable", "grok").get();
         }
-        fc.setCurrentDirectory(startDir);
-        int result = fc.showOpenDialog(parent);
-        if (result == JFileChooser.APPROVE_OPTION) {
-            String path = fc.getSelectedFile().getAbsolutePath();
-            GrokPluginSettings.setExecutable(path);
-            return path;
+        catch (Exception ex) {
+            chosen = null;
         }
-        return null;
+        if (chosen != null) {
+            GrokPluginSettings.setExecutable(chosen);
+            start(chosen, effectiveModel);
+        }
+        else {
+            listener.onAiProcessEvent(new StatusEvent(StatusEventTypeEnum.FAILED, StatusMessageUtil.formatExecutableNotFound(null)));
+        }
     }
 
     @Override
@@ -172,8 +139,7 @@ public class GrokAiImplementation extends AiImplementation {
             }
             if (cached != null) {
                 List<String> snapshot = cached;
-                SwingUtilities.invokeLater(() -> AiTypePropertyBus.getInstance()
-                        .fire(AiTypeEnum.GROK, new GrokModelsEvent(snapshot)));
+                AiTypePropertyBus.getInstance().fire(AiTypeEnum.GROK, new GrokModelsEvent(snapshot));
             }
             return;
         }
@@ -182,8 +148,7 @@ public class GrokAiImplementation extends AiImplementation {
                 cachedModels = models;
                 modelsFetched = true;
             }
-            SwingUtilities.invokeLater(() -> AiTypePropertyBus.getInstance()
-                    .fire(AiTypeEnum.GROK, new GrokModelsEvent(models)));
+            AiTypePropertyBus.getInstance().fire(AiTypeEnum.GROK, new GrokModelsEvent(models));
         });
     }
 
