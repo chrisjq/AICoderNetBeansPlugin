@@ -329,28 +329,29 @@ public class ClaudeAiProcessManager extends AiProcessManager {
                 int code = exited ? p.exitValue() : -1;
 
                 boolean shouldReport;
-                ClaudeAiMcpRegistrar deadReg = null;
-                ClaudeAiSession deadSession = null;
                 synchronized (ClaudeAiProcessManager.this) {
                     shouldReport = (currentProcess == p) && !cancelledByUser;
                     if (currentProcess == p) {
                         processing = false;
                         currentProcess = null;
                         cancelledByUser = false;
+                        // Only mark not-running here — do NOT deregister registrar/
+                        // claudeAiSession. This is a single turn's OS process dying
+                        // (killed, crashed, non-zero exit); the Claude-side session
+                        // survives via --resume regardless. Deregistering
+                        // unconditionally on every non-zero turn exit meant a killed
+                        // turn (or an external `kill`, indistinguishable from here)
+                        // permanently broke the PreToolUse Edit/Write hook for the
+                        // rest of the session — SessionRegistry.get() would miss and
+                        // defer forever — because nothing re-registers until start()
+                        // runs again, and a CLI-side auto-resumed turn never calls
+                        // start(). stop() (called at the top of every real start())
+                        // still disposes/deregisters correctly when this session is
+                        // genuinely torn down.
                         if (code != 0) {
                             running = false;
-                            deadReg = registrar;
-                            registrar = null;
-                            deadSession = claudeAiSession;
-                            claudeAiSession = null;
                         }
                     }
-                }
-                if (deadReg != null) {
-                    McpServerRegistry.deregister(deadReg);
-                }
-                if (deadSession != null) {
-                    deadSession.dispose();
                 }
                 if (shouldReport && code != 0) {
                     listener.onAiProcessEvent(new StatusEvent(StatusEventTypeEnum.EXITED,
@@ -368,20 +369,17 @@ public class ClaudeAiProcessManager extends AiProcessManager {
                     Thread.currentThread().interrupt();
                 }
                 boolean wasUserCancel;
-                ClaudeAiMcpRegistrar failedReg = null;
-                ClaudeAiSession failedSession = null;
                 synchronized (ClaudeAiProcessManager.this) {
                     wasUserCancel = cancelledByUser;
                     cancelledByUser = false;
                     processing = false;
                     currentProcess = null;
                     running = false;
-                    if (!wasUserCancel) {
-                        failedReg = registrar;
-                        registrar = null;
-                        failedSession = claudeAiSession;
-                        claudeAiSession = null;
-                    }
+                    // See the matching comment above: don't deregister registrar/
+                    // claudeAiSession just because this turn's spawn/IO failed —
+                    // that used to permanently break the PreToolUse hook until the
+                    // tab was closed and reopened. stop() still cleans up properly
+                    // on a genuine session teardown.
                 }
                 // Don't orphan the child process / leak its stdin on the error path.
                 if (p != null) {
@@ -393,12 +391,6 @@ public class ClaudeAiProcessManager extends AiProcessManager {
                     }
                     catch (Exception ignored) {
                     }
-                }
-                if (failedReg != null) {
-                    McpServerRegistry.deregister(failedReg);
-                }
-                if (failedSession != null) {
-                    failedSession.dispose();
                 }
                 if (!wasUserCancel) {
                     listener.onAiProcessEvent(new StatusEvent(StatusEventTypeEnum.FAILED, StatusMessageUtil.formatSendFailed(e.getMessage())));
