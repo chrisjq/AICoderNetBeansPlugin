@@ -44,6 +44,44 @@ class RateLimitManagerTest {
     }
 
     @Test
+    void burstOfDuplicateSubmissionsCoalescesToExactlyOne() throws Exception {
+        // Simulates onTurnComplete() firing rapidly across many quick turns
+        // while one usage fetch is already in flight — none of the duplicates
+        // should be accepted or queued, so there is no unbounded backlog no
+        // matter how many times the same key is resubmitted.
+        RateLimitManager rlm = new RateLimitManager();
+        CountDownLatch firstStarted = new CountDownLatch(1);
+        CountDownLatch gate = new CountDownLatch(1);
+        AtomicInteger totalRuns = new AtomicInteger();
+        AtomicInteger acceptedCount = new AtomicInteger();
+
+        boolean first = rlm.submitWhenClear("usage", () -> {
+            firstStarted.countDown();
+            try {
+                gate.await(2, TimeUnit.SECONDS);
+            }
+            catch (InterruptedException ignored) {
+            }
+            totalRuns.incrementAndGet();
+        });
+        assertTrue(first);
+        assertTrue(firstStarted.await(1, TimeUnit.SECONDS));
+
+        int burstSize = 50;
+        for (int i = 0; i < burstSize; i++) {
+            if (rlm.submitWhenClear("usage", totalRuns::incrementAndGet)) {
+                acceptedCount.incrementAndGet();
+            }
+        }
+        assertEquals(0, acceptedCount.get(), "no duplicate in a burst should be accepted while one is pending");
+
+        gate.countDown();
+        Thread.sleep(200);
+        assertEquals(1, totalRuns.get(), "exactly one run total — the burst must not queue up any backlog");
+        rlm.shutdown();
+    }
+
+    @Test
     void differentKeysBothRun() throws Exception {
         RateLimitManager rlm = new RateLimitManager();
         CountDownLatch both = new CountDownLatch(2);

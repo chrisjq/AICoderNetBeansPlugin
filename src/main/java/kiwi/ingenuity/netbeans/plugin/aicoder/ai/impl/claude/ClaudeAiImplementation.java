@@ -42,6 +42,27 @@ public class ClaudeAiImplementation extends AiImplementation {
     private static volatile List<String> cachedModels = null;
     private static volatile boolean modelsFetched = false;
     private static volatile ClaudeUsageEvent cachedUsageEvent = null;
+    private static volatile long lastUsageFetchAttemptMs = 0;
+    /**
+     * Learned minimum gap between usage-endpoint fetch attempts. Starts at
+     * {@link #INITIAL_USAGE_INTERVAL_MS} — a conservative baseline rather than
+     * 0, since direct testing against /api/oauth/usage showed the real limit
+     * trips after as few as 3 requests within a few seconds, so waiting for
+     * the first 429 before throttling at all would still let an initial burst
+     * through. From there, every subsequent 429 grows the interval further by
+     * {@link #OFFSET_MS} (see {@link #recordUsageFetch429IfApplicable()}) — a
+     * plain additive ratchet rather than a one-shot measurement, since
+     * Anthropic's Retry-After header on this endpoint is always "0" (it never
+     * varies and retrying immediately keeps failing for tens of seconds), so
+     * there is no reliable single-shot signal to derive an exact value from.
+     * The interval never shrinks back down since there's no signal for when
+     * that would be safe. onTurnComplete() fires this on every single turn,
+     * so without a floor a fast multi-turn conversation hammers
+     * /api/oauth/usage far faster than Anthropic allows.
+     */
+    private static final long INITIAL_USAGE_INTERVAL_MS = 30_000L;
+    private static volatile long learnedUsageIntervalMs = INITIAL_USAGE_INTERVAL_MS;
+    private static long OFFSET_MS = 10000L;
 
     private final ClaudeAiProcessManager delegate;
 
@@ -272,6 +293,11 @@ public class ClaudeAiImplementation extends AiImplementation {
 
     private static void fetchUsageAsync() {
         triggerModelDiscovery();
+        long now = System.currentTimeMillis();
+        if (shouldThrottleUsageFetch(now, lastUsageFetchAttemptMs, learnedUsageIntervalMs)) {
+            return;
+        }
+        lastUsageFetchAttemptMs = now;
         AnthropicApiClient.rateLimitManager().submitWhenClear("usage", () -> {
             try {
                 AnthropicApiClient.UsageData data = new AnthropicApiClient().fetchUsage();
@@ -280,9 +306,40 @@ public class ClaudeAiImplementation extends AiImplementation {
                 AiTypePropertyBus.getInstance().fire(AiTypeEnum.CLAUDE, event);
             }
             catch (Exception e) {
+                recordUsageFetch429IfApplicable();
                 LOG.log(Level.WARNING, "Usage fetch failed: {0}", e.getMessage());
             }
         });
+    }
+
+    /**
+     * True when the last usage-fetch attempt was recent enough that a new one
+     * would almost certainly retrigger the same server-side rate limit already
+     * learned about — skips the network call entirely rather than hitting the
+     * endpoint and eating another 429/backoff cycle. Package- visible (not
+     * private) purely so it's unit-testable as a pure function.
+     */
+    static boolean shouldThrottleUsageFetch(long now, long lastAttemptMs, long learnedIntervalMs) {
+        return learnedIntervalMs > 0 && now - lastAttemptMs < learnedIntervalMs;
+    }
+
+    /**
+     * Called on a failed usage fetch. Only grows the throttle when the
+     * failure was actually the rate limiter tripping (not some other
+     * network/parse error) — {@code RateLimitManager.isRateLimited()} is true
+     * immediately after {@code AnthropicApiClient.get()} calls
+     * {@code setRateLimit()} on a 429, so this reliably distinguishes a
+     * rate-limit failure from any other exception without needing to parse
+     * the exception message. Each 429 adds another {@link #OFFSET_MS} step —
+     * a fresh attempt only happens after waiting at least the current learned
+     * interval (see {@link #shouldThrottleUsageFetch}), so a 429 here means
+     * that interval still wasn't long enough and needs to grow further.
+     */
+    private static void recordUsageFetch429IfApplicable() {
+        if (AnthropicApiClient.rateLimitManager().isRateLimited()) {
+            learnedUsageIntervalMs += OFFSET_MS;
+            LOG.log(Level.INFO, "Usage fetch rate limited again — growing throttle interval to {0}ms", learnedUsageIntervalMs);
+        }
     }
 
     private void triggerUsageReplay() {
