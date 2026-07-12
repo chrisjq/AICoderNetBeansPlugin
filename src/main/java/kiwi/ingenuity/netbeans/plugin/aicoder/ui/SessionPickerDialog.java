@@ -98,7 +98,7 @@ public class SessionPickerDialog extends JDialog {
             aiTypeCombo.setSelectedItem(lastType != null ? lastType : AiTypeEnum.GitHubCoPilot);
         }
         pack();
-        setMinimumSize(new Dimension(600, 380));
+        setMinimumSize(new Dimension(600, 480));
     }
 
     private Component buildLeftPanel() {

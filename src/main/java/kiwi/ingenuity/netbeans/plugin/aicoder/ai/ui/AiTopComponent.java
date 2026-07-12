@@ -2,10 +2,7 @@ package kiwi.ingenuity.netbeans.plugin.aicoder.ai.ui;
 
 import java.awt.BorderLayout;
 import java.awt.Color;
-import java.awt.Graphics2D;
-import java.awt.Image;
 import java.awt.Window;
-import java.awt.image.BufferedImage;
 import java.beans.PropertyChangeListener;
 import java.io.File;
 import java.io.IOException;
@@ -103,13 +100,11 @@ public final class AiTopComponent extends TopComponent implements AiProcessEvent
     private static final Color STATUS_COLOR_ORANGE = new Color(0xFF, 0x98, 0x00);
     private static final Color STATUS_COLOR_RED = new Color(0xF4, 0x43, 0x36);
     // Briefly shown in place of orange each time AI output arrives while the
-    // tab is THINKING. See flashThinking().
-    private static final Color THINKING_FLASH_COLOR = new Color(0xFF, 0xC8, 0x55);
-
-    private static final Image STATUS_ICON_GREEN = makeStatusIcon(STATUS_COLOR_GREEN);
-    private static final Image STATUS_ICON_ORANGE = makeStatusIcon(STATUS_COLOR_ORANGE);
-    private static final Image STATUS_ICON_RED = makeStatusIcon(STATUS_COLOR_RED);
-    private static final Image STATUS_ICON_YELLOW = makeStatusIcon(THINKING_FLASH_COLOR);
+    // tab is THINKING. See flashThinking(). A paler gold (0xFFC855) rendered
+    // black in the tab strip in testing — magenta is confirmed to render
+    // correctly, so it's used here even though it's a more assertive colour
+    // than the other status dots.
+    private static final Color THINKING_FLASH_COLOR = new Color(0xFF, 0x00, 0xFF);
 
     private static final String STATUS_HEX_GREEN = toHex(STATUS_COLOR_GREEN);
     private static final String STATUS_HEX_ORANGE = toHex(STATUS_COLOR_ORANGE);
@@ -120,19 +115,6 @@ public final class AiTopComponent extends TopComponent implements AiProcessEvent
      * Duration of the "AI output received" flash pulse, in milliseconds.
      */
     private static final int THINKING_FLASH_MS = 250;
-
-    private static Image makeStatusIcon(Color color) {
-        int size = 12;
-        BufferedImage img = new BufferedImage(
-                size, size, BufferedImage.TYPE_INT_ARGB);
-        Graphics2D g = img.createGraphics();
-        g.setRenderingHint(java.awt.RenderingHints.KEY_ANTIALIASING,
-                java.awt.RenderingHints.VALUE_ANTIALIAS_ON);
-        g.setColor(color);
-        g.fillOval(1, 1, size - 2, size - 2);
-        g.dispose();
-        return img;
-    }
 
     private static String toHex(Color color) {
         return String.format("#%02X%02X%02X", color.getRed(), color.getGreen(), color.getBlue());
@@ -242,7 +224,6 @@ public final class AiTopComponent extends TopComponent implements AiProcessEvent
         this.sessionPersistenceManager = sessionPersistenceManager;
         setName(session.name());
         setDisplayName(session.name());
-        setIcon(STATUS_ICON_RED);
         updateTabTooltip();
         setLayout(new BorderLayout());
 
@@ -894,20 +875,9 @@ public final class AiTopComponent extends TopComponent implements AiProcessEvent
         };
     }
 
-    private Image currentStatusIcon() {
-        return switch (tabStatus) {
-            case READY ->
-                STATUS_ICON_GREEN;
-            case THINKING ->
-                thinkingFlashActive ? STATUS_ICON_YELLOW : STATUS_ICON_ORANGE;
-            case FATAL ->
-                STATUS_ICON_RED;
-        };
-    }
-
     /**
-     * Single source of truth for the tab status circle. Updates both the window
-     * icon and the HTML tab-name dot so they stay in sync.
+     * Single source of truth for the tab status circle (the HTML dot in the
+     * tab name — NetBeans's tab strip doesn't reliably honour setIcon() here).
      */
     private void setTabStatus(TabStatus status) {
         tabStatus = status;
@@ -919,7 +889,6 @@ public final class AiTopComponent extends TopComponent implements AiProcessEvent
                 thinkingFlashTimer.stop();
             }
         }
-        setIcon(currentStatusIcon());
         updateTabHtmlName();
     }
 
@@ -956,14 +925,12 @@ public final class AiTopComponent extends TopComponent implements AiProcessEvent
         }
         if (!thinkingFlashActive) {
             thinkingFlashActive = true;
-            setIcon(currentStatusIcon());
             updateTabHtmlName();
         }
         if (thinkingFlashTimer == null) {
             thinkingFlashTimer = new Timer(THINKING_FLASH_MS, e -> {
                 thinkingFlashActive = false;
                 if (tabStatus == TabStatus.THINKING) {
-                    setIcon(currentStatusIcon());
                     updateTabHtmlName();
                 }
             });
@@ -1679,7 +1646,7 @@ public final class AiTopComponent extends TopComponent implements AiProcessEvent
     }
 
     /**
-     * Tab status-circle states. See the STATUS_ICON_* colour legend above.
+     * Tab status-circle states. See the STATUS_HEX_* colour legend above.
      */
     private enum TabStatus {
         READY, THINKING, FATAL
