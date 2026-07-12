@@ -1,6 +1,7 @@
 package kiwi.ingenuity.netbeans.plugin.aicoder.ai.settings;
 
 import com.google.gson.JsonObject;
+import kiwi.ingenuity.netbeans.plugin.aicoder.DatabaseAccessOptionEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.WebRequestAccessOptionEnum;
 
 /**
@@ -50,6 +51,20 @@ public abstract class AiSessionSettingsCreator<E extends AiSessionSettings> {
             if (cfgObj.has(key) && cfgObj.get(key).isJsonPrimitive()) {
                 settings.setAllowWebRequestAccess(option, cfgObj.get(key).getAsBoolean());
             }
+        }
+        key = AiSessionSettingsKeyEnum.ALLOW_DATABASE_ACCESS.key();
+        if (cfgObj.has(key) && cfgObj.get(key).isJsonPrimitive()) {
+            settings.setAllowDatabaseAccess(cfgObj.get(key).getAsBoolean());
+        }
+        for (DatabaseAccessOptionEnum option : DatabaseAccessOptionEnum.values()) {
+            key = AiSessionSettingsKeyEnum.forDatabaseAccessOption(option).key();
+            if (cfgObj.has(key) && cfgObj.get(key).isJsonPrimitive()) {
+                settings.setAllowDatabaseAccessOption(option, cfgObj.get(key).getAsBoolean());
+            }
+        }
+        key = AiSessionSettingsKeyEnum.DATABASE_ROW_LIMIT.key();
+        if (cfgObj.has(key) && cfgObj.get(key).isJsonPrimitive()) {
+            settings.setDatabaseRowLimit(cfgObj.get(key).getAsInt());
         }
     }
 

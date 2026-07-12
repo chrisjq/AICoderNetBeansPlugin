@@ -47,6 +47,11 @@ public enum McpToolEnum {
     GIT_TAG("GitTag"),
     GIT_REMOTE("GitRemote"),
     GIT_REVERT("GitRevert"),
+    // DATABASE
+    LIST_DATABASE_CONNECTIONS("ListDatabaseConnections"),
+    GET_TABLE_SCHEMA("GetTableSchema"),
+    GET_TABLE_DATA("GetTableData"),
+    EXECUTE_SQL_QUERY("ExecuteSqlQuery"),
     // HELP
     GET_PROJECT_STRUCTURE("GetProjectStructure"),
     GET_CLASS_MEMBERS("GetClassMembers"),

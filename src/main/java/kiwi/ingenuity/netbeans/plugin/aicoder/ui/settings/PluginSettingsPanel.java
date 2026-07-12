@@ -18,6 +18,7 @@ import javax.swing.JSpinner;
 import javax.swing.JTabbedPane;
 import javax.swing.SpinnerNumberModel;
 import kiwi.ingenuity.netbeans.plugin.aicoder.AccessControlLabelEnum;
+import kiwi.ingenuity.netbeans.plugin.aicoder.DatabaseAccessOptionEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.PluginSettings;
 import kiwi.ingenuity.netbeans.plugin.aicoder.WebRequestAccessOptionEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ui.ScrollablePanel;
@@ -49,6 +50,7 @@ public class PluginSettingsPanel extends JPanel {
     private final JSpinner fontSizeSpinner;
     private final JCheckBox restrictToProjectCheckBox;
     private final WebRequestAccessSettingsPanel webRequestAccessPanel;
+    private final DatabaseAccessSettingsPanel databaseAccessPanel;
     private final AiMessagingSettingsPanel aiMessagingPanel;
     private final JSpinner inboxRetentionSpinner;
     private final JSpinner inboxMaxSizeSpinner;
@@ -162,9 +164,17 @@ public class PluginSettingsPanel extends JPanel {
         addTo(general, webRequestAccessPanel, c);
         c.gridwidth = 1;
 
-        // AI messaging
+        // Database access
         c.gridx = 0;
         c.gridy = 10;
+        c.gridwidth = 2;
+        databaseAccessPanel = new DatabaseAccessSettingsPanel(false);
+        addTo(general, databaseAccessPanel, c);
+        c.gridwidth = 1;
+
+        // AI messaging
+        c.gridx = 0;
+        c.gridy = 11;
         c.gridwidth = 2;
         aiMessagingPanel = new AiMessagingSettingsPanel(false);
         addTo(general, aiMessagingPanel, c);
@@ -172,7 +182,7 @@ public class PluginSettingsPanel extends JPanel {
 
         // Inbox read-message retention (minutes, 0 = keep until deleted)
         c.gridx = 0;
-        c.gridy = 11;
+        c.gridy = 12;
         c.weightx = 0;
         addTo(general, new JLabel("Inbox read retention (min, 0=keep):"), c);
         inboxRetentionSpinner = new JSpinner(new SpinnerNumberModel(
@@ -183,7 +193,7 @@ public class PluginSettingsPanel extends JPanel {
 
         // Inbox max size
         c.gridx = 0;
-        c.gridy = 12;
+        c.gridy = 13;
         c.weightx = 0;
         addTo(general, new JLabel("Inbox max size:"), c);
         inboxMaxSizeSpinner = new JSpinner(new SpinnerNumberModel(
@@ -194,7 +204,7 @@ public class PluginSettingsPanel extends JPanel {
 
         // Filler for general tab
         c.gridx = 0;
-        c.gridy = 13;
+        c.gridy = 14;
         c.weightx = 1;
         c.weighty = 1;
         c.gridwidth = 2;
@@ -228,6 +238,8 @@ public class PluginSettingsPanel extends JPanel {
         fontSizeSpinner.addChangeListener(e -> fireChanged());
         restrictToProjectCheckBox.addActionListener(e -> fireChanged());
         webRequestAccessPanel.addChangeListener(e -> fireChanged());
+        databaseAccessPanel.addChangeListener(e -> fireChanged());
+        databaseAccessPanel.addRowLimitChangeListener(e -> fireChanged());
         aiMessagingPanel.addChangeListener(e -> fireChanged());
         inboxRetentionSpinner.addChangeListener(e -> fireChanged());
         inboxMaxSizeSpinner.addChangeListener(e -> fireChanged());
@@ -263,6 +275,12 @@ public class PluginSettingsPanel extends JPanel {
             webRequestAccessPanel.setOptionSelected(option,
                     PluginSettings.isAllowWebRequestAccess(option));
         }
+        databaseAccessPanel.setAllowDatabaseAccessSelected(PluginSettings.isAllowDatabaseAccess());
+        for (DatabaseAccessOptionEnum option : DatabaseAccessOptionEnum.values()) {
+            databaseAccessPanel.setOptionSelected(option,
+                    PluginSettings.isAllowDatabaseAccessOption(option));
+        }
+        databaseAccessPanel.setRowLimitValue(PluginSettings.getDatabaseRowLimit());
         aiMessagingPanel.setAllowInterAiSelected(PluginSettings.isAllowInterAiComms());
         aiMessagingPanel.setAutoNotifySelected(PluginSettings.isAutoNotifyInbox());
         aiMessagingPanel.setAllowImportantSelected(
@@ -289,6 +307,12 @@ public class PluginSettingsPanel extends JPanel {
             PluginSettings.setAllowWebRequestAccess(option,
                     webRequestAccessPanel.isOptionSelected(option));
         }
+        PluginSettings.setAllowDatabaseAccess(databaseAccessPanel.isAllowDatabaseAccessSelected());
+        for (DatabaseAccessOptionEnum option : DatabaseAccessOptionEnum.values()) {
+            PluginSettings.setAllowDatabaseAccessOption(option,
+                    databaseAccessPanel.isOptionSelected(option));
+        }
+        PluginSettings.setDatabaseRowLimit(databaseAccessPanel.getRowLimitValue());
         PluginSettings.setAllowInterAiComms(aiMessagingPanel.isAllowInterAiSelected());
         PluginSettings.setAutoNotifyInbox(aiMessagingPanel.isAutoNotifySelected());
         PluginSettings.setAllowImportantMessages(

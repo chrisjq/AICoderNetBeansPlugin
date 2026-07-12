@@ -129,6 +129,30 @@ public final class PluginSettings {
         prefs().putBoolean(PluginSettingsKeyEnum.forWebRequestAccessOption(option).key(), v);
     }
 
+    public static boolean isAllowDatabaseAccess() {
+        return getBoolean(PluginSettingsKeyEnum.ALLOW_DATABASE_ACCESS);
+    }
+
+    public static void setAllowDatabaseAccess(boolean v) {
+        prefs().putBoolean(PluginSettingsKeyEnum.ALLOW_DATABASE_ACCESS.key(), v);
+    }
+
+    public static boolean isAllowDatabaseAccessOption(DatabaseAccessOptionEnum option) {
+        return getBoolean(PluginSettingsKeyEnum.forDatabaseAccessOption(option));
+    }
+
+    public static void setAllowDatabaseAccessOption(DatabaseAccessOptionEnum option, boolean v) {
+        prefs().putBoolean(PluginSettingsKeyEnum.forDatabaseAccessOption(option).key(), v);
+    }
+
+    public static int getDatabaseRowLimit() {
+        return getInt(PluginSettingsKeyEnum.DATABASE_ROW_LIMIT);
+    }
+
+    public static void setDatabaseRowLimit(int v) {
+        prefs().putInt(PluginSettingsKeyEnum.DATABASE_ROW_LIMIT.key(), Math.max(1, v));
+    }
+
     public static boolean isAllowInterAiComms() {
         return getBoolean(PluginSettingsKeyEnum.ALLOW_INTER_AI_COMMS);
     }

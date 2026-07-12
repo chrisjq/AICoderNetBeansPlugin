@@ -1,5 +1,6 @@
 package kiwi.ingenuity.netbeans.plugin.aicoder.ai.settings;
 
+import kiwi.ingenuity.netbeans.plugin.aicoder.DatabaseAccessOptionEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.WebRequestAccessOptionEnum;
 
 /**
@@ -74,7 +75,32 @@ public enum AiSessionSettingsKeyEnum {
     /**
      * Whether to allow request bodies
      */
-    ALLOW_WEB_REQUEST_BODY("allowWebRequestBody");
+    ALLOW_WEB_REQUEST_BODY("allowWebRequestBody"),
+    /**
+     * Whether to allow database access at all
+     */
+    ALLOW_DATABASE_ACCESS("allowDatabaseAccess"),
+    /**
+     * Read-only flag (no write support implemented; kept as a real setting
+     * rather than hardcoded so enforcement stays honest)
+     */
+    ALLOW_DATABASE_READ_ONLY("allowDatabaseReadOnly"),
+    /**
+     * Whether to allow table schema lookups
+     */
+    ALLOW_DATABASE_SCHEMA("allowDatabaseSchema"),
+    /**
+     * Whether to allow table data reads
+     */
+    ALLOW_DATABASE_SELECT("allowDatabaseSelect"),
+    /**
+     * Whether to allow arbitrary SELECT query execution
+     */
+    ALLOW_DATABASE_EXECUTE_SQL("allowDatabaseExecuteSql"),
+    /**
+     * Maximum rows returned by a database read
+     */
+    DATABASE_ROW_LIMIT("databaseRowLimit");
 
     public static AiSessionSettingsKeyEnum forWebRequestAccessOption(WebRequestAccessOptionEnum option) {
         return switch (option) {
@@ -96,6 +122,19 @@ public enum AiSessionSettingsKeyEnum {
                 ALLOW_WEB_REQUEST_HEADERS;
             case BODY ->
                 ALLOW_WEB_REQUEST_BODY;
+        };
+    }
+
+    public static AiSessionSettingsKeyEnum forDatabaseAccessOption(DatabaseAccessOptionEnum option) {
+        return switch (option) {
+            case READ_ONLY ->
+                ALLOW_DATABASE_READ_ONLY;
+            case SCHEMA ->
+                ALLOW_DATABASE_SCHEMA;
+            case SELECT ->
+                ALLOW_DATABASE_SELECT;
+            case EXECUTE_SQL ->
+                ALLOW_DATABASE_EXECUTE_SQL;
         };
     }
 

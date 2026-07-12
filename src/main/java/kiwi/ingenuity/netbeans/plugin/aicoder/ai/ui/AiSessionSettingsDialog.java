@@ -18,12 +18,14 @@ import javax.swing.JTextArea;
 import javax.swing.JTextField;
 import javax.swing.SpinnerNumberModel;
 import kiwi.ingenuity.netbeans.plugin.aicoder.AccessControlLabelEnum;
+import kiwi.ingenuity.netbeans.plugin.aicoder.DatabaseAccessOptionEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.PluginSettings;
 import kiwi.ingenuity.netbeans.plugin.aicoder.WebRequestAccessOptionEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.session.AiSession;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.settings.AiSessionSettings;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ui.ScrollablePanel;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ui.settings.AiMessagingSettingsPanel;
+import kiwi.ingenuity.netbeans.plugin.aicoder.ui.settings.DatabaseAccessSettingsPanel;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ui.settings.WebRequestAccessSettingsPanel;
 import org.openide.windows.WindowManager;
 
@@ -42,6 +44,7 @@ public class AiSessionSettingsDialog extends JDialog {
     private final JCheckBox restrictCheckBox = new JCheckBox();
     private final AiMessagingSettingsPanel aiMessagingPanel;
     private final WebRequestAccessSettingsPanel webRequestAccessPanel;
+    private final DatabaseAccessSettingsPanel databaseAccessPanel;
     private final JTextArea sessionInstructionsArea = new JTextArea(4, 24);
 
     private boolean resetAutoNotify = false;
@@ -58,6 +61,7 @@ public class AiSessionSettingsDialog extends JDialog {
 
         aiMessagingPanel = new AiMessagingSettingsPanel(true);
         webRequestAccessPanel = new WebRequestAccessSettingsPanel(true);
+        databaseAccessPanel = new DatabaseAccessSettingsPanel(true);
 
         historySpinner = new JSpinner(new SpinnerNumberModel(
                 cfg.effectiveMaxHistory(), 0, 10000, 10));
@@ -77,6 +81,13 @@ public class AiSessionSettingsDialog extends JDialog {
             webRequestAccessPanel.setOptionSelected(option,
                     cfg.effectiveAllowWebRequestAccess(option));
         }
+
+        databaseAccessPanel.setAllowDatabaseAccessSelected(cfg.effectiveAllowDatabaseAccess());
+        for (DatabaseAccessOptionEnum option : DatabaseAccessOptionEnum.values()) {
+            databaseAccessPanel.setOptionSelected(option,
+                    cfg.effectiveAllowDatabaseAccessOption(option));
+        }
+        databaseAccessPanel.setRowLimitValue(cfg.effectiveDatabaseRowLimit());
 
         aiMessagingPanel.setAllowInterAiSelected(cfg.effectiveAllowInterAiComms());
         aiMessagingPanel.setAutoNotifySelected(cfg.effectiveAutoNotifyInbox());
@@ -149,6 +160,7 @@ public class AiSessionSettingsDialog extends JDialog {
         addRow(p, c, row++, new JLabel("History size:"), historySpinner);
         addFull(p, c, row++, restrictCheckBox);
         addFull(p, c, row++, webRequestAccessPanel);
+        addFull(p, c, row++, databaseAccessPanel);
         addFull(p, c, row++, aiMessagingPanel);
         addRow(p, c, row++, new JLabel("Session instructions:"), new JScrollPane(sessionInstructionsArea));
         addFull(p, c, row++, sessionInstructionsResetBtn);
@@ -195,6 +207,12 @@ public class AiSessionSettingsDialog extends JDialog {
         boolean webRequestsSelected = webRequestAccessPanel.isAllowWebRequestsSelected();
         Boolean allowWebRequests = webRequestsSelected == PluginSettings.isAllowWebRequests() ? null : webRequestsSelected;
 
+        boolean databaseAccessSelected = databaseAccessPanel.isAllowDatabaseAccessSelected();
+        Boolean allowDatabaseAccess = databaseAccessSelected == PluginSettings.isAllowDatabaseAccess() ? null : databaseAccessSelected;
+
+        int rowLimitValue = databaseAccessPanel.getRowLimitValue();
+        Integer databaseRowLimit = rowLimitValue == PluginSettings.getDatabaseRowLimit() ? null : rowLimitValue;
+
         boolean interAiSelected = aiMessagingPanel.isAllowInterAiSelected();
         Boolean allowInterAiComms = interAiSelected == PluginSettings.isAllowInterAiComms() ? null : interAiSelected;
 
@@ -224,6 +242,14 @@ public class AiSessionSettingsDialog extends JDialog {
                     ? null : selected;
             original.setAllowWebRequestAccess(option, override);
         }
+        original.setAllowDatabaseAccess(allowDatabaseAccess);
+        for (DatabaseAccessOptionEnum option : DatabaseAccessOptionEnum.values()) {
+            boolean selected = databaseAccessPanel.isOptionSelected(option);
+            Boolean override = selected == PluginSettings.isAllowDatabaseAccessOption(option)
+                    ? null : selected;
+            original.setAllowDatabaseAccessOption(option, override);
+        }
+        original.setDatabaseRowLimit(databaseRowLimit);
         original.setAllowInterAiComms(allowInterAiComms);
         original.setAutoNotifyInbox(autoNotifyInbox);
         original.setAllowImportantMessages(allowImportantMessages);

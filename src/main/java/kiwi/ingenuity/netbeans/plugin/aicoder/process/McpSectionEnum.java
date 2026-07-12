@@ -4,6 +4,7 @@ public enum McpSectionEnum {
     DEVOPS_BUILD("Build Code"),
     DEVOPS_TEST("Test Code"),
     GIT("Git"),
+    DATABASE("Database (read-only)"),
     HELP("Help & Information"),
     REFACTORING("Refactoring (IDE-safe - all references updated automatically)"),
     SEARCH("Search/Find (faster and IDE-aware)"),

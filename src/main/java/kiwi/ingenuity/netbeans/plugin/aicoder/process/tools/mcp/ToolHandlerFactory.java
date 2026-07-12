@@ -42,6 +42,10 @@ import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.git.GitRevertToo
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.git.GitShowTool;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.git.GitStashTool;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.git.GitTagTool;
+import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.database.ExecuteSqlQueryTool;
+import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.database.GetTableDataTool;
+import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.database.GetTableSchemaTool;
+import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.database.ListDatabaseConnectionsTool;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.help.GetClassMembersTool;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.help.GetJavadocTool;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.help.GetProjectStructureTool;
@@ -129,6 +133,10 @@ public final class ToolHandlerFactory {
         map.put(McpToolEnum.GIT_TAG, new GitTagTool());
         map.put(McpToolEnum.GIT_REMOTE, new GitRemoteTool());
         map.put(McpToolEnum.GIT_REVERT, new GitRevertTool());
+        map.put(McpToolEnum.LIST_DATABASE_CONNECTIONS, new ListDatabaseConnectionsTool());
+        map.put(McpToolEnum.GET_TABLE_SCHEMA, new GetTableSchemaTool());
+        map.put(McpToolEnum.GET_TABLE_DATA, new GetTableDataTool());
+        map.put(McpToolEnum.EXECUTE_SQL_QUERY, new ExecuteSqlQueryTool());
         map.put(McpToolEnum.REFRESH_NB_FILE_STATUS, new RefreshFileStatusTool());
         map.put(McpToolEnum.RENAME_SYMBOL, new RenameSymbolTool());
         map.put(McpToolEnum.MOVE_CLASS, new MoveClassTool());

@@ -28,7 +28,13 @@ public enum PluginSettingsKeyEnum {
     ALLOW_IMPORTANT_MESSAGES("ai.session.allowImportantMessages", true),
     INBOX_RETENTION_MINUTES("ai.inbox.retentionMinutes", 60),
     INBOX_MAX_SIZE("ai.inbox.maxSize", 1000),
-    LAST_SESSION_AI_TYPE("ai.session.lastAiType", null);
+    LAST_SESSION_AI_TYPE("ai.session.lastAiType", null),
+    ALLOW_DATABASE_ACCESS("ai.session.allowDatabaseAccess", false),
+    ALLOW_DATABASE_READ_ONLY("ai.session.allowDatabaseAccess.readOnly", false),
+    ALLOW_DATABASE_SCHEMA("ai.session.allowDatabaseAccess.schema", false),
+    ALLOW_DATABASE_SELECT("ai.session.allowDatabaseAccess.select", false),
+    ALLOW_DATABASE_EXECUTE_SQL("ai.session.allowDatabaseAccess.executeSql", false),
+    DATABASE_ROW_LIMIT("ai.session.databaseRowLimit", 25);
 
     public static PluginSettingsKeyEnum forWebRequestAccessOption(WebRequestAccessOptionEnum option) {
         return switch (option) {
@@ -50,6 +56,19 @@ public enum PluginSettingsKeyEnum {
                 ALLOW_WEB_REQUEST_HEADERS;
             case BODY ->
                 ALLOW_WEB_REQUEST_BODY;
+        };
+    }
+
+    public static PluginSettingsKeyEnum forDatabaseAccessOption(DatabaseAccessOptionEnum option) {
+        return switch (option) {
+            case READ_ONLY ->
+                ALLOW_DATABASE_READ_ONLY;
+            case SCHEMA ->
+                ALLOW_DATABASE_SCHEMA;
+            case SELECT ->
+                ALLOW_DATABASE_SELECT;
+            case EXECUTE_SQL ->
+                ALLOW_DATABASE_EXECUTE_SQL;
         };
     }
 

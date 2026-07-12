@@ -14,7 +14,12 @@ public enum AccessControlLabelEnum {
     ALLOW_WEB_REQUEST_BODY("Allow request bodies by default", "Allow request bodies"),
     ALLOW_INTER_AI_COMMS("Allow inter-AI communication by default", "Allow inter-AI communication"),
     AUTO_NOTIFY_INBOX("Auto-notify AI sessions on inbox messages", "Auto-notify on incoming messages"),
-    ALLOW_IMPORTANT_MESSAGES("Allow important messages (interrupt receiving session)", "Allow important messages, interrupt this session");
+    ALLOW_IMPORTANT_MESSAGES("Allow important messages (interrupt receiving session)", "Allow important messages, interrupt this session"),
+    ALLOW_DATABASE_ACCESS("Allow AI database access by default", "Allow database access"),
+    ALLOW_DATABASE_READ_ONLY("Read-only (no write support implemented)", "Read-only (no write support implemented)"),
+    ALLOW_DATABASE_SCHEMA("Allow table schema lookups by default", "Allow table schema lookups"),
+    ALLOW_DATABASE_SELECT("Allow Select Query by default", "Allow Select Query"),
+    ALLOW_DATABASE_EXECUTE_SQL("Allow arbitrary SELECT queries by default", "Allow arbitrary SELECT queries");
 
     private final String globalLabel;
     private final String sessionLabel;

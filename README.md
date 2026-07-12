@@ -142,6 +142,17 @@ The plugin exposes the following tools to the AI assistant over the MCP endpoint
 | `GetTypeHierarchy` | Full supertype/subtype tree for a class or interface |
 | `GetJavadoc` | Javadoc and method signatures for any class or member on the classpath |
 
+### Database (read-only)
+
+| Tool | Description |
+|---|---|
+| `ListDatabaseConnections` | Lists all registered Database Explorer connections and their connection status |
+| `GetTableSchema` | Returns column names, types, nullability, and primary keys for a table |
+| `GetTableData` | Fetches up to the configured row limit of a table's data (SELECT *) |
+| `ExecuteSqlQuery` | Runs a read-only SELECT query on a database connection (SELECT enforced) |
+
+> **Note:** Database access must be enabled in **Tools > Options > AI Coder > General** or in session settings. All database operations are read-only; INSERT, UPDATE, DELETE, and DDL statements are blocked.
+
 ### Refactoring (IDE-safe — all references updated automatically)
 
 | Tool | Description |

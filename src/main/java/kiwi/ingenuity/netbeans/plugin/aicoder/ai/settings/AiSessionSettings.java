@@ -1,6 +1,7 @@
 package kiwi.ingenuity.netbeans.plugin.aicoder.ai.settings;
 
 import com.google.gson.JsonObject;
+import kiwi.ingenuity.netbeans.plugin.aicoder.DatabaseAccessOptionEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.PluginSettings;
 import kiwi.ingenuity.netbeans.plugin.aicoder.WebRequestAccessOptionEnum;
 
@@ -26,6 +27,12 @@ public class AiSessionSettings {
     private volatile Boolean allowWebRequestOptions;
     private volatile Boolean allowWebRequestHeaders;
     private volatile Boolean allowWebRequestBody;
+    private volatile Boolean allowDatabaseAccess;
+    private volatile Boolean allowDatabaseReadOnly;
+    private volatile Boolean allowDatabaseSchema;
+    private volatile Boolean allowDatabaseSelect;
+    private volatile Boolean allowDatabaseExecuteSql;
+    private volatile Integer databaseRowLimit;
 
     public AiSessionSettings() {
     }
@@ -156,6 +163,40 @@ public class AiSessionSettings {
         return value != null ? value : PluginSettings.isAllowWebRequestAccess(option);
     }
 
+    public Boolean allowDatabaseAccess() {
+        return allowDatabaseAccess;
+    }
+
+    public Boolean allowDatabaseAccessOption(DatabaseAccessOptionEnum option) {
+        return switch (option) {
+            case READ_ONLY ->
+                allowDatabaseReadOnly;
+            case SCHEMA ->
+                allowDatabaseSchema;
+            case SELECT ->
+                allowDatabaseSelect;
+            case EXECUTE_SQL ->
+                allowDatabaseExecuteSql;
+        };
+    }
+
+    public Integer databaseRowLimit() {
+        return databaseRowLimit;
+    }
+
+    public boolean effectiveAllowDatabaseAccess() {
+        return allowDatabaseAccess != null ? allowDatabaseAccess : PluginSettings.isAllowDatabaseAccess();
+    }
+
+    public boolean effectiveAllowDatabaseAccessOption(DatabaseAccessOptionEnum option) {
+        Boolean value = allowDatabaseAccessOption(option);
+        return value != null ? value : PluginSettings.isAllowDatabaseAccessOption(option);
+    }
+
+    public int effectiveDatabaseRowLimit() {
+        return databaseRowLimit != null ? databaseRowLimit : PluginSettings.getDatabaseRowLimit();
+    }
+
     public void setAutoAccept(Boolean newAutoAccept) {
         this.autoAccept = newAutoAccept;
     }
@@ -211,6 +252,27 @@ public class AiSessionSettings {
         }
     }
 
+    public void setAllowDatabaseAccess(Boolean newAllowDatabaseAccess) {
+        this.allowDatabaseAccess = newAllowDatabaseAccess;
+    }
+
+    public void setAllowDatabaseAccessOption(DatabaseAccessOptionEnum option, Boolean allowed) {
+        switch (option) {
+            case READ_ONLY ->
+                allowDatabaseReadOnly = allowed;
+            case SCHEMA ->
+                allowDatabaseSchema = allowed;
+            case SELECT ->
+                allowDatabaseSelect = allowed;
+            case EXECUTE_SQL ->
+                allowDatabaseExecuteSql = allowed;
+        }
+    }
+
+    public void setDatabaseRowLimit(Integer newDatabaseRowLimit) {
+        this.databaseRowLimit = newDatabaseRowLimit;
+    }
+
     public String getAdditionalInfo() {
         return "";
     }
@@ -249,6 +311,18 @@ public class AiSessionSettings {
             if (value != null) {
                 cfgObj.addProperty(AiSessionSettingsKeyEnum.forWebRequestAccessOption(option).key(), value);
             }
+        }
+        if (allowDatabaseAccess != null) {
+            cfgObj.addProperty(AiSessionSettingsKeyEnum.ALLOW_DATABASE_ACCESS.key(), allowDatabaseAccess);
+        }
+        for (DatabaseAccessOptionEnum option : DatabaseAccessOptionEnum.values()) {
+            Boolean value = allowDatabaseAccessOption(option);
+            if (value != null) {
+                cfgObj.addProperty(AiSessionSettingsKeyEnum.forDatabaseAccessOption(option).key(), value);
+            }
+        }
+        if (databaseRowLimit != null) {
+            cfgObj.addProperty(AiSessionSettingsKeyEnum.DATABASE_ROW_LIMIT.key(), databaseRowLimit);
         }
     }
 }
