@@ -4,6 +4,8 @@
  */
 package kiwi.ingenuity.netbeans.plugin.aicoder.utils;
 
+import java.util.List;
+
 /**
  *
  * @author chris
@@ -37,6 +39,16 @@ public class StatusMessageUtil {
 
     public static String formatExecutableNotFound(String executablePath) {
         return "Executable not found — please set in plugin options.";
+    }
+
+    /**
+     * Formats an unexpected-process-exit status message, appending captured
+     * stderr (if any) so the user has something to act on instead of a bare
+     * exit code.
+     */
+    public static String formatExited(String aiName, int code, List<String> stderrLines) {
+        String errText = stderrLines == null ? "" : String.join("\n", stderrLines).strip();
+        return aiName + " exited (code " + code + ")" + (errText.isBlank() ? "" : ": " + errText);
     }
 
     private StatusMessageUtil() {

@@ -996,13 +996,21 @@ public final class AiTopComponent extends TopComponent implements AiProcessEvent
      * True for events that actually render new AI-generated content in the chat
      * panel. Internal/plumbing events (status updates, impl events, turn
      * boundaries) must not trigger the THINKING flash pulse — only output the
-     * user can actually see arriving should.
+     * user can actually see arriving should. Mirrors handleEvent()'s own
+     * rendering conditions: an empty TextDeltaEvent renders nothing, and a
+     * ToolUseEvent only renders a diff when it's a file modification AND MCP
+     * isn't active (MCP-active sessions render file edits via PermissionEvent
+     * instead) — otherwise every Read/Bash/Grep/MCP tool call would flash the
+     * tab despite adding nothing visible to the chat.
      */
-    private static boolean isVisibleChatOutput(AiProcessEvent event) {
-        return event instanceof TextDeltaEvent
-                || event instanceof ToolUseEvent
-                || event instanceof PermissionEvent
-                || event instanceof AskUserQuestionEvent;
+    private boolean isVisibleChatOutput(AiProcessEvent event) {
+        if (event instanceof TextDeltaEvent td) {
+            return td.text() != null && !td.text().isEmpty();
+        }
+        if (event instanceof ToolUseEvent tu) {
+            return tu.isFileModification() && (aiBackend == null || !aiBackend.isMcpActive());
+        }
+        return event instanceof PermissionEvent || event instanceof AskUserQuestionEvent;
     }
 
     private void handleEvent(AiProcessEvent event) {

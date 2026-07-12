@@ -266,9 +266,8 @@ public class GrokAiProcessManager extends AiProcessManager {
                     synchronized (this) {
                         processing = false;
                     }
-                    String errText = String.join("\n", stderrLines);
                     listener.onAiProcessEvent(new StatusEvent(StatusEventTypeEnum.EXITED,
-                            "Grok exited (code " + code + ")" + (errText.isBlank() ? "" : ": " + errText)));
+                            StatusMessageUtil.formatExited("Grok", code, stderrLines)));
                 }
             }
             else {

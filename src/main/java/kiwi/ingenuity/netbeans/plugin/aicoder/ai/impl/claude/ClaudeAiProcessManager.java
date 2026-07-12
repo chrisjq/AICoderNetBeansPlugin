@@ -353,7 +353,8 @@ public class ClaudeAiProcessManager extends AiProcessManager {
                     deadSession.dispose();
                 }
                 if (shouldReport && code != 0) {
-                    listener.onAiProcessEvent(new StatusEvent(StatusEventTypeEnum.EXITED, "AI exited (code " + code + ")"));
+                    listener.onAiProcessEvent(new StatusEvent(StatusEventTypeEnum.EXITED,
+                            StatusMessageUtil.formatExited("AI", code, stderrLines)));
                 }
 
             }
