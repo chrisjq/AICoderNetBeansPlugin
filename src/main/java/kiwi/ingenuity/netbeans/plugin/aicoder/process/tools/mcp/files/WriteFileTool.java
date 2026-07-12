@@ -9,8 +9,7 @@ import kiwi.ingenuity.netbeans.plugin.aicoder.ai.events.PermissionEvent;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.McpSectionEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.McpToolEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.events.AiProcessEventListener;
-import kiwi.ingenuity.netbeans.plugin.aicoder.process.locking.LockTypeEnum;
-import kiwi.ingenuity.netbeans.plugin.aicoder.process.locking.RequiresLock;
+import kiwi.ingenuity.netbeans.plugin.aicoder.process.locking.LockManager;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.server.McpServerRegistry;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.session.AbstractAiSession;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.AbstractActionTool;
@@ -23,8 +22,12 @@ import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.providers.netbeans.R
  * NetBeans Accept/Reject diff panel (PermissionEvent) before applying. Used so
  * GitHub Copilot file creation goes through the review UX (Copilot's native
  * `create` tool is denied).
+ *
+ * <p>Locks the target file (not a global lock — see usesOwnFileLocking()) from
+ * before the diff is shown through the user's decision and the write, so the
+ * file can't change underneath a pending decision. A different file being
+ * edited concurrently is unaffected.
  */
-@RequiresLock(LockTypeEnum.FILE_WRITE_LOCK)
 public class WriteFileTool extends AbstractActionTool {
 
     public WriteFileTool() {
@@ -65,6 +68,11 @@ public class WriteFileTool extends AbstractActionTool {
     }
 
     @Override
+    public boolean usesOwnFileLocking() {
+        return true;
+    }
+
+    @Override
     public String handle(ToolRequestArguments args, AbstractAiSession session) {
         String filePath = args.str("file_path");
         String content = args.str("content");
@@ -75,24 +83,35 @@ public class WriteFileTool extends AbstractActionTool {
         if (server == null || !server.isFileAllowed(session.getId(), filePath)) {
             return "Error: file path is not within the allowed project directories";
         }
-        AiProcessEventListener listener = session.getAiProcessEventListener();
-        if (listener == null) {
+        LockManager lockManager = LockManager.getInstance();
+        if (!lockManager.acquireFileLock(session.getId(), filePath)) {
+            String holder = lockManager.getFileLockHolder(filePath);
+            return "File is locked by " + (holder != null ? "session " + holder : "another in-progress edit")
+                    + " — try again shortly";
+        }
+        try {
+            AiProcessEventListener listener = session.getAiProcessEventListener();
+            if (listener == null) {
+                return RefactoringProvider.writeFileContent(filePath, content);
+            }
+            CompletableFuture<PermissionDecision> future = new CompletableFuture<>();
+            listener.onAiProcessEvent(new PermissionEvent("Write", filePath, null, null, content, future));
+            PermissionDecision decision;
+            try {
+                decision = future.get(120, TimeUnit.SECONDS);
+            }
+            catch (Exception e) {
+                decision = PermissionDecision.denied(null);
+            }
+            if (decision == null || !decision.allow()) {
+                return decision != null && decision.message() != null && !decision.message().isBlank()
+                        ? "User rejected the write: " + decision.message().trim() + " — do not retry this change"
+                        : "User rejected the write — do not retry this change";
+            }
             return RefactoringProvider.writeFileContent(filePath, content);
         }
-        CompletableFuture<PermissionDecision> future = new CompletableFuture<>();
-        listener.onAiProcessEvent(new PermissionEvent("Write", filePath, null, null, content, future));
-        PermissionDecision decision;
-        try {
-            decision = future.get(120, TimeUnit.SECONDS);
+        finally {
+            lockManager.releaseFileLock(session.getId(), filePath);
         }
-        catch (Exception e) {
-            decision = PermissionDecision.denied(null);
-        }
-        if (decision == null || !decision.allow()) {
-            return decision != null && decision.message() != null && !decision.message().isBlank()
-                    ? "User rejected the write: " + decision.message().trim() + " — do not retry this change"
-                    : "User rejected the write — do not retry this change";
-        }
-        return RefactoringProvider.writeFileContent(filePath, content);
     }
 }

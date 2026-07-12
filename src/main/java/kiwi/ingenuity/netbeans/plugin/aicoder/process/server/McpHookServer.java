@@ -420,6 +420,20 @@ public class McpHookServer {
             McpHookServerUtil.sendJson(ex, 200, McpHookServerUtil.hookDefer());
             return;
         }
+
+        // Per-file lock, held from before the diff is shown through the decision and the
+        // write — scoped to just this file, so a concurrent diff on a different file (from
+        // this session or another) is unaffected. Also keeps this native-hook path and the
+        // MCP-tool WriteFile/ApplyEdit path (which locks the same way) mutually exclusive on
+        // the same file, since they'd otherwise share no coordination at all.
+        LockManager lockManager = LockManager.getInstance();
+        if (!lockManager.acquireFileLock(sessionId, filePath)) {
+            String holder = lockManager.getFileLockHolder(filePath);
+            McpHookServerUtil.sendJson(ex, 200, McpHookServerUtil.hookDeny(
+                    "File is locked by " + (holder != null ? "session " + holder : "another in-progress edit")
+                    + " — try again shortly"));
+            return;
+        }
         sessionHookLock.lock();
         try {
             CompletableFuture<PermissionDecision> future = new CompletableFuture<>();
@@ -443,18 +457,9 @@ public class McpHookServer {
                 decision = PermissionDecision.denied(null);
             }
             if (decision != null && decision.allow()) {
-                // Acquire mutationLock so hook-applied writes are mutually exclusive with
-                // MCP tool-call mutations (handleMcpToolCall also holds mutationLock).
-                mutationLock.lock();
-                String applyResult;
-                try {
-                    applyResult = "Write".equals(toolName)
-                            ? RefactoringProvider.writeFileContent(filePath, writeContent)
-                            : RefactoringProvider.applyEdit(filePath, oldString, newString);
-                }
-                finally {
-                    mutationLock.unlock();
-                }
+                String applyResult = "Write".equals(toolName)
+                        ? RefactoringProvider.writeFileContent(filePath, writeContent)
+                        : RefactoringProvider.applyEdit(filePath, oldString, newString);
                 String allowedResponse = McpHookServerUtil.hookDeny("Applied by NetBeans plugin: " + applyResult);
                 if (PluginSettings.isDebugJson()) {
                     LOG.log(Level.INFO, "Hook response (applied): {0}", allowedResponse);
@@ -474,6 +479,7 @@ public class McpHookServer {
         }
         finally {
             sessionHookLock.unlock();
+            lockManager.releaseFileLock(sessionId, filePath);
         }
     }
 
@@ -669,7 +675,11 @@ public class McpHookServer {
                     lockAcquired = true;
                 }
                 String result;
-                if (!handler.isMutating()) {
+                if (!handler.isMutating() || handler.usesOwnFileLocking()) {
+                    // usesOwnFileLocking() tools (WriteFile, ApplyEdit) guard themselves with a
+                    // per-file lock held across their own decision-wait + write, scoped to just
+                    // that file — wrapping them in the global mutationLock too would serialize
+                    // every other session's mutations on unrelated files for no reason.
                     result = handler.handle(new ToolRequestArguments(argsObj), session);
                 }
                 else {

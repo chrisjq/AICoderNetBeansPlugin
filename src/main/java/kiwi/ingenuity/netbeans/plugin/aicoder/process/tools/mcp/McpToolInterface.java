@@ -21,5 +21,16 @@ public interface McpToolInterface {
         return true;
     }
 
+    /**
+     * True if this tool acquires and releases its own fine-grained lock(s)
+     * inside handle() (e.g. a per-file lock held from before showing a diff
+     * through the user's decision and the write). When true, McpHookServer
+     * skips wrapping handle() in its own global mutation lock — the tool is
+     * fully responsible for guarding against concurrent mutation itself.
+     */
+    default boolean usesOwnFileLocking() {
+        return false;
+    }
+
     String handle(ToolRequestArguments args, AbstractAiSession session) throws McpArgumentException;
 }

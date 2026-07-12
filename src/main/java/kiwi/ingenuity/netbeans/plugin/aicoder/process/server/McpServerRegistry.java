@@ -57,8 +57,10 @@ public final class McpServerRegistry {
     /**
      * Test seam: when non-null, overrides the configured hook-server port.
      * Tests set this to 0 to bind an ephemeral port. Never set in production.
+     * Public so tests outside this package (e.g. tool-level tests that need a
+     * real registered server for isFileAllowed()) can use it too.
      */
-    static volatile Integer portOverride = null;
+    public static volatile Integer portOverride = null;
 
     /**
      * Test seam: supervisor queue-poll / health-tick interval, in milliseconds.
