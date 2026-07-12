@@ -46,6 +46,7 @@ import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.database.Execute
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.database.GetTableDataTool;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.database.GetTableSchemaTool;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.database.ListDatabaseConnectionsTool;
+import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.database.ListTablesTool;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.help.GetClassMembersTool;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.help.GetJavadocTool;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.help.GetProjectStructureTool;
@@ -134,6 +135,7 @@ public final class ToolHandlerFactory {
         map.put(McpToolEnum.GIT_REMOTE, new GitRemoteTool());
         map.put(McpToolEnum.GIT_REVERT, new GitRevertTool());
         map.put(McpToolEnum.LIST_DATABASE_CONNECTIONS, new ListDatabaseConnectionsTool());
+        map.put(McpToolEnum.LIST_TABLES, new ListTablesTool());
         map.put(McpToolEnum.GET_TABLE_SCHEMA, new GetTableSchemaTool());
         map.put(McpToolEnum.GET_TABLE_DATA, new GetTableDataTool());
         map.put(McpToolEnum.EXECUTE_SQL_QUERY, new ExecuteSqlQueryTool());

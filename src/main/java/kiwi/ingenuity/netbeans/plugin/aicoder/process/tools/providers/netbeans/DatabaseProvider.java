@@ -8,6 +8,7 @@ import java.sql.SQLException;
 import java.sql.Statement;
 import java.util.logging.Level;
 import java.util.logging.Logger;
+import kiwi.ingenuity.netbeans.plugin.aicoder.PluginSettings;
 import org.netbeans.api.db.explorer.ConnectionManager;
 import org.netbeans.api.db.explorer.DatabaseConnection;
 
@@ -28,13 +29,6 @@ public class DatabaseProvider {
 
     private static final Logger LOG = Logger.getLogger(DatabaseProvider.class.getName());
 
-    /**
-     * Hard cap on rows returned by any query, independent of what the AI asks
-     * for — a runaway SELECT against a huge table shouldn't be able to flood
-     * the conversation or the process.
-     */
-    private static final int MAX_ROWS = 500;
-
     public static String listConnections() {
         DatabaseConnection[] conns = ConnectionManager.getDefault().getConnections();
         if (conns.length == 0) {
@@ -48,6 +42,37 @@ public class DatabaseProvider {
                     .append('\n');
         }
         return sb.toString();
+    }
+
+    public static String listTables(String connectionName) {
+        DatabaseConnection dc = findConnection(connectionName);
+        if (dc == null) {
+            return connectionNotFoundError(connectionName);
+        }
+        Connection conn = jdbcConnection(dc);
+        if (conn == null) {
+            return notConnectedError(connectionName);
+        }
+        try {
+            DatabaseMetaData md = conn.getMetaData();
+            String schema = dc.getSchema();
+            StringBuilder sb = new StringBuilder();
+            try (ResultSet rs = md.getTables(null, schema, "%", new String[]{"TABLE"})) {
+                boolean found = false;
+                while (rs.next()) {
+                    found = true;
+                    sb.append(rs.getString("TABLE_NAME")).append('\n');
+                }
+                if (!found) {
+                    return "(no tables found in schema " + (schema != null ? schema : "default") + ")";
+                }
+            }
+            return sb.toString();
+        }
+        catch (SQLException e) {
+            LOG.log(Level.WARNING, "listTables error", e);
+            return "Error listing tables: " + e.getMessage();
+        }
     }
 
     public static String getTableSchema(String connectionName, String tableName) {
@@ -107,27 +132,23 @@ public class DatabaseProvider {
         if (!isValidIdentifier(tableName)) {
             return "Invalid tableName: " + tableName;
         }
-        int effectiveLimit = limit <= 0 || limit > MAX_ROWS ? MAX_ROWS : limit;
-        return runReadOnlyQuery(connectionName, "SELECT * FROM " + tableName, effectiveLimit);
-    }
-
-    public static String executeSqlQuery(String connectionName, String sql) {
-        return executeSqlQuery(connectionName, sql, MAX_ROWS);
+        return runReadOnlyQuery(connectionName, "SELECT * FROM " + tableName, limit);
     }
 
     /**
-     * @param maxRows caller-supplied cap (e.g. from the session's configured
-     * row limit) — always clamped to {@link #MAX_ROWS} regardless of what's
-     * requested, since that's an absolute safety ceiling independent of
-     * settings.
+     * Convenience overload for callers with no session-specific row limit
+     * (e.g. tests) — uses the plugin's globally configured default.
      */
+    public static String executeSqlQuery(String connectionName, String sql) {
+        return executeSqlQuery(connectionName, sql, PluginSettings.getDatabaseRowLimit());
+    }
+
     public static String executeSqlQuery(String connectionName, String sql, int maxRows) {
         String trimmed = sql == null ? "" : sql.strip();
         if (!trimmed.regionMatches(true, 0, "SELECT", 0, "SELECT".length())) {
             return "Rejected: only SELECT queries are allowed.";
         }
-        int effectiveMaxRows = maxRows <= 0 || maxRows > MAX_ROWS ? MAX_ROWS : maxRows;
-        return runReadOnlyQuery(connectionName, trimmed, effectiveMaxRows);
+        return runReadOnlyQuery(connectionName, trimmed, maxRows);
     }
 
     private static String runReadOnlyQuery(String connectionName, String sql, int maxRows) {

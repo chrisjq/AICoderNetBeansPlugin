@@ -29,6 +29,7 @@ public class AiSessionSettings {
     private volatile Boolean allowWebRequestBody;
     private volatile Boolean allowDatabaseAccess;
     private volatile Boolean allowDatabaseReadOnly;
+    private volatile Boolean allowListTables;
     private volatile Boolean allowDatabaseSchema;
     private volatile Boolean allowDatabaseSelect;
     private volatile Boolean allowDatabaseExecuteSql;
@@ -171,6 +172,8 @@ public class AiSessionSettings {
         return switch (option) {
             case READ_ONLY ->
                 allowDatabaseReadOnly;
+            case LIST_TABLES ->
+                allowListTables;
             case SCHEMA ->
                 allowDatabaseSchema;
             case SELECT ->
@@ -260,6 +263,8 @@ public class AiSessionSettings {
         switch (option) {
             case READ_ONLY ->
                 allowDatabaseReadOnly = allowed;
+            case LIST_TABLES ->
+                allowListTables = allowed;
             case SCHEMA ->
                 allowDatabaseSchema = allowed;
             case SELECT ->

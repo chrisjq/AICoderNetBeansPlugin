@@ -86,6 +86,10 @@ public enum AiSessionSettingsKeyEnum {
      */
     ALLOW_DATABASE_READ_ONLY("allowDatabaseReadOnly"),
     /**
+     * Whether to allow table listing
+     */
+    ALLOW_DATABASE_LIST_TABLES("allowDatabaseListTables"),
+    /**
      * Whether to allow table schema lookups
      */
     ALLOW_DATABASE_SCHEMA("allowDatabaseSchema"),
@@ -129,6 +133,8 @@ public enum AiSessionSettingsKeyEnum {
         return switch (option) {
             case READ_ONLY ->
                 ALLOW_DATABASE_READ_ONLY;
+            case LIST_TABLES ->
+                ALLOW_DATABASE_LIST_TABLES;
             case SCHEMA ->
                 ALLOW_DATABASE_SCHEMA;
             case SELECT ->

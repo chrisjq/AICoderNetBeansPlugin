@@ -10,6 +10,7 @@ package kiwi.ingenuity.netbeans.plugin.aicoder;
  */
 public enum DatabaseAccessOptionEnum {
     READ_ONLY(AccessControlLabelEnum.ALLOW_DATABASE_READ_ONLY),
+    LIST_TABLES(AccessControlLabelEnum.ALLOW_DATABASE_LIST_TABLES),
     SCHEMA(AccessControlLabelEnum.ALLOW_DATABASE_SCHEMA),
     SELECT(AccessControlLabelEnum.ALLOW_DATABASE_SELECT),
     EXECUTE_SQL(AccessControlLabelEnum.ALLOW_DATABASE_EXECUTE_SQL);

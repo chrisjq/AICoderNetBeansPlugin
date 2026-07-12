@@ -49,6 +49,7 @@ public enum McpToolEnum {
     GIT_REVERT("GitRevert"),
     // DATABASE
     LIST_DATABASE_CONNECTIONS("ListDatabaseConnections"),
+    LIST_TABLES("ListTables"),
     GET_TABLE_SCHEMA("GetTableSchema"),
     GET_TABLE_DATA("GetTableData"),
     EXECUTE_SQL_QUERY("ExecuteSqlQuery"),

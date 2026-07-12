@@ -31,6 +31,7 @@ public enum PluginSettingsKeyEnum {
     LAST_SESSION_AI_TYPE("ai.session.lastAiType", null),
     ALLOW_DATABASE_ACCESS("ai.session.allowDatabaseAccess", false),
     ALLOW_DATABASE_READ_ONLY("ai.session.allowDatabaseAccess.readOnly", false),
+    ALLOW_DATABASE_LIST_TABLES("ai.session.allowDatabaseAccess.listTables", false),
     ALLOW_DATABASE_SCHEMA("ai.session.allowDatabaseAccess.schema", false),
     ALLOW_DATABASE_SELECT("ai.session.allowDatabaseAccess.select", false),
     ALLOW_DATABASE_EXECUTE_SQL("ai.session.allowDatabaseAccess.executeSql", false),
@@ -63,6 +64,8 @@ public enum PluginSettingsKeyEnum {
         return switch (option) {
             case READ_ONLY ->
                 ALLOW_DATABASE_READ_ONLY;
+            case LIST_TABLES ->
+                ALLOW_DATABASE_LIST_TABLES;
             case SCHEMA ->
                 ALLOW_DATABASE_SCHEMA;
             case SELECT ->

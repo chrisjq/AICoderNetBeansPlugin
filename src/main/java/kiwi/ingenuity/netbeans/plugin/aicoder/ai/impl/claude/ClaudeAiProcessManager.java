@@ -249,7 +249,9 @@ public class ClaudeAiProcessManager extends AiProcessManager {
 
                 // Clear processing before firing TurnCompleteEvent so refreshInputEnabled() on
                 // the EDT sees isProcessing()==false immediately (the thread may still be draining
-                // stderr and waiting on p.waitFor() for up to ~2 seconds after this point).
+                // stderr and waiting on p.waitFor() for up to 60s after this point — usually the
+                // process exits within ~2s of stdin closing, but this is a hard ceiling, not the
+                // typical case, so don't assume the OS process is gone just because the UI re-enabled).
                 // When cancelledByUser is true, suppress all events to prevent stale output from
                 // appearing in the conversation panel after the user clicked Stop.
                 // turnComplete signals the read loop to stop: with stdin held open the process
@@ -322,7 +324,7 @@ public class ClaudeAiProcessManager extends AiProcessManager {
                 }
 
                 stderrThread.join(2000);
-                boolean exited = p.waitFor(30, java.util.concurrent.TimeUnit.SECONDS);
+                boolean exited = p.waitFor(60, java.util.concurrent.TimeUnit.SECONDS);
                 if (!exited) {
                     p.destroyForcibly();
                 }

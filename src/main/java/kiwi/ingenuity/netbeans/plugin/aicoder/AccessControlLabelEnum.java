@@ -17,6 +17,7 @@ public enum AccessControlLabelEnum {
     ALLOW_IMPORTANT_MESSAGES("Allow important messages (interrupt receiving session)", "Allow important messages, interrupt this session"),
     ALLOW_DATABASE_ACCESS("Allow AI database access by default", "Allow database access"),
     ALLOW_DATABASE_READ_ONLY("Read-only (no write support implemented)", "Read-only (no write support implemented)"),
+    ALLOW_DATABASE_LIST_TABLES("Allow table listing by default", "Allow table listing"),
     ALLOW_DATABASE_SCHEMA("Allow table schema lookups by default", "Allow table schema lookups"),
     ALLOW_DATABASE_SELECT("Allow Select Query by default", "Allow Select Query"),
     ALLOW_DATABASE_EXECUTE_SQL("Allow arbitrary SELECT queries by default", "Allow arbitrary SELECT queries");

@@ -147,6 +147,7 @@ The plugin exposes the following tools to the AI assistant over the MCP endpoint
 | Tool | Description |
 |---|---|
 | `ListDatabaseConnections` | Lists all registered Database Explorer connections and their connection status |
+| `ListTables` | Lists all tables in a database schema |
 | `GetTableSchema` | Returns column names, types, nullability, and primary keys for a table |
 | `GetTableData` | Fetches up to the configured row limit of a table's data (SELECT *) |
 | `ExecuteSqlQuery` | Runs a read-only SELECT query on a database connection (SELECT enforced) |
