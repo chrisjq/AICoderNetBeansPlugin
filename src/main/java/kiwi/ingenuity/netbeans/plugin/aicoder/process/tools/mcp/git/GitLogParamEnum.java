@@ -5,7 +5,9 @@ package kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.git;
  * definition and handle() argument extraction so the two cannot drift.
  */
 public enum GitLogParamEnum {
-    LIMIT("limit");
+    LIMIT("limit"),
+    FILE("file"),
+    FOLLOW("follow");
 
     private final String key;
 

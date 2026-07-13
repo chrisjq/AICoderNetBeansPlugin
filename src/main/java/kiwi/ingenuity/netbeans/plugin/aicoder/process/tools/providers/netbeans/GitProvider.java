@@ -194,7 +194,7 @@ public class GitProvider {
         }
     }
 
-    public static String gitLog(String projectPath, int limit) {
+    public static String gitLog(String projectPath, int limit, String file, boolean follow) {
         File root = resolveRoot(projectPath);
         if (root == null) {
             return noRepoError(projectPath);
@@ -203,9 +203,21 @@ public class GitProvider {
         if (gitRoot == null) {
             return "Not a git repository: " + root;
         }
+        // When a file is given, scope the log to it (relative paths resolve against
+        // the project root). setFollowRenames mirrors `git log --follow`, which is
+        // only meaningful for a single path, so it is applied only alongside a file.
+        File target = null;
+        if (file != null && !file.isBlank()) {
+            File f = new File(file);
+            target = f.isAbsolute() ? f : new File(root, file);
+        }
         try (GitClient client = GitRepository.getInstance(gitRoot).createClient()) {
             SearchCriteria criteria = new SearchCriteria();
             criteria.setLimit(limit > 0 ? limit : 20);
+            if (target != null) {
+                criteria.setFiles(new File[]{target});
+                criteria.setFollowRenames(follow);
+            }
             GitRevisionInfo[] revisions = client.log(criteria, NULL_PM);
             if (revisions.length == 0) {
                 return "No commits found";

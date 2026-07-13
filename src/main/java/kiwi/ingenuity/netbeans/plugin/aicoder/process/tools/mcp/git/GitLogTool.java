@@ -21,7 +21,8 @@ public class GitLogTool implements McpToolInterface {
     @Override
     public String instruction() {
         return "GitLog -> INSTEAD OF Bash git log - shows recent commit history (short hash + message). "
-                + "Requires projectPath to select the target git repository or project root.";
+                + "Requires projectPath to select the target git repository or project root. "
+                + "Optionally pass file to scope history to a single path (with follow=true to track it across renames).";
     }
 
     @Override
@@ -45,6 +46,18 @@ public class GitLogTool implements McpToolInterface {
                 + "against the default project). Required — selects which project/repo to operate "
                 + "on when multiple are open, or when the repo lives outside any open project.");
         props.add(GitCommonParamEnum.PROJECT_PATH.key(), projectPath);
+        JsonObject file = new JsonObject();
+        file.addProperty(ToolSchemaKeyEnum.TYPE.key(), "string");
+        file.addProperty(ToolSchemaKeyEnum.DESCRIPTION.key(),
+                "Optional. Scope history to a single file (like 'git log -- <file>'). Absolute path, "
+                + "or relative to the project root. Omit to log the whole repository.");
+        props.add(GitLogParamEnum.FILE.key(), file);
+        JsonObject follow = new JsonObject();
+        follow.addProperty(ToolSchemaKeyEnum.TYPE.key(), "boolean");
+        follow.addProperty(ToolSchemaKeyEnum.DESCRIPTION.key(),
+                "Optional. When a file is given, follow it across renames (like 'git log --follow'). "
+                + "Default: false. Ignored when no file is set.");
+        props.add(GitLogParamEnum.FOLLOW.key(), follow);
         schema.add(ToolSchemaKeyEnum.PROPERTIES.key(), props);
         JsonArray required = new JsonArray();
         required.add(GitCommonParamEnum.PROJECT_PATH.key());
@@ -60,6 +73,10 @@ public class GitLogTool implements McpToolInterface {
 
     @Override
     public String handle(ToolRequestArguments args, AbstractAiSession session) throws McpArgumentException {
-        return GitProvider.gitLog(args.require(GitCommonParamEnum.PROJECT_PATH.key()), args.intOr(GitLogParamEnum.LIMIT.key(), 20, 1, 1000));
+        return GitProvider.gitLog(
+                args.require(GitCommonParamEnum.PROJECT_PATH.key()),
+                args.intOr(GitLogParamEnum.LIMIT.key(), 20, 1, 1000),
+                args.str(GitLogParamEnum.FILE.key()),
+                args.bool(GitLogParamEnum.FOLLOW.key()));
     }
 }

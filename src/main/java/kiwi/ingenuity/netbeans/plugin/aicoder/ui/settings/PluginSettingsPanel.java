@@ -249,10 +249,12 @@ public class PluginSettingsPanel extends JPanel {
     }
 
     private Component makeDefaultsBanner() {
-        JLabel banner = new JLabel("<html><body style='width:520px'><i>These are global defaults. "
-                + "They apply live to every open AI session that has not overridden the setting in its "
-                + "own Session Configuration &mdash; changing one here immediately affects all such "
-                + "sessions.</i></body></html>");
+        JLabel banner = new JLabel("<html><body style='width:520px'>"
+                + "<b>Manage AI sessions via Tools &rarr; AI Manager.</b><br><br>"
+                + "<i>The settings below are global defaults. They apply live to every open AI "
+                + "session that has not overridden the setting in its own Session Configuration "
+                + "&mdash; changing one here immediately affects all such sessions.</i>"
+                + "</body></html>");
         banner.setBorder(javax.swing.BorderFactory.createEmptyBorder(8, 10, 4, 10));
         return banner;
     }

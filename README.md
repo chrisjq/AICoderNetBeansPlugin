@@ -42,6 +42,16 @@ mvn package
 
 The built `.nbm` file is in `target/`. In NetBeans: **Tools > Plugins > Downloaded > Add Plugins**, select the `.nbm`, then click **Install**.
 
+## Usage
+
+**Manage AI sessions via Tools → AI Manager.** This opens the AI Manager dialog where you can:
+
+- **Create** a new session — give it a name, pick the target open project, choose the backend (Claude, Grok, or GitHub Copilot), and click **Create & Open**. You can create several at once with the count field.
+- **Open** an existing session — select it and click **Open** (its project must be open in the IDE).
+- **Delete** a session and its saved history.
+
+Each opened session is a dockable chat tab. Per-session overrides (history size, file/web/database access, inter-AI messaging, model, instructions) are available from the session's configuration; anything not overridden falls back to the global defaults in **Tools > Options > AI Coder**.
+
 ## Configuration
 
 Open **Tools > Options > AI Coder**. General settings apply to every backend; each backend also has its own tab (Claude, Grok, GitHub Copilot) for executable path and model selection.
@@ -115,7 +125,7 @@ The plugin exposes the following tools to the AI assistant over the MCP endpoint
 | `GetGitDiff` | Unstaged or staged changes |
 | `GitAdd` | Stages files for the next commit |
 | `GitCommit` | Commits staged changes with a message; can stage files first |
-| `GitLog` | Recent commit history (short hash + subject) |
+| `GitLog` | Recent commit history (short hash + subject); optionally scope to a single `file` (like `git log -- <file>`) and `follow` it across renames |
 | `GitPush` | Pushes the current (or specified) branch to a remote |
 | `GitPull` | Fetches from a remote and merges into the current branch |
 | `GitCheckout` | Switches to a branch or revision (optionally creating it) |
@@ -293,14 +303,14 @@ The tool returns a JSON object with:
 ```
 NetBeans IDE
   └── AI Coder panel (dockable TopComponent)
-        ├── Backend (Claude | GitHub Copilot)
+        ├── Backend (Claude | Grok | GitHub Copilot)
         │     └── process manager  →  backend CLI subprocess
         └── McpHookServer  (loopback HTTP, port 6969)
               ├── /mcp   — MCP Streamable HTTP endpoint (tool calls)
               └── /      — PreToolUse hook (diff-panel gate for file writes)
 ```
 
-Each backend drives its CLI as a subprocess and parses its streaming output to render the chat. The **Claude** backend connects via the MCP configuration written to `~/.claude/mcp.json`; the **GitHub Copilot** backend runs the `copilot` CLI in prompt mode and is configured through the Copilot MCP registrar. In both cases the hook server intercepts write/patch/create operations and presents a diff to the user before allowing or denying them.
+Each backend drives its CLI as a subprocess and parses its streaming output to render the chat. The **Claude** backend connects via the MCP configuration written to `~/.claude/mcp.json`; the **Grok** and **GitHub Copilot** backends run their CLIs (`grok` / `copilot`) in headless prompt mode and are wired to the tool server through their own MCP registrars. In every case the hook server intercepts write/patch/create operations and presents a diff to the user before allowing or denying them.
 
 Mutating tool calls (builds, refactorings, file writes) are serialised through a fair `ReentrantLock` to prevent concurrent IDE state corruption. Read-only tools bypass the lock entirely.
 
