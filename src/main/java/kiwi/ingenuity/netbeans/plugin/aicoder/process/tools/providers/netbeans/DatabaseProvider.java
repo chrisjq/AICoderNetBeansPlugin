@@ -35,9 +35,10 @@ public class DatabaseProvider {
             return "No database connections registered. Add one via Services > Databases in the IDE first.";
         }
         StringBuilder sb = new StringBuilder();
+        sb.append("Pass the exact connectionName= value below (either the display name or the JDBC URL) to the other database tools.\n\n");
         for (DatabaseConnection c : conns) {
-            sb.append(c.getDisplayName())
-                    .append(" — ").append(c.getDatabaseURL())
+            sb.append("connectionName=\"").append(c.getDisplayName()).append('"')
+                    .append("  (url: ").append(c.getDatabaseURL()).append(')')
                     .append(isConnected(c) ? " [connected]" : " [not connected — connect it via Services > Databases first]")
                     .append('\n');
         }
@@ -221,7 +222,9 @@ public class DatabaseProvider {
 
     private static DatabaseConnection findConnection(String connectionName) {
         for (DatabaseConnection c : ConnectionManager.getDefault().getConnections()) {
-            if (c.getDisplayName().equals(connectionName) || c.getName().equals(connectionName)) {
+            if (c.getDisplayName().equals(connectionName)
+                    || c.getName().equals(connectionName)
+                    || connectionName.equals(c.getDatabaseURL())) {
                 return c;
             }
         }
