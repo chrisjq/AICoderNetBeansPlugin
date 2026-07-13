@@ -25,6 +25,7 @@ import java.util.concurrent.locks.ReentrantLock;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 import kiwi.ingenuity.netbeans.plugin.aicoder.PluginSettings;
+import kiwi.ingenuity.netbeans.plugin.aicoder.PluginUtil;
 import kiwi.ingenuity.netbeans.plugin.aicoder.StringConst;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.AiTypeEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.events.PermissionDecision;
@@ -254,9 +255,22 @@ public class McpHookServer {
         if (restrict == null || !restrict) {
             return true;
         }
-        // Restrict is on: require at least one registered project root. An empty
-        // dir list used to allow everything (fail-open); that could open the FS
-        // if scope was never populated. Fail closed instead.
+        // Restrict is on: the file must resolve inside one of the session's registered
+        // project roots. An empty dir list fails closed (never fail-open, which would
+        // open the whole FS if scope was never populated).
+        return isWithinProjectDirs(sessionId, filePath);
+    }
+
+    /**
+     * True if {@code filePath} resolves to a location inside one of the session's
+     * registered project roots. Independent of the restrict-to-project flag, so a
+     * caller can ask "is this a project file?" directly. Fails closed when the
+     * session has no registered roots.
+     */
+    boolean isWithinProjectDirs(String sessionId, String filePath) {
+        if (filePath == null || filePath.isBlank()) {
+            return false;
+        }
         List<java.io.File> dirs = sessionProjectDirs.get(sessionId);
         if (dirs == null || dirs.isEmpty()) {
             return false;
@@ -266,6 +280,34 @@ public class McpHookServer {
             java.nio.file.Path dir = resolveRealPath(d.toPath());
             return resolvedFile.equals(dir) || resolvedFile.startsWith(dir);
         });
+    }
+
+    /**
+     * True if {@code filePath} is inside this session's own per-session config
+     * directory ({@code ~/.ai-coder/{type}/{sessionId}/}), where the AI keeps its
+     * memory and logs. These live outside every open project, so no diff panel can
+     * be built for them; they pass straight through to the built-in tool. Scoped to
+     * the requesting session, so one session can never write into another session's
+     * memory.
+     */
+    public boolean isOwnSessionConfigFile(String sessionId, String filePath) {
+        if (sessionId == null || filePath == null || filePath.isBlank()) {
+            return false;
+        }
+        String aiTypeKey = sessionAiTypeKey.get(sessionId);
+        if (aiTypeKey == null || aiTypeKey.isBlank()) {
+            return false;
+        }
+        try {
+            java.nio.file.Path sessionDir = PluginUtil.getPluginConfigDir()
+                    .resolve(aiTypeKey).resolve(sessionId);
+            java.nio.file.Path resolvedDir = resolveRealPath(sessionDir);
+            java.nio.file.Path resolvedFile = resolveRealPath(java.nio.file.Path.of(filePath));
+            return resolvedFile.equals(resolvedDir) || resolvedFile.startsWith(resolvedDir);
+        }
+        catch (IOException e) {
+            return false;
+        }
     }
 
     public int getPort() {
@@ -398,9 +440,26 @@ public class McpHookServer {
         String newString = McpHookServerUtil.str(input, "new_string");
         String writeContent = McpHookServerUtil.str(input, "content");
 
-        if (!isFileAllowed(sessionId, filePath)) {
-            McpHookServerUtil.sendJson(ex, 200,
-                    McpHookServerUtil.hookDeny("Access denied: " + filePath + " is outside the allowed project scope for this session"));
+        // Out-of-project files cannot be shown in the Accept/Reject diff panel, so they
+        // are decided here instead of falling through to the panel — which would defer
+        // forever (the "no panel, no response" hang).
+        //
+        // 1. The session's OWN per-session config dir (memory, logs) always passes
+        //    straight through to the built-in tool. Scoped to this session's dir, so one
+        //    session can never write into another session's memory.
+        if (isOwnSessionConfigFile(sessionId, filePath)) {
+            McpHookServerUtil.sendJson(ex, 200, McpHookServerUtil.hookAllow());
+            return;
+        }
+        // 2. A file outside every open project cannot be diffed. Honour the restrict flag:
+        //    restrict ON -> deny (session is scoped to its projects); restrict OFF -> let
+        //    the built-in tool write it directly. Files inside a project fall through to
+        //    the diff panel below.
+        if (!isWithinProjectDirs(sessionId, filePath)) {
+            boolean restrict = Boolean.TRUE.equals(sessionRestrictToProject.get(sessionId));
+            McpHookServerUtil.sendJson(ex, 200, restrict
+                    ? McpHookServerUtil.hookDeny("Access denied: " + filePath + " is outside the allowed project scope for this session")
+                    : McpHookServerUtil.hookAllow());
             return;
         }
 
@@ -446,7 +505,12 @@ public class McpHookServer {
             }
             catch (TimeoutException e) {
                 LOG.log(Level.WARNING, "Permission request timed out for: {0}", filePath);
-                decision = PermissionDecision.denied(null);
+                // Distinct from a genuine rejection: the user simply never acted on the
+                // diff panel in time. Say so and mark it retryable — a real rejection ends
+                // with "do not retry this change", which would be wrong advice here.
+                decision = PermissionDecision.denied(
+                        "Timed out waiting for the user to review this change in the diff panel — "
+                        + "the user did not respond in time. You may retry.");
             }
             catch (InterruptedException e) {
                 Thread.currentThread().interrupt();

@@ -4,6 +4,7 @@ import com.google.gson.JsonArray;
 import com.google.gson.JsonObject;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.events.PermissionDecision;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.events.PermissionEvent;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.McpSectionEnum;
@@ -80,7 +81,16 @@ public class WriteFileTool extends AbstractActionTool {
             return "Error: file_path is required";
         }
         var server = McpServerRegistry.getServer();
-        if (server == null || !server.isFileAllowed(session.getId(), filePath)) {
+        if (server == null) {
+            return "Error: file path is not within the allowed project directories";
+        }
+        // The session's own config dir (memory, logs) is written directly, never shown in
+        // a review panel — consistent with the built-in Write hook. Checked before the
+        // project-scope gate so it works even for a restrict-to-project session.
+        if (server.isOwnSessionConfigFile(session.getId(), filePath)) {
+            return RefactoringProvider.writeFileContent(filePath, content);
+        }
+        if (!server.isFileAllowed(session.getId(), filePath)) {
             return "Error: file path is not within the allowed project directories";
         }
         LockManager lockManager = LockManager.getInstance();
@@ -99,6 +109,13 @@ public class WriteFileTool extends AbstractActionTool {
             PermissionDecision decision;
             try {
                 decision = future.get(120, TimeUnit.SECONDS);
+            }
+            catch (TimeoutException e) {
+                // A timeout is not a rejection — the user simply never acted on the diff
+                // panel. Return a distinct, retryable message (a real rejection below ends
+                // with "do not retry this change").
+                return "Timed out waiting for the user to review this change in the diff panel — "
+                        + "the user did not respond in time. You may retry.";
             }
             catch (Exception e) {
                 decision = PermissionDecision.denied(null);
