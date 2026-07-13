@@ -13,6 +13,7 @@ import java.util.function.Consumer;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 import kiwi.ingenuity.netbeans.plugin.aicoder.utils.JsonUtils;
+import kiwi.ingenuity.netbeans.plugin.aicoder.utils.StatusMessageUtil;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.events.AiProcessEvent;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.events.AiProcessEventListener;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.events.StatusEvent;
@@ -246,6 +247,17 @@ public class ClaudeStreamJsonParser {
         if (cachedContextWindow > 0 && total > 0) {
             double sessionPct = Math.min((double) total / cachedContextWindow * 100.0, 100.0);
             listener.onAiProcessEvent(new ClaudeSessionInfoEvent(-1, sessionPct, null));
+        }
+
+        // A successful run reports subtype "success"; anything else (e.g.
+        // "error_during_execution" from an aborted_streaming turn) means the
+        // response ended before completing. Surface a visible notice so the user
+        // isn't left staring at silent no-output, then still complete the turn.
+        String subtype = JsonUtils.getString(obj, ClaudeJsonKeyEnum.SUBTYPE.key());
+        if (subtype != null && !"success".equals(subtype)) {
+            LOG.log(Level.WARNING, "Claude turn ended abnormally: subtype={0}", subtype);
+            listener.onAiProcessEvent(new StatusEvent(StatusEventTypeEnum.INTERRUPTED,
+                    StatusMessageUtil.formatTurnInterrupted(subtype)));
         }
 
         return new TurnCompleteEvent();

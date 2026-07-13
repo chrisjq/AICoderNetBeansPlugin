@@ -1172,6 +1172,15 @@ public final class AiTopComponent extends TopComponent implements AiProcessEvent
                     // must run after it to override the green it would otherwise set.
                     setTabStatus(TabStatus.FATAL);
                 }
+                case INTERRUPTED -> {
+                    // Turn aborted mid-stream but the process is alive. Post a visible
+                    // system message so the user isn't left with silent no-output; the
+                    // TurnCompleteEvent that follows finalises the turn and returns to Ready.
+                    infoBar.setProcessing(false);
+                    if (conversationPanel != null) {
+                        conversationPanel.addSystemMessage(se.text());
+                    }
+                }
                 default ->
                     infoBar.setStatusMessage(se.text());
             }

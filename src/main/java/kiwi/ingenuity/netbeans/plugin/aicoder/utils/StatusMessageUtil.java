@@ -42,6 +42,17 @@ public class StatusMessageUtil {
     }
 
     /**
+     * Formats a notice for a turn that ended abnormally before completing (e.g.
+     * the CLI runtime aborted the stream mid-response). The process is still
+     * alive, so this is informational, not fatal — the user can simply retry.
+     */
+    public static String formatTurnInterrupted(String subtype) {
+        String reason = (subtype == null || subtype.isBlank()) ? "an unexpected runtime error" : subtype;
+        return "⚠ The response ended unexpectedly before finishing (" + reason
+                + "). Any pending action from this turn was not completed — you can retry.";
+    }
+
+    /**
      * Formats an unexpected-process-exit status message, appending captured
      * stderr (if any) so the user has something to act on instead of a bare
      * exit code.
