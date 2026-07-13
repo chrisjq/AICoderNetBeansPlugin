@@ -41,4 +41,18 @@ public enum AccessControlLabelEnum {
     public String displayLabel() {
         return sessionLabel;
     }
+
+    /** Marker shown on a session control that currently inherits the global default. */
+    public static final String MARKER_FROM_GLOBAL = "Set from Global";
+    /** Marker shown on a session control whose value overrides the global default. */
+    public static final String MARKER_ON_SESSION = "Set on Session";
+
+    /**
+     * Appends an inheritance marker to a session control's label. {@code overridden}
+     * means the control's current value differs from the global default (so it is
+     * "Set on Session"); otherwise it is currently "Set from Global".
+     */
+    public static String withSessionMarker(String baseLabel, boolean overridden) {
+        return baseLabel + " — " + (overridden ? MARKER_ON_SESSION : MARKER_FROM_GLOBAL);
+    }
 }

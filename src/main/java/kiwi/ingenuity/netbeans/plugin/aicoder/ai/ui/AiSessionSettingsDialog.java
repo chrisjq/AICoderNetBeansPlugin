@@ -41,7 +41,9 @@ public class AiSessionSettingsDialog extends JDialog {
     private final JTextField nameField = new JTextField(24);
     private final JTextArea descriptionArea = new JTextArea(3, 24);
     private final JSpinner historySpinner;
+    private final JLabel historyMarker = new JLabel();
     private final JCheckBox restrictCheckBox = new JCheckBox();
+    private String restrictBaseLabel;
     private final AiMessagingSettingsPanel aiMessagingPanel;
     private final WebRequestAccessSettingsPanel webRequestAccessPanel;
     private final DatabaseAccessSettingsPanel databaseAccessPanel;
@@ -65,6 +67,9 @@ public class AiSessionSettingsDialog extends JDialog {
 
         historySpinner = new JSpinner(new SpinnerNumberModel(
                 cfg.effectiveMaxHistory(), 0, 10000, 10));
+        historyMarker.setEnabled(false);
+        historySpinner.addChangeListener(e -> refreshHistoryMarker());
+        refreshHistoryMarker();
 
         nameField.setText(session.name());
         descriptionArea.setText(session.description() != null ? session.description() : "");
@@ -72,9 +77,11 @@ public class AiSessionSettingsDialog extends JDialog {
         descriptionArea.setWrapStyleWord(true);
 
         boolean globalRestrict = PluginSettings.isRestrictToProjectFiles();
-        restrictCheckBox.setText(
-                AccessControlLabelEnum.RESTRICT_TO_PROJECT_FILES.sessionLabel(globalRestrict));
+        restrictBaseLabel = AccessControlLabelEnum.RESTRICT_TO_PROJECT_FILES.sessionLabel(globalRestrict);
+        restrictCheckBox.setText(restrictBaseLabel);
         restrictCheckBox.setSelected(cfg.effectiveRestrictToProjectFiles());
+        restrictCheckBox.addActionListener(e -> refreshRestrictMarker());
+        refreshRestrictMarker();
 
         webRequestAccessPanel.setAllowWebRequestsSelected(cfg.effectiveAllowWebRequests());
         for (WebRequestAccessOptionEnum option : WebRequestAccessOptionEnum.values()) {
@@ -157,7 +164,10 @@ public class AiSessionSettingsDialog extends JDialog {
         int row = 0;
         addRow(p, c, row++, new JLabel("Session name:"), nameField);
         addRow(p, c, row++, new JLabel("Description:"), new JScrollPane(descriptionArea));
-        addRow(p, c, row++, new JLabel("History size:"), historySpinner);
+        JPanel historyRow = new JPanel(new BorderLayout(8, 0));
+        historyRow.add(historySpinner, BorderLayout.WEST);
+        historyRow.add(historyMarker, BorderLayout.CENTER);
+        addRow(p, c, row++, new JLabel("History size:"), historyRow);
         addFull(p, c, row++, restrictCheckBox);
         addFull(p, c, row++, webRequestAccessPanel);
         addFull(p, c, row++, databaseAccessPanel);
@@ -192,6 +202,17 @@ public class AiSessionSettingsDialog extends JDialog {
         c.weightx = 1;
         c.weighty = 0;
         p.add(comp, c);
+    }
+
+    private void refreshHistoryMarker() {
+        boolean overridden = ((Integer) historySpinner.getValue()).intValue() != PluginSettings.getMaxHistory();
+        historyMarker.setText(overridden
+                ? AccessControlLabelEnum.MARKER_ON_SESSION : AccessControlLabelEnum.MARKER_FROM_GLOBAL);
+    }
+
+    private void refreshRestrictMarker() {
+        restrictCheckBox.setText(AccessControlLabelEnum.withSessionMarker(restrictBaseLabel,
+                restrictCheckBox.isSelected() != PluginSettings.isRestrictToProjectFiles()));
     }
 
     private void buildResult(AiSessionSettings original) {

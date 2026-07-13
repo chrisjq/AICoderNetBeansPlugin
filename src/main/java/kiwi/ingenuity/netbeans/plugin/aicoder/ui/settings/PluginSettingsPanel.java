@@ -212,7 +212,10 @@ public class PluginSettingsPanel extends JPanel {
         c.gridwidth = 1;
         c.weighty = 0;
 
-        tabs.addTab("General", wrapTab(general));
+        JPanel generalTab = new JPanel(new BorderLayout());
+        generalTab.add(makeDefaultsBanner(), BorderLayout.NORTH);
+        generalTab.add(wrapTab(general), BorderLayout.CENTER);
+        tabs.addTab("General", generalTab);
 
         // ===== Per-AI tabs (discovered via Lookup) =====
         Collection<? extends SettingsTab> aiTabs
@@ -243,6 +246,15 @@ public class PluginSettingsPanel extends JPanel {
         aiMessagingPanel.addChangeListener(e -> fireChanged());
         inboxRetentionSpinner.addChangeListener(e -> fireChanged());
         inboxMaxSizeSpinner.addChangeListener(e -> fireChanged());
+    }
+
+    private Component makeDefaultsBanner() {
+        JLabel banner = new JLabel("<html><body style='width:520px'><i>These are global defaults. "
+                + "They apply live to every open AI session that has not overridden the setting in its "
+                + "own Session Configuration &mdash; changing one here immediately affects all such "
+                + "sessions.</i></body></html>");
+        banner.setBorder(javax.swing.BorderFactory.createEmptyBorder(8, 10, 4, 10));
+        return banner;
     }
 
     private Component wrapTab(Component component) {
