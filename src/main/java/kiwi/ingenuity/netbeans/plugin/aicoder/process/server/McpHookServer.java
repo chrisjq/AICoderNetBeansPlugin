@@ -199,7 +199,7 @@ public class McpHookServer {
      * @param aiTypeKey AI type key from {@code AiTypeEnum.key()}, e.g.
      * {@code "claude"}
      */
-    public void registerSession(String sessionId, String aiTypeKey,
+    public void registerSession(String sessionId, AiTypeEnum aiType,
             List<java.io.File> projectDirs, boolean restrictToProjectFiles) {
         if (sessionId == null) {
             return;
@@ -208,7 +208,7 @@ public class McpHookServer {
         // HTTP listener via start(), so by the time a session registers here the
         // server is already accepting connections. The backing maps are all
         // concurrent, so no synchronization is required.
-        sessionAiTypeKey.put(sessionId, aiTypeKey);
+        sessionAiTypeKey.put(sessionId, aiType.key());
         sessionProjectDirs.put(sessionId, projectDirs);
         sessionRestrictToProject.put(sessionId, restrictToProjectFiles);
         LockManager.getInstance().releaseOrphanedLocks(Set.copyOf(activeSessions));
@@ -219,18 +219,26 @@ public class McpHookServer {
 
     /**
      * Refreshes a registered session's file-access scope (project dirs +
-     * restrict flag) without re-registering it. Called each turn so the scope
-     * tracks the currently-open projects — a project opened after the session
-     * started then becomes reachable by the plugin's MCP tools (matching what
-     * the CLI already sees via --add-dir). No-op for an unknown session.
+     * restrict flag). If the session is not currently tracked (hook-server
+     * restart, or a lost/startup-race registration), re-registers it rather
+     * than no-oping — a silently untracked session would bypass the diff panel
+     * indefinitely. Only open sessions call this (handleSubmit + the
+     * open-projects listener), and componentClosed removes that listener and
+     * calls unregisterSession, so this cannot resurrect a closed session.
      */
-    public void updateSessionScope(String sessionId,
+    public void updateSessionScope(String sessionId, AiTypeEnum aiType,
             List<java.io.File> projectDirs, boolean restrictToProjectFiles) {
-        if (sessionId == null || !activeSessions.contains(sessionId)) {
+        if (sessionId == null) {
             return;
+        }
+        if (aiType != null) {
+            sessionAiTypeKey.put(sessionId, aiType.key());
         }
         sessionProjectDirs.put(sessionId, projectDirs);
         sessionRestrictToProject.put(sessionId, restrictToProjectFiles);
+        if (activeSessions.add(sessionId)) {
+            hookLocks.put(sessionId, new ReentrantLock(true));
+        }
     }
 
     public void unregisterSession(String sessionId) {
@@ -262,10 +270,10 @@ public class McpHookServer {
     }
 
     /**
-     * True if {@code filePath} resolves to a location inside one of the session's
-     * registered project roots. Independent of the restrict-to-project flag, so a
-     * caller can ask "is this a project file?" directly. Fails closed when the
-     * session has no registered roots.
+     * True if {@code filePath} resolves to a location inside one of the
+     * session's registered project roots. Independent of the
+     * restrict-to-project flag, so a caller can ask "is this a project file?"
+     * directly. Fails closed when the session has no registered roots.
      */
     boolean isWithinProjectDirs(String sessionId, String filePath) {
         if (filePath == null || filePath.isBlank()) {
@@ -282,13 +290,27 @@ public class McpHookServer {
         });
     }
 
+    boolean isUnderAnyOpenProject(String filePath) {
+        if (filePath == null || filePath.isBlank()) {
+            return false;
+        }
+        java.nio.file.Path f = resolveRealPath(java.nio.file.Path.of(filePath));
+        for (org.netbeans.api.project.Project p : org.netbeans.api.project.ui.OpenProjects.getDefault().getOpenProjects()) {
+            java.nio.file.Path d = resolveRealPath(java.nio.file.Path.of(p.getProjectDirectory().getPath()));
+            if (f.equals(d) || f.startsWith(d)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
     /**
      * True if {@code filePath} is inside this session's own per-session config
-     * directory ({@code ~/.ai-coder/{type}/{sessionId}/}), where the AI keeps its
-     * memory and logs. These live outside every open project, so no diff panel can
-     * be built for them; they pass straight through to the built-in tool. Scoped to
-     * the requesting session, so one session can never write into another session's
-     * memory.
+     * directory ({@code ~/.ai-coder/{type}/{sessionId}/}), where the AI keeps
+     * its memory and logs. These live outside every open project, so no diff
+     * panel can be built for them; they pass straight through to the built-in
+     * tool. Scoped to the requesting session, so one session can never write
+     * into another session's memory.
      */
     public boolean isOwnSessionConfigFile(String sessionId, String filePath) {
         if (sessionId == null || filePath == null || filePath.isBlank()) {
@@ -455,7 +477,7 @@ public class McpHookServer {
         //    restrict ON -> deny (session is scoped to its projects); restrict OFF -> let
         //    the built-in tool write it directly. Files inside a project fall through to
         //    the diff panel below.
-        if (!isWithinProjectDirs(sessionId, filePath)) {
+        if (!isWithinProjectDirs(sessionId, filePath) && !isUnderAnyOpenProject(filePath)) {
             boolean restrict = Boolean.TRUE.equals(sessionRestrictToProject.get(sessionId));
             McpHookServerUtil.sendJson(ex, 200, restrict
                     ? McpHookServerUtil.hookDeny("Access denied: " + filePath + " is outside the allowed project scope for this session")

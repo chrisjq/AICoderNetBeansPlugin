@@ -3,6 +3,7 @@ package kiwi.ingenuity.netbeans.plugin.aicoder.process.server;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
+import static kiwi.ingenuity.netbeans.plugin.aicoder.ai.AiTypeEnum.CLAUDE;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import org.junit.jupiter.api.Test;
@@ -19,11 +20,11 @@ class McpHookServerScopeTest {
         McpHookServer s = new McpHookServer(0);
         s.init();
         try {
-            s.registerSession("c1", "claude", List.of(dirA.toFile()), true);
+            s.registerSession("c1", CLAUDE, List.of(dirA.toFile()), true);
             // Project B not in the start-time scope → rejected.
             assertFalse(s.isFileAllowed("c1", fileB.toString()));
             // Refresh the scope to include a newly-opened project B.
-            s.updateSessionScope("c1", List.of(dirA.toFile(), dirB.toFile()), true);
+            s.updateSessionScope("c1", CLAUDE, List.of(dirA.toFile(), dirB.toFile()), true);
             assertTrue(s.isFileAllowed("c1", fileB.toString()));
         }
         finally {
@@ -32,11 +33,11 @@ class McpHookServerScopeTest {
     }
 
     @Test
-    void updateSessionScope_unknownSession_isNoop() throws Exception {
+    void updateSessionScope_unknownSession_registersSession() throws Exception {
         McpHookServer s = new McpHookServer(0);
         s.init();
         try {
-            s.updateSessionScope("never-registered", List.of(), true); // must not throw
+            s.updateSessionScope("never-registered", CLAUDE, List.of(), true); // must not throw
         }
         finally {
             s.stop();
@@ -49,7 +50,7 @@ class McpHookServerScopeTest {
         McpHookServer s = new McpHookServer(0);
         s.init();
         try {
-            s.registerSession("c1", "claude", List.of(), true);
+            s.registerSession("c1", CLAUDE, List.of(), true);
             assertFalse(s.isFileAllowed("c1", file.toString()));
         }
         finally {
@@ -63,7 +64,7 @@ class McpHookServerScopeTest {
         McpHookServer s = new McpHookServer(0);
         s.init();
         try {
-            s.registerSession("c1", "claude", List.of(), false);
+            s.registerSession("c1", CLAUDE, List.of(), false);
             assertTrue(s.isFileAllowed("c1", file.toString()));
         }
         finally {

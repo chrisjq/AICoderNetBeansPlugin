@@ -314,6 +314,20 @@ Each backend drives its CLI as a subprocess and parses its streaming output to r
 
 Mutating tool calls (builds, refactorings, file writes) are serialised through a fair `ReentrantLock` to prevent concurrent IDE state corruption. Read-only tools bypass the lock entirely.
 
+## Security
+
+The MCP tool server exposes powerful IDE capabilities (file writes, builds, git, shell-adjacent refactors) to an AI backend, so access to it is deliberately constrained. The relevant controls:
+
+- **Loopback-only binding** — the HTTP server binds to the loopback address (`127.0.0.1` / `[::1]`) via `InetAddress.getLoopbackAddress()`, never a routable interface. It is not reachable from other hosts on the network; only processes on the same machine can connect. The Claude MCP registrar additionally refuses to write any endpoint URL that is not loopback.
+- **Per-session authentication** — every session is issued a random secret at creation. Each `tools/call` (and every inter-AI messaging tool) must carry the caller's `sessionId` **and** matching `secretKey`; requests missing or failing this check are rejected with an authentication error before any tool runs. Secrets are compared in constant time (`MessageDigest.isEqual`) to avoid timing leaks. Secrets are held in memory only and are regenerated for each new session — they are not persisted to disk.
+- **Session isolation** — a valid `secretKey` authenticates only its own `sessionId`. A session cannot read another session's inbox, edit its description, or act on its behalf without that session's own secret.
+- **Accept/Reject diff gate** — all AI-initiated file writes, edits, and creates are intercepted by the PreToolUse hook and routed through the NetBeans diff panel. No change touches your working tree until you explicitly approve it.
+- **Read-only database access** — database tools are disabled unless you opt in (global or per-session), and even then only `SELECT` is permitted; `INSERT`/`UPDATE`/`DELETE`/DDL are blocked, enforced by both a statement-prefix check and a read-only JDBC connection.
+- **Optional project-file scoping** — sessions can be restricted so file access stays within the session's open project directories.
+- **Connection guardrails** — the server caps concurrent and idle connections and enforces request/response timeouts to limit runaway or stuck clients.
+
+> **Note:** These controls guard the tool server itself. They do not replace trust in the AI backend or its CLI — the assistant still runs builds/tests and can propose any edit. The Accept/Reject gate is your final review step, so read diffs before approving. Because the port is loopback-only, treat any local process able to read your session's `secretKey` (e.g. from process arguments, logs, or the MCP config file) as able to drive the tool server — keep those readable only by your user account.
+
 ## Development
 
 ```bash

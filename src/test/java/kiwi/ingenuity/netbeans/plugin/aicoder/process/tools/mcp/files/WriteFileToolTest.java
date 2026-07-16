@@ -7,6 +7,7 @@ import java.util.UUID;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.TimeUnit;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.AiTypeEnum;
+import static kiwi.ingenuity.netbeans.plugin.aicoder.ai.AiTypeEnum.CLAUDE;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.events.PermissionDecision;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.events.PermissionEvent;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.session.AiSession;
@@ -57,8 +58,8 @@ class WriteFileToolTest {
         boolean ok = McpServerRegistry.register(new NoopRegistrar("registry-boot")).get(5, TimeUnit.SECONDS);
         assertTrue(ok, "test server must start");
         // restrictToProjectFiles=false so isFileAllowed() passes for any /tmp path.
-        McpServerRegistry.getServer().registerSession("mySession", "claude", List.of(), false);
-        McpServerRegistry.getServer().registerSession("otherSession", "claude", List.of(), false);
+        McpServerRegistry.getServer().registerSession("mySession", CLAUDE, List.of(), false);
+        McpServerRegistry.getServer().registerSession("otherSession", CLAUDE, List.of(), false);
     }
 
     @AfterEach

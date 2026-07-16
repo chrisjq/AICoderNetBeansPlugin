@@ -590,6 +590,12 @@ public final class AiTopComponent extends TopComponent implements AiProcessEvent
                 if (!OpenProjects.PROPERTY_OPEN_PROJECTS.equals(evt.getPropertyName())) {
                     return;
                 }
+                Object mcpObj = aiBackend != null ? aiBackend.getMcpServer() : null;
+                if (mcpObj instanceof McpHookServer mcp) {
+                    List<File> dirs = contextProvider != null ? contextProvider.getAllOpenProjectDirs() : List.of();
+                    boolean restrict = session.settings() != null && session.settings().effectiveRestrictToProjectFiles();
+                    mcp.updateSessionScope(session.id(), session.aiType(), dirs, restrict);
+                }
                 File sessionDir = aiBackend != null ? aiBackend.getSessionWorkingDir() : null;
                 if (sessionDir == null) {
                     sessionDir = chosenSessionDir;
@@ -631,7 +637,7 @@ public final class AiTopComponent extends TopComponent implements AiProcessEvent
                     ? contextProvider.getAllOpenProjectDirs() : List.of();
             boolean restrict = session.settings() != null
                     && session.settings().effectiveRestrictToProjectFiles();
-            mcpServer.registerSession(session.id(), session.aiType().key(), dirs, restrict);
+            mcpServer.registerSession(session.id(), session.aiType(), dirs, restrict);
         }
         if (aiTypePropertyListener == null) {
             aiTypePropertyListener = this::handleAiTypeProperty;
@@ -814,13 +820,10 @@ public final class AiTopComponent extends TopComponent implements AiProcessEvent
         }
         pendingResponseCancellers.clear();
         AiSessionInboxBroker.getInstance().unregister(session.id());
-        // Unregister session file scope from MCP server
-        Object mcpObj = aiBackend != null ? aiBackend.getMcpServer() : null;
-        if (mcpObj instanceof McpHookServer mcpServer) {
-            mcpServer.unregisterSession(session.id());
-        }
-        turnOutputSuppressed = false;
-        suppressedTurnCompletionMessage = null;
+        // Remove the open-projects listener BEFORE unregistering the session, so it can
+        // never re-register (resurrect) the session via updateSessionScope. Once removed,
+        // no queued property-change event can fire, making the ordering self-evidently safe
+        // rather than relying on componentClosed and the listener both running on the EDT.
         try {
             if (openProjectsListener != null) {
                 OpenProjects.getDefault().removePropertyChangeListener(openProjectsListener);
@@ -830,6 +833,13 @@ public final class AiTopComponent extends TopComponent implements AiProcessEvent
         catch (Exception e) {
             LOG.log(Level.WARNING, "Error removing openProjectsListener during session close", e);
         }
+        // Unregister session file scope from MCP server
+        Object mcpObj = aiBackend != null ? aiBackend.getMcpServer() : null;
+        if (mcpObj instanceof McpHookServer mcpServer) {
+            mcpServer.unregisterSession(session.id());
+        }
+        turnOutputSuppressed = false;
+        suppressedTurnCompletionMessage = null;
         try {
             if (aiTypePropertyListener != null) {
                 AiTypePropertyBus.getInstance().removeListener(session.aiType(), aiTypePropertyListener);
@@ -1242,7 +1252,7 @@ public final class AiTopComponent extends TopComponent implements AiProcessEvent
         if (mcpObj instanceof McpHookServer mcp) {
             boolean restrict = session.settings() != null
                     && session.settings().effectiveRestrictToProjectFiles();
-            mcp.updateSessionScope(session.id(), projectDirs, restrict);
+            mcp.updateSessionScope(session.id(), session.aiType(), projectDirs, restrict);
         }
         if (aiBackend != null) {
             aiBackend.sendPrompt(fullPrompt, workDir, projectDirs);
