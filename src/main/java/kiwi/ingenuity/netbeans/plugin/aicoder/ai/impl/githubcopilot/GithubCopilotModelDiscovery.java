@@ -36,8 +36,9 @@ public final class GithubCopilotModelDiscovery {
     private static final long TIMEOUT_SECONDS = 30;
     private static final Gson GSON = new Gson();
 
+    private static final int MAX_RETRIES = 20;
     private static final AtomicBoolean inProgress = new AtomicBoolean(false);
-    private static volatile boolean succeeded = false;
+    private static volatile int retryCount = 0;
 
     /**
      * Builds the dropdown list from discovered model ids: "auto" first (it
@@ -58,19 +59,23 @@ public final class GithubCopilotModelDiscovery {
     }
 
     /**
-     * Runs model discovery once per IDE run on a background daemon thread. On
-     * success it stores the list in {@link GithubCopilotPluginSettings} and
-     * invokes {@code onResult} (off the EDT — the caller must marshal to the
-     * EDT before touching Swing). Does nothing if a discovery is already
-     * running or has already succeeded.
+     * Starts a fresh discovery cycle: resets the retry counter and submits a
+     * background fetch. Does nothing if a discovery is already in progress.
+     * On failure, retries up to {@value #MAX_RETRIES} times within the cycle.
      *
      * @param cliPath the located copilot CLI path, or null to use PATH
      */
     public static void discoverAsync(String cliPath, Consumer<String[]> onResult) {
-        if (succeeded || !inProgress.compareAndSet(false, true)) {
+        retryCount = 0;
+        tryDiscover(cliPath, onResult);
+    }
+
+    private static void tryDiscover(String cliPath, Consumer<String[]> onResult) {
+        if (!inProgress.compareAndSet(false, true)) {
             return;
         }
         Thread t = new Thread(() -> {
+            boolean shouldRetry = false;
             try {
                 // Tier 1: official SDK. Tier 2: direct stdio JSON-RPC. Tier 3:
                 // static fallback (do nothing — the combo already shows it).
@@ -95,7 +100,7 @@ public final class GithubCopilotModelDiscovery {
 
                 if (models != null && models.length > 1) {
                     GithubCopilotPluginSettings.setDiscoveredModels(models);
-                    succeeded = true;
+                    retryCount = 0;
                     LOG.log(Level.INFO, "Copilot model discovery succeeded via {0} ({1} models)",
                             new Object[]{method, models.length});
                     if (onResult != null) {
@@ -103,11 +108,22 @@ public final class GithubCopilotModelDiscovery {
                     }
                 }
                 else {
-                    LOG.log(Level.INFO, "Copilot model discovery: using static fallback model list");
+                    int attempt = ++retryCount;
+                    if (attempt < MAX_RETRIES) {
+                        LOG.log(Level.INFO, "Copilot model discovery: no models returned (attempt {0}/{1}), retrying",
+                                new Object[]{attempt, MAX_RETRIES});
+                        shouldRetry = true;
+                    }
+                    else {
+                        LOG.log(Level.INFO, "Copilot model discovery: using static fallback model list after {0} attempts", attempt);
+                    }
                 }
             }
             finally {
                 inProgress.set(false);
+            }
+            if (shouldRetry) {
+                tryDiscover(cliPath, onResult);
             }
         }, "copilot-model-discovery");
         t.setDaemon(true);

@@ -36,7 +36,8 @@ public class GithubCopilotAiImplementation extends AiImplementation {
     // populates all four, not just the one that triggered discovery.
     private static final Object MODEL_LOCK = new Object();
     private static volatile List<String> cachedModels = null;
-    private static volatile boolean modelsFetched = false;
+    private static volatile long modelsFetchedMs = 0L;
+    private static final long MODEL_REFRESH_INTERVAL_MS = 10 * 60 * 1000L;
     private final GithubCopilotProcessManager processManager;
 
     public GithubCopilotAiImplementation(AiProcessEventListener listener, ExecutablePrompter prompter) {
@@ -137,25 +138,23 @@ public class GithubCopilotAiImplementation extends AiImplementation {
      * session that happened to trigger discovery got the loaded list.
      */
     private void triggerModelDiscovery() {
-        if (modelsFetched) {
-            List<String> cached;
-            synchronized (MODEL_LOCK) {
-                cached = cachedModels;
-            }
-            if (cached != null) {
-                List<String> snapshot = cached;
-                AiTypePropertyBus.getInstance().fire(AiTypeEnum.GitHubCoPilot, new GithubCopilotModelsEvent(snapshot));
-            }
+        List<String> cached;
+        long lastSuccess;
+        synchronized (MODEL_LOCK) {
+            cached = cachedModels;
+            lastSuccess = modelsFetchedMs;
+        }
+        if (cached != null) {
+            AiTypePropertyBus.getInstance().fire(AiTypeEnum.GitHubCoPilot, new GithubCopilotModelsEvent(cached));
+        }
+        if (lastSuccess > 0 && System.currentTimeMillis() - lastSuccess < MODEL_REFRESH_INTERVAL_MS) {
             return;
         }
-        // discoverAsync coalesces concurrent calls (only the first runs) and
-        // invokes this callback off the EDT on success. Cache + broadcast so all
-        // open Copilot dropdowns update, not just the triggering session.
         GithubCopilotModelDiscovery.discoverAsync(GithubCopilotExecutableLocator.locate(), models -> {
             List<String> list = Arrays.asList(models);
             synchronized (MODEL_LOCK) {
                 cachedModels = list;
-                modelsFetched = true;
+                modelsFetchedMs = System.currentTimeMillis();
             }
             AiTypePropertyBus.getInstance().fire(AiTypeEnum.GitHubCoPilot, new GithubCopilotModelsEvent(list));
         });

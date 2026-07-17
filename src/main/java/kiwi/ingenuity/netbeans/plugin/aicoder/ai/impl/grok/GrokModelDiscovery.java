@@ -14,8 +14,8 @@ import java.util.logging.Logger;
 import java.util.regex.Pattern;
 
 /**
- * Live discovery of the real model list available to the logged-in account,
- * via {@code grok models} (https://docs.x.ai/build/cli/reference). Confirmed
+ * Live discovery of the real model list available to the logged-in account, via
+ * {@code grok models} (https://docs.x.ai/build/cli/reference). Confirmed
  * against a real installed grok CLI (v0.2.93); actual output looks like:
  * <pre>
  * You are logged in with grok.com.
@@ -27,14 +27,14 @@ import java.util.regex.Pattern;
  *   - grok-composer-2.5-fast
  * </pre> The CLI has no {@code --json}/structured-output flag for this
  * subcommand (checked via {@code grok models --help}), so stdout is parsed
- * line-by-line: each {@code "  * "}/{@code "  - "} bullet's first token is
- * taken as the model id (dropping a trailing {@code " (default)"} marker or
- * any other trailing description text), everything else (banner lines,
- * headers, blank lines) is discarded. Any failure (grok not installed, not
- * logged in, unexpected future format change) is swallowed and the caller
- * keeps using the hardcoded {@link GrokPluginSettings#KNOWN_MODELS} fallback
- * list. Mirrors {@code GithubCopilotModelDiscovery}'s
- * discover-once-per-IDE-run / cache / broadcast shape.
+ * line-by-line: each {@code "  * "}/{@code "  - "} bullet's first token is taken
+ * as the model id (dropping a trailing {@code " (default)"} marker or any other
+ * trailing description text), everything else (banner lines, headers, blank
+ * lines) is discarded. Any failure (grok not installed, not logged in,
+ * unexpected future format change) is swallowed and the caller keeps using the
+ * hardcoded {@link GrokPluginSettings#KNOWN_MODELS} fallback list. Mirrors
+ * {@code GithubCopilotModelDiscovery}'s discover-once-per-IDE-run / cache /
+ * broadcast shape.
  */
 public final class GrokModelDiscovery {
 
@@ -46,40 +46,65 @@ public final class GrokModelDiscovery {
     // lines like "Default" or "Available").
     private static final Pattern MODEL_ID_PATTERN = Pattern.compile("^[a-zA-Z0-9][a-zA-Z0-9._-]*$");
 
+    private static final int MAX_RETRIES = 20;
     private static final AtomicBoolean inProgress = new AtomicBoolean(false);
-    private static volatile boolean succeeded = false;
+    private static volatile int retryCount = 0;
 
     /**
-     * Runs {@code grok models} once per IDE run on a background daemon thread.
-     * On success, invokes {@code onResult} (off the EDT — caller must marshal
-     * to the EDT before touching Swing) with the discovered id list. Does
-     * nothing if a discovery is already running or has already succeeded.
+     * Starts a fresh discovery cycle: resets the retry counter and submits a
+     * background fetch. Does nothing if a discovery is already in progress.
+     * On failure, retries up to {@value #MAX_RETRIES} times within the cycle.
      *
      * @param executablePath the located grok CLI path, or null to use PATH
      */
     public static void discoverAsync(String executablePath, Consumer<List<String>> onResult) {
-        if (succeeded || !inProgress.compareAndSet(false, true)) {
+        retryCount = 0;
+        tryDiscover(executablePath, onResult);
+    }
+
+    private static void tryDiscover(String executablePath, Consumer<List<String>> onResult) {
+        if (!inProgress.compareAndSet(false, true)) {
             return;
         }
         Thread t = new Thread(() -> {
+            boolean shouldRetry = false;
             try {
                 List<String> models = discover(executablePath);
                 if (models != null && !models.isEmpty()) {
-                    succeeded = true;
+                    retryCount = 0;
                     LOG.log(Level.INFO, "Grok model discovery succeeded ({0} models)", models.size());
                     if (onResult != null) {
                         onResult.accept(models);
                     }
                 }
                 else {
-                    LOG.log(Level.INFO, "Grok model discovery: using static fallback model list");
+                    int attempt = ++retryCount;
+                    if (attempt < MAX_RETRIES) {
+                        LOG.log(Level.INFO, "Grok model discovery: no models returned (attempt {0}/{1}), retrying",
+                                new Object[]{attempt, MAX_RETRIES});
+                        shouldRetry = true;
+                    }
+                    else {
+                        LOG.log(Level.INFO, "Grok model discovery: using static fallback model list after {0} attempts", attempt);
+                    }
                 }
             }
             catch (Exception e) {
-                LOG.log(Level.INFO, "Grok model discovery failed; using static fallback model list", e);
+                int attempt = ++retryCount;
+                if (attempt < MAX_RETRIES) {
+                    LOG.log(Level.INFO, "Grok model discovery failed (attempt {0}/{1}), retrying: {2}",
+                            new Object[]{attempt, MAX_RETRIES, e.getMessage()});
+                    shouldRetry = true;
+                }
+                else {
+                    LOG.log(Level.INFO, "Grok model discovery failed after {0} attempts; using static fallback model list", attempt);
+                }
             }
             finally {
                 inProgress.set(false);
+            }
+            if (shouldRetry) {
+                tryDiscover(executablePath, onResult);
             }
         }, "grok-model-discovery");
         t.setDaemon(true);

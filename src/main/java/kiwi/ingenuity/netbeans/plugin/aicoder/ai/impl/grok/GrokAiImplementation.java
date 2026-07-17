@@ -34,7 +34,8 @@ public class GrokAiImplementation extends AiImplementation {
     // broadcast to every open session's dropdown via AiTypePropertyBus.
     private static final Object MODEL_LOCK = new Object();
     private static volatile List<String> cachedModels = null;
-    private static volatile boolean modelsFetched = false;
+    private static volatile long modelsFetchedMs = 0L;
+    private static final long MODEL_REFRESH_INTERVAL_MS = 10 * 60 * 1000L;
 
     private final GrokAiProcessManager delegate;
 
@@ -132,21 +133,22 @@ public class GrokAiImplementation extends AiImplementation {
      * immediately.
      */
     private void triggerModelDiscovery() {
-        if (modelsFetched) {
-            List<String> cached;
-            synchronized (MODEL_LOCK) {
-                cached = cachedModels;
-            }
-            if (cached != null) {
-                List<String> snapshot = cached;
-                AiTypePropertyBus.getInstance().fire(AiTypeEnum.GROK, new GrokModelsEvent(snapshot));
-            }
+        List<String> cached;
+        long lastSuccess;
+        synchronized (MODEL_LOCK) {
+            cached = cachedModels;
+            lastSuccess = modelsFetchedMs;
+        }
+        if (cached != null) {
+            AiTypePropertyBus.getInstance().fire(AiTypeEnum.GROK, new GrokModelsEvent(cached));
+        }
+        if (lastSuccess > 0 && System.currentTimeMillis() - lastSuccess < MODEL_REFRESH_INTERVAL_MS) {
             return;
         }
         GrokModelDiscovery.discoverAsync(GrokExecutableLocator.locate(), models -> {
             synchronized (MODEL_LOCK) {
                 cachedModels = models;
-                modelsFetched = true;
+                modelsFetchedMs = System.currentTimeMillis();
             }
             AiTypePropertyBus.getInstance().fire(AiTypeEnum.GROK, new GrokModelsEvent(models));
         });
