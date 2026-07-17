@@ -68,4 +68,6 @@ public abstract class AiSessionSettingsCreator<E extends AiSessionSettings> {
         }
     }
 
+    public abstract void applyDefaultSettingsFromGlobal(AiSessionSettings settings);
+
 }

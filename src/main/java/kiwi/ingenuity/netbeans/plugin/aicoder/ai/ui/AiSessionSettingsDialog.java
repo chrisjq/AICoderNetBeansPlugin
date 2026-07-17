@@ -19,7 +19,6 @@ import javax.swing.JTextField;
 import javax.swing.SpinnerNumberModel;
 import kiwi.ingenuity.netbeans.plugin.aicoder.AccessControlLabelEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.DatabaseAccessOptionEnum;
-import kiwi.ingenuity.netbeans.plugin.aicoder.PluginSettings;
 import kiwi.ingenuity.netbeans.plugin.aicoder.WebRequestAccessOptionEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.session.AiSession;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.settings.AiSessionSettings;
@@ -41,16 +40,11 @@ public class AiSessionSettingsDialog extends JDialog {
     private final JTextField nameField = new JTextField(24);
     private final JTextArea descriptionArea = new JTextArea(3, 24);
     private final JSpinner historySpinner;
-    private final JLabel historyMarker = new JLabel();
     private final JCheckBox restrictCheckBox = new JCheckBox();
-    private String restrictBaseLabel;
     private final AiMessagingSettingsPanel aiMessagingPanel;
     private final WebRequestAccessSettingsPanel webRequestAccessPanel;
     private final DatabaseAccessSettingsPanel databaseAccessPanel;
     private final JTextArea sessionInstructionsArea = new JTextArea(4, 24);
-
-    private boolean resetAutoNotify = false;
-    private final boolean globalAutoNotify;
 
     private AiSessionSettings result = null;
     private String resultName = null;
@@ -59,7 +53,6 @@ public class AiSessionSettingsDialog extends JDialog {
     private AiSessionSettingsDialog(AiSession session) {
         super(WindowManager.getDefault().getMainWindow(), "Session Configuration", true);
         AiSessionSettings cfg = session.settings();
-        globalAutoNotify = PluginSettings.isAutoNotifyInbox();
 
         aiMessagingPanel = new AiMessagingSettingsPanel(true);
         webRequestAccessPanel = new WebRequestAccessSettingsPanel(true);
@@ -67,21 +60,14 @@ public class AiSessionSettingsDialog extends JDialog {
 
         historySpinner = new JSpinner(new SpinnerNumberModel(
                 cfg.effectiveMaxHistory(), 0, 10000, 10));
-        historyMarker.setEnabled(false);
-        historySpinner.addChangeListener(e -> refreshHistoryMarker());
-        refreshHistoryMarker();
 
         nameField.setText(session.name());
         descriptionArea.setText(session.description() != null ? session.description() : "");
         descriptionArea.setLineWrap(true);
         descriptionArea.setWrapStyleWord(true);
 
-        boolean globalRestrict = PluginSettings.isRestrictToProjectFiles();
-        restrictBaseLabel = AccessControlLabelEnum.RESTRICT_TO_PROJECT_FILES.sessionLabel(globalRestrict);
-        restrictCheckBox.setText(restrictBaseLabel);
+        restrictCheckBox.setText(AccessControlLabelEnum.RESTRICT_TO_PROJECT_FILES.displayLabel());
         restrictCheckBox.setSelected(cfg.effectiveRestrictToProjectFiles());
-        restrictCheckBox.addActionListener(e -> refreshRestrictMarker());
-        refreshRestrictMarker();
 
         webRequestAccessPanel.setAllowWebRequestsSelected(cfg.effectiveAllowWebRequests());
         for (WebRequestAccessOptionEnum option : WebRequestAccessOptionEnum.values()) {
@@ -98,15 +84,11 @@ public class AiSessionSettingsDialog extends JDialog {
 
         aiMessagingPanel.setAllowInterAiSelected(cfg.effectiveAllowInterAiComms());
         aiMessagingPanel.setAutoNotifySelected(cfg.effectiveAutoNotifyInbox());
-        aiMessagingPanel.setAllowImportantSelected(
-                cfg.effectiveAllowImportantMessages());
-        aiMessagingPanel.addChangeListener(e -> resetAutoNotify = false);
+        aiMessagingPanel.setAllowImportantSelected(cfg.effectiveAllowImportantMessages());
 
         sessionInstructionsArea.setText(cfg.sessionInstructions() != null ? cfg.sessionInstructions() : "");
         sessionInstructionsArea.setLineWrap(true);
         sessionInstructionsArea.setWrapStyleWord(true);
-
-        aiMessagingPanel.setAutoNotifyAccessory(createAutoNotifyResetButton());
 
         JButton sessionInstructionsResetBtn = new JButton("Reset to default");
         sessionInstructionsResetBtn.addActionListener(e -> sessionInstructionsArea.setText(""));
@@ -143,16 +125,6 @@ public class AiSessionSettingsDialog extends JDialog {
         return scrollPane;
     }
 
-    private JButton createAutoNotifyResetButton() {
-        JButton autoNotifyResetBtn = new JButton("Reset");
-        autoNotifyResetBtn.setToolTipText("Revert to global default");
-        autoNotifyResetBtn.addActionListener(e -> {
-            aiMessagingPanel.setAutoNotifySelected(globalAutoNotify);
-            resetAutoNotify = true;
-        });
-        return autoNotifyResetBtn;
-    }
-
     private ScrollablePanel buildForm(JButton sessionInstructionsResetBtn) {
         ScrollablePanel p = new ScrollablePanel(new GridBagLayout());
         p.setBorder(BorderFactory.createEmptyBorder(12, 12, 12, 12));
@@ -164,10 +136,7 @@ public class AiSessionSettingsDialog extends JDialog {
         int row = 0;
         addRow(p, c, row++, new JLabel("Session name:"), nameField);
         addRow(p, c, row++, new JLabel("Description:"), new JScrollPane(descriptionArea));
-        JPanel historyRow = new JPanel(new BorderLayout(8, 0));
-        historyRow.add(historySpinner, BorderLayout.WEST);
-        historyRow.add(historyMarker, BorderLayout.CENTER);
-        addRow(p, c, row++, new JLabel("History size:"), historyRow);
+        addRow(p, c, row++, new JLabel("History size:"), historySpinner);
         addFull(p, c, row++, restrictCheckBox);
         addFull(p, c, row++, webRequestAccessPanel);
         addFull(p, c, row++, databaseAccessPanel);
@@ -204,76 +173,29 @@ public class AiSessionSettingsDialog extends JDialog {
         p.add(comp, c);
     }
 
-    private void refreshHistoryMarker() {
-        boolean overridden = ((Integer) historySpinner.getValue()).intValue() != PluginSettings.getMaxHistory();
-        historyMarker.setText(overridden
-                ? AccessControlLabelEnum.MARKER_ON_SESSION : AccessControlLabelEnum.MARKER_FROM_GLOBAL);
-    }
-
-    private void refreshRestrictMarker() {
-        restrictCheckBox.setText(AccessControlLabelEnum.withSessionMarker(restrictBaseLabel,
-                restrictCheckBox.isSelected() != PluginSettings.isRestrictToProjectFiles()));
-    }
-
     private void buildResult(AiSessionSettings original) {
         resultName = nameField.getText().trim();
         resultDescription = descriptionArea.getText().trim();
 
-        int historyValue = (Integer) historySpinner.getValue();
-        Integer maxHistory = historyValue == PluginSettings.getMaxHistory() ? null : historyValue;
-
-        boolean restrictSelected = restrictCheckBox.isSelected();
-        Boolean restrictToProjectFiles = restrictSelected == PluginSettings.isRestrictToProjectFiles() ? null : restrictSelected;
-
-        boolean webRequestsSelected = webRequestAccessPanel.isAllowWebRequestsSelected();
-        Boolean allowWebRequests = webRequestsSelected == PluginSettings.isAllowWebRequests() ? null : webRequestsSelected;
-
-        boolean databaseAccessSelected = databaseAccessPanel.isAllowDatabaseAccessSelected();
-        Boolean allowDatabaseAccess = databaseAccessSelected == PluginSettings.isAllowDatabaseAccess() ? null : databaseAccessSelected;
-
-        int rowLimitValue = databaseAccessPanel.getRowLimitValue();
-        Integer databaseRowLimit = rowLimitValue == PluginSettings.getDatabaseRowLimit() ? null : rowLimitValue;
-
-        boolean interAiSelected = aiMessagingPanel.isAllowInterAiSelected();
-        Boolean allowInterAiComms = interAiSelected == PluginSettings.isAllowInterAiComms() ? null : interAiSelected;
-
-        Boolean autoNotifyInbox;
-        if (resetAutoNotify) {
-            autoNotifyInbox = null;
+        original.setMaxHistory((Integer) historySpinner.getValue());
+        original.setRestrictToProjectFiles(restrictCheckBox.isSelected());
+        original.setAllowWebRequests(webRequestAccessPanel.isAllowWebRequestsSelected());
+        for (WebRequestAccessOptionEnum option : WebRequestAccessOptionEnum.values()) {
+            original.setAllowWebRequestAccess(option, webRequestAccessPanel.isOptionSelected(option));
         }
-        else {
-            boolean autoSelected = aiMessagingPanel.isAutoNotifySelected();
-            autoNotifyInbox = autoSelected == globalAutoNotify ? null : autoSelected;
+        original.setAllowDatabaseAccess(databaseAccessPanel.isAllowDatabaseAccessSelected());
+        for (DatabaseAccessOptionEnum option : DatabaseAccessOptionEnum.values()) {
+            original.setAllowDatabaseAccessOption(option, databaseAccessPanel.isOptionSelected(option));
         }
-
-        boolean importantSelected = aiMessagingPanel.isAllowImportantSelected();
-        Boolean allowImportantMessages = importantSelected == PluginSettings.isAllowImportantMessages() ? null : importantSelected;
+        original.setDatabaseRowLimit(databaseAccessPanel.getRowLimitValue());
+        original.setAllowInterAiComms(aiMessagingPanel.isAllowInterAiSelected());
+        original.setAutoNotifyInbox(aiMessagingPanel.isAutoNotifySelected());
+        original.setAllowImportantMessages(aiMessagingPanel.isAllowImportantSelected());
 
         String sessionInstructions = sessionInstructionsArea.getText().trim();
         if (sessionInstructions.isBlank()) {
             sessionInstructions = null;
         }
-
-        original.setMaxHistory(maxHistory);
-        original.setRestrictToProjectFiles(restrictToProjectFiles);
-        original.setAllowWebRequests(allowWebRequests);
-        for (WebRequestAccessOptionEnum option : WebRequestAccessOptionEnum.values()) {
-            boolean selected = webRequestAccessPanel.isOptionSelected(option);
-            Boolean override = selected == PluginSettings.isAllowWebRequestAccess(option)
-                    ? null : selected;
-            original.setAllowWebRequestAccess(option, override);
-        }
-        original.setAllowDatabaseAccess(allowDatabaseAccess);
-        for (DatabaseAccessOptionEnum option : DatabaseAccessOptionEnum.values()) {
-            boolean selected = databaseAccessPanel.isOptionSelected(option);
-            Boolean override = selected == PluginSettings.isAllowDatabaseAccessOption(option)
-                    ? null : selected;
-            original.setAllowDatabaseAccessOption(option, override);
-        }
-        original.setDatabaseRowLimit(databaseRowLimit);
-        original.setAllowInterAiComms(allowInterAiComms);
-        original.setAutoNotifyInbox(autoNotifyInbox);
-        original.setAllowImportantMessages(allowImportantMessages);
         original.setSessionInstructions(sessionInstructions);
 
         result = original;

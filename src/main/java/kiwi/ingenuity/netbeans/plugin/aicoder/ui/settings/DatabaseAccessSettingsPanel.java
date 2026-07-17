@@ -28,39 +28,25 @@ import kiwi.ingenuity.netbeans.plugin.aicoder.PluginSettings;
  */
 public final class DatabaseAccessSettingsPanel extends JPanel {
 
-    private static String label(AccessControlLabelEnum label, boolean sessionOverrideLabels,
-            boolean globalEnabled) {
-        return sessionOverrideLabels ? label.sessionLabel(globalEnabled) : label.globalLabel();
+    private static String label(AccessControlLabelEnum label, boolean sessionMode) {
+        return sessionMode ? label.displayLabel() : label.globalLabel();
     }
 
-    // In session mode each control shows a live "Set from Global" / "Set on Session"
-    // marker; base labels are kept so the marker can be re-applied on toggle.
-    private final boolean sessionMode;
     private final JCheckBox allowDatabaseAccessCheckBox = new JCheckBox();
-    private final String allowDatabaseAccessBaseLabel;
     private final Map<DatabaseAccessOptionEnum, JCheckBox> optionCheckBoxes
             = new EnumMap<>(DatabaseAccessOptionEnum.class);
-    private final Map<DatabaseAccessOptionEnum, String> optionBaseLabels
-            = new EnumMap<>(DatabaseAccessOptionEnum.class);
     private final JSpinner rowLimitSpinner;
-    private final JLabel rowLimitMarker = new JLabel();
 
-    public DatabaseAccessSettingsPanel(boolean sessionOverrideLabels) {
-        this.sessionMode = sessionOverrideLabels;
+    public DatabaseAccessSettingsPanel(boolean sessionMode) {
         setBorder(BorderFactory.createTitledBorder("Database Access (read-only)"));
         setLayout(new GridBagLayout());
 
-        allowDatabaseAccessBaseLabel = label(AccessControlLabelEnum.ALLOW_DATABASE_ACCESS,
-                sessionOverrideLabels, PluginSettings.isAllowDatabaseAccess());
-        allowDatabaseAccessCheckBox.setText(allowDatabaseAccessBaseLabel);
+        allowDatabaseAccessCheckBox.setText(label(AccessControlLabelEnum.ALLOW_DATABASE_ACCESS, sessionMode));
         addRow(allowDatabaseAccessCheckBox, 0, 0);
 
         int row = 1;
         for (DatabaseAccessOptionEnum option : DatabaseAccessOptionEnum.values()) {
-            String base = label(option.label(), sessionOverrideLabels,
-                    PluginSettings.isAllowDatabaseAccessOption(option));
-            optionBaseLabels.put(option, base);
-            JCheckBox checkBox = new JCheckBox(base);
+            JCheckBox checkBox = new JCheckBox(label(option.label(), sessionMode));
             if (option == DatabaseAccessOptionEnum.READ_ONLY) {
                 checkBox.setSelected(true);
                 checkBox.setEnabled(false);
@@ -77,27 +63,13 @@ public final class DatabaseAccessSettingsPanel extends JPanel {
         c.insets = new Insets(4, 24, 4, 4);
         add(new JLabel("Row limit:"), c);
         c.gridx = 1;
-        c.weightx = 0;
+        c.weightx = 1;
         c.fill = GridBagConstraints.HORIZONTAL;
         c.insets = new Insets(4, 4, 4, 4);
         add(rowLimitSpinner, c);
-        c.gridx = 2;
-        c.weightx = 1;
-        rowLimitMarker.setEnabled(false);
-        add(rowLimitMarker, c);
 
         allowDatabaseAccessCheckBox.addActionListener(e -> updateDependentState());
-        if (sessionMode) {
-            allowDatabaseAccessCheckBox.addActionListener(e -> refreshMarkers());
-            for (Map.Entry<DatabaseAccessOptionEnum, JCheckBox> entry : optionCheckBoxes.entrySet()) {
-                if (entry.getKey() != DatabaseAccessOptionEnum.READ_ONLY) {
-                    entry.getValue().addActionListener(e -> refreshMarkers());
-                }
-            }
-            rowLimitSpinner.addChangeListener(e -> refreshMarkers());
-        }
         updateDependentState();
-        refreshMarkers();
     }
 
     public void addChangeListener(ActionListener listener) {
@@ -120,7 +92,6 @@ public final class DatabaseAccessSettingsPanel extends JPanel {
     public void setAllowDatabaseAccessSelected(boolean selected) {
         allowDatabaseAccessCheckBox.setSelected(selected);
         updateDependentState();
-        refreshMarkers();
     }
 
     public boolean isOptionSelected(DatabaseAccessOptionEnum option) {
@@ -132,7 +103,6 @@ public final class DatabaseAccessSettingsPanel extends JPanel {
             return;
         }
         optionCheckBoxes.get(option).setSelected(selected);
-        refreshMarkers();
     }
 
     public int getRowLimitValue() {
@@ -141,7 +111,6 @@ public final class DatabaseAccessSettingsPanel extends JPanel {
 
     public void setRowLimitValue(int value) {
         rowLimitSpinner.setValue(value);
-        refreshMarkers();
     }
 
     private void updateDependentState() {
@@ -154,38 +123,11 @@ public final class DatabaseAccessSettingsPanel extends JPanel {
         rowLimitSpinner.setEnabled(enabled);
     }
 
-    /**
-     * Re-applies the "Set from Global" / "Set on Session" marker to each control
-     * based on whether its current value differs from the global default. The
-     * fixed READ_ONLY row and (outside session mode) all controls are left plain.
-     */
-    private void refreshMarkers() {
-        if (!sessionMode) {
-            return;
-        }
-        allowDatabaseAccessCheckBox.setText(AccessControlLabelEnum.withSessionMarker(
-                allowDatabaseAccessBaseLabel,
-                allowDatabaseAccessCheckBox.isSelected() != PluginSettings.isAllowDatabaseAccess()));
-        for (Map.Entry<DatabaseAccessOptionEnum, JCheckBox> entry : optionCheckBoxes.entrySet()) {
-            DatabaseAccessOptionEnum option = entry.getKey();
-            if (option == DatabaseAccessOptionEnum.READ_ONLY) {
-                continue;
-            }
-            JCheckBox checkBox = entry.getValue();
-            checkBox.setText(AccessControlLabelEnum.withSessionMarker(
-                    optionBaseLabels.get(option),
-                    checkBox.isSelected() != PluginSettings.isAllowDatabaseAccessOption(option)));
-        }
-        boolean rowLimitOverridden = getRowLimitValue() != PluginSettings.getDatabaseRowLimit();
-        rowLimitMarker.setText(rowLimitOverridden
-                ? AccessControlLabelEnum.MARKER_ON_SESSION : AccessControlLabelEnum.MARKER_FROM_GLOBAL);
-    }
-
     private void addRow(Component component, int row, int leftInset) {
         GridBagConstraints c = new GridBagConstraints();
         c.gridx = 0;
         c.gridy = row;
-        c.gridwidth = 3;
+        c.gridwidth = 2;
         c.weightx = 1;
         c.fill = GridBagConstraints.HORIZONTAL;
         c.anchor = GridBagConstraints.WEST;

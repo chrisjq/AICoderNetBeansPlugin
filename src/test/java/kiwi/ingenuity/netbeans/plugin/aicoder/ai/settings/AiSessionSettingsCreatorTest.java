@@ -15,6 +15,11 @@ class AiSessionSettingsCreatorTest {
             public AiSessionSettings create() {
                 return new AiSessionSettings();
             }
+
+            @Override
+            public void applyDefaultSettingsFromGlobal(AiSessionSettings settings) {
+                // No-op: this test exercises update()/JSON parsing, not global defaults.
+            }
         };
     }
 

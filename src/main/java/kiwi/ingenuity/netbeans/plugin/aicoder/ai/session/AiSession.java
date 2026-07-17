@@ -32,6 +32,8 @@ public class AiSession {
                 : aiType.displayName();
         Instant now = Instant.now();
         AiSessionSettings settings = aiType.createDefaultSettings();
+        settings.applyDefaultSettingsFromGlobal();
+        aiType.getSettingsCreator().applyDefaultSettingsFromGlobal(settings);
         return new AiSession(
                 UUID.randomUUID().toString(),
                 folder,

@@ -278,6 +278,47 @@ public class AiSessionSettings {
         this.databaseRowLimit = newDatabaseRowLimit;
     }
 
+    public void applyDefaultSettingsFromGlobal() {
+        if (maxHistory == null) {
+            maxHistory = PluginSettings.getMaxHistory();
+        }
+        if (restrictToProjectFiles == null) {
+            restrictToProjectFiles = PluginSettings.isRestrictToProjectFiles();
+        }
+        if (allowInterAiComms == null) {
+            allowInterAiComms = PluginSettings.isAllowInterAiComms();
+        }
+        if (autoNotifyInbox == null) {
+            autoNotifyInbox = PluginSettings.isAutoNotifyInbox();
+        }
+        if (allowImportantMessages == null) {
+            allowImportantMessages = PluginSettings.isAllowImportantMessages();
+        }
+        if (autoAccept == null) {
+            autoAccept = PluginSettings.isAutoAccept();
+        }
+        if (allowWebRequests == null) {
+            allowWebRequests = PluginSettings.isAllowWebRequests();
+        }
+        for (WebRequestAccessOptionEnum o : WebRequestAccessOptionEnum.values()) {
+            if (allowWebRequestAccess(o) == null) {
+                setAllowWebRequestAccess(o, PluginSettings.isAllowWebRequestAccess(o));
+            }
+        }
+        if (allowDatabaseAccess == null) {
+            allowDatabaseAccess = PluginSettings.isAllowDatabaseAccess();
+        }
+        for (DatabaseAccessOptionEnum o : DatabaseAccessOptionEnum.values()) {
+            if (allowDatabaseAccessOption(o) == null) {
+                setAllowDatabaseAccessOption(o, PluginSettings.isAllowDatabaseAccessOption(o));
+            }
+        }
+        if (databaseRowLimit == null) {
+            databaseRowLimit = PluginSettings.getDatabaseRowLimit();
+        }
+        // sessionInstructions intentionally left as-is (no global equivalent).
+    }
+
     public String getAdditionalInfo() {
         return "";
     }

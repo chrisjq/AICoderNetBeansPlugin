@@ -2,6 +2,7 @@ package kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.grok.settings;
 
 import com.google.gson.JsonObject;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.settings.AiModelSessionSettingsCreator;
+import kiwi.ingenuity.netbeans.plugin.aicoder.ai.settings.AiSessionSettings;
 
 /**
  * Creates and updates Grok-specific AI session settings. Handles instantiation
@@ -18,6 +19,10 @@ public class GrokSettingsCreator extends AiModelSessionSettingsCreator<GrokSessi
     public void update(GrokSessionSettings settings, JsonObject cfgObj) {
         super.update(settings, cfgObj);
         //Update specific settings
+    }
+
+    @Override
+    public void applyDefaultSettingsFromGlobal(AiSessionSettings settings) {
     }
 
 }
