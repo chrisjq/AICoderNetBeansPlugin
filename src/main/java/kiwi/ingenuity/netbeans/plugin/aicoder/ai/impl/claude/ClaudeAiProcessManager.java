@@ -42,6 +42,11 @@ public class ClaudeAiProcessManager extends AiProcessManager {
 
     private volatile boolean firstMessage = true;
     private long cachedContextWindow = 0;
+    // Set by a graceful Mail interrupt so the resulting abnormal turn end (the
+    // INTERRUPTED "response ended unexpectedly" notice and any non-zero process
+    // exit) is treated as intentional and not surfaced to the user. Distinct from
+    // cancelledByUser, which additionally mutes the whole partial-output stream.
+    private volatile boolean turnInterrupted = false;
     // Kept open across the turn so cancel() can write a graceful interrupt to stdin.
     // Guarded by stdinLock (a separate lock from `this`) because cancel() holds `this`
     // while reading it and the process thread must write it without deadlocking on `this`.
@@ -115,6 +120,7 @@ public class ClaudeAiProcessManager extends AiProcessManager {
         // cancelledByUser, so it can persist across turns. Clear it here — a new turn always
         // starts clean regardless of how the previous one ended.
         cancelledByUser = false;
+        turnInterrupted = false;
         processing = true;
 
         // pinning logic same as original
@@ -268,6 +274,14 @@ public class ClaudeAiProcessManager extends AiProcessManager {
                         if (cancelledByUser) {
                             return;
                         }
+                        // A Mail interrupt we initiated makes Claude end the turn with a
+                        // non-success subtype; suppress the resulting INTERRUPTED notice so
+                        // an intentional interrupt is silent. Genuine (non-interrupted)
+                        // abnormal endings still surface, since turnInterrupted is false.
+                        if (turnInterrupted && event instanceof StatusEvent se
+                                && se.type() == StatusEventTypeEnum.INTERRUPTED) {
+                            return;
+                        }
                     }
                     listener.onAiProcessEvent(event);
                 };
@@ -332,11 +346,12 @@ public class ClaudeAiProcessManager extends AiProcessManager {
 
                 boolean shouldReport;
                 synchronized (ClaudeAiProcessManager.this) {
-                    shouldReport = (currentProcess == p) && !cancelledByUser;
+                    shouldReport = (currentProcess == p) && !cancelledByUser && !turnInterrupted;
                     if (currentProcess == p) {
                         processing = false;
                         currentProcess = null;
                         cancelledByUser = false;
+                        turnInterrupted = false;
                         // Only mark not-running here — do NOT deregister registrar/
                         // claudeAiSession. This is a single turn's OS process dying
                         // (killed, crashed, non-zero exit); the Claude-side session
@@ -374,6 +389,7 @@ public class ClaudeAiProcessManager extends AiProcessManager {
                 synchronized (ClaudeAiProcessManager.this) {
                     wasUserCancel = cancelledByUser;
                     cancelledByUser = false;
+                    turnInterrupted = false;
                     processing = false;
                     currentProcess = null;
                     running = false;
@@ -426,6 +442,7 @@ public class ClaudeAiProcessManager extends AiProcessManager {
                         interrupt.add(ClaudeJsonKeyEnum.REQUEST.key(), request);
                         currentStdin.write((GSON.toJson(interrupt) + "\n").getBytes(StandardCharsets.UTF_8));
                         currentStdin.flush();
+                        turnInterrupted = true;
                     }
                     catch (IOException ignored) {
                     }
