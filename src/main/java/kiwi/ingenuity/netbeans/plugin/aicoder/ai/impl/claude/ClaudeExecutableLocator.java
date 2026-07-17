@@ -81,9 +81,12 @@ public final class ClaudeExecutableLocator {
             return null;
         }
         String os = System.getProperty("os.name", "").toLowerCase();
-        String name = os.contains("win") ? "claude.exe" : "claude";
+        boolean isWindows = os.contains("win");
+        String name = isWindows ? "claude.exe" : "claude";
         for (String dir : pathVar.split(File.pathSeparator)) {
-            if (dir.isBlank() || !TRUSTED_DIRS.contains(dir)) {
+            // On Windows, trust all PATH entries — common install locations
+            // (%APPDATA%\npm, winget, scoop, etc.) are not in TRUSTED_DIRS.
+            if (dir.isBlank() || (!isWindows && !TRUSTED_DIRS.contains(dir))) {
                 continue;
             }
             String candidate = dir + File.separator + name;

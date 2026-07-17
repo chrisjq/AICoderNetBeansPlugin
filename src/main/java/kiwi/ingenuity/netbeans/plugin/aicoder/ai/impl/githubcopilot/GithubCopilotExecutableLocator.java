@@ -81,9 +81,12 @@ public final class GithubCopilotExecutableLocator {
             return null;
         }
         String os = System.getProperty("os.name", "").toLowerCase();
-        String name = os.contains("win") ? "copilot.exe" : "copilot";
+        boolean isWindows = os.contains("win");
+        String name = isWindows ? "copilot.exe" : "copilot";
         for (String dir : pathVar.split(File.pathSeparator)) {
-            if (dir.isBlank() || !TRUSTED_DIRS.contains(dir)) {
+            // On Windows, trust all PATH entries — common install locations
+            // (%APPDATA%\npm, winget, scoop, etc.) are not in TRUSTED_DIRS.
+            if (dir.isBlank() || (!isWindows && !TRUSTED_DIRS.contains(dir))) {
                 continue;
             }
             String candidate = dir + File.separator + name;

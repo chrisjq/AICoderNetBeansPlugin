@@ -70,9 +70,12 @@ public final class GrokExecutableLocator {
             return null;
         }
         String os = System.getProperty("os.name", "").toLowerCase();
-        String name = os.contains("win") ? "grok.exe" : "grok";
+        boolean isWindows = os.contains("win");
+        String name = isWindows ? "grok.exe" : "grok";
         for (String dir : pathVar.split(File.pathSeparator)) {
-            if (dir.isBlank() || !TRUSTED_DIRS.contains(dir)) {
+            // On Windows, trust all PATH entries — common install locations
+            // (%APPDATA%\npm, winget, scoop, etc.) are not in TRUSTED_DIRS.
+            if (dir.isBlank() || (!isWindows && !TRUSTED_DIRS.contains(dir))) {
                 continue;
             }
             String candidate = dir + File.separator + name;
