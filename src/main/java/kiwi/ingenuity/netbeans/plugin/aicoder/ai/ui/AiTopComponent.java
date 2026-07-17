@@ -491,6 +491,17 @@ public final class AiTopComponent extends TopComponent implements AiProcessEvent
         // must keep flowing even with inter-AI comms off. buildPreamble() gates
         // the inter-AI capability blurb on the live comms setting on its own.
         refreshSessionIdentity();
+        // Immediately propagate restrictToProjectFiles to the MCP hook server's
+        // scope map so file-tool permission changes take effect on the next tool
+        // call, not only after the next user submit.
+        Object mcpObj = aiBackend != null ? aiBackend.getMcpServer() : null;
+        if (mcpObj instanceof McpHookServer mcp) {
+            List<java.io.File> dirs = contextProvider != null
+                    ? contextProvider.getAllOpenProjectDirs() : List.of();
+            boolean restrict = session.settings() != null
+                    && session.settings().effectiveRestrictToProjectFiles();
+            mcp.updateSessionScope(session.id(), session.aiType(), dirs, restrict);
+        }
     }
 
     public void closeWithoutPrompt() {
