@@ -37,21 +37,123 @@ public class AnthropicApiClient {
     }
 
     /**
-     * Last-seen modification time of the OAuth credentials file, in millis.
+     * True on macOS, where the Claude CLI stores its OAuth credentials in the
+     * login Keychain (a generic password, service "Claude Code-credentials")
+     * rather than the ~/.claude/.credentials.json file used on Linux/Windows.
      */
-    private static volatile long lastCredsModifiedMs = credentialsModifiedMs();
+    private static final boolean IS_MAC =
+            System.getProperty("os.name", "").toLowerCase(java.util.Locale.ROOT).contains("mac");
+
+    /**
+     * macOS Keychain service names to try, in order. The CLI writes the blob to
+     * "Claude Code-credentials"; some versions have historically read it back
+     * from "Claude Code" (no suffix), so both are attempted.
+     */
+    private static final String[] MAC_KEYCHAIN_SERVICES = {"Claude Code-credentials", "Claude Code"};
+
+    /**
+     * Last-seen fingerprint of the OAuth credentials — the file's last-modified
+     * time on Linux/Windows, or a content hash of the Keychain blob on macOS
+     * (there is no file to stat). A change means the user re-authenticated.
+     * Seeded lazily on macOS (0) so plugin class-load never triggers a Keychain
+     * access prompt; the first poll computes the real value.
+     */
+    private static volatile long lastCredsFingerprint = IS_MAC ? 0L : fileModifiedMs();
 
     private static Path credentialsPath() {
         return Path.of(System.getProperty("user.home"), ".claude", ".credentials.json");
     }
 
-    private static long credentialsModifiedMs() {
+    private static long fileModifiedMs() {
         try {
             Path creds = credentialsPath();
             return Files.exists(creds) ? Files.getLastModifiedTime(creds).toMillis() : 0L;
         }
         catch (Exception e) {
             return 0L;
+        }
+    }
+
+    /**
+     * A cheap value that changes whenever the stored credentials change. On
+     * macOS this hashes the Keychain JSON; elsewhere it is the credentials
+     * file's last-modified time. Falls back to the file on macOS when the
+     * Keychain is unreadable (e.g. creds exported to disk for headless/SSH use).
+     */
+    private static long credentialsFingerprint() {
+        if (IS_MAC) {
+            String json = readMacKeychainJson();
+            if (json != null && !json.isBlank()) {
+                return json.hashCode() & 0xffffffffL;
+            }
+        }
+        return fileModifiedMs();
+    }
+
+    /**
+     * Reads the raw Claude credentials JSON blob, or null if unavailable. On
+     * macOS the login Keychain is tried first, then the file as a fallback;
+     * on other platforms only the file is read.
+     */
+    private static String readCredentialsJson() {
+        if (IS_MAC) {
+            String keychain = readMacKeychainJson();
+            if (keychain != null && !keychain.isBlank()) {
+                return keychain;
+            }
+        }
+        Path creds = credentialsPath();
+        try {
+            return Files.exists(creds) ? Files.readString(creds) : null;
+        }
+        catch (Exception e) {
+            LOG.log(Level.WARNING, "Could not read credentials file " + creds, e);
+            return null;
+        }
+    }
+
+    /**
+     * Returns the Claude OAuth JSON from the macOS login Keychain via the
+     * {@code security} tool, trying each known service name, or null if not
+     * found or access was denied (e.g. a headless / SSH session with no GUI
+     * Keychain authorization). Never blocks longer than a few seconds.
+     */
+    private static String readMacKeychainJson() {
+        for (String service : MAC_KEYCHAIN_SERVICES) {
+            String value = runSecurityFindGenericPassword(service);
+            if (value != null && !value.isBlank()) {
+                return value;
+            }
+        }
+        return null;
+    }
+
+    private static String runSecurityFindGenericPassword(String service) {
+        Process p = null;
+        try {
+            p = new ProcessBuilder("security", "find-generic-password", "-s", service, "-w")
+                    .redirectErrorStream(false)
+                    .start();
+            byte[] out;
+            try (InputStream is = p.getInputStream()) {
+                out = is.readNBytes(MAX_RESPONSE_BYTES);
+            }
+            if (!p.waitFor(5, java.util.concurrent.TimeUnit.SECONDS)) {
+                p.destroyForcibly();
+                return null;
+            }
+            if (p.exitValue() != 0) {
+                // Non-zero: no item for this service name, or access denied.
+                return null;
+            }
+            return new String(out, StandardCharsets.UTF_8).trim();
+        }
+        catch (Exception e) {
+            LOG.log(Level.FINE, "Keychain read failed for service " + service, e);
+            if (p != null) {
+                p.destroyForcibly();
+            }
+            return null;
         }
     }
 
@@ -70,9 +172,9 @@ public class AnthropicApiClient {
      * caller may want to re-run a usage/model fetch), false otherwise.
      */
     public static boolean refreshCredentialsState() {
-        long current = credentialsModifiedMs();
-        if (current != lastCredsModifiedMs) {
-            lastCredsModifiedMs = current;
+        long current = credentialsFingerprint();
+        if (current != lastCredsFingerprint) {
+            lastCredsFingerprint = current;
             RATE_LIMIT_MANAGER.clearRateLimit();
             return true;
         }
@@ -93,12 +195,12 @@ public class AnthropicApiClient {
     private long defaultRateLimit = 2L * 60L * 1000L; // 2 minutes — fallback when no usable Retry-After is supplied
 
     private String readOAuthToken() {
-        Path creds = credentialsPath();
-        if (!Files.exists(creds)) {
+        String json = readCredentialsJson();
+        if (json == null || json.isBlank()) {
             return null;
         }
         try {
-            JsonObject root = GSON.fromJson(Files.readString(creds), JsonObject.class);
+            JsonObject root = GSON.fromJson(json, JsonObject.class);
             if (root == null) {
                 return null;
             }
@@ -109,10 +211,10 @@ public class AnthropicApiClient {
                     return tok.getAsString();
                 }
             }
-            LOG.log(Level.WARNING, "OAuth token not found in {0} — run ''claude auth login''", creds);
+            LOG.log(Level.WARNING, "OAuth token not found in Claude credentials — run ''claude login''");
         }
         catch (Exception e) {
-            LOG.log(Level.WARNING, "Could not read OAuth credentials from " + creds, e);
+            LOG.log(Level.WARNING, "Could not parse Claude OAuth credentials", e);
         }
         return null;
     }
@@ -123,7 +225,9 @@ public class AnthropicApiClient {
         }
         String token = readOAuthToken();
         if (token == null) {
-            throw new IOException("No OAuth credentials at ~/.claude/.credentials.json");
+            throw new IOException(IS_MAC
+                    ? "No Claude OAuth credentials (checked macOS Keychain and ~/.claude/.credentials.json)"
+                    : "No OAuth credentials at ~/.claude/.credentials.json");
         }
 
         HttpURLConnection conn = (HttpURLConnection) new URL(API_BASE + path).openConnection();
