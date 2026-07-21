@@ -79,6 +79,11 @@ public class ClaudeStreamJsonParser {
         if (line == null || line.isBlank()) {
             return;
         }
+
+        // Parse/convert in isolated try-catch to avoid misclassifying listener exceptions
+        AiProcessEvent event = null;
+        boolean parseFailure = false;
+
         try {
             JsonObject obj = GSON.fromJson(line, JsonObject.class);
             Consumer<String> cb = onFirstSessionId;
@@ -89,17 +94,28 @@ public class ClaudeStreamJsonParser {
                     cb.accept(claudeId);
                 }
             }
-            AiProcessEvent event = toEvent(obj);
-            if (event != null) {
-                listener.onAiProcessEvent(event);
-            }
+            event = toEvent(obj);
         }
         catch (RuntimeException e) {
             // RuntimeException (not just JsonSyntaxException) so a ClassCastException
             // from an unexpected-type JSON field can't kill the stream reader thread.
             // NOTE: cannot multi-catch (JsonSyntaxException | RuntimeException) — they are
             // related by subclassing, which is a compile error; RuntimeException covers both.
-            LOG.log(Level.FINE, "Skipping unparseable line: {0}", line);
+            parseFailure = true;
+            LOG.log(Level.WARNING, "Skipping unparseable line: {0}", line);
+
+            // If the unparseable line is a result event (even if malformed), emit FAILED
+            // so the turn doesn't stay in processing state. String check is the only option
+            // since the JSON didn't parse.
+            if (line.contains("\"type\":\"result\"")) {
+                listener.onAiProcessEvent(new StatusEvent(StatusEventTypeEnum.FAILED,
+                        "Claude response could not be parsed. This may indicate an incomplete or corrupted response."));
+            }
+        }
+
+        // Listener call outside catch block so listener exceptions aren't misclassified
+        if (!parseFailure && event != null) {
+            listener.onAiProcessEvent(event);
         }
     }
 
@@ -254,6 +270,15 @@ public class ClaudeStreamJsonParser {
         // response ended before completing. Surface a visible notice so the user
         // isn't left staring at silent no-output, then still complete the turn.
         String subtype = JsonUtils.getString(obj, ClaudeJsonKeyEnum.SUBTYPE.key());
+        if ("api_error".equals(subtype)) {
+            // Hard API error (e.g. usage/plan limit). The persistent process stays
+            // alive, so no process-exit EXITED fires — surface FAILED so the tab
+            // goes red like other backends, and do NOT emit TurnCompleteEvent (that
+            // would reset the tab back to green/Ready).
+            LOG.log(Level.WARNING, "Claude turn ended with api_error");
+            listener.onAiProcessEvent(new StatusEvent(StatusEventTypeEnum.FAILED, apiErrorMessage(obj)));
+            return null;
+        }
         if (subtype != null && !"success".equals(subtype)) {
             LOG.log(Level.WARNING, "Claude turn ended abnormally: subtype={0}", subtype);
             listener.onAiProcessEvent(new StatusEvent(StatusEventTypeEnum.INTERRUPTED,
@@ -261,6 +286,16 @@ public class ClaudeStreamJsonParser {
         }
 
         return new TurnCompleteEvent();
+    }
+
+    private static String apiErrorMessage(JsonObject obj) {
+        for (String key : new String[]{"result", "error", "message"}) {
+            String v = JsonUtils.getString(obj, key);
+            if (v != null && !v.isBlank()) {
+                return v;
+            }
+        }
+        return "Claude API error — you may have reached your usage/plan limit.";
     }
 
     private AiProcessEvent parseSystem(JsonObject obj) {
@@ -278,6 +313,20 @@ public class ClaudeStreamJsonParser {
             // usage_pct/session_pct not present in init — session% comes from result event
             return new ClaudeSessionInfoEvent(-1, -1, model);
         }
+
+        if ("task_notification".equals(subtype)) {
+            String summary = JsonUtils.getString(obj, "summary");
+            String msg = (summary != null && !summary.isBlank()) ? summary : "Background task completed";
+            listener.onAiProcessEvent(new StatusEvent(StatusEventTypeEnum.INFO, msg));
+            return null;
+        }
+
+        if ("api_error".equals(subtype)) {
+            LOG.log(Level.WARNING, "Claude system api_error");
+            listener.onAiProcessEvent(new StatusEvent(StatusEventTypeEnum.FAILED, apiErrorMessage(obj)));
+            return null;
+        }
+
         return null;
     }
 

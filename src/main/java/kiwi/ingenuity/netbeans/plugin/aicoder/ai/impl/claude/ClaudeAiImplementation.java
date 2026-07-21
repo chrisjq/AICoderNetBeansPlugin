@@ -147,6 +147,7 @@ public class ClaudeAiImplementation extends AiImplementation {
     public void setModel(String model) {
         ClaudePluginSettings.setModel(model);
         delegate.setModel(model);
+        delegate.recycleForModelChange();
     }
 
     @Override

@@ -149,4 +149,60 @@ class ClaudeStreamJsonParserTest {
         assertEquals(StatusEventTypeEnum.THINKING, se.type());
         assertTrue(se.text().contains("42"));
     }
+
+    @Test
+    void surfacesBackgroundTaskNotification() {
+        String line = "{\"type\":\"system\",\"subtype\":\"task_notification\",\"task_id\":\"bbtd0rkr3\",\"summary\":\"Background command completed (exit code 0)\"}";
+
+        List<AiProcessEvent> events = parse(line);
+
+        assertEquals(1, events.size());
+        StatusEvent se = assertInstanceOf(StatusEvent.class, events.get(0));
+        assertTrue(se.text().contains("Background command completed"));
+    }
+
+    @Test
+    void apiErrorResultSurfacesAsFailedAndNoTurnComplete() {
+        String line = "{\"type\":\"result\",\"subtype\":\"api_error\",\"is_error\":true,\"result\":\"You've hit your plan limits.\"}";
+
+        List<AiProcessEvent> events = parse(line);
+
+        boolean failed = events.stream().anyMatch(e ->
+                e instanceof StatusEvent se
+                && se.type() == StatusEventTypeEnum.FAILED
+                && se.text() != null && se.text().contains("plan limits"));
+        boolean anyTurnComplete = events.stream().anyMatch(e ->
+                e instanceof TurnCompleteEvent);
+        assertTrue(failed, "api_error should surface as FAILED");
+        assertFalse(anyTurnComplete, "api_error must not emit TurnCompleteEvent");
+    }
+
+    @Test
+    void malformedResultLine_emitsFailedStatusEventAndNoTurnComplete() {
+        // Truncated JSON containing type:result — unparseable
+        String line = "{\"type\":\"result\",\"subtype\":\"success\",\"usage\":{\"input_tokens\":100,\"output";
+
+        List<AiProcessEvent> events = parse(line);
+
+        // Should emit exactly one StatusEvent with FAILED type
+        boolean failed = events.stream().anyMatch(e ->
+                e instanceof StatusEvent se
+                && se.type() == StatusEventTypeEnum.FAILED
+                && se.text() != null && se.text().contains("could not be parsed"));
+        boolean anyTurnComplete = events.stream().anyMatch(e ->
+                e instanceof TurnCompleteEvent);
+        assertTrue(failed, "malformed result line should emit StatusEvent FAILED");
+        assertFalse(anyTurnComplete, "malformed result line must not emit TurnCompleteEvent");
+        assertEquals(1, events.size(), "malformed result should emit exactly one event");
+    }
+
+    @Test
+    void malformedNonResultLine_emitsNoEvents() {
+        // Truncated JSON NOT containing type:result — unparseable
+        String line = "{\"type\":\"assistant\",\"message\":{\"content\":[{\"type\":\"text\",\"text\":\"Hello";
+
+        List<AiProcessEvent> events = parse(line);
+
+        assertTrue(events.isEmpty(), "malformed non-result line should emit no events");
+    }
 }
