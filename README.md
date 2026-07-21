@@ -6,8 +6,8 @@ A NetBeans IDE plugin that embeds an AI coding assistant as a dockable chat pane
 
 | Backend | Driven via | Models | Status |
 |---|---|---|---|
-| **Claude** | `claude` CLI (`--output-format stream-json`) | opus / sonnet / haiku (default `claude-sonnet-4-6`) | Enabled by default |
-| **GitHub Copilot** | `copilot` CLI in prompt mode (`copilot -p --model …`) | discovered at runtime via the Copilot SDK (with a static fallback list) | Enabled by default |
+| **Claude** | `claude` CLI (one long-lived process per session, `--input-format stream-json` over persistent stdin/stdout) | opus / sonnet / haiku (default `claude-sonnet-4-6`; discovered at runtime and cached per session) | Enabled by default |
+| **GitHub Copilot** | Copilot SDK session | discovered at runtime via the Copilot SDK (with a static fallback list) | Enabled by default |
 | **Grok** | `grok` CLI in headless prompt mode (`grok -p --model …`) | discovered at runtime via `grok models` (with a static fallback list) | Enabled by default |
 
 Each backend has its own process manager, executable locator, settings, and info bar, but they all share the same chat panel, MCP tool server, and Accept/Reject diff gate. You can run multiple sessions (and multiple backends) at once.
@@ -17,15 +17,19 @@ Each backend has its own process manager, executable locator, settings, and info
 - **Streaming chat panel** — dockable AI conversation window with Markdown rendering and syntax-highlighted code blocks
 - **Pluggable backends** — switch between Claude, Grok, and GitHub Copilot; each session picks its backend and model
 - **Accept / Reject diffs** — file edits proposed by the AI are shown as a diff panel; you approve or reject each change before it is applied
-- **MCP tool server** — exposes IDE tools (build, test, git, search, refactor, navigation, editor context) to the AI over a local HTTP/JSON-RPC 2.0 endpoint (port 6969 by default)
+- **MCP tool server** — exposes IDE tools (build, test, git, search, refactor, navigation, editor context) to the AI over a local HTTP/JSON-RPC 2.0 endpoint (port 49167 by default)
 - **PreToolUse hook** — intercepts the AI's write/edit/create file operations and routes them through the diff panel
 - **Inter-AI messaging** — multiple AI sessions can discover and message each other within the IDE (opt-in per session)
 - **Concurrency guards** — mutating tool calls are serialised so parallel refactorings cannot corrupt IDE state
+- **Claude persistent session** — one long-lived `claude` process per session, kept alive across turns and automatically relaunched with `--resume` after crash or model change; enables mid-turn background task notifications and context preservation
+- **Claude usage bars** — real-time visibility into 5-hour and 7-day rolling usage percentages
+- **Mid-session model switching** — switch Claude models on the fly; session context is preserved via `--resume`
+- **Per-session persistent memory** — Claude sessions automatically store long-term memory in a session-specific directory (enabled by default in `~/.claude/memory/`)
 
 ## Requirements
 
-- NetBeans IDE 30.0+
-- Java 21+ (plugin is built with `maven.compiler.release` 21)
+- NetBeans IDE 22+
+- Java 17+ (plugin is built with `maven.compiler.release` 17); runtime requires Java 17 or higher due to NetBeans 22's own JDK 17 requirement and the bundled Copilot SDK (Java 17 bytecode)
 - Maven (for Maven projects)
 - At least one backend CLI installed and on your `PATH` (or configured in settings):
   - **Claude** — the Claude Code CLI (`claude`)
@@ -60,7 +64,7 @@ Open **Tools > Options > AI Coder**. General settings apply to every backend; ea
 
 | Setting | Default | Description |
 |---|---|---|
-| MCP server port | 6969 | Loopback port for the IDE tool server |
+| MCP server port | 49167 | Loopback port for the IDE tool server |
 | Max history | 200 | Maximum conversation turns retained |
 | Save history | true | Persist history between IDE sessions |
 | Diff context lines | 3 | Lines of context shown in diff panel |
@@ -72,7 +76,7 @@ Open **Tools > Options > AI Coder**. General settings apply to every backend; ea
 | Setting | Default | Description |
 |---|---|---|
 | Claude executable | auto-detect | Path to the `claude` CLI binary |
-| Model | claude-sonnet-4-6 | Model used for chat (opus / sonnet / haiku) |
+| Model | claude-sonnet-4-6 | Model used for chat (opus / sonnet / haiku); list is discovered at session start and cached |
 
 > Authentication for Claude Code is handled by the `claude` CLI itself. Logon via the claude cli before use.
 
@@ -170,7 +174,7 @@ The plugin exposes the following tools to the AI assistant over the MCP endpoint
 |---|---|
 | `RenameSymbol` | Rename any identifier across all files in the project |
 | `MoveClass` | Move a Java class to a different package, updating imports |
-| `MoveFile` | Move a file; Java files use move refactoring (updates package + imports) |
+| `MoveFile` | Move a file; Java files use move refactoring (updates package + imports); other files use standard file operations |
 | `InlineVariable` | Inline a variable at all use sites and remove the declaration |
 | `ChangeMethodSignature` | Modify a method's parameters, name, or return type and update all callers |
 
@@ -190,11 +194,13 @@ The plugin exposes the following tools to the AI assistant over the MCP endpoint
 | Tool | Description |
 |---|---|
 | `GetFileContent` | Read a file's in-memory content, including unsaved editor changes |
-| `WebRequest` | Fetch an HTTP or HTTPS URL with optional method, headers, request body, timeout, and response truncation. Supports GET, POST, PUT, PATCH, DELETE, HEAD, and OPTIONS |
-| `GetClipboard` | Read the current system clipboard text |
+| `WriteFile` | Create/overwrite a file with content, approved via the diff panel |
+| `ApplyEdit` | Replace an exact string in a file, approved via the diff panel |
 | `SaveFile` | Create/overwrite a file with content and save, or flush unsaved editor changes to disk |
 | `DeleteFile` | Permanently delete a file, closing its editor tab and refreshing VCS status |
 | `CopyFile` | Copy a file to a target directory, optionally renaming the copy |
+| `WebRequest` | Fetch an HTTP or HTTPS URL with optional method, headers, request body, timeout, and response truncation. Supports GET, POST, PUT, PATCH, DELETE, HEAD, and OPTIONS |
+| `GetClipboard` | Read the current system clipboard text |
 | `RefreshFileStatus` | Refreshes NetBeans' filesystem and VCS view — call after git commits and after creating or modifying files outside the IDE |
 
 ### UI → Build
@@ -209,8 +215,6 @@ The plugin exposes the following tools to the AI assistant over the MCP endpoint
 
 | Tool | Description |
 |---|---|
-| `WriteFile` | Create/overwrite a file with content, approved via the diff panel |
-| `ApplyEdit` | Replace an exact string in a file, approved via the diff panel |
 | `GetCurrentFile` | Path, line, and column of the active editor cursor |
 | `GetCurrentFileContent` | Full text content of the active editor tab |
 | `GetOpenFiles` | List of all files currently open in the IDE |
@@ -304,13 +308,15 @@ The tool returns a JSON object with:
 NetBeans IDE
   └── AI Coder panel (dockable TopComponent)
         ├── Backend (Claude | Grok | GitHub Copilot)
-        │     └── process manager  →  backend CLI subprocess
-        └── McpHookServer  (loopback HTTP, port 6969)
+        │     └── process manager  →  backend CLI subprocess or SDK session
+        └── McpHookServer  (loopback HTTP, port 49167)
               ├── /mcp   — MCP Streamable HTTP endpoint (tool calls)
               └── /      — PreToolUse hook (diff-panel gate for file writes)
 ```
 
-Each backend drives its CLI as a subprocess and parses its streaming output to render the chat. The **Claude** backend connects via the MCP configuration written to `~/.claude/mcp.json`; the **Grok** and **GitHub Copilot** backends run their CLIs (`grok` / `copilot`) in headless prompt mode and are wired to the tool server through their own MCP registrars. In every case the hook server intercepts write/patch/create operations and presents a diff to the user before allowing or denying them.
+Each backend drives its CLI or SDK session and parses its output to render the chat. The **Claude** backend runs one long-lived `claude` process per session, kept alive across turns and relaunched with `--resume` after crash or model change, which enables mid-turn background task notifications and context preservation. The **Grok** backend runs the `grok` CLI in headless prompt mode. The **GitHub Copilot** backend uses the Copilot SDK's persistent session API. In every case the hook server intercepts write/patch/create operations and presents a diff to the user before allowing or denying them.
+
+The PreToolUse hook for Claude is registered in `~/.claude/settings.json` as an HTTP hook entry that routes Edit/Write operations through the diff-panel gate at the local MCP server.
 
 Mutating tool calls (builds, refactorings, file writes) are serialised through a fair `ReentrantLock` to prevent concurrent IDE state corruption. Read-only tools bypass the lock entirely.
 
@@ -341,7 +347,7 @@ mvn test
 mvn nbm:run-ide
 ```
 
-Tests are in `src/test/java` and use JUnit 5. The `McpToolTest` suite verifies that every `McpToolEnum` constant has a registered handler and that the tool/section enumeration is consistent.
+Tests are in `src/test/java` and use JUnit 6. The `McpToolTest` suite verifies that every `McpToolEnum` constant has a registered handler and that the tool/section enumeration is consistent.
 
 ## License
 

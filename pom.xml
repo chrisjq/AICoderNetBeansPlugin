@@ -5,7 +5,7 @@
     <modelVersion>4.0.0</modelVersion>
     <groupId>kiwi.ingenuity.aicoder</groupId>
     <artifactId>AiCoderNetbeansPlugin</artifactId>
-    <version>1.1.44</version>
+    <version>1.1.45</version>
     <packaging>nbm</packaging>
 
     <name>AI Coder for NetBeans</name>
@@ -133,7 +133,7 @@
         <dependency>
             <groupId>org.netbeans.api</groupId>
             <artifactId>org-netbeans-api-annotations-common</artifactId>
-            <version>RELEASE300</version>
+            <version>RELEASE220</version>
         </dependency>
         <dependency>
             <groupId>org.netbeans.api</groupId>
@@ -327,7 +327,7 @@
 
     <properties>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
-        <maven.compiler.release>21</maven.compiler.release>
+        <maven.compiler.release>17</maven.compiler.release>
     </properties>
 
     <profiles>

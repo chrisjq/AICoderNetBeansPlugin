@@ -94,16 +94,14 @@ public class ClaudeAiInfoBarExtension implements AiInfoBarExtension {
 
     @Override
     public void onPropertyEvent(AiPropertyEvent event) {
-        switch (event) {
-            case ClaudeUsageEvent ue ->
-                SwingUtilities.invokeLater(() -> {
-                    setPctBar(fiveHourBar, ue.fiveHourPct(), "Session (5-hour limit)");
-                    setPctBar(sevenDayBar, ue.sevenDayPct(), "Weekly (7-day limit)");
-                });
-            case ClaudeModelsEvent me ->
-                SwingUtilities.invokeLater(() -> setAvailableModels(me.models()));
-            default -> {
-            }
+        if (event instanceof ClaudeUsageEvent ue) {
+            SwingUtilities.invokeLater(() -> {
+                setPctBar(fiveHourBar, ue.fiveHourPct(), "Session (5-hour limit)");
+                setPctBar(sevenDayBar, ue.sevenDayPct(), "Weekly (7-day limit)");
+            });
+        }
+        else if (event instanceof ClaudeModelsEvent me) {
+            SwingUtilities.invokeLater(() -> setAvailableModels(me.models()));
         }
     }
 
