@@ -2,8 +2,11 @@ package kiwi.ingenuity.netbeans.plugin.aicoder.process.server;
 
 import java.util.LinkedHashMap;
 import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.AiTypeEnum;
+import kiwi.ingenuity.netbeans.plugin.aicoder.process.McpInstructionOptionEnum;
+import kiwi.ingenuity.netbeans.plugin.aicoder.process.McpInstructionOptions;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.McpToolEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.McpToolInterface;
 
@@ -15,16 +18,11 @@ import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.McpToolInterface
  * <p>
  * Layer 2 (AI-type static): registered per {@link AiTypeEnum} via
  * {@link #register}. Includes per-tool instruction additions.
- * <p>
- * Full instructions for each AI type are cached after first build to avoid
- * redundant concatenation on every initialize request. The cache is invalidated
- * whenever {@link #registerHandlers} is called.
  */
 public final class McpInstructionRegistry {
 
     private static final Map<AiTypeEnum, String> aiTypeHeaders = new ConcurrentHashMap<>();
     private static final Map<AiTypeEnum, Map<McpToolEnum, String>> aiTypeToolInstructions = new ConcurrentHashMap<>();
-    private static final Map<AiTypeEnum, String> instructionCache = new ConcurrentHashMap<>();
     private static final Map<AiTypeEnum, Map<McpToolEnum, McpToolInterface>> handlerRegistry = new ConcurrentHashMap<>();
 
     /**
@@ -45,7 +43,11 @@ public final class McpInstructionRegistry {
      * no Layer-2 header is registered the global header is returned unchanged.
      */
     public static String buildHeader(AiTypeEnum type) {
-        StringBuilder sb = new StringBuilder(McpHookServerUtil.getGlobalInstructionsHeader());
+        return buildHeader(type, McpInstructionOptions.cli());
+    }
+
+    public static String buildHeader(AiTypeEnum type, Set<McpInstructionOptionEnum> options) {
+        StringBuilder sb = new StringBuilder(McpHookServerUtil.getGlobalInstructionsHeader(options));
         String aiTypeHeader = aiTypeHeaders.get(type);
         if (aiTypeHeader != null && !aiTypeHeader.isBlank()) {
             sb.append("\n\n").append(aiTypeHeader.trim());
@@ -89,42 +91,28 @@ public final class McpInstructionRegistry {
     }
 
     /**
-     * Returns cached instructions for the given AI type, or null if not cached.
-     */
-    public static String getCachedInstructions(AiTypeEnum type) {
-        return instructionCache.get(type);
-    }
-
-    /**
-     * Stores instructions in the cache for the given AI type.
-     */
-    public static void cacheInstructions(AiTypeEnum type, String instructions) {
-        if (type != null && instructions != null) {
-            instructionCache.put(type, instructions);
-        }
-    }
-
-    /**
      * Builds the complete instructions string for the given AI type by
      * combining Layer 1 (global), Layer 2 (AI-type), and Layer 3
-     * (tool-specific) instructions. The result is cached for subsequent calls.
+     * (tool-specific) instructions.
      */
     public static String buildFullInstructions(AiTypeEnum type, Map<McpToolEnum, McpToolInterface> handlers) {
-        String header = buildHeader(type);
+        return buildFullInstructions(type, handlers, McpInstructionOptions.cli());
+    }
+
+    public static String buildFullInstructions(AiTypeEnum type, Map<McpToolEnum, McpToolInterface> handlers,
+            Set<McpInstructionOptionEnum> options) {
+        String header = buildHeader(type, options);
         Map<McpToolEnum, String> overrides = buildToolInstructions(type, handlers);
         return McpHookServerUtil.buildInstructions(header, handlers, overrides);
     }
 
     /**
      * Register the tool handlers for an AI type. All sessions of the same type
-     * have identical handlers, so put is idempotent. Invalidates the
-     * instruction cache so the next initialize call rebuilds with real
-     * handlers.
+     * have identical handlers, so put is idempotent.
      */
     public static void registerHandlers(AiTypeEnum type, Map<McpToolEnum, McpToolInterface> handlers) {
         if (type != null && handlers != null && !handlers.isEmpty()) {
             handlerRegistry.put(type, Map.copyOf(handlers));
-            instructionCache.remove(type);  // Invalidate stale cache
         }
     }
 

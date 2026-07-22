@@ -3,6 +3,7 @@ package kiwi.ingenuity.netbeans.plugin.aicoder.ai;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.claude.settings.ClaudeSettingsCreator;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.githubcopilot.settings.GithubCopilotSettingsCreator;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.grok.settings.GrokSettingsCreator;
+import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.ollama.settings.OllamaSettingsCreator;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.settings.AiSessionSettings;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.settings.AiSessionSettingsCreator;
 
@@ -14,7 +15,8 @@ import kiwi.ingenuity.netbeans.plugin.aicoder.ai.settings.AiSessionSettingsCreat
 public enum AiTypeEnum {
     CLAUDE("Claude", "claude", true, true, new ClaudeSettingsCreator()),
     GROK("Grok", "grok", true, true, new GrokSettingsCreator()),
-    GitHubCoPilot("GitHub CoPilot", "github_copilot", true, true, new GithubCopilotSettingsCreator());
+    GitHubCoPilot("GitHub CoPilot", "github_copilot", true, true, new GithubCopilotSettingsCreator()),
+    OLLAMA_LOCAL("Ollama (Local)", "ollama_local", false, true, new OllamaSettingsCreator());
 
     public static AiTypeEnum fromKey(String key) {
         if (key == null) {
@@ -101,6 +103,19 @@ public enum AiTypeEnum {
      */
     public AiSessionSettingsCreator getSettingsCreator() {
         return settingCreator;
+    }
+
+    /**
+     * Whether session credentials (sessionId/secretKey) should be included in
+     * the prompt preamble. Local AI backends (e.g. Ollama) don't need them.
+     */
+    public boolean includeSessionCredentialsInPrompt() {
+        return switch (this) {
+            case OLLAMA_LOCAL ->
+                false;
+            default ->
+                true;
+        };
     }
 
 }

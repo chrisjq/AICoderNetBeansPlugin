@@ -130,6 +130,14 @@ public final class AiTopComponent extends TopComponent implements AiProcessEvent
         return String.format("#%02X%02X%02X", color.getRed(), color.getGreen(), color.getBlue());
     }
 
+    // --- end AiSessionHost ---
+    private static String appendDecisionMessage(String base, String message) {
+        if (message == null || message.isBlank()) {
+            return base;
+        }
+        return base + "\n\nUser note: " + message.trim();
+    }
+
     private final ConversationPanel conversationPanel;
     private final AiInfoBar infoBar;
     private final AiInputField inputField;
@@ -1249,7 +1257,8 @@ public final class AiTopComponent extends TopComponent implements AiProcessEvent
         String sessionInstructions = session.settings() != null
                 ? session.settings().sessionInstructions() : null;
         String fullPrompt = contextProvider != null
-                ? contextProvider.buildPreamble(text, sessionInstructions)
+                ? contextProvider.buildPreamble(text, sessionInstructions,
+                        session.aiType().includeSessionCredentialsInPrompt())
                 : text;
         conversationPanel.addUserMessage(text);
         infoBar.setProcessing(true);
@@ -1376,14 +1385,6 @@ public final class AiTopComponent extends TopComponent implements AiProcessEvent
         if (statusMessage != null) {
             infoBar.setStatusMessage(statusMessage);
         }
-    }
-
-    // --- end AiSessionHost ---
-    private static String appendDecisionMessage(String base, String message) {
-        if (message == null || message.isBlank()) {
-            return base;
-        }
-        return base + "\n\nUser note: " + message.trim();
     }
 
     private void showDiff(ToolUseEvent tu) {

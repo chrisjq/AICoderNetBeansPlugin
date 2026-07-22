@@ -3,6 +3,7 @@ package kiwi.ingenuity.netbeans.plugin.aicoder.ai;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.claude.settings.ClaudeSessionSettings;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.githubcopilot.settings.GithubCopilotSessionSettings;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.grok.settings.GrokSessionSettings;
+import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.ollama.settings.OllamaSessionSettings;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.settings.AiModelSessionSettings;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.settings.AiSessionSettings;
 import static org.junit.jupiter.api.Assertions.*;
@@ -40,5 +41,23 @@ class AiTypeEnumSettingsTest {
     void eachCallCreatesAFreshInstance() {
         assertNotSame(AiTypeEnum.CLAUDE.createDefaultSettings(),
                 AiTypeEnum.CLAUDE.createDefaultSettings());
+    }
+
+    @Test
+    void ollamaLocalCreatesOllamaSessionSettings() {
+        assertTrue(AiTypeEnum.OLLAMA_LOCAL.createDefaultSettings() instanceof OllamaSessionSettings);
+    }
+
+    @Test
+    void ollamaLocalUsesCredentialFreePromptPath() {
+        assertFalse(AiTypeEnum.OLLAMA_LOCAL.includeSessionCredentialsInPrompt());
+        assertTrue(AiTypeEnum.CLAUDE.includeSessionCredentialsInPrompt());
+        assertTrue(AiTypeEnum.GROK.includeSessionCredentialsInPrompt());
+        assertTrue(AiTypeEnum.GitHubCoPilot.includeSessionCredentialsInPrompt());
+    }
+
+    @Test
+    void fromKeyResolvesOllamaLocal() {
+        assertEquals(AiTypeEnum.OLLAMA_LOCAL, AiTypeEnum.fromKey("ollama_local"));
     }
 }

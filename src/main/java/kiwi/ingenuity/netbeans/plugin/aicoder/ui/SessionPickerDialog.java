@@ -31,8 +31,11 @@ import javax.swing.ListSelectionModel;
 import javax.swing.SpinnerNumberModel;
 import javax.swing.SwingUtilities;
 import javax.swing.UIManager;
+import kiwi.ingenuity.netbeans.plugin.aicoder.PluginSettings;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.AiTypeEnum;
+import kiwi.ingenuity.netbeans.plugin.aicoder.ai.AiTypeRegistry;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.session.AiSession;
+import kiwi.ingenuity.netbeans.plugin.aicoder.ai.settings.AiTypeSettings;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.ui.AiTopComponent;
 import kiwi.ingenuity.netbeans.plugin.aicoder.serialization.SessionPersistenceManager;
 import org.netbeans.api.project.Project;
@@ -82,6 +85,7 @@ public class SessionPickerDialog extends JDialog {
         this.spm = spm;
         setLayout(new BorderLayout(8, 8));
         getRootPane().setBorder(BorderFactory.createEmptyBorder(12, 12, 12, 12));
+        aiTypeCombo.setRenderer(new AiTypeEnumRenderer());
 
         add(buildLeftPanel(), BorderLayout.CENTER);
         add(buildRightPanel(), BorderLayout.EAST);
@@ -89,12 +93,12 @@ public class SessionPickerDialog extends JDialog {
 
         loadSessions();
         populateProjects();
-        new kiwi.ingenuity.netbeans.plugin.aicoder.ai.AiTypeRegistry().getEnabled()
+        new AiTypeRegistry().getEnabled()
                 .stream()
-                .map(kiwi.ingenuity.netbeans.plugin.aicoder.ai.settings.AiTypeSettings::type)
+                .map(AiTypeSettings::type)
                 .forEach(aiTypeCombo::addItem);
         if (aiTypeCombo.getItemCount() > 0) {
-            AiTypeEnum lastType = kiwi.ingenuity.netbeans.plugin.aicoder.PluginSettings.getLastSessionAiType();
+            AiTypeEnum lastType = PluginSettings.getLastSessionAiType();
             aiTypeCombo.setSelectedItem(lastType != null ? lastType : AiTypeEnum.GitHubCoPilot);
         }
         pack();
@@ -353,6 +357,27 @@ public class SessionPickerDialog extends JDialog {
                 }
                 setEnabled(open);
             }
+            return this;
+        }
+    }
+
+    class AiTypeEnumRenderer extends DefaultListCellRenderer {
+
+        @Override
+        public Component getListCellRendererComponent(JList<?> list, Object value,
+                int index, boolean isSelected, boolean cellHasFocus) {
+
+            // Let the parent do the default styling (selection colors, etc.)
+            super.getListCellRendererComponent(list, value, index, isSelected, cellHasFocus);
+
+            if (value instanceof AiTypeEnum myObj) {
+                setText(myObj.displayName());   // or any custom text
+                // setIcon(...);            // you can also add icons
+            }
+            else if (value != null) {
+                setText(value.toString());
+            }
+
             return this;
         }
     }

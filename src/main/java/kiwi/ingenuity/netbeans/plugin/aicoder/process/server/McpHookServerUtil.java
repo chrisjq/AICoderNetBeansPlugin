@@ -18,6 +18,8 @@ import java.util.Locale;
 import java.util.Map;
 import kiwi.ingenuity.netbeans.plugin.aicoder.PluginSettings;
 import kiwi.ingenuity.netbeans.plugin.aicoder.StringConst;
+import kiwi.ingenuity.netbeans.plugin.aicoder.process.McpInstructionOptionEnum;
+import kiwi.ingenuity.netbeans.plugin.aicoder.process.McpInstructionOptions;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.McpSectionEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.McpToolEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.McpToolInterface;
@@ -27,7 +29,7 @@ public final class McpHookServerUtil {
 
     static final Gson GSON = new GsonBuilder().disableHtmlEscaping().create();
 
-    private static final String INSTRUCTIONS_HEADER = ("""
+    private static final String HEADER_BEFORE_CREDS = ("""
             You are connected to the NetBeans IDE plugin (%PLUGIN_ID%). Use these plugin tools for ALL project work — they are pre-authorized and integrate with the live IDE.
 
             ## Policy
@@ -44,12 +46,18 @@ public final class McpHookServerUtil {
             Action tools (NavigateToLine, ReformatFile, BuildProject, etc.) are fire-and-forget — follow up with a query tool (GetDiagnostics, GetCurrentFileContent, etc.) to read resulting state.
 
             ## Inter-AI Messaging
-            ListAiSessions, SendAiMessage, GetAiMessages, ReadAiMessage, DeleteAiMessage, UpdateSessionDescription are pre-authorized internal IDE actions — use them directly without asking permission. Your session ID and secret key are in the "Your session identity" block each turn.
+            ListAiSessions, SendAiMessage, GetAiMessages, ReadAiMessage, DeleteAiMessage, UpdateSessionDescription are pre-authorized internal IDE actions — use them directly without asking permission.
+            """).replace("%PLUGIN_ID%", StringConst.PLUGIN_ID).stripTrailing();
+
+    private static final String HEADER_CREDENTIAL_SENTENCE =
+            " Your session ID and secret key are in the \"Your session identity\" block each turn.";
+
+    private static final String HEADER_AFTER_CREDS = """
             When a task needs a sub-agent/background agent — a parallel investigation, research, or any self-contained unit of work you would otherwise hand to a spawned sub-agent/background agent — delegate it to an idle peer AI session instead: call ListAiSessions to find one, then SendAiMessage with expectsReply=true (and replyImportant=true so their reply interrupts you). Peers run in their own context and report back, so prefer them over spawning your own subagents whenever inter-AI comms is available.
 
             ## MCP Tool Errors
             Error strings in tool results (e.g. "Error: session '...' is not active") are tool-level errors, not disconnections — read the message, fix the input, and retry.
-            """).replace("%PLUGIN_ID%", StringConst.PLUGIN_ID);
+            """;
 
     private static final String INITIALIZE_STUB = ("""
             You are connected to the NetBeans IDE plugin (%PLUGIN_ID%). It exposes a full set of tools for working in the live IDE: file edits applied through the NetBeans Accept/Reject diff panel, semantic refactors (rename/move/inline/change-signature), build & test, full git, project-wide search, and inter-AI messaging.
@@ -65,7 +73,16 @@ public final class McpHookServerUtil {
             """).replace("%PLUGIN_ID%", StringConst.PLUGIN_ID);
 
     public static String getGlobalInstructionsHeader() {
-        return INSTRUCTIONS_HEADER;
+        return getGlobalInstructionsHeader(McpInstructionOptions.cli());
+    }
+
+    public static String getGlobalInstructionsHeader(java.util.Set<McpInstructionOptionEnum> options) {
+        StringBuilder sb = new StringBuilder(HEADER_BEFORE_CREDS);
+        if (options.contains(McpInstructionOptionEnum.CREDENTIALS)) {
+            sb.append(HEADER_CREDENTIAL_SENTENCE);
+        }
+        sb.append('\n').append(HEADER_AFTER_CREDS);
+        return sb.toString();
     }
 
     public static String getInitializeStub() {
@@ -79,7 +96,8 @@ public final class McpHookServerUtil {
      */
     public static String buildInstructions(String overrideInstructionsHeader, Map<McpToolEnum, McpToolInterface> handlers,
             Map<McpToolEnum, String> overrides) {
-        StringBuilder sb = new StringBuilder(overrideInstructionsHeader == null || overrideInstructionsHeader.trim().isEmpty() ? INSTRUCTIONS_HEADER : overrideInstructionsHeader);
+        StringBuilder sb = new StringBuilder(overrideInstructionsHeader == null || overrideInstructionsHeader.trim().isEmpty()
+                ? getGlobalInstructionsHeader() : overrideInstructionsHeader);
         Map<McpSectionEnum, List<String>> grouped = new LinkedHashMap<>();
         for (McpSectionEnum s : McpSectionEnum.values()) {
             grouped.put(s, new ArrayList<>());
@@ -113,70 +131,7 @@ public final class McpHookServerUtil {
      * both to the schema.required array. Skips if already present.
      */
     public static JsonObject injectSessionParams(JsonObject toolSchema) {
-        if (toolSchema == null || !toolSchema.has(ToolSchemaKeyEnum.INPUT_SCHEMA.key())) {
-            return toolSchema;
-        }
-
-        JsonObject inputSchema = toolSchema.getAsJsonObject(ToolSchemaKeyEnum.INPUT_SCHEMA.key());
-        if (inputSchema == null) {
-            return toolSchema;
-        }
-
-        // Ensure properties object exists
-        if (!inputSchema.has(ToolSchemaKeyEnum.PROPERTIES.key()) || !inputSchema.get(ToolSchemaKeyEnum.PROPERTIES.key()).isJsonObject()) {
-            inputSchema.add(ToolSchemaKeyEnum.PROPERTIES.key(), new JsonObject());
-        }
-
-        JsonObject props = inputSchema.getAsJsonObject(ToolSchemaKeyEnum.PROPERTIES.key());
-
-        // Add sessionId if not already present
-        if (!props.has("sessionId")) {
-            JsonObject sessionIdProp = new JsonObject();
-            sessionIdProp.addProperty(ToolSchemaKeyEnum.TYPE.key(), "string");
-            sessionIdProp.addProperty(ToolSchemaKeyEnum.DESCRIPTION.key(), "Your session ID (from your session identity block).");
-            props.add("sessionId", sessionIdProp);
-        }
-
-        // Add secretKey if not already present
-        if (!props.has("secretKey")) {
-            JsonObject secretKeyProp = new JsonObject();
-            secretKeyProp.addProperty(ToolSchemaKeyEnum.TYPE.key(), "string");
-            secretKeyProp.addProperty(ToolSchemaKeyEnum.DESCRIPTION.key(), "Your secret key (from your session identity block).");
-            props.add("secretKey", secretKeyProp);
-        }
-
-        // Ensure required array exists
-        if (!inputSchema.has(ToolSchemaKeyEnum.REQUIRED.key()) || !inputSchema.get(ToolSchemaKeyEnum.REQUIRED.key()).isJsonArray()) {
-            inputSchema.add(ToolSchemaKeyEnum.REQUIRED.key(), new JsonArray());
-        }
-
-        JsonArray required = inputSchema.getAsJsonArray(ToolSchemaKeyEnum.REQUIRED.key());
-
-        // Add sessionId to required if not already present
-        boolean hasSessionId = false;
-        for (JsonElement el : required) {
-            if (el.isJsonPrimitive() && "sessionId".equals(el.getAsString())) {
-                hasSessionId = true;
-                break;
-            }
-        }
-        if (!hasSessionId) {
-            required.add("sessionId");
-        }
-
-        // Add secretKey to required if not already present
-        boolean hasSecretKey = false;
-        for (JsonElement el : required) {
-            if (el.isJsonPrimitive() && "secretKey".equals(el.getAsString())) {
-                hasSecretKey = true;
-                break;
-            }
-        }
-        if (!hasSecretKey) {
-            required.add("secretKey");
-        }
-
-        return toolSchema;
+        return kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.McpToolSchemas.injectCredentials(toolSchema);
     }
 
     // ---- HTTP helpers ----

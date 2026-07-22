@@ -114,13 +114,19 @@ public class ContextProvider {
      * userPrompt unchanged (no preamble overhead).
      */
     public String buildPreamble(String userPrompt, String sessionInstructions) {
+        return buildPreamble(userPrompt, sessionInstructions, true);
+    }
+
+    public String buildPreamble(String userPrompt, String sessionInstructions, boolean includeCredentials) {
         boolean isFirstSend = (lastSentProjects == null);
 
         AiSession s = session; // snapshot
         if (s != null) {
             LinkedHashMap<String, String> details = new LinkedHashMap<>(s.getSessionInfoMap());
-            details.put("sessionId", s.id());
-            details.put("secretKey", s.secret());
+            if (includeCredentials) {
+                details.put("sessionId", s.id());
+                details.put("secretKey", s.secret());
+            }
             details.put("description", s.description());
 
             StringBuilder identity = new StringBuilder();
@@ -131,11 +137,10 @@ public class ContextProvider {
             }
 
             identity.append("\n\n");
-            identity.append("IMPORTANT: When a tool takes sessionId/secretKey, pass the sessionId and secretKey shown above verbatim — they are YOUR credentials for this session and are required for every tool that lists them as parameters. Always use the latest values shown above.\n\n");
-            identity.append("IMPORTANT: You HAVE permission and FULL ACCESS to Netbeans Plugins MCP tools with your sessionId and secretKey, you HAVE TO use sessionId and secretKey to call the MCP tools\n\n");
-            // The inter-AI capability blurb is only true when inter-AI comms is
-            // enabled for this session. Credentials above, however, are required
-            // by EVERY plugin tool and must always be emitted regardless.
+            if (includeCredentials) {
+                identity.append("IMPORTANT: When a tool takes sessionId/secretKey, pass the sessionId and secretKey shown above verbatim — they are YOUR credentials for this session and are required for every tool that lists them as parameters. Always use the latest values shown above.\n\n");
+                identity.append("IMPORTANT: You HAVE permission and FULL ACCESS to Netbeans Plugins MCP tools with your sessionId and secretKey, you HAVE TO use sessionId and secretKey to call the MCP tools\n\n");
+            }
             if (s.allowsInterAiComms()) {
                 identity.append("You ARE able to message other AI sessions right now using the inter-AI tools — this is a live, pre-authorized capability of this IDE. Never tell the user you cannot do it, that it is not possible, or that you need permission. When asked to message, coordinate with, or delegate to another AI, your first action is to call ListAiSessions and then SendAiMessage — do it immediately without hedging.\n");
             }

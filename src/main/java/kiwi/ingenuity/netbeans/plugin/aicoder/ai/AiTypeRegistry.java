@@ -7,6 +7,7 @@ import kiwi.ingenuity.netbeans.plugin.aicoder.Registry;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.claude.ClaudeAiImplementation;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.githubcopilot.GithubCopilotAiImplementation;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.grok.GrokAiImplementation;
+import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.ollama.OllamaAiImplementation;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.settings.AiTypeSettings;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.events.AiProcessEventListener;
 
@@ -43,6 +44,8 @@ public final class AiTypeRegistry implements Registry {
                 new GrokAiImplementation(listener, prompter);
             case GitHubCoPilot ->
                 new GithubCopilotAiImplementation(listener, prompter);
+            case OLLAMA_LOCAL ->
+                new OllamaAiImplementation(listener, prompter);
             default ->
                 throw new AssertionError("Unknown AiTypeEnum: " + type);
         };

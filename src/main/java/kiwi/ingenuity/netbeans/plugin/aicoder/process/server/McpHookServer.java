@@ -32,14 +32,12 @@ import kiwi.ingenuity.netbeans.plugin.aicoder.ai.events.PermissionDecision;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.events.PermissionEvent;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.mail.AiSessionInboxBroker;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.McpArgumentException;
+import kiwi.ingenuity.netbeans.plugin.aicoder.process.McpInstructionOptions;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.McpToolEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.SessionRegistry;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.locking.LockManager;
-import kiwi.ingenuity.netbeans.plugin.aicoder.process.locking.LockTypeEnum;
-import kiwi.ingenuity.netbeans.plugin.aicoder.process.locking.ToolLockRegistry;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.session.AbstractAiSession;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.McpToolInterface;
-import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.ToolRequestArguments;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.providers.netbeans.RefactoringProvider;
 import org.openide.util.Exceptions;
 
@@ -103,7 +101,6 @@ public class McpHookServer {
     private int port;
     private ExecutorService executor;
     private final Set<String> activeSessions = Collections.newSetFromMap(new ConcurrentHashMap<>());
-    private final ReentrantLock mutationLock = new ReentrantLock(true);
     private final Map<String, ReentrantLock> hookLocks = new ConcurrentHashMap<>();
     private final Map<String, List<java.io.File>> sessionProjectDirs = new ConcurrentHashMap<>();
     private final Map<String, Boolean> sessionRestrictToProject = new ConcurrentHashMap<>();
@@ -666,9 +663,7 @@ public class McpHookServer {
                     JsonObject result = new JsonObject();
                     JsonArray tools = new JsonArray();
                     for (McpToolInterface h : handlers.values()) {
-                        JsonObject schema = h.schema();
-                        schema = McpHookServerUtil.injectSessionParams(schema);
-                        tools.add(schema);
+                        tools.add(h.schema(McpInstructionOptions.cli()));
                     }
                     result.add("tools", tools);
                     McpHookServerUtil.sendJson(ex, 200, McpHookServerUtil.mcpOk(id, result));
@@ -745,58 +740,8 @@ public class McpHookServer {
         }
         McpHookServerUtil.logToolUse(session.getSessionName(), toolName, argsObj);
         try {
-            LockTypeEnum requiredLock = ToolLockRegistry.getLockType(tool, handler);
-            LockManager lockManager = LockManager.getInstance();
-            boolean lockAcquired = false;
-            try {
-                if (requiredLock != null) {
-                    if (!lockManager.acquireLock(session.getId(), requiredLock)) {
-                        String holder = lockManager.getLockHolder(requiredLock);
-                        McpHookServerUtil.sendJson(ex, 200,
-                                McpHookServerUtil.mcpTextResult(id,
-                                        "Resource locked by session " + holder
-                                        + ". Tool: " + toolName + ". Please try again shortly."));
-                        return;
-                    }
-                    lockAcquired = true;
-                }
-                String result;
-                if (!handler.isMutating() || handler.usesOwnFileLocking()) {
-                    // usesOwnFileLocking() tools (WriteFile, ApplyEdit) guard themselves with a
-                    // per-file lock held across their own decision-wait + write, scoped to just
-                    // that file — wrapping them in the global mutationLock too would serialize
-                    // every other session's mutations on unrelated files for no reason.
-                    result = handler.handle(new ToolRequestArguments(argsObj), session);
-                }
-                else {
-                    boolean mutLockAcquired;
-                    try {
-                        mutLockAcquired = mutationLock.tryLock(900, TimeUnit.SECONDS);
-                    }
-                    catch (InterruptedException ie) {
-                        Thread.currentThread().interrupt();
-                        mutLockAcquired = false;
-                    }
-                    if (!mutLockAcquired) {
-                        McpHookServerUtil.sendJson(ex, 200,
-                                McpHookServerUtil.mcpTextResult(id,
-                                        "Error: mutation lock timeout — another operation is blocking. Please try again."));
-                        return;
-                    }
-                    try {
-                        result = handler.handle(new ToolRequestArguments(argsObj), session);
-                    }
-                    finally {
-                        mutationLock.unlock();
-                    }
-                }
-                McpHookServerUtil.sendJson(ex, 200, McpHookServerUtil.mcpTextResult(id, result));
-            }
-            finally {
-                if (lockAcquired && requiredLock != null) {
-                    lockManager.releaseLock(session.getId(), requiredLock);
-                }
-            }
+            String result = McpToolInvoker.invoke(tool, handler, argsObj, session);
+            McpHookServerUtil.sendJson(ex, 200, McpHookServerUtil.mcpTextResult(id, result));
         }
         catch (McpArgumentException e) {
             McpHookServerUtil.sendJson(ex, 200,
@@ -813,8 +758,7 @@ public class McpHookServer {
                 LOG.log(Level.FINE, "Tool failure: " + toolName, e);
             }
             McpHookServerUtil.sendJson(ex, 200,
-                    McpHookServerUtil.mcpTextResult(id,
-                            "Error in " + toolName + ": internal error"));
+                    McpHookServerUtil.mcpError(id, -32603, "Internal error: " + e.getMessage()));
         }
     }
 }

@@ -1,8 +1,10 @@
 package kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp;
 
 import com.google.gson.JsonObject;
+import java.util.Set;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.session.AbstractAiSession;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.McpArgumentException;
+import kiwi.ingenuity.netbeans.plugin.aicoder.process.McpInstructionOptionEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.McpSectionEnum;
 
 public interface McpToolInterface {
@@ -16,6 +18,16 @@ public interface McpToolInterface {
     String instruction();
 
     JsonObject schema();
+
+    /**
+     * Model-facing schema. Domain surface comes from {@link #schema()}; credentials
+     * are injected only when options contains CREDENTIALS.
+     *
+     * @param options non-null; use contains(...) to decide what to emit
+     */
+    default JsonObject schema(Set<McpInstructionOptionEnum> options) {
+        return McpToolSchemas.applyCredentialsIfRequested(schema(), options);
+    }
 
     default boolean isMutating() {
         return true;
