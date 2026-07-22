@@ -6,6 +6,7 @@ import kiwi.ingenuity.netbeans.plugin.aicoder.process.McpToolEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.AbstractActionTool;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.session.AbstractAiSession;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.ToolRequestArguments;
+import kiwi.ingenuity.netbeans.plugin.aicoder.process.McpArgumentException;
 
 public class GetClipboardTool extends AbstractActionTool {
 
@@ -22,7 +23,10 @@ public class GetClipboardTool extends AbstractActionTool {
     }
 
     @Override
-    public String handle(ToolRequestArguments args, AbstractAiSession session) {
+    public String handle(ToolRequestArguments args, AbstractAiSession session) throws McpArgumentException {
+        if (!session.getSettings().effectiveEnableClipboardAccess()) {
+            throw new McpArgumentException(-32602, "Clipboard access is disabled. Enable it in session settings or global options.");
+        }
         return EditorContextProvider.getClipboard();
     }
 }

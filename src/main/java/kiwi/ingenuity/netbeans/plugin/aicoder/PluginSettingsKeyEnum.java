@@ -35,7 +35,8 @@ public enum PluginSettingsKeyEnum {
     ALLOW_DATABASE_SCHEMA("ai.session.allowDatabaseAccess.schema", false),
     ALLOW_DATABASE_SELECT("ai.session.allowDatabaseAccess.select", false),
     ALLOW_DATABASE_EXECUTE_SQL("ai.session.allowDatabaseAccess.executeSql", false),
-    DATABASE_ROW_LIMIT("ai.session.databaseRowLimit", 25);
+    DATABASE_ROW_LIMIT("ai.session.databaseRowLimit", 25),
+    ENABLE_CLIPBOARD_ACCESS("ai.session.enableClipboardAccess", false);
 
     public static PluginSettingsKeyEnum forWebRequestAccessOption(WebRequestAccessOptionEnum option) {
         return switch (option) {

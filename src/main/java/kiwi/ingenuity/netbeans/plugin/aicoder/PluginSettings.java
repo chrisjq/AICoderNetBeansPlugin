@@ -137,6 +137,14 @@ public final class PluginSettings {
         prefs().putBoolean(PluginSettingsKeyEnum.ALLOW_DATABASE_ACCESS.key(), v);
     }
 
+    public static boolean isEnableClipboardAccess() {
+        return getBoolean(PluginSettingsKeyEnum.ENABLE_CLIPBOARD_ACCESS);
+    }
+
+    public static void setEnableClipboardAccess(boolean v) {
+        prefs().putBoolean(PluginSettingsKeyEnum.ENABLE_CLIPBOARD_ACCESS.key(), v);
+    }
+
     public static boolean isAllowDatabaseAccessOption(DatabaseAccessOptionEnum option) {
         return getBoolean(PluginSettingsKeyEnum.forDatabaseAccessOption(option));
     }

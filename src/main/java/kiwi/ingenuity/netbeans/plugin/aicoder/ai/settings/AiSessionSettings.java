@@ -34,6 +34,7 @@ public class AiSessionSettings {
     private volatile Boolean allowDatabaseSelect;
     private volatile Boolean allowDatabaseExecuteSql;
     private volatile Integer databaseRowLimit;
+    private volatile Boolean enableClipboardAccess;
 
     public AiSessionSettings() {
     }
@@ -187,6 +188,10 @@ public class AiSessionSettings {
         return databaseRowLimit;
     }
 
+    public Boolean enableClipboardAccess() {
+        return enableClipboardAccess;
+    }
+
     public boolean effectiveAllowDatabaseAccess() {
         return allowDatabaseAccess != null ? allowDatabaseAccess : PluginSettings.isAllowDatabaseAccess();
     }
@@ -198,6 +203,10 @@ public class AiSessionSettings {
 
     public int effectiveDatabaseRowLimit() {
         return databaseRowLimit != null ? databaseRowLimit : PluginSettings.getDatabaseRowLimit();
+    }
+
+    public boolean effectiveEnableClipboardAccess() {
+        return enableClipboardAccess != null ? enableClipboardAccess : PluginSettings.isEnableClipboardAccess();
     }
 
     public void setAutoAccept(Boolean newAutoAccept) {
@@ -278,6 +287,10 @@ public class AiSessionSettings {
         this.databaseRowLimit = newDatabaseRowLimit;
     }
 
+    public void setEnableClipboardAccess(Boolean newEnableClipboardAccess) {
+        this.enableClipboardAccess = newEnableClipboardAccess;
+    }
+
     public void applyDefaultSettingsFromGlobal() {
         if (maxHistory == null) {
             maxHistory = PluginSettings.getMaxHistory();
@@ -315,6 +328,9 @@ public class AiSessionSettings {
         }
         if (databaseRowLimit == null) {
             databaseRowLimit = PluginSettings.getDatabaseRowLimit();
+        }
+        if (enableClipboardAccess == null) {
+            enableClipboardAccess = PluginSettings.isEnableClipboardAccess();
         }
         // sessionInstructions intentionally left as-is (no global equivalent).
     }
@@ -369,6 +385,9 @@ public class AiSessionSettings {
         }
         if (databaseRowLimit != null) {
             cfgObj.addProperty(AiSessionSettingsKeyEnum.DATABASE_ROW_LIMIT.key(), databaseRowLimit);
+        }
+        if (enableClipboardAccess != null) {
+            cfgObj.addProperty(AiSessionSettingsKeyEnum.ENABLE_CLIPBOARD_ACCESS.key(), enableClipboardAccess);
         }
     }
 }

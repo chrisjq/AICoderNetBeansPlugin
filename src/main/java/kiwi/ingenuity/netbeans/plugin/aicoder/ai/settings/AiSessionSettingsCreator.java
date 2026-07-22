@@ -66,6 +66,10 @@ public abstract class AiSessionSettingsCreator<E extends AiSessionSettings> {
         if (cfgObj.has(key) && cfgObj.get(key).isJsonPrimitive()) {
             settings.setDatabaseRowLimit(cfgObj.get(key).getAsInt());
         }
+        key = AiSessionSettingsKeyEnum.ENABLE_CLIPBOARD_ACCESS.key();
+        if (cfgObj.has(key) && cfgObj.get(key).isJsonPrimitive()) {
+            settings.setEnableClipboardAccess(cfgObj.get(key).getAsBoolean());
+        }
     }
 
     public abstract void applyDefaultSettingsFromGlobal(AiSessionSettings settings);

@@ -104,7 +104,11 @@ public enum AiSessionSettingsKeyEnum {
     /**
      * Maximum rows returned by a database read
      */
-    DATABASE_ROW_LIMIT("databaseRowLimit");
+    DATABASE_ROW_LIMIT("databaseRowLimit"),
+    /**
+     * Whether to enable clipboard access
+     */
+    ENABLE_CLIPBOARD_ACCESS("enableClipboardAccess");
 
     public static AiSessionSettingsKeyEnum forWebRequestAccessOption(WebRequestAccessOptionEnum option) {
         return switch (option) {

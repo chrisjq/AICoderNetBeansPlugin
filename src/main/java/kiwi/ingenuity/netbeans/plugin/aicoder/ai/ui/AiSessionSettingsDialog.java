@@ -41,6 +41,7 @@ public class AiSessionSettingsDialog extends JDialog {
     private final JTextArea descriptionArea = new JTextArea(3, 24);
     private final JSpinner historySpinner;
     private final JCheckBox restrictCheckBox = new JCheckBox();
+    private final JCheckBox clipboardCheckBox = new JCheckBox();
     private final AiMessagingSettingsPanel aiMessagingPanel;
     private final WebRequestAccessSettingsPanel webRequestAccessPanel;
     private final DatabaseAccessSettingsPanel databaseAccessPanel;
@@ -68,6 +69,9 @@ public class AiSessionSettingsDialog extends JDialog {
 
         restrictCheckBox.setText(AccessControlLabelEnum.RESTRICT_TO_PROJECT_FILES.displayLabel());
         restrictCheckBox.setSelected(cfg.effectiveRestrictToProjectFiles());
+
+        clipboardCheckBox.setText("Enable Clipboard Access");
+        clipboardCheckBox.setSelected(cfg.effectiveEnableClipboardAccess());
 
         webRequestAccessPanel.setAllowWebRequestsSelected(cfg.effectiveAllowWebRequests());
         for (WebRequestAccessOptionEnum option : WebRequestAccessOptionEnum.values()) {
@@ -140,6 +144,7 @@ public class AiSessionSettingsDialog extends JDialog {
         addFull(p, c, row++, restrictCheckBox);
         addFull(p, c, row++, webRequestAccessPanel);
         addFull(p, c, row++, databaseAccessPanel);
+        addFull(p, c, row++, clipboardCheckBox);
         addFull(p, c, row++, aiMessagingPanel);
         addRow(p, c, row++, new JLabel("Session instructions:"), new JScrollPane(sessionInstructionsArea));
         addFull(p, c, row++, sessionInstructionsResetBtn);
@@ -188,6 +193,7 @@ public class AiSessionSettingsDialog extends JDialog {
             original.setAllowDatabaseAccessOption(option, databaseAccessPanel.isOptionSelected(option));
         }
         original.setDatabaseRowLimit(databaseAccessPanel.getRowLimitValue());
+        original.setEnableClipboardAccess(clipboardCheckBox.isSelected());
         original.setAllowInterAiComms(aiMessagingPanel.isAllowInterAiSelected());
         original.setAutoNotifyInbox(aiMessagingPanel.isAutoNotifySelected());
         original.setAllowImportantMessages(aiMessagingPanel.isAllowImportantSelected());

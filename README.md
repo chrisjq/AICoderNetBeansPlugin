@@ -54,7 +54,7 @@ The built `.nbm` file is in `target/`. In NetBeans: **Tools > Plugins > Download
 - **Open** an existing session — select it and click **Open** (its project must be open in the IDE).
 - **Delete** a session and its saved history.
 
-Each opened session is a dockable chat tab. Per-session overrides (history size, file/web/database access, inter-AI messaging, model, instructions) are available from the session's configuration; anything not overridden falls back to the global defaults in **Tools > Options > AI Coder**.
+Each opened session is a dockable chat tab. Per-session overrides (history size, file/web/database/clipboard access, inter-AI messaging, model, instructions) are available from the session's configuration; anything not overridden falls back to the global defaults in **Tools > Options > AI Coder**.
 
 ## Configuration
 
@@ -200,7 +200,7 @@ The plugin exposes the following tools to the AI assistant over the MCP endpoint
 | `DeleteFile` | Permanently delete a file, closing its editor tab and refreshing VCS status |
 | `CopyFile` | Copy a file to a target directory, optionally renaming the copy |
 | `WebRequest` | Fetch an HTTP or HTTPS URL with optional method, headers, request body, timeout, and response truncation. Supports GET, POST, PUT, PATCH, DELETE, HEAD, and OPTIONS |
-| `GetClipboard` | Read the current system clipboard text |
+| `GetClipboard` | Read the current system clipboard text (opt-in: disabled by default; enable in **Tools > Options > AI Coder > General** or per-session settings) |
 | `RefreshFileStatus` | Refreshes NetBeans' filesystem and VCS view — call after git commits and after creating or modifying files outside the IDE |
 
 ### UI → Build
@@ -330,6 +330,7 @@ The MCP tool server exposes powerful IDE capabilities (file writes, builds, git,
 - **Accept/Reject diff gate** — all AI-initiated file writes, edits, and creates are intercepted by the PreToolUse hook and routed through the NetBeans diff panel. No change touches your working tree until you explicitly approve it.
 - **Read-only database access** — database tools are disabled unless you opt in (global or per-session), and even then only `SELECT` is permitted; `INSERT`/`UPDATE`/`DELETE`/DDL are blocked, enforced by both a statement-prefix check and a read-only JDBC connection.
 - **Optional project-file scoping** — sessions can be restricted so file access stays within the session's open project directories.
+- **Opt-in clipboard access** — the `GetClipboard` tool is disabled by default; reading the system clipboard requires enabling clipboard access globally (**Tools > Options > AI Coder > General**) or per session. When disabled, `GetClipboard` is rejected before it runs.
 - **Connection guardrails** — the server caps concurrent and idle connections and enforces request/response timeouts to limit runaway or stuck clients.
 
 > **Note:** These controls guard the tool server itself. They do not replace trust in the AI backend or its CLI — the assistant still runs builds/tests and can propose any edit. The Accept/Reject gate is your final review step, so read diffs before approving. Because the port is loopback-only, treat any local process able to read your session's `secretKey` (e.g. from process arguments, logs, or the MCP config file) as able to drive the tool server — keep those readable only by your user account.

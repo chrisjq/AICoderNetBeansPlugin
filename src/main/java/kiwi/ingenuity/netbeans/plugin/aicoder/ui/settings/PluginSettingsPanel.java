@@ -49,6 +49,7 @@ public class PluginSettingsPanel extends JPanel {
     private final JSpinner diffContextSpinner;
     private final JSpinner fontSizeSpinner;
     private final JCheckBox restrictToProjectCheckBox;
+    private final JCheckBox enableClipboardAccessCheckBox;
     private final WebRequestAccessSettingsPanel webRequestAccessPanel;
     private final DatabaseAccessSettingsPanel databaseAccessPanel;
     private final AiMessagingSettingsPanel aiMessagingPanel;
@@ -172,9 +173,18 @@ public class PluginSettingsPanel extends JPanel {
         addTo(general, databaseAccessPanel, c);
         c.gridwidth = 1;
 
-        // AI messaging
+        // Enable clipboard access
         c.gridx = 0;
         c.gridy = 11;
+        c.gridwidth = 2;
+        c.weightx = 1;
+        enableClipboardAccessCheckBox = new JCheckBox("Enable Clipboard Access");
+        addTo(general, enableClipboardAccessCheckBox, c);
+        c.gridwidth = 1;
+
+        // AI messaging
+        c.gridx = 0;
+        c.gridy = 12;
         c.gridwidth = 2;
         aiMessagingPanel = new AiMessagingSettingsPanel(false);
         addTo(general, aiMessagingPanel, c);
@@ -182,7 +192,7 @@ public class PluginSettingsPanel extends JPanel {
 
         // Inbox read-message retention (minutes, 0 = keep until deleted)
         c.gridx = 0;
-        c.gridy = 12;
+        c.gridy = 13;
         c.weightx = 0;
         addTo(general, new JLabel("Inbox read retention (min, 0=keep):"), c);
         inboxRetentionSpinner = new JSpinner(new SpinnerNumberModel(
@@ -193,7 +203,7 @@ public class PluginSettingsPanel extends JPanel {
 
         // Inbox max size
         c.gridx = 0;
-        c.gridy = 13;
+        c.gridy = 14;
         c.weightx = 0;
         addTo(general, new JLabel("Inbox max size:"), c);
         inboxMaxSizeSpinner = new JSpinner(new SpinnerNumberModel(
@@ -204,7 +214,7 @@ public class PluginSettingsPanel extends JPanel {
 
         // Filler for general tab
         c.gridx = 0;
-        c.gridy = 14;
+        c.gridy = 15;
         c.weightx = 1;
         c.weighty = 1;
         c.gridwidth = 2;
@@ -240,6 +250,7 @@ public class PluginSettingsPanel extends JPanel {
         diffContextSpinner.addChangeListener(e -> fireChanged());
         fontSizeSpinner.addChangeListener(e -> fireChanged());
         restrictToProjectCheckBox.addActionListener(e -> fireChanged());
+        enableClipboardAccessCheckBox.addActionListener(e -> fireChanged());
         webRequestAccessPanel.addChangeListener(e -> fireChanged());
         databaseAccessPanel.addChangeListener(e -> fireChanged());
         databaseAccessPanel.addRowLimitChangeListener(e -> fireChanged());
@@ -284,6 +295,7 @@ public class PluginSettingsPanel extends JPanel {
         diffContextSpinner.setValue(PluginSettings.getDiffContextLines());
         fontSizeSpinner.setValue(PluginSettings.getChatFontSize());
         restrictToProjectCheckBox.setSelected(PluginSettings.isRestrictToProjectFiles());
+        enableClipboardAccessCheckBox.setSelected(PluginSettings.isEnableClipboardAccess());
         webRequestAccessPanel.setAllowWebRequestsSelected(PluginSettings.isAllowWebRequests());
         for (WebRequestAccessOptionEnum option : WebRequestAccessOptionEnum.values()) {
             webRequestAccessPanel.setOptionSelected(option,
@@ -316,6 +328,7 @@ public class PluginSettingsPanel extends JPanel {
         PluginSettings.setDiffContextLines((Integer) diffContextSpinner.getValue());
         PluginSettings.setChatFontSize((Integer) fontSizeSpinner.getValue());
         PluginSettings.setRestrictToProjectFiles(restrictToProjectCheckBox.isSelected());
+        PluginSettings.setEnableClipboardAccess(enableClipboardAccessCheckBox.isSelected());
         PluginSettings.setAllowWebRequests(webRequestAccessPanel.isAllowWebRequestsSelected());
         for (WebRequestAccessOptionEnum option : WebRequestAccessOptionEnum.values()) {
             PluginSettings.setAllowWebRequestAccess(option,
