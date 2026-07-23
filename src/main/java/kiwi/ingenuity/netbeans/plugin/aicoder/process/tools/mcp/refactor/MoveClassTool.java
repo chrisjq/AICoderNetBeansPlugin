@@ -2,7 +2,9 @@ package kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.refactor;
 
 import com.google.gson.JsonArray;
 import com.google.gson.JsonObject;
+import java.util.Set;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.McpArgumentException;
+import kiwi.ingenuity.netbeans.plugin.aicoder.process.McpInstructionOptionEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.McpSectionEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.McpToolEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.locking.LockTypeEnum;
@@ -11,6 +13,7 @@ import kiwi.ingenuity.netbeans.plugin.aicoder.process.server.McpHookServer;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.server.McpServerRegistry;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.session.AbstractAiSession;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.McpToolInterface;
+import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.McpToolSchemas;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.ToolRequestArguments;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.ToolSchemaKeyEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.providers.netbeans.RefactoringProvider;
@@ -24,12 +27,18 @@ public class MoveClassTool implements McpToolInterface {
     }
 
     @Override
-    public String instruction() {
+    public String instruction(Set<McpInstructionOptionEnum> options) {
+        if (!options.contains(McpInstructionOptionEnum.TOOL_INSTRUCTION)) {
+            return null;
+        }
+        if (options.contains(McpInstructionOptionEnum.ONLY_MCP_TOOL_ACCESS)) {
+            return "MoveClass - moves a Java class and updates ALL import references project-wide; use ApplyEdit for any content changes to the moved file";
+        }
         return "MoveClass -> INSTEAD OF WriteFile+DeleteFile for Java classes — use this first to move the class and update ALL import references project-wide, then use ApplyEdit for any content changes to the moved file";
     }
 
     @Override
-    public JsonObject schema() {
+    public JsonObject schema(Set<McpInstructionOptionEnum> options) {
         JsonObject tool = new JsonObject();
         tool.addProperty(ToolSchemaKeyEnum.NAME.key(), McpToolEnum.MOVE_CLASS.toolName());
         tool.addProperty(ToolSchemaKeyEnum.DESCRIPTION.key(),
@@ -55,7 +64,7 @@ public class MoveClassTool implements McpToolInterface {
         required.add(MoveClassParamEnum.TARGET_PACKAGE.key());
         schema.add(ToolSchemaKeyEnum.REQUIRED.key(), required);
         tool.add(ToolSchemaKeyEnum.INPUT_SCHEMA.key(), schema);
-        return tool;
+        return McpToolSchemas.applyCredentialsIfRequested(tool, options);
     }
 
     @Override

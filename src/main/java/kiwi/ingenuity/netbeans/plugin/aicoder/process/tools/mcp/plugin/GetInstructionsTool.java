@@ -2,7 +2,6 @@ package kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.plugin;
 
 import java.util.Map;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.AiTypeEnum;
-import kiwi.ingenuity.netbeans.plugin.aicoder.process.McpInstructionOptions;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.McpSectionEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.McpToolEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.server.McpInstructionRegistry;
@@ -38,9 +37,7 @@ public class GetInstructionsTool extends AbstractActionTool {
     public String handle(ToolRequestArguments args, AbstractAiSession session) {
         AiTypeEnum type = session.getType();
         Map<McpToolEnum, McpToolInterface> handlers = McpInstructionRegistry.getHandlers(type);
-        String full = McpInstructionRegistry.buildFullInstructions(type, handlers,
-                type.includeSessionCredentialsInPrompt()
-                ? McpInstructionOptions.cli() : McpInstructionOptions.apiBackend());
+        String full = McpInstructionRegistry.buildFullInstructions(type, handlers);
         session.getAiSession().setInstructionsLoaded(true);
         return full;
     }

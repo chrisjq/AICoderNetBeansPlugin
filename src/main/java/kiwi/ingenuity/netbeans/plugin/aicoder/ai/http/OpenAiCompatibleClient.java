@@ -23,9 +23,13 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
 import java.util.function.Consumer;
+import java.util.logging.Level;
+import java.util.logging.Logger;
+import kiwi.ingenuity.netbeans.plugin.aicoder.PluginSettings;
 
 public class OpenAiCompatibleClient implements HttpAiClient {
 
+    private static final Logger LOG = Logger.getLogger(OpenAiCompatibleClient.class.getName());
     private static final Gson GSON = new Gson();
     private static final Duration DEFAULT_TIMEOUT = Duration.ofSeconds(300);
 
@@ -85,6 +89,9 @@ public class OpenAiCompatibleClient implements HttpAiClient {
                     continue;
                 }
                 String data = line.substring(5).stripLeading();
+                if (PluginSettings.isDebugJson()) {
+                    LOG.log(Level.WARNING, "ollama sse: {0}", data);
+                }
                 lines.add(data);
                 emitTextDelta(data, onTextDelta);
             }
@@ -254,7 +261,11 @@ public class OpenAiCompatibleClient implements HttpAiClient {
         if (request.apiKey() != null && !request.apiKey().isBlank()) {
             builder.header("Authorization", "Bearer " + request.apiKey().trim());
         }
-        builder.POST(HttpRequest.BodyPublishers.ofString(GSON.toJson(buildPayload(request)), StandardCharsets.UTF_8));
+        String payloadJson = GSON.toJson(buildPayload(request));
+        if (PluginSettings.isDebugJson()) {
+            LOG.log(Level.WARNING, "ollama request: {0}", payloadJson);
+        }
+        builder.POST(HttpRequest.BodyPublishers.ofString(payloadJson, StandardCharsets.UTF_8));
 
         try {
             HttpResponse<InputStream> response = httpClient.send(builder.build(), HttpResponse.BodyHandlers.ofInputStream());

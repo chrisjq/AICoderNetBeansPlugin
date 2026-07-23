@@ -18,7 +18,8 @@ public class CleanProjectTool extends AbstractActionTool {
                 "Cleans the open project using the IDE's built-in Clean action. "
                 + "Works for any project type (Maven, Ant, Gradle). "
                 + "Fire-and-forget: result appears in the Output window.",
-                "CleanProject -> INSTEAD OF Bash clean command - IDE clean action for any project type (fire-and-forget)");
+                "CleanProject -> INSTEAD OF Bash clean command - IDE clean action for any project type (fire-and-forget)",
+                "CleanProject - IDE clean action for any project type (fire-and-forget)");
     }
 
     @Override

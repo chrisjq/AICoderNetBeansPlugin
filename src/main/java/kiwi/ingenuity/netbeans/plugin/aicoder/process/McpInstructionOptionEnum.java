@@ -6,10 +6,21 @@ package kiwi.ingenuity.netbeans.plugin.aicoder.process;
  * callers only use {@code options.contains(...)}.
  */
 public enum McpInstructionOptionEnum {
-    /** Global/policy header prose. */
+    /**
+     * Global/policy header prose.
+     */
     HEADER,
-    /** Per-tool instruction lines and the tool's domain schema surface. */
+    /**
+     * Per-tool instruction lines and the tool's domain schema surface.
+     */
     TOOL_INSTRUCTION,
-    /** Caller credentials: sessionId/secretKey in schemas and credential prose. */
-    CREDENTIALS
+    /**
+     * Caller credentials: sessionId/secretKey in schemas and credential prose.
+     */
+    CREDENTIALS,
+    /**
+     * Is a AI that can only access these tools so shouldnt have any directive
+     * about preferring MCP tools over the tools provided here.
+     */
+    ONLY_MCP_TOOL_ACCESS
 }

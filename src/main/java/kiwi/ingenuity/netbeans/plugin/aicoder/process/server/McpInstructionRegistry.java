@@ -6,7 +6,6 @@ import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.AiTypeEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.McpInstructionOptionEnum;
-import kiwi.ingenuity.netbeans.plugin.aicoder.process.McpInstructionOptions;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.McpToolEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.McpToolInterface;
 
@@ -14,10 +13,15 @@ import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.McpToolInterface
  * Static registry for the layered MCP instruction architecture.
  * <p>
  * Layer 1 (global static):
- * {@link McpHookServerUtil#getGlobalInstructionsHeader()}
+ * {@link McpHookServerUtil#getGlobalInstructionsHeader(Set)}
  * <p>
  * Layer 2 (AI-type static): registered per {@link AiTypeEnum} via
  * {@link #register}. Includes per-tool instruction additions.
+ * <p>
+ * Both layers honour the caller's {@link McpInstructionOptionEnum} set: Layer-2
+ * header text is emitted only when HEADER is present, and Layer-2 per-tool
+ * additions only when TOOL_INSTRUCTION is present. Without those checks a
+ * registered addition could reintroduce text the options were meant to suppress.
  */
 public final class McpInstructionRegistry {
 
@@ -43,11 +47,11 @@ public final class McpInstructionRegistry {
      * no Layer-2 header is registered the global header is returned unchanged.
      */
     public static String buildHeader(AiTypeEnum type) {
-        return buildHeader(type, McpInstructionOptions.cli());
-    }
-
-    public static String buildHeader(AiTypeEnum type, Set<McpInstructionOptionEnum> options) {
+        Set<McpInstructionOptionEnum> options = type.getMcpOptions();
         StringBuilder sb = new StringBuilder(McpHookServerUtil.getGlobalInstructionsHeader(options));
+        if (!options.contains(McpInstructionOptionEnum.HEADER)) {
+            return sb.toString();
+        }
         String aiTypeHeader = aiTypeHeaders.get(type);
         if (aiTypeHeader != null && !aiTypeHeader.isBlank()) {
             sb.append("\n\n").append(aiTypeHeader.trim());
@@ -57,12 +61,16 @@ public final class McpInstructionRegistry {
 
     /**
      * Builds the per-tool instruction map for the given AI type, merging each
-     * tool's global {@link McpToolInterface#instruction()} (Layer 1) with any
+     * tool's global {@link McpToolInterface#instruction(Set)} (Layer 1) with any
      * registered AI-type addition (Layer 2). Both present: concatenated with ";
      * ".
      */
     public static Map<McpToolEnum, String> buildToolInstructions(
             AiTypeEnum type, Map<McpToolEnum, McpToolInterface> handlers) {
+        Set<McpInstructionOptionEnum> options = type.getMcpOptions();
+        if (!options.contains(McpInstructionOptionEnum.TOOL_INSTRUCTION)) {
+            return Map.of();
+        }
         Map<McpToolEnum, String> aiTypeMap = aiTypeToolInstructions.getOrDefault(type, Map.of());
         LinkedHashMap<McpToolEnum, String> result = new LinkedHashMap<>();
         for (McpToolEnum e : McpToolEnum.values()) {
@@ -70,7 +78,7 @@ public final class McpInstructionRegistry {
             if (handler == null) {
                 continue;
             }
-            String global = handler.instruction();
+            String global = handler.instruction(options);
             String aiTypeAddition = aiTypeMap.get(e);
             String combined;
             if (global != null && aiTypeAddition != null) {
@@ -96,14 +104,9 @@ public final class McpInstructionRegistry {
      * (tool-specific) instructions.
      */
     public static String buildFullInstructions(AiTypeEnum type, Map<McpToolEnum, McpToolInterface> handlers) {
-        return buildFullInstructions(type, handlers, McpInstructionOptions.cli());
-    }
-
-    public static String buildFullInstructions(AiTypeEnum type, Map<McpToolEnum, McpToolInterface> handlers,
-            Set<McpInstructionOptionEnum> options) {
-        String header = buildHeader(type, options);
+        String header = buildHeader(type);
         Map<McpToolEnum, String> overrides = buildToolInstructions(type, handlers);
-        return McpHookServerUtil.buildInstructions(header, handlers, overrides);
+        return McpHookServerUtil.buildInstructions(type, header, handlers, overrides);
     }
 
     /**

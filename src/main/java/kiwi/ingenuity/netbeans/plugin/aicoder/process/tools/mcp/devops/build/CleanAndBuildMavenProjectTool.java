@@ -18,7 +18,8 @@ public class CleanAndBuildMavenProjectTool extends AbstractBuildTool {
                 "Cleans then builds the open Maven project (mvn clean package -DskipTests). "
                 + "Maven projects only - do not use for Ant or Gradle projects. "
                 + "Returns the full build output including any compile errors.",
-                "CleanAndBuildMavenProject -> INSTEAD OF Bash mvn clean package - cleans and builds Maven project and returns full output");
+                "CleanAndBuildMavenProject -> INSTEAD OF Bash mvn clean package - cleans and builds Maven project and returns full output",
+                "CleanAndBuildMavenProject - cleans and builds Maven project and returns full output");
     }
 
     @Override

@@ -3,8 +3,13 @@ package kiwi.ingenuity.netbeans.plugin.aicoder.process;
 import com.google.gson.JsonArray;
 import com.google.gson.JsonObject;
 import java.util.List;
+import java.util.Set;
+import kiwi.ingenuity.netbeans.plugin.aicoder.ai.AiTypeEnum;
+import static kiwi.ingenuity.netbeans.plugin.aicoder.ai.AiTypeEnum.CLAUDE;
+import static kiwi.ingenuity.netbeans.plugin.aicoder.ai.AiTypeEnum.OLLAMA_LOCAL;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.session.AbstractAiSession;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.McpToolInterface;
+import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.McpToolSchemas;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.ToolRequestArguments;
 import org.junit.jupiter.api.Test;
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -15,6 +20,11 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 class AbstractMcpBridgeTest {
 
     private static final class EchoBridge extends AbstractMcpBridge {
+
+        public EchoBridge(AiTypeEnum aiType) {
+            super(aiType);
+        }
+
         @Override
         protected String executeTool(String toolName, JsonObject argsWithAuth) {
             return toolName + "|"
@@ -25,6 +35,11 @@ class AbstractMcpBridgeTest {
     }
 
     private static final class ExplodingBridge extends AbstractMcpBridge {
+
+        public ExplodingBridge(AiTypeEnum aiType) {
+            super(aiType);
+        }
+
         @Override
         protected String executeTool(String toolName, JsonObject argsWithAuth) {
             throw new IllegalStateException("boom");
@@ -32,18 +47,19 @@ class AbstractMcpBridgeTest {
     }
 
     private static final class FakeTool implements McpToolInterface {
+
         @Override
         public McpSectionEnum section() {
             return McpSectionEnum.SYSTEM;
         }
 
         @Override
-        public String instruction() {
+        public String instruction(Set<McpInstructionOptionEnum> options) {
             return "Fake -> no-op";
         }
 
         @Override
-        public JsonObject schema() {
+        public JsonObject schema(Set<McpInstructionOptionEnum> options) {
             JsonObject tool = new JsonObject();
             tool.addProperty("name", "FakeTool");
             JsonObject inputSchema = new JsonObject();
@@ -51,7 +67,7 @@ class AbstractMcpBridgeTest {
             inputSchema.add("properties", new JsonObject());
             inputSchema.add("required", new JsonArray());
             tool.add("inputSchema", inputSchema);
-            return tool;
+            return McpToolSchemas.applyCredentialsIfRequested(tool, options);
         }
 
         @Override
@@ -62,7 +78,7 @@ class AbstractMcpBridgeTest {
 
     @Test
     void listToolsForModelDefaultsToApiBackendOptions() {
-        EchoBridge bridge = new EchoBridge();
+        EchoBridge bridge = new EchoBridge(OLLAMA_LOCAL);
 
         JsonArray tools = bridge.listToolsForModel(List.of(new FakeTool()));
         JsonObject schema = tools.get(0).getAsJsonObject();
@@ -74,8 +90,7 @@ class AbstractMcpBridgeTest {
 
     @Test
     void setOptionsCanReEnableCredentialFieldsForCliCallers() {
-        EchoBridge bridge = new EchoBridge();
-        bridge.setOptions(McpInstructionOptions.cli());
+        EchoBridge bridge = new EchoBridge(CLAUDE);
 
         JsonArray tools = bridge.listToolsForModel(List.of(new FakeTool()));
         JsonObject schema = tools.get(0).getAsJsonObject();
@@ -87,7 +102,7 @@ class AbstractMcpBridgeTest {
 
     @Test
     void invokeToolOverwritesModelSuppliedCredentials() {
-        EchoBridge bridge = new EchoBridge();
+        EchoBridge bridge = new EchoBridge(OLLAMA_LOCAL);
         bridge.setSessionCredentials("real-session", "real-secret");
         JsonObject args = new JsonObject();
         args.addProperty("sessionId", "model-session");
@@ -103,27 +118,27 @@ class AbstractMcpBridgeTest {
 
     @Test
     void invokeToolFailsCleanlyBeforeCredentialsAreSet() {
-        EchoBridge bridge = new EchoBridge();
+        EchoBridge bridge = new EchoBridge(OLLAMA_LOCAL);
         assertEquals("Error: session credentials are not set", bridge.invokeTool("GetWeather", new JsonObject()));
     }
 
     @Test
     void blankToolNameFailsCleanly() {
-        EchoBridge bridge = new EchoBridge();
+        EchoBridge bridge = new EchoBridge(OLLAMA_LOCAL);
         bridge.setSessionCredentials("sid", "secret");
         assertEquals("Error: toolName must not be blank", bridge.invokeTool("   ", new JsonObject()));
     }
 
     @Test
     void runtimeExceptionsAreWrappedAsErrorStrings() {
-        ExplodingBridge bridge = new ExplodingBridge();
+        ExplodingBridge bridge = new ExplodingBridge(OLLAMA_LOCAL);
         bridge.setSessionCredentials("sid", "secret");
         assertEquals("Error: boom", bridge.invokeTool("Explode", new JsonObject()));
     }
 
     @Test
     void blankCredentialsAreRejectedImmediately() {
-        EchoBridge bridge = new EchoBridge();
+        EchoBridge bridge = new EchoBridge(OLLAMA_LOCAL);
         assertThrows(IllegalArgumentException.class, () -> bridge.setSessionCredentials("", "secret"));
         assertThrows(IllegalArgumentException.class, () -> bridge.setSessionCredentials("sid", " "));
     }

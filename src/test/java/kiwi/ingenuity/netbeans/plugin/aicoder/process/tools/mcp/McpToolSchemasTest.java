@@ -1,13 +1,14 @@
 package kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp;
 
 import com.google.gson.JsonObject;
-import kiwi.ingenuity.netbeans.plugin.aicoder.process.McpInstructionOptions;
+import kiwi.ingenuity.netbeans.plugin.aicoder.ai.AiTypeEnum;
 import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class McpToolSchemasTest {
+
     private JsonObject toolWithInputSchema() {
         JsonObject tool = new JsonObject();
         JsonObject input = new JsonObject();
@@ -32,14 +33,14 @@ class McpToolSchemasTest {
 
     @Test
     void applyWithCredentialsInjectsSessionIdAndSecretKey() {
-        JsonObject tool = McpToolSchemas.applyCredentialsIfRequested(toolWithInputSchema(), McpInstructionOptions.cli());
+        JsonObject tool = McpToolSchemas.applyCredentialsIfRequested(toolWithInputSchema(), AiTypeEnum.CLAUDE.getMcpOptions());
         assertTrue(requiredContains(tool, "sessionId"));
         assertTrue(requiredContains(tool, "secretKey"));
     }
 
     @Test
     void applyWithoutCredentialsLeavesSchemaClean() {
-        JsonObject tool = McpToolSchemas.applyCredentialsIfRequested(toolWithInputSchema(), McpInstructionOptions.apiBackend());
+        JsonObject tool = McpToolSchemas.applyCredentialsIfRequested(toolWithInputSchema(), AiTypeEnum.OLLAMA_LOCAL.getMcpOptions());
         assertFalse(requiredContains(tool, "sessionId"));
         assertFalse(requiredContains(tool, "secretKey"));
         assertFalse(tool.getAsJsonObject("inputSchema").getAsJsonObject("properties").has("sessionId"));

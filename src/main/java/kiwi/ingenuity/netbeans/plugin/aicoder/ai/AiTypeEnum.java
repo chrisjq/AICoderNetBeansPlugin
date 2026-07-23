@@ -1,11 +1,17 @@
 package kiwi.ingenuity.netbeans.plugin.aicoder.ai;
 
+import java.util.Set;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.claude.settings.ClaudeSettingsCreator;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.githubcopilot.settings.GithubCopilotSettingsCreator;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.grok.settings.GrokSettingsCreator;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.ollama.settings.OllamaSettingsCreator;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.settings.AiSessionSettings;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.settings.AiSessionSettingsCreator;
+import kiwi.ingenuity.netbeans.plugin.aicoder.process.McpInstructionOptionEnum;
+import static kiwi.ingenuity.netbeans.plugin.aicoder.process.McpInstructionOptionEnum.CREDENTIALS;
+import static kiwi.ingenuity.netbeans.plugin.aicoder.process.McpInstructionOptionEnum.HEADER;
+import static kiwi.ingenuity.netbeans.plugin.aicoder.process.McpInstructionOptionEnum.ONLY_MCP_TOOL_ACCESS;
+import static kiwi.ingenuity.netbeans.plugin.aicoder.process.McpInstructionOptionEnum.TOOL_INSTRUCTION;
 
 /**
  * Enumerates available AI implementations and their configurations. Each type
@@ -13,10 +19,10 @@ import kiwi.ingenuity.netbeans.plugin.aicoder.ai.settings.AiSessionSettingsCreat
  * configurations.
  */
 public enum AiTypeEnum {
-    CLAUDE("Claude", "claude", true, true, new ClaudeSettingsCreator()),
-    GROK("Grok", "grok", true, true, new GrokSettingsCreator()),
-    GitHubCoPilot("GitHub CoPilot", "github_copilot", true, true, new GithubCopilotSettingsCreator()),
-    OLLAMA_LOCAL("Ollama (Local)", "ollama_local", false, true, new OllamaSettingsCreator());
+    CLAUDE("Claude", "claude", true, true, new ClaudeSettingsCreator(), Set.of(HEADER, TOOL_INSTRUCTION, CREDENTIALS)),
+    GROK("Grok", "grok", true, true, new GrokSettingsCreator(), Set.of(HEADER, TOOL_INSTRUCTION, CREDENTIALS)),
+    GitHubCoPilot("GitHub CoPilot", "github_copilot", true, true, new GithubCopilotSettingsCreator(), Set.of(HEADER, TOOL_INSTRUCTION, CREDENTIALS)),
+    OLLAMA_LOCAL("Ollama (Local)", "ollama_local", true, true, new OllamaSettingsCreator(), Set.of(HEADER, TOOL_INSTRUCTION, ONLY_MCP_TOOL_ACCESS));
 
     public static AiTypeEnum fromKey(String key) {
         if (key == null) {
@@ -50,13 +56,20 @@ public enum AiTypeEnum {
      * Creator responsible for instantiating and updating settings
      */
     private final AiSessionSettingsCreator settingCreator;
+    /**
+     * Controls what this AI type receives in instruction text and tool schemas.
+     * Types that reach the plugin through a bridge which injects credentials
+     * server-side omit CREDENTIALS, so they are never shown sessionId/secretKey.
+     */
+    private final Set<McpInstructionOptionEnum> mcpOptions;
 
-    AiTypeEnum(String displayName, String key, boolean isImplemented, boolean enabledByDefault, AiSessionSettingsCreator settingCreator) {
+    AiTypeEnum(String displayName, String key, boolean isImplemented, boolean enabledByDefault, AiSessionSettingsCreator settingCreator, Set<McpInstructionOptionEnum> options) {
         this.displayName = displayName;
         this.key = key;
         this.implemented = isImplemented;
         this.enabledByDefault = enabledByDefault;
         this.settingCreator = settingCreator;
+        this.mcpOptions = options;
     }
 
     /**
@@ -105,17 +118,7 @@ public enum AiTypeEnum {
         return settingCreator;
     }
 
-    /**
-     * Whether session credentials (sessionId/secretKey) should be included in
-     * the prompt preamble. Local AI backends (e.g. Ollama) don't need them.
-     */
-    public boolean includeSessionCredentialsInPrompt() {
-        return switch (this) {
-            case OLLAMA_LOCAL ->
-                false;
-            default ->
-                true;
-        };
+    public Set<McpInstructionOptionEnum> getMcpOptions() {
+        return mcpOptions;
     }
-
 }

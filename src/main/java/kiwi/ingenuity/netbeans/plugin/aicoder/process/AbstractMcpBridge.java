@@ -4,17 +4,18 @@ import com.google.gson.JsonArray;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
 import java.util.Collection;
-import java.util.Objects;
 import java.util.Set;
+import kiwi.ingenuity.netbeans.plugin.aicoder.ai.AiTypeEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.McpToolInterface;
 
 public abstract class AbstractMcpBridge {
 
     private volatile String sessionId;
     private volatile String secretKey;
-    private volatile Set<McpInstructionOptionEnum> options = McpInstructionOptions.apiBackend();
+    private final AiTypeEnum aiType;
 
-    protected AbstractMcpBridge() {
+    protected AbstractMcpBridge(AiTypeEnum aiType) {
+        this.aiType = aiType;
     }
 
     public final void setSessionCredentials(String sessionId, String secretKey) {
@@ -28,12 +29,8 @@ public abstract class AbstractMcpBridge {
         this.secretKey = secretKey;
     }
 
-    public final void setOptions(Set<McpInstructionOptionEnum> options) {
-        this.options = Set.copyOf(Objects.requireNonNull(options, "options"));
-    }
-
     public final Set<McpInstructionOptionEnum> options() {
-        return options;
+        return aiType.getMcpOptions();
     }
 
     public final JsonArray listToolsForModel(Collection<? extends McpToolInterface> handlers) {
@@ -43,7 +40,7 @@ public abstract class AbstractMcpBridge {
         }
         for (McpToolInterface handler : handlers) {
             if (handler != null) {
-                tools.add(handler.schema(options));
+                tools.add(handler.schema(aiType.getMcpOptions()));
             }
         }
         return tools;

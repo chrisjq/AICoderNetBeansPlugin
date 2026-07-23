@@ -15,7 +15,8 @@ public class RunInspectTool extends AbstractActionTool {
                 "Opens the NetBeans Inspect dialog (Source > Inspect). "
                 + "Select 'All Analysers' configuration and 'All Open Projects' scope, "
                 + "then click Inspect to run static analysis across the entire codebase.",
-                "RunInspect -> INSTEAD OF manual code review - opens NetBeans static analysis for all open projects");
+                "RunInspect -> INSTEAD OF manual code review - opens NetBeans static analysis for all open projects",
+                "RunInspect - opens NetBeans static analysis for all open projects");
     }
 
     @Override

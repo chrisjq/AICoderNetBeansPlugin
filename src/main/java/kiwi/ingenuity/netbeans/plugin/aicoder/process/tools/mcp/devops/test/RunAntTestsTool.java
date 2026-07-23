@@ -18,7 +18,8 @@ public class RunAntTestsTool extends AbstractTestsTool {
                 "Runs the open Ant project's test suite (ant test). "
                 + "Ant projects only - do not use for Maven or Gradle projects. "
                 + "Optionally restrict to a single test class via -Dtest.includes.",
-                "RunAntTests -> INSTEAD OF Bash ant test - runs Ant tests with optional class filter");
+                "RunAntTests -> INSTEAD OF Bash ant test - runs Ant tests with optional class filter",
+                "RunAntTests - runs Ant tests with optional class filter");
     }
 
     @Override

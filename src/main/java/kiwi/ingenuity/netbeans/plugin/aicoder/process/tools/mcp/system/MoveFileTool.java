@@ -2,7 +2,9 @@ package kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.system;
 
 import com.google.gson.JsonArray;
 import com.google.gson.JsonObject;
+import java.util.Set;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.McpArgumentException;
+import kiwi.ingenuity.netbeans.plugin.aicoder.process.McpInstructionOptionEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.McpSectionEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.McpToolEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.locking.LockTypeEnum;
@@ -10,6 +12,7 @@ import kiwi.ingenuity.netbeans.plugin.aicoder.process.locking.RequiresLock;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.server.McpHookServer;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.session.AbstractAiSession;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.McpToolInterface;
+import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.McpToolSchemas;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.ToolRequestArguments;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.ToolSchemaKeyEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.providers.netbeans.RefactoringProvider;
@@ -29,13 +32,16 @@ public class MoveFileTool implements McpToolInterface {
     }
 
     @Override
-    public String instruction() {
+    public String instruction(Set<McpInstructionOptionEnum> options) {
+        if (!options.contains(McpInstructionOptionEnum.TOOL_INSTRUCTION)) {
+            return null;
+        }
         return "MoveFile -> moves a file; Java files use MoveRefactoring (updates package declaration "
                 + "and all import references); other files use FileUtil.moveFile()";
     }
 
     @Override
-    public JsonObject schema() {
+    public JsonObject schema(Set<McpInstructionOptionEnum> options) {
         JsonObject tool = new JsonObject();
         tool.addProperty(ToolSchemaKeyEnum.NAME.key(), McpToolEnum.MOVE_FILE.toolName());
         tool.addProperty(ToolSchemaKeyEnum.DESCRIPTION.key(),
@@ -60,7 +66,7 @@ public class MoveFileTool implements McpToolInterface {
         required.add(MoveFileParamEnum.TARGET_DIRECTORY.key());
         schema.add(ToolSchemaKeyEnum.REQUIRED.key(), required);
         tool.add(ToolSchemaKeyEnum.INPUT_SCHEMA.key(), schema);
-        return tool;
+        return McpToolSchemas.applyCredentialsIfRequested(tool, options);
     }
 
     @Override

@@ -3,9 +3,11 @@ package kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.ollama;
 import com.google.gson.JsonObject;
 import java.time.Instant;
 import java.util.Map;
+import java.util.Set;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.AiTypeEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.session.AiSession;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.McpArgumentException;
+import kiwi.ingenuity.netbeans.plugin.aicoder.process.McpInstructionOptionEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.McpSectionEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.McpToolEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.events.AiProcessEventListener;
@@ -18,13 +20,14 @@ import org.junit.jupiter.api.Test;
 class OllamaMcpBridgeTest {
 
     private static final class FakeTool implements McpToolInterface {
+
         @Override
         public McpSectionEnum section() {
             return McpSectionEnum.SYSTEM;
         }
 
         @Override
-        public String instruction() {
+        public String instruction(Set<McpInstructionOptionEnum> options) {
             return "Fake -> echoes auth";
         }
 
@@ -34,7 +37,7 @@ class OllamaMcpBridgeTest {
         }
 
         @Override
-        public JsonObject schema() {
+        public JsonObject schema(Set<McpInstructionOptionEnum> options) {
             JsonObject tool = new JsonObject();
             tool.addProperty("name", McpToolEnum.GET_PLUGIN_VERSION.toolName());
             JsonObject inputSchema = new JsonObject();
@@ -51,6 +54,7 @@ class OllamaMcpBridgeTest {
     }
 
     private static final class FakeSession extends AbstractAiSession {
+
         private final Map<McpToolEnum, McpToolInterface> handlers;
 
         FakeSession(AiSession session, Map<McpToolEnum, McpToolInterface> handlers) {

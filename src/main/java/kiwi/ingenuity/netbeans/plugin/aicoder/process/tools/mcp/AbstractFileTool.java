@@ -1,6 +1,8 @@
 package kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp;
 
 import com.google.gson.JsonObject;
+import java.util.Set;
+import kiwi.ingenuity.netbeans.plugin.aicoder.process.McpInstructionOptionEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.McpSectionEnum;
 
 public abstract class AbstractFileTool implements McpToolInterface {
@@ -9,12 +11,18 @@ public abstract class AbstractFileTool implements McpToolInterface {
     private final String toolName;
     private final String description;
     private final String instruction;
+    private final String instructionMcpOnly;
 
     protected AbstractFileTool(McpSectionEnum section, String toolName, String description, String instruction) {
+        this(section, toolName, description, instruction, instruction);
+    }
+
+    protected AbstractFileTool(McpSectionEnum section, String toolName, String description, String instruction, String instructionMcpOnly) {
         this.section = section;
         this.toolName = toolName;
         this.description = description;
         this.instruction = instruction;
+        this.instructionMcpOnly = instructionMcpOnly;
     }
 
     @Override
@@ -23,12 +31,15 @@ public abstract class AbstractFileTool implements McpToolInterface {
     }
 
     @Override
-    public String instruction() {
-        return instruction;
+    public String instruction(Set<McpInstructionOptionEnum> options) {
+        if (!options.contains(McpInstructionOptionEnum.TOOL_INSTRUCTION)) {
+            return null;
+        }
+        return options.contains(McpInstructionOptionEnum.ONLY_MCP_TOOL_ACCESS) ? instructionMcpOnly : instruction;
     }
 
     @Override
-    public JsonObject schema() {
+    public JsonObject schema(Set<McpInstructionOptionEnum> options) {
         JsonObject tool = new JsonObject();
         tool.addProperty(ToolSchemaKeyEnum.NAME.key(), toolName);
         tool.addProperty(ToolSchemaKeyEnum.DESCRIPTION.key(), description);
@@ -41,6 +52,6 @@ public abstract class AbstractFileTool implements McpToolInterface {
         props.add("filePath", fp);
         schema.add(ToolSchemaKeyEnum.PROPERTIES.key(), props);
         tool.add(ToolSchemaKeyEnum.INPUT_SCHEMA.key(), schema);
-        return tool;
+        return McpToolSchemas.applyCredentialsIfRequested(tool, options);
     }
 }

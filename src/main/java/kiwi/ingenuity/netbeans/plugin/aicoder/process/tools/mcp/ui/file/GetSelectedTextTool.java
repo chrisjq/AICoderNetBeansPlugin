@@ -13,7 +13,8 @@ public class GetSelectedTextTool extends AbstractActionTool {
         super(McpSectionEnum.UI_FILES,
                 McpToolEnum.GET_SELECTED_TEXT.toolName(),
                 "Returns the text currently selected/highlighted in the active editor.",
-                "GetSelectedText -> INSTEAD OF asking the user to paste - use when the user says 'this' or refers to selected code");
+                "GetSelectedText -> INSTEAD OF asking the user to paste - use when the user says 'this' or refers to selected code",
+                "GetSelectedText - use when the user says 'this' or refers to selected code");
     }
 
     @Override

@@ -452,10 +452,11 @@ public final class AiTopComponent extends TopComponent implements AiProcessEvent
         if (contextProvider == null) {
             return;
         }
-        // Always hand the session to the ContextProvider so the identity block
-        // (sessionId/secretKey) is emitted on every turn — those credentials are
-        // required by EVERY plugin tool, independent of inter-AI comms. The
-        // inter-AI capability blurb is gated separately inside buildPreamble().
+        // Always hand the session to the ContextProvider so the identity block is
+        // emitted on every turn. Whether that block carries sessionId/secretKey is
+        // decided inside buildPreamble() by the AI type's CREDENTIALS option: types
+        // that call tools through a bridge get credentials injected server-side and
+        // so are never shown them. The inter-AI capability blurb is gated separately.
         contextProvider.setSession(session);
     }
 
@@ -1257,8 +1258,7 @@ public final class AiTopComponent extends TopComponent implements AiProcessEvent
         String sessionInstructions = session.settings() != null
                 ? session.settings().sessionInstructions() : null;
         String fullPrompt = contextProvider != null
-                ? contextProvider.buildPreamble(text, sessionInstructions,
-                        session.aiType().includeSessionCredentialsInPrompt())
+                ? contextProvider.buildPreamble(text, sessionInstructions)
                 : text;
         conversationPanel.addUserMessage(text);
         infoBar.setProcessing(true);

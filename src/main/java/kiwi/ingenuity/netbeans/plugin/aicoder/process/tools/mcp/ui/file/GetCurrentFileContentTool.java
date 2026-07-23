@@ -14,7 +14,8 @@ public class GetCurrentFileContentTool extends AbstractActionTool {
                 McpToolEnum.GET_CURRENT_FILE_CONTENT.toolName(),
                 "Returns the full text content of the file currently open in the active editor, "
                 + "prefixed with its absolute path.",
-                "GetCurrentFileContent -> INSTEAD OF Read tool when you need the active editor's full text");
+                "GetCurrentFileContent -> INSTEAD OF Read tool when you need the active editor's full text",
+                "GetCurrentFileContent - get the active editor's full text");
     }
 
     @Override

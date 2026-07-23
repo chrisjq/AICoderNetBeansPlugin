@@ -13,7 +13,8 @@ public class GetDiagnosticsTool extends AbstractActionTool {
         super(McpSectionEnum.UI_FILES,
                 McpToolEnum.GET_DIAGNOSTICS.toolName(),
                 "Returns compiler errors and warnings for all open Java files in the IDE.",
-                "GetDiagnostics -> INSTEAD OF Bash compiler invocation - check for compiler errors BEFORE proposing fixes or building");
+                "GetDiagnostics -> INSTEAD OF Bash compiler invocation - check for compiler errors BEFORE proposing fixes or building",
+                "GetDiagnostics - check for compiler errors BEFORE proposing fixes or building");
     }
 
     @Override

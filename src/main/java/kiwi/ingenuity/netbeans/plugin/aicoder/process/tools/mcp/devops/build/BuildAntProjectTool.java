@@ -18,7 +18,8 @@ public class BuildAntProjectTool extends AbstractBuildTool {
                 "Builds the open Ant project (ant jar). "
                 + "Ant projects only - do not use for Maven or Gradle projects. "
                 + "Returns the full build output including any compile errors.",
-                "BuildAntProject -> INSTEAD OF Bash ant jar - builds Ant project and returns full output");
+                "BuildAntProject -> INSTEAD OF Bash ant jar - builds Ant project and returns full output",
+                "BuildAntProject - builds Ant project and returns full output");
     }
 
     @Override

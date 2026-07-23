@@ -13,7 +13,8 @@ public class GetOpenFilesTool extends AbstractActionTool {
         super(McpSectionEnum.UI_FILES,
                 McpToolEnum.GET_OPEN_FILES.toolName(),
                 "Returns a list of all files currently open in the IDE.",
-                "GetOpenFiles -> INSTEAD OF asking the user - lists all open editor tabs");
+                "GetOpenFiles -> INSTEAD OF asking the user - lists all open editor tabs",
+                "GetOpenFiles - lists all open editor tabs");
     }
 
     @Override

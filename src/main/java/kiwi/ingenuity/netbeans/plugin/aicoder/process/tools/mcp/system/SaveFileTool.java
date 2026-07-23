@@ -1,6 +1,8 @@
 package kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.system;
 
 import com.google.gson.JsonObject;
+import java.util.Set;
+import kiwi.ingenuity.netbeans.plugin.aicoder.process.McpInstructionOptionEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.McpSectionEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.McpToolEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.locking.LockTypeEnum;
@@ -8,6 +10,7 @@ import kiwi.ingenuity.netbeans.plugin.aicoder.process.locking.RequiresLock;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.server.McpHookServer;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.session.AbstractAiSession;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.AbstractFileTool;
+import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.McpToolSchemas;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.ToolRequestArguments;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.ToolSchemaKeyEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.providers.netbeans.EditorContextProvider;
@@ -26,12 +29,13 @@ public class SaveFileTool extends AbstractFileTool {
                 + "existing unsaved editor changes to disk.",
                 "SaveFile -> with 'content': write+save in one step INSTEAD OF Read+Edit (no built-in "
                 + "tools needed); refresh is automatic for both new and existing files; "
-                + "without 'content': flush unsaved NetBeans changes before Read+Edit");
+                + "without 'content': flush unsaved NetBeans changes before Read+Edit",
+                "SaveFile - with 'content': write+save in one step; refresh is automatic for both new and existing files; without 'content': flush unsaved NetBeans changes");
         this.server = server;
     }
 
     @Override
-    public JsonObject schema() {
+    public JsonObject schema(Set<McpInstructionOptionEnum> options) {
         JsonObject tool = new JsonObject();
         tool.addProperty(ToolSchemaKeyEnum.NAME.key(), McpToolEnum.SAVE_FILE.toolName());
         tool.addProperty(ToolSchemaKeyEnum.DESCRIPTION.key(),
@@ -52,7 +56,7 @@ public class SaveFileTool extends AbstractFileTool {
         props.add(SaveFileParamEnum.CONTENT.key(), ct);
         schema.add(ToolSchemaKeyEnum.PROPERTIES.key(), props);
         tool.add(ToolSchemaKeyEnum.INPUT_SCHEMA.key(), schema);
-        return tool;
+        return McpToolSchemas.applyCredentialsIfRequested(tool, options);
     }
 
     @Override

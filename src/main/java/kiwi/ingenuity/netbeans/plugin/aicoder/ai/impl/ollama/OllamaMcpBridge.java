@@ -1,6 +1,7 @@
 package kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.ollama;
 
 import com.google.gson.JsonObject;
+import kiwi.ingenuity.netbeans.plugin.aicoder.ai.AiTypeEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.AbstractMcpBridge;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.McpArgumentException;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.McpToolEnum;
@@ -13,6 +14,7 @@ public class OllamaMcpBridge extends AbstractMcpBridge {
     private final AbstractAiSession session;
 
     public OllamaMcpBridge(AbstractAiSession session) {
+        super(AiTypeEnum.OLLAMA_LOCAL);
         this.session = session;
     }
 

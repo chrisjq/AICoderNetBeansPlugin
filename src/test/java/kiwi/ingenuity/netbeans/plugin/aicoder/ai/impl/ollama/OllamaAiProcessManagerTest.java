@@ -6,6 +6,7 @@ import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import java.util.function.Consumer;
@@ -22,6 +23,7 @@ import kiwi.ingenuity.netbeans.plugin.aicoder.ai.http.HttpAiClient;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.ollama.session.OllamaAiSession;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.session.AiSession;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.session.InterruptTypeEnum;
+import kiwi.ingenuity.netbeans.plugin.aicoder.process.McpInstructionOptionEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.McpSectionEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.McpToolEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.events.AiProcessEvent;
@@ -163,6 +165,7 @@ class OllamaAiProcessManagerTest {
     }
 
     private static final class FakeHttpClient implements HttpAiClient {
+
         private final List<ChatResult> scripted;
         private final List<ChatRequest> requests = new ArrayList<>();
         private int index = 0;
@@ -183,6 +186,7 @@ class OllamaAiProcessManagerTest {
     }
 
     private static final class TestOllamaProcessManager extends OllamaAiProcessManager {
+
         private final HttpAiClient fakeClient;
         final List<String> invokedToolNames = new ArrayList<>();
 
@@ -221,7 +225,7 @@ class OllamaAiProcessManagerTest {
                 }
 
                 @Override
-                public String instruction() {
+                public String instruction(Set<McpInstructionOptionEnum> options) {
                     return "GetPluginVersion -> fake";
                 }
 
@@ -231,7 +235,7 @@ class OllamaAiProcessManagerTest {
                 }
 
                 @Override
-                public JsonObject schema() {
+                public JsonObject schema(Set<McpInstructionOptionEnum> options) {
                     JsonObject tool = new JsonObject();
                     tool.addProperty("name", McpToolEnum.GET_PLUGIN_VERSION.toolName());
                     JsonObject inputSchema = new JsonObject();

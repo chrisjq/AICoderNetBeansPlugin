@@ -15,19 +15,15 @@ public interface McpToolInterface {
      * Instruction line for MCP text, e.g. "SearchInFiles -> INSTEAD OF Bash
      * grep/rg - ...". Null to omit from instructions.
      */
-    String instruction();
-
-    JsonObject schema();
+    String instruction(Set<McpInstructionOptionEnum> options);
 
     /**
-     * Model-facing schema. Domain surface comes from {@link #schema()}; credentials
-     * are injected only when options contains CREDENTIALS.
+     * Model-facing schema. Build the full schema; inject credentials only when
+     * options contains CREDENTIALS.
      *
      * @param options non-null; use contains(...) to decide what to emit
      */
-    default JsonObject schema(Set<McpInstructionOptionEnum> options) {
-        return McpToolSchemas.applyCredentialsIfRequested(schema(), options);
-    }
+    JsonObject schema(Set<McpInstructionOptionEnum> options);
 
     default boolean isMutating() {
         return true;

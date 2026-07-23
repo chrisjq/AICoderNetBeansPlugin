@@ -20,7 +20,8 @@ public class FixImportsTool extends AbstractFileTool {
                 "Fix imports: removes unused imports and adds missing ones for the specified Java file. "
                 + "A disambiguation dialog appears if a type name is ambiguous. "
                 + "Omit filePath to use the current editor.",
-                "FixImports -> INSTEAD OF manual import editing - removes unused and adds missing imports");
+                "FixImports -> INSTEAD OF manual import editing - removes unused and adds missing imports",
+                "FixImports - removes unused and adds missing imports");
     }
 
     @Override

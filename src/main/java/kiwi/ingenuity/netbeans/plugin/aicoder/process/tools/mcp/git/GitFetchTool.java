@@ -2,12 +2,15 @@ package kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.git;
 
 import com.google.gson.JsonArray;
 import com.google.gson.JsonObject;
+import java.util.Set;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.ToolSchemaKeyEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.providers.netbeans.GitProvider;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.McpArgumentException;
+import kiwi.ingenuity.netbeans.plugin.aicoder.process.McpInstructionOptionEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.McpSectionEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.McpToolEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.McpToolInterface;
+import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.McpToolSchemas;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.session.AbstractAiSession;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.ToolRequestArguments;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.locking.LockTypeEnum;
@@ -22,13 +25,20 @@ public class GitFetchTool implements McpToolInterface {
     }
 
     @Override
-    public String instruction() {
+    public String instruction(Set<McpInstructionOptionEnum> options) {
+        if (!options.contains(McpInstructionOptionEnum.TOOL_INSTRUCTION)) {
+            return null;
+        }
+        if (options.contains(McpInstructionOptionEnum.ONLY_MCP_TOOL_ACCESS)) {
+            return "GitFetch - fetches from remote without merging. "
+                    + "Requires projectPath to select the target git repository or project root.";
+        }
         return "GitFetch -> INSTEAD OF Bash git fetch - fetches from remote without merging. "
                 + "Requires projectPath to select the target git repository or project root.";
     }
 
     @Override
-    public JsonObject schema() {
+    public JsonObject schema(Set<McpInstructionOptionEnum> options) {
         JsonObject tool = new JsonObject();
         tool.addProperty(ToolSchemaKeyEnum.NAME.key(), McpToolEnum.GIT_FETCH.toolName());
         tool.addProperty(ToolSchemaKeyEnum.DESCRIPTION.key(),
@@ -52,7 +62,7 @@ public class GitFetchTool implements McpToolInterface {
         required.add(GitCommonParamEnum.PROJECT_PATH.key());
         schema.add(ToolSchemaKeyEnum.REQUIRED.key(), required);
         tool.add(ToolSchemaKeyEnum.INPUT_SCHEMA.key(), schema);
-        return tool;
+        return McpToolSchemas.applyCredentialsIfRequested(tool, options);
     }
 
     @Override

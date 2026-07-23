@@ -4,10 +4,13 @@ import com.google.gson.JsonArray;
 import com.google.gson.JsonObject;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.mail.AiInboxMessage;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.mail.AiSessionInboxBroker;
+import java.util.Set;
+import kiwi.ingenuity.netbeans.plugin.aicoder.process.McpInstructionOptionEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.McpSectionEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.McpToolEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.session.AbstractAiSession;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.AbstractActionTool;
+import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.McpToolSchemas;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.ToolRequestArguments;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.ToolSchemaKeyEnum;
 
@@ -21,7 +24,7 @@ public class SendAiMessageTool extends AbstractActionTool {
     }
 
     @Override
-    public JsonObject schema() {
+    public JsonObject schema(Set<McpInstructionOptionEnum> options) {
         JsonObject tool = new JsonObject();
         tool.addProperty(ToolSchemaKeyEnum.NAME.key(), McpToolEnum.SEND_AI_MESSAGE.toolName());
         tool.addProperty(ToolSchemaKeyEnum.DESCRIPTION.key(), "Send a message to another AI session's inbox. Use ListAiSessions to find peer sessionIds.");
@@ -64,26 +67,34 @@ public class SendAiMessageTool extends AbstractActionTool {
         replyImportant.addProperty(ToolSchemaKeyEnum.DESCRIPTION.key(), "Only meaningful when expectsReply=true. If true, any reply to this message is automatically marked important so you receive a graceful interrupt when it arrives — you do not need to set important=true on the reply yourself. The automatic no-reply notification (sent when the recipient exits without responding) is also marked important and will interrupt you.");
         props.add(SendAiMessageParamEnum.REPLY_IMPORTANT.key(), replyImportant);
 
-        JsonObject sessionId = new JsonObject();
-        sessionId.addProperty(ToolSchemaKeyEnum.TYPE.key(), "string");
-        sessionId.addProperty(ToolSchemaKeyEnum.DESCRIPTION.key(), "Your sessionId for authentication (from your session identity block).");
-        props.add(SendAiMessageParamEnum.SESSION_ID.key(), sessionId);
+        JsonArray required = new JsonArray();
+        // Caller credentials are declared here rather than by
+        // applyCredentialsIfRequested so they can carry richer descriptions.
+        // Callers without CREDENTIALS reach this tool through a bridge that
+        // injects both values server-side, so they must not be asked for them.
+        // targetSessionId below is a real argument and is always declared.
+        if (options.contains(McpInstructionOptionEnum.CREDENTIALS)) {
+            JsonObject sessionId = new JsonObject();
+            sessionId.addProperty(ToolSchemaKeyEnum.TYPE.key(), "string");
+            sessionId.addProperty(ToolSchemaKeyEnum.DESCRIPTION.key(), "Your sessionId for authentication (from your session identity block).");
+            props.add(SendAiMessageParamEnum.SESSION_ID.key(), sessionId);
 
-        JsonObject secretKey = new JsonObject();
-        secretKey.addProperty(ToolSchemaKeyEnum.TYPE.key(), "string");
-        secretKey.addProperty(ToolSchemaKeyEnum.DESCRIPTION.key(), "Your secret key for authentication (from your session identity block). Keep this secret.");
-        props.add(SendAiMessageParamEnum.SECRET_KEY.key(), secretKey);
+            JsonObject secretKey = new JsonObject();
+            secretKey.addProperty(ToolSchemaKeyEnum.TYPE.key(), "string");
+            secretKey.addProperty(ToolSchemaKeyEnum.DESCRIPTION.key(), "Your secret key for authentication (from your session identity block). Keep this secret.");
+            props.add(SendAiMessageParamEnum.SECRET_KEY.key(), secretKey);
+
+            required.add(SendAiMessageParamEnum.SESSION_ID.key());
+            required.add(SendAiMessageParamEnum.SECRET_KEY.key());
+        }
 
         schema.add(ToolSchemaKeyEnum.PROPERTIES.key(), props);
-        JsonArray required = new JsonArray();
-        required.add(SendAiMessageParamEnum.SESSION_ID.key());
-        required.add(SendAiMessageParamEnum.SECRET_KEY.key());
         required.add(SendAiMessageParamEnum.TARGET_SESSION_ID.key());
         required.add(SendAiMessageParamEnum.SUBJECT.key());
         required.add(SendAiMessageParamEnum.MESSAGE.key());
         schema.add(ToolSchemaKeyEnum.REQUIRED.key(), required);
         tool.add(ToolSchemaKeyEnum.INPUT_SCHEMA.key(), schema);
-        return tool;
+        return McpToolSchemas.applyCredentialsIfRequested(tool, options);
     }
 
     @Override

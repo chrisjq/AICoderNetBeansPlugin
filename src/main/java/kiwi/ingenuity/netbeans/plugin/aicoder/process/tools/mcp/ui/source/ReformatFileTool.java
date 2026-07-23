@@ -20,7 +20,8 @@ public class ReformatFileTool extends AbstractFileTool {
                 "Reformat the specified Java file using the project's code style settings. "
                 + "Applies indentation, brace placement, and spacing rules. "
                 + "Omit filePath to use the current editor.",
-                "ReformatFile -> INSTEAD OF manual formatting - applies project code style to a file");
+                "ReformatFile -> INSTEAD OF manual formatting - applies project code style to a file",
+                "ReformatFile - applies project code style to a file");
     }
 
     @Override

@@ -17,7 +17,8 @@ public class GetTypeHierarchyTool extends AbstractClassNameTool {
                 "Returns the full supertype and subtype hierarchy for a class or interface in the open project: "
                 + "direct and indirect supertypes (extends/implements chain) plus all known subtypes and implementors. "
                 + "Provide a fully qualified class name, or omit to use the symbol at the current cursor position.",
-                "GetTypeHierarchy -> INSTEAD OF manual search - shows the full supertype/subtype tree for a class");
+                "GetTypeHierarchy -> INSTEAD OF manual search - shows the full supertype/subtype tree for a class",
+                "GetTypeHierarchy - shows the full supertype/subtype tree for a class");
     }
 
     @Override

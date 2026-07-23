@@ -32,7 +32,7 @@ import kiwi.ingenuity.netbeans.plugin.aicoder.ai.events.PermissionDecision;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.events.PermissionEvent;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.mail.AiSessionInboxBroker;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.McpArgumentException;
-import kiwi.ingenuity.netbeans.plugin.aicoder.process.McpInstructionOptions;
+import kiwi.ingenuity.netbeans.plugin.aicoder.process.McpInstructionOptionEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.McpToolEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.SessionRegistry;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.locking.LockManager;
@@ -642,7 +642,8 @@ public class McpHookServer {
 
             switch (rpcMethod) {
                 case "initialize" -> {
-                    String instructions = McpHookServerUtil.getInitializeStub();
+                    String instructions = McpHookServerUtil.getInitializeStub(
+                            aiType != null ? aiType.getMcpOptions() : Set.of());
                     JsonObject result = new JsonObject();
                     String clientProto = McpHookServerUtil.str(params, "protocolVersion");
                     result.addProperty("protocolVersion",
@@ -660,10 +661,12 @@ public class McpHookServer {
                 case "tools/list" -> {
                     Map<McpToolEnum, McpToolInterface> handlers
                             = aiType != null ? McpInstructionRegistry.getHandlers(aiType) : Map.of();
+                    Set<McpInstructionOptionEnum> toolOptions
+                            = aiType != null ? aiType.getMcpOptions() : Set.of();
                     JsonObject result = new JsonObject();
                     JsonArray tools = new JsonArray();
                     for (McpToolInterface h : handlers.values()) {
-                        tools.add(h.schema(McpInstructionOptions.cli()));
+                        tools.add(h.schema(toolOptions));
                     }
                     result.add("tools", tools);
                     McpHookServerUtil.sendJson(ex, 200, McpHookServerUtil.mcpOk(id, result));

@@ -31,7 +31,6 @@ import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.ollama.session.OllamaAiSes
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.ollama.settings.OllamaPluginSettings;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.ollama.settings.OllamaSessionSettings;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.session.InterruptTypeEnum;
-import kiwi.ingenuity.netbeans.plugin.aicoder.process.McpInstructionOptions;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.McpToolEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.events.AiProcessEventListener;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.server.McpInstructionRegistry;
@@ -122,7 +121,7 @@ public class OllamaAiProcessManager extends AiProcessManager {
 
             Map<McpToolEnum, McpToolInterface> handlers = buildToolHandlers(ollamaSession);
             String instructions = McpInstructionRegistry.buildFullInstructions(
-                    currentSession.aiType(), handlers, McpInstructionOptions.apiBackend());
+                    currentSession.aiType(), handlers);
             JsonArray toolSchemas = bridge.listToolsForModel(handlers.values());
             List<JsonObject> tools = new ArrayList<>();
             Set<String> knownToolNames = new java.util.LinkedHashSet<>();

@@ -18,7 +18,8 @@ public class CleanAndBuildProjectTool extends AbstractActionTool {
                 "Cleans then rebuilds the open project using the IDE's built-in Clean and Build action. "
                 + "Works for any project type (Maven, Ant, Gradle). "
                 + "Fire-and-forget: result appears in the Output window.",
-                "CleanAndBuildProject -> INSTEAD OF Bash clean then build - IDE clean+build action for any project type");
+                "CleanAndBuildProject -> INSTEAD OF Bash clean then build - IDE clean+build action for any project type",
+                "CleanAndBuildProject - IDE clean+build action for any project type");
     }
 
     @Override

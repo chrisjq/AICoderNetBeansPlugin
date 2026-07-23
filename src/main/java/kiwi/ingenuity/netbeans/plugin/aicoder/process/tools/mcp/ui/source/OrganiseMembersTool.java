@@ -20,7 +20,8 @@ public class OrganiseMembersTool extends AbstractFileTool {
                 "Organise members: sorts class members (fields, constructors, methods) "
                 + "according to the configured member order in Tools > Options > Editor > Java. "
                 + "Omit filePath to use the current editor.",
-                "OrganiseMembers -> INSTEAD OF manual member reordering - sorts class members by configured order");
+                "OrganiseMembers -> INSTEAD OF manual member reordering - sorts class members by configured order",
+                "OrganiseMembers - sorts class members by configured order");
     }
 
     @Override

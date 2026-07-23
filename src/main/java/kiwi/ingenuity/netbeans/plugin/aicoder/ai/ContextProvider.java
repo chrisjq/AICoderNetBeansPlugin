@@ -11,6 +11,7 @@ import java.util.function.Consumer;
 import java.util.logging.Logger;
 import javax.swing.SwingUtilities;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.session.AiSession;
+import kiwi.ingenuity.netbeans.plugin.aicoder.process.McpInstructionOptionEnum;
 import org.netbeans.api.project.Project;
 import org.netbeans.api.project.ui.OpenProjects;
 import org.openide.filesystems.FileObject;
@@ -103,27 +104,13 @@ public class ContextProvider {
         return buildPreamble(userPrompt, null);
     }
 
-    /**
-     * Prepend context to the user prompt — but only what has changed since the
-     * last send.
-     *
-     * First call after resetSentContext(): sends the full baseline (all open
-     * projects + file) and, if {@code toolInstructions} is non-blank, appends a
-     * {@code ## Tool Instructions} section. Subsequent calls: sends only the
-     * delta — projects added/closed, file switched. If nothing changed, returns
-     * userPrompt unchanged (no preamble overhead).
-     */
     public String buildPreamble(String userPrompt, String sessionInstructions) {
-        return buildPreamble(userPrompt, sessionInstructions, true);
-    }
-
-    public String buildPreamble(String userPrompt, String sessionInstructions, boolean includeCredentials) {
         boolean isFirstSend = (lastSentProjects == null);
 
         AiSession s = session; // snapshot
         if (s != null) {
             LinkedHashMap<String, String> details = new LinkedHashMap<>(s.getSessionInfoMap());
-            if (includeCredentials) {
+            if (session.aiType().getMcpOptions().contains(McpInstructionOptionEnum.CREDENTIALS)) {
                 details.put("sessionId", s.id());
                 details.put("secretKey", s.secret());
             }
@@ -137,7 +124,7 @@ public class ContextProvider {
             }
 
             identity.append("\n\n");
-            if (includeCredentials) {
+            if (session.aiType().getMcpOptions().contains(McpInstructionOptionEnum.CREDENTIALS)) {
                 identity.append("IMPORTANT: When a tool takes sessionId/secretKey, pass the sessionId and secretKey shown above verbatim — they are YOUR credentials for this session and are required for every tool that lists them as parameters. Always use the latest values shown above.\n\n");
                 identity.append("IMPORTANT: You HAVE permission and FULL ACCESS to Netbeans Plugins MCP tools with your sessionId and secretKey, you HAVE TO use sessionId and secretKey to call the MCP tools\n\n");
             }

@@ -7,24 +7,27 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class ContextProviderPreambleTest {
-    private static final String CREDENTIAL_IMPORTANT =
-            "IMPORTANT: When a tool takes sessionId/secretKey, pass the sessionId and secretKey shown above verbatim";
+
+    private static final String CREDENTIAL_IMPORTANT
+            = "IMPORTANT: When a tool takes sessionId/secretKey, pass the sessionId and secretKey shown above verbatim";
 
     @Test
     void preambleCredentialGatingMatchesFlag() {
-        AiSession session = AiSession.create(null, AiTypeEnum.CLAUDE);
+        AiSession session = AiSession.create(null, AiTypeEnum.OLLAMA_LOCAL);
 
         ContextProvider withoutCreds = new ContextProvider(fo -> {
         });
         withoutCreds.setSession(session);
-        String noCreds = withoutCreds.buildPreamble("prompt", null, false);
+        String noCreds = withoutCreds.buildPreamble("prompt", null);
         assertFalse(noCreds.contains("secretKey:"));
         assertFalse(noCreds.contains(CREDENTIAL_IMPORTANT));
+
+        session = AiSession.create(null, AiTypeEnum.CLAUDE);
 
         ContextProvider withCreds = new ContextProvider(fo -> {
         });
         withCreds.setSession(session);
-        String yesCreds = withCreds.buildPreamble("prompt", null, true);
+        String yesCreds = withCreds.buildPreamble("prompt", null);
         assertTrue(yesCreds.contains("secretKey:"));
         assertTrue(yesCreds.contains(CREDENTIAL_IMPORTANT));
     }

@@ -18,7 +18,8 @@ public class BuildGradleProjectTool extends AbstractBuildTool {
                 "Builds the open Gradle project (./gradlew build -x test). "
                 + "Gradle projects only - do not use for Maven or Ant projects. "
                 + "Returns the full build output including any compile errors.",
-                "BuildGradleProject -> INSTEAD OF Bash gradlew build - builds Gradle project and returns full output");
+                "BuildGradleProject -> INSTEAD OF Bash gradlew build - builds Gradle project and returns full output",
+                "BuildGradleProject - builds Gradle project and returns full output");
     }
 
     @Override

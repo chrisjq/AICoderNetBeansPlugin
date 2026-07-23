@@ -20,7 +20,8 @@ public class OrganiseImportsTool extends AbstractFileTool {
                 "Organise imports: sorts and groups existing import statements by package. "
                 + "Does not add or remove imports - use FixImports for that. "
                 + "Omit filePath to use the current editor.",
-                "OrganiseImports -> INSTEAD OF manual import sorting - sorts and groups existing imports");
+                "OrganiseImports -> INSTEAD OF manual import sorting - sorts and groups existing imports",
+                "OrganiseImports - sorts and groups existing imports");
     }
 
     @Override
