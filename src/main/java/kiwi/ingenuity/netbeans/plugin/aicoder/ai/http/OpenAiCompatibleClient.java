@@ -185,6 +185,9 @@ public class OpenAiCompatibleClient implements HttpAiClient {
             tools.add(tool);
         }
         payload.add("tools", tools);
+        if (request.responseFormat() != null) {
+            payload.add("response_format", request.responseFormat());
+        }
         return payload;
     }
 

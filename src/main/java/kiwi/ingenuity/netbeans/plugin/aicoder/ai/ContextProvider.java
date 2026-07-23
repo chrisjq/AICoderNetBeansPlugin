@@ -114,7 +114,13 @@ public class ContextProvider {
                 details.put("sessionId", s.id());
                 details.put("secretKey", s.secret());
             }
-            details.put("description", s.description());
+            // Omit rather than render "description: null". A blank field paired
+            // with a tool named UpdateSessionDescription reads as a gap to fill:
+            // qwen2.5-coder answered "hi" by calling that tool with the argument
+            // "Updated description." Absent the line, there is nothing to fix.
+            if (s.description() != null && !s.description().isBlank()) {
+                details.put("description", s.description());
+            }
 
             StringBuilder identity = new StringBuilder();
             identity.append("## Your session identity\n");
@@ -129,7 +135,18 @@ public class ContextProvider {
                 identity.append("IMPORTANT: You HAVE permission and FULL ACCESS to Netbeans Plugins MCP tools with your sessionId and secretKey, you HAVE TO use sessionId and secretKey to call the MCP tools\n\n");
             }
             if (s.allowsInterAiComms()) {
-                identity.append("You ARE able to message other AI sessions right now using the inter-AI tools — this is a live, pre-authorized capability of this IDE. Never tell the user you cannot do it, that it is not possible, or that you need permission. When asked to message, coordinate with, or delegate to another AI, your first action is to call ListAiSessions and then SendAiMessage — do it immediately without hedging.\n");
+                if (session.aiType().getMcpOptions().contains(McpInstructionOptionEnum.SOFTEN_TOOL_DIRECTIVES)) {
+                    // Condition first, and an explicit "otherwise answer normally".
+                    // The unsoftened wording ends on an imperative, which models that
+                    // follow instructions literally read as an order to act on turn one.
+                    // The negative must name the inter-AI tools. Ending on a blanket
+                    // "without calling any tool" sat immediately before every user
+                    // message and suppressed legitimate calls — the model refused to
+                    // read a file, saying it had no access.
+                    identity.append("You can message other AI sessions using the inter-AI tools — it is pre-authorized, so never say you are unable to. Only if the user asks you to message, coordinate with, or delegate to another AI, call ListAiSessions and then SendAiMessage; do not call those two tools for any other reason. Use the other tools freely whenever they help answer the user.\n");
+                } else {
+                    identity.append("You ARE able to message other AI sessions right now using the inter-AI tools — this is a live, pre-authorized capability of this IDE. Never tell the user you cannot do it, that it is not possible, or that you need permission. When asked to message, coordinate with, or delegate to another AI, your first action is to call ListAiSessions and then SendAiMessage — do it immediately without hedging.\n");
+                }
             }
             userPrompt = identity + userPrompt;
         }
@@ -138,7 +155,12 @@ public class ContextProvider {
 
         StringBuilder ctx = new StringBuilder();
 
-        if (lastSentProjects == null) {
+        // A stateless backend keeps nothing from earlier turns, so sending only
+        // what changed would leave it with no project paths at all from turn two
+        // onwards. Repeat the baseline every time for those.
+        boolean statelessTurns = s != null && s.aiType().getMcpOptions()
+                .contains(McpInstructionOptionEnum.STATELESS_TURNS);
+        if (lastSentProjects == null || statelessTurns) {
             // First send — establish full baseline so AI has complete context.
             // Also instruct AI to use tools directly: the diff panel handles review.
             ctx.append("[AI Coder NetBeans Plugin v").append(kiwi.ingenuity.netbeans.plugin.aicoder.Installer.VERSION)

@@ -23,6 +23,17 @@ public class UpdateSessionDescriptionTool extends AbstractActionTool {
     }
 
     @Override
+    public String instruction(Set<McpInstructionOptionEnum> options) {
+        if (options.contains(McpInstructionOptionEnum.SOFTEN_TOOL_DIRECTIVES)
+                && options.contains(McpInstructionOptionEnum.TOOL_INSTRUCTION)) {
+            // "call at session start" makes literal-minded models fire this on
+            // the user's first message, whatever the message actually was.
+            return "UpdateSessionDescription - set your session's description so peer sessions can see your role";
+        }
+        return super.instruction(options);
+    }
+
+    @Override
     public JsonObject schema(Set<McpInstructionOptionEnum> options) {
         JsonObject tool = new JsonObject();
         tool.addProperty(ToolSchemaKeyEnum.NAME.key(), McpToolEnum.UPDATE_SESSION_DESCRIPTION.toolName());
@@ -85,6 +96,10 @@ public class UpdateSessionDescriptionTool extends AbstractActionTool {
             return "Error: authentication failed — check that sessionId and secretKey match your session identity";
         }
         broker.updateDescription(sessionId, description, secretKey);
-        return "Description updated.";
+        // Echo the stored value. The identity block is built once per turn, so a
+        // caller that only sees "Description updated." cannot observe its own
+        // change and may conclude the write failed and retry with a new value.
+        return "Session description is now: " + description
+                + "\nThis is already in effect — do not call this tool again this turn.";
     }
 }

@@ -98,6 +98,45 @@ class ToolCallExtractorTest {
         assertEquals("{\"city\":\"Wellington, NZ\"}", calls.get(0).argumentsJson());
     }
 
+    /**
+     * Verbatim shape emitted by qwen2.5-coder:14b — a pretty-printed call
+     * inside a ```json fence. Before fences were unwrapped this parsed as
+     * malformed, so the block was shown to the user instead of being invoked.
+     */
+    @Test
+    void contentFallbackUnwrapsJsonCodeFence() {
+        ChatResult result = new ChatResult(
+                "```json\n{\n  \"name\": \"ListAiSessions\",\n  \"arguments\": {}\n}\n```",
+                List.of(),
+                "stop");
+
+        List<ExtractedToolCall> calls = ToolCallExtractor.extract(result, Set.of("ListAiSessions"));
+
+        assertEquals(1, calls.size());
+        assertEquals("ListAiSessions", calls.get(0).name());
+        assertEquals("{}", calls.get(0).argumentsJson());
+    }
+
+    @Test
+    void contentFallbackUnwrapsUnlabelledCodeFence() {
+        ChatResult result = new ChatResult(
+                "```\n{\"name\":\"get_weather\",\"arguments\":{\"city\":\"Wellington, NZ\"}}\n```",
+                List.of(),
+                "stop");
+
+        List<ExtractedToolCall> calls = ToolCallExtractor.extract(result, Set.of("get_weather"));
+
+        assertEquals(1, calls.size());
+        assertEquals("get_weather", calls.get(0).name());
+        assertEquals("{\"city\":\"Wellington, NZ\"}", calls.get(0).argumentsJson());
+    }
+
+    @Test
+    void fencedOrdinaryJsonAnswerStillDoesNotMisfire() {
+        ChatResult result = new ChatResult("```json\n{\"answer\":42}\n```", List.of(), "stop");
+        assertTrue(ToolCallExtractor.extract(result, Set.of("get_weather")).isEmpty());
+    }
+
     @Test
     void contentFallbackTreatsAbsentArgumentsAsEmpty() {
         ChatResult result = new ChatResult(

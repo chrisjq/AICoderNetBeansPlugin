@@ -1,5 +1,6 @@
 package kiwi.ingenuity.netbeans.plugin.aicoder.process.server;
 
+import com.google.gson.JsonObject;
 import com.sun.net.httpserver.Headers;
 import com.sun.net.httpserver.HttpContext;
 import com.sun.net.httpserver.HttpExchange;
@@ -11,8 +12,17 @@ import java.io.InputStream;
 import java.io.OutputStream;
 import java.net.InetSocketAddress;
 import java.net.URI;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.logging.Handler;
+import java.util.logging.LogRecord;
+import java.util.logging.Logger;
+import kiwi.ingenuity.netbeans.plugin.aicoder.PluginSettings;
 import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import org.junit.jupiter.api.Test;
 
 class McpHookServerUtilTest {
@@ -39,6 +49,54 @@ class McpHookServerUtilTest {
                 null, new IOException("Broken pipe"));
 
         assertDoesNotThrow(() -> McpHookServerUtil.sendJson(exchange, 200, "{}"));
+    }
+
+    /**
+     * Tool-use logging now runs for in-process callers too, and Ollama's bridge
+     * injects credentials into every call's arguments — so the session secret
+     * must never reach the IDE log. sessionId stays: it is not secret and is
+     * needed to correlate entries.
+     */
+    @Test
+    void logToolUseRedactsTheSecretKey() {
+        boolean previous = PluginSettings.isLogToolUse();
+        Logger logger = Logger.getLogger(McpHookServerUtil.class.getName());
+        List<String> captured = new ArrayList<>();
+        Handler capture = new Handler() {
+            @Override
+            public void publish(LogRecord record) {
+                captured.add(record.getMessage());
+            }
+
+            @Override
+            public void flush() {
+            }
+
+            @Override
+            public void close() {
+            }
+        };
+        logger.addHandler(capture);
+        try {
+            PluginSettings.setLogToolUse(true);
+            JsonObject args = new JsonObject();
+            args.addProperty("sessionId", "sid-1234");
+            args.addProperty("secretKey", "super-secret-value");
+            args.addProperty("filePath", "/tmp/Foo.java");
+
+            McpHookServerUtil.logToolUse("OllamaTest", "GetFileContent", args);
+
+            assertEquals(1, captured.size());
+            String line = captured.get(0);
+            assertFalse(line.contains("super-secret-value"), "secret leaked into the log: " + line);
+            assertTrue(line.contains("secretKey[***]"));
+            assertTrue(line.contains("sessionId[sid-1234]"), "sessionId should remain for correlation");
+            assertTrue(line.contains("/tmp/Foo.java"), "ordinary arguments must still be logged");
+        }
+        finally {
+            logger.removeHandler(capture);
+            PluginSettings.setLogToolUse(previous);
+        }
     }
 
     private static final class ThrowingHttpExchange extends HttpExchange {

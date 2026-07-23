@@ -11,6 +11,9 @@ import kiwi.ingenuity.netbeans.plugin.aicoder.process.McpInstructionOptionEnum;
 import static kiwi.ingenuity.netbeans.plugin.aicoder.process.McpInstructionOptionEnum.CREDENTIALS;
 import static kiwi.ingenuity.netbeans.plugin.aicoder.process.McpInstructionOptionEnum.HEADER;
 import static kiwi.ingenuity.netbeans.plugin.aicoder.process.McpInstructionOptionEnum.ONLY_MCP_TOOL_ACCESS;
+import static kiwi.ingenuity.netbeans.plugin.aicoder.process.McpInstructionOptionEnum.SOFTEN_TOOL_DIRECTIVES;
+import static kiwi.ingenuity.netbeans.plugin.aicoder.process.McpInstructionOptionEnum.STATELESS_TURNS;
+import static kiwi.ingenuity.netbeans.plugin.aicoder.process.McpInstructionOptionEnum.TOOL_CALLS_VIA_SCHEMA;
 import static kiwi.ingenuity.netbeans.plugin.aicoder.process.McpInstructionOptionEnum.TOOL_INSTRUCTION;
 
 /**
@@ -22,7 +25,13 @@ public enum AiTypeEnum {
     CLAUDE("Claude", "claude", true, true, new ClaudeSettingsCreator(), Set.of(HEADER, TOOL_INSTRUCTION, CREDENTIALS)),
     GROK("Grok", "grok", true, true, new GrokSettingsCreator(), Set.of(HEADER, TOOL_INSTRUCTION, CREDENTIALS)),
     GitHubCoPilot("GitHub CoPilot", "github_copilot", true, true, new GithubCopilotSettingsCreator(), Set.of(HEADER, TOOL_INSTRUCTION, CREDENTIALS)),
-    OLLAMA_LOCAL("Ollama (Local)", "ollama_local", true, true, new OllamaSettingsCreator(), Set.of(HEADER, TOOL_INSTRUCTION, ONLY_MCP_TOOL_ACCESS));
+    // No TOOL_INSTRUCTION: under TOOL_CALLS_VIA_SCHEMA the tool list is rendered
+    // into the prompt from the schemas, carrying names, parameters and
+    // descriptions. The per-tool instruction lines describe the same tools
+    // without the parameters, so enabling both only duplicated ~9k characters.
+    OLLAMA_LOCAL("Ollama (Local)", "ollama_local", true, true, new OllamaSettingsCreator(),
+            Set.of(HEADER, ONLY_MCP_TOOL_ACCESS, SOFTEN_TOOL_DIRECTIVES, TOOL_CALLS_VIA_SCHEMA,
+                    STATELESS_TURNS));
 
     public static AiTypeEnum fromKey(String key) {
         if (key == null) {

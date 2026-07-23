@@ -75,7 +75,7 @@ class OllamaAiProcessManagerTest {
         ChatMessage toolResult = secondRequest.messages().get(3);
         assertEquals(ChatRole.TOOL, toolResult.role());
         assertEquals("call_0", toolResult.toolCallId());
-        assertEquals("ok", toolResult.content());
+        assertEquals("ok 1", toolResult.content());
         // Prose final answer must be streamed exactly once
         assertTrue(events.stream().anyMatch(e -> e instanceof TextDeltaEvent td && td.text().contains("Finished.")));
         // JSON tool-call content must NOT be emitted as a TextDeltaEvent
@@ -94,10 +94,12 @@ class OllamaAiProcessManagerTest {
             }
         };
 
+        // Arguments must differ per call: identical calls are caught by the
+        // repeat guard long before the iteration cap is reached.
         List<ChatResult> repeating = new ArrayList<>();
         for (int i = 0; i < 30; i++) {
             repeating.add(new ChatResult("",
-                    List.of(new ChatToolCall("call-" + i, "GetPluginVersion", "{}")),
+                    List.of(new ChatToolCall("call-" + i, "GetPluginVersion", "{\"n\":" + i + "}")),
                     "tool_calls"));
         }
         FakeHttpClient fakeClient = new FakeHttpClient(repeating);
@@ -115,6 +117,179 @@ class OllamaAiProcessManagerTest {
         assertEquals(25, manager.invokedToolNames.size());
         assertTrue(events.stream().anyMatch(e -> e instanceof StatusEvent se
                 && se.text() != null && se.text().contains("Stopped after 25 tool iterations")));
+    }
+
+    /**
+     * qwen2.5-coder:14b answered "hi" by calling UpdateSessionDescription, got
+     * back "Description updated.", and — having no signal that the work was
+     * done — reissued the identical call every iteration. The tool must run
+     * once and the turn must end promptly rather than at the iteration cap.
+     */
+    @Test
+    void stopsWhenModelRepeatsTheSameCall() throws Exception {
+        CountDownLatch done = new CountDownLatch(1);
+        List<AiProcessEvent> events = new ArrayList<>();
+        AiProcessEventListener listener = event -> {
+            events.add(event);
+            if (event instanceof TurnCompleteEvent) {
+                done.countDown();
+            }
+        };
+
+        List<ChatResult> identical = new ArrayList<>();
+        for (int i = 0; i < 30; i++) {
+            identical.add(new ChatResult("",
+                    List.of(new ChatToolCall("call-" + i, "GetPluginVersion", "{}")),
+                    "tool_calls"));
+        }
+        TestOllamaProcessManager manager
+                = new TestOllamaProcessManager(listener, new FakeHttpClient(identical));
+        AiSession shared = new AiSession("sid3", "session3", null,
+                kiwi.ingenuity.netbeans.plugin.aicoder.ai.AiTypeEnum.OLLAMA_LOCAL,
+                null,
+                kiwi.ingenuity.netbeans.plugin.aicoder.ai.AiTypeEnum.OLLAMA_LOCAL.createDefaultSettings(),
+                Instant.now(), Instant.now());
+        manager.setCurrentSession(shared);
+        manager.start(null, "qwen2.5-coder:7b");
+        manager.sendPrompt("hi", new File(System.getProperty("user.home")), List.of());
+
+        assertTrue(done.await(5, TimeUnit.SECONDS));
+        assertEquals(1, manager.invokedToolNames.size(),
+                "a repeated identical call must not re-run the tool");
+        assertTrue(events.stream().anyMatch(e -> e instanceof StatusEvent se
+                && se.text() != null && se.text().contains("kept repeating the same tool call")));
+        assertFalse(events.stream().anyMatch(e -> e instanceof StatusEvent se
+                && se.text() != null && se.text().contains("Stopped after 25")),
+                "should end on the repeat guard, not grind out the iteration cap");
+    }
+
+    /**
+     * Observed with qwen2.5-coder:14b: it called UpdateSessionDescription four
+     * times, varying the description each time, so an arguments-based guard
+     * never matched — yet every call returned "Description updated." An
+     * already-seen result means the call taught the model nothing.
+     */
+    @Test
+    void stopsWhenRepeatedCallsVaryArgsButReturnTheSameResult() throws Exception {
+        CountDownLatch done = new CountDownLatch(1);
+        List<AiProcessEvent> events = new ArrayList<>();
+        AiProcessEventListener listener = event -> {
+            events.add(event);
+            if (event instanceof TurnCompleteEvent) {
+                done.countDown();
+            }
+        };
+
+        List<ChatResult> varying = new ArrayList<>();
+        for (int i = 0; i < 30; i++) {
+            varying.add(new ChatResult("",
+                    List.of(new ChatToolCall("call-" + i, "GetPluginVersion",
+                            "{\"description\":\"attempt " + i + "\"}")),
+                    "tool_calls"));
+        }
+        TestOllamaProcessManager manager = new TestOllamaProcessManager(
+                listener, new FakeHttpClient(varying), "Description updated.");
+        AiSession shared = new AiSession("sid4", "session4", null,
+                kiwi.ingenuity.netbeans.plugin.aicoder.ai.AiTypeEnum.OLLAMA_LOCAL,
+                null,
+                kiwi.ingenuity.netbeans.plugin.aicoder.ai.AiTypeEnum.OLLAMA_LOCAL.createDefaultSettings(),
+                Instant.now(), Instant.now());
+        manager.setCurrentSession(shared);
+        manager.start(null, "qwen2.5-coder:7b");
+        manager.sendPrompt("hi", new File(System.getProperty("user.home")), List.of());
+
+        assertTrue(done.await(5, TimeUnit.SECONDS));
+        assertTrue(manager.invokedToolNames.size() <= 3,
+                "identical results must end the turn quickly, got " + manager.invokedToolNames.size());
+        assertTrue(events.stream().anyMatch(e -> e instanceof StatusEvent se
+                && se.text() != null && se.text().contains("kept repeating the same tool call")));
+    }
+
+    /**
+     * A stalled loop previously ended on a status line, leaving the user with no
+     * reply to "hi" at all. The turn now makes one final request with no tools
+     * offered, so the model can only answer in prose.
+     */
+    @Test
+    void stalledLoopStillProducesAnAnswer() throws Exception {
+        CountDownLatch done = new CountDownLatch(1);
+        List<AiProcessEvent> events = new ArrayList<>();
+        AiProcessEventListener listener = event -> {
+            events.add(event);
+            if (event instanceof TurnCompleteEvent) {
+                done.countDown();
+            }
+        };
+
+        List<ChatResult> scripted = new ArrayList<>();
+        for (int i = 0; i < 3; i++) {
+            scripted.add(new ChatResult("",
+                    List.of(new ChatToolCall("c" + i, "GetPluginVersion", "{\"d\":\"v" + i + "\"}")),
+                    "tool_calls"));
+        }
+        scripted.add(new ChatResult("Hello! How can I help with your project?", List.of(), "stop"));
+
+        FakeHttpClient fake = new FakeHttpClient(scripted);
+        TestOllamaProcessManager manager
+                = new TestOllamaProcessManager(listener, fake, "Description updated.");
+        AiSession shared = new AiSession("sid6", "session6", null,
+                kiwi.ingenuity.netbeans.plugin.aicoder.ai.AiTypeEnum.OLLAMA_LOCAL,
+                null,
+                kiwi.ingenuity.netbeans.plugin.aicoder.ai.AiTypeEnum.OLLAMA_LOCAL.createDefaultSettings(),
+                Instant.now(), Instant.now());
+        manager.setCurrentSession(shared);
+        manager.start(null, "qwen2.5-coder:7b");
+        manager.sendPrompt("hi", new File(System.getProperty("user.home")), List.of());
+
+        assertTrue(done.await(5, TimeUnit.SECONDS));
+        assertTrue(events.stream().anyMatch(e -> e instanceof TextDeltaEvent td
+                && td.text() != null && td.text().contains("How can I help")),
+                "the user must get a real answer, not just a status line");
+        // The recovery request must offer no tools, or the model can stall again.
+        ChatRequest recovery = fake.requests.get(fake.requests.size() - 1);
+        assertTrue(recovery.toolSchemas().isEmpty(), "final request must offer no tools");
+    }
+
+    /** "{}" is what the model produced after giving up; it must not be shown as the reply. */
+    @Test
+    void emptyJsonObjectIsNotPresentedAsTheAnswer() throws Exception {
+        CountDownLatch done = new CountDownLatch(1);
+        List<AiProcessEvent> events = new ArrayList<>();
+        AiProcessEventListener listener = event -> {
+            events.add(event);
+            if (event instanceof TurnCompleteEvent) {
+                done.countDown();
+            }
+        };
+
+        FakeHttpClient fake = new FakeHttpClient(List.of(new ChatResult("{}", List.of(), "stop")));
+        TestOllamaProcessManager manager = new TestOllamaProcessManager(listener, fake);
+        AiSession shared = new AiSession("sid5", "session5", null,
+                kiwi.ingenuity.netbeans.plugin.aicoder.ai.AiTypeEnum.OLLAMA_LOCAL,
+                null,
+                kiwi.ingenuity.netbeans.plugin.aicoder.ai.AiTypeEnum.OLLAMA_LOCAL.createDefaultSettings(),
+                Instant.now(), Instant.now());
+        manager.setCurrentSession(shared);
+        manager.start(null, "qwen2.5-coder:7b");
+        manager.sendPrompt("hi", new File(System.getProperty("user.home")), List.of());
+
+        assertTrue(done.await(5, TimeUnit.SECONDS));
+        assertFalse(events.stream().anyMatch(e -> e instanceof TextDeltaEvent td
+                && td.text() != null && td.text().contains("{}")),
+                "a bare {} must never reach the user as the assistant's reply");
+        assertTrue(events.stream().anyMatch(e -> e instanceof StatusEvent se
+                && se.text() != null && se.text().contains("empty response")));
+    }
+
+    @Test
+    void emptyJsonDetectionLeavesRealAnswersAlone() {
+        assertTrue(OllamaAiProcessManager.isEmptyJson("{}"));
+        assertTrue(OllamaAiProcessManager.isEmptyJson("  []  "));
+        assertTrue(OllamaAiProcessManager.isEmptyJson("```json\n{}\n```"));
+        assertFalse(OllamaAiProcessManager.isEmptyJson("{\"answer\":42}"),
+                "a user can ask for JSON and must still receive it");
+        assertFalse(OllamaAiProcessManager.isEmptyJson("Hello!"));
+        assertFalse(OllamaAiProcessManager.isEmptyJson(""));
     }
 
     @Test
@@ -188,11 +363,19 @@ class OllamaAiProcessManagerTest {
     private static final class TestOllamaProcessManager extends OllamaAiProcessManager {
 
         private final HttpAiClient fakeClient;
+        /** When set, every tool returns this — the "Description updated." case. */
+        private final String fixedToolResult;
         final List<String> invokedToolNames = new ArrayList<>();
 
         TestOllamaProcessManager(AiProcessEventListener listener, HttpAiClient fakeClient) {
+            this(listener, fakeClient, null);
+        }
+
+        TestOllamaProcessManager(AiProcessEventListener listener, HttpAiClient fakeClient,
+                String fixedToolResult) {
             super(listener);
             this.fakeClient = fakeClient;
+            this.fixedToolResult = fixedToolResult;
         }
 
         @Override
@@ -211,7 +394,9 @@ class OllamaAiProcessManagerTest {
                 @Override
                 protected String executeTool(String toolName, JsonObject argsWithAuth) {
                     invokedToolNames.add(toolName);
-                    return "ok";
+                    // Distinct per call by default: a repeated result now means
+                    // "no progress" and ends the turn, tested separately.
+                    return fixedToolResult != null ? fixedToolResult : "ok " + invokedToolNames.size();
                 }
             };
         }

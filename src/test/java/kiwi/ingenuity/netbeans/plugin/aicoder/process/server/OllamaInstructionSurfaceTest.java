@@ -11,6 +11,7 @@ import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.McpToolInterface
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.ToolSchemaKeyEnum;
 import org.junit.jupiter.api.Test;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -97,6 +98,54 @@ class OllamaInstructionSurfaceTest {
             assertFalse(params.contains("secretKey"),
                     e.getKey() + " must not declare secretKey — the bridge injects it");
         }
+    }
+
+    /**
+     * Under TOOL_CALLS_VIA_SCHEMA the tools array is not sent and the tool list
+     * is rendered from the schemas by SchemaToolCalls — which carries parameter
+     * names the per-tool instruction lines never had. Enabling TOOL_INSTRUCTION
+     * as well would describe all 83 tools twice, ~9k characters of duplication.
+     */
+    @Test
+    void ollamaLearnsToolsFromTheRenderedListRatherThanPerToolProse() {
+        Map<McpToolEnum, McpToolInterface> handlers = ollamaHandlers();
+        String text = ollamaInstructions();
+
+        assertFalse(text.contains("### "),
+                "the rendered tool list is the description channel, not the per-tool sections");
+        assertTrue(text.contains("## Policy"), "the policy header must survive");
+
+        int named = 0;
+        for (McpToolInterface handler : handlers.values()) {
+            if (handler.schema(AiTypeEnum.OLLAMA_LOCAL.getMcpOptions()).has("name")) {
+                named++;
+            }
+        }
+        assertEquals(handlers.size(), named, "every handler must still contribute a callable schema");
+        assertTrue(handlers.size() > 50, "sanity check that the full tool set is present");
+    }
+
+    /**
+     * SOFTEN_TOOL_DIRECTIVES exists because qwen2.5-coder:14b answered "hi" by
+     * calling a tool: the prompt told it to "call at session start" and to make
+     * an inter-AI call its "first action", and it complied literally.
+     */
+    @Test
+    void ollamaInstructionsCarryNoProactiveCallDirectives() {
+        String text = ollamaInstructions();
+        assertFalse(text.contains("call at session start"),
+                "a session-start directive makes small models fire a tool on the user's first message");
+        assertFalse(text.contains("first action"),
+                "an unconditional 'first action is to call X' reads as an order to act on turn one");
+    }
+
+    /** The softened wording must not cost the CLI types their directives. */
+    @Test
+    void claudeKeepsProactiveCallDirectives() {
+        String text = McpInstructionRegistry.buildFullInstructions(
+                AiTypeEnum.CLAUDE, ClaudeToolHandlerFactory.build(() -> null, null));
+        assertTrue(text.contains("call at session start"),
+                "Claude follows the conditional correctly and should keep the stronger wording");
     }
 
     /**

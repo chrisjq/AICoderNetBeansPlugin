@@ -741,8 +741,8 @@ public class McpHookServer {
                     McpHookServerUtil.mcpError(id, -32601, "Unhandled tool: " + toolName));
             return;
         }
-        McpHookServerUtil.logToolUse(session.getSessionName(), toolName, argsObj);
         try {
+            // McpToolInvoker logs the call — see the note there on why it moved.
             String result = McpToolInvoker.invoke(tool, handler, argsObj, session);
             McpHookServerUtil.sendJson(ex, 200, McpHookServerUtil.mcpTextResult(id, result));
         }

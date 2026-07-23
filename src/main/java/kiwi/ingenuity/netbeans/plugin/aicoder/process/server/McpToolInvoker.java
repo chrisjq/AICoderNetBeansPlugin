@@ -23,6 +23,13 @@ public final class McpToolInvoker {
 
     public static String invoke(McpToolEnum tool, McpToolInterface handler,
             JsonObject argsObj, AbstractAiSession session) throws McpArgumentException {
+        // Logged here rather than at the HTTP entry point so in-process callers
+        // are covered too: Ollama reaches tools through OllamaMcpBridge, so its
+        // calls never appeared in the log while this lived in McpHookServer.
+        // Null-safe: a read-only tool needing no lock can be invoked without a
+        // session, and logging must not make that path throw.
+        McpHookServerUtil.logToolUse(
+                session == null ? null : session.getSessionName(), tool.toolName(), argsObj);
         LockTypeEnum requiredLock = ToolLockRegistry.getLockType(tool, handler);
         LockManager lockManager = LockManager.getInstance();
         boolean lockAcquired = false;

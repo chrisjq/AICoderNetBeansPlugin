@@ -27,7 +27,7 @@ public final class ToolCallExtractor {
             return List.of();
         }
         try {
-            JsonElement parsed = JsonParser.parseString(assistantText);
+            JsonElement parsed = JsonParser.parseString(stripCodeFence(assistantText));
             List<ExtractedToolCall> out = new ArrayList<>();
             if (parsed.isJsonObject()) {
                 addIfKnownTool(parsed.getAsJsonObject(), knownToolNames, out);
@@ -44,6 +44,36 @@ public final class ToolCallExtractor {
         catch (RuntimeException ex) {
             return List.of();
         }
+    }
+
+    /**
+     * Unwraps a markdown code fence around a text-form tool call.
+     *
+     * <p>Models that emit tool calls as assistant text rather than in the
+     * structured tool_calls field frequently wrap them in ```json ... ```.
+     * The backticks are not JSON, so the payload must be unwrapped before
+     * parsing — otherwise the call is missed and the raw block is shown to the
+     * user as if it were the answer.
+     *
+     * @return the fenced content, or the input stripped if it is not fenced
+     */
+    private static String stripCodeFence(String text) {
+        String trimmed = text.strip();
+        if (!trimmed.startsWith("```")) {
+            return trimmed;
+        }
+        int closing = trimmed.lastIndexOf("```");
+        String inner = closing > 2 ? trimmed.substring(3, closing) : trimmed.substring(3);
+        int firstNewline = inner.indexOf('\n');
+        if (firstNewline >= 0) {
+            // Drop the opening fence's language tag ("json", "JSON", or empty)
+            // but keep the line when the payload itself starts there.
+            String tag = inner.substring(0, firstNewline).trim();
+            if (!tag.startsWith("{") && !tag.startsWith("[")) {
+                inner = inner.substring(firstNewline + 1);
+            }
+        }
+        return inner.strip();
     }
 
     private static List<ExtractedToolCall> fromStructured(List<ChatToolCall> toolCalls) {

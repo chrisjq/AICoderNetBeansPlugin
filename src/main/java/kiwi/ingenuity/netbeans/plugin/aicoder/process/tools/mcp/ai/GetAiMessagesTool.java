@@ -26,6 +26,17 @@ public class GetAiMessagesTool extends AbstractActionTool {
     }
 
     @Override
+    public String instruction(Set<McpInstructionOptionEnum> options) {
+        if (options.contains(McpInstructionOptionEnum.SOFTEN_TOOL_DIRECTIVES)
+                && options.contains(McpInstructionOptionEnum.TOOL_INSTRUCTION)) {
+            // "call at session start" makes literal-minded models fire this on
+            // the user's first message, whatever the message actually was.
+            return "GetAiMessages - list inbox summaries when checking for messages from peer AI sessions";
+        }
+        return super.instruction(options);
+    }
+
+    @Override
     public JsonObject schema(Set<McpInstructionOptionEnum> options) {
         JsonObject tool = new JsonObject();
         tool.addProperty(ToolSchemaKeyEnum.NAME.key(), McpToolEnum.GET_AI_MESSAGES.toolName());

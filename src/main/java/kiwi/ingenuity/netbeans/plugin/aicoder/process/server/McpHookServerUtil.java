@@ -257,6 +257,12 @@ public final class McpHookServerUtil {
         if (argsObj != null && argsObj.size() > 0) {
             sb.append(" arguments:");
             for (Map.Entry<String, JsonElement> entry : argsObj.entrySet()) {
+                if ("secretKey".equals(entry.getKey())) {
+                    // Never write the session secret to the IDE log. sessionId is
+                    // kept: it is not secret and is needed to correlate entries.
+                    sb.append(" secretKey[***]");
+                    continue;
+                }
                 JsonElement elem = entry.getValue();
                 String value = elem.isJsonNull() ? ""
                         : elem.isJsonPrimitive() ? elem.getAsString()

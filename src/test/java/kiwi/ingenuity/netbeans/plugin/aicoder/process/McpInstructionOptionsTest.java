@@ -18,11 +18,27 @@ class McpInstructionOptionsTest {
     }
 
     @Test
-    void apiBackendOmitsCredentials() {
+    void apiBackendOmitsCredentialsAndDescribesToolsInProse() {
         var o = AiTypeEnum.OLLAMA_LOCAL.getMcpOptions();
         assertTrue(o.contains(McpInstructionOptionEnum.HEADER));
-        assertTrue(o.contains(McpInstructionOptionEnum.TOOL_INSTRUCTION));
-        assertFalse(o.contains(McpInstructionOptionEnum.CREDENTIALS));
+        assertFalse(o.contains(McpInstructionOptionEnum.CREDENTIALS),
+                "credentials are injected by the bridge");
+        assertTrue(o.contains(McpInstructionOptionEnum.TOOL_CALLS_VIA_SCHEMA),
+                "populating the tools array makes this backend fire a tool every turn");
+        assertFalse(o.contains(McpInstructionOptionEnum.TOOL_INSTRUCTION),
+                "SchemaToolCalls renders name, parameters and description, so the "
+                + "per-tool lines would only duplicate it without adding parameters");
+        assertTrue(o.contains(McpInstructionOptionEnum.ONLY_MCP_TOOL_ACCESS));
+        assertTrue(o.contains(McpInstructionOptionEnum.SOFTEN_TOOL_DIRECTIVES));
+    }
+
+    @Test
+    void cliTypesKeepTheToolsArray() {
+        for (AiTypeEnum type : new AiTypeEnum[]{AiTypeEnum.CLAUDE, AiTypeEnum.GROK,
+            AiTypeEnum.GitHubCoPilot}) {
+            assertFalse(type.getMcpOptions().contains(McpInstructionOptionEnum.TOOL_CALLS_VIA_SCHEMA),
+                    type + " handles native tool calls and must keep the standard path");
+        }
     }
 
     @Test

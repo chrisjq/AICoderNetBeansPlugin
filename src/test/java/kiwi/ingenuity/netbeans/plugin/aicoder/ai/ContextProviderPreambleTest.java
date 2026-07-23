@@ -31,4 +31,108 @@ class ContextProviderPreambleTest {
         assertTrue(yesCreds.contains("secretKey:"));
         assertTrue(yesCreds.contains(CREDENTIAL_IMPORTANT));
     }
+
+    /**
+     * The inter-AI blurb sits immediately before the user's own text, so its
+     * final clause carries a lot of weight. Under SOFTEN_TOOL_DIRECTIVES it must
+     * lead with the condition rather than end on "do it immediately".
+     */
+    /** Inter-AI comms is settings-derived, so enable it rather than relying on the default. */
+    private static ContextProvider providerFor(AiTypeEnum type) {
+        AiSession session = AiSession.create(null, type);
+        session.settings().setAllowInterAiComms(Boolean.TRUE);
+        ContextProvider provider = new ContextProvider(fo -> {
+        });
+        provider.setSession(session);
+        return provider;
+    }
+
+    @Test
+    void interAiBlurbIsConditionalForSoftenedTypes() {
+        String preamble = providerFor(AiTypeEnum.OLLAMA_LOCAL).buildPreamble("hi", null);
+
+        assertFalse(preamble.contains("first action"),
+                "an unconditional 'first action is to call X' triggers a tool call on 'hi'");
+        assertFalse(preamble.contains("without hedging"));
+        assertTrue(preamble.contains("Only if the user asks you to message"),
+                "the inter-AI instruction must lead with its condition");
+    }
+
+    /**
+     * A rendered "description: null" is an invitation to fill it in — the model
+     * called UpdateSessionDescription in response to "hi". Blank fields must be
+     * omitted, not printed as the literal string "null".
+     */
+    @Test
+    void blankIdentityFieldsAreOmittedRatherThanRenderedAsNull() {
+        for (AiTypeEnum type : new AiTypeEnum[]{AiTypeEnum.OLLAMA_LOCAL, AiTypeEnum.CLAUDE}) {
+            String preamble = providerFor(type).buildPreamble("hi", null);
+            assertFalse(preamble.contains(": null"),
+                    type + " identity block must not render a null field");
+            assertFalse(preamble.contains("description: null"), type + " description leaked as null");
+        }
+    }
+
+    @Test
+    void populatedDescriptionIsStillShown() {
+        AiSession session = AiSession.create(null, AiTypeEnum.CLAUDE);
+        session.setDescription("reviewing the MCP options work");
+        ContextProvider provider = new ContextProvider(fo -> {
+        });
+        provider.setSession(session);
+
+        assertTrue(provider.buildPreamble("hi", null)
+                .contains("description: reviewing the MCP options work"));
+    }
+
+    /**
+     * The blurb sits immediately before every user message. Ending it on a
+     * blanket "without calling any tool" made the model refuse to read files,
+     * replying that it had no access — the negative must name only the two
+     * inter-AI tools it is scoping.
+     */
+    @Test
+    void softenedBlurbDoesNotForbidToolsInGeneral() {
+        String preamble = providerFor(AiTypeEnum.OLLAMA_LOCAL).buildPreamble("read pom.xml", null);
+
+        assertFalse(preamble.contains("without calling any tool"),
+                "a blanket prohibition suppresses legitimate tool use");
+        assertTrue(preamble.contains("do not call those two tools for any other reason"),
+                "the restriction must name the inter-AI tools");
+        assertTrue(preamble.contains("Use the other tools freely"));
+    }
+
+    /**
+     * Ollama builds its message list fresh each turn, so context sent only on
+     * the first turn is gone by the second. Asked to read pom.xml on a later
+     * turn the model invented "/path/to/pom.xml", never having been told where
+     * the project was.
+     */
+    @Test
+    void statelessTypesGetTheProjectBaselineOnEveryTurn() {
+        ContextProvider provider = providerFor(AiTypeEnum.OLLAMA_LOCAL);
+        provider.buildPreamble("first", null);
+        String second = provider.buildPreamble("second", null);
+
+        assertTrue(second.contains("AI Coder NetBeans Plugin v"),
+                "the baseline must repeat for a backend that keeps no history");
+    }
+
+    @Test
+    void statefulTypesStillGetDeltasOnly() {
+        ContextProvider provider = providerFor(AiTypeEnum.CLAUDE);
+        provider.buildPreamble("first", null);
+        String second = provider.buildPreamble("second", null);
+
+        assertFalse(second.contains("AI Coder NetBeans Plugin v"),
+                "Claude remembers turn one, so repeating the baseline is wasted context");
+    }
+
+    @Test
+    void interAiBlurbKeepsStrongWordingForOtherTypes() {
+        String preamble = providerFor(AiTypeEnum.CLAUDE).buildPreamble("hi", null);
+
+        assertTrue(preamble.contains("first action"));
+        assertTrue(preamble.contains("without hedging"));
+    }
 }
