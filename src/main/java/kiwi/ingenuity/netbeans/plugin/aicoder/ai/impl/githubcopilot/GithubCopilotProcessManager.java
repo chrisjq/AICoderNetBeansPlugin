@@ -3,6 +3,7 @@ package kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.githubcopilot;
 import com.github.copilot.CopilotClient;
 import com.github.copilot.CopilotSession;
 import com.github.copilot.rpc.CopilotClientOptions;
+import com.github.copilot.rpc.McpAuthResult;
 import com.github.copilot.rpc.McpHttpServerConfig;
 import com.github.copilot.rpc.PermissionHandler;
 import com.github.copilot.rpc.ResumeSessionConfig;
@@ -11,11 +12,13 @@ import com.github.copilot.rpc.SessionMetadata;
 import java.io.File;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 import java.util.logging.Level;
 import java.util.logging.Logger;
+import kiwi.ingenuity.netbeans.plugin.aicoder.PluginSettings;
 import kiwi.ingenuity.netbeans.plugin.aicoder.StringConst;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.AiProcessManager;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.AiTypeEnum;
@@ -24,8 +27,8 @@ import kiwi.ingenuity.netbeans.plugin.aicoder.ai.events.StatusEventTypeEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.githubcopilot.events.GithubCopilotFatalErrorEvent;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.githubcopilot.events.GithubCopilotQuotaEvent;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.githubcopilot.session.GithubCopilotAiSession;
-import kiwi.ingenuity.netbeans.plugin.aicoder.PluginSettings;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.githubcopilot.settings.GithubCopilotPluginSettings;
+import kiwi.ingenuity.netbeans.plugin.aicoder.ai.session.AiSession;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.session.InterruptTypeEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.events.AiProcessEventListener;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.server.McpHookServer;
@@ -43,6 +46,57 @@ import kiwi.ingenuity.netbeans.plugin.aicoder.utils.StatusMessageUtil;
 public class GithubCopilotProcessManager extends AiProcessManager {
 
     private static final Logger LOG = Logger.getLogger(GithubCopilotProcessManager.class.getName());
+
+    static SessionConfig buildCreateConfig(String sessionId, String model,
+            Map<String, com.github.copilot.rpc.McpServerConfig> mcpServers) {
+        return new SessionConfig()
+                .setSessionId(sessionId)
+                .setModel(model)
+                .setExcludedTools(List.of("edit", "create"))
+                .setOnPermissionRequest(PermissionHandler.APPROVE_ALL)
+                // An MCP server asking for OAuth cannot be serviced from here — we
+                // have no browser flow, and our own server needs no auth. Cancel
+                // rather than leave the request pending and hang the turn.
+                .setOnMcpAuthRequest((request, invocation)
+                        -> CompletableFuture.completedFuture(McpAuthResult.cancelled()))
+                .setMcpServers(mcpServers);
+    }
+
+    static ResumeSessionConfig buildResumeConfig(String model,
+            Map<String, com.github.copilot.rpc.McpServerConfig> mcpServers) {
+        return new ResumeSessionConfig()
+                .setModel(model)
+                .setExcludedTools(List.of("edit", "create"))
+                .setOnPermissionRequest(PermissionHandler.APPROVE_ALL)
+                .setMcpServers(mcpServers);
+    }
+
+    static boolean sessionListContains(List<SessionMetadata> sessions, String targetSessionId) {
+        if (sessions == null || targetSessionId == null || targetSessionId.isBlank()) {
+            return false;
+        }
+        return sessions.stream().map(SessionMetadata::getSessionId).anyMatch(targetSessionId::equals);
+    }
+
+    static boolean isSessionNotFoundFailure(Throwable failure) {
+        String message = deepestMessage(failure);
+        return message != null && message.toLowerCase().contains("session not found");
+    }
+
+    private static boolean isCorruptedSessionFailure(Throwable failure) {
+        String message = deepestMessage(failure);
+        return message != null && (message.contains("could not be loaded") || message.contains("corrupted"));
+    }
+
+    private static String deepestMessage(Throwable failure) {
+        String lastMessage = null;
+        for (Throwable current = failure; current != null; current = current.getCause()) {
+            if (current.getMessage() != null && !current.getMessage().isBlank()) {
+                lastMessage = current.getMessage();
+            }
+        }
+        return lastMessage;
+    }
 
     // Copilot's own resumable session id. Normally equals the plugin session id,
     // but is replaced with a fresh UUID after a corrupted resume so MCP routing
@@ -143,6 +197,10 @@ public class GithubCopilotProcessManager extends AiProcessManager {
         eventBridge = new GithubCopilotSessionEventBridge(turnAwareListener);
         eventBridge.setOnError(msg -> listener.onAiProcessEvent(
                 new StatusEvent(StatusEventTypeEnum.EXITED, "GitHub Copilot: " + msg)));
+        eventBridge.setSessionNameSupplier(() -> {
+            AiSession s = currentSession;
+            return s == null ? null : s.name();
+        });
 
         CopilotClientOptions opts = new CopilotClientOptions();
         opts.setCliPath(executablePath);
@@ -171,9 +229,9 @@ public class GithubCopilotProcessManager extends AiProcessManager {
     }
 
     /**
-     * Resume an existing Copilot session only when it is actually present in the
-     * SDK session store; otherwise create a fresh one under the stable plugin
-     * session id so later reopen/resume uses the same id without a noisy
+     * Resume an existing Copilot session only when it is actually present in
+     * the SDK session store; otherwise create a fresh one under the stable
+     * plugin session id so later reopen/resume uses the same id without a noisy
      * "session not found" exception on first start.
      */
     private CopilotSession createOrResumeSession(CopilotClient client, String model)
@@ -210,52 +268,6 @@ public class GithubCopilotProcessManager extends AiProcessManager {
             Map<String, com.github.copilot.rpc.McpServerConfig> mcpServers, String targetSessionId)
             throws ExecutionException, InterruptedException, TimeoutException {
         return client.createSession(buildCreateConfig(targetSessionId, model, mcpServers)).get(2, TimeUnit.MINUTES);
-    }
-
-    static SessionConfig buildCreateConfig(String sessionId, String model,
-            Map<String, com.github.copilot.rpc.McpServerConfig> mcpServers) {
-        return new SessionConfig()
-                .setSessionId(sessionId)
-                .setModel(model)
-                .setExcludedTools(List.of("edit", "create"))
-                .setOnPermissionRequest(PermissionHandler.APPROVE_ALL)
-                .setMcpServers(mcpServers);
-    }
-
-    static ResumeSessionConfig buildResumeConfig(String model,
-            Map<String, com.github.copilot.rpc.McpServerConfig> mcpServers) {
-        return new ResumeSessionConfig()
-                .setModel(model)
-                .setExcludedTools(List.of("edit", "create"))
-                .setOnPermissionRequest(PermissionHandler.APPROVE_ALL)
-                .setMcpServers(mcpServers);
-    }
-
-    static boolean sessionListContains(List<SessionMetadata> sessions, String targetSessionId) {
-        if (sessions == null || targetSessionId == null || targetSessionId.isBlank()) {
-            return false;
-        }
-        return sessions.stream().map(SessionMetadata::getSessionId).anyMatch(targetSessionId::equals);
-    }
-
-    static boolean isSessionNotFoundFailure(Throwable failure) {
-        String message = deepestMessage(failure);
-        return message != null && message.toLowerCase().contains("session not found");
-    }
-
-    private static boolean isCorruptedSessionFailure(Throwable failure) {
-        String message = deepestMessage(failure);
-        return message != null && (message.contains("could not be loaded") || message.contains("corrupted"));
-    }
-
-    private static String deepestMessage(Throwable failure) {
-        String lastMessage = null;
-        for (Throwable current = failure; current != null; current = current.getCause()) {
-            if (current.getMessage() != null && !current.getMessage().isBlank()) {
-                lastMessage = current.getMessage();
-            }
-        }
-        return lastMessage;
     }
 
     private Map<String, com.github.copilot.rpc.McpServerConfig> buildMcpServers() {

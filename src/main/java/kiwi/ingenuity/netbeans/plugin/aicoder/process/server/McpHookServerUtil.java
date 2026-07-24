@@ -39,7 +39,8 @@ public final class McpHookServerUtil {
         if (mcpOnly) {
             sb.append("You are connected to the NetBeans IDE plugin (").append(StringConst.PLUGIN_ID)
                     .append("). Use these plugin tools for ALL project work — they are the only tools available.");
-        } else {
+        }
+        else {
             sb.append("You are connected to the NetBeans IDE plugin (").append(StringConst.PLUGIN_ID)
                     .append("). Use these plugin tools for ALL project work — they are pre-authorized and integrate with the live IDE.");
         }
@@ -47,7 +48,8 @@ public final class McpHookServerUtil {
         if (!mcpOnly) {
             sb.append("- Edit project files ONLY via the Edit/Write tools or the plugin's ApplyEdit/WriteFile — these route through the Accept/Reject diff panel. NEVER modify project files with Bash (sed, echo, >/tee redirects): that skips the diff panel and is not reviewable.\n");
             sb.append("- Prefer plugin tools (search, git, build, refactor) over Bash/Grep for anything in the open project. Only use built-ins for files outside the project tree (e.g. memory, system config).\n");
-        } else {
+        }
+        else {
             sb.append("- Use plugin tools for ALL project work — they are the only tools available.\n");
         }
         sb.append("- The IDE is running — never claim tools are unavailable or the environment is headless. If a tool exists for the task, use it.\n");
@@ -77,12 +79,17 @@ public final class McpHookServerUtil {
         sb.append("You are connected to the NetBeans IDE plugin (").append(StringConst.PLUGIN_ID).append("). ");
         if (mcpOnly) {
             sb.append("It exposes a full set of tools for working in the live IDE: file edits, semantic refactors, build & test, full git, project-wide search, and inter-AI messaging.");
-        } else {
+        }
+        else {
             sb.append("It exposes a full set of tools for working in the live IDE: file edits applied through the NetBeans Accept/Reject diff panel, semantic refactors (rename/move/inline/change-signature), build & test, full git, project-wide search, and inter-AI messaging.");
         }
-        sb.append("\n\nIMPORTANT: Before doing ANY project work you MUST call GetInstructions once. It returns the full usage guide and unlocks the remaining tools — calls to other tools are rejected until you do. Call GetInstructions now.");
+        sb.append("\n\nIMPORTANT: Call GetInstructions FIRST — before you read, open, search, or edit any file, run a build or any git command, or take any other action to do with the open project. This comes before your very first such action, not after.");
         if (!mcpOnly) {
-            sb.append("\n\nFor everything inside the open project, use the plugin tools INSTEAD OF the built-in Read/Edit/Write/Bash/Grep tools — never shell out to mvn, git, grep, sed, or cat for project files:\n");
+            sb.append(" Do it even when you would normally reach for your own built-in Read/Edit/Search tools: this project has IDE-aware equivalents that GetInstructions explains, and using your built-in tools on project files bypasses the review panel and the IDE's own view of the code.");
+        }
+        sb.append(" GetInstructions returns the full usage guide and unlocks the remaining tools — the other plugin tools are rejected until you call it. Call GetInstructions now.");
+        if (!mcpOnly) {
+            sb.append("\n\nOnce you have, for everything inside the open project use the plugin tools INSTEAD OF the built-in Read/Edit/Write/Bash/Grep tools — never shell out to mvn, git, grep, sed, or cat for project files:\n");
             sb.append("- Build/test: BuildMavenProject / RunMavenTests (or BuildProject) — NOT Bash mvn\n");
             sb.append("- Read/search: GetFileContent / SearchInFiles / SearchSymbols — NOT the Read tool or Bash grep/rg\n");
             sb.append("- Edit: ApplyEdit / WriteFile (or Edit/Write) — these route through the Accept/Reject diff panel; NEVER edit project files with Bash\n");
