@@ -4,8 +4,11 @@ import java.awt.Toolkit;
 import java.awt.datatransfer.DataFlavor;
 import java.io.File;
 import java.io.IOException;
+import java.nio.charset.Charset;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
+import java.time.Instant;
+import java.time.temporal.ChronoUnit;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.concurrent.atomic.AtomicReference;
@@ -15,6 +18,7 @@ import javax.swing.SwingUtilities;
 import javax.swing.text.Document;
 import javax.swing.text.JTextComponent;
 import org.netbeans.api.editor.EditorRegistry;
+import org.netbeans.api.queries.FileEncodingQuery;
 import org.openide.filesystems.FileObject;
 import org.openide.filesystems.FileUtil;
 import org.openide.loaders.DataObject;
@@ -138,8 +142,13 @@ public class EditorContextProvider {
             int from = startLine > 0 ? Math.max(0, startLine - 1) : 0;
             int to = endLine > 0 ? Math.min(lines.size(), endLine) : lines.size();
             StringBuilder sb = new StringBuilder();
+            // Include the whole-file size so a caller whose own tool-result limit
+            // truncates large results (many agent harnesses cap at ~20 KB) can
+            // see up front that it needs to page through with startLine/endLine,
+            // rather than discovering it from a clipped first read.
             sb.append("File: ").append(filePath).append(" (lines ")
-                    .append(from + 1).append("–").append(to).append(" of ").append(lines.size()).append(")\n\n");
+                    .append(from + 1).append("–").append(to).append(" of ").append(lines.size())
+                    .append(", ").append(f.length()).append(" bytes)\n\n");
             for (int i = from; i < to; i++) {
                 sb.append(String.format("%4d  %s%n", i + 1, lines.get(i)));
                 if (sb.length() > MAX_FILE_CONTENT_CHARS) {
@@ -153,6 +162,94 @@ public class EditorContextProvider {
         catch (IOException e) {
             return "Error reading file: " + e.getMessage();
         }
+    }
+
+    /**
+     * Reports a file's metadata without returning its contents: exact byte size,
+     * line count, text encoding, last-modified time and age, whether it is
+     * writable, and whether the editor holds unsaved changes for it. Lets a
+     * caller decide whether a read needs paging (a caller's result limit may
+     * clip a large GetFileContent) before spending the tokens, which charset the
+     * bytes decode with, how stale the on-disk copy is, and whether an edit will
+     * be permitted. The encoding is resolved through NetBeans' own
+     * {@link FileEncodingQuery} so it matches how the editor reads the file
+     * (per-project charset settings, detection); the size/line count are the
+     * on-disk copy — an "unsaved editor changes" flag warns when the editor's
+     * in-memory copy has diverged from it.
+     */
+    public static String getFileSizeAndMeta(String filePath) {
+        File f = new File(filePath);
+        if (!f.exists() || !f.isFile()) {
+            return "File not found: " + filePath;
+        }
+        long bytes = f.length();
+
+        // Resolve the FileObject once — both the encoding query and the
+        // unsaved-changes check need it. Best-effort: a null or throwing resolve
+        // just omits the IDE-derived fields rather than failing the whole call.
+        FileObject fo = null;
+        try {
+            fo = FileUtil.toFileObject(FileUtil.normalizeFile(f));
+        }
+        catch (Throwable t) {
+            LOG.log(Level.FINE, "toFileObject failed for " + filePath, t);
+        }
+
+        String encoding = "unknown";
+        if (fo != null) {
+            try {
+                Charset cs = FileEncodingQuery.getEncoding(fo);
+                if (cs != null) {
+                    encoding = cs.name();
+                }
+            }
+            catch (Throwable t) {
+                // FileEncodingQuery pulls in ProjectManager/global Lookup, which
+                // may be absent outside a fully started IDE (e.g. tests) and
+                // fails with an Error, not an Exception. Encoding is best-effort
+                // — degrade to "unknown" rather than failing.
+                LOG.log(Level.FINE, "encoding query failed for " + filePath, t);
+            }
+        }
+
+        StringBuilder sb = new StringBuilder();
+        sb.append(filePath).append(": ").append(bytes).append(" bytes");
+        try {
+            long lineCount = Files.readAllLines(f.toPath(), StandardCharsets.UTF_8).size();
+            sb.append(", ").append(lineCount).append(" lines");
+        }
+        catch (IOException e) {
+            // Size and encoding are still useful even if the file is not
+            // decodable as UTF-8 text (e.g. a binary or non-UTF-8 file).
+            sb.append(", line count unavailable (").append(e.getMessage()).append(")");
+        }
+        sb.append(", encoding ").append(encoding);
+
+        // Last-modified timestamp (UTC, second precision) plus age in seconds so
+        // a caller can judge staleness without a second clock call of its own.
+        long modMillis = f.lastModified();
+        if (modMillis > 0) {
+            Instant modified = Instant.ofEpochMilli(modMillis).truncatedTo(ChronoUnit.SECONDS);
+            long ageSeconds = Math.max(0, (System.currentTimeMillis() - modMillis) / 1000);
+            sb.append(", modified ").append(modified).append(" (").append(ageSeconds).append("s ago)");
+        }
+
+        // Writable flag — lets a caller know an edit will be permitted before it
+        // reaches the diff panel (generated/read-only files fail there).
+        sb.append(f.canWrite() ? ", writable" : ", read-only");
+
+        // Unsaved editor changes: the on-disk size/line count above may lag the
+        // editor's in-memory copy when this is set.
+        if (fo != null) {
+            try {
+                DataObject dob = DataObject.find(fo);
+                sb.append(dob.isModified() ? ", unsaved editor changes" : ", no unsaved changes");
+            }
+            catch (Throwable t) {
+                LOG.log(Level.FINE, "unsaved-changes check failed for " + filePath, t);
+            }
+        }
+        return sb.toString();
     }
 
     public static String navigateToLine(String filePath, int lineNumber) {

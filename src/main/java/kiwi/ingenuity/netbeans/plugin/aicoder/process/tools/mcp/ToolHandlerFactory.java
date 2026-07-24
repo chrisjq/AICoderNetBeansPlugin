@@ -68,6 +68,7 @@ import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.system.DeleteFil
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.system.WebRequestTool;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.system.GetClipboardTool;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.system.GetFileContentTool;
+import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.system.GetFileSizeAndMetaTool;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.system.MoveFileTool;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.system.RefreshFileStatusTool;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.system.SaveFileTool;
@@ -104,6 +105,7 @@ public final class ToolHandlerFactory {
         map.put(McpToolEnum.GET_TYPE_HIERARCHY, new GetTypeHierarchyTool());
         map.put(McpToolEnum.GET_CURRENT_FILE_CONTENT, new GetCurrentFileContentTool());
         map.put(McpToolEnum.GET_FILE_CONTENT, new GetFileContentTool(server));
+        map.put(McpToolEnum.GET_FILE_SIZE_AND_META, new GetFileSizeAndMetaTool(server));
         map.put(McpToolEnum.WEB_REQUEST, new WebRequestTool());
         map.put(McpToolEnum.NAVIGATE_TO_LINE, new NavigateToLineTool());
         map.put(McpToolEnum.GET_PROJECT_STRUCTURE, new GetProjectStructureTool());

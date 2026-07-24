@@ -5,7 +5,7 @@
     <modelVersion>4.0.0</modelVersion>
     <groupId>kiwi.ingenuity.aicoder</groupId>
     <artifactId>AiCoderNetbeansPlugin</artifactId>
-    <version>1.1.61</version>
+    <version>1.1.65</version>
     <packaging>nbm</packaging>
 
     <name>AI Coder for NetBeans</name>
@@ -148,6 +148,11 @@
         <dependency>
             <groupId>org.netbeans.api</groupId>
             <artifactId>org-openide-filesystems</artifactId>
+            <version>RELEASE220</version>
+        </dependency>
+        <dependency>
+            <groupId>org.netbeans.api</groupId>
+            <artifactId>org-netbeans-modules-queries</artifactId>
             <version>RELEASE220</version>
         </dependency>
         <dependency>

@@ -54,5 +54,16 @@ public enum McpInstructionOptionEnum {
      * again, and then cannot resolve a file: asked to read pom.xml it invented
      * "/path/to/pom.xml", having no idea where the project lived.
      */
-    STATELESS_TURNS
+    STATELESS_TURNS,
+    /**
+     * Emit a strong, up-front directive to route every action through the MCP
+     * tool server and never touch files with the agent's own built-in tools.
+     *
+     * <p>For agents that have their own file/shell tools and fall back to them
+     * even after being told to prefer the plugin's — GitHub Copilot read a file
+     * with its native {@code view} tool rather than GetFileContent. The wording
+     * is what Copilot itself said would make it use the MCP tools. Appears in
+     * the connection stub so it is seen before the first action.
+     */
+    FORCE_MCP_TOOL_USE
 }

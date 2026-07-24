@@ -8,8 +8,8 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
 class McpInstructionOptionEnumTest {
 
     @Test
-    void hasExactlyTheSevenFlags() {
-        assertEquals(7, McpInstructionOptionEnum.values().length);
+    void hasExactlyTheEightFlags() {
+        assertEquals(8, McpInstructionOptionEnum.values().length);
         assertNotNull(McpInstructionOptionEnum.valueOf("HEADER"));
         assertNotNull(McpInstructionOptionEnum.valueOf("TOOL_INSTRUCTION"));
         assertNotNull(McpInstructionOptionEnum.valueOf("CREDENTIALS"));
@@ -17,5 +17,6 @@ class McpInstructionOptionEnumTest {
         assertNotNull(McpInstructionOptionEnum.valueOf("SOFTEN_TOOL_DIRECTIVES"));
         assertNotNull(McpInstructionOptionEnum.valueOf("TOOL_CALLS_VIA_SCHEMA"));
         assertNotNull(McpInstructionOptionEnum.valueOf("STATELESS_TURNS"));
+        assertNotNull(McpInstructionOptionEnum.valueOf("FORCE_MCP_TOOL_USE"));
     }
 }

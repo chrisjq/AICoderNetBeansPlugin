@@ -41,6 +41,26 @@ public final class GithubCopilotSessionEventBridge {
      * use. The Copilot path had none, so a turn that produced no output left
      * nothing to inspect. Logs the event type and its data on every event.
      */
+    /**
+     * Expands a tool's arguments into one log property per key, so the line
+     * reads {@code path[/x/README.md]} like the MCP tools rather than a single
+     * {@code arguments[{path=...}]} blob. The SDK hands arguments back as an
+     * Object that is a String-keyed Map in practice; anything else is logged
+     * whole under a single key.
+     */
+    private static JsonObject toArgsObject(Object arguments) {
+        JsonObject obj = new JsonObject();
+        if (arguments instanceof java.util.Map<?, ?> map) {
+            for (java.util.Map.Entry<?, ?> entry : map.entrySet()) {
+                obj.addProperty(String.valueOf(entry.getKey()), String.valueOf(entry.getValue()));
+            }
+        }
+        else if (arguments != null) {
+            obj.addProperty("arguments", String.valueOf(arguments));
+        }
+        return obj;
+    }
+
     private static void logRaw(String kind, Object detail) {
         if (PluginSettings.isDebugJson()) {
             LOG.log(Level.WARNING, "copilot event [{0}]: {1}",
@@ -116,11 +136,7 @@ public final class GithubCopilotSessionEventBridge {
             if (toolName == null || toolName.isBlank()) {
                 return;
             }
-            JsonObject args = new JsonObject();
-            if (data.arguments() != null) {
-                args.addProperty("arguments", String.valueOf(data.arguments()));
-            }
-            McpHookServerUtil.logToolUse(sessionName.get(), toolName, args);
+            McpHookServerUtil.logToolUse(sessionName.get(), toolName, toArgsObject(data.arguments()));
         });
 
         session.on(AssistantMessageDeltaEvent.class, e -> {

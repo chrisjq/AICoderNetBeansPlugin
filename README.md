@@ -36,6 +36,8 @@ Each backend has its own process manager, executable locator, settings, and info
   - **Grok** — the xAI Grok CLI (`grok`), signed in via `grok login`
   - **GitHub Copilot** — the GitHub Copilot CLI (`copilot`), signed in to a Copilot-enabled GitHub account
 
+> **NetBeans must not run inside an isolated/sandboxed container** (Flatpak, Snap, a locked-down Docker image, etc.). The plugin launches the backend CLIs (`claude`, `grok`, `copilot`) as child processes on your `PATH` and runs a local MCP HTTP server that those CLIs connect back to. A sandbox blocks the host `PATH`, subprocess spawning, and/or loopback networking the plugin depends on, so the backends will fail to start or connect. Install NetBeans from a native package, the official installer, or a plain unpacked distribution.
+
 ## Installation
 
 Build the plugin NBM and install it via **Tools > Plugins > Downloaded**:
@@ -194,6 +196,7 @@ The plugin exposes the following tools to the AI assistant over the MCP endpoint
 | Tool | Description |
 |---|---|
 | `GetFileContent` | Read a file's in-memory content, including unsaved editor changes |
+| `GetFileSizeAndMeta` | Report a file's byte size, line count, text encoding, last-modified time & age, writable flag and unsaved-editor-changes flag without returning its content — call before `GetFileContent` on a large file to decide whether to page the read |
 | `WriteFile` | Create/overwrite a file with content, approved via the diff panel |
 | `ApplyEdit` | Replace an exact string in a file, approved via the diff panel |
 | `SaveFile` | Create/overwrite a file with content and save, or flush unsaved editor changes to disk |

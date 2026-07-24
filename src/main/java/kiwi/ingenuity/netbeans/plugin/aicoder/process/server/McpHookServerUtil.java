@@ -76,6 +76,14 @@ public final class McpHookServerUtil {
         }
         boolean mcpOnly = options.contains(McpInstructionOptionEnum.ONLY_MCP_TOOL_ACCESS);
         StringBuilder sb = new StringBuilder();
+        if (options.contains(McpInstructionOptionEnum.FORCE_MCP_TOOL_USE)) {
+            // Copilot's own answer to "what would make you use these tools?", placed
+            // first so it is read before any action. It otherwise fell back to its
+            // native view/edit tools despite the guidance further down.
+            sb.append("Use the IDE MCP tool server for all repository, editor, build, git, refactor, "
+                    + "search, and UI actions; never read or write files directly with your own "
+                    + "built-in tools.\n\n");
+        }
         sb.append("You are connected to the NetBeans IDE plugin (").append(StringConst.PLUGIN_ID).append("). ");
         if (mcpOnly) {
             sb.append("It exposes a full set of tools for working in the live IDE: file edits, semantic refactors, build & test, full git, project-wide search, and inter-AI messaging.");
