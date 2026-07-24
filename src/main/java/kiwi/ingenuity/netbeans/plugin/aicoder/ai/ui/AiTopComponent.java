@@ -1117,6 +1117,16 @@ public final class AiTopComponent extends TopComponent implements AiProcessEvent
             pendingNewlineBeforeText = false;
             infoBar.setProcessing(false);
             conversationPanel.finaliseAssistantMessage();
+            // The AI has returned to a non-thinking state. If a question or
+            // permission request is still open, the AI has stopped waiting for it
+            // — e.g. its own tool-call timeout fired before our 300s one — so it is
+            // orphaned. Resolve each: this unblocks the still-waiting tool, greys
+            // the panel, and records the outcome, rather than leaving a live-looking
+            // question the AI will never receive an answer to.
+            for (Runnable c : new ArrayList<>(pendingResponseCancellers)) {
+                c.run();
+            }
+            pendingResponseCancellers.clear();
             checkForFileChanges();
             saveHistory();
             infoBar.setStatusMessage("Ready...");
@@ -1144,6 +1154,14 @@ public final class AiTopComponent extends TopComponent implements AiProcessEvent
                 }
                 if (answer != null && !answer.isBlank()) {
                     conversationPanel.addSystemMessage(NotificationUtil.formatAnswer(answer));
+                }
+                else {
+                    // No answer — timed out or the turn was cancelled. Record it in
+                    // history so the conversation shows the question was asked and
+                    // never submitted; the live QuestionPanel is transient and gone
+                    // after a save/restore.
+                    conversationPanel.addSystemMessage(
+                            NotificationUtil.formatUnansweredQuestion(aqe.questions()));
                 }
                 refreshInputEnabled();
             }));

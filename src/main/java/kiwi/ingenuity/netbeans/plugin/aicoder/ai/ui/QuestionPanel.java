@@ -17,6 +17,7 @@ import javax.swing.JButton;
 import javax.swing.JCheckBox;
 import javax.swing.JLabel;
 import javax.swing.JPanel;
+import javax.swing.SwingUtilities;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.events.AskUserQuestionEvent;
 
 /**
@@ -43,6 +44,7 @@ class QuestionPanel extends JPanel {
 
     private int totalQuestions;
     private boolean submitted = false;
+    private JButton submitBtn;
 
     QuestionPanel(AskUserQuestionEvent event) {
         this.event = event;
@@ -137,12 +139,27 @@ class QuestionPanel extends JPanel {
             JPanel submitRow = new JPanel(new FlowLayout(FlowLayout.LEFT, 4, 0));
             submitRow.setOpaque(false);
             submitRow.setAlignmentX(Component.LEFT_ALIGNMENT);
-            JButton submitBtn = new JButton("Submit");
+            submitBtn = new JButton("Submit");
             submitBtn.addActionListener(e -> submit());
             submitRow.add(submitBtn);
             add(submitRow);
         }
         // Single-question single-select: auto-submits on button click (handled in onSingleSelect)
+
+        // React to the request being resolved without a user submission: the tool
+        // times out after 300s and cancels the future, and a cancelled turn
+        // completes it with null. Grey the controls out just as a submit does —
+        // otherwise the panel keeps a live-looking Submit button that blocks the
+        // user, who then has to click it on a dead question before typing again.
+        // The "not answered" record is added to history by the AiTopComponent
+        // handler, mirroring how a submitted answer is recorded.
+        event.response().whenComplete((answer, ex) -> SwingUtilities.invokeLater(() -> {
+            if (submitted) {
+                return;
+            }
+            submitted = true;
+            setAllEnabled(false);
+        }));
     }
 
     private void onSingleSelect(int qi, String label, JButton clicked) {
@@ -230,6 +247,9 @@ class QuestionPanel extends JPanel {
             for (JCheckBox cb : cbs) {
                 cb.setEnabled(enabled);
             }
+        }
+        if (submitBtn != null) {
+            submitBtn.setEnabled(enabled);
         }
     }
 

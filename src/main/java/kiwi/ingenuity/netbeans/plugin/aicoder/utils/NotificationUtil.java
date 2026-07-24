@@ -37,6 +37,29 @@ public class NotificationUtil {
         return "Answer: " + answer.replace("\n", " | ");
     }
 
+    /**
+     * A question that was shown but never answered — the tool timed out or the
+     * turn was cancelled. Recorded in history (unlike the live question panel,
+     * which is transient) so the conversation shows it was asked and left
+     * unanswered.
+     */
+    public static String formatUnansweredQuestion(com.google.gson.JsonArray questions) {
+        StringBuilder sb = new StringBuilder("Question not answered (timed out or cancelled)");
+        if (questions != null) {
+            String joined = questions.asList().stream()
+                    .filter(com.google.gson.JsonElement::isJsonObject)
+                    .map(com.google.gson.JsonElement::getAsJsonObject)
+                    .filter(q -> q.has("question"))
+                    .map(q -> q.get("question").getAsString())
+                    .reduce((a, b) -> a + " | " + b)
+                    .orElse("");
+            if (!joined.isBlank()) {
+                sb.append(": ").append(joined);
+            }
+        }
+        return sb.toString();
+    }
+
     public static String formatEdit(String shortPath) {
         return "Edit: " + shortPath;
     }
