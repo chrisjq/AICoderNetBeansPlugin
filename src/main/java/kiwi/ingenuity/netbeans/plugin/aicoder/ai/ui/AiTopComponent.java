@@ -2,6 +2,9 @@ package kiwi.ingenuity.netbeans.plugin.aicoder.ai.ui;
 
 import java.awt.BorderLayout;
 import java.awt.Color;
+import java.awt.Dimension;
+import java.awt.FlowLayout;
+import java.awt.Insets;
 import java.awt.Window;
 import java.beans.PropertyChangeListener;
 import java.io.File;
@@ -28,6 +31,7 @@ import javax.swing.JLabel;
 import javax.swing.JOptionPane;
 import javax.swing.JPanel;
 import javax.swing.JScrollPane;
+import javax.swing.JSplitPane;
 import javax.swing.SwingUtilities;
 import javax.swing.Timer;
 import javax.swing.UIManager;
@@ -125,6 +129,11 @@ public final class AiTopComponent extends TopComponent implements AiProcessEvent
      * Duration of the "AI output received" flash pulse, in milliseconds.
      */
     private static final int THINKING_FLASH_MS = 250;
+
+    // Height (px) of the resizable input region below the infobar — used as both
+    // its minimum and its initial size, so the window always opens at the
+    // minimum. Set here in one place to adjust the input area size.
+    private static final int INPUT_AREA_HEIGHT = 80;
 
     private static String toHex(Color color) {
         return String.format("#%02X%02X%02X", color.getRed(), color.getGreen(), color.getBlue());
@@ -289,7 +298,6 @@ public final class AiTopComponent extends TopComponent implements AiProcessEvent
         });
 
         add(contextLabel, BorderLayout.NORTH);
-        add(conversationPanel, BorderLayout.CENTER);
 
         JPanel bottom = new JPanel(new BorderLayout());
         Color sepColor = UIManager.getColor("Separator.foreground");
@@ -301,13 +309,42 @@ public final class AiTopComponent extends TopComponent implements AiProcessEvent
         }
         bottom.setBorder(BorderFactory.createMatteBorder(1, 0, 0, 0, sepColor));
         bottom.add(infoBar, BorderLayout.NORTH);
-        JPanel inputRow = new JPanel(new BorderLayout(4, 0));
-        inputRow.add(new JScrollPane(inputField,
+
+        // Minimum and initial height come from INPUT_AREA_HEIGHT (preferred ==
+        // minimum), so the window always opens at the minimum size.
+        JScrollPane inputScrollPane = new JScrollPane(inputField,
                 JScrollPane.VERTICAL_SCROLLBAR_AS_NEEDED,
-                JScrollPane.HORIZONTAL_SCROLLBAR_NEVER), BorderLayout.CENTER);
-        inputRow.add(sendButton, BorderLayout.EAST);
+                JScrollPane.HORIZONTAL_SCROLLBAR_NEVER);
+        inputScrollPane.setMinimumSize(new Dimension(0, INPUT_AREA_HEIGHT));
+        inputScrollPane.setPreferredSize(new Dimension(0, INPUT_AREA_HEIGHT));
+
+        JButton configButton = new JButton("⚙");
+        configButton.setToolTipText("Session configuration");
+        configButton.setMargin(new Insets(0, 4, 0, 4));
+        configButton.addActionListener(e -> openSessionConfig());
+
+        JPanel inputRow = new JPanel(new BorderLayout(4, 0));
+        inputRow.add(inputScrollPane, BorderLayout.CENTER);
+        JPanel eastPanel = new JPanel(new BorderLayout());
+        JPanel buttonStrip = new JPanel(new FlowLayout(FlowLayout.LEFT, 0, 0));
+        buttonStrip.add(configButton);
+        eastPanel.add(buttonStrip, BorderLayout.NORTH);
+        eastPanel.add(sendButton, BorderLayout.CENTER);
+        inputRow.add(eastPanel, BorderLayout.EAST);
         bottom.add(inputRow, BorderLayout.CENTER);
-        add(bottom, BorderLayout.SOUTH);
+        // Minimum keeps the infobar fully visible and the stacked ⚙/Send column
+        // usable — dragging the divider down must not crush the buttons, so the
+        // floor is the taller of one input row and the east button column.
+        bottom.setMinimumSize(new Dimension(0,
+                infoBar.getPreferredSize().height
+                + Math.max(INPUT_AREA_HEIGHT, eastPanel.getPreferredSize().height)));
+
+        JSplitPane splitPane = new JSplitPane(JSplitPane.VERTICAL_SPLIT,
+                conversationPanel, bottom);
+        splitPane.setResizeWeight(1.0);
+        splitPane.setContinuousLayout(true);
+        splitPane.setOneTouchExpandable(false);
+        add(splitPane, BorderLayout.CENTER);
 
         this.aiBackend = new AiTypeRegistry().create(session.aiType(), this, this);
         AiInfoBarExtension ext = this.aiBackend.createInfoBarExtension(session, this);

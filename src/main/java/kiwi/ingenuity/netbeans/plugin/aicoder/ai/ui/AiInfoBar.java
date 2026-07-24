@@ -1,6 +1,5 @@
 package kiwi.ingenuity.netbeans.plugin.aicoder.ai.ui;
 
-import kiwi.ingenuity.netbeans.plugin.aicoder.ai.ui.events.AiInfoBarListener;
 import java.awt.BorderLayout;
 import java.awt.Dimension;
 import java.awt.Font;
@@ -20,6 +19,7 @@ import javax.swing.JSeparator;
 import javax.swing.SwingConstants;
 import javax.swing.Timer;
 import kiwi.ingenuity.netbeans.plugin.aicoder.PluginSettings;
+import kiwi.ingenuity.netbeans.plugin.aicoder.ai.ui.events.AiInfoBarListener;
 
 public class AiInfoBar extends JPanel {
 
@@ -28,7 +28,6 @@ public class AiInfoBar extends JPanel {
     private final JCheckBox autoAcceptCheck;
     private final JLabel statusLabel;
     private final JButton stopButton;
-    private final JButton configBtn;
     private final JPanel aiControlsPanel;
 
     private final GridBagConstraints compGbc;
@@ -105,14 +104,6 @@ public class AiInfoBar extends JPanel {
         GridBagConstraints statusGbc = new GridBagConstraints();
         statusGbc.insets = new Insets(0, 3, 0, 3);
         rightPanel.add(statusLabel, statusGbc);
-
-        configBtn = new JButton("⚙");
-        configBtn.setToolTipText("Session configuration");
-        configBtn.setMargin(new Insets(0, 4, 0, 4));
-        configBtn.addActionListener(e -> listeners.forEach(AiInfoBarListener::onSettingsRequested));
-        GridBagConstraints configGbc = new GridBagConstraints();
-        configGbc.insets = new Insets(0, 2, 0, 4);
-        rightPanel.add(configBtn, configGbc);
 
         add(rightPanel, BorderLayout.EAST);
 
