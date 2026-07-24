@@ -29,7 +29,7 @@ public enum AiTypeEnum {
     // into the prompt from the schemas, carrying names, parameters and
     // descriptions. The per-tool instruction lines describe the same tools
     // without the parameters, so enabling both only duplicated ~9k characters.
-    OLLAMA_LOCAL("Ollama (Local)", "ollama_local", true, true, new OllamaSettingsCreator(),
+    OLLAMA_LOCAL("Ollama (Local)", "ollama_local", true, false, new OllamaSettingsCreator(),
             Set.of(HEADER, ONLY_MCP_TOOL_ACCESS, SOFTEN_TOOL_DIRECTIVES, TOOL_CALLS_VIA_SCHEMA,
                     STATELESS_TURNS));
 
@@ -68,7 +68,8 @@ public enum AiTypeEnum {
     /**
      * Controls what this AI type receives in instruction text and tool schemas.
      * Types that reach the plugin through a bridge which injects credentials
-     * server-side omit CREDENTIALS, so they are never shown sessionId/secretKey.
+     * server-side omit CREDENTIALS, so they are never shown
+     * sessionId/secretKey.
      */
     private final Set<McpInstructionOptionEnum> mcpOptions;
 

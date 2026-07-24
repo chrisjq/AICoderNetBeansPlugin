@@ -7,6 +7,9 @@ import com.github.copilot.generated.SessionErrorEvent;
 import com.github.copilot.generated.SessionIdleEvent;
 import com.github.copilot.generated.SessionUsageInfoEvent;
 import java.util.function.Consumer;
+import java.util.logging.Level;
+import java.util.logging.Logger;
+import kiwi.ingenuity.netbeans.plugin.aicoder.PluginSettings;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.events.TextDeltaEvent;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.events.TurnCompleteEvent;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.githubcopilot.events.GithubCopilotTokenUsageEvent;
@@ -21,12 +24,26 @@ import kiwi.ingenuity.netbeans.plugin.aicoder.process.events.AiProcessEventListe
  */
 public final class GithubCopilotSessionEventBridge {
 
+    private static final Logger LOG = Logger.getLogger(GithubCopilotSessionEventBridge.class.getName());
+
     private final AiProcessEventListener listener;
     private Consumer<String> onError;
     private String lastMessageId = null;
 
     public GithubCopilotSessionEventBridge(AiProcessEventListener listener) {
         this.listener = listener;
+    }
+
+    /**
+     * Raw SDK-event logging, gated on the same debug flag Claude and Ollama use.
+     * The Copilot path had none, so a turn that produced no output left nothing
+     * to inspect. Logs the event type and its data on every event.
+     */
+    private static void logRaw(String kind, Object detail) {
+        if (PluginSettings.isDebugJson()) {
+            LOG.log(Level.WARNING, "copilot event [{0}]: {1}",
+                    new Object[]{kind, detail == null ? "null" : String.valueOf(detail)});
+        }
     }
 
     /**
@@ -41,6 +58,7 @@ public final class GithubCopilotSessionEventBridge {
     public void attach(CopilotSession session) {
         session.on(AssistantMessageDeltaEvent.class, e -> {
             AssistantMessageDeltaEvent.AssistantMessageDeltaEventData data = e.getData();
+            logRaw("assistant.delta", data == null ? null : data.deltaContent());
             if (data == null) {
                 return;
             }
@@ -70,10 +88,17 @@ public final class GithubCopilotSessionEventBridge {
         // CopilotSession#sendAndWait), so only session.idle may surface
         // TurnCompleteEvent; mapping turn_end to it re-enables the send button
         // mid-response whenever a step produces no text.
-        session.on(AssistantTurnEndEvent.class, e -> lastMessageId = null);
-        session.on(SessionIdleEvent.class, e -> listener.onAiProcessEvent(new TurnCompleteEvent()));
+        session.on(AssistantTurnEndEvent.class, e -> {
+            logRaw("assistant.turn_end", e.getData());
+            lastMessageId = null;
+        });
+        session.on(SessionIdleEvent.class, e -> {
+            logRaw("session.idle", e.getData());
+            listener.onAiProcessEvent(new TurnCompleteEvent());
+        });
         session.on(SessionUsageInfoEvent.class, e -> {
             SessionUsageInfoEvent.SessionUsageInfoEventData data = e.getData();
+            logRaw("session.usage", data);
             if (data == null || data.currentTokens() == null) {
                 return;
             }
@@ -83,6 +108,11 @@ public final class GithubCopilotSessionEventBridge {
         });
         session.on(SessionErrorEvent.class, e -> {
             SessionErrorEvent.SessionErrorEventData data = e.getData();
+            // Logged unconditionally at WARNING (not only under the debug flag):
+            // an error here is the likeliest reason a turn ends with no output,
+            // and it was previously dropped whenever onError was unset or the
+            // message blank, leaving no trace at all.
+            LOG.log(Level.WARNING, "copilot session error: {0}", data == null ? "null" : data);
             if (data == null || onError == null) {
                 return;
             }

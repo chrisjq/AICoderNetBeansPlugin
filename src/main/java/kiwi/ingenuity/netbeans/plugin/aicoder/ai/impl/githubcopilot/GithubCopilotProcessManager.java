@@ -24,6 +24,7 @@ import kiwi.ingenuity.netbeans.plugin.aicoder.ai.events.StatusEventTypeEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.githubcopilot.events.GithubCopilotFatalErrorEvent;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.githubcopilot.events.GithubCopilotQuotaEvent;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.githubcopilot.session.GithubCopilotAiSession;
+import kiwi.ingenuity.netbeans.plugin.aicoder.PluginSettings;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.githubcopilot.settings.GithubCopilotPluginSettings;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.session.InterruptTypeEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.events.AiProcessEventListener;
@@ -307,6 +308,9 @@ public class GithubCopilotProcessManager extends AiProcessManager {
             sessionWorkingDir = workingDir;
         }
         CopilotSession session = copilotSession;
+        if (PluginSettings.isDebugJson()) {
+            LOG.log(Level.WARNING, "copilot prompt: {0}", text);
+        }
         // session.send() only resolves once the message is queued (fire-and-forget) —
         // it does NOT mean the turn finished. Only handle the failure-to-queue case
         // here; the success path's `processing` reset happens on TurnCompleteEvent
