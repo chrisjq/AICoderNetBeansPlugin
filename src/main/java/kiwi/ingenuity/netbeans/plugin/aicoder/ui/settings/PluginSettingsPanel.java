@@ -2,13 +2,17 @@ package kiwi.ingenuity.netbeans.plugin.aicoder.ui.settings;
 
 import java.awt.BorderLayout;
 import java.awt.Component;
+import java.awt.Dimension;
 import java.awt.GridBagConstraints;
 import java.awt.GridBagLayout;
 import java.awt.Insets;
+import java.awt.Rectangle;
 import java.beans.PropertyChangeListener;
 import java.beans.PropertyChangeSupport;
 import java.util.Collection;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import javax.swing.Box;
 import javax.swing.JCheckBox;
 import javax.swing.JLabel;
@@ -16,11 +20,13 @@ import javax.swing.JPanel;
 import javax.swing.JScrollPane;
 import javax.swing.JSpinner;
 import javax.swing.JTabbedPane;
+import javax.swing.Scrollable;
 import javax.swing.SpinnerNumberModel;
 import kiwi.ingenuity.netbeans.plugin.aicoder.AccessControlLabelEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.DatabaseAccessOptionEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.PluginSettings;
 import kiwi.ingenuity.netbeans.plugin.aicoder.WebRequestAccessOptionEnum;
+import kiwi.ingenuity.netbeans.plugin.aicoder.ai.AiTypeEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ui.ScrollablePanel;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ui.SettingsTab;
 import org.openide.util.Lookup;
@@ -33,7 +39,7 @@ import org.openide.util.Lookup;
  * Per-AI tabs are discovered via Lookup ({@link SettingsTab}), so each AI
  * implementation contributes its own settings tab.
  */
-public class PluginSettingsPanel extends JPanel {
+public class PluginSettingsPanel extends JPanel implements Scrollable {
 
     static final String PROP_CHANGED = "changed";
 
@@ -58,6 +64,13 @@ public class PluginSettingsPanel extends JPanel {
 
     // Per-AI tabs discovered via Lookup
     private final List<SettingsTab> aiSettingsTabs;
+
+    // Per-AI enable checkboxes (AiTypeEnum -> JCheckBox)
+    private final Map<AiTypeEnum, JCheckBox> aiEnableCheckboxes = new HashMap<>();
+
+    // Per-AI options component (the scrollable CENTER of each tab), whose
+    // visibility the enable checkbox toggles.
+    private final Map<AiTypeEnum, Component> aiOptionPanels = new HashMap<>();
 
     public PluginSettingsPanel() {
         setLayout(new BorderLayout());
@@ -232,7 +245,27 @@ public class PluginSettingsPanel extends JPanel {
                 = Lookup.getDefault().lookupAll(SettingsTab.class);
         for (SettingsTab tab : aiTabs) {
             if (tab.getAiType().isImplemented()) {
-                tabs.addTab(tab.getTabTitle(), wrapTab(tab.getComponent()));
+                // Build wrapper with enable checkbox at NORTH and scrollable options in CENTER
+                JPanel aiWrapper = new JPanel(new BorderLayout());
+                JCheckBox enableBox = new JCheckBox("Enable " + tab.getTabTitle());
+                aiEnableCheckboxes.put(tab.getAiType(), enableBox);
+
+                Component optionsScroll = wrapTab(tab.getComponent());
+                aiOptionPanels.put(tab.getAiType(), optionsScroll);
+                aiWrapper.add(enableBox, BorderLayout.NORTH);
+                aiWrapper.add(optionsScroll, BorderLayout.CENTER);
+
+                // Initial visibility is set in load(); toggling updates visibility,
+                // reflows the tab (revalidate/repaint so the freed space is
+                // reclaimed immediately) and marks the panel changed.
+                enableBox.addActionListener(e -> {
+                    optionsScroll.setVisible(enableBox.isSelected());
+                    aiWrapper.revalidate();
+                    aiWrapper.repaint();
+                    fireChanged();
+                });
+
+                tabs.addTab(tab.getTabTitle(), aiWrapper);
                 tab.addPropertyChangeListener(e -> fireChanged());
             }
         }
@@ -316,6 +349,17 @@ public class PluginSettingsPanel extends JPanel {
         for (SettingsTab tab : aiSettingsTabs) {
             tab.load();
         }
+
+        // Initialize per-AI enable checkboxes and apply visibility to their option panes
+        for (Map.Entry<AiTypeEnum, JCheckBox> e : aiEnableCheckboxes.entrySet()) {
+            AiTypeEnum type = e.getKey();
+            boolean enabled = PluginSettings.isAiEnabled(type);
+            e.getValue().setSelected(enabled);
+            Component options = aiOptionPanels.get(type);
+            if (options != null) {
+                options.setVisible(enabled);
+            }
+        }
     }
 
     void store() {
@@ -349,6 +393,11 @@ public class PluginSettingsPanel extends JPanel {
         for (SettingsTab tab : aiSettingsTabs) {
             tab.store();
         }
+
+        // Persist per-AI enabled flags
+        for (Map.Entry<AiTypeEnum, JCheckBox> e : aiEnableCheckboxes.entrySet()) {
+            PluginSettings.setAiEnabled(e.getKey(), e.getValue().isSelected());
+        }
     }
 
     boolean isSettingsValid() {
@@ -379,5 +428,35 @@ public class PluginSettingsPanel extends JPanel {
 
     private void fireChanged() {
         pcs.firePropertyChange(PROP_CHANGED, null, null);
+    }
+
+    // ===== Scrollable =====
+    // The NetBeans Options dialog places this panel inside its own JScrollPane.
+    // Tracking the viewport height keeps the panel exactly viewport-sized, so
+    // that outer scrollbar never engages and the JTabbedPane header stays fixed;
+    // content overflow is handled by each tab's own inner JScrollPane (wrapTab).
+    @Override
+    public Dimension getPreferredScrollableViewportSize() {
+        return getPreferredSize();
+    }
+
+    @Override
+    public int getScrollableUnitIncrement(Rectangle visibleRect, int orientation, int direction) {
+        return 16;
+    }
+
+    @Override
+    public int getScrollableBlockIncrement(Rectangle visibleRect, int orientation, int direction) {
+        return Math.max(visibleRect.height - 16, 16);
+    }
+
+    @Override
+    public boolean getScrollableTracksViewportWidth() {
+        return true;
+    }
+
+    @Override
+    public boolean getScrollableTracksViewportHeight() {
+        return true;
     }
 }
