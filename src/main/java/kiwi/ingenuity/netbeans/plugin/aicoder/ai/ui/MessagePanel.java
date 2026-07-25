@@ -32,6 +32,7 @@ import javax.swing.SwingUtilities;
 import javax.swing.Timer;
 import javax.swing.UIManager;
 import javax.swing.event.HyperlinkEvent;
+import kiwi.ingenuity.netbeans.plugin.aicoder.PluginSettings;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.AiMessage;
 import org.commonmark.ext.gfm.strikethrough.Strikethrough;
 import org.commonmark.ext.gfm.strikethrough.StrikethroughExtension;
@@ -851,6 +852,8 @@ public class MessagePanel extends JPanel {
         if (RSTA_DARK_THEME != null) {
             RSTA_DARK_THEME.apply(rsta);
         }
+        int codeFontSize = Math.max(8, PluginSettings.getChatFontSize() - 2);
+        rsta.setFont(rsta.getFont().deriveFont((float) codeFontSize));
 
         org.fife.ui.rtextarea.RTextScrollPane rsp = new org.fife.ui.rtextarea.RTextScrollPane(rsta, false) {
             @Override
@@ -890,7 +893,7 @@ public class MessagePanel extends JPanel {
         String codeText = code.stripTrailing();
         JButton copyBtn = new JButton("⎘");
         copyBtn.setToolTipText("Copy code");
-        copyBtn.setFont(copyBtn.getFont().deriveFont(11f));
+        copyBtn.setFont(copyBtn.getFont().deriveFont((float) codeFontSize));
         copyBtn.setMargin(new Insets(1, 4, 1, 4));
         copyBtn.setFocusable(false);
         copyBtn.setOpaque(true);
