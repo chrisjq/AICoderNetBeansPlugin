@@ -24,8 +24,19 @@ public final class GrokPluginSettings {
     };
     public static final String DEFAULT_MODEL = "grok-4.5";
 
+    private static volatile String[] discoveredModels = null;
+
     private static Preferences prefs() {
         return NbPreferences.forModule(PluginSettings.class);
+    }
+
+    public static String[] getKnownModels() {
+        String[] d = discoveredModels;
+        return (d != null && d.length > 0) ? d : KNOWN_MODELS;
+    }
+
+    public static void setDiscoveredModels(String[] models) {
+        discoveredModels = models;
     }
 
     public static String getModel() {

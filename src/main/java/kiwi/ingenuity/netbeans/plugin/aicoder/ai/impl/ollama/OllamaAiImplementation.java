@@ -1,7 +1,10 @@
 package kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.ollama;
 
 import java.util.Arrays;
+import java.util.List;
+import java.util.function.Consumer;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.AiImplementation;
+import kiwi.ingenuity.netbeans.plugin.aicoder.ai.AiModelCatalog;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.AiSessionHost;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.AiTypeEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.AiTypePropertyBus;
@@ -17,6 +20,11 @@ import kiwi.ingenuity.netbeans.plugin.aicoder.process.events.AiProcessEventListe
 
 public class OllamaAiImplementation extends AiImplementation {
 
+    private static final AiModelCatalog MODEL_CATALOG = new AiModelCatalog();
+
+    public static AiModelCatalog modelCatalog() {
+        return MODEL_CATALOG;
+    }
     private final OllamaAiProcessManager processManager;
 
     public OllamaAiImplementation(AiProcessEventListener listener, ExecutablePrompter prompter) {
@@ -77,6 +85,9 @@ public class OllamaAiImplementation extends AiImplementation {
     @Override
     public OllamaAiInfoBarExtension createInfoBarExtension(AiSession session, AiSessionHost host) {
         OllamaAiInfoBarExtension ext = new OllamaAiInfoBarExtension();
+        Consumer<List<String>> catalogListener = models -> ext.setAvailableModels(models.toArray(String[]::new));
+        MODEL_CATALOG.addListener(catalogListener);
+        ext.setDisposeAction(() -> MODEL_CATALOG.removeListener(catalogListener));
         String initialModel = session.settings() instanceof OllamaSessionSettings settings
                 && settings.model() != null
                 ? settings.model()
@@ -100,23 +111,35 @@ public class OllamaAiImplementation extends AiImplementation {
         return ext;
     }
 
+    public static void triggerModelDiscovery(String customBaseUrl) {
+        String baseUrl = (customBaseUrl != null && !customBaseUrl.isBlank())
+                ? customBaseUrl
+                : OllamaPluginSettings.getBaseUrl();
+        if (!MODEL_CATALOG.beginRefresh()) {
+            return;
+        }
+        OllamaModelDiscovery.discoverAsync(baseUrl,
+                models -> {
+                    List<String> list = Arrays.asList(models);
+                    OllamaPluginSettings.setDiscoveredModels(models);
+                    if (MODEL_CATALOG.publish(list)) {
+                        AiTypePropertyBus.getInstance().fire(AiTypeEnum.OLLAMA_LOCAL, new OllamaModelsEvent(list));
+                    }
+                },
+                hint -> {
+                    if (hint != null) {
+                        AiTypePropertyBus.getInstance().fire(AiTypeEnum.OLLAMA_LOCAL,
+                                new OllamaCapabilityHintEvent(hint));
+                    }
+                });
+    }
+
     private void triggerModelDiscovery() {
         String baseUrl = currentSession != null && currentSession.settings() instanceof OllamaSessionSettings settings
                 && settings.baseUrl() != null && !settings.baseUrl().isBlank()
                 ? settings.baseUrl()
                 : defaultBaseUrl();
-        OllamaModelDiscovery.discoverAsync(baseUrl,
-                models -> {
-                    storeDiscoveredModels(models);
-                    AiTypePropertyBus.getInstance().fire(type,
-                            new OllamaModelsEvent(Arrays.asList(models)));
-                },
-                hint -> {
-                    if (hint != null) {
-                        AiTypePropertyBus.getInstance().fire(type,
-                                new OllamaCapabilityHintEvent(hint));
-                    }
-                });
+        triggerModelDiscovery(baseUrl);
     }
 
     private void triggerCapabilityDiscovery(String model) {

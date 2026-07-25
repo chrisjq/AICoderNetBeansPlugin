@@ -1,5 +1,6 @@
 package kiwi.ingenuity.netbeans.plugin.aicoder.ui;
 
+import com.google.gson.JsonObject;
 import java.awt.BorderLayout;
 import java.awt.Component;
 import java.awt.Dimension;
@@ -8,179 +9,225 @@ import java.awt.GridBagConstraints;
 import java.awt.GridBagLayout;
 import java.awt.Insets;
 import java.io.IOException;
-import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 import javax.swing.BorderFactory;
-import javax.swing.DefaultListCellRenderer;
-import javax.swing.DefaultListModel;
 import javax.swing.JButton;
+import javax.swing.JCheckBox;
 import javax.swing.JComboBox;
+import javax.swing.JComponent;
 import javax.swing.JDialog;
 import javax.swing.JLabel;
-import javax.swing.JList;
 import javax.swing.JOptionPane;
 import javax.swing.JPanel;
 import javax.swing.JScrollPane;
 import javax.swing.JSpinner;
+import javax.swing.JTabbedPane;
+import javax.swing.JTable;
 import javax.swing.JTextField;
 import javax.swing.ListSelectionModel;
 import javax.swing.SpinnerNumberModel;
 import javax.swing.SwingUtilities;
-import javax.swing.UIManager;
 import kiwi.ingenuity.netbeans.plugin.aicoder.PluginSettings;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.AiTypeEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.AiTypeRegistry;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.session.AiSession;
+import kiwi.ingenuity.netbeans.plugin.aicoder.ai.session.SessionInstructionsDeliveryEnum;
+import kiwi.ingenuity.netbeans.plugin.aicoder.ai.settings.AiSessionCreateSettingsPanel;
+import kiwi.ingenuity.netbeans.plugin.aicoder.ai.settings.AiSessionSettings;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.settings.AiTypeSettings;
+import kiwi.ingenuity.netbeans.plugin.aicoder.ai.settings.ConfigTemplate;
+import kiwi.ingenuity.netbeans.plugin.aicoder.ai.settings.SpecialInstructionTemplate;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.ui.AiTopComponent;
 import kiwi.ingenuity.netbeans.plugin.aicoder.serialization.SessionPersistenceManager;
+import kiwi.ingenuity.netbeans.plugin.aicoder.serialization.TemplatePersistenceManager;
 import org.netbeans.api.project.Project;
 import org.netbeans.api.project.ui.OpenProjects;
 import org.openide.windows.Mode;
 import org.openide.windows.TopComponent;
 import org.openide.windows.WindowManager;
 
+/**
+ * Modal manager for existing sessions and their reusable creation templates.
+ */
 public class SessionPickerDialog extends JDialog {
 
     private static final Logger LOG = Logger.getLogger(SessionPickerDialog.class.getName());
-
-    /**
-     * Upper bound on how many sessions can be created at once.
-     */
     private static final int MAX_CREATE_COUNT = 50;
 
     public static void show(SessionPersistenceManager spm) {
-        SessionPickerDialog d = new SessionPickerDialog(spm);
-        d.setLocationRelativeTo(WindowManager.getDefault().getMainWindow());
-        d.setVisible(true);
+        SessionPickerDialog dialog = new SessionPickerDialog(spm);
+        dialog.setLocationRelativeTo(WindowManager.getDefault().getMainWindow());
+        dialog.setVisible(true);
     }
 
-    private static boolean isProjectOpen(String projectPath) {
-        if (projectPath == null) {
-            return false;
-        }
-        return Arrays.stream(OpenProjects.getDefault().getOpenProjects())
-                .anyMatch(p -> p.getProjectDirectory().getPath().equals(projectPath));
+    private static boolean isProjectOpen(String path) {
+        return path != null && Arrays.stream(OpenProjects.getDefault().getOpenProjects()).anyMatch(p -> p.getProjectDirectory().getPath().equals(path));
     }
 
-    private static String escapeHtml(String s) {
-        return s.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;");
-    }
-
-    private final SessionPersistenceManager spm;
-    private final DefaultListModel<AiSession> listModel = new DefaultListModel<>();
-    private final JList<AiSession> sessionList = new JList<>(listModel);
-    private final JTextField nameField = new JTextField(20);
-    private final JSpinner countSpinner = new JSpinner(new SpinnerNumberModel(1, 1, MAX_CREATE_COUNT, 1));
-    private final JComboBox<String> projectCombo = new JComboBox<>();
-    private final JComboBox<AiTypeEnum> aiTypeCombo = new JComboBox<>();
-    private JButton createBtn;
-
-    private SessionPickerDialog(SessionPersistenceManager spm) {
-        super(WindowManager.getDefault().getMainWindow(), "AI Sessions", true);
-        this.spm = spm;
-        setLayout(new BorderLayout(8, 8));
-        getRootPane().setBorder(BorderFactory.createEmptyBorder(12, 12, 12, 12));
-        aiTypeCombo.setRenderer(new AiTypeEnumRenderer());
-
-        add(buildLeftPanel(), BorderLayout.CENTER);
-        add(buildRightPanel(), BorderLayout.EAST);
-        add(buildButtonPanel(), BorderLayout.SOUTH);
-
-        loadSessions();
-        populateProjects();
-        new AiTypeRegistry().getEnabled()
-                .stream()
-                .map(AiTypeSettings::type)
-                .forEach(aiTypeCombo::addItem);
-        if (aiTypeCombo.getItemCount() > 0) {
-            AiTypeEnum lastType = PluginSettings.getLastSessionAiType();
-            aiTypeCombo.setSelectedItem(lastType != null ? lastType : AiTypeEnum.GitHubCoPilot);
-        }
-        pack();
-        setMinimumSize(new Dimension(600, 480));
-    }
-
-    private Component buildLeftPanel() {
-        JPanel p = new JPanel(new BorderLayout(4, 4));
-        p.add(new JLabel("Existing sessions:"), BorderLayout.NORTH);
-        sessionList.setSelectionMode(ListSelectionModel.MULTIPLE_INTERVAL_SELECTION);
-        sessionList.setCellRenderer(new SessionCellRenderer());
-        p.add(new JScrollPane(sessionList), BorderLayout.CENTER);
-        return p;
-    }
-
-    private Component buildRightPanel() {
-        JPanel p = new ScrollablePanel(new GridBagLayout());
-        p.setBorder(BorderFactory.createTitledBorder("New session"));
+    private static GridBagConstraints constraints() {
         GridBagConstraints c = new GridBagConstraints();
         c.insets = new Insets(4, 4, 4, 4);
         c.anchor = GridBagConstraints.NORTHWEST;
         c.fill = GridBagConstraints.HORIZONTAL;
+        return c;
+    }
+
+    private static void addRow(JPanel p, GridBagConstraints c, int row, String label, Component value) {
+        c.gridy = row;
         c.gridx = 0;
-        c.gridy = 0;
+        c.gridwidth = 1;
+        c.weightx = 0;
+        p.add(new JLabel(label), c);
+        c.gridx = 1;
         c.weightx = 1;
-        p.add(new JLabel("Name (required):"), c);
-        c.gridy = 1;
-        p.add(nameField, c);
-        c.gridy = 2;
-        p.add(new JLabel("Count:"), c);
-        c.gridy = 3;
-        p.add(countSpinner, c);
+        p.add(value, c);
+    }
+
+    private final SessionPersistenceManager spm;
+    private final TemplatePersistenceManager templates = new TemplatePersistenceManager();
+    private final SessionTableModel sessions = new SessionTableModel();
+    private final JTable sessionTable = new JTable(sessions);
+    private final JTextField nameField = new JTextField(20);
+    private final JSpinner countSpinner = new JSpinner(new SpinnerNumberModel(1, 1, MAX_CREATE_COUNT, 1));
+    private final JComboBox<String> projectCombo = new JComboBox<>();
+    private final JComboBox<AiTypeEnum> aiTypeCombo = new JComboBox<>();
+    private final JComboBox<ConfigTemplate> configCombo = new JComboBox<>();
+    private final JComboBox<SpecialInstructionTemplate> instructionsCombo = new JComboBox<>();
+    private final JCheckBox injectOnCreate = new JCheckBox("Inject Special Instructions on Create");
+    private final JCheckBox closeAfterCreate = new JCheckBox("Close after action", true);
+    private final JCheckBox closeAfterOpen = new JCheckBox("Close after action", true);
+    private JButton createButton;
+    private final JPanel typeSettingsHolder = new JPanel(new BorderLayout());
+    private AiSessionCreateSettingsPanel<AiSessionSettings> typeSettingsPanel;
+
+    private SessionPickerDialog(SessionPersistenceManager spm) {
+        super(WindowManager.getDefault().getMainWindow(), "AI Manager", true);
+        this.spm = spm;
+        setLayout(new BorderLayout());
+        getRootPane().setBorder(BorderFactory.createEmptyBorder(12, 12, 12, 12));
+        aiTypeCombo.setRenderer(new AiTypeRenderer());
+        configCombo.setRenderer(new TemplateRenderer<>(ConfigTemplate::name, "Default"));
+        instructionsCombo.setRenderer(new TemplateRenderer<>(SpecialInstructionTemplate::name, "None"));
+        instructionsCombo.addActionListener(e -> updateInstructionInjectionControl());
+        aiTypeCombo.addActionListener(e -> replaceTypeSettingsPanel());
+        updateInstructionInjectionControl();
+        JTabbedPane tabs = new JTabbedPane();
+        tabs.addTab("Existing Sessions", buildExistingTab());
+        tabs.addTab("Create Session", buildCreateTab());
+        tabs.addTab("Templates", buildTemplatesTab());
+        add(tabs, BorderLayout.CENTER);
+        JPanel bottom = new JPanel(new FlowLayout(FlowLayout.RIGHT));
+        JButton cancel = new JButton("Cancel");
+        cancel.addActionListener(e -> dispose());
+        bottom.add(cancel);
+        add(bottom, BorderLayout.SOUTH);
+        loadSessions();
+        populateProjects();
+        populateTypes();
+        refreshTemplates();
+        setPreferredSize(new Dimension(850, 600));
+        setMinimumSize(new Dimension(820, 560));
+        pack();
+    }
+
+    private Component buildExistingTab() {
+        sessionTable.setSelectionMode(ListSelectionModel.MULTIPLE_INTERVAL_SELECTION);
+        sessionTable.setAutoCreateRowSorter(true);
+        sessionTable.setDefaultRenderer(Object.class, new SessionRenderer());
+        sessionTable.setPreferredScrollableViewportSize(new Dimension(780, 320));
+        JPanel panel = new JPanel(new BorderLayout(4, 4));
+        panel.add(new JScrollPane(sessionTable), BorderLayout.CENTER);
+        JPanel actions = new JPanel(new FlowLayout(FlowLayout.RIGHT));
+        JButton open = new JButton("Open");
+        open.addActionListener(e -> onOpenSelected());
+        JButton delete = new JButton("Delete");
+        delete.addActionListener(e -> onDelete());
+        actions.add(open);
+        actions.add(closeAfterOpen);
+        actions.add(delete);
+        panel.add(actions, BorderLayout.SOUTH);
+        return panel;
+    }
+
+    private Component buildCreateTab() {
+        ScrollablePanel form = new ScrollablePanel(new GridBagLayout());
+        GridBagConstraints c = constraints();
+        addRow(form, c, 0, "Name (required):", nameField);
+        addRow(form, c, 1, "Count:", countSpinner);
+        addRow(form, c, 2, "Project:", projectCombo);
+        addRow(form, c, 3, "AI type:", aiTypeCombo);
+        c.gridx = 0;
         c.gridy = 4;
-        p.add(new JLabel("Project:"), c);
-        c.gridy = 5;
-        p.add(projectCombo, c);
-        c.gridy = 6;
-        p.add(new JLabel("AI type:"), c);
+        c.gridwidth = 2;
+        c.weightx = 1;
+        form.add(typeSettingsHolder, c);
+        addRow(form, c, 5, "Config Template:", configCombo);
+        addRow(form, c, 6, "Special Instructions:", instructionsCombo);
+        c.gridx = 0;
         c.gridy = 7;
-        p.add(aiTypeCombo, c);
+        c.gridwidth = 2;
+        form.add(injectOnCreate, c);
+        JPanel actions = new JPanel(new FlowLayout(FlowLayout.LEFT, 4, 0));
+        createButton = new JButton("Create & Open");
+        createButton.addActionListener(e -> onCreateNew());
+        actions.add(createButton);
+        actions.add(closeAfterCreate);
         c.gridy = 8;
-        JButton createBtn = new JButton("Create & Open");
-        createBtn.addActionListener(e -> onCreateNew());
-        this.createBtn = createBtn;
-        p.add(createBtn, c);
-
-        JScrollPane sp = new JScrollPane(p);
-        sp.setPreferredSize(new Dimension(300, 0));
-        sp.setHorizontalScrollBarPolicy(JScrollPane.HORIZONTAL_SCROLLBAR_NEVER);
-        sp.getVerticalScrollBar().setUnitIncrement(16);
-        return sp;
+        form.add(actions, c);
+        c.gridy = 9;
+        c.weighty = 1;
+        form.add(new JPanel(), c);
+        return new JScrollPane(form);
     }
 
-    private Component buildButtonPanel() {
-        JPanel p = new JPanel(new FlowLayout(FlowLayout.RIGHT, 4, 0));
-        JButton openBtn = new JButton("Open");
-        openBtn.addActionListener(e -> onOpenSelected());
-        JButton deleteBtn = new JButton("Delete");
-        deleteBtn.addActionListener(e -> onDelete());
-        JButton cancelBtn = new JButton("Cancel");
-        cancelBtn.addActionListener(e -> dispose());
-        p.add(openBtn);
-        p.add(deleteBtn);
-        p.add(cancelBtn);
-        return p;
+    private Component buildTemplatesTab() {
+        JTabbedPane nested = new JTabbedPane();
+        nested.addTab("Config Templates", new ConfigTemplatesPanel(templates, this::refreshTemplates));
+        nested.addTab("Special Instructions", new InstructionTemplatesPanel(templates, this::refreshTemplates));
+        return nested;
     }
 
-    private void loadSessions() {
-        listModel.clear();
-        try {
-            spm.loadAll().forEach(listModel::addElement);
+    private void populateTypes() {
+        new AiTypeRegistry().getEnabled().stream().map(AiTypeSettings::type).forEach(aiTypeCombo::addItem);
+        AiTypeEnum last = PluginSettings.getLastSessionAiType();
+        if (last != null) {
+            aiTypeCombo.setSelectedItem(last);
         }
-        catch (IOException e) {
-            LOG.log(Level.WARNING, "Could not load sessions", e);
+        replaceTypeSettingsPanel();
+    }
+
+    @SuppressWarnings({"unchecked", "rawtypes"})
+    private void replaceTypeSettingsPanel() {
+        if (typeSettingsPanel != null) {
+            typeSettingsPanel.dispose();
+            typeSettingsHolder.removeAll();
+        }
+        AiTypeEnum type = (AiTypeEnum) aiTypeCombo.getSelectedItem();
+        if (type == null) {
+            return;
+        }
+        typeSettingsPanel = (AiSessionCreateSettingsPanel) type.getSettingsCreator().createSettingsPanel();
+        AiSessionSettings defaults = type.createDefaultSettings();
+        defaults.applyDefaultSettingsFromGlobal();
+        type.getSettingsCreator().applyDefaultSettingsFromGlobal(defaults);
+        typeSettingsPanel.load(defaults);
+        typeSettingsPanel.startLoading();
+        JComponent component = typeSettingsPanel.component();
+        typeSettingsHolder.add(component, BorderLayout.CENTER);
+        typeSettingsHolder.revalidate();
+        typeSettingsHolder.repaint();
+        if (isShowing()) {
+            pack();
         }
     }
 
     private void populateProjects() {
-        projectCombo.removeAllItems();
-        Project[] projects = OpenProjects.getDefault().getOpenProjects();
-        for (Project proj : projects) {
-            projectCombo.addItem(proj.getProjectDirectory().getPath());
+        for (Project project : OpenProjects.getDefault().getOpenProjects()) {
+            projectCombo.addItem(project.getProjectDirectory().getPath());
         }
         Project main = OpenProjects.getDefault().getMainProject();
         if (main != null) {
@@ -188,197 +235,187 @@ public class SessionPickerDialog extends JDialog {
         }
     }
 
+    private void loadSessions() {
+        try {
+            sessions.setRows(spm.loadAll());
+        }
+        catch (IOException e) {
+            LOG.log(Level.WARNING, "Could not load sessions", e);
+        }
+    }
+
+    private void refreshTemplates() {
+        Object config = configCombo.getSelectedItem(), instruction = instructionsCombo.getSelectedItem();
+        configCombo.removeAllItems();
+        configCombo.addItem(null);
+        instructionsCombo.removeAllItems();
+        instructionsCombo.addItem(null);
+        try {
+            templates.saveConfigDefaultsIfEmpty().forEach(configCombo::addItem);
+            templates.saveSpecialInstructionDefaultsIfEmpty().forEach(instructionsCombo::addItem);
+        }
+        catch (IOException e) {
+            LOG.log(Level.WARNING, "Could not load templates", e);
+        }
+        configCombo.setSelectedItem(config);
+        instructionsCombo.setSelectedItem(instruction);
+        updateInstructionInjectionControl();
+    }
+
     private void onCreateNew() {
-        String projectPath = (String) projectCombo.getSelectedItem();
-        if (projectPath == null || projectPath.isBlank()) {
-            JOptionPane.showMessageDialog(this, "Please select an open project.", "No project", JOptionPane.WARNING_MESSAGE);
+        String project = (String) projectCombo.getSelectedItem();
+        AiTypeEnum type = (AiTypeEnum) aiTypeCombo.getSelectedItem();
+        String baseName = nameField.getText().trim();
+        if (project == null || type == null || baseName.isEmpty()) {
+            JOptionPane.showMessageDialog(this, "Name, open project, and AI type are required.", "Create session", JOptionPane.WARNING_MESSAGE);
             return;
         }
-
-        AiTypeEnum chosenType = (AiTypeEnum) aiTypeCombo.getSelectedItem();
-        if (chosenType == null) {
-            JOptionPane.showMessageDialog(this, "Please select an AI type.", "No AI type", JOptionPane.WARNING_MESSAGE);
-            return;
+        PluginSettings.setLastSessionAiType(type);
+        ConfigTemplate config = (ConfigTemplate) configCombo.getSelectedItem();
+        SpecialInstructionTemplate instruction = (SpecialInstructionTemplate) instructionsCombo.getSelectedItem();
+        AiSessionSettings typeSettingsSnapshot = type.createDefaultSettings();
+        typeSettingsSnapshot.applyDefaultSettingsFromGlobal();
+        type.getSettingsCreator().applyDefaultSettingsFromGlobal(typeSettingsSnapshot);
+        if (typeSettingsPanel != null) {
+            typeSettingsPanel.applyTo(typeSettingsSnapshot);
         }
-        kiwi.ingenuity.netbeans.plugin.aicoder.PluginSettings.setLastSessionAiType(chosenType);
-
-        String typedName = nameField.getText().trim();
-        if (typedName.isEmpty()) {
-            JOptionPane.showMessageDialog(this, "Please enter a name for the AI session.", "Name required", JOptionPane.WARNING_MESSAGE);
-            nameField.requestFocusInWindow();
-            return;
-        }
-
+        JsonObject typeSettingsJson = new JsonObject();
+        typeSettingsSnapshot.populateJsonObject(typeSettingsJson);
+        boolean startup = instruction != null && injectOnCreate.isSelected();
+        boolean close = closeAfterCreate.isSelected();
         int count = (Integer) countSpinner.getValue();
-        if (count < 1) {
-            count = 1;
-        }
-        int finalCount = count;
-
-        // spm.save() takes a cross-process file lock and rewrites the whole
-        // sessions JSON file on every call, so doing this in a loop synchronously
-        // on the EDT (as before) could freeze the UI for a moment when creating
-        // several sessions at once. Run the save loop off the EDT, then dispose
-        // and open the created tabs back on the EDT.
-        setCreateControlsEnabled(false);
+        setCreateEnabled(false);
         new Thread(() -> {
             List<AiSession> created = new ArrayList<>();
-            // count == 1 -> use the typed name as-is; count > 1 -> suffix each with _1.._N.
-            for (int i = 1; i <= finalCount; i++) {
-                String name = finalCount == 1 ? typedName : typedName + "_" + i;
-                AiSession session = AiSession.create(projectPath, chosenType).withName(name);
+            for (int i = 1; i <= count; i++) {
+                AiSession session = AiSession.create(project, type).withName(count == 1 ? baseName : baseName + "_" + i);
+                type.getSettingsCreator().update(session.settings(), typeSettingsJson);
+                if (config != null) {
+                    config.applyTo(session.settings());
+                }
+                if (instruction != null) {
+                    session.settings().setSessionInstructions(instruction.body());
+                }
+                session.setSessionInstructionsDelivery(startup ? SessionInstructionsDeliveryEnum.ON_START : SessionInstructionsDeliveryEnum.ON_FIRST_REQUEST);
                 try {
                     spm.save(session);
                     created.add(session);
                 }
-                catch (IOException e) {
-                    LOG.log(Level.WARNING, "Could not save new session " + name, e);
+                catch (IOException ex) {
+                    LOG.log(Level.WARNING, "Could not save session " + session.name(), ex);
                 }
             }
             SwingUtilities.invokeLater(() -> {
-                if (created.isEmpty()) {
-                    setCreateControlsEnabled(true);
-                    return;
+                if (!created.isEmpty()) {
+                    created.forEach(this::openSession);
+                    loadSessions();
+                    if (close) {
+                        dispose();
+                    }
                 }
-                dispose();
-                created.forEach(this::openSession);
+                setCreateEnabled(true);
             });
         }, "aicoder-session-create").start();
     }
 
-    private void setCreateControlsEnabled(boolean enabled) {
-        createBtn.setEnabled(enabled);
+    private void setCreateEnabled(boolean enabled) {
+        createButton.setEnabled(enabled);
         nameField.setEnabled(enabled);
         countSpinner.setEnabled(enabled);
         projectCombo.setEnabled(enabled);
         aiTypeCombo.setEnabled(enabled);
+        configCombo.setEnabled(enabled);
+        instructionsCombo.setEnabled(enabled);
+        injectOnCreate.setEnabled(enabled && instructionsCombo.getSelectedItem() != null);
+    }
+
+    private void updateInstructionInjectionControl() {
+        boolean visible = instructionsCombo.getSelectedItem() != null;
+        injectOnCreate.setVisible(visible);
+        injectOnCreate.setEnabled(visible && instructionsCombo.isEnabled());
+        if (!visible) {
+            injectOnCreate.setSelected(false);
+        }
+    }
+
+    private List<AiSession> selectedSessions() {
+        return sessionTable.getSelectedRows() == null ? List.of() : Arrays.stream(sessionTable.getSelectedRows()).map(sessionTable::convertRowIndexToModel).mapToObj(sessions::row).toList();
     }
 
     private void onOpenSelected() {
-        List<AiSession> selected = sessionList.getSelectedValuesList();
-        if (selected.isEmpty()) {
+        List<AiSession> selected = selectedSessions();
+        List<AiSession> blocked = selected.stream().filter(s -> s.projectPath() != null && !isProjectOpen(s.projectPath())).toList();
+        List<AiSession> eligible = selected.stream().filter(s -> s.projectPath() == null || isProjectOpen(s.projectPath())).sorted((a, b) -> a.name().compareToIgnoreCase(b.name())).toList();
+        if (!blocked.isEmpty()) {
+            String names = blocked.stream().map(AiSession::name).sorted(String.CASE_INSENSITIVE_ORDER).reduce((a, b) -> a + ", " + b).orElse("");
+            JOptionPane.showMessageDialog(this, "The project for the following sessions is not open:\n" + names + "\n\nOpen the project(s) first.", "Project not open", JOptionPane.WARNING_MESSAGE);
+        }
+        if (eligible.isEmpty()) {
             return;
         }
-        List<AiSession> blocked = selected.stream()
-                .filter(s -> s.projectPath() != null && !isProjectOpen(s.projectPath()))
-                .toList();
-        if (!blocked.isEmpty()) {
-            StringBuilder names = new StringBuilder();
-            for (AiSession s : blocked) {
-                if (names.length() > 0) {
-                    names.append(", ");
-                }
-                names.append(s.name());
-            }
-            JOptionPane.showMessageDialog(this,
-                    "The project for the following sessions is not open:\n" + names + "\n\nOpen the project(s) first.",
-                    "Project not open", JOptionPane.WARNING_MESSAGE);
-            if (blocked.size() == selected.size()) {
-                return;
-            }
+        eligible.forEach(this::openSession);
+        if (closeAfterOpen.isSelected()) {
+            dispose();
         }
-        List<AiSession> toOpen = selected.stream()
-                .filter(s -> s.projectPath() == null || isProjectOpen(s.projectPath()))
-                .sorted((a, b) -> a.name().compareToIgnoreCase(b.name()))
-                .toList();
-        dispose();
-        toOpen.forEach(this::openSession);
     }
 
     private void onDelete() {
-        List<AiSession> selected = sessionList.getSelectedValuesList();
+        List<AiSession> selected = selectedSessions();
         if (selected.isEmpty()) {
             return;
         }
-        String message = selected.size() == 1
-                ? "Delete \"" + selected.get(0).name() + "\" and its history permanently?"
-                : "Delete these " + selected.size() + " sessions and their history permanently?";
-        int confirm = JOptionPane.showConfirmDialog(this, message,
-                selected.size() == 1 ? "Delete Session" : "Delete Sessions",
-                JOptionPane.YES_NO_OPTION, JOptionPane.WARNING_MESSAGE);
-        if (confirm != JOptionPane.YES_OPTION) {
+        if (JOptionPane.showConfirmDialog(this, "Delete selected sessions and their history permanently?", "Delete Sessions", JOptionPane.YES_NO_OPTION, JOptionPane.WARNING_MESSAGE) != JOptionPane.YES_OPTION) {
             return;
         }
-        for (AiSession s : selected) {
-            String deletedId = s.id();
-            try {
-                spm.delete(deletedId);
-            }
-            catch (IOException e) {
-                LOG.log(Level.WARNING, "Could not delete session " + deletedId, e);
-            }
-            for (TopComponent tc : new ArrayList<>(TopComponent.getRegistry().getOpened())) {
-                if (tc instanceof AiTopComponent ctc && deletedId.equals(ctc.getSession().id())) {
-                    ctc.closeWithoutPrompt();
-                    break;
-                }
-            }
+        for (AiSession session : selected) try {
+            spm.delete(session.id());
+            closeTab(session.id());
+        }
+        catch (IOException e) {
+            LOG.log(Level.WARNING, "Could not delete session", e);
         }
         loadSessions();
     }
 
+    private void closeTab(String id) {
+        for (TopComponent tc : new ArrayList<>(TopComponent.getRegistry().getOpened())) {
+            if (tc instanceof AiTopComponent ai && id.equals(ai.getSession().id())) {
+                ai.closeWithoutPrompt();
+                return;
+            }
+        }
+    }
+
     private void openSession(AiSession session) {
-        SwingUtilities.invokeLater(() -> {
-            for (TopComponent existing : TopComponent.getRegistry().getOpened()) {
-                if (existing instanceof AiTopComponent ctc
-                        && session.id().equals(ctc.getSession().id())) {
-                    existing.requestActive();
+        Runnable task = () -> {
+            for (TopComponent tc : TopComponent.getRegistry().getOpened()) {
+                if (tc instanceof AiTopComponent ai && session.id().equals(ai.getSession().id())) {
+                    tc.requestActive();
                     return;
                 }
             }
             AiTopComponent tc = new AiTopComponent(session, spm);
-            Mode outputMode = WindowManager.getDefault().findMode("output");
-            if (outputMode != null) {
-                outputMode.dockInto(tc);
+            Mode mode = WindowManager.getDefault().findMode("output");
+            if (mode != null) {
+                mode.dockInto(tc);
             }
             tc.open();
             tc.requestActive();
-        });
-    }
-
-    private static class SessionCellRenderer extends DefaultListCellRenderer {
-
-        @Override
-        public Component getListCellRendererComponent(JList<?> list, Object value,
-                int index, boolean isSelected, boolean cellHasFocus) {
-            super.getListCellRendererComponent(list, value, index, isSelected, cellHasFocus);
-            if (value instanceof AiSession s) {
-                String project = s.projectPath() != null
-                        ? Path.of(s.projectPath()).getFileName().toString()
-                        : "—";
-                String typeTag = "<font color='#888888'>[" + s.aiType().displayName() + "]</font>";
-                String desc = s.description() != null && !s.description().isBlank()
-                        ? " — " + escapeHtml(s.description().substring(0, Math.min(s.description().length(), 40)))
-                        : "";
-                setText("<html><b>" + escapeHtml(s.name()) + "</b>" + desc + "  " + typeTag + "  <font color='gray'>[" + escapeHtml(project) + "]</font></html>");
-                boolean open = s.projectPath() == null || isProjectOpen(s.projectPath());
-                if (!open && !isSelected) {
-                    setForeground(UIManager.getColor("Label.disabledForeground"));
-                }
-                setEnabled(open);
-            }
-            return this;
+        };
+        if (SwingUtilities.isEventDispatchThread()) {
+            task.run();
+        }
+        else {
+            SwingUtilities.invokeLater(task);
         }
     }
 
-    class AiTypeEnumRenderer extends DefaultListCellRenderer {
-
-        @Override
-        public Component getListCellRendererComponent(JList<?> list, Object value,
-                int index, boolean isSelected, boolean cellHasFocus) {
-
-            // Let the parent do the default styling (selection colors, etc.)
-            super.getListCellRendererComponent(list, value, index, isSelected, cellHasFocus);
-
-            if (value instanceof AiTypeEnum myObj) {
-                setText(myObj.displayName());   // or any custom text
-                // setIcon(...);            // you can also add icons
-            }
-            else if (value != null) {
-                setText(value.toString());
-            }
-
-            return this;
+    @Override
+    public void dispose() {
+        if (typeSettingsPanel != null) {
+            typeSettingsPanel.dispose();
+            typeSettingsPanel = null;
         }
+        super.dispose();
     }
 }

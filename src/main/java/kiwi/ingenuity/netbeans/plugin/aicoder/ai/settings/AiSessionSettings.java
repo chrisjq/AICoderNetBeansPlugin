@@ -11,6 +11,7 @@ public class AiSessionSettings {
     // message-delivery threads and is mutated in place, so each field needs
     // safe cross-thread visibility.
     private volatile Integer maxHistory;
+    private volatile Boolean saveHistory;
     private volatile Boolean restrictToProjectFiles;
     private volatile Boolean allowInterAiComms;
     private volatile Boolean autoNotifyInbox;
@@ -79,6 +80,14 @@ public class AiSessionSettings {
 
     public Integer maxHistory() {
         return maxHistory;
+    }
+
+    public Boolean saveHistory() {
+        return saveHistory;
+    }
+
+    public boolean effectiveSaveHistory() {
+        return saveHistory != null ? saveHistory : PluginSettings.isSaveHistory();
     }
 
     public Boolean restrictToProjectFiles() {
@@ -217,6 +226,10 @@ public class AiSessionSettings {
         this.maxHistory = newMaxHistory;
     }
 
+    public void setSaveHistory(Boolean newSaveHistory) {
+        this.saveHistory = newSaveHistory;
+    }
+
     public void setRestrictToProjectFiles(Boolean newRestrictToProjectFiles) {
         this.restrictToProjectFiles = newRestrictToProjectFiles;
     }
@@ -295,6 +308,9 @@ public class AiSessionSettings {
         if (maxHistory == null) {
             maxHistory = PluginSettings.getMaxHistory();
         }
+        if (saveHistory == null) {
+            saveHistory = PluginSettings.isSaveHistory();
+        }
         if (restrictToProjectFiles == null) {
             restrictToProjectFiles = PluginSettings.isRestrictToProjectFiles();
         }
@@ -346,6 +362,9 @@ public class AiSessionSettings {
     public void populateJsonObject(JsonObject cfgObj) {
         if (maxHistory != null) {
             cfgObj.addProperty(AiSessionSettingsKeyEnum.MAX_HISTORY.key(), maxHistory);
+        }
+        if (saveHistory != null) {
+            cfgObj.addProperty(AiSessionSettingsKeyEnum.SAVE_HISTORY.key(), saveHistory);
         }
         if (restrictToProjectFiles != null) {
             cfgObj.addProperty(AiSessionSettingsKeyEnum.RESTRICT_TO_PROJECT_FILES.key(), restrictToProjectFiles);

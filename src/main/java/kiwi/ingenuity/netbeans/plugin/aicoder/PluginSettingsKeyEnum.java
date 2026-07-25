@@ -30,7 +30,7 @@ public enum PluginSettingsKeyEnum {
     INBOX_MAX_SIZE("ai.inbox.maxSize", 1000),
     LAST_SESSION_AI_TYPE("ai.session.lastAiType", null),
     ALLOW_DATABASE_ACCESS("ai.session.allowDatabaseAccess", false),
-    ALLOW_DATABASE_READ_ONLY("ai.session.allowDatabaseAccess.readOnly", false),
+    ALLOW_DATABASE_READ_ONLY("ai.session.allowDatabaseAccess.readOnly", true),
     ALLOW_DATABASE_LIST_TABLES("ai.session.allowDatabaseAccess.listTables", false),
     ALLOW_DATABASE_SCHEMA("ai.session.allowDatabaseAccess.schema", false),
     ALLOW_DATABASE_SELECT("ai.session.allowDatabaseAccess.select", false),

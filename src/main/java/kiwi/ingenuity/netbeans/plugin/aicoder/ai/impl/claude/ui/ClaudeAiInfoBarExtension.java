@@ -43,6 +43,7 @@ public class ClaudeAiInfoBarExtension implements AiInfoBarExtension {
 
     private final List<ClaudeInfoBarListener> listeners = new ArrayList<>();
     private boolean programmatic = false;
+    private Runnable disposeAction;
 
     public ClaudeAiInfoBarExtension() {
         modelCombo = new JComboBox<>(ClaudePluginSettings.KNOWN_MODELS);
@@ -82,8 +83,16 @@ public class ClaudeAiInfoBarExtension implements AiInfoBarExtension {
         listeners.remove(listener);
     }
 
+    public void setDisposeAction(Runnable disposeAction) {
+        this.disposeAction = disposeAction;
+    }
+
     @Override
     public void dispose() {
+        if (disposeAction != null) {
+            disposeAction.run();
+            disposeAction = null;
+        }
         listeners.clear();
     }
 

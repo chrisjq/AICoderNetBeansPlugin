@@ -2,7 +2,9 @@ package kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.githubcopilot;
 
 import java.util.Arrays;
 import java.util.List;
+import java.util.function.Consumer;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.AiImplementation;
+import kiwi.ingenuity.netbeans.plugin.aicoder.ai.AiModelCatalog;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.AiSessionHost;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.AiTypeEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.AiTypePropertyBus;
@@ -34,10 +36,19 @@ public class GithubCopilotAiImplementation extends AiImplementation {
     // IDE run (like Claude): discover once, cache, and broadcast to every open
     // session's dropdown via AiTypePropertyBus — so opening 4 sessions at once
     // populates all four, not just the one that triggered discovery.
-    private static final Object MODEL_LOCK = new Object();
-    private static volatile List<String> cachedModels = null;
-    private static volatile long modelsFetchedMs = 0L;
-    private static final long MODEL_REFRESH_INTERVAL_MS = 10 * 60 * 1000L;
+    private static final AiModelCatalog MODEL_CATALOG = new AiModelCatalog();
+
+    public static AiModelCatalog modelCatalog() {
+        return MODEL_CATALOG;
+    }
+
+    public static void addModelCatalogListener(java.util.function.Consumer<List<String>> listener) {
+        MODEL_CATALOG.addListener(listener);
+    }
+
+    public static void removeModelCatalogListener(java.util.function.Consumer<List<String>> listener) {
+        MODEL_CATALOG.removeListener(listener);
+    }
     private final GithubCopilotProcessManager processManager;
 
     public GithubCopilotAiImplementation(AiProcessEventListener listener, ExecutablePrompter prompter) {
@@ -88,6 +99,9 @@ public class GithubCopilotAiImplementation extends AiImplementation {
     @Override
     public GithubCopilotAiInfoBarExtension createInfoBarExtension(AiSession session, AiSessionHost host) {
         GithubCopilotAiInfoBarExtension provider = new GithubCopilotAiInfoBarExtension(session, host);
+        Consumer<List<String>> catalogListener = models -> provider.setAvailableModels(models.toArray(String[]::new));
+        MODEL_CATALOG.addListener(catalogListener);
+        provider.setDisposeAction(() -> MODEL_CATALOG.removeListener(catalogListener));
         provider.addListener(new GithubCopilotInfoBarListener() {
             @Override
             public void onCompactRequested() {
@@ -137,26 +151,15 @@ public class GithubCopilotAiImplementation extends AiImplementation {
      * completed replays the cached list immediately. Without this, only the
      * session that happened to trigger discovery got the loaded list.
      */
-    private void triggerModelDiscovery() {
-        List<String> cached;
-        long lastSuccess;
-        synchronized (MODEL_LOCK) {
-            cached = cachedModels;
-            lastSuccess = modelsFetchedMs;
-        }
-        if (cached != null) {
-            AiTypePropertyBus.getInstance().fire(AiTypeEnum.GitHubCoPilot, new GithubCopilotModelsEvent(cached));
-        }
-        if (lastSuccess > 0 && System.currentTimeMillis() - lastSuccess < MODEL_REFRESH_INTERVAL_MS) {
+    public static void triggerModelDiscovery() {
+        if (!MODEL_CATALOG.beginRefresh()) {
             return;
         }
         GithubCopilotModelDiscovery.discoverAsync(GithubCopilotExecutableLocator.locate(), models -> {
             List<String> list = Arrays.asList(models);
-            synchronized (MODEL_LOCK) {
-                cachedModels = list;
-                modelsFetchedMs = System.currentTimeMillis();
+            if (MODEL_CATALOG.publish(list)) {
+                AiTypePropertyBus.getInstance().fire(AiTypeEnum.GitHubCoPilot, new GithubCopilotModelsEvent(list));
             }
-            AiTypePropertyBus.getInstance().fire(AiTypeEnum.GitHubCoPilot, new GithubCopilotModelsEvent(list));
         });
     }
 

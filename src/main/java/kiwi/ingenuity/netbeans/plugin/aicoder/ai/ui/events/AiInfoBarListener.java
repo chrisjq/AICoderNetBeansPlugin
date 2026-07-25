@@ -9,4 +9,7 @@ public interface AiInfoBarListener {
 
     default void onAutoAcceptChanged(boolean autoAccept) {
     }
+
+    default void onSaveHistoryChanged(boolean saveHistory) {
+    }
 }

@@ -56,6 +56,8 @@ public class AiSession {
     private final AiSessionSettings settings;
     private volatile Instant lastUsedAt;
     private volatile boolean instructionsLoaded = false;
+    private volatile SessionInstructionsDeliveryEnum sessionInstructionsDelivery = SessionInstructionsDeliveryEnum.ON_FIRST_REQUEST;
+    private volatile boolean startupInstructionsInjected = false;
 
     private final ConcurrentHashMap<String, String> extraData = new ConcurrentHashMap<>();
     private volatile AiSessionCallback callback;
@@ -134,6 +136,22 @@ public class AiSession {
 
     public void setInstructionsLoaded(boolean instructionsLoaded) {
         this.instructionsLoaded = instructionsLoaded;
+    }
+
+    public SessionInstructionsDeliveryEnum sessionInstructionsDelivery() {
+        return sessionInstructionsDelivery;
+    }
+
+    public void setSessionInstructionsDelivery(SessionInstructionsDeliveryEnum delivery) {
+        this.sessionInstructionsDelivery = delivery != null ? delivery : SessionInstructionsDeliveryEnum.ON_FIRST_REQUEST;
+    }
+
+    public boolean isStartupInstructionsInjected() {
+        return startupInstructionsInjected;
+    }
+
+    public void setStartupInstructionsInjected(boolean injected) {
+        this.startupInstructionsInjected = injected;
     }
 
     // ---- Extra key-value data (for info map extensibility) ----

@@ -16,6 +16,7 @@ public class OllamaAiInfoBarExtension implements AiInfoBarExtension {
 
     private final JComboBox<String> modelCombo = new JComboBox<>(OllamaPluginSettings.getKnownModels());
     private final JLabel hintLabel = new JLabel(" ");
+    private Runnable disposeAction;
 
     public OllamaAiInfoBarExtension() {
         modelCombo.setEditable(true);
@@ -25,6 +26,18 @@ public class OllamaAiInfoBarExtension implements AiInfoBarExtension {
 
     public void addModelChangeListener(java.awt.event.ActionListener listener) {
         modelCombo.addActionListener(listener);
+    }
+
+    public void setDisposeAction(Runnable disposeAction) {
+        this.disposeAction = disposeAction;
+    }
+
+    @Override
+    public void dispose() {
+        if (disposeAction != null) {
+            disposeAction.run();
+            disposeAction = null;
+        }
     }
 
     public String getSelectedModel() {

@@ -23,6 +23,7 @@ import java.util.logging.Logger;
 import kiwi.ingenuity.netbeans.plugin.aicoder.PluginUtil;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.AiTypeEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.session.AiSession;
+import kiwi.ingenuity.netbeans.plugin.aicoder.ai.session.SessionInstructionsDeliveryEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.settings.AiSessionSettings;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.settings.AiSessionSettingsCreator;
 
@@ -186,7 +187,7 @@ public class SessionPersistenceManager {
                         LOG.log(Level.WARNING, "Malformed lastUsedAt for session {0}, using epoch", o.get("id").getAsString());
                         lastUsedAt = Instant.EPOCH;
                     }
-                    result.add(new AiSession(
+                    AiSession session = new AiSession(
                             o.get("id").getAsString(),
                             o.get("name").getAsString(),
                             description,
@@ -194,7 +195,21 @@ public class SessionPersistenceManager {
                             o.has("projectPath") ? o.get("projectPath").getAsString() : null,
                             settings,
                             createdAt,
-                            lastUsedAt));
+                            lastUsedAt);
+                    if (o.has("sessionInstructionsDelivery")) {
+                        try {
+                            session.setSessionInstructionsDelivery(SessionInstructionsDeliveryEnum.valueOf(
+                                    o.get("sessionInstructionsDelivery").getAsString()));
+                        }
+                        catch (IllegalArgumentException e) {
+                            LOG.log(Level.WARNING, "Invalid session instruction delivery mode for session {0}; using first-request delivery",
+                                    session.id());
+                        }
+                    }
+                    if (o.has("startupInstructionsInjected") && !o.get("startupInstructionsInjected").isJsonNull()) {
+                        session.setStartupInstructionsInjected(o.get("startupInstructionsInjected").getAsBoolean());
+                    }
+                    result.add(session);
                 }
                 catch (Exception e) {
                     LOG.log(Level.WARNING, "Skipping malformed session entry", e);
@@ -228,6 +243,8 @@ public class SessionPersistenceManager {
             o.add("config", cfgObj);
             o.addProperty("createdAt", s.createdAt().toString());
             o.addProperty("lastUsedAt", s.lastUsedAt().toString());
+            o.addProperty("sessionInstructionsDelivery", s.sessionInstructionsDelivery().name());
+            o.addProperty("startupInstructionsInjected", s.isStartupInstructionsInjected());
             arr.add(o);
         }
         byte[] bytes = GSON.toJson(arr).getBytes(StandardCharsets.UTF_8);

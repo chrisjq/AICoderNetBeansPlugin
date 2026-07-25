@@ -12,6 +12,7 @@ public enum AiSessionSettingsKeyEnum {
      * Maximum conversation history size
      */
     MAX_HISTORY("maxHistory"),
+    SAVE_HISTORY("saveHistory"),
     /**
      * Whether to restrict searches to project files
      */

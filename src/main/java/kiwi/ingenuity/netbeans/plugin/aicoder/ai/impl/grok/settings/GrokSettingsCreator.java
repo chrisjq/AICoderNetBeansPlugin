@@ -1,7 +1,9 @@
 package kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.grok.settings;
 
 import com.google.gson.JsonObject;
+import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.grok.GrokAiImplementation;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.settings.AiModelSessionSettingsCreator;
+import kiwi.ingenuity.netbeans.plugin.aicoder.ai.settings.AiSessionCreateSettingsPanel;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.settings.AiSessionSettings;
 
 /**
@@ -13,6 +15,11 @@ public class GrokSettingsCreator extends AiModelSessionSettingsCreator<GrokSessi
     @Override
     public GrokSessionSettings create() {
         return new GrokSessionSettings();
+    }
+
+    @Override
+    public AiSessionCreateSettingsPanel<GrokSessionSettings> createSettingsPanel() {
+        return new GrokCreateSettingsPanel(GrokAiImplementation.modelCatalog());
     }
 
     @Override

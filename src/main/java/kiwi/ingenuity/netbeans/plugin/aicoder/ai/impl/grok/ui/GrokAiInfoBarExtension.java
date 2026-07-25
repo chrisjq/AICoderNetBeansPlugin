@@ -10,9 +10,9 @@ import javax.swing.JComponent;
 import javax.swing.JProgressBar;
 import javax.swing.SwingUtilities;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.events.AiPropertyEvent;
-import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.grok.settings.GrokPluginSettings;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.grok.events.GrokModelsEvent;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.grok.events.GrokTokenUsageEvent;
+import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.grok.settings.GrokPluginSettings;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.ui.AiInfoBarExtension;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.events.AiProcessImplEvent;
 
@@ -31,6 +31,7 @@ public class GrokAiInfoBarExtension implements AiInfoBarExtension {
     private volatile int currentTokens = 0;
     private volatile boolean hasUsageData = false;
     private boolean programmatic = false;
+    private Runnable disposeAction;
 
     public GrokAiInfoBarExtension() {
         modelCombo = new JComboBox<>(GrokPluginSettings.KNOWN_MODELS);
@@ -45,8 +46,16 @@ public class GrokAiInfoBarExtension implements AiInfoBarExtension {
         contextBar.setToolTipText("Context window usage — tokens used / total available");
     }
 
+    public void setDisposeAction(Runnable disposeAction) {
+        this.disposeAction = disposeAction;
+    }
+
     @Override
     public void dispose() {
+        if (disposeAction != null) {
+            disposeAction.run();
+            disposeAction = null;
+        }
     }
 
     @Override

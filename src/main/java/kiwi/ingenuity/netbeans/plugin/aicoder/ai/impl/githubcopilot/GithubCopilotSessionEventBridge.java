@@ -77,6 +77,8 @@ public final class GithubCopilotSessionEventBridge {
     // shown, so it is emitted only for messages that never streamed.
     private final Set<String> streamedMessageIds = new HashSet<>();
 
+    private boolean errorReportedThisTurn = false;
+
     public GithubCopilotSessionEventBridge(AiProcessEventListener listener) {
         this.listener = listener;
     }
@@ -199,9 +201,11 @@ public final class GithubCopilotSessionEventBridge {
         session.on(AssistantTurnEndEvent.class, e -> {
             logRaw("assistant.turn_end", e.getData());
             lastMessageId = null;
+            errorReportedThisTurn = false;
         });
         session.on(SessionIdleEvent.class, e -> {
             logRaw("session.idle", e.getData());
+            errorReportedThisTurn = false;
             listener.onAiProcessEvent(new TurnCompleteEvent());
         });
         session.on(SessionUsageInfoEvent.class, e -> {
@@ -217,11 +221,21 @@ public final class GithubCopilotSessionEventBridge {
         session.on(SessionErrorEvent.class, e -> {
             SessionErrorEvent.SessionErrorEventData data = e.getData();
             logRaw("session.error", data);
-            if (data == null || onError == null) {
+            if (data == null || onError == null || errorReportedThisTurn) {
                 return;
             }
             String msg = data.message();
             if (msg != null && !msg.isBlank()) {
+                if (msg.trim().startsWith("{") && msg.contains("\"message\"")) {
+                    try {
+                        JsonObject obj = com.google.gson.JsonParser.parseString(msg).getAsJsonObject();
+                        if (obj.has("message") && !obj.get("message").isJsonNull()) {
+                            msg = obj.get("message").getAsString();
+                        }
+                    } catch (Exception ignored) {
+                    }
+                }
+                errorReportedThisTurn = true;
                 onError.accept(msg);
             }
         });
@@ -231,7 +245,7 @@ public final class GithubCopilotSessionEventBridge {
         session.on(ModelCallFailureEvent.class, e -> {
             ModelCallFailureEvent.ModelCallFailureEventData data = e.getData();
             logRaw("model.call_failure", data);
-            if (data == null || onError == null) {
+            if (data == null || onError == null || errorReportedThisTurn) {
                 return;
             }
             String msg = data.errorMessage();
@@ -240,6 +254,7 @@ public final class GithubCopilotSessionEventBridge {
                         + (data.failureKind() != null ? " (" + data.failureKind() + ")" : "")
                         + (data.errorCode() != null ? " [" + data.errorCode() + "]" : "");
             }
+            errorReportedThisTurn = true;
             onError.accept(msg);
         });
     }

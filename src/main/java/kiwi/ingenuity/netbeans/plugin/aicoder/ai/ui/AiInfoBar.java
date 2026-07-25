@@ -18,7 +18,6 @@ import javax.swing.JPanel;
 import javax.swing.JSeparator;
 import javax.swing.SwingConstants;
 import javax.swing.Timer;
-import kiwi.ingenuity.netbeans.plugin.aicoder.PluginSettings;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.ui.events.AiInfoBarListener;
 
 public class AiInfoBar extends JPanel {
@@ -88,10 +87,11 @@ public class AiInfoBar extends JPanel {
         autoAcceptCheck.addActionListener(e -> listeners.forEach(l -> l.onAutoAcceptChanged(autoAcceptCheck.isSelected())));
         rightPanel.add(autoAcceptCheck, compGbc);
 
-        saveHistoryCheck = new JCheckBox("Save", PluginSettings.isSaveHistory());
+        saveHistoryCheck = new JCheckBox("Save", false);
         saveHistoryCheck.setFont(saveHistoryCheck.getFont().deriveFont(11f));
         saveHistoryCheck.setToolTipText("Save conversation history across sessions");
-        saveHistoryCheck.addActionListener(e -> PluginSettings.setSaveHistory(saveHistoryCheck.isSelected()));
+        saveHistoryCheck.addActionListener(e -> listeners.forEach(
+                l -> l.onSaveHistoryChanged(saveHistoryCheck.isSelected())));
         rightPanel.add(saveHistoryCheck, compGbc);
 
         statusLabel = new JLabel(" ");
@@ -193,6 +193,10 @@ public class AiInfoBar extends JPanel {
      */
     public void setAutoAccept(boolean value) {
         autoAcceptCheck.setSelected(value);
+    }
+
+    public void setSaveHistory(boolean value) {
+        saveHistoryCheck.setSelected(value);
     }
 
     public boolean isAutoAccept() {

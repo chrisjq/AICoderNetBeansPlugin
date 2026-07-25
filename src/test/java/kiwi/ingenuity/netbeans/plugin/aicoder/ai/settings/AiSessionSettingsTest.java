@@ -44,6 +44,16 @@ class AiSessionSettingsTest {
     }
 
     @Test
+    void effectiveSaveHistory_explicitOverrideAndGlobalFallback() {
+        AiSessionSettings cfg = new AiSessionSettings();
+        assertEquals(PluginSettings.isSaveHistory(), cfg.effectiveSaveHistory());
+        cfg.setSaveHistory(false);
+        assertEquals(false, cfg.effectiveSaveHistory());
+        cfg.setSaveHistory(true);
+        assertEquals(true, cfg.effectiveSaveHistory());
+    }
+
+    @Test
     void setAutoAccept_preservesAllowWebRequestAccess() {
         AiSessionSettings cfg = new AiSessionSettings(
                 null, null, null, null, null, null, null, true);

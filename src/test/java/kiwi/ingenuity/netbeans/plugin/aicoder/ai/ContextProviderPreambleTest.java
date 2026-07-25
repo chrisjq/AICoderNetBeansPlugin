@@ -1,15 +1,33 @@
 package kiwi.ingenuity.netbeans.plugin.aicoder.ai;
 
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.session.AiSession;
-import org.junit.jupiter.api.Test;
-
+import kiwi.ingenuity.netbeans.plugin.aicoder.ai.session.SessionInstructionsDeliveryEnum;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import org.junit.jupiter.api.Test;
 
 class ContextProviderPreambleTest {
 
     private static final String CREDENTIAL_IMPORTANT
             = "IMPORTANT: When a tool takes sessionId/secretKey, pass the sessionId and secretKey shown above verbatim";
+
+    /**
+     * The inter-AI blurb sits immediately before the user's own text, so its
+     * final clause carries a lot of weight. Under SOFTEN_TOOL_DIRECTIVES it
+     * must lead with the condition rather than end on "do it immediately".
+     */
+    /**
+     * Inter-AI comms is settings-derived, so enable it rather than relying on
+     * the default.
+     */
+    private static ContextProvider providerFor(AiTypeEnum type) {
+        AiSession session = AiSession.create(null, type);
+        session.settings().setAllowInterAiComms(Boolean.TRUE);
+        ContextProvider provider = new ContextProvider(fo -> {
+        });
+        provider.setSession(session);
+        return provider;
+    }
 
     @Test
     void preambleCredentialGatingMatchesFlag() {
@@ -30,21 +48,6 @@ class ContextProviderPreambleTest {
         String yesCreds = withCreds.buildPreamble("prompt", null);
         assertTrue(yesCreds.contains("secretKey:"));
         assertTrue(yesCreds.contains(CREDENTIAL_IMPORTANT));
-    }
-
-    /**
-     * The inter-AI blurb sits immediately before the user's own text, so its
-     * final clause carries a lot of weight. Under SOFTEN_TOOL_DIRECTIVES it must
-     * lead with the condition rather than end on "do it immediately".
-     */
-    /** Inter-AI comms is settings-derived, so enable it rather than relying on the default. */
-    private static ContextProvider providerFor(AiTypeEnum type) {
-        AiSession session = AiSession.create(null, type);
-        session.settings().setAllowInterAiComms(Boolean.TRUE);
-        ContextProvider provider = new ContextProvider(fo -> {
-        });
-        provider.setSession(session);
-        return provider;
     }
 
     @Test
@@ -126,6 +129,56 @@ class ContextProviderPreambleTest {
 
         assertFalse(second.contains("AI Coder NetBeans Plugin v"),
                 "Claude remembers turn one, so repeating the baseline is wasted context");
+    }
+
+    @Test
+    void pendingStartupDeliveryInjectsOnFirstUserRequest() {
+        AiSession session = AiSession.create(null, AiTypeEnum.CLAUDE);
+        session.setSessionInstructionsDelivery(SessionInstructionsDeliveryEnum.ON_START);
+        ContextProvider provider = new ContextProvider(fo -> {
+        });
+        provider.setSession(session);
+
+        assertTrue(provider.buildPreamble("prompt", "startup-only instruction")
+                .contains("## Session Instructions"));
+        assertTrue(provider.consumeSessionInstructionsInjected());
+    }
+
+    @Test
+    void completedStartupDeliveryIsNotRepeatedOnFirstUserRequest() {
+        AiSession session = AiSession.create(null, AiTypeEnum.CLAUDE);
+        session.setSessionInstructionsDelivery(SessionInstructionsDeliveryEnum.ON_START);
+        session.setStartupInstructionsInjected(true);
+        ContextProvider provider = new ContextProvider(fo -> {
+        });
+        provider.setSession(session);
+
+        assertFalse(provider.buildPreamble("prompt", "startup-only instruction")
+                .contains("## Session Instructions"));
+    }
+
+    @Test
+    void changedInstructionsStillInjectAfterTheFirstRequest() {
+        ContextProvider provider = providerFor(AiTypeEnum.CLAUDE);
+        provider.buildPreamble("first", "initial instruction");
+
+        assertTrue(provider.buildPreamble("second", "updated instruction")
+                .contains("updated instruction"));
+    }
+
+    @Test
+    void instructionDeliverySignalReportsOnlyActualInjections() {
+        ContextProvider provider = providerFor(AiTypeEnum.CLAUDE);
+
+        provider.buildPreamble("first", "instruction");
+        assertTrue(provider.consumeSessionInstructionsInjected());
+        assertFalse(provider.consumeSessionInstructionsInjected());
+
+        provider.buildPreamble("second", "instruction");
+        assertFalse(provider.consumeSessionInstructionsInjected());
+
+        provider.buildPreamble("third", "changed instruction");
+        assertTrue(provider.consumeSessionInstructionsInjected());
     }
 
     @Test

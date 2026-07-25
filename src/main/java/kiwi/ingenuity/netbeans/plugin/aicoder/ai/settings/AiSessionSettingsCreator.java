@@ -1,6 +1,8 @@
 package kiwi.ingenuity.netbeans.plugin.aicoder.ai.settings;
 
 import com.google.gson.JsonObject;
+import javax.swing.JComponent;
+import javax.swing.JPanel;
 import kiwi.ingenuity.netbeans.plugin.aicoder.DatabaseAccessOptionEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.WebRequestAccessOptionEnum;
 
@@ -13,10 +15,41 @@ public abstract class AiSessionSettingsCreator<E extends AiSessionSettings> {
 
     public abstract E create();
 
+    /**
+     * Creates a transient, typed panel for settings selected while creating a
+     * session.
+     */
+    public AiSessionCreateSettingsPanel<E> createSettingsPanel() {
+        return new AiSessionCreateSettingsPanel<>() {
+            private final JPanel component = new JPanel();
+
+            @Override
+            public JComponent component() {
+                return component;
+            }
+
+            @Override
+            public void load(E settings) {
+            }
+
+            @Override
+            public void applyTo(E settings) {
+            }
+
+            @Override
+            public void dispose() {
+            }
+        };
+    }
+
     public void update(E settings, JsonObject cfgObj) {
         String key = AiSessionSettingsKeyEnum.MAX_HISTORY.key();
         if (cfgObj.has(key) && cfgObj.get(key).isJsonPrimitive()) {
             settings.setMaxHistory(cfgObj.get(key).getAsInt());
+        }
+        key = AiSessionSettingsKeyEnum.SAVE_HISTORY.key();
+        if (cfgObj.has(key) && cfgObj.get(key).isJsonPrimitive()) {
+            settings.setSaveHistory(cfgObj.get(key).getAsBoolean());
         }
         key = AiSessionSettingsKeyEnum.RESTRICT_TO_PROJECT_FILES.key();
         if (cfgObj.has(key) && cfgObj.get(key).isJsonPrimitive()) {

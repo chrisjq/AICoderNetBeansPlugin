@@ -74,7 +74,15 @@ public class SaveFileTool extends AbstractFileTool {
             if (fp == null) {
                 return "file_path is required when content is provided";
             }
-            return RefactoringProvider.writeFileContent(fp, content);
+            boolean autoAccept = session.getSettings() != null && session.getSettings().effectiveAutoAccept();
+            if (!autoAccept) {
+                return "Save File: " + fp + " — rejected (Auto-Accept is disabled for this session. Use WriteFile or ApplyEdit to show the diff review panel, or enable Auto-Accept in session settings)";
+            }
+            String res = RefactoringProvider.writeFileContent(fp, content);
+            if (res != null && res.contains("File updated and saved")) {
+                return "Save File: " + fp + " — auto-accepted";
+            }
+            return res;
         }
         return RefactoringProvider.saveFile(effectivePath);
     }

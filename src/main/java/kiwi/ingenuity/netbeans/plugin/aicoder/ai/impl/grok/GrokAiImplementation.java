@@ -2,7 +2,9 @@ package kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.grok;
 
 import java.util.Arrays;
 import java.util.List;
+import java.util.function.Consumer;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.AiImplementation;
+import kiwi.ingenuity.netbeans.plugin.aicoder.ai.AiModelCatalog;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.AiSessionHost;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.AiTypeEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.AiTypePropertyBus;
@@ -32,10 +34,11 @@ public class GrokAiImplementation extends AiImplementation {
     // The discovered model list is shared across all Grok sessions for the IDE
     // run (like Claude/Copilot): discover once via `grok models`, cache, and
     // broadcast to every open session's dropdown via AiTypePropertyBus.
-    private static final Object MODEL_LOCK = new Object();
-    private static volatile List<String> cachedModels = null;
-    private static volatile long modelsFetchedMs = 0L;
-    private static final long MODEL_REFRESH_INTERVAL_MS = 10 * 60 * 1000L;
+    private static final AiModelCatalog MODEL_CATALOG = new AiModelCatalog();
+
+    public static AiModelCatalog modelCatalog() {
+        return MODEL_CATALOG;
+    }
 
     private final GrokAiProcessManager delegate;
 
@@ -94,6 +97,9 @@ public class GrokAiImplementation extends AiImplementation {
     @Override
     public AiInfoBarExtension createInfoBarExtension(AiSession session, AiSessionHost host) {
         GrokAiInfoBarExtension provider = new GrokAiInfoBarExtension();
+        Consumer<List<String>> catalogListener = provider::setAvailableModels;
+        MODEL_CATALOG.addListener(catalogListener);
+        provider.setDisposeAction(() -> MODEL_CATALOG.removeListener(catalogListener));
         provider.addModelChangeListener(e -> {
             String model = provider.getSelectedModel();
             if (model == null) {
@@ -132,25 +138,17 @@ public class GrokAiImplementation extends AiImplementation {
      * opened after discovery already completed replays the cached list
      * immediately.
      */
-    private void triggerModelDiscovery() {
-        List<String> cached;
-        long lastSuccess;
-        synchronized (MODEL_LOCK) {
-            cached = cachedModels;
-            lastSuccess = modelsFetchedMs;
-        }
-        if (cached != null) {
-            AiTypePropertyBus.getInstance().fire(AiTypeEnum.GROK, new GrokModelsEvent(cached));
-        }
-        if (lastSuccess > 0 && System.currentTimeMillis() - lastSuccess < MODEL_REFRESH_INTERVAL_MS) {
+    public static void triggerModelDiscovery() {
+        if (!MODEL_CATALOG.beginRefresh()) {
             return;
         }
-        GrokModelDiscovery.discoverAsync(GrokExecutableLocator.locate(), models -> {
-            synchronized (MODEL_LOCK) {
-                cachedModels = models;
-                modelsFetchedMs = System.currentTimeMillis();
+        GrokModelDiscovery.discoverAsync(GrokExecutableLocator.locate(), list -> {
+            if (list != null && !list.isEmpty()) {
+                GrokPluginSettings.setDiscoveredModels(list.toArray(String[]::new));
             }
-            AiTypePropertyBus.getInstance().fire(AiTypeEnum.GROK, new GrokModelsEvent(models));
+            if (MODEL_CATALOG.publish(list)) {
+                AiTypePropertyBus.getInstance().fire(AiTypeEnum.GROK, new GrokModelsEvent(list));
+            }
         });
     }
 

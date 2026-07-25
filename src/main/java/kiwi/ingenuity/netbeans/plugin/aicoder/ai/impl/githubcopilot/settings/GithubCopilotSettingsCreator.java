@@ -1,7 +1,9 @@
 package kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.githubcopilot.settings;
 
 import com.google.gson.JsonObject;
+import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.githubcopilot.GithubCopilotAiImplementation;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.settings.AiModelSessionSettingsCreator;
+import kiwi.ingenuity.netbeans.plugin.aicoder.ai.settings.AiSessionCreateSettingsPanel;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.settings.AiSessionSettings;
 
 /**
@@ -13,6 +15,11 @@ public class GithubCopilotSettingsCreator extends AiModelSessionSettingsCreator<
     @Override
     public GithubCopilotSessionSettings create() {
         return new GithubCopilotSessionSettings();
+    }
+
+    @Override
+    public AiSessionCreateSettingsPanel<GithubCopilotSessionSettings> createSettingsPanel() {
+        return new GithubCopilotCreateSettingsPanel(GithubCopilotAiImplementation.modelCatalog());
     }
 
     @Override

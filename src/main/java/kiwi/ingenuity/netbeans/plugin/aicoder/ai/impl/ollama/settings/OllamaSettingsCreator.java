@@ -1,7 +1,9 @@
 package kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.ollama.settings;
 
 import com.google.gson.JsonObject;
+import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.ollama.OllamaAiImplementation;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.settings.AiModelSessionSettingsCreator;
+import kiwi.ingenuity.netbeans.plugin.aicoder.ai.settings.AiSessionCreateSettingsPanel;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.settings.AiSessionSettings;
 
 public class OllamaSettingsCreator extends AiModelSessionSettingsCreator<OllamaSessionSettings> {
@@ -9,6 +11,11 @@ public class OllamaSettingsCreator extends AiModelSessionSettingsCreator<OllamaS
     @Override
     public OllamaSessionSettings create() {
         return new OllamaSessionSettings();
+    }
+
+    @Override
+    public AiSessionCreateSettingsPanel<OllamaSessionSettings> createSettingsPanel() {
+        return new OllamaCreateSettingsPanel(OllamaAiImplementation.modelCatalog());
     }
 
     @Override

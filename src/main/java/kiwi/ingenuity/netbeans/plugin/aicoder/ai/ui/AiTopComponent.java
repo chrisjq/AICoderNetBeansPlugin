@@ -60,6 +60,7 @@ import kiwi.ingenuity.netbeans.plugin.aicoder.ai.notification.NotificationTypeEn
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.session.AiSession;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.session.AiSessionCallback;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.session.InterruptTypeEnum;
+import kiwi.ingenuity.netbeans.plugin.aicoder.ai.session.SessionInstructionsDeliveryEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.settings.AiSessionSettings;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.ui.events.AiInfoBarListener;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.ui.events.DiffDecisionListener;
@@ -276,6 +277,8 @@ public final class AiTopComponent extends TopComponent implements AiProcessEvent
         inputField.setEnabled(false);
         inputField.setCanSend(false);
         sendButton.setEnabled(false);
+        infoBar.setSaveHistory(session.settings() != null
+                ? session.settings().effectiveSaveHistory() : PluginSettings.isSaveHistory());
         infoBar.setAutoAccept(session.settings() != null
                 ? session.settings().effectiveAutoAccept()
                 : kiwi.ingenuity.netbeans.plugin.aicoder.PluginSettings.isAutoAccept());
@@ -293,6 +296,12 @@ public final class AiTopComponent extends TopComponent implements AiProcessEvent
             @Override
             public void onAutoAcceptChanged(boolean autoAccept) {
                 session.settings().setAutoAccept(autoAccept);
+                updateSessionSettings(session.settings());
+            }
+
+            @Override
+            public void onSaveHistoryChanged(boolean saveHistory) {
+                session.settings().setSaveHistory(saveHistory);
                 updateSessionSettings(session.settings());
             }
         });
@@ -537,6 +546,7 @@ public final class AiTopComponent extends TopComponent implements AiProcessEvent
         // must keep flowing even with inter-AI comms off. buildPreamble() gates
         // the inter-AI capability blurb on the live comms setting on its own.
         refreshSessionIdentity();
+        infoBar.setSaveHistory(session.settings().effectiveSaveHistory());
         // Immediately propagate restrictToProjectFiles to the MCP hook server's
         // scope map so file-tool permission changes take effect on the next tool
         // call, not only after the next user submit.
@@ -562,7 +572,7 @@ public final class AiTopComponent extends TopComponent implements AiProcessEvent
             return true;
         }
         if (PluginSettings.isSaveSessionOnCloseIfTicked()) {
-            if (!PluginSettings.isSaveHistory()) {
+            if (!isSaveHistoryEnabled()) {
                 deleteSessionOnClose();
             }
             return true;
@@ -1294,6 +1304,8 @@ public final class AiTopComponent extends TopComponent implements AiProcessEvent
         if (aiBackend != null && !aiBackend.isRunning()) {
             boolean alreadyStarting = pendingSubmitText != null;
             pendingSubmitText = alreadyStarting ? pendingSubmitText + "\n\n" + text : text;
+            boolean sessionInstructionsInjected = contextProvider != null
+                    && contextProvider.consumeSessionInstructionsInjected();
             if (!alreadyStarting) {
                 infoBar.setStatusMessage("Starting " + session.aiType().displayName() + "...");
                 startAiProcess();
@@ -1315,6 +1327,8 @@ public final class AiTopComponent extends TopComponent implements AiProcessEvent
         String fullPrompt = contextProvider != null
                 ? contextProvider.buildPreamble(text, sessionInstructions)
                 : text;
+        boolean sessionInstructionsInjected = contextProvider != null
+                && contextProvider.consumeSessionInstructionsInjected();
         conversationPanel.addUserMessage(text);
         infoBar.setProcessing(true);
         infoBar.setStatusMessage("Thinking…");
@@ -1331,6 +1345,9 @@ public final class AiTopComponent extends TopComponent implements AiProcessEvent
         }
         if (aiBackend != null) {
             aiBackend.sendPrompt(fullPrompt, workDir, projectDirs);
+            if (sessionInstructionsInjected) {
+                conversationPanel.addSystemMessage("Special Instructions Sent");
+            }
         }
         setSendEnabled(false);
     }
@@ -1422,6 +1439,7 @@ public final class AiTopComponent extends TopComponent implements AiProcessEvent
     @Override
     public void updateSessionSettings(AiSessionSettings newConfig) {
         infoBar.setAutoAccept(newConfig.effectiveAutoAccept());
+        infoBar.setSaveHistory(newConfig.effectiveSaveHistory());
         try {
             sessionPersistenceManager.save(session);
         }
@@ -1677,6 +1695,40 @@ public final class AiTopComponent extends TopComponent implements AiProcessEvent
         }
     }
 
+    private void deliverStartupInstructions() {
+        if (session == null
+                || session.sessionInstructionsDelivery() != SessionInstructionsDeliveryEnum.ON_START
+                || session.isStartupInstructionsInjected()
+                || aiBackend == null
+                || !aiBackend.isRunning()
+                || aiBackend.isProcessing()
+                || session.settings() == null) {
+            return;
+        }
+        String instructions = session.settings().sessionInstructions();
+        if (instructions == null || instructions.isBlank()) {
+            return;
+        }
+        List<File> projectDirs = contextProvider != null
+                ? contextProvider.getAllOpenProjectDirs() : List.of();
+        String prompt = contextProvider != null
+                ? contextProvider.buildPreamble("", instructions)
+                : "## Session Instructions\n" + instructions;
+        boolean sessionInstructionsInjected = contextProvider == null
+                || contextProvider.consumeSessionInstructionsInjected();
+        aiBackend.sendPrompt(prompt, resolveWorkDir(), projectDirs);
+        if (sessionInstructionsInjected) {
+            conversationPanel.addSystemMessage("Special Instructions Sent");
+        }
+        session.setStartupInstructionsInjected(true);
+        try {
+            sessionPersistenceManager.save(session);
+        }
+        catch (IOException e) {
+            LOG.log(Level.WARNING, "Could not persist startup-instruction delivery", e);
+        }
+    }
+
     /**
      * Loads and applies saved history for this session. Disk I/O and JSON
      * parsing (and the stored-session-validity disk scan) run off the EDT on
@@ -1685,7 +1737,9 @@ public final class AiTopComponent extends TopComponent implements AiProcessEvent
      * UI/state mutations in {@link #applyLoadedHistory} run on the EDT.
      */
     private void loadHistory(CompletableFuture<Void> future) {
-        if (historyManager == null || !PluginSettings.isSaveHistory()) {
+        if (historyManager == null || !isSaveHistoryEnabled()) {
+            future.whenCompleteAsync((ignored, ex) -> SwingUtilities.invokeLater(this::deliverStartupInstructions),
+                    PERSIST_EXECUTOR);
             SwingUtilities.invokeLater(this::resolveSessionDir);
             return;
         }
@@ -1707,6 +1761,8 @@ public final class AiTopComponent extends TopComponent implements AiProcessEvent
         }
         catch (IOException e) {
             LOG.log(Level.WARNING, "Could not load history", e);
+            future.whenCompleteAsync((ignored, ex) -> SwingUtilities.invokeLater(this::deliverStartupInstructions),
+                    PERSIST_EXECUTOR);
             SwingUtilities.invokeLater(this::resolveSessionDir);
             return;
         }
@@ -1745,6 +1801,8 @@ public final class AiTopComponent extends TopComponent implements AiProcessEvent
         }
         if (loaded.messages().isEmpty() && loaded.sessionId() == null) {
             resolveSessionDir();
+            deliverStartupInstructions();
+            resolveSessionDir();
             return;
         }
         if (loaded.workingDir() != null) {
@@ -1778,8 +1836,13 @@ public final class AiTopComponent extends TopComponent implements AiProcessEvent
         resolveSessionDir();
     }
 
+    private boolean isSaveHistoryEnabled() {
+        return session != null && session.settings() != null
+                ? session.settings().effectiveSaveHistory() : PluginSettings.isSaveHistory();
+    }
+
     private void saveHistory() {
-        if (historyManager == null || !PluginSettings.isSaveHistory()) {
+        if (historyManager == null || !isSaveHistoryEnabled()) {
             return;
         }
         try {

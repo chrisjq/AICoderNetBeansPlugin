@@ -22,10 +22,7 @@ import javax.swing.JSpinner;
 import javax.swing.JTabbedPane;
 import javax.swing.Scrollable;
 import javax.swing.SpinnerNumberModel;
-import kiwi.ingenuity.netbeans.plugin.aicoder.AccessControlLabelEnum;
-import kiwi.ingenuity.netbeans.plugin.aicoder.DatabaseAccessOptionEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.PluginSettings;
-import kiwi.ingenuity.netbeans.plugin.aicoder.WebRequestAccessOptionEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.AiTypeEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ui.ScrollablePanel;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ui.SettingsTab;
@@ -46,7 +43,7 @@ public class PluginSettingsPanel extends JPanel implements Scrollable {
     private final PropertyChangeSupport pcs = new PropertyChangeSupport(this);
 
     // General tab controls
-    private final JSpinner maxHistorySpinner;
+    private final AiSessionConfigPanel sessionConfigPanel;
     private final JCheckBox saveHistoryCheck;
     private final JCheckBox saveSessionOnCloseIfTickedCheck;
     private final JCheckBox debugJsonCheck;
@@ -54,11 +51,6 @@ public class PluginSettingsPanel extends JPanel implements Scrollable {
     private final JSpinner mcpPortSpinner;
     private final JSpinner diffContextSpinner;
     private final JSpinner fontSizeSpinner;
-    private final JCheckBox restrictToProjectCheckBox;
-    private final JCheckBox enableClipboardAccessCheckBox;
-    private final WebRequestAccessSettingsPanel webRequestAccessPanel;
-    private final DatabaseAccessSettingsPanel databaseAccessPanel;
-    private final AiMessagingSettingsPanel aiMessagingPanel;
     private final JSpinner inboxRetentionSpinner;
     private final JSpinner inboxMaxSizeSpinner;
 
@@ -95,17 +87,6 @@ public class PluginSettingsPanel extends JPanel implements Scrollable {
         c.gridx = 1;
         c.weightx = 1;
         addTo(general, fontSizeSpinner, c);
-
-        // Max history
-        c.gridx = 0;
-        c.gridy = 1;
-        c.weightx = 0;
-        addTo(general, new JLabel("Max history:"), c);
-        maxHistorySpinner = new JSpinner(new SpinnerNumberModel(
-                PluginSettings.getMaxHistory(), 0, 10000, 10));
-        c.gridx = 1;
-        c.weightx = 1;
-        addTo(general, maxHistorySpinner, c);
 
         // Save history
         c.gridx = 0;
@@ -160,47 +141,13 @@ public class PluginSettingsPanel extends JPanel implements Scrollable {
         c.weightx = 1;
         addTo(general, diffContextSpinner, c);
 
-        // Restrict to project files
+        // Shared generic defaults use the same component as sessions and templates.
         c.gridx = 0;
         c.gridy = 8;
         c.gridwidth = 2;
         c.weightx = 1;
-        restrictToProjectCheckBox = new JCheckBox(
-                AccessControlLabelEnum.RESTRICT_TO_PROJECT_FILES.globalLabel());
-        addTo(general, restrictToProjectCheckBox, c);
-        c.gridwidth = 1;
-
-        // Web request access
-        c.gridx = 0;
-        c.gridy = 9;
-        c.gridwidth = 2;
-        webRequestAccessPanel = new WebRequestAccessSettingsPanel(false);
-        addTo(general, webRequestAccessPanel, c);
-        c.gridwidth = 1;
-
-        // Database access
-        c.gridx = 0;
-        c.gridy = 10;
-        c.gridwidth = 2;
-        databaseAccessPanel = new DatabaseAccessSettingsPanel(false);
-        addTo(general, databaseAccessPanel, c);
-        c.gridwidth = 1;
-
-        // Enable clipboard access
-        c.gridx = 0;
-        c.gridy = 11;
-        c.gridwidth = 2;
-        c.weightx = 1;
-        enableClipboardAccessCheckBox = new JCheckBox("Enable Clipboard Access");
-        addTo(general, enableClipboardAccessCheckBox, c);
-        c.gridwidth = 1;
-
-        // AI messaging
-        c.gridx = 0;
-        c.gridy = 12;
-        c.gridwidth = 2;
-        aiMessagingPanel = new AiMessagingSettingsPanel(false);
-        addTo(general, aiMessagingPanel, c);
+        sessionConfigPanel = new AiSessionConfigPanel(AiSessionConfigPanelMode.GLOBAL);
+        addTo(general, sessionConfigPanel, c);
         c.gridwidth = 1;
 
         // Inbox read-message retention (minutes, 0 = keep until deleted)
@@ -274,7 +221,6 @@ public class PluginSettingsPanel extends JPanel implements Scrollable {
         add(tabs, BorderLayout.CENTER);
 
         // Listeners (attached once)
-        maxHistorySpinner.addChangeListener(e -> fireChanged());
         saveHistoryCheck.addActionListener(e -> fireChanged());
         saveSessionOnCloseIfTickedCheck.addActionListener(e -> fireChanged());
         debugJsonCheck.addActionListener(e -> fireChanged());
@@ -282,12 +228,7 @@ public class PluginSettingsPanel extends JPanel implements Scrollable {
         mcpPortSpinner.addChangeListener(e -> fireChanged());
         diffContextSpinner.addChangeListener(e -> fireChanged());
         fontSizeSpinner.addChangeListener(e -> fireChanged());
-        restrictToProjectCheckBox.addActionListener(e -> fireChanged());
-        enableClipboardAccessCheckBox.addActionListener(e -> fireChanged());
-        webRequestAccessPanel.addChangeListener(e -> fireChanged());
-        databaseAccessPanel.addChangeListener(e -> fireChanged());
-        databaseAccessPanel.addRowLimitChangeListener(e -> fireChanged());
-        aiMessagingPanel.addChangeListener(e -> fireChanged());
+        sessionConfigPanel.addChangeListener(e -> fireChanged());
         inboxRetentionSpinner.addChangeListener(e -> fireChanged());
         inboxMaxSizeSpinner.addChangeListener(e -> fireChanged());
     }
@@ -319,7 +260,7 @@ public class PluginSettingsPanel extends JPanel implements Scrollable {
     }
 
     void load() {
-        maxHistorySpinner.setValue(PluginSettings.getMaxHistory());
+        sessionConfigPanel.loadGlobal();
         saveHistoryCheck.setSelected(PluginSettings.isSaveHistory());
         saveSessionOnCloseIfTickedCheck.setSelected(PluginSettings.isSaveSessionOnCloseIfTicked());
         debugJsonCheck.setSelected(PluginSettings.isDebugJson());
@@ -327,23 +268,6 @@ public class PluginSettingsPanel extends JPanel implements Scrollable {
         mcpPortSpinner.setValue(PluginSettings.getHookServerPort());
         diffContextSpinner.setValue(PluginSettings.getDiffContextLines());
         fontSizeSpinner.setValue(PluginSettings.getChatFontSize());
-        restrictToProjectCheckBox.setSelected(PluginSettings.isRestrictToProjectFiles());
-        enableClipboardAccessCheckBox.setSelected(PluginSettings.isEnableClipboardAccess());
-        webRequestAccessPanel.setAllowWebRequestsSelected(PluginSettings.isAllowWebRequests());
-        for (WebRequestAccessOptionEnum option : WebRequestAccessOptionEnum.values()) {
-            webRequestAccessPanel.setOptionSelected(option,
-                    PluginSettings.isAllowWebRequestAccess(option));
-        }
-        databaseAccessPanel.setAllowDatabaseAccessSelected(PluginSettings.isAllowDatabaseAccess());
-        for (DatabaseAccessOptionEnum option : DatabaseAccessOptionEnum.values()) {
-            databaseAccessPanel.setOptionSelected(option,
-                    PluginSettings.isAllowDatabaseAccessOption(option));
-        }
-        databaseAccessPanel.setRowLimitValue(PluginSettings.getDatabaseRowLimit());
-        aiMessagingPanel.setAllowInterAiSelected(PluginSettings.isAllowInterAiComms());
-        aiMessagingPanel.setAutoNotifySelected(PluginSettings.isAutoNotifyInbox());
-        aiMessagingPanel.setAllowImportantSelected(
-                PluginSettings.isAllowImportantMessages());
         inboxRetentionSpinner.setValue(PluginSettings.getInboxRetentionMinutes());
         inboxMaxSizeSpinner.setValue(PluginSettings.getInboxMaxSize());
         for (SettingsTab tab : aiSettingsTabs) {
@@ -363,7 +287,7 @@ public class PluginSettingsPanel extends JPanel implements Scrollable {
     }
 
     void store() {
-        PluginSettings.setMaxHistory((Integer) maxHistorySpinner.getValue());
+        sessionConfigPanel.applyGlobal();
         PluginSettings.setSaveHistory(saveHistoryCheck.isSelected());
         PluginSettings.setSaveSessionOnCloseIfTicked(saveSessionOnCloseIfTickedCheck.isSelected());
         PluginSettings.setDebugJson(debugJsonCheck.isSelected());
@@ -371,23 +295,6 @@ public class PluginSettingsPanel extends JPanel implements Scrollable {
         PluginSettings.setHookServerPort((Integer) mcpPortSpinner.getValue());
         PluginSettings.setDiffContextLines((Integer) diffContextSpinner.getValue());
         PluginSettings.setChatFontSize((Integer) fontSizeSpinner.getValue());
-        PluginSettings.setRestrictToProjectFiles(restrictToProjectCheckBox.isSelected());
-        PluginSettings.setEnableClipboardAccess(enableClipboardAccessCheckBox.isSelected());
-        PluginSettings.setAllowWebRequests(webRequestAccessPanel.isAllowWebRequestsSelected());
-        for (WebRequestAccessOptionEnum option : WebRequestAccessOptionEnum.values()) {
-            PluginSettings.setAllowWebRequestAccess(option,
-                    webRequestAccessPanel.isOptionSelected(option));
-        }
-        PluginSettings.setAllowDatabaseAccess(databaseAccessPanel.isAllowDatabaseAccessSelected());
-        for (DatabaseAccessOptionEnum option : DatabaseAccessOptionEnum.values()) {
-            PluginSettings.setAllowDatabaseAccessOption(option,
-                    databaseAccessPanel.isOptionSelected(option));
-        }
-        PluginSettings.setDatabaseRowLimit(databaseAccessPanel.getRowLimitValue());
-        PluginSettings.setAllowInterAiComms(aiMessagingPanel.isAllowInterAiSelected());
-        PluginSettings.setAutoNotifyInbox(aiMessagingPanel.isAutoNotifySelected());
-        PluginSettings.setAllowImportantMessages(
-                aiMessagingPanel.isAllowImportantSelected());
         PluginSettings.setInboxRetentionMinutes((Integer) inboxRetentionSpinner.getValue());
         PluginSettings.setInboxMaxSize((Integer) inboxMaxSizeSpinner.getValue());
         for (SettingsTab tab : aiSettingsTabs) {

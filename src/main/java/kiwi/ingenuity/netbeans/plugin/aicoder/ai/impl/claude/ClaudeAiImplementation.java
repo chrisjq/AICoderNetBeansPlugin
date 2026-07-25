@@ -5,10 +5,12 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Arrays;
 import java.util.List;
+import java.util.function.Consumer;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 import java.util.stream.Stream;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.AiImplementation;
+import kiwi.ingenuity.netbeans.plugin.aicoder.ai.AiModelCatalog;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.AiSessionHost;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.AiTypeEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.AiTypePropertyBus;
@@ -39,9 +41,8 @@ public class ClaudeAiImplementation extends AiImplementation {
     private static final Logger LOG = Logger.getLogger(ClaudeAiImplementation.class.getName());
 
     private static final Object MODEL_LOCK = new Object();
-    private static volatile List<String> cachedModels = null;
-    private static volatile long lastModelFetchSuccessMs = 0L;
-    private static final long MODEL_REFRESH_INTERVAL_MS = 10 * 60 * 1000L;
+    private static final AiModelCatalog MODEL_CATALOG = new AiModelCatalog();
+
     private static final int MAX_MODEL_DISCOVERY_RETRIES = 20;
     private static int modelDiscoveryRetries = 0; // guarded by MODEL_LOCK
     private static volatile ClaudeUsageEvent cachedUsageEvent = null;
@@ -66,6 +67,135 @@ public class ClaudeAiImplementation extends AiImplementation {
     private static final long INITIAL_USAGE_INTERVAL_MS = 30_000L;
     private static volatile long learnedUsageIntervalMs = INITIAL_USAGE_INTERVAL_MS;
     private static long OFFSET_MS = 10000L;
+
+    public static AiModelCatalog modelCatalog() {
+        return MODEL_CATALOG;
+    }
+
+    /**
+     * Invoked by {@link ClaudeCredentialMonitor} when
+     * ~/.claude/.credentials.json changes (the user ran {@code claude login}
+     * after the plugin started). Resets model discovery state so the fresh
+     * credentials are used to re-fetch models, and triggers usage fetch.
+     */
+    public static void onCredentialsChanged() {
+        synchronized (MODEL_LOCK) {
+            modelDiscoveryRetries = 0;
+        }
+        MODEL_CATALOG.invalidate();
+        triggerModelDiscovery();
+        fetchUsageAsync();
+    }
+
+    /**
+     * Fires cached models to this session's dropdown immediately (if
+     * available), then re-fetches from the API if the last successful fetch was
+     * more than {@link #MODEL_REFRESH_INTERVAL_MS} ago. Only called once per
+     * session (from {@link #registerLifecycleListeners}) and on credentials
+     * change.
+     */
+    public static void triggerModelDiscovery() {
+        AnthropicApiClient.refreshCredentialsState();
+        if (!MODEL_CATALOG.beginRefresh()) {
+            return;
+        }
+        synchronized (MODEL_LOCK) {
+            modelDiscoveryRetries = 0;
+        }
+        submitModelFetch();
+    }
+
+    /**
+     * Submits a model fetch to the rate-limit manager. Coalesced by the
+     * {@code "models"} key so only one fetch runs at a time. On failure,
+     * retries up to {@link #MAX_MODEL_DISCOVERY_RETRIES} times within the
+     * current fetch cycle.
+     */
+    private static void submitModelFetch() {
+        AnthropicApiClient.rateLimitManager().submitWhenClear("models", ClaudeAiImplementation::doFetchModels);
+    }
+
+    private static void doFetchModels() {
+        try {
+            List<String> modelList = new AnthropicApiClient().fetchModels();
+            if (modelList != null && !modelList.isEmpty()) {
+                synchronized (MODEL_LOCK) {
+                    modelDiscoveryRetries = 0;
+                }
+                ClaudePluginSettings.setDiscoveredModels(modelList.toArray(String[]::new));
+                if (MODEL_CATALOG.publish(modelList)) {
+                    AiTypePropertyBus.getInstance().fire(AiTypeEnum.CLAUDE, new ClaudeModelsEvent(modelList));
+                }
+            }
+            else {
+                MODEL_CATALOG.refreshFailed();
+            }
+        }
+        catch (Exception e) {
+            int attempt;
+            synchronized (MODEL_LOCK) {
+                attempt = ++modelDiscoveryRetries;
+            }
+            LOG.log(Level.WARNING, "Model discovery failed (attempt {0}/{1}): {2}",
+                    new Object[]{attempt, MAX_MODEL_DISCOVERY_RETRIES, e.getMessage()});
+            if (attempt < MAX_MODEL_DISCOVERY_RETRIES) {
+                submitModelFetch();
+            }
+            else {
+                MODEL_CATALOG.refreshFailed();
+            }
+        }
+    }
+
+    private static void fetchUsageAsync() {
+        long now = System.currentTimeMillis();
+        if (shouldThrottleUsageFetch(now, lastUsageFetchAttemptMs, learnedUsageIntervalMs)) {
+            return;
+        }
+        lastUsageFetchAttemptMs = now;
+        AnthropicApiClient.rateLimitManager().submitWhenClear("usage", () -> {
+            try {
+                AnthropicApiClient.UsageData data = new AnthropicApiClient().fetchUsage();
+                ClaudeUsageEvent event = new ClaudeUsageEvent(data.fiveHourPct(), data.sevenDayPct());
+                cachedUsageEvent = event;
+                AiTypePropertyBus.getInstance().fire(AiTypeEnum.CLAUDE, event);
+            }
+            catch (Exception e) {
+                recordUsageFetch429IfApplicable();
+                LOG.log(Level.WARNING, "Usage fetch failed: {0}", e.getMessage());
+            }
+        });
+    }
+
+    /**
+     * True when the last usage-fetch attempt was recent enough that a new one
+     * would almost certainly retrigger the same server-side rate limit already
+     * learned about — skips the network call entirely rather than hitting the
+     * endpoint and eating another 429/backoff cycle. Package- visible (not
+     * private) purely so it's unit-testable as a pure function.
+     */
+    static boolean shouldThrottleUsageFetch(long now, long lastAttemptMs, long learnedIntervalMs) {
+        return learnedIntervalMs > 0 && now - lastAttemptMs < learnedIntervalMs;
+    }
+
+    /**
+     * Called on a failed usage fetch. Only grows the throttle when the failure
+     * was actually the rate limiter tripping (not some other network/parse
+     * error) — {@code RateLimitManager.isRateLimited()} is true immediately
+     * after {@code AnthropicApiClient.get()} calls {@code setRateLimit()} on a
+     * 429, so this reliably distinguishes a rate-limit failure from any other
+     * exception without needing to parse the exception message. Each 429 adds
+     * another {@link #OFFSET_MS} step — a fresh attempt only happens after
+     * waiting at least the current learned interval (see
+     * {@link #shouldThrottleUsageFetch}), so a 429 here means that interval
+     * still wasn't long enough and needs to grow further.
+     */
+    private static void recordUsageFetch429IfApplicable() {
+        if (AnthropicApiClient.rateLimitManager().isRateLimited()) {
+            learnedUsageIntervalMs += OFFSET_MS;
+            LOG.log(Level.INFO, "Usage fetch rate limited again — growing throttle interval to {0}ms", learnedUsageIntervalMs);
+        }
+    }
 
     private final ClaudeAiProcessManager delegate;
 
@@ -173,6 +303,9 @@ public class ClaudeAiImplementation extends AiImplementation {
     @Override
     public AiInfoBarExtension createInfoBarExtension(AiSession session, AiSessionHost host) {
         ClaudeAiInfoBarExtension provider = new ClaudeAiInfoBarExtension();
+        Consumer<List<String>> catalogListener = provider::setAvailableModels;
+        MODEL_CATALOG.addListener(catalogListener);
+        provider.setDisposeAction(() -> MODEL_CATALOG.removeListener(catalogListener));
         provider.addListener(new ClaudeInfoBarListener() {
             @Override
             public void onCompactRequested() {
@@ -241,135 +374,6 @@ public class ClaudeAiImplementation extends AiImplementation {
         });
         triggerModelDiscovery();
         triggerUsageReplay();
-    }
-
-    /**
-     * Invoked by {@link ClaudeCredentialMonitor} when
-     * ~/.claude/.credentials.json changes (the user ran {@code claude login}
-     * after the plugin started). Resets model discovery state so the fresh
-     * credentials are used to re-fetch models, and triggers usage fetch.
-     */
-    public static void onCredentialsChanged() {
-        synchronized (MODEL_LOCK) {
-            lastModelFetchSuccessMs = 0L;
-            modelDiscoveryRetries = 0;
-            cachedModels = null;
-        }
-        triggerModelDiscovery();
-        fetchUsageAsync();
-    }
-
-    /**
-     * Fires cached models to this session's dropdown immediately (if
-     * available), then re-fetches from the API if the last successful fetch
-     * was more than {@link #MODEL_REFRESH_INTERVAL_MS} ago. Only called once
-     * per session (from {@link #registerLifecycleListeners}) and on
-     * credentials change.
-     */
-    private static void triggerModelDiscovery() {
-        AnthropicApiClient.refreshCredentialsState();
-        List<String> cached;
-        long lastSuccess;
-        synchronized (MODEL_LOCK) {
-            cached = cachedModels;
-            lastSuccess = lastModelFetchSuccessMs;
-        }
-        if (cached != null) {
-            AiTypePropertyBus.getInstance().fire(AiTypeEnum.CLAUDE, new ClaudeModelsEvent(cached));
-        }
-        if (lastSuccess > 0 && System.currentTimeMillis() - lastSuccess < MODEL_REFRESH_INTERVAL_MS) {
-            return;
-        }
-        synchronized (MODEL_LOCK) {
-            modelDiscoveryRetries = 0;
-        }
-        submitModelFetch();
-    }
-
-    /**
-     * Submits a model fetch to the rate-limit manager. Coalesced by the
-     * {@code "models"} key so only one fetch runs at a time. On failure,
-     * retries up to {@link #MAX_MODEL_DISCOVERY_RETRIES} times within the
-     * current fetch cycle.
-     */
-    private static void submitModelFetch() {
-        AnthropicApiClient.rateLimitManager().submitWhenClear("models", ClaudeAiImplementation::doFetchModels);
-    }
-
-    private static void doFetchModels() {
-        try {
-            List<String> modelList = new AnthropicApiClient().fetchModels();
-            if (modelList != null && !modelList.isEmpty()) {
-                synchronized (MODEL_LOCK) {
-                    cachedModels = modelList;
-                    lastModelFetchSuccessMs = System.currentTimeMillis();
-                    modelDiscoveryRetries = 0;
-                }
-                ClaudePluginSettings.setDiscoveredModels(modelList.toArray(String[]::new));
-                AiTypePropertyBus.getInstance().fire(AiTypeEnum.CLAUDE, new ClaudeModelsEvent(modelList));
-            }
-        }
-        catch (Exception e) {
-            int attempt;
-            synchronized (MODEL_LOCK) {
-                attempt = ++modelDiscoveryRetries;
-            }
-            LOG.log(Level.WARNING, "Model discovery failed (attempt {0}/{1}): {2}",
-                    new Object[]{attempt, MAX_MODEL_DISCOVERY_RETRIES, e.getMessage()});
-            if (attempt < MAX_MODEL_DISCOVERY_RETRIES) {
-                submitModelFetch();
-            }
-        }
-    }
-
-    private static void fetchUsageAsync() {
-        long now = System.currentTimeMillis();
-        if (shouldThrottleUsageFetch(now, lastUsageFetchAttemptMs, learnedUsageIntervalMs)) {
-            return;
-        }
-        lastUsageFetchAttemptMs = now;
-        AnthropicApiClient.rateLimitManager().submitWhenClear("usage", () -> {
-            try {
-                AnthropicApiClient.UsageData data = new AnthropicApiClient().fetchUsage();
-                ClaudeUsageEvent event = new ClaudeUsageEvent(data.fiveHourPct(), data.sevenDayPct());
-                cachedUsageEvent = event;
-                AiTypePropertyBus.getInstance().fire(AiTypeEnum.CLAUDE, event);
-            }
-            catch (Exception e) {
-                recordUsageFetch429IfApplicable();
-                LOG.log(Level.WARNING, "Usage fetch failed: {0}", e.getMessage());
-            }
-        });
-    }
-
-    /**
-     * True when the last usage-fetch attempt was recent enough that a new one
-     * would almost certainly retrigger the same server-side rate limit already
-     * learned about — skips the network call entirely rather than hitting the
-     * endpoint and eating another 429/backoff cycle. Package- visible (not
-     * private) purely so it's unit-testable as a pure function.
-     */
-    static boolean shouldThrottleUsageFetch(long now, long lastAttemptMs, long learnedIntervalMs) {
-        return learnedIntervalMs > 0 && now - lastAttemptMs < learnedIntervalMs;
-    }
-
-    /**
-     * Called on a failed usage fetch. Only grows the throttle when the failure
-     * was actually the rate limiter tripping (not some other network/parse
-     * error) — {@code RateLimitManager.isRateLimited()} is true immediately
-     * after {@code AnthropicApiClient.get()} calls {@code setRateLimit()} on a
-     * 429, so this reliably distinguishes a rate-limit failure from any other
-     * exception without needing to parse the exception message. Each 429 adds
-     * another {@link #OFFSET_MS} step — a fresh attempt only happens after
-     * waiting at least the current learned interval (see
-     * {@link #shouldThrottleUsageFetch}), so a 429 here means that interval
-     * still wasn't long enough and needs to grow further.
-     */
-    private static void recordUsageFetch429IfApplicable() {
-        if (AnthropicApiClient.rateLimitManager().isRateLimited()) {
-            learnedUsageIntervalMs += OFFSET_MS;
-            LOG.log(Level.INFO, "Usage fetch rate limited again — growing throttle interval to {0}ms", learnedUsageIntervalMs);
-        }
     }
 
     private void triggerUsageReplay() {

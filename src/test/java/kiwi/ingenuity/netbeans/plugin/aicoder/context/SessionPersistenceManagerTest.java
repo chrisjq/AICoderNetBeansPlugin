@@ -6,6 +6,7 @@ import java.nio.file.Path;
 import java.util.List;
 import kiwi.ingenuity.netbeans.plugin.aicoder.WebRequestAccessOptionEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.session.AiSession;
+import kiwi.ingenuity.netbeans.plugin.aicoder.ai.session.SessionInstructionsDeliveryEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.settings.AiModelSessionSettings;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.settings.AiSessionSettings;
 import kiwi.ingenuity.netbeans.plugin.aicoder.serialization.SessionPersistenceManager;
@@ -83,6 +84,35 @@ class SessionPersistenceManagerTest {
         List<AiSession> all = m.loadAll();
         assertEquals(1, all.size());
         assertEquals("always answer in haiku", all.get(0).settings().sessionInstructions());
+    }
+
+    @Test
+    void startupInstructionDeliveryDefaultsPersist() throws IOException {
+        SessionPersistenceManager m = mgr();
+        AiSession s = AiSession.create("/projects/MyApp", kiwi.ingenuity.netbeans.plugin.aicoder.ai.AiTypeEnum.CLAUDE);
+
+        assertEquals(SessionInstructionsDeliveryEnum.ON_FIRST_REQUEST, s.sessionInstructionsDelivery());
+        assertFalse(s.isStartupInstructionsInjected());
+
+        m.save(s);
+
+        AiSession loaded = m.loadAll().get(0);
+        assertEquals(SessionInstructionsDeliveryEnum.ON_FIRST_REQUEST, loaded.sessionInstructionsDelivery());
+        assertFalse(loaded.isStartupInstructionsInjected());
+    }
+
+    @Test
+    void startupInstructionsDeliveryStateRoundtrips() throws IOException {
+        SessionPersistenceManager m = mgr();
+        AiSession s = AiSession.create("/projects/MyApp", kiwi.ingenuity.netbeans.plugin.aicoder.ai.AiTypeEnum.CLAUDE);
+        s.setSessionInstructionsDelivery(SessionInstructionsDeliveryEnum.ON_START);
+        s.setStartupInstructionsInjected(true);
+
+        m.save(s);
+
+        AiSession loaded = m.loadAll().get(0);
+        assertEquals(SessionInstructionsDeliveryEnum.ON_START, loaded.sessionInstructionsDelivery());
+        assertTrue(loaded.isStartupInstructionsInjected());
     }
 
     @Test

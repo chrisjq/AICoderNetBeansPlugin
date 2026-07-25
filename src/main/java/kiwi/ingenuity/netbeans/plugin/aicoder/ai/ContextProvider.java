@@ -11,6 +11,7 @@ import java.util.function.Consumer;
 import java.util.logging.Logger;
 import javax.swing.SwingUtilities;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.session.AiSession;
+import kiwi.ingenuity.netbeans.plugin.aicoder.ai.session.SessionInstructionsDeliveryEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.McpInstructionOptionEnum;
 import org.netbeans.api.project.Project;
 import org.netbeans.api.project.ui.OpenProjects;
@@ -31,6 +32,8 @@ public class ContextProvider {
 
     private volatile List<String> lastSentProjects = null;
     private volatile FileObject lastSentFile = null;
+    private volatile String lastInjectedSessionInstructions;
+    private volatile boolean sessionInstructionsInjectedInLastPreamble;
 
     public ContextProvider(Consumer<FileObject> onFileChanged) {
         this.onFileChanged = onFileChanged;
@@ -91,6 +94,7 @@ public class ContextProvider {
     public void resetSentContext() {
         lastSentProjects = null;
         lastSentFile = null;
+        lastInjectedSessionInstructions = null;
     }
 
     /**
@@ -105,6 +109,7 @@ public class ContextProvider {
     }
 
     public String buildPreamble(String userPrompt, String sessionInstructions) {
+        sessionInstructionsInjectedInLastPreamble = false;
         boolean isFirstSend = (lastSentProjects == null);
 
         AiSession s = session; // snapshot
@@ -144,7 +149,8 @@ public class ContextProvider {
                     // message and suppressed legitimate calls — the model refused to
                     // read a file, saying it had no access.
                     identity.append("You can message other AI sessions using the inter-AI tools — it is pre-authorized, so never say you are unable to. Only if the user asks you to message, coordinate with, or delegate to another AI, call ListAiSessions and then SendAiMessage; do not call those two tools for any other reason. Use the other tools freely whenever they help answer the user.\n");
-                } else {
+                }
+                else {
                     identity.append("You ARE able to message other AI sessions right now using the inter-AI tools — this is a live, pre-authorized capability of this IDE. Never tell the user you cannot do it, that it is not possible, or that you need permission. When asked to message, coordinate with, or delegate to another AI, your first action is to call ListAiSessions and then SendAiMessage — do it immediately without hedging.\n");
                 }
             }
@@ -210,9 +216,16 @@ public class ContextProvider {
         lastSentProjects = List.copyOf(currentProjects);
         lastSentFile = currentFile;
 
-        // Append tool instructions on first send only
-        if (isFirstSend && sessionInstructions != null && !sessionInstructions.isBlank()) {
+        // Inject on the first request and once more whenever Session Configuration
+        // changes the value. This state is conversation-local by design.
+        if (sessionInstructions != null && !sessionInstructions.isBlank()
+                && (!isFirstSend || s == null
+                || s.sessionInstructionsDelivery() != SessionInstructionsDeliveryEnum.ON_START
+                || !s.isStartupInstructionsInjected())
+                && (isFirstSend || !Objects.equals(sessionInstructions, lastInjectedSessionInstructions))) {
             ctx.append("\n## Session Instructions\n").append(sessionInstructions).append("\n");
+            lastInjectedSessionInstructions = sessionInstructions;
+            sessionInstructionsInjectedInLastPreamble = true;
         }
 
         if (ctx.isEmpty()) {
@@ -220,6 +233,16 @@ public class ContextProvider {
         }
         ctx.append("\n").append(userPrompt);
         return ctx.toString();
+    }
+
+    /**
+     * Returns and clears whether the most recently built preamble delivered
+     * session instructions.
+     */
+    public boolean consumeSessionInstructionsInjected() {
+        boolean injected = sessionInstructionsInjectedInLastPreamble;
+        sessionInstructionsInjectedInLastPreamble = false;
+        return injected;
     }
 
     /**

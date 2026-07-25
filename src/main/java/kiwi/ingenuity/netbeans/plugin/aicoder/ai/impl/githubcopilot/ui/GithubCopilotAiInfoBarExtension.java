@@ -52,6 +52,7 @@ public class GithubCopilotAiInfoBarExtension implements AiInfoBarExtension {
     private volatile double quotaRemainingPercentage = 0;
     private volatile String quotaResetDate = null;
     private volatile boolean quotaUnlimited = false;
+    private Runnable disposeAction;
 
     public GithubCopilotAiInfoBarExtension(AiSession session, AiSessionHost host) {
         this.session = session;
@@ -99,6 +100,19 @@ public class GithubCopilotAiInfoBarExtension implements AiInfoBarExtension {
 
     public void addListener(GithubCopilotInfoBarListener l) {
         listeners.add(l);
+    }
+
+    public void setDisposeAction(Runnable disposeAction) {
+        this.disposeAction = disposeAction;
+    }
+
+    @Override
+    public void dispose() {
+        if (disposeAction != null) {
+            disposeAction.run();
+            disposeAction = null;
+        }
+        listeners.clear();
     }
 
     public void removeListener(GithubCopilotInfoBarListener l) {
