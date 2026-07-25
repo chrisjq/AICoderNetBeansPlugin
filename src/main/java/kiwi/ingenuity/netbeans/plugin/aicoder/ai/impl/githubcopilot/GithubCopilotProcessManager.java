@@ -195,8 +195,13 @@ public class GithubCopilotProcessManager extends AiProcessManager {
             }
         };
         eventBridge = new GithubCopilotSessionEventBridge(turnAwareListener);
-        eventBridge.setOnError(msg -> listener.onAiProcessEvent(
-                new StatusEvent(StatusEventTypeEnum.EXITED, "GitHub Copilot: " + msg)));
+        eventBridge.setOnError(msg -> {
+            synchronized (GithubCopilotProcessManager.this) {
+                processing = false;
+            }
+            listener.onAiProcessEvent(new StatusEvent(StatusEventTypeEnum.EXITED,
+                    "GitHub Copilot: " + msg));
+        });
         eventBridge.setSessionNameSupplier(() -> {
             AiSession s = currentSession;
             return s == null ? null : s.name();
