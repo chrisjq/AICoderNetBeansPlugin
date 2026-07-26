@@ -226,8 +226,6 @@ public final class AiTopComponent extends TopComponent implements AiProcessEvent
     private final List<AbstractNotification> deferredNotifications = new ArrayList<>();
     private final SessionPersistenceManager sessionPersistenceManager;
 
-    private volatile boolean sendEnabled = false;
-
     // Starts red: nothing is running until the AI process reports READY. Moves to
     // green/orange via setSendEnabled(), and back to red on a fatal error.
     private volatile TabStatus tabStatus = TabStatus.FATAL;
@@ -1304,8 +1302,6 @@ public final class AiTopComponent extends TopComponent implements AiProcessEvent
         if (aiBackend != null && !aiBackend.isRunning()) {
             boolean alreadyStarting = pendingSubmitText != null;
             pendingSubmitText = alreadyStarting ? pendingSubmitText + "\n\n" + text : text;
-            boolean sessionInstructionsInjected = contextProvider != null
-                    && contextProvider.consumeSessionInstructionsInjected();
             if (!alreadyStarting) {
                 infoBar.setStatusMessage("Starting " + session.aiType().displayName() + "...");
                 startAiProcess();
@@ -1353,7 +1349,7 @@ public final class AiTopComponent extends TopComponent implements AiProcessEvent
     }
 
     private void setSendEnabled(boolean enabled) {
-        sendEnabled = enabled;
+
         inputField.setCanSend(enabled);
         sendButton.setEnabled(enabled);
         // enabled  => ready/idle (green); disabled => a turn is in flight (orange).
@@ -1716,10 +1712,12 @@ public final class AiTopComponent extends TopComponent implements AiProcessEvent
                 : "## Session Instructions\n" + instructions;
         boolean sessionInstructionsInjected = contextProvider == null
                 || contextProvider.consumeSessionInstructionsInjected();
+        infoBar.setProcessing(true);
         aiBackend.sendPrompt(prompt, resolveWorkDir(), projectDirs);
         if (sessionInstructionsInjected) {
             conversationPanel.addSystemMessage("Special Instructions Sent");
         }
+        setSendEnabled(false);
         session.setStartupInstructionsInjected(true);
         try {
             sessionPersistenceManager.save(session);
@@ -1802,7 +1800,6 @@ public final class AiTopComponent extends TopComponent implements AiProcessEvent
         if (loaded.messages().isEmpty() && loaded.sessionId() == null) {
             resolveSessionDir();
             deliverStartupInstructions();
-            resolveSessionDir();
             return;
         }
         if (loaded.workingDir() != null) {

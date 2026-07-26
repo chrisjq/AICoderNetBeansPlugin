@@ -158,6 +158,50 @@ class ContextProviderPreambleTest {
     }
 
     @Test
+    void completedStartupDeliveryIsNotRepeatedOnLaterRequests() {
+        AiSession session = AiSession.create(null, AiTypeEnum.CLAUDE);
+        session.setSessionInstructionsDelivery(SessionInstructionsDeliveryEnum.ON_START);
+        session.setStartupInstructionsInjected(true);
+        ContextProvider provider = new ContextProvider(fo -> {
+        });
+        provider.setSession(session);
+
+        provider.buildPreamble("first", "startup-only instruction");
+
+        assertFalse(provider.buildPreamble("second", "startup-only instruction")
+                .contains("## Session Instructions"),
+                "the ON_START guard must hold on every send, not only the first");
+    }
+
+    /**
+     * Reopening a session resumes from saved history, which calls
+     * resetSentContext() — clearing both the context baseline and the memory of
+     * what was last injected. The ON_START guard used to be prefixed with
+     * `!isFirstSend ||`, so from the second send after a reopen it
+     * short-circuited to true and the "instructions changed" test compared
+     * against a nulled lastInjectedSessionInstructions, re-delivering
+     * instructions the session had already received at startup.
+     */
+    @Test
+    void completedStartupDeliveryIsNotRepeatedAfterAReopen() {
+        AiSession session = AiSession.create(null, AiTypeEnum.CLAUDE);
+        session.setSessionInstructionsDelivery(SessionInstructionsDeliveryEnum.ON_START);
+        session.setStartupInstructionsInjected(true);
+        ContextProvider provider = new ContextProvider(fo -> {
+        });
+        provider.setSession(session);
+        provider.resetSentContext();
+
+        assertFalse(provider.buildPreamble("first after reopen", "startup-only instruction")
+                .contains("## Session Instructions"));
+        assertFalse(provider.buildPreamble("second after reopen", "startup-only instruction")
+                .contains("## Session Instructions"),
+                "the second send after a reopen is where the re-injection used to appear");
+        assertFalse(provider.consumeSessionInstructionsInjected(),
+                "no injection means no 'Special Instructions Sent' marker either");
+    }
+
+    @Test
     void changedInstructionsStillInjectAfterTheFirstRequest() {
         ContextProvider provider = providerFor(AiTypeEnum.CLAUDE);
         provider.buildPreamble("first", "initial instruction");

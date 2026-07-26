@@ -316,9 +316,30 @@ public class GithubCopilotProcessManager extends AiProcessManager {
 
     @Override
     public synchronized void sendPrompt(String text, File workingDir, List<File> projectDirs) {
-        if (pendingDiff || !running || processing || copilotSession == null) {
+        if (pendingDiff || !running || processing) {
             return;
         }
+
+        if (copilotSession == null) {
+            // recycleForModelChange() closed the old session after a model switch.
+            // Re-establishing costs two blocking RPCs (listSessions + resume/create)
+            // and sendPrompt runs on the EDT, so hand off to a background thread and
+            // send from there once the session is up. Mark the turn busy first so the
+            // UI shows "thinking" and a second send cannot race the re-establish.
+            cancelledByUser = false;
+            processing = true;
+            if (sessionWorkingDir == null && workingDir != null && workingDir.isDirectory()) {
+                sessionWorkingDir = workingDir;
+            }
+            new Thread(() -> reestablishAndSend(text, workingDir, projectDirs),
+                    "copilot-model-recycle").start();
+            return;
+        }
+
+        if (copilotSession == null) {
+            return;
+        }
+
         cancelledByUser = false;
         processing = true;
         if (sessionWorkingDir == null && workingDir != null && workingDir.isDirectory()) {
@@ -347,6 +368,44 @@ public class GithubCopilotProcessManager extends AiProcessManager {
     }
 
     /**
+     * Re-establishes the CopilotSession after a model change and then sends the
+     * queued prompt. Runs on a background thread: createOrResumeSession()
+     * blocks on RPC for up to two minutes per call, and every sendPrompt()
+     * caller is on the EDT. The RPC deliberately happens OUTSIDE the monitor so
+     * a concurrent stop() (e.g. the user closing the tab mid-recycle) is not
+     * blocked by it; only publishing the new session takes the lock.
+     */
+    private void reestablishAndSend(String text, File workingDir, List<File> projectDirs) {
+        CopilotSession created = null;
+        try {
+            created = createOrResumeSession(client, model);
+        }
+        catch (Exception e) {
+            LOG.log(Level.WARNING, "Failed to re-establish Copilot session after model change", e);
+        }
+        synchronized (this) {
+            processing = false;
+            if (created == null || !running) {
+                if (created != null) {
+                    created.close();
+                }
+                listener.onAiProcessEvent(new StatusEvent(StatusEventTypeEnum.FAILED,
+                        StatusMessageUtil.formatSendFailed(
+                                "could not re-establish the session after the model change")));
+                return;
+            }
+            copilotSession = created;
+            copilotSessionId = created.getSessionId();
+            if (eventBridge != null) {
+                eventBridge.attach(created);
+            }
+        }
+        // Re-enter the normal path now that a session exists: it re-arms
+        // `processing` and runs the usual send/failure handling.
+        sendPrompt(text, workingDir, projectDirs);
+    }
+
+    /**
      * Graceful interrupt: Cancel aborts the current turn without tearing down
      * the session (session.abort()) — previously this had to kill the whole OS
      * process since one-shot -p had no in-band signal. Mail interjects the
@@ -364,7 +423,9 @@ public class GithubCopilotProcessManager extends AiProcessManager {
             case Cancel -> {
                 cancelledByUser = true;
                 session.abort();
-                processing = false;
+                synchronized (GithubCopilotProcessManager.this) {
+                    processing = false;
+                }
                 listener.onAiProcessEvent(new StatusEvent(StatusEventTypeEnum.STOPPED, StatusMessageUtil.formatStopped()));
             }
             case Mail -> {
@@ -404,6 +465,17 @@ public class GithubCopilotProcessManager extends AiProcessManager {
         sessionWorkingDir = null;
         pendingDiff = false;
         sessionConfigDir = null;
+    }
+
+    public synchronized void recycleForModelChange() {
+        if (!running || processing) {
+            return;
+        }
+        CopilotSession oldSession = copilotSession;
+        copilotSession = null;
+        if (oldSession != null) {
+            oldSession.close();
+        }
     }
 
     // Called from the EDT (history load applies the stored session id; the

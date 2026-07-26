@@ -2,9 +2,13 @@ package kiwi.ingenuity.netbeans.plugin.aicoder.ai.ui;
 
 import java.awt.BorderLayout;
 import java.awt.Dimension;
+import java.awt.GraphicsConfiguration;
+import java.awt.GraphicsEnvironment;
 import java.awt.GridBagConstraints;
 import java.awt.GridBagLayout;
 import java.awt.Insets;
+import java.awt.Rectangle;
+import java.awt.Toolkit;
 import javax.swing.BorderFactory;
 import javax.swing.JButton;
 import javax.swing.JDialog;
@@ -76,7 +80,26 @@ public class AiSessionSettingsDialog extends JDialog {
         buttons.add(cancel);
         add(buttons, BorderLayout.SOUTH);
         pack();
-        setMinimumSize(new Dimension(Math.max(560, getWidth()), Math.min(620, getHeight())));
+
+        // Calculate usable screen bounds from parent window's GraphicsConfiguration
+        GraphicsConfiguration gc = WindowManager.getDefault().getMainWindow().getGraphicsConfiguration();
+        Rectangle screenBounds;
+        Insets screenInsets = new Insets(0, 0, 0, 0);
+        if (gc != null) {
+            screenBounds = gc.getBounds();
+            screenInsets = Toolkit.getDefaultToolkit().getScreenInsets(gc);
+        }
+        else {
+            screenBounds = GraphicsEnvironment.getLocalGraphicsEnvironment().getMaximumWindowBounds();
+        }
+
+        int usableHeight = screenBounds.height - screenInsets.top - screenInsets.bottom;
+        int initialHeight = Math.max(600, usableHeight / 2);
+        initialHeight = Math.min(initialHeight, usableHeight);
+        int initialWidth = Math.max(560, getWidth());
+
+        setSize(new Dimension(initialWidth, initialHeight));
+        setMinimumSize(new Dimension(560, 400));
     }
 
     private JScrollPane buildForm() {
@@ -87,13 +110,23 @@ public class AiSessionSettingsDialog extends JDialog {
         c.anchor = GridBagConstraints.WEST;
         c.fill = GridBagConstraints.HORIZONTAL;
         addRow(form, c, 0, new JLabel("Session name:"), nameField);
-        addRow(form, c, 1, new JLabel("Description:"), new JScrollPane(descriptionArea));
+
+        JScrollPane descriptionScroll = new JScrollPane(descriptionArea);
+        descriptionScroll.setPreferredSize(new Dimension(300, 200));
+        descriptionScroll.setMinimumSize(new Dimension(200, 200));
+        addRow(form, c, 1, new JLabel("Description:"), descriptionScroll);
+
         c.gridx = 0;
         c.gridy = 2;
         c.gridwidth = 2;
         c.weightx = 1;
         form.add(configPanel, c);
-        addRow(form, c, 3, new JLabel("Session instructions:"), new JScrollPane(sessionInstructionsArea));
+
+        JScrollPane instructionsScroll = new JScrollPane(sessionInstructionsArea);
+        instructionsScroll.setPreferredSize(new Dimension(300, 200));
+        instructionsScroll.setMinimumSize(new Dimension(200, 200));
+        addRow(form, c, 3, new JLabel("Session instructions:"), instructionsScroll);
+
         c.gridy = 4;
         c.weighty = 1;
         form.add(new JPanel(), c);

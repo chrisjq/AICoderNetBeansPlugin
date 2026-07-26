@@ -1,14 +1,15 @@
 package kiwi.ingenuity.netbeans.plugin.aicoder.process;
 
-import kiwi.ingenuity.netbeans.plugin.aicoder.process.PromptHistory;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import org.junit.jupiter.api.Test;
 
 class PromptHistoryTest {
 
     @Test
-    void previousOnEmpty_returnsEmpty() {
-        assertEquals("", new PromptHistory().previous("current"));
+    void previousOnEmpty_preservesDraft() {
+        // With no history there is nothing to show, so the unsent draft must be
+        // left alone. Returning "" here used to silently wipe what the user typed.
+        assertEquals("current", new PromptHistory().previous("current"));
     }
 
     @Test
@@ -61,5 +62,34 @@ class PromptHistoryTest {
         h.add("a");
         h.clear();
         assertEquals("", h.previous(""));
+    }
+
+    @Test
+    void upThenDown_restoresUnsentDraft() {
+        PromptHistory h = new PromptHistory();
+        h.add("a");
+        assertEquals("a", h.previous("my draft")); // Up — draft stashed
+        assertEquals("my draft", h.next("a")); // Down — draft comes back
+    }
+
+    @Test
+    void draftSurvivesWalkingSeveralEntriesDeep() {
+        PromptHistory h = new PromptHistory();
+        h.add("a");
+        h.add("b");
+        assertEquals("b", h.previous("my draft"));
+        assertEquals("a", h.previous("b"));
+        assertEquals("b", h.next("a"));
+        assertEquals("my draft", h.next("b"));
+    }
+
+    @Test
+    void addClearsStoredDraft() {
+        PromptHistory h = new PromptHistory();
+        h.add("a");
+        h.previous("my draft"); // stashes the draft
+        h.add("sent something"); // sending must discard it
+        h.previous("");
+        assertEquals("", h.next("sent something"));
     }
 }

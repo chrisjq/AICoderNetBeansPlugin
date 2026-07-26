@@ -49,6 +49,25 @@ public class GithubCopilotAiImplementation extends AiImplementation {
     public static void removeModelCatalogListener(java.util.function.Consumer<List<String>> listener) {
         MODEL_CATALOG.removeListener(listener);
     }
+
+    /**
+     * Discover the Copilot model list once per IDE run, then broadcast it to
+     * every open Copilot session's info bar via {@link AiTypePropertyBus} —
+     * mirroring the Claude flow. A session opened after discovery already
+     * completed replays the cached list immediately. Without this, only the
+     * session that happened to trigger discovery got the loaded list.
+     */
+    public static void triggerModelDiscovery() {
+        if (!MODEL_CATALOG.beginRefresh()) {
+            return;
+        }
+        GithubCopilotModelDiscovery.discoverAsync(GithubCopilotExecutableLocator.locate(), models -> {
+            List<String> list = Arrays.asList(models);
+            if (MODEL_CATALOG.publish(list)) {
+                AiTypePropertyBus.getInstance().fire(AiTypeEnum.GitHubCoPilot, new GithubCopilotModelsEvent(list));
+            }
+        });
+    }
     private final GithubCopilotProcessManager processManager;
 
     public GithubCopilotAiImplementation(AiProcessEventListener listener, ExecutablePrompter prompter) {
@@ -81,10 +100,14 @@ public class GithubCopilotAiImplementation extends AiImplementation {
     @Override
     public void setModel(String model) {
         GithubCopilotPluginSettings.setModel(model);
-        // Propagate to the process manager so the next `copilot -p --model ...`
-        // turn uses the newly selected model. Without this the dropdown change
-        // only updated settings and the running session kept the old model.
+        // A CopilotSession binds its model at create/resume time, so changing the
+        // model on a live session has no effect until the session is rebuilt.
+        // recycleForModelChange() closes and clears it immediately (cheap, no RPC —
+        // this runs on the EDT from the info-bar combo listener); the next send
+        // re-establishes it on a background thread with the new model, preserving
+        // the conversation via the retained copilotSessionId.
         processManager.setModel(model);
+        processManager.recycleForModelChange();
         if (currentSession != null) {
             AiSessionSettings cfg = currentSession.settings();
             if (model != null && !model.equals(cfg instanceof AiModelSessionSettings mc
@@ -142,25 +165,6 @@ public class GithubCopilotAiImplementation extends AiImplementation {
         // and the result is broadcast to EVERY open Copilot session's dropdown.
         triggerModelDiscovery();
         return provider;
-    }
-
-    /**
-     * Discover the Copilot model list once per IDE run, then broadcast it to
-     * every open Copilot session's info bar via {@link AiTypePropertyBus} —
-     * mirroring the Claude flow. A session opened after discovery already
-     * completed replays the cached list immediately. Without this, only the
-     * session that happened to trigger discovery got the loaded list.
-     */
-    public static void triggerModelDiscovery() {
-        if (!MODEL_CATALOG.beginRefresh()) {
-            return;
-        }
-        GithubCopilotModelDiscovery.discoverAsync(GithubCopilotExecutableLocator.locate(), models -> {
-            List<String> list = Arrays.asList(models);
-            if (MODEL_CATALOG.publish(list)) {
-                AiTypePropertyBus.getInstance().fire(AiTypeEnum.GitHubCoPilot, new GithubCopilotModelsEvent(list));
-            }
-        });
     }
 
     private void compact(AiSessionHost host) {

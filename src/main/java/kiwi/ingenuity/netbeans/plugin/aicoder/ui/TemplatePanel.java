@@ -91,14 +91,20 @@ public abstract class TemplatePanel<T> extends JPanel {
         actions.add(save);
         actions.add(cancel);
         actions.add(remove);
-        c.gridy = 2;
-        editor.add(actions, c);
 
         JScrollPane tableScrollPane = new JScrollPane(table);
         JScrollPane editorScrollPane = new JScrollPane(editor);
         tableScrollPane.setMinimumSize(new Dimension(0, 0));
         editorScrollPane.setMinimumSize(new Dimension(0, 0));
-        JSplitPane splitPane = new JSplitPane(JSplitPane.HORIZONTAL_SPLIT, tableScrollPane, editorScrollPane);
+        // The action row is deliberately OUTSIDE editorScrollPane: New/Save/Cancel/
+        // Delete stay pinned to the bottom of the editor side instead of scrolling
+        // away with a long template body. Both the config and instruction tabs
+        // extend this class, so this applies to each of them.
+        JPanel editorSide = new JPanel(new BorderLayout(6, 6));
+        editorSide.add(editorScrollPane, BorderLayout.CENTER);
+        editorSide.add(actions, BorderLayout.SOUTH);
+        editorSide.setMinimumSize(new Dimension(0, 0));
+        JSplitPane splitPane = new JSplitPane(JSplitPane.HORIZONTAL_SPLIT, tableScrollPane, editorSide);
         splitPane.addComponentListener(new ComponentAdapter() {
             @Override
             public void componentResized(ComponentEvent e) {

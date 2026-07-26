@@ -15,14 +15,9 @@ public final class GrokPluginSettings {
     // with the account's real available models via `grok models` when that
     // succeeds.
     public static final String[] KNOWN_MODELS = {
-        "grok-4.5",
-        "grok-4.3",
-        "grok-4.20-0309-reasoning",
-        "grok-4.20-0309-non-reasoning",
-        "grok-4.20-multi-agent-0309",
-        "grok-build-0.1"
+        "grok-4.5"
     };
-    public static final String DEFAULT_MODEL = "grok-4.5";
+    public static final String DEFAULT_MODEL = KNOWN_MODELS[0];
 
     private static volatile String[] discoveredModels = null;
 

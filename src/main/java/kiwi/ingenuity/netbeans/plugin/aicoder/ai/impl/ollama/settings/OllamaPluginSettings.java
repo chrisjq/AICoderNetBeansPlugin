@@ -6,7 +6,14 @@ import org.openide.util.NbPreferences;
 
 public final class OllamaPluginSettings {
 
-    public static final String DEFAULT_MODEL = "qwen2.5-coder:7b";
+    // Ollama only serves models the user has pulled locally, so this list is just
+    // the pre-discovery fallback shown before `ollama list` reports the real set;
+    // getKnownModels() swaps in the discovered models once available. The combo is
+    // editable, so a model that is installed but not listed here can still be typed.
+    public static final String[] KNOWN_MODELS = {
+        "qwen2.5-coder:7b"
+    };
+    public static final String DEFAULT_MODEL = KNOWN_MODELS[0];
     public static final String DEFAULT_BASE_URL = "http://localhost:11434";
 
     private static volatile String[] discoveredModels = null;
@@ -34,10 +41,8 @@ public final class OllamaPluginSettings {
     }
 
     public static String[] getKnownModels() {
-        String[] models = discoveredModels;
-        return (models != null && models.length > 0)
-                ? models
-                : new String[]{DEFAULT_MODEL};
+        String[] d = discoveredModels;
+        return (d != null && d.length > 0) ? d : KNOWN_MODELS;
     }
 
     public static void setDiscoveredModels(String[] models) {

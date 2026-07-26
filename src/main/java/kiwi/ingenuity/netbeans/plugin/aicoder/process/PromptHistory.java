@@ -7,9 +7,11 @@ public class PromptHistory {
 
     private final List<String> entries = new ArrayList<>();
     private int cursor = -1; // -1 = at "live" position (past newest)
+    private String draft = ""; // Stores unsent draft when navigating history
 
     /**
-     * Adds a prompt. Ignores blank input and consecutive duplicates.
+     * Adds a prompt. Ignores blank input and consecutive duplicates. Clears the
+     * saved draft when a new prompt is added.
      */
     public void add(String prompt) {
         if (prompt.isBlank()) {
@@ -20,17 +22,20 @@ public class PromptHistory {
         }
         entries.add(prompt);
         cursor = -1;
+        draft = "";
     }
 
     /**
-     * Returns the previous (older) entry, or "" if history is empty.
-     * currentText is unused.
+     * Returns the previous (older) entry, or currentText if history is empty.
+     * When navigating from live position, saves currentText as draft before
+     * moving.
      */
     public String previous(String currentText) {
         if (entries.isEmpty()) {
-            return "";
+            return currentText;
         }
         if (cursor == -1) {
+            draft = currentText;
             cursor = entries.size() - 1;
         }
         else if (cursor > 0) {
@@ -40,8 +45,8 @@ public class PromptHistory {
     }
 
     /**
-     * Returns the next (newer) entry, or "" when past the newest entry (back at
-     * live position).
+     * Returns the next (newer) entry, or the saved draft when returning to live
+     * position.
      */
     public String next(String currentText) {
         if (cursor == -1) {
@@ -50,7 +55,7 @@ public class PromptHistory {
         cursor++;
         if (cursor >= entries.size()) {
             cursor = -1;
-            return "";
+            return draft;
         }
         return entries.get(cursor);
     }
@@ -58,5 +63,6 @@ public class PromptHistory {
     public void clear() {
         entries.clear();
         cursor = -1;
+        draft = "";
     }
 }

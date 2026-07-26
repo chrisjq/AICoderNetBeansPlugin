@@ -108,6 +108,7 @@ public class SessionPickerDialog extends JDialog {
         super(WindowManager.getDefault().getMainWindow(), "AI Manager", true);
         this.spm = spm;
         setLayout(new BorderLayout());
+        setDefaultCloseOperation(DISPOSE_ON_CLOSE);
         getRootPane().setBorder(BorderFactory.createEmptyBorder(12, 12, 12, 12));
         aiTypeCombo.setRenderer(new AiTypeRenderer());
         configCombo.setRenderer(new TemplateRenderer<>(ConfigTemplate::name, "Default"));

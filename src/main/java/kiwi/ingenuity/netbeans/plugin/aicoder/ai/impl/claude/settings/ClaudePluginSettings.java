@@ -11,7 +11,7 @@ public final class ClaudePluginSettings {
         "claude-sonnet-4-6",
         "claude-haiku-4-5"
     };
-    public static final String DEFAULT_MODEL = "claude-sonnet-4-6";
+    public static final String DEFAULT_MODEL = KNOWN_MODELS[1];
 
     private static volatile String[] discoveredModels = null;
 

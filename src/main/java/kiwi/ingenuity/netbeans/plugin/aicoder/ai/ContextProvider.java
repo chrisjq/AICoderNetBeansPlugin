@@ -218,8 +218,28 @@ public class ContextProvider {
 
         // Inject on the first request and once more whenever Session Configuration
         // changes the value. This state is conversation-local by design.
+        //
+        // The ON_START guard must be checked on EVERY send. It used to be prefixed
+        // with `!isFirstSend ||`, which short-circuited the whole guard to true from
+        // the second send onwards, so the two checks below were never evaluated.
+        // isFirstSend only tracks whether the context BASELINE needs resending, and
+        // resetSentContext() clears it (and lastInjectedSessionInstructions) whenever
+        // a session is reopened — so on the second send after a reopen the "value
+        // changed" test below compared against null, read that as a change, and
+        // re-delivered instructions deliverStartupInstructions() had already sent.
+        // ON_START sessions belong to deliverStartupInstructions(); once its flag is
+        // set, buildPreamble() must never inject for them.
+        //
+        // `s == null` deliberately fails OPEN (inject rather than skip). It is not a
+        // per-AI-type concern: `s` is the plugin's own AiSession record, not a backend
+        // process/CLI session, so per-turn process types (Grok) still have one. The
+        // only window where it is null is between AiTopComponent creating this provider
+        // and its first refreshSessionIdentity() — and that call happens before READY,
+        // while the input field is still disabled by the startupResolved gate. So no
+        // send can observe it, and failing open costs nothing. Do not "harden" this to
+        // fail closed without first re-checking that gate.
         if (sessionInstructions != null && !sessionInstructions.isBlank()
-                && (!isFirstSend || s == null
+                && (s == null
                 || s.sessionInstructionsDelivery() != SessionInstructionsDeliveryEnum.ON_START
                 || !s.isStartupInstructionsInjected())
                 && (isFirstSend || !Objects.equals(sessionInstructions, lastInjectedSessionInstructions))) {
