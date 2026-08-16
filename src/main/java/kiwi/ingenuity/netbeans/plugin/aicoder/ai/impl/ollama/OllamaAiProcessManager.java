@@ -13,6 +13,7 @@ import java.util.Set;
 import java.util.concurrent.TimeUnit;
 import java.util.logging.Level;
 import java.util.logging.Logger;
+import kiwi.ingenuity.netbeans.plugin.aicoder.PluginSettings;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.AiProcessManager;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.events.StatusEvent;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.events.StatusEventTypeEnum;
@@ -21,24 +22,34 @@ import kiwi.ingenuity.netbeans.plugin.aicoder.ai.events.ToolUseEvent;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.events.TurnCompleteEvent;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.http.ChatMessage;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.http.ChatRequest;
-import kiwi.ingenuity.netbeans.plugin.aicoder.ai.http.SchemaToolCalls;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.http.ChatResult;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.http.ChatRole;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.http.ChatToolCall;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.http.ExtractedToolCall;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.http.HttpAiClient;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.http.OpenAiCompatibleClient;
+import kiwi.ingenuity.netbeans.plugin.aicoder.ai.http.SchemaToolCalls;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.http.ToolCallExtractor;
+import kiwi.ingenuity.netbeans.plugin.aicoder.ai.http.context.AbstractChatContextBroker;
+import kiwi.ingenuity.netbeans.plugin.aicoder.ai.http.context.ContextBrokerSettings;
+import kiwi.ingenuity.netbeans.plugin.aicoder.ai.http.context.ContextTriggerEnum;
+import kiwi.ingenuity.netbeans.plugin.aicoder.ai.http.context.ContextTrimStrategyEnum;
+import kiwi.ingenuity.netbeans.plugin.aicoder.ai.http.context.OllamaChatContextBroker;
+import kiwi.ingenuity.netbeans.plugin.aicoder.ai.http.context.PinSlotEnum;
+import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.ollama.events.OllamaTokenUsageEvent;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.ollama.session.OllamaAiSession;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.ollama.settings.OllamaPluginSettings;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.ollama.settings.OllamaSessionSettings;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.session.InterruptTypeEnum;
+import kiwi.ingenuity.netbeans.plugin.aicoder.ai.settings.OpenAiClientSessionSettings;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.McpInstructionOptionEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.McpToolEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.events.AiProcessEventListener;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.server.McpInstructionRegistry;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.server.McpServerRegistry;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.McpToolInterface;
+import kiwi.ingenuity.netbeans.plugin.aicoder.serialization.ContextPersistenceManager;
+import kiwi.ingenuity.netbeans.plugin.aicoder.serialization.SessionPersistenceManager;
 import kiwi.ingenuity.netbeans.plugin.aicoder.utils.StatusMessageUtil;
 
 public class OllamaAiProcessManager extends AiProcessManager {
@@ -46,11 +57,91 @@ public class OllamaAiProcessManager extends AiProcessManager {
     private static final Logger LOG = Logger.getLogger(OllamaAiProcessManager.class.getName());
     static final int MAX_TOOL_ITERATIONS = 25;
 
+    /**
+     * True for text that is an empty JSON object or array — "{}" or "[]", with
+     * or without a code fence. Anything with actual content is left alone: a
+     * user can legitimately ask for JSON and must still receive it.
+     */
+    static boolean isEmptyJson(String text) {
+        if (text == null || text.isBlank()) {
+            return false;
+        }
+        String stripped = text.strip();
+        if (stripped.startsWith("```")) {
+            int close = stripped.lastIndexOf("```");
+            stripped = (close > 2 ? stripped.substring(3, close) : stripped.substring(3)).strip();
+            int nl = stripped.indexOf('\n');
+            if (nl >= 0 && !stripped.startsWith("{") && !stripped.startsWith("[")) {
+                stripped = stripped.substring(nl + 1).strip();
+            }
+        }
+        try {
+            JsonElement parsed = JsonParser.parseString(stripped);
+            if (parsed.isJsonObject()) {
+                return parsed.getAsJsonObject().size() == 0;
+            }
+            return parsed.isJsonArray() && parsed.getAsJsonArray().isEmpty();
+        }
+        catch (RuntimeException ex) {
+            return false;
+        }
+    }
+
+    /**
+     * A hand-edited preference must not stop a session starting.
+     */
+    private static ContextTriggerEnum parseTrigger(String raw) {
+        try {
+            return ContextTriggerEnum.valueOf(raw);
+        }
+        catch (RuntimeException ex) {
+            return ContextTriggerEnum.ESTIMATED_TOKENS;
+        }
+    }
+
+    private static ContextTrimStrategyEnum parseStrategy(String raw) {
+        try {
+            return ContextTrimStrategyEnum.valueOf(raw);
+        }
+        catch (RuntimeException ex) {
+            return ContextTrimStrategyEnum.DROP_MARKED;
+        }
+    }
+
+    private static String describe(Throwable ex) {
+        String msg = ex.getMessage();
+        return msg != null && !msg.isBlank() ? msg : ex.getClass().getSimpleName();
+    }
+
+    /**
+     * ContextBrokerSettings has no equals(): it is a plain mutable settings
+     * bag, not a value type, so field-by-field comparison lives here instead.
+     * Two null-safety branches aside, this is the same six-field comparison
+     * AbstractChatContextBroker.updateSettings() uses to decide whether to log
+     * — duplicated rather than shared, since the two live in different packages
+     * for different purposes (one gates a debug log line, this one resets a
+     * user-facing warning).
+     */
+    private static boolean settingsDiffer(ContextBrokerSettings a, ContextBrokerSettings b) {
+        if (a == null || b == null) {
+            return a != b;
+        }
+        return a.tokenThreshold() != b.tokenThreshold()
+                || a.trimTargetPercent() != b.trimTargetPercent()
+                || a.maxMessages() != b.maxMessages()
+                || a.persistOnClose() != b.persistOnClose()
+                || a.strategy() != b.strategy()
+                || a.trigger() != b.trigger();
+    }
+
     private volatile OllamaMcpRegistrar registrar;
     private volatile HttpAiClient httpClient;
     volatile OllamaAiSession ollamaSession;
     volatile OllamaMcpBridge bridge;
+    volatile AbstractChatContextBroker broker;
     volatile Thread activeTurnThread;
+    private volatile ContextBrokerSettings lastResolvedSettings;
+    private volatile boolean pinnedOverBudgetWarned;
 
     public OllamaAiProcessManager(AiProcessEventListener listener) {
         super(listener);
@@ -87,6 +178,36 @@ public class OllamaAiProcessManager extends AiProcessManager {
         ollamaSession = new OllamaAiSession(currentSession, listener);
         bridge = createBridge(ollamaSession);
         bridge.setSessionCredentials(currentSession.id(), currentSession.secret());
+        ContextBrokerSettings settingsForBroker = resolveBrokerSettings();
+        lastResolvedSettings = settingsForBroker;
+        broker = createContextBroker(currentSession.id(), settingsForBroker);
+        if (broker != null
+                && settingsForBroker.trigger() == ContextTriggerEnum.REPORTED_TOKENS) {
+            listener.onAiProcessEvent(new StatusEvent(StatusEventTypeEnum.INFO,
+                    "Context trigger falls back to estimated tokens until this endpoint reports usage"));
+        }
+        if (broker != null) {
+            // Built unconditionally, not only under the SUMMARISE strategy: the
+            // Compact button can call it on demand from any strategy, and a
+            // null summariser would make that button silently do nothing for
+            // almost every user running the default DROP_MARKED strategy.
+            OllamaSessionSettings settingsForSummariser = effectiveSessionSettings();
+            broker.setSummariser(new OllamaContextSummariser(createHttpAiClient(),
+                    resolveEffectiveBaseUrl(settingsForSummariser),
+                    resolveApiKey(settingsForSummariser),
+                    resolveEffectiveModel(settingsForSummariser)));
+        }
+        if (broker != null && settingsForBroker.persistOnClose()) {
+            JsonObject saved = createContextPersistenceManager().load(currentSession.id());
+            if (saved != null) {
+                broker.restoreFromJson(saved);
+                // Settings may have tightened while the session was closed; the
+                // first request after a restore must not go out over budget.
+                broker.trimIfNeeded();
+                listener.onAiProcessEvent(new OllamaTokenUsageEvent(
+                        broker.estimatedTokenTotal(), settingsForBroker.tokenThreshold()));
+            }
+        }
         currentSession.setInstructionsLoaded(true);
         running = true;
         listener.onAiProcessEvent(new StatusEvent(StatusEventTypeEnum.READY,
@@ -109,18 +230,30 @@ public class OllamaAiProcessManager extends AiProcessManager {
         worker.start();
     }
 
+    private OllamaSessionSettings effectiveSessionSettings() {
+        return currentSession.settings() instanceof OllamaSessionSettings os
+                ? os : new OllamaSessionSettings();
+    }
+
+    private String resolveEffectiveModel(OllamaSessionSettings settings) {
+        return model != null && !model.isBlank()
+                ? model
+                : settings.model() != null && !settings.model().isBlank()
+                ? settings.model()
+                : defaultModel();
+    }
+
+    private String resolveEffectiveBaseUrl(OllamaSessionSettings settings) {
+        return settings.baseUrl() != null && !settings.baseUrl().isBlank()
+                ? settings.baseUrl()
+                : defaultBaseUrl();
+    }
+
     private void runTurn(String text) {
         try {
-            OllamaSessionSettings settings = currentSession.settings() instanceof OllamaSessionSettings os
-                    ? os : new OllamaSessionSettings();
-            String effectiveModel = model != null && !model.isBlank()
-                    ? model
-                    : settings.model() != null && !settings.model().isBlank()
-                    ? settings.model()
-                    : defaultModel();
-            String effectiveBaseUrl = settings.baseUrl() != null && !settings.baseUrl().isBlank()
-                    ? settings.baseUrl()
-                    : defaultBaseUrl();
+            OllamaSessionSettings settings = effectiveSessionSettings();
+            String effectiveModel = resolveEffectiveModel(settings);
+            String effectiveBaseUrl = resolveEffectiveBaseUrl(settings);
 
             Map<McpToolEnum, McpToolInterface> handlers = buildToolHandlers(ollamaSession);
             String instructions = McpInstructionRegistry.buildFullInstructions(
@@ -156,9 +289,25 @@ public class OllamaAiProcessManager extends AiProcessManager {
                         + " message and set tool_name to \"\". Never do both.";
             }
 
-            List<ChatMessage> messages = new ArrayList<>();
-            messages.add(new ChatMessage(ChatRole.SYSTEM, instructions, List.of(), null));
-            messages.add(new ChatMessage(ChatRole.USER, text, List.of(), null));
+            AbstractChatContextBroker localBroker = broker;
+            if (localBroker == null) {
+                return;
+            }
+            // Refreshed once per turn, at the boundary, never mid-trim or
+            // inside the tool loop below: a strategy or threshold changing
+            // underneath a half-completed trim would be very hard to reason
+            // about. This is what lets a preference change (e.g. Token
+            // threshold) take effect on the next request instead of requiring
+            // a session restart.
+            ContextBrokerSettings refreshedSettings = resolveBrokerSettings();
+            if (settingsDiffer(lastResolvedSettings, refreshedSettings)) {
+                pinnedOverBudgetWarned = false;
+            }
+            lastResolvedSettings = refreshedSettings;
+            localBroker.updateSettings(refreshedSettings);
+            localBroker.upsertPin(PinSlotEnum.TOOLS, instructions);
+            localBroker.beginTurn();
+            localBroker.append(new ChatMessage(ChatRole.USER, text, List.of(), null));
 
             HttpAiClient client = httpClient;
             if (client == null) {
@@ -180,8 +329,15 @@ public class OllamaAiProcessManager extends AiProcessManager {
             int barrenRounds = 0;
             for (int iteration = 0; iteration < MAX_TOOL_ITERATIONS && !cancelledByUser; iteration++) {
                 String apiKey = resolveApiKey(settings);
+                localBroker.trimIfNeeded();
+                if (!pinnedOverBudgetWarned && localBroker.isPinnedOverBudget()) {
+                    pinnedOverBudgetWarned = true;
+                    listener.onAiProcessEvent(new StatusEvent(StatusEventTypeEnum.INFO,
+                            "Context threshold is too low for the pinned instructions and tool list — history is not being trimmed. Raise the Token threshold in the session's Context History settings."));
+                }
+                int estimatedForRequest = localBroker.estimatedTokenTotal();
                 ChatRequest request = new ChatRequest(effectiveBaseUrl, apiKey, effectiveModel,
-                        List.copyOf(messages), List.copyOf(requestTools), responseFormat);
+                        localBroker.snapshot(), List.copyOf(requestTools), responseFormat);
                 StringBuilder buf = new StringBuilder();
                 boolean[] decided = {false};
                 boolean[] streaming = {false};
@@ -213,6 +369,9 @@ public class OllamaAiProcessManager extends AiProcessManager {
                         listener.onAiProcessEvent(new TextDeltaEvent(delta, null));
                     }
                 });
+                localBroker.recordUsage(estimatedForRequest, result.promptTokens());
+                listener.onAiProcessEvent(new OllamaTokenUsageEvent(
+                        localBroker.estimatedTokenTotal(), lastResolvedSettings.tokenThreshold()));
                 List<ExtractedToolCall> calls;
                 String assistantText;
                 if (schemaMode) {
@@ -241,6 +400,11 @@ public class OllamaAiProcessManager extends AiProcessManager {
                     if (!streaming[0] && finalText != null && !finalText.isBlank()) {
                         listener.onAiProcessEvent(new TextDeltaEvent(finalText, null));
                     }
+                    if (finalText != null && !finalText.isBlank()) {
+                        localBroker.append(new ChatMessage(ChatRole.ASSISTANT, finalText,
+                                List.of(), null));
+                    }
+                    localBroker.commitTurn();
                     listener.onAiProcessEvent(new TurnCompleteEvent());
                     return;
                 }
@@ -277,11 +441,11 @@ public class OllamaAiProcessManager extends AiProcessManager {
                         madeProgress = true;
                     }
                 }
-                messages.add(new ChatMessage(ChatRole.ASSISTANT, null,
+                localBroker.append(new ChatMessage(ChatRole.ASSISTANT, null,
                         List.copyOf(assistantToolCalls), null));
                 for (int callIndex = 0; callIndex < assistantToolCalls.size(); callIndex++) {
                     ChatToolCall toolCall = assistantToolCalls.get(callIndex);
-                    messages.add(new ChatMessage(ChatRole.TOOL, toolResults.get(callIndex),
+                    localBroker.append(new ChatMessage(ChatRole.TOOL, toolResults.get(callIndex),
                             List.of(), toolCall.id()));
                 }
                 barrenRounds = madeProgress ? 0 : barrenRounds + 1;
@@ -289,9 +453,13 @@ public class OllamaAiProcessManager extends AiProcessManager {
                     // Ending here would leave the user with no reply at all, so
                     // ask once more with no tools offered — the model can only
                     // answer in prose.
-                    if (!answerWithoutTools(client, effectiveBaseUrl, apiKey, effectiveModel, messages)) {
+                    if (!answerWithoutTools(client, effectiveBaseUrl, apiKey, effectiveModel,
+                            localBroker)) {
                         listener.onAiProcessEvent(new StatusEvent(StatusEventTypeEnum.INFO,
                                 "Stopped: the model kept repeating the same tool call without making progress"));
+                    }
+                    else {
+                        localBroker.commitTurn();
                     }
                     listener.onAiProcessEvent(new TurnCompleteEvent());
                     return;
@@ -300,24 +468,32 @@ public class OllamaAiProcessManager extends AiProcessManager {
             if (!cancelledByUser) {
                 listener.onAiProcessEvent(new StatusEvent(StatusEventTypeEnum.INFO,
                         "Stopped after " + MAX_TOOL_ITERATIONS + " tool iterations"));
-                answerWithoutTools(client, effectiveBaseUrl, resolveApiKey(settings),
-                        effectiveModel, messages);
+                if (answerWithoutTools(client, effectiveBaseUrl, resolveApiKey(settings),
+                        effectiveModel, localBroker)) {
+                    localBroker.commitTurn();
+                }
                 listener.onAiProcessEvent(new TurnCompleteEvent());
             }
         }
         catch (IOException ex) {
+            LOG.log(Level.WARNING, "Ollama send failed", ex);
             if (!cancelledByUser) {
                 listener.onAiProcessEvent(new StatusEvent(StatusEventTypeEnum.FAILED,
-                        StatusMessageUtil.formatSendFailed(ex.getMessage())));
+                        StatusMessageUtil.formatSendFailed(describe(ex))));
             }
         }
         catch (RuntimeException ex) {
+            LOG.log(Level.WARNING, "Ollama send failed", ex);
             if (!cancelledByUser) {
                 listener.onAiProcessEvent(new StatusEvent(StatusEventTypeEnum.FAILED,
-                        StatusMessageUtil.formatSendFailed(ex.getMessage())));
+                        StatusMessageUtil.formatSendFailed(describe(ex))));
             }
         }
         finally {
+            AbstractChatContextBroker brokerSnap = broker;
+            if (brokerSnap != null) {
+                brokerSnap.rollbackTurn();
+            }
             processing = false;
             activeTurnThread = null;
         }
@@ -331,8 +507,8 @@ public class OllamaAiProcessManager extends AiProcessManager {
      * @return true if a non-empty answer was produced and emitted
      */
     private boolean answerWithoutTools(HttpAiClient client, String baseUrl, String apiKey,
-            String model, List<ChatMessage> messages) throws IOException {
-        List<ChatMessage> prompt = new ArrayList<>(messages);
+            String model, AbstractChatContextBroker localBroker) throws IOException {
+        List<ChatMessage> prompt = new ArrayList<>(localBroker.snapshot());
         prompt.add(new ChatMessage(ChatRole.USER,
                 "Stop calling tools. Answer my original message directly, in plain text.",
                 List.of(), null));
@@ -349,37 +525,8 @@ public class OllamaAiProcessManager extends AiProcessManager {
             return false;
         }
         listener.onAiProcessEvent(new TextDeltaEvent(text, null));
+        localBroker.append(new ChatMessage(ChatRole.ASSISTANT, text, List.of(), null));
         return true;
-    }
-
-    /**
-     * True for text that is an empty JSON object or array — "{}" or "[]", with
-     * or without a code fence. Anything with actual content is left alone: a
-     * user can legitimately ask for JSON and must still receive it.
-     */
-    static boolean isEmptyJson(String text) {
-        if (text == null || text.isBlank()) {
-            return false;
-        }
-        String stripped = text.strip();
-        if (stripped.startsWith("```")) {
-            int close = stripped.lastIndexOf("```");
-            stripped = (close > 2 ? stripped.substring(3, close) : stripped.substring(3)).strip();
-            int nl = stripped.indexOf('\n');
-            if (nl >= 0 && !stripped.startsWith("{") && !stripped.startsWith("[")) {
-                stripped = stripped.substring(nl + 1).strip();
-            }
-        }
-        try {
-            JsonElement parsed = JsonParser.parseString(stripped);
-            if (parsed.isJsonObject()) {
-                return parsed.getAsJsonObject().size() == 0;
-            }
-            return parsed.isJsonArray() && parsed.getAsJsonArray().isEmpty();
-        }
-        catch (RuntimeException ex) {
-            return false;
-        }
     }
 
     boolean registerMcp(OllamaMcpRegistrar reg) throws Exception {
@@ -392,6 +539,57 @@ public class OllamaAiProcessManager extends AiProcessManager {
 
     OllamaMcpBridge createBridge(OllamaAiSession session) {
         return new OllamaMcpBridge(session);
+    }
+
+    AbstractChatContextBroker createContextBroker(String sessionId, ContextBrokerSettings settings) {
+        return new OllamaChatContextBroker(sessionId, settings);
+    }
+
+    /**
+     * The context file lives beside history.json in the same per-session
+     * directory, so it shares SessionPersistenceManager's base directory rather
+     * than inventing a new location.
+     */
+    ContextPersistenceManager createContextPersistenceManager() {
+        return new ContextPersistenceManager(SessionPersistenceManager.defaultBaseDir());
+    }
+
+    /**
+     * Three-level fallback per setting: session value if set, else the global
+     * default, else the hardcoded default baked into ContextBrokerSettings.
+     * Session values are nullable precisely so "unset" is distinguishable from
+     * "set to zero/false".
+     */
+    ContextBrokerSettings resolveBrokerSettings() {
+        ContextBrokerSettings s = ContextBrokerSettings.defaults();
+        OpenAiClientSessionSettings cfg
+                = currentSession != null
+                && currentSession.settings() instanceof OpenAiClientSessionSettings o
+                ? o : null;
+
+        s.setTrigger(cfg != null && cfg.contextTrimTrigger() != null
+                ? cfg.contextTrimTrigger()
+                : parseTrigger(PluginSettings.getContextTrimTrigger()));
+        s.setStrategy(cfg != null && cfg.contextTrimStrategy() != null
+                ? cfg.contextTrimStrategy()
+                : parseStrategy(PluginSettings.getContextTrimStrategy()));
+        s.setTokenThreshold(cfg != null && cfg.contextTokenThreshold() != null
+                ? cfg.contextTokenThreshold()
+                : PluginSettings.getContextTokenThreshold());
+        s.setTrimTargetPercent(cfg != null && cfg.contextTrimTargetPercent() != null
+                ? cfg.contextTrimTargetPercent()
+                : PluginSettings.getContextTrimTargetPercent());
+        s.setMaxMessages(cfg != null && cfg.contextMaxMessages() != null
+                ? cfg.contextMaxMessages()
+                : PluginSettings.getContextMaxMessages());
+        s.setPersistOnClose(cfg != null && cfg.contextPersistOnClose() != null
+                ? cfg.contextPersistOnClose()
+                : PluginSettings.isContextPersistOnClose());
+        return s;
+    }
+
+    ContextBrokerSettings brokerSettingsForTest() {
+        return lastResolvedSettings;
     }
 
     Map<McpToolEnum, McpToolInterface> buildToolHandlers(OllamaAiSession session) {
@@ -437,6 +635,7 @@ public class OllamaAiProcessManager extends AiProcessManager {
         cancelledByUser = true;
         running = false;
         processing = false;
+        pinnedOverBudgetWarned = false;
         Thread turnThread = activeTurnThread;
         activeTurnThread = null;
         if (turnThread != null) {
@@ -447,6 +646,24 @@ public class OllamaAiProcessManager extends AiProcessManager {
         }
         ollamaSession = null;
         bridge = null;
+        AbstractChatContextBroker brokerSnap = broker;
+        if (brokerSnap != null) {
+            // Rollback before save: saving first would write a half-finished
+            // turn to disk, and it would come back as a ghost user message
+            // with no reply — a lone USER entry has no orphaned tool results,
+            // so the group-integrity check on load would not catch it.
+            brokerSnap.rollbackTurn();
+            if (lastResolvedSettings != null && lastResolvedSettings.persistOnClose()
+                    && sessionId != null) {
+                try {
+                    createContextPersistenceManager().save(sessionId, brokerSnap.toJson());
+                }
+                catch (IOException ex) {
+                    LOG.log(Level.WARNING, "Could not persist context", ex);
+                }
+            }
+        }
+        broker = null;
         httpClient = null;
         if (registrar != null) {
             McpServerRegistry.deregister(registrar);
@@ -463,6 +680,80 @@ public class OllamaAiProcessManager extends AiProcessManager {
         if (existingSessionId != null && !existingSessionId.isBlank()) {
             sessionId = existingSessionId;
         }
+    }
+
+    @Override
+    public void updatePinnedContext(String identity, String baseline, String instructions) {
+        AbstractChatContextBroker localBroker = broker;
+        if (localBroker == null) {
+            return;
+        }
+        localBroker.upsertPin(PinSlotEnum.IDENTITY, identity);
+        localBroker.upsertPin(PinSlotEnum.BASELINE, baseline);
+        localBroker.upsertPin(PinSlotEnum.INSTRUCTIONS, instructions);
+    }
+
+    /**
+     * Wipes the model's memory of the conversation. The chat panel keeps
+     * showing the full transcript, so without an inline notice a user who
+     * scrolls up and references an earlier exchange gets a baffled reply —
+     * before this feature the visible log and the model's memory always agreed,
+     * so this divergence needs calling out.
+     */
+    public void clearContext() {
+        AbstractChatContextBroker b = broker;
+        if (b == null) {
+            return;
+        }
+        b.clearHistory();
+        listener.onAiProcessEvent(new StatusEvent(StatusEventTypeEnum.INFO,
+                "Context cleared — the model no longer has the earlier conversation"));
+        ContextBrokerSettings resolved = lastResolvedSettings;
+        if (resolved != null) {
+            listener.onAiProcessEvent(new OllamaTokenUsageEvent(
+                    b.estimatedTokenTotal(), resolved.tokenThreshold()));
+        }
+    }
+
+    /**
+     * Trims older context down to the low-water mark right now, ignoring the
+     * threshold. Summarises the evicted span when a summariser is available (it
+     * is, unconditionally, once start() has run), falling back to a drop marker
+     * otherwise.
+     *
+     * Runs on a background thread: summarising makes a network call that can
+     * take seconds, and this is invoked straight from the info bar's Compact
+     * button, on the EDT. Completion is reported the same way a turn reports
+     * usage — an OllamaTokenUsageEvent — so the info bar's existing handling of
+     * that event also clears the gauge's indeterminate state.
+     */
+    public void compactContext() {
+        AbstractChatContextBroker b = broker;
+        if (b == null) {
+            return;
+        }
+        Thread worker = new Thread(() -> {
+            int evicted = b.compactNow();
+            listener.onAiProcessEvent(new StatusEvent(StatusEventTypeEnum.INFO,
+                    evicted == 0
+                            ? "Nothing to compact"
+                            : "Compacted — " + evicted + " earlier exchange(s) summarised"));
+            ContextBrokerSettings resolved = lastResolvedSettings;
+            if (resolved != null) {
+                listener.onAiProcessEvent(new OllamaTokenUsageEvent(
+                        b.estimatedTokenTotal(), resolved.tokenThreshold()));
+            }
+        }, "ollama-compact-" + sessionId);
+        worker.setDaemon(true);
+        worker.start();
+    }
+
+    /**
+     * Polled by the info bar to keep the gauge's indeterminate state honest.
+     */
+    public boolean isSummarising() {
+        AbstractChatContextBroker b = broker;
+        return b != null && b.isSummarising();
     }
 
     @Override

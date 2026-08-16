@@ -545,6 +545,12 @@ public final class AiTopComponent extends TopComponent implements AiProcessEvent
         // the inter-AI capability blurb on the live comms setting on its own.
         refreshSessionIdentity();
         infoBar.setSaveHistory(session.settings().effectiveSaveHistory());
+        if (aiBackend != null) {
+            aiBackend.applySessionSettings(session.settings());
+        }
+        if (infoBarExtension != null) {
+            infoBarExtension.onSessionSettingsChanged(session.settings());
+        }
         // Immediately propagate restrictToProjectFiles to the MCP hook server's
         // scope map so file-tool permission changes take effect on the next tool
         // call, not only after the next user submit.
@@ -1323,8 +1329,6 @@ public final class AiTopComponent extends TopComponent implements AiProcessEvent
         String fullPrompt = contextProvider != null
                 ? contextProvider.buildPreamble(text, sessionInstructions)
                 : text;
-        boolean sessionInstructionsInjected = contextProvider != null
-                && contextProvider.consumeSessionInstructionsInjected();
         conversationPanel.addUserMessage(text);
         infoBar.setProcessing(true);
         infoBar.setStatusMessage("Thinking…");
@@ -1340,8 +1344,14 @@ public final class AiTopComponent extends TopComponent implements AiProcessEvent
             mcp.updateSessionScope(session.id(), session.aiType(), projectDirs, restrict);
         }
         if (aiBackend != null) {
+            if (contextProvider != null) {
+                aiBackend.updatePinnedContext(
+                        contextProvider.buildIdentityBlock(),
+                        contextProvider.buildProjectBaseline(),
+                        session.settings() == null ? null : session.settings().sessionInstructions());
+            }
             aiBackend.sendPrompt(fullPrompt, workDir, projectDirs);
-            if (sessionInstructionsInjected) {
+            if (contextProvider != null && contextProvider.consumeSessionInstructionsInjected()) {
                 conversationPanel.addSystemMessage("Special Instructions Sent");
             }
         }
@@ -1710,11 +1720,15 @@ public final class AiTopComponent extends TopComponent implements AiProcessEvent
         String prompt = contextProvider != null
                 ? contextProvider.buildPreamble("", instructions)
                 : "## Session Instructions\n" + instructions;
-        boolean sessionInstructionsInjected = contextProvider == null
-                || contextProvider.consumeSessionInstructionsInjected();
         infoBar.setProcessing(true);
+        if (contextProvider != null) {
+            aiBackend.updatePinnedContext(
+                    contextProvider.buildIdentityBlock(),
+                    contextProvider.buildProjectBaseline(),
+                    instructions);
+        }
         aiBackend.sendPrompt(prompt, resolveWorkDir(), projectDirs);
-        if (sessionInstructionsInjected) {
+        if (contextProvider != null && contextProvider.consumeSessionInstructionsInjected()) {
             conversationPanel.addSystemMessage("Special Instructions Sent");
         }
         setSendEnabled(false);

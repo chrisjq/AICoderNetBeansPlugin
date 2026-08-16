@@ -6,6 +6,7 @@ import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.grok.settings.GrokSessionS
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.ollama.settings.OllamaSessionSettings;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.settings.AiModelSessionSettings;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.settings.AiSessionSettings;
+import kiwi.ingenuity.netbeans.plugin.aicoder.ai.settings.OpenAiClientSessionSettings;
 import static org.junit.jupiter.api.Assertions.*;
 import org.junit.jupiter.api.Test;
 
@@ -59,5 +60,18 @@ class AiTypeEnumSettingsTest {
     @Test
     void fromKeyResolvesOllamaLocal() {
         assertEquals(AiTypeEnum.OLLAMA_LOCAL, AiTypeEnum.fromKey("ollama_local"));
+    }
+
+    @Test
+    void isOpenAiCompatibleMatchesTheSettingsClassForEveryType() {
+        for (AiTypeEnum type : AiTypeEnum.values()) {
+            AiSessionSettings settings = type.createDefaultSettings();
+            boolean settingsAreOpenAi = settings instanceof OpenAiClientSessionSettings;
+            assertEquals(settingsAreOpenAi, type.isOpenAiCompatible(),
+                    type + ": isOpenAiCompatible() is " + type.isOpenAiCompatible()
+                    + " but its settings class " + settings.getClass().getSimpleName()
+                    + (settingsAreOpenAi ? " DOES" : " does NOT")
+                    + " extend OpenAiClientSessionSettings — the flag and the class hierarchy disagree");
+        }
     }
 }

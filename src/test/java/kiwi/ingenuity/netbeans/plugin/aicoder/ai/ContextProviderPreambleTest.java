@@ -2,6 +2,7 @@ package kiwi.ingenuity.netbeans.plugin.aicoder.ai;
 
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.session.AiSession;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.session.SessionInstructionsDeliveryEnum;
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import org.junit.jupiter.api.Test;
@@ -52,12 +53,12 @@ class ContextProviderPreambleTest {
 
     @Test
     void interAiBlurbIsConditionalForSoftenedTypes() {
-        String preamble = providerFor(AiTypeEnum.OLLAMA_LOCAL).buildPreamble("hi", null);
+        String identity = providerFor(AiTypeEnum.OLLAMA_LOCAL).buildIdentityBlock();
 
-        assertFalse(preamble.contains("first action"),
+        assertFalse(identity.contains("first action"),
                 "an unconditional 'first action is to call X' triggers a tool call on 'hi'");
-        assertFalse(preamble.contains("without hedging"));
-        assertTrue(preamble.contains("Only if the user asks you to message"),
+        assertFalse(identity.contains("without hedging"));
+        assertTrue(identity.contains("Only if the user asks you to message"),
                 "the inter-AI instruction must lead with its condition");
     }
 
@@ -96,13 +97,13 @@ class ContextProviderPreambleTest {
      */
     @Test
     void softenedBlurbDoesNotForbidToolsInGeneral() {
-        String preamble = providerFor(AiTypeEnum.OLLAMA_LOCAL).buildPreamble("read pom.xml", null);
+        String identity = providerFor(AiTypeEnum.OLLAMA_LOCAL).buildIdentityBlock();
 
-        assertFalse(preamble.contains("without calling any tool"),
+        assertFalse(identity.contains("without calling any tool"),
                 "a blanket prohibition suppresses legitimate tool use");
-        assertTrue(preamble.contains("do not call those two tools for any other reason"),
+        assertTrue(identity.contains("do not call those two tools for any other reason"),
                 "the restriction must name the inter-AI tools");
-        assertTrue(preamble.contains("Use the other tools freely"));
+        assertTrue(identity.contains("Use the other tools freely"));
     }
 
     /**
@@ -112,13 +113,15 @@ class ContextProviderPreambleTest {
      * the project was.
      */
     @Test
-    void statelessTypesGetTheProjectBaselineOnEveryTurn() {
-        ContextProvider provider = providerFor(AiTypeEnum.OLLAMA_LOCAL);
-        provider.buildPreamble("first", null);
-        String second = provider.buildPreamble("second", null);
+    void ollamaNoLongerRepeatsTheProjectBaselineBecauseItIsPinnedInstead() {
+        ContextProvider p = providerFor(AiTypeEnum.OLLAMA_LOCAL);
+        p.buildPreamble("first", null);
+        String second = p.buildPreamble("second", null);
 
-        assertTrue(second.contains("AI Coder NetBeans Plugin v"),
-                "the baseline must repeat for a backend that keeps no history");
+        assertFalse(second.contains("AI Coder NetBeans Plugin v"),
+                "the baseline is now a pinned broker slot, not part of every user message");
+        assertEquals("second", second.trim(),
+                "buildPreamble returns the raw user text for broker-backed backends");
     }
 
     @Test
@@ -231,5 +234,24 @@ class ContextProviderPreambleTest {
 
         assertTrue(preamble.contains("first action"));
         assertTrue(preamble.contains("without hedging"));
+    }
+
+    @Test
+    void identityBlockIsAvailableSeparatelyFromThePrompt() {
+        ContextProvider p = providerFor(AiTypeEnum.OLLAMA_LOCAL);
+        String identity = p.buildIdentityBlock();
+
+        assertTrue(identity.contains("## Your session identity"));
+        assertFalse(identity.contains("AI Coder NetBeans Plugin v"),
+                "the project baseline is a separate block");
+    }
+
+    @Test
+    void projectBaselineIsAvailableSeparatelyFromThePrompt() {
+        ContextProvider p = providerFor(AiTypeEnum.OLLAMA_LOCAL);
+        String baseline = p.buildProjectBaseline();
+
+        assertTrue(baseline.contains("AI Coder NetBeans Plugin v"));
+        assertFalse(baseline.contains("## Your session identity"));
     }
 }

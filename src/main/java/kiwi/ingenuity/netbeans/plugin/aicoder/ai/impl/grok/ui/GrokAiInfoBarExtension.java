@@ -13,6 +13,8 @@ import kiwi.ingenuity.netbeans.plugin.aicoder.ai.events.AiPropertyEvent;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.grok.events.GrokModelsEvent;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.grok.events.GrokTokenUsageEvent;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.grok.settings.GrokPluginSettings;
+import kiwi.ingenuity.netbeans.plugin.aicoder.ai.settings.AiModelSessionSettings;
+import kiwi.ingenuity.netbeans.plugin.aicoder.ai.settings.AiSessionSettings;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.ui.AiInfoBarExtension;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.events.AiProcessImplEvent;
 
@@ -148,6 +150,14 @@ public class GrokAiInfoBarExtension implements AiInfoBarExtension {
     public void onPropertyEvent(AiPropertyEvent event) {
         if (event instanceof GrokModelsEvent me) {
             setAvailableModels(me.models());
+        }
+    }
+
+    @Override
+    public void onSessionSettingsChanged(AiSessionSettings settings) {
+        if (settings instanceof AiModelSessionSettings modelSettings
+                && modelSettings.model() != null && !modelSettings.model().isBlank()) {
+            setSelectedModel(modelSettings.model());
         }
     }
 

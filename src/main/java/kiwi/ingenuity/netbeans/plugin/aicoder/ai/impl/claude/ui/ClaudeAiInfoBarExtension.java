@@ -16,6 +16,8 @@ import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.claude.events.ClaudeModels
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.claude.events.ClaudeSessionInfoEvent;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.claude.events.ClaudeUsageEvent;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.claude.settings.ClaudePluginSettings;
+import kiwi.ingenuity.netbeans.plugin.aicoder.ai.settings.AiModelSessionSettings;
+import kiwi.ingenuity.netbeans.plugin.aicoder.ai.settings.AiSessionSettings;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.ui.AiInfoBarExtension;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.events.AiProcessImplEvent;
 
@@ -111,6 +113,14 @@ public class ClaudeAiInfoBarExtension implements AiInfoBarExtension {
         }
         else if (event instanceof ClaudeModelsEvent me) {
             SwingUtilities.invokeLater(() -> setAvailableModels(me.models()));
+        }
+    }
+
+    @Override
+    public void onSessionSettingsChanged(AiSessionSettings settings) {
+        if (settings instanceof AiModelSessionSettings modelSettings
+                && modelSettings.model() != null && !modelSettings.model().isBlank()) {
+            setSelectedModel(modelSettings.model());
         }
     }
 

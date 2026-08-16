@@ -7,6 +7,8 @@ import java.util.List;
 import kiwi.ingenuity.netbeans.plugin.aicoder.PluginUtil;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.session.AiSession;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.session.InterruptTypeEnum;
+import kiwi.ingenuity.netbeans.plugin.aicoder.ai.settings.AiModelSessionSettings;
+import kiwi.ingenuity.netbeans.plugin.aicoder.ai.settings.AiSessionSettings;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.ui.AiInfoBarExtension;
 import kiwi.ingenuity.netbeans.plugin.aicoder.events.SessionLifecycleSource;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.events.AiProcessEventListener;
@@ -72,6 +74,13 @@ public abstract class AiImplementation {
 
     public abstract void setModel(String model);
 
+    public void applySessionSettings(AiSessionSettings settings) {
+        if (settings instanceof AiModelSessionSettings modelSettings
+                && modelSettings.model() != null && !modelSettings.model().isBlank()) {
+            setModel(modelSettings.model());
+        }
+    }
+
     public void setPendingDiff(boolean pending) {
         delegate().setPendingDiff(pending);
     }
@@ -94,6 +103,10 @@ public abstract class AiImplementation {
 
     public boolean isMcpActive() {
         return delegate().isMcpActive();
+    }
+
+    public void updatePinnedContext(String identity, String baseline, String instructions) {
+        delegate().updatePinnedContext(identity, baseline, instructions);
     }
 
     public AiInfoBarExtension createInfoBarExtension(AiSession session, AiSessionHost host) {

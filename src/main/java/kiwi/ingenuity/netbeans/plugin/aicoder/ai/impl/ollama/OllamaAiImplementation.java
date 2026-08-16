@@ -14,16 +14,40 @@ import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.ollama.events.OllamaModels
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.ollama.settings.OllamaPluginSettings;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.ollama.settings.OllamaSessionSettings;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.ollama.ui.OllamaAiInfoBarExtension;
+import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.ollama.ui.OllamaInfoBarListener;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.session.AiSession;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.settings.AiSessionSettings;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.events.AiProcessEventListener;
 
-public class OllamaAiImplementation extends AiImplementation {
+public class OllamaAiImplementation extends AiImplementation implements OllamaInfoBarListener {
 
     private static final AiModelCatalog MODEL_CATALOG = new AiModelCatalog();
 
     public static AiModelCatalog modelCatalog() {
         return MODEL_CATALOG;
+    }
+
+    public static void triggerModelDiscovery(String customBaseUrl) {
+        String baseUrl = (customBaseUrl != null && !customBaseUrl.isBlank())
+                ? customBaseUrl
+                : OllamaPluginSettings.getBaseUrl();
+        if (!MODEL_CATALOG.beginRefresh()) {
+            return;
+        }
+        OllamaModelDiscovery.discoverAsync(baseUrl,
+                models -> {
+                    List<String> list = Arrays.asList(models);
+                    OllamaPluginSettings.setDiscoveredModels(models);
+                    if (MODEL_CATALOG.publish(list)) {
+                        AiTypePropertyBus.getInstance().fire(AiTypeEnum.OLLAMA_LOCAL, new OllamaModelsEvent(list));
+                    }
+                },
+                hint -> {
+                    if (hint != null) {
+                        AiTypePropertyBus.getInstance().fire(AiTypeEnum.OLLAMA_LOCAL,
+                                new OllamaCapabilityHintEvent(hint));
+                    }
+                });
     }
     private final OllamaAiProcessManager processManager;
 
@@ -85,6 +109,9 @@ public class OllamaAiImplementation extends AiImplementation {
     @Override
     public OllamaAiInfoBarExtension createInfoBarExtension(AiSession session, AiSessionHost host) {
         OllamaAiInfoBarExtension ext = new OllamaAiInfoBarExtension();
+        ext.setProcessingSupplier(delegate()::isProcessing);
+        ext.setSummarisingSupplier(delegate()::isSummarising);
+        ext.addListener(this);
         Consumer<List<String>> catalogListener = models -> ext.setAvailableModels(models.toArray(String[]::new));
         MODEL_CATALOG.addListener(catalogListener);
         ext.setDisposeAction(() -> MODEL_CATALOG.removeListener(catalogListener));
@@ -111,29 +138,6 @@ public class OllamaAiImplementation extends AiImplementation {
         return ext;
     }
 
-    public static void triggerModelDiscovery(String customBaseUrl) {
-        String baseUrl = (customBaseUrl != null && !customBaseUrl.isBlank())
-                ? customBaseUrl
-                : OllamaPluginSettings.getBaseUrl();
-        if (!MODEL_CATALOG.beginRefresh()) {
-            return;
-        }
-        OllamaModelDiscovery.discoverAsync(baseUrl,
-                models -> {
-                    List<String> list = Arrays.asList(models);
-                    OllamaPluginSettings.setDiscoveredModels(models);
-                    if (MODEL_CATALOG.publish(list)) {
-                        AiTypePropertyBus.getInstance().fire(AiTypeEnum.OLLAMA_LOCAL, new OllamaModelsEvent(list));
-                    }
-                },
-                hint -> {
-                    if (hint != null) {
-                        AiTypePropertyBus.getInstance().fire(AiTypeEnum.OLLAMA_LOCAL,
-                                new OllamaCapabilityHintEvent(hint));
-                    }
-                });
-    }
-
     private void triggerModelDiscovery() {
         String baseUrl = currentSession != null && currentSession.settings() instanceof OllamaSessionSettings settings
                 && settings.baseUrl() != null && !settings.baseUrl().isBlank()
@@ -158,5 +162,15 @@ public class OllamaAiImplementation extends AiImplementation {
 
     @Override
     protected void afterStart() {
+    }
+
+    @Override
+    public void onClearRequested() {
+        delegate().clearContext();
+    }
+
+    @Override
+    public void onCompactRequested() {
+        delegate().compactContext();
     }
 }

@@ -108,6 +108,9 @@ public abstract class AiProcessManager {
         return McpServerRegistry.getServer();
     }
 
+    public void updatePinnedContext(String identity, String baseline, String instructions) {
+    }
+
     // ---- Backend-specific turn lifecycle ----
     public abstract void start(String executableOrConfig, String modelOrConfig);
 

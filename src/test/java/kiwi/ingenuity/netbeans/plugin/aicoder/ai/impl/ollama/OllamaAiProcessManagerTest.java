@@ -2,6 +2,8 @@ package kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.ollama;
 
 import com.google.gson.JsonObject;
 import java.io.File;
+import java.io.IOException;
+import java.nio.file.Path;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
@@ -20,7 +22,13 @@ import kiwi.ingenuity.netbeans.plugin.aicoder.ai.http.ChatResult;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.http.ChatRole;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.http.ChatToolCall;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.http.HttpAiClient;
+import kiwi.ingenuity.netbeans.plugin.aicoder.ai.http.context.AbstractChatContextBroker;
+import kiwi.ingenuity.netbeans.plugin.aicoder.ai.http.context.ContextBrokerSettings;
+import kiwi.ingenuity.netbeans.plugin.aicoder.ai.http.context.ContextTrimStrategyEnum;
+import kiwi.ingenuity.netbeans.plugin.aicoder.ai.http.context.OllamaChatContextBroker;
+import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.ollama.events.OllamaTokenUsageEvent;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.ollama.session.OllamaAiSession;
+import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.ollama.settings.OllamaSessionSettings;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.session.AiSession;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.session.InterruptTypeEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.McpInstructionOptionEnum;
@@ -30,13 +38,48 @@ import kiwi.ingenuity.netbeans.plugin.aicoder.process.events.AiProcessEvent;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.events.AiProcessEventListener;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.McpToolInterface;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.ToolRequestArguments;
+import kiwi.ingenuity.netbeans.plugin.aicoder.serialization.ContextPersistenceManager;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
 
 class OllamaAiProcessManagerTest {
+
+    private static int countOccurrences(String text, String target) {
+        if (text == null || target == null || target.isEmpty()) {
+            return 0;
+        }
+        int count = 0;
+        int idx = 0;
+        while ((idx = text.indexOf(target, idx)) != -1) {
+            count++;
+            idx += target.length();
+        }
+        return count;
+    }
+
+    private static AiSession newSession() {
+        return new AiSession("sid", "session", null,
+                kiwi.ingenuity.netbeans.plugin.aicoder.ai.AiTypeEnum.OLLAMA_LOCAL,
+                null,
+                kiwi.ingenuity.netbeans.plugin.aicoder.ai.AiTypeEnum.OLLAMA_LOCAL
+                        .createDefaultSettings(),
+                Instant.now(), Instant.now());
+    }
+
+    private static void awaitIdle(OllamaAiProcessManager manager) throws InterruptedException {
+        long deadline = System.currentTimeMillis() + 5000L;
+        while (manager.isProcessing() && System.currentTimeMillis() < deadline) {
+            Thread.sleep(10L);
+        }
+        assertFalse(manager.isProcessing(), "turn did not finish within 5s");
+    }
+
+    @TempDir
+    Path contextTempDir;
 
     @Test
     void toolCallThenFinalTextLoopsAndTerminates() throws Exception {
@@ -206,9 +249,9 @@ class OllamaAiProcessManagerTest {
     }
 
     /**
-     * A stalled loop previously ended on a status line, leaving the user with no
-     * reply to "hi" at all. The turn now makes one final request with no tools
-     * offered, so the model can only answer in prose.
+     * A stalled loop previously ended on a status line, leaving the user with
+     * no reply to "hi" at all. The turn now makes one final request with no
+     * tools offered, so the model can only answer in prose.
      */
     @Test
     void stalledLoopStillProducesAnAnswer() throws Exception {
@@ -250,7 +293,10 @@ class OllamaAiProcessManagerTest {
         assertTrue(recovery.toolSchemas().isEmpty(), "final request must offer no tools");
     }
 
-    /** "{}" is what the model produced after giving up; it must not be shown as the reply. */
+    /**
+     * "{}" is what the model produced after giving up; it must not be shown as
+     * the reply.
+     */
     @Test
     void emptyJsonObjectIsNotPresentedAsTheAnswer() throws Exception {
         CountDownLatch done = new CountDownLatch(1);
@@ -339,6 +385,343 @@ class OllamaAiProcessManagerTest {
         assertTrue(manager.invokedToolNames.isEmpty());
     }
 
+    @Test
+    void historySurvivesAcrossTurns() throws Exception {
+        AiProcessEventListener listener = event -> {
+        };
+        FakeHttpClient fakeClient = new FakeHttpClient(List.of(
+                new ChatResult("first answer", List.of(), "stop"),
+                new ChatResult("second answer", List.of(), "stop")));
+
+        TestOllamaProcessManager manager = new TestOllamaProcessManager(listener, fakeClient);
+        manager.setCurrentSession(newSession());
+        manager.start(null, "qwen2.5-coder:7b");
+
+        File home = new File(System.getProperty("user.home"));
+        manager.sendPrompt("turn one", home, List.of());
+        awaitIdle(manager);
+        manager.sendPrompt("turn two", home, List.of());
+        awaitIdle(manager);
+
+        assertEquals(2, fakeClient.requests.size());
+        StringBuilder second = new StringBuilder();
+        for (ChatMessage m : fakeClient.requests.get(1).messages()) {
+            second.append(m.content() == null ? "" : m.content()).append('\n');
+        }
+        String text = second.toString();
+
+        assertTrue(text.contains("turn one"),
+                "the second request must still carry the first user message");
+        assertTrue(text.contains("first answer"),
+                "the second request must still carry the first assistant answer");
+        assertTrue(text.contains("turn two"));
+    }
+
+    @Test
+    void anIoExceptionMidTurnDoesNotBrickTheSession() throws Exception {
+        AiProcessEventListener listener = event -> {
+        };
+        FailFirstHttpClient client = new FailFirstHttpClient(List.of(
+                new ChatResult("answer after recovery", List.of(), "stop")));
+
+        TestOllamaProcessManager manager = new TestOllamaProcessManager(listener, client);
+        manager.setCurrentSession(newSession());
+        manager.start(null, "qwen2.5-coder:7b");
+
+        File home = new File(System.getProperty("user.home"));
+        manager.sendPrompt("turn that fails", home, List.of());
+        awaitIdle(manager);
+
+        manager.sendPrompt("turn that should still work", home, List.of());
+        awaitIdle(manager);
+
+        assertEquals(2, client.requests.size(),
+                "the second turn must reach the client — a stuck open turn would throw "
+                + "IllegalStateException in beginTurn() and never get here");
+        StringBuilder second = new StringBuilder();
+        for (ChatMessage m : client.requests.get(1).messages()) {
+            second.append(m.content() == null ? "" : m.content()).append('\n');
+        }
+        assertFalse(second.toString().contains("turn that fails"),
+                "a turn that failed must leave no trace in history");
+    }
+
+    @Test
+    void theStopCallingToolsPromptNeverEntersHistory() throws Exception {
+        AiProcessEventListener listener = event -> {
+        };
+        FakeHttpClient fakeClient = new FakeHttpClient(List.of(
+                new ChatResult("{\"name\":\"GetPluginVersion\",\"arguments\":{\"d\":\"a\"}}",
+                        List.of(), "stop"),
+                new ChatResult("{\"name\":\"GetPluginVersion\",\"arguments\":{\"d\":\"b\"}}",
+                        List.of(), "stop"),
+                new ChatResult("{\"name\":\"GetPluginVersion\",\"arguments\":{\"d\":\"c\"}}",
+                        List.of(), "stop"),
+                new ChatResult("fine, here is your answer", List.of(), "stop"),
+                new ChatResult("second turn answer", List.of(), "stop")));
+
+        TestOllamaProcessManager manager
+                = new TestOllamaProcessManager(listener, fakeClient, "Description updated.");
+        manager.setCurrentSession(newSession());
+        manager.start(null, "qwen2.5-coder:7b");
+
+        File home = new File(System.getProperty("user.home"));
+        manager.sendPrompt("do something repetitive", home, List.of());
+        awaitIdle(manager);
+        manager.sendPrompt("next question", home, List.of());
+        awaitIdle(manager);
+
+        ChatRequest last = fakeClient.requests.get(fakeClient.requests.size() - 1);
+        StringBuilder all = new StringBuilder();
+        for (ChatMessage m : last.messages()) {
+            String c = m.content() == null ? "" : m.content();
+            assertFalse(c.contains("Stop calling tools"),
+                    "the synthetic fallback prompt must never be persisted into history");
+            all.append(c).append('\n');
+        }
+        assertTrue(all.toString().contains("fine, here is your answer"),
+                "the answer the fallback produced must be kept");
+    }
+
+    @Test
+    void pinnedContextReachesTheBrokerAndIsNotDuplicatedPerTurn() throws Exception {
+        AiProcessEventListener listener = event -> {
+        };
+        FakeHttpClient fakeClient = new FakeHttpClient(List.of(
+                new ChatResult("first answer", List.of(), "stop"),
+                new ChatResult("second answer", List.of(), "stop")));
+
+        TestOllamaProcessManager manager = new TestOllamaProcessManager(listener, fakeClient);
+        manager.setCurrentSession(newSession());
+        manager.start(null, "qwen2.5-coder:7b");
+
+        File home = new File(System.getProperty("user.home"));
+        manager.updatePinnedContext("IDENTITY-BLOCK", "BASELINE-BLOCK", null);
+        manager.sendPrompt("turn one", home, List.of());
+        awaitIdle(manager);
+
+        // Identical second call must not duplicate the blocks (upsertPin is idempotent).
+        manager.updatePinnedContext("IDENTITY-BLOCK", "BASELINE-BLOCK", null);
+        manager.sendPrompt("turn two", home, List.of());
+        awaitIdle(manager);
+
+        assertEquals(2, fakeClient.requests.size());
+        String system = fakeClient.requests.get(1).messages().get(0).content();
+        assertEquals(1, countOccurrences(system, "IDENTITY-BLOCK"),
+                "IDENTITY pin must appear exactly once after two identical upserts");
+        assertEquals(1, countOccurrences(system, "BASELINE-BLOCK"),
+                "BASELINE pin must appear exactly once after two identical upserts");
+        assertTrue(system.indexOf("IDENTITY-BLOCK") < system.indexOf("BASELINE-BLOCK"),
+                "IDENTITY slot is declared before BASELINE in PinSlotEnum so it must render first");
+    }
+
+    @Test
+    void reportedUsageReachesTheBrokerAndCalibratesTheEstimator() throws Exception {
+        AiProcessEventListener listener = event -> {
+        };
+        FakeHttpClient fakeClient = new FakeHttpClient(List.of(
+                new ChatResult("answer", List.of(), "stop", 5000, 20)));
+
+        TestOllamaProcessManager manager = new TestOllamaProcessManager(listener, fakeClient);
+        manager.setCurrentSession(newSession());
+        manager.start(null, "qwen2.5-coder:7b");
+        manager.sendPrompt("hello", new File(System.getProperty("user.home")), List.of());
+        awaitIdle(manager);
+
+        assertTrue(manager.broker.hasSeenReportedUsage(),
+                "a backend that reports usage must be recorded as doing so");
+        assertTrue(manager.broker.calibrationRatio() > 1.0d,
+                "a large reported prompt_tokens must push the estimate upward");
+    }
+
+    @Test
+    void sessionSettingsOverrideGlobalDefaultsInTheBroker() throws Exception {
+        AiProcessEventListener listener = event -> {
+        };
+        FakeHttpClient fakeClient = new FakeHttpClient(List.of(
+                new ChatResult("a", List.of(), "stop")));
+        TestOllamaProcessManager manager = new TestOllamaProcessManager(listener, fakeClient);
+
+        AiSession s = newSession();
+        ((OllamaSessionSettings) s.settings()).setContextTokenThreshold(1234);
+        ((OllamaSessionSettings) s.settings()).setContextTrimStrategy(ContextTrimStrategyEnum.DROP);
+        manager.setCurrentSession(s);
+        manager.start(null, "qwen2.5-coder:7b");
+
+        assertEquals(1234, manager.brokerSettingsForTest().tokenThreshold());
+        assertEquals(ContextTrimStrategyEnum.DROP, manager.brokerSettingsForTest().strategy());
+    }
+
+    @Test
+    void summariserWiredInStartIsUsedWhenSummariseStrategyTrims() throws Exception {
+        AiProcessEventListener listener = event -> {
+        };
+        FakeHttpClient fakeClient = new FakeHttpClient(List.of(
+                new ChatResult("first answer", List.of(), "stop"),
+                new ChatResult("a short summary of turn one", List.of(), "stop"),
+                new ChatResult("second answer", List.of(), "stop")));
+
+        TestOllamaProcessManager manager = new TestOllamaProcessManager(listener, fakeClient);
+        AiSession s = newSession();
+        ((OllamaSessionSettings) s.settings()).setContextTrimStrategy(ContextTrimStrategyEnum.SUMMARISE);
+        ((OllamaSessionSettings) s.settings()).setContextTokenThreshold(1);
+        manager.setCurrentSession(s);
+        manager.start(null, "qwen2.5-coder:7b");
+
+        File home = new File(System.getProperty("user.home"));
+        manager.sendPrompt("turn one", home, List.of());
+        awaitIdle(manager);
+        manager.sendPrompt("turn two", home, List.of());
+        awaitIdle(manager);
+
+        assertEquals(3, fakeClient.requests.size(),
+                "turn two's trim must trigger one extra summariser call in between");
+        boolean sawSummary = fakeClient.requests.get(2).messages().stream()
+                .anyMatch(m -> m.content() != null
+                        && m.content().contains("[Summary of earlier conversation:"));
+        assertTrue(sawSummary, "the summariser wired unconditionally in start() must be used "
+                + "by the broker's SUMMARISE trim path");
+    }
+
+    @Test
+    void compactContextRunsOffTheCallingThreadAndReportsUsageWhenDone() throws Exception {
+        List<AiProcessEvent> events = new ArrayList<>();
+        CountDownLatch usageReported = new CountDownLatch(1);
+        AiProcessEventListener listener = event -> {
+            events.add(event);
+            if (event instanceof OllamaTokenUsageEvent) {
+                usageReported.countDown();
+            }
+        };
+        FakeHttpClient fakeClient = new FakeHttpClient(List.of());
+        TestOllamaProcessManager manager = new TestOllamaProcessManager(listener, fakeClient);
+        manager.setCurrentSession(newSession());
+        manager.start(null, "qwen2.5-coder:7b");
+
+        manager.compactContext();
+
+        assertTrue(usageReported.await(5, TimeUnit.SECONDS),
+                "compactContext must report usage once its background thread finishes, "
+                + "the same way the info bar learns a turn finished");
+        assertTrue(events.stream().anyMatch(e -> e instanceof StatusEvent se
+                && se.text() != null && se.text().contains("Nothing to compact")),
+                "an empty broker has nothing to compact");
+        assertFalse(manager.isSummarising(),
+                "summarising must have cleared by the time usage is reported");
+    }
+
+    @Test
+    void contextIsSavedOnStopAndRestoredOnStartWhenEnabled() throws Exception {
+        AiProcessEventListener listener = event -> {
+        };
+        FakeHttpClient client = new FakeHttpClient(List.of(
+                new ChatResult("first answer", List.of(), "stop"),
+                new ChatResult("second answer", List.of(), "stop")));
+
+        AiSession session = newSession();
+        ((OllamaSessionSettings) session.settings()).setContextPersistOnClose(true);
+
+        TestOllamaProcessManager first = new TestOllamaProcessManager(listener, client);
+        first.setContextBaseDir(contextTempDir);
+        first.setCurrentSession(session);
+        first.start(null, "qwen2.5-coder:7b");
+        first.sendPrompt("remember this", new File(System.getProperty("user.home")), List.of());
+        awaitIdle(first);
+        first.stop();
+
+        TestOllamaProcessManager second = new TestOllamaProcessManager(listener, client);
+        second.setContextBaseDir(contextTempDir);
+        second.setCurrentSession(session);
+        second.start(null, "qwen2.5-coder:7b");
+
+        assertTrue(second.broker.entryCount() > 0,
+                "history must survive a stop/start cycle when persistence is enabled");
+    }
+
+    @Test
+    void contextIsNotSavedWhenPersistenceIsOff() throws Exception {
+        AiProcessEventListener listener = event -> {
+        };
+        FakeHttpClient client = new FakeHttpClient(List.of(
+                new ChatResult("answer", List.of(), "stop")));
+
+        AiSession session = newSession();
+        ((OllamaSessionSettings) session.settings()).setContextPersistOnClose(false);
+
+        TestOllamaProcessManager first = new TestOllamaProcessManager(listener, client);
+        first.setContextBaseDir(contextTempDir);
+        first.setCurrentSession(session);
+        first.start(null, "qwen2.5-coder:7b");
+        first.sendPrompt("do not remember", new File(System.getProperty("user.home")), List.of());
+        awaitIdle(first);
+        first.stop();
+
+        TestOllamaProcessManager second = new TestOllamaProcessManager(listener, client);
+        second.setContextBaseDir(contextTempDir);
+        second.setCurrentSession(session);
+        second.start(null, "qwen2.5-coder:7b");
+
+        assertEquals(0, second.broker.entryCount());
+    }
+
+    @Test
+    void tokenThresholdChangeBetweenTurnsIsPickedUpOnTheNextTurn() throws Exception {
+        AiProcessEventListener listener = event -> {
+        };
+        FakeHttpClient fakeClient = new FakeHttpClient(List.of(
+                new ChatResult("first answer", List.of(), "stop"),
+                new ChatResult("second answer", List.of(), "stop")));
+
+        AiSession s = newSession();
+        ((OllamaSessionSettings) s.settings()).setContextTokenThreshold(9000);
+        TestOllamaProcessManager manager = new TestOllamaProcessManager(listener, fakeClient);
+        manager.setCurrentSession(s);
+        manager.start(null, "qwen2.5-coder:7b");
+
+        File home = new File(System.getProperty("user.home"));
+        manager.sendPrompt("turn one", home, List.of());
+        awaitIdle(manager);
+        assertEquals(9000, manager.brokerSettingsForTest().tokenThreshold());
+
+        ((OllamaSessionSettings) s.settings()).setContextTokenThreshold(4321);
+        manager.sendPrompt("turn two", home, List.of());
+        awaitIdle(manager);
+
+        assertEquals(4321, manager.brokerSettingsForTest().tokenThreshold(),
+                "a threshold change must take effect on the very next turn, without "
+                + "restarting the session");
+    }
+
+    @Test
+    void loweringThresholdBetweenTurnsCausesTheBrokerToActuallyTrimOnTheNextTurn() throws Exception {
+        AiProcessEventListener listener = event -> {
+        };
+        FakeHttpClient fakeClient = new FakeHttpClient(List.of(
+                new ChatResult("first answer", List.of(), "stop"),
+                new ChatResult("second answer", List.of(), "stop")));
+
+        AiSession s = newSession();
+        ((OllamaSessionSettings) s.settings()).setContextTrimStrategy(ContextTrimStrategyEnum.DROP);
+        ((OllamaSessionSettings) s.settings()).setContextTokenThreshold(1_000_000);
+        TestOllamaProcessManager manager = new TestOllamaProcessManager(listener, fakeClient);
+        manager.setCurrentSession(s);
+        manager.start(null, "qwen2.5-coder:7b");
+
+        File home = new File(System.getProperty("user.home"));
+        manager.sendPrompt("turn one", home, List.of());
+        awaitIdle(manager);
+        int entriesAfterTurnOne = manager.broker.entryCount();
+        assertEquals(2, entriesAfterTurnOne, "turn one commits with no trimming under a huge threshold");
+
+        ((OllamaSessionSettings) s.settings()).setContextTokenThreshold(1);
+        manager.sendPrompt("turn two", home, List.of());
+        awaitIdle(manager);
+
+        assertTrue(manager.broker.entryCount() < entriesAfterTurnOne + 2,
+                "lowering the threshold between turns must cause the very next turn's trim to "
+                + "actually evict, not merely record the new number with no effect");
+    }
+
     private static final class FakeHttpClient implements HttpAiClient {
 
         private final List<ChatResult> scripted;
@@ -360,12 +743,41 @@ class OllamaAiProcessManagerTest {
         }
     }
 
+    private static final class FailFirstHttpClient implements HttpAiClient {
+
+        private final List<ChatResult> scripted;
+        private final List<ChatRequest> requests = new ArrayList<>();
+        private int index = 0;
+
+        FailFirstHttpClient(List<ChatResult> scripted) {
+            this.scripted = scripted;
+        }
+
+        @Override
+        public ChatResult chat(ChatRequest request, Consumer<String> onTextDelta)
+                throws IOException {
+            requests.add(request);
+            if (index == 0) {
+                index++;
+                throw new IOException("stream cut");
+            }
+            ChatResult result = scripted.get(index++ - 1);
+            if (result.assistantText() != null && !result.assistantText().isBlank()) {
+                onTextDelta.accept(result.assistantText());
+            }
+            return result;
+        }
+    }
+
     private static final class TestOllamaProcessManager extends OllamaAiProcessManager {
 
         private final HttpAiClient fakeClient;
-        /** When set, every tool returns this — the "Description updated." case. */
+        /**
+         * When set, every tool returns this — the "Description updated." case.
+         */
         private final String fixedToolResult;
         final List<String> invokedToolNames = new ArrayList<>();
+        private volatile Path contextBaseDir;
 
         TestOllamaProcessManager(AiProcessEventListener listener, HttpAiClient fakeClient) {
             this(listener, fakeClient, null);
@@ -376,6 +788,18 @@ class OllamaAiProcessManagerTest {
             super(listener);
             this.fakeClient = fakeClient;
             this.fixedToolResult = fixedToolResult;
+        }
+
+        /**
+         * Only needed by tests that enable contextPersistOnClose.
+         */
+        void setContextBaseDir(Path contextBaseDir) {
+            this.contextBaseDir = contextBaseDir;
+        }
+
+        @Override
+        ContextPersistenceManager createContextPersistenceManager() {
+            return new ContextPersistenceManager(contextBaseDir);
         }
 
         @Override
@@ -399,6 +823,11 @@ class OllamaAiProcessManagerTest {
                     return fixedToolResult != null ? fixedToolResult : "ok " + invokedToolNames.size();
                 }
             };
+        }
+
+        @Override
+        AbstractChatContextBroker createContextBroker(String sessionId, ContextBrokerSettings settings) {
+            return new OllamaChatContextBroker(sessionId, settings);
         }
 
         @Override

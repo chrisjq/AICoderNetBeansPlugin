@@ -10,10 +10,11 @@ import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.atomic.AtomicReference;
-import org.junit.jupiter.api.Test;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import org.junit.jupiter.api.Test;
 
 class OpenAiCompatibleClientTest {
 
@@ -178,5 +179,39 @@ class OpenAiCompatibleClientTest {
         ChatResult result = OpenAiCompatibleClient.assembleSse(lines);
 
         assertEquals("Hello world", result.assistantText());
+    }
+
+    @Test
+    void payloadRequestsUsageAlongsideStreaming() {
+        ChatRequest request = new ChatRequest("http://localhost:11434", null, "m",
+                List.of(new ChatMessage(ChatRole.USER, "hi", List.of(), null)), List.of());
+
+        JsonObject payload = OpenAiCompatibleClient.buildPayloadForTest(request);
+
+        assertTrue(payload.has("stream_options"));
+        assertTrue(payload.getAsJsonObject("stream_options").get("include_usage").getAsBoolean(),
+                "without this the endpoint never reports prompt_tokens");
+    }
+
+    @Test
+    void usageIsParsedFromTheFinalSseChunk() {
+        ChatResult result = OpenAiCompatibleClient.assembleSse(List.of(
+                "{\"choices\":[{\"delta\":{\"content\":\"hello\"}}]}",
+                "{\"choices\":[],\"usage\":{\"prompt_tokens\":1234,\"completion_tokens\":56}}",
+                "[DONE]"));
+
+        assertEquals("hello", result.assistantText());
+        assertEquals(1234, result.promptTokens());
+        assertEquals(56, result.completionTokens());
+    }
+
+    @Test
+    void absentUsageYieldsNullsRatherThanFailing() {
+        ChatResult result = OpenAiCompatibleClient.assembleSse(List.of(
+                "{\"choices\":[{\"delta\":{\"content\":\"hello\"}}]}",
+                "[DONE]"));
+
+        assertEquals("hello", result.assistantText());
+        assertNull(result.promptTokens());
     }
 }

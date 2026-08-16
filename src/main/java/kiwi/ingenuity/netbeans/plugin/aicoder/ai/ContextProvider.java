@@ -108,53 +108,108 @@ public class ContextProvider {
         return buildPreamble(userPrompt, null);
     }
 
+    /**
+     * The session identity block — emitted for every AI type; carries
+     * sessionId/secretKey only for types with
+     * McpInstructionOptionEnum.CREDENTIALS. Returns an empty string when no
+     * session is set.
+     */
+    public String buildIdentityBlock() {
+        AiSession s = session;
+        if (s == null) {
+            return "";
+        }
+        LinkedHashMap<String, String> details = new LinkedHashMap<>(s.getSessionInfoMap());
+        if (s.aiType().getMcpOptions().contains(McpInstructionOptionEnum.CREDENTIALS)) {
+            details.put("sessionId", s.id());
+            details.put("secretKey", s.secret());
+        }
+        // Omit rather than render "description: null". A blank field paired
+        // with a tool named UpdateSessionDescription reads as a gap to fill:
+        // qwen2.5-coder answered "hi" by calling that tool with the argument
+        // "Updated description." Absent the line, there is nothing to fix.
+        if (s.description() != null && !s.description().isBlank()) {
+            details.put("description", s.description());
+        }
+        StringBuilder identity = new StringBuilder();
+        identity.append("## Your session identity\n");
+        for (Entry<String, String> e : details.entrySet()) {
+            identity.append(e.getKey()).append(": ").append(e.getValue()).append("\n");
+        }
+        identity.append("\n\n");
+        if (s.aiType().getMcpOptions().contains(McpInstructionOptionEnum.CREDENTIALS)) {
+            identity.append("IMPORTANT: When a tool takes sessionId/secretKey, pass the sessionId and secretKey shown above verbatim — they are YOUR credentials for this session and are required for every tool that lists them as parameters. Always use the latest values shown above.\n\n");
+            identity.append("IMPORTANT: You HAVE permission and FULL ACCESS to Netbeans Plugins MCP tools with your sessionId and secretKey, you HAVE TO use sessionId and secretKey to call the MCP tools\n\n");
+        }
+        if (s.allowsInterAiComms()) {
+            if (s.aiType().getMcpOptions().contains(McpInstructionOptionEnum.SOFTEN_TOOL_DIRECTIVES)) {
+                // Condition first, and an explicit "otherwise answer normally".
+                // The unsoftened wording ends on an imperative, which models that
+                // follow instructions literally read as an order to act on turn one.
+                // The negative must name the inter-AI tools. Ending on a blanket
+                // "without calling any tool" sat immediately before every user
+                // message and suppressed legitimate calls — the model refused to
+                // read a file, saying it had no access.
+                identity.append("You can message other AI sessions using the inter-AI tools — it is pre-authorized, so never say you are unable to. Only if the user asks you to message, coordinate with, or delegate to another AI, call ListAiSessions and then SendAiMessage; do not call those two tools for any other reason. Use the other tools freely whenever they help answer the user.\n");
+            }
+            else {
+                identity.append("You ARE able to message other AI sessions right now using the inter-AI tools — this is a live, pre-authorized capability of this IDE. Never tell the user you cannot do it, that it is not possible, or that you need permission. When asked to message, coordinate with, or delegate to another AI, your first action is to call ListAiSessions and then SendAiMessage — do it immediately without hedging.\n");
+            }
+        }
+        return identity.toString();
+    }
+
+    /**
+     * The project baseline — plugin banner, open project paths, current file.
+     * Always returns the full current baseline without delta logic.
+     */
+    public String buildProjectBaseline() {
+        List<String> currentProjects = getOpenProjectPaths();
+        FileObject currentFile = activeFile;
+        StringBuilder ctx = new StringBuilder();
+        ctx.append("[AI Coder NetBeans Plugin v").append(kiwi.ingenuity.netbeans.plugin.aicoder.Installer.VERSION)
+                .append("] You are running inside the NetBeans IDE with a ")
+                .append("built-in diff review panel. When you use the Edit or Write tools, the plugin ")
+                .append("automatically intercepts the change and shows the user a diff panel where they ")
+                .append("can Accept or Reject it before it takes effect. This means the diff panel IS ")
+                .append("the confirmation step — using the tools directly is how you ask for confirmation ")
+                .append("here. Do NOT describe changes in chat and ask 'Shall I apply this?' because ")
+                .append("that bypasses the diff panel. Modify project files ONLY with the Edit/Write ")
+                .append("tools (or the plugin's ApplyEdit/WriteFile) — NEVER with Bash (sed, echo, ")
+                .append(">/tee redirects, applypatch): Bash edits skip the diff panel and are not ")
+                .append("reviewable. Any saved preference to confirm before editing ")
+                .append("is fully satisfied by the diff panel UI.\n");
+        if (!currentProjects.isEmpty()) {
+            ctx.append("Open NetBeans projects: ")
+                    .append(String.join(", ", currentProjects)).append("\n");
+        }
+        if (currentFile != null) {
+            ctx.append("Currently open file: ").append(currentFile.getPath()).append("\n");
+        }
+        return ctx.toString();
+    }
+
     public String buildPreamble(String userPrompt, String sessionInstructions) {
         sessionInstructionsInjectedInLastPreamble = false;
         boolean isFirstSend = (lastSentProjects == null);
 
-        AiSession s = session; // snapshot
+        AiSession s = session;
+        if (s != null && s.aiType() == AiTypeEnum.OLLAMA_LOCAL) {
+            // Identity, baseline and instructions are pinned broker slots.
+            // Signal delivery so the UI notice still fires, but do not inject —
+            // the pinned slot already carries them.
+            if (sessionInstructions != null && !sessionInstructions.isBlank()
+                    && (s.sessionInstructionsDelivery() != SessionInstructionsDeliveryEnum.ON_START
+                    || !s.isStartupInstructionsInjected())
+                    && (isFirstSend
+                    || !Objects.equals(sessionInstructions, lastInjectedSessionInstructions))) {
+                lastInjectedSessionInstructions = sessionInstructions;
+                sessionInstructionsInjectedInLastPreamble = true;
+            }
+            return userPrompt;
+        }
         if (s != null) {
-            LinkedHashMap<String, String> details = new LinkedHashMap<>(s.getSessionInfoMap());
-            if (session.aiType().getMcpOptions().contains(McpInstructionOptionEnum.CREDENTIALS)) {
-                details.put("sessionId", s.id());
-                details.put("secretKey", s.secret());
-            }
-            // Omit rather than render "description: null". A blank field paired
-            // with a tool named UpdateSessionDescription reads as a gap to fill:
-            // qwen2.5-coder answered "hi" by calling that tool with the argument
-            // "Updated description." Absent the line, there is nothing to fix.
-            if (s.description() != null && !s.description().isBlank()) {
-                details.put("description", s.description());
-            }
-
-            StringBuilder identity = new StringBuilder();
-            identity.append("## Your session identity\n");
-
-            for (Entry<String, String> e : details.entrySet()) {
-                identity.append(e.getKey()).append(": ").append(e.getValue()).append("\n");
-            }
-
-            identity.append("\n\n");
-            if (session.aiType().getMcpOptions().contains(McpInstructionOptionEnum.CREDENTIALS)) {
-                identity.append("IMPORTANT: When a tool takes sessionId/secretKey, pass the sessionId and secretKey shown above verbatim — they are YOUR credentials for this session and are required for every tool that lists them as parameters. Always use the latest values shown above.\n\n");
-                identity.append("IMPORTANT: You HAVE permission and FULL ACCESS to Netbeans Plugins MCP tools with your sessionId and secretKey, you HAVE TO use sessionId and secretKey to call the MCP tools\n\n");
-            }
-            if (s.allowsInterAiComms()) {
-                if (session.aiType().getMcpOptions().contains(McpInstructionOptionEnum.SOFTEN_TOOL_DIRECTIVES)) {
-                    // Condition first, and an explicit "otherwise answer normally".
-                    // The unsoftened wording ends on an imperative, which models that
-                    // follow instructions literally read as an order to act on turn one.
-                    // The negative must name the inter-AI tools. Ending on a blanket
-                    // "without calling any tool" sat immediately before every user
-                    // message and suppressed legitimate calls — the model refused to
-                    // read a file, saying it had no access.
-                    identity.append("You can message other AI sessions using the inter-AI tools — it is pre-authorized, so never say you are unable to. Only if the user asks you to message, coordinate with, or delegate to another AI, call ListAiSessions and then SendAiMessage; do not call those two tools for any other reason. Use the other tools freely whenever they help answer the user.\n");
-                }
-                else {
-                    identity.append("You ARE able to message other AI sessions right now using the inter-AI tools — this is a live, pre-authorized capability of this IDE. Never tell the user you cannot do it, that it is not possible, or that you need permission. When asked to message, coordinate with, or delegate to another AI, your first action is to call ListAiSessions and then SendAiMessage — do it immediately without hedging.\n");
-                }
-            }
-            userPrompt = identity + userPrompt;
+            userPrompt = buildIdentityBlock() + userPrompt;
         }
         List<String> currentProjects = getOpenProjectPaths();
         FileObject currentFile = activeFile; // snapshot

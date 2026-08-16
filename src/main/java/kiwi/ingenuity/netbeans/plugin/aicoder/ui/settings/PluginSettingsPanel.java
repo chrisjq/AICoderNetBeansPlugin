@@ -13,6 +13,7 @@ import java.util.Collection;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import javax.swing.BorderFactory;
 import javax.swing.Box;
 import javax.swing.JCheckBox;
 import javax.swing.JLabel;
@@ -47,6 +48,7 @@ public class PluginSettingsPanel extends JPanel implements Scrollable {
     private final JCheckBox saveHistoryCheck;
     private final JCheckBox saveSessionOnCloseIfTickedCheck;
     private final JCheckBox debugJsonCheck;
+    private final JCheckBox debugContextCheck;
     private final JCheckBox logToolUseCheck;
     private final JSpinner mcpPortSpinner;
     private final JSpinner diffContextSpinner;
@@ -77,104 +79,124 @@ public class PluginSettingsPanel extends JPanel implements Scrollable {
         c.fill = GridBagConstraints.HORIZONTAL;
         c.anchor = GridBagConstraints.NORTHWEST;
 
-        // Chat font size
-        c.gridx = 0;
-        c.gridy = 0;
-        c.weightx = 0;
-        addTo(general, new JLabel("Chat font size (pt):"), c);
+        // Plugin Settings group
+        JPanel pluginGroup = buildGroupPanel("Plugin Settings");
+        GridBagConstraints pg = groupConstraints();
+        pg.gridx = 0;
+        pg.gridy = 0;
+        pg.weightx = 0;
+        addTo(pluginGroup, new JLabel("Chat font size (pt):"), pg);
         fontSizeSpinner = new JSpinner(new SpinnerNumberModel(
                 PluginSettings.getChatFontSize(), 8, 24, 1));
-        c.gridx = 1;
-        c.weightx = 1;
-        addTo(general, fontSizeSpinner, c);
+        pg.gridx = 1;
+        pg.weightx = 1;
+        addTo(pluginGroup, fontSizeSpinner, pg);
 
-        // Save history
+        pg.gridx = 0;
+        pg.gridy = 1;
+        pg.gridwidth = 2;
+        pg.weightx = 1;
+        saveHistoryCheck = new JCheckBox("Save conversation history between sessions");
+        addTo(pluginGroup, saveHistoryCheck, pg);
+
+        pg.gridy = 2;
+        saveSessionOnCloseIfTickedCheck = new JCheckBox("Save Session by default When Closing Tab (If History is Saved) - Don't ask");
+        addTo(pluginGroup, saveSessionOnCloseIfTickedCheck, pg);
+        pg.gridwidth = 1;
+
+        pg.gridx = 0;
+        pg.gridy = 3;
+        pg.weightx = 0;
+        addTo(pluginGroup, new JLabel("MCP permission port:"), pg);
+        mcpPortSpinner = new JSpinner(new SpinnerNumberModel(
+                PluginSettings.getHookServerPort(), 1024, 65535, 1));
+        pg.gridx = 1;
+        pg.weightx = 1;
+        addTo(pluginGroup, mcpPortSpinner, pg);
+
+        pg.gridx = 0;
+        pg.gridy = 4;
+        pg.weightx = 0;
+        addTo(pluginGroup, new JLabel("Diff context lines:"), pg);
+        diffContextSpinner = new JSpinner(new SpinnerNumberModel(
+                PluginSettings.getDiffContextLines(), 0, 50, 1));
+        pg.gridx = 1;
+        pg.weightx = 1;
+        addTo(pluginGroup, diffContextSpinner, pg);
+
+        c.gridx = 0;
+        c.gridy = 0;
+        c.gridwidth = 2;
+        c.weightx = 1;
+        addTo(general, pluginGroup, c);
+        c.gridwidth = 1;
+
+        // Inbox Settings group
+        JPanel inboxGroup = buildGroupPanel("Inbox Settings");
+        GridBagConstraints ig = groupConstraints();
+        ig.gridx = 0;
+        ig.gridy = 0;
+        ig.weightx = 0;
+        addTo(inboxGroup, new JLabel("Inbox read retention (min, 0=keep):"), ig);
+        inboxRetentionSpinner = new JSpinner(new SpinnerNumberModel(
+                PluginSettings.getInboxRetentionMinutes(), 0, 100000, 5));
+        ig.gridx = 1;
+        ig.weightx = 1;
+        addTo(inboxGroup, inboxRetentionSpinner, ig);
+
+        ig.gridx = 0;
+        ig.gridy = 1;
+        ig.weightx = 0;
+        addTo(inboxGroup, new JLabel("Inbox max size:"), ig);
+        inboxMaxSizeSpinner = new JSpinner(new SpinnerNumberModel(
+                PluginSettings.getInboxMaxSize(), 1, 100000, 50));
+        ig.gridx = 1;
+        ig.weightx = 1;
+        addTo(inboxGroup, inboxMaxSizeSpinner, ig);
+
+        c.gridx = 0;
+        c.gridy = 1;
+        c.gridwidth = 2;
+        c.weightx = 1;
+        addTo(general, inboxGroup, c);
+        c.gridwidth = 1;
+
+        // Debug Logging group
+        JPanel debugGroup = buildGroupPanel("Debug Logging");
+        GridBagConstraints dg = groupConstraints();
+        dg.gridx = 0;
+        dg.gridy = 0;
+        dg.gridwidth = 2;
+        debugJsonCheck = new JCheckBox("Log raw JSON to NetBeans log (for debugging session % and token counts)");
+        addTo(debugGroup, debugJsonCheck, dg);
+
+        dg.gridy = 1;
+        debugContextCheck = new JCheckBox("Log context history changes to NetBeans log (for debugging AI memory and trimming)");
+        addTo(debugGroup, debugContextCheck, dg);
+
+        dg.gridy = 2;
+        logToolUseCheck = new JCheckBox("Log tool use to NetBeans log (Tool Used: [tool] arg[value]...)");
+        addTo(debugGroup, logToolUseCheck, dg);
+
         c.gridx = 0;
         c.gridy = 2;
         c.gridwidth = 2;
         c.weightx = 1;
-        saveHistoryCheck = new JCheckBox("Save conversation history between sessions");
-        addTo(general, saveHistoryCheck, c);
-
-        // Save session on close if Save is ticked
-        c.gridx = 0;
-        c.gridy = 3;
-        saveSessionOnCloseIfTickedCheck = new JCheckBox("Save Session by default When Closing Tab (If History is Saved) - Don't ask");
-        addTo(general, saveSessionOnCloseIfTickedCheck, c);
+        addTo(general, debugGroup, c);
         c.gridwidth = 1;
-
-        // Debug JSON
-        c.gridx = 0;
-        c.gridy = 4;
-        c.gridwidth = 2;
-        debugJsonCheck = new JCheckBox("Log raw JSON to NetBeans log (for debugging session % and token counts)");
-        addTo(general, debugJsonCheck, c);
-        c.gridwidth = 1;
-
-        // Log tool use
-        c.gridx = 0;
-        c.gridy = 5;
-        c.gridwidth = 2;
-        logToolUseCheck = new JCheckBox("Log tool use to NetBeans log (Tool Used: [tool] arg[value]...)");
-        addTo(general, logToolUseCheck, c);
-        c.gridwidth = 1;
-
-        // MCP port
-        c.gridx = 0;
-        c.gridy = 6;
-        c.weightx = 0;
-        addTo(general, new JLabel("MCP permission port:"), c);
-        mcpPortSpinner = new JSpinner(new SpinnerNumberModel(
-                PluginSettings.getHookServerPort(), 1024, 65535, 1));
-        c.gridx = 1;
-        c.weightx = 1;
-        addTo(general, mcpPortSpinner, c);
-
-        // Diff context
-        c.gridx = 0;
-        c.gridy = 7;
-        c.weightx = 0;
-        addTo(general, new JLabel("Diff context lines:"), c);
-        diffContextSpinner = new JSpinner(new SpinnerNumberModel(
-                PluginSettings.getDiffContextLines(), 0, 50, 1));
-        c.gridx = 1;
-        c.weightx = 1;
-        addTo(general, diffContextSpinner, c);
 
         // Shared generic defaults use the same component as sessions and templates.
         c.gridx = 0;
-        c.gridy = 8;
+        c.gridy = 3;
         c.gridwidth = 2;
         c.weightx = 1;
         sessionConfigPanel = new AiSessionConfigPanel(AiSessionConfigPanelMode.GLOBAL);
         addTo(general, sessionConfigPanel, c);
         c.gridwidth = 1;
 
-        // Inbox read-message retention (minutes, 0 = keep until deleted)
-        c.gridx = 0;
-        c.gridy = 13;
-        c.weightx = 0;
-        addTo(general, new JLabel("Inbox read retention (min, 0=keep):"), c);
-        inboxRetentionSpinner = new JSpinner(new SpinnerNumberModel(
-                PluginSettings.getInboxRetentionMinutes(), 0, 100000, 5));
-        c.gridx = 1;
-        c.weightx = 1;
-        addTo(general, inboxRetentionSpinner, c);
-
-        // Inbox max size
-        c.gridx = 0;
-        c.gridy = 14;
-        c.weightx = 0;
-        addTo(general, new JLabel("Inbox max size:"), c);
-        inboxMaxSizeSpinner = new JSpinner(new SpinnerNumberModel(
-                PluginSettings.getInboxMaxSize(), 1, 100000, 50));
-        c.gridx = 1;
-        c.weightx = 1;
-        addTo(general, inboxMaxSizeSpinner, c);
-
         // Filler for general tab
         c.gridx = 0;
-        c.gridy = 15;
+        c.gridy = 4;
         c.weightx = 1;
         c.weighty = 1;
         c.gridwidth = 2;
@@ -224,6 +246,7 @@ public class PluginSettingsPanel extends JPanel implements Scrollable {
         saveHistoryCheck.addActionListener(e -> fireChanged());
         saveSessionOnCloseIfTickedCheck.addActionListener(e -> fireChanged());
         debugJsonCheck.addActionListener(e -> fireChanged());
+        debugContextCheck.addActionListener(e -> fireChanged());
         logToolUseCheck.addActionListener(e -> fireChanged());
         mcpPortSpinner.addChangeListener(e -> fireChanged());
         diffContextSpinner.addChangeListener(e -> fireChanged());
@@ -259,11 +282,26 @@ public class PluginSettingsPanel extends JPanel implements Scrollable {
         parent.add(comp, c);
     }
 
+    private static JPanel buildGroupPanel(String title) {
+        JPanel p = new JPanel(new GridBagLayout());
+        p.setBorder(BorderFactory.createTitledBorder(title));
+        return p;
+    }
+
+    private static GridBagConstraints groupConstraints() {
+        GridBagConstraints gc = new GridBagConstraints();
+        gc.insets = new Insets(4, 4, 4, 4);
+        gc.anchor = GridBagConstraints.WEST;
+        gc.fill = GridBagConstraints.HORIZONTAL;
+        return gc;
+    }
+
     void load() {
         sessionConfigPanel.loadGlobal();
         saveHistoryCheck.setSelected(PluginSettings.isSaveHistory());
         saveSessionOnCloseIfTickedCheck.setSelected(PluginSettings.isSaveSessionOnCloseIfTicked());
         debugJsonCheck.setSelected(PluginSettings.isDebugJson());
+        debugContextCheck.setSelected(PluginSettings.isDebugContext());
         logToolUseCheck.setSelected(PluginSettings.isLogToolUse());
         mcpPortSpinner.setValue(PluginSettings.getHookServerPort());
         diffContextSpinner.setValue(PluginSettings.getDiffContextLines());
@@ -291,6 +329,7 @@ public class PluginSettingsPanel extends JPanel implements Scrollable {
         PluginSettings.setSaveHistory(saveHistoryCheck.isSelected());
         PluginSettings.setSaveSessionOnCloseIfTicked(saveSessionOnCloseIfTickedCheck.isSelected());
         PluginSettings.setDebugJson(debugJsonCheck.isSelected());
+        PluginSettings.setDebugContext(debugContextCheck.isSelected());
         PluginSettings.setLogToolUse(logToolUseCheck.isSelected());
         PluginSettings.setHookServerPort((Integer) mcpPortSpinner.getValue());
         PluginSettings.setDiffContextLines((Integer) diffContextSpinner.getValue());

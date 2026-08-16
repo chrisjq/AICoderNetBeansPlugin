@@ -13,7 +13,6 @@ import static kiwi.ingenuity.netbeans.plugin.aicoder.process.McpInstructionOptio
 import static kiwi.ingenuity.netbeans.plugin.aicoder.process.McpInstructionOptionEnum.HEADER;
 import static kiwi.ingenuity.netbeans.plugin.aicoder.process.McpInstructionOptionEnum.ONLY_MCP_TOOL_ACCESS;
 import static kiwi.ingenuity.netbeans.plugin.aicoder.process.McpInstructionOptionEnum.SOFTEN_TOOL_DIRECTIVES;
-import static kiwi.ingenuity.netbeans.plugin.aicoder.process.McpInstructionOptionEnum.STATELESS_TURNS;
 import static kiwi.ingenuity.netbeans.plugin.aicoder.process.McpInstructionOptionEnum.TOOL_CALLS_VIA_SCHEMA;
 import static kiwi.ingenuity.netbeans.plugin.aicoder.process.McpInstructionOptionEnum.TOOL_INSTRUCTION;
 
@@ -23,16 +22,17 @@ import static kiwi.ingenuity.netbeans.plugin.aicoder.process.McpInstructionOptio
  * configurations.
  */
 public enum AiTypeEnum {
-    CLAUDE("Claude", "claude", true, true, new ClaudeSettingsCreator(), Set.of(HEADER, TOOL_INSTRUCTION, CREDENTIALS)),
-    GROK("Grok", "grok", true, true, new GrokSettingsCreator(), Set.of(HEADER, TOOL_INSTRUCTION, CREDENTIALS)),
-    GitHubCoPilot("GitHub CoPilot", "github_copilot", true, true, new GithubCopilotSettingsCreator(), Set.of(HEADER, TOOL_INSTRUCTION, CREDENTIALS, FORCE_MCP_TOOL_USE)),
+    //                                                          implemented  enabledByDefault  openAiCompatible
+    CLAUDE("Claude", "claude", true, true, false, new ClaudeSettingsCreator(), Set.of(HEADER, TOOL_INSTRUCTION, CREDENTIALS)),
+    GROK("Grok", "grok", true, true, false, new GrokSettingsCreator(), Set.of(HEADER, TOOL_INSTRUCTION, CREDENTIALS)),
+    GitHubCoPilot("GitHub CoPilot", "github_copilot", true, true, false, new GithubCopilotSettingsCreator(), Set.of(HEADER, TOOL_INSTRUCTION, CREDENTIALS, FORCE_MCP_TOOL_USE)),
     // No TOOL_INSTRUCTION: under TOOL_CALLS_VIA_SCHEMA the tool list is rendered
     // into the prompt from the schemas, carrying names, parameters and
     // descriptions. The per-tool instruction lines describe the same tools
     // without the parameters, so enabling both only duplicated ~9k characters.
-    OLLAMA_LOCAL("Ollama (Local)", "ollama_local", true, false, new OllamaSettingsCreator(),
-            Set.of(HEADER, ONLY_MCP_TOOL_ACCESS, SOFTEN_TOOL_DIRECTIVES, TOOL_CALLS_VIA_SCHEMA,
-                    STATELESS_TURNS));
+    //                                                          implemented  enabledByDefault  openAiCompatible
+    OLLAMA_LOCAL("Ollama (Local)", "ollama_local", true, false, true, new OllamaSettingsCreator(),
+            Set.of(HEADER, ONLY_MCP_TOOL_ACCESS, SOFTEN_TOOL_DIRECTIVES, TOOL_CALLS_VIA_SCHEMA));
 
     public static AiTypeEnum fromKey(String key) {
         if (key == null) {
@@ -63,6 +63,12 @@ public enum AiTypeEnum {
      */
     private final boolean implemented;
     /**
+     * Whether this AI type communicates via the OpenAI-compatible HTTP API.
+     * True only for types whose session settings extend
+     * OpenAiClientSessionSettings.
+     */
+    private final boolean openAiCompatible;
+    /**
      * Creator responsible for instantiating and updating settings
      */
     private final AiSessionSettingsCreator settingCreator;
@@ -74,11 +80,13 @@ public enum AiTypeEnum {
      */
     private final Set<McpInstructionOptionEnum> mcpOptions;
 
-    AiTypeEnum(String displayName, String key, boolean isImplemented, boolean enabledByDefault, AiSessionSettingsCreator settingCreator, Set<McpInstructionOptionEnum> options) {
+    AiTypeEnum(String displayName, String key, boolean isImplemented, boolean enabledByDefault,
+            boolean openAiCompatible, AiSessionSettingsCreator settingCreator, Set<McpInstructionOptionEnum> options) {
         this.displayName = displayName;
         this.key = key;
         this.implemented = isImplemented;
         this.enabledByDefault = enabledByDefault;
+        this.openAiCompatible = openAiCompatible;
         this.settingCreator = settingCreator;
         this.mcpOptions = options;
     }
@@ -109,6 +117,15 @@ public enum AiTypeEnum {
      */
     public boolean isImplemented() {
         return implemented;
+    }
+
+    /**
+     * Returns true if this AI type communicates via the OpenAI-compatible HTTP
+     * API. When true, the session settings will be an instance of
+     * OpenAiClientSessionSettings and context management controls apply.
+     */
+    public boolean isOpenAiCompatible() {
+        return openAiCompatible;
     }
 
     /**

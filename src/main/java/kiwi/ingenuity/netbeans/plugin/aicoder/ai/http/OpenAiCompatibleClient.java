@@ -37,6 +37,8 @@ public class OpenAiCompatibleClient implements HttpAiClient {
         StringBuilder assistantText = new StringBuilder();
         Map<Integer, PartialToolCall> toolCalls = new LinkedHashMap<>();
         String finishReason = null;
+        Integer promptTokens = null;
+        Integer completionTokens = null;
 
         for (String dataLine : sseDataLines) {
             if (dataLine == null || dataLine.isBlank() || "[DONE]".equals(dataLine)) {
@@ -48,6 +50,17 @@ public class OpenAiCompatibleClient implements HttpAiClient {
             }
             catch (RuntimeException ex) {
                 continue;
+            }
+            JsonObject usage = root.getAsJsonObject("usage");
+            if (usage != null) {
+                JsonElement pt = usage.get("prompt_tokens");
+                if (pt != null && !pt.isJsonNull()) {
+                    promptTokens = pt.getAsInt();
+                }
+                JsonElement ct = usage.get("completion_tokens");
+                if (ct != null && !ct.isJsonNull()) {
+                    completionTokens = ct.getAsInt();
+                }
             }
             JsonArray choices = root.getAsJsonArray("choices");
             if (choices == null || choices.isEmpty()) {
@@ -77,7 +90,8 @@ public class OpenAiCompatibleClient implements HttpAiClient {
                 .map(Map.Entry::getValue)
                 .map(PartialToolCall::toChatToolCall)
                 .toList();
-        return new ChatResult(assistantText.toString(), finalToolCalls, finishReason);
+        return new ChatResult(assistantText.toString(), finalToolCalls, finishReason,
+                promptTokens, completionTokens);
     }
 
     private static List<String> readSseDataLines(InputStream body, Consumer<String> onTextDelta) throws IOException {
@@ -155,6 +169,9 @@ public class OpenAiCompatibleClient implements HttpAiClient {
         JsonObject payload = new JsonObject();
         payload.addProperty("model", request.model());
         payload.addProperty("stream", true);
+        JsonObject streamOptions = new JsonObject();
+        streamOptions.addProperty("include_usage", true);
+        payload.add("stream_options", streamOptions);
 
         JsonArray messages = new JsonArray();
         for (ChatMessage message : request.messages() == null ? List.<ChatMessage>of() : request.messages()) {
@@ -189,6 +206,10 @@ public class OpenAiCompatibleClient implements HttpAiClient {
             payload.add("response_format", request.responseFormat());
         }
         return payload;
+    }
+
+    static JsonObject buildPayloadForTest(ChatRequest request) {
+        return buildPayload(request);
     }
 
     private static JsonObject toApiMessage(ChatMessage message) {

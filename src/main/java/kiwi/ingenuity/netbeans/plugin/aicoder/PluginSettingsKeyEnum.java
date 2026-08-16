@@ -5,6 +5,7 @@ public enum PluginSettingsKeyEnum {
     SAVE_HISTORY("ai.saveHistory", true),
     SAVE_SESSION_ON_CLOSE_IF_TICKED("ai.saveSessionOnCloseIfTicked", false),
     DEBUG_JSON("ai.debugJson", false),
+    DEBUG_CONTEXT("ai.debugContext", false),
     MCP_SERVER_PORT("ai.mcpPort", 49167),
     DIFF_CONTEXT_LINES("ai.diffContextLines", 3),
     CHAT_FONT_SIZE("ai.chatFontSize", 13),
@@ -36,7 +37,13 @@ public enum PluginSettingsKeyEnum {
     ALLOW_DATABASE_SELECT("ai.session.allowDatabaseAccess.select", false),
     ALLOW_DATABASE_EXECUTE_SQL("ai.session.allowDatabaseAccess.executeSql", false),
     DATABASE_ROW_LIMIT("ai.session.databaseRowLimit", 25),
-    ENABLE_CLIPBOARD_ACCESS("ai.session.enableClipboardAccess", false);
+    ENABLE_CLIPBOARD_ACCESS("ai.session.enableClipboardAccess", false),
+    CONTEXT_TRIM_TRIGGER("ai.contextTrimTrigger", "ESTIMATED_TOKENS"),
+    CONTEXT_TRIM_STRATEGY("ai.contextTrimStrategy", "DROP_MARKED"),
+    CONTEXT_TOKEN_THRESHOLD("ai.contextTokenThreshold", 12000),
+    CONTEXT_TRIM_TARGET_PERCENT("ai.contextTrimTargetPercent", 70),
+    CONTEXT_MAX_MESSAGES("ai.contextMaxMessages", 0),
+    CONTEXT_PERSIST_ON_CLOSE("ai.contextPersistOnClose", false);
 
     public static PluginSettingsKeyEnum forWebRequestAccessOption(WebRequestAccessOptionEnum option) {
         return switch (option) {

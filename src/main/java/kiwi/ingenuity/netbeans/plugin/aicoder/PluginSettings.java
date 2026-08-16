@@ -201,6 +201,14 @@ public final class PluginSettings {
         prefs().putBoolean(PluginSettingsKeyEnum.DEBUG_JSON.key(), v);
     }
 
+    public static boolean isDebugContext() {
+        return getBoolean(PluginSettingsKeyEnum.DEBUG_CONTEXT);
+    }
+
+    public static void setDebugContext(boolean v) {
+        prefs().putBoolean(PluginSettingsKeyEnum.DEBUG_CONTEXT.key(), v);
+    }
+
     public static int getHookServerPort() {
         return getInt(PluginSettingsKeyEnum.MCP_SERVER_PORT);
     }
@@ -243,6 +251,55 @@ public final class PluginSettings {
         if (type != null) {
             prefs().put(PluginSettingsKeyEnum.LAST_SESSION_AI_TYPE.key(), type.key());
         }
+    }
+
+    // ---- Context broker global defaults ----
+    public static String getContextTrimTrigger() {
+        return getString(PluginSettingsKeyEnum.CONTEXT_TRIM_TRIGGER);
+    }
+
+    public static void setContextTrimTrigger(String v) {
+        prefs().put(PluginSettingsKeyEnum.CONTEXT_TRIM_TRIGGER.key(), v);
+    }
+
+    public static String getContextTrimStrategy() {
+        return getString(PluginSettingsKeyEnum.CONTEXT_TRIM_STRATEGY);
+    }
+
+    public static void setContextTrimStrategy(String v) {
+        prefs().put(PluginSettingsKeyEnum.CONTEXT_TRIM_STRATEGY.key(), v);
+    }
+
+    public static int getContextTokenThreshold() {
+        return getInt(PluginSettingsKeyEnum.CONTEXT_TOKEN_THRESHOLD);
+    }
+
+    public static void setContextTokenThreshold(int v) {
+        prefs().putInt(PluginSettingsKeyEnum.CONTEXT_TOKEN_THRESHOLD.key(), v);
+    }
+
+    public static int getContextTrimTargetPercent() {
+        return getInt(PluginSettingsKeyEnum.CONTEXT_TRIM_TARGET_PERCENT);
+    }
+
+    public static void setContextTrimTargetPercent(int v) {
+        prefs().putInt(PluginSettingsKeyEnum.CONTEXT_TRIM_TARGET_PERCENT.key(), v);
+    }
+
+    public static int getContextMaxMessages() {
+        return getInt(PluginSettingsKeyEnum.CONTEXT_MAX_MESSAGES);
+    }
+
+    public static void setContextMaxMessages(int v) {
+        prefs().putInt(PluginSettingsKeyEnum.CONTEXT_MAX_MESSAGES.key(), v);
+    }
+
+    public static boolean isContextPersistOnClose() {
+        return getBoolean(PluginSettingsKeyEnum.CONTEXT_PERSIST_ON_CLOSE);
+    }
+
+    public static void setContextPersistOnClose(boolean v) {
+        prefs().putBoolean(PluginSettingsKeyEnum.CONTEXT_PERSIST_ON_CLOSE.key(), v);
     }
 
     private PluginSettings() {

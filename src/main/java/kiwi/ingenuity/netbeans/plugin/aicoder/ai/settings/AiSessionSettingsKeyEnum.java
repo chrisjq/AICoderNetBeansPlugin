@@ -109,7 +109,13 @@ public enum AiSessionSettingsKeyEnum {
     /**
      * Whether to enable clipboard access
      */
-    ENABLE_CLIPBOARD_ACCESS("enableClipboardAccess");
+    ENABLE_CLIPBOARD_ACCESS("enableClipboardAccess"),
+    CONTEXT_TRIM_TRIGGER("contextTrimTrigger"),
+    CONTEXT_TRIM_STRATEGY("contextTrimStrategy"),
+    CONTEXT_TOKEN_THRESHOLD("contextTokenThreshold"),
+    CONTEXT_TRIM_TARGET_PERCENT("contextTrimTargetPercent"),
+    CONTEXT_MAX_MESSAGES("contextMaxMessages"),
+    CONTEXT_PERSIST_ON_CLOSE("contextPersistOnClose");
 
     public static AiSessionSettingsKeyEnum forWebRequestAccessOption(WebRequestAccessOptionEnum option) {
         return switch (option) {

@@ -65,7 +65,7 @@ public class AiSessionSettingsDialog extends JDialog {
         sessionInstructionsArea.setText(settings.sessionInstructions() == null ? "" : settings.sessionInstructions());
         sessionInstructionsArea.setLineWrap(true);
         sessionInstructionsArea.setWrapStyleWord(true);
-        configPanel.loadSession(settings);
+        configPanel.loadSession(settings, session.aiType());
         add(buildForm(), BorderLayout.CENTER);
         JPanel buttons = new JPanel();
         JButton ok = new JButton("OK");
@@ -100,6 +100,12 @@ public class AiSessionSettingsDialog extends JDialog {
 
         setSize(new Dimension(initialWidth, initialHeight));
         setMinimumSize(new Dimension(560, 400));
+    }
+
+    @Override
+    public void dispose() {
+        configPanel.dispose();
+        super.dispose();
     }
 
     private JScrollPane buildForm() {

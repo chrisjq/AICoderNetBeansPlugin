@@ -13,6 +13,8 @@ import kiwi.ingenuity.netbeans.plugin.aicoder.ai.events.AiPropertyEvent;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.githubcopilot.events.GithubCopilotModelsEvent;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.githubcopilot.settings.GithubCopilotPluginSettings;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.session.AiSession;
+import kiwi.ingenuity.netbeans.plugin.aicoder.ai.settings.AiModelSessionSettings;
+import kiwi.ingenuity.netbeans.plugin.aicoder.ai.settings.AiSessionSettings;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.ui.AiInfoBarExtension;
 
 /**
@@ -52,6 +54,7 @@ public class GithubCopilotAiInfoBarExtension implements AiInfoBarExtension {
     private volatile double quotaRemainingPercentage = 0;
     private volatile String quotaResetDate = null;
     private volatile boolean quotaUnlimited = false;
+    private boolean programmaticModelSelection = false;
     private Runnable disposeAction;
 
     public GithubCopilotAiInfoBarExtension(AiSession session, AiSessionHost host) {
@@ -121,7 +124,7 @@ public class GithubCopilotAiInfoBarExtension implements AiInfoBarExtension {
 
     public void addModelChangeListener(ActionListener l) {
         modelCombo.addActionListener(e -> {
-            if (l != null) {
+            if (!programmaticModelSelection && l != null) {
                 l.actionPerformed(e);
             }
         });
@@ -138,7 +141,13 @@ public class GithubCopilotAiInfoBarExtension implements AiInfoBarExtension {
             SwingUtilities.invokeLater(() -> setSelectedModel(model));
             return;
         }
-        modelCombo.setSelectedItem(model);
+        programmaticModelSelection = true;
+        try {
+            modelCombo.setSelectedItem(model);
+        }
+        finally {
+            programmaticModelSelection = false;
+        }
     }
 
     /**
@@ -195,6 +204,14 @@ public class GithubCopilotAiInfoBarExtension implements AiInfoBarExtension {
             // discovered (or replayed from cache for a newly opened session).
             // Delivered on the EDT; setAvailableModels also self-marshals.
             setAvailableModels(me.models().toArray(String[]::new));
+        }
+    }
+
+    @Override
+    public void onSessionSettingsChanged(AiSessionSettings settings) {
+        if (settings instanceof AiModelSessionSettings modelSettings
+                && modelSettings.model() != null && !modelSettings.model().isBlank()) {
+            setSelectedModel(modelSettings.model());
         }
     }
 

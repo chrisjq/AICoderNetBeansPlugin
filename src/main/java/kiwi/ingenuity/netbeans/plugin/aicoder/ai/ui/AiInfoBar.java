@@ -35,6 +35,7 @@ public class AiInfoBar extends JPanel {
     private final JLabel fillerLabel;
 
     private final List<AiInfoBarListener> listeners = new ArrayList<>();
+    private AiInfoBarExtension extension;
 
     private long sessionStartMs = 0;
     private final Timer clockTimer;
@@ -177,6 +178,7 @@ public class AiInfoBar extends JPanel {
      * component is shown.
      */
     public void setExtension(AiInfoBarExtension extension) {
+        this.extension = extension;
         aiControlsPanel.remove(fillerLabel);
         for (JComponent comp : extension.createComponents()) {
             aiControlsPanel.add(new JSeparator(JSeparator.VERTICAL), sepGbc);
@@ -208,6 +210,9 @@ public class AiInfoBar extends JPanel {
      */
     public void setProcessing(boolean processing) {
         stopButton.setVisible(processing);
+        if (extension != null) {
+            extension.onProcessingChanged(processing);
+        }
         revalidate();
         repaint();
     }

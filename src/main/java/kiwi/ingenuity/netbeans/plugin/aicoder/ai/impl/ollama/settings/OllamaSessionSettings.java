@@ -1,9 +1,9 @@
 package kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.ollama.settings;
 
 import com.google.gson.JsonObject;
-import kiwi.ingenuity.netbeans.plugin.aicoder.ai.settings.AiModelSessionSettings;
+import kiwi.ingenuity.netbeans.plugin.aicoder.ai.settings.OpenAiClientSessionSettings;
 
-public class OllamaSessionSettings extends AiModelSessionSettings {
+public class OllamaSessionSettings extends OpenAiClientSessionSettings {
 
     private volatile String baseUrl;
 
