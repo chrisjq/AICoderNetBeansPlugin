@@ -12,6 +12,7 @@ import kiwi.ingenuity.netbeans.plugin.aicoder.ai.ExecutablePrompter;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.events.StatusEvent;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.events.StatusEventTypeEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.githubcopilot.events.GithubCopilotModelsEvent;
+import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.githubcopilot.events.GithubCopilotQuotaEvent;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.githubcopilot.settings.GithubCopilotPluginSettings;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.githubcopilot.ui.GithubCopilotAiInfoBarExtension;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.githubcopilot.ui.GithubCopilotInfoBarListener;
@@ -37,6 +38,7 @@ public class GithubCopilotAiImplementation extends AiImplementation {
     // session's dropdown via AiTypePropertyBus — so opening 4 sessions at once
     // populates all four, not just the one that triggered discovery.
     private static final AiModelCatalog MODEL_CATALOG = new AiModelCatalog();
+    private static volatile GithubCopilotQuotaEvent cachedQuotaEvent;
 
     public static AiModelCatalog modelCatalog() {
         return MODEL_CATALOG;
@@ -48,6 +50,11 @@ public class GithubCopilotAiImplementation extends AiImplementation {
 
     public static void removeModelCatalogListener(java.util.function.Consumer<List<String>> listener) {
         MODEL_CATALOG.removeListener(listener);
+    }
+
+    public static void publishQuota(GithubCopilotQuotaEvent event) {
+        cachedQuotaEvent = event;
+        AiTypePropertyBus.getInstance().fire(AiTypeEnum.GitHubCoPilot, event);
     }
 
     /**
@@ -164,6 +171,10 @@ public class GithubCopilotAiImplementation extends AiImplementation {
         // back silently to the hardcoded list). Discovery runs once per IDE run
         // and the result is broadcast to EVERY open Copilot session's dropdown.
         triggerModelDiscovery();
+        GithubCopilotQuotaEvent cached = cachedQuotaEvent;
+        if (cached != null) {
+            provider.onPropertyEvent(cached);
+        }
         return provider;
     }
 

@@ -232,7 +232,8 @@ public final class GithubCopilotSessionEventBridge {
                         if (obj.has("message") && !obj.get("message").isJsonNull()) {
                             msg = obj.get("message").getAsString();
                         }
-                    } catch (Exception ignored) {
+                    }
+                    catch (Exception ignored) {
                     }
                 }
                 errorReportedThisTurn = true;

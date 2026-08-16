@@ -3,6 +3,9 @@ package kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.githubcopilot.ui;
 import java.awt.Color;
 import java.awt.Dimension;
 import java.awt.event.ActionListener;
+import java.time.OffsetDateTime;
+import java.time.format.DateTimeFormatter;
+import java.time.format.DateTimeParseException;
 import java.util.ArrayList;
 import java.util.List;
 import javax.swing.JButton;
@@ -11,6 +14,8 @@ import javax.swing.SwingUtilities;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.AiSessionHost;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.events.AiPropertyEvent;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.githubcopilot.events.GithubCopilotModelsEvent;
+import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.githubcopilot.events.GithubCopilotQuotaEvent;
+import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.githubcopilot.events.GithubCopilotTokenUsageEvent;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.githubcopilot.settings.GithubCopilotPluginSettings;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.session.AiSession;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.settings.AiModelSessionSettings;
@@ -37,6 +42,15 @@ public class GithubCopilotAiInfoBarExtension implements AiInfoBarExtension {
         return 128000;
     }
 
+    private static String formatResetDate(String resetDate) {
+        try {
+            return OffsetDateTime.parse(resetDate).format(DateTimeFormatter.ISO_LOCAL_DATE);
+        }
+        catch (DateTimeParseException ex) {
+            return resetDate;
+        }
+    }
+
     private final AiSession session;
     private final AiSessionHost host;
     private final javax.swing.JLabel errorLabel;
@@ -52,7 +66,8 @@ public class GithubCopilotAiInfoBarExtension implements AiInfoBarExtension {
     private volatile long quotaUsedRequests = 0;
     private volatile long quotaEntitlementRequests = 0;
     private volatile double quotaRemainingPercentage = 0;
-    private volatile String quotaResetDate = null;
+    private volatile String quotaResetDate;
+    private volatile boolean showQuotaResetDate;
     private volatile boolean quotaUnlimited = false;
     private boolean programmaticModelSelection = false;
     private Runnable disposeAction;
@@ -205,6 +220,9 @@ public class GithubCopilotAiInfoBarExtension implements AiInfoBarExtension {
             // Delivered on the EDT; setAvailableModels also self-marshals.
             setAvailableModels(me.models().toArray(String[]::new));
         }
+        else if (event instanceof GithubCopilotQuotaEvent quota) {
+            updateQuota(quota);
+        }
     }
 
     @Override
@@ -217,31 +235,39 @@ public class GithubCopilotAiInfoBarExtension implements AiInfoBarExtension {
 
     @Override
     public void onAiProcessImplEvent(kiwi.ingenuity.netbeans.plugin.aicoder.process.events.AiProcessImplEvent event) {
-        if (event instanceof kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.githubcopilot.events.GithubCopilotTokenUsageEvent te) {
-            currentTokens = te.currentTokens();
-            // Prefer the REAL context-window size read from the Copilot CLI log
-            // (CompactionProcessor "used/total tokens"); only fall back to a
-            // per-model estimate before the first log read provides a total.
-            if (te.maxTokens() > 0) {
-                maxTokens = te.maxTokens();
-            }
-            else if (te.model() != null && !te.model().isBlank()) {
-                maxTokens = defaultMaxTokensForModel(te.model());
-            }
-            updateContextBar();
+        if (event instanceof GithubCopilotTokenUsageEvent usage) {
+            updateUsage(usage);
         }
         else if (event instanceof kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.githubcopilot.events.GithubCopilotFatalErrorEvent error) {
             fatalError = error.errorMessage();
             updateErrorLabel();
         }
-        else if (event instanceof kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.githubcopilot.events.GithubCopilotQuotaEvent qe) {
-            quotaUnlimited = qe.unlimited();
-            quotaUsedRequests = qe.usedRequests();
-            quotaEntitlementRequests = qe.entitlementRequests();
-            quotaRemainingPercentage = qe.remainingPercentage();
-            quotaResetDate = qe.resetDate();
-            updateQuotaBar();
+        else if (event instanceof GithubCopilotQuotaEvent quota) {
+            updateQuota(quota);
         }
+    }
+
+    private void updateUsage(GithubCopilotTokenUsageEvent usage) {
+        currentTokens = usage.currentTokens();
+        // Prefer the real context-window size reported by Copilot; fall back to
+        // the model estimate only when the event has no limit.
+        if (usage.maxTokens() > 0) {
+            maxTokens = usage.maxTokens();
+        }
+        else if (usage.model() != null && !usage.model().isBlank()) {
+            maxTokens = defaultMaxTokensForModel(usage.model());
+        }
+        updateContextBar();
+    }
+
+    private void updateQuota(GithubCopilotQuotaEvent quota) {
+        quotaUnlimited = quota.unlimited();
+        quotaUsedRequests = quota.usedRequests();
+        quotaEntitlementRequests = quota.entitlementRequests();
+        quotaRemainingPercentage = quota.remainingPercentage();
+        quotaResetDate = quota.resetDate();
+        showQuotaResetDate = quota.showResetDate();
+        updateQuotaBar();
     }
 
     private void updateQuotaBar() {
@@ -256,10 +282,11 @@ public class GithubCopilotAiInfoBarExtension implements AiInfoBarExtension {
             int pct = (int) Math.round(100.0 - quotaRemainingPercentage);
             quotaBar.setValue(Math.min(100, Math.max(0, pct)));
             quotaBar.setString(pct + "%");
-            String resetDateFormatted = quotaResetDate != null ? quotaResetDate.split("T")[0] : "unknown";
+            String reset = showQuotaResetDate && quotaResetDate != null
+                    ? "; resets " + formatResetDate(quotaResetDate) : "";
             quotaBar.setToolTipText(String.format(
-                    "Premium requests: %,d / %,d used (%d%%); resets %s",
-                    quotaUsedRequests, quotaEntitlementRequests, pct, resetDateFormatted));
+                    "Premium requests: %,d / %,d used (%d%%)%s",
+                    quotaUsedRequests, quotaEntitlementRequests, pct, reset));
             quotaBar.setVisible(true);
         }
     }

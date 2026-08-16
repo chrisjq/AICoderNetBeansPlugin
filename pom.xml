@@ -5,7 +5,7 @@
     <modelVersion>4.0.0</modelVersion>
     <groupId>kiwi.ingenuity.aicoder</groupId>
     <artifactId>AiCoderNetbeansPlugin</artifactId>
-    <version>1.2.27</version>
+    <version>1.2.30</version>
     <packaging>nbm</packaging>
 
     <name>AI Coder for NetBeans</name>
@@ -312,7 +312,7 @@
         <dependency>
             <groupId>com.github</groupId>
             <artifactId>copilot-sdk-java</artifactId>
-            <version>1.0.8</version>
+            <version>1.0.11</version>
             <exclusions>
                 <exclusion>
                     <groupId>com.puppycrawl.tools</groupId>

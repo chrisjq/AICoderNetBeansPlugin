@@ -46,6 +46,11 @@ import kiwi.ingenuity.netbeans.plugin.aicoder.utils.StatusMessageUtil;
 public class GithubCopilotProcessManager extends AiProcessManager {
 
     private static final Logger LOG = Logger.getLogger(GithubCopilotProcessManager.class.getName());
+    /**
+     * The sdk sends a reset date but it is incorrect, set to true when the sdk
+     * returns it correctly.
+     */
+    private static final boolean ENABLE_RESET_DATE = false;
 
     static SessionConfig buildCreateConfig(String sessionId, String model,
             Map<String, com.github.copilot.rpc.McpServerConfig> mcpServers) {
@@ -187,9 +192,11 @@ public class GithubCopilotProcessManager extends AiProcessManager {
             if (isTurnComplete) {
                 GithubCopilotQuotaService.getQuotaAsync(executablePath, quota -> {
                     if (quota != null) {
-                        listener.onAiProcessEvent(new GithubCopilotQuotaEvent(
+                        GithubCopilotQuotaEvent quotaEvent = new GithubCopilotQuotaEvent(
                                 quota.unlimited(), quota.usedRequests(), quota.entitlementRequests(),
-                                quota.remainingPercentage(), quota.resetDate()));
+                                quota.remainingPercentage(), quota.resetDate(), ENABLE_RESET_DATE);
+                        listener.onAiProcessEvent(quotaEvent);
+                        GithubCopilotAiImplementation.publishQuota(quotaEvent);
                     }
                 });
             }
@@ -226,9 +233,11 @@ public class GithubCopilotProcessManager extends AiProcessManager {
         listener.onAiProcessEvent(new GithubCopilotFatalErrorEvent(null, null));
         GithubCopilotQuotaService.getQuotaAsync(executablePath, quota -> {
             if (quota != null) {
-                listener.onAiProcessEvent(new GithubCopilotQuotaEvent(
+                GithubCopilotQuotaEvent quotaEvent = new GithubCopilotQuotaEvent(
                         quota.unlimited(), quota.usedRequests(), quota.entitlementRequests(),
-                        quota.remainingPercentage(), quota.resetDate()));
+                        quota.remainingPercentage(), quota.resetDate(), false);
+                listener.onAiProcessEvent(quotaEvent);
+                GithubCopilotAiImplementation.publishQuota(quotaEvent);
             }
         });
     }

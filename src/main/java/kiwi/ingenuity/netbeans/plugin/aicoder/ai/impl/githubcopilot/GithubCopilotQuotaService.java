@@ -79,16 +79,17 @@ public final class GithubCopilotQuotaService {
             if (result != null) {
                 Map<String, AccountQuotaSnapshot> snapshots = result.quotaSnapshots();
                 if (snapshots != null) {
+                    LOG.log(Level.INFO, "Copilot quota snapshots: {0}", snapshots);
                     AccountQuotaSnapshot premiumSnapshot = snapshots.get("premium_interactions");
                     if (premiumSnapshot != null) {
                         java.time.OffsetDateTime resetDateTime = premiumSnapshot.resetDate();
-                        String resetDateStr = resetDateTime != null ? resetDateTime.toString() : null;
+                        String resetDate = resetDateTime != null ? resetDateTime.toString() : null;
                         return new QuotaInfo(
                                 premiumSnapshot.isUnlimitedEntitlement(),
                                 premiumSnapshot.usedRequests(),
                                 premiumSnapshot.entitlementRequests(),
                                 premiumSnapshot.remainingPercentage(),
-                                resetDateStr
+                                resetDate
                         );
                     }
                 }
@@ -149,6 +150,7 @@ public final class GithubCopilotQuotaService {
             return null;
         }
         JsonObject snapshots = result.getAsJsonObject("quotaSnapshots");
+        LOG.log(Level.INFO, "Copilot quota snapshots: {0}", snapshots);
         if (!snapshots.has("premium_interactions") || !snapshots.get("premium_interactions").isJsonObject()) {
             return null;
         }
@@ -159,7 +161,6 @@ public final class GithubCopilotQuotaService {
         long entitlementRequests = premiumSnapshot.has("entitlementRequests") ? premiumSnapshot.get("entitlementRequests").getAsLong() : 0;
         double remainingPercentage = premiumSnapshot.has("remainingPercentage") ? premiumSnapshot.get("remainingPercentage").getAsDouble() : 0;
         String resetDate = premiumSnapshot.has("resetDate") ? premiumSnapshot.get("resetDate").getAsString() : null;
-
         return new QuotaInfo(unlimited, usedRequests, entitlementRequests, remainingPercentage, resetDate);
     }
 
