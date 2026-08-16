@@ -242,13 +242,13 @@ public class ClaudeAiProcessManager extends AiProcessManager {
         ClaudePersistentSession launched = launchPersistentSession(cmd, workDir,
                 line -> {
                     if (PluginSettings.isDebugJson()) {
-                        LOG.log(Level.WARNING, "ai json [{0}]: {1}", new Object[]{sid, line});
+                        LOG.log(Level.INFO, "ai json [{0}]: {1}", new Object[]{sid, line});
                     }
                     p.parseLine(line);
                 },
                 err -> {
                     if (PluginSettings.isDebugJson()) {
-                        LOG.log(Level.INFO, "claude stderr [{0}]: {1}", new Object[]{sid, err});
+                        LOG.log(Level.WARNING, "claude stderr [{0}]: {1}", new Object[]{sid, err});
                     }
                     addStderr(err);
                 });
@@ -309,7 +309,7 @@ public class ClaudeAiProcessManager extends AiProcessManager {
         }
         processing = true;
         if (PluginSettings.isDebugJson()) {
-            LOG.log(Level.WARNING, "ai prompt [{0}]: {1}", new Object[]{sessionId, text});
+            LOG.log(Level.INFO, "ai prompt [{0}]: {1}", new Object[]{sessionId, text});
         }
         if (!session.sendUserTurn(text)) {
             ClaudePersistentSession failedSession = session;

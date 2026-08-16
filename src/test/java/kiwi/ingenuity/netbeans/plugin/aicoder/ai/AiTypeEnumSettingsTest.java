@@ -4,6 +4,7 @@ import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.claude.settings.ClaudeSess
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.githubcopilot.settings.GithubCopilotSessionSettings;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.grok.settings.GrokSessionSettings;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.ollama.settings.OllamaSessionSettings;
+import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.opencode.settings.OpenCodeSessionSettings;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.settings.AiModelSessionSettings;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.settings.AiSessionSettings;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.settings.OpenAiClientSessionSettings;
@@ -47,6 +48,11 @@ class AiTypeEnumSettingsTest {
     @Test
     void ollamaLocalCreatesOllamaSessionSettings() {
         assertTrue(AiTypeEnum.OLLAMA_LOCAL.createDefaultSettings() instanceof OllamaSessionSettings);
+    }
+
+    @Test
+    void openCodeCreatesOpenCodeSessionSettings() {
+        assertTrue(AiTypeEnum.OPENCODE.createDefaultSettings() instanceof OpenCodeSessionSettings);
     }
 
     @Test

@@ -28,60 +28,55 @@ import org.junit.jupiter.api.Test;
  */
 class McpServerRegistryTest {
 
-    /**
-     * Records which lifecycle callbacks the registry invoked. {@code events} is
-     * written by the supervisor thread and read by the test thread, so it is
-     * thread-safe.
-     */
-    private static final class FakeRegistrar extends AiMcpRegistrar {
-
-        final List<String> events = new CopyOnWriteArrayList<>();
-        volatile boolean hooksResult = true;
-        volatile boolean throwInRegisterHooks = false;
-        volatile CountDownLatch hookEntered = null;
-        volatile CountDownLatch hookGate = null;
-
-        FakeRegistrar(String sessionId, AiTypeEnum type) {
-            super(sessionId, type);
+    // ---- helpers ----
+    private static boolean register(FakeRegistrar r) {
+        try {
+            return McpServerRegistry.register(r).get(5, TimeUnit.SECONDS);
         }
-
-        @Override
-        public void addMcpEndpoint(String endpointUrl) {
-            events.add("add");
+        catch (Exception e) {
+            return false;
         }
+    }
 
-        @Override
-        public void removeMcpEndpoint() {
-            events.add("remove");
+    private static void awaitCount(FakeRegistrar r, String event, long expected, long timeoutMs)
+            throws InterruptedException {
+        long deadline = System.currentTimeMillis() + timeoutMs;
+        while (System.currentTimeMillis() < deadline && r.count(event) != expected) {
+            Thread.sleep(20);
         }
+        assertEquals(expected, r.count(event), "count of '" + event + "'");
+    }
 
-        @Override
-        public boolean registerHooks(String serverBaseUrl) {
-            events.add("registerHooks");
-            if (throwInRegisterHooks) {
-                throw new RuntimeException("boom");
+    private static boolean awaitServerRunning(long timeoutMs) throws InterruptedException {
+        long deadline = System.currentTimeMillis() + timeoutMs;
+        while (System.currentTimeMillis() < deadline) {
+            McpHookServer s = McpServerRegistry.getServer();
+            if (s != null && !s.isStopped()) {
+                return true;
             }
-            if (hookGate != null) {
-                if (hookEntered != null) {
-                    hookEntered.countDown();
-                }
-                try {
-                    hookGate.await(30, TimeUnit.SECONDS);
-                }
-                catch (InterruptedException e) {
-                    Thread.currentThread().interrupt();
-                }
+            Thread.sleep(20);
+        }
+        return false;
+    }
+
+    private static boolean awaitServerStopped(long timeoutMs) throws InterruptedException {
+        long deadline = System.currentTimeMillis() + timeoutMs;
+        while (System.currentTimeMillis() < deadline) {
+            if (McpServerRegistry.getServer() == null) {
+                return true;
             }
-            return hooksResult;
+            Thread.sleep(20);
         }
+        return false;
+    }
 
-        @Override
-        public void unregisterHooks() {
-            events.add("unregisterHooks");
+    private static boolean isServing(McpHookServer server) {
+        try (Socket sock = new Socket()) {
+            sock.connect(new InetSocketAddress(InetAddress.getLoopbackAddress(), server.getPort()), 1000);
+            return true;
         }
-
-        long count(String event) {
-            return events.stream().filter(event::equals).count();
+        catch (Exception e) {
+            return false;
         }
     }
 
@@ -309,55 +304,94 @@ class McpServerRegistryTest {
         assertNotNull(McpServerRegistry.getServer());
     }
 
-    // ---- helpers ----
-    private static boolean register(FakeRegistrar r) {
-        try {
-            return McpServerRegistry.register(r).get(5, TimeUnit.SECONDS);
-        }
-        catch (Exception e) {
-            return false;
-        }
+    // ---- endpointUrlFor tests ----
+    @Test
+    void endpointUrlForReturnsNullWhenServerNotRunning() {
+        // No sessions registered — sharedServer is null.
+        assertNull(McpServerRegistry.endpointUrlFor(AiTypeEnum.OPENCODE));
+        assertNull(McpServerRegistry.endpointUrlFor(null));
     }
 
-    private static void awaitCount(FakeRegistrar r, String event, long expected, long timeoutMs)
-            throws InterruptedException {
-        long deadline = System.currentTimeMillis() + timeoutMs;
-        while (System.currentTimeMillis() < deadline && r.count(event) != expected) {
-            Thread.sleep(20);
-        }
-        assertEquals(expected, r.count(event), "count of '" + event + "'");
+    @Test
+    void endpointUrlForReturnsMcpUrlWhenServerIsUp() {
+        FakeRegistrar r = new FakeRegistrar("oc1", AiTypeEnum.OPENCODE);
+        assertTrue(register(r));
+        String url = McpServerRegistry.endpointUrlFor(AiTypeEnum.OPENCODE);
+        assertNotNull(url);
+        assertEquals(McpServerRegistry.getServer().getBaseUrl() + "/mcp/opencode", url);
     }
 
-    private static boolean awaitServerRunning(long timeoutMs) throws InterruptedException {
-        long deadline = System.currentTimeMillis() + timeoutMs;
-        while (System.currentTimeMillis() < deadline) {
-            McpHookServer s = McpServerRegistry.getServer();
-            if (s != null && !s.isStopped()) {
-                return true;
+    @Test
+    void endpointUrlForReturnsNonNullForSecondSessionOfType() {
+        // First session gets addMcpEndpoint called; second does NOT (typeCount guard).
+        // endpointUrlFor must still return the correct URL for both sessions.
+        FakeRegistrar oc1 = new FakeRegistrar("oc1", AiTypeEnum.OPENCODE);
+        assertTrue(register(oc1));
+        assertEquals(1, oc1.count("add"), "first session must have addMcpEndpoint called");
+
+        FakeRegistrar oc2 = new FakeRegistrar("oc2", AiTypeEnum.OPENCODE);
+        assertTrue(register(oc2));
+        assertEquals(0, oc2.count("add"), "second session must NOT have addMcpEndpoint called");
+
+        String url = McpServerRegistry.endpointUrlFor(AiTypeEnum.OPENCODE);
+        assertNotNull(url, "endpointUrlFor must return non-null even when the registrar's addMcpEndpoint was never called");
+        assertEquals(McpServerRegistry.getServer().getBaseUrl() + "/mcp/opencode", url);
+    }
+
+    /**
+     * Records which lifecycle callbacks the registry invoked. {@code events} is
+     * written by the supervisor thread and read by the test thread, so it is
+     * thread-safe.
+     */
+    private static final class FakeRegistrar extends AiMcpRegistrar {
+
+        final List<String> events = new CopyOnWriteArrayList<>();
+        volatile boolean hooksResult = true;
+        volatile boolean throwInRegisterHooks = false;
+        volatile CountDownLatch hookEntered = null;
+        volatile CountDownLatch hookGate = null;
+
+        FakeRegistrar(String sessionId, AiTypeEnum type) {
+            super(sessionId, type);
+        }
+
+        @Override
+        public void addMcpEndpoint(String endpointUrl) {
+            events.add("add");
+        }
+
+        @Override
+        public void removeMcpEndpoint() {
+            events.add("remove");
+        }
+
+        @Override
+        public boolean registerHooks(String serverBaseUrl) {
+            events.add("registerHooks");
+            if (throwInRegisterHooks) {
+                throw new RuntimeException("boom");
             }
-            Thread.sleep(20);
-        }
-        return false;
-    }
-
-    private static boolean awaitServerStopped(long timeoutMs) throws InterruptedException {
-        long deadline = System.currentTimeMillis() + timeoutMs;
-        while (System.currentTimeMillis() < deadline) {
-            if (McpServerRegistry.getServer() == null) {
-                return true;
+            if (hookGate != null) {
+                if (hookEntered != null) {
+                    hookEntered.countDown();
+                }
+                try {
+                    hookGate.await(30, TimeUnit.SECONDS);
+                }
+                catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                }
             }
-            Thread.sleep(20);
+            return hooksResult;
         }
-        return false;
-    }
 
-    private static boolean isServing(McpHookServer server) {
-        try (Socket sock = new Socket()) {
-            sock.connect(new InetSocketAddress(InetAddress.getLoopbackAddress(), server.getPort()), 1000);
-            return true;
+        @Override
+        public void unregisterHooks() {
+            events.add("unregisterHooks");
         }
-        catch (Exception e) {
-            return false;
+
+        long count(String event) {
+            return events.stream().filter(event::equals).count();
         }
     }
 }

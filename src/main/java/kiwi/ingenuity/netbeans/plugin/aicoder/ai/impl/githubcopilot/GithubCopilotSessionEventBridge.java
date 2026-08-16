@@ -63,7 +63,7 @@ public final class GithubCopilotSessionEventBridge {
 
     private static void logRaw(String kind, Object detail) {
         if (PluginSettings.isDebugJson()) {
-            LOG.log(Level.WARNING, "copilot event [{0}]: {1}",
+            LOG.log(Level.INFO, "copilot event [{0}]: {1}",
                     new Object[]{kind, detail == null ? "null" : String.valueOf(detail)});
         }
     }

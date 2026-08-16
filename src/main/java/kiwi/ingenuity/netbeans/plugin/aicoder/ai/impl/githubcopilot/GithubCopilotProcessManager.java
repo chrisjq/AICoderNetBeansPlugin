@@ -31,7 +31,6 @@ import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.githubcopilot.settings.Git
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.session.AiSession;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.session.InterruptTypeEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.events.AiProcessEventListener;
-import kiwi.ingenuity.netbeans.plugin.aicoder.process.server.McpHookServer;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.server.McpServerRegistry;
 import kiwi.ingenuity.netbeans.plugin.aicoder.utils.StatusMessageUtil;
 
@@ -285,11 +284,10 @@ public class GithubCopilotProcessManager extends AiProcessManager {
     }
 
     private Map<String, com.github.copilot.rpc.McpServerConfig> buildMcpServers() {
-        McpHookServer server = McpServerRegistry.getServer();
-        if (server == null || sessionId == null) {
+        String endpoint = McpServerRegistry.endpointUrlFor(AiTypeEnum.GitHubCoPilot);
+        if (endpoint == null || sessionId == null) {
             return Map.of();
         }
-        String endpoint = server.getBaseUrl() + "/mcp/" + AiTypeEnum.GitHubCoPilot.key();
         McpHttpServerConfig mcpServer = new McpHttpServerConfig().setUrl(endpoint).setTools(List.of("*"));
         return Map.of(StringConst.PLUGIN_ID, mcpServer);
     }
@@ -356,7 +354,7 @@ public class GithubCopilotProcessManager extends AiProcessManager {
         }
         CopilotSession session = copilotSession;
         if (PluginSettings.isDebugJson()) {
-            LOG.log(Level.WARNING, "copilot prompt: {0}", text);
+            LOG.log(Level.INFO, "copilot prompt: {0}", text);
         }
         // session.send() only resolves once the message is queued (fire-and-forget) —
         // it does NOT mean the turn finished. Only handle the failure-to-queue case

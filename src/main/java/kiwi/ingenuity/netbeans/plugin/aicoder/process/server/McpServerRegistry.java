@@ -161,6 +161,24 @@ public final class McpServerRegistry {
         return sharedServer;
     }
 
+    /**
+     * The MCP endpoint URL for an AI type, or null when the shared server is
+     * not running. Single source of truth for the {@code {base}/mcp/{key}}
+     * route — callers must not build this string themselves, because a future
+     * route change would silently break only those callers.
+     *
+     * <p>
+     * Safe to call from any thread: reads the volatile {@code sharedServer}
+     * once into a local, so the reference cannot flip mid-method.
+     */
+    public static String endpointUrlFor(AiTypeEnum type) {
+        McpHookServer s = sharedServer;
+        if (s == null || s.isStopped() || type == null) {
+            return null;
+        }
+        return s.getBaseUrl() + "/mcp/" + type.key();
+    }
+
     // ---- Enqueue helper (finding 4: never a silent drop) ----
     private static boolean enqueue(McpRegistryEvent event) {
         if (!QUEUE.offer(event)) {
@@ -272,7 +290,7 @@ public final class McpServerRegistry {
                 ok = event.registrar().registerHooks(server.getBaseUrl());
                 if (ok) {
                     event.registrar().removeMcpEndpoint();
-                    event.registrar().addMcpEndpoint(server.getBaseUrl() + "/mcp/" + type.key());
+                    event.registrar().addMcpEndpoint(endpointUrlFor(type));
                 }
             }
             catch (Exception e) {

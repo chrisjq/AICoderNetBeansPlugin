@@ -5,6 +5,7 @@ import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.claude.settings.ClaudeSett
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.githubcopilot.settings.GithubCopilotSettingsCreator;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.grok.settings.GrokSettingsCreator;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.ollama.settings.OllamaSettingsCreator;
+import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.opencode.settings.OpenCodeSettingsCreator;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.settings.AiSessionSettings;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.settings.AiSessionSettingsCreator;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.McpInstructionOptionEnum;
@@ -32,7 +33,8 @@ public enum AiTypeEnum {
     // without the parameters, so enabling both only duplicated ~9k characters.
     //                                                          implemented  enabledByDefault  openAiCompatible
     OLLAMA_LOCAL("Ollama (Local)", "ollama_local", true, false, true, new OllamaSettingsCreator(),
-            Set.of(HEADER, ONLY_MCP_TOOL_ACCESS, SOFTEN_TOOL_DIRECTIVES, TOOL_CALLS_VIA_SCHEMA));
+            Set.of(HEADER, ONLY_MCP_TOOL_ACCESS, SOFTEN_TOOL_DIRECTIVES, TOOL_CALLS_VIA_SCHEMA)),
+    OPENCODE("OpenCode", "opencode", true, true, false, new OpenCodeSettingsCreator(), Set.of(HEADER, TOOL_INSTRUCTION, CREDENTIALS));
 
     public static AiTypeEnum fromKey(String key) {
         if (key == null) {

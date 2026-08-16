@@ -809,7 +809,7 @@ public class MessagePanel extends JPanel {
             String desc = e.getDescription();
             String url = (desc != null && !desc.isBlank()) ? desc
                     : (e.getURL() != null ? e.getURL().toString() : null);
-            if (kiwi.ingenuity.netbeans.plugin.aicoder.PluginSettings.isDebugJson()) {
+            if (PluginSettings.isDebugJson()) {
                 LOG.log(Level.INFO, "link click: desc={0} url={1}",
                         new Object[]{desc, e.getURL()});
             }

@@ -19,6 +19,7 @@ import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.claude.settings.ClaudePlug
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.githubcopilot.settings.GithubCopilotPluginSettings;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.grok.settings.GrokPluginSettings;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.ollama.settings.OllamaPluginSettings;
+import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.opencode.settings.OpenCodePluginSettings;
 
 /**
  * Reusable session-create panel for AI types with a model setting.
@@ -27,6 +28,46 @@ public class ModelCreateSettingsPanel<E extends AiModelSessionSettings>
         implements AiSessionCreateSettingsPanel<E> {
 
     private static final Map<AiTypeEnum, String> LAST_SELECTED_MODELS = new EnumMap<>(AiTypeEnum.class);
+
+    private static List<String> getKnownModels(AiTypeEnum aiType) {
+        if (aiType == null) {
+            return List.of();
+        }
+        switch (aiType) {
+            case CLAUDE:
+                return Arrays.asList(ClaudePluginSettings.getKnownModels());
+            case GROK:
+                return Arrays.asList(GrokPluginSettings.getKnownModels());
+            case GitHubCoPilot:
+                return Arrays.asList(GithubCopilotPluginSettings.getKnownModels());
+            case OLLAMA_LOCAL:
+                return Arrays.asList(OllamaPluginSettings.getKnownModels());
+            case OPENCODE:
+                return Arrays.asList(OpenCodePluginSettings.getKnownModels());
+            default:
+                return List.of();
+        }
+    }
+
+    private static String getDefaultModel(AiTypeEnum aiType) {
+        if (aiType == null) {
+            return null;
+        }
+        switch (aiType) {
+            case CLAUDE:
+                return ClaudePluginSettings.getModel();
+            case GROK:
+                return GrokPluginSettings.getModel();
+            case GitHubCoPilot:
+                return GithubCopilotPluginSettings.getModel();
+            case OLLAMA_LOCAL:
+                return OllamaPluginSettings.getModel();
+            case OPENCODE:
+                return OpenCodePluginSettings.getModel();
+            default:
+                return null;
+        }
+    }
     private final JPanel panel = new JPanel(new BorderLayout(6, 0));
     private final JComboBox<String> model = new JComboBox<>();
     private final AiModelCatalog catalog;
@@ -197,39 +238,4 @@ public class ModelCreateSettingsPanel<E extends AiModelSessionSettings>
         }
     }
 
-    private static List<String> getKnownModels(AiTypeEnum aiType) {
-        if (aiType == null) {
-            return List.of();
-        }
-        switch (aiType) {
-            case CLAUDE:
-                return Arrays.asList(ClaudePluginSettings.getKnownModels());
-            case GROK:
-                return Arrays.asList(GrokPluginSettings.getKnownModels());
-            case GitHubCoPilot:
-                return Arrays.asList(GithubCopilotPluginSettings.getKnownModels());
-            case OLLAMA_LOCAL:
-                return Arrays.asList(OllamaPluginSettings.getKnownModels());
-            default:
-                return List.of();
-        }
-    }
-
-    private static String getDefaultModel(AiTypeEnum aiType) {
-        if (aiType == null) {
-            return null;
-        }
-        switch (aiType) {
-            case CLAUDE:
-                return ClaudePluginSettings.getModel();
-            case GROK:
-                return GrokPluginSettings.getModel();
-            case GitHubCoPilot:
-                return GithubCopilotPluginSettings.getModel();
-            case OLLAMA_LOCAL:
-                return OllamaPluginSettings.getModel();
-            default:
-                return null;
-        }
-    }
 }

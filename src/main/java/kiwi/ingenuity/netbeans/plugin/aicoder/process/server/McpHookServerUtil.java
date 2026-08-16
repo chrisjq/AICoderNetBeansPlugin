@@ -17,6 +17,7 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
+import java.util.logging.Logger;
 import kiwi.ingenuity.netbeans.plugin.aicoder.PluginSettings;
 import kiwi.ingenuity.netbeans.plugin.aicoder.StringConst;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.AiTypeEnum;
@@ -292,7 +293,7 @@ public final class McpHookServerUtil {
                 sb.append(' ').append(entry.getKey()).append('[').append(value).append(']');
             }
         }
-        java.util.logging.Logger.getLogger(McpHookServerUtil.class.getName())
+        Logger.getLogger(McpHookServerUtil.class.getName())
                 .log(java.util.logging.Level.INFO, sb.toString());
     }
 

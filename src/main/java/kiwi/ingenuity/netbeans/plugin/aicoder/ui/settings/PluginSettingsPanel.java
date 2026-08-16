@@ -41,6 +41,20 @@ public class PluginSettingsPanel extends JPanel implements Scrollable {
 
     static final String PROP_CHANGED = "changed";
 
+    private static JPanel buildGroupPanel(String title) {
+        JPanel p = new JPanel(new GridBagLayout());
+        p.setBorder(BorderFactory.createTitledBorder(title));
+        return p;
+    }
+
+    private static GridBagConstraints groupConstraints() {
+        GridBagConstraints gc = new GridBagConstraints();
+        gc.insets = new Insets(4, 4, 4, 4);
+        gc.anchor = GridBagConstraints.WEST;
+        gc.fill = GridBagConstraints.HORIZONTAL;
+        return gc;
+    }
+
     private final PropertyChangeSupport pcs = new PropertyChangeSupport(this);
 
     // General tab controls
@@ -132,7 +146,7 @@ public class PluginSettingsPanel extends JPanel implements Scrollable {
         c.gridwidth = 1;
 
         // Inbox Settings group
-        JPanel inboxGroup = buildGroupPanel("Inbox Settings");
+        JPanel inboxGroup = buildGroupPanel("AI Inbox Settings");
         GridBagConstraints ig = groupConstraints();
         ig.gridx = 0;
         ig.gridy = 0;
@@ -280,20 +294,6 @@ public class PluginSettingsPanel extends JPanel implements Scrollable {
     // Helper to reduce repetition in layout
     private void addTo(JPanel parent, Component comp, GridBagConstraints c) {
         parent.add(comp, c);
-    }
-
-    private static JPanel buildGroupPanel(String title) {
-        JPanel p = new JPanel(new GridBagLayout());
-        p.setBorder(BorderFactory.createTitledBorder(title));
-        return p;
-    }
-
-    private static GridBagConstraints groupConstraints() {
-        GridBagConstraints gc = new GridBagConstraints();
-        gc.insets = new Insets(4, 4, 4, 4);
-        gc.anchor = GridBagConstraints.WEST;
-        gc.fill = GridBagConstraints.HORIZONTAL;
-        return gc;
     }
 
     void load() {

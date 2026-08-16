@@ -191,7 +191,7 @@ public class GrokAiProcessManager extends AiProcessManager {
             }
 
             if (debugJson) {
-                LOG.log(Level.WARNING, "grok prompt [{0}]: {1}", new Object[]{sid, text});
+                LOG.log(Level.INFO, "grok prompt [{0}]: {1}", new Object[]{sid, text});
             }
 
             final Process proc = p;
@@ -201,7 +201,7 @@ public class GrokAiProcessManager extends AiProcessManager {
                     String line;
                     while ((line = r.readLine()) != null) {
                         if (debugJson) {
-                            LOG.log(Level.INFO, "grok stderr [{0}]: {1}", new Object[]{sid, line});
+                            LOG.log(Level.WARNING, "grok stderr [{0}]: {1}", new Object[]{sid, line});
                         }
                         stderrLines.add(line);
                     }
@@ -217,7 +217,7 @@ public class GrokAiProcessManager extends AiProcessManager {
                 String line;
                 while ((line = r.readLine()) != null) {
                     if (debugJson) {
-                        LOG.log(Level.WARNING, "grok json [{0}]: {1}", new Object[]{sid, line});
+                        LOG.log(Level.INFO, "grok json [{0}]: {1}", new Object[]{sid, line});
                     }
                     stdout.append(line).append('\n');
                 }

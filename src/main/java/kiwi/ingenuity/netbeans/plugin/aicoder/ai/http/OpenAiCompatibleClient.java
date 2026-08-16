@@ -104,7 +104,7 @@ public class OpenAiCompatibleClient implements HttpAiClient {
                 }
                 String data = line.substring(5).stripLeading();
                 if (PluginSettings.isDebugJson()) {
-                    LOG.log(Level.WARNING, "ollama sse: {0}", data);
+                    LOG.log(Level.INFO, "ollama sse: {0}", data);
                 }
                 lines.add(data);
                 emitTextDelta(data, onTextDelta);
@@ -287,7 +287,7 @@ public class OpenAiCompatibleClient implements HttpAiClient {
         }
         String payloadJson = GSON.toJson(buildPayload(request));
         if (PluginSettings.isDebugJson()) {
-            LOG.log(Level.WARNING, "ollama request: {0}", payloadJson);
+            LOG.log(Level.INFO, "ollama request: {0}", payloadJson);
         }
         builder.POST(HttpRequest.BodyPublishers.ofString(payloadJson, StandardCharsets.UTF_8));
 
