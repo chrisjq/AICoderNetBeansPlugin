@@ -20,6 +20,7 @@ import javax.swing.JCheckBox;
 import javax.swing.JComboBox;
 import javax.swing.JComponent;
 import javax.swing.JDialog;
+import javax.swing.JEditorPane;
 import javax.swing.JLabel;
 import javax.swing.JOptionPane;
 import javax.swing.JPanel;
@@ -42,6 +43,7 @@ import kiwi.ingenuity.netbeans.plugin.aicoder.ai.settings.AiTypeSettings;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.settings.ConfigTemplate;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.settings.SpecialInstructionTemplate;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.ui.AiTopComponent;
+import kiwi.ingenuity.netbeans.plugin.aicoder.process.server.McpToolsDocumentation;
 import kiwi.ingenuity.netbeans.plugin.aicoder.serialization.SessionPersistenceManager;
 import kiwi.ingenuity.netbeans.plugin.aicoder.serialization.TemplatePersistenceManager;
 import org.netbeans.api.project.Project;
@@ -57,6 +59,7 @@ public class SessionPickerDialog extends JDialog {
 
     private static final Logger LOG = Logger.getLogger(SessionPickerDialog.class.getName());
     private static final int MAX_CREATE_COUNT = 50;
+    private static String MCP_TOOLS_HELP_HTML = null;
 
     public static void show(SessionPersistenceManager spm) {
         SessionPickerDialog dialog = new SessionPickerDialog(spm);
@@ -120,6 +123,7 @@ public class SessionPickerDialog extends JDialog {
         tabs.addTab("Existing Sessions", buildExistingTab());
         tabs.addTab("Create Session", buildCreateTab());
         tabs.addTab("Templates", buildTemplatesTab());
+        tabs.addTab("Help", buildHelpTab());
         add(tabs, BorderLayout.CENTER);
         JPanel bottom = new JPanel(new FlowLayout(FlowLayout.RIGHT));
         JButton cancel = new JButton("Cancel");
@@ -189,6 +193,18 @@ public class SessionPickerDialog extends JDialog {
         JTabbedPane nested = new JTabbedPane();
         nested.addTab("Config Templates", new ConfigTemplatesPanel(templates, this::refreshTemplates));
         nested.addTab("Special Instructions", new InstructionTemplatesPanel(templates, this::refreshTemplates));
+        return nested;
+    }
+
+    private Component buildHelpTab() {
+        JTabbedPane nested = new JTabbedPane();
+        if (MCP_TOOLS_HELP_HTML == null) {
+            MCP_TOOLS_HELP_HTML = McpToolsDocumentation.buildHtml();
+        }
+        JEditorPane mcpTools = new JEditorPane("text/html", MCP_TOOLS_HELP_HTML);
+        mcpTools.setEditable(false);
+        mcpTools.setCaretPosition(0);
+        nested.addTab("MCP Tools", new JScrollPane(mcpTools));
         return nested;
     }
 

@@ -14,10 +14,13 @@ import kiwi.ingenuity.netbeans.plugin.aicoder.ai.AiTypeEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.session.AiSession;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.settings.AiSessionSettings;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.settings.ConfigTemplate;
+import kiwi.ingenuity.netbeans.plugin.aicoder.process.server.McpToolsDocumentation;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ui.settings.AiSessionConfigPanel;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ui.settings.AiSessionConfigPanelMode;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import org.junit.jupiter.api.Test;
 
 class AiManagerModelTest {
@@ -58,7 +61,8 @@ class AiManagerModelTest {
     private static void setRows(TableModel model, List<?> rows) {
         if (model instanceof SessionTableModel sessionModel) {
             sessionModel.setRows((List<AiSession>) rows);
-        } else if (model instanceof SimpleTableModel simpleModel) {
+        }
+        else if (model instanceof SimpleTableModel simpleModel) {
             simpleModel.setRows(rows);
         }
     }
@@ -157,5 +161,15 @@ class AiManagerModelTest {
             assertThrows(IllegalStateException.class, () -> global.applySession(new AiSessionSettings()));
             return null;
         });
+    }
+
+    @Test
+    void mcpToolsHelpIsGeneratedFromTheToolRegistryWithoutCredentials() {
+        String html = McpToolsDocumentation.buildHtml();
+
+        assertTrue(html.contains("BuildMavenProject"));
+        assertTrue(html.contains("SendAiMessage"));
+        assertFalse(html.contains("sessionId"));
+        assertFalse(html.contains("secretKey"));
     }
 }
