@@ -3,7 +3,8 @@ package kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.opencode.settings;
 public enum OpenCodePluginSettingsKeyEnum {
     EXECUTABLE("ai.opencode.executable"),
     MODEL("ai.opencode.model"),
-    MODE("ai.opencode.mode");
+    MODE("ai.opencode.mode"),
+    DISCOVERED_MODELS("ai.opencode.discoveredModels");
 
     private final String key;
 

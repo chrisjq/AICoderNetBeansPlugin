@@ -20,11 +20,27 @@ public final class OpenCodePluginSettings {
 
     public static String[] getKnownModels() {
         String[] d = discoveredModels;
-        return (d != null && d.length > 0) ? d : KNOWN_MODELS;
+        if (d != null && d.length > 0) {
+            return d;
+        }
+        // OpenCode cannot re-discover models without spawning a new process; persist
+        // the list from the last session/new response so the create-dialog is useful
+        // even when no session has started this IDE run.
+        String persisted = prefs().get(OpenCodePluginSettingsKeyEnum.DISCOVERED_MODELS.key(), "");
+        if (!persisted.isEmpty()) {
+            return persisted.split(",", -1);
+        }
+        return KNOWN_MODELS;
     }
 
     public static void setDiscoveredModels(String[] models) {
         discoveredModels = models;
+        if (models != null && models.length > 0) {
+            prefs().put(OpenCodePluginSettingsKeyEnum.DISCOVERED_MODELS.key(), String.join(",", models));
+        }
+        else {
+            prefs().remove(OpenCodePluginSettingsKeyEnum.DISCOVERED_MODELS.key());
+        }
     }
 
     public static String getExecutable() {

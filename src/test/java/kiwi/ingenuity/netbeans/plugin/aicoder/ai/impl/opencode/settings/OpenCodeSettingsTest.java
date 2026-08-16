@@ -97,4 +97,66 @@ class OpenCodeSettingsTest {
         new OpenCodeSettingsCreator().update(settings, new JsonObject());
         assertNull(settings.acpSessionId(), "absent acpSessionId in JSON must deserialise to null");
     }
+
+    // ---- Addendum 4: effort persistence ----
+    @Test
+    void effortIsNullBeforeSet() {
+        assertNull(new OpenCodeSessionSettings().effort());
+    }
+
+    @Test
+    void effortSetAndGetRoundTrips() {
+        OpenCodeSessionSettings settings = new OpenCodeSessionSettings();
+        settings.setEffort("high");
+        assertEquals("high", settings.effort());
+    }
+
+    @Test
+    void populateJsonObjectIncludesEffortWhenSet() {
+        OpenCodeSessionSettings settings = new OpenCodeSessionSettings();
+        settings.setEffort("low");
+        JsonObject cfg = new JsonObject();
+        settings.populateJsonObject(cfg);
+        assertEquals("low", cfg.get("effort").getAsString());
+    }
+
+    @Test
+    void populateJsonObjectOmitsEffortKeyWhenNull() {
+        OpenCodeSessionSettings settings = new OpenCodeSessionSettings();
+        JsonObject cfg = new JsonObject();
+        settings.populateJsonObject(cfg);
+        assertFalse(cfg.has("effort"));
+    }
+
+    @Test
+    void settingsCreatorUpdateDeserializesEffortFromJson() {
+        OpenCodeSettingsCreator creator = new OpenCodeSettingsCreator();
+        OpenCodeSessionSettings settings = new OpenCodeSessionSettings();
+        JsonObject cfgObj = new JsonObject();
+        cfgObj.addProperty("effort", "high");
+        creator.update(settings, cfgObj);
+        assertEquals("high", settings.effort());
+    }
+
+    @Test
+    void settingsCreatorUpdateToleratesJsonWithoutEffortKey() {
+        OpenCodeSettingsCreator creator = new OpenCodeSettingsCreator();
+        OpenCodeSessionSettings settings = new OpenCodeSessionSettings();
+        settings.setEffort("low");
+        creator.update(settings, new JsonObject());
+        assertEquals("low", settings.effort(), "existing effort must be preserved when JSON omits effort key");
+    }
+
+    @Test
+    void effortRoundTripsThroughSettingsCreator() {
+        OpenCodeSessionSettings settings = new OpenCodeSessionSettings();
+        settings.setEffort("medium");
+        JsonObject cfg = new JsonObject();
+        settings.populateJsonObject(cfg);
+
+        OpenCodeSessionSettings loaded = new OpenCodeSessionSettings();
+        new OpenCodeSettingsCreator().update(loaded, cfg);
+
+        assertEquals("medium", loaded.effort());
+    }
 }

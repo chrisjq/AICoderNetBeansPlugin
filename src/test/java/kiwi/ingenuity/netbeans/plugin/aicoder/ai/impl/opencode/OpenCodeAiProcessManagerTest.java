@@ -39,6 +39,37 @@ class OpenCodeAiProcessManagerTest {
         return params;
     }
 
+    // ---- Addendum 4: effort validation + mode validation ----
+    private static JsonObject buildModeOption(String currentValue, String... availableValues) {
+        JsonObject opt = new JsonObject();
+        opt.addProperty("id", "mode");
+        opt.addProperty("currentValue", currentValue);
+        opt.addProperty("type", "select");
+        JsonArray options = new JsonArray();
+        for (String v : availableValues) {
+            JsonObject o = new JsonObject();
+            o.addProperty("value", v);
+            options.add(o);
+        }
+        opt.add("options", options);
+        return opt;
+    }
+
+    private static JsonObject buildEffortOption(String currentValue, String... availableValues) {
+        JsonObject opt = new JsonObject();
+        opt.addProperty("id", "effort");
+        opt.addProperty("currentValue", currentValue);
+        opt.addProperty("type", "select");
+        JsonArray options = new JsonArray();
+        for (String v : availableValues) {
+            JsonObject o = new JsonObject();
+            o.addProperty("value", v);
+            options.add(o);
+        }
+        opt.add("options", options);
+        return opt;
+    }
+
     // ---- Payload builder tests ----
     @Test
     void permissionConfigJsonIsExact() {
@@ -763,6 +794,167 @@ class OpenCodeAiProcessManagerTest {
                 "spawnAndHandshake must write acpSessionId to session settings");
         assertEquals(List.of("acp-handshake-id"), callbackValues,
                 "onSessionEstablished callback must fire after acpSessionId is written to settings");
+    }
+
+    @Test
+    void applyInitialEffortSentWhenStoredDiffersFromAgentCurrent() {
+        List<String[]> calls = new ArrayList<>();
+        OpenCodeAiProcessManager manager = new OpenCodeAiProcessManager(e -> {
+        }) {
+            @Override
+            public CompletableFuture<JsonArray> setConfigOption(String configId, String value) {
+                calls.add(new String[]{configId, value});
+                return CompletableFuture.completedFuture(new JsonArray());
+            }
+        };
+
+        JsonArray cfgOpts = new JsonArray();
+        cfgOpts.add(buildModeOption("build", "build", "plan"));
+        cfgOpts.add(buildEffortOption("low", "low", "high"));
+        manager.sessionConfigOptions = cfgOpts;
+
+        OpenCodeSessionSettings settings = new OpenCodeSessionSettings();
+        settings.setMode("build");
+        settings.setEffort("high");
+        AiSession session = new AiSession("test-effort-send", "Test", null,
+                AiTypeEnum.OPENCODE, null, settings, java.time.Instant.now(), java.time.Instant.now());
+        manager.setCurrentSession(session);
+
+        manager.applyInitialModeIfNeeded();
+
+        long effortCalls = calls.stream().filter(c -> "effort".equals(c[0])).count();
+        assertEquals(1, effortCalls, "setConfigOption(effort) must fire when stored effort differs from current");
+        assertEquals("high", calls.stream().filter(c -> "effort".equals(c[0])).findFirst().get()[1]);
+    }
+
+    @Test
+    void applyInitialEffortClearedWhenModelHasNoEffortOption() {
+        List<AiProcessEvent> events = new ArrayList<>();
+        OpenCodeAiProcessManager manager = new OpenCodeAiProcessManager(events::add) {
+            @Override
+            public CompletableFuture<JsonArray> setConfigOption(String configId, String value) {
+                return CompletableFuture.completedFuture(new JsonArray());
+            }
+        };
+
+        JsonArray cfgOpts = new JsonArray();
+        cfgOpts.add(buildModeOption("build", "build", "plan"));
+        // No effort option in configOptions
+        manager.sessionConfigOptions = cfgOpts;
+
+        OpenCodeSessionSettings settings = new OpenCodeSessionSettings();
+        settings.setMode("build");
+        settings.setEffort("low");
+        AiSession session = new AiSession("test-effort-no-option", "Test", null,
+                AiTypeEnum.OPENCODE, null, settings, java.time.Instant.now(), java.time.Instant.now());
+        manager.setCurrentSession(session);
+
+        boolean changed = manager.applyInitialModeIfNeeded();
+
+        assertNull(settings.effort(), "effort must be cleared when model has no effort option");
+        assertTrue(changed, "applyInitialModeIfNeeded must return true when effort was cleared");
+        long infoCount = events.stream()
+                .filter(e -> e instanceof StatusEvent se && se.type() == StatusEventTypeEnum.INFO)
+                .count();
+        assertEquals(1, infoCount, "exactly one INFO event must be fired for the cleared effort");
+    }
+
+    @Test
+    void applyInitialEffortClearedWhenNotInAvailableValues() {
+        List<AiProcessEvent> events = new ArrayList<>();
+        OpenCodeAiProcessManager manager = new OpenCodeAiProcessManager(events::add) {
+            @Override
+            public CompletableFuture<JsonArray> setConfigOption(String configId, String value) {
+                return CompletableFuture.completedFuture(new JsonArray());
+            }
+        };
+
+        JsonArray cfgOpts = new JsonArray();
+        cfgOpts.add(buildModeOption("build", "build", "plan"));
+        cfgOpts.add(buildEffortOption("low", "low", "high"));
+        manager.sessionConfigOptions = cfgOpts;
+
+        OpenCodeSessionSettings settings = new OpenCodeSessionSettings();
+        settings.setMode("build");
+        settings.setEffort("medium");  // not in ["low", "high"]
+        AiSession session = new AiSession("test-effort-invalid", "Test", null,
+                AiTypeEnum.OPENCODE, null, settings, java.time.Instant.now(), java.time.Instant.now());
+        manager.setCurrentSession(session);
+
+        boolean changed = manager.applyInitialModeIfNeeded();
+
+        assertNull(settings.effort(), "invalid effort must be cleared");
+        assertTrue(changed, "applyInitialModeIfNeeded must return true when effort was cleared");
+        long infoCount = events.stream()
+                .filter(e -> e instanceof StatusEvent se && se.type() == StatusEventTypeEnum.INFO)
+                .count();
+        assertEquals(1, infoCount, "exactly one INFO event must fire for the invalid effort");
+    }
+
+    @Test
+    void applyInitialModeInvalidReplacedWithAgentCurrentValue() {
+        List<AiProcessEvent> events = new ArrayList<>();
+        List<String[]> calls = new ArrayList<>();
+        OpenCodeAiProcessManager manager = new OpenCodeAiProcessManager(events::add) {
+            @Override
+            public CompletableFuture<JsonArray> setConfigOption(String configId, String value) {
+                calls.add(new String[]{configId, value});
+                return CompletableFuture.completedFuture(new JsonArray());
+            }
+        };
+
+        JsonArray cfgOpts = new JsonArray();
+        cfgOpts.add(buildModeOption("build", "build", "plan"));
+        manager.sessionConfigOptions = cfgOpts;
+
+        OpenCodeSessionSettings settings = new OpenCodeSessionSettings();
+        settings.setMode("custom-agent");  // not in ["build", "plan"]
+        AiSession session = new AiSession("test-mode-invalid", "Test", null,
+                AiTypeEnum.OPENCODE, null, settings, java.time.Instant.now(), java.time.Instant.now());
+        manager.setCurrentSession(session);
+
+        boolean changed = manager.applyInitialModeIfNeeded();
+
+        assertEquals("build", settings.mode(),
+                "invalid stored mode must be replaced with the agent's currentValue");
+        assertTrue(changed, "applyInitialModeIfNeeded must return true when mode was replaced");
+        long infoCount = events.stream()
+                .filter(e -> e instanceof StatusEvent se && se.type() == StatusEventTypeEnum.INFO)
+                .count();
+        assertEquals(1, infoCount, "exactly one INFO event must fire for the replaced mode");
+        assertTrue(calls.isEmpty(),
+                "setConfigOption must NOT be called when effectiveMode == agentCurrentMode after replacement");
+    }
+
+    @Test
+    void applyInitialBothValidAndMatchingAgent_noInfoEvents_noSetConfigOptionCalls() {
+        List<AiProcessEvent> events = new ArrayList<>();
+        List<String[]> calls = new ArrayList<>();
+        OpenCodeAiProcessManager manager = new OpenCodeAiProcessManager(events::add) {
+            @Override
+            public CompletableFuture<JsonArray> setConfigOption(String configId, String value) {
+                calls.add(new String[]{configId, value});
+                return CompletableFuture.completedFuture(new JsonArray());
+            }
+        };
+
+        JsonArray cfgOpts = new JsonArray();
+        cfgOpts.add(buildModeOption("build", "build", "plan"));
+        cfgOpts.add(buildEffortOption("low", "low", "high"));
+        manager.sessionConfigOptions = cfgOpts;
+
+        OpenCodeSessionSettings settings = new OpenCodeSessionSettings();
+        settings.setMode("build");   // matches agent current
+        settings.setEffort("low");   // matches agent current
+        AiSession session = new AiSession("test-both-valid", "Test", null,
+                AiTypeEnum.OPENCODE, null, settings, java.time.Instant.now(), java.time.Instant.now());
+        manager.setCurrentSession(session);
+
+        boolean changed = manager.applyInitialModeIfNeeded();
+
+        assertFalse(changed, "applyInitialModeIfNeeded must return false when both values are valid and match");
+        assertTrue(calls.isEmpty(), "setConfigOption must NOT be called when values already match agent");
+        assertTrue(events.isEmpty(), "no INFO events must fire when values are valid and matching");
     }
 
     @Test

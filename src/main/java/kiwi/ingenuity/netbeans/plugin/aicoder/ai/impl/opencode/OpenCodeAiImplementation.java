@@ -1,5 +1,8 @@
 package kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.opencode;
 
+import com.google.gson.JsonArray;
+import com.google.gson.JsonElement;
+import com.google.gson.JsonObject;
 import java.nio.file.Path;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.AiImplementation;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.AiModelCatalog;
@@ -24,8 +27,15 @@ public class OpenCodeAiImplementation extends AiImplementation {
         return modelCatalog;
     }
 
+    /**
+     * OpenCode's model list only becomes available after a successful ACP
+     * {@code session/new} handshake, via the {@code configOptions} array. There
+     * is nothing to discover before a session exists; models are cached in
+     * {@link kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.opencode.settings.OpenCodePluginSettings#setDiscoveredModels}
+     * when the first {@code session/new} response arrives.
+     */
     public static void triggerModelDiscovery() {
-        // Placeholder for Slice 6: will discover models via ACP configOptions
+        // intentional no-op: models arrive via configOptions after session/new
     }
     private final OpenCodeAiProcessManager delegate;
     private volatile AiSessionHost sessionHost;
@@ -67,7 +77,35 @@ public class OpenCodeAiImplementation extends AiImplementation {
 
     @Override
     public void setModel(String model) {
-        OpenCodePluginSettings.setModel(model);
+        // Session-scoped change — deliberately does not write the global default.
+        // The global default (Tools → Options) is owned solely by the settings panel.
+        delegate().setModel(model);
+        if (currentSession != null && currentSession.settings() instanceof OpenCodeSessionSettings settings) {
+            settings.setModel(model);
+        }
+        if (delegate().isSessionLive()) {
+            String current = currentConfigValue("model");
+            if (model != null && !model.equals(current)) {
+                delegate().setConfigOption("model", model);
+            }
+        }
+    }
+
+    private String currentConfigValue(String id) {
+        JsonArray opts = delegate().configOptions();
+        if (opts == null) {
+            return null;
+        }
+        for (JsonElement el : opts) {
+            if (!el.isJsonObject()) {
+                continue;
+            }
+            JsonObject o = el.getAsJsonObject();
+            if (id.equals(o.has("id") ? o.get("id").getAsString() : null)) {
+                return o.has("currentValue") ? o.get("currentValue").getAsString() : null;
+            }
+        }
+        return null;
     }
 
     @Override
@@ -93,7 +131,9 @@ public class OpenCodeAiImplementation extends AiImplementation {
 
     @Override
     public AiInfoBarExtension createInfoBarExtension(AiSession session, AiSessionHost host) {
-        return new OpenCodeAiInfoBarExtension(delegate);
+        OpenCodeSessionSettings s = (session != null && session.settings() instanceof OpenCodeSessionSettings)
+                ? (OpenCodeSessionSettings) session.settings() : null;
+        return new OpenCodeAiInfoBarExtension(delegate, s, host);
     }
 
     @Override

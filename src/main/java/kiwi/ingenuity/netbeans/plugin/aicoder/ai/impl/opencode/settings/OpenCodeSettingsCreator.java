@@ -30,6 +30,9 @@ public class OpenCodeSettingsCreator extends AiModelSessionSettingsCreator<OpenC
         if (cfgObj.has("mode") && !cfgObj.get("mode").isJsonNull()) {
             settings.setMode(cfgObj.get("mode").getAsString());
         }
+        if (cfgObj.has("effort") && !cfgObj.get("effort").isJsonNull()) {
+            settings.setEffort(cfgObj.get("effort").getAsString());
+        }
         if (cfgObj.has("acpSessionId") && !cfgObj.get("acpSessionId").isJsonNull()) {
             settings.setAcpSessionId(cfgObj.get("acpSessionId").getAsString());
         }

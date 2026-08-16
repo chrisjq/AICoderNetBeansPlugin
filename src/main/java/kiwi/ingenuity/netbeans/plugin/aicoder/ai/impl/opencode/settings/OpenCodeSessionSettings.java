@@ -6,6 +6,7 @@ import kiwi.ingenuity.netbeans.plugin.aicoder.ai.settings.AiModelSessionSettings
 public class OpenCodeSessionSettings extends AiModelSessionSettings {
 
     private volatile String mode;
+    private volatile String effort;
     private volatile String acpSessionId;
 
     public OpenCodeSessionSettings() {
@@ -24,6 +25,14 @@ public class OpenCodeSessionSettings extends AiModelSessionSettings {
         this.mode = mode;
     }
 
+    public String effort() {
+        return effort;
+    }
+
+    public void setEffort(String effort) {
+        this.effort = effort;
+    }
+
     public String acpSessionId() {
         return acpSessionId;
     }
@@ -37,6 +46,9 @@ public class OpenCodeSessionSettings extends AiModelSessionSettings {
         super.populateJsonObject(cfgObj);
         if (mode != null) {
             cfgObj.addProperty("mode", mode);
+        }
+        if (effort != null) {
+            cfgObj.addProperty("effort", effort);
         }
         if (acpSessionId != null) {
             cfgObj.addProperty("acpSessionId", acpSessionId);

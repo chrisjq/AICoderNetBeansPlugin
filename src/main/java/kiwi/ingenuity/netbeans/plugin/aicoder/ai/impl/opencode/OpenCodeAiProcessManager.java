@@ -337,7 +337,12 @@ public class OpenCodeAiProcessManager extends AiProcessManager {
         if (cb != null) {
             cb.run();
         }
-        applyInitialModeIfNeeded();
+        boolean settingsChanged = applyInitialModeIfNeeded();
+        if (settingsChanged && cb != null) {
+            // Validation replaced or cleared a stored value — re-persist so the
+            // corrected settings survive the next IDE restart.
+            cb.run();
+        }
         // Notify info bar that config options are now available (fired outside
         // the monitor to avoid deadlock; the info bar guards with invokeLater).
         if (sessionConfigOptions != null) {
@@ -345,41 +350,121 @@ public class OpenCodeAiProcessManager extends AiProcessManager {
         }
     }
 
-    void applyInitialModeIfNeeded() {
+    boolean applyInitialModeIfNeeded() {
         if (sessionConfigOptions == null || currentSession == null) {
-            return;
+            return false;
         }
         if (!(currentSession.settings() instanceof OpenCodeSessionSettings)) {
-            return;
+            return false;
         }
         OpenCodeSessionSettings s = (OpenCodeSessionSettings) currentSession.settings();
-        String effectiveMode = s.mode();
-        if (effectiveMode == null || effectiveMode.isBlank()) {
-            effectiveMode = OpenCodePluginSettings.DEFAULT_MODE;
-        }
-        String configCurrentMode = null;
+        boolean settingsChanged = false;
+        settingsChanged |= applyInitialModeOption(s);
+        settingsChanged |= applyInitialEffortOption(s);
+        return settingsChanged;
+    }
+
+    private boolean applyInitialModeOption(OpenCodeSessionSettings s) {
+        String agentCurrentMode = null;
+        List<String> availableModes = new ArrayList<>();
         for (JsonElement el : sessionConfigOptions) {
             if (!el.isJsonObject()) {
                 continue;
             }
             JsonObject opt = el.getAsJsonObject();
-            if ("mode".equals(opt.has("id") ? opt.get("id").getAsString() : null)
-                    && opt.has("currentValue")) {
-                configCurrentMode = opt.get("currentValue").getAsString();
+            if ("mode".equals(opt.has("id") ? opt.get("id").getAsString() : null)) {
+                if (opt.has("currentValue")) {
+                    agentCurrentMode = opt.get("currentValue").getAsString();
+                }
+                if (opt.has("options") && opt.get("options").isJsonArray()) {
+                    for (JsonElement v : opt.getAsJsonArray("options")) {
+                        if (v.isJsonObject() && v.getAsJsonObject().has("value")) {
+                            availableModes.add(v.getAsJsonObject().get("value").getAsString());
+                        }
+                    }
+                }
                 break;
             }
         }
-        if (effectiveMode.equals(configCurrentMode)) {
-            return;
+        String effectiveMode = s.mode();
+        if (effectiveMode == null || effectiveMode.isBlank()) {
+            effectiveMode = OpenCodePluginSettings.DEFAULT_MODE;
         }
-        try {
-            JsonArray updated = setConfigOption("mode", effectiveMode).get(30, TimeUnit.SECONDS);
-            sessionConfigOptions = updated;
-        }
-        catch (Exception e) {
+        boolean settingsChanged = false;
+        if (!availableModes.isEmpty() && !availableModes.contains(effectiveMode)) {
             listener.onAiProcessEvent(new StatusEvent(StatusEventTypeEnum.INFO,
-                    "Mode \"" + effectiveMode + "\" rejected by OpenCode; using default"));
+                    "Mode \"" + effectiveMode + "\" is not available; using agent default"));
+            effectiveMode = agentCurrentMode;
+            s.setMode(effectiveMode);
+            settingsChanged = true;
         }
+        if (effectiveMode != null && !effectiveMode.equals(agentCurrentMode)) {
+            try {
+                JsonArray updated = setConfigOption("mode", effectiveMode).get(30, TimeUnit.SECONDS);
+                sessionConfigOptions = updated;
+            }
+            catch (Exception e) {
+                listener.onAiProcessEvent(new StatusEvent(StatusEventTypeEnum.INFO,
+                        "Mode \"" + effectiveMode + "\" rejected by OpenCode; using default"));
+            }
+        }
+        return settingsChanged;
+    }
+
+    private boolean applyInitialEffortOption(OpenCodeSessionSettings s) {
+        String agentCurrentEffort = null;
+        List<String> availableEfforts = new ArrayList<>();
+        boolean effortOptionExists = false;
+        for (JsonElement el : sessionConfigOptions) {
+            if (!el.isJsonObject()) {
+                continue;
+            }
+            JsonObject opt = el.getAsJsonObject();
+            if ("effort".equals(opt.has("id") ? opt.get("id").getAsString() : null)) {
+                effortOptionExists = true;
+                if (opt.has("currentValue")) {
+                    agentCurrentEffort = opt.get("currentValue").getAsString();
+                }
+                if (opt.has("options") && opt.get("options").isJsonArray()) {
+                    for (JsonElement v : opt.getAsJsonArray("options")) {
+                        if (v.isJsonObject() && v.getAsJsonObject().has("value")) {
+                            availableEfforts.add(v.getAsJsonObject().get("value").getAsString());
+                        }
+                    }
+                }
+                break;
+            }
+        }
+        String storedEffort = s.effort();
+        if (!effortOptionExists) {
+            if (storedEffort != null) {
+                listener.onAiProcessEvent(new StatusEvent(StatusEventTypeEnum.INFO,
+                        "Effort setting \"" + storedEffort + "\" ignored: model does not support effort"));
+                s.setEffort(null);
+                return true;
+            }
+            return false;
+        }
+        if (storedEffort == null) {
+            return false;
+        }
+        if (!availableEfforts.contains(storedEffort)) {
+            listener.onAiProcessEvent(new StatusEvent(StatusEventTypeEnum.INFO,
+                    "Effort \"" + storedEffort + "\" is not available; clearing stored effort"));
+            s.setEffort(null);
+            return true;
+        }
+        if (!storedEffort.equals(agentCurrentEffort)) {
+            try {
+                JsonArray updated = setConfigOption("effort", storedEffort).get(30, TimeUnit.SECONDS);
+                sessionConfigOptions = updated;
+            }
+            catch (Exception e) {
+                listener.onAiProcessEvent(new StatusEvent(StatusEventTypeEnum.INFO,
+                        "Effort \"" + storedEffort + "\" rejected by OpenCode"));
+            }
+        }
+        return false;
     }
 
     private void startStderrDrainer(Process process) {
@@ -631,6 +716,10 @@ public class OpenCodeAiProcessManager extends AiProcessManager {
         if (existingSessionId != null && !existingSessionId.isBlank()) {
             pendingAcpResumeId = existingSessionId;
         }
+    }
+
+    public synchronized boolean isSessionLive() {
+        return acpSessionId != null;
     }
 
     @Override
