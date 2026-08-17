@@ -51,6 +51,7 @@ import kiwi.ingenuity.netbeans.plugin.aicoder.ai.events.PermissionDecision;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.events.PermissionEvent;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.events.StatusEvent;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.events.StatusEventTypeEnum;
+import kiwi.ingenuity.netbeans.plugin.aicoder.ai.events.SystemNotificationEvent;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.events.TextDeltaEvent;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.events.ToolUseEvent;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.events.TurnCompleteEvent;
@@ -1284,6 +1285,9 @@ public final class AiTopComponent extends TopComponent implements AiProcessEvent
                     infoBar.setStatusMessage(se.text());
             }
         }
+        else if (event instanceof SystemNotificationEvent sn) {
+            conversationPanel.addSystemMessage(sn.text());
+        }
         else if (infoBarExtension != null && event instanceof AiProcessImplEvent si) {
             infoBarExtension.onAiProcessImplEvent(si);
         }
@@ -1329,6 +1333,11 @@ public final class AiTopComponent extends TopComponent implements AiProcessEvent
         String fullPrompt = contextProvider != null
                 ? contextProvider.buildPreamble(text, sessionInstructions)
                 : text;
+        boolean instructionsIncluded = contextProvider != null
+                && contextProvider.consumeSessionInstructionsInjected();
+        if (instructionsIncluded) {
+            conversationPanel.addSystemMessage("Session Instructions Sent");
+        }
         conversationPanel.addUserMessage(text);
         infoBar.setProcessing(true);
         infoBar.setStatusMessage("Thinking…");
@@ -1351,9 +1360,6 @@ public final class AiTopComponent extends TopComponent implements AiProcessEvent
                         session.settings() == null ? null : session.settings().sessionInstructions());
             }
             aiBackend.sendPrompt(fullPrompt, workDir, projectDirs);
-            if (contextProvider != null && contextProvider.consumeSessionInstructionsInjected()) {
-                conversationPanel.addSystemMessage("Special Instructions Sent");
-            }
         }
         setSendEnabled(false);
     }
@@ -1729,7 +1735,7 @@ public final class AiTopComponent extends TopComponent implements AiProcessEvent
         }
         aiBackend.sendPrompt(prompt, resolveWorkDir(), projectDirs);
         if (contextProvider != null && contextProvider.consumeSessionInstructionsInjected()) {
-            conversationPanel.addSystemMessage("Special Instructions Sent");
+            conversationPanel.addSystemMessage("Session Instructions Sent");
         }
         setSendEnabled(false);
         session.setStartupInstructionsInjected(true);

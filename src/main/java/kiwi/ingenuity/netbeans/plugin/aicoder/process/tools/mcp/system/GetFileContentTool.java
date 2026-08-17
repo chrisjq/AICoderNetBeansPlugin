@@ -3,19 +3,39 @@ package kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.system;
 import com.google.gson.JsonArray;
 import com.google.gson.JsonObject;
 import java.util.Set;
-import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.ToolSchemaKeyEnum;
-import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.providers.netbeans.EditorContextProvider;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.McpArgumentException;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.McpInstructionOptionEnum;
-import kiwi.ingenuity.netbeans.plugin.aicoder.process.server.McpHookServer;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.McpSectionEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.McpToolEnum;
+import kiwi.ingenuity.netbeans.plugin.aicoder.process.server.McpHookServer;
+import kiwi.ingenuity.netbeans.plugin.aicoder.process.session.AbstractAiSession;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.McpToolInterface;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.McpToolSchemas;
-import kiwi.ingenuity.netbeans.plugin.aicoder.process.session.AbstractAiSession;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.ToolRequestArguments;
+import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.ToolSchemaKeyEnum;
+import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.providers.netbeans.EditorContextProvider;
 
 public class GetFileContentTool implements McpToolInterface {
+
+    /**
+     * Model-facing tool description. Callers with ONLY_MCP_TOOL_ACCESS have no
+     * built-in Read tool, so the comparison against it is omitted rather than
+     * pointing them at something they cannot call.
+     */
+    private static String description(Set<McpInstructionOptionEnum> options) {
+        StringBuilder sb = new StringBuilder(
+                "Returns the in-memory content of a file (including unsaved editor changes). ");
+        if (options.contains(McpInstructionOptionEnum.ONLY_MCP_TOOL_ACCESS)) {
+            sb.append("Use this for project source files so you see what the IDE currently holds, "
+                    + "not what is on disk. ");
+        }
+        else {
+            sb.append("Use this INSTEAD OF the built-in Read tool for project source files so you see "
+                    + "what the IDE currently holds, not what is on disk. ");
+        }
+        sb.append("Optionally restrict to a line range using startLine and endLine.");
+        return sb.toString();
+    }
 
     private final McpHookServer server;
 
@@ -34,30 +54,12 @@ public class GetFileContentTool implements McpToolInterface {
             return null;
         }
         if (options.contains(McpInstructionOptionEnum.ONLY_MCP_TOOL_ACCESS)) {
-            return "GetFileContent - reads project source files with live NetBeans annotations (compilation errors, warnings)";
+            return "GetFileContent - reads project source files with live NetBeans annotations (compilation errors, warnings); do not guess paths — use GetProjectStructure for package layout or SearchSymbols/SearchInFiles to locate a file first";
         }
         return "GetFileContent -> INSTEAD OF Read tool for project source files; reads NetBeans "
                 + "in-memory content including unsaved changes. Full rewrite: GetFileContent → SaveFile(content). "
-                + "Partial edit: GetFileContent → SaveFile (flush) → Read (built-in) → Edit (built-in)";
-    }
-
-    /**
-     * Model-facing tool description. Callers with ONLY_MCP_TOOL_ACCESS have no
-     * built-in Read tool, so the comparison against it is omitted rather than
-     * pointing them at something they cannot call.
-     */
-    private static String description(Set<McpInstructionOptionEnum> options) {
-        StringBuilder sb = new StringBuilder(
-                "Returns the in-memory content of a file (including unsaved editor changes). ");
-        if (options.contains(McpInstructionOptionEnum.ONLY_MCP_TOOL_ACCESS)) {
-            sb.append("Use this for project source files so you see what the IDE currently holds, "
-                    + "not what is on disk. ");
-        } else {
-            sb.append("Use this INSTEAD OF the built-in Read tool for project source files so you see "
-                    + "what the IDE currently holds, not what is on disk. ");
-        }
-        sb.append("Optionally restrict to a line range using startLine and endLine.");
-        return sb.toString();
+                + "Partial edit: GetFileContent → SaveFile (flush) → Read (built-in) → Edit (built-in). "
+                + "Do not guess paths — use GetProjectStructure for package layout or SearchSymbols/SearchInFiles to locate a file first";
     }
 
     @Override

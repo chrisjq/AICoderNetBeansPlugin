@@ -3,10 +3,12 @@ package kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.system;
 import com.google.gson.JsonArray;
 import com.google.gson.JsonObject;
 import java.util.Set;
+import kiwi.ingenuity.netbeans.plugin.aicoder.ai.events.SystemNotificationEvent;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.McpArgumentException;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.McpInstructionOptionEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.McpSectionEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.McpToolEnum;
+import kiwi.ingenuity.netbeans.plugin.aicoder.process.events.AiProcessEventListener;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.locking.LockTypeEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.locking.RequiresLock;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.server.McpHookServer;
@@ -80,6 +82,13 @@ public class MoveFileTool implements McpToolInterface {
         if (sessionId == null || !server.isFileAllowed(sessionId, targetDir)) {
             return "Access denied: " + targetDir + " is outside the allowed project scope for this session.";
         }
-        return RefactoringProvider.moveFile(sourcePath, targetDir);
+        String result = RefactoringProvider.moveFile(sourcePath, targetDir);
+        if ("File moved".equals(result)) {
+            AiProcessEventListener listener = session.getAiProcessEventListener();
+            if (listener != null) {
+                listener.onAiProcessEvent(new SystemNotificationEvent("MoveFile: " + sourcePath + " → " + targetDir));
+            }
+        }
+        return result;
     }
 }

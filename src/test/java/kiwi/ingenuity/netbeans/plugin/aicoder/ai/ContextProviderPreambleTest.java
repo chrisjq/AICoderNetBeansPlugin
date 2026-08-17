@@ -201,7 +201,7 @@ class ContextProviderPreambleTest {
                 .contains("## Session Instructions"),
                 "the second send after a reopen is where the re-injection used to appear");
         assertFalse(provider.consumeSessionInstructionsInjected(),
-                "no injection means no 'Special Instructions Sent' marker either");
+                "no injection means no 'Session Instructions Sent' marker either");
     }
 
     @Test

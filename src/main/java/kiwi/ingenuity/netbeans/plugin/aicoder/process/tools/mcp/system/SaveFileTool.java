@@ -2,9 +2,16 @@ package kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.system;
 
 import com.google.gson.JsonObject;
 import java.util.Set;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
+import kiwi.ingenuity.netbeans.plugin.aicoder.ai.events.PermissionDecision;
+import kiwi.ingenuity.netbeans.plugin.aicoder.ai.events.PermissionEvent;
+import kiwi.ingenuity.netbeans.plugin.aicoder.ai.events.SystemNotificationEvent;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.McpInstructionOptionEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.McpSectionEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.McpToolEnum;
+import kiwi.ingenuity.netbeans.plugin.aicoder.process.events.AiProcessEventListener;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.locking.LockTypeEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.locking.RequiresLock;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.server.McpHookServer;
@@ -74,16 +81,37 @@ public class SaveFileTool extends AbstractFileTool {
             if (fp == null) {
                 return "file_path is required when content is provided";
             }
-            boolean autoAccept = session.getSettings() != null && session.getSettings().effectiveAutoAccept();
-            if (!autoAccept) {
-                return "Save File: " + fp + " — rejected (Auto-Accept is disabled for this session. Use WriteFile or ApplyEdit to show the diff review panel, or enable Auto-Accept in session settings)";
+            AiProcessEventListener listener = session.getAiProcessEventListener();
+            if (listener == null) {
+                return RefactoringProvider.writeFileContent(fp, content);
             }
-            String res = RefactoringProvider.writeFileContent(fp, content);
-            if (res != null && res.contains("File updated and saved")) {
-                return "Save File: " + fp + " — auto-accepted";
+            CompletableFuture<PermissionDecision> future = new CompletableFuture<>();
+            listener.onAiProcessEvent(new PermissionEvent("Write", fp, null, null, content, future));
+            PermissionDecision decision;
+            try {
+                decision = future.get(120, TimeUnit.SECONDS);
             }
-            return res;
+            catch (TimeoutException e) {
+                return "Timed out waiting for the user to review this change in the diff panel — "
+                        + "the user did not respond in time. You may retry.";
+            }
+            catch (Exception e) {
+                decision = PermissionDecision.denied(null);
+            }
+            if (decision == null || !decision.allow()) {
+                return decision != null && decision.message() != null && !decision.message().isBlank()
+                        ? "User rejected the write: " + decision.message().trim() + " — do not retry this change"
+                        : "User rejected the write — do not retry this change";
+            }
+            return RefactoringProvider.writeFileContent(fp, content);
         }
-        return RefactoringProvider.saveFile(effectivePath);
+        String result = RefactoringProvider.saveFile(effectivePath);
+        if ("File saved".equals(result)) {
+            AiProcessEventListener listener = session.getAiProcessEventListener();
+            if (listener != null) {
+                listener.onAiProcessEvent(new SystemNotificationEvent("SaveFile: " + effectivePath));
+            }
+        }
+        return result;
     }
 }

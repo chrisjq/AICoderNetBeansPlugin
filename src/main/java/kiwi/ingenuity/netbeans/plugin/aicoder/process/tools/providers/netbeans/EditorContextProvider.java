@@ -9,6 +9,8 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
+import java.util.ArrayDeque;
+import java.util.ArrayList;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.concurrent.atomic.AtomicReference;
@@ -18,6 +20,11 @@ import javax.swing.SwingUtilities;
 import javax.swing.text.Document;
 import javax.swing.text.JTextComponent;
 import org.netbeans.api.editor.EditorRegistry;
+import org.netbeans.api.project.Project;
+import org.netbeans.api.project.ProjectUtils;
+import org.netbeans.api.project.SourceGroup;
+import org.netbeans.api.project.Sources;
+import org.netbeans.api.project.ui.OpenProjects;
 import org.netbeans.api.queries.FileEncodingQuery;
 import org.openide.filesystems.FileObject;
 import org.openide.filesystems.FileUtil;
@@ -135,7 +142,7 @@ public class EditorContextProvider {
     public static String getFileContent(String filePath, int startLine, int endLine) {
         File f = new File(filePath);
         if (!f.exists() || !f.isFile()) {
-            return "File not found: " + filePath;
+            return buildNotFoundMessage(filePath);
         }
         try {
             List<String> lines = Files.readAllLines(f.toPath(), StandardCharsets.UTF_8);
@@ -165,13 +172,13 @@ public class EditorContextProvider {
     }
 
     /**
-     * Reports a file's metadata without returning its contents: exact byte size,
-     * line count, text encoding, last-modified time and age, whether it is
-     * writable, and whether the editor holds unsaved changes for it. Lets a
+     * Reports a file's metadata without returning its contents: exact byte
+     * size, line count, text encoding, last-modified time and age, whether it
+     * is writable, and whether the editor holds unsaved changes for it. Lets a
      * caller decide whether a read needs paging (a caller's result limit may
-     * clip a large GetFileContent) before spending the tokens, which charset the
-     * bytes decode with, how stale the on-disk copy is, and whether an edit will
-     * be permitted. The encoding is resolved through NetBeans' own
+     * clip a large GetFileContent) before spending the tokens, which charset
+     * the bytes decode with, how stale the on-disk copy is, and whether an edit
+     * will be permitted. The encoding is resolved through NetBeans' own
      * {@link FileEncodingQuery} so it matches how the editor reads the file
      * (per-project charset settings, detection); the size/line count are the
      * on-disk copy — an "unsaved editor changes" flag warns when the editor's
@@ -438,6 +445,77 @@ public class EditorContextProvider {
             return fo;
         }
         return null;
+    }
+
+    static String buildNotFoundMessage(String filePath) {
+        return buildNotFoundMessage(filePath, collectSourceRoots());
+    }
+
+    static String buildNotFoundMessage(String filePath, List<File> sourceRoots) {
+        String simpleName = new File(filePath).getName();
+        List<String> candidates = new ArrayList<>();
+        int scanned = 0;
+        scan:
+        for (File root : sourceRoots) {
+            ArrayDeque<File> queue = new ArrayDeque<>();
+            queue.add(root);
+            while (!queue.isEmpty()) {
+                File dir = queue.poll();
+                File[] children = dir.listFiles();
+                if (children == null) {
+                    continue;
+                }
+                for (File child : children) {
+                    if (child.isDirectory()) {
+                        queue.add(child);
+                    }
+                    else {
+                        scanned++;
+                        if (scanned > 20_000) {
+                            break scan;
+                        }
+                        if (child.getName().equals(simpleName)) {
+                            candidates.add(child.getAbsolutePath());
+                            if (candidates.size() >= 5) {
+                                break scan;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        StringBuilder sb = new StringBuilder("File not found: ").append(filePath);
+        if (candidates.isEmpty()) {
+            sb.append("\n\nNo file with that name in the open projects. Use GetProjectStructure for the package layout, or SearchSymbols/SearchInFiles to locate it.");
+        }
+        else {
+            sb.append("\n\nDid you mean:");
+            for (String c : candidates) {
+                sb.append("\n  ").append(c);
+            }
+        }
+        return sb.toString();
+    }
+
+    private static List<File> collectSourceRoots() {
+        List<File> roots = new ArrayList<>();
+        try {
+            Project[] projects = OpenProjects.getDefault().getOpenProjects();
+            for (Project project : projects) {
+                Sources sources = ProjectUtils.getSources(project);
+                SourceGroup[] groups = sources.getSourceGroups("java");
+                for (SourceGroup group : groups) {
+                    File rootFile = FileUtil.toFile(group.getRootFolder());
+                    if (rootFile != null) {
+                        roots.add(rootFile);
+                    }
+                }
+            }
+        }
+        catch (Throwable t) {
+            LOG.log(Level.FINE, "collectSourceRoots error", t);
+        }
+        return roots;
     }
 
     private EditorContextProvider() {

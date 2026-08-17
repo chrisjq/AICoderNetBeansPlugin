@@ -1,7 +1,9 @@
 package kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.system;
 
+import kiwi.ingenuity.netbeans.plugin.aicoder.ai.events.SystemNotificationEvent;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.McpSectionEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.McpToolEnum;
+import kiwi.ingenuity.netbeans.plugin.aicoder.process.events.AiProcessEventListener;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.locking.LockTypeEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.locking.RequiresLock;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.server.McpHookServer;
@@ -35,6 +37,13 @@ public class DeleteFileTool extends AbstractFileTool {
                 return "Access denied: " + effectivePath + " is outside the allowed project scope for this session.";
             }
         }
-        return RefactoringProvider.deleteFile(effectivePath);
+        String result = RefactoringProvider.deleteFile(effectivePath);
+        if ("File deleted".equals(result)) {
+            AiProcessEventListener listener = session.getAiProcessEventListener();
+            if (listener != null) {
+                listener.onAiProcessEvent(new SystemNotificationEvent("DeleteFile: " + effectivePath));
+            }
+        }
+        return result;
     }
 }
