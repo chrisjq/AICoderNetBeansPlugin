@@ -126,6 +126,16 @@ public class OpenCodeAiProcessManager extends AiProcessManager {
         return params;
     }
 
+    static String resolveSessionId(boolean resumed, String resumeId, JsonObject sessionResult) {
+        // session/resume response contains only configOptions; use the requested id directly.
+        // session/new always returns sessionId in its response.
+        if (resumed) {
+            return resumeId;
+        }
+        return sessionResult != null && sessionResult.has("sessionId")
+                ? sessionResult.get("sessionId").getAsString() : null;
+    }
+
     private volatile AcpConnection connection = null;
     private volatile String acpSessionId = null;
     volatile String pendingAcpResumeId = null;
@@ -262,11 +272,10 @@ public class OpenCodeAiProcessManager extends AiProcessManager {
                 JsonObject resumeResult = conn.sendRequest(AcpMethodEnum.SESSION_RESUME,
                         buildSessionResumeParams(resumeId, workDir.getAbsolutePath(), mcpBaseUrl))
                         .get(30, TimeUnit.SECONDS);
-                String resumedSid = resumeResult.has("sessionId") ? resumeResult.get("sessionId").getAsString() : null;
-                if (resumedSid != null && !resumedSid.isBlank()) {
-                    sessionResult = resumeResult;
-                    resumed = true;
-                }
+                // session/resume returns only configOptions (no sessionId) — the client
+                // supplied the id in the request; a non-exception return means resume succeeded.
+                sessionResult = resumeResult;
+                resumed = true;
             }
             catch (Exception e) {
                 LOG.log(Level.INFO, "session/resume failed; falling back to session/new: {0}", e.getMessage());
@@ -293,8 +302,7 @@ public class OpenCodeAiProcessManager extends AiProcessManager {
             }
         }
 
-        String sid = sessionResult != null && sessionResult.has("sessionId")
-                ? sessionResult.get("sessionId").getAsString() : null;
+        String sid = resolveSessionId(resumed, resumeId, sessionResult);
         if (sid == null || sid.isBlank()) {
             conn.close();
             synchronized (this) {
@@ -303,7 +311,7 @@ public class OpenCodeAiProcessManager extends AiProcessManager {
                 }
             }
             process.destroyForcibly();
-            throw new IOException((resumed ? "session/resume" : "session/new") + " returned no sessionId");
+            throw new IOException("session/new returned no sessionId");
         }
 
         // ---- Publish results under the lock; bail if stop() ran during the waits ----
@@ -330,8 +338,11 @@ public class OpenCodeAiProcessManager extends AiProcessManager {
             activeHandler = handler;
             this.connection = conn;
         }
-        if (PluginSettings.isDebugJson()) {
-            LOG.log(Level.INFO, "OpenCode ACP session started: {0}", acpSessionId);
+        if (resumed) {
+            LOG.log(Level.INFO, "Resumed OpenCode ACP session: {0}", acpSessionId);
+        }
+        else {
+            LOG.log(Level.INFO, "Started new OpenCode ACP session: {0}", acpSessionId);
         }
         Runnable cb = onSessionEstablished;
         if (cb != null) {
@@ -713,9 +724,18 @@ public class OpenCodeAiProcessManager extends AiProcessManager {
 
     @Override
     public void resumeSession(String existingSessionId) {
-        if (existingSessionId != null && !existingSessionId.isBlank()) {
-            pendingAcpResumeId = existingSessionId;
+        if (existingSessionId == null || existingSessionId.isBlank()) {
+            return;
         }
+        if (!existingSessionId.startsWith("ses_")) {
+            // Guard against plugin-level UUIDs; OpenCode session ids always start with ses_.
+            // AiTopComponent.loadHistory() passes the plugin UUID here — the override in
+            // OpenCodeAiImplementation.resumeSession() is the primary defence, but this
+            // ensures no stray caller can ever poison the pending resume slot.
+            LOG.log(Level.FINE, "resumeSession: ignoring non-ACP id ''{0}''", existingSessionId);
+            return;
+        }
+        pendingAcpResumeId = existingSessionId;
     }
 
     public synchronized boolean isSessionLive() {

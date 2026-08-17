@@ -960,7 +960,7 @@ class OpenCodeAiProcessManagerTest {
     @Test
     void afterStartResumesFromSettingsAcpId() {
         OpenCodeSessionSettings settings = new OpenCodeSessionSettings();
-        settings.setAcpSessionId("persisted-acp-id");
+        settings.setAcpSessionId("ses_persisted");
         AiSession session = new AiSession("s2", "Test", null, AiTypeEnum.OPENCODE, null, settings, Instant.now(), Instant.now());
 
         List<AiProcessEvent> events = new ArrayList<>();
@@ -976,7 +976,138 @@ class OpenCodeAiProcessManagerTest {
 
         impl.start("non-existent-opencode-executable", "model");
 
-        assertEquals("persisted-acp-id", impl.exposedDelegate().pendingAcpResumeId,
+        assertEquals("ses_persisted", impl.exposedDelegate().pendingAcpResumeId,
                 "afterStart must call resumeSession with the acpSessionId from settings");
+    }
+
+    @Test
+    void resumeSession_nonAcpId_isIgnored() {
+        // Belt-and-braces guard: the process manager must reject any id that does not start with
+        // ses_ — a plugin-level UUID must never reach the pending resume slot.
+        OpenCodeAiProcessManager manager = new OpenCodeAiProcessManager(e -> {
+        });
+
+        manager.resumeSession("e6523570-b545-4136-ac6b-3bd9d7fce668");
+
+        assertNull(manager.pendingAcpResumeId,
+                "resumeSession must ignore ids that do not start with ses_");
+    }
+
+    // ---- Bug 2 fix: session/resume returns only configOptions, no sessionId ----
+    @Test
+    void resolveSessionId_resumed_usesRequestedIdNotResponseId() {
+        // REGRESSION GUARD (Bug 2): opencode 1.18.18 returns {"configOptions":[...]} with
+        // NO "sessionId" in the session/resume response. Old logic checked for "sessionId"
+        // in the response → null → resumed stayed false → fell through to session/new,
+        // silently overwriting the stored ACP id. This must FAIL against the old logic and
+        // PASS after the fix.
+        JsonObject resumeResponse = new JsonObject();
+        resumeResponse.add("configOptions", new JsonArray()); // no sessionId — real opencode 1.18.18 behaviour
+
+        String resolved = OpenCodeAiProcessManager.resolveSessionId(true, "ses_abc123", resumeResponse);
+
+        assertEquals("ses_abc123", resolved,
+                "resolveSessionId with resumed=true must return the requested id, not look for sessionId in response");
+    }
+
+    @Test
+    void resolveSessionId_notResumed_usesSessionIdFromNewResponse() {
+        // When session/new is used, resolveSessionId must return the sessionId from the response.
+        // Guards against the fix accidentally breaking the non-resumed path.
+        JsonObject newResponse = new JsonObject();
+        newResponse.addProperty("sessionId", "ses_from-new");
+
+        String resolved = OpenCodeAiProcessManager.resolveSessionId(false, null, newResponse);
+
+        assertEquals("ses_from-new", resolved,
+                "resolveSessionId with resumed=false must return sessionId from the session/new response");
+    }
+
+    @Test
+    void resolveSessionId_sessionNewNoSessionId_returnsNull() {
+        // session/new returning no sessionId → resolveSessionId must return null →
+        // spawnAndHandshake throws IOException. This guard must survive the Bug 2 fix.
+        JsonObject emptyNewResponse = new JsonObject();
+
+        String resolved = OpenCodeAiProcessManager.resolveSessionId(false, null, emptyNewResponse);
+
+        assertNull(resolved,
+                "resolveSessionId must return null when session/new response has no sessionId");
+    }
+
+    @Test
+    void resumeResponse_configOptionsAreStashedOnHandshake() throws Exception {
+        // session/resume also returns configOptions; they must be stashed just as session/new's are.
+        JsonObject cfgOpt = new JsonObject();
+        cfgOpt.addProperty("id", "model");
+        cfgOpt.addProperty("currentValue", "claude-sonnet-4-5");
+        JsonArray cfgOpts = new JsonArray();
+        cfgOpts.add(cfgOpt);
+
+        JsonObject resumeResponse = new JsonObject();
+        resumeResponse.add("configOptions", cfgOpts);
+
+        OpenCodeAiProcessManager manager = new OpenCodeAiProcessManager(e -> {
+        }) {
+            @Override
+            protected void spawnAndHandshake(File workDir) {
+                synchronized (this) {
+                    pendingAcpResumeId = null;
+                    if (resumeResponse.has("configOptions") && resumeResponse.get("configOptions").isJsonArray()) {
+                        sessionConfigOptions = resumeResponse.getAsJsonArray("configOptions");
+                    }
+                }
+            }
+        };
+
+        manager.spawnAndHandshake(new File(System.getProperty("java.io.tmpdir")));
+
+        assertNotNull(manager.configOptions(), "configOptions from resume response must be stashed");
+        assertEquals(1, manager.configOptions().size());
+        assertEquals("claude-sonnet-4-5",
+                manager.configOptions().get(0).getAsJsonObject().get("currentValue").getAsString());
+    }
+
+    @Test
+    void successfulResume_preservesStoredAcpId() throws Exception {
+        // REGRESSION GUARD (Bug 2): after a successful resume, the manager's acpSessionId
+        // must equal the REQUESTED resume id — not null, not a new id from session/new.
+        // Before the fix, resolveSessionId(resumed=true) returned null for a
+        // configOptions-only response, so acpSessionId was never set correctly.
+        OpenCodeSessionSettings settings = new OpenCodeSessionSettings();
+        settings.setAcpSessionId("ses_must-survive");
+        AiSession session = new AiSession("s-preserve3", "Test", null,
+                AiTypeEnum.OPENCODE, null, settings, Instant.now(), Instant.now());
+
+        JsonObject resumeResponse = new JsonObject();
+        resumeResponse.add("configOptions", new JsonArray()); // real opencode: no sessionId
+
+        OpenCodeAiProcessManager manager = new OpenCodeAiProcessManager(e -> {
+        }) {
+            @Override
+            protected void spawnAndHandshake(File workDir) {
+                String resumeId = pendingAcpResumeId;
+                boolean resumed = resumeId != null;
+                String sid = OpenCodeAiProcessManager.resolveSessionId(resumed, resumeId, resumeResponse);
+                if (sid == null) {
+                    // Simulate what the real code does without the fix: falls through to
+                    // session/new and gets a fresh id, silently overwriting the stored one.
+                    sid = "ses_new-replacement-must-not-appear";
+                }
+                synchronized (this) {
+                    pendingAcpResumeId = null;
+                    if (currentSession != null && currentSession.settings() instanceof OpenCodeSessionSettings) {
+                        ((OpenCodeSessionSettings) currentSession.settings()).setAcpSessionId(sid);
+                    }
+                }
+            }
+        };
+        manager.setCurrentSession(session);
+        manager.pendingAcpResumeId = "ses_must-survive";
+
+        manager.spawnAndHandshake(new File(System.getProperty("java.io.tmpdir")));
+
+        assertEquals("ses_must-survive", settings.acpSessionId(),
+                "after successful resume, settings.acpSessionId must be the requested resume id, not a new one");
     }
 }

@@ -232,4 +232,92 @@ class OpenCodeAiImplementationTest {
         assertEquals("opencode/any-model", settings.model(),
                 "settings must still be updated even with no live session");
     }
+
+    @Test
+    void resumeSession_withStoredAcpId_usesAcpIdNotPluginUuid() {
+        String acpId = "ses_abc123";
+        String pluginUuid = "e6523570-b545-4136-ac6b-3bd9d7fce668";
+
+        OpenCodeSessionSettings settings = new OpenCodeSessionSettings();
+        settings.setAcpSessionId(acpId);
+        AiSession session = new AiSession("s-resume-1", "Test", null,
+                AiTypeEnum.OPENCODE, null, settings, Instant.now(), Instant.now());
+
+        var impl = new OpenCodeAiImplementation(e -> {
+        }, null) {
+            {
+                currentSession = session;
+            }
+
+            OpenCodeAiProcessManager exposedDelegate() {
+                return delegate();
+            }
+        };
+
+        impl.resumeSession(pluginUuid);
+
+        assertEquals(acpId, impl.exposedDelegate().pendingAcpResumeId,
+                "resumeSession(pluginUUID) must use the stored ACP id, not the plugin UUID");
+    }
+
+    @Test
+    void resumeSession_withNoStoredAcpId_doesNotAttemptResume() {
+        String pluginUuid = "e6523570-b545-4136-ac6b-3bd9d7fce668";
+
+        OpenCodeSessionSettings settings = new OpenCodeSessionSettings();
+        AiSession session = new AiSession("s-resume-2", "Test", null,
+                AiTypeEnum.OPENCODE, null, settings, Instant.now(), Instant.now());
+
+        var impl = new OpenCodeAiImplementation(e -> {
+        }, null) {
+            {
+                currentSession = session;
+            }
+
+            OpenCodeAiProcessManager exposedDelegate() {
+                return delegate();
+            }
+        };
+
+        impl.resumeSession(pluginUuid);
+
+        assertNull(impl.exposedDelegate().pendingAcpResumeId,
+                "resumeSession must not set pendingAcpResumeId when no ACP id is stored");
+    }
+
+    @Test
+    void afterStartThenResumeSessionWithPluginUuid_pendingResumeIdIsAcpId() {
+        // REGRESSION GUARD: AiTopComponent ordering is startAiProcess() -> afterStart() (sets ses_... id)
+        // then loadHistory() -> resumeSession(pluginUUID). The plugin UUID must NOT overwrite the ACP id.
+        String acpId = "ses_ff4f7e79dffeO55jvs3BjVUU88";
+        String pluginUuid = "e6523570-b545-4136-ac6b-3bd9d7fce668";
+
+        OpenCodeSessionSettings settings = new OpenCodeSessionSettings();
+        settings.setAcpSessionId(acpId);
+        AiSession session = new AiSession("s-resume-3", "Test", null,
+                AiTypeEnum.OPENCODE, null, settings, Instant.now(), Instant.now());
+
+        var impl = new OpenCodeAiImplementation(e -> {
+        }, null) {
+            {
+                currentSession = session;
+            }
+
+            OpenCodeAiProcessManager exposedDelegate() {
+                return delegate();
+            }
+        };
+
+        // Simulate startAiProcess() -> afterStart() setting the ACP id
+        impl.start("non-existent-opencode-executable", "model");
+        assertEquals(acpId, impl.exposedDelegate().pendingAcpResumeId,
+                "after afterStart(), pendingAcpResumeId must be the stored ACP id");
+
+        // Simulate AiTopComponent.loadHistory() calling resumeSession with the plugin UUID —
+        // this is the bug path. Before the fix, this line overwrites pendingAcpResumeId.
+        impl.resumeSession(pluginUuid);
+
+        assertEquals(acpId, impl.exposedDelegate().pendingAcpResumeId,
+                "resumeSession(pluginUUID) must NOT overwrite the ACP id set by afterStart()");
+    }
 }

@@ -91,6 +91,22 @@ public class OpenCodeAiImplementation extends AiImplementation {
         }
     }
 
+    @Override
+    public void resumeSession(String sessionId) {
+        // AiTopComponent.loadHistory() passes the PLUGIN session id, which is
+        // meaningless to OpenCode — the agent mints its own ses_... id, which we
+        // persist in OpenCodeSessionSettings.acpSessionId. Ignore the argument and
+        // always resume from the stored ACP id (or not at all).
+        String stored = currentSession != null
+                && currentSession.settings() instanceof OpenCodeSessionSettings
+                ? ((OpenCodeSessionSettings) currentSession.settings()).acpSessionId()
+                : null;
+        if (stored != null && !stored.isBlank()) {
+            delegate().resumeSession(stored);
+        }
+        // else: do nothing — a fresh session/new is correct
+    }
+
     private String currentConfigValue(String id) {
         JsonArray opts = delegate().configOptions();
         if (opts == null) {
