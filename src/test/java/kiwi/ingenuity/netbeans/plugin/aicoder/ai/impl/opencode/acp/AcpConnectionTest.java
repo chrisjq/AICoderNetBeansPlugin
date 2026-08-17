@@ -18,6 +18,11 @@ import org.junit.jupiter.api.Test;
 
 class AcpConnectionTest {
 
+    private static boolean threadExists(String name) {
+        return Thread.getAllStackTraces().keySet().stream()
+                .anyMatch(t -> name.equals(t.getName()) && t.isAlive());
+    }
+
     // plugin→agent pipes
     private PipedInputStream agentIn;
     private PipedOutputStream pluginOut;
@@ -215,6 +220,260 @@ class AcpConnectionTest {
         assertEquals("initialize", parsed.get("method").getAsString());
         assertTrue(parsed.has("id"), "request must include id");
         assertTrue(parsed.has("params"), "request must include params");
+    }
+
+    // ---- Bug fix: split into notify (single-thread) + dispatch (cached) executors ----
+    @Test
+    void notificationsAreDeliveredInSubmittedOrder() throws Exception {
+        // REGRESSION GUARD: With a cached thread pool the dispatcher runs notification
+        // handlers concurrently, so session/update chunks can arrive out of order and
+        // garble streamed assistant text.
+        //
+        // Chunk 0's handler blocks on a latch. With the cached pool (old code), chunks
+        // 1..N-1 run on parallel threads, complete first, and reach the delivery queue
+        // ahead of chunk 0 → wrong order → test FAILS.
+        // With the single-thread notify executor (fix), chunks 1..N-1 queue behind the
+        // blocked chunk 0 and only run after the latch releases → correct order → PASSES.
+        int N = 50;
+        CountDownLatch firstChunkGate = new CountDownLatch(1);
+        LinkedBlockingQueue<String> delivered = new LinkedBlockingQueue<>();
+
+        PipedInputStream localPluginIn = new PipedInputStream(65536);
+        PipedOutputStream localAgentOut = new PipedOutputStream(localPluginIn);
+        PipedInputStream localAgentIn = new PipedInputStream(65536);
+        PipedOutputStream localPluginOut = new PipedOutputStream(localAgentIn);
+
+        AcpClientHandler orderHandler = new AcpClientHandler() {
+            private final java.util.concurrent.atomic.AtomicBoolean first
+                    = new java.util.concurrent.atomic.AtomicBoolean(true);
+
+            @Override
+            public void onSessionUpdate(String sid, JsonObject update) {
+                if (first.compareAndSet(true, false)) {
+                    try {
+                        firstChunkGate.await(10, TimeUnit.SECONDS);
+                    }
+                    catch (InterruptedException e) {
+                        Thread.currentThread().interrupt();
+                    }
+                }
+                delivered.offer(update.get("text").getAsString());
+            }
+
+            @Override
+            public CompletableFuture<JsonObject> onRequestPermission(JsonObject p) {
+                return CompletableFuture.completedFuture(new JsonObject());
+            }
+
+            @Override
+            public CompletableFuture<JsonObject> onWriteTextFile(JsonObject p) {
+                return CompletableFuture.completedFuture(new JsonObject());
+            }
+
+            @Override
+            public CompletableFuture<JsonObject> onReadTextFile(JsonObject p) {
+                return CompletableFuture.completedFuture(new JsonObject());
+            }
+
+            @Override
+            public void onDisconnected(Exception cause) {
+            }
+        };
+
+        AcpConnection fresh = new AcpConnection(localPluginOut, localPluginIn, orderHandler);
+        try {
+            StringBuilder expected = new StringBuilder();
+            for (int i = 0; i < N; i++) {
+                String text = "chunk-" + i;
+                expected.append(text);
+                JsonObject update = new JsonObject();
+                update.addProperty("text", text);
+                JsonObject params = new JsonObject();
+                params.addProperty("sessionId", "ses_order");
+                params.add("update", update);
+                JsonObject notif = new JsonObject();
+                notif.addProperty("jsonrpc", "2.0");
+                notif.addProperty("method", "session/update");
+                notif.add("params", params);
+                byte[] bytes = (notif.toString() + "\n").getBytes(StandardCharsets.UTF_8);
+                localAgentOut.write(bytes);
+                localAgentOut.flush();
+            }
+            // Allow the cached pool (old code) time to dispatch and complete chunks 1..N-1
+            // while chunk 0 is still blocked. With the fix, 1..N-1 simply queue.
+            Thread.sleep(200);
+            firstChunkGate.countDown();
+
+            StringBuilder received = new StringBuilder();
+            for (int i = 0; i < N; i++) {
+                String text = delivered.poll(5, TimeUnit.SECONDS);
+                assertNotNull(text, "timed out waiting for chunk " + i);
+                received.append(text);
+            }
+            assertEquals(expected.toString(), received.toString(),
+                    "session/update notifications must arrive in submitted order");
+        }
+        finally {
+            firstChunkGate.countDown(); // safety in case test fails early
+            fresh.close();
+            localAgentOut.close();
+        }
+    }
+
+    @Test
+    void notificationsOrderedWhilePermissionPending() throws Exception {
+        // Combined guarantee: acp-notify is a separate FIFO executor from acp-dispatch,
+        // so notification ordering is preserved even while a permission handler is blocking.
+        // Uses the same latch technique as notificationsAreDeliveredInSubmittedOrder.
+        int N = 20;
+        CountDownLatch notifGate = new CountDownLatch(1);
+        CompletableFuture<JsonObject> slowPermission = new CompletableFuture<>();
+        LinkedBlockingQueue<String> delivered = new LinkedBlockingQueue<>();
+
+        PipedInputStream localPluginIn = new PipedInputStream(65536);
+        PipedOutputStream localAgentOut = new PipedOutputStream(localPluginIn);
+        PipedInputStream localAgentIn = new PipedInputStream(65536);
+        PipedOutputStream localPluginOut = new PipedOutputStream(localAgentIn);
+        BufferedReader localAgentReader = new BufferedReader(
+                new InputStreamReader(localAgentIn, StandardCharsets.UTF_8));
+
+        AcpClientHandler combinedHandler = new AcpClientHandler() {
+            private final java.util.concurrent.atomic.AtomicBoolean first
+                    = new java.util.concurrent.atomic.AtomicBoolean(true);
+
+            @Override
+            public void onSessionUpdate(String sid, JsonObject update) {
+                if (first.compareAndSet(true, false)) {
+                    try {
+                        notifGate.await(10, TimeUnit.SECONDS);
+                    }
+                    catch (InterruptedException e) {
+                        Thread.currentThread().interrupt();
+                    }
+                }
+                delivered.offer(update.get("text").getAsString());
+            }
+
+            @Override
+            public CompletableFuture<JsonObject> onRequestPermission(JsonObject p) {
+                return slowPermission;
+            }
+
+            @Override
+            public CompletableFuture<JsonObject> onWriteTextFile(JsonObject p) {
+                return CompletableFuture.completedFuture(new JsonObject());
+            }
+
+            @Override
+            public CompletableFuture<JsonObject> onReadTextFile(JsonObject p) {
+                return CompletableFuture.completedFuture(new JsonObject());
+            }
+
+            @Override
+            public void onDisconnected(Exception cause) {
+            }
+        };
+
+        AcpConnection fresh = new AcpConnection(localPluginOut, localPluginIn, combinedHandler);
+        try {
+            // Send blocking permission request
+            JsonObject permReq = new JsonObject();
+            permReq.addProperty("jsonrpc", "2.0");
+            permReq.addProperty("id", 77);
+            permReq.addProperty("method", "session/request_permission");
+            permReq.add("params", new JsonObject());
+            localAgentOut.write((permReq.toString() + "\n").getBytes(StandardCharsets.UTF_8));
+            localAgentOut.flush();
+            Thread.sleep(50); // let permission handler start and block
+
+            // Send N notifications; chunk 0 blocks on notifGate
+            StringBuilder expected = new StringBuilder();
+            for (int i = 0; i < N; i++) {
+                String text = "tok-" + i;
+                expected.append(text);
+                JsonObject update = new JsonObject();
+                update.addProperty("text", text);
+                JsonObject params = new JsonObject();
+                params.addProperty("sessionId", "ses_combined");
+                params.add("update", update);
+                JsonObject notif = new JsonObject();
+                notif.addProperty("jsonrpc", "2.0");
+                notif.addProperty("method", "session/update");
+                notif.add("params", params);
+                localAgentOut.write((notif.toString() + "\n").getBytes(StandardCharsets.UTF_8));
+                localAgentOut.flush();
+            }
+            Thread.sleep(200); // allow cached pool (old code) to race chunks 1..N-1 past chunk 0
+            notifGate.countDown();
+
+            StringBuilder received = new StringBuilder();
+            for (int i = 0; i < N; i++) {
+                String text = delivered.poll(5, TimeUnit.SECONDS);
+                assertNotNull(text, "timed out waiting for notification " + i);
+                received.append(text);
+            }
+            assertEquals(expected.toString(), received.toString(),
+                    "notifications must arrive in order even while permission is pending");
+
+            // Release permission and verify reply is sent
+            slowPermission.complete(new JsonObject());
+            String replyLine = localAgentReader.readLine();
+            assertNotNull(replyLine, "permission response must be sent");
+            JsonObject reply = JsonParser.parseString(replyLine).getAsJsonObject();
+            assertEquals(77, reply.get("id").getAsLong());
+            assertFalse(reply.has("error"), "permission response must not have error");
+        }
+        finally {
+            notifGate.countDown();
+            slowPermission.complete(new JsonObject()); // safety
+            fresh.close();
+            localAgentOut.close();
+            localAgentReader.close();
+        }
+    }
+
+    @Test
+    void closeShutsBothExecutors() throws Exception {
+        // SingleThreadExecutor and CachedThreadPool both create threads lazily.
+        // Prime acp-notify by delivering a notification and waiting for it to arrive.
+        JsonObject update = new JsonObject();
+        update.addProperty("text", "prime");
+        JsonObject nparams = new JsonObject();
+        nparams.addProperty("sessionId", "ses_close");
+        nparams.add("update", update);
+        JsonObject notif = new JsonObject();
+        notif.addProperty("jsonrpc", "2.0");
+        notif.addProperty("method", "session/update");
+        notif.add("params", nparams);
+        agentSend(notif);
+        assertNotNull(handler.receivedUpdates.poll(3, TimeUnit.SECONDS), "handler must receive notification");
+
+        // Prime acp-dispatch by completing a request.
+        CompletableFuture<JsonObject> req = connection.sendRequest(AcpMethodEnum.INITIALIZE, new JsonObject());
+        JsonObject outbound = agentRead();
+        long id = outbound.get("id").getAsLong();
+        JsonObject resp = new JsonObject();
+        resp.addProperty("jsonrpc", "2.0");
+        resp.addProperty("id", id);
+        resp.add("result", new JsonObject());
+        agentSend(resp);
+        req.get(3, TimeUnit.SECONDS);
+
+        assertTrue(threadExists("acp-notify"), "acp-notify must be alive before close");
+        assertTrue(threadExists("acp-dispatch"), "acp-dispatch must be alive before close");
+
+        connection.close();
+
+        long deadline = System.currentTimeMillis() + 2000;
+        while (System.currentTimeMillis() < deadline) {
+            if (!threadExists("acp-notify") && !threadExists("acp-dispatch")) {
+                break;
+            }
+            Thread.sleep(20);
+        }
+
+        assertFalse(threadExists("acp-notify"), "acp-notify thread must be gone after close");
+        assertFalse(threadExists("acp-dispatch"), "acp-dispatch thread must be gone after close");
     }
 
     static class TestHandler implements AcpClientHandler {

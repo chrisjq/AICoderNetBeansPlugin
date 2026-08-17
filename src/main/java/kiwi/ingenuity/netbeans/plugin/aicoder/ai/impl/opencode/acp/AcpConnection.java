@@ -25,18 +25,19 @@ import java.util.concurrent.locks.ReentrantLock;
  * <p>
  * A single daemon reader thread reads lines and routes them in three ways:
  * <ol>
- * <li>method + id → inbound request from agent → dispatcher executor + reply
- * <li>method only → notification → dispatcher executor
- * <li>id only → response to our request → complete pending future via
- * dispatcher
+ * <li>method + id → inbound request from agent → dispatch executor + reply
+ * <li>method only → notification → notify executor (FIFO, single-thread)
+ * <li>id only → response to our request → complete pending future via dispatch
+ * executor
  * </ol>
  *
  * <p>
- * Inbound requests (particularly session/request_permission, which can block up
- * to 120 s waiting for user input) are always dispatched to a separate executor
- * so the reader thread is never blocked. Response futures are completed via the
- * same executor so that thenAccept/thenApply continuations do not run on the
- * reader thread.
+ * Notifications (session/update) and the disconnection callback are delivered
+ * via a single-thread executor («acp-notify») to guarantee FIFO order. Inbound
+ * requests (particularly session/request_permission, which can block up to 120
+ * s waiting for user input) and response-future completions run on a
+ * cached-thread-pool executor («acp-dispatch») so the reader thread is never
+ * blocked.
  */
 public class AcpConnection {
 
@@ -48,7 +49,8 @@ public class AcpConnection {
     private final AtomicLong nextId = new AtomicLong(1);
     private final ConcurrentHashMap<Long, CompletableFuture<JsonObject>> pending = new ConcurrentHashMap<>();
     private final ReentrantLock writeLock = new ReentrantLock();
-    private final ExecutorService dispatcher;
+    private final ExecutorService notifyExecutor;
+    private final ExecutorService dispatchExecutor;
     private final Thread readerThread;
     private final AtomicBoolean closed = new AtomicBoolean(false);
 
@@ -56,8 +58,13 @@ public class AcpConnection {
         this.writer = new PrintWriter(new OutputStreamWriter(out, StandardCharsets.UTF_8), false);
         this.inputStream = in;
         this.handler = handler;
-        this.dispatcher = Executors.newCachedThreadPool(r -> {
-            Thread t = new Thread(r, "acp-dispatcher");
+        this.notifyExecutor = Executors.newSingleThreadExecutor(r -> {
+            Thread t = new Thread(r, "acp-notify");
+            t.setDaemon(true);
+            return t;
+        });
+        this.dispatchExecutor = Executors.newCachedThreadPool(r -> {
+            Thread t = new Thread(r, "acp-dispatch");
             t.setDaemon(true);
             return t;
         });
@@ -107,7 +114,8 @@ public class AcpConnection {
         }
         catch (IOException ignore) {
         }
-        dispatcher.shutdown();
+        notifyExecutor.shutdown();
+        dispatchExecutor.shutdown();
         RuntimeException ex = new RuntimeException("AcpConnection closed");
         pending.values().forEach(f -> f.completeExceptionally(ex));
         pending.clear();
@@ -145,12 +153,12 @@ public class AcpConnection {
         }
         catch (IOException e) {
             if (!closed.get()) {
-                dispatcher.execute(() -> handler.onDisconnected(e));
+                notifyExecutor.execute(() -> handler.onDisconnected(e));
                 return;
             }
         }
         if (!closed.get()) {
-            dispatcher.execute(() -> handler.onDisconnected(null));
+            notifyExecutor.execute(() -> handler.onDisconnected(null));
         }
     }
 
@@ -164,12 +172,12 @@ public class AcpConnection {
                 long id = msg.get("id").getAsLong();
                 String method = msg.get("method").getAsString();
                 JsonObject params = msg.has("params") ? msg.getAsJsonObject("params") : new JsonObject();
-                dispatcher.execute(() -> handleInboundRequest(id, method, params));
+                dispatchExecutor.execute(() -> handleInboundRequest(id, method, params));
             }
             else if (hasMethod) {
                 String method = msg.get("method").getAsString();
                 JsonObject params = msg.has("params") ? msg.getAsJsonObject("params") : new JsonObject();
-                dispatcher.execute(() -> handleNotification(method, params));
+                notifyExecutor.execute(() -> handleNotification(method, params));
             }
             else if (hasId) {
                 long id = msg.get("id").getAsLong();
@@ -180,11 +188,11 @@ public class AcpConnection {
                         int code = error.has("code") ? error.get("code").getAsInt() : 0;
                         String message = error.has("message") ? error.get("message").getAsString() : "unknown";
                         AcpException ex = new AcpException(code, message);
-                        dispatcher.execute(() -> future.completeExceptionally(ex));
+                        dispatchExecutor.execute(() -> future.completeExceptionally(ex));
                     }
                     else {
                         JsonObject result = msg.has("result") ? msg.getAsJsonObject("result") : new JsonObject();
-                        dispatcher.execute(() -> future.complete(result));
+                        dispatchExecutor.execute(() -> future.complete(result));
                     }
                 }
             }
