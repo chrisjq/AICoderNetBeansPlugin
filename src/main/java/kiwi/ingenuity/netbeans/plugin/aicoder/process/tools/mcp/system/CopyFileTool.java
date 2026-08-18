@@ -3,7 +3,11 @@ package kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.system;
 import com.google.gson.JsonArray;
 import com.google.gson.JsonObject;
 import java.util.Set;
-import kiwi.ingenuity.netbeans.plugin.aicoder.ai.events.SystemNotificationEvent;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
+import kiwi.ingenuity.netbeans.plugin.aicoder.ai.events.ConfirmEvent;
+import kiwi.ingenuity.netbeans.plugin.aicoder.ai.events.PermissionDecision;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.McpArgumentException;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.McpInstructionOptionEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.McpSectionEnum;
@@ -23,6 +27,7 @@ import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.providers.netbeans.R
 public class CopyFileTool implements McpToolInterface {
 
     private final McpHookServer server;
+    long confirmTimeoutSeconds = 120;
 
     public CopyFileTool(McpHookServer server) {
         this.server = server;
@@ -84,16 +89,33 @@ public class CopyFileTool implements McpToolInterface {
         if (sessionId == null || !server.isFileAllowed(sessionId, targetDir)) {
             return "Access denied: " + targetDir + " is outside the allowed project scope for this session.";
         }
-        String result = RefactoringProvider.copyFile(
-                sourcePath,
-                targetDir,
-                args.str(CopyFileParamEnum.NEW_NAME.key()));
-        if (result != null && result.startsWith("Copied to")) {
-            AiProcessEventListener listener = session.getAiProcessEventListener();
-            if (listener != null) {
-                listener.onAiProcessEvent(new SystemNotificationEvent("CopyFile: " + sourcePath + " → " + targetDir));
-            }
+        String newName = args.str(CopyFileParamEnum.NEW_NAME.key());
+        if (!new java.io.File(sourcePath).exists()) {
+            return RefactoringProvider.copyFile(sourcePath, targetDir, newName);
         }
-        return result;
+        AiProcessEventListener listener = session.getAiProcessEventListener();
+        if (listener == null) {
+            return RefactoringProvider.copyFile(sourcePath, targetDir, newName);
+        }
+        CompletableFuture<PermissionDecision> future = new CompletableFuture<>();
+        listener.onAiProcessEvent(new ConfirmEvent("Copy",
+                "Copy " + sourcePath + " → " + targetDir + "?", sourcePath, future));
+        PermissionDecision decision;
+        try {
+            decision = future.get(confirmTimeoutSeconds, TimeUnit.SECONDS);
+        }
+        catch (TimeoutException e) {
+            future.complete(PermissionDecision.denied("timed out"));
+            return "Timed out waiting for the user to confirm this operation — "
+                    + "the user did not respond in time. You may retry.";
+        }
+        catch (Exception e) {
+            future.complete(PermissionDecision.denied(null));
+            decision = PermissionDecision.denied(null);
+        }
+        if (decision == null || !decision.allow()) {
+            return "User declined the copy — do not retry without asking.";
+        }
+        return RefactoringProvider.copyFile(sourcePath, targetDir, newName);
     }
 }

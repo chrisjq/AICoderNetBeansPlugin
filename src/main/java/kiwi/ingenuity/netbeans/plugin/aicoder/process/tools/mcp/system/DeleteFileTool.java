@@ -1,6 +1,10 @@
 package kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.system;
 
-import kiwi.ingenuity.netbeans.plugin.aicoder.ai.events.SystemNotificationEvent;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
+import kiwi.ingenuity.netbeans.plugin.aicoder.ai.events.ConfirmEvent;
+import kiwi.ingenuity.netbeans.plugin.aicoder.ai.events.PermissionDecision;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.McpSectionEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.McpToolEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.events.AiProcessEventListener;
@@ -17,6 +21,7 @@ import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.providers.netbeans.R
 public class DeleteFileTool extends AbstractFileTool {
 
     private final McpHookServer server;
+    long confirmTimeoutSeconds = 120;
 
     public DeleteFileTool(McpHookServer server) {
         super(McpSectionEnum.SYSTEM,
@@ -37,13 +42,32 @@ public class DeleteFileTool extends AbstractFileTool {
                 return "Access denied: " + effectivePath + " is outside the allowed project scope for this session.";
             }
         }
-        String result = RefactoringProvider.deleteFile(effectivePath);
-        if ("File deleted".equals(result)) {
-            AiProcessEventListener listener = session.getAiProcessEventListener();
-            if (listener != null) {
-                listener.onAiProcessEvent(new SystemNotificationEvent("DeleteFile: " + effectivePath));
-            }
+        if (effectivePath == null || !new java.io.File(effectivePath).exists()) {
+            return RefactoringProvider.deleteFile(effectivePath);
         }
-        return result;
+        AiProcessEventListener listener = session.getAiProcessEventListener();
+        if (listener == null) {
+            return RefactoringProvider.deleteFile(effectivePath);
+        }
+        CompletableFuture<PermissionDecision> future = new CompletableFuture<>();
+        listener.onAiProcessEvent(new ConfirmEvent("Delete",
+                "Permanently delete " + effectivePath + "?", effectivePath, future));
+        PermissionDecision decision;
+        try {
+            decision = future.get(confirmTimeoutSeconds, TimeUnit.SECONDS);
+        }
+        catch (TimeoutException e) {
+            future.complete(PermissionDecision.denied("timed out"));
+            return "Timed out waiting for the user to confirm this operation — "
+                    + "the user did not respond in time. You may retry.";
+        }
+        catch (Exception e) {
+            future.complete(PermissionDecision.denied(null));
+            decision = PermissionDecision.denied(null);
+        }
+        if (decision == null || !decision.allow()) {
+            return "User declined the delete — do not retry without asking.";
+        }
+        return RefactoringProvider.deleteFile(effectivePath);
     }
 }

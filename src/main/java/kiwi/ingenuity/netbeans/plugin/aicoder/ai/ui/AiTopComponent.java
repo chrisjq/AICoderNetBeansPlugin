@@ -35,6 +35,8 @@ import javax.swing.JSplitPane;
 import javax.swing.SwingUtilities;
 import javax.swing.Timer;
 import javax.swing.UIManager;
+import com.google.gson.JsonArray;
+import com.google.gson.JsonObject;
 import javax.swing.filechooser.FileFilter;
 import kiwi.ingenuity.netbeans.plugin.aicoder.PluginSettings;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.AiImplementation;
@@ -47,6 +49,7 @@ import kiwi.ingenuity.netbeans.plugin.aicoder.ai.events.AiInboxMessageEvent;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.events.AiPropertyEvent;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.events.AiPropertyListener;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.events.AskUserQuestionEvent;
+import kiwi.ingenuity.netbeans.plugin.aicoder.ai.events.ConfirmEvent;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.events.PermissionDecision;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.events.PermissionEvent;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.events.StatusEvent;
@@ -1110,7 +1113,8 @@ public final class AiTopComponent extends TopComponent implements AiProcessEvent
         if (event instanceof ToolUseEvent tu) {
             return tu.isFileModification() && (aiBackend == null || !aiBackend.isMcpActive());
         }
-        return event instanceof PermissionEvent || event instanceof AskUserQuestionEvent;
+        return event instanceof PermissionEvent || event instanceof AskUserQuestionEvent
+                || event instanceof ConfirmEvent;
     }
 
     private void handleEvent(AiProcessEvent event) {
@@ -1214,6 +1218,61 @@ public final class AiTopComponent extends TopComponent implements AiProcessEvent
                     // after a save/restore.
                     conversationPanel.addSystemMessage(
                             NotificationUtil.formatUnansweredQuestion(aqe.questions()));
+                }
+                refreshInputEnabled();
+            }));
+        }
+        else if (event instanceof ConfirmEvent ce) {
+            if (infoBar.isAutoAccept()) {
+                finaliseActiveAssistantIfNeeded();
+                conversationPanel.addSystemMessage(
+                        NotificationUtil.formatAutoAccepted(ce.toolName(), shortPath(ce.filePath())));
+                ce.response().complete(PermissionDecision.allowed());
+                return;
+            }
+            if (assistantTurnActive) {
+                assistantTurnActive = false;
+                conversationPanel.finaliseAssistantMessage();
+            }
+            if (aiBackend != null) {
+                aiBackend.setPendingDiff(true);
+            }
+            inputField.setEnabled(false);
+            sendButton.setEnabled(false);
+            String fp = ce.filePath();
+            JsonArray questions = new JsonArray();
+            JsonObject q = new JsonObject();
+            q.addProperty("question", ce.displayText());
+            JsonArray options = new JsonArray();
+            JsonObject yes = new JsonObject();
+            yes.addProperty("label", "Yes");
+            options.add(yes);
+            JsonObject no = new JsonObject();
+            no.addProperty("label", "No");
+            options.add(no);
+            q.add("options", options);
+            questions.add(q);
+            CompletableFuture<String> aqeFuture = new CompletableFuture<>();
+            AskUserQuestionEvent aqe = new AskUserQuestionEvent(questions, aqeFuture);
+            Runnable canceller = () -> aqeFuture.complete(null);
+            pendingResponseCancellers.add(canceller);
+            ce.response().whenComplete((d, ex) -> aqeFuture.complete(null));
+            conversationPanel.showQuestion(aqe);
+            aqeFuture.whenComplete((answer, ex) -> SwingUtilities.invokeLater(() -> {
+                pendingResponseCancellers.remove(canceller);
+                if (aiBackend != null) {
+                    aiBackend.setPendingDiff(false);
+                }
+                if ("Yes".equals(answer)) {
+                    ce.response().complete(PermissionDecision.allowed());
+                    conversationPanel.addSystemMessage(NotificationUtil.formatFileAccepted(shortPath(fp)));
+                }
+                else if (answer != null) {
+                    ce.response().complete(PermissionDecision.denied(null));
+                    conversationPanel.addSystemMessage(NotificationUtil.formatFileRejected(shortPath(fp)));
+                }
+                else {
+                    ce.response().complete(PermissionDecision.denied("timed out or cancelled"));
                 }
                 refreshInputEnabled();
             }));

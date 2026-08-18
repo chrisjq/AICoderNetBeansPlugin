@@ -5,6 +5,7 @@ import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import kiwi.ingenuity.netbeans.plugin.aicoder.ai.events.ConfirmEvent;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.events.PermissionDecision;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.events.PermissionEvent;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.events.SystemNotificationEvent;
@@ -16,41 +17,12 @@ import kiwi.ingenuity.netbeans.plugin.aicoder.process.server.McpHookServer;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.session.AbstractAiSession;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.McpToolInterface;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.ToolRequestArguments;
-import org.junit.jupiter.api.Test;
 import static org.junit.jupiter.api.Assertions.*;
+import org.junit.jupiter.api.Test;
 
 class MutationToolsNotificationTest {
 
     private static final String SESSION_ID = "test-session";
-
-    private static class StubSession extends AbstractAiSession {
-        final List<AiProcessEvent> captured = new ArrayList<>();
-
-        StubSession() {
-            super(new AiSession(SESSION_ID, "Test", null, null, null, null,
-                    Instant.EPOCH, Instant.EPOCH));
-        }
-
-        @Override
-        public String getId() {
-            return SESSION_ID;
-        }
-
-        @Override
-        public AiProcessEventListener getAiProcessEventListener() {
-            return event -> {
-                captured.add(event);
-                if (event instanceof PermissionEvent pe) {
-                    pe.response().complete(PermissionDecision.denied(null));
-                }
-            };
-        }
-
-        @Override
-        public Map<McpToolEnum, McpToolInterface> getMcpToolHandlers() {
-            return Map.of();
-        }
-    }
 
     private static McpHookServer allowAllServer() {
         return new McpHookServer(0);
@@ -78,8 +50,13 @@ class MutationToolsNotificationTest {
         return new ToolRequestArguments(obj);
     }
 
-    // ---- SystemNotificationEvent structural tests ----
+    private static java.io.File tempFile() throws Exception {
+        java.io.File f = java.io.File.createTempFile("aicoder-confirm-test-", ".txt");
+        f.deleteOnExit();
+        return f;
+    }
 
+    // ---- SystemNotificationEvent structural tests ----
     @Test
     void systemNotificationEventStoresText() {
         SystemNotificationEvent event = new SystemNotificationEvent("DeleteFile: /src/Foo.java");
@@ -116,7 +93,6 @@ class MutationToolsNotificationTest {
     // RefactoringProvider returns "File not found: ..." outside the NetBeans IDE
     // (resolveFileObject returns null without the platform). These tests verify
     // that no SystemNotificationEvent is fired when the operation does not succeed.
-
     @Test
     void deleteFileFailedOperationFiresNoNotification() {
         StubSession session = new StubSession();
@@ -168,5 +144,151 @@ class MutationToolsNotificationTest {
         assertTrue(result.contains("Access denied"), "should be access denied: " + result);
         assertTrue(nullIdSession.captured.isEmpty(),
                 "access denied must not emit any event");
+    }
+
+    @Test
+    void deleteFileFiresConfirmEventForExistingPath() throws Exception {
+        java.io.File file = tempFile();
+        ConfirmStubSession session = new ConfirmStubSession(PermissionDecision.denied(null));
+        DeleteFileTool tool = new DeleteFileTool(allowAllServer());
+
+        tool.handle(deleteArgs(file.getAbsolutePath()), session);
+
+        long confirms = session.captured.stream()
+                .filter(e -> e instanceof ConfirmEvent).count();
+        assertEquals(1, confirms, "tool must fire ConfirmEvent for an existing path");
+    }
+
+    @Test
+    void deleteFileRejectedByUserDoesNotProceed() throws Exception {
+        java.io.File file = tempFile();
+        ConfirmStubSession session = new ConfirmStubSession(PermissionDecision.denied(null));
+        DeleteFileTool tool = new DeleteFileTool(allowAllServer());
+
+        String result = tool.handle(deleteArgs(file.getAbsolutePath()), session);
+
+        assertTrue(file.exists(), "rejected delete must leave the file on disk");
+        assertTrue(result.contains("declined"), "result should indicate user declined: " + result);
+        long notifications = session.captured.stream()
+                .filter(e -> e instanceof SystemNotificationEvent).count();
+        assertEquals(0, notifications, "rejected delete must emit no SystemNotificationEvent");
+    }
+
+    @Test
+    void moveFileFiresConfirmEventForExistingSource() throws Exception {
+        java.io.File file = tempFile();
+        ConfirmStubSession session = new ConfirmStubSession(PermissionDecision.denied(null));
+        MoveFileTool tool = new MoveFileTool(allowAllServer());
+
+        tool.handle(moveArgs(file.getAbsolutePath(), "/tmp"), session);
+
+        long confirms = session.captured.stream()
+                .filter(e -> e instanceof ConfirmEvent).count();
+        assertEquals(1, confirms, "tool must fire ConfirmEvent for an existing source");
+    }
+
+    @Test
+    void copyFileFiresConfirmEventForExistingSource() throws Exception {
+        java.io.File file = tempFile();
+        ConfirmStubSession session = new ConfirmStubSession(PermissionDecision.denied(null));
+        CopyFileTool tool = new CopyFileTool(allowAllServer());
+
+        tool.handle(copyArgs(file.getAbsolutePath(), "/tmp"), session);
+
+        long confirms = session.captured.stream()
+                .filter(e -> e instanceof ConfirmEvent).count();
+        assertEquals(1, confirms, "tool must fire ConfirmEvent for an existing source");
+    }
+
+    @Test
+    void deleteFileNonexistentPathFiresNoConfirmEvent() {
+        StubSession session = new StubSession();
+        DeleteFileTool tool = new DeleteFileTool(allowAllServer());
+
+        tool.handle(deleteArgs("/tmp/nonexistent-aicoder-confirm-test.txt"), session);
+
+        long confirms = session.captured.stream()
+                .filter(e -> e instanceof ConfirmEvent).count();
+        assertEquals(0, confirms, "nonexistent path must not fire ConfirmEvent");
+    }
+
+    @Test
+    void deleteFileTimeoutCompletesFutureAndReturnsRetryableMessage() throws Exception {
+        java.io.File file = tempFile();
+        // Listener captures the event but never completes the future (simulates no user response)
+        StubSession session = new StubSession() {
+            @Override
+            public AiProcessEventListener getAiProcessEventListener() {
+                return event -> captured.add(event);
+            }
+        };
+        DeleteFileTool tool = new DeleteFileTool(allowAllServer());
+        tool.confirmTimeoutSeconds = 0; // immediate timeout
+
+        String result = tool.handle(deleteArgs(file.getAbsolutePath()), session);
+
+        assertTrue(result.toLowerCase().contains("timed out"),
+                "timeout must return retryable message: " + result);
+        assertTrue(file.exists(), "timed-out delete must leave the file on disk");
+        ConfirmEvent ce = (ConfirmEvent) session.captured.stream()
+                .filter(e -> e instanceof ConfirmEvent)
+                .findFirst().orElseThrow(() -> new AssertionError("ConfirmEvent not fired"));
+        assertTrue(ce.response().isDone(),
+                "future must be completed after timeout so the UI can unblock");
+        assertFalse(ce.response().get().allow(),
+                "future must resolve to denied so UI posts no accepted message");
+    }
+
+    private static class StubSession extends AbstractAiSession {
+
+        final List<AiProcessEvent> captured = new ArrayList<>();
+
+        StubSession() {
+            super(new AiSession(SESSION_ID, "Test", null, null, null, null,
+                    Instant.EPOCH, Instant.EPOCH));
+        }
+
+        @Override
+        public String getId() {
+            return SESSION_ID;
+        }
+
+        @Override
+        public AiProcessEventListener getAiProcessEventListener() {
+            return event -> {
+                captured.add(event);
+                if (event instanceof PermissionEvent pe) {
+                    pe.response().complete(PermissionDecision.denied(null));
+                }
+            };
+        }
+
+        @Override
+        public Map<McpToolEnum, McpToolInterface> getMcpToolHandlers() {
+            return Map.of();
+        }
+    }
+
+    // ---- ConfirmEvent tests: tools ask before acting ----
+    private static class ConfirmStubSession extends StubSession {
+
+        private final PermissionDecision resolveWith;
+
+        ConfirmStubSession(PermissionDecision resolveWith) {
+            this.resolveWith = resolveWith;
+        }
+
+        @Override
+        public AiProcessEventListener getAiProcessEventListener() {
+            return event -> {
+                captured.add(event);
+                if (event instanceof PermissionEvent pe) {
+                    pe.response().complete(PermissionDecision.denied(null));
+                }
+                if (event instanceof ConfirmEvent ce) {
+                    ce.response().complete(resolveWith);
+                }
+            };
+        }
     }
 }
