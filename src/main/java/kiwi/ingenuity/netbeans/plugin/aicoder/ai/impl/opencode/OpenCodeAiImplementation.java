@@ -4,6 +4,9 @@ import com.google.gson.JsonArray;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 import java.nio.file.Path;
+import java.util.logging.Level;
+import java.util.logging.Logger;
+import kiwi.ingenuity.netbeans.plugin.aicoder.PluginSettings;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.AiImplementation;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.AiModelCatalog;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.AiSessionHost;
@@ -21,6 +24,7 @@ import kiwi.ingenuity.netbeans.plugin.aicoder.utils.StatusMessageUtil;
 
 public class OpenCodeAiImplementation extends AiImplementation {
 
+    private static final Logger LOG = Logger.getLogger(OpenCodeAiImplementation.class.getName());
     private static final AiModelCatalog modelCatalog = new AiModelCatalog();
 
     public static AiModelCatalog modelCatalog() {
@@ -52,7 +56,7 @@ public class OpenCodeAiImplementation extends AiImplementation {
 
     @Override
     public void startWithDiscovery(String model) {
-        String effectiveModel = (model != null && !model.isBlank()) ? model : OpenCodePluginSettings.getModel();
+        String effectiveModel = resolveStartupModel(model);
         String execPath = OpenCodeExecutableLocator.locate();
         if (execPath != null) {
             start(execPath, effectiveModel);
@@ -73,6 +77,39 @@ public class OpenCodeAiImplementation extends AiImplementation {
             listener.onAiProcessEvent(new StatusEvent(StatusEventTypeEnum.FAILED,
                     StatusMessageUtil.formatExecutableNotFound(null)));
         }
+    }
+
+    /**
+     * Resolves the model to start a session with: an explicit argument first,
+     * then the session's own choice, then the global default. Extracted from
+     * {@link #startWithDiscovery} so it can be tested without going through
+     * {@link OpenCodeExecutableLocator#locate}, which depends on what is
+     * actually installed on the machine running the tests.
+     *
+     * <p>
+     * AiTopComponent always calls {@code startWithDiscovery(null)} — the
+     * session-picker flow applies the chosen model to session settings, not
+     * through this argument — so falling straight to the global default here,
+     * as this used to do, silently ran every OpenCode session on
+     * {@code OpenCodePluginSettings.getModel()} regardless of what the user
+     * picked per session. Session settings must be checked before the global
+     * default, matching Claude/Ollama's pattern.
+     */
+    String resolveStartupModel(String model) {
+        String sessionModel = currentSession != null
+                && currentSession.settings() instanceof OpenCodeSessionSettings s
+                && s.model() != null && !s.model().isBlank()
+                ? s.model() : null;
+        String effectiveModel = (model != null && !model.isBlank())
+                ? model
+                : sessionModel != null ? sessionModel : OpenCodePluginSettings.getModel();
+        if (PluginSettings.isDebugJson()) {
+            String source = (model != null && !model.isBlank()) ? "explicit argument"
+                    : sessionModel != null ? "session setting" : "global default";
+            LOG.log(Level.INFO, "OpenCode requested model=\"{0}\" at session start (source: {1})",
+                    new Object[]{effectiveModel, source});
+        }
+        return effectiveModel;
     }
 
     @Override
@@ -149,6 +186,14 @@ public class OpenCodeAiImplementation extends AiImplementation {
     public AiInfoBarExtension createInfoBarExtension(AiSession session, AiSessionHost host) {
         OpenCodeSessionSettings s = (session != null && session.settings() instanceof OpenCodeSessionSettings)
                 ? (OpenCodeSessionSettings) session.settings() : null;
+        if (PluginSettings.isDebugJson()) {
+            LOG.log(Level.INFO,
+                    "OpenCode createInfoBarExtension [{0}]: session#={1} settings#={2} model={3}",
+                    new Object[]{session != null ? session.id() : null,
+                        session != null ? System.identityHashCode(session) : null,
+                        s != null ? System.identityHashCode(s) : null,
+                        s != null ? s.model() : null});
+        }
         return new OpenCodeAiInfoBarExtension(delegate, s, host);
     }
 

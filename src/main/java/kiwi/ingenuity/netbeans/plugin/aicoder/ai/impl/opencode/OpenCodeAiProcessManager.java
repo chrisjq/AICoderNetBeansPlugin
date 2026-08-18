@@ -191,6 +191,13 @@ public class OpenCodeAiProcessManager extends AiProcessManager {
                     "MCP server unavailable — running without MCP tools"));
         }
 
+        if (PluginSettings.isDebugJson()) {
+            String m = currentSession.settings() instanceof OpenCodeSessionSettings ocs ? ocs.model() : null;
+            LOG.log(Level.INFO,
+                    "OpenCode start() [{0}]: registering OpenCodeAiSession — session#={1} settings#={2} model={3}",
+                    new Object[]{sessionId, System.identityHashCode(currentSession),
+                        System.identityHashCode(currentSession.settings()), m});
+        }
         openCodeAiSession = new OpenCodeAiSession(currentSession, listener);
         running = true;
         listener.onAiProcessEvent(new StatusEvent(StatusEventTypeEnum.READY, StatusMessageUtil.formatReady("OpenCode")));
@@ -370,9 +377,82 @@ public class OpenCodeAiProcessManager extends AiProcessManager {
         }
         OpenCodeSessionSettings s = (OpenCodeSessionSettings) currentSession.settings();
         boolean settingsChanged = false;
+        // Model first: effort's available values depend on which model is active
+        // (design doc §13), so applyInitialEffortOption must see configOptions
+        // AFTER a model switch, not before.
+        settingsChanged |= applyInitialModelOption(s);
         settingsChanged |= applyInitialModeOption(s);
         settingsChanged |= applyInitialEffortOption(s);
         return settingsChanged;
+    }
+
+    /**
+     * Reconciles the session's chosen model against what the agent actually
+     * started with. {@code session/new} carries no model parameter — OpenCode
+     * always picks its own model when a session is created — so without this,
+     * every session silently ran whatever OpenCode defaulted to (typically
+     * {@code opencode/big-pickle}) regardless of what the user chose per
+     * session. Unlike mode/effort, an unavailable choice is never silently
+     * substituted here: it is surfaced (status message + log) instead, because
+     * running a different model than the user asked for without telling them is
+     * the entire bug this method exists to fix.
+     */
+    private boolean applyInitialModelOption(OpenCodeSessionSettings s) {
+        String agentCurrentModel = null;
+        List<String> availableModels = new ArrayList<>();
+        for (JsonElement el : sessionConfigOptions) {
+            if (!el.isJsonObject()) {
+                continue;
+            }
+            JsonObject opt = el.getAsJsonObject();
+            if ("model".equals(opt.has("id") ? opt.get("id").getAsString() : null)) {
+                if (opt.has("currentValue")) {
+                    agentCurrentModel = opt.get("currentValue").getAsString();
+                }
+                if (opt.has("options") && opt.get("options").isJsonArray()) {
+                    for (JsonElement v : opt.getAsJsonArray("options")) {
+                        if (v.isJsonObject() && v.getAsJsonObject().has("value")) {
+                            availableModels.add(v.getAsJsonObject().get("value").getAsString());
+                        }
+                    }
+                }
+                break;
+            }
+        }
+        String requestedModel = s.model();
+        if (PluginSettings.isDebugJson()) {
+            LOG.log(Level.INFO, "OpenCode configOptions model: agent reports \"{0}\" (session requested \"{1}\")",
+                    new Object[]{agentCurrentModel, requestedModel});
+            if (requestedModel != null && !requestedModel.isBlank() && !requestedModel.equals(agentCurrentModel)) {
+                LOG.log(Level.WARNING,
+                        "OpenCode model mismatch: session settings say \"{0}\" but the agent started with \"{1}\"",
+                        new Object[]{requestedModel, agentCurrentModel});
+            }
+        }
+        if (requestedModel == null || requestedModel.isBlank() || requestedModel.equals(agentCurrentModel)) {
+            return false;
+        }
+        if (!availableModels.isEmpty() && !availableModels.contains(requestedModel)) {
+            LOG.log(Level.WARNING,
+                    "OpenCode session requested model \"{0}\" but the agent does not offer it (available: {1}); "
+                    + "running \"{2}\" instead", new Object[]{requestedModel, availableModels, agentCurrentModel});
+            listener.onAiProcessEvent(new StatusEvent(StatusEventTypeEnum.INFO,
+                    "Model \"" + requestedModel + "\" is not available; running \"" + agentCurrentModel
+                    + "\" instead"));
+            return false;
+        }
+        try {
+            JsonArray updated = setConfigOption("model", requestedModel).get(30, TimeUnit.SECONDS);
+            sessionConfigOptions = updated;
+        }
+        catch (Exception e) {
+            LOG.log(Level.WARNING, "OpenCode rejected model \"{0}\": {1}",
+                    new Object[]{requestedModel, e.getMessage()});
+            listener.onAiProcessEvent(new StatusEvent(StatusEventTypeEnum.INFO,
+                    "Model \"" + requestedModel + "\" was rejected by OpenCode; running \"" + agentCurrentModel
+                    + "\" instead"));
+        }
+        return false;
     }
 
     private boolean applyInitialModeOption(OpenCodeSessionSettings s) {

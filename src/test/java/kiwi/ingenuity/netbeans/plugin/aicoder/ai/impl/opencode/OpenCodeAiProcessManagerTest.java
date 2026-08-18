@@ -70,6 +70,21 @@ class OpenCodeAiProcessManagerTest {
         return opt;
     }
 
+    private static JsonObject buildModelOption(String currentValue, String... availableValues) {
+        JsonObject opt = new JsonObject();
+        opt.addProperty("id", "model");
+        opt.addProperty("currentValue", currentValue);
+        opt.addProperty("type", "select");
+        JsonArray options = new JsonArray();
+        for (String v : availableValues) {
+            JsonObject o = new JsonObject();
+            o.addProperty("value", v);
+            options.add(o);
+        }
+        opt.add("options", options);
+        return opt;
+    }
+
     // ---- Payload builder tests ----
     @Test
     void permissionConfigJsonIsExact() {
@@ -955,6 +970,130 @@ class OpenCodeAiProcessManagerTest {
         assertFalse(changed, "applyInitialModeIfNeeded must return false when both values are valid and match");
         assertTrue(calls.isEmpty(), "setConfigOption must NOT be called when values already match agent");
         assertTrue(events.isEmpty(), "no INFO events must fire when values are valid and matching");
+    }
+
+    // ---- Model-at-startup tests (fix for the per-session-model-never-applied bug) ----
+    @Test
+    void applyInitialModelSentWhenSessionModelDiffersFromAgentCurrent() {
+        List<String[]> calls = new ArrayList<>();
+        OpenCodeAiProcessManager manager = new OpenCodeAiProcessManager(e -> {
+        }) {
+            @Override
+            public CompletableFuture<JsonArray> setConfigOption(String configId, String value) {
+                calls.add(new String[]{configId, value});
+                return CompletableFuture.completedFuture(new JsonArray());
+            }
+        };
+
+        JsonArray cfgOpts = new JsonArray();
+        cfgOpts.add(buildModelOption("opencode/big-pickle", "opencode/big-pickle", "opencode/deepseek-v4-flash-free"));
+        manager.sessionConfigOptions = cfgOpts;
+
+        OpenCodeSessionSettings settings = new OpenCodeSessionSettings();
+        settings.setModel("opencode/deepseek-v4-flash-free");
+        AiSession session = new AiSession("test-model-diff", "Test", null,
+                AiTypeEnum.OPENCODE, null, settings, Instant.now(), Instant.now());
+        manager.setCurrentSession(session);
+
+        manager.applyInitialModeIfNeeded();
+
+        long modelCalls = calls.stream().filter(c -> "model".equals(c[0])).count();
+        assertEquals(1, modelCalls, "setConfigOption(model) must fire when session model differs from the agent's");
+        assertEquals("opencode/deepseek-v4-flash-free",
+                calls.stream().filter(c -> "model".equals(c[0])).findFirst().get()[1]);
+    }
+
+    @Test
+    void applyInitialModelSkippedWhenAlreadyMatchesAgent() {
+        List<String[]> calls = new ArrayList<>();
+        OpenCodeAiProcessManager manager = new OpenCodeAiProcessManager(e -> {
+        }) {
+            @Override
+            public CompletableFuture<JsonArray> setConfigOption(String configId, String value) {
+                calls.add(new String[]{configId, value});
+                return CompletableFuture.completedFuture(new JsonArray());
+            }
+        };
+
+        JsonArray cfgOpts = new JsonArray();
+        cfgOpts.add(buildModelOption("opencode/deepseek-v4-flash-free",
+                "opencode/big-pickle", "opencode/deepseek-v4-flash-free"));
+        manager.sessionConfigOptions = cfgOpts;
+
+        OpenCodeSessionSettings settings = new OpenCodeSessionSettings();
+        settings.setModel("opencode/deepseek-v4-flash-free");
+        AiSession session = new AiSession("test-model-match", "Test", null,
+                AiTypeEnum.OPENCODE, null, settings, Instant.now(), Instant.now());
+        manager.setCurrentSession(session);
+
+        manager.applyInitialModeIfNeeded();
+
+        assertTrue(calls.stream().noneMatch(c -> "model".equals(c[0])),
+                "setConfigOption(model) must NOT fire when session model already matches the agent's");
+    }
+
+    @Test
+    void applyInitialModelNotAvailableIsSurfacedNotSilentlySubstituted() {
+        List<AiProcessEvent> events = new ArrayList<>();
+        List<String[]> calls = new ArrayList<>();
+        OpenCodeAiProcessManager manager = new OpenCodeAiProcessManager(events::add) {
+            @Override
+            public CompletableFuture<JsonArray> setConfigOption(String configId, String value) {
+                calls.add(new String[]{configId, value});
+                return CompletableFuture.completedFuture(new JsonArray());
+            }
+        };
+
+        JsonArray cfgOpts = new JsonArray();
+        cfgOpts.add(buildModelOption("opencode/big-pickle", "opencode/big-pickle", "opencode/hy3-free"));
+        manager.sessionConfigOptions = cfgOpts;
+
+        OpenCodeSessionSettings settings = new OpenCodeSessionSettings();
+        settings.setModel("opencode/not-offered-by-agent");
+        AiSession session = new AiSession("test-model-unavailable", "Test", null,
+                AiTypeEnum.OPENCODE, null, settings, Instant.now(), Instant.now());
+        manager.setCurrentSession(session);
+
+        boolean changed = manager.applyInitialModeIfNeeded();
+
+        assertFalse(changed, "an unavailable model must not be recorded as a settings change");
+        assertEquals("opencode/not-offered-by-agent", settings.model(),
+                "the session's chosen model must NOT be silently overwritten — unlike mode, "
+                + "an unavailable model is surfaced, not replaced");
+        assertTrue(calls.stream().noneMatch(c -> "model".equals(c[0])),
+                "setConfigOption(model) must NOT be called for a model the agent does not offer");
+        assertTrue(events.stream().anyMatch(e -> e instanceof StatusEvent se
+                && se.type() == StatusEventTypeEnum.INFO
+                && se.text().contains("opencode/not-offered-by-agent")),
+                "an INFO status event naming the requested model must be surfaced to the user");
+    }
+
+    @Test
+    void applyInitialModelSkippedWhenSessionModelIsNull() {
+        List<String[]> calls = new ArrayList<>();
+        OpenCodeAiProcessManager manager = new OpenCodeAiProcessManager(e -> {
+        }) {
+            @Override
+            public CompletableFuture<JsonArray> setConfigOption(String configId, String value) {
+                calls.add(new String[]{configId, value});
+                return CompletableFuture.completedFuture(new JsonArray());
+            }
+        };
+
+        JsonArray cfgOpts = new JsonArray();
+        cfgOpts.add(buildModelOption("opencode/big-pickle", "opencode/big-pickle", "opencode/hy3-free"));
+        manager.sessionConfigOptions = cfgOpts;
+
+        OpenCodeSessionSettings settings = new OpenCodeSessionSettings();
+        // settings.setModel(...) never called — no session preference recorded.
+        AiSession session = new AiSession("test-model-unset", "Test", null,
+                AiTypeEnum.OPENCODE, null, settings, Instant.now(), Instant.now());
+        manager.setCurrentSession(session);
+
+        manager.applyInitialModeIfNeeded();
+
+        assertTrue(calls.stream().noneMatch(c -> "model".equals(c[0])),
+                "no model preference means nothing to reconcile against the agent");
     }
 
     @Test

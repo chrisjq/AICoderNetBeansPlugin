@@ -5,7 +5,7 @@
     <modelVersion>4.0.0</modelVersion>
     <groupId>kiwi.ingenuity.aicoder</groupId>
     <artifactId>AiCoderNetbeansPlugin</artifactId>
-    <version>1.2.40</version>
+    <version>1.2.47</version>
     <packaging>nbm</packaging>
 
     <name>AI Coder for NetBeans</name>

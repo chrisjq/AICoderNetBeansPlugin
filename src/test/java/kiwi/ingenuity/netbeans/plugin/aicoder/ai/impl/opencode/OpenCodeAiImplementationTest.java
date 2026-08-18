@@ -233,6 +233,65 @@ class OpenCodeAiImplementationTest {
                 "settings must still be updated even with no live session");
     }
 
+    // ---- resolveStartupModel must use the session's chosen model, not the global default ----
+    // (Tests the extracted helper directly rather than startWithDiscovery() itself, since that
+    // method's other branch depends on OpenCodeExecutableLocator.locate() finding a real
+    // executable on disk — environment-dependent and not something a unit test should assume.)
+    @Test
+    void resolveStartupModel_usesSessionModelNotGlobalDefault() {
+        OpenCodeSessionSettings settings = new OpenCodeSessionSettings();
+        settings.setModel("opencode/deepseek-v4-flash-free");
+        AiSession session = new AiSession("s-swd-1", "Test", null,
+                AiTypeEnum.OPENCODE, null, settings, Instant.now(), Instant.now());
+
+        OpenCodeAiImplementation impl = new OpenCodeAiImplementation(e -> {
+        }, null) {
+            {
+                currentSession = session;
+            }
+        };
+
+        assertEquals("opencode/deepseek-v4-flash-free", impl.resolveStartupModel(null),
+                "startWithDiscovery(null) must fall back to the session's chosen model, "
+                + "not OpenCodePluginSettings.getModel() — this is the per-session-model bug");
+    }
+
+    @Test
+    void resolveStartupModel_explicitArgumentWinsOverSessionModel() {
+        OpenCodeSessionSettings settings = new OpenCodeSessionSettings();
+        settings.setModel("opencode/deepseek-v4-flash-free");
+        AiSession session = new AiSession("s-swd-2", "Test", null,
+                AiTypeEnum.OPENCODE, null, settings, Instant.now(), Instant.now());
+
+        OpenCodeAiImplementation impl = new OpenCodeAiImplementation(e -> {
+        }, null) {
+            {
+                currentSession = session;
+            }
+        };
+
+        assertEquals("opencode/explicit-override", impl.resolveStartupModel("opencode/explicit-override"),
+                "an explicit model argument must still win over the session setting");
+    }
+
+    @Test
+    void resolveStartupModel_noSessionModelFallsBackToGlobalDefault() {
+        OpenCodeSessionSettings settings = new OpenCodeSessionSettings();
+        // settings.setModel(...) never called.
+        AiSession session = new AiSession("s-swd-3", "Test", null,
+                AiTypeEnum.OPENCODE, null, settings, Instant.now(), Instant.now());
+
+        OpenCodeAiImplementation impl = new OpenCodeAiImplementation(e -> {
+        }, null) {
+            {
+                currentSession = session;
+            }
+        };
+
+        assertEquals(OpenCodePluginSettings.getModel(), impl.resolveStartupModel(null),
+                "with no session model and no explicit argument, the global default is still correct");
+    }
+
     @Test
     void resumeSession_withStoredAcpId_usesAcpIdNotPluginUuid() {
         String acpId = "ses_abc123";

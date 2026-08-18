@@ -513,6 +513,350 @@ class OpenCodeAiInfoBarExtensionTest {
                 "rebuilt fallback must include all three newly-discovered models");
     }
 
+    // ---- Regression: OpenCodeModelsEvent for an idle session must not reset the model ----
+    @Test
+    void onPropertyEventPreservesCurrentlyDisplayedModelInsteadOfResettingToGlobalDefault() throws Exception {
+        // Reproduces the diagnosed root cause directly: settings.model() is never
+        // populated for a session whose model was only ever known via a live ACP
+        // connection (OpenCodeAiProcessManager.applyInitialModeIfNeeded has a
+        // counterpart for mode and effort but none for model), so
+        // buildFallbackConfigOptions falls back to the global default here.
+        OpenCodeSessionSettings settings = new OpenCodeSessionSettings();
+        OpenCodeAiProcessManager manager = new OpenCodeAiProcessManager(e -> {
+        }) {
+            @Override
+            public synchronized boolean isSessionLive() {
+                return false;
+            }
+        };
+
+        List<JsonArray> applied = new ArrayList<>();
+        OpenCodeAiInfoBarExtension ext = new OpenCodeAiInfoBarExtension(manager, settings, null) {
+            @Override
+            void applyConfigOptions(JsonArray opts) {
+                applied.add(opts);
+            }
+        };
+
+        // The session is currently displaying a real, discovered model that was
+        // never written back into settings.model() — the idle-session state the
+        // bug report describes.
+        JsonObject modelOpt = new JsonObject();
+        modelOpt.addProperty("id", "model");
+        modelOpt.addProperty("type", "select");
+        modelOpt.addProperty("currentValue", "opencode/deepseek-v4-flash-free");
+        JsonArray modelOpts = new JsonArray();
+        for (String v : new String[]{"opencode/big-pickle", "opencode/deepseek-v4-flash-free"}) {
+            JsonObject o = new JsonObject();
+            o.addProperty("value", v);
+            o.addProperty("name", v);
+            modelOpts.add(o);
+        }
+        modelOpt.add("options", modelOpts);
+        JsonArray displayedBeforeEvent = new JsonArray();
+        displayedBeforeEvent.add(modelOpt);
+        ext.recordAndApply(displayedBeforeEvent);
+        applied.clear();
+
+        // An unrelated session's discovery broadcasts a fresh model list — the
+        // event is keyed by AiType, not by this session (class javadoc).
+        OpenCodePluginSettings.setDiscoveredModels(
+                new String[]{"opencode/hy3-free", "opencode/nemotron-3-ultra-free"});
+        ext.onPropertyEvent(new OpenCodeModelsEvent(
+                List.of("opencode/hy3-free", "opencode/nemotron-3-ultra-free")));
+        SwingUtilities.invokeAndWait(() -> {
+        });
+
+        assertEquals(1, applied.size(), "the broadcast must trigger exactly one rebuild");
+        List<OptionSpec> specs = OpenCodeAiInfoBarExtension.parseConfigOptions(applied.get(0));
+        OptionSpec modelSpec = specs.stream().filter(s -> "model".equals(s.id())).findFirst().orElseThrow();
+        assertEquals("opencode/deepseek-v4-flash-free", modelSpec.currentValue(),
+                "the model actually displayed before the broadcast must survive it — it must "
+                + "NOT reset to the global default (opencode/big-pickle)");
+        assertTrue(modelSpec.displayNames().containsAll(
+                List.of("opencode/hy3-free", "opencode/nemotron-3-ultra-free")),
+                "the option list itself must still refresh to the newly-discovered models");
+    }
+
+    // ---- Full end-to-end reproduction: does a REAL handshake broadcast from one
+    // session reset a different, idle session's model? Goes through the actual
+    // AiTypePropertyBus + cacheDiscoveredModels() production path (not a
+    // hand-simulated onPropertyEvent call), mirroring exactly how AiTopComponent
+    // wires handleAiTypeProperty -> infoBarExtension.onPropertyEvent. ----
+    @Test
+    void unrelatedSessionsHandshakeBroadcastDoesNotResetOtherIdleSessionsModel() throws Exception {
+        // ---- "_2": idle, never started, showing its own distinct model ----
+        OpenCodeSessionSettings settings2 = new OpenCodeSessionSettings();
+        settings2.setModel("opencode/nemotron-3-ultra-free");
+        OpenCodeAiProcessManager manager2 = new OpenCodeAiProcessManager(e -> {
+        }) {
+            @Override
+            public synchronized boolean isSessionLive() {
+                return false;
+            }
+        };
+        List<JsonArray> applied2 = new ArrayList<>();
+        OpenCodeAiInfoBarExtension ext2 = new OpenCodeAiInfoBarExtension(manager2, settings2, null) {
+            @Override
+            void applyConfigOptions(JsonArray opts) {
+                applied2.add(opts);
+            }
+        };
+        ext2.createComponents();
+
+        OptionSpec initialModelSpec = OpenCodeAiInfoBarExtension.parseConfigOptions(applied2.get(0))
+                .stream().filter(s -> "model".equals(s.id())).findFirst().orElseThrow();
+        assertEquals("opencode/nemotron-3-ultra-free", initialModelSpec.currentValue(),
+                "sanity check: _2 must start out showing its own model, unaffected");
+
+        // ---- "_1": gets messaged; its handshake reports the agent's pre-correction
+        // model, exactly like the live bug (the agent always starts on big-pickle) ----
+        OpenCodeAiProcessManager manager1 = new OpenCodeAiProcessManager(e -> {
+        });
+        OpenCodeAiInfoBarExtension ext1 = new OpenCodeAiInfoBarExtension(manager1, null, null) {
+            @Override
+            void applyConfigOptions(JsonArray opts) {
+                // stub — this test is about _2, not _1's own combo
+            }
+        };
+
+        // Wire _2 to the type-wide bus exactly as AiTopComponent.handleAiTypeProperty
+        // wires a real info bar extension.
+        AiPropertyListener forwardTo2 = ext2::onPropertyEvent;
+        CountDownLatch busDelivered = new CountDownLatch(1);
+        AiPropertyListener latchListener = event -> busDelivered.countDown();
+        AiTypePropertyBus.getInstance().addListener(AiTypeEnum.OPENCODE, forwardTo2);
+        AiTypePropertyBus.getInstance().addListener(AiTypeEnum.OPENCODE, latchListener);
+        try {
+            JsonObject modelOpt = new JsonObject();
+            modelOpt.addProperty("id", "model");
+            modelOpt.addProperty("type", "select");
+            modelOpt.addProperty("currentValue", "opencode/big-pickle");
+            JsonArray options = new JsonArray();
+            for (String v : new String[]{"opencode/big-pickle", "opencode/nemotron-3-ultra-free", "opencode/other"}) {
+                JsonObject o = new JsonObject();
+                o.addProperty("value", v);
+                o.addProperty("name", v);
+                options.add(o);
+            }
+            modelOpt.add("options", options);
+            JsonArray agentConfigOptions = new JsonArray();
+            agentConfigOptions.add(modelOpt);
+
+            // Real production call: fires cacheDiscoveredModels() -> AiTypePropertyBus.fire()
+            // for real, exactly like OpenCodeAiProcessManager.spawnAndHandshake() does.
+            ext1.onAiProcessImplEvent(new OpenCodeConfigOptionsEvent(agentConfigOptions));
+
+            assertTrue(busDelivered.await(5, TimeUnit.SECONDS),
+                    "the type-wide OpenCodeModelsEvent broadcast must actually fire");
+            SwingUtilities.invokeAndWait(() -> {
+            });
+        }
+        finally {
+            AiTypePropertyBus.getInstance().removeListener(AiTypeEnum.OPENCODE, forwardTo2);
+            AiTypePropertyBus.getInstance().removeListener(AiTypeEnum.OPENCODE, latchListener);
+            OpenCodePluginSettings.setDiscoveredModels(null);
+        }
+
+        OptionSpec finalModelSpec = OpenCodeAiInfoBarExtension.parseConfigOptions(applied2.get(applied2.size() - 1))
+                .stream().filter(s -> "model".equals(s.id())).findFirst().orElseThrow();
+        assertEquals("opencode/nemotron-3-ultra-free", finalModelSpec.currentValue(),
+                "_2's own model must survive _1's unrelated handshake broadcast, going through the "
+                + "REAL AiTypePropertyBus/cacheDiscoveredModels path, not a simulated event");
+    }
+
+    // ---- Namespace mismatch: does the REAL combo (buildCombo/displayForValue,
+    // not just the configOptions JSON) still show the user's persisted model
+    // when a broadcast's discovered option "value" strings use a different
+    // literal form than settings.model()? This is the gap the previous
+    // reproduction test missed by stubbing out applyConfigOptions(). ----
+    @Test
+    void namespaceMismatchBetweenPersistedModelAndDiscoveredOptionsLeavesComboShowingWrongModel() throws Exception {
+        // ---- "_2": idle, showing its own persisted model under the namespaced
+        // form used when the session was created (e.g. "opencode/<id>"). ----
+        OpenCodeSessionSettings settings2 = new OpenCodeSessionSettings();
+        settings2.setModel("opencode/nemotron-3-ultra-free");
+        OpenCodeAiProcessManager manager2 = new OpenCodeAiProcessManager(e -> {
+        }) {
+            @Override
+            public synchronized boolean isSessionLive() {
+                return false;
+            }
+        };
+        OpenCodeAiInfoBarExtension ext2 = new OpenCodeAiInfoBarExtension(manager2, settings2, null);
+
+        SwingUtilities.invokeAndWait(() -> {
+            List<JComponent> comps = ext2.createComponents();
+            JPanel comboPanel = (JPanel) comps.get(0);
+            @SuppressWarnings("unchecked")
+            JComboBox<String> modelCombo = (JComboBox<String>) comboPanel.getComponent(0);
+            assertEquals("opencode/nemotron-3-ultra-free", modelCombo.getSelectedItem(),
+                    "sanity check: _2 must start out correctly selected");
+        });
+
+        // ---- "_1": a real handshake discovers models WITHOUT the "opencode/"
+        // prefix — mirroring OpenCode's own log, which reports bare
+        // "modelID=big-pickle", never "modelID=opencode/big-pickle". ----
+        OpenCodeAiProcessManager manager1 = new OpenCodeAiProcessManager(e -> {
+        });
+        OpenCodeAiInfoBarExtension ext1 = new OpenCodeAiInfoBarExtension(manager1, null, null) {
+            @Override
+            void applyConfigOptions(JsonArray opts) {
+                // stub — this test is about _2, not _1's own combo
+            }
+        };
+
+        AiPropertyListener forwardTo2 = ext2::onPropertyEvent;
+        CountDownLatch busDelivered = new CountDownLatch(1);
+        AiPropertyListener latchListener = event -> busDelivered.countDown();
+        AiTypePropertyBus.getInstance().addListener(AiTypeEnum.OPENCODE, forwardTo2);
+        AiTypePropertyBus.getInstance().addListener(AiTypeEnum.OPENCODE, latchListener);
+        try {
+            JsonObject modelOpt = new JsonObject();
+            modelOpt.addProperty("id", "model");
+            modelOpt.addProperty("type", "select");
+            modelOpt.addProperty("currentValue", "big-pickle");
+            JsonArray options = new JsonArray();
+            for (String v : new String[]{"big-pickle", "nemotron-3-ultra-free", "other"}) {
+                JsonObject o = new JsonObject();
+                o.addProperty("value", v);
+                o.addProperty("name", v);
+                options.add(o);
+            }
+            modelOpt.add("options", options);
+            JsonArray agentConfigOptions = new JsonArray();
+            agentConfigOptions.add(modelOpt);
+
+            ext1.onAiProcessImplEvent(new OpenCodeConfigOptionsEvent(agentConfigOptions));
+
+            assertTrue(busDelivered.await(5, TimeUnit.SECONDS),
+                    "the type-wide OpenCodeModelsEvent broadcast must actually fire");
+            SwingUtilities.invokeAndWait(() -> {
+            });
+        }
+        finally {
+            AiTypePropertyBus.getInstance().removeListener(AiTypeEnum.OPENCODE, forwardTo2);
+            AiTypePropertyBus.getInstance().removeListener(AiTypeEnum.OPENCODE, latchListener);
+            OpenCodePluginSettings.setDiscoveredModels(null);
+        }
+
+        SwingUtilities.invokeAndWait(() -> {
+            @SuppressWarnings("unchecked")
+            JComboBox<String> modelCombo = (JComboBox<String>) ext2.comboPanel.getComponent(0);
+            assertEquals("opencode/nemotron-3-ultra-free", modelCombo.getSelectedItem(),
+                    "_2's combo must still visibly show the model that will actually run, even "
+                    + "though the freshly-discovered option list uses a different value namespace "
+                    + "than the persisted settings — it must never silently fall back to whatever "
+                    + "the combo defaults to (e.g. the first discovered entry)");
+        });
+    }
+
+    // ---- Does an idle-session dropdown change survive a later broadcast? Chris
+    // confirmed the four sessions all started on big-pickle and were changed
+    // to distinct models via the info bar dropdown itself, while idle — not
+    // via the create dialog. handleConfigChange()'s idle branch calls
+    // applyToSettings() but never recordAndApply(), so lastKnownConfigOptions
+    // is never refreshed after the pick. If a later OpenCodeModelsEvent
+    // broadcast arrives, preserveSelections() "preserves" that stale
+    // lastKnownConfigOptions currentValue over the freshly-derived one from
+    // settings — silently reverting the user's pick. This test needs no
+    // cross-session broadcast and no object-identity divergence to reproduce:
+    // it is self-contained to one idle session picking its own model. ----
+    @Test
+    void idleSessionDropdownModelChangeSurvivesALaterModelsBroadcast() throws Exception {
+        OpenCodeSessionSettings settings = new OpenCodeSessionSettings();
+        settings.setModel("opencode/big-pickle");
+        OpenCodeAiProcessManager manager = new OpenCodeAiProcessManager(e -> {
+        }) {
+            @Override
+            public synchronized boolean isSessionLive() {
+                return false;
+            }
+        };
+        OpenCodeAiInfoBarExtension ext = new OpenCodeAiInfoBarExtension(manager, settings, null);
+
+        SwingUtilities.invokeAndWait(ext::createComponents);
+
+        // ---- User picks a different model from the idle combo. ----
+        OptionSpec modelSpec = OpenCodeAiInfoBarExtension.parseConfigOptions(
+                OpenCodeAiInfoBarExtension.buildFallbackConfigOptions(settings))
+                .stream().filter(s -> "model".equals(s.id())).findFirst().orElseThrow();
+        SwingUtilities.invokeAndWait(()
+                -> ext.handleConfigChange(modelSpec, "opencode/nemotron-3-ultra-free", null));
+
+        assertEquals("opencode/nemotron-3-ultra-free", settings.model(),
+                "sanity check: the idle-session pick must write straight through to settings");
+
+        // ---- Some other session's discovery later broadcasts a fresh model
+        // list — must not undo the pick just made on this idle session. ----
+        OpenCodePluginSettings.setDiscoveredModels(
+                new String[]{"opencode/big-pickle", "opencode/nemotron-3-ultra-free"});
+        try {
+            SwingUtilities.invokeAndWait(() -> ext.onPropertyEvent(new OpenCodeModelsEvent(
+                    List.of("opencode/big-pickle", "opencode/nemotron-3-ultra-free"))));
+            SwingUtilities.invokeAndWait(() -> {
+            });
+        }
+        finally {
+            OpenCodePluginSettings.setDiscoveredModels(null);
+        }
+
+        SwingUtilities.invokeAndWait(() -> {
+            @SuppressWarnings("unchecked")
+            JComboBox<String> modelCombo = (JComboBox<String>) ext.comboPanel.getComponent(0);
+            assertEquals("opencode/nemotron-3-ultra-free", modelCombo.getSelectedItem(),
+                    "the model picked on this idle session must still be shown after a later "
+                    + "OpenCodeModelsEvent broadcast — it must not revert to whatever was "
+                    + "displayed before the pick (e.g. the global default)");
+        });
+    }
+
+    // ---- preserveSelections() unit tests (pure helper, no Swing) ----
+    @Test
+    void preserveSelectionsKeepsDisplayedCurrentValueButUsesRefreshedOptionList() {
+        JsonArray displayed = configArray(
+                "[{\"id\":\"model\",\"type\":\"select\",\"currentValue\":\"old-selected\","
+                + "\"options\":[{\"value\":\"old-selected\",\"name\":\"old-selected\"}]}]");
+        JsonArray refreshed = configArray(
+                "[{\"id\":\"model\",\"type\":\"select\",\"currentValue\":\"global-default\","
+                + "\"options\":[{\"value\":\"new-a\",\"name\":\"new-a\"},{\"value\":\"new-b\",\"name\":\"new-b\"}]}]");
+
+        JsonArray merged = OpenCodeAiInfoBarExtension.preserveSelections(displayed, refreshed);
+
+        List<OptionSpec> specs = OpenCodeAiInfoBarExtension.parseConfigOptions(merged);
+        OptionSpec model = byId(specs, "model");
+        assertEquals("old-selected", model.currentValue(),
+                "currentValue must come from what was already displayed, not the refreshed default");
+        assertTrue(model.displayNames().containsAll(List.of("new-a", "new-b")),
+                "the option list must come from refreshed, not displayed");
+    }
+
+    @Test
+    void preserveSelectionsLeavesEntryUntouchedWhenIdIsNotInDisplayed() {
+        JsonArray displayed = configArray(
+                "[{\"id\":\"mode\",\"type\":\"select\",\"currentValue\":\"build\",\"options\":[]}]");
+        JsonArray refreshed = configArray(
+                "[{\"id\":\"model\",\"type\":\"select\",\"currentValue\":\"global-default\","
+                + "\"options\":[{\"value\":\"global-default\",\"name\":\"global-default\"}]}]");
+
+        JsonArray merged = OpenCodeAiInfoBarExtension.preserveSelections(displayed, refreshed);
+
+        OptionSpec model = byId(OpenCodeAiInfoBarExtension.parseConfigOptions(merged), "model");
+        assertEquals("global-default", model.currentValue(),
+                "with no prior selection for this id, the refreshed value must stand");
+    }
+
+    @Test
+    void preserveSelectionsHandlesNullDisplayedOrRefreshed() {
+        JsonArray refreshed = configArray("[{\"id\":\"model\",\"type\":\"select\",\"options\":[]}]");
+        assertSame(refreshed, OpenCodeAiInfoBarExtension.preserveSelections(null, refreshed),
+                "null displayed (nothing shown yet) must fall through to refreshed as-is");
+
+        JsonArray displayed = configArray("[{\"id\":\"model\",\"type\":\"select\",\"options\":[]}]");
+        assertSame(displayed, OpenCodeAiInfoBarExtension.preserveSelections(displayed, null),
+                "null refreshed must fall back to whatever was displayed");
+    }
+
     // ---- Addendum 3: mode persistence from live-session combo changes ----
     @Test
     void handleConfigChangeLivePath_writesAppliedModeToSettings() throws Exception {
