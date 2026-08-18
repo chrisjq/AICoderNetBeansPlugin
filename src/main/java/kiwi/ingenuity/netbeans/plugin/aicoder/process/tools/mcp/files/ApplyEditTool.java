@@ -2,12 +2,12 @@ package kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.files;
 
 import com.google.gson.JsonArray;
 import com.google.gson.JsonObject;
+import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.events.PermissionDecision;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.events.PermissionEvent;
-import java.util.Set;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.McpInstructionOptionEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.McpSectionEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.McpToolEnum;
@@ -26,7 +26,8 @@ import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.providers.netbeans.R
  * diff panel (PermissionEvent) before applying. Used so GitHub Copilot edits go
  * through the same review UX.
  *
- * <p>Locks the target file (not a global lock — see usesOwnFileLocking()) from
+ * <p>
+ * Locks the target file (not a global lock — see usesOwnFileLocking()) from
  * before the diff is shown through the user's decision and the write, so the
  * file can't change underneath a pending decision. A different file being
  * edited concurrently is unaffected.
@@ -36,15 +37,15 @@ public class ApplyEditTool extends AbstractActionTool {
     public ApplyEditTool() {
         super(McpSectionEnum.UI_FILES,
                 McpToolEnum.APPLY_EDIT.toolName(),
-                "Replace an exact string in a file. The user approves the change in the NetBeans Accept/Reject diff panel before it is applied.",
-                "ApplyEdit -> replace old_string with new_string in a file; user approves via the NetBeans diff panel");
+                "Replace an exact string in a file. old_string must match the source byte-for-byte including indentation; strip the line-number gutter if text was copied from GetFileContent. The user approves the change in the NetBeans Accept/Reject diff panel.",
+                "ApplyEdit -> replace old_string with new_string in a file; old_string must be byte-for-byte exact (strip GetFileContent gutter if copying from there); user approves via the NetBeans diff panel");
     }
 
     @Override
     public JsonObject schema(Set<McpInstructionOptionEnum> options) {
         JsonObject tool = new JsonObject();
         tool.addProperty(ToolSchemaKeyEnum.NAME.key(), McpToolEnum.APPLY_EDIT.toolName());
-        tool.addProperty(ToolSchemaKeyEnum.DESCRIPTION.key(), "Replace an exact string in a file. The user approves the change in the NetBeans Accept/Reject diff panel before it is applied.");
+        tool.addProperty(ToolSchemaKeyEnum.DESCRIPTION.key(), "Replace an exact string in a file. old_string must match the source byte-for-byte including indentation; strip the line-number gutter if text was copied from GetFileContent. The user approves the change in the NetBeans Accept/Reject diff panel.");
         JsonObject schema = new JsonObject();
         schema.addProperty(ToolSchemaKeyEnum.TYPE.key(), "object");
         JsonObject props = new JsonObject();
@@ -54,7 +55,7 @@ public class ApplyEditTool extends AbstractActionTool {
         props.add("file_path", fp);
         JsonObject os = new JsonObject();
         os.addProperty(ToolSchemaKeyEnum.TYPE.key(), "string");
-        os.addProperty(ToolSchemaKeyEnum.DESCRIPTION.key(), "The exact text to replace.");
+        os.addProperty(ToolSchemaKeyEnum.DESCRIPTION.key(), "The exact text to replace, matched byte-for-byte. Strip the line-number gutter if copied from GetFileContent.");
         props.add("old_string", os);
         JsonObject ns = new JsonObject();
         ns.addProperty(ToolSchemaKeyEnum.TYPE.key(), "string");

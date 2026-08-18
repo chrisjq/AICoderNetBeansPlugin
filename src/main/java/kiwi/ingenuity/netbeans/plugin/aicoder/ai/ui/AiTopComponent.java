@@ -78,6 +78,7 @@ import kiwi.ingenuity.netbeans.plugin.aicoder.serialization.HistoryPersistenceMa
 import kiwi.ingenuity.netbeans.plugin.aicoder.serialization.HistoryPersistenceManager.LoadedHistory;
 import kiwi.ingenuity.netbeans.plugin.aicoder.serialization.SessionPersistenceManager;
 import kiwi.ingenuity.netbeans.plugin.aicoder.utils.NotificationUtil;
+import kiwi.ingenuity.netbeans.plugin.aicoder.utils.ProjectPathUtil;
 import org.netbeans.api.project.Project;
 import org.netbeans.api.project.ui.OpenProjects;
 import org.openide.filesystems.FileObject;
@@ -404,24 +405,14 @@ public final class AiTopComponent extends TopComponent implements AiProcessEvent
         });
     }
 
+    /**
+     * Shortens a path for display in system messages. Delegates to the shared
+     * utility so notifications, confirm prompts and diff messages all render a
+     * path the same way — including the project directory name, which says
+     * which project a file belongs to when several are open.
+     */
     private String shortPath(String fp) {
-        if (fp == null || fp.isBlank()) {
-            return fp;
-        }
-        if (contextProvider != null) {
-            for (File projectDir : contextProvider.getAllOpenProjectDirs()) {
-                String base = projectDir.getAbsolutePath();
-                if (fp.startsWith(base)) {
-                    String rel = fp.substring(base.length());
-                    if (rel.startsWith(File.separator)) {
-                        rel = rel.substring(1);
-                    }
-                    return rel.length() > 128 ? "..." + rel.substring(rel.length() - 125) : rel;
-                }
-            }
-        }
-        String name = Path.of(fp).getFileName().toString();
-        return name.length() > 128 ? "..." + name.substring(name.length() - 125) : name;
+        return ProjectPathUtil.shortPath(fp);
     }
 
     private String confirmLabel(ConfirmEvent ce) {
@@ -1532,7 +1523,7 @@ public final class AiTopComponent extends TopComponent implements AiProcessEvent
         inputField.setEnabled(false);
         sendButton.setEnabled(false);
         finaliseActiveAssistantIfNeeded();
-        conversationPanel.addSystemMessage(NotificationUtil.formatEdit(shortPath(fp)));
+        conversationPanel.addSystemMessage(NotificationUtil.formatToolActionQuestion(tu.toolName(), shortPath(fp)));
 
         AiDiffTopComponent diff = new AiDiffTopComponent(fp, original, proposed, session.name());
         final AiImplementation backendSnap = aiBackend;
@@ -1568,7 +1559,7 @@ public final class AiTopComponent extends TopComponent implements AiProcessEvent
                     backendSnap.setPendingDiff(false);
                     backendSnap.sendPrompt(appendDecisionMessage("Changes rejected, file reverted.", message), wd, pd);
                 }
-                conversationPanel.addSystemMessage(NotificationUtil.formatFileRejected(shortPath(fp), message));
+                conversationPanel.addSystemMessage(NotificationUtil.formatFileRejectedTool(tu.toolName(), shortPath(fp), message));
                 refreshInputEnabled();
             }
         });
@@ -1634,7 +1625,7 @@ public final class AiTopComponent extends TopComponent implements AiProcessEvent
                 LOG.log(Level.WARNING, "Could not read file for permission diff — denying: " + fp, e);
                 SwingUtilities.invokeLater(() -> {
                     conversationPanel.addSystemMessage(
-                            NotificationUtil.formatPermissionDenied(shortPath(fp),
+                            NotificationUtil.formatPermissionDenied(pe.toolName(), shortPath(fp),
                                     "could not read file for diff preview"));
                     pe.response().complete(PermissionDecision.denied("Could not read file for diff preview"));
                 });
@@ -1653,7 +1644,7 @@ public final class AiTopComponent extends TopComponent implements AiProcessEvent
                 LOG.log(Level.WARNING, "Permission denied for {0}: {1}",
                         new Object[]{fp, decision.reason()});
                 conversationPanel.addSystemMessage(
-                        NotificationUtil.formatPermissionDenied(shortPath(fp), decision.reason()));
+                        NotificationUtil.formatPermissionDenied(pe.toolName(), shortPath(fp), decision.reason()));
                 pe.response().complete(PermissionDecision.denied(decision.reason()));
                 return;
             }
@@ -1716,7 +1707,7 @@ public final class AiTopComponent extends TopComponent implements AiProcessEvent
                     openDiffs.remove(diff);
                     pendingResponseCancellers.remove(canceller);
                     pe.response().complete(PermissionDecision.denied(message));
-                    conversationPanel.addSystemMessage(NotificationUtil.formatFileRejected(shortPath(fp), message));
+                    conversationPanel.addSystemMessage(NotificationUtil.formatFileRejectedTool(pe.toolName(), shortPath(fp), message));
                 }
             });
             openDiffs.add(diff);

@@ -2,12 +2,12 @@ package kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.files;
 
 import com.google.gson.JsonArray;
 import com.google.gson.JsonObject;
+import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.events.PermissionDecision;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.events.PermissionEvent;
-import java.util.Set;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.McpInstructionOptionEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.McpSectionEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.McpToolEnum;
@@ -27,7 +27,8 @@ import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.providers.netbeans.R
  * GitHub Copilot file creation goes through the review UX (Copilot's native
  * `create` tool is denied).
  *
- * <p>Locks the target file (not a global lock — see usesOwnFileLocking()) from
+ * <p>
+ * Locks the target file (not a global lock — see usesOwnFileLocking()) from
  * before the diff is shown through the user's decision and the write, so the
  * file can't change underneath a pending decision. A different file being
  * edited concurrently is unaffected.

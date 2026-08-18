@@ -22,6 +22,7 @@ import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.ToolRequestArgum
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.ToolSchemaKeyEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.providers.netbeans.EditorContextProvider;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.providers.netbeans.RefactoringProvider;
+import kiwi.ingenuity.netbeans.plugin.aicoder.utils.ProjectPathUtil;
 
 @RequiresLock(LockTypeEnum.FILE_WRITE_LOCK)
 public class SaveFileTool extends AbstractFileTool {
@@ -109,7 +110,8 @@ public class SaveFileTool extends AbstractFileTool {
         if ("File saved".equals(result)) {
             AiProcessEventListener listener = session.getAiProcessEventListener();
             if (listener != null) {
-                listener.onAiProcessEvent(new SystemNotificationEvent("SaveFile: " + effectivePath));
+                listener.onAiProcessEvent(new SystemNotificationEvent(
+                        "SaveFile: " + ProjectPathUtil.shortPath(effectivePath)));
             }
         }
         return result;

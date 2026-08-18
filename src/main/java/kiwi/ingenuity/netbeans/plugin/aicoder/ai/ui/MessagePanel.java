@@ -506,6 +506,14 @@ public class MessagePanel extends JPanel {
         this.restored = restored;
         setLayout(new BorderLayout());
         setBorder(BorderFactory.createEmptyBorder(4, 0, 4, 0));
+        // The conversation is a vertical BoxLayout, which places each child at
+        // (maxAscent - width * alignmentX) where maxAscent is the largest
+        // width * alignmentX among siblings. Leaving this at the JComponent
+        // default of CENTER_ALIGNMENT gives message panels a large ascent, which
+        // indents every LEFT_ALIGNMENT sibling — QuestionPanel and ConfirmPanel —
+        // by roughly half a message width while these still sit at x=0. Match
+        // them so every child shares an ascent of zero.
+        setAlignmentX(Component.LEFT_ALIGNMENT);
 
         Color borderColor = switch (role) {
             case USER ->

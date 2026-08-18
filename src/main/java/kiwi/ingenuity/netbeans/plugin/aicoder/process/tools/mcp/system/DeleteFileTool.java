@@ -16,6 +16,7 @@ import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.AbstractFileTool
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.ToolRequestArguments;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.providers.netbeans.EditorContextProvider;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.providers.netbeans.RefactoringProvider;
+import kiwi.ingenuity.netbeans.plugin.aicoder.utils.ProjectPathUtil;
 
 @RequiresLock(LockTypeEnum.FILE_WRITE_LOCK)
 public class DeleteFileTool extends AbstractFileTool {
@@ -51,7 +52,8 @@ public class DeleteFileTool extends AbstractFileTool {
         }
         CompletableFuture<PermissionDecision> future = new CompletableFuture<>();
         listener.onAiProcessEvent(new ConfirmEvent("Delete",
-                "Permanently delete " + effectivePath + "?", effectivePath, null, future));
+                "Permanently delete " + ProjectPathUtil.shortPath(effectivePath) + "?",
+                effectivePath, null, future));
         PermissionDecision decision;
         try {
             decision = future.get(confirmTimeoutSeconds, TimeUnit.SECONDS);

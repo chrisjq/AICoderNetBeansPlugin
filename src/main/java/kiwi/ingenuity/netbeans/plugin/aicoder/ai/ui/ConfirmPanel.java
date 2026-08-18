@@ -2,11 +2,11 @@ package kiwi.ingenuity.netbeans.plugin.aicoder.ai.ui;
 
 import java.awt.Color;
 import java.awt.Component;
+import java.awt.Dimension;
 import java.awt.FlowLayout;
 import javax.swing.BorderFactory;
 import javax.swing.BoxLayout;
 import javax.swing.JButton;
-import javax.swing.JLabel;
 import javax.swing.JPanel;
 import javax.swing.SwingUtilities;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.events.ConfirmEvent;
@@ -27,11 +27,20 @@ class ConfirmPanel extends JPanel {
     ConfirmPanel(ConfirmEvent event) {
         setLayout(new BoxLayout(this, BoxLayout.Y_AXIS));
         setOpaque(false);
+        // Align with the messages around us. Children are LEFT_ALIGNMENT below,
+        // but without this the panel itself defaults to CENTER_ALIGNMENT and the
+        // enclosing BoxLayout indents the whole panel relative to left-aligned
+        // message bubbles. See also getMaximumSize().
+        setAlignmentX(Component.LEFT_ALIGNMENT);
+        // Tab should reach Yes/No, not stop on the prompt text first. The text
+        // stays focusable so it can be clicked and copied.
+        setFocusTraversalPolicyProvider(true);
+        setFocusTraversalPolicy(new SkipTextFocusTraversalPolicy());
         setBorder(BorderFactory.createCompoundBorder(
                 BorderFactory.createMatteBorder(0, 3, 0, 0, BORDER_COLOR),
                 BorderFactory.createEmptyBorder(4, 8, 6, 4)));
 
-        JLabel label = new JLabel("<html><b>" + esc(event.displayText()) + "</b></html>");
+        WrappingHtmlLabel label = new WrappingHtmlLabel(event.displayText());
         label.setAlignmentX(Component.LEFT_ALIGNMENT);
         label.setBorder(BorderFactory.createEmptyBorder(0, 0, 4, 0));
         add(label);
@@ -55,6 +64,15 @@ class ConfirmPanel extends JPanel {
                 noBtn.setEnabled(false);
             }
         }));
+    }
+
+    @Override
+    public Dimension getMaximumSize() {
+        // Fill the available width. A vertical BoxLayout stretches a child up to
+        // its maximum width only, and the default for this panel is its preferred
+        // width — which leaves the prompt wrapping in a narrow column with empty
+        // space beside it. Height stays natural so we do not absorb slack.
+        return new Dimension(Integer.MAX_VALUE, getPreferredSize().height);
     }
 
     private void respond(ConfirmEvent event, boolean allow) {

@@ -33,7 +33,7 @@ public class GetFileContentTool implements McpToolInterface {
             sb.append("Use this INSTEAD OF the built-in Read tool for project source files so you see "
                     + "what the IDE currently holds, not what is on disk. ");
         }
-        sb.append("Optionally restrict to a line range using startLine and endLine.");
+        sb.append("Optionally restrict to a line range using startLine and endLine. Output includes a line-number gutter; strip it before using content in ApplyEdit old_string.");
         return sb.toString();
     }
 
@@ -57,7 +57,8 @@ public class GetFileContentTool implements McpToolInterface {
             return "GetFileContent - reads project source files with live NetBeans annotations (compilation errors, warnings); do not guess paths — use GetProjectStructure for package layout or SearchSymbols/SearchInFiles to locate a file first";
         }
         return "GetFileContent -> INSTEAD OF Read tool for project source files; reads NetBeans "
-                + "in-memory content including unsaved changes. Full rewrite: GetFileContent → SaveFile(content). "
+                + "in-memory content including unsaved changes; output carries a line-number gutter — strip it before using in ApplyEdit old_string. "
+                + "Full rewrite: GetFileContent → SaveFile(content). "
                 + "Partial edit: GetFileContent → SaveFile (flush) → Read (built-in) → Edit (built-in). "
                 + "Do not guess paths — use GetProjectStructure for package layout or SearchSymbols/SearchInFiles to locate a file first";
     }

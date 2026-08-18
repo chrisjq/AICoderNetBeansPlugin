@@ -5,6 +5,7 @@ import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 import java.awt.Color;
 import java.awt.Component;
+import java.awt.Dimension;
 import java.awt.FlowLayout;
 import java.util.ArrayList;
 import java.util.LinkedHashSet;
@@ -15,7 +16,6 @@ import javax.swing.Box;
 import javax.swing.BoxLayout;
 import javax.swing.JButton;
 import javax.swing.JCheckBox;
-import javax.swing.JLabel;
 import javax.swing.JPanel;
 import javax.swing.SwingUtilities;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.events.AskUserQuestionEvent;
@@ -50,6 +50,15 @@ class QuestionPanel extends JPanel {
         this.event = event;
         setLayout(new BoxLayout(this, BoxLayout.Y_AXIS));
         setOpaque(false);
+        // Align with the messages around us. Children are LEFT_ALIGNMENT below,
+        // but without this the panel itself defaults to CENTER_ALIGNMENT and the
+        // enclosing BoxLayout indents the whole panel relative to left-aligned
+        // message bubbles. See also getMaximumSize().
+        setAlignmentX(Component.LEFT_ALIGNMENT);
+        // Tab should reach the option buttons, not stop on the question text
+        // first. The text stays focusable so it can be clicked and copied.
+        setFocusTraversalPolicyProvider(true);
+        setFocusTraversalPolicy(new SkipTextFocusTraversalPolicy());
         setBorder(BorderFactory.createCompoundBorder(
                 BorderFactory.createMatteBorder(0, 3, 0, 0, BORDER_COLOR),
                 BorderFactory.createEmptyBorder(4, 8, 6, 4)));
@@ -83,10 +92,9 @@ class QuestionPanel extends JPanel {
             }
 
             // Question label
-            String labelHtml = "<html><b>"
-                    + (header != null ? "[" + esc(header) + "] " : "")
-                    + esc(questionText) + "</b></html>";
-            JLabel qLabel = new JLabel(labelHtml);
+            String labelHtml = (header != null ? "[" + header + "] " : "")
+                    + questionText;
+            WrappingHtmlLabel qLabel = new WrappingHtmlLabel(labelHtml);
             qLabel.setAlignmentX(Component.LEFT_ALIGNMENT);
             qLabel.setBorder(BorderFactory.createEmptyBorder(0, 0, 4, 0));
             add(qLabel);
@@ -110,7 +118,7 @@ class QuestionPanel extends JPanel {
                 }
             }
             else {
-                JPanel btnRow = new JPanel(new FlowLayout(FlowLayout.LEFT, 4, 0));
+                JPanel btnRow = WrapLayout.wrappingRow(FlowLayout.LEFT, 4, 0);
                 btnRow.setOpaque(false);
                 btnRow.setAlignmentX(Component.LEFT_ALIGNMENT);
                 final int qi = i;
@@ -136,7 +144,7 @@ class QuestionPanel extends JPanel {
         // Show Submit button for multi-select or multi-question scenarios
         if (hasMultiSelect || totalQuestions > 1) {
             add(Box.createVerticalStrut(6));
-            JPanel submitRow = new JPanel(new FlowLayout(FlowLayout.LEFT, 4, 0));
+            JPanel submitRow = WrapLayout.wrappingRow(FlowLayout.LEFT, 4, 0);
             submitRow.setOpaque(false);
             submitRow.setAlignmentX(Component.LEFT_ALIGNMENT);
             submitBtn = new JButton("Submit");
@@ -160,6 +168,15 @@ class QuestionPanel extends JPanel {
             submitted = true;
             setAllEnabled(false);
         }));
+    }
+
+    @Override
+    public Dimension getMaximumSize() {
+        // Fill the available width. A vertical BoxLayout stretches a child up to
+        // its maximum width only, and the default for this panel is its preferred
+        // width — which leaves the question wrapping in a narrow column with empty
+        // space beside it. Height stays natural so we do not absorb slack.
+        return new Dimension(Integer.MAX_VALUE, getPreferredSize().height);
     }
 
     private void onSingleSelect(int qi, String label, JButton clicked) {

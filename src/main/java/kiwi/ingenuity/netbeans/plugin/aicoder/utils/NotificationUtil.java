@@ -57,52 +57,52 @@ public class NotificationUtil {
         return sb.toString();
     }
 
-    public static String formatEdit(String shortPath) {
-        return "Edit: " + shortPath;
-    }
-
     public static String formatFileAcceptedTool(String toolName, String shortPath) {
-        return toolName + ": " + formatFileAccepted(shortPath);
+        return toolNameLabel(toolName) + formatFileAccepted(shortPath);
     }
 
     public static String formatFileRejectedTool(String toolName, String shortPath) {
-        return toolName + ": " + formatFileRejected(shortPath);
+        return toolNameLabel(toolName) + formatFileRejected(shortPath);
     }
 
     public static String formatFileRejectedTool(String toolName, String shortPath, String message) {
-        return toolName + ": " + formatFileRejected(shortPath, message);
+        return toolNameLabel(toolName) + formatFileRejected(shortPath, message);
     }
 
-    public static String formatFileAccepted(String shortPath) {
+    private static String formatFileAccepted(String shortPath) {
         return shortPath + " — accepted";
     }
 
-    public static String formatFileRejected(String shortPath) {
+    private static String formatFileRejected(String shortPath) {
         return formatFileRejected(shortPath, null);
     }
 
-    public static String formatFileRejected(String shortPath, String message) {
+    private static String formatFileRejected(String shortPath, String message) {
         return message != null && !message.isBlank()
                 ? shortPath + " — rejected: " + message.trim()
                 : shortPath + " — rejected";
     }
 
     public static String formatAutoAccepted(String toolName, String shortPath) {
-        return toolName + ": " + shortPath + " — auto-accepted";
-    }
-
-    public static String formatToolAction(String toolName, String shortPath) {
-        return toolName + ": " + shortPath;
+        return toolNameLabel(toolName) + shortPath + " — auto-accepted";
     }
 
     public static String formatToolActionQuestion(String toolName, String shortPath) {
-        return toolName + ": " + shortPath + " ?";
+        return toolNameLabel(toolName) + shortPath + " ?";
     }
 
-    public static String formatPermissionDenied(String shortPath, String reason) {
+    public static String formatPermissionDenied(String toolName, String shortPath, String reason) {
         String path = shortPath != null && !shortPath.isBlank() ? shortPath : "(unknown file)";
         String detail = reason != null && !reason.isBlank() ? reason : "permission denied";
-        return path + " — denied (" + detail + ")";
+        return toolNameLabel(toolName) + path + " — denied (" + detail + ")";
+    }
+
+    public static String toolNameLabel(String toolName) {
+        if (toolName != null && !toolName.isEmpty()) {
+            return toolName + ": ";
+        }
+
+        return "";
     }
 
     private NotificationUtil() {

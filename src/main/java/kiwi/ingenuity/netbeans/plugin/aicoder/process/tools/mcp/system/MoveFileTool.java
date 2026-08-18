@@ -22,6 +22,7 @@ import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.McpToolSchemas;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.ToolRequestArguments;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.ToolSchemaKeyEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.providers.netbeans.RefactoringProvider;
+import kiwi.ingenuity.netbeans.plugin.aicoder.utils.ProjectPathUtil;
 
 @RequiresLock(LockTypeEnum.FILE_WRITE_LOCK)
 public class MoveFileTool implements McpToolInterface {
@@ -96,7 +97,8 @@ public class MoveFileTool implements McpToolInterface {
         }
         CompletableFuture<PermissionDecision> future = new CompletableFuture<>();
         listener.onAiProcessEvent(new ConfirmEvent("Move",
-                "Move " + sourcePath + " → " + targetDir + "?", sourcePath, targetDir, future));
+                "Move " + ProjectPathUtil.shortPath(sourcePath) + " → "
+                + ProjectPathUtil.shortPath(targetDir) + "?", sourcePath, targetDir, future));
         PermissionDecision decision;
         try {
             decision = future.get(confirmTimeoutSeconds, TimeUnit.SECONDS);
