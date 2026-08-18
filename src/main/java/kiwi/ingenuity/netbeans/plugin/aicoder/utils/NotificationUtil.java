@@ -4,9 +4,6 @@ import kiwi.ingenuity.netbeans.plugin.aicoder.ai.mail.AiInboxMessage;
 
 public class NotificationUtil {
 
-    private NotificationUtil() {
-    }
-
     public static String formatInboxNotification(AiInboxMessage message, String senderName) {
         StringBuilder notifBuilder = new StringBuilder();
         notifBuilder.append("id=").append(message.id());
@@ -64,6 +61,18 @@ public class NotificationUtil {
         return "Edit: " + shortPath;
     }
 
+    public static String formatFileAcceptedTool(String toolName, String shortPath) {
+        return toolName + ": " + formatFileAccepted(shortPath);
+    }
+
+    public static String formatFileRejectedTool(String toolName, String shortPath) {
+        return toolName + ": " + formatFileRejected(shortPath);
+    }
+
+    public static String formatFileRejectedTool(String toolName, String shortPath, String message) {
+        return toolName + ": " + formatFileRejected(shortPath, message);
+    }
+
     public static String formatFileAccepted(String shortPath) {
         return shortPath + " — accepted";
     }
@@ -86,9 +95,16 @@ public class NotificationUtil {
         return toolName + ": " + shortPath;
     }
 
+    public static String formatToolActionQuestion(String toolName, String shortPath) {
+        return toolName + ": " + shortPath + " ?";
+    }
+
     public static String formatPermissionDenied(String shortPath, String reason) {
         String path = shortPath != null && !shortPath.isBlank() ? shortPath : "(unknown file)";
         String detail = reason != null && !reason.isBlank() ? reason : "permission denied";
         return path + " — denied (" + detail + ")";
+    }
+
+    private NotificationUtil() {
     }
 }

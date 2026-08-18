@@ -99,7 +99,7 @@ public class CopyFileTool implements McpToolInterface {
         }
         CompletableFuture<PermissionDecision> future = new CompletableFuture<>();
         listener.onAiProcessEvent(new ConfirmEvent("Copy",
-                "Copy " + sourcePath + " → " + targetDir + "?", sourcePath, future));
+                "Copy " + sourcePath + " → " + targetDir + "?", sourcePath, targetDir, future));
         PermissionDecision decision;
         try {
             decision = future.get(confirmTimeoutSeconds, TimeUnit.SECONDS);

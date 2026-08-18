@@ -35,8 +35,6 @@ import javax.swing.JSplitPane;
 import javax.swing.SwingUtilities;
 import javax.swing.Timer;
 import javax.swing.UIManager;
-import com.google.gson.JsonArray;
-import com.google.gson.JsonObject;
 import javax.swing.filechooser.FileFilter;
 import kiwi.ingenuity.netbeans.plugin.aicoder.PluginSettings;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.AiImplementation;
@@ -424,6 +422,12 @@ public final class AiTopComponent extends TopComponent implements AiProcessEvent
         }
         String name = Path.of(fp).getFileName().toString();
         return name.length() > 128 ? "..." + name.substring(name.length() - 125) : name;
+    }
+
+    private String confirmLabel(ConfirmEvent ce) {
+        String src = shortPath(ce.filePath());
+        String tgt = ce.targetPath();
+        return tgt != null ? src + " → " + shortPath(tgt) : src;
     }
 
     @Override
@@ -1226,7 +1230,7 @@ public final class AiTopComponent extends TopComponent implements AiProcessEvent
             if (infoBar.isAutoAccept()) {
                 finaliseActiveAssistantIfNeeded();
                 conversationPanel.addSystemMessage(
-                        NotificationUtil.formatAutoAccepted(ce.toolName(), shortPath(ce.filePath())));
+                        NotificationUtil.formatAutoAccepted(ce.toolName(), confirmLabel(ce)));
                 ce.response().complete(PermissionDecision.allowed());
                 return;
             }
@@ -1239,40 +1243,22 @@ public final class AiTopComponent extends TopComponent implements AiProcessEvent
             }
             inputField.setEnabled(false);
             sendButton.setEnabled(false);
-            String fp = ce.filePath();
-            JsonArray questions = new JsonArray();
-            JsonObject q = new JsonObject();
-            q.addProperty("question", ce.displayText());
-            JsonArray options = new JsonArray();
-            JsonObject yes = new JsonObject();
-            yes.addProperty("label", "Yes");
-            options.add(yes);
-            JsonObject no = new JsonObject();
-            no.addProperty("label", "No");
-            options.add(no);
-            q.add("options", options);
-            questions.add(q);
-            CompletableFuture<String> aqeFuture = new CompletableFuture<>();
-            AskUserQuestionEvent aqe = new AskUserQuestionEvent(questions, aqeFuture);
-            Runnable canceller = () -> aqeFuture.complete(null);
+            Runnable canceller = () -> ce.response().complete(PermissionDecision.denied("cancelled"));
             pendingResponseCancellers.add(canceller);
-            ce.response().whenComplete((d, ex) -> aqeFuture.complete(null));
-            conversationPanel.showQuestion(aqe);
-            aqeFuture.whenComplete((answer, ex) -> SwingUtilities.invokeLater(() -> {
+            conversationPanel.showConfirm(ce);
+            ce.response().whenComplete((decision, ex) -> SwingUtilities.invokeLater(() -> {
                 pendingResponseCancellers.remove(canceller);
                 if (aiBackend != null) {
                     aiBackend.setPendingDiff(false);
                 }
-                if ("Yes".equals(answer)) {
-                    ce.response().complete(PermissionDecision.allowed());
-                    conversationPanel.addSystemMessage(NotificationUtil.formatFileAccepted(shortPath(fp)));
+                if (decision != null && decision.allow()) {
+                    conversationPanel.addSystemMessage(NotificationUtil.formatFileAcceptedTool(ce.toolName(), confirmLabel(ce)));
                 }
-                else if (answer != null) {
-                    ce.response().complete(PermissionDecision.denied(null));
-                    conversationPanel.addSystemMessage(NotificationUtil.formatFileRejected(shortPath(fp)));
+                else if (decision != null && decision.message() == null) {
+                    conversationPanel.addSystemMessage(NotificationUtil.formatFileRejectedTool(ce.toolName(), confirmLabel(ce)));
                 }
-                else {
-                    ce.response().complete(PermissionDecision.denied("timed out or cancelled"));
+                else if (decision != null) {
+                    conversationPanel.addSystemMessage(NotificationUtil.formatFileRejectedTool(ce.toolName(), confirmLabel(ce), decision.message()));
                 }
                 refreshInputEnabled();
             }));
@@ -1564,7 +1550,7 @@ public final class AiTopComponent extends TopComponent implements AiProcessEvent
                     backendSnap.setPendingDiff(false);
                     backendSnap.sendPrompt(appendDecisionMessage("Changes accepted.", message), wd, pd);
                 }
-                conversationPanel.addSystemMessage(NotificationUtil.formatFileAccepted(shortPath(fp)));
+                conversationPanel.addSystemMessage(NotificationUtil.formatFileAcceptedTool(tu.toolName(), shortPath(fp)));
                 refreshInputEnabled();
             }
 
@@ -1688,7 +1674,7 @@ public final class AiTopComponent extends TopComponent implements AiProcessEvent
 
         diffShownForCurrentTurn = true;
         finaliseActiveAssistantIfNeeded();
-        conversationPanel.addSystemMessage(NotificationUtil.formatToolAction(pe.toolName(), shortPath(fp)));
+        conversationPanel.addSystemMessage(NotificationUtil.formatToolActionQuestion(pe.toolName(), shortPath(fp)));
         final Runnable canceller = () -> pe.response().complete(PermissionDecision.denied("Permission request cancelled"));
         pendingResponseCancellers.add(canceller);
 
@@ -1707,7 +1693,7 @@ public final class AiTopComponent extends TopComponent implements AiProcessEvent
                     openDiffs.remove(diff);
                     pendingResponseCancellers.remove(canceller);
                     pe.response().complete(PermissionDecision.allowed());
-                    conversationPanel.addSystemMessage(NotificationUtil.formatFileAccepted(shortPath(fp)));
+                    conversationPanel.addSystemMessage(NotificationUtil.formatFileAcceptedTool(pe.toolName(), shortPath(fp)));
                     new Timer(600, ev -> {
                         try {
                             FileObject fo = FileUtil.toFileObject(new File(fp));

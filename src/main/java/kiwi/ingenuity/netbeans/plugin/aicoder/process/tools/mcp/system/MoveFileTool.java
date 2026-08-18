@@ -96,7 +96,7 @@ public class MoveFileTool implements McpToolInterface {
         }
         CompletableFuture<PermissionDecision> future = new CompletableFuture<>();
         listener.onAiProcessEvent(new ConfirmEvent("Move",
-                "Move " + sourcePath + " → " + targetDir + "?", sourcePath, future));
+                "Move " + sourcePath + " → " + targetDir + "?", sourcePath, targetDir, future));
         PermissionDecision decision;
         try {
             decision = future.get(confirmTimeoutSeconds, TimeUnit.SECONDS);

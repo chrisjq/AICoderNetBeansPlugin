@@ -239,6 +239,50 @@ class MutationToolsNotificationTest {
                 "future must resolve to denied so UI posts no accepted message");
     }
 
+    @Test
+    void confirmEventForCopyIncludesTargetPath() throws Exception {
+        java.io.File file = tempFile();
+        ConfirmStubSession session = new ConfirmStubSession(PermissionDecision.denied(null));
+        CopyFileTool tool = new CopyFileTool(allowAllServer());
+
+        tool.handle(copyArgs(file.getAbsolutePath(), "/tmp"), session);
+
+        ConfirmEvent ce = (ConfirmEvent) session.captured.stream()
+                .filter(e -> e instanceof ConfirmEvent)
+                .findFirst().orElseThrow(() -> new AssertionError("ConfirmEvent not fired"));
+        assertEquals(file.getAbsolutePath(), ce.filePath(), "filePath must be source");
+        assertEquals("/tmp", ce.targetPath(), "targetPath must be target directory for Copy");
+    }
+
+    @Test
+    void confirmEventForMoveIncludesTargetPath() throws Exception {
+        java.io.File file = tempFile();
+        ConfirmStubSession session = new ConfirmStubSession(PermissionDecision.denied(null));
+        MoveFileTool tool = new MoveFileTool(allowAllServer());
+
+        tool.handle(moveArgs(file.getAbsolutePath(), "/tmp"), session);
+
+        ConfirmEvent ce = (ConfirmEvent) session.captured.stream()
+                .filter(e -> e instanceof ConfirmEvent)
+                .findFirst().orElseThrow(() -> new AssertionError("ConfirmEvent not fired"));
+        assertEquals(file.getAbsolutePath(), ce.filePath(), "filePath must be source");
+        assertEquals("/tmp", ce.targetPath(), "targetPath must be target directory for Move");
+    }
+
+    @Test
+    void confirmEventForDeleteHasNullTargetPath() throws Exception {
+        java.io.File file = tempFile();
+        ConfirmStubSession session = new ConfirmStubSession(PermissionDecision.denied(null));
+        DeleteFileTool tool = new DeleteFileTool(allowAllServer());
+
+        tool.handle(deleteArgs(file.getAbsolutePath()), session);
+
+        ConfirmEvent ce = (ConfirmEvent) session.captured.stream()
+                .filter(e -> e instanceof ConfirmEvent)
+                .findFirst().orElseThrow(() -> new AssertionError("ConfirmEvent not fired"));
+        assertNull(ce.targetPath(), "Delete must have null targetPath");
+    }
+
     private static class StubSession extends AbstractAiSession {
 
         final List<AiProcessEvent> captured = new ArrayList<>();

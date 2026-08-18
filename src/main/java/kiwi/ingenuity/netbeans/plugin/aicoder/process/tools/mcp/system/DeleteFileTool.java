@@ -51,7 +51,7 @@ public class DeleteFileTool extends AbstractFileTool {
         }
         CompletableFuture<PermissionDecision> future = new CompletableFuture<>();
         listener.onAiProcessEvent(new ConfirmEvent("Delete",
-                "Permanently delete " + effectivePath + "?", effectivePath, future));
+                "Permanently delete " + effectivePath + "?", effectivePath, null, future));
         PermissionDecision decision;
         try {
             decision = future.get(confirmTimeoutSeconds, TimeUnit.SECONDS);

@@ -15,10 +15,11 @@ import static javax.swing.ScrollPaneConstants.HORIZONTAL_SCROLLBAR_NEVER;
 import javax.swing.Scrollable;
 import javax.swing.SwingUtilities;
 import javax.swing.Timer;
-import kiwi.ingenuity.netbeans.plugin.aicoder.ai.AiMessage;
-import kiwi.ingenuity.netbeans.plugin.aicoder.ai.events.AskUserQuestionEvent;
 import kiwi.ingenuity.netbeans.plugin.aicoder.PluginSettings;
 import kiwi.ingenuity.netbeans.plugin.aicoder.PluginSettingsKeyEnum;
+import kiwi.ingenuity.netbeans.plugin.aicoder.ai.AiMessage;
+import kiwi.ingenuity.netbeans.plugin.aicoder.ai.events.AskUserQuestionEvent;
+import kiwi.ingenuity.netbeans.plugin.aicoder.ai.events.ConfirmEvent;
 import org.openide.util.NbPreferences;
 
 /**
@@ -216,6 +217,18 @@ public class ConversationPanel extends JScrollPane {
     }
 
     /**
+     * Render a ConfirmEvent inline. The ConfirmPanel completes event.response()
+     * when the user clicks Yes or No, which unblocks the MCP tool thread.
+     */
+    public void showConfirm(ConfirmEvent event) {
+        ConfirmPanel cp = new ConfirmPanel(event);
+        cp.setAlignmentX(Component.LEFT_ALIGNMENT);
+        inner.add(cp);
+        inner.revalidate();
+        scrollToBottom();
+    }
+
+    /**
      * Add a system notification to the conversation with orange indicator.
      * Stored in history and persists when saved/restored. Callers must finalise
      * any active assistant message before calling this method.
@@ -233,6 +246,7 @@ public class ConversationPanel extends JScrollPane {
 
     private void scrollToBottom() {
         SwingUtilities.invokeLater(() -> {
+            validate();
             JScrollBar sb = getVerticalScrollBar();
             sb.setValue(sb.getMaximum());
         });
