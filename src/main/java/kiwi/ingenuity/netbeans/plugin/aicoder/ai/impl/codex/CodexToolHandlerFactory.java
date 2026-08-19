@@ -1,0 +1,29 @@
+package kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.codex;
+
+import java.util.Collections;
+import java.util.LinkedHashMap;
+import java.util.Map;
+import java.util.function.Supplier;
+import kiwi.ingenuity.netbeans.plugin.aicoder.process.McpToolEnum;
+import kiwi.ingenuity.netbeans.plugin.aicoder.process.events.AiProcessEventListener;
+import kiwi.ingenuity.netbeans.plugin.aicoder.process.server.McpHookServer;
+import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.McpToolInterface;
+import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.ToolHandlerFactory;
+
+/**
+ * Builds the MCP tool handler map Codex sessions expose over
+ * {@code McpHookServer}. No Codex-specific tool on top of the shared set —
+ * nothing in this slice's scope needed one (unlike OpenCode's
+ * {@code AskUserQuestionTool}).
+ */
+public final class CodexToolHandlerFactory {
+
+    public static Map<McpToolEnum, McpToolInterface> build(Supplier<AiProcessEventListener> listenerSupplier, McpHookServer server) {
+        Map<McpToolEnum, McpToolInterface> map = new LinkedHashMap<>();
+        map.putAll(ToolHandlerFactory.getToolHandlers(server));
+        return Collections.unmodifiableMap(map);
+    }
+
+    private CodexToolHandlerFactory() {
+    }
+}

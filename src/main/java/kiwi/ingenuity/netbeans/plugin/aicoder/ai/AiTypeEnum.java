@@ -2,6 +2,7 @@ package kiwi.ingenuity.netbeans.plugin.aicoder.ai;
 
 import java.util.Set;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.claude.settings.ClaudeSettingsCreator;
+import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.codex.settings.CodexSettingsCreator;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.githubcopilot.settings.GithubCopilotSettingsCreator;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.grok.settings.GrokSettingsCreator;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.ollama.settings.OllamaSettingsCreator;
@@ -34,7 +35,11 @@ public enum AiTypeEnum {
     //                                                          implemented  enabledByDefault  openAiCompatible
     OLLAMA_LOCAL("Ollama (Local)", "ollama_local", true, false, true, new OllamaSettingsCreator(),
             Set.of(HEADER, ONLY_MCP_TOOL_ACCESS, SOFTEN_TOOL_DIRECTIVES, TOOL_CALLS_VIA_SCHEMA)),
-    OPENCODE("OpenCode", "opencode", true, true, false, new OpenCodeSettingsCreator(), Set.of(HEADER, TOOL_INSTRUCTION, CREDENTIALS));
+    OPENCODE("OpenCode", "opencode", true, true, false, new OpenCodeSettingsCreator(), Set.of(HEADER, TOOL_INSTRUCTION, CREDENTIALS)),
+    // MCP not yet registered (design doc §9 slice — later), so mcpOptions below
+    // mirrors OpenCode's set as the intended shape rather than a proven one;
+    // revisit once Codex is actually wired into McpHookServer.
+    CODEX("Codex", "codex", true, true, false, new CodexSettingsCreator(), Set.of(HEADER, TOOL_INSTRUCTION, CREDENTIALS));
 
     public static AiTypeEnum fromKey(String key) {
         if (key == null) {

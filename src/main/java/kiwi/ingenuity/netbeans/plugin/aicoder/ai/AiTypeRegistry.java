@@ -5,6 +5,7 @@ import java.util.List;
 import kiwi.ingenuity.netbeans.plugin.aicoder.PluginSettings;
 import kiwi.ingenuity.netbeans.plugin.aicoder.Registry;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.claude.ClaudeAiImplementation;
+import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.codex.CodexAiImplementation;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.githubcopilot.GithubCopilotAiImplementation;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.grok.GrokAiImplementation;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.ollama.OllamaAiImplementation;
@@ -49,6 +50,8 @@ public final class AiTypeRegistry implements Registry {
                 new OllamaAiImplementation(listener, prompter);
             case OPENCODE ->
                 new OpenCodeAiImplementation(listener, prompter);
+            case CODEX ->
+                new CodexAiImplementation(listener, prompter);
             default ->
                 throw new AssertionError("Unknown AiTypeEnum: " + type);
         };
