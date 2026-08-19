@@ -424,12 +424,32 @@ public class GithubCopilotProcessManager extends AiProcessManager {
     public void interrupt(InterruptTypeEnum type) {
         CopilotSession session = copilotSession;
         if (session == null) {
+            // "Stop did nothing because nothing was running" and "Stop ran but
+            // output kept coming" are indistinguishable after the fact — this
+            // branch is the first of those.
+            if (type == InterruptTypeEnum.Cancel && PluginSettings.isDebugJson()) {
+                LOG.log(Level.INFO, "GitHub Copilot interrupt: IGNORED, no session (session={0})", sessionId);
+            }
             return;
         }
         switch (type) {
             case Cancel -> {
+                // Stamping the moment the user actually pressed Stop is the only way
+                // to measure the wind-down tail afterwards: without it, "it carried
+                // on after I stopped it" cannot be told apart from a normal
+                // wind-down, and the agent's own log gives no click time to compare
+                // against. Note: session.abort() is called here unconditionally
+                // (this class has no processing-gated early return like the other
+                // AI types), so turnInFlight is logged rather than gating on it.
+                if (PluginSettings.isDebugJson()) {
+                    LOG.log(Level.INFO, "GitHub Copilot interrupt: user pressed Stop (session={0}, turnInFlight={1})",
+                            new Object[]{sessionId, processing});
+                }
                 cancelledByUser = true;
                 session.abort();
+                if (PluginSettings.isDebugJson()) {
+                    LOG.log(Level.INFO, "GitHub Copilot interrupt: session.abort() sent (session={0})", sessionId);
+                }
                 synchronized (GithubCopilotProcessManager.this) {
                     processing = false;
                 }
@@ -448,6 +468,13 @@ public class GithubCopilotProcessManager extends AiProcessManager {
 
     @Override
     public synchronized void stop() {
+        // Logged before the state is torn down, so the record says what was
+        // actually in flight at the moment of the stop rather than the
+        // cleared-out aftermath.
+        if (PluginSettings.isDebugJson()) {
+            LOG.log(Level.INFO, "GitHub Copilot stop: shutting session down (session={0}, turnInFlight={1}, sessionAlive={2})",
+                    new Object[]{sessionId, processing, copilotSession != null});
+        }
         running = false;
         processing = false;
         cancelledByUser = true;

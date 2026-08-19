@@ -1,5 +1,7 @@
 package kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.claude.settings;
 
+import java.util.Arrays;
+import java.util.List;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.AiModelCatalog;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.AiTypeEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.claude.ClaudeAiImplementation;
@@ -9,6 +11,16 @@ public final class ClaudeCreateSettingsPanel extends ModelCreateSettingsPanel<Cl
 
     public ClaudeCreateSettingsPanel(AiModelCatalog catalog) {
         super(AiTypeEnum.CLAUDE, catalog, ClaudeSessionSettings::model, ClaudeSessionSettings::setModel);
+    }
+
+    @Override
+    protected List<String> knownModels() {
+        return Arrays.asList(ClaudePluginSettings.getKnownModels());
+    }
+
+    @Override
+    protected String defaultModel() {
+        return ClaudePluginSettings.getModel();
     }
 
     @Override

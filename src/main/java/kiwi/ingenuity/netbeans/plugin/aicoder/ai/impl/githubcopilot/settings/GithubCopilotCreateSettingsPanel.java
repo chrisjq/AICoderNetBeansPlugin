@@ -1,5 +1,7 @@
 package kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.githubcopilot.settings;
 
+import java.util.Arrays;
+import java.util.List;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.AiModelCatalog;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.AiTypeEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.githubcopilot.GithubCopilotAiImplementation;
@@ -9,6 +11,16 @@ public final class GithubCopilotCreateSettingsPanel extends ModelCreateSettingsP
 
     public GithubCopilotCreateSettingsPanel(AiModelCatalog catalog) {
         super(AiTypeEnum.GitHubCoPilot, catalog, GithubCopilotSessionSettings::model, GithubCopilotSessionSettings::setModel);
+    }
+
+    @Override
+    protected List<String> knownModels() {
+        return Arrays.asList(GithubCopilotPluginSettings.getKnownModels());
+    }
+
+    @Override
+    protected String defaultModel() {
+        return GithubCopilotPluginSettings.getModel();
     }
 
     @Override

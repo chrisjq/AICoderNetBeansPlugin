@@ -1,5 +1,7 @@
 package kiwi.ingenuity.netbeans.plugin.aicoder.ai.settings;
 
+import java.awt.Component;
+import java.awt.Container;
 import javax.swing.JComboBox;
 import javax.swing.JPanel;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.claude.settings.ClaudeSessionSettings;
@@ -25,11 +27,34 @@ class AiSessionCreateSettingsPanelTest {
         panel.dispose();
     }
 
+    /**
+     * Locates the model combo by walking the component tree instead of by child
+     * index. The panel nests the model row inside an outer panel so a subclass
+     * can add its own controls beneath it (OpenCode's mode, Ollama's base URL),
+     * and a fixed index breaks the moment that nesting changes — which is a
+     * layout detail, not the behaviour this test is about.
+     */
+    @SuppressWarnings("unchecked")
+    private static JComboBox<Object> findModelCombo(Container root) {
+        for (Component c : root.getComponents()) {
+            if (c instanceof JComboBox) {
+                return (JComboBox<Object>) c;
+            }
+            if (c instanceof Container nested) {
+                JComboBox<Object> found = findModelCombo(nested);
+                if (found != null) {
+                    return found;
+                }
+            }
+        }
+        return null;
+    }
+
     @Test
     void userSelectedModelIsReusedByFreshPanel() {
         ClaudeSettingsCreator creator = new ClaudeSettingsCreator();
         AiSessionCreateSettingsPanel<ClaudeSessionSettings> first = creator.createSettingsPanel();
-        JComboBox<Object> models = (JComboBox<Object>) ((JPanel) first.component()).getComponent(1);
+        JComboBox<Object> models = findModelCombo((JPanel) first.component());
         models.addItem("remembered-model");
         models.setSelectedItem("remembered-model");
         first.dispose();

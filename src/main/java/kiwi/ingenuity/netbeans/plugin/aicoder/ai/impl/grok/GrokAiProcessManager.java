@@ -38,14 +38,6 @@ public class GrokAiProcessManager extends AiProcessManager {
 
     private static final Logger LOG = Logger.getLogger(GrokAiProcessManager.class.getName());
 
-    private volatile boolean firstMessage = true;
-    private volatile GrokAiMcpRegistrar registrar = null;
-    private GrokAiSession grokAiSession = null;
-
-    public GrokAiProcessManager(AiProcessEventListener listener) {
-        super(listener);
-    }
-
     /**
      * Ask the process to exit gracefully (SIGTERM-equivalent), give it up to 5
      * seconds to do so, and only escalate to a forced kill if it is still alive
@@ -65,6 +57,68 @@ public class GrokAiProcessManager extends AiProcessManager {
             Thread.currentThread().interrupt();
             p.destroyForcibly();
         }
+    }
+
+    /**
+     * Grant the headless CLI access to every open NetBeans project, mirroring
+     * Claude's {@code --add-dir} loop.
+     *
+     * <p>
+     * Grok exposes no {@code --add-dir}. Instead:
+     * <ul>
+     * <li>{@code --cwd} pins the session working directory (also set on
+     * {@link ProcessBuilder#directory(File)} for child processes)</li>
+     * <li>path-scoped {@code --allow} rules grant native Read/Edit/Write/Grep
+     * under each project root (repeatable; works with headless mode)</li>
+     * </ul>
+     * MCP tools already receive the same list via
+     * {@code McpHookServer.updateSessionScope}; these flags cover the CLI's own
+     * filesystem tools.
+     */
+    static void appendProjectDirArgs(List<String> args, File workDir, List<File> projDirs) {
+        if (workDir != null && workDir.isDirectory()) {
+            args.add("--cwd");
+            args.add(canonicalPath(workDir));
+        }
+        if (projDirs == null || projDirs.isEmpty()) {
+            return;
+        }
+        for (File d : projDirs) {
+            if (d == null || !d.isDirectory()) {
+                continue;
+            }
+            String root = canonicalPath(d);
+            // Stable absolute globs: strip trailing separator so "/foo/**" is well-formed.
+            while (root.length() > 1 && (root.endsWith("/") || root.endsWith("\\"))) {
+                root = root.substring(0, root.length() - 1);
+            }
+            String glob = root + "/**";
+            args.add("--allow");
+            args.add("Read(" + glob + ")");
+            args.add("--allow");
+            args.add("Edit(" + glob + ")");
+            args.add("--allow");
+            args.add("Write(" + glob + ")");
+            args.add("--allow");
+            args.add("Grep(" + glob + ")");
+        }
+    }
+
+    private static String canonicalPath(File f) {
+        try {
+            return f.getCanonicalPath();
+        }
+        catch (IOException e) {
+            return f.getAbsolutePath();
+        }
+    }
+
+    private volatile boolean firstMessage = true;
+    private volatile GrokAiMcpRegistrar registrar = null;
+    private GrokAiSession grokAiSession = null;
+
+    public GrokAiProcessManager(AiProcessEventListener listener) {
+        super(listener);
     }
 
     @Override
@@ -302,60 +356,6 @@ public class GrokAiProcessManager extends AiProcessManager {
     }
 
     /**
-     * Grant the headless CLI access to every open NetBeans project, mirroring
-     * Claude's {@code --add-dir} loop.
-     *
-     * <p>
-     * Grok exposes no {@code --add-dir}. Instead:
-     * <ul>
-     * <li>{@code --cwd} pins the session working directory (also set on
-     * {@link ProcessBuilder#directory(File)} for child processes)</li>
-     * <li>path-scoped {@code --allow} rules grant native Read/Edit/Write/Grep
-     * under each project root (repeatable; works with headless mode)</li>
-     * </ul>
-     * MCP tools already receive the same list via
-     * {@code McpHookServer.updateSessionScope}; these flags cover the CLI's own
-     * filesystem tools.
-     */
-    static void appendProjectDirArgs(List<String> args, File workDir, List<File> projDirs) {
-        if (workDir != null && workDir.isDirectory()) {
-            args.add("--cwd");
-            args.add(canonicalPath(workDir));
-        }
-        if (projDirs == null || projDirs.isEmpty()) {
-            return;
-        }
-        for (File d : projDirs) {
-            if (d == null || !d.isDirectory()) {
-                continue;
-            }
-            String root = canonicalPath(d);
-            // Stable absolute globs: strip trailing separator so "/foo/**" is well-formed.
-            while (root.length() > 1 && (root.endsWith("/") || root.endsWith("\\"))) {
-                root = root.substring(0, root.length() - 1);
-            }
-            String glob = root + "/**";
-            args.add("--allow");
-            args.add("Read(" + glob + ")");
-            args.add("--allow");
-            args.add("Edit(" + glob + ")");
-            args.add("--allow");
-            args.add("Write(" + glob + ")");
-            args.add("--allow");
-            args.add("Grep(" + glob + ")");
-        }
-    }
-
-    private static String canonicalPath(File f) {
-        try {
-            return f.getCanonicalPath();
-        }
-        catch (IOException e) {
-            return f.getAbsolutePath();
-        }
-    }
-
-    /**
      * Clears {@code firstMessage} so the next prompt uses {@code -r}.
      */
     private synchronized void markFirstMessageDone() {
@@ -386,10 +386,24 @@ public class GrokAiProcessManager extends AiProcessManager {
     @Override
     public synchronized void interrupt(InterruptTypeEnum type) {
         if (type == InterruptTypeEnum.Cancel) {
+            // Stamping the moment the user actually pressed Stop is the only way to
+            // measure the wind-down tail afterwards: without it, "it carried on
+            // after I stopped it" cannot be told apart from a normal wind-down, and
+            // the agent's own log gives no click time to compare against. Grok has
+            // no processing-gated early return here (unlike the other AI types) —
+            // turnInFlight/processAlive are logged so "Stop did nothing" and "Stop
+            // acted" can still be told apart afterwards.
+            if (PluginSettings.isDebugJson()) {
+                LOG.log(Level.INFO, "Grok interrupt: user pressed Stop (session={0}, turnInFlight={1}, processAlive={2})",
+                        new Object[]{sessionId, processing, currentProcess != null});
+            }
             cancelledByUser = true;
             processing = false;
             if (currentProcess != null) {
                 terminateProcess(currentProcess);
+                if (PluginSettings.isDebugJson()) {
+                    LOG.log(Level.INFO, "Grok interrupt: process terminated (session={0})", sessionId);
+                }
                 currentProcess = null;
             }
             listener.onAiProcessEvent(new StatusEvent(StatusEventTypeEnum.STOPPED, StatusMessageUtil.formatStopped()));
@@ -398,6 +412,13 @@ public class GrokAiProcessManager extends AiProcessManager {
 
     @Override
     public synchronized void stop() {
+        // Logged before the state is torn down, so the record says what was
+        // actually in flight at the moment of the stop rather than the
+        // cleared-out aftermath.
+        if (PluginSettings.isDebugJson()) {
+            LOG.log(Level.INFO, "Grok stop: shutting session down (session={0}, turnInFlight={1}, processAlive={2})",
+                    new Object[]{sessionId, processing, currentProcess != null});
+        }
         running = false;
         processing = false;
         cancelledByUser = true;

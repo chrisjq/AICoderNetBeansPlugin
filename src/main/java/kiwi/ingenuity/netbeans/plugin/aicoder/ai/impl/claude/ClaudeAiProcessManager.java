@@ -42,6 +42,16 @@ public class ClaudeAiProcessManager extends AiProcessManager {
     private static final Gson GSON = new GsonBuilder().disableHtmlEscaping().create();
     private static final int MAX_STDERR_LINES = 100;
 
+    private static JsonObject buildInterruptRequest() {
+        JsonObject interrupt = new JsonObject();
+        interrupt.addProperty(ClaudeJsonKeyEnum.TYPE.key(), "control_request");
+        interrupt.addProperty(ClaudeJsonKeyEnum.REQUEST_ID.key(), "req_interrupt");
+        JsonObject request = new JsonObject();
+        request.addProperty(ClaudeJsonKeyEnum.SUBTYPE.key(), "interrupt");
+        interrupt.add(ClaudeJsonKeyEnum.REQUEST.key(), request);
+        return interrupt;
+    }
+
     private volatile boolean firstMessage = true;
     private long cachedContextWindow = 0;
     protected volatile boolean turnInterrupted = false;
@@ -331,20 +341,16 @@ public class ClaudeAiProcessManager extends AiProcessManager {
         }
     }
 
-    private static JsonObject buildInterruptRequest() {
-        JsonObject interrupt = new JsonObject();
-        interrupt.addProperty(ClaudeJsonKeyEnum.TYPE.key(), "control_request");
-        interrupt.addProperty(ClaudeJsonKeyEnum.REQUEST_ID.key(), "req_interrupt");
-        JsonObject request = new JsonObject();
-        request.addProperty(ClaudeJsonKeyEnum.SUBTYPE.key(), "interrupt");
-        interrupt.add(ClaudeJsonKeyEnum.REQUEST.key(), request);
-        return interrupt;
-    }
-
     @Override
     public void interrupt(InterruptTypeEnum type) {
         ClaudePersistentSession s = persistentSession;
         if (s == null) {
+            // "Stop did nothing because nothing was running" and "Stop ran but
+            // output kept coming" are indistinguishable after the fact — this
+            // branch is the first of those.
+            if (type == InterruptTypeEnum.Cancel && PluginSettings.isDebugJson()) {
+                LOG.log(Level.INFO, "Claude interrupt: IGNORED, no session (session={0})", sessionId);
+            }
             return;
         }
         String interruptLine = GSON.toJson(buildInterruptRequest());
@@ -361,13 +367,28 @@ public class ClaudeAiProcessManager extends AiProcessManager {
             case Cancel -> {
                 synchronized (this) {
                     if (!processing) {
+                        if (PluginSettings.isDebugJson()) {
+                            LOG.log(Level.INFO, "Claude interrupt: IGNORED, no turn in flight (session={0})", sessionId);
+                        }
                         return;
                     }
                     cancelledByUser = true;
                     awaitingCancelResult = true;
                     processing = false;
                 }
+                // Stamping the moment the user actually pressed Stop is the only way
+                // to measure the wind-down tail afterwards: without it, "it carried
+                // on after I stopped it" cannot be told apart from a normal
+                // wind-down, and the agent's own log gives no click time to compare
+                // against.
+                if (PluginSettings.isDebugJson()) {
+                    LOG.log(Level.INFO, "Claude interrupt: user pressed Stop, cancelling turn (session={0}, connected=true)",
+                            sessionId);
+                }
                 s.sendRawLine(interruptLine);
+                if (PluginSettings.isDebugJson()) {
+                    LOG.log(Level.INFO, "Claude interrupt: control_request(interrupt) sent (session={0})", sessionId);
+                }
                 listener.onAiProcessEvent(new StatusEvent(StatusEventTypeEnum.STOPPED, StatusMessageUtil.formatStopped()));
                 Thread watchdog = new Thread(() -> {
                     try {
@@ -394,6 +415,13 @@ public class ClaudeAiProcessManager extends AiProcessManager {
 
     @Override
     public synchronized void stop() {
+        // Logged before the state is torn down, so the record says what was
+        // actually in flight at the moment of the stop rather than the
+        // cleared-out aftermath.
+        if (PluginSettings.isDebugJson()) {
+            LOG.log(Level.INFO, "Claude stop: shutting session down (session={0}, turnInFlight={1}, sessionAlive={2})",
+                    new Object[]{sessionId, processing, persistentSession != null});
+        }
         running = false;
         processing = false;
         cancelledByUser = true;
