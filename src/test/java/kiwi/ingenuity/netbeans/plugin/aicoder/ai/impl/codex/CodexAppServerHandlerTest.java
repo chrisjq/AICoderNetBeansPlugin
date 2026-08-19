@@ -18,6 +18,7 @@ import kiwi.ingenuity.netbeans.plugin.aicoder.ai.events.StatusEvent;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.events.StatusEventTypeEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.events.TextDeltaEvent;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.events.TurnCompleteEvent;
+import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.codex.events.CodexRateLimitEvent;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.codex.events.CodexTokenUsageEvent;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.events.AiProcessEvent;
 import static org.junit.jupiter.api.Assertions.*;
@@ -642,13 +643,20 @@ class CodexAppServerHandlerTest {
         CodexAppServerHandler handler = newHandler(events);
 
         JsonObject total = new JsonObject();
-        total.addProperty("totalTokens", 12345L);
-        total.addProperty("inputTokens", 10000L);
-        total.addProperty("outputTokens", 2345L);
+        total.addProperty("totalTokens", 5_000_000L);
+        total.addProperty("inputTokens", 4_000_000L);
+        total.addProperty("outputTokens", 1_000_000L);
         total.addProperty("cachedInputTokens", 0L);
         total.addProperty("reasoningOutputTokens", 0L);
+        JsonObject last = new JsonObject();
+        last.addProperty("totalTokens", 12345L);
+        last.addProperty("inputTokens", 10000L);
+        last.addProperty("outputTokens", 2345L);
+        last.addProperty("cachedInputTokens", 0L);
+        last.addProperty("reasoningOutputTokens", 0L);
         JsonObject tokenUsage = new JsonObject();
         tokenUsage.add("total", total);
+        tokenUsage.add("last", last);
         tokenUsage.addProperty("modelContextWindow", 200000L);
         JsonObject params = new JsonObject();
         params.addProperty("threadId", "th_1");
@@ -662,6 +670,44 @@ class CodexAppServerHandlerTest {
         CodexTokenUsageEvent te = (CodexTokenUsageEvent) events.get(0);
         assertEquals(12345L, te.usedTokens());
         assertEquals(200000L, te.contextWindow());
+    }
+
+    @Test
+    void accountRateLimitsUpdated_firesPrimaryUsageEvent() {
+        List<AiProcessEvent> events = new ArrayList<>();
+        CodexAppServerHandler handler = newHandler(events);
+
+        JsonObject primary = new JsonObject();
+        primary.addProperty("usedPercent", 51.0);
+        primary.addProperty("windowDurationMins", 43200L);
+        primary.addProperty("resetsAt", 1789468349L);
+        JsonObject rateLimits = new JsonObject();
+        rateLimits.add("primary", primary);
+        JsonObject params = new JsonObject();
+        params.add("rateLimits", rateLimits);
+
+        handler.onNotification(CodexAppServerHandler.METHOD_ACCOUNT_RATE_LIMITS_UPDATED, params);
+
+        assertEquals(1, events.size());
+        assertInstanceOf(CodexRateLimitEvent.class, events.get(0));
+        CodexRateLimitEvent event = (CodexRateLimitEvent) events.get(0);
+        assertEquals(51.0, event.usedPercent());
+        assertEquals(43200L, event.windowDurationMins());
+        assertEquals(1789468349L, event.resetsAtEpochSeconds());
+    }
+
+    @Test
+    void accountRateLimitsUpdated_withoutPrimaryUsage_doesNothing() {
+        List<AiProcessEvent> events = new ArrayList<>();
+        CodexAppServerHandler handler = newHandler(events);
+
+        JsonObject rateLimits = new JsonObject();
+        rateLimits.add("primary", new JsonObject());
+        JsonObject params = new JsonObject();
+        params.add("rateLimits", rateLimits);
+        handler.onNotification(CodexAppServerHandler.METHOD_ACCOUNT_RATE_LIMITS_UPDATED, params);
+
+        assertTrue(events.isEmpty());
     }
 
     @Test

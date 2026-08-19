@@ -4,8 +4,8 @@ import kiwi.ingenuity.netbeans.plugin.aicoder.process.events.AiProcessImplEvent;
 
 /**
  * Fired when a {@code thread/tokenUsage/updated} notification arrives from the
- * Codex {@code app-server}. Carries the cumulative token count for the thread
- * ({@code tokenUsage.total.totalTokens}) and the model context window size
+ * Codex {@code app-server}. Carries the latest context token count
+ * ({@code tokenUsage.last.totalTokens}) and the model context window size
  * ({@code tokenUsage.modelContextWindow}, 0 when the server does not supply
  * it). Used to drive the context gauge in the info bar.
  */
@@ -20,7 +20,7 @@ public final class CodexTokenUsageEvent implements AiProcessImplEvent {
     }
 
     /**
-     * Cumulative total tokens used by this thread ({@code total.totalTokens}).
+     * Tokens used in the latest context ({@code last.totalTokens}).
      */
     public long usedTokens() {
         return usedTokens;

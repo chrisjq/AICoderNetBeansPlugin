@@ -25,6 +25,7 @@ import kiwi.ingenuity.netbeans.plugin.aicoder.ai.events.StatusEvent;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.events.StatusEventTypeEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.events.TextDeltaEvent;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.events.TurnCompleteEvent;
+import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.codex.events.CodexRateLimitEvent;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.codex.events.CodexTokenUsageEvent;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.events.AiProcessEventListener;
 
@@ -57,6 +58,7 @@ class CodexAppServerHandler implements CodexNotificationListener, CodexServerReq
     static final String METHOD_FILE_CHANGE_APPROVAL = "item/fileChange/requestApproval";
     static final String METHOD_MCP_ELICITATION = "mcpServer/elicitation/request";
     static final String METHOD_THREAD_TOKEN_USAGE = "thread/tokenUsage/updated";
+    static final String METHOD_ACCOUNT_RATE_LIMITS_UPDATED = "account/rateLimits/updated";
 
     /**
      * Extracts {@code item.changes} from an {@code item/started} notification
@@ -289,6 +291,9 @@ class CodexAppServerHandler implements CodexNotificationListener, CodexServerReq
             case METHOD_THREAD_TOKEN_USAGE:
                 handleTokenUsageUpdated(params);
                 break;
+            case METHOD_ACCOUNT_RATE_LIMITS_UPDATED:
+                handleRateLimitsUpdated(params);
+                break;
             default:
                 break; // Unrecognised notification — ignore silently, never throw.
         }
@@ -320,17 +325,42 @@ class CodexAppServerHandler implements CodexNotificationListener, CodexServerReq
         if (tokenUsage.has("modelContextWindow") && !tokenUsage.get("modelContextWindow").isJsonNull()) {
             contextWindow = tokenUsage.get("modelContextWindow").getAsLong();
         }
-        if (!tokenUsage.has("total") || !tokenUsage.get("total").isJsonObject()) {
+        if (!tokenUsage.has("last") || !tokenUsage.get("last").isJsonObject()) {
             return;
         }
-        JsonObject total = tokenUsage.getAsJsonObject("total");
-        long usedTokens = total.has("totalTokens") && !total.get("totalTokens").isJsonNull()
-                ? total.get("totalTokens").getAsLong() : 0L;
+        // `total` is the thread's lifetime token spend, which can exceed the
+        // model context window many times over. `last` is the active turn's
+        // context usage and is therefore comparable with modelContextWindow.
+        JsonObject last = tokenUsage.getAsJsonObject("last");
+        long usedTokens = last.has("totalTokens") && !last.get("totalTokens").isJsonNull()
+                ? last.get("totalTokens").getAsLong() : 0L;
         if (PluginSettings.isDebugJson()) {
             LOG.log(Level.INFO, "codex tokenUsage: used={0} contextWindow={1}",
                     new Object[]{usedTokens, contextWindow});
         }
         listener.onAiProcessEvent(new CodexTokenUsageEvent(usedTokens, contextWindow));
+    }
+
+    private void handleRateLimitsUpdated(JsonObject params) {
+        if (params == null || !params.has("rateLimits") || !params.get("rateLimits").isJsonObject()) {
+            return;
+        }
+        JsonObject rateLimits = params.getAsJsonObject("rateLimits");
+        if (!rateLimits.has("primary") || !rateLimits.get("primary").isJsonObject()) {
+            return;
+        }
+        JsonObject primary = rateLimits.getAsJsonObject("primary");
+        if (!primary.has("usedPercent") || primary.get("usedPercent").isJsonNull()) {
+            return;
+        }
+        double usedPercent = primary.get("usedPercent").getAsDouble();
+        long windowDurationMins = primary.has("windowDurationMins") && !primary.get("windowDurationMins").isJsonNull()
+                ? primary.get("windowDurationMins").getAsLong() : 0L;
+        long resetsAt = primary.has("resetsAt") && !primary.get("resetsAt").isJsonNull()
+                ? primary.get("resetsAt").getAsLong() : 0L;
+        CodexRateLimitEvent event = new CodexRateLimitEvent(usedPercent, windowDurationMins, resetsAt);
+        listener.onAiProcessEvent(event);
+        CodexAiImplementation.publishRateLimit(event);
     }
 
     private void handleTurnCompleted(JsonObject params) {

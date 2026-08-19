@@ -21,6 +21,7 @@ import kiwi.ingenuity.netbeans.plugin.aicoder.ai.session.AiSession;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.settings.AiModelSessionSettings;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.settings.AiSessionSettings;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.ui.AiInfoBarExtension;
+import kiwi.ingenuity.netbeans.plugin.aicoder.ui.UIConstants;
 
 /**
  *
@@ -103,7 +104,7 @@ public class GithubCopilotAiInfoBarExtension implements AiInfoBarExtension {
         compactBtn.setToolTipText("Compact conversation to reduce context window usage");
         compactBtn.addActionListener(e -> listeners.forEach(GithubCopilotInfoBarListener::onCompactRequested));
         contextBar = new javax.swing.JProgressBar(0, 100);
-        contextBar.setPreferredSize(new Dimension(170, 14));
+        contextBar.setPreferredSize(new Dimension(UIConstants.INFO_BAR_CONTEXT_PROGRESS_WIDTH, UIConstants.INFO_BAR_PROGRESS_HEIGHT));
         contextBar.setStringPainted(true);
         contextBar.setString("No usage data");
         contextBar.setToolTipText("Context window usage — tokens used / total available");
@@ -111,7 +112,7 @@ public class GithubCopilotAiInfoBarExtension implements AiInfoBarExtension {
         // token counts once a turn reports usage.
         contextBar.setVisible(true);
         quotaBar = new javax.swing.JProgressBar(0, 100);
-        quotaBar.setPreferredSize(new Dimension(90, 14));
+        quotaBar.setPreferredSize(new Dimension(UIConstants.INFO_BAR_QUOTA_PROGRESS_WIDTH, UIConstants.INFO_BAR_PROGRESS_HEIGHT));
         quotaBar.setStringPainted(true);
         quotaBar.setVisible(false);
     }

@@ -20,6 +20,7 @@ import kiwi.ingenuity.netbeans.plugin.aicoder.ai.settings.AiModelSessionSettings
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.settings.AiSessionSettings;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.ui.AiInfoBarExtension;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.events.AiProcessImplEvent;
+import kiwi.ingenuity.netbeans.plugin.aicoder.ui.UIConstants;
 
 public class ClaudeAiInfoBarExtension implements AiInfoBarExtension {
 
@@ -59,19 +60,19 @@ public class ClaudeAiInfoBarExtension implements AiInfoBarExtension {
         compactBtn.addActionListener(e -> listeners.forEach(ClaudeInfoBarListener::onCompactRequested));
 
         sessionBar = new JProgressBar(0, 100);
-        sessionBar.setPreferredSize(new Dimension(70, 14));
+        sessionBar.setPreferredSize(new Dimension(UIConstants.INFO_BAR_SESSION_PROGRESS_WIDTH, UIConstants.INFO_BAR_PROGRESS_HEIGHT));
         sessionBar.setStringPainted(true);
         sessionBar.setString("ctx");
         sessionBar.setToolTipText("Context window usage %");
 
         fiveHourBar = new JProgressBar(0, 100);
-        fiveHourBar.setPreferredSize(new Dimension(55, 14));
+        fiveHourBar.setPreferredSize(new Dimension(UIConstants.INFO_BAR_RATE_LIMIT_PROGRESS_WIDTH, UIConstants.INFO_BAR_PROGRESS_HEIGHT));
         fiveHourBar.setStringPainted(true);
         fiveHourBar.setString("Session");
         fiveHourBar.setToolTipText("5-hour rate limit usage % (resets every 5 hours)");
 
         sevenDayBar = new JProgressBar(0, 100);
-        sevenDayBar.setPreferredSize(new Dimension(55, 14));
+        sevenDayBar.setPreferredSize(new Dimension(UIConstants.INFO_BAR_RATE_LIMIT_PROGRESS_WIDTH, UIConstants.INFO_BAR_PROGRESS_HEIGHT));
         sevenDayBar.setStringPainted(true);
         sevenDayBar.setString("Weekly");
         sevenDayBar.setToolTipText("7-day rate limit usage % (resets weekly)");

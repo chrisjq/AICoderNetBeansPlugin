@@ -4,17 +4,22 @@ import java.awt.Component;
 import java.awt.Dimension;
 import java.awt.KeyboardFocusManager;
 import java.awt.event.ActionListener;
+import java.time.Instant;
+import java.time.ZoneId;
+import java.time.format.DateTimeFormatter;
 import java.util.List;
 import javax.swing.JComboBox;
 import javax.swing.JComponent;
 import javax.swing.JProgressBar;
 import javax.swing.SwingUtilities;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.events.AiPropertyEvent;
+import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.codex.events.CodexRateLimitEvent;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.codex.events.CodexTokenUsageEvent;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.codex.settings.CodexPluginSettings;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.settings.AiModelSessionSettings;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.settings.AiSessionSettings;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.ui.AiInfoBarExtension;
+import kiwi.ingenuity.netbeans.plugin.aicoder.ui.UIConstants;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.events.AiProcessImplEvent;
 
 /**
@@ -39,8 +44,11 @@ import kiwi.ingenuity.netbeans.plugin.aicoder.process.events.AiProcessImplEvent;
  */
 public class CodexAiInfoBarExtension implements AiInfoBarExtension {
 
+    private static final DateTimeFormatter RESET_TIME_FORMAT = DateTimeFormatter.ofPattern("d MMM uuuu, HH:mm");
+
     private final JComboBox<String> modelCombo;
     private final JProgressBar contextBar;
+    private final JProgressBar rateLimitBar;
     private volatile long maxTokens = 0;
     private volatile long currentTokens = 0;
     private boolean programmatic = false;
@@ -59,10 +67,16 @@ public class CodexAiInfoBarExtension implements AiInfoBarExtension {
         modelCombo.setToolTipText("Codex model — pick from list or type any model ID");
 
         contextBar = new JProgressBar(0, 100);
-        contextBar.setPreferredSize(new Dimension(170, 14));
+        contextBar.setPreferredSize(new Dimension(UIConstants.INFO_BAR_CONTEXT_PROGRESS_WIDTH, UIConstants.INFO_BAR_PROGRESS_HEIGHT));
         contextBar.setStringPainted(true);
         contextBar.setString("No usage data");
         contextBar.setToolTipText("Context window usage — tokens used / context window size");
+
+        rateLimitBar = new JProgressBar(0, 100);
+        rateLimitBar.setPreferredSize(new Dimension(UIConstants.INFO_BAR_SESSION_PROGRESS_WIDTH, UIConstants.INFO_BAR_PROGRESS_HEIGHT));
+        rateLimitBar.setStringPainted(true);
+        rateLimitBar.setString("Rate");
+        rateLimitBar.setToolTipText("Codex account rate-limit usage");
     }
 
     public void setDisposeAction(Runnable disposeAction) {
@@ -79,7 +93,7 @@ public class CodexAiInfoBarExtension implements AiInfoBarExtension {
 
     @Override
     public List<JComponent> createComponents() {
-        return List.of(modelCombo, contextBar);
+        return List.of(modelCombo, contextBar, rateLimitBar);
     }
 
     /**
@@ -153,9 +167,30 @@ public class CodexAiInfoBarExtension implements AiInfoBarExtension {
 
     @Override
     public void onPropertyEvent(AiPropertyEvent event) {
+        if (event instanceof CodexRateLimitEvent rateLimit) {
+            updateRateLimitBar(rateLimit);
+        }
         // Codex has no dynamic model-discovery broadcast that is safe to act
-        // on here — do not use AiTypePropertyBus (it is keyed by type, not
-        // session, and would reset every Codex session's combo on any event).
+        // on here — do not use AiTypePropertyBus for model changes because it
+        // is keyed by type, not session, and would reset every Codex session's
+        // combo on any event.
+    }
+
+    private void updateRateLimitBar(CodexRateLimitEvent rateLimit) {
+        if (!SwingUtilities.isEventDispatchThread()) {
+            SwingUtilities.invokeLater(() -> updateRateLimitBar(rateLimit));
+            return;
+        }
+        int usedPercent = (int) Math.round(Math.max(0.0, Math.min(100.0, rateLimit.usedPercent())));
+        rateLimitBar.setValue(usedPercent);
+        rateLimitBar.setString(usedPercent + "%");
+        String reset = rateLimit.resetsAtEpochSeconds() > 0
+                ? Instant.ofEpochSecond(rateLimit.resetsAtEpochSeconds())
+                        .atZone(ZoneId.systemDefault()).format(RESET_TIME_FORMAT)
+                : "unknown";
+        rateLimitBar.setToolTipText(String.format(
+                "Codex rate-limit usage: %.1f%% used; resets %s",
+                rateLimit.usedPercent(), reset));
     }
 
     @Override

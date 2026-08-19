@@ -2,6 +2,7 @@ package kiwi.ingenuity.netbeans.plugin.aicoder.ai.http.context;
 
 import javax.swing.JComponent;
 import javax.swing.JProgressBar;
+import kiwi.ingenuity.netbeans.plugin.aicoder.ui.UIConstants;
 
 /**
  * A reusable context usage gauge for any OpenAI-compatible backend. Wraps a
@@ -17,7 +18,7 @@ public class ContextGaugePanel {
 
     public ContextGaugePanel() {
         bar = new JProgressBar(0, 100);
-        bar.setPreferredSize(new java.awt.Dimension(170, 14));
+        bar.setPreferredSize(new java.awt.Dimension(UIConstants.INFO_BAR_CONTEXT_PROGRESS_WIDTH, UIConstants.INFO_BAR_PROGRESS_HEIGHT));
         bar.setStringPainted(true);
         bar.setString("No usage data");
     }

@@ -8,9 +8,11 @@ import kiwi.ingenuity.netbeans.plugin.aicoder.ai.AiImplementation;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.AiModelCatalog;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.AiSessionHost;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.AiTypeEnum;
+import kiwi.ingenuity.netbeans.plugin.aicoder.ai.AiTypePropertyBus;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.ExecutablePrompter;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.events.StatusEvent;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.events.StatusEventTypeEnum;
+import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.codex.events.CodexRateLimitEvent;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.codex.settings.CodexPluginSettings;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.codex.settings.CodexSessionSettings;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.codex.ui.CodexAiInfoBarExtension;
@@ -23,9 +25,15 @@ public class CodexAiImplementation extends AiImplementation {
 
     private static final Logger LOG = Logger.getLogger(CodexAiImplementation.class.getName());
     private static final AiModelCatalog modelCatalog = new AiModelCatalog();
+    private static volatile CodexRateLimitEvent cachedRateLimitEvent;
 
     public static AiModelCatalog modelCatalog() {
         return modelCatalog;
+    }
+
+    public static void publishRateLimit(CodexRateLimitEvent event) {
+        cachedRateLimitEvent = event;
+        AiTypePropertyBus.getInstance().fire(AiTypeEnum.CODEX, event);
     }
 
     private final CodexAiProcessManager delegate;
@@ -167,6 +175,10 @@ public class CodexAiImplementation extends AiImplementation {
                 host.updateSessionSettings(currentSession.settings());
             }
         });
+        CodexRateLimitEvent cached = cachedRateLimitEvent;
+        if (cached != null) {
+            ext.onPropertyEvent(cached);
+        }
         return ext;
     }
 

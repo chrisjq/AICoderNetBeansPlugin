@@ -17,6 +17,7 @@ import kiwi.ingenuity.netbeans.plugin.aicoder.ai.settings.AiModelSessionSettings
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.settings.AiSessionSettings;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.ui.AiInfoBarExtension;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.events.AiProcessImplEvent;
+import kiwi.ingenuity.netbeans.plugin.aicoder.ui.UIConstants;
 
 /**
  * Grok info bar: model selector + context-window usage progress bar. Mirrors
@@ -42,7 +43,7 @@ public class GrokAiInfoBarExtension implements AiInfoBarExtension {
         modelCombo.setToolTipText("Grok model — pick from list or type any model ID");
 
         contextBar = new JProgressBar(0, 100);
-        contextBar.setPreferredSize(new Dimension(170, 14));
+        contextBar.setPreferredSize(new Dimension(UIConstants.INFO_BAR_CONTEXT_PROGRESS_WIDTH, UIConstants.INFO_BAR_PROGRESS_HEIGHT));
         contextBar.setStringPainted(true);
         contextBar.setString("No usage data");
         contextBar.setToolTipText("Context window usage — tokens used / total available");
