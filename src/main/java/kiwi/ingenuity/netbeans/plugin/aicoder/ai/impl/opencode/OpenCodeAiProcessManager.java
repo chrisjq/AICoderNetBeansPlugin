@@ -59,14 +59,27 @@ public class OpenCodeAiProcessManager extends AiProcessManager {
     /**
      * Builds the value for the OPENCODE_CONFIG_CONTENT environment variable.
      * Forces "ask" permission for all edit, bash and external-directory
-     * operations. This MERGES with the user's existing config — it does not
-     * replace it (verified by live probe, design doc §4).
+     * operations, and denies sub-agent spawning outright. This MERGES with the
+     * user's existing config — it does not replace it (verified by live probe,
+     * design doc §4) — so it constrains only the sessions this plugin launches
+     * and leaves the user's own {@code opencode} CLI usage alone.
      */
     static String buildPermissionConfigJson() {
         JsonObject permission = new JsonObject();
         permission.addProperty("edit", "ask");
         permission.addProperty("bash", "ask");
         permission.addProperty("external_directory", "ask");
+        // Sub-agents run invisibly: they get their own session, never surface in
+        // this session's transcript, and their failures are not reported back. A
+        // live OpenCode session sat "busy" for 80 minutes after a spawned explore
+        // sub-agent died mid-stream with nothing logged — the parent simply waited
+        // forever. The plugin also already provides multi-agent work through peer
+        // sessions, which ARE visible and interruptible, so nothing is lost.
+        //
+        // "deny" is OpenCode's own vocabulary here: it applies
+        // {"permission":"task","action":"deny"} to every sub-agent it spawns to
+        // stop them recursing.
+        permission.addProperty("task", "deny");
         JsonObject config = new JsonObject();
         config.add("permission", permission);
         return GSON.toJson(config);
@@ -728,6 +741,12 @@ public class OpenCodeAiProcessManager extends AiProcessManager {
         OpenCodeAcpClientHandler h;
         synchronized (this) {
             if (!processing) {
+                // Worth recording: "I pressed Stop and nothing happened" and "I
+                // pressed Stop and it kept talking" look identical afterwards, and
+                // this branch is the first of those.
+                if (PluginSettings.isDebugJson()) {
+                    LOG.log(Level.INFO, "OpenCode interrupt: IGNORED, no turn in flight (session={0})", acpSessionId);
+                }
                 return;
             }
             cancelledByUser = true;
@@ -736,8 +755,15 @@ public class OpenCodeAiProcessManager extends AiProcessManager {
             sid = acpSessionId;
             h = activeHandler;
         }
-        // Cancel any outstanding permission dialog before sending session/cancel,
-        // so OpenCode receives the permission response before the cancel notification.
+        // session/cancel is a notification, so OpenCode winds the turn down at its
+        // own pace and updates can still arrive afterwards. Stamping the moment the
+        // user actually pressed Stop is the only way to measure that tail: without
+        // it, "it carried on after I stopped it" cannot be told apart from a normal
+        // wind-down, and the agent's own log gives no click time to compare against.
+        if (PluginSettings.isDebugJson()) {
+            LOG.log(Level.INFO, "OpenCode interrupt: user pressed Stop, cancelling turn (session={0}, connected={1})",
+                    new Object[]{sid, conn != null});
+        }
         if (h != null) {
             h.cancelPendingPermissions();
         }
@@ -745,12 +771,22 @@ public class OpenCodeAiProcessManager extends AiProcessManager {
             JsonObject params = new JsonObject();
             params.addProperty("sessionId", sid);
             conn.sendNotification(AcpMethodEnum.SESSION_CANCEL, params);
+            if (PluginSettings.isDebugJson()) {
+                LOG.log(Level.INFO, "OpenCode interrupt: session/cancel sent (session={0})", sid);
+            }
         }
         listener.onAiProcessEvent(new StatusEvent(StatusEventTypeEnum.STOPPED, StatusMessageUtil.formatStopped()));
     }
 
     @Override
     public synchronized void stop() {
+        // Logged before the state is torn down, so the record says what was actually
+        // in flight at the moment of the stop rather than the cleared-out aftermath.
+        if (PluginSettings.isDebugJson()) {
+            LOG.log(Level.INFO, "OpenCode stop: shutting session down (session={0}, turnInFlight={1}, connected={2}, processAlive={3})",
+                    new Object[]{acpSessionId, processing, connection != null,
+                        currentProcess != null && currentProcess.isAlive()});
+        }
         running = false;
         processing = false;
         cancelledByUser = true;

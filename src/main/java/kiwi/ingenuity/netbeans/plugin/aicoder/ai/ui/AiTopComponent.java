@@ -151,6 +151,22 @@ public final class AiTopComponent extends TopComponent implements AiProcessEvent
         return base + "\n\nUser note: " + message.trim();
     }
 
+    /**
+     * Pure form of {@link #confirmLabel(ConfirmEvent)}, with path shortening
+     * already applied, so the fallback rule can be tested without a running
+     * IDE.
+     *
+     * @param shortSrc shortened source path, or null for a non-file confirm
+     * @param shortTgt shortened target path, or null when there is no target
+     * @param displayText the event's own description of what is being approved
+     */
+    static String buildConfirmLabel(String shortSrc, String shortTgt, String displayText) {
+        if (shortSrc == null || shortSrc.isBlank()) {
+            return displayText != null && !displayText.isBlank() ? displayText : "(no details)";
+        }
+        return shortTgt != null ? shortSrc + " → " + shortTgt : shortSrc;
+    }
+
     private final ConversationPanel conversationPanel;
     private final AiInfoBar infoBar;
     private final AiInputField inputField;
@@ -415,10 +431,18 @@ public final class AiTopComponent extends TopComponent implements AiProcessEvent
         return ProjectPathUtil.shortPath(fp);
     }
 
+    /**
+     * Label for a confirm notification. Not every confirm is about a file: a
+     * shell command has no path at all, and rendering the absent one printed
+     * the literal string "null" to the user ("Execute: null — auto-accepted"),
+     * which says nothing about what was approved. Those events carry the
+     * subject in their display text instead — the command itself — so fall back
+     * to it.
+     */
     private String confirmLabel(ConfirmEvent ce) {
-        String src = shortPath(ce.filePath());
-        String tgt = ce.targetPath();
-        return tgt != null ? src + " → " + shortPath(tgt) : src;
+        return buildConfirmLabel(shortPath(ce.filePath()),
+                ce.targetPath() != null ? shortPath(ce.targetPath()) : null,
+                ce.displayText());
     }
 
     @Override

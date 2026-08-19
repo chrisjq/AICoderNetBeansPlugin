@@ -11,6 +11,7 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.AiTypeEnum;
+import kiwi.ingenuity.netbeans.plugin.aicoder.ai.events.ConfirmEvent;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.events.PermissionDecision;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.events.PermissionEvent;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.events.StatusEvent;
@@ -29,11 +30,20 @@ import org.junit.jupiter.api.Test;
 class OpenCodeAiProcessManagerTest {
 
     // ---- Permission routing tests (Part B / Slice 4) ----
+    // Carries a resolvable path (via locations[0].path) so this represents a genuine
+    // "edit with a known target" request and stays on the PermissionEvent branch —
+    // kind="edit" with NO resolvable path is a different, deliberately-tested case
+    // (see the "unidentified action" tests below).
     private static JsonObject buildMinimalPermissionParams() {
+        JsonObject location = new JsonObject();
+        location.addProperty("path", "/some/file.txt");
+        JsonArray locations = new JsonArray();
+        locations.add(location);
+
         JsonObject toolCall = new JsonObject();
         toolCall.addProperty("title", "/some/file.txt");
         toolCall.addProperty("kind", "edit");
-        toolCall.add("locations", new JsonArray());
+        toolCall.add("locations", locations);
         JsonObject params = new JsonObject();
         params.add("toolCall", toolCall);
         return params;
@@ -95,8 +105,13 @@ class OpenCodeAiProcessManagerTest {
         assertEquals("ask", permission.get("edit").getAsString());
         assertEquals("ask", permission.get("bash").getAsString());
         assertEquals("ask", permission.get("external_directory").getAsString());
+        // Sub-agents are denied, not asked: an approved spawn would still run
+        // invisibly in its own session, and a silent death there strands the
+        // parent turn with no way for the user to see or interrupt it.
+        assertEquals("deny", permission.get("task").getAsString(),
+                "sub-agent spawning must be denied for every session the plugin launches");
         // No extra fields — this is a safety control
-        assertEquals(3, permission.entrySet().size(), "permission must have exactly 3 keys");
+        assertEquals(4, permission.entrySet().size(), "permission must have exactly 4 keys");
         assertEquals(1, parsed.entrySet().size(), "config must have exactly 1 top-level key");
     }
 
@@ -315,6 +330,9 @@ class OpenCodeAiProcessManagerTest {
 
     @Test
     void nonDiffPermissionTypeStillCompletesAndNeverNpes() throws Exception {
+        // A resolvable path keeps this on the PermissionEvent branch — the point of this
+        // test is content-type handling (non-diff content must not NPE while extracting
+        // oldText/newText), not path resolution, which is covered separately below.
         List<AiProcessEvent> fired = new ArrayList<>();
         OpenCodeAcpClientHandler handler = new OpenCodeAcpClientHandler(fired::add, () -> {
         });
@@ -325,10 +343,15 @@ class OpenCodeAiProcessManagerTest {
         JsonArray contentArray = new JsonArray();
         contentArray.add(content);
 
+        JsonObject location = new JsonObject();
+        location.addProperty("path", "/some/path.txt");
+        JsonArray locations = new JsonArray();
+        locations.add(location);
+
         JsonObject toolCall = new JsonObject();
         toolCall.addProperty("title", "bash");
         toolCall.addProperty("kind", "bash");
-        toolCall.add("locations", new JsonArray());
+        toolCall.add("locations", locations);
         toolCall.add("content", contentArray);
 
         JsonObject params = new JsonObject();
@@ -359,6 +382,123 @@ class OpenCodeAiProcessManagerTest {
 
         JsonObject result = future.get(1, TimeUnit.SECONDS);
         assertEquals("cancelled", result.getAsJsonObject("outcome").get("outcome").getAsString());
+    }
+
+    // ---- "Write: null" defect: shell commands must not surface as a file write ----
+    @Test
+    void executeKindPermissionRaisesConfirmEventWithCommandAsDisplayText() throws Exception {
+        // Verbatim live-probed shape: `opencode acp` with permission {"bash":"ask"},
+        // driven to run `echo hi`. Empty locations, no content array, rawInput has only
+        // "command". Before the fix this fell through to PermissionEvent("Write", null, ...)
+        // — an arbitrary shell command mislabelled and auto-approved as a file write.
+        List<AiProcessEvent> fired = new ArrayList<>();
+        OpenCodeAcpClientHandler handler = new OpenCodeAcpClientHandler(fired::add, () -> {
+        });
+
+        JsonObject rawInput = new JsonObject();
+        rawInput.addProperty("command", "echo hi");
+
+        JsonObject toolCall = new JsonObject();
+        toolCall.addProperty("toolCallId", "call_20bd");
+        toolCall.addProperty("title", "echo hi");
+        toolCall.addProperty("kind", "execute");
+        toolCall.addProperty("status", "pending");
+        toolCall.add("locations", new JsonArray());
+        toolCall.add("rawInput", rawInput);
+
+        JsonObject params = new JsonObject();
+        params.add("toolCall", toolCall);
+
+        CompletableFuture<JsonObject> future = handler.onRequestPermission(params);
+        assertFalse(future.isDone(), "must wait for an explicit decision, not auto-complete");
+
+        assertEquals(1, fired.size());
+        assertInstanceOf(ConfirmEvent.class, fired.get(0),
+                "a shell command must raise ConfirmEvent, not PermissionEvent — there is no diff to render");
+        ConfirmEvent ce = (ConfirmEvent) fired.get(0);
+        assertEquals("Execute", ce.toolName());
+        assertEquals("echo hi", ce.displayText());
+        assertNull(ce.filePath(), "a shell command has no target file");
+
+        ce.response().complete(PermissionDecision.allowed());
+        JsonObject result = future.get(1, TimeUnit.SECONDS);
+        assertEquals("once", result.getAsJsonObject("outcome").get("optionId").getAsString());
+    }
+
+    @Test
+    void executeKindWithNoCommandFallsBackToTitleThenPlaceholder() {
+        List<AiProcessEvent> fired = new ArrayList<>();
+        OpenCodeAcpClientHandler handler = new OpenCodeAcpClientHandler(fired::add, () -> {
+        });
+
+        JsonObject toolCall = new JsonObject();
+        toolCall.addProperty("title", "run the build");
+        toolCall.addProperty("kind", "execute");
+        toolCall.add("locations", new JsonArray());
+        // No rawInput at all.
+        JsonObject params = new JsonObject();
+        params.add("toolCall", toolCall);
+
+        handler.onRequestPermission(params);
+
+        ConfirmEvent ce = (ConfirmEvent) fired.get(0);
+        assertEquals("run the build", ce.displayText(), "must fall back to toolCall.title when rawInput.command is absent");
+    }
+
+    @Test
+    void unidentifiedActionWithNoPathIsNotSilentlyApprovableAndShowsKindAndTitle() throws Exception {
+        // kind is a real observed value ("read") that is neither "execute" nor
+        // resolves to a path here — none of the three known path shapes matched.
+        // Before the fix this was PermissionEvent("Write", null, ...) — "Write: null" —
+        // and with auto-accept on, an unidentified action was approved sight unseen.
+        List<AiProcessEvent> fired = new ArrayList<>();
+        OpenCodeAcpClientHandler handler = new OpenCodeAcpClientHandler(fired::add, () -> {
+        });
+
+        JsonObject toolCall = new JsonObject();
+        toolCall.addProperty("title", "list directory contents");
+        toolCall.addProperty("kind", "read");
+        toolCall.add("locations", new JsonArray());
+        toolCall.add("rawInput", new JsonObject());
+        JsonObject params = new JsonObject();
+        params.add("toolCall", toolCall);
+
+        CompletableFuture<JsonObject> future = handler.onRequestPermission(params);
+        assertFalse(future.isDone(), "an unidentified action must wait for an explicit decision, never auto-approve");
+
+        assertEquals(1, fired.size());
+        assertInstanceOf(ConfirmEvent.class, fired.get(0),
+                "no path and not execute must raise ConfirmEvent, not a null-path PermissionEvent");
+        ConfirmEvent ce = (ConfirmEvent) fired.get(0);
+        assertEquals("read", ce.toolName(), "toolName must show the real kind, not be hard-coded to \"Write\"");
+        assertEquals("list directory contents", ce.displayText(), "must show the title so there is something real to see");
+        assertNull(ce.filePath());
+
+        ce.response().complete(PermissionDecision.denied("rejected"));
+        JsonObject result = future.get(1, TimeUnit.SECONDS);
+        assertEquals("reject", result.getAsJsonObject("outcome").get("optionId").getAsString());
+    }
+
+    @Test
+    void unidentifiedActionWithNoTitleUsesPlaceholderDisplayText() {
+        List<AiProcessEvent> fired = new ArrayList<>();
+        OpenCodeAcpClientHandler handler = new OpenCodeAcpClientHandler(fired::add, () -> {
+        });
+
+        JsonObject toolCall = new JsonObject();
+        toolCall.addProperty("kind", "mystery");
+        toolCall.add("locations", new JsonArray());
+        // No title, no rawInput, no content — the fully-degenerate case.
+        JsonObject params = new JsonObject();
+        params.add("toolCall", toolCall);
+
+        handler.onRequestPermission(params);
+
+        assertEquals(1, fired.size());
+        ConfirmEvent ce = (ConfirmEvent) fired.get(0);
+        assertEquals("mystery", ce.toolName());
+        assertFalse(ce.displayText().isBlank(), "must never show a blank or null display text");
+        assertNotEquals("null", ce.displayText(), "must never literally read \"null\"");
     }
 
     @Test

@@ -4,7 +4,10 @@ import com.google.gson.JsonArray;
 import com.google.gson.JsonObject;
 import java.util.concurrent.CancellationException;
 import java.util.concurrent.CompletableFuture;
+import java.util.logging.Level;
 import java.util.logging.Logger;
+import kiwi.ingenuity.netbeans.plugin.aicoder.PluginSettings;
+import kiwi.ingenuity.netbeans.plugin.aicoder.ai.events.ConfirmEvent;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.events.PermissionDecision;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.events.PermissionEvent;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.events.StatusEvent;
@@ -84,6 +87,43 @@ class OpenCodeAcpClientHandler implements AcpClientHandler {
         return null;
     }
 
+    /**
+     * Extracts {@code rawInput.command} from a {@code toolCall} — the shell
+     * command text for an {@code execute}-kind permission request (live-probed
+     * shape: {@code
+     * rawInput:{"command":"echo hi"}}, empty {@code locations}, no
+     * {@code content}).
+     */
+    static String extractRawInputCommand(JsonObject toolCall) {
+        if (toolCall == null || !toolCall.has("rawInput") || !toolCall.get("rawInput").isJsonObject()) {
+            return null;
+        }
+        JsonObject rawInput = toolCall.getAsJsonObject("rawInput");
+        return rawInput.has("command") && !rawInput.get("command").isJsonNull()
+                ? rawInput.get("command").getAsString() : null;
+    }
+
+    /**
+     * Extracts {@code content[0].newText} when
+     * {@code content[0].type == "diff"} — the full proposed file content ACP
+     * sends for an edit permission request. Returns null for any other shape
+     * (non-diff content, missing content, etc.).
+     */
+    static String extractDiffNewText(JsonObject toolCall) {
+        if (toolCall == null || !toolCall.has("content") || !toolCall.get("content").isJsonArray()) {
+            return null;
+        }
+        JsonArray content = toolCall.getAsJsonArray("content");
+        if (content.size() == 0 || !content.get(0).isJsonObject()) {
+            return null;
+        }
+        JsonObject c0 = content.get(0).getAsJsonObject();
+        if (!"diff".equals(c0.has("type") ? c0.get("type").getAsString() : null)) {
+            return null;
+        }
+        return c0.has("newText") && !c0.get("newText").isJsonNull() ? c0.get("newText").getAsString() : null;
+    }
+
     private final AiProcessEventListener listener;
     private final Runnable disconnectCallback;
     private volatile CompletableFuture<PermissionDecision> pendingPermission = null;
@@ -145,60 +185,126 @@ class OpenCodeAcpClientHandler implements AcpClientHandler {
         listener.onAiProcessEvent(new ToolUseEvent(toolName, filePath, null, null, mapToolKind(kind)));
     }
 
+    /**
+     * Routes {@code session/request_permission} by {@code toolCall.kind}, not
+     * by whether a file path happened to resolve (design doc / live probe,
+     * "Write: null" defect):
+     * <ul>
+     * <li>{@code execute} — a shell command. There is no diff to render, so
+     * this raises {@link ConfirmEvent} (yes/no), not
+     * {@link PermissionEvent}.</li>
+     * <li>a resolvable file path — unchanged {@link PermissionEvent} "Write"
+     * path.</li>
+     * <li>neither — the subject could not be identified. Falling back to the
+     * old "Write: null" text let auto-accept approve an unseen action of
+     * unknown kind. Raise {@link ConfirmEvent} instead, showing the kind and
+     * title so there is at least something real to see, and never treat it as
+     * silently approvable.</li>
+     * </ul>
+     */
     @Override
     public CompletableFuture<JsonObject> onRequestPermission(JsonObject params) {
         JsonObject toolCall = params.has("toolCall") && params.get("toolCall").isJsonObject()
                 ? params.getAsJsonObject("toolCall") : null;
-
-        // Extract target file path: content[0].path → locations[0].path → rawInput.filepath
+        String kind = toolCall != null && toolCall.has("kind") && !toolCall.get("kind").isJsonNull()
+                ? toolCall.get("kind").getAsString() : null;
+        String title = toolCall != null && toolCall.has("title") && !toolCall.get("title").isJsonNull()
+                ? toolCall.get("title").getAsString() : null;
         String filePath = extractPermissionFilePath(toolCall);
 
-        // ACP sends full file contents in newText — route through "Write", not "Edit".
-        // PermissionDiffPolicy.decide("Edit",...) requires an exact oldString substring match,
-        // which breaks for full-file diffs and fails outright when oldText is null (new files).
-        String newText = null;
-        if (toolCall != null && toolCall.has("content") && toolCall.get("content").isJsonArray()) {
-            JsonArray content = toolCall.getAsJsonArray("content");
-            if (content.size() > 0 && content.get(0).isJsonObject()) {
-                JsonObject c0 = content.get(0).getAsJsonObject();
-                if ("diff".equals(c0.has("type") ? c0.get("type").getAsString() : null)) {
-                    newText = c0.has("newText") ? c0.get("newText").getAsString() : null;
-                }
+        if ("execute".equals(kind)) {
+            String command = extractRawInputCommand(toolCall);
+            String displayText = command != null ? command : title != null ? title : "(unknown command)";
+            if (PluginSettings.isDebugJson()) {
+                LOG.log(Level.INFO, "OpenCode permission request: kind=execute -> ConfirmEvent, command={0}",
+                        displayText);
             }
+            return raiseConfirmAndReply("Execute", displayText, null, null);
         }
 
+        if (filePath != null) {
+            if (PluginSettings.isDebugJson()) {
+                LOG.log(Level.INFO, "OpenCode permission request: path={0} toolCall.kind={1} title={2} -> PermissionEvent",
+                        new Object[]{filePath, kind, title});
+            }
+            // ACP sends full file contents in newText — route through "Write", not "Edit".
+            // PermissionDiffPolicy.decide("Edit",...) requires an exact oldString substring
+            // match, which breaks for full-file diffs and fails outright when oldText is
+            // null (new files).
+            String newText = extractDiffNewText(toolCall);
+            CompletableFuture<PermissionDecision> decisionFuture = new CompletableFuture<>();
+            pendingPermission = decisionFuture;
+            listener.onAiProcessEvent(new PermissionEvent("Write", filePath, null, null, newText, decisionFuture));
+            return decisionFuture.handle(this::mapDecisionToAcpResult);
+        }
+
+        // Neither an execute nor a resolvable path — none of the three known shapes
+        // matched. This used to fall straight into the "Write" PermissionEvent with a
+        // null path, which read as "Write: null" and, with auto-accept on, approved an
+        // unidentified action sight unseen. Show what we do know instead of guessing,
+        // and never let this branch look auto-acceptable.
+        if (PluginSettings.isDebugJson()) {
+            LOG.log(Level.WARNING,
+                    "OpenCode permission request with no extractable file path and kind != execute "
+                    + "-> ConfirmEvent(kind={0}, title={1}) instead of \"Write: null\". Raw params: {2}",
+                    new Object[]{kind, title, params});
+        }
+        String toolName = kind != null && !kind.isBlank() ? kind : "Unknown";
+        String displayText = title != null && !title.isBlank()
+                ? title : "(unidentified OpenCode action, kind=" + toolName + ")";
+        return raiseConfirmAndReply(toolName, displayText, null, null);
+    }
+
+    /**
+     * Raises a {@link ConfirmEvent} (yes/no, no diff to render) and maps the
+     * eventual {@link PermissionDecision} to the ACP wire reply via
+     * {@link #mapDecisionToAcpResult}. Mirrors
+     * {@code CodexAppServerHandler.raiseConfirmAndReply}.
+     */
+    private CompletableFuture<JsonObject> raiseConfirmAndReply(
+            String toolName, String displayText, String filePath, String targetPath) {
         CompletableFuture<PermissionDecision> decisionFuture = new CompletableFuture<>();
         pendingPermission = decisionFuture;
-        listener.onAiProcessEvent(new PermissionEvent("Write", filePath, null, null, newText, decisionFuture));
+        listener.onAiProcessEvent(new ConfirmEvent(toolName, displayText, filePath, targetPath, decisionFuture));
+        return decisionFuture.handle(this::mapDecisionToAcpResult);
+    }
 
-        // Map the PermissionDecision back to the ACP wire response.
-        //
-        // NOTE: We always reply "once" for an allow, never "always". The diff panel's
-        // auto-accept path calls PermissionDecision.allowed() directly, so we cannot
-        // distinguish it from an explicit user click. Replying "always" would configure
-        // OpenCode to skip future permission requests permanently — a side-effect the
-        // user did not request from the auto-accept toggle.
-        //
-        // NOTE: Unlike the Claude/MCP path (which applies the edit itself and then sends
-        // "deny" to prevent a double-write), here answering "once" lets OpenCode perform
-        // the write. We MUST NOT apply the edit ourselves — doing so would double-apply it.
-        return decisionFuture.handle((decision, ex) -> {
-            pendingPermission = null;
-            JsonObject result = new JsonObject();
-            if (ex != null || decision == null) {
-                // Turn was cancelled while the permission dialog was open
-                JsonObject outcome = new JsonObject();
-                outcome.addProperty("outcome", "cancelled");
-                result.add("outcome", outcome);
-            }
-            else {
-                JsonObject outcome = new JsonObject();
-                outcome.addProperty("outcome", "selected");
-                outcome.addProperty("optionId", decision.allow() ? "once" : "reject");
-                result.add("outcome", outcome);
-            }
-            return result;
-        });
+    /**
+     * Maps a completed {@link PermissionDecision} future to the ACP {@code
+     * session/request_permission} wire response. Shared by every
+     * {@code onRequestPermission} branch (execute/edit/unidentified) so the
+     * decision→outcome mapping lives in one place.
+     *
+     * <p>
+     * NOTE: We always reply "once" for an allow, never "always". The diff
+     * panel's auto-accept path calls {@code PermissionDecision.allowed()}
+     * directly, so we cannot distinguish it from an explicit user click.
+     * Replying "always" would configure OpenCode to skip future permission
+     * requests permanently — a side-effect the user did not request from the
+     * auto-accept toggle.
+     *
+     * <p>
+     * NOTE: Unlike the Claude/MCP path (which applies the edit itself and then
+     * sends "deny" to prevent a double-write), here answering "once" lets
+     * OpenCode perform the write/command itself. We MUST NOT apply the edit
+     * ourselves — doing so would double-apply it.
+     */
+    private JsonObject mapDecisionToAcpResult(PermissionDecision decision, Throwable ex) {
+        pendingPermission = null;
+        JsonObject result = new JsonObject();
+        if (ex != null || decision == null) {
+            // Turn was cancelled while the permission dialog was open
+            JsonObject outcome = new JsonObject();
+            outcome.addProperty("outcome", "cancelled");
+            result.add("outcome", outcome);
+        }
+        else {
+            JsonObject outcome = new JsonObject();
+            outcome.addProperty("outcome", "selected");
+            outcome.addProperty("optionId", decision.allow() ? "once" : "reject");
+            result.add("outcome", outcome);
+        }
+        return result;
     }
 
     /**
