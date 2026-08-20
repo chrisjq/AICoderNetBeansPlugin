@@ -3,8 +3,8 @@ package kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.plugin;
 import kiwi.ingenuity.netbeans.plugin.aicoder.Installer;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.McpSectionEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.McpToolEnum;
-import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.AbstractActionTool;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.session.AbstractAiSession;
+import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.AbstractActionTool;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.ToolRequestArguments;
 
 public class GetPluginVersionTool extends AbstractActionTool {
@@ -12,8 +12,8 @@ public class GetPluginVersionTool extends AbstractActionTool {
     public GetPluginVersionTool() {
         super(McpSectionEnum.PLUGIN,
                 McpToolEnum.GET_PLUGIN_VERSION.toolName(),
-                "Returns the currently running version of the NetBeans CC plugin.",
-                "GetPluginVersion -> call before using important/replyImportant on SendAiMessage to confirm peer version supports graceful interrupt");
+                "Returns the version of the AI Coder NetBeans plugin that is currently running.",
+                "GetPluginVersion -> returns the running plugin version");
     }
 
     @Override

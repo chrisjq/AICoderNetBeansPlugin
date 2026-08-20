@@ -84,7 +84,11 @@ public class AiInfoBar extends JPanel {
         // Initial state is false; AiTopComponent sets the per-session value after construction.
         autoAcceptCheck = new JCheckBox("Auto-Accept", false);
         autoAcceptCheck.setFont(autoAcceptCheck.getFont().deriveFont(11f));
-        autoAcceptCheck.setToolTipText("Automatically accept all file changes without showing diff");
+        // Deliberately not "file changes": the same flag also auto-approves
+        // ConfirmEvent, which is how shell commands and other non-file actions ask.
+        autoAcceptCheck.setToolTipText(
+                "Approve every request automatically, without asking — file changes, "
+                + "file actions, and shell commands");
         autoAcceptCheck.addActionListener(e -> listeners.forEach(l -> l.onAutoAcceptChanged(autoAcceptCheck.isSelected())));
         rightPanel.add(autoAcceptCheck, compGbc);
 

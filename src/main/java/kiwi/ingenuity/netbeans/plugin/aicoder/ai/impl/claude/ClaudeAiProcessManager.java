@@ -347,9 +347,12 @@ public class ClaudeAiProcessManager extends AiProcessManager {
         if (s == null) {
             // "Stop did nothing because nothing was running" and "Stop ran but
             // output kept coming" are indistinguishable after the fact — this
-            // branch is the first of those.
-            if (type == InterruptTypeEnum.Cancel && PluginSettings.isDebugJson()) {
-                LOG.log(Level.INFO, "Claude interrupt: IGNORED, no session (session={0})", sessionId);
+            // branch is the first of those. A silent no-op is what let Codex's
+            // equivalent Mail drop go unnoticed for so long, so both types are
+            // logged here, not just Cancel.
+            if (PluginSettings.isDebugJson()) {
+                LOG.log(Level.INFO, "Claude interrupt: IGNORED, no session (type={0}, session={1})",
+                        new Object[]{type, sessionId});
             }
             return;
         }
@@ -358,6 +361,11 @@ public class ClaudeAiProcessManager extends AiProcessManager {
             case Mail -> {
                 synchronized (this) {
                     if (!processing) {
+                        if (PluginSettings.isDebugJson()) {
+                            LOG.log(Level.INFO,
+                                    "Claude interrupt: Mail IGNORED, no turn in flight — message will arrive via "
+                                    + "normal inbox flush (session={0})", sessionId);
+                        }
                         return;
                     }
                     turnInterrupted = true;

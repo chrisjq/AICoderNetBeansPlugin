@@ -68,6 +68,69 @@ class CodexAiProcessManagerTest {
         return script;
     }
 
+    // ---- interrupt(Mail): turn/steer, not turn/interrupt — steers a running turn
+    // instead of cancelling it, mirroring GithubCopilotProcessManager's approach
+    // (not Claude's, which interrupts). Wire shape confirmed live: `codex app-server
+    // generate-json-schema` against codex-cli 0.148.0 (no persisted Slice 5 schemas
+    // remained on disk to reuse) — TurnSteerParams requires threadId + expectedTurnId
+    // + input; TurnSteerResponse is just {turnId}, so a refusal (e.g.
+    // ActiveTurnNotSteerable) can only arrive as a genuine JSON-RPC error, never a
+    // "successful" body. ----
+    /**
+     * Handshake identical to {@link #fakeCodexThatExitsAfterHandshake}, then
+     * answers {@code turn/start} (id 3) so a turn is genuinely in flight,
+     * {@code touch}es {@code markerFile} the instant {@code turn/steer} (id 4)
+     * actually arrives — proving the request was sent, not just that no
+     * exception was thrown — then answers it with {@code steerResponseLine} and
+     * sleeps so the connection stays up for the rest of the test instead of
+     * triggering a crash/EXITED event.
+     */
+    private static File fakeCodexHandshakeTurnThenSteer(File markerFile, String steerResponseLine) throws IOException {
+        File script = File.createTempFile("fake-codex-", ".sh");
+        script.deleteOnExit();
+        String body = "#!/bin/sh\n"
+                + "read -r _req1\n"
+                + "printf '{\"jsonrpc\":\"2.0\",\"id\":1,\"result\":{\"userAgent\":\"fake\",\"codexHome\":\"/tmp\"}}\\n'\n"
+                + "read -r _notif\n"
+                + "read -r _req2\n"
+                + "printf '{\"jsonrpc\":\"2.0\",\"id\":2,\"result\":{\"thread\":{\"id\":\"fake-thread-id\"},\"model\":\"fake-model\"}}\\n'\n"
+                + "read -r _req3\n"
+                + "printf '{\"jsonrpc\":\"2.0\",\"id\":3,\"result\":{\"turn\":{\"id\":\"fake-turn-id\",\"items\":[],\"status\":\"inProgress\"}}}\\n'\n"
+                + "read -r _req4\n"
+                + "touch '" + markerFile.getAbsolutePath() + "'\n"
+                + "printf '" + steerResponseLine + "\\n'\n"
+                + "sleep 5\n";
+        Files.writeString(script.toPath(), body, StandardCharsets.UTF_8);
+        script.setExecutable(true);
+        return script;
+    }
+
+    /**
+     * Handshake identical to {@link #fakeCodexThatExitsAfterHandshake}, but
+     * sleeps afterward instead of exiting — a real, connected, idle
+     * (never-processing) session with no turn started, for testing the
+     * Mail-while-idle no-op path.
+     */
+    private static File fakeCodexHandshakeThenSleep() throws IOException {
+        File script = File.createTempFile("fake-codex-", ".sh");
+        script.deleteOnExit();
+        String body = "#!/bin/sh\n"
+                + "read -r _req1\n"
+                + "printf '{\"jsonrpc\":\"2.0\",\"id\":1,\"result\":{\"userAgent\":\"fake\",\"codexHome\":\"/tmp\"}}\\n'\n"
+                + "read -r _notif\n"
+                + "read -r _req2\n"
+                + "printf '{\"jsonrpc\":\"2.0\",\"id\":2,\"result\":{\"thread\":{\"id\":\"fake-thread-id\"},\"model\":\"fake-model\"}}\\n'\n"
+                + "sleep 5\n";
+        Files.writeString(script.toPath(), body, StandardCharsets.UTF_8);
+        script.setExecutable(true);
+        return script;
+    }
+
+    private static boolean noStoppedOrFailedEvent(List<AiProcessEvent> events) {
+        return events.stream().noneMatch(e -> e instanceof StatusEvent se
+                && (se.type() == StatusEventTypeEnum.STOPPED || se.type() == StatusEventTypeEnum.FAILED));
+    }
+
     // ---- buildInitializeParams: shape confirmed by live probe against codex-cli 0.147.0 ----
     @Test
     void buildInitializeParamsHasClientInfoAndCapabilities() {
@@ -289,6 +352,107 @@ class CodexAiProcessManagerTest {
         CodexAiProcessManager manager = new CodexAiProcessManager(events::add);
         manager.interrupt(InterruptTypeEnum.Cancel);
         assertTrue(events.isEmpty(), "interrupt with nothing in flight must not fire any event");
+    }
+
+    @Test
+    void interruptMailIsNoOpWhenIdle() throws Exception {
+        File script = fakeCodexHandshakeThenSleep();
+        CopyOnWriteArrayList<AiProcessEvent> events = new CopyOnWriteArrayList<>();
+        CodexAiProcessManager manager = new CodexAiProcessManager(events::add);
+        manager.setCurrentSession(newSession("s1", new CodexSessionSettings()));
+        manager.start(script.getAbsolutePath(), "fake-model");
+
+        // Drive the handshake directly (same package, protected method) rather than
+        // via sendPrompt/sendTurn, so threadId/client get populated but processing
+        // stays false and no turn is ever started.
+        manager.spawnAndHandshake(new File(System.getProperty("java.io.tmpdir")));
+        awaitTrue(() -> manager.threadId() != null, "handshake completed");
+        assertFalse(manager.isProcessing());
+        events.clear();
+
+        assertDoesNotThrow(() -> manager.interrupt(InterruptTypeEnum.Mail));
+        assertTrue(noStoppedOrFailedEvent(events), "Mail while idle must not fire STOPPED or FAILED");
+        assertFalse(manager.isProcessing());
+
+        manager.stop();
+    }
+
+    @Test
+    void interruptMailWhileProcessingAttemptsSteer() throws Exception {
+        File marker = File.createTempFile("codex-steer-marker-", "");
+        assertTrue(marker.delete());
+        File script = fakeCodexHandshakeTurnThenSteer(marker,
+                "{\"jsonrpc\":\"2.0\",\"id\":4,\"result\":{\"turnId\":\"fake-turn-id\"}}");
+        CopyOnWriteArrayList<AiProcessEvent> events = new CopyOnWriteArrayList<>();
+        CodexAiProcessManager manager = new CodexAiProcessManager(events::add);
+        manager.setCurrentSession(newSession("s1", new CodexSessionSettings()));
+        manager.start(script.getAbsolutePath(), "fake-model");
+
+        manager.sendPrompt("hi", new File(System.getProperty("java.io.tmpdir")), List.of());
+        awaitTrue(() -> manager.currentTurnId() != null, "turn/start response processed, turn in flight");
+        assertTrue(manager.isProcessing());
+        events.clear();
+
+        manager.interrupt(InterruptTypeEnum.Mail);
+
+        awaitTrue(marker::exists, "turn/steer actually reached the app-server");
+        // Give the response a moment to round-trip before asserting on post-state.
+        Thread.sleep(100);
+        assertTrue(noStoppedOrFailedEvent(events), "a successful steer must not cancel or fail the turn");
+        assertTrue(manager.isProcessing(), "the turn must still be running — Mail steers, it does not interrupt");
+
+        manager.stop();
+    }
+
+    @Test
+    void interruptMailRefusedSteerDoesNotThrowOrCancelTheTurn() throws Exception {
+        File marker = File.createTempFile("codex-steer-marker-", "");
+        assertTrue(marker.delete());
+        // ActiveTurnNotSteerable (or any other refusal) surfaces as a plain JSON-RPC
+        // error — TurnSteerResponse has no error field of its own to carry it, and
+        // CodexJsonRpcClient does not parse `error.data` at all, so every refusal
+        // reason is handled identically here.
+        File script = fakeCodexHandshakeTurnThenSteer(marker,
+                "{\"jsonrpc\":\"2.0\",\"id\":4,\"error\":{\"code\":-32000,\"message\":\"active turn not steerable\"}}");
+        CopyOnWriteArrayList<AiProcessEvent> events = new CopyOnWriteArrayList<>();
+        CodexAiProcessManager manager = new CodexAiProcessManager(events::add);
+        manager.setCurrentSession(newSession("s1", new CodexSessionSettings()));
+        manager.start(script.getAbsolutePath(), "fake-model");
+
+        manager.sendPrompt("hi", new File(System.getProperty("java.io.tmpdir")), List.of());
+        awaitTrue(() -> manager.currentTurnId() != null, "turn/start response processed, turn in flight");
+        events.clear();
+
+        assertDoesNotThrow(() -> manager.interrupt(InterruptTypeEnum.Mail));
+
+        awaitTrue(marker::exists, "turn/steer was attempted despite the eventual refusal");
+        Thread.sleep(100);
+        assertTrue(noStoppedOrFailedEvent(events),
+                "a refused steer must not cancel or fail the turn — the message is left for the normal inbox flush");
+        assertTrue(manager.isProcessing(), "a refused steer must leave the turn running, never escalate to Cancel");
+
+        manager.stop();
+    }
+
+    @Test
+    void interruptCancelWhileProcessingIsUnchangedByTheMailSteerAddition() throws Exception {
+        File script = fakeCodexHandshakeTurnThenSteer(
+                File.createTempFile("codex-unused-marker-", ""), "{\"jsonrpc\":\"2.0\",\"id\":4,\"result\":{}}");
+        CopyOnWriteArrayList<AiProcessEvent> events = new CopyOnWriteArrayList<>();
+        CodexAiProcessManager manager = new CodexAiProcessManager(events::add);
+        manager.setCurrentSession(newSession("s1", new CodexSessionSettings()));
+        manager.start(script.getAbsolutePath(), "fake-model");
+
+        manager.sendPrompt("hi", new File(System.getProperty("java.io.tmpdir")), List.of());
+        awaitTrue(() -> manager.currentTurnId() != null, "turn/start response processed, turn in flight");
+
+        manager.interrupt(InterruptTypeEnum.Cancel);
+
+        awaitTrue(() -> events.stream().anyMatch(e -> e instanceof StatusEvent se && se.type() == StatusEventTypeEnum.STOPPED),
+                "Cancel must still fire STOPPED exactly as before this change");
+        assertFalse(manager.isProcessing(), "Cancel must still clear processing immediately, unlike Mail");
+
+        manager.stop();
     }
 
     // ---- resumeSession(): stores the request; the guard against the wrong id

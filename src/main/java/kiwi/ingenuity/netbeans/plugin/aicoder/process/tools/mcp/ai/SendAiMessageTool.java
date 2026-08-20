@@ -2,9 +2,9 @@ package kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.ai;
 
 import com.google.gson.JsonArray;
 import com.google.gson.JsonObject;
+import java.util.Set;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.mail.AiInboxMessage;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.mail.AiSessionInboxBroker;
-import java.util.Set;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.McpInstructionOptionEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.McpSectionEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.McpToolEnum;
@@ -39,7 +39,9 @@ public class SendAiMessageTool extends AbstractActionTool {
 
         JsonObject subj = new JsonObject();
         subj.addProperty(ToolSchemaKeyEnum.TYPE.key(), "string");
-        subj.addProperty(ToolSchemaKeyEnum.DESCRIPTION.key(), "Short subject line (max " + AiInboxMessage.MAX_SUBJECT_LENGTH + " chars) summarising the message.");
+        subj.addProperty(ToolSchemaKeyEnum.DESCRIPTION.key(), "Short subject line (max "
+                + AiInboxMessage.MAX_SUBJECT_LENGTH + " chars). The recipient sees only this, not the body, "
+                + "when the message is delivered — make it state what you want done.");
         props.add(SendAiMessageParamEnum.SUBJECT.key(), subj);
 
         JsonObject msg = new JsonObject();
@@ -54,7 +56,7 @@ public class SendAiMessageTool extends AbstractActionTool {
 
         JsonObject important = new JsonObject();
         important.addProperty(ToolSchemaKeyEnum.TYPE.key(), "boolean");
-        important.addProperty(ToolSchemaKeyEnum.DESCRIPTION.key(), "If true and the target session supports it, sends a graceful interrupt to the target so it can read this message sooner. Only set this after calling GetPluginVersion to confirm both sessions are on the same plugin version — older versions do not support graceful interrupt. Also requires allowImportantMessages to be enabled on the target session.");
+        important.addProperty(ToolSchemaKeyEnum.DESCRIPTION.key(), "If true, sends a graceful interrupt to the target so it can read this message sooner, instead of waiting for its current turn to finish. Requires allowImportantMessages to be enabled on the target session; it is ignored otherwise.");
         props.add(SendAiMessageParamEnum.IMPORTANT.key(), important);
 
         JsonObject expectsReply = new JsonObject();

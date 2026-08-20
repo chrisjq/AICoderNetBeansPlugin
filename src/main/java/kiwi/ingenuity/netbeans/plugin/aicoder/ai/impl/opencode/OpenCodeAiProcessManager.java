@@ -734,6 +734,16 @@ public class OpenCodeAiProcessManager extends AiProcessManager {
     @Override
     public void interrupt(InterruptTypeEnum type) {
         if (type != InterruptTypeEnum.Cancel) {
+            // Mail is unimplemented here — this drop was previously silent, the same
+            // shape as the bug just fixed in CodexAiProcessManager. Logged rather than
+            // fixed: implementing ACP mid-turn steering (if OpenCode's protocol even
+            // supports it) is out of scope for this task, which is Codex-specific;
+            // reported to the Planner separately as a likely second instance.
+            if (type == InterruptTypeEnum.Mail && PluginSettings.isDebugJson()) {
+                LOG.log(Level.INFO,
+                        "OpenCode interrupt: Mail IGNORED (unimplemented) — message will arrive via normal inbox "
+                        + "flush (session={0})", acpSessionId);
+            }
             return;
         }
         AcpConnection conn;

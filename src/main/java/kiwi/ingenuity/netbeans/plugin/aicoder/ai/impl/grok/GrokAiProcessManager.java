@@ -408,6 +408,14 @@ public class GrokAiProcessManager extends AiProcessManager {
             }
             listener.onAiProcessEvent(new StatusEvent(StatusEventTypeEnum.STOPPED, StatusMessageUtil.formatStopped()));
         }
+        else if (PluginSettings.isDebugJson()) {
+            // Legitimate no-op, not a bug: headless one-shot-process-per-prompt has no
+            // persistent session to inject a mid-turn notice into. Logged anyway — a
+            // silent no-op is what let Codex's equivalent Mail drop go unnoticed for
+            // so long.
+            LOG.log(Level.INFO, "Grok interrupt: Mail IGNORED, no persistent session to inject into (session={0})",
+                    sessionId);
+        }
     }
 
     @Override

@@ -5,7 +5,7 @@ import java.time.Instant;
 import java.util.UUID;
 
 /**
- * Immutable reusable special-instruction text.
+ * Immutable reusable session-instruction text.
  */
 public record SpecialInstructionTemplate(String id, String name, String body,
         Instant createdAt, Instant updatedAt) {

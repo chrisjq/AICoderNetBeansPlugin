@@ -22,6 +22,14 @@ public class NotificationUtil {
             notifBuilder.append(", Subject=").append(subject);
         }
 
+        // The header alone reads as an FYI. Three sessions received one, replied "I
+        // am ready to execute it" in their own chat, and ended the turn without ever
+        // calling ReadAiMessage — so the notification has to name the tools.
+        notifBuilder.append(" — read it with ReadAiMessage.");
+        if (message.expectsReply()) {
+            notifBuilder.append(" A response must be sent to this message with SendAiMessage.");
+        }
+
         return notifBuilder.toString();
     }
 

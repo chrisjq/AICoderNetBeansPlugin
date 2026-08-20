@@ -70,6 +70,12 @@ public class CodexAiProcessManager extends AiProcessManager {
      * Claude/Grok register under.
      */
     static final String MCP_SERVER_NAME = StringConst.PLUGIN_ID;
+    /**
+     * Mail interrupt text — same spirit and wording as {@code
+     * GithubCopilotProcessManager}'s Mail notice, so the on-screen behaviour
+     * reads the same across backends that support mid-turn injection.
+     */
+    static final String MAIL_STEER_TEXT = "[inbox] You have a new message — check it when convenient.";
 
     static JsonObject buildInitializeParams(String clientName, String clientTitle, String clientVersion) {
         JsonObject clientInfo = new JsonObject();
@@ -134,6 +140,41 @@ public class CodexAiProcessManager extends AiProcessManager {
         JsonObject params = new JsonObject();
         params.addProperty("threadId", threadId);
         params.addProperty("turnId", turnId);
+        return params;
+    }
+
+    /**
+     * {@code TurnSteerParams} (confirmed by generating the schema live against
+     * {@code codex-cli 0.148.0} with {@code codex app-server
+     * generate-json-schema} — the design doc's §0a method — since no persisted
+     * copy of the Slice 5 schemas remained on disk): {@code threadId} and
+     * {@code input} are the same shape as {@code turn/start}'s, but steering
+     * additionally requires {@code expectedTurnId} — "Required active turn id
+     * precondition. The request fails when it does not match the currently
+     * active turn." {@code TurnSteerResponse} on success is just {@code
+     * {turnId}}; there is no in-band error field on either params or response,
+     * so a refusal (e.g. {@code ActiveTurnNotSteerable}, returned per the
+     * schema when the active turn cannot accept same-turn steering — a
+     * {@code /review} or manual {@code /compact} in progress) can only surface
+     * as a genuine JSON-RPC error response, not a "successful" body. {@code
+     * CodexJsonRpcClient} does not parse the error's {@code data} field at all
+     * ({@link CodexJsonRpcException} carries only {@code code}/{@code
+     * message}), so there is no {@code codexErrorInfo} discriminant available
+     * to branch on here even if one wanted to — every {@code turn/steer}
+     * failure is handled identically (log and leave the message for the normal
+     * inbox flush), which is also exactly the required behaviour for {@code
+     * ActiveTurnNotSteerable} specifically.
+     */
+    static JsonObject buildTurnSteerParams(String threadId, String expectedTurnId, String promptText) {
+        JsonObject textInput = new JsonObject();
+        textInput.addProperty("type", "text");
+        textInput.addProperty("text", promptText);
+        JsonArray input = new JsonArray();
+        input.add(textInput);
+        JsonObject params = new JsonObject();
+        params.addProperty("threadId", threadId);
+        params.addProperty("expectedTurnId", expectedTurnId);
+        params.add("input", input);
         return params;
     }
 
@@ -533,6 +574,10 @@ public class CodexAiProcessManager extends AiProcessManager {
 
     @Override
     public void interrupt(InterruptTypeEnum type) {
+        if (type == InterruptTypeEnum.Mail) {
+            interruptMail();
+            return;
+        }
         if (type != InterruptTypeEnum.Cancel) {
             return;
         }
@@ -589,6 +634,65 @@ public class CodexAiProcessManager extends AiProcessManager {
             LOG.log(Level.INFO, "Codex interrupt: turn/interrupt deferred, turnId not yet known (threadId={0})", tid);
         }
         listener.onAiProcessEvent(new StatusEvent(StatusEventTypeEnum.STOPPED, StatusMessageUtil.formatStopped()));
+    }
+
+    /**
+     * Mail interjects the inbox notice into a running turn via {@code
+     * turn/steer} instead of interrupting it — mirrors {@code
+     * GithubCopilotProcessManager}'s {@code session.send(..., "immediate")}
+     * approach, not Claude's turn-interrupting one, because Codex's app-server
+     * exposes steering as its own method rather than a mode on an in-flight
+     * send. Only attempted while a turn is actually in flight and its turn id
+     * is known; both a genuinely idle session and a refused steer (e.g.
+     * {@code ActiveTurnNotSteerable}) fall back identically to doing nothing
+     * further — the message is not lost, it simply arrives later via the normal
+     * inbox flush. Never escalates to Cancel: interrupting the user's turn to
+     * deliver a notice would be worse than delivering it late.
+     */
+    private void interruptMail() {
+        CodexJsonRpcClient c;
+        String tid;
+        String tuid;
+        synchronized (this) {
+            if (!processing) {
+                if (PluginSettings.isDebugJson()) {
+                    LOG.log(Level.INFO,
+                            "Codex interrupt: Mail IGNORED, no turn in flight — message will arrive via normal "
+                            + "inbox flush (threadId={0})", threadId);
+                }
+                return;
+            }
+            c = client;
+            tid = threadId;
+            tuid = currentTurnId;
+        }
+        if (c == null || tid == null || tuid == null) {
+            if (PluginSettings.isDebugJson()) {
+                LOG.log(Level.INFO,
+                        "Codex interrupt: Mail IGNORED, turn id not yet known — message will arrive via normal "
+                        + "inbox flush (threadId={0})", tid);
+            }
+            return;
+        }
+        if (PluginSettings.isDebugJson()) {
+            LOG.log(Level.INFO, "Codex interrupt: Mail received, attempting turn/steer (threadId={0}, turnId={1})",
+                    new Object[]{tid, tuid});
+        }
+        c.sendRequest("turn/steer", buildTurnSteerParams(tid, tuid, MAIL_STEER_TEXT))
+                .whenComplete((result, ex) -> {
+                    if (ex != null) {
+                        if (PluginSettings.isDebugJson()) {
+                            LOG.log(Level.INFO,
+                                    "Codex interrupt: turn/steer refused — message will arrive via normal inbox "
+                                    + "flush (threadId={0}, turnId={1}, reason={2})",
+                                    new Object[]{tid, tuid, ex.getMessage()});
+                        }
+                    }
+                    else if (PluginSettings.isDebugJson()) {
+                        LOG.log(Level.INFO, "Codex interrupt: turn/steer delivered (threadId={0}, turnId={1})",
+                                new Object[]{tid, tuid});
+                    }
+                });
     }
 
     @Override

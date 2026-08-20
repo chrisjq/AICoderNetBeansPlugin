@@ -642,6 +642,13 @@ public class OllamaAiProcessManager extends AiProcessManager {
             listener.onAiProcessEvent(new StatusEvent(StatusEventTypeEnum.STOPPED,
                     StatusMessageUtil.formatStopped()));
         }
+        else if (PluginSettings.isDebugJson()) {
+            // Legitimate no-op, not a bug: a single blocking OpenAI-compatible HTTP
+            // request has no channel to inject a mid-turn notice into. Logged anyway —
+            // a silent no-op is what let Codex's equivalent Mail drop go unnoticed for
+            // so long.
+            LOG.log(Level.INFO, "Ollama interrupt: Mail IGNORED, no channel to inject into (session={0})", sessionId);
+        }
     }
 
     @Override

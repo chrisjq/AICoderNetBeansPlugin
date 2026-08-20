@@ -100,7 +100,7 @@ public class SessionPickerDialog extends JDialog {
     private final JComboBox<AiTypeEnum> aiTypeCombo = new JComboBox<>();
     private final JComboBox<ConfigTemplate> configCombo = new JComboBox<>();
     private final JComboBox<SpecialInstructionTemplate> instructionsCombo = new JComboBox<>();
-    private final JCheckBox injectOnCreate = new JCheckBox("Inject Special Instructions on Create");
+    private final JCheckBox injectOnCreate = new JCheckBox("Inject Session Instructions on Create");
     private final JCheckBox closeAfterCreate = new JCheckBox("Close after action", true);
     private final JCheckBox closeAfterOpen = new JCheckBox("Close after action", true);
     private JButton createButton;
@@ -171,7 +171,7 @@ public class SessionPickerDialog extends JDialog {
         c.weightx = 1;
         form.add(typeSettingsHolder, c);
         addRow(form, c, 5, "Config Template:", configCombo);
-        addRow(form, c, 6, "Special Instructions:", instructionsCombo);
+        addRow(form, c, 6, "Session Instructions:", instructionsCombo);
         c.gridx = 0;
         c.gridy = 7;
         c.gridwidth = 2;
@@ -192,7 +192,7 @@ public class SessionPickerDialog extends JDialog {
     private Component buildTemplatesTab() {
         JTabbedPane nested = new JTabbedPane();
         nested.addTab("Config Templates", new ConfigTemplatesPanel(templates, this::refreshTemplates));
-        nested.addTab("Special Instructions", new InstructionTemplatesPanel(templates, this::refreshTemplates));
+        nested.addTab("Session Instructions", new InstructionTemplatesPanel(templates, this::refreshTemplates));
         return nested;
     }
 

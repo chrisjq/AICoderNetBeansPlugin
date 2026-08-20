@@ -131,7 +131,7 @@ public class AiSessionSettingsDialog extends JDialog {
         JScrollPane instructionsScroll = new JScrollPane(sessionInstructionsArea);
         instructionsScroll.setPreferredSize(new Dimension(300, 200));
         instructionsScroll.setMinimumSize(new Dimension(200, 200));
-        addRow(form, c, 3, new JLabel("Session instructions:"), instructionsScroll);
+        addRow(form, c, 3, new JLabel("Session Instructions:"), instructionsScroll);
 
         c.gridy = 4;
         c.weighty = 1;

@@ -52,12 +52,12 @@ public class GithubCopilotProcessManager extends AiProcessManager {
     private static final boolean ENABLE_RESET_DATE = false;
 
     static SessionConfig buildCreateConfig(String sessionId, String model,
-            Map<String, com.github.copilot.rpc.McpServerConfig> mcpServers) {
+            Map<String, com.github.copilot.rpc.McpServerConfig> mcpServers, PermissionHandler permissionHandler) {
         return new SessionConfig()
                 .setSessionId(sessionId)
                 .setModel(model)
                 .setExcludedTools(List.of("edit", "create"))
-                .setOnPermissionRequest(PermissionHandler.APPROVE_ALL)
+                .setOnPermissionRequest(permissionHandler)
                 // An MCP server asking for OAuth cannot be serviced from here — we
                 // have no browser flow, and our own server needs no auth. Cancel
                 // rather than leave the request pending and hang the turn.
@@ -67,11 +67,11 @@ public class GithubCopilotProcessManager extends AiProcessManager {
     }
 
     static ResumeSessionConfig buildResumeConfig(String model,
-            Map<String, com.github.copilot.rpc.McpServerConfig> mcpServers) {
+            Map<String, com.github.copilot.rpc.McpServerConfig> mcpServers, PermissionHandler permissionHandler) {
         return new ResumeSessionConfig()
                 .setModel(model)
                 .setExcludedTools(List.of("edit", "create"))
-                .setOnPermissionRequest(PermissionHandler.APPROVE_ALL)
+                .setOnPermissionRequest(permissionHandler)
                 .setMcpServers(mcpServers);
     }
 
@@ -113,6 +113,7 @@ public class GithubCopilotProcessManager extends AiProcessManager {
 
     private CopilotClient client = null;
     private CopilotSession copilotSession = null;
+    private volatile GithubCopilotPermissionHandler permissionHandler = null;
 
     public GithubCopilotProcessManager(AiProcessEventListener listener) {
         super(listener);
@@ -254,7 +255,10 @@ public class GithubCopilotProcessManager extends AiProcessManager {
             return createSession(client, model, mcpServers, copilotSessionId);
         }
         try {
-            return client.resumeSession(copilotSessionId, buildResumeConfig(model, mcpServers)).get(2, TimeUnit.MINUTES);
+            GithubCopilotPermissionHandler handler = new GithubCopilotPermissionHandler(listener, sessionId);
+            permissionHandler = handler;
+            return client.resumeSession(copilotSessionId, buildResumeConfig(model, mcpServers, handler))
+                    .get(2, TimeUnit.MINUTES);
         }
         catch (ExecutionException resumeFailure) {
             if (isCorruptedSessionFailure(resumeFailure)) {
@@ -280,7 +284,10 @@ public class GithubCopilotProcessManager extends AiProcessManager {
     private CopilotSession createSession(CopilotClient client, String model,
             Map<String, com.github.copilot.rpc.McpServerConfig> mcpServers, String targetSessionId)
             throws ExecutionException, InterruptedException, TimeoutException {
-        return client.createSession(buildCreateConfig(targetSessionId, model, mcpServers)).get(2, TimeUnit.MINUTES);
+        GithubCopilotPermissionHandler handler = new GithubCopilotPermissionHandler(listener, sessionId);
+        permissionHandler = handler;
+        return client.createSession(buildCreateConfig(targetSessionId, model, mcpServers, handler))
+                .get(2, TimeUnit.MINUTES);
     }
 
     private Map<String, com.github.copilot.rpc.McpServerConfig> buildMcpServers() {
@@ -426,9 +433,12 @@ public class GithubCopilotProcessManager extends AiProcessManager {
         if (session == null) {
             // "Stop did nothing because nothing was running" and "Stop ran but
             // output kept coming" are indistinguishable after the fact — this
-            // branch is the first of those.
-            if (type == InterruptTypeEnum.Cancel && PluginSettings.isDebugJson()) {
-                LOG.log(Level.INFO, "GitHub Copilot interrupt: IGNORED, no session (session={0})", sessionId);
+            // branch is the first of those. A silent no-op is what let Codex's
+            // equivalent Mail drop go unnoticed for so long, so both types are
+            // logged here, not just Cancel.
+            if (PluginSettings.isDebugJson()) {
+                LOG.log(Level.INFO, "GitHub Copilot interrupt: IGNORED, no session (type={0}, session={1})",
+                        new Object[]{type, sessionId});
             }
             return;
         }
@@ -446,6 +456,14 @@ public class GithubCopilotProcessManager extends AiProcessManager {
                             new Object[]{sessionId, processing});
                 }
                 cancelledByUser = true;
+                // Cancel any outstanding permission dialog before session.abort(), so
+                // Copilot receives the permission reply (userNotAvailable) before the
+                // abort — mirrors OpenCodeAiProcessManager/CodexAiProcessManager
+                // interrupt()'s ordering.
+                GithubCopilotPermissionHandler handler = permissionHandler;
+                if (handler != null) {
+                    handler.cancelPendingPermissions();
+                }
                 session.abort();
                 if (PluginSettings.isDebugJson()) {
                     LOG.log(Level.INFO, "GitHub Copilot interrupt: session.abort() sent (session={0})", sessionId);
@@ -457,10 +475,19 @@ public class GithubCopilotProcessManager extends AiProcessManager {
             }
             case Mail -> {
                 if (processing) {
+                    if (PluginSettings.isDebugJson()) {
+                        LOG.log(Level.INFO, "GitHub Copilot interrupt: Mail received, injecting notice (session={0})",
+                                sessionId);
+                    }
                     com.github.copilot.rpc.MessageOptions options = new com.github.copilot.rpc.MessageOptions()
                             .setPrompt("[inbox] You have a new message — check it when convenient.")
                             .setMode("immediate");
                     session.send(options);
+                }
+                else if (PluginSettings.isDebugJson()) {
+                    LOG.log(Level.INFO,
+                            "GitHub Copilot interrupt: Mail IGNORED, no turn in flight — message will arrive via "
+                            + "normal inbox flush (session={0})", sessionId);
                 }
             }
         }
@@ -487,6 +514,14 @@ public class GithubCopilotProcessManager extends AiProcessManager {
         registrar = null;
         if (reg != null) {
             McpServerRegistry.deregister(reg);
+        }
+        // Complete any outstanding permission dialog exceptionally so its .handle()
+        // continuation fires and replies userNotAvailable() to Copilot — otherwise a
+        // stop() while awaiting approval leaves the dialog up and the turn wedged.
+        GithubCopilotPermissionHandler permHandler = permissionHandler;
+        permissionHandler = null;
+        if (permHandler != null) {
+            permHandler.cancelPendingPermissions();
         }
         if (client != null) {
             client.close();

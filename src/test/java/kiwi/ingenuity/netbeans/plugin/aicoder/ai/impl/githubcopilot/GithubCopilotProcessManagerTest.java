@@ -15,7 +15,8 @@ class GithubCopilotProcessManagerTest {
     @Test
     void buildCreateConfigPinsStableSessionId() {
         SessionConfig config = GithubCopilotProcessManager.buildCreateConfig(
-                "plugin-session-123", "gpt-5.4", Map.of());
+                "plugin-session-123", "gpt-5.4", Map.of(), new GithubCopilotPermissionHandler(event -> {
+        }, "plugin-session-123"));
 
         assertEquals("plugin-session-123", config.getSessionId());
         assertEquals("gpt-5.4", config.getModel());
