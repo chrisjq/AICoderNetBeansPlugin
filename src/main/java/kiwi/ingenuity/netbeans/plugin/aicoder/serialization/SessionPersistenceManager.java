@@ -209,6 +209,9 @@ public class SessionPersistenceManager {
                     if (o.has("startupInstructionsInjected") && !o.get("startupInstructionsInjected").isJsonNull()) {
                         session.setStartupInstructionsInjected(o.get("startupInstructionsInjected").getAsBoolean());
                     }
+                    if (o.has("lastInjectedInstructions") && !o.get("lastInjectedInstructions").isJsonNull()) {
+                        session.setLastInjectedInstructions(o.get("lastInjectedInstructions").getAsString());
+                    }
                     result.add(session);
                 }
                 catch (Exception e) {
@@ -245,6 +248,9 @@ public class SessionPersistenceManager {
             o.addProperty("lastUsedAt", s.lastUsedAt().toString());
             o.addProperty("sessionInstructionsDelivery", s.sessionInstructionsDelivery().name());
             o.addProperty("startupInstructionsInjected", s.isStartupInstructionsInjected());
+            if (s.lastInjectedInstructions() != null) {
+                o.addProperty("lastInjectedInstructions", s.lastInjectedInstructions());
+            }
             arr.add(o);
         }
         byte[] bytes = GSON.toJson(arr).getBytes(StandardCharsets.UTF_8);

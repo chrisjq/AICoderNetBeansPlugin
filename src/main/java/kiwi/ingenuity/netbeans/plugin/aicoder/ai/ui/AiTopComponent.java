@@ -1397,6 +1397,7 @@ public final class AiTopComponent extends TopComponent implements AiProcessEvent
                 && contextProvider.consumeSessionInstructionsInjected();
         if (instructionsIncluded) {
             conversationPanel.addSystemMessage("Session Instructions Sent");
+            recordInstructionsDelivered(sessionInstructions);
         }
         conversationPanel.addUserMessage(text);
         infoBar.setProcessing(true);
@@ -1767,6 +1768,29 @@ public final class AiTopComponent extends TopComponent implements AiProcessEvent
         }
     }
 
+    /**
+     * Persists the instruction text just delivered, so it is not delivered
+     * again after an IDE restart. {@code ContextProvider}'s own record is
+     * in-memory and is recreated whenever the session is opened, which is why
+     * an ON_FIRST_REQUEST session used to re-send its instructions on the first
+     * message of every run while ON_START — whose guard was already persisted —
+     * did not.
+     */
+    private void recordInstructionsDelivered(String instructions) {
+        if (session == null) {
+            return;
+        }
+        session.setLastInjectedInstructions(instructions);
+        PERSIST_EXECUTOR.execute(() -> {
+            try {
+                sessionPersistenceManager.save(session);
+            }
+            catch (IOException e) {
+                LOG.log(Level.WARNING, "Could not persist delivered session instructions", e);
+            }
+        });
+    }
+
     private void deliverStartupInstructions() {
         if (session == null
                 || session.sessionInstructionsDelivery() != SessionInstructionsDeliveryEnum.ON_START
@@ -1796,6 +1820,7 @@ public final class AiTopComponent extends TopComponent implements AiProcessEvent
         aiBackend.sendPrompt(prompt, resolveWorkDir(), projectDirs);
         if (contextProvider != null && contextProvider.consumeSessionInstructionsInjected()) {
             conversationPanel.addSystemMessage("Session Instructions Sent");
+            recordInstructionsDelivered(instructions);
         }
         setSendEnabled(false);
         session.setStartupInstructionsInjected(true);

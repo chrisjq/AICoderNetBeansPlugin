@@ -58,6 +58,18 @@ public class AiSession {
     private volatile boolean instructionsLoaded = false;
     private volatile SessionInstructionsDeliveryEnum sessionInstructionsDelivery = SessionInstructionsDeliveryEnum.ON_FIRST_REQUEST;
     private volatile boolean startupInstructionsInjected = false;
+    /**
+     * The session-instruction text most recently delivered to the backend, or
+     * null if none ever was. Persisted, unlike {@code ContextProvider}'s
+     * in-memory copy, which is recreated whenever the session is opened — so
+     * without this an ON_FIRST_REQUEST session re-sent its instructions on the
+     * first message after every IDE restart.
+     *
+     * <p>
+     * The text is stored rather than a boolean so that editing the instructions
+     * still re-delivers them: "already sent" is only true for the same text.
+     */
+    private volatile String lastInjectedInstructions = null;
 
     private final ConcurrentHashMap<String, String> extraData = new ConcurrentHashMap<>();
     private volatile AiSessionCallback callback;
@@ -152,6 +164,14 @@ public class AiSession {
 
     public void setStartupInstructionsInjected(boolean injected) {
         this.startupInstructionsInjected = injected;
+    }
+
+    public String lastInjectedInstructions() {
+        return lastInjectedInstructions;
+    }
+
+    public void setLastInjectedInstructions(String instructions) {
+        this.lastInjectedInstructions = instructions;
     }
 
     // ---- Extra key-value data (for info map extensibility) ----

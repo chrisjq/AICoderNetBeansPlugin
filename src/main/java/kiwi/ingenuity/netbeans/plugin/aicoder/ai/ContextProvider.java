@@ -201,8 +201,7 @@ public class ContextProvider {
             if (sessionInstructions != null && !sessionInstructions.isBlank()
                     && (s.sessionInstructionsDelivery() != SessionInstructionsDeliveryEnum.ON_START
                     || !s.isStartupInstructionsInjected())
-                    && (isFirstSend
-                    || !Objects.equals(sessionInstructions, lastInjectedSessionInstructions))) {
+                    && instructionsStillNeedSending(s, sessionInstructions, isFirstSend)) {
                 lastInjectedSessionInstructions = sessionInstructions;
                 sessionInstructionsInjectedInLastPreamble = true;
             }
@@ -297,7 +296,7 @@ public class ContextProvider {
                 && (s == null
                 || s.sessionInstructionsDelivery() != SessionInstructionsDeliveryEnum.ON_START
                 || !s.isStartupInstructionsInjected())
-                && (isFirstSend || !Objects.equals(sessionInstructions, lastInjectedSessionInstructions))) {
+                && instructionsStillNeedSending(s, sessionInstructions, isFirstSend)) {
             ctx.append("\n## Session Instructions\n").append(sessionInstructions).append("\n");
             lastInjectedSessionInstructions = sessionInstructions;
             sessionInstructionsInjectedInLastPreamble = true;
@@ -318,6 +317,24 @@ public class ContextProvider {
         boolean injected = sessionInstructionsInjectedInLastPreamble;
         sessionInstructionsInjectedInLastPreamble = false;
         return injected;
+    }
+
+    /**
+     * True when {@code sessionInstructions} still needs delivering.
+     *
+     * <p>
+     * Checks the session's persisted record as well as this provider's
+     * in-memory one. The in-memory copy is recreated every time the session is
+     * opened, so on its own it made an ON_FIRST_REQUEST session re-deliver its
+     * instructions on the first message after every IDE restart — while
+     * ON_START did not, because its guard was already persisted. Comparing the
+     * text rather than a flag keeps edited instructions being re-delivered.
+     */
+    private boolean instructionsStillNeedSending(AiSession s, String sessionInstructions, boolean isFirstSend) {
+        if (!isFirstSend && Objects.equals(sessionInstructions, lastInjectedSessionInstructions)) {
+            return false;
+        }
+        return s == null || !Objects.equals(sessionInstructions, s.lastInjectedInstructions());
     }
 
     /**
