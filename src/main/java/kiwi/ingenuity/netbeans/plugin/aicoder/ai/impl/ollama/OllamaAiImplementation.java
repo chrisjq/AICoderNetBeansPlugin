@@ -73,10 +73,6 @@ public class OllamaAiImplementation extends AiImplementation implements OllamaIn
         return OllamaPluginSettings.getBaseUrl();
     }
 
-    protected void persistModel(String model) {
-        OllamaPluginSettings.setModel(model);
-    }
-
     protected void storeDiscoveredModels(String[] models) {
         OllamaPluginSettings.setDiscoveredModels(models);
     }
@@ -99,7 +95,8 @@ public class OllamaAiImplementation extends AiImplementation implements OllamaIn
 
     @Override
     public void setModel(String model) {
-        persistModel(model);
+        // Session-scoped change — deliberately does not write the global default.
+        // The global default (Tools → Options) is owned solely by the settings panel.
         delegate().setModel(model);
         if (currentSession != null && currentSession.settings() instanceof OllamaSessionSettings settings) {
             settings.setModel(model);

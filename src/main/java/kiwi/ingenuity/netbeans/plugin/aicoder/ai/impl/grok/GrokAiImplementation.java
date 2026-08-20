@@ -40,6 +40,27 @@ public class GrokAiImplementation extends AiImplementation {
         return MODEL_CATALOG;
     }
 
+    /**
+     * Discover the Grok model list once per IDE run via {@code grok models},
+     * then broadcast it to every open Grok session's info bar via
+     * {@link AiTypePropertyBus} — mirroring the Claude/Copilot flow. A session
+     * opened after discovery already completed replays the cached list
+     * immediately.
+     */
+    public static void triggerModelDiscovery() {
+        if (!MODEL_CATALOG.beginRefresh()) {
+            return;
+        }
+        GrokModelDiscovery.discoverAsync(GrokExecutableLocator.locate(), list -> {
+            if (list != null && !list.isEmpty()) {
+                GrokPluginSettings.setDiscoveredModels(list.toArray(String[]::new));
+            }
+            if (MODEL_CATALOG.publish(list)) {
+                AiTypePropertyBus.getInstance().fire(AiTypeEnum.GROK, new GrokModelsEvent(list));
+            }
+        });
+    }
+
     private final GrokAiProcessManager delegate;
 
     public GrokAiImplementation(AiProcessEventListener listener, ExecutablePrompter prompter) {
@@ -86,7 +107,11 @@ public class GrokAiImplementation extends AiImplementation {
 
     @Override
     public void setModel(String model) {
-        GrokPluginSettings.setModel(model);
+        // Session-scoped change — deliberately does not write the global default.
+        // The global default (Tools → Options) is owned solely by the settings panel.
+        if (currentSession != null && currentSession.settings() instanceof AiModelSessionSettings mc) {
+            mc.setModel(model);
+        }
         delegate.setModel(model);
     }
 
@@ -129,27 +154,6 @@ public class GrokAiImplementation extends AiImplementation {
         // the result is broadcast to EVERY open Grok session's dropdown.
         triggerModelDiscovery();
         return provider;
-    }
-
-    /**
-     * Discover the Grok model list once per IDE run via {@code grok models},
-     * then broadcast it to every open Grok session's info bar via
-     * {@link AiTypePropertyBus} — mirroring the Claude/Copilot flow. A session
-     * opened after discovery already completed replays the cached list
-     * immediately.
-     */
-    public static void triggerModelDiscovery() {
-        if (!MODEL_CATALOG.beginRefresh()) {
-            return;
-        }
-        GrokModelDiscovery.discoverAsync(GrokExecutableLocator.locate(), list -> {
-            if (list != null && !list.isEmpty()) {
-                GrokPluginSettings.setDiscoveredModels(list.toArray(String[]::new));
-            }
-            if (MODEL_CATALOG.publish(list)) {
-                AiTypePropertyBus.getInstance().fire(AiTypeEnum.GROK, new GrokModelsEvent(list));
-            }
-        });
     }
 
     @Override

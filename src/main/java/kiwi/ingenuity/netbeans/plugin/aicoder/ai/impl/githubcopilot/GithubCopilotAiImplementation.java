@@ -3,6 +3,9 @@ package kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.githubcopilot;
 import java.util.Arrays;
 import java.util.List;
 import java.util.function.Consumer;
+import java.util.logging.Level;
+import java.util.logging.Logger;
+import kiwi.ingenuity.netbeans.plugin.aicoder.PluginSettings;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.AiImplementation;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.AiModelCatalog;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.AiSessionHost;
@@ -32,6 +35,8 @@ import kiwi.ingenuity.netbeans.plugin.aicoder.process.events.AiProcessEventListe
  * Manages session lifecycle, authentication, and model selection.
  */
 public class GithubCopilotAiImplementation extends AiImplementation {
+
+    private static final Logger LOG = Logger.getLogger(GithubCopilotAiImplementation.class.getName());
 
     // The discovered model list is shared across all Copilot sessions for the
     // IDE run (like Claude): discover once, cache, and broadcast to every open
@@ -76,10 +81,13 @@ public class GithubCopilotAiImplementation extends AiImplementation {
         });
     }
     private final GithubCopilotProcessManager processManager;
+    private volatile AiSessionHost sessionHost;
+    private volatile GithubCopilotAiInfoBarExtension infoBar;
 
     public GithubCopilotAiImplementation(AiProcessEventListener listener, ExecutablePrompter prompter) {
         super(AiTypeEnum.GitHubCoPilot, listener, prompter);
         this.processManager = new GithubCopilotProcessManager(listener);
+        this.processManager.setOnModelFallback(this::applyModelFallback);
     }
 
     @Override
@@ -89,8 +97,7 @@ public class GithubCopilotAiImplementation extends AiImplementation {
 
     @Override
     public void startWithDiscovery(String model) {
-        String effectiveModel = (model != null && !model.isBlank())
-                ? model : GithubCopilotPluginSettings.getModel();
+        String effectiveModel = resolveStartupModel(model);
         String execPath = GithubCopilotExecutableLocator.locate();
         if (execPath != null) {
             // start() can block on MCP registration, so run it off the EDT.
@@ -104,9 +111,45 @@ public class GithubCopilotAiImplementation extends AiImplementation {
                 "EXECUTABLE_NOT_FOUND", "GitHub Copilot CLI not found"));
     }
 
+    /**
+     * Resolves the model to start a session with: an explicit argument first,
+     * then the session's own choice, then the global default. Mirrors
+     * OpenCodeAiImplementation.resolveStartupModel and
+     * CodexAiImplementation.resolveStartupModel — extracted so it can be tested
+     * without going through {@link GithubCopilotExecutableLocator#locate},
+     * which depends on what is actually installed on the machine.
+     *
+     * <p>
+     * AiTopComponent always calls {@code startWithDiscovery(null)}, so falling
+     * straight to the global default here — as this used to do — silently ran a
+     * session on {@code GithubCopilotPluginSettings.getModel()} regardless of
+     * what the user had picked for it. The info bar, session settings and
+     * ListAiSessions all kept reporting the session's own model, so the
+     * mismatch was invisible. Same bug already found and fixed for OpenCode and
+     * Codex; Claude, Grok and Ollama check session settings via their own
+     * getCurrentModel()/inline equivalents.
+     */
+    String resolveStartupModel(String model) {
+        String sessionModel = currentSession != null
+                && currentSession.settings() instanceof AiModelSessionSettings s
+                && s.model() != null && !s.model().isBlank()
+                ? s.model() : null;
+        String effectiveModel = (model != null && !model.isBlank())
+                ? model
+                : sessionModel != null ? sessionModel : GithubCopilotPluginSettings.getModel();
+        if (PluginSettings.isDebugJson()) {
+            String source = (model != null && !model.isBlank()) ? "explicit argument"
+                    : sessionModel != null ? "session setting" : "global default";
+            LOG.log(Level.INFO, "GitHub Copilot requested model=\"{0}\" at session start (source: {1})",
+                    new Object[]{effectiveModel, source});
+        }
+        return effectiveModel;
+    }
+
     @Override
     public void setModel(String model) {
-        GithubCopilotPluginSettings.setModel(model);
+        // Session-scoped change — deliberately does not write the global default.
+        // The global default (Tools → Options) is owned solely by the settings panel.
         // A CopilotSession binds its model at create/resume time, so changing the
         // model on a live session has no effect until the session is rebuilt.
         // recycleForModelChange() closes and clears it immediately (cheap, no RPC —
@@ -129,6 +172,8 @@ public class GithubCopilotAiImplementation extends AiImplementation {
     @Override
     public GithubCopilotAiInfoBarExtension createInfoBarExtension(AiSession session, AiSessionHost host) {
         GithubCopilotAiInfoBarExtension provider = new GithubCopilotAiInfoBarExtension(session, host);
+        this.sessionHost = host;
+        this.infoBar = provider;
         Consumer<List<String>> catalogListener = models -> provider.setAvailableModels(models.toArray(String[]::new));
         MODEL_CATALOG.addListener(catalogListener);
         provider.setDisposeAction(() -> MODEL_CATALOG.removeListener(catalogListener));
@@ -178,6 +223,33 @@ public class GithubCopilotAiImplementation extends AiImplementation {
         return provider;
     }
 
+    /**
+     * Applies the model the CLI fell back to when the requested one was not
+     * available for the account: session settings, persisted, then the info-bar
+     * dropdown. Wired to {@link GithubCopilotProcessManager#setOnModelFallback}
+     * in the constructor, so it is always connected regardless of whether the
+     * info bar or {@code onStarted} has run yet.
+     *
+     * <p>
+     * Deliberately does not call {@link #setModel} — that would additionally
+     * recycle the Copilot session while we are already handling a start
+     * failure. Package-private rather than private so the test can call it
+     * directly, matching {@link #resolveStartupModel}.
+     */
+    void applyModelFallback(String model) {
+        if (currentSession != null && currentSession.settings() instanceof AiModelSessionSettings settings) {
+            settings.setModel(model);
+        }
+        AiSessionHost host = sessionHost;
+        if (host != null && currentSession != null) {
+            host.updateSessionSettings(currentSession.settings());
+        }
+        GithubCopilotAiInfoBarExtension bar = infoBar;
+        if (bar != null) {
+            bar.setSelectedModel(model);
+        }
+    }
+
     private void compact(AiSessionHost host) {
         if (!isRunning() || isProcessing()) {
             listener.onAiProcessEvent(new StatusEvent(StatusEventTypeEnum.INFO,
@@ -199,7 +271,10 @@ public class GithubCopilotAiImplementation extends AiImplementation {
 
     @Override
     public void onStarted(AiSessionHost session) {
-        // No-op. Copilot is driven exclusively in prompt mode (`copilot -p`),
+        // Retain the host so applyModelFallback can persist session settings
+        // even if the info bar has not been created or has been recreated.
+        this.sessionHost = session;
+        // Nothing else to do here. Copilot is driven exclusively in prompt mode (`copilot -p`),
         // where memory is disabled by default (the only switch is the opt-in
         // `--enable-memory`, which GithubCopilotProcessManager never passes).
         // The user's ~/.copilot/settings.json also persists "memory": false.

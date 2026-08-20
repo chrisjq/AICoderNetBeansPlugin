@@ -16,6 +16,7 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
+import java.util.function.Consumer;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 import kiwi.ingenuity.netbeans.plugin.aicoder.PluginSettings;
@@ -27,7 +28,6 @@ import kiwi.ingenuity.netbeans.plugin.aicoder.ai.events.StatusEventTypeEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.githubcopilot.events.GithubCopilotFatalErrorEvent;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.githubcopilot.events.GithubCopilotQuotaEvent;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.githubcopilot.session.GithubCopilotAiSession;
-import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.githubcopilot.settings.GithubCopilotPluginSettings;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.session.AiSession;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.session.InterruptTypeEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.events.AiProcessEventListener;
@@ -114,9 +114,14 @@ public class GithubCopilotProcessManager extends AiProcessManager {
     private CopilotClient client = null;
     private CopilotSession copilotSession = null;
     private volatile GithubCopilotPermissionHandler permissionHandler = null;
+    private volatile Consumer<String> onModelFallback;
 
     public GithubCopilotProcessManager(AiProcessEventListener listener) {
         super(listener);
+    }
+
+    public void setOnModelFallback(Consumer<String> onModelFallback) {
+        this.onModelFallback = onModelFallback;
     }
 
     @Override
@@ -319,7 +324,11 @@ public class GithubCopilotProcessManager extends AiProcessManager {
         }
         else if (lower.contains("is not available") && model != null && !"auto".equalsIgnoreCase(model)) {
             model = "auto";
-            GithubCopilotPluginSettings.setModel("auto");
+            // Report the fallback so the implementation can persist it and refresh the info bar.
+            Consumer<String> cb = onModelFallback;
+            if (cb != null) {
+                cb.accept(model);
+            }
             listener.onAiProcessEvent(new StatusEvent(StatusEventTypeEnum.INFO,
                     "Model was not available for your account — switched to 'auto'. Please resend your message."));
         }

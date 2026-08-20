@@ -170,6 +170,15 @@ public class GithubCopilotAiInfoBarExtension implements AiInfoBarExtension {
      * Replaces the dropdown's items with a discovered model list, preserving
      * the current selection. The combo stays editable so any model can still be
      * typed. EDT-safe.
+     *
+     * <p>
+     * Repopulating must be guarded like {@link #setSelectedModel}: model
+     * discovery is broadcast to <em>every</em> open Copilot session's info bar,
+     * and {@code removeAllItems()}/{@code addItem()} fire combo action events.
+     * Unguarded, those reach the model-change listener as if the user had
+     * picked a model — which calls setModel(), rewrites the global default,
+     * recycles the live Copilot session and writes session settings to disk on
+     * the EDT, all off the back of another session's discovery finishing.
      */
     public void setAvailableModels(String[] models) {
         if (models == null || models.length == 0) {
@@ -180,13 +189,19 @@ public class GithubCopilotAiInfoBarExtension implements AiInfoBarExtension {
             return;
         }
         String current = getSelectedModel();
-        modelCombo.removeAllItems();
-        for (String m : models) {
-            modelCombo.addItem(m);
+        programmaticModelSelection = true;
+        try {
+            modelCombo.removeAllItems();
+            for (String m : models) {
+                modelCombo.addItem(m);
+            }
+            modelCombo.setSelectedItem(current);
+            if (!current.equals(modelCombo.getSelectedItem())) {
+                modelCombo.getEditor().setItem(current);
+            }
         }
-        modelCombo.setSelectedItem(current);
-        if (!current.equals(modelCombo.getSelectedItem())) {
-            modelCombo.getEditor().setItem(current);
+        finally {
+            programmaticModelSelection = false;
         }
     }
 

@@ -275,7 +275,11 @@ public class ClaudeAiImplementation extends AiImplementation {
 
     @Override
     public void setModel(String model) {
-        ClaudePluginSettings.setModel(model);
+        // Session-scoped change — deliberately does not write the global default.
+        // The global default (Tools → Options) is owned solely by the settings panel.
+        if (currentSession != null && currentSession.settings() instanceof AiModelSessionSettings mc) {
+            mc.setModel(model);
+        }
         delegate.setModel(model);
         delegate.recycleForModelChange();
     }
