@@ -1,360 +1,207 @@
 # AI Coder for NetBeans
 
-A NetBeans IDE plugin that embeds an AI coding assistant as a dockable chat panel with full IDE context awareness. It supports multiple AI backends — **[Claude Code](https://claude.ai/code)**, **[Grok](https://docs.x.ai/build/cli)**, and **GitHub Copilot** — behind a single shared chat UI and tool server. The assistant can read and edit your project files, run builds and tests, perform IDE refactorings, search your codebase, and ask you questions — all from within NetBeans.
+> **Version compatibility:** Version 1.2.21 supports Claude, GitHub Copilot, and Grok only. Current releases also support Ollama (Local), OpenCode, and Codex.
+
+AI Coder is a NetBeans IDE plugin that provides dockable, multi-session AI coding chats with IDE-aware context, project-scoped tools, configurable permissions, and reviewable file changes. It can work with local, CLI-based, SDK-based, ACP, app-server, and OpenAI-compatible backends through one shared chat and tool experience.
 
 ## Supported backends
 
-| Backend | Driven via | Models | Status |
+| Backend | Connection | Configuration | Default status |
 |---|---|---|---|
-| **Claude** | `claude` CLI (one long-lived process per session, `--input-format stream-json` over persistent stdin/stdout) | opus / sonnet / haiku (default `claude-sonnet-4-6`; discovered at runtime and cached per session) | Enabled by default |
-| **GitHub Copilot** | Copilot SDK session | discovered at runtime via the Copilot SDK (with a static fallback list) | Enabled by default |
-| **Grok** | `grok` CLI in headless prompt mode (`grok -p --model …`) | discovered at runtime via `grok models` (with a static fallback list) | Enabled by default |
+| [**Claude**](https://code.claude.com/docs/en/overview) | Long-lived `claude` CLI stream session | Executable and model | Enabled |
+| [**GitHub Copilot**](https://docs.github.com/en/copilot/how-tos/copilot-cli/cli-getting-started) | Copilot SDK session | Executable and model | Enabled |
+| [**Grok**](https://docs.x.ai/build/overview) | Headless `grok` CLI prompt sessions | Executable and model | Enabled |
+| [**OpenCode**](https://opencode.ai/docs) | Long-lived `opencode acp` session | Executable, editable/discovered model, and Build or Plan agent mode | Enabled |
+| [**Codex**](https://developers.openai.com/codex/cli/) | Long-lived Codex app-server session | Executable, editable model, reasoning effort, and sandbox/approval options | Enabled |
+| [**Ollama (Local)**](https://docs.ollama.com/cli) | OpenAI-compatible HTTP API | Base URL, editable/discovered model, and context-management options | Implemented; enable in Options |
 
-Each backend has its own process manager, executable locator, settings, and info bar, but they all share the same chat panel, MCP tool server, and Accept/Reject diff gate. You can run multiple sessions (and multiple backends) at once.
+Each session has its own backend, model, settings, working project, chat history, session instructions, and optional persisted backend session/thread state. Multiple sessions and backends can run at the same time, though their file-, build- and Git-changing work is serialised across the whole plugin — see [Concurrency and limits](REFERENCE.md#concurrency-and-limits).
 
-## Features
+## What it provides
 
-- **Streaming chat panel** — dockable AI conversation window with Markdown rendering and syntax-highlighted code blocks
-- **Pluggable backends** — switch between Claude, Grok, and GitHub Copilot; each session picks its backend and model
-- **Accept / Reject diffs** — file edits proposed by the AI are shown as a diff panel; you approve or reject each change before it is applied
-- **MCP tool server** — exposes IDE tools (build, test, git, search, refactor, navigation, editor context) to the AI over a local HTTP/JSON-RPC 2.0 endpoint (port 49167 by default)
-- **PreToolUse hook** — intercepts the AI's write/edit/create file operations and routes them through the diff panel
-- **Inter-AI messaging** — multiple AI sessions can discover and message each other within the IDE (opt-in per session)
-- **Concurrency guards** — mutating tool calls are serialised so parallel refactorings cannot corrupt IDE state
-- **Claude persistent session** — one long-lived `claude` process per session, kept alive across turns and automatically relaunched with `--resume` after crash or model change; enables mid-turn background task notifications and context preservation
-- **Claude usage bars** — real-time visibility into 5-hour and 7-day rolling usage percentages
-- **Mid-session model switching** — switch Claude models on the fly; session context is preserved via `--resume`
-- **Per-session persistent memory** — Claude sessions automatically store long-term memory in a session-specific directory (enabled by default in `~/.claude/memory/`)
+- Streaming Markdown chat with syntax-highlighted code, tool activity, status messages, and dockable session tabs.
+- Paste clipboard images into chat when the selected backend supports image input.
+- AI Manager for creating, opening, duplicating, deleting, and organising sessions.
+- Per-session session instructions, with delivery on the first user request or automatically at startup.
+- Reusable configuration templates and instruction templates; built-in configuration templates include Coordinator, CoderPeer, and ReviewerPeer.
+- IDE context delivery: open projects, active file, session identity, and later project/file changes are supplied to the assistant. OpenAI-compatible sessions also support managed conversation context.
+- Persistent sessions, conversation history, and context recovery across IDE restarts when enabled.
+- Shared account usage gauges where a backend reports them: Claude rolling limits, GitHub Copilot quota, and Codex account rate limits. Context gauges show the active context against the backend-reported window where available.
+- Inter-AI messaging between opted-in sessions, including inbox notifications and important-message interruption controls.
+- NetBeans-aware search, navigation, diagnostics, formatting, build, test, refactoring, VCS, file, database, and web-request tools.
+- Diff review for AI-proposed content writes, and explicit confirmation for destructive or location-changing file actions.
 
 ## Requirements
 
-- NetBeans IDE 22+
-- Java 17+ (plugin is built with `maven.compiler.release` 17); runtime requires Java 17 or higher due to NetBeans 22's own JDK 17 requirement and the bundled Copilot SDK (Java 17 bytecode)
-- Maven (for Maven projects)
-- At least one backend CLI installed and on your `PATH` (or configured in settings):
-  - **Claude** — the Claude Code CLI (`claude`)
-  - **Grok** — the xAI Grok CLI (`grok`), signed in via `grok login`
-  - **GitHub Copilot** — the GitHub Copilot CLI (`copilot`), signed in to a Copilot-enabled GitHub account
+- NetBeans IDE 22 or newer.
+- Java 17 or newer.
+- Maven to build this plugin and to use its Maven build/test tools; Gradle or Ant when using their corresponding tools.
+- At least one configured backend:
+  - **Claude:** the `claude` CLI, authenticated with `claude login`.
+  - **GitHub Copilot:** the `copilot` CLI and a Copilot-enabled GitHub account.
+  - **Grok:** the `grok` CLI, authenticated with `grok login`.
+  - **OpenCode:** the `opencode` CLI.
+  - **Codex:** the `codex` CLI/app-server, authenticated with `codex login`.
+  - **Ollama (Local):** a reachable OpenAI-compatible Ollama endpoint; no CLI is required by the plugin.
 
-> **NetBeans must not run inside an isolated/sandboxed container** (Flatpak, Snap, a locked-down Docker image, etc.). The plugin launches the backend CLIs (`claude`, `grok`, `copilot`) as child processes on your `PATH` and runs a local MCP HTTP server that those CLIs connect back to. A sandbox blocks the host `PATH`, subprocess spawning, and/or loopback networking the plugin depends on, so the backends will fail to start or connect. Install NetBeans from a native package, the official installer, or a plain unpacked distribution.
+> NetBeans must be able to launch configured CLIs and use loopback networking. Sandboxed installations that block process creation, the host `PATH`, or local HTTP connections can prevent CLI/ACP/app-server backends and the MCP tool server from working.
 
 ## Installation
 
-Build the plugin NBM and install it via **Tools > Plugins > Downloaded**:
+Build the NetBeans module:
 
 ```bash
 mvn package
 ```
 
-The built `.nbm` file is in `target/`. In NetBeans: **Tools > Plugins > Downloaded > Add Plugins**, select the `.nbm`, then click **Install**.
+Install the generated `.nbm` from `target/` using **Tools > Plugins > Downloaded > Add Plugins**.
 
-## Usage
+## Getting started
 
-**Manage AI sessions via Tools → AI Manager.** This opens the AI Manager dialog where you can:
+1. Configure one or more backend tabs in **Tools > Options > AI Coder**.
+2. Open **Tools > AI Manager**.
+3. Create a session, choose its backend and project, then select **Create & Open**.
+4. Use the dockable chat tab to ask for analysis, changes, tests, or IDE operations.
+5. Review every proposed content diff in the NetBeans Accept/Reject panel before it is saved — unless you enable Auto-accept, which applies changes without asking. See [Change review and safety](#change-review-and-safety).
 
-- **Create** a new session — give it a name, pick the target open project, choose the backend (Claude, Grok, or GitHub Copilot), and click **Create & Open**. You can create several at once with the count field.
-- **Open** an existing session — select it and click **Open** (its project must be open in the IDE).
-- **Delete** a session and its saved history.
-
-Each opened session is a dockable chat tab. Per-session overrides (history size, file/web/database/clipboard access, inter-AI messaging, model, instructions) are available from the session's configuration; anything not overridden falls back to the global defaults in **Tools > Options > AI Coder**.
+You can set session-specific options from its configuration UI. An unset session option inherits its global default. For step-by-step use of the AI Manager, session tabs, reviews, and templates, see the [UI guide](UI_GUIDE.md).
 
 ## Configuration
 
-Open **Tools > Options > AI Coder**. General settings apply to every backend; each backend also has its own tab (Claude, Grok, GitHub Copilot) for executable path and model selection.
+### Global and per-session options
 
-### General
+The General options tab establishes defaults. Sessions can override the following controls:
 
-| Setting | Default | Description |
-|---|---|---|
-| MCP server port | 49167 | Loopback port for the IDE tool server |
-| Max history | 200 | Maximum conversation turns retained |
-| Save history | true | Persist history between IDE sessions |
-| Diff context lines | 3 | Lines of context shown in diff panel |
-| Chat font size | 13pt | Font size for the chat panel |
-| Debug JSON | false | Log raw JSON traffic to the IDE output window |
+| Area | Controls |
+|---|---|
+| Conversation | Maximum history, save history, chat font size, and diff-context lines |
+| Project scope | Restrict file access to session project directories |
+| Change review | Auto-accept policy and diff presentation |
+| Session instructions | Session instructions and startup/first-request delivery behavior |
+| Inter-AI | Enable inter-AI messaging, automatic inbox notices, and important-message interruption |
+| Web requests | Master switch plus independent permissions for GET, POST, PUT, PATCH, DELETE, HEAD, OPTIONS, request headers, and request bodies |
+| Database | Master switch, read-only sub-permissions, and database row limit |
+| Clipboard | Explicit opt-in for clipboard reads |
+| Infrastructure | MCP loopback port, save-session-on-close prompt behavior, inbox retention/size, debug JSON, debug context, and tool-use logging |
 
-### Claude backend
+The default posture restricts file tools to project directories, disables auto-accept and clipboard access, and disables inter-AI messaging and automatic inbox notices. Important-message interruption is enabled when messaging is enabled. Database access is disabled by default with a row limit of 25; inbox entries are retained for 60 minutes with a maximum of 1,000 entries.
 
-| Setting | Default | Description |
-|---|---|---|
-| Claude executable | auto-detect | Path to the `claude` CLI binary |
-| Model | claude-sonnet-4-6 | Model used for chat (opus / sonnet / haiku); list is discovered at session start and cached |
+Web requests allow GET by default when web access is enabled. Methods that can change remote state, custom headers, and request bodies are disabled by default and must be enabled globally or for the session.
 
-> Authentication for Claude Code is handled by the `claude` CLI itself. Logon via the claude cli before use.
+Database access is opt-in and read-only. The plugin permits only SELECT-style operations against a read-only JDBC connection and enforces the configured row limit.
 
-### GitHub Copilot backend
+### Backend options
 
-| Setting | Default | Description |
-|---|---|---|
-| Copilot executable | auto-detect | Path to the `copilot` CLI binary |
-| Model | auto-discovered | Model list is fetched via the Copilot SDK at session start; falls back to a built-in list if discovery fails |
+Backend tabs supply executable locations and default backend settings. Session settings preserve the selected backend-specific configuration.
 
-> Authentication for GitHub Copilot is handled by the `copilot` CLI itself. Logon via the copilot cli before use.
+| Backend | Notable options |
+|---|---|
+| Claude | CLI executable and model; models are discovered and cached when available |
+| GitHub Copilot | CLI executable and SDK-discovered model list with fallback choices |
+| Grok | CLI executable and discovered/fallback model list |
+| OpenCode | CLI executable, model, and ACP-provided agent/mode configuration |
+| Codex | CLI executable, model, reasoning effort, and app-server session options |
+| Ollama (Local) | OpenAI-compatible base URL (default `http://localhost:11434`), model, context window, and context-management settings |
 
-### Grok backend
+OpenCode’s mode is **Build** for normal agent work or **Plan** for read-only planning. Codex provides known model choices including `gpt-5.6-terra`, `gpt-5.6-luna`, `gpt-5.5`, and `gpt-5.4-mini`, while keeping the model field editable. Ollama needs no API key; its model and base URL can be changed for an individual session.
 
-| Setting | Default | Description |
-|---|---|---|
-| Grok executable | auto-detect | Path to the `grok` CLI binary |
-| Model | auto-discovered | Model list is fetched via `grok models` at session start; falls back to a built-in list if discovery fails |
+For OpenAI-compatible sessions, context management can trim by message count, estimated tokens, or reported tokens. Available strategies are no trimming, dropping older messages, dropping marked messages, or summarising; configure the trigger threshold, post-trim target, message limit, and context persistence in the Ollama/OpenAI context settings.
 
-> Authentication for Grok is handled by the `grok` CLI itself. Logon via the grok cli before use.
+## Sessions, history, and context
 
-## MCP Tool Reference
+Session definitions are saved in the NetBeans user area and include their name, description, backend-specific settings, associated project, timestamps, and instruction-delivery state. Opening a saved session restores its recorded history and working directory where valid. Corrupt history/context data is ignored and rebuilt rather than blocking a session.
 
-The plugin exposes the following tools to the AI assistant over the MCP endpoint at `http://127.0.0.1:<port>/mcp`. These tools are backend-agnostic — Claude, Grok, and GitHub Copilot use the same set.
+On initial delivery, the assistant receives session identity, open project locations, and active-editor context. Later requests generally contain only changes to the active file/project state; stateless backends receive the required baseline again. Saved history and model-facing context are independent, allowing the chat transcript and backend context to recover safely.
 
-### Build Code
+## AI Manager and templates
+
+**Tools > AI Manager** lets you create, open, and delete sessions; session settings are changed afterwards from the session's own gear button. A session can be associated with an open project and can use a reusable configuration template. Configuration templates preserve common non-backend settings; session-instruction templates provide reusable prompts without overwriting backend selection or credentials.
+
+Deleting a session removes its saved history and associated local backend configuration for that session.
+
+## MCP and IDE tool reference
+
+The local MCP server exposes the following NetBeans-aware capabilities to compatible backends. Tool availability is also filtered by backend support and the session permission settings. For the complete tool list, usage rules, permission model, and backend/session settings, see the [tool and settings reference](REFERENCE.md).
+
+### Build and test
 
 | Tool | Description |
 |---|---|
-| `BuildMavenProject` | Runs `mvn package` |
-| `CleanAndBuildMavenProject` | Runs `mvn clean package` |
-| `BuildGradleProject` | Runs `gradlew build` |
-| `BuildAntProject` | Runs `ant jar` |
-| `DownloadMavenSources` | Downloads source JARs for all dependencies (enables source browsing) |
-| `DownloadMavenJavadoc` | Downloads Javadoc JARs for all dependencies (run before `GetJavadoc`) |
+| [`BuildProject`](REFERENCE.md#buildproject), [`CleanProject`](REFERENCE.md#cleanproject), [`CleanAndBuildProject`](REFERENCE.md#cleanandbuildproject) | Invoke NetBeans build actions for the active project type |
+| [`BuildMavenProject`](REFERENCE.md#buildmavenproject), [`CleanAndBuildMavenProject`](REFERENCE.md#cleanandbuildmavenproject), [`RunMavenTests`](REFERENCE.md#runmaventests) | Maven package/clean/test operations |
+| [`BuildGradleProject`](REFERENCE.md#buildgradleproject), [`RunGradleTests`](REFERENCE.md#rungradletests) | Gradle build and test operations |
+| [`BuildAntProject`](REFERENCE.md#buildantproject), [`RunAntTests`](REFERENCE.md#runanttests) | Ant build and test operations |
+| [`DownloadMavenSources`](REFERENCE.md#downloadmavensources), [`DownloadMavenJavadoc`](REFERENCE.md#downloadmavenjavadoc) | Download dependency sources or Javadoc |
 
-### Test Code
-
-| Tool | Description |
-|---|---|
-| `RunMavenTests` | Runs `mvn test` (optional class filter) |
-| `RunGradleTests` | Runs `gradlew test` (optional class filter) |
-| `RunAntTests` | Runs `ant test` (optional class filter) |
-
-### Git
+### Search, code intelligence, and refactoring
 
 | Tool | Description |
 |---|---|
-| `GetGitStatus` | Branch name and short file status |
-| `GetGitDiff` | Unstaged or staged changes |
-| `GitAdd` | Stages files for the next commit |
-| `GitCommit` | Commits staged changes with a message; can stage files first |
-| `GitLog` | Recent commit history (short hash + subject); optionally scope to a single `file` (like `git log -- <file>`) and `follow` it across renames |
-| `GitPush` | Pushes the current (or specified) branch to a remote |
-| `GitPull` | Fetches from a remote and merges into the current branch |
-| `GitCheckout` | Switches to a branch or revision (optionally creating it) |
-| `GitBranch` | Lists local branches or creates a new one from HEAD |
-| `GitDeleteBranch` | Deletes a local branch |
-| `GitStash` | Stash, list, pop, apply, or drop stashed changes |
-| `GitFetch` | Fetches from a remote without merging |
-| `GitReset` | Unstages files or resets HEAD (SOFT/MIXED/HARD) |
-| `GitMerge` | Merges a branch into the current branch |
-| `GitShow` | Full details (author, date, message, diff) for a commit |
-| `GitBlame` | Per-line commit hash, author, and content for a file |
-| `GitRebase` | Rebases the current branch onto an upstream; supports continue/skip/abort |
-| `GitCherryPick` | Cherry-picks one or more commits onto the current branch |
-| `GitTag` | Lists, creates, or deletes tags |
-| `GitRemote` | Lists, adds, or removes git remotes |
-| `GitRevert` | Reverts a commit by creating a new inverse commit |
+| [`SearchInFiles`](REFERENCE.md#searchinfiles), [`SearchTypes`](REFERENCE.md#searchtypes), [`SearchSymbols`](REFERENCE.md#searchsymbols) | IDE-aware text, type, and member search; `SearchInFiles` searches all open projects when no file is supplied |
+| [`FindDeclaration`](REFERENCE.md#finddeclaration), [`FindImplementations`](REFERENCE.md#findimplementations), [`FindUsages`](REFERENCE.md#findusages) | Navigate relationships in Java source |
+| [`GetProjectStructure`](REFERENCE.md#getprojectstructure), [`GetClassMembers`](REFERENCE.md#getclassmembers), [`GetTypeHierarchy`](REFERENCE.md#gettypehierarchy), [`GetJavadoc`](REFERENCE.md#getjavadoc) | Inspect project and classpath information |
+| [`RenameSymbol`](REFERENCE.md#renamesymbol), [`MoveClass`](REFERENCE.md#moveclass), [`MoveFile`](REFERENCE.md#movefile), [`InlineVariable`](REFERENCE.md#inlinevariable), [`ChangeMethodSignature`](REFERENCE.md#changemethodsignature) | IDE refactorings that update references where applicable |
+| [`GetDiagnostics`](REFERENCE.md#getdiagnostics), [`NavigateToLine`](REFERENCE.md#navigatetoline), [`FixImports`](REFERENCE.md#fiximports), [`OrganiseImports`](REFERENCE.md#organiseimports), [`OrganiseMembers`](REFERENCE.md#organisemembers), [`ReformatFile`](REFERENCE.md#reformatfile) | Diagnostics, navigation, and source maintenance |
 
-### Help & Information
+### Files, VCS, and system access
 
 | Tool | Description |
 |---|---|
-| `GetProjectStructure` | Project source-file layout, organised by source root |
-| `GetClassMembers` | Fields, methods, and constructors of a class |
-| `GetTypeHierarchy` | Full supertype/subtype tree for a class or interface |
-| `GetJavadoc` | Javadoc and method signatures for any class or member on the classpath |
+| [`GetFileContent`](REFERENCE.md#getfilecontent), [`GetFileSizeAndMeta`](REFERENCE.md#getfilesizeandmeta), [`GetCurrentFile`](REFERENCE.md#getcurrentfile), [`GetCurrentFileContent`](REFERENCE.md#getcurrentfilecontent), [`GetOpenFiles`](REFERENCE.md#getopenfiles), [`GetSelectedText`](REFERENCE.md#getselectedtext) | Read editor and filesystem context, including unsaved editor content where applicable |
+| [`WriteFile`](REFERENCE.md#writefile), [`ApplyEdit`](REFERENCE.md#applyedit), [`SaveFile`](REFERENCE.md#savefile) | Propose or save content changes through the review gate |
+| [`CopyFile`](REFERENCE.md#copyfile), [`MoveFile`](REFERENCE.md#movefile), [`DeleteFile`](REFERENCE.md#deletefile) | Copy, relocate, or remove files with explicit confirmation |
+| [`CloseFile`](REFERENCE.md#closefile), [`RefreshFileStatus`](REFERENCE.md#refreshfilestatus) | Manage open files and refresh NetBeans/VCS state |
+| [`GetGitStatus`](REFERENCE.md#getgitstatus), [`GetGitDiff`](REFERENCE.md#getgitdiff), [`GitAdd`](REFERENCE.md#gitadd), [`GitCommit`](REFERENCE.md#gitcommit), [`GitLog`](REFERENCE.md#gitlog), [`GitPush`](REFERENCE.md#gitpush), [`GitPull`](REFERENCE.md#gitpull), [`GitCheckout`](REFERENCE.md#gitcheckout), [`GitBranch`](REFERENCE.md#gitbranch), [`GitDeleteBranch`](REFERENCE.md#gitdeletebranch), [`GitStash`](REFERENCE.md#gitstash), [`GitFetch`](REFERENCE.md#gitfetch), [`GitReset`](REFERENCE.md#gitreset), [`GitMerge`](REFERENCE.md#gitmerge), [`GitShow`](REFERENCE.md#gitshow), [`GitBlame`](REFERENCE.md#gitblame), [`GitRebase`](REFERENCE.md#gitrebase), [`GitCherryPick`](REFERENCE.md#gitcherrypick), [`GitTag`](REFERENCE.md#gittag), [`GitRemote`](REFERENCE.md#gitremote), [`GitRevert`](REFERENCE.md#gitrevert) | Git inspection and repository operations |
+| [`GetClipboard`](REFERENCE.md#getclipboard) | Read clipboard text when clipboard access is enabled |
+| [`WebRequest`](REFERENCE.md#webrequest) | Make permitted HTTP/HTTPS requests |
 
-### Database (read-only)
-
-| Tool | Description |
-|---|---|
-| `ListDatabaseConnections` | Lists all registered Database Explorer connections and their connection status |
-| `ListTables` | Lists all tables in a database schema |
-| `GetTableSchema` | Returns column names, types, nullability, and primary keys for a table |
-| `GetTableData` | Fetches up to the configured row limit of a table's data (SELECT *) |
-| `ExecuteSqlQuery` | Runs a read-only SELECT query on a database connection (SELECT enforced) |
-
-> **Note:** Database access must be enabled in **Tools > Options > AI Coder > General** or in session settings. All database operations are read-only; INSERT, UPDATE, DELETE, and DDL statements are blocked.
-
-### Refactoring (IDE-safe — all references updated automatically)
+### Database and collaboration
 
 | Tool | Description |
 |---|---|
-| `RenameSymbol` | Rename any identifier across all files in the project |
-| `MoveClass` | Move a Java class to a different package, updating imports |
-| `MoveFile` | Move a file; Java files use move refactoring (updates package + imports); other files use standard file operations |
-| `InlineVariable` | Inline a variable at all use sites and remove the declaration |
-| `ChangeMethodSignature` | Modify a method's parameters, name, or return type and update all callers |
+| [`ListDatabaseConnections`](REFERENCE.md#listdatabaseconnections), [`ListTables`](REFERENCE.md#listtables), [`GetTableSchema`](REFERENCE.md#gettableschema), [`GetTableData`](REFERENCE.md#gettabledata), [`ExecuteSqlQuery`](REFERENCE.md#executesqlquery) | Read-only Database Explorer access |
+| [`ListAiSessions`](REFERENCE.md#listaisessions), [`SendAiMessage`](REFERENCE.md#sendaimessage), [`GetAiMessages`](REFERENCE.md#getaimessages), [`ReadAiMessage`](REFERENCE.md#readaimessage), [`DeleteAiMessage`](REFERENCE.md#deleteaimessage), [`IsAiSessionActive`](REFERENCE.md#isaisessionactive), [`UpdateSessionDescription`](REFERENCE.md#updatesessiondescription) | Inter-AI session discovery and messaging |
+| [`GetPluginVersion`](REFERENCE.md#getpluginversion), [`GetInstructions`](REFERENCE.md#getinstructions), [`AskUserQuestion`](REFERENCE.md#askuserquestion), [`RunInspect`](REFERENCE.md#runinspect) | Plugin guidance, user input, and static-analysis entry points |
 
-### Search/Find (IDE-aware)
+## Change review and safety
 
-| Tool | Description |
-|---|---|
-| `SearchInFiles` | Grep-style text/regex search across Java source files |
-| `SearchTypes` | Find Java types (class/interface/enum/annotation) by name pattern |
-| `SearchSymbols` | Find methods, fields, and nested types by name |
-| `FindDeclaration` | Go-to-definition: resolve a symbol to its declaration |
-| `FindImplementations` | Find all direct subtypes/implementors of a type |
-| `FindUsages` | Find all usages of a class or method across the project |
+> **The plugin provides gates, not guarantees.** It mediates what passes through its own tool and approval layer, and it constrains backends where it can. It cannot make an assistant safe. Backends run as real processes with your credentials and your filesystem access, and one that can run shell commands can act in ways no dialog fully describes. Read what you are approving, and keep your work under version control so an unwanted change is recoverable.
 
-### Core System Functions
+Content-changing operations such as `WriteFile`, `ApplyEdit`, and content-bearing `SaveFile` are shown in the NetBeans diff review panel, and are not saved until you accept them.
 
-| Tool | Description |
-|---|---|
-| `GetFileContent` | Read a file's in-memory content, including unsaved editor changes |
-| `GetFileSizeAndMeta` | Report a file's byte size, line count, text encoding, last-modified time & age, writable flag and unsaved-editor-changes flag without returning its content — call before `GetFileContent` on a large file to decide whether to page the read |
-| `WriteFile` | Create/overwrite a file with content, approved via the diff panel |
-| `ApplyEdit` | Replace an exact string in a file, approved via the diff panel |
-| `SaveFile` | Create/overwrite a file with content and save, or flush unsaved editor changes to disk |
-| `DeleteFile` | Permanently delete a file, closing its editor tab and refreshing VCS status |
-| `CopyFile` | Copy a file to a target directory, optionally renaming the copy |
-| `WebRequest` | Fetch an HTTP or HTTPS URL with optional method, headers, request body, timeout, and response truncation. Supports GET, POST, PUT, PATCH, DELETE, HEAD, and OPTIONS |
-| `GetClipboard` | Read the current system clipboard text (opt-in: disabled by default; enable in **Tools > Options > AI Coder > General** or per-session settings) |
-| `RefreshFileStatus` | Refreshes NetBeans' filesystem and VCS view — call after git commits and after creating or modifying files outside the IDE |
+`CopyFile`, `MoveFile`, and `DeleteFile` have no content diff, so they are confirmed as actions before proceeding. Shell commands proposed by a backend are confirmed the same way, showing the command that would run. Refactorings use NetBeans refactoring APIs so project references are updated consistently.
 
-### UI → Build
+**Auto-accept removes the review step by design.** With it enabled, content writes, file actions, and shell commands are approved automatically and reported to the transcript after the fact rather than before. It is off by default, can be set globally or per session, and is worth leaving off for anything you would not want applied unseen.
 
-| Tool | Description |
-|---|---|
-| `BuildProject` | IDE build action (auto-detects Maven/Gradle/Ant) |
-| `CleanProject` | IDE clean action for any project type |
-| `CleanAndBuildProject` | IDE clean+build action for any project type |
-
-### UI → Files & Text
-
-| Tool | Description |
-|---|---|
-| `GetCurrentFile` | Path, line, and column of the active editor cursor |
-| `GetCurrentFileContent` | Full text content of the active editor tab |
-| `GetOpenFiles` | List of all files currently open in the IDE |
-| `GetSelectedText` | Currently selected/highlighted text in the active editor |
-| `GetDiagnostics` | Compiler errors and warnings for all open Java files |
-| `CloseFile` | Close an editor tab |
-
-### UI → Navigation
-
-| Tool | Description |
-|---|---|
-| `NavigateToLine` | Opens a file in the editor and jumps to a given line |
-
-### UI → Source Code Formatting
-
-| Tool | Description |
-|---|---|
-| `FixImports` | Removes unused imports and adds missing ones |
-| `OrganiseImports` | Sorts and groups existing import statements |
-| `OrganiseMembers` | Sorts class members according to configured member order |
-| `ReformatFile` | Reformats a file using the project's code style settings |
-
-### UI → Dialog Actions
-
-| Tool | Description |
-|---|---|
-| `RunInspect` | Opens the NetBeans Inspect dialog to run static analysis across the codebase |
-
-### Request Input from User
-
-| Tool | Description |
-|---|---|
-| `AskUserQuestion` | Present the user with a question and selectable options |
-
-### Plugin & Inter-AI Messaging
-
-| Tool | Description |
-|---|---|
-| `GetPluginVersion` | Returns the running version of the NetBeans plugin |
-| `GetInstructions` | Returns the full plugin usage guide (must be called once before other plugin tools) |
-| `ListAiSessions` | Discover peer AI sessions open in the IDE (excludes the caller) |
-| `SendAiMessage` | Send a message to another AI session's inbox |
-| `GetAiMessages` | List inbox message summaries (id, subject, from) |
-| `ReadAiMessage` | Read the full body of a specific inbox message and mark it read |
-| `DeleteAiMessage` | Delete one or more inbox messages by id |
-| `IsAiSessionActive` | Check whether a target AI session is idle or busy |
-| `UpdateSessionDescription` | Update your session's description visible to peer sessions |
-
-## WebRequest Tool Details
-
-The **WebRequest** tool allows the AI assistant to fetch external web resources. It supports full HTTP method control, custom headers, request bodies, timeouts, and response truncation.
-
-### Parameters
-
-| Parameter | Type | Required | Default | Description |
-|---|---|---|---|---|
-| `url` | string | ✓ | — | The HTTP or HTTPS URL to fetch |
-| `method` | string | — | GET | HTTP method (GET, POST, PUT, PATCH, DELETE, HEAD, OPTIONS) |
-| `headers` | object | — | none | Request headers as a JSON object of `headerName → value` |
-| `body` | string | — | none | Request body (primarily useful with POST, PUT, PATCH, DELETE) |
-| `timeoutSeconds` | integer | — | 30 | Request timeout in seconds (range: 1-300) |
-| `maxChars` | integer | — | 20000 | Maximum response body characters to return (range: 1-200,000) |
-
-### Response
-
-The tool returns a JSON object with:
-
-| Field | Description |
-|---|---|
-| `requestedUrl` | The original URL requested |
-| `finalUrl` | The final URL after following redirects |
-| `method` | The HTTP method used |
-| `status` | HTTP status code |
-| `headers` | Response headers (single-value as string, multi-value as array) |
-| `truncated` | Boolean indicating if response body was truncated |
-| `body` | Response body (UTF-8 decoded, with charset auto-detection from Content-Type) |
-
-### Example
-
-```json
-{
-  "url": "https://api.github.com/zen",
-  "method": "GET",
-  "maxChars": 500
-}
-```
+The local tool server binds only to loopback addresses. Every call is authenticated with the caller's session ID and per-session secret, and sessions cannot act as each other. Project scoping, database access, clipboard access, web permissions, inter-AI messaging, and auto-accept are all separately configurable.
 
 ## Architecture
 
-```
+```text
 NetBeans IDE
-  └── AI Coder panel (dockable TopComponent)
-        ├── Backend (Claude | Grok | GitHub Copilot)
-        │     └── process manager  →  backend CLI subprocess or SDK session
-        └── McpHookServer  (loopback HTTP, port 49167)
-              ├── /mcp   — MCP Streamable HTTP endpoint (tool calls)
-              └── /      — PreToolUse hook (diff-panel gate for file writes)
+  └── AI Coder dockable sessions
+        ├── Claude / Grok CLI sessions
+        ├── GitHub Copilot SDK session
+        ├── OpenCode ACP session
+        ├── Codex app-server session
+        ├── Ollama OpenAI-compatible HTTP client
+        └── Local MCP/IDE tool server and review bridge
 ```
 
-Each backend drives its CLI or SDK session and parses its output to render the chat. The **Claude** backend runs one long-lived `claude` process per session, kept alive across turns and relaunched with `--resume` after crash or model change, which enables mid-turn background task notifications and context preservation. The **Grok** backend runs the `grok` CLI in headless prompt mode. The **GitHub Copilot** backend uses the Copilot SDK's persistent session API. In every case the hook server intercepts write/patch/create operations and presents a diff to the user before allowing or denying them.
-
-The PreToolUse hook for Claude is registered in `~/.claude/settings.json` as an HTTP hook entry that routes Edit/Write operations through the diff-panel gate at the local MCP server.
-
-Mutating tool calls (builds, refactorings, file writes) are serialised through a fair `ReentrantLock` to prevent concurrent IDE state corruption. Read-only tools bypass the lock entirely.
-
-## Security
-
-The MCP tool server exposes powerful IDE capabilities (file writes, builds, git, shell-adjacent refactors) to an AI backend, so access to it is deliberately constrained. The relevant controls:
-
-- **Loopback-only binding** — the HTTP server binds to the loopback address (`127.0.0.1` / `[::1]`) via `InetAddress.getLoopbackAddress()`, never a routable interface. It is not reachable from other hosts on the network; only processes on the same machine can connect. The Claude MCP registrar additionally refuses to write any endpoint URL that is not loopback.
-- **Per-session authentication** — every session is issued a random secret at creation. Each `tools/call` (and every inter-AI messaging tool) must carry the caller's `sessionId` **and** matching `secretKey`; requests missing or failing this check are rejected with an authentication error before any tool runs. Secrets are compared in constant time (`MessageDigest.isEqual`) to avoid timing leaks. Secrets are held in memory only and are regenerated for each new session — they are not persisted to disk.
-- **Session isolation** — a valid `secretKey` authenticates only its own `sessionId`. A session cannot read another session's inbox, edit its description, or act on its behalf without that session's own secret.
-- **Accept/Reject diff gate** — all AI-initiated file writes, edits, and creates are intercepted by the PreToolUse hook and routed through the NetBeans diff panel. No change touches your working tree until you explicitly approve it.
-- **Read-only database access** — database tools are disabled unless you opt in (global or per-session), and even then only `SELECT` is permitted; `INSERT`/`UPDATE`/`DELETE`/DDL are blocked, enforced by both a statement-prefix check and a read-only JDBC connection.
-- **Optional project-file scoping** — sessions can be restricted so file access stays within the session's open project directories.
-- **Opt-in clipboard access** — the `GetClipboard` tool is disabled by default; reading the system clipboard requires enabling clipboard access globally (**Tools > Options > AI Coder > General**) or per session. When disabled, `GetClipboard` is rejected before it runs.
-- **Connection guardrails** — the server caps concurrent and idle connections and enforces request/response timeouts to limit runaway or stuck clients.
-
-> **Note:** These controls guard the tool server itself. They do not replace trust in the AI backend or its CLI — the assistant still runs builds/tests and can propose any edit. The Accept/Reject gate is your final review step, so read diffs before approving. Because the port is loopback-only, treat any local process able to read your session's `secretKey` (e.g. from process arguments, logs, or the MCP config file) as able to drive the tool server — keep those readable only by your user account.
+The plugin keeps backend integration behind a common session/UI model. Backend-specific process managers and settings creators handle protocol details while shared components provide message rendering, persistence, IDE context, permissions, tools, and change review.
 
 ## Development
 
 ```bash
-# Build
 mvn package
-
-# Run tests
 mvn test
-
-# Install into a running NetBeans (requires nbm-maven-plugin)
 mvn nbm:run-ide
 ```
 
-Tests are in `src/test/java` and use JUnit 6. The `McpToolTest` suite verifies that every `McpToolEnum` constant has a registered handler and that the tool/section enumeration is consistent.
+Tests are under `src/test/java` and cover protocol handling, tool registration, session settings, context management, persistence, and UI behavior.
 
 ## License
 
 Copyright (c) 2026 Chris Quin.
 
-This project is licensed under the [MIT License](LICENSE) — see the [LICENSE](LICENSE) file for details.
+This project is licensed under the [MIT License](LICENSE) — see [LICENSE](LICENSE) for details.
