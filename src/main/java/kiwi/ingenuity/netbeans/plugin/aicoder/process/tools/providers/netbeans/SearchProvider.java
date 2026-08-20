@@ -23,6 +23,10 @@ import org.netbeans.api.java.source.ClassIndex;
 import org.netbeans.api.java.source.ElementHandle;
 import org.netbeans.api.java.source.JavaSource;
 import org.netbeans.api.java.source.SourceUtils;
+import org.netbeans.api.project.Project;
+import org.netbeans.api.project.ProjectUtils;
+import org.netbeans.api.project.SourceGroup;
+import org.netbeans.api.project.ui.OpenProjects;
 import org.openide.filesystems.FileObject;
 import org.openide.filesystems.FileUtil;
 
@@ -37,14 +41,23 @@ public class SearchProvider {
         if (query == null || query.isBlank()) {
             return "query is required";
         }
-        FileObject fo = resolveFileObject(filePath);
-        if (fo == null) {
-            return filePath != null && !filePath.isBlank()
-                    ? "File not found: " + filePath : "No editor focused";
+        List<FileObject> roots;
+        if (filePath != null && !filePath.isBlank()) {
+            FileObject fo = resolveFileObject(filePath);
+            if (fo == null) {
+                return "File not found: " + filePath;
+            }
+            ClassPath cp = ClassPath.getClassPath(fo, ClassPath.SOURCE);
+            if (cp == null) {
+                return "Cannot resolve source classpath for: " + filePath;
+            }
+            roots = List.of(cp.getRoots());
         }
-        ClassPath cp = ClassPath.getClassPath(fo, ClassPath.SOURCE);
-        if (cp == null) {
-            return "Cannot resolve source classpath for: " + filePath;
+        else {
+            roots = openProjectSourceRoots();
+            if (roots.isEmpty()) {
+                return "No projects open";
+            }
         }
 
         Pattern pattern;
@@ -62,7 +75,7 @@ public class SearchProvider {
 
         List<SearchResultFormatter.Hit> hits = new ArrayList<>();
         int totalHits = 0;
-        for (FileObject root : cp.getRoots()) {
+        for (FileObject root : roots) {
             File rootDir = FileUtil.toFile(root);
             if (rootDir == null) {
                 continue;
@@ -384,6 +397,35 @@ public class SearchProvider {
             default ->
                 ClassIndex.NameKind.PREFIX;
         };
+    }
+
+    /**
+     * Java source roots of every open project, used when no {@code filePath}
+     * narrows the search.
+     *
+     * <p>
+     * This used to fall back to whatever file the editor happened to have
+     * focused and take its SOURCE classpath. That made a project-wide search
+     * depend on unrelated editor state: with a non-source file in front — a
+     * pom, a README — {@code ClassPath.getClassPath} returns null and every
+     * search failed, reporting "Cannot resolve source classpath for: null"
+     * because the caller's own filePath was still null at that point. Searching
+     * the open projects is what the caller asked for when they omitted a path.
+     */
+    private static List<FileObject> openProjectSourceRoots() {
+        List<FileObject> roots = new ArrayList<>();
+        for (Project project : OpenProjects.getDefault().getOpenProjects()) {
+            SourceGroup[] groups = ProjectUtils.getSources(project).getSourceGroups("java");
+            for (SourceGroup group : groups) {
+                roots.add(group.getRootFolder());
+            }
+            if (groups.length == 0) {
+                // Non-Java project, or one whose source groups are not registered:
+                // walking the project directory still beats returning nothing.
+                roots.add(project.getProjectDirectory());
+            }
+        }
+        return roots;
     }
 
     private static FileObject resolveFileObject(String filePath) {

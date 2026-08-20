@@ -333,7 +333,7 @@ class CodexAppServerHandler implements CodexNotificationListener, CodexServerReq
      * break has to be synthesised at the only point that knows a tool ran.
      *
      * <p>
-     * Field names taken from a live notification, not guessed: null null     {@code {"item":{"type":"mcpToolCall","tool":"ListAiSessions",
+     * Field names taken from a live notification, not guessed: null null null null     {@code {"item":{"type":"mcpToolCall","tool":"ListAiSessions",
      * "server":"aicoder-nb-ki-plugin",...}}}. Kind.OTHER with a null path
      * deliberately — {@code isFileModification()} stays false so no diff panel
      * is raised; file changes keep their own path below.
@@ -551,7 +551,13 @@ class CodexAppServerHandler implements CodexNotificationListener, CodexServerReq
         }
         CompletableFuture<PermissionDecision> decisionFuture = new CompletableFuture<>();
         pendingPermission = decisionFuture;
-        listener.onAiProcessEvent(new ConfirmEvent("McpElicitation", displayText, null, null, decisionFuture));
+        // Never auto-accept. An elicitation is some MCP server asking the user a
+        // question of its own devising; this plugin gates its own tools and can
+        // vouch for nothing else, and both paths are null so there is no subject
+        // to show. Auto-accepting would answer, on the user's behalf, a question
+        // neither they nor this code has seen.
+        listener.onAiProcessEvent(new ConfirmEvent("McpElicitation", displayText, null, null,
+                decisionFuture, true));
         return decisionFuture.handle((decision, ex) -> {
             JsonObject result = new JsonObject();
             result.addProperty("action", approvalDecision(decision, ex));

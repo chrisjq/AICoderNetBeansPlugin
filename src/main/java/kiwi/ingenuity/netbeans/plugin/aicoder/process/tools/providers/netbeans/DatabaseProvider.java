@@ -6,6 +6,11 @@ import java.sql.ResultSet;
 import java.sql.ResultSetMetaData;
 import java.sql.SQLException;
 import java.sql.Statement;
+import java.util.Collections;
+import java.util.Map;
+import java.util.WeakHashMap;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.locks.ReentrantLock;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 import kiwi.ingenuity.netbeans.plugin.aicoder.PluginSettings;
@@ -15,19 +20,53 @@ import org.netbeans.api.db.explorer.DatabaseConnection;
 /**
  * Read-only access to the IDE's registered Database Explorer connections
  * (Services &gt; Databases). Deliberately narrow: it only ever talks to
- * connections the user has already registered and connected through the IDE
- * — it never accepts raw JDBC URLs/credentials from a tool call, and never
+ * connections the user has already registered and connected through the IDE —
+ * it never accepts raw JDBC URLs/credentials from a tool call, and never
  * silently establishes a new connection (see {@link #jdbcConnection}).
  *
  * <p>
  * {@link #executeSqlQuery} and {@link #getTableData} both enforce SELECT-only
  * twice: a textual prefix check on the SQL itself, and
- * {@link Connection#setReadOnly(boolean)} on the JDBC connection so the
- * driver rejects any write the prefix check missed.
+ * {@link Connection#setReadOnly(boolean)} on the JDBC connection so the driver
+ * rejects any write the prefix check missed.
  */
 public class DatabaseProvider {
 
     private static final Logger LOG = Logger.getLogger(DatabaseProvider.class.getName());
+
+    /**
+     * Ceiling on a single query, so one that never returns cannot pin the
+     * connection against every other session. Best effort — a driver may not
+     * support it.
+     */
+    private static final int QUERY_TIMEOUT_SECONDS = 300;
+
+    /**
+     * How long to wait for another query on the same connection to finish.
+     *
+     * <p>
+     * Equal to {@link #QUERY_TIMEOUT_SECONDS} rather than longer, because
+     * tryLock returns the moment the lock frees rather than sleeping out its
+     * deadline: a waiter only gives up if the holder is still running after
+     * this long, which by then means the query timeout did not take effect — a
+     * driver that ignored it, or a connection wedged below the driver. Either
+     * way the caller gets an error it can act on instead of blocking forever.
+     */
+    private static final int LOCK_WAIT_SECONDS = 300;
+
+    /**
+     * One lock per JDBC connection. Weak keys so a closed or replaced
+     * connection does not keep its lock — and the connection itself — alive.
+     *
+     * <p>
+     * A plain {@code synchronized (conn)} would also be exception-safe, since
+     * the monitor is released when a throw unwinds the block. What it cannot do
+     * is give up: a waiter blocks with no bound, so a query that hangs takes
+     * every other session's database tools down with it. tryLock with a
+     * deadline turns that into a reportable error.
+     */
+    private static final Map<Connection, ReentrantLock> CONNECTION_LOCKS
+            = Collections.synchronizedMap(new WeakHashMap<>());
 
     public static String listConnections() {
         DatabaseConnection[] conns = ConnectionManager.getDefault().getConnections();
@@ -137,8 +176,8 @@ public class DatabaseProvider {
     }
 
     /**
-     * Convenience overload for callers with no session-specific row limit
-     * (e.g. tests) — uses the plugin's globally configured default.
+     * Convenience overload for callers with no session-specific row limit (e.g.
+     * tests) — uses the plugin's globally configured default.
      */
     public static String executeSqlQuery(String connectionName, String sql) {
         return executeSqlQuery(connectionName, sql, PluginSettings.getDatabaseRowLimit());
@@ -146,10 +185,42 @@ public class DatabaseProvider {
 
     public static String executeSqlQuery(String connectionName, String sql, int maxRows) {
         String trimmed = sql == null ? "" : sql.strip();
-        if (!trimmed.regionMatches(true, 0, "SELECT", 0, "SELECT".length())) {
-            return "Rejected: only SELECT queries are allowed.";
+        String rejection = rejectIfNotSingleSelect(trimmed);
+        if (rejection != null) {
+            return rejection;
         }
         return runReadOnlyQuery(connectionName, trimmed, maxRows);
+    }
+
+    /**
+     * Returns a rejection message if {@code sql} is anything other than one
+     * SELECT statement, or null when it may run.
+     *
+     * <p>
+     * The prefix test alone was not the "enforced twice" this class advertises.
+     * It passes {@code SELECT 1; DROP TABLE users} on any driver configured to
+     * allow multiple statements per call, because only the first six characters
+     * were ever examined. The read-only connection was supposed to be the
+     * second line of defence, but {@link Connection#setReadOnly(boolean)} is a
+     * hint that several drivers accept and ignore — so for those, "twice" was
+     * "not at all".
+     *
+     * <p>
+     * Rejecting an embedded statement separator closes that. A semicolon
+     * trailing the single statement is allowed since it terminates rather than
+     * chains, and only a semicolon that has something after it can begin a
+     * second statement.
+     */
+    static String rejectIfNotSingleSelect(String sql) {
+        if (!sql.regionMatches(true, 0, "SELECT", 0, "SELECT".length())) {
+            return "Rejected: only SELECT queries are allowed.";
+        }
+        int semi = sql.indexOf(';');
+        if (semi >= 0 && !sql.substring(semi + 1).isBlank()) {
+            return "Rejected: only a single SELECT statement is allowed — "
+                    + "remove the ';' and anything following it.";
+        }
+        return null;
     }
 
     private static String runReadOnlyQuery(String connectionName, String sql, int maxRows) {
@@ -161,31 +232,83 @@ public class DatabaseProvider {
         if (conn == null) {
             return notConnectedError(connectionName);
         }
-        boolean originalReadOnly;
+        // Serialise on the connection itself. getJDBCConnection() hands back the
+        // IDE's shared connection — the same object the Database Explorer and
+        // every other AI session use — and read-only is per-connection state, not
+        // per-statement. Two concurrent queries previously interleaved like this:
+        //
+        //   A: reads original=false, sets true
+        //   B: reads original=TRUE  (A's value), sets true
+        //   A: finishes, restores FALSE  <- while B is still executing
+        //   B: finishes, restores true   <- leaves the IDE's connection read-only
+        //
+        // so B ran unprotected and the user's connection was left altered. With
+        // six sessions able to query at once that is a routine interleaving, not
+        // a rare one. Holding the lock across set/execute/restore makes the
+        // save-and-restore atomic; queries on one connection now queue.
+        ReentrantLock lock = CONNECTION_LOCKS.computeIfAbsent(conn, c -> new ReentrantLock());
+        boolean acquired;
         try {
-            originalReadOnly = conn.isReadOnly();
-            conn.setReadOnly(true);
+            acquired = lock.tryLock(LOCK_WAIT_SECONDS, TimeUnit.SECONDS);
         }
-        catch (SQLException e) {
-            return "Error preparing read-only connection: " + e.getMessage();
+        catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            return "Interrupted while waiting for the connection to become free.";
         }
-        try (Statement st = conn.createStatement()) {
-            st.setMaxRows(maxRows);
-            try (ResultSet rs = st.executeQuery(sql)) {
-                return formatResultSet(rs, maxRows);
+        if (!acquired) {
+            return "Timed out after " + LOCK_WAIT_SECONDS + "s waiting for another query on connection '"
+                    + connectionName + "' to finish. It may be hung; check the IDE's Services > Databases.";
+        }
+        try {
+            boolean originalReadOnly;
+            boolean changed = false;
+            try {
+                originalReadOnly = conn.isReadOnly();
+                if (!originalReadOnly) {
+                    conn.setReadOnly(true);
+                    changed = true;
+                }
             }
-        }
-        catch (SQLException e) {
-            LOG.log(Level.WARNING, "Query error", e);
-            return "Query error: " + e.getMessage();
+            catch (SQLException e) {
+                return "Error preparing read-only connection: " + e.getMessage();
+            }
+            try (Statement st = conn.createStatement()) {
+                st.setMaxRows(maxRows);
+                try {
+                    st.setQueryTimeout(QUERY_TIMEOUT_SECONDS);
+                }
+                catch (SQLException ignored) {
+                    // Optional per JDBC; a driver that refuses it still runs the query.
+                    LOG.log(Level.FINE, "Driver does not support setQueryTimeout");
+                }
+                try (ResultSet rs = st.executeQuery(sql)) {
+                    return formatResultSet(rs, maxRows);
+                }
+            }
+            catch (SQLException e) {
+                LOG.log(Level.WARNING, "Query error", e);
+                return "Query error: " + e.getMessage();
+            }
+            finally {
+                // Restore only what this call changed. Blindly writing back the
+                // observed value is what left the connection read-only for the
+                // Database Explorer after an interleaved run.
+                if (changed) {
+                    try {
+                        conn.setReadOnly(false);
+                    }
+                    catch (SQLException ignored) {
+                        // Best effort — restoring must not mask the real result.
+                    }
+                }
+            }
         }
         finally {
-            try {
-                conn.setReadOnly(originalReadOnly);
-            }
-            catch (SQLException ignored) {
-                // Best effort — restoring read-only state shouldn't mask the real result.
-            }
+            // Outermost, so it runs whether the body returned, threw a checked
+            // SQLException, or unwound on a RuntimeException/Error from the
+            // driver or from formatResultSet. Releasing the lock must not depend
+            // on the failure mode.
+            lock.unlock();
         }
     }
 
@@ -232,9 +355,9 @@ public class DatabaseProvider {
     }
 
     /**
-     * Never triggers a new connection attempt (no credential prompt, no
-     * silent auto-connect) — only returns a live JDBC connection if the user
-     * already connected this entry via the IDE.
+     * Never triggers a new connection attempt (no credential prompt, no silent
+     * auto-connect) — only returns a live JDBC connection if the user already
+     * connected this entry via the IDE.
      */
     private static Connection jdbcConnection(DatabaseConnection dc) {
         try {

@@ -219,7 +219,13 @@ class OpenCodeAcpClientHandler implements AcpClientHandler {
                 LOG.log(Level.INFO, "OpenCode permission request: kind=execute -> ConfirmEvent, command={0}",
                         displayText);
             }
-            return raiseConfirmAndReply("Execute", displayText, null, null);
+            // Shell execution always needs a human, matching the Copilot rule:
+            // the command is identified, but running arbitrary commands is not
+            // something auto-accept should answer on the user's behalf. When
+            // extractRawInputCommand finds nothing, displayText degrades to
+            // "(unknown command)" — approving that unseen is the failure this
+            // guards against.
+            return raiseConfirmAndReply("Execute", displayText, null, null, true);
         }
 
         if (filePath != null) {
@@ -252,7 +258,13 @@ class OpenCodeAcpClientHandler implements AcpClientHandler {
         String toolName = kind != null && !kind.isBlank() ? kind : "Unknown";
         String displayText = title != null && !title.isBlank()
                 ? title : "(unidentified OpenCode action, kind=" + toolName + ")";
-        return raiseConfirmAndReply(toolName, displayText, null, null);
+        // Never auto-accept this one. It is the fallback for a request whose kind
+        // and subject could not be worked out, so auto-accept would approve an
+        // action of unknown type against an unknown target and log it as
+        // "Unknown — auto-accepted" — the whole point of the gate lost exactly
+        // where the request is least understood. This is the "Write: null" case
+        // under a better label.
+        return raiseConfirmAndReply(toolName, displayText, null, null, true);
     }
 
     /**
@@ -262,10 +274,12 @@ class OpenCodeAcpClientHandler implements AcpClientHandler {
      * {@code CodexAppServerHandler.raiseConfirmAndReply}.
      */
     private CompletableFuture<JsonObject> raiseConfirmAndReply(
-            String toolName, String displayText, String filePath, String targetPath) {
+            String toolName, String displayText, String filePath, String targetPath,
+            boolean requireExplicitApproval) {
         CompletableFuture<PermissionDecision> decisionFuture = new CompletableFuture<>();
         pendingPermission = decisionFuture;
-        listener.onAiProcessEvent(new ConfirmEvent(toolName, displayText, filePath, targetPath, decisionFuture));
+        listener.onAiProcessEvent(new ConfirmEvent(toolName, displayText, filePath, targetPath,
+                decisionFuture, requireExplicitApproval));
         return decisionFuture.handle(this::mapDecisionToAcpResult);
     }
 
