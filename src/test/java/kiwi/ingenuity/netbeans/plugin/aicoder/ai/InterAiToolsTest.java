@@ -20,6 +20,22 @@ import org.junit.jupiter.api.Test;
 
 class InterAiToolsTest {
 
+    /**
+     * Waits for the broker's asynchronous delivery/interrupt dispatch to
+     * finish.
+     *
+     * <p>
+     * sendMessage() queues delivery and the mail interrupt on the broker's
+     * notifier rather than running them inline, so reading interrupt state
+     * straight after the call observes it before the work has happened. That
+     * bites hardest on the negative assertions: without this barrier a "did not
+     * interrupt" test passes whether or not the production code is correct.
+     */
+    private static void awaitDispatch(AiSessionInboxBroker broker) throws InterruptedException {
+        assertTrue(broker.awaitNotifierIdle(5, TimeUnit.SECONDS),
+                "broker notifier did not drain within 5s");
+    }
+
     private static AiSession stubSession(String id, String name, boolean commsAllowed, boolean importantAllowed, boolean running, int[] interruptCount) {
         AiSessionSettings settings = new AiSessionSettings(null, null, commsAllowed, null, importantAllowed, null, null, null);
         AiSession s = new AiSession(id, name, null, AiTypeEnum.CLAUDE, null, settings, Instant.now(), Instant.now());
@@ -172,37 +188,40 @@ class InterAiToolsTest {
     }
 
     @Test
-    void sendMessageWithImportantFlagInterruptsRunningSession() {
+    void sendMessageWithImportantFlagInterruptsRunningSession() throws InterruptedException {
         AiSessionInboxBroker broker = new AiSessionInboxBroker();
         int[] ic = {0};
         AiSession target = stubSession("target", "TargetAI", true, true, true, ic);
         broker.register(target);
 
         broker.sendMessage("sender", "target", "Subject", "body", null, true);
+        awaitDispatch(broker);
 
         assertEquals(1, ic[0]);
     }
 
     @Test
-    void sendMessageWithImportantFlagDoesNotInterruptWhenDisabled() {
+    void sendMessageWithImportantFlagDoesNotInterruptWhenDisabled() throws InterruptedException {
         AiSessionInboxBroker broker = new AiSessionInboxBroker();
         int[] ic = {0};
         AiSession target = stubSession("target", "TargetAI", true, false, true, ic);
         broker.register(target);
 
         broker.sendMessage("sender", "target", "Subject", "body", null, true);
+        awaitDispatch(broker);
 
         assertEquals(0, ic[0]);
     }
 
     @Test
-    void sendMessageWithImportantFlagDoesNotInterruptWhenNotRunning() {
+    void sendMessageWithImportantFlagDoesNotInterruptWhenNotRunning() throws InterruptedException {
         AiSessionInboxBroker broker = new AiSessionInboxBroker();
         int[] ic = {0};
         AiSession target = stubSession("target", "TargetAI", true, true, false, ic);
         broker.register(target);
 
         broker.sendMessage("sender", "target", "Subject", "body", null, true);
+        awaitDispatch(broker);
 
         assertEquals(0, ic[0]);
     }
@@ -325,8 +344,9 @@ class InterAiToolsTest {
 
         broker.unregister("target");
 
-        // Give the notifier a moment — there should be no interrupt submitted
-        Thread.sleep(200);
+        // Drain the notifier rather than sleeping: a fixed wait can elapse while
+        // the interrupt is still queued, passing the assertion for the wrong reason.
+        awaitDispatch(broker);
         assertEquals(0, interruptCount[0], "non-important unread should not interrupt the sender");
     }
 
@@ -340,7 +360,7 @@ class InterAiToolsTest {
 
     // --- expectsReply / replyImportant ---
     @Test
-    void replyToMessageWithReplyImportantFalseDoesNotInterruptSender() {
+    void replyToMessageWithReplyImportantFalseDoesNotInterruptSender() throws InterruptedException {
         AiSessionInboxBroker broker = new AiSessionInboxBroker();
         int[] icA = {0};
         int[] icB = {0};
@@ -351,13 +371,14 @@ class InterAiToolsTest {
 
         String originalId = broker.sendMessage("a", "b", "Q", "body", null, false, true, false);
         broker.sendMessage("b", "a", "Re: Q", "answer", originalId, false, false, false);
+        awaitDispatch(broker);
 
         assertEquals(0, icA[0],
                 "replyImportant=false should not interrupt the original sender on reply");
     }
 
     @Test
-    void replyToMessageWithReplyImportantTrueAutoUpgradesImportanceToInterruptSender() {
+    void replyToMessageWithReplyImportantTrueAutoUpgradesImportanceToInterruptSender() throws InterruptedException {
         AiSessionInboxBroker broker = new AiSessionInboxBroker();
         int[] icA = {0};
         int[] icB = {0};
@@ -368,6 +389,7 @@ class InterAiToolsTest {
 
         String originalId = broker.sendMessage("a", "b", "Q", "body", null, false, true, true);
         broker.sendMessage("b", "a", "Re: Q", "answer", originalId, false, false, false);
+        awaitDispatch(broker);
 
         assertEquals(1, icA[0],
                 "replyImportant=true should auto-upgrade reply importance and interrupt the original sender");

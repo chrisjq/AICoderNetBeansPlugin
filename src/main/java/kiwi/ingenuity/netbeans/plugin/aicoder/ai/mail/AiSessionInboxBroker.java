@@ -8,8 +8,10 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
+import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
 import java.util.function.IntSupplier;
@@ -172,10 +174,13 @@ public final class AiSessionInboxBroker {
                 GlobalPropertyBus.getInstance().fire(new AiInboxMessageEvent(senderId, notifId, notifSubject, exitingName));
                 String deliveryNote = "Session " + sessionId + " exited — your message(s) were not delivered: "
                         + subjects.stream().map(s -> "\"" + s + "\"").collect(Collectors.joining(", "));
-                notifier.submit(() -> senderHandle.deliverIncomingMessage(sessionId, new SimpleNotification(deliveryNote)));
-                if (wasImportant) {
-                    notifier.submit(() -> senderHandle.requestGracefulInterrupt(InterruptTypeEnum.Mail));
-                }
+                notifier.submit(() -> {
+                    senderHandle.deliverIncomingMessage(sessionId, new SimpleNotification(deliveryNote));
+
+                    if (wasImportant) {
+                        senderHandle.requestGracefulInterrupt(InterruptTypeEnum.Mail);
+                    }
+                });
             }
         }
 
@@ -208,10 +213,13 @@ public final class AiSessionInboxBroker {
                 GlobalPropertyBus.getInstance().fire(new AiInboxMessageEvent(senderId, notifId, notifSubject, exitingName));
                 String deliveryNote = "Session " + sessionId + " exited without responding to your message."
                         + " Subject: \"" + pendingEntry.subject() + "\"";
-                notifier.submit(() -> senderHandle.deliverIncomingMessage(sessionId, new SimpleNotification(deliveryNote)));
-                if (pendingEntry.replyImportant()) {
-                    notifier.submit(() -> senderHandle.requestGracefulInterrupt(InterruptTypeEnum.Mail));
-                }
+                notifier.submit(() -> {
+                    senderHandle.deliverIncomingMessage(sessionId, new SimpleNotification(deliveryNote));
+
+                    if (pendingEntry.replyImportant()) {
+                        senderHandle.requestGracefulInterrupt(InterruptTypeEnum.Mail);
+                    }
+                });
             }
         }
     }
@@ -343,15 +351,19 @@ public final class AiSessionInboxBroker {
         }
         AiSession handle = sessionFromRegistry(targetSessionId);
         AiSession caller = sessionFromRegistry(callerSessionId);
-        if (effectiveImportant && handle != null && handle.isRunning() && handle.allowsImportantMessages()) {
-            handle.requestGracefulInterrupt(InterruptTypeEnum.Mail);
-        }
+
+        final boolean effectiveImportantFinal = effectiveImportant;
         String callerName = caller != null ? caller.name() : callerSessionId;
         GlobalPropertyBus.getInstance().fire(new AiInboxMessageEvent(targetSessionId, id, truncatedSubject, callerName));
         if (handle != null) {
             final AiInboxMessage capturedMsg = msg;
-            notifier.submit(() -> handle.deliverIncomingMessage(callerSessionId,
-                    new DeliverIncomingMessageNotification(capturedMsg)));
+            notifier.submit(() -> {
+                handle.deliverIncomingMessage(callerSessionId, new DeliverIncomingMessageNotification(capturedMsg));
+
+                if (effectiveImportantFinal && handle.isRunning() && handle.allowsImportantMessages()) {
+                    handle.requestGracefulInterrupt(InterruptTypeEnum.Mail);
+                }
+            });
         }
         return id;
     }
@@ -503,6 +515,31 @@ public final class AiSessionInboxBroker {
         if (s != null) {
             s.shutdownNow();
         }
+    }
+
+    /**
+     * Blocks until every notification task submitted before this call has
+     * finished running, or the timeout expires. Returns true if the queue
+     * drained in time.
+     *
+     * <p>
+     * {@code notifier} is a single worker over a FIFO queue, so a no-op
+     * submitted now cannot run until everything ahead of it has completed —
+     * awaiting it is therefore an exact barrier rather than a guess. Exists
+     * because delivery and the mail interrupt are dispatched asynchronously:
+     * without a barrier a caller (notably a test) observing state straight
+     * after {@code sendMessage} reads it before the work has run, which makes a
+     * "did not interrupt" assertion pass whether or not the code is correct.
+     */
+    public boolean awaitNotifierIdle(long timeout, TimeUnit unit) throws InterruptedException {
+        CountDownLatch drained = new CountDownLatch(1);
+        try {
+            notifier.submit(drained::countDown);
+        }
+        catch (RejectedExecutionException e) {
+            return true; // already shut down: nothing left to wait for
+        }
+        return drained.await(timeout, unit);
     }
 
     public void shutdownNotifier() {
