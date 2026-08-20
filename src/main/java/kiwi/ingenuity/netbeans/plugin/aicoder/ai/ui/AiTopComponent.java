@@ -167,6 +167,25 @@ public final class AiTopComponent extends TopComponent implements AiProcessEvent
         return shortTgt != null ? shortSrc + " → " + shortTgt : shortSrc;
     }
 
+    /**
+     * Whether auto-accept may answer this confirmation on the user's behalf.
+     *
+     * <p>
+     * Auto-accept means "approve things I can see", never "approve things
+     * nobody could identify": a request that arrives without an identifiable
+     * subject, or one whose consequences warrant a human every time, sets
+     * {@link ConfirmEvent#requireExplicitApproval()} and is prompted regardless
+     * of the setting. Copilot's shell path sets it — the alternative was a
+     * command being run unseen, as happened when an unclassified kind was
+     * approved silently and wrote an arbitrary script to /tmp.
+     *
+     * <p>
+     * Pure so the rule can be tested without a running IDE.
+     */
+    static boolean shouldAutoAccept(ConfirmEvent event, boolean autoAccept) {
+        return autoAccept && !event.requireExplicitApproval();
+    }
+
     private final ConversationPanel conversationPanel;
     private final AiInfoBar infoBar;
     private final AiInputField inputField;
@@ -760,8 +779,16 @@ public final class AiTopComponent extends TopComponent implements AiProcessEvent
 
     private void handleGlobalProperty(AiPropertyEvent event) {
         if (event instanceof AiInboxMessageEvent ime && session.id().equals(ime.targetSessionId())) {
-            SwingUtilities.invokeLater(() -> conversationPanel.addSystemMessage(
-                    NotificationUtil.formatInboxMessage(ime.fromName(), ime.subject())));
+            SwingUtilities.invokeLater(() -> {
+                // Mail arrives asynchronously, so it can land mid-stream. Without
+                // this the notice is appended after a still-growing assistant
+                // bubble: the transcript then shows the notice at the bottom while
+                // the text it interrupted carries on above it. addSystemMessage's
+                // own javadoc makes finalising the caller's job.
+                finaliseActiveAssistantIfNeeded();
+                conversationPanel.addSystemMessage(
+                        NotificationUtil.formatInboxMessage(ime.fromName(), ime.subject()));
+            });
         }
     }
 
@@ -1242,7 +1269,7 @@ public final class AiTopComponent extends TopComponent implements AiProcessEvent
             }));
         }
         else if (event instanceof ConfirmEvent ce) {
-            if (infoBar.isAutoAccept()) {
+            if (shouldAutoAccept(ce, infoBar.isAutoAccept())) {
                 finaliseActiveAssistantIfNeeded();
                 conversationPanel.addSystemMessage(
                         NotificationUtil.formatAutoAccepted(ce.toolName(), confirmLabel(ce)));
@@ -1336,8 +1363,11 @@ public final class AiTopComponent extends TopComponent implements AiProcessEvent
                     // Turn aborted mid-stream but the process is alive. Post a visible
                     // system message so the user isn't left with silent no-output; the
                     // TurnCompleteEvent that follows finalises the turn and returns to Ready.
+                    // Close the streaming bubble first: by definition there is one open
+                    // here, so without it the abort notice renders after text it aborted.
                     infoBar.setProcessing(false);
                     if (conversationPanel != null) {
+                        finaliseActiveAssistantIfNeeded();
                         conversationPanel.addSystemMessage(se.text());
                     }
                 }
@@ -1346,6 +1376,9 @@ public final class AiTopComponent extends TopComponent implements AiProcessEvent
             }
         }
         else if (event instanceof SystemNotificationEvent sn) {
+            // Backends raise these mid-turn (e.g. the Copilot permission handler
+            // reporting a denied internal tool), so a stream may be open.
+            finaliseActiveAssistantIfNeeded();
             conversationPanel.addSystemMessage(sn.text());
         }
         else if (infoBarExtension != null && event instanceof AiProcessImplEvent si) {

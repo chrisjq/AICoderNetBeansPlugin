@@ -5,6 +5,8 @@ import java.awt.Dimension;
 import java.awt.Rectangle;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.logging.Level;
+import java.util.logging.Logger;
 import java.util.prefs.PreferenceChangeListener;
 import javax.swing.BorderFactory;
 import javax.swing.BoxLayout;
@@ -28,6 +30,8 @@ import org.openide.util.NbPreferences;
  * finaliseAssistantMessage) and restoring saved history.
  */
 public class ConversationPanel extends JScrollPane {
+
+    private static final Logger LOG = Logger.getLogger(ConversationPanel.class.getName());
 
     private final JPanel inner;
     private MessagePanel activeAssistant;
@@ -234,6 +238,17 @@ public class ConversationPanel extends JScrollPane {
      * any active assistant message before calling this method.
      */
     public void addSystemMessage(String text) {
+        if (activeAssistant != null && PluginSettings.isDebugJson()) {
+            // The contract above is easy to break silently: the panel lands after
+            // a bubble that keeps growing, and nothing complains. Finalising here
+            // instead is NOT an option — assistantTurnActive lives on
+            // AiTopComponent, so clearing activeAssistant behind its back leaves
+            // the two out of step and appendDelta() then discards the rest of the
+            // response. Naming the offender is the most this class can safely do.
+            LOG.log(Level.WARNING,
+                    "addSystemMessage called while an assistant message is still streaming — "
+                    + "caller must finalise first or the transcript order will be wrong: {0}", text);
+        }
         AiMessage m = AiMessage.system(text);
         history.add(m);
         MessagePanel r = new MessagePanel(AiMessage.Role.SYSTEM, false);

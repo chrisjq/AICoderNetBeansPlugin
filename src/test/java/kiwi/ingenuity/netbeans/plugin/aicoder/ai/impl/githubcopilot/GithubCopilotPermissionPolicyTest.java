@@ -1,5 +1,6 @@
 package kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.githubcopilot;
 
+import java.util.List;
 import java.util.Map;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -70,7 +71,7 @@ class GithubCopilotPermissionPolicyTest {
     @Test
     void recognisedCategoriesKeepTheirCleanLabel() {
         assertEquals("Shell", GithubCopilotPermissionPolicy.describeToolName(
-                GithubCopilotPermissionPolicy.Category.SHELL, "shell(echo)", Map.of()),
+                GithubCopilotPermissionPolicy.Category.SHELL, "commands(echo)", Map.of()),
                 "\"Shell\" reads better than the raw kind for a recognised category");
     }
 
@@ -80,9 +81,9 @@ class GithubCopilotPermissionPolicyTest {
         // side (PermissionRequestResultKind) is an enum — so an unfamiliar value is
         // an arbitrary server string. "Unknown" is more honest there than printing
         // it where a tool name belongs; the raw kind still appears in the text.
-        assertEquals("Unknown", GithubCopilotPermissionPolicy.describeToolName(
+        assertEquals("Internal Command", GithubCopilotPermissionPolicy.describeToolName(
                 GithubCopilotPermissionPolicy.Category.UNKNOWN, "some-future-kind(thing)", Map.of()));
-        assertEquals("Unknown", GithubCopilotPermissionPolicy.describeToolName(
+        assertEquals("Internal Command", GithubCopilotPermissionPolicy.describeToolName(
                 GithubCopilotPermissionPolicy.Category.UNKNOWN, null, null));
     }
 
@@ -147,27 +148,50 @@ class GithubCopilotPermissionPolicyTest {
     }
 
     @Test
-    void bareShellKindRoutesToShell() {
+    void commandsKindRoutesToShell() {
         assertEquals(GithubCopilotPermissionPolicy.Category.SHELL,
-                GithubCopilotPermissionPolicy.classify("shell", MCP_SERVER_NAME, null));
+                GithubCopilotPermissionPolicy.classify("commands", MCP_SERVER_NAME,
+                        Map.of("fullCommandText", "echo hi", "intention", "test")));
     }
 
+    /**
+     * The kind getKind() actually reports for a shell command is "shell" —
+     * "commands" appears only inside extensionData, as a sub-array beside
+     * fullCommandText. Captured verbatim from a live request. A rewrite that
+     * matched only "commands" made the SHELL branch unreachable, so every shell
+     * command fell through to UNKNOWN and was auto-denied instead of prompting.
+     */
     @Test
-    void fullPatternShellKindRoutesToShellTheSameAsBareForm() {
+    void shellKindFromLiveRequestRoutesToShellNotUnknown() {
         assertEquals(GithubCopilotPermissionPolicy.Category.SHELL,
-                GithubCopilotPermissionPolicy.classify("shell(echo)", MCP_SERVER_NAME, null));
+                GithubCopilotPermissionPolicy.classify("shell", MCP_SERVER_NAME,
+                        Map.of("fullCommandText", "find src/main/java -name \"*.java\" | wc -l",
+                                "intention", "Count .java files in src/main/java",
+                                "commands", "[{identifier=find, readOnly=false}]")));
     }
 
     @Test
-    void writeKindRoutesToWrite() {
-        assertEquals(GithubCopilotPermissionPolicy.Category.WRITE,
-                GithubCopilotPermissionPolicy.classify("write(/tmp/out.txt)", MCP_SERVER_NAME, null));
+    void commandsSuffixRoutesToShellTheSameAsBareForm() {
+        assertEquals(GithubCopilotPermissionPolicy.Category.SHELL,
+                GithubCopilotPermissionPolicy.classify("commands(echo)", MCP_SERVER_NAME,
+                        Map.of("fullCommandText", "echo hi")));
     }
 
     @Test
-    void urlKindRoutesToUrl() {
-        assertEquals(GithubCopilotPermissionPolicy.Category.URL,
-                GithubCopilotPermissionPolicy.classify("url(example.com)", MCP_SERVER_NAME, null));
+    void readKindRoutesToInternal() {
+        assertEquals(GithubCopilotPermissionPolicy.Category.INTERNAL,
+                GithubCopilotPermissionPolicy.classify("read", MCP_SERVER_NAME,
+                        Map.of("path", "src/Main.java", "intention", "inspect")));
+    }
+
+    @Test
+    void pathAndUrlKindsRouteToInternal() {
+        assertEquals(GithubCopilotPermissionPolicy.Category.INTERNAL,
+                GithubCopilotPermissionPolicy.classify("path", MCP_SERVER_NAME,
+                        Map.of("accessKind", "shell", "paths", List.of("/tmp"))));
+        assertEquals(GithubCopilotPermissionPolicy.Category.INTERNAL,
+                GithubCopilotPermissionPolicy.classify("url", MCP_SERVER_NAME,
+                        Map.of("url", "https://example.com", "intention", "fetch")));
     }
 
     @Test
@@ -178,8 +202,8 @@ class GithubCopilotPermissionPolicyTest {
 
     @Test
     void describeRequestIncludesKindAndExtensionData() {
-        String text = GithubCopilotPermissionPolicy.describeRequest("shell(echo)", Map.of("command", "echo hi"));
-        assertEquals("GitHub Copilot requests permission: shell(echo) — command=echo hi", text);
+        String text = GithubCopilotPermissionPolicy.describeRequest("commands(echo)", Map.of("fullCommandText", "echo hi"));
+        assertEquals("GitHub Copilot requests permission: commands(echo) — fullCommandText=echo hi", text);
     }
 
     @Test
@@ -188,5 +212,17 @@ class GithubCopilotPermissionPolicyTest {
                 GithubCopilotPermissionPolicy.describeRequest(null, Map.of()));
         assertEquals("GitHub Copilot requests permission: (unknown kind)",
                 GithubCopilotPermissionPolicy.describeRequest(null, null));
+    }
+
+    @Test
+    void rejectFeedbackNamesTheMcpAlternativeForEachNativeKind() {
+        assertTrue(GithubCopilotPermissionPolicy.rejectFeedbackFor(
+                GithubCopilotPermissionPolicy.Category.INTERNAL, "read").contains("GetFileContent"));
+        assertTrue(GithubCopilotPermissionPolicy.rejectFeedbackFor(
+                GithubCopilotPermissionPolicy.Category.INTERNAL, "path").contains("GetProjectStructure"));
+        assertTrue(GithubCopilotPermissionPolicy.rejectFeedbackFor(
+                GithubCopilotPermissionPolicy.Category.INTERNAL, "url").contains("WebRequest"));
+        assertTrue(GithubCopilotPermissionPolicy.rejectFeedbackFor(
+                GithubCopilotPermissionPolicy.Category.UNKNOWN, "future").contains("GetInstructions"));
     }
 }

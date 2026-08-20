@@ -24,6 +24,7 @@ import kiwi.ingenuity.netbeans.plugin.aicoder.ai.events.PermissionEvent;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.events.StatusEvent;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.events.StatusEventTypeEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.events.TextDeltaEvent;
+import kiwi.ingenuity.netbeans.plugin.aicoder.ai.events.ToolUseEvent;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.events.TurnCompleteEvent;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.codex.events.CodexRateLimitEvent;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.codex.events.CodexTokenUsageEvent;
@@ -306,6 +307,7 @@ class CodexAppServerHandler implements CodexNotificationListener, CodexServerReq
     }
 
     private void handleItemStarted(JsonObject params) {
+        announceToolCall(params);
         JsonArray changes = extractFileChangeChanges(params);
         if (changes == null) {
             return;
@@ -314,6 +316,41 @@ class CodexAppServerHandler implements CodexNotificationListener, CodexServerReq
         if (itemId != null) {
             fileChangeCache.put(itemId, changes);
         }
+    }
+
+    /**
+     * Raises a ToolUseEvent for an {@code item/started} notification describing
+     * an MCP tool call, so the UI knows a tool ran between two runs of agent
+     * text.
+     *
+     * <p>
+     * That event is what sets AiTopComponent's
+     * {@code pendingNewlineBeforeText}, the only thing that separates the
+     * model's narration either side of a tool call. Codex raised no such event,
+     * so the two blocks were appended to one bubble verbatim and collided — a
+     * live transcript reads "...instruction now.At 00:17 the weather
+     * station...". The blocks carry no trailing whitespace of their own, so the
+     * break has to be synthesised at the only point that knows a tool ran.
+     *
+     * <p>
+     * Field names taken from a live notification, not guessed: null null     {@code {"item":{"type":"mcpToolCall","tool":"ListAiSessions",
+     * "server":"aicoder-nb-ki-plugin",...}}}. Kind.OTHER with a null path
+     * deliberately — {@code isFileModification()} stays false so no diff panel
+     * is raised; file changes keep their own path below.
+     */
+    private void announceToolCall(JsonObject params) {
+        if (params == null || !params.has("item") || !params.get("item").isJsonObject()) {
+            return;
+        }
+        JsonObject item = params.getAsJsonObject("item");
+        String type = item.has("type") && !item.get("type").isJsonNull()
+                ? item.get("type").getAsString() : null;
+        if (!"mcpToolCall".equals(type)) {
+            return;
+        }
+        String tool = item.has("tool") && !item.get("tool").isJsonNull()
+                ? item.get("tool").getAsString() : "tool";
+        listener.onAiProcessEvent(new ToolUseEvent(tool, null, null, null, ToolUseEvent.Kind.OTHER));
     }
 
     private void handleTokenUsageUpdated(JsonObject params) {

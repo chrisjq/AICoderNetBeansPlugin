@@ -7,9 +7,12 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.atomic.AtomicReference;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.events.ConfirmEvent;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.events.PermissionDecision;
+import kiwi.ingenuity.netbeans.plugin.aicoder.ai.events.SystemNotificationEvent;
+import kiwi.ingenuity.netbeans.plugin.aicoder.ai.events.ToolUseEvent;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.events.AiProcessEvent;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import org.junit.jupiter.api.Test;
@@ -27,8 +30,15 @@ class GithubCopilotPermissionHandlerTest {
         return new PermissionInvocation().setSessionId("session-1");
     }
 
+    /**
+     * Our own MCP calls must never prompt — but they do announce themselves with
+     * a ToolUseEvent, which is what sets AiTopComponent's pendingNewlineBeforeText
+     * and so separates the model's narration either side of the call. Copilot
+     * emitted no such event at all, and the two text blocks were appended to one
+     * bubble verbatim, rendering as "...classes:Let me try...".
+     */
     @Test
-    void ourMcpServerKindApprovesWithoutRaisingAnEvent() throws Exception {
+    void ourMcpServerKindApprovesAndAnnouncesWithoutPrompting() throws Exception {
         AtomicReference<AiProcessEvent> raised = new AtomicReference<>();
         GithubCopilotPermissionHandler handler = new GithubCopilotPermissionHandler(raised::set, "session-1");
 
@@ -37,7 +47,12 @@ class GithubCopilotPermissionHandlerTest {
 
         assertTrue(future.isDone());
         assertEquals("approve-once", future.get().getKind());
-        assertNull(raised.get(), "our own MCP server calls must not raise a ConfirmEvent");
+        assertFalse(raised.get() instanceof ConfirmEvent,
+                "our own MCP server calls must not raise a ConfirmEvent");
+        ToolUseEvent tu = assertInstanceOf(ToolUseEvent.class, raised.get(),
+                "the call must still be announced so the narration around it stays separated");
+        assertEquals(ToolUseEvent.Kind.OTHER, tu.kind());
+        assertFalse(tu.isFileModification(), "an MCP call must not trigger the diff panel");
     }
 
     @Test
@@ -45,11 +60,12 @@ class GithubCopilotPermissionHandlerTest {
         AtomicReference<AiProcessEvent> raised = new AtomicReference<>();
         GithubCopilotPermissionHandler handler = new GithubCopilotPermissionHandler(raised::set, "session-1");
 
-        CompletableFuture<PermissionRequestResult> future = handler.handle(request("shell(echo)"), invocation());
+        CompletableFuture<PermissionRequestResult> future = handler.handle(request("commands(echo)"), invocation());
 
         assertFalse(future.isDone(), "must wait on the user rather than auto-resolving");
         ConfirmEvent ce = (ConfirmEvent) raised.get();
         assertEquals("Shell", ce.toolName());
+        assertTrue(ce.requireExplicitApproval());
         ce.response().complete(PermissionDecision.allowed());
 
         assertEquals("approve-once", future.get().getKind());
@@ -60,7 +76,7 @@ class GithubCopilotPermissionHandlerTest {
         AtomicReference<AiProcessEvent> raised = new AtomicReference<>();
         GithubCopilotPermissionHandler handler = new GithubCopilotPermissionHandler(raised::set, "session-1");
 
-        CompletableFuture<PermissionRequestResult> future = handler.handle(request("shell(rm -rf /)"), invocation());
+        CompletableFuture<PermissionRequestResult> future = handler.handle(request("commands(rm -rf /)"), invocation());
 
         ConfirmEvent ce = (ConfirmEvent) raised.get();
         ce.response().complete(PermissionDecision.denied("no"));
@@ -75,48 +91,46 @@ class GithubCopilotPermissionHandlerTest {
         AtomicReference<AiProcessEvent> raised = new AtomicReference<>();
         GithubCopilotPermissionHandler handler = new GithubCopilotPermissionHandler(raised::set, "session-1");
 
-        handler.handle(request("shell"), invocation());
+        handler.handle(request("commands"), invocation());
 
         assertTrue(raised.get() instanceof ConfirmEvent);
         assertEquals("Shell", ((ConfirmEvent) raised.get()).toolName());
     }
 
     @Test
-    void writeKindRaisesConfirmEvent() {
-        AtomicReference<AiProcessEvent> raised = new AtomicReference<>();
-        GithubCopilotPermissionHandler handler = new GithubCopilotPermissionHandler(raised::set, "session-1");
+    void internalKindsRejectAndRaiseSystemNotification() throws Exception {
+        for (String kind : new String[]{"read", "path", "url"}) {
+            AtomicReference<AiProcessEvent> raised = new AtomicReference<>();
+            GithubCopilotPermissionHandler handler = new GithubCopilotPermissionHandler(raised::set, "session-1");
 
-        handler.handle(request("write(/tmp/x)"), invocation());
+            PermissionRequestResult result = handler.handle(request(kind), invocation()).get();
 
-        assertTrue(raised.get() instanceof ConfirmEvent);
-        assertEquals("Write", ((ConfirmEvent) raised.get()).toolName());
+            assertEquals("reject", result.getKind());
+            String expectedTool = switch (kind) {
+                case "read" ->
+                    "GetFileContent";
+                case "path" ->
+                    "GetProjectStructure";
+                default ->
+                    "WebRequest";
+            };
+            assertTrue(result.getFeedback().contains(expectedTool));
+            assertTrue(raised.get() instanceof SystemNotificationEvent);
+            assertTrue(((SystemNotificationEvent) raised.get()).text().startsWith("Internal Command: "));
+        }
     }
 
     @Test
-    void urlKindRaisesConfirmEvent() {
+    void unrecognisedKindRejectsWithoutConfirmEvent() throws Exception {
         AtomicReference<AiProcessEvent> raised = new AtomicReference<>();
         GithubCopilotPermissionHandler handler = new GithubCopilotPermissionHandler(raised::set, "session-1");
 
-        handler.handle(request("url(example.com)"), invocation());
+        PermissionRequestResult result = handler.handle(request("some-future-kind(thing)"), invocation()).get();
 
-        assertTrue(raised.get() instanceof ConfirmEvent);
-        assertEquals("URL", ((ConfirmEvent) raised.get()).toolName());
-    }
-
-    @Test
-    void unrecognisedKindPromptsRatherThanAutoApproving() {
-        AtomicReference<AiProcessEvent> raised = new AtomicReference<>();
-        GithubCopilotPermissionHandler handler = new GithubCopilotPermissionHandler(raised::set, "session-1");
-
-        CompletableFuture<PermissionRequestResult> future
-                = handler.handle(request("some-future-kind(thing)"), invocation());
-
-        assertFalse(future.isDone(), "unknown kinds must fail closed and wait on the user, never auto-approve");
-        assertTrue(raised.get() instanceof ConfirmEvent);
-        // An unrecognised kind is not echoed here — the SDK enumerates no
-        // request-side kinds, so it is an arbitrary server string. It still appears
-        // in full in the display text.
-        assertEquals("Unknown", ((ConfirmEvent) raised.get()).toolName());
+        assertEquals("reject", result.getKind());
+        assertTrue(result.getFeedback().contains("GetInstructions"));
+        assertTrue(raised.get() instanceof SystemNotificationEvent);
+        assertTrue(((SystemNotificationEvent) raised.get()).text().startsWith("Internal Command: "));
     }
 
     // ---- cancelPendingPermissions ----
@@ -136,7 +150,7 @@ class GithubCopilotPermissionHandlerTest {
         AtomicReference<AiProcessEvent> raised = new AtomicReference<>();
         GithubCopilotPermissionHandler handler = new GithubCopilotPermissionHandler(raised::set, "session-1");
 
-        CompletableFuture<PermissionRequestResult> future = handler.handle(request("shell(rm -rf /)"), invocation());
+        CompletableFuture<PermissionRequestResult> future = handler.handle(request("commands(rm -rf /)"), invocation());
         assertFalse(future.isDone());
 
         handler.cancelPendingPermissions();
@@ -155,7 +169,7 @@ class GithubCopilotPermissionHandlerTest {
         AtomicReference<AiProcessEvent> raised = new AtomicReference<>();
         GithubCopilotPermissionHandler handler = new GithubCopilotPermissionHandler(raised::set, "session-1");
 
-        CompletableFuture<PermissionRequestResult> future = handler.handle(request("write(/tmp/x)"), invocation());
+        CompletableFuture<PermissionRequestResult> future = handler.handle(request("commands(/tmp/x)"), invocation());
 
         handler.cancelPendingPermissions();
 
@@ -167,7 +181,7 @@ class GithubCopilotPermissionHandlerTest {
         AtomicReference<AiProcessEvent> raised = new AtomicReference<>();
         GithubCopilotPermissionHandler handler = new GithubCopilotPermissionHandler(raised::set, "session-1");
 
-        CompletableFuture<PermissionRequestResult> future = handler.handle(request("url(example.com)"), invocation());
+        CompletableFuture<PermissionRequestResult> future = handler.handle(request("commands(example.com)"), invocation());
         ConfirmEvent ce = (ConfirmEvent) raised.get();
 
         handler.cancelPendingPermissions();
@@ -187,7 +201,7 @@ class GithubCopilotPermissionHandlerTest {
         AtomicReference<AiProcessEvent> raised = new AtomicReference<>();
         GithubCopilotPermissionHandler handler = new GithubCopilotPermissionHandler(raised::set, "session-1");
 
-        CompletableFuture<PermissionRequestResult> future = handler.handle(request("shell(echo)"), invocation());
+        CompletableFuture<PermissionRequestResult> future = handler.handle(request("commands(echo)"), invocation());
         ConfirmEvent ce = (ConfirmEvent) raised.get();
         ce.response().complete(PermissionDecision.allowed());
         assertEquals("approve-once", future.get().getKind());

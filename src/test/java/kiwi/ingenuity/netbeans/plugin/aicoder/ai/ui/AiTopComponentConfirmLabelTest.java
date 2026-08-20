@@ -1,5 +1,7 @@
 package kiwi.ingenuity.netbeans.plugin.aicoder.ai.ui;
 
+import java.util.concurrent.CompletableFuture;
+import kiwi.ingenuity.netbeans.plugin.aicoder.ai.events.ConfirmEvent;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import org.junit.jupiter.api.Test;
@@ -64,5 +66,21 @@ class AiTopComponentConfirmLabelTest {
         // Substituting it for the path here would read badly in "<tool>: <label> — accepted".
         assertEquals("MyProject/a.txt",
                 AiTopComponent.buildConfirmLabel("MyProject/a.txt", null, "Permanently delete MyProject/a.txt?"));
+    }
+
+    @Test
+    void explicitApprovalConfirmIsNeverAutoAccepted() {
+        ConfirmEvent shell = new ConfirmEvent("Shell", "echo hi", null, null,
+                new CompletableFuture<>(), true);
+
+        assertFalse(AiTopComponent.shouldAutoAccept(shell, true));
+    }
+
+    @Test
+    void normalConfirmRemainsAutoAcceptedWhenEnabled() {
+        ConfirmEvent normal = new ConfirmEvent("Copy", "copy", null, null,
+                new CompletableFuture<>());
+
+        assertEquals(true, AiTopComponent.shouldAutoAccept(normal, true));
     }
 }

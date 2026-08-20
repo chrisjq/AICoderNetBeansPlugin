@@ -13,6 +13,8 @@ import kiwi.ingenuity.netbeans.plugin.aicoder.PluginSettings;
 import kiwi.ingenuity.netbeans.plugin.aicoder.StringConst;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.events.ConfirmEvent;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.events.PermissionDecision;
+import kiwi.ingenuity.netbeans.plugin.aicoder.ai.events.SystemNotificationEvent;
+import kiwi.ingenuity.netbeans.plugin.aicoder.ai.events.ToolUseEvent;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.events.AiProcessEventListener;
 
 /**
@@ -77,13 +79,37 @@ class GithubCopilotPermissionHandler implements PermissionHandler {
         GithubCopilotPermissionPolicy.Category category
                 = GithubCopilotPermissionPolicy.classify(kind, StringConst.PLUGIN_ID, extensionData);
         if (category == GithubCopilotPermissionPolicy.Category.MCP_OUR_SERVER) {
+            // Announce the call before approving it. Copilot emitted no ToolUseEvent
+            // at all, and that event is what sets AiTopComponent's
+            // pendingNewlineBeforeText — the only thing that separates the narration
+            // either side of a tool call. Without it the two text blocks are appended
+            // to the same bubble verbatim and collide: the model ends one block
+            // "...search for the process manager classes:" and opens the next with
+            // "Let me try...", rendering as "classes:Let me try". The blocks carry no
+            // trailing whitespace (verified against live session data), so the break
+            // has to be synthesised here, at the only point that knows a tool ran.
+            //
+            // Kind.OTHER with a null path deliberately: these are MCP calls, so
+            // isFileModification() stays false and no diff panel is raised. This only
+            // restores the paragraph break; read-only tool calls remain invisible in
+            // the transcript, the same as for every other backend.
+            Object toolTitle = extensionData == null ? null : extensionData.get("toolTitle");
+            listener.onAiProcessEvent(new ToolUseEvent(
+                    toolTitle != null ? toolTitle.toString() : kind,
+                    null, null, null, ToolUseEvent.Kind.OTHER));
             return CompletableFuture.completedFuture(PermissionRequestResult.approveOnce());
+        }
+        String displayText = GithubCopilotPermissionPolicy.describeRequest(kind, extensionData);
+        if (category == GithubCopilotPermissionPolicy.Category.INTERNAL
+                || category == GithubCopilotPermissionPolicy.Category.UNKNOWN) {
+            listener.onAiProcessEvent(new SystemNotificationEvent("Internal Command: " + displayText));
+            return CompletableFuture.completedFuture(PermissionRequestResult.reject(
+                    GithubCopilotPermissionPolicy.rejectFeedbackFor(category, kind)));
         }
         CompletableFuture<PermissionDecision> decisionFuture = new CompletableFuture<>();
         pendingPermission = decisionFuture;
-        String displayText = GithubCopilotPermissionPolicy.describeRequest(kind, extensionData);
         String toolName = GithubCopilotPermissionPolicy.describeToolName(category, kind, extensionData);
-        listener.onAiProcessEvent(new ConfirmEvent(toolName, displayText, null, null, decisionFuture));
+        listener.onAiProcessEvent(new ConfirmEvent(toolName, displayText, null, null, decisionFuture, true));
         return decisionFuture.handle((decision, ex) -> {
             pendingPermission = null;
             if (ex != null) {

@@ -60,14 +60,17 @@ final class GithubCopilotPermissionPolicy {
         if (mcpServerName != null && !mcpServerName.isBlank() && k.contains(mcpServerName.toLowerCase(Locale.ROOT))) {
             return Category.MCP_OUR_SERVER;
         }
-        if (k.contains("shell")) {
+        // getKind() says "shell"; "commands" appears only INSIDE extensionData as a
+        // sub-array alongside fullCommandText. Both are matched because the two
+        // vocabularies were confused once already: a rewrite that matched only
+        // "commands" made this branch unreachable, so every shell command fell
+        // through to UNKNOWN and was auto-denied instead of prompting. Confirmed
+        // from the handler's own log: getKind() yields only mcp, read and shell.
+        if (k.contains("shell") || k.contains("commands")) {
             return Category.SHELL;
         }
-        if (k.contains("write")) {
-            return Category.WRITE;
-        }
-        if (k.contains("url")) {
-            return Category.URL;
+        if (k.contains("read") || k.contains("path") || k.contains("url")) {
+            return Category.INTERNAL;
         }
         return Category.UNKNOWN;
     }
@@ -84,7 +87,7 @@ final class GithubCopilotPermissionPolicy {
         if (title != null && !title.toString().isBlank()) {
             return title.toString();
         }
-        // A recognised category reads well on its own ("Shell", "Write", "URL").
+        // A recognised category reads well on its own ("Shell", "Internal Command").
         // An unrecognised kind is NOT echoed into this slot: the SDK declares no
         // constants for the request-side kind (only the reply side,
         // PermissionRequestResultKind, is an enum), so an unfamiliar value is an
@@ -92,7 +95,7 @@ final class GithubCopilotPermissionPolicy {
         // "some-future-kind(thing)" where a tool name belongs reads worse than
         // admitting we do not recognise it. The raw kind is still shown in full in
         // the display text, so nothing is hidden.
-        return category == null || category == Category.UNKNOWN
+        return category == null || category == Category.UNKNOWN || category == Category.INTERNAL
                 ? Category.UNKNOWN.label() : category.label();
     }
 
@@ -127,6 +130,21 @@ final class GithubCopilotPermissionPolicy {
         return sb.toString();
     }
 
+    static String rejectFeedbackFor(Category category, String rawKind) {
+        String kind = rawKind == null ? "" : rawKind.toLowerCase(Locale.ROOT);
+        if (category == Category.INTERNAL && kind.contains("read")) {
+            return "declined — use the IDE's own tools instead: GetFileContent to read a file, "
+                    + "or SearchInFiles / SearchTypes / GetProjectStructure to locate one.";
+        }
+        if (category == Category.INTERNAL && kind.contains("path")) {
+            return "declined — use GetProjectStructure to inspect the project tree; read files with GetFileContent.";
+        }
+        if (category == Category.INTERNAL && kind.contains("url")) {
+            return "declined — use the WebRequest tool instead; it also honours this session's web-access settings.";
+        }
+        return "declined — call GetInstructions for the list of tools this IDE provides, and use those instead.";
+    }
+
     private static String redact(String key, Object value) {
         String k = key == null ? "" : key.toLowerCase(Locale.ROOT);
         if (k.contains("secret") || k.contains("token") || k.contains("password") || k.contains("apikey")) {
@@ -149,11 +167,12 @@ final class GithubCopilotPermissionPolicy {
          */
         MCP_OUR_SERVER,
         SHELL,
-        WRITE,
-        URL,
         /**
-         * Matches none of the known kinds — always prompts, never
-         * auto-approved.
+         * Native Copilot actions that must use their MCP equivalents instead.
+         */
+        INTERNAL,
+        /**
+         * Matches none of the known kinds — always denied.
          */
         UNKNOWN;
 
@@ -163,12 +182,8 @@ final class GithubCopilotPermissionPolicy {
                     "MCP";
                 case SHELL ->
                     "Shell";
-                case WRITE ->
-                    "Write";
-                case URL ->
-                    "URL";
-                case UNKNOWN ->
-                    "Unknown";
+                case INTERNAL, UNKNOWN ->
+                    "Internal Command";
             };
         }
     }

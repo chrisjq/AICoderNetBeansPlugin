@@ -75,7 +75,7 @@ public class CodexAiProcessManager extends AiProcessManager {
      * GithubCopilotProcessManager}'s Mail notice, so the on-screen behaviour
      * reads the same across backends that support mid-turn injection.
      */
-    static final String MAIL_STEER_TEXT = "[inbox] You have a new message — check it when convenient.";
+    static final String MAIL_STEER_TEXT = "[inbox] You have a new message — check your inbox NOW.";
 
     static JsonObject buildInitializeParams(String clientName, String clientTitle, String clientVersion) {
         JsonObject clientInfo = new JsonObject();

@@ -22,6 +22,13 @@ class GithubCopilotProcessManagerTest {
         assertEquals("gpt-5.4", config.getModel());
         assertTrue(config.getExcludedTools().contains("edit"));
         assertTrue(config.getExcludedTools().contains("create"));
+        // Withheld so Copilot never reaches for them: the permission gate would
+        // refuse each one and post a system message, which a single survey turned
+        // into six. bash stays available — running commands has no plugin
+        // equivalent, so it is gated by confirmation rather than withheld.
+        assertTrue(config.getExcludedTools().contains("glob"));
+        assertTrue(config.getExcludedTools().contains("view"));
+        assertFalse(config.getExcludedTools().contains("bash"));
     }
 
     @Test

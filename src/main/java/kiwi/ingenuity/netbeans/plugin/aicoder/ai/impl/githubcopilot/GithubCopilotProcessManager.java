@@ -51,12 +51,35 @@ public class GithubCopilotProcessManager extends AiProcessManager {
      */
     private static final boolean ENABLE_RESET_DATE = false;
 
+    /**
+     * Copilot's own tools that this plugin withholds, because an IDE-aware
+     * equivalent exists and routes through NetBeans' view of the code:
+     * {@code edit}/{@code create} are covered by ApplyEdit/WriteFile via the
+     * diff panel, {@code glob} by
+     * SearchTypes/SearchInFiles/GetProjectStructure, and {@code view} by
+     * GetFileContent.
+     *
+     * <p>
+     * Withholding beats denying at the permission gate. The gate still refuses
+     * these (kind {@code read}), but only after Copilot has spent a tool call
+     * on one, and every refusal posts a system message — a short survey
+     * produced six. Excluded, they are never offered, so there is nothing to
+     * refuse and nothing to announce, and the "Internal Command" notice stays
+     * rare enough to be worth reading.
+     *
+     * <p>
+     * {@code bash} is deliberately NOT excluded: running commands is the one
+     * capability the plugin's tools do not cover, so it stays available and is
+     * gated by an explicit confirmation instead (kind {@code shell}).
+     */
+    private static final List<String> EXCLUDED_NATIVE_TOOLS = List.of("edit", "create", "glob", "view");
+
     static SessionConfig buildCreateConfig(String sessionId, String model,
             Map<String, com.github.copilot.rpc.McpServerConfig> mcpServers, PermissionHandler permissionHandler) {
         return new SessionConfig()
                 .setSessionId(sessionId)
                 .setModel(model)
-                .setExcludedTools(List.of("edit", "create"))
+                .setExcludedTools(EXCLUDED_NATIVE_TOOLS)
                 .setOnPermissionRequest(permissionHandler)
                 // An MCP server asking for OAuth cannot be serviced from here — we
                 // have no browser flow, and our own server needs no auth. Cancel
@@ -70,7 +93,7 @@ public class GithubCopilotProcessManager extends AiProcessManager {
             Map<String, com.github.copilot.rpc.McpServerConfig> mcpServers, PermissionHandler permissionHandler) {
         return new ResumeSessionConfig()
                 .setModel(model)
-                .setExcludedTools(List.of("edit", "create"))
+                .setExcludedTools(EXCLUDED_NATIVE_TOOLS)
                 .setOnPermissionRequest(permissionHandler)
                 .setMcpServers(mcpServers);
     }
@@ -489,7 +512,7 @@ public class GithubCopilotProcessManager extends AiProcessManager {
                                 sessionId);
                     }
                     com.github.copilot.rpc.MessageOptions options = new com.github.copilot.rpc.MessageOptions()
-                            .setPrompt("[inbox] You have a new message — check it when convenient.")
+                            .setPrompt("[inbox] You have a new message — check your inbox NOW.")
                             .setMode("immediate");
                     session.send(options);
                 }

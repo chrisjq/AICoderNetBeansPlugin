@@ -156,12 +156,21 @@ public class SendAiMessageTool extends AbstractActionTool {
         if (messageId == null) {
             return "Error: session '" + targetSessionId + "' is not active";
         }
+        boolean tryInterruptEnabled = targetAllowsImportant && important;
         String result = "Message sent to session " + targetSessionId + " (id=" + messageId + ")";
         if (targetRunning) {
-            result += " — WARNING: target session is currently processing; message will not be read until its current turn completes";
-        }
-        if (important && !targetAllowsImportant) {
-            result += " — NOTE: important flag ignored; target session has allowImportantMessages disabled";
+            result += " — WARNING: target session is currently processing";
+
+            if (tryInterruptEnabled) {
+                result += ", message will be notified but read by recipient may be delayed.";
+            }
+            else {
+                result += ", message will be delivered when recipient ends current task.";
+            }
+
+            if (!targetAllowsImportant) {
+                result += " Note: Target currently has mail interruptions disabled.";
+            }
         }
         return result;
     }

@@ -17,6 +17,7 @@ import kiwi.ingenuity.netbeans.plugin.aicoder.ai.events.PermissionEvent;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.events.StatusEvent;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.events.StatusEventTypeEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.events.TextDeltaEvent;
+import kiwi.ingenuity.netbeans.plugin.aicoder.ai.events.ToolUseEvent;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.events.TurnCompleteEvent;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.codex.events.CodexRateLimitEvent;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.codex.events.CodexTokenUsageEvent;
@@ -160,6 +161,55 @@ class CodexAppServerHandlerTest {
         TextDeltaEvent te = (TextDeltaEvent) events.get(0);
         assertEquals("Hello", te.text());
         assertEquals("tu_1", te.turnId());
+    }
+
+    /**
+     * Item shape copied from a live item/started notification, not invented:
+     * {@code {"item":{"type":"mcpToolCall","tool":"ListAiSessions",
+     * "server":"aicoder-nb-ki-plugin","status":"inProgress",...}}}.
+     */
+    @Test
+    void mcpToolCallItemStarted_firesToolUseEventSoNarrationStaysSeparated() {
+        List<AiProcessEvent> events = new ArrayList<>();
+        CodexAppServerHandler handler = newHandler(events);
+
+        JsonObject item = new JsonObject();
+        item.addProperty("type", "mcpToolCall");
+        item.addProperty("id", "exec-c29c4888");
+        item.addProperty("server", "aicoder-nb-ki-plugin");
+        item.addProperty("tool", "ListAiSessions");
+        item.addProperty("status", "inProgress");
+        JsonObject params = new JsonObject();
+        params.add("item", item);
+
+        handler.onNotification(CodexAppServerHandler.METHOD_ITEM_STARTED, params);
+
+        assertEquals(1, events.size());
+        ToolUseEvent tu = assertInstanceOf(ToolUseEvent.class, events.get(0));
+        assertEquals("ListAiSessions", tu.toolName());
+        assertEquals(ToolUseEvent.Kind.OTHER, tu.kind());
+        assertFalse(tu.isFileModification(), "an MCP call must not trigger the diff panel");
+    }
+
+    /**
+     * Only tool calls announce themselves. Reasoning and agentMessage items also
+     * arrive as item/started, and raising an event for those would insert a
+     * paragraph break where no tool ran.
+     */
+    @Test
+    void nonToolCallItemStarted_firesNothing() {
+        List<AiProcessEvent> events = new ArrayList<>();
+        CodexAppServerHandler handler = newHandler(events);
+
+        JsonObject item = new JsonObject();
+        item.addProperty("type", "reasoning");
+        item.addProperty("id", "rs-1");
+        JsonObject params = new JsonObject();
+        params.add("item", item);
+
+        handler.onNotification(CodexAppServerHandler.METHOD_ITEM_STARTED, params);
+
+        assertTrue(events.isEmpty(), "only mcpToolCall items should announce a tool run");
     }
 
     @Test
