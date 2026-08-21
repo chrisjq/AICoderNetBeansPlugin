@@ -4,6 +4,7 @@ import com.google.gson.JsonObject;
 import java.util.Set;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.McpInstructionOptionEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.McpSectionEnum;
+import kiwi.ingenuity.netbeans.plugin.aicoder.process.McpToolPropertyEnum;
 
 public abstract class AbstractClassNameTool implements McpToolInterface {
 
@@ -51,7 +52,7 @@ public abstract class AbstractClassNameTool implements McpToolInterface {
         cn.addProperty(ToolSchemaKeyEnum.DESCRIPTION.key(),
                 "Fully qualified class name (e.g. com.example.MyClass). Required — this tool does not "
                 + "resolve the symbol under the user's cursor; use SearchTypes to find the class you mean.");
-        props.add("className", cn);
+        props.add(McpToolPropertyEnum.CLASS_NAME.key(), cn);
         schema.add(ToolSchemaKeyEnum.PROPERTIES.key(), props);
         tool.add(ToolSchemaKeyEnum.INPUT_SCHEMA.key(), schema);
         return McpToolSchemas.applyCredentialsIfRequested(tool, options);

@@ -28,6 +28,7 @@ import kiwi.ingenuity.netbeans.plugin.aicoder.ai.events.TurnCompleteEvent;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.opencode.acp.AcpConnection;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.opencode.acp.AcpErrorCodeEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.opencode.acp.AcpException;
+import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.opencode.acp.AcpJsonKeyEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.opencode.acp.AcpMethodEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.opencode.settings.OpenCodePluginSettings;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.opencode.settings.OpenCodeSessionSettings;
@@ -66,9 +67,9 @@ public class OpenCodeAiProcessManager extends AiProcessManager {
      */
     static String buildPermissionConfigJson() {
         JsonObject permission = new JsonObject();
-        permission.addProperty("edit", "ask");
-        permission.addProperty("bash", "ask");
-        permission.addProperty("external_directory", "ask");
+        permission.addProperty(AcpJsonKeyEnum.EDIT.key(), "ask");
+        permission.addProperty(AcpJsonKeyEnum.BASH.key(), "ask");
+        permission.addProperty(AcpJsonKeyEnum.EXTERNAL_DIRECTORY.key(), "ask");
         // Sub-agents run invisibly: they get their own session, never surface in
         // this session's transcript, and their failures are not reported back. A
         // live OpenCode session sat "busy" for 80 minutes after a spawned explore
@@ -79,43 +80,43 @@ public class OpenCodeAiProcessManager extends AiProcessManager {
         // "deny" is OpenCode's own vocabulary here: it applies
         // {"permission":"task","action":"deny"} to every sub-agent it spawns to
         // stop them recursing.
-        permission.addProperty("task", "deny");
+        permission.addProperty(AcpJsonKeyEnum.TASK.key(), "deny");
         JsonObject config = new JsonObject();
-        config.add("permission", permission);
+        config.add(AcpJsonKeyEnum.PERMISSION.key(), permission);
         return GSON.toJson(config);
     }
 
     static JsonObject buildInitializeParams(String pluginVersion) {
         JsonObject fs = new JsonObject();
-        fs.addProperty("readTextFile", true);
-        fs.addProperty("writeTextFile", true);
+        fs.addProperty(AcpJsonKeyEnum.READ_TEXT_FILE.key(), true);
+        fs.addProperty(AcpJsonKeyEnum.WRITE_TEXT_FILE.key(), true);
         JsonObject capabilities = new JsonObject();
-        capabilities.add("fs", fs);
-        capabilities.addProperty("terminal", false);
+        capabilities.add(AcpJsonKeyEnum.FS.key(), fs);
+        capabilities.addProperty(AcpJsonKeyEnum.TERMINAL.key(), false);
         JsonObject info = new JsonObject();
-        info.addProperty("name", "aicoder-netbeans");
-        info.addProperty("version", pluginVersion);
+        info.addProperty(AcpJsonKeyEnum.NAME.key(), "aicoder-netbeans");
+        info.addProperty(AcpJsonKeyEnum.VERSION.key(), pluginVersion);
         JsonObject params = new JsonObject();
-        params.addProperty("protocolVersion", 1);
-        params.add("clientCapabilities", capabilities);
-        params.add("clientInfo", info);
+        params.addProperty(AcpJsonKeyEnum.PROTOCOL_VERSION.key(), 1);
+        params.add(AcpJsonKeyEnum.CLIENT_CAPABILITIES.key(), capabilities);
+        params.add(AcpJsonKeyEnum.CLIENT_INFO.key(), info);
         return params;
     }
 
     static JsonObject buildSessionResumeParams(String acpSessionId, String cwd, String mcpEndpointUrl) {
         JsonObject params = new JsonObject();
-        params.addProperty("sessionId", acpSessionId);
-        params.addProperty("cwd", cwd);
+        params.addProperty(AcpJsonKeyEnum.SESSION_ID.key(), acpSessionId);
+        params.addProperty(AcpJsonKeyEnum.CWD.key(), cwd);
         JsonArray mcpServers = new JsonArray();
         if (mcpEndpointUrl != null) {
             JsonObject entry = new JsonObject();
-            entry.addProperty("type", "http");
-            entry.addProperty("name", StringConst.PLUGIN_ID);
-            entry.addProperty("url", mcpEndpointUrl);
-            entry.add("headers", new JsonArray());
+            entry.addProperty(AcpJsonKeyEnum.TYPE.key(), "http");
+            entry.addProperty(AcpJsonKeyEnum.NAME.key(), StringConst.PLUGIN_ID);
+            entry.addProperty(AcpJsonKeyEnum.URL.key(), mcpEndpointUrl);
+            entry.add(AcpJsonKeyEnum.HEADERS.key(), new JsonArray());
             mcpServers.add(entry);
         }
-        params.add("mcpServers", mcpServers);
+        params.add(AcpJsonKeyEnum.MCP_SERVERS.key(), mcpServers);
         return params;
     }
 
@@ -125,17 +126,17 @@ public class OpenCodeAiProcessManager extends AiProcessManager {
 
     static JsonObject buildSessionNewParams(String absoluteCwd, String mcpEndpointUrl) {
         JsonObject params = new JsonObject();
-        params.addProperty("cwd", absoluteCwd);
+        params.addProperty(AcpJsonKeyEnum.CWD.key(), absoluteCwd);
         JsonArray mcpServers = new JsonArray();
         if (mcpEndpointUrl != null) {
             JsonObject entry = new JsonObject();
-            entry.addProperty("type", "http");
-            entry.addProperty("name", StringConst.PLUGIN_ID);
-            entry.addProperty("url", mcpEndpointUrl);
-            entry.add("headers", new JsonArray());
+            entry.addProperty(AcpJsonKeyEnum.TYPE.key(), "http");
+            entry.addProperty(AcpJsonKeyEnum.NAME.key(), StringConst.PLUGIN_ID);
+            entry.addProperty(AcpJsonKeyEnum.URL.key(), mcpEndpointUrl);
+            entry.add(AcpJsonKeyEnum.HEADERS.key(), new JsonArray());
             mcpServers.add(entry);
         }
-        params.add("mcpServers", mcpServers);
+        params.add(AcpJsonKeyEnum.MCP_SERVERS.key(), mcpServers);
         return params;
     }
 
@@ -145,8 +146,8 @@ public class OpenCodeAiProcessManager extends AiProcessManager {
         if (resumed) {
             return resumeId;
         }
-        return sessionResult != null && sessionResult.has("sessionId")
-                ? sessionResult.get("sessionId").getAsString() : null;
+        return sessionResult != null && sessionResult.has(AcpJsonKeyEnum.SESSION_ID.key())
+                ? sessionResult.get(AcpJsonKeyEnum.SESSION_ID.key()).getAsString() : null;
     }
 
     private volatile AcpConnection connection = null;
@@ -267,7 +268,7 @@ public class OpenCodeAiProcessManager extends AiProcessManager {
             process.destroyForcibly();
             throw new IOException("ACP initialize failed: " + e.getMessage(), e);
         }
-        int proto = initResult.has("protocolVersion") ? initResult.get("protocolVersion").getAsInt() : -1;
+        int proto = initResult.has(AcpJsonKeyEnum.PROTOCOL_VERSION.key()) ? initResult.get(AcpJsonKeyEnum.PROTOCOL_VERSION.key()).getAsInt() : -1;
         if (proto != 1) {
             conn.close();
             synchronized (this) {
@@ -331,7 +332,7 @@ public class OpenCodeAiProcessManager extends AiProcessManager {
                 }
             }
             process.destroyForcibly();
-            throw new IOException("session/new returned no sessionId");
+            throw new IOException("session/new returned no " + AcpJsonKeyEnum.SESSION_ID.key());
         }
 
         // ---- Publish results under the lock; bail if stop() ran during the waits ----
@@ -352,8 +353,8 @@ public class OpenCodeAiProcessManager extends AiProcessManager {
                 }
                 currentSession.putExtra("opencode_acp_session_id", sid);
             }
-            if (sessionResult.has("configOptions") && sessionResult.get("configOptions").isJsonArray()) {
-                sessionConfigOptions = sessionResult.getAsJsonArray("configOptions");
+            if (sessionResult.has(AcpJsonKeyEnum.CONFIG_OPTIONS.key()) && sessionResult.get(AcpJsonKeyEnum.CONFIG_OPTIONS.key()).isJsonArray()) {
+                sessionConfigOptions = sessionResult.getAsJsonArray(AcpJsonKeyEnum.CONFIG_OPTIONS.key());
             }
             activeHandler = handler;
             this.connection = conn;
@@ -418,14 +419,14 @@ public class OpenCodeAiProcessManager extends AiProcessManager {
                 continue;
             }
             JsonObject opt = el.getAsJsonObject();
-            if ("model".equals(opt.has("id") ? opt.get("id").getAsString() : null)) {
-                if (opt.has("currentValue")) {
-                    agentCurrentModel = opt.get("currentValue").getAsString();
+            if ("model".equals(opt.has(AcpJsonKeyEnum.ID.key()) ? opt.get(AcpJsonKeyEnum.ID.key()).getAsString() : null)) {
+                if (opt.has(AcpJsonKeyEnum.CURRENT_VALUE.key())) {
+                    agentCurrentModel = opt.get(AcpJsonKeyEnum.CURRENT_VALUE.key()).getAsString();
                 }
-                if (opt.has("options") && opt.get("options").isJsonArray()) {
-                    for (JsonElement v : opt.getAsJsonArray("options")) {
-                        if (v.isJsonObject() && v.getAsJsonObject().has("value")) {
-                            availableModels.add(v.getAsJsonObject().get("value").getAsString());
+                if (opt.has(AcpJsonKeyEnum.OPTIONS.key()) && opt.get(AcpJsonKeyEnum.OPTIONS.key()).isJsonArray()) {
+                    for (JsonElement v : opt.getAsJsonArray(AcpJsonKeyEnum.OPTIONS.key())) {
+                        if (v.isJsonObject() && v.getAsJsonObject().has(AcpJsonKeyEnum.VALUE.key())) {
+                            availableModels.add(v.getAsJsonObject().get(AcpJsonKeyEnum.VALUE.key()).getAsString());
                         }
                     }
                 }
@@ -476,14 +477,14 @@ public class OpenCodeAiProcessManager extends AiProcessManager {
                 continue;
             }
             JsonObject opt = el.getAsJsonObject();
-            if ("mode".equals(opt.has("id") ? opt.get("id").getAsString() : null)) {
-                if (opt.has("currentValue")) {
-                    agentCurrentMode = opt.get("currentValue").getAsString();
+            if ("mode".equals(opt.has(AcpJsonKeyEnum.ID.key()) ? opt.get(AcpJsonKeyEnum.ID.key()).getAsString() : null)) {
+                if (opt.has(AcpJsonKeyEnum.CURRENT_VALUE.key())) {
+                    agentCurrentMode = opt.get(AcpJsonKeyEnum.CURRENT_VALUE.key()).getAsString();
                 }
-                if (opt.has("options") && opt.get("options").isJsonArray()) {
-                    for (JsonElement v : opt.getAsJsonArray("options")) {
-                        if (v.isJsonObject() && v.getAsJsonObject().has("value")) {
-                            availableModes.add(v.getAsJsonObject().get("value").getAsString());
+                if (opt.has(AcpJsonKeyEnum.OPTIONS.key()) && opt.get(AcpJsonKeyEnum.OPTIONS.key()).isJsonArray()) {
+                    for (JsonElement v : opt.getAsJsonArray(AcpJsonKeyEnum.OPTIONS.key())) {
+                        if (v.isJsonObject() && v.getAsJsonObject().has(AcpJsonKeyEnum.VALUE.key())) {
+                            availableModes.add(v.getAsJsonObject().get(AcpJsonKeyEnum.VALUE.key()).getAsString());
                         }
                     }
                 }
@@ -524,15 +525,15 @@ public class OpenCodeAiProcessManager extends AiProcessManager {
                 continue;
             }
             JsonObject opt = el.getAsJsonObject();
-            if ("effort".equals(opt.has("id") ? opt.get("id").getAsString() : null)) {
+            if ("effort".equals(opt.has(AcpJsonKeyEnum.ID.key()) ? opt.get(AcpJsonKeyEnum.ID.key()).getAsString() : null)) {
                 effortOptionExists = true;
-                if (opt.has("currentValue")) {
-                    agentCurrentEffort = opt.get("currentValue").getAsString();
+                if (opt.has(AcpJsonKeyEnum.CURRENT_VALUE.key())) {
+                    agentCurrentEffort = opt.get(AcpJsonKeyEnum.CURRENT_VALUE.key()).getAsString();
                 }
-                if (opt.has("options") && opt.get("options").isJsonArray()) {
-                    for (JsonElement v : opt.getAsJsonArray("options")) {
-                        if (v.isJsonObject() && v.getAsJsonObject().has("value")) {
-                            availableEfforts.add(v.getAsJsonObject().get("value").getAsString());
+                if (opt.has(AcpJsonKeyEnum.OPTIONS.key()) && opt.get(AcpJsonKeyEnum.OPTIONS.key()).isJsonArray()) {
+                    for (JsonElement v : opt.getAsJsonArray(AcpJsonKeyEnum.OPTIONS.key())) {
+                        if (v.isJsonObject() && v.getAsJsonObject().has(AcpJsonKeyEnum.VALUE.key())) {
+                            availableEfforts.add(v.getAsJsonObject().get(AcpJsonKeyEnum.VALUE.key()).getAsString());
                         }
                     }
                 }
@@ -674,14 +675,14 @@ public class OpenCodeAiProcessManager extends AiProcessManager {
 
     private synchronized void sendTurn(String text) {
         JsonObject promptItem = new JsonObject();
-        promptItem.addProperty("type", "text");
-        promptItem.addProperty("text", text);
+        promptItem.addProperty(AcpJsonKeyEnum.TYPE.key(), "text");
+        promptItem.addProperty(AcpJsonKeyEnum.TEXT.key(), text);
         JsonArray promptArray = new JsonArray();
         promptArray.add(promptItem);
 
         JsonObject params = new JsonObject();
-        params.addProperty("sessionId", acpSessionId);
-        params.add("prompt", promptArray);
+        params.addProperty(AcpJsonKeyEnum.SESSION_ID.key(), acpSessionId);
+        params.add(AcpJsonKeyEnum.PROMPT.key(), promptArray);
 
         if (PluginSettings.isDebugJson()) {
             LOG.log(Level.INFO, "opencode prompt [{0}]: {1}", new Object[]{acpSessionId, text});
@@ -779,7 +780,7 @@ public class OpenCodeAiProcessManager extends AiProcessManager {
         }
         if (conn != null && sid != null) {
             JsonObject params = new JsonObject();
-            params.addProperty("sessionId", sid);
+            params.addProperty(AcpJsonKeyEnum.SESSION_ID.key(), sid);
             conn.sendNotification(AcpMethodEnum.SESSION_CANCEL, params);
             if (PluginSettings.isDebugJson()) {
                 LOG.log(Level.INFO, "OpenCode interrupt: session/cancel sent (session={0})", sid);
@@ -817,7 +818,7 @@ public class OpenCodeAiProcessManager extends AiProcessManager {
         if (conn != null && sid != null) {
             try {
                 JsonObject params = new JsonObject();
-                params.addProperty("sessionId", sid);
+                params.addProperty(AcpJsonKeyEnum.SESSION_ID.key(), sid);
                 conn.sendRequest(AcpMethodEnum.SESSION_CLOSE, params).get(5, TimeUnit.SECONDS);
             }
             catch (Exception e) {
@@ -898,14 +899,14 @@ public class OpenCodeAiProcessManager extends AiProcessManager {
                     new IllegalStateException("OpenCode session is not active"));
         }
         JsonObject params = new JsonObject();
-        params.addProperty("sessionId", sid);
-        params.addProperty("configId", configId);
-        params.addProperty("value", value);
+        params.addProperty(AcpJsonKeyEnum.SESSION_ID.key(), sid);
+        params.addProperty(AcpJsonKeyEnum.CONFIG_ID.key(), configId);
+        params.addProperty(AcpJsonKeyEnum.VALUE.key(), value);
         return conn.sendRequest(AcpMethodEnum.SESSION_SET_CONFIG_OPTION, params)
                 .thenApply(result -> {
-                    JsonArray options = result != null && result.has("configOptions")
-                            && result.get("configOptions").isJsonArray()
-                            ? result.getAsJsonArray("configOptions")
+                    JsonArray options = result != null && result.has(AcpJsonKeyEnum.CONFIG_OPTIONS.key())
+                            && result.get(AcpJsonKeyEnum.CONFIG_OPTIONS.key()).isJsonArray()
+                            ? result.getAsJsonArray(AcpJsonKeyEnum.CONFIG_OPTIONS.key())
                             : new JsonArray();
                     sessionConfigOptions = options;
                     return options;

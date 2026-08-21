@@ -18,8 +18,8 @@ public class RunGradleTestsTool extends AbstractTestsTool {
                 "Runs the open Gradle project's test suite (./gradlew test). "
                 + "Gradle projects only - do not use for Maven or Ant projects. "
                 + "Optionally restrict to a single test class (simple or fully qualified name).",
-                "RunGradleTests -> INSTEAD OF Bash gradlew test - runs Gradle tests with optional class filter",
-                "RunGradleTests - runs Gradle tests with optional class filter");
+                McpToolEnum.RUN_GRADLE_TESTS.toolName() + " -> INSTEAD OF Bash gradlew test - runs Gradle tests with optional class filter",
+                McpToolEnum.RUN_GRADLE_TESTS.toolName() + " - runs Gradle tests with optional class filter");
     }
 
     @Override

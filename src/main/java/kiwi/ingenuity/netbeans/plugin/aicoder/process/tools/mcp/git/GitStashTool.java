@@ -2,20 +2,20 @@ package kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.git;
 
 import com.google.gson.JsonArray;
 import com.google.gson.JsonObject;
-import java.util.List;
 import java.util.Set;
-import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.ToolSchemaKeyEnum;
-import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.providers.netbeans.GitProvider;
-import kiwi.ingenuity.netbeans.plugin.aicoder.process.McpSectionEnum;
-import kiwi.ingenuity.netbeans.plugin.aicoder.process.McpToolEnum;
-import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.McpToolInterface;
-import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.McpToolSchemas;
-import kiwi.ingenuity.netbeans.plugin.aicoder.process.session.AbstractAiSession;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.McpArgumentException;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.McpInstructionOptionEnum;
-import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.ToolRequestArguments;
+import kiwi.ingenuity.netbeans.plugin.aicoder.process.McpSectionEnum;
+import kiwi.ingenuity.netbeans.plugin.aicoder.process.McpToolEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.locking.LockTypeEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.locking.RequiresLock;
+import kiwi.ingenuity.netbeans.plugin.aicoder.process.session.AbstractAiSession;
+import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.McpToolInterface;
+import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.McpToolSchemas;
+import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.ToolRequestArguments;
+import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.ToolSchemaKeyEnum;
+import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.providers.netbeans.GitProvider;
+import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.providers.netbeans.GitStashActionEnum;
 
 @RequiresLock(LockTypeEnum.GIT_LOCK)
 public class GitStashTool implements McpToolInterface {
@@ -43,14 +43,14 @@ public class GitStashTool implements McpToolInterface {
         JsonObject tool = new JsonObject();
         tool.addProperty(ToolSchemaKeyEnum.NAME.key(), McpToolEnum.GIT_STASH.toolName());
         tool.addProperty(ToolSchemaKeyEnum.DESCRIPTION.key(),
-                "Manages git stash. Actions: push (default), list, pop, apply, drop. "
+                "Manages git stash. Actions: " + GitStashActionEnum.actionList() + ". "
                 + "Equivalent to: git stash [push|list|pop|apply|drop]");
         JsonObject schema = new JsonObject();
         schema.addProperty(ToolSchemaKeyEnum.TYPE.key(), "object");
         JsonObject props = new JsonObject();
         JsonObject action = new JsonObject();
         action.addProperty(ToolSchemaKeyEnum.TYPE.key(), "string");
-        action.addProperty(ToolSchemaKeyEnum.DESCRIPTION.key(), "Action: push (default), list, pop, apply, drop.");
+        action.addProperty(ToolSchemaKeyEnum.DESCRIPTION.key(), "Action: " + GitStashActionEnum.actionList() + ".");
         props.add(GitStashParamEnum.ACTION.key(), action);
         JsonObject index = new JsonObject();
         index.addProperty(ToolSchemaKeyEnum.TYPE.key(), "integer");
@@ -58,7 +58,8 @@ public class GitStashTool implements McpToolInterface {
         props.add(GitStashParamEnum.INDEX.key(), index);
         JsonObject message = new JsonObject();
         message.addProperty(ToolSchemaKeyEnum.TYPE.key(), "string");
-        message.addProperty(ToolSchemaKeyEnum.DESCRIPTION.key(), "Message for stash push. Default: WIP.");
+        message.addProperty(ToolSchemaKeyEnum.DESCRIPTION.key(),
+                "Message for stash push. Default: " + GitProvider.STASH_DEFAULT_MESSAGE + ".");
         props.add(GitStashParamEnum.MESSAGE.key(), message);
         JsonObject includeUntracked = new JsonObject();
         includeUntracked.addProperty(ToolSchemaKeyEnum.TYPE.key(), "boolean");
@@ -86,16 +87,17 @@ public class GitStashTool implements McpToolInterface {
 
     @Override
     public String handle(ToolRequestArguments args, AbstractAiSession session) throws McpArgumentException {
-        String action = args.str(GitStashParamEnum.ACTION.key());
+        String rawAction = args.str(GitStashParamEnum.ACTION.key());
+        GitStashActionEnum action = GitStashActionEnum.from(rawAction);
         if (action == null) {
-            action = "push";
-        }
-        if (!List.of("push", "list", "pop", "apply", "drop").contains(action)) {
-            return "Invalid action '" + action + "'. Must be one of: push, list, pop, apply, drop";
+            return "Invalid action '" + rawAction + "'. Must be one of: "
+                    + GitStashActionEnum.actionList();
         }
         int index = args.intOr(GitStashParamEnum.INDEX.key(), 0, 0, Integer.MAX_VALUE);
         String message = args.str(GitStashParamEnum.MESSAGE.key());
         boolean includeUntracked = args.bool(GitStashParamEnum.INCLUDE_UNTRACKED.key());
+        // Passing the enum, not the raw string, so the provider cannot be
+        // handed a value the tool never validated.
         return GitProvider.gitStash(args.require(GitCommonParamEnum.PROJECT_PATH.key()), action, index, message, includeUntracked);
     }
 }

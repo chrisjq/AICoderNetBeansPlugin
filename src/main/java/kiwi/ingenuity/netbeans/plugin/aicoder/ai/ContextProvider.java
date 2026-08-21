@@ -13,6 +13,7 @@ import javax.swing.SwingUtilities;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.session.AiSession;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.session.SessionInstructionsDeliveryEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.McpInstructionOptionEnum;
+import kiwi.ingenuity.netbeans.plugin.aicoder.process.McpToolPropertyEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.providers.netbeans.EditorContextProvider;
 import org.netbeans.api.project.Project;
 import org.netbeans.api.project.ui.OpenProjects;
@@ -138,8 +139,12 @@ public class ContextProvider {
         }
         LinkedHashMap<String, String> details = new LinkedHashMap<>(s.getSessionInfoMap());
         if (s.aiType().getMcpOptions().contains(McpInstructionOptionEnum.CREDENTIALS)) {
-            details.put("sessionId", s.id());
-            details.put("secretKey", s.secret());
+            // These labels are what the AI is told to pass back as tool
+            // arguments, so they must be the property names themselves — a
+            // preamble naming a key the server does not accept is worse than
+            // no preamble.
+            details.put(McpToolPropertyEnum.SESSION_ID.key(), s.id());
+            details.put(McpToolPropertyEnum.SECRET_KEY.key(), s.secret());
         }
         // Omit rather than render "description: null". A blank field paired
         // with a tool named UpdateSessionDescription reads as a gap to fill:

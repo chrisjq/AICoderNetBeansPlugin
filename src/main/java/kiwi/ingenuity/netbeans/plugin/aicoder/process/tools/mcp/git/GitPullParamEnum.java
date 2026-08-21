@@ -1,19 +1,21 @@
 package kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.git;
 
+import kiwi.ingenuity.netbeans.plugin.aicoder.process.McpToolPropertyEnum;
+
 /**
  * Parameter-name keys for the GitPullTool MCP tool, shared between its schema()
  * definition and handle() argument extraction so the two cannot drift.
  */
 public enum GitPullParamEnum {
-    REMOTE("remote");
+    REMOTE(McpToolPropertyEnum.REMOTE);
 
-    private final String key;
+    private final McpToolPropertyEnum property;
 
-    GitPullParamEnum(String key) {
-        this.key = key;
+    GitPullParamEnum(McpToolPropertyEnum property) {
+        this.property = property;
     }
 
     public String key() {
-        return key;
+        return property.key();
     }
 }

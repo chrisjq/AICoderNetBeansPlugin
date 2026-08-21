@@ -9,6 +9,7 @@ import java.util.Map;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.McpInstructionOptionEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.McpSectionEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.McpToolEnum;
+import kiwi.ingenuity.netbeans.plugin.aicoder.process.McpToolPropertyEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.McpToolInterface;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.ToolHandlerFactory;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.ToolSchemaKeyEnum;
@@ -115,14 +116,15 @@ public final class McpToolsDocumentation {
             return;
         }
         if (input.has(ToolSchemaKeyEnum.PROPERTIES.key())) {
-            input.getAsJsonObject(ToolSchemaKeyEnum.PROPERTIES.key()).remove("sessionId");
-            input.getAsJsonObject(ToolSchemaKeyEnum.PROPERTIES.key()).remove("secretKey");
+            input.getAsJsonObject(ToolSchemaKeyEnum.PROPERTIES.key()).remove(McpToolPropertyEnum.SESSION_ID.key());
+            input.getAsJsonObject(ToolSchemaKeyEnum.PROPERTIES.key()).remove(McpToolPropertyEnum.SECRET_KEY.key());
         }
         if (input.has(ToolSchemaKeyEnum.REQUIRED.key()) && input.get(ToolSchemaKeyEnum.REQUIRED.key()).isJsonArray()) {
             JsonArray required = input.getAsJsonArray(ToolSchemaKeyEnum.REQUIRED.key());
             for (int index = required.size() - 1; index >= 0; index--) {
                 String name = required.get(index).getAsString();
-                if ("sessionId".equals(name) || "secretKey".equals(name)) {
+                if (McpToolPropertyEnum.SESSION_ID.key().equals(name)
+                        || McpToolPropertyEnum.SECRET_KEY.key().equals(name)) {
                     required.remove(index);
                 }
             }

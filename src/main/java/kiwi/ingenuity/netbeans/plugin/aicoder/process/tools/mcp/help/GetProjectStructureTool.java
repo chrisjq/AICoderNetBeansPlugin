@@ -14,8 +14,8 @@ public class GetProjectStructureTool extends AbstractActionTool {
                 McpToolEnum.GET_PROJECT_STRUCTURE.toolName(),
                 "Returns the Java source file tree for all open projects, organised by source root. "
                 + "Use to understand the package layout before navigating or searching.",
-                "GetProjectStructure -> INSTEAD OF Glob for Java project layout overview",
-                "GetProjectStructure - Java project layout overview");
+                McpToolEnum.GET_PROJECT_STRUCTURE.toolName() + " -> INSTEAD OF Glob for Java project layout overview",
+                McpToolEnum.GET_PROJECT_STRUCTURE.toolName() + " - Java project layout overview");
     }
 
     @Override

@@ -1,19 +1,21 @@
 package kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.git;
 
+import kiwi.ingenuity.netbeans.plugin.aicoder.process.McpToolPropertyEnum;
+
 /**
  * Parameter-name keys for the GitRevertTool MCP tool, shared between its
  * schema() definition and handle() argument extraction so the two cannot drift.
  */
 public enum GitRevertParamEnum {
-    REVISION("revision");
+    REVISION(McpToolPropertyEnum.REVISION);
 
-    private final String key;
+    private final McpToolPropertyEnum property;
 
-    GitRevertParamEnum(String key) {
-        this.key = key;
+    GitRevertParamEnum(McpToolPropertyEnum property) {
+        this.property = property;
     }
 
     public String key() {
-        return key;
+        return property.key();
     }
 }

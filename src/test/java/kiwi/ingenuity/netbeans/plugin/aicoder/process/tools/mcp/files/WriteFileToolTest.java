@@ -12,6 +12,7 @@ import kiwi.ingenuity.netbeans.plugin.aicoder.ai.events.PermissionDecision;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.events.PermissionEvent;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.session.AiSession;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.McpToolEnum;
+import kiwi.ingenuity.netbeans.plugin.aicoder.process.McpToolPropertyEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.events.AiProcessEvent;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.events.AiProcessEventListener;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.locking.LockManager;
@@ -27,28 +28,15 @@ import org.junit.jupiter.api.Test;
 
 class WriteFileToolTest {
 
-    private static final class NoopRegistrar extends AiMcpRegistrar {
+    private static String uniqueFile() {
+        return "/tmp/write-file-tool-test-" + UUID.randomUUID() + ".txt";
+    }
 
-        NoopRegistrar(String sessionId) {
-            super(sessionId, AiTypeEnum.CLAUDE);
-        }
-
-        @Override
-        public void addMcpEndpoint(String endpointUrl) {
-        }
-
-        @Override
-        public void removeMcpEndpoint() {
-        }
-
-        @Override
-        public boolean registerHooks(String serverBaseUrl) {
-            return true;
-        }
-
-        @Override
-        public void unregisterHooks() {
-        }
+    private static ToolRequestArguments args(String filePath, String content) {
+        JsonObject o = new JsonObject();
+        o.addProperty(McpToolPropertyEnum.FILE_PATH.key(), filePath);
+        o.addProperty("content", content);
+        return new ToolRequestArguments(o);
     }
 
     @BeforeEach
@@ -66,17 +54,6 @@ class WriteFileToolTest {
     void tearDown() {
         McpServerRegistry.stopAll();
         McpServerRegistry.portOverride = null;
-    }
-
-    private static String uniqueFile() {
-        return "/tmp/write-file-tool-test-" + UUID.randomUUID() + ".txt";
-    }
-
-    private static ToolRequestArguments args(String filePath, String content) {
-        JsonObject o = new JsonObject();
-        o.addProperty("file_path", filePath);
-        o.addProperty("content", content);
-        return new ToolRequestArguments(o);
     }
 
     @Test
@@ -114,6 +91,30 @@ class WriteFileToolTest {
         LockManager lockManager = LockManager.getInstance();
         assertTrue(lockManager.acquireFileLock("otherSession", filePath));
         lockManager.releaseFileLock("otherSession", filePath);
+    }
+
+    private static final class NoopRegistrar extends AiMcpRegistrar {
+
+        NoopRegistrar(String sessionId) {
+            super(sessionId, AiTypeEnum.CLAUDE);
+        }
+
+        @Override
+        public void addMcpEndpoint(String endpointUrl) {
+        }
+
+        @Override
+        public void removeMcpEndpoint() {
+        }
+
+        @Override
+        public boolean registerHooks(String serverBaseUrl) {
+            return true;
+        }
+
+        @Override
+        public void unregisterHooks() {
+        }
     }
 
     private static final class RecordingListener implements AiProcessEventListener {

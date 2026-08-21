@@ -25,6 +25,7 @@ import kiwi.ingenuity.netbeans.plugin.aicoder.process.session.AbstractAiSession;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.McpToolInterface;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.McpToolSchemas;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.ToolRequestArguments;
+import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.ToolResponseKeyEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.ToolSchemaKeyEnum;
 
 public class WebRequestTool implements McpToolInterface {
@@ -112,10 +113,10 @@ public class WebRequestTool implements McpToolInterface {
 
     private static JsonObject formatResponse(URI requestedUri, String method, HttpResponse<byte[]> response, int maxChars) {
         JsonObject out = new JsonObject();
-        out.addProperty("requestedUrl", requestedUri.toString());
-        out.addProperty("finalUrl", response.uri().toString());
-        out.addProperty("method", method);
-        out.addProperty("status", response.statusCode());
+        out.addProperty(ToolResponseKeyEnum.REQUESTED_URL.key(), requestedUri.toString());
+        out.addProperty(ToolResponseKeyEnum.FINAL_URL.key(), response.uri().toString());
+        out.addProperty(ToolResponseKeyEnum.METHOD.key(), method);
+        out.addProperty(ToolResponseKeyEnum.STATUS.key(), response.statusCode());
 
         JsonObject headers = new JsonObject();
         response.headers().map().forEach((name, values) -> {
@@ -132,12 +133,12 @@ public class WebRequestTool implements McpToolInterface {
             }
             headers.add(name, arr);
         });
-        out.add("headers", headers);
+        out.add(ToolResponseKeyEnum.HEADERS.key(), headers);
 
         String decoded = decodeBody(response);
         boolean truncated = decoded.length() > maxChars;
-        out.addProperty("truncated", truncated);
-        out.addProperty("body", truncated ? decoded.substring(0, maxChars) : decoded);
+        out.addProperty(ToolResponseKeyEnum.TRUNCATED.key(), truncated);
+        out.addProperty(ToolResponseKeyEnum.BODY.key(), truncated ? decoded.substring(0, maxChars) : decoded);
         return out;
     }
 
@@ -172,7 +173,7 @@ public class WebRequestTool implements McpToolInterface {
         if (!options.contains(McpInstructionOptionEnum.TOOL_INSTRUCTION)) {
             return null;
         }
-        return "WebRequest -> fetch an HTTP/HTTPS URL with optional method, headers, body, and timeout";
+        return McpToolEnum.WEB_REQUEST.toolName() + " -> fetch an HTTP/HTTPS URL with optional method, headers, body, and timeout";
     }
 
     @Override

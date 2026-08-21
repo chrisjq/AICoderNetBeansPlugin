@@ -14,6 +14,7 @@ import kiwi.ingenuity.netbeans.plugin.aicoder.ai.AiTypeEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.ExecutablePrompter;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.events.StatusEvent;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.events.StatusEventTypeEnum;
+import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.opencode.acp.AcpJsonKeyEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.opencode.settings.OpenCodePluginSettings;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.opencode.settings.OpenCodeSessionSettings;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.opencode.ui.OpenCodeAiInfoBarExtension;
@@ -154,8 +155,12 @@ public class OpenCodeAiImplementation extends AiImplementation {
                 continue;
             }
             JsonObject o = el.getAsJsonObject();
-            if (id.equals(o.has("id") ? o.get("id").getAsString() : null)) {
-                return o.has("currentValue") ? o.get("currentValue").getAsString() : null;
+            // Same ACP configOptions object the process manager and info bar
+            // read, so it takes the field names from the same enum.
+            String idKey = AcpJsonKeyEnum.ID.key();
+            String currentValueKey = AcpJsonKeyEnum.CURRENT_VALUE.key();
+            if (id.equals(o.has(idKey) ? o.get(idKey).getAsString() : null)) {
+                return o.has(currentValueKey) ? o.get(currentValueKey).getAsString() : null;
             }
         }
         return null;

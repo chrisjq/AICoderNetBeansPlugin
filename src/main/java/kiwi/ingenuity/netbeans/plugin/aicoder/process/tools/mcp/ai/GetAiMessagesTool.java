@@ -4,9 +4,9 @@ import com.google.gson.JsonArray;
 import com.google.gson.JsonObject;
 import java.time.Instant;
 import java.util.List;
+import java.util.Set;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.mail.AiInboxMessage;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.mail.AiSessionInboxBroker;
-import java.util.Set;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.McpInstructionOptionEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.McpSectionEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.McpToolEnum;
@@ -21,8 +21,8 @@ public class GetAiMessagesTool extends AbstractActionTool {
     public GetAiMessagesTool() {
         super(McpSectionEnum.PLUGIN,
                 McpToolEnum.GET_AI_MESSAGES.toolName(),
-                "List inbox messages (summaries only — id, subject, from). Non-destructive. Use ReadAiMessage to fetch the full body of a specific message.",
-                "GetAiMessages -> list inbox summaries; call at session start and after interrupts to check for messages");
+                "List inbox messages (summaries only — id, subject, from). Non-destructive. Use " + McpToolEnum.READ_AI_MESSAGE.toolName() + " to fetch the full body of a specific message.",
+                McpToolEnum.GET_AI_MESSAGES.toolName() + " -> list inbox summaries; call at session start and after interrupts to check for messages");
     }
 
     @Override
@@ -31,7 +31,7 @@ public class GetAiMessagesTool extends AbstractActionTool {
                 && options.contains(McpInstructionOptionEnum.TOOL_INSTRUCTION)) {
             // "call at session start" makes literal-minded models fire this on
             // the user's first message, whatever the message actually was.
-            return "GetAiMessages - list inbox summaries when checking for messages from peer AI sessions";
+            return McpToolEnum.GET_AI_MESSAGES.toolName() + " - list inbox summaries when checking for messages from peer AI sessions";
         }
         return super.instruction(options);
     }
@@ -76,11 +76,11 @@ public class GetAiMessagesTool extends AbstractActionTool {
     public String handle(ToolRequestArguments args, AbstractAiSession session) {
         String sessionId = args.str(GetAiMessagesParamEnum.SESSION_ID.key());
         if (sessionId == null) {
-            return "Error: sessionId is required (pass your own session ID from the session identity block)";
+            return "Error: " + GetAiMessagesParamEnum.SESSION_ID.key() + " is required (pass your own session ID from the session identity block)";
         }
         String secretKey = args.str(GetAiMessagesParamEnum.SECRET_KEY.key());
         if (secretKey == null) {
-            return "Error: secretKey is required (pass your secret key from the session identity block)";
+            return "Error: " + GetAiMessagesParamEnum.SECRET_KEY.key() + " is required (pass your secret key from the session identity block)";
         }
         List<AiInboxMessage> messages = AiSessionInboxBroker.getInstance().listInbox(sessionId, secretKey);
         if (messages == null) {

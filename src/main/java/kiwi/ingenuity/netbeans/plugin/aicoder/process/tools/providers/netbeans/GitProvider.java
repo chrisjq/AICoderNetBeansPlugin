@@ -41,6 +41,12 @@ public class GitProvider {
 
     private static final Logger LOG = Logger.getLogger(GitProvider.class.getName());
 
+    /**
+     * Message given to a stash push when the caller supplies none. Documented
+     * as the default in GitStash's schema, so the two must agree.
+     */
+    public static final String STASH_DEFAULT_MESSAGE = "WIP";
+
     private static final ProgressMonitor NULL_PM = new ProgressMonitor() {
         @Override
         public boolean isCanceled() {
@@ -69,6 +75,8 @@ public class GitProvider {
             LOG.log(Level.WARNING, "Git: {0}", s);
         }
     };
+    private static final List<String> PROTECTED_BRANCHES
+            = List.of("main", "master", "production", "release");
 
     public static String getGitStatus(String projectPath) {
         File root = resolveRoot(projectPath);
@@ -436,8 +444,8 @@ public class GitProvider {
      * convenience). This lets a caller always explicitly target any open
      * project's repository, or any repo on disk — instead of relying on
      * NetBeans' "main project" notion, which is ambiguous (and can be plain
-     * wrong) whenever multiple projects/repos are open at once, or when the
-     * git repository lives outside any open project's directory.
+     * wrong) whenever multiple projects/repos are open at once, or when the git
+     * repository lives outside any open project's directory.
      */
     private static File resolveRoot(String projectPath) {
         if (projectPath == null || projectPath.isBlank()) {
@@ -460,11 +468,11 @@ public class GitProvider {
     /**
      * Resolves the best root directory for locating a specific file's git
      * repository: the NetBeans project that owns the file (so a file in a
-     * non-default open project resolves to its own repo), falling back to
-     * the file's own directory so {@link #findGitRoot} can still walk
-     * upward to find {@code .git}. Only used by {@link #gitBlame} when
-     * projectPath is omitted, since blame is a single-file operation and the
-     * project can be determined from the file itself.
+     * non-default open project resolves to its own repo), falling back to the
+     * file's own directory so {@link #findGitRoot} can still walk upward to
+     * find {@code .git}. Only used by {@link #gitBlame} when projectPath is
+     * omitted, since blame is a single-file operation and the project can be
+     * determined from the file itself.
      */
     private static File resolveRootForFile(File file) {
         FileObject fo = FileUtils.resolveByFile(file);
@@ -560,7 +568,7 @@ public class GitProvider {
         }
     }
 
-    public static String gitStash(String projectPath, String action, int index, String message, boolean includeUntracked) {
+    public static String gitStash(String projectPath, GitStashActionEnum action, int index, String message, boolean includeUntracked) {
         File root = resolveRoot(projectPath);
         if (root == null) {
             return noRepoError(projectPath);
@@ -569,43 +577,44 @@ public class GitProvider {
         if (gitRoot == null) {
             return "Not a git repository: " + root;
         }
-        String act = action != null ? action.toLowerCase() : "push";
+        GitStashActionEnum act = action != null ? action : GitStashActionEnum.DEFAULT;
         try (GitClient client = GitRepository.getInstance(gitRoot).createClient()) {
-            switch (act) {
-                case "list" -> {
+            // A switch expression over the enum, so adding an action to
+            // GitStashActionEnum without handling it here fails to compile.
+            // The old string switch sent anything unrecognised to its default
+            // branch, which stashed the working tree.
+            return switch (act) {
+                case LIST -> {
                     GitRevisionInfo[] stashes = client.stashList(NULL_PM);
                     if (stashes.length == 0) {
-                        return "No stashes";
+                        yield "No stashes";
                     }
                     StringBuilder sb = new StringBuilder();
                     for (int i = 0; i < stashes.length; i++) {
                         sb.append("stash@{").append(i).append("}: ").append(stashes[i].getShortMessage()).append('\n');
                     }
-                    return sb.toString().strip();
+                    yield sb.toString().strip();
                 }
-                case "pop" -> {
+                case POP -> {
                     client.stashApply(index, true, NULL_PM);
                     FileUtil.refreshFor(root);
-                    return "Popped stash@{" + index + "}";
+                    yield "Popped stash@{" + index + "}";
                 }
-                case "apply" -> {
+                case APPLY -> {
                     client.stashApply(index, false, NULL_PM);
                     FileUtil.refreshFor(root);
-                    return "Applied stash@{" + index + "}";
+                    yield "Applied stash@{" + index + "}";
                 }
-                case "drop" -> {
+                case DROP -> {
                     client.stashDrop(index, NULL_PM);
-                    return "Dropped stash@{" + index + "}";
+                    yield "Dropped stash@{" + index + "}";
                 }
-                default -> {
-                    String msg = (message != null && !message.isBlank()) ? message : "WIP";
+                case PUSH -> {
+                    String msg = (message != null && !message.isBlank()) ? message : STASH_DEFAULT_MESSAGE;
                     GitRevisionInfo info = client.stashSave(msg, includeUntracked, NULL_PM);
-                    if (info == null) {
-                        return "Nothing to stash";
-                    }
-                    return "Stashed: " + info.getShortMessage();
+                    yield info == null ? "Nothing to stash" : "Stashed: " + info.getShortMessage();
                 }
-            }
+            };
         }
         catch (GitException e) {
             LOG.log(Level.WARNING, "gitStash error", e);
@@ -886,7 +895,7 @@ public class GitProvider {
         }
     }
 
-    public static String gitTag(String projectPath, String action, String name, String revision, String message) {
+    public static String gitTag(String projectPath, GitTagActionEnum action, String name, String revision, String message) {
         File root = resolveRoot(projectPath);
         if (root == null) {
             return noRepoError(projectPath);
@@ -895,35 +904,35 @@ public class GitProvider {
         if (gitRoot == null) {
             return "Not a git repository: " + root;
         }
-        String act = action != null ? action.toLowerCase() : "list";
-        if (("create".equals(act) || "delete".equals(act)) && (name == null || name.isBlank())) {
-            return "Error: name is required for action=" + act;
+        GitTagActionEnum act = action != null ? action : GitTagActionEnum.DEFAULT;
+        if ((act == GitTagActionEnum.CREATE || act == GitTagActionEnum.DELETE) && (name == null || name.isBlank())) {
+            return "Error: name is required for action=" + act.action();
         }
-        if (("create".equals(act) || "delete".equals(act)) && name != null && !isValidBranchName(name)) {
+        if ((act == GitTagActionEnum.CREATE || act == GitTagActionEnum.DELETE) && name != null && !isValidBranchName(name)) {
             return "Invalid tag name: '" + name + "'";
         }
         try (GitClient client = GitRepository.getInstance(gitRoot).createClient()) {
-            switch (act) {
-                case "create" -> {
+            return switch (act) {
+                case CREATE -> {
                     String rev = (revision != null && !revision.isBlank()) ? revision : "HEAD";
                     String msg = (message != null) ? message : "";
                     GitTag tag = client.createTag(name, rev, msg, false, false, NULL_PM);
-                    return "Created tag: " + tag.getTagName();
+                    yield "Created tag: " + tag.getTagName();
                 }
-                case "delete" -> {
+                case DELETE -> {
                     client.deleteTag(name, NULL_PM);
-                    return "Deleted tag: " + name;
+                    yield "Deleted tag: " + name;
                 }
-                default -> {
+                case LIST -> {
                     Map<String, GitTag> tags = client.getTags(NULL_PM, false);
                     if (tags.isEmpty()) {
-                        return "No tags";
+                        yield "No tags";
                     }
                     StringBuilder sb = new StringBuilder();
                     tags.forEach((k, v) -> sb.append(k).append('\n'));
-                    return sb.toString().strip();
+                    yield sb.toString().strip();
                 }
-            }
+            };
         }
         catch (GitException e) {
             LOG.log(Level.WARNING, "gitTag error", e);
@@ -931,7 +940,7 @@ public class GitProvider {
         }
     }
 
-    public static String gitRemote(String projectPath, String action, String name, String url) {
+    public static String gitRemote(String projectPath, GitRemoteActionEnum action, String name, String url) {
         File root = resolveRoot(projectPath);
         if (root == null) {
             return noRepoError(projectPath);
@@ -940,32 +949,32 @@ public class GitProvider {
         if (gitRoot == null) {
             return "Not a git repository: " + root;
         }
-        String act = action != null ? action.toLowerCase() : "list";
+        GitRemoteActionEnum act = action != null ? action : GitRemoteActionEnum.DEFAULT;
         try (GitClient client = GitRepository.getInstance(gitRoot).createClient()) {
-            switch (act) {
-                case "add" -> {
+            return switch (act) {
+                case ADD -> {
                     if (name == null || name.isBlank()) {
-                        return "name is required";
+                        yield "name is required";
                     }
                     if (url == null || url.isBlank()) {
-                        return "url is required";
+                        yield "url is required";
                     }
                     String fetchSpec = "+refs/heads/*:refs/remotes/" + name + "/*";
                     GitRemoteConfig cfg = new GitRemoteConfig(name, List.of(url), List.of(), List.of(fetchSpec), List.of());
                     client.setRemote(cfg, NULL_PM);
-                    return "Added remote: " + name + " -> " + url;
+                    yield "Added remote: " + name + " -> " + url;
                 }
-                case "remove" -> {
+                case REMOVE -> {
                     if (name == null || name.isBlank()) {
-                        return "name is required";
+                        yield "name is required";
                     }
                     client.removeRemote(name, NULL_PM);
-                    return "Removed remote: " + name;
+                    yield "Removed remote: " + name;
                 }
-                default -> {
+                case LIST -> {
                     Map<String, GitRemoteConfig> remotes = client.getRemotes(NULL_PM);
                     if (remotes.isEmpty()) {
-                        return "No remotes configured";
+                        yield "No remotes configured";
                     }
                     StringBuilder sb = new StringBuilder();
                     for (Map.Entry<String, GitRemoteConfig> e : remotes.entrySet()) {
@@ -973,9 +982,9 @@ public class GitProvider {
                         sb.append(e.getKey()).append('\t')
                                 .append(uris.isEmpty() ? "(no url)" : uris.get(0)).append('\n');
                     }
-                    return sb.toString().strip();
+                    yield sb.toString().strip();
                 }
-            }
+            };
         }
         catch (GitException e) {
             LOG.log(Level.WARNING, "gitRemote error", e);
@@ -1017,9 +1026,6 @@ public class GitProvider {
             return "Git error: " + e.getMessage();
         }
     }
-
-    private static final List<String> PROTECTED_BRANCHES
-            = List.of("main", "master", "production", "release");
 
     private static boolean isProtectedBranch(String name) {
         return name != null && PROTECTED_BRANCHES.contains(name.toLowerCase(Locale.ROOT));

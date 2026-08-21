@@ -3,18 +3,19 @@ package kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.git;
 import com.google.gson.JsonArray;
 import com.google.gson.JsonObject;
 import java.util.Set;
-import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.ToolSchemaKeyEnum;
-import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.providers.netbeans.GitProvider;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.McpArgumentException;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.McpInstructionOptionEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.McpSectionEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.McpToolEnum;
-import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.McpToolInterface;
-import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.McpToolSchemas;
-import kiwi.ingenuity.netbeans.plugin.aicoder.process.session.AbstractAiSession;
-import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.ToolRequestArguments;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.locking.LockTypeEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.locking.RequiresLock;
+import kiwi.ingenuity.netbeans.plugin.aicoder.process.session.AbstractAiSession;
+import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.McpToolInterface;
+import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.McpToolSchemas;
+import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.ToolRequestArguments;
+import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.ToolSchemaKeyEnum;
+import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.providers.netbeans.GitProvider;
+import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.providers.netbeans.GitTagActionEnum;
 
 @RequiresLock(LockTypeEnum.GIT_LOCK)
 public class GitTagTool implements McpToolInterface {
@@ -42,7 +43,7 @@ public class GitTagTool implements McpToolInterface {
         JsonObject tool = new JsonObject();
         tool.addProperty(ToolSchemaKeyEnum.NAME.key(), McpToolEnum.GIT_TAG.toolName());
         tool.addProperty(ToolSchemaKeyEnum.DESCRIPTION.key(),
-                "Manages git tags. action=list (default) lists all tags; create makes a new tag; delete removes one. "
+                "Manages git tags. Actions: " + GitTagActionEnum.actionList() + ". "
                 + "name is required for create and delete actions. "
                 + "Equivalent to: git tag [-a|-d] [name] [revision]");
         JsonObject schema = new JsonObject();
@@ -50,7 +51,7 @@ public class GitTagTool implements McpToolInterface {
         JsonObject props = new JsonObject();
         JsonObject action = new JsonObject();
         action.addProperty(ToolSchemaKeyEnum.TYPE.key(), "string");
-        action.addProperty(ToolSchemaKeyEnum.DESCRIPTION.key(), "Action: list (default), create, delete.");
+        action.addProperty(ToolSchemaKeyEnum.DESCRIPTION.key(), "Action: " + GitTagActionEnum.actionList() + ".");
         props.add(GitTagParamEnum.ACTION.key(), action);
         JsonObject name = new JsonObject();
         name.addProperty(ToolSchemaKeyEnum.TYPE.key(), "string");
@@ -86,10 +87,16 @@ public class GitTagTool implements McpToolInterface {
 
     @Override
     public String handle(ToolRequestArguments args, AbstractAiSession session) throws McpArgumentException {
-        String action = args.str(GitTagParamEnum.ACTION.key());
+        String rawAction = args.str(GitTagParamEnum.ACTION.key());
+        GitTagActionEnum action = GitTagActionEnum.from(rawAction);
+        if (action == null) {
+            return "Invalid action '" + rawAction + "'. Must be one of: "
+                    + GitTagActionEnum.actionList();
+        }
         String name = args.str(GitTagParamEnum.NAME.key());
-        if (("create".equals(action) || "delete".equals(action)) && (name == null || name.isBlank())) {
-            throw new McpArgumentException(-32602, "name is required for action=" + action);
+        if ((action == GitTagActionEnum.CREATE || action == GitTagActionEnum.DELETE)
+                && (name == null || name.isBlank())) {
+            throw new McpArgumentException(-32602, "name is required for action=" + action.action());
         }
         return GitProvider.gitTag(args.require(GitCommonParamEnum.PROJECT_PATH.key()), action, name,
                 args.str(GitTagParamEnum.REVISION.key()), args.str(GitTagParamEnum.MESSAGE.key()));

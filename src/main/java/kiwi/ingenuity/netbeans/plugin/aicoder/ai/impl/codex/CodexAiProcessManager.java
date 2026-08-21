@@ -79,12 +79,12 @@ public class CodexAiProcessManager extends AiProcessManager {
 
     static JsonObject buildInitializeParams(String clientName, String clientTitle, String clientVersion) {
         JsonObject clientInfo = new JsonObject();
-        clientInfo.addProperty("name", clientName);
-        clientInfo.addProperty("title", clientTitle);
-        clientInfo.addProperty("version", clientVersion);
+        clientInfo.addProperty(CodexJsonKeyEnum.NAME.key(), clientName);
+        clientInfo.addProperty(CodexJsonKeyEnum.TITLE.key(), clientTitle);
+        clientInfo.addProperty(CodexJsonKeyEnum.VERSION.key(), clientVersion);
         JsonObject params = new JsonObject();
-        params.add("clientInfo", clientInfo);
-        params.add("capabilities", new JsonObject());
+        params.add(CodexJsonKeyEnum.CLIENT_INFO.key(), clientInfo);
+        params.add(CodexJsonKeyEnum.CAPABILITIES.key(), new JsonObject());
         return params;
     }
 
@@ -99,36 +99,36 @@ public class CodexAiProcessManager extends AiProcessManager {
      */
     static JsonObject buildThreadStartParams(String cwd, String model) {
         JsonObject params = new JsonObject();
-        params.addProperty("cwd", cwd);
-        params.addProperty("sandbox", "workspace-write");
-        params.addProperty("approvalPolicy", "untrusted");
+        params.addProperty(CodexJsonKeyEnum.CWD.key(), cwd);
+        params.addProperty(CodexJsonKeyEnum.SANDBOX.key(), "workspace-write");
+        params.addProperty(CodexJsonKeyEnum.APPROVAL_POLICY.key(), "untrusted");
         if (model != null && !model.isBlank()) {
-            params.addProperty("model", model);
+            params.addProperty(CodexJsonKeyEnum.MODEL.key(), model);
         }
         return params;
     }
 
     static JsonObject buildThreadResumeParams(String threadId, String cwd, String model) {
         JsonObject params = new JsonObject();
-        params.addProperty("threadId", threadId);
-        params.addProperty("cwd", cwd);
-        params.addProperty("sandbox", "workspace-write");
-        params.addProperty("approvalPolicy", "untrusted");
+        params.addProperty(CodexJsonKeyEnum.THREAD_ID.key(), threadId);
+        params.addProperty(CodexJsonKeyEnum.CWD.key(), cwd);
+        params.addProperty(CodexJsonKeyEnum.SANDBOX.key(), "workspace-write");
+        params.addProperty(CodexJsonKeyEnum.APPROVAL_POLICY.key(), "untrusted");
         if (model != null && !model.isBlank()) {
-            params.addProperty("model", model);
+            params.addProperty(CodexJsonKeyEnum.MODEL.key(), model);
         }
         return params;
     }
 
     static JsonObject buildTurnStartParams(String threadId, String promptText) {
         JsonObject textInput = new JsonObject();
-        textInput.addProperty("type", "text");
-        textInput.addProperty("text", promptText);
+        textInput.addProperty(CodexJsonKeyEnum.TYPE.key(), "text");
+        textInput.addProperty(CodexJsonKeyEnum.TEXT.key(), promptText);
         JsonArray input = new JsonArray();
         input.add(textInput);
         JsonObject params = new JsonObject();
-        params.addProperty("threadId", threadId);
-        params.add("input", input);
+        params.addProperty(CodexJsonKeyEnum.THREAD_ID.key(), threadId);
+        params.add(CodexJsonKeyEnum.INPUT.key(), input);
         return params;
     }
 
@@ -138,8 +138,8 @@ public class CodexAiProcessManager extends AiProcessManager {
      */
     static JsonObject buildTurnInterruptParams(String threadId, String turnId) {
         JsonObject params = new JsonObject();
-        params.addProperty("threadId", threadId);
-        params.addProperty("turnId", turnId);
+        params.addProperty(CodexJsonKeyEnum.THREAD_ID.key(), threadId);
+        params.addProperty(CodexJsonKeyEnum.TURN_ID.key(), turnId);
         return params;
     }
 
@@ -167,14 +167,14 @@ public class CodexAiProcessManager extends AiProcessManager {
      */
     static JsonObject buildTurnSteerParams(String threadId, String expectedTurnId, String promptText) {
         JsonObject textInput = new JsonObject();
-        textInput.addProperty("type", "text");
-        textInput.addProperty("text", promptText);
+        textInput.addProperty(CodexJsonKeyEnum.TYPE.key(), "text");
+        textInput.addProperty(CodexJsonKeyEnum.TEXT.key(), promptText);
         JsonArray input = new JsonArray();
         input.add(textInput);
         JsonObject params = new JsonObject();
-        params.addProperty("threadId", threadId);
-        params.addProperty("expectedTurnId", expectedTurnId);
-        params.add("input", input);
+        params.addProperty(CodexJsonKeyEnum.THREAD_ID.key(), threadId);
+        params.addProperty(CodexJsonKeyEnum.EXPECTED_TURN_ID.key(), expectedTurnId);
+        params.add(CodexJsonKeyEnum.INPUT.key(), input);
         return params;
     }
 
@@ -188,15 +188,15 @@ public class CodexAiProcessManager extends AiProcessManager {
      * "handshake did not produce a usable id".
      */
     static String extractThreadId(JsonObject result) {
-        if (result == null || !result.has("thread")) {
+        if (result == null || !result.has(CodexJsonKeyEnum.THREAD.key())) {
             return null;
         }
-        JsonElement threadEl = result.get("thread");
+        JsonElement threadEl = result.get(CodexJsonKeyEnum.THREAD.key());
         if (!threadEl.isJsonObject()) {
             return null;
         }
         JsonObject thread = threadEl.getAsJsonObject();
-        return thread.has("id") && !thread.get("id").isJsonNull() ? thread.get("id").getAsString() : null;
+        return thread.has(CodexJsonKeyEnum.ID.key()) && !thread.get(CodexJsonKeyEnum.ID.key()).isJsonNull() ? thread.get(CodexJsonKeyEnum.ID.key()).getAsString() : null;
     }
 
     /**
@@ -204,15 +204,15 @@ public class CodexAiProcessManager extends AiProcessManager {
      * later for turn/interrupt.
      */
     static String extractTurnId(JsonObject result) {
-        if (result == null || !result.has("turn")) {
+        if (result == null || !result.has(CodexJsonKeyEnum.TURN.key())) {
             return null;
         }
-        JsonElement turnEl = result.get("turn");
+        JsonElement turnEl = result.get(CodexJsonKeyEnum.TURN.key());
         if (!turnEl.isJsonObject()) {
             return null;
         }
         JsonObject turn = turnEl.getAsJsonObject();
-        return turn.has("id") && !turn.get("id").isJsonNull() ? turn.get("id").getAsString() : null;
+        return turn.has(CodexJsonKeyEnum.ID.key()) && !turn.get(CodexJsonKeyEnum.ID.key()).isJsonNull() ? turn.get(CodexJsonKeyEnum.ID.key()).getAsString() : null;
     }
 
     /**
@@ -223,10 +223,10 @@ public class CodexAiProcessManager extends AiProcessManager {
      * produced.
      */
     static String extractModel(JsonObject result) {
-        if (result == null || !result.has("model") || result.get("model").isJsonNull()) {
+        if (result == null || !result.has(CodexJsonKeyEnum.MODEL.key()) || result.get(CodexJsonKeyEnum.MODEL.key()).isJsonNull()) {
             return null;
         }
-        return result.get("model").getAsString();
+        return result.get(CodexJsonKeyEnum.MODEL.key()).getAsString();
     }
 
     /**

@@ -21,8 +21,8 @@ public class DeleteAiMessageTool extends AbstractActionTool {
     public DeleteAiMessageTool() {
         super(McpSectionEnum.PLUGIN,
                 McpToolEnum.DELETE_AI_MESSAGE.toolName(),
-                "Delete one or more inbox messages by id. Pass messageId for a single message or messageIds array for bulk delete. At least one of the two is required; if both are given they are combined and all are deleted.",
-                "DeleteAiMessage -> delete one or more inbox messages once processed; pass messageIds array for bulk delete");
+                "Delete one or more inbox messages by id. Pass " + DeleteAiMessageParamEnum.MESSAGE_ID.key() + " for a single message or " + DeleteAiMessageParamEnum.MESSAGE_IDS.key() + " array for bulk delete. At least one of the two is required; if both are given they are combined and all are deleted.",
+                McpToolEnum.DELETE_AI_MESSAGE.toolName() + " -> delete one or more inbox messages once processed; pass " + DeleteAiMessageParamEnum.MESSAGE_IDS.key() + " array for bulk delete");
     }
 
     @Override
@@ -30,7 +30,7 @@ public class DeleteAiMessageTool extends AbstractActionTool {
         JsonObject tool = new JsonObject();
         tool.addProperty(ToolSchemaKeyEnum.NAME.key(), McpToolEnum.DELETE_AI_MESSAGE.toolName());
         tool.addProperty(ToolSchemaKeyEnum.DESCRIPTION.key(),
-                "Delete one or more inbox messages by id. Pass messageId for a single message or messageIds array for bulk delete. Exactly one of messageId or messageIds must be provided.");
+                "Delete one or more inbox messages by id. Pass " + DeleteAiMessageParamEnum.MESSAGE_ID.key() + " for a single message or " + DeleteAiMessageParamEnum.MESSAGE_IDS.key() + " array for bulk delete. Exactly one of " + DeleteAiMessageParamEnum.MESSAGE_ID.key() + " or " + DeleteAiMessageParamEnum.MESSAGE_IDS.key() + " must be provided.");
         JsonObject schema = new JsonObject();
         schema.addProperty(ToolSchemaKeyEnum.TYPE.key(), "object");
         JsonObject props = new JsonObject();
@@ -59,7 +59,7 @@ public class DeleteAiMessageTool extends AbstractActionTool {
         mids.addProperty(ToolSchemaKeyEnum.TYPE.key(), "array");
         JsonObject items = new JsonObject();
         items.addProperty(ToolSchemaKeyEnum.TYPE.key(), "string");
-        mids.add("items", items);
+        mids.add(ToolSchemaKeyEnum.ITEMS.key(), items);
         mids.addProperty(ToolSchemaKeyEnum.DESCRIPTION.key(), "A list of message IDs to delete.");
         props.add(DeleteAiMessageParamEnum.MESSAGE_IDS.key(), mids);
         schema.add(ToolSchemaKeyEnum.PROPERTIES.key(), props);
@@ -77,11 +77,11 @@ public class DeleteAiMessageTool extends AbstractActionTool {
     public String handle(ToolRequestArguments args, AbstractAiSession session) {
         String sessionId = args.str(DeleteAiMessageParamEnum.SESSION_ID.key());
         if (sessionId == null) {
-            return "Error: sessionId is required";
+            return "Error: " + DeleteAiMessageParamEnum.SESSION_ID.key() + " is required";
         }
         String secretKey = args.str(DeleteAiMessageParamEnum.SECRET_KEY.key());
         if (secretKey == null) {
-            return "Error: secretKey is required";
+            return "Error: " + DeleteAiMessageParamEnum.SECRET_KEY.key() + " is required";
         }
         List<String> ids = new ArrayList<>();
         String single = args.str(DeleteAiMessageParamEnum.MESSAGE_ID.key());
@@ -97,10 +97,10 @@ public class DeleteAiMessageTool extends AbstractActionTool {
             }
         }
         if (ids.isEmpty()) {
-            return "Error: provide messageId or a non-empty messageIds array";
+            return "Error: provide " + DeleteAiMessageParamEnum.MESSAGE_ID.key() + " or a non-empty " + DeleteAiMessageParamEnum.MESSAGE_IDS.key() + " array";
         }
         if (!AiSessionInboxBroker.getInstance().validateSecret(sessionId, secretKey)) {
-            return "Error: authentication failed — check that sessionId and secretKey match your session identity";
+            return "Error: authentication failed — check that " + DeleteAiMessageParamEnum.SESSION_ID.key() + " and " + DeleteAiMessageParamEnum.SECRET_KEY.key() + " match your session identity";
         }
         int deleted = AiSessionInboxBroker.getInstance().deleteMessages(sessionId, secretKey, ids);
         return "Deleted " + deleted + " message(s).";

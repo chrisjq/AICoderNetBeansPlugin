@@ -24,7 +24,7 @@ public class RefreshFileStatusTool implements McpToolInterface {
         if (!options.contains(McpInstructionOptionEnum.TOOL_INSTRUCTION)) {
             return null;
         }
-        return "RefreshFileStatus -> call after every git commit, and after creating or modifying files outside the IDE, so NetBeans detects the changes immediately";
+        return McpToolEnum.REFRESH_NB_FILE_STATUS.toolName() + " -> call after every git commit, and after creating or modifying files outside the IDE, so NetBeans detects the changes immediately";
     }
 
     @Override

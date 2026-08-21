@@ -17,6 +17,8 @@ import javax.swing.text.BadLocationException;
 import javax.swing.text.Document;
 import javax.swing.text.JTextComponent;
 import javax.swing.text.StyledDocument;
+import kiwi.ingenuity.netbeans.plugin.aicoder.process.McpToolPropertyEnum;
+import kiwi.ingenuity.netbeans.plugin.aicoder.process.McpToolEnum;
 import org.netbeans.api.java.classpath.ClassPath;
 import org.netbeans.api.java.source.JavaSource;
 import org.netbeans.api.java.source.TreePathHandle;
@@ -56,12 +58,14 @@ public class RefactoringProvider {
         if (fo == null) {
             return filePath != null && !filePath.isBlank()
                     ? "File not found: " + filePath
-                    : "filePath is required — this tool does not fall back to the focused editor. "
-                    + "Call GetCurrentFile if you want the file the user is looking at.";
+                    : McpToolPropertyEnum.FILE_PATH.key() + " is required — this tool does not fall back to the focused editor. "
+                    + "Call " + McpToolEnum.GET_CURRENT_FILE.toolName()
+                      + " if you want the file the user is looking at.";
         }
         if (line <= 0) {
-            return "line is required and must be 1-based — this tool does not follow the user's cursor. "
-                    + "Call GetCurrentFile if you want the line the user is on.";
+            return McpToolPropertyEnum.LINE.key() + " is required and must be 1-based — this tool does not follow the user's cursor. "
+                    + "Call " + McpToolEnum.GET_CURRENT_FILE.toolName()
+                      + " if you want the line the user is on.";
         }
         TreePathHandle handle = resolveHandle(fo, line);
         if (handle == null) {
@@ -84,8 +88,9 @@ public class RefactoringProvider {
         if (fo == null) {
             return filePath != null && !filePath.isBlank()
                     ? "File not found: " + filePath
-                    : "filePath is required — this tool does not fall back to the focused editor. "
-                    + "Call GetCurrentFile if you want the file the user is looking at.";
+                    : McpToolPropertyEnum.FILE_PATH.key() + " is required — this tool does not fall back to the focused editor. "
+                    + "Call " + McpToolEnum.GET_CURRENT_FILE.toolName()
+                      + " if you want the file the user is looking at.";
         }
         FileObject targetFolder = findOrCreatePackage(fo, targetPackage);
         if (targetFolder == null) {
@@ -104,12 +109,14 @@ public class RefactoringProvider {
         if (fo == null) {
             return filePath != null && !filePath.isBlank()
                     ? "File not found: " + filePath
-                    : "filePath is required — this tool does not fall back to the focused editor. "
-                    + "Call GetCurrentFile if you want the file the user is looking at.";
+                    : McpToolPropertyEnum.FILE_PATH.key() + " is required — this tool does not fall back to the focused editor. "
+                    + "Call " + McpToolEnum.GET_CURRENT_FILE.toolName()
+                      + " if you want the file the user is looking at.";
         }
         if (line <= 0) {
-            return "line is required and must be 1-based — this tool does not follow the user's cursor. "
-                    + "Call GetCurrentFile if you want the line the user is on.";
+            return McpToolPropertyEnum.LINE.key() + " is required and must be 1-based — this tool does not follow the user's cursor. "
+                    + "Call " + McpToolEnum.GET_CURRENT_FILE.toolName()
+                      + " if you want the line the user is on.";
         }
         TreePathHandle handle = resolveHandle(fo, line);
         if (handle == null) {
@@ -127,12 +134,14 @@ public class RefactoringProvider {
         if (fo == null) {
             return filePath != null && !filePath.isBlank()
                     ? "File not found: " + filePath
-                    : "filePath is required — this tool does not fall back to the focused editor. "
-                    + "Call GetCurrentFile if you want the file the user is looking at.";
+                    : McpToolPropertyEnum.FILE_PATH.key() + " is required — this tool does not fall back to the focused editor. "
+                    + "Call " + McpToolEnum.GET_CURRENT_FILE.toolName()
+                      + " if you want the file the user is looking at.";
         }
         if (line <= 0) {
-            return "line is required and must be 1-based — this tool does not follow the user's cursor. "
-                    + "Call GetCurrentFile if you want the line the user is on.";
+            return McpToolPropertyEnum.LINE.key() + " is required and must be 1-based — this tool does not follow the user's cursor. "
+                    + "Call " + McpToolEnum.GET_CURRENT_FILE.toolName()
+                      + " if you want the line the user is on.";
         }
         TreePathHandle handle = resolveHandle(fo, line);
         if (handle == null) {
@@ -172,8 +181,9 @@ public class RefactoringProvider {
         if (fo == null) {
             return filePath != null && !filePath.isBlank()
                     ? "File not found: " + filePath
-                    : "filePath is required — this tool rewrites a file, so it does not fall back to "
-                    + "the focused editor. Call GetCurrentFile if you want the file the user is looking at.";
+                    : McpToolPropertyEnum.FILE_PATH.key() + " is required — this tool rewrites a file, so it does not fall back to "
+                    + "the focused editor. Call " + McpToolEnum.GET_CURRENT_FILE.toolName()
+                      + " if you want the file the user is looking at.";
         }
         File diskFile = FileUtil.toFile(fo);
         if (diskFile == null) {
@@ -218,10 +228,10 @@ public class RefactoringProvider {
 
     public static String writeFileContent(String filePath, String content) {
         if (filePath == null || filePath.isBlank()) {
-            return "filePath is required";
+            return McpToolPropertyEnum.FILE_PATH.key() + " is required";
         }
         if (content == null) {
-            return "content is required";
+            return McpToolPropertyEnum.CONTENT.key() + " is required";
         }
         File f = new File(filePath);
         if (!f.exists()) {
@@ -280,10 +290,10 @@ public class RefactoringProvider {
 
     public static String applyEdit(String filePath, String oldString, String newString) {
         if (filePath == null || filePath.isBlank()) {
-            return "filePath is required";
+            return McpToolPropertyEnum.FILE_PATH.key() + " is required";
         }
         if (oldString == null) {
-            return "old_string is required";
+            return McpToolPropertyEnum.OLD_STRING.key() + " is required";
         }
         final String replacement = newString != null ? newString : "";
         FileObject fo = resolveFileObject(filePath);
@@ -299,7 +309,7 @@ public class RefactoringProvider {
         }
         int idx = content.indexOf(oldString);
         if (idx < 0) {
-            return "old_string not found in file";
+            return McpToolPropertyEnum.OLD_STRING.key() + " not found in file";
         }
         String updated = content.substring(0, idx) + replacement + content.substring(idx + oldString.length());
         // Exact-byte write so the result is precisely the accepted diff (no On-Save
@@ -362,7 +372,7 @@ public class RefactoringProvider {
 
     public static String deleteFile(String filePath) {
         if (filePath == null || filePath.isBlank()) {
-            return "filePath is required";
+            return McpToolPropertyEnum.FILE_PATH.key() + " is required";
         }
         FileObject fo = resolveFileObject(filePath);
         if (fo == null) {
@@ -479,7 +489,7 @@ public class RefactoringProvider {
         FileObject fo = resolveFileObject(filePath);
         if (fo == null) {
             return filePath != null && !filePath.isBlank()
-                    ? "File not found: " + filePath : "No editor focused";
+                    ? "File not found: " + filePath : McpToolPropertyEnum.FILE_PATH.key() + " is required";
         }
         AtomicReference<String> result = new AtomicReference<>("File not open in any tab");
         try {
@@ -528,7 +538,7 @@ public class RefactoringProvider {
         FileObject fo = resolveFileObject(filePath);
         if (fo == null) {
             return filePath != null && !filePath.isBlank()
-                    ? "File not found: " + filePath : "No editor focused";
+                    ? "File not found: " + filePath : McpToolPropertyEnum.FILE_PATH.key() + " is required";
         }
         // Open without stealing focus — the editor is found via EditorCookie, not lastFocusedComponent
         File diskFile2 = FileUtil.toFile(fo);

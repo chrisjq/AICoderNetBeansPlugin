@@ -18,8 +18,8 @@ public class BuildMavenProjectTool extends AbstractBuildTool {
                 "Builds the open Maven project (mvn package -DskipTests). "
                 + "Maven projects only - do not use for Ant or Gradle projects. "
                 + "Returns the full build output including any compile errors.",
-                "BuildMavenProject -> INSTEAD OF Bash mvn package - builds Maven project and returns full output",
-                "BuildMavenProject - builds Maven project and returns full output");
+                McpToolEnum.BUILD_MAVEN_PROJECT.toolName() + " -> INSTEAD OF Bash mvn package - builds Maven project and returns full output",
+                McpToolEnum.BUILD_MAVEN_PROJECT.toolName() + " - builds Maven project and returns full output");
     }
 
     @Override

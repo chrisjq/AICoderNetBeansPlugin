@@ -14,8 +14,8 @@ public class GetClipboardTool extends AbstractActionTool {
         super(McpSectionEnum.SYSTEM,
                 McpToolEnum.GET_CLIPBOARD.toolName(),
                 "Returns the current text content of the system clipboard.",
-                "GetClipboard -> INSTEAD OF asking the user to paste - reads current clipboard content",
-                "GetClipboard - reads current clipboard content");
+                McpToolEnum.GET_CLIPBOARD.toolName() + " -> INSTEAD OF asking the user to paste - reads current clipboard content",
+                McpToolEnum.GET_CLIPBOARD.toolName() + " - reads current clipboard content");
     }
 
     @Override

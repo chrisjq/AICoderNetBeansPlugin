@@ -27,7 +27,7 @@ public class GetTableSchemaTool implements McpToolInterface {
         if (!options.contains(McpInstructionOptionEnum.TOOL_INSTRUCTION)) {
             return null;
         }
-        return "GetTableSchema -> returns column names/types/nullability/primary keys for a table on a "
+        return McpToolEnum.GET_TABLE_SCHEMA.toolName() + " -> returns column names/types/nullability/primary keys for a table on a "
                 + "registered, connected Database Explorer connection.";
     }
 
@@ -38,7 +38,7 @@ public class GetTableSchemaTool implements McpToolInterface {
         tool.addProperty(ToolSchemaKeyEnum.DESCRIPTION.key(),
                 "Returns the schema (columns, types, nullability, primary keys) for a table, read via "
                 + "JDBC DatabaseMetaData on a connection already registered and connected in the IDE's "
-                + "Database Explorer. Use ListDatabaseConnections first to find the connectionName.");
+                + "Database Explorer. Use ListDatabaseConnections first to find the " + DatabaseParamEnum.CONNECTION_NAME.key() + ".");
         JsonObject schema = new JsonObject();
         schema.addProperty(ToolSchemaKeyEnum.TYPE.key(), "object");
         JsonObject props = new JsonObject();

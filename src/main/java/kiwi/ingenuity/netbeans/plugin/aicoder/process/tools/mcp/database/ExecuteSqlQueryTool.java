@@ -28,7 +28,7 @@ public class ExecuteSqlQueryTool implements McpToolInterface {
         if (!options.contains(McpInstructionOptionEnum.TOOL_INSTRUCTION)) {
             return null;
         }
-        return "ExecuteSqlQuery -> runs a read-only SELECT query on a registered, connected Database "
+        return McpToolEnum.EXECUTE_SQL_QUERY.toolName() + " -> runs a read-only SELECT query on a registered, connected Database "
                 + "Explorer connection. Only SELECT is allowed — enforced twice (text prefix check + "
                 + "read-only JDBC connection). Results are capped at the configured row limit; truncated "
                 + "results are flagged in the output with a trailing 'row limit reached' note.";
@@ -46,7 +46,7 @@ public class ExecuteSqlQueryTool implements McpToolInterface {
                 + "layer of enforcement. Results are capped at this session's configured database row limit "
                 + "(currently " + PluginSettings.getDatabaseRowLimit() + "); if more rows exist than were "
                 + "returned, the output ends with a '... (row limit N reached, results may be truncated)' note. "
-                + "Use ListDatabaseConnections first to find the connectionName.");
+                + "Use ListDatabaseConnections first to find the " + DatabaseParamEnum.CONNECTION_NAME.key() + ".");
         JsonObject schema = new JsonObject();
         schema.addProperty(ToolSchemaKeyEnum.TYPE.key(), "object");
         JsonObject props = new JsonObject();

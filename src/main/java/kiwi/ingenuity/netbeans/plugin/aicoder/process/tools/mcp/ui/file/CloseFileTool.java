@@ -1,22 +1,21 @@
 package kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.ui.file;
 
-import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.providers.netbeans.RefactoringProvider;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.McpSectionEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.McpToolEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.server.McpHookServer;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.server.McpServerRegistry;
-import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.AbstractFileTool;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.session.AbstractAiSession;
+import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.AbstractFileTool;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.ToolRequestArguments;
+import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.providers.netbeans.RefactoringProvider;
 
 public class CloseFileTool extends AbstractFileTool {
 
     public CloseFileTool() {
         super(McpSectionEnum.UI_FILES,
                 McpToolEnum.CLOSE_FILE.toolName(),
-                "Close the editor tab for the specified file. "
-                + "Omit filePath to use the current editor.",
-                "CloseFile -> close an editor tab; omit filePath to close the current editor");
+                "Close the editor tab for the specified file.",
+                "CloseFile -> close the editor tab for a specified file");
     }
 
     @Override

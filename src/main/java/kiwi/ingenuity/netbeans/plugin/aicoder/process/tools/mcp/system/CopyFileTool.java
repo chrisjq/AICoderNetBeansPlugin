@@ -44,7 +44,7 @@ public class CopyFileTool implements McpToolInterface {
         if (!options.contains(McpInstructionOptionEnum.TOOL_INSTRUCTION)) {
             return null;
         }
-        return "CopyFile -> copies a file to a target directory using FileUtil.copyFile(); "
+        return McpToolEnum.COPY_FILE.toolName() + " -> copies a file to a target directory using FileUtil.copyFile(); "
                 + "optionally rename via newName (base name, no extension)";
     }
 

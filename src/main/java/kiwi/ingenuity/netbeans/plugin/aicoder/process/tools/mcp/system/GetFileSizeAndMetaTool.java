@@ -40,7 +40,7 @@ public class GetFileSizeAndMetaTool implements McpToolInterface {
         if (!options.contains(McpInstructionOptionEnum.TOOL_INSTRUCTION)) {
             return null;
         }
-        return "GetFileSizeAndMeta - reports a file's byte size, line count, encoding, last-modified "
+        return McpToolEnum.GET_FILE_SIZE_AND_META.toolName() + " - reports a file's byte size, line count, encoding, last-modified "
                 + "time and age, writable flag and unsaved-editor-changes flag without returning its "
                 + "content; call it before GetFileContent on a large file to decide whether to page "
                 + "the read with startLine/endLine";

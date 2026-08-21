@@ -15,43 +15,12 @@ import kiwi.ingenuity.netbeans.plugin.aicoder.process.server.McpHookServer;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.session.AbstractAiSession;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.McpToolInterface;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.ToolRequestArguments;
-import org.junit.jupiter.api.Test;
 import static org.junit.jupiter.api.Assertions.*;
+import org.junit.jupiter.api.Test;
 
 class SaveFileToolTest {
 
     private static final String SESSION_ID = "test-session";
-
-    private static class StubSession extends AbstractAiSession {
-        final List<AiProcessEvent> captured = new ArrayList<>();
-        private final PermissionDecision autoDecision;
-
-        StubSession(PermissionDecision autoDecision) {
-            super(new AiSession(SESSION_ID, "Test", null, null, null, null,
-                    Instant.EPOCH, Instant.EPOCH));
-            this.autoDecision = autoDecision;
-        }
-
-        @Override
-        public String getId() {
-            return SESSION_ID;
-        }
-
-        @Override
-        public AiProcessEventListener getAiProcessEventListener() {
-            return event -> {
-                captured.add(event);
-                if (event instanceof PermissionEvent pe) {
-                    pe.response().complete(autoDecision);
-                }
-            };
-        }
-
-        @Override
-        public Map<McpToolEnum, McpToolInterface> getMcpToolHandlers() {
-            return Map.of();
-        }
-    }
 
     private static ToolRequestArguments args(String filePath, String content) {
         JsonObject obj = new JsonObject();
@@ -96,6 +65,34 @@ class SaveFileToolTest {
     }
 
     @Test
+    void saveFileWithoutFilePathIsRejectedRatherThanSavingTheFocusedEditor() {
+        // The no-content path flushes unsaved editor changes to disk. It used to
+        // fall back to EditorContextProvider.getCurrentFilePath(), so omitting
+        // the path committed whatever the user was part-way through editing.
+        StubSession session = new StubSession(PermissionDecision.denied(null));
+        SaveFileTool tool = new SaveFileTool(allowAllServer());
+
+        String result = tool.handle(args(null, null), session);
+
+        // "filePath", not "file_path" — that is the actual schema key, and an
+        // error naming a key the parser does not accept just makes the caller
+        // retry with it. WriteFile and ApplyEdit used to be the exception,
+        // taking file_path; they were moved to camelCase so every tool now
+        // agrees. Claude's own hook payload still uses file_path, which is why
+        // ClaudeHookKeyEnum keeps that spelling separately.
+        assertTrue(result.contains("filePath is required"), result);
+        assertTrue(session.captured.isEmpty(), "must not act at all without a path");
+    }
+
+    @Test
+    void saveFileWithBlankFilePathIsAlsoRejected() {
+        StubSession session = new StubSession(PermissionDecision.denied(null));
+        SaveFileTool tool = new SaveFileTool(allowAllServer());
+
+        assertTrue(tool.handle(args("   ", null), session).contains("filePath is required"));
+    }
+
+    @Test
     void saveFileWithoutContentDoesNotFirePermissionEvent() {
         StubSession session = new StubSession(PermissionDecision.denied(null));
         SaveFileTool tool = new SaveFileTool(allowAllServer());
@@ -104,5 +101,37 @@ class SaveFileToolTest {
 
         assertTrue(session.captured.isEmpty(),
                 "no-content flush path must not fire PermissionEvent");
+    }
+
+    private static class StubSession extends AbstractAiSession {
+
+        final List<AiProcessEvent> captured = new ArrayList<>();
+        private final PermissionDecision autoDecision;
+
+        StubSession(PermissionDecision autoDecision) {
+            super(new AiSession(SESSION_ID, "Test", null, null, null, null,
+                    Instant.EPOCH, Instant.EPOCH));
+            this.autoDecision = autoDecision;
+        }
+
+        @Override
+        public String getId() {
+            return SESSION_ID;
+        }
+
+        @Override
+        public AiProcessEventListener getAiProcessEventListener() {
+            return event -> {
+                captured.add(event);
+                if (event instanceof PermissionEvent pe) {
+                    pe.response().complete(autoDecision);
+                }
+            };
+        }
+
+        @Override
+        public Map<McpToolEnum, McpToolInterface> getMcpToolHandlers() {
+            return Map.of();
+        }
     }
 }

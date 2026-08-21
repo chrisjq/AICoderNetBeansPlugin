@@ -28,7 +28,7 @@ public class GetTableDataTool implements McpToolInterface {
         if (!options.contains(McpInstructionOptionEnum.TOOL_INSTRUCTION)) {
             return null;
         }
-        return "GetTableData -> returns up to the configured row limit of a table's rows (SELECT * ... , "
+        return McpToolEnum.GET_TABLE_DATA.toolName() + " -> returns up to the configured row limit of a table's rows (SELECT * ... , "
                 + "read-only) on a registered, connected Database Explorer connection. Truncated results "
                 + "are flagged in the output with a trailing 'row limit reached' note.";
     }
@@ -42,7 +42,7 @@ public class GetTableDataTool implements McpToolInterface {
                 + "connection already registered and connected in the IDE's Database Explorer. Read-only: "
                 + "enforced via a row cap (see `limit`) and a read-only JDBC connection. If more rows exist "
                 + "than were returned, the output ends with a '... (row limit N reached, results may be "
-                + "truncated)' note. Use ListDatabaseConnections first to find the connectionName.");
+                + "truncated)' note. Use ListDatabaseConnections first to find the " + DatabaseParamEnum.CONNECTION_NAME.key() + ".");
         JsonObject schema = new JsonObject();
         schema.addProperty(ToolSchemaKeyEnum.TYPE.key(), "object");
         JsonObject props = new JsonObject();

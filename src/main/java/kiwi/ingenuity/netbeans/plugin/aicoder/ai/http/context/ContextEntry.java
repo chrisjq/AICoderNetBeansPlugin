@@ -19,27 +19,28 @@ public class ContextEntry {
 
     public static ContextEntry fromJson(JsonObject o) {
         List<ChatToolCall> calls = new ArrayList<>();
-        JsonArray arr = o.getAsJsonArray("toolCalls");
+        JsonArray arr = o.getAsJsonArray(ContextJsonKeyEnum.TOOL_CALLS.key());
         if (arr != null) {
             for (JsonElement el : arr) {
                 JsonObject co = el.getAsJsonObject();
-                calls.add(new ChatToolCall(optString(co, "id"), optString(co, "name"),
-                        optString(co, "arguments")));
+                calls.add(new ChatToolCall(optString(co, ContextJsonKeyEnum.ID.key()),
+                        optString(co, ContextJsonKeyEnum.NAME.key()),
+                        optString(co, ContextJsonKeyEnum.ARGUMENTS.key())));
             }
         }
         ChatMessage msg = new ChatMessage(
-                ChatRole.valueOf(o.get("role").getAsString()),
-                optString(o, "content"),
+                ChatRole.valueOf(o.get(ContextJsonKeyEnum.ROLE.key()).getAsString()),
+                optString(o, ContextJsonKeyEnum.CONTENT.key()),
                 calls,
-                optString(o, "toolCallId"));
+                optString(o, ContextJsonKeyEnum.TOOL_CALL_ID.key()));
         return new ContextEntry(
-                o.get("sequence").getAsLong(),
-                o.get("groupId").getAsLong(),
-                o.get("timestamp").getAsLong(),
+                o.get(ContextJsonKeyEnum.SEQUENCE.key()).getAsLong(),
+                o.get(ContextJsonKeyEnum.GROUP_ID.key()).getAsLong(),
+                o.get(ContextJsonKeyEnum.TIMESTAMP.key()).getAsLong(),
                 msg,
-                ContextRetentionEnum.valueOf(o.get("retention").getAsString()),
-                o.get("estimatedTokens").getAsInt(),
-                optString(o, "cacheId"));
+                ContextRetentionEnum.valueOf(o.get(ContextJsonKeyEnum.RETENTION.key()).getAsString()),
+                o.get(ContextJsonKeyEnum.ESTIMATED_TOKENS.key()).getAsInt(),
+                optString(o, ContextJsonKeyEnum.CACHE_ID.key()));
     }
 
     private static String optString(JsonObject o, String key) {
@@ -113,30 +114,30 @@ public class ContextEntry {
 
     public JsonObject toJson() {
         JsonObject o = new JsonObject();
-        o.addProperty("sequence", sequence);
-        o.addProperty("groupId", groupId);
-        o.addProperty("timestamp", timestamp);
-        o.addProperty("retention", retention.name());
-        o.addProperty("estimatedTokens", estimatedTokens);
+        o.addProperty(ContextJsonKeyEnum.SEQUENCE.key(), sequence);
+        o.addProperty(ContextJsonKeyEnum.GROUP_ID.key(), groupId);
+        o.addProperty(ContextJsonKeyEnum.TIMESTAMP.key(), timestamp);
+        o.addProperty(ContextJsonKeyEnum.RETENTION.key(), retention.name());
+        o.addProperty(ContextJsonKeyEnum.ESTIMATED_TOKENS.key(), estimatedTokens);
         if (cacheId != null) {
-            o.addProperty("cacheId", cacheId);
+            o.addProperty(ContextJsonKeyEnum.CACHE_ID.key(), cacheId);
         }
-        o.addProperty("role", message.role().name());
+        o.addProperty(ContextJsonKeyEnum.ROLE.key(), message.role().name());
         if (message.content() != null) {
-            o.addProperty("content", message.content());
+            o.addProperty(ContextJsonKeyEnum.CONTENT.key(), message.content());
         }
         if (message.toolCallId() != null) {
-            o.addProperty("toolCallId", message.toolCallId());
+            o.addProperty(ContextJsonKeyEnum.TOOL_CALL_ID.key(), message.toolCallId());
         }
         JsonArray calls = new JsonArray();
         for (ChatToolCall c : message.toolCalls()) {
             JsonObject co = new JsonObject();
-            co.addProperty("id", c.id());
-            co.addProperty("name", c.name());
-            co.addProperty("arguments", c.argumentsJson());
+            co.addProperty(ContextJsonKeyEnum.ID.key(), c.id());
+            co.addProperty(ContextJsonKeyEnum.NAME.key(), c.name());
+            co.addProperty(ContextJsonKeyEnum.ARGUMENTS.key(), c.argumentsJson());
             calls.add(co);
         }
-        o.add("toolCalls", calls);
+        o.add(ContextJsonKeyEnum.TOOL_CALLS.key(), calls);
         return o;
     }
 

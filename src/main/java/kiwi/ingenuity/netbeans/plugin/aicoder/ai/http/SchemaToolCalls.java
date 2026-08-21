@@ -8,26 +8,26 @@ import java.util.ArrayList;
 import java.util.Collection;
 import java.util.List;
 import java.util.Set;
+import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.ToolSchemaKeyEnum;
 
 /**
- * Tool calling for backends that misuse the request's {@code tools} array.
+ * Tool calling for backends that misuse the request's
+ * {@link OpenAiJsonKeyEnum#TOOLS} array.
  *
- * <p>qwen2.5-coder calls a tool on every turn once {@code tools} is populated —
- * given one irrelevant tool and the message "hi" it invented a city and called
- * it — and returns the call as text rather than in {@code tool_calls}. Listing
- * the same tools in the prompt carries the information without triggering the
- * template, and a {@code response_format} JSON schema makes the reply shape
+ * <p>
+ * qwen2.5-coder calls a tool on every turn once {@link OpenAiJsonKeyEnum#TOOLS}
+ * is populated — given one irrelevant tool and the message "hi" it invented a
+ * city and called it — and returns the call as text rather than in
+ * {@link OpenAiJsonKeyEnum#TOOL_CALLS}. Listing the same tools in the prompt
+ * carries the information without triggering the template, and a
+ * {@link OpenAiJsonKeyEnum#RESPONSE_FORMAT} JSON schema makes the reply shape
  * guaranteed instead of best-effort. Verified against qwen2.5-coder:14b: "hi"
- * answers with an empty {@code tool_name}, a real request fills it in.
+ * answers with an empty {@link OpenAiJsonKeyEnum#TOOL_NAME}, a real request
+ * fills it in.
  */
 public final class SchemaToolCalls {
 
     private static final Gson GSON = new Gson();
-
-    /** Parsed schema reply: at most one of message/call is meaningful. */
-    public record Reply(String message, List<ExtractedToolCall> calls) {
-
-    }
 
     /**
      * The {@code response_format} value constraining the model to a reply that
@@ -35,34 +35,43 @@ public final class SchemaToolCalls {
      */
     public static JsonObject responseFormat() {
         JsonObject props = new JsonObject();
-        props.add("message", stringField(
+        props.add(OpenAiJsonKeyEnum.MESSAGE.key(), stringField(
                 "Your reply to the user. Use this whenever no tool is needed."));
-        props.add("tool_name", stringField(
+        props.add(OpenAiJsonKeyEnum.TOOL_NAME.key(), stringField(
                 "Exact name of one tool to call, or \"\" when answering directly."));
         JsonObject args = new JsonObject();
-        args.addProperty("type", "object");
-        args.addProperty("description", "Arguments for tool_name, or {} when not calling a tool.");
-        props.add("tool_arguments", args);
+        args.addProperty(OpenAiJsonKeyEnum.TYPE.key(), "object");
+        args.addProperty(OpenAiJsonKeyEnum.DESCRIPTION.key(),
+                "Arguments for " + OpenAiJsonKeyEnum.TOOL_NAME.key() + ", or {} when not calling a tool.");
+        props.add(OpenAiJsonKeyEnum.TOOL_ARGUMENTS.key(), args);
 
         JsonObject schema = new JsonObject();
-        schema.addProperty("type", "object");
-        schema.add("properties", props);
-        schema.add("required", GSON.toJsonTree(List.of("message", "tool_name", "tool_arguments")));
+        schema.addProperty(OpenAiJsonKeyEnum.TYPE.key(), "object");
+        schema.add(OpenAiJsonKeyEnum.PROPERTIES.key(), props);
+        // JSON Schema matches "required" entries against property names exactly,
+        // so these must be the same constants used to add the properties above.
+        // As literals they would still compile and still produce valid JSON
+        // after a rename — the schema would just quietly stop requiring the
+        // field it no longer names.
+        schema.add(OpenAiJsonKeyEnum.REQUIRED.key(), GSON.toJsonTree(List.of(
+                OpenAiJsonKeyEnum.MESSAGE.key(),
+                OpenAiJsonKeyEnum.TOOL_NAME.key(),
+                OpenAiJsonKeyEnum.TOOL_ARGUMENTS.key())));
 
         JsonObject jsonSchema = new JsonObject();
-        jsonSchema.addProperty("name", "tool_or_answer");
-        jsonSchema.add("schema", schema);
+        jsonSchema.addProperty(OpenAiJsonKeyEnum.NAME.key(), "tool_or_answer");
+        jsonSchema.add(OpenAiJsonKeyEnum.SCHEMA.key(), schema);
 
         JsonObject format = new JsonObject();
-        format.addProperty("type", "json_schema");
-        format.add("json_schema", jsonSchema);
+        format.addProperty(OpenAiJsonKeyEnum.TYPE.key(), "json_schema");
+        format.add(OpenAiJsonKeyEnum.JSON_SCHEMA.key(), jsonSchema);
         return format;
     }
 
     private static JsonObject stringField(String description) {
         JsonObject field = new JsonObject();
-        field.addProperty("type", "string");
-        field.addProperty("description", description);
+        field.addProperty(OpenAiJsonKeyEnum.TYPE.key(), "string");
+        field.addProperty(OpenAiJsonKeyEnum.DESCRIPTION.key(), description);
         return field;
     }
 
@@ -74,13 +83,15 @@ public final class SchemaToolCalls {
     public static String renderToolList(Collection<JsonObject> toolSchemas) {
         StringBuilder sb = new StringBuilder();
         for (JsonObject tool : toolSchemas) {
-            if (tool == null || !tool.has("name")) {
+            // These are the plugin's own MCP tool definitions — read with
+            // ToolSchemaKeyEnum, not the OpenAI wire enum.
+            if (tool == null || !tool.has(ToolSchemaKeyEnum.NAME.key())) {
                 continue;
             }
-            sb.append("- ").append(tool.get("name").getAsString()).append('(');
+            sb.append("- ").append(tool.get(ToolSchemaKeyEnum.NAME.key()).getAsString()).append('(');
             sb.append(String.join(", ", parameterNames(tool))).append(')');
-            if (tool.has("description")) {
-                sb.append(" - ").append(firstSentence(tool.get("description").getAsString()));
+            if (tool.has(ToolSchemaKeyEnum.DESCRIPTION.key())) {
+                sb.append(" - ").append(firstSentence(tool.get(ToolSchemaKeyEnum.DESCRIPTION.key()).getAsString()));
             }
             sb.append('\n');
         }
@@ -88,8 +99,8 @@ public final class SchemaToolCalls {
     }
 
     /**
-     * First sentence of a description, to bound prompt size across 80+ tools.
-     * A full stop only ends a sentence when an upper-case word follows, so
+     * First sentence of a description, to bound prompt size across 80+ tools. A
+     * full stop only ends a sentence when an upper-case word follows, so
      * abbreviations survive — splitting naively on ". " cut "(e.g. /path)" to
      * "(e.g" mid-word.
      */
@@ -106,24 +117,25 @@ public final class SchemaToolCalls {
     /**
      * Parameter names, required first, optional ones in square brackets.
      *
-     * <p>Required names must appear exactly as-is: marking them instead with a
+     * <p>
+     * Required names must appear exactly as-is: marking them instead with a
      * trailing {@code !} put the marker inside the identifier, and the model
      * sent {@code "!filePath"} and {@code "description!"} as argument keys.
      * Brackets decorate only the optional ones, which matter less if mangled.
      */
     private static List<String> parameterNames(JsonObject tool) {
         List<String> names = new ArrayList<>();
-        JsonElement inputSchema = tool.get("inputSchema");
+        JsonElement inputSchema = tool.get(ToolSchemaKeyEnum.INPUT_SCHEMA.key());
         if (inputSchema == null || !inputSchema.isJsonObject()) {
             return names;
         }
         JsonObject input = inputSchema.getAsJsonObject();
-        JsonElement properties = input.get("properties");
+        JsonElement properties = input.get(ToolSchemaKeyEnum.PROPERTIES.key());
         if (properties == null || !properties.isJsonObject()) {
             return names;
         }
         List<String> required = new ArrayList<>();
-        JsonElement requiredEl = input.get("required");
+        JsonElement requiredEl = input.get(ToolSchemaKeyEnum.REQUIRED.key());
         if (requiredEl != null && requiredEl.isJsonArray()) {
             requiredEl.getAsJsonArray().forEach(e -> {
                 if (e.isJsonPrimitive()) {
@@ -160,7 +172,7 @@ public final class SchemaToolCalls {
             JsonElement parsed = JsonParser.parseString(text.strip());
             if (parsed.isJsonObject()) {
                 JsonObject obj = parsed.getAsJsonObject();
-                if (obj.has("tool_name") || obj.has("message")) {
+                if (obj.has(OpenAiJsonKeyEnum.TOOL_NAME.key()) || obj.has(OpenAiJsonKeyEnum.MESSAGE.key())) {
                     return fromSchemaObject(obj, knownToolNames);
                 }
             }
@@ -172,15 +184,15 @@ public final class SchemaToolCalls {
     }
 
     private static Reply fromSchemaObject(JsonObject obj, Set<String> knownToolNames) {
-        String message = obj.has("message") && obj.get("message").isJsonPrimitive()
-                ? obj.get("message").getAsString() : null;
-        String name = obj.has("tool_name") && obj.get("tool_name").isJsonPrimitive()
-                ? obj.get("tool_name").getAsString() : null;
+        String message = obj.has(OpenAiJsonKeyEnum.MESSAGE.key()) && obj.get(OpenAiJsonKeyEnum.MESSAGE.key()).isJsonPrimitive()
+                ? obj.get(OpenAiJsonKeyEnum.MESSAGE.key()).getAsString() : null;
+        String name = obj.has(OpenAiJsonKeyEnum.TOOL_NAME.key()) && obj.get(OpenAiJsonKeyEnum.TOOL_NAME.key()).isJsonPrimitive()
+                ? obj.get(OpenAiJsonKeyEnum.TOOL_NAME.key()).getAsString() : null;
         if (name == null || name.isBlank() || !knownToolNames.contains(name)) {
             return new Reply(message, List.of());
         }
-        JsonObject arguments = obj.has("tool_arguments") && obj.get("tool_arguments").isJsonObject()
-                ? cleanArgumentNames(obj.getAsJsonObject("tool_arguments")) : new JsonObject();
+        JsonObject arguments = obj.has(OpenAiJsonKeyEnum.TOOL_ARGUMENTS.key()) && obj.get(OpenAiJsonKeyEnum.TOOL_ARGUMENTS.key()).isJsonObject()
+                ? cleanArgumentNames(obj.getAsJsonObject(OpenAiJsonKeyEnum.TOOL_ARGUMENTS.key())) : new JsonObject();
         return new Reply(message, List.of(new ExtractedToolCall(name, GSON.toJson(arguments))));
     }
 
@@ -207,5 +219,12 @@ public final class SchemaToolCalls {
     }
 
     private SchemaToolCalls() {
+    }
+
+    /**
+     * Parsed schema reply: at most one of message/call is meaningful.
+     */
+    public record Reply(String message, List<ExtractedToolCall> calls) {
+
     }
 }

@@ -1,20 +1,22 @@
 package kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.ui.navigate;
 
+import kiwi.ingenuity.netbeans.plugin.aicoder.process.McpToolPropertyEnum;
+
 /**
  * Parameter-name keys for the NavigateToLineTool MCP tool, shared between its
  * schema() definition and handle() argument extraction so the two cannot drift.
  */
 public enum NavigateToLineParamEnum {
-    FILE_PATH("filePath"),
-    LINE("line");
+    FILE_PATH(McpToolPropertyEnum.FILE_PATH),
+    LINE(McpToolPropertyEnum.LINE);
 
-    private final String key;
+    private final McpToolPropertyEnum property;
 
-    NavigateToLineParamEnum(String key) {
-        this.key = key;
+    NavigateToLineParamEnum(McpToolPropertyEnum property) {
+        this.property = property;
     }
 
     public String key() {
-        return key;
+        return property.key();
     }
 }

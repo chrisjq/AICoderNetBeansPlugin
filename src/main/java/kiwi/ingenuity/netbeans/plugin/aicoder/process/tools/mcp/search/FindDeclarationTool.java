@@ -3,16 +3,16 @@ package kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.search;
 import com.google.gson.JsonArray;
 import com.google.gson.JsonObject;
 import java.util.Set;
-import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.ToolSchemaKeyEnum;
-import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.providers.netbeans.SearchProvider;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.McpArgumentException;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.McpInstructionOptionEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.McpSectionEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.McpToolEnum;
+import kiwi.ingenuity.netbeans.plugin.aicoder.process.session.AbstractAiSession;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.McpToolInterface;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.McpToolSchemas;
-import kiwi.ingenuity.netbeans.plugin.aicoder.process.session.AbstractAiSession;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.ToolRequestArguments;
+import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.ToolSchemaKeyEnum;
+import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.providers.netbeans.SearchProvider;
 
 public class FindDeclarationTool implements McpToolInterface {
 
@@ -27,9 +27,9 @@ public class FindDeclarationTool implements McpToolInterface {
             return null;
         }
         if (options.contains(McpInstructionOptionEnum.ONLY_MCP_TOOL_ACCESS)) {
-            return "FindDeclaration - resolve a symbol to its declaration (returns file:line)";
+            return McpToolEnum.FIND_DECLARATION.toolName() + " - resolve a symbol to its declaration (returns file:line)";
         }
-        return "FindDeclaration -> INSTEAD OF manual search - resolve a symbol to its declaration (returns file:line)";
+        return McpToolEnum.FIND_DECLARATION.toolName() + " -> INSTEAD OF manual search - resolve a symbol to its declaration (returns file:line)";
     }
 
     @Override
@@ -45,7 +45,7 @@ public class FindDeclarationTool implements McpToolInterface {
         JsonObject props = new JsonObject();
         JsonObject fp = new JsonObject();
         fp.addProperty(ToolSchemaKeyEnum.TYPE.key(), "string");
-        fp.addProperty(ToolSchemaKeyEnum.DESCRIPTION.key(), "Absolute path to the file containing the reference. Omit to use current editor.");
+        fp.addProperty(ToolSchemaKeyEnum.DESCRIPTION.key(), "Absolute path to the file containing the reference. Omit to use the first open project's source root.");
         props.add(FindDeclarationParamEnum.FILE_PATH.key(), fp);
         JsonObject ln = new JsonObject();
         ln.addProperty(ToolSchemaKeyEnum.TYPE.key(), "integer");

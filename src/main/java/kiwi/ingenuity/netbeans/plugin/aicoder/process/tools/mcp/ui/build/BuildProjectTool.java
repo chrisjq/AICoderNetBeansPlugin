@@ -18,7 +18,7 @@ public class BuildProjectTool extends AbstractActionTool {
                 "Builds the open project using the IDE's built-in Build action. "
                 + "Works for any project type (Maven, Ant, Gradle). "
                 + "Fire-and-forget: result appears in the Output window. "
-                + "For Maven projects where full build output is needed as text, use BuildMavenProject instead.",
+                + "For Maven projects where full build output is needed as text, use " + McpToolEnum.BUILD_MAVEN_PROJECT.toolName() + " instead.",
                 "BuildProject -> INSTEAD OF Bash build commands - IDE build action (works for any project type)",
                 "BuildProject - IDE build action (works for any project type)");
     }

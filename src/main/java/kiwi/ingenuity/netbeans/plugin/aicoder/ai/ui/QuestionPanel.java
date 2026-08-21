@@ -19,6 +19,7 @@ import javax.swing.JCheckBox;
 import javax.swing.JPanel;
 import javax.swing.SwingUtilities;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.events.AskUserQuestionEvent;
+import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.userinput.AskUserQuestionParamEnum;
 
 /**
  * Renders an AskUserQuestion tool call inline in the conversation.
@@ -26,6 +27,16 @@ import kiwi.ingenuity.netbeans.plugin.aicoder.ai.events.AskUserQuestionEvent;
  * button.
  */
 class QuestionPanel extends JPanel {
+
+    // This panel renders the payload AskUserQuestionTool declares, so the keys
+    // are taken from that tool's ParamEnum rather than repeated as literals —
+    // the schema and the reader are then incapable of disagreeing.
+    private static final String QUESTION = AskUserQuestionParamEnum.QUESTION.key();
+    private static final String HEADER = AskUserQuestionParamEnum.HEADER.key();
+    private static final String OPTIONS = AskUserQuestionParamEnum.OPTIONS.key();
+    private static final String MULTI_SELECT = AskUserQuestionParamEnum.MULTI_SELECT.key();
+    private static final String LABEL = AskUserQuestionParamEnum.LABEL.key();
+    private static final String DESCRIPTION = AskUserQuestionParamEnum.DESCRIPTION.key();
 
     private static final Color BORDER_COLOR = new Color(0x89, 0xb4, 0xfa);
 
@@ -78,11 +89,13 @@ class QuestionPanel extends JPanel {
             }
             JsonObject q = el.getAsJsonObject();
 
-            String questionText = q.has("question") ? q.get("question").getAsString() : "";
-            String header = q.has("header") ? q.get("header").getAsString() : null;
-            JsonArray options = q.has("options") && q.get("options").isJsonArray()
-                    ? q.getAsJsonArray("options") : new JsonArray();
-            boolean multiSelect = q.has("multiSelect") && q.get("multiSelect").getAsBoolean();
+            // Keys come from AskUserQuestionParamEnum, the same enum the tool
+            // builds its schema from — this panel renders that exact payload.
+            String questionText = q.has(QUESTION) ? q.get(QUESTION).getAsString() : "";
+            String header = q.has(HEADER) ? q.get(HEADER).getAsString() : null;
+            JsonArray options = q.has(OPTIONS) && q.get(OPTIONS).isJsonArray()
+                    ? q.getAsJsonArray(OPTIONS) : new JsonArray();
+            boolean multiSelect = q.has(MULTI_SELECT) && q.get(MULTI_SELECT).getAsBoolean();
             if (multiSelect) {
                 hasMultiSelect = true;
             }
@@ -105,8 +118,8 @@ class QuestionPanel extends JPanel {
                         continue;
                     }
                     JsonObject opt = optEl.getAsJsonObject();
-                    String label = opt.has("label") ? opt.get("label").getAsString() : "";
-                    String desc = opt.has("description") ? opt.get("description").getAsString() : "";
+                    String label = opt.has(LABEL) ? opt.get(LABEL).getAsString() : "";
+                    String desc = opt.has(DESCRIPTION) ? opt.get(DESCRIPTION).getAsString() : "";
                     JCheckBox cb = new JCheckBox(label);
                     if (!desc.isEmpty()) {
                         cb.setToolTipText(desc);
@@ -127,8 +140,8 @@ class QuestionPanel extends JPanel {
                         continue;
                     }
                     JsonObject opt = optEl.getAsJsonObject();
-                    String label = opt.has("label") ? opt.get("label").getAsString() : "";
-                    String desc = opt.has("description") ? opt.get("description").getAsString() : "";
+                    String label = opt.has(LABEL) ? opt.get(LABEL).getAsString() : "";
+                    String desc = opt.has(DESCRIPTION) ? opt.get(DESCRIPTION).getAsString() : "";
                     JButton btn = new JButton(label);
                     if (!desc.isEmpty()) {
                         btn.setToolTipText(desc);
@@ -229,23 +242,23 @@ class QuestionPanel extends JPanel {
                 continue;
             }
             JsonObject q = el.getAsJsonObject();
-            String header = q.has("header") ? q.get("header").getAsString()
-                    : q.has("question") ? q.get("question").getAsString() : ("Q" + (i + 1));
+            String header = q.has(HEADER) ? q.get(HEADER).getAsString()
+                    : q.has(QUESTION) ? q.get(QUESTION).getAsString() : ("Q" + (i + 1));
             sb.append(header).append(": ").append(buildSingleAnswer(i, q)).append("\n");
         }
         return sb.toString().strip();
     }
 
     private String buildSingleAnswer(int qi, JsonObject q) {
-        boolean multiSelect = q.has("multiSelect") && q.get("multiSelect").getAsBoolean();
+        boolean multiSelect = q.has(MULTI_SELECT) && q.get(MULTI_SELECT).getAsBoolean();
         if (multiSelect) {
-            JsonArray options = q.has("options") ? q.getAsJsonArray("options") : new JsonArray();
+            JsonArray options = q.has(OPTIONS) ? q.getAsJsonArray(OPTIONS) : new JsonArray();
             Set<String> chosen = new LinkedHashSet<>();
             List<JCheckBox> cbs = checkBoxLists.get(qi);
             for (int j = 0; j < cbs.size() && j < options.size(); j++) {
                 if (cbs.get(j).isSelected()) {
                     JsonObject opt = options.get(j).getAsJsonObject();
-                    chosen.add(opt.has("label") ? opt.get("label").getAsString() : "");
+                    chosen.add(opt.has(LABEL) ? opt.get(LABEL).getAsString() : "");
                 }
             }
             return chosen.isEmpty() ? "(none selected)" : String.join(", ", chosen);

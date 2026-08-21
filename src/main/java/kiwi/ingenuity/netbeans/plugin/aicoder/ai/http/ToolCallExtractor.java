@@ -49,11 +49,12 @@ public final class ToolCallExtractor {
     /**
      * Unwraps a markdown code fence around a text-form tool call.
      *
-     * <p>Models that emit tool calls as assistant text rather than in the
-     * structured tool_calls field frequently wrap them in ```json ... ```.
-     * The backticks are not JSON, so the payload must be unwrapped before
-     * parsing — otherwise the call is missed and the raw block is shown to the
-     * user as if it were the answer.
+     * <p>
+     * Models that emit tool calls as assistant text rather than in the
+     * structured {@link OpenAiJsonKeyEnum#TOOL_CALLS} field frequently wrap
+     * them in ```json ... ```. The backticks are not JSON, so the payload must
+     * be unwrapped before parsing — otherwise the call is missed and the raw
+     * block is shown to the user as if it were the answer.
      *
      * @return the fenced content, or the input stripped if it is not fenced
      */
@@ -90,8 +91,8 @@ public final class ToolCallExtractor {
 
     private static void addIfKnownTool(JsonObject obj, Set<String> knownToolNames,
             List<ExtractedToolCall> out) {
-        JsonElement nameEl = obj.get("name");
-        JsonElement argumentsEl = obj.get("arguments");
+        JsonElement nameEl = obj.get(OpenAiJsonKeyEnum.NAME.key());
+        JsonElement argumentsEl = obj.get(OpenAiJsonKeyEnum.ARGUMENTS.key());
         if (nameEl == null || !nameEl.isJsonPrimitive() || !nameEl.getAsJsonPrimitive().isString()) {
             return;
         }

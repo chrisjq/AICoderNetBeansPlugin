@@ -29,9 +29,9 @@ public class FindUsagesTool implements McpToolInterface {
             return null;
         }
         if (options.contains(McpInstructionOptionEnum.ONLY_MCP_TOOL_ACCESS)) {
-            return "FindUsages - find all references to a class or member across the project";
+            return McpToolEnum.FIND_USAGES.toolName() + " - find all references to a class or member across the project";
         }
-        return "FindUsages -> INSTEAD OF manual search - find all references to a class or member across the project";
+        return McpToolEnum.FIND_USAGES.toolName() + " -> INSTEAD OF manual search - find all references to a class or member across the project";
     }
 
     @Override

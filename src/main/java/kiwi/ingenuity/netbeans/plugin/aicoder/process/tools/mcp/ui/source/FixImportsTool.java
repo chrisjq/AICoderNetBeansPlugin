@@ -1,15 +1,15 @@
 package kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.ui.source;
 
-import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.providers.netbeans.RefactoringProvider;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.McpSectionEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.McpToolEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.locking.LockTypeEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.locking.RequiresLock;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.server.McpHookServer;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.server.McpServerRegistry;
-import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.AbstractFileTool;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.session.AbstractAiSession;
+import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.AbstractFileTool;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.ToolRequestArguments;
+import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.providers.netbeans.RefactoringProvider;
 
 @RequiresLock(LockTypeEnum.FILE_WRITE_LOCK)
 public class FixImportsTool extends AbstractFileTool {
@@ -18,8 +18,7 @@ public class FixImportsTool extends AbstractFileTool {
         super(McpSectionEnum.UI_SOURCE,
                 McpToolEnum.FIX_IMPORTS.toolName(),
                 "Fix imports: removes unused imports and adds missing ones for the specified Java file. "
-                + "A disambiguation dialog appears if a type name is ambiguous. "
-                + "Omit filePath to use the current editor.",
+                + "A disambiguation dialog appears if a type name is ambiguous.",
                 "FixImports -> INSTEAD OF manual import editing - removes unused and adds missing imports",
                 "FixImports - removes unused and adds missing imports");
     }

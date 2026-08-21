@@ -45,13 +45,13 @@ public class OpenCodeSessionSettings extends AiModelSessionSettings {
     public void populateJsonObject(JsonObject cfgObj) {
         super.populateJsonObject(cfgObj);
         if (mode != null) {
-            cfgObj.addProperty("mode", mode);
+            cfgObj.addProperty(OpenCodeSessionSettingsKeyEnum.MODE.key(), mode);
         }
         if (effort != null) {
-            cfgObj.addProperty("effort", effort);
+            cfgObj.addProperty(OpenCodeSessionSettingsKeyEnum.EFFORT.key(), effort);
         }
         if (acpSessionId != null) {
-            cfgObj.addProperty("acpSessionId", acpSessionId);
+            cfgObj.addProperty(OpenCodeSessionSettingsKeyEnum.ACP_SESSION_ID.key(), acpSessionId);
         }
     }
 }

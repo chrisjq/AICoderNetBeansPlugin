@@ -93,7 +93,8 @@ class GithubCopilotPermissionHandler implements PermissionHandler {
             // isFileModification() stays false and no diff panel is raised. This only
             // restores the paragraph break; read-only tool calls remain invisible in
             // the transcript, the same as for every other backend.
-            Object toolTitle = extensionData == null ? null : extensionData.get("toolTitle");
+            Object toolTitle = extensionData == null ? null
+                    : extensionData.get(GithubCopilotJsonKeyEnum.TOOL_TITLE.key());
             listener.onAiProcessEvent(new ToolUseEvent(
                     toolTitle != null ? toolTitle.toString() : kind,
                     null, null, null, ToolUseEvent.Kind.OTHER));

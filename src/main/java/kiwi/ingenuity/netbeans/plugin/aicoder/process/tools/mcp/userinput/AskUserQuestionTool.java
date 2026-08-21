@@ -9,15 +9,15 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 import java.util.function.Supplier;
+import kiwi.ingenuity.netbeans.plugin.aicoder.ai.events.AskUserQuestionEvent;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.McpArgumentException;
+import kiwi.ingenuity.netbeans.plugin.aicoder.process.McpInstructionOptionEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.McpSectionEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.McpToolEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.events.AiProcessEventListener;
-import kiwi.ingenuity.netbeans.plugin.aicoder.ai.events.AskUserQuestionEvent;
-import kiwi.ingenuity.netbeans.plugin.aicoder.process.McpInstructionOptionEnum;
+import kiwi.ingenuity.netbeans.plugin.aicoder.process.session.AbstractAiSession;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.McpToolInterface;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.McpToolSchemas;
-import kiwi.ingenuity.netbeans.plugin.aicoder.process.session.AbstractAiSession;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.ToolRequestArguments;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.ToolSchemaKeyEnum;
 import org.openide.util.Exceptions;
@@ -73,12 +73,12 @@ public class AskUserQuestionTool implements McpToolInterface {
         JsonObject qProp = new JsonObject();
         qProp.addProperty(ToolSchemaKeyEnum.TYPE.key(), "string");
         qProp.addProperty(ToolSchemaKeyEnum.DESCRIPTION.key(), "The question to ask");
-        itemProps.add("question", qProp);
+        itemProps.add(AskUserQuestionParamEnum.QUESTION.key(), qProp);
 
         JsonObject hProp = new JsonObject();
         hProp.addProperty(ToolSchemaKeyEnum.TYPE.key(), "string");
         hProp.addProperty(ToolSchemaKeyEnum.DESCRIPTION.key(), "Short chip label (max 12 chars)");
-        itemProps.add("header", hProp);
+        itemProps.add(AskUserQuestionParamEnum.HEADER.key(), hProp);
 
         JsonObject optArr = new JsonObject();
         optArr.addProperty(ToolSchemaKeyEnum.TYPE.key(), "array");
@@ -87,23 +87,23 @@ public class AskUserQuestionTool implements McpToolInterface {
         JsonObject optProps = new JsonObject();
         JsonObject lProp = new JsonObject();
         lProp.addProperty(ToolSchemaKeyEnum.TYPE.key(), "string");
-        optProps.add("label", lProp);
+        optProps.add(AskUserQuestionParamEnum.LABEL.key(), lProp);
         JsonObject dProp = new JsonObject();
         dProp.addProperty(ToolSchemaKeyEnum.TYPE.key(), "string");
-        optProps.add("description", dProp);
+        optProps.add(AskUserQuestionParamEnum.DESCRIPTION.key(), dProp);
         optItem.add(ToolSchemaKeyEnum.PROPERTIES.key(), optProps);
         optArr.add(ToolSchemaKeyEnum.ITEMS.key(), optItem);
-        itemProps.add("options", optArr);
+        itemProps.add(AskUserQuestionParamEnum.OPTIONS.key(), optArr);
 
         JsonObject msProp = new JsonObject();
         msProp.addProperty(ToolSchemaKeyEnum.TYPE.key(), "boolean");
         msProp.addProperty(ToolSchemaKeyEnum.DEFAULT.key(), false);
-        itemProps.add("multiSelect", msProp);
+        itemProps.add(AskUserQuestionParamEnum.MULTI_SELECT.key(), msProp);
 
         item.add(ToolSchemaKeyEnum.PROPERTIES.key(), itemProps);
         JsonArray itemRequired = new JsonArray();
-        itemRequired.add("question");
-        itemRequired.add("options");
+        itemRequired.add(AskUserQuestionParamEnum.QUESTION.key());
+        itemRequired.add(AskUserQuestionParamEnum.OPTIONS.key());
         item.add(ToolSchemaKeyEnum.REQUIRED.key(), itemRequired);
         questionsArr.add(ToolSchemaKeyEnum.ITEMS.key(), item);
         props.add(AskUserQuestionParamEnum.QUESTIONS.key(), questionsArr);

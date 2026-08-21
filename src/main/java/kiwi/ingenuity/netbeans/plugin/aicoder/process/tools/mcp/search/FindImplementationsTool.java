@@ -3,16 +3,16 @@ package kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.search;
 import com.google.gson.JsonArray;
 import com.google.gson.JsonObject;
 import java.util.Set;
-import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.ToolSchemaKeyEnum;
-import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.providers.netbeans.SearchProvider;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.McpArgumentException;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.McpInstructionOptionEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.McpSectionEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.McpToolEnum;
+import kiwi.ingenuity.netbeans.plugin.aicoder.process.session.AbstractAiSession;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.McpToolInterface;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.McpToolSchemas;
-import kiwi.ingenuity.netbeans.plugin.aicoder.process.session.AbstractAiSession;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.ToolRequestArguments;
+import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.ToolSchemaKeyEnum;
+import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.providers.netbeans.SearchProvider;
 
 public class FindImplementationsTool implements McpToolInterface {
 
@@ -27,9 +27,9 @@ public class FindImplementationsTool implements McpToolInterface {
             return null;
         }
         if (options.contains(McpInstructionOptionEnum.ONLY_MCP_TOOL_ACCESS)) {
-            return "FindImplementations - find all subtypes/implementors of an interface or class";
+            return McpToolEnum.FIND_IMPLEMENTATIONS.toolName() + " - find all subtypes/implementors of an interface or class";
         }
-        return "FindImplementations -> INSTEAD OF manual search - find all subtypes/implementors of an interface or class";
+        return McpToolEnum.FIND_IMPLEMENTATIONS.toolName() + " -> INSTEAD OF manual search - find all subtypes/implementors of an interface or class";
     }
 
     @Override
@@ -45,7 +45,7 @@ public class FindImplementationsTool implements McpToolInterface {
         JsonObject props = new JsonObject();
         JsonObject fp = new JsonObject();
         fp.addProperty(ToolSchemaKeyEnum.TYPE.key(), "string");
-        fp.addProperty(ToolSchemaKeyEnum.DESCRIPTION.key(), "Absolute path to the file containing the type declaration. Omit to use current editor.");
+        fp.addProperty(ToolSchemaKeyEnum.DESCRIPTION.key(), "Absolute path to the file containing the type declaration. Omit to use the first open project's source root.");
         props.add(FindImplementationsParamEnum.FILE_PATH.key(), fp);
         JsonObject ln = new JsonObject();
         ln.addProperty(ToolSchemaKeyEnum.TYPE.key(), "integer");

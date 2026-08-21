@@ -173,7 +173,7 @@ public class ClaudeAiProcessManager extends AiProcessManager {
             try {
                 Files.createDirectories(memoryDir);
                 JsonObject settings = new JsonObject();
-                settings.addProperty("autoMemoryDirectory", memoryDir.toString());
+                settings.addProperty(ClaudeJsonKeyEnum.AUTO_MEMORY_DIRECTORY.key(), memoryDir.toString());
                 args.add("--settings");
                 args.add(GSON.toJson(settings));
             }

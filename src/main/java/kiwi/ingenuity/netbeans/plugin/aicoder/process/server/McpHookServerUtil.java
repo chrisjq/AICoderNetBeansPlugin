@@ -24,6 +24,7 @@ import kiwi.ingenuity.netbeans.plugin.aicoder.ai.AiTypeEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.McpInstructionOptionEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.McpSectionEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.McpToolEnum;
+import kiwi.ingenuity.netbeans.plugin.aicoder.process.McpToolPropertyEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.McpToolInterface;
 
 public final class McpHookServerUtil {
@@ -273,10 +274,12 @@ public final class McpHookServerUtil {
         if (argsObj != null && argsObj.size() > 0) {
             sb.append(" arguments:");
             for (Map.Entry<String, JsonElement> entry : argsObj.entrySet()) {
-                if ("secretKey".equals(entry.getKey())) {
+                if (McpToolPropertyEnum.SECRET_KEY.key().equals(entry.getKey())) {
                     // Never write the session secret to the IDE log. sessionId is
                     // kept: it is not secret and is needed to correlate entries.
-                    sb.append(" secretKey[***]");
+                    // Matched through the enum so renaming the property cannot
+                    // silently turn this redaction off.
+                    sb.append(' ').append(McpToolPropertyEnum.SECRET_KEY.key()).append("[***]");
                     continue;
                 }
                 JsonElement elem = entry.getValue();

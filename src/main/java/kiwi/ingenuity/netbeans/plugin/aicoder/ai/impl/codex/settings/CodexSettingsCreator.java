@@ -25,8 +25,9 @@ public class CodexSettingsCreator extends AiModelSessionSettingsCreator<CodexSes
     @Override
     public void update(CodexSessionSettings settings, JsonObject cfgObj) {
         super.update(settings, cfgObj);
-        if (cfgObj.has("threadId") && !cfgObj.get("threadId").isJsonNull()) {
-            settings.setThreadId(cfgObj.get("threadId").getAsString());
+        String threadIdKey = CodexSessionSettingsKeyEnum.THREAD_ID.key();
+        if (cfgObj.has(threadIdKey) && !cfgObj.get(threadIdKey).isJsonNull()) {
+            settings.setThreadId(cfgObj.get(threadIdKey).getAsString());
         }
     }
 

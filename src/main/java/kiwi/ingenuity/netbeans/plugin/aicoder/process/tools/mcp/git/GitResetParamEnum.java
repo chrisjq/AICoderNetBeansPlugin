@@ -1,21 +1,23 @@
 package kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.git;
 
+import kiwi.ingenuity.netbeans.plugin.aicoder.process.McpToolPropertyEnum;
+
 /**
  * Parameter-name keys for the GitResetTool MCP tool, shared between its
  * schema() definition and handle() argument extraction so the two cannot drift.
  */
 public enum GitResetParamEnum {
-    FILES("files"),
-    REVISION("revision"),
-    TYPE("type");
+    FILES(McpToolPropertyEnum.FILES),
+    REVISION(McpToolPropertyEnum.REVISION),
+    TYPE(McpToolPropertyEnum.TYPE);
 
-    private final String key;
+    private final McpToolPropertyEnum property;
 
-    GitResetParamEnum(String key) {
-        this.key = key;
+    GitResetParamEnum(McpToolPropertyEnum property) {
+        this.property = property;
     }
 
     public String key() {
-        return key;
+        return property.key();
     }
 }

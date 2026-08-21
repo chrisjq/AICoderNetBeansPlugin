@@ -111,8 +111,11 @@ public final class AiSessionInboxBroker {
             AiSession exitingSession = sessionFromRegistry(sessionId);
             exitingName = exitingSession != null ? exitingSession.name() : sessionId;
             List<AiInboxMessage> removed = inbox.remove(sessionId);
-            unread = removed != null ? removed : List.of();
-            unread.forEach(m -> inboxMessageById.remove(m.id()));
+            List<AiInboxMessage> removedMessages = removed != null ? removed : List.of();
+            removedMessages.forEach(m -> inboxMessageById.remove(m.id()));
+            // Read messages remain in the inbox, but only unread ones are undelivered.
+            // A replied-to message is no longer pending, so the pending check below cannot exclude it.
+            unread = removedMessages.stream().filter(m -> m.readAt() == null).toList();
             // Collect pending entries where the exiting session was the recipient
             pendingAsRecipient = pendingReplies.values().stream()
                     .filter(e -> e.toSessionId().equals(sessionId))

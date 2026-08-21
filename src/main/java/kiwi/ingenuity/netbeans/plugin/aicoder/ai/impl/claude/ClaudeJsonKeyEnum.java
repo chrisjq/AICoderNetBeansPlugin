@@ -31,8 +31,20 @@ public enum ClaudeJsonKeyEnum {
     REQUEST("request"),
     // Session ID carried on every stream-json event (the Claude Code session UUID)
     SESSION_ID("session_id"),
-    // System event subtypes (used as values, not keys, but kept here for locality)
-    ESTIMATED_TOKENS("estimated_tokens");
+    // System event fields: estimated_tokens on the thinking_tokens subtype,
+    // summary on the task_notification subtype. (The subtype names themselves
+    // are VALUES and stay literals in the parser.)
+    ESTIMATED_TOKENS("estimated_tokens"),
+    SUMMARY("summary"),
+    // api_error payload fields (result and system events): the error text may
+    // arrive under any of result / error / message, probed in that order
+    RESULT("result"),
+    ERROR("error"),
+    // Claude CLI settings JSON (passed on the command line via --settings)
+    AUTO_MEMORY_DIRECTORY("autoMemoryDirectory"),
+    // Claude CLI OAuth credentials (~/.claude/.credentials.json, or the macOS Keychain blob)
+    CLAUDE_AI_OAUTH("claudeAiOauth"),
+    ACCESS_TOKEN("accessToken");
 
     private final String key;
 

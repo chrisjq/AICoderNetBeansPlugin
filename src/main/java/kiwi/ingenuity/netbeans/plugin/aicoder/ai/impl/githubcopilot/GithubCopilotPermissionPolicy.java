@@ -2,6 +2,9 @@ package kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.githubcopilot;
 
 import java.util.Locale;
 import java.util.Map;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
+import kiwi.ingenuity.netbeans.plugin.aicoder.process.McpToolPropertyEnum;
 
 /**
  * Pure classification/formatting rules for
@@ -14,8 +17,8 @@ import java.util.Map;
  * MCP tool that kind is the literal string {@code "mcp"} — not the server name,
  * and not the {@code <mcp-server-name>(tool-name?)} pattern that
  * {@code copilot help permissions} documents for the CLI's own rule syntax. The
- * server name arrives separately, as {@code serverName} in
- * {@code extensionData}:
+ * server name arrives separately, as
+ * {@link GithubCopilotJsonKeyEnum#SERVER_NAME} in {@code extensionData}:
  *
  * <pre>
  * kind=mcp
@@ -52,7 +55,8 @@ final class GithubCopilotPermissionPolicy {
             // The server name is in extensionData, never in the kind. A tool from
             // another MCP server is deliberately not auto-approved — this plugin
             // gates its own tools and can vouch for nothing else.
-            Object server = extensionData == null ? null : extensionData.get("serverName");
+            Object server = extensionData == null ? null
+                    : extensionData.get(GithubCopilotJsonKeyEnum.SERVER_NAME.key());
             return server != null && mcpServerName != null
                     && server.toString().equalsIgnoreCase(mcpServerName)
                     ? Category.MCP_OUR_SERVER : Category.UNKNOWN;
@@ -78,12 +82,14 @@ final class GithubCopilotPermissionPolicy {
     /**
      * Label for the confirm panel's tool-name slot. The category alone reads
      * badly — an MCP call showed up as literally "Unknown" even though its
-     * {@code toolTitle} was right there in {@code extensionData}. Prefer the
-     * most specific thing actually known: the tool's title, then the raw kind,
-     * and only "Unknown" when there is genuinely nothing to show.
+     * {@link GithubCopilotJsonKeyEnum#TOOL_TITLE} was right there in
+     * {@code extensionData}. Prefer the most specific thing actually known: the
+     * tool's title, then the raw kind, and only "Unknown" when there is
+     * genuinely nothing to show.
      */
     static String describeToolName(Category category, String rawKind, Map<String, Object> extensionData) {
-        Object title = extensionData == null ? null : extensionData.get("toolTitle");
+        Object title = extensionData == null ? null
+                : extensionData.get(GithubCopilotJsonKeyEnum.TOOL_TITLE.key());
         if (title != null && !title.toString().isBlank()) {
             return title.toString();
         }
@@ -108,10 +114,10 @@ final class GithubCopilotPermissionPolicy {
      *
      * <p>
      * Two exceptions. Anything whose key looks like a credential is masked: the
-     * inter-AI tools pass a session {@code secretKey} as a normal argument, and
-     * a live run rendered one in full into both the confirm panel and the log.
-     * Long values are truncated so one large argument cannot push the rest of
-     * the request off the panel.
+     * inter-AI tools pass a session {@link McpToolPropertyEnum#SECRET_KEY} as a
+     * normal argument, and a live run rendered one in full into both the
+     * confirm panel and the log. Long values are truncated so one large
+     * argument cannot push the rest of the request off the panel.
      */
     static String describeRequest(String rawKind, Map<String, Object> extensionData) {
         StringBuilder sb = new StringBuilder("GitHub Copilot requests permission: ")
@@ -152,8 +158,12 @@ final class GithubCopilotPermissionPolicy {
         }
         String v = String.valueOf(value);
         // Nested argument maps carry credentials too — args={..., secretKey=...}.
-        if (v.contains("secretKey=")) {
-            v = v.replaceAll("secretKey=[^,}\\s]+", "secretKey=***");
+        // The parameter name comes from McpToolPropertyEnum so a rename there
+        // cannot silently switch this redaction off.
+        String secretKey = McpToolPropertyEnum.SECRET_KEY.key();
+        if (v.contains(secretKey + "=")) {
+            v = v.replaceAll(Pattern.quote(secretKey) + "=[^,}\\s]+",
+                    Matcher.quoteReplacement(secretKey) + "=***");
         }
         return v.length() > MAX_VALUE_CHARS ? v.substring(0, MAX_VALUE_CHARS) + "…" : v;
     }

@@ -1,20 +1,22 @@
 package kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.devops.test;
 
+import kiwi.ingenuity.netbeans.plugin.aicoder.process.McpToolPropertyEnum;
+
 /**
  * Parameter-name keys for the RunGradleTestsTool MCP tool, shared between its
  * schema() definition and handle() argument extraction so the two cannot drift.
  */
 public enum RunGradleTestsParamEnum {
-    TEST_CLASS("testClass"),
-    PROJECT_PATH("projectPath");
+    TEST_CLASS(McpToolPropertyEnum.TEST_CLASS),
+    PROJECT_PATH(McpToolPropertyEnum.PROJECT_PATH);
 
-    private final String key;
+    private final McpToolPropertyEnum property;
 
-    RunGradleTestsParamEnum(String key) {
-        this.key = key;
+    RunGradleTestsParamEnum(McpToolPropertyEnum property) {
+        this.property = property;
     }
 
     public String key() {
-        return key;
+        return property.key();
     }
 }

@@ -27,9 +27,9 @@ public class GetJavadocTool implements McpToolInterface {
             return null;
         }
         if (options.contains(McpInstructionOptionEnum.ONLY_MCP_TOOL_ACCESS)) {
-            return "GetJavadoc - returns Javadoc for any class or member";
+            return McpToolEnum.GET_JAVADOC.toolName() + " - returns Javadoc for any class or member";
         }
-        return "GetJavadoc -> INSTEAD OF web search - returns Javadoc for any class or member";
+        return McpToolEnum.GET_JAVADOC.toolName() + " -> INSTEAD OF web search - returns Javadoc for any class or member";
     }
 
     @Override

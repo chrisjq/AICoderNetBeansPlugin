@@ -4,6 +4,7 @@ import com.google.gson.JsonObject;
 import java.util.Set;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.McpInstructionOptionEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.McpSectionEnum;
+import kiwi.ingenuity.netbeans.plugin.aicoder.process.McpToolPropertyEnum;
 
 public abstract class AbstractTestsTool implements McpToolInterface {
 
@@ -51,13 +52,13 @@ public abstract class AbstractTestsTool implements McpToolInterface {
         tc.addProperty(ToolSchemaKeyEnum.DESCRIPTION.key(),
                 "Optional test class name (e.g. MyServiceTest or com.example.MyServiceTest). "
                 + "Omit to run all tests.");
-        props.add("testClass", tc);
+        props.add(McpToolPropertyEnum.TEST_CLASS.key(), tc);
         JsonObject pp = new JsonObject();
         pp.addProperty(ToolSchemaKeyEnum.TYPE.key(), "string");
         pp.addProperty(ToolSchemaKeyEnum.DESCRIPTION.key(),
                 "Absolute path to the project root directory. "
                 + "Omit to auto-detect from the main (bold) project or first matching open project.");
-        props.add("projectPath", pp);
+        props.add(McpToolPropertyEnum.PROJECT_PATH.key(), pp);
         schema.add(ToolSchemaKeyEnum.PROPERTIES.key(), props);
         tool.add(ToolSchemaKeyEnum.INPUT_SCHEMA.key(), schema);
         return McpToolSchemas.applyCredentialsIfRequested(tool, options);

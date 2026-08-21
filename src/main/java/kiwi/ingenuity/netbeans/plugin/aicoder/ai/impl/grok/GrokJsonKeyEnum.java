@@ -8,8 +8,12 @@ package kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.grok;
  * on-disk {@code signals.json} file — see {@link GrokUsageSignalsReader}).
  * RESULT/RESPONSE/CONTENT/MESSAGE are kept only as defensive fallbacks in case
  * a future grok CLI version renames the {@code text} field.
+ * <p>
+ * Also holds the field names of the per-session {@code signals.json} file the
+ * grok CLI rewrites after every turn (see {@link GrokUsageSignalsReader}).
  */
 public enum GrokJsonKeyEnum {
+    // --output-format json response fields
     RESULT("result"),
     RESPONSE("response"),
     TEXT("text"),
@@ -17,7 +21,11 @@ public enum GrokJsonKeyEnum {
     MESSAGE("message"),
     ERROR("error"),
     SESSION_ID("sessionId"),
-    STOP_REASON("stopReason");
+    STOP_REASON("stopReason"),
+    // ~/.grok/sessions/<cwd>/<sessionId>/signals.json fields
+    CONTEXT_TOKENS_USED("contextTokensUsed"),
+    CONTEXT_WINDOW_TOKENS("contextWindowTokens"),
+    PRIMARY_MODEL_ID("primaryModelId");
 
     private final String key;
 

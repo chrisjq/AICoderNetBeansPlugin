@@ -18,7 +18,7 @@ public class DownloadMavenJavadocTool extends AbstractBuildTool {
                 "Downloads Javadoc JARs for all dependencies via 'mvn dependency:resolve -Dclassifier=javadoc'. "
                 + "Maven projects only - do not use for Ant or Gradle projects. "
                 + "Run before GetJavadoc if doc comments are missing for library classes.",
-                "DownloadMavenJavadoc -> run before GetJavadoc to download Javadoc JARs for Maven dependencies");
+                McpToolEnum.DOWNLOAD_MAVEN_JAVADOC.toolName() + " -> run before GetJavadoc to download Javadoc JARs for Maven dependencies");
     }
 
     @Override

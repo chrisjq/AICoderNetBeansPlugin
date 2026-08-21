@@ -39,7 +39,7 @@ public class NavigateToLineTool implements McpToolInterface {
         tool.addProperty(ToolSchemaKeyEnum.NAME.key(), McpToolEnum.NAVIGATE_TO_LINE.toolName());
         tool.addProperty(ToolSchemaKeyEnum.DESCRIPTION.key(),
                 "Opens a file in the NetBeans editor and jumps to the specified line. "
-                + "Use after FindUsages or GetTypeHierarchy results to jump directly to a location.");
+                + "Use after " + McpToolEnum.FIND_USAGES.toolName() + " or " + McpToolEnum.GET_TYPE_HIERARCHY.toolName() + " results to jump directly to a location.");
         JsonObject schema = new JsonObject();
         schema.addProperty(ToolSchemaKeyEnum.TYPE.key(), "object");
         JsonObject props = new JsonObject();

@@ -1,22 +1,24 @@
 package kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.git;
 
+import kiwi.ingenuity.netbeans.plugin.aicoder.process.McpToolPropertyEnum;
+
 /**
  * Parameter-name keys for the GitTagTool MCP tool, shared between its schema()
  * definition and handle() argument extraction so the two cannot drift.
  */
 public enum GitTagParamEnum {
-    ACTION("action"),
-    NAME("name"),
-    REVISION("revision"),
-    MESSAGE("message");
+    ACTION(McpToolPropertyEnum.ACTION),
+    NAME(McpToolPropertyEnum.NAME),
+    REVISION(McpToolPropertyEnum.REVISION),
+    MESSAGE(McpToolPropertyEnum.MESSAGE);
 
-    private final String key;
+    private final McpToolPropertyEnum property;
 
-    GitTagParamEnum(String key) {
-        this.key = key;
+    GitTagParamEnum(McpToolPropertyEnum property) {
+        this.property = property;
     }
 
     public String key() {
-        return key;
+        return property.key();
     }
 }

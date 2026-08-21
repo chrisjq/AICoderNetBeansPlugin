@@ -18,7 +18,7 @@ public class DownloadMavenSourcesTool extends AbstractBuildTool {
                 "Downloads source JARs for all dependencies via 'mvn dependency:sources'. "
                 + "Maven projects only - do not use for Ant or Gradle projects. "
                 + "Enables source code browsing and navigation for library classes in the IDE.",
-                "DownloadMavenSources -> downloads source JARs for Maven dependencies to enable source browsing of library classes");
+                McpToolEnum.DOWNLOAD_MAVEN_SOURCES.toolName() + " -> downloads source JARs for Maven dependencies to enable source browsing of library classes");
     }
 
     @Override

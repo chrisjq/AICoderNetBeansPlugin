@@ -15,12 +15,14 @@ import java.util.logging.Level;
 import java.util.logging.Logger;
 import kiwi.ingenuity.netbeans.plugin.aicoder.StringConst;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.AiTypeEnum;
+import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.McpConfigKeyEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.server.AiMcpRegistrar;
 
 /**
  * Claude-specific MCP registration strategy. Uses {@code claude mcp add/remove}
- * to manage per-session endpoints, and writes the PreToolUse HTTP hook to
- * ~/.claude/settings.json for the diff-intercept feature.
+ * to manage per-session endpoints, and writes the
+ * {@link McpConfigKeyEnum#PRE_TOOL_USE} HTTP hook to ~/.claude/settings.json
+ * for the diff-intercept feature.
  */
 public class ClaudeAiMcpRegistrar extends AiMcpRegistrar {
 
@@ -33,28 +35,28 @@ public class ClaudeAiMcpRegistrar extends AiMcpRegistrar {
         Path settingsPath = Path.of(System.getProperty("user.home"), ".claude", "settings.json");
         try {
             JsonObject settings = readSettings(settingsPath);
-            if (!settings.has("hooks") || !settings.get("hooks").isJsonObject()) {
-                settings.add("hooks", new JsonObject());
+            if (!settings.has(McpConfigKeyEnum.HOOKS.key()) || !settings.get(McpConfigKeyEnum.HOOKS.key()).isJsonObject()) {
+                settings.add(McpConfigKeyEnum.HOOKS.key(), new JsonObject());
             }
-            JsonObject hooks = settings.getAsJsonObject("hooks");
+            JsonObject hooks = settings.getAsJsonObject(McpConfigKeyEnum.HOOKS.key());
             JsonArray preToolUse = new JsonArray();
-            if (hooks.has("PreToolUse") && hooks.get("PreToolUse").isJsonArray()) {
-                for (JsonElement el : hooks.getAsJsonArray("PreToolUse")) {
+            if (hooks.has(McpConfigKeyEnum.PRE_TOOL_USE.key()) && hooks.get(McpConfigKeyEnum.PRE_TOOL_USE.key()).isJsonArray()) {
+                for (JsonElement el : hooks.getAsJsonArray(McpConfigKeyEnum.PRE_TOOL_USE.key())) {
                     if (!isNbPluginHookEntry(el)) {
                         preToolUse.add(el);
                     }
                 }
             }
             JsonObject entry = new JsonObject();
-            entry.addProperty("matcher", "Edit|Write");
+            entry.addProperty(McpConfigKeyEnum.MATCHER.key(), "Edit|Write");
             JsonArray innerHooks = new JsonArray();
             JsonObject httpHook = new JsonObject();
-            httpHook.addProperty("type", "http");
-            httpHook.addProperty("url", baseUrl + "/");
+            httpHook.addProperty(McpConfigKeyEnum.TYPE.key(), "http");
+            httpHook.addProperty(McpConfigKeyEnum.URL.key(), baseUrl + "/");
             innerHooks.add(httpHook);
-            entry.add("hooks", innerHooks);
+            entry.add(McpConfigKeyEnum.HOOKS.key(), innerHooks);
             preToolUse.add(entry);
-            hooks.add("PreToolUse", preToolUse);
+            hooks.add(McpConfigKeyEnum.PRE_TOOL_USE.key(), preToolUse);
             writeSettings(settingsPath, settings);
             LOG.log(Level.INFO, "PreToolUse hook registered in {0}", settingsPath);
             return true;
@@ -72,20 +74,20 @@ public class ClaudeAiMcpRegistrar extends AiMcpRegistrar {
                 return;
             }
             JsonObject settings = readSettings(settingsPath);
-            if (!settings.has("hooks") || !settings.get("hooks").isJsonObject()) {
+            if (!settings.has(McpConfigKeyEnum.HOOKS.key()) || !settings.get(McpConfigKeyEnum.HOOKS.key()).isJsonObject()) {
                 return;
             }
-            JsonObject hooks = settings.getAsJsonObject("hooks");
-            if (!hooks.has("PreToolUse") || !hooks.get("PreToolUse").isJsonArray()) {
+            JsonObject hooks = settings.getAsJsonObject(McpConfigKeyEnum.HOOKS.key());
+            if (!hooks.has(McpConfigKeyEnum.PRE_TOOL_USE.key()) || !hooks.get(McpConfigKeyEnum.PRE_TOOL_USE.key()).isJsonArray()) {
                 return;
             }
             JsonArray filtered = new JsonArray();
-            for (JsonElement el : hooks.getAsJsonArray("PreToolUse")) {
+            for (JsonElement el : hooks.getAsJsonArray(McpConfigKeyEnum.PRE_TOOL_USE.key())) {
                 if (!isNbPluginHookEntry(el)) {
                     filtered.add(el);
                 }
             }
-            hooks.add("PreToolUse", filtered);
+            hooks.add(McpConfigKeyEnum.PRE_TOOL_USE.key(), filtered);
             writeSettings(settingsPath, settings);
             LOG.log(Level.INFO, "PreToolUse hook unregistered from {0}", settingsPath);
         }
@@ -99,7 +101,7 @@ public class ClaudeAiMcpRegistrar extends AiMcpRegistrar {
             return false;
         }
         try {
-            JsonArray hks = el.getAsJsonObject().getAsJsonArray("hooks");
+            JsonArray hks = el.getAsJsonObject().getAsJsonArray(McpConfigKeyEnum.HOOKS.key());
             if (hks == null) {
                 return false;
             }
@@ -107,7 +109,7 @@ public class ClaudeAiMcpRegistrar extends AiMcpRegistrar {
                 if (!h.isJsonObject()) {
                     continue;
                 }
-                JsonElement urlEl = h.getAsJsonObject().get("url");
+                JsonElement urlEl = h.getAsJsonObject().get(McpConfigKeyEnum.URL.key());
                 if (urlEl != null && !urlEl.isJsonNull()) {
                     String url = urlEl.getAsString();
                     if (url != null && (url.startsWith("http://127.0.0.1:")

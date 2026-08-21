@@ -26,6 +26,7 @@ import java.util.function.Consumer;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 import kiwi.ingenuity.netbeans.plugin.aicoder.PluginSettings;
+import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.ToolSchemaKeyEnum;
 
 public class OpenAiCompatibleClient implements HttpAiClient {
 
@@ -51,35 +52,35 @@ public class OpenAiCompatibleClient implements HttpAiClient {
             catch (RuntimeException ex) {
                 continue;
             }
-            JsonObject usage = root.getAsJsonObject("usage");
+            JsonObject usage = root.getAsJsonObject(OpenAiJsonKeyEnum.USAGE.key());
             if (usage != null) {
-                JsonElement pt = usage.get("prompt_tokens");
+                JsonElement pt = usage.get(OpenAiJsonKeyEnum.PROMPT_TOKENS.key());
                 if (pt != null && !pt.isJsonNull()) {
                     promptTokens = pt.getAsInt();
                 }
-                JsonElement ct = usage.get("completion_tokens");
+                JsonElement ct = usage.get(OpenAiJsonKeyEnum.COMPLETION_TOKENS.key());
                 if (ct != null && !ct.isJsonNull()) {
                     completionTokens = ct.getAsInt();
                 }
             }
-            JsonArray choices = root.getAsJsonArray("choices");
+            JsonArray choices = root.getAsJsonArray(OpenAiJsonKeyEnum.CHOICES.key());
             if (choices == null || choices.isEmpty()) {
                 continue;
             }
             JsonObject choice = choices.get(0).getAsJsonObject();
-            JsonElement finishReasonEl = choice.get("finish_reason");
+            JsonElement finishReasonEl = choice.get(OpenAiJsonKeyEnum.FINISH_REASON.key());
             if (finishReasonEl != null && !finishReasonEl.isJsonNull()) {
                 finishReason = finishReasonEl.getAsString();
             }
-            JsonObject delta = choice.getAsJsonObject("delta");
+            JsonObject delta = choice.getAsJsonObject(OpenAiJsonKeyEnum.DELTA.key());
             if (delta == null) {
                 continue;
             }
-            JsonElement contentEl = delta.get("content");
+            JsonElement contentEl = delta.get(OpenAiJsonKeyEnum.CONTENT.key());
             if (contentEl != null && !contentEl.isJsonNull()) {
                 assistantText.append(contentEl.getAsString());
             }
-            JsonArray deltaToolCalls = delta.getAsJsonArray("tool_calls");
+            JsonArray deltaToolCalls = delta.getAsJsonArray(OpenAiJsonKeyEnum.TOOL_CALLS.key());
             if (deltaToolCalls != null) {
                 appendToolCalls(toolCalls, deltaToolCalls);
             }
@@ -119,16 +120,16 @@ public class OpenAiCompatibleClient implements HttpAiClient {
         }
         try {
             JsonObject root = JsonParser.parseString(data).getAsJsonObject();
-            JsonArray choices = root.getAsJsonArray("choices");
+            JsonArray choices = root.getAsJsonArray(OpenAiJsonKeyEnum.CHOICES.key());
             if (choices == null || choices.isEmpty()) {
                 return;
             }
             JsonObject choice = choices.get(0).getAsJsonObject();
-            JsonObject delta = choice.getAsJsonObject("delta");
+            JsonObject delta = choice.getAsJsonObject(OpenAiJsonKeyEnum.DELTA.key());
             if (delta == null) {
                 return;
             }
-            JsonElement contentEl = delta.get("content");
+            JsonElement contentEl = delta.get(OpenAiJsonKeyEnum.CONTENT.key());
             if (contentEl != null && !contentEl.isJsonNull()) {
                 onTextDelta.accept(contentEl.getAsString());
             }
@@ -144,21 +145,22 @@ public class OpenAiCompatibleClient implements HttpAiClient {
                 continue;
             }
             JsonObject toolCall = element.getAsJsonObject();
-            int index = toolCall.has("index") ? toolCall.get("index").getAsInt() : toolCalls.size();
+            int index = toolCall.has(OpenAiJsonKeyEnum.INDEX.key())
+                    ? toolCall.get(OpenAiJsonKeyEnum.INDEX.key()).getAsInt() : toolCalls.size();
             PartialToolCall partial = toolCalls.computeIfAbsent(index, i -> new PartialToolCall());
-            JsonElement idEl = toolCall.get("id");
+            JsonElement idEl = toolCall.get(OpenAiJsonKeyEnum.ID.key());
             if (idEl != null && !idEl.isJsonNull()) {
                 partial.id = idEl.getAsString();
             }
-            JsonObject function = toolCall.getAsJsonObject("function");
+            JsonObject function = toolCall.getAsJsonObject(OpenAiJsonKeyEnum.FUNCTION.key());
             if (function == null) {
                 continue;
             }
-            JsonElement nameEl = function.get("name");
+            JsonElement nameEl = function.get(OpenAiJsonKeyEnum.NAME.key());
             if (nameEl != null && !nameEl.isJsonNull()) {
                 partial.name = nameEl.getAsString();
             }
-            JsonElement argsEl = function.get("arguments");
+            JsonElement argsEl = function.get(OpenAiJsonKeyEnum.ARGUMENTS.key());
             if (argsEl != null && !argsEl.isJsonNull()) {
                 partial.arguments.append(argsEl.getAsString());
             }
@@ -167,43 +169,48 @@ public class OpenAiCompatibleClient implements HttpAiClient {
 
     private static JsonObject buildPayload(ChatRequest request) {
         JsonObject payload = new JsonObject();
-        payload.addProperty("model", request.model());
-        payload.addProperty("stream", true);
+        payload.addProperty(OpenAiJsonKeyEnum.MODEL.key(), request.model());
+        payload.addProperty(OpenAiJsonKeyEnum.STREAM.key(), true);
         JsonObject streamOptions = new JsonObject();
-        streamOptions.addProperty("include_usage", true);
-        payload.add("stream_options", streamOptions);
+        streamOptions.addProperty(OpenAiJsonKeyEnum.INCLUDE_USAGE.key(), true);
+        payload.add(OpenAiJsonKeyEnum.STREAM_OPTIONS.key(), streamOptions);
 
         JsonArray messages = new JsonArray();
         for (ChatMessage message : request.messages() == null ? List.<ChatMessage>of() : request.messages()) {
             messages.add(toApiMessage(message));
         }
-        payload.add("messages", messages);
+        payload.add(OpenAiJsonKeyEnum.MESSAGES.key(), messages);
 
         JsonArray tools = new JsonArray();
         for (JsonObject toolSchema : request.toolSchemas() == null ? List.<JsonObject>of() : request.toolSchemas()) {
             JsonObject function = new JsonObject();
             if (toolSchema != null) {
-                if (toolSchema.has("name")) {
-                    function.add("name", toolSchema.get("name"));
+                // toolSchema is one of the plugin's OWN MCP tool definitions, so it is
+                // READ with ToolSchemaKeyEnum; what is WRITTEN into the OpenAI
+                // function object uses OpenAiJsonKeyEnum. Same spelling today, but
+                // two contracts — keep them from sharing one constant.
+                if (toolSchema.has(ToolSchemaKeyEnum.NAME.key())) {
+                    function.add(OpenAiJsonKeyEnum.NAME.key(), toolSchema.get(ToolSchemaKeyEnum.NAME.key()));
                 }
-                if (toolSchema.has("description")) {
-                    function.add("description", toolSchema.get("description"));
+                if (toolSchema.has(ToolSchemaKeyEnum.DESCRIPTION.key())) {
+                    function.add(OpenAiJsonKeyEnum.DESCRIPTION.key(), toolSchema.get(ToolSchemaKeyEnum.DESCRIPTION.key()));
                 }
-                JsonElement parameters = toolSchema.has("inputSchema")
-                        ? toolSchema.get("inputSchema")
-                        : toolSchema.has("parameters") ? toolSchema.get("parameters") : null;
+                // A schema already in OpenAI shape carries "parameters" instead.
+                JsonElement parameters = toolSchema.has(ToolSchemaKeyEnum.INPUT_SCHEMA.key())
+                        ? toolSchema.get(ToolSchemaKeyEnum.INPUT_SCHEMA.key())
+                        : toolSchema.has(OpenAiJsonKeyEnum.PARAMETERS.key()) ? toolSchema.get(OpenAiJsonKeyEnum.PARAMETERS.key()) : null;
                 if (parameters != null && parameters.isJsonObject()) {
-                    function.add("parameters", deepCopy(parameters.getAsJsonObject()));
+                    function.add(OpenAiJsonKeyEnum.PARAMETERS.key(), deepCopy(parameters.getAsJsonObject()));
                 }
             }
             JsonObject tool = new JsonObject();
-            tool.addProperty("type", "function");
-            tool.add("function", function);
+            tool.addProperty(OpenAiJsonKeyEnum.TYPE.key(), "function");
+            tool.add(OpenAiJsonKeyEnum.FUNCTION.key(), function);
             tools.add(tool);
         }
-        payload.add("tools", tools);
+        payload.add(OpenAiJsonKeyEnum.TOOLS.key(), tools);
         if (request.responseFormat() != null) {
-            payload.add("response_format", request.responseFormat());
+            payload.add(OpenAiJsonKeyEnum.RESPONSE_FORMAT.key(), request.responseFormat());
         }
         return payload;
     }
@@ -214,31 +221,31 @@ public class OpenAiCompatibleClient implements HttpAiClient {
 
     private static JsonObject toApiMessage(ChatMessage message) {
         JsonObject out = new JsonObject();
-        out.addProperty("role", message.role().name().toLowerCase(Locale.ROOT));
+        out.addProperty(OpenAiJsonKeyEnum.ROLE.key(), message.role().name().toLowerCase(Locale.ROOT));
         if (message.content() == null) {
-            out.add("content", null);
+            out.add(OpenAiJsonKeyEnum.CONTENT.key(), null);
         }
         else {
-            out.addProperty("content", message.content());
+            out.addProperty(OpenAiJsonKeyEnum.CONTENT.key(), message.content());
         }
         if (message.toolCallId() != null) {
-            out.addProperty("tool_call_id", message.toolCallId());
+            out.addProperty(OpenAiJsonKeyEnum.TOOL_CALL_ID.key(), message.toolCallId());
         }
         if (message.toolCalls() != null && !message.toolCalls().isEmpty()) {
             JsonArray toolCalls = new JsonArray();
             for (ChatToolCall call : message.toolCalls()) {
                 JsonObject toolCall = new JsonObject();
                 if (call.id() != null) {
-                    toolCall.addProperty("id", call.id());
+                    toolCall.addProperty(OpenAiJsonKeyEnum.ID.key(), call.id());
                 }
-                toolCall.addProperty("type", "function");
+                toolCall.addProperty(OpenAiJsonKeyEnum.TYPE.key(), "function");
                 JsonObject function = new JsonObject();
-                function.addProperty("name", call.name());
-                function.addProperty("arguments", call.argumentsJson() == null ? "{}" : call.argumentsJson());
-                toolCall.add("function", function);
+                function.addProperty(OpenAiJsonKeyEnum.NAME.key(), call.name());
+                function.addProperty(OpenAiJsonKeyEnum.ARGUMENTS.key(), call.argumentsJson() == null ? "{}" : call.argumentsJson());
+                toolCall.add(OpenAiJsonKeyEnum.FUNCTION.key(), function);
                 toolCalls.add(toolCall);
             }
-            out.add("tool_calls", toolCalls);
+            out.add(OpenAiJsonKeyEnum.TOOL_CALLS.key(), toolCalls);
         }
         return out;
     }

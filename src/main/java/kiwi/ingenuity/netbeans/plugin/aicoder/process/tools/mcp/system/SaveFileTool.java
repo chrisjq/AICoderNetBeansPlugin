@@ -20,7 +20,6 @@ import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.AbstractFileTool
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.McpToolSchemas;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.ToolRequestArguments;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.ToolSchemaKeyEnum;
-import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.providers.netbeans.EditorContextProvider;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.providers.netbeans.RefactoringProvider;
 import kiwi.ingenuity.netbeans.plugin.aicoder.utils.ProjectPathUtil;
 
@@ -35,10 +34,10 @@ public class SaveFileTool extends AbstractFileTool {
                 "Save a file. When 'content' is provided, replaces the entire file content and saves "
                 + "(works for open or closed files; creates new files). Without 'content', saves "
                 + "existing unsaved editor changes to disk.",
-                "SaveFile -> with 'content': write+save in one step INSTEAD OF Read+Edit (no built-in "
+                McpToolEnum.SAVE_FILE.toolName() + " -> with 'content': write+save in one step INSTEAD OF Read+Edit (no built-in "
                 + "tools needed); refresh is automatic for both new and existing files; "
                 + "without 'content': flush unsaved NetBeans changes before Read+Edit",
-                "SaveFile - with 'content': write+save in one step; refresh is automatic for both new and existing files; without 'content': flush unsaved NetBeans changes");
+                McpToolEnum.SAVE_FILE.toolName() + " - with 'content': write+save in one step; refresh is automatic for both new and existing files; without 'content': flush unsaved NetBeans changes");
         this.server = server;
     }
 
@@ -55,7 +54,9 @@ public class SaveFileTool extends AbstractFileTool {
         JsonObject props = new JsonObject();
         JsonObject fp = new JsonObject();
         fp.addProperty(ToolSchemaKeyEnum.TYPE.key(), "string");
-        fp.addProperty(ToolSchemaKeyEnum.DESCRIPTION.key(), "Absolute path to the file. Omit to use the current editor.");
+        fp.addProperty(ToolSchemaKeyEnum.DESCRIPTION.key(),
+                "Absolute path to the file. Required — this tool does not fall back to the "
+                + "focused editor. Call " + McpToolEnum.GET_CURRENT_FILE.toolName() + " for the file the user is looking at.");
         props.add(SaveFileParamEnum.FILE_PATH.key(), fp);
         JsonObject ct = new JsonObject();
         ct.addProperty(ToolSchemaKeyEnum.TYPE.key(), "string");
@@ -70,7 +71,17 @@ public class SaveFileTool extends AbstractFileTool {
     @Override
     public String handle(ToolRequestArguments args, AbstractAiSession session) {
         String fp = args.str(SaveFileParamEnum.FILE_PATH.key());
-        String effectivePath = fp != null ? fp : EditorContextProvider.getCurrentFilePath();
+        if (fp == null || fp.isBlank()) {
+            // No fallback to the focused editor. Without content this flushes
+            // unsaved editor changes to disk, so omitting the path committed
+            // whatever the user happened to be part-way through editing —
+            // chosen by where they last clicked, not by anything the caller
+            // decided. The content path already required it; this makes the
+            // no-content path agree.
+            return "filePath is required — this tool does not fall back to the focused editor. "
+                    + "Call GetCurrentFile if you want the file the user is looking at.";
+        }
+        String effectivePath = fp;
         if (effectivePath != null) {
             String sessionId = session.getId();
             if (sessionId == null || !server.isFileAllowed(sessionId, effectivePath)) {
@@ -80,7 +91,7 @@ public class SaveFileTool extends AbstractFileTool {
         String content = args.str(SaveFileParamEnum.CONTENT.key());
         if (content != null) {
             if (fp == null) {
-                return "file_path is required when content is provided";
+                return "filePath is required when content is provided";
             }
             AiProcessEventListener listener = session.getAiProcessEventListener();
             if (listener == null) {

@@ -27,14 +27,17 @@ public class OpenCodeSettingsCreator extends AiModelSessionSettingsCreator<OpenC
     @Override
     public void update(OpenCodeSessionSettings settings, JsonObject cfgObj) {
         super.update(settings, cfgObj);
-        if (cfgObj.has("mode") && !cfgObj.get("mode").isJsonNull()) {
-            settings.setMode(cfgObj.get("mode").getAsString());
+        String modeKey = OpenCodeSessionSettingsKeyEnum.MODE.key();
+        String effortKey = OpenCodeSessionSettingsKeyEnum.EFFORT.key();
+        String acpSessionIdKey = OpenCodeSessionSettingsKeyEnum.ACP_SESSION_ID.key();
+        if (cfgObj.has(modeKey) && !cfgObj.get(modeKey).isJsonNull()) {
+            settings.setMode(cfgObj.get(modeKey).getAsString());
         }
-        if (cfgObj.has("effort") && !cfgObj.get("effort").isJsonNull()) {
-            settings.setEffort(cfgObj.get("effort").getAsString());
+        if (cfgObj.has(effortKey) && !cfgObj.get(effortKey).isJsonNull()) {
+            settings.setEffort(cfgObj.get(effortKey).getAsString());
         }
-        if (cfgObj.has("acpSessionId") && !cfgObj.get("acpSessionId").isJsonNull()) {
-            settings.setAcpSessionId(cfgObj.get("acpSessionId").getAsString());
+        if (cfgObj.has(acpSessionIdKey) && !cfgObj.get(acpSessionIdKey).isJsonNull()) {
+            settings.setAcpSessionId(cfgObj.get(acpSessionIdKey).getAsString());
         }
     }
 

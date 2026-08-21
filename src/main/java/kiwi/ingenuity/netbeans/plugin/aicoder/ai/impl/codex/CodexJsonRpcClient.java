@@ -94,11 +94,11 @@ public class CodexJsonRpcClient {
         CompletableFuture<JsonObject> future = new CompletableFuture<>();
         pending.put(id, future);
         JsonObject msg = new JsonObject();
-        msg.addProperty("jsonrpc", "2.0");
-        msg.addProperty("id", id);
-        msg.addProperty("method", method);
+        msg.addProperty(CodexJsonKeyEnum.JSONRPC.key(), "2.0");
+        msg.addProperty(CodexJsonKeyEnum.ID.key(), id);
+        msg.addProperty(CodexJsonKeyEnum.METHOD.key(), method);
         if (params != null) {
-            msg.add("params", params);
+            msg.add(CodexJsonKeyEnum.PARAMS.key(), params);
         }
         try {
             writeMessage(msg);
@@ -112,10 +112,10 @@ public class CodexJsonRpcClient {
 
     public void sendNotification(String method, JsonObject params) {
         JsonObject msg = new JsonObject();
-        msg.addProperty("jsonrpc", "2.0");
-        msg.addProperty("method", method);
+        msg.addProperty(CodexJsonKeyEnum.JSONRPC.key(), "2.0");
+        msg.addProperty(CodexJsonKeyEnum.METHOD.key(), method);
         if (params != null) {
-            msg.add("params", params);
+            msg.add(CodexJsonKeyEnum.PARAMS.key(), params);
         }
         writeMessage(msg);
     }
@@ -195,33 +195,33 @@ public class CodexJsonRpcClient {
     private void handleLine(String line) {
         try {
             JsonObject msg = JsonParser.parseString(line).getAsJsonObject();
-            boolean hasMethod = msg.has("method");
-            boolean hasId = msg.has("id");
+            boolean hasMethod = msg.has(CodexJsonKeyEnum.METHOD.key());
+            boolean hasId = msg.has(CodexJsonKeyEnum.ID.key());
 
             if (hasMethod && hasId) {
-                long id = msg.get("id").getAsLong();
-                String method = msg.get("method").getAsString();
-                JsonObject params = msg.has("params") ? msg.getAsJsonObject("params") : new JsonObject();
+                long id = msg.get(CodexJsonKeyEnum.ID.key()).getAsLong();
+                String method = msg.get(CodexJsonKeyEnum.METHOD.key()).getAsString();
+                JsonObject params = msg.has(CodexJsonKeyEnum.PARAMS.key()) ? msg.getAsJsonObject(CodexJsonKeyEnum.PARAMS.key()) : new JsonObject();
                 dispatchExecutor.execute(() -> handleInboundRequest(id, method, params));
             }
             else if (hasMethod) {
-                String method = msg.get("method").getAsString();
-                JsonObject params = msg.has("params") ? msg.getAsJsonObject("params") : new JsonObject();
+                String method = msg.get(CodexJsonKeyEnum.METHOD.key()).getAsString();
+                JsonObject params = msg.has(CodexJsonKeyEnum.PARAMS.key()) ? msg.getAsJsonObject(CodexJsonKeyEnum.PARAMS.key()) : new JsonObject();
                 notifyExecutor.execute(() -> notificationListener.onNotification(method, params));
             }
             else if (hasId) {
-                long id = msg.get("id").getAsLong();
+                long id = msg.get(CodexJsonKeyEnum.ID.key()).getAsLong();
                 CompletableFuture<JsonObject> future = pending.remove(id);
                 if (future != null) {
-                    if (msg.has("error")) {
-                        JsonObject error = msg.getAsJsonObject("error");
-                        int code = error.has("code") ? error.get("code").getAsInt() : 0;
-                        String message = error.has("message") ? error.get("message").getAsString() : "unknown";
+                    if (msg.has(CodexJsonKeyEnum.ERROR.key())) {
+                        JsonObject error = msg.getAsJsonObject(CodexJsonKeyEnum.ERROR.key());
+                        int code = error.has(CodexJsonKeyEnum.CODE.key()) ? error.get(CodexJsonKeyEnum.CODE.key()).getAsInt() : 0;
+                        String message = error.has(CodexJsonKeyEnum.MESSAGE.key()) ? error.get(CodexJsonKeyEnum.MESSAGE.key()).getAsString() : "unknown";
                         CodexJsonRpcException ex = new CodexJsonRpcException(code, message);
                         dispatchExecutor.execute(() -> future.completeExceptionally(ex));
                     }
                     else {
-                        JsonObject result = msg.has("result") ? msg.getAsJsonObject("result") : new JsonObject();
+                        JsonObject result = msg.has(CodexJsonKeyEnum.RESULT.key()) ? msg.getAsJsonObject(CodexJsonKeyEnum.RESULT.key()) : new JsonObject();
                         dispatchExecutor.execute(() -> future.complete(result));
                     }
                 }
@@ -243,20 +243,20 @@ public class CodexJsonRpcClient {
 
     private void sendSuccessResponse(long id, JsonObject result) {
         JsonObject msg = new JsonObject();
-        msg.addProperty("jsonrpc", "2.0");
-        msg.addProperty("id", id);
-        msg.add("result", result != null ? result : new JsonObject());
+        msg.addProperty(CodexJsonKeyEnum.JSONRPC.key(), "2.0");
+        msg.addProperty(CodexJsonKeyEnum.ID.key(), id);
+        msg.add(CodexJsonKeyEnum.RESULT.key(), result != null ? result : new JsonObject());
         writeMessage(msg);
     }
 
     private void sendErrorResponse(long id, int code, String message) {
         JsonObject msg = new JsonObject();
-        msg.addProperty("jsonrpc", "2.0");
-        msg.addProperty("id", id);
+        msg.addProperty(CodexJsonKeyEnum.JSONRPC.key(), "2.0");
+        msg.addProperty(CodexJsonKeyEnum.ID.key(), id);
         JsonObject error = new JsonObject();
-        error.addProperty("code", code);
-        error.addProperty("message", message);
-        msg.add("error", error);
+        error.addProperty(CodexJsonKeyEnum.CODE.key(), code);
+        error.addProperty(CodexJsonKeyEnum.MESSAGE.key(), message);
+        msg.add(CodexJsonKeyEnum.ERROR.key(), error);
         writeMessage(msg);
     }
 }

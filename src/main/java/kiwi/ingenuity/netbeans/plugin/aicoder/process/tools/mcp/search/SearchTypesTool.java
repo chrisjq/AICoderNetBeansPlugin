@@ -27,9 +27,9 @@ public class SearchTypesTool implements McpToolInterface {
             return null;
         }
         if (options.contains(McpInstructionOptionEnum.ONLY_MCP_TOOL_ACCESS)) {
-            return "SearchTypes - locate Java types by name pattern";
+            return McpToolEnum.SEARCH_TYPES.toolName() + " - locate Java types by name pattern";
         }
-        return "SearchTypes -> INSTEAD OF Glob - locate Java types by name pattern";
+        return McpToolEnum.SEARCH_TYPES.toolName() + " -> INSTEAD OF Glob - locate Java types by name pattern";
     }
 
     @Override
@@ -46,7 +46,7 @@ public class SearchTypesTool implements McpToolInterface {
         JsonObject props = new JsonObject();
         JsonObject fp = new JsonObject();
         fp.addProperty(ToolSchemaKeyEnum.TYPE.key(), "string");
-        fp.addProperty(ToolSchemaKeyEnum.DESCRIPTION.key(), "Any source file in the project. Omit to use current editor.");
+        fp.addProperty(ToolSchemaKeyEnum.DESCRIPTION.key(), "Any source file in the project. Omit to use the first open project's source root.");
         props.add(SearchTypesParamEnum.FILE_PATH.key(), fp);
         JsonObject n = new JsonObject();
         n.addProperty(ToolSchemaKeyEnum.TYPE.key(), "string");

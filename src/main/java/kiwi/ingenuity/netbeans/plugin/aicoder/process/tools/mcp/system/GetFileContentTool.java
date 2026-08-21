@@ -7,6 +7,7 @@ import kiwi.ingenuity.netbeans.plugin.aicoder.process.McpArgumentException;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.McpInstructionOptionEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.McpSectionEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.McpToolEnum;
+import kiwi.ingenuity.netbeans.plugin.aicoder.process.McpToolPropertyEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.server.McpHookServer;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.session.AbstractAiSession;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.McpToolInterface;
@@ -33,7 +34,7 @@ public class GetFileContentTool implements McpToolInterface {
             sb.append("Use this INSTEAD OF the built-in Read tool for project source files so you see "
                     + "what the IDE currently holds, not what is on disk. ");
         }
-        sb.append("Optionally restrict to a line range using startLine and endLine. Output includes a line-number gutter; strip it before using content in ApplyEdit old_string.");
+        sb.append("Optionally restrict to a line range using " + GetFileContentParamEnum.START_LINE.key() + " and " + GetFileContentParamEnum.END_LINE.key() + ". Output includes a line-number gutter; strip it before using content in ApplyEdit " + McpToolPropertyEnum.OLD_STRING.key() + ".");
         return sb.toString();
     }
 
@@ -54,13 +55,13 @@ public class GetFileContentTool implements McpToolInterface {
             return null;
         }
         if (options.contains(McpInstructionOptionEnum.ONLY_MCP_TOOL_ACCESS)) {
-            return "GetFileContent - reads project source files with live NetBeans annotations (compilation errors, warnings); do not guess paths — use GetProjectStructure for package layout or SearchSymbols/SearchInFiles to locate a file first";
+            return McpToolEnum.GET_FILE_CONTENT.toolName() + " - reads project source files with live NetBeans annotations (compilation errors, warnings); do not guess paths — use " + McpToolEnum.GET_PROJECT_STRUCTURE.toolName() + " for package layout or " + McpToolEnum.SEARCH_SYMBOLS.toolName() + "/" + McpToolEnum.SEARCH_IN_FILES.toolName() + " to locate a file first";
         }
-        return "GetFileContent -> INSTEAD OF Read tool for project source files; reads NetBeans "
-                + "in-memory content including unsaved changes; output carries a line-number gutter — strip it before using in ApplyEdit old_string. "
-                + "Full rewrite: GetFileContent → SaveFile(content). "
-                + "Partial edit: GetFileContent → SaveFile (flush) → Read (built-in) → Edit (built-in). "
-                + "Do not guess paths — use GetProjectStructure for package layout or SearchSymbols/SearchInFiles to locate a file first";
+        return McpToolEnum.GET_FILE_CONTENT.toolName() + " -> INSTEAD OF Read tool for project source files; reads NetBeans "
+                + "in-memory content including unsaved changes; output carries a line-number gutter — strip it before using in " + McpToolEnum.APPLY_EDIT.toolName() + " " + McpToolPropertyEnum.OLD_STRING.key() + ". "
+                + "Full rewrite: " + McpToolEnum.GET_FILE_CONTENT.toolName() + " → " + McpToolEnum.SAVE_FILE.toolName() + " (" + McpToolPropertyEnum.CONTENT.key() + "). "
+                + "Partial edit: " + McpToolEnum.GET_FILE_CONTENT.toolName() + " → " + McpToolEnum.SAVE_FILE.toolName() + " (flush) → Read (built-in) → Edit (built-in). "
+                + "Do not guess paths — use " + McpToolEnum.GET_PROJECT_STRUCTURE.toolName() + " for package layout or " + McpToolEnum.SEARCH_SYMBOLS.toolName() + "/" + McpToolEnum.SEARCH_IN_FILES.toolName() + " to locate a file first";
     }
 
     @Override

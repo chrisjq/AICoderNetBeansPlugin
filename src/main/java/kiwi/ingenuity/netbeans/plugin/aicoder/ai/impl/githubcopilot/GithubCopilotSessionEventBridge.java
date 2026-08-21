@@ -226,11 +226,12 @@ public final class GithubCopilotSessionEventBridge {
             }
             String msg = data.message();
             if (msg != null && !msg.isBlank()) {
-                if (msg.trim().startsWith("{") && msg.contains("\"message\"")) {
+                String messageKey = GithubCopilotJsonKeyEnum.MESSAGE.key();
+                if (msg.trim().startsWith("{") && msg.contains("\"" + messageKey + "\"")) {
                     try {
                         JsonObject obj = com.google.gson.JsonParser.parseString(msg).getAsJsonObject();
-                        if (obj.has("message") && !obj.get("message").isJsonNull()) {
-                            msg = obj.get("message").getAsString();
+                        if (obj.has(messageKey) && !obj.get(messageKey).isJsonNull()) {
+                            msg = obj.get(messageKey).getAsString();
                         }
                     }
                     catch (Exception ignored) {

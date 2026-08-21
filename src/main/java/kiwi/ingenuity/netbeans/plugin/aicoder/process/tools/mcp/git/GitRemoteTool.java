@@ -3,18 +3,19 @@ package kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.git;
 import com.google.gson.JsonArray;
 import com.google.gson.JsonObject;
 import java.util.Set;
-import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.ToolSchemaKeyEnum;
-import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.providers.netbeans.GitProvider;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.McpArgumentException;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.McpInstructionOptionEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.McpSectionEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.McpToolEnum;
-import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.McpToolInterface;
-import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.McpToolSchemas;
-import kiwi.ingenuity.netbeans.plugin.aicoder.process.session.AbstractAiSession;
-import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.ToolRequestArguments;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.locking.LockTypeEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.locking.RequiresLock;
+import kiwi.ingenuity.netbeans.plugin.aicoder.process.session.AbstractAiSession;
+import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.McpToolInterface;
+import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.McpToolSchemas;
+import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.ToolRequestArguments;
+import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.ToolSchemaKeyEnum;
+import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.providers.netbeans.GitProvider;
+import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.providers.netbeans.GitRemoteActionEnum;
 
 @RequiresLock(LockTypeEnum.GIT_LOCK)
 public class GitRemoteTool implements McpToolInterface {
@@ -42,7 +43,7 @@ public class GitRemoteTool implements McpToolInterface {
         JsonObject tool = new JsonObject();
         tool.addProperty(ToolSchemaKeyEnum.NAME.key(), McpToolEnum.GIT_REMOTE.toolName());
         tool.addProperty(ToolSchemaKeyEnum.DESCRIPTION.key(),
-                "Manages git remotes. action=list (default) lists all remotes with URLs; "
+                "Manages git remotes. Actions: " + GitRemoteActionEnum.actionList() + ". "
                 + "add adds a new remote; remove deletes one. "
                 + "Equivalent to: git remote [-v|add|remove] [name] [url]");
         JsonObject schema = new JsonObject();
@@ -50,7 +51,7 @@ public class GitRemoteTool implements McpToolInterface {
         JsonObject props = new JsonObject();
         JsonObject action = new JsonObject();
         action.addProperty(ToolSchemaKeyEnum.TYPE.key(), "string");
-        action.addProperty(ToolSchemaKeyEnum.DESCRIPTION.key(), "Action: list (default), add, remove.");
+        action.addProperty(ToolSchemaKeyEnum.DESCRIPTION.key(), "Action: " + GitRemoteActionEnum.actionList() + ".");
         props.add(GitRemoteParamEnum.ACTION.key(), action);
         JsonObject name = new JsonObject();
         name.addProperty(ToolSchemaKeyEnum.TYPE.key(), "string");
@@ -82,17 +83,22 @@ public class GitRemoteTool implements McpToolInterface {
 
     @Override
     public String handle(ToolRequestArguments args, AbstractAiSession session) throws McpArgumentException {
-        String action = args.str(GitRemoteParamEnum.ACTION.key());
+        String rawAction = args.str(GitRemoteParamEnum.ACTION.key());
+        GitRemoteActionEnum action = GitRemoteActionEnum.from(rawAction);
+        if (action == null) {
+            return "Invalid action '" + rawAction + "'. Must be one of: "
+                    + GitRemoteActionEnum.actionList();
+        }
         String name = args.str(GitRemoteParamEnum.NAME.key());
         String url = args.str(GitRemoteParamEnum.URL.key());
 
-        if ("add".equals(action) && (name == null || name.isBlank())) {
+        if (action == GitRemoteActionEnum.ADD && (name == null || name.isBlank())) {
             return "Error: name is required for action=add";
         }
-        if ("add".equals(action) && (url == null || url.isBlank())) {
+        if (action == GitRemoteActionEnum.ADD && (url == null || url.isBlank())) {
             return "Error: url is required for action=add";
         }
-        if ("remove".equals(action) && (name == null || name.isBlank())) {
+        if (action == GitRemoteActionEnum.REMOVE && (name == null || name.isBlank())) {
             return "Error: name is required for action=remove";
         }
 

@@ -27,7 +27,7 @@ public class ListTablesTool implements McpToolInterface {
         if (!options.contains(McpInstructionOptionEnum.TOOL_INSTRUCTION)) {
             return null;
         }
-        return "ListTables -> lists all tables in a database schema accessible through a registered, "
+        return McpToolEnum.LIST_TABLES.toolName() + " -> lists all tables in a database schema accessible through a registered, "
                 + "connected Database Explorer connection.";
     }
 
@@ -39,7 +39,7 @@ public class ListTablesTool implements McpToolInterface {
                 "Returns a list of all tables in a database schema on a connection already registered and "
                 + "connected in the IDE's Database Explorer. Use this to discover what tables are available, "
                 + "then use GetTableSchema or GetTableData to explore them. Use ListDatabaseConnections first "
-                + "to find the connectionName.");
+                + "to find the " + DatabaseParamEnum.CONNECTION_NAME.key() + ".");
         JsonObject schema = new JsonObject();
         schema.addProperty(ToolSchemaKeyEnum.TYPE.key(), "object");
         JsonObject props = new JsonObject();

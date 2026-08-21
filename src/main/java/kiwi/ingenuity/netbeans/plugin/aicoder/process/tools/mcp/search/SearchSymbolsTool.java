@@ -27,9 +27,9 @@ public class SearchSymbolsTool implements McpToolInterface {
             return null;
         }
         if (options.contains(McpInstructionOptionEnum.ONLY_MCP_TOOL_ACCESS)) {
-            return "SearchSymbols - find methods or fields by name";
+            return McpToolEnum.SEARCH_SYMBOLS.toolName() + " - find methods or fields by name";
         }
-        return "SearchSymbols -> INSTEAD OF Grep - find methods or fields by name";
+        return McpToolEnum.SEARCH_SYMBOLS.toolName() + " -> INSTEAD OF Grep - find methods or fields by name";
     }
 
     @Override
@@ -47,7 +47,7 @@ public class SearchSymbolsTool implements McpToolInterface {
         JsonObject props = new JsonObject();
         JsonObject fp = new JsonObject();
         fp.addProperty(ToolSchemaKeyEnum.TYPE.key(), "string");
-        fp.addProperty(ToolSchemaKeyEnum.DESCRIPTION.key(), "Any source file in the project. Omit to use current editor.");
+        fp.addProperty(ToolSchemaKeyEnum.DESCRIPTION.key(), "Any source file in the project. Omit to use the first open project's source root.");
         props.add(SearchSymbolsParamEnum.FILE_PATH.key(), fp);
         JsonObject n = new JsonObject();
         n.addProperty(ToolSchemaKeyEnum.TYPE.key(), "string");

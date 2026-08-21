@@ -1,21 +1,23 @@
 package kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.refactor;
 
+import kiwi.ingenuity.netbeans.plugin.aicoder.process.McpToolPropertyEnum;
+
 /**
  * Parameter-name keys for the RenameSymbolTool MCP tool, shared between its
  * schema() definition and handle() argument extraction so the two cannot drift.
  */
 public enum RenameSymbolParamEnum {
-    FILE_PATH("filePath"),
-    LINE("line"),
-    NEW_NAME("newName");
+    FILE_PATH(McpToolPropertyEnum.FILE_PATH),
+    LINE(McpToolPropertyEnum.LINE),
+    NEW_NAME(McpToolPropertyEnum.NEW_NAME);
 
-    private final String key;
+    private final McpToolPropertyEnum property;
 
-    RenameSymbolParamEnum(String key) {
-        this.key = key;
+    RenameSymbolParamEnum(McpToolPropertyEnum property) {
+        this.property = property;
     }
 
     public String key() {
-        return key;
+        return property.key();
     }
 }

@@ -78,11 +78,11 @@ public class AcpConnection {
         CompletableFuture<JsonObject> future = new CompletableFuture<>();
         pending.put(id, future);
         JsonObject msg = new JsonObject();
-        msg.addProperty("jsonrpc", "2.0");
-        msg.addProperty("id", id);
-        msg.addProperty("method", method.wireValue());
+        msg.addProperty(AcpJsonKeyEnum.JSONRPC.key(), "2.0");
+        msg.addProperty(AcpJsonKeyEnum.ID.key(), id);
+        msg.addProperty(AcpJsonKeyEnum.METHOD.key(), method.wireValue());
         if (params != null) {
-            msg.add("params", params);
+            msg.add(AcpJsonKeyEnum.PARAMS.key(), params);
         }
         try {
             writeMessage(msg);
@@ -96,10 +96,10 @@ public class AcpConnection {
 
     public void sendNotification(AcpMethodEnum method, JsonObject params) {
         JsonObject msg = new JsonObject();
-        msg.addProperty("jsonrpc", "2.0");
-        msg.addProperty("method", method.wireValue());
+        msg.addProperty(AcpJsonKeyEnum.JSONRPC.key(), "2.0");
+        msg.addProperty(AcpJsonKeyEnum.METHOD.key(), method.wireValue());
         if (params != null) {
-            msg.add("params", params);
+            msg.add(AcpJsonKeyEnum.PARAMS.key(), params);
         }
         writeMessage(msg);
     }
@@ -165,33 +165,33 @@ public class AcpConnection {
     private void handleLine(String line) {
         try {
             JsonObject msg = JsonParser.parseString(line).getAsJsonObject();
-            boolean hasMethod = msg.has("method");
-            boolean hasId = msg.has("id");
+            boolean hasMethod = msg.has(AcpJsonKeyEnum.METHOD.key());
+            boolean hasId = msg.has(AcpJsonKeyEnum.ID.key());
 
             if (hasMethod && hasId) {
-                long id = msg.get("id").getAsLong();
-                String method = msg.get("method").getAsString();
-                JsonObject params = msg.has("params") ? msg.getAsJsonObject("params") : new JsonObject();
+                long id = msg.get(AcpJsonKeyEnum.ID.key()).getAsLong();
+                String method = msg.get(AcpJsonKeyEnum.METHOD.key()).getAsString();
+                JsonObject params = msg.has(AcpJsonKeyEnum.PARAMS.key()) ? msg.getAsJsonObject(AcpJsonKeyEnum.PARAMS.key()) : new JsonObject();
                 dispatchExecutor.execute(() -> handleInboundRequest(id, method, params));
             }
             else if (hasMethod) {
-                String method = msg.get("method").getAsString();
-                JsonObject params = msg.has("params") ? msg.getAsJsonObject("params") : new JsonObject();
+                String method = msg.get(AcpJsonKeyEnum.METHOD.key()).getAsString();
+                JsonObject params = msg.has(AcpJsonKeyEnum.PARAMS.key()) ? msg.getAsJsonObject(AcpJsonKeyEnum.PARAMS.key()) : new JsonObject();
                 notifyExecutor.execute(() -> handleNotification(method, params));
             }
             else if (hasId) {
-                long id = msg.get("id").getAsLong();
+                long id = msg.get(AcpJsonKeyEnum.ID.key()).getAsLong();
                 CompletableFuture<JsonObject> future = pending.remove(id);
                 if (future != null) {
-                    if (msg.has("error")) {
-                        JsonObject error = msg.getAsJsonObject("error");
-                        int code = error.has("code") ? error.get("code").getAsInt() : 0;
-                        String message = error.has("message") ? error.get("message").getAsString() : "unknown";
+                    if (msg.has(AcpJsonKeyEnum.ERROR.key())) {
+                        JsonObject error = msg.getAsJsonObject(AcpJsonKeyEnum.ERROR.key());
+                        int code = error.has(AcpJsonKeyEnum.CODE.key()) ? error.get(AcpJsonKeyEnum.CODE.key()).getAsInt() : 0;
+                        String message = error.has(AcpJsonKeyEnum.MESSAGE.key()) ? error.get(AcpJsonKeyEnum.MESSAGE.key()).getAsString() : "unknown";
                         AcpException ex = new AcpException(code, message);
                         dispatchExecutor.execute(() -> future.completeExceptionally(ex));
                     }
                     else {
-                        JsonObject result = msg.has("result") ? msg.getAsJsonObject("result") : new JsonObject();
+                        JsonObject result = msg.has(AcpJsonKeyEnum.RESULT.key()) ? msg.getAsJsonObject(AcpJsonKeyEnum.RESULT.key()) : new JsonObject();
                         dispatchExecutor.execute(() -> future.complete(result));
                     }
                 }
@@ -233,28 +233,28 @@ public class AcpConnection {
 
     private void handleNotification(String method, JsonObject params) {
         if (AcpMethodEnum.SESSION_UPDATE.wireValue().equals(method)) {
-            String sessionId = params.has("sessionId") ? params.get("sessionId").getAsString() : null;
-            JsonObject update = params.has("update") ? params.getAsJsonObject("update") : new JsonObject();
+            String sessionId = params.has(AcpJsonKeyEnum.SESSION_ID.key()) ? params.get(AcpJsonKeyEnum.SESSION_ID.key()).getAsString() : null;
+            JsonObject update = params.has(AcpJsonKeyEnum.UPDATE.key()) ? params.getAsJsonObject(AcpJsonKeyEnum.UPDATE.key()) : new JsonObject();
             handler.onSessionUpdate(sessionId, update);
         }
     }
 
     private void sendSuccessResponse(long id, JsonObject result) {
         JsonObject msg = new JsonObject();
-        msg.addProperty("jsonrpc", "2.0");
-        msg.addProperty("id", id);
-        msg.add("result", result != null ? result : new JsonObject());
+        msg.addProperty(AcpJsonKeyEnum.JSONRPC.key(), "2.0");
+        msg.addProperty(AcpJsonKeyEnum.ID.key(), id);
+        msg.add(AcpJsonKeyEnum.RESULT.key(), result != null ? result : new JsonObject());
         writeMessage(msg);
     }
 
     private void sendErrorResponse(long id, int code, String message) {
         JsonObject msg = new JsonObject();
-        msg.addProperty("jsonrpc", "2.0");
-        msg.addProperty("id", id);
+        msg.addProperty(AcpJsonKeyEnum.JSONRPC.key(), "2.0");
+        msg.addProperty(AcpJsonKeyEnum.ID.key(), id);
         JsonObject error = new JsonObject();
-        error.addProperty("code", code);
-        error.addProperty("message", message);
-        msg.add("error", error);
+        error.addProperty(AcpJsonKeyEnum.CODE.key(), code);
+        error.addProperty(AcpJsonKeyEnum.MESSAGE.key(), message);
+        msg.add(AcpJsonKeyEnum.ERROR.key(), error);
         writeMessage(msg);
     }
 }

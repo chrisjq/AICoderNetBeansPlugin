@@ -1,20 +1,22 @@
 package kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.git;
 
+import kiwi.ingenuity.netbeans.plugin.aicoder.process.McpToolPropertyEnum;
+
 /**
  * Parameter-name keys for the GitCherryPickTool MCP tool, shared between its
  * schema() definition and handle() argument extraction so the two cannot drift.
  */
 public enum GitCherryPickParamEnum {
-    REVISIONS("revisions"),
-    OPERATION("operation");
+    REVISIONS(McpToolPropertyEnum.REVISIONS),
+    OPERATION(McpToolPropertyEnum.OPERATION);
 
-    private final String key;
+    private final McpToolPropertyEnum property;
 
-    GitCherryPickParamEnum(String key) {
-        this.key = key;
+    GitCherryPickParamEnum(McpToolPropertyEnum property) {
+        this.property = property;
     }
 
     public String key() {
-        return key;
+        return property.key();
     }
 }

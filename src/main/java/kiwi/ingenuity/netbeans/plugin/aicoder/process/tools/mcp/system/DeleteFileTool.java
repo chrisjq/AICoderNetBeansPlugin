@@ -28,7 +28,7 @@ public class DeleteFileTool extends AbstractFileTool {
                 McpToolEnum.DELETE_FILE.toolName(),
                 "Permanently delete a file. Closes any open editor tab, removes the file from disk, "
                 + "and refreshes the project tree and VCS status.",
-                "DeleteFile -> permanently removes a file; closes open tab and refreshes VCS automatically");
+                McpToolEnum.DELETE_FILE.toolName() + " -> permanently removes a file; closes open tab and refreshes VCS automatically");
         this.server = server;
     }
 
@@ -41,7 +41,7 @@ public class DeleteFileTool extends AbstractFileTool {
             // chosen by where they last clicked rather than by anything the
             // caller decided. Nothing about that is recoverable from the caller's
             // side, so it must name its target.
-            return "file_path is required — this tool does not fall back to the focused editor. "
+            return "filePath is required — this tool does not fall back to the focused editor. "
                     + "Call GetCurrentFile if you want the file the user is looking at.";
         }
         String effectivePath = fp;

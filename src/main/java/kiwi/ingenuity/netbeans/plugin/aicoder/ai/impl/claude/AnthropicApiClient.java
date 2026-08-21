@@ -28,21 +28,12 @@ public class AnthropicApiClient {
     static final RateLimitManager RATE_LIMIT_MANAGER = new RateLimitManager();
 
     /**
-     * The shared rate-limit manager for all Claude API access. Used by
-     * ClaudeAiImplementation to defer usage/model refreshes and by Installer to
-     * shut the scheduler down on uninstall.
-     */
-    public static RateLimitManager rateLimitManager() {
-        return RATE_LIMIT_MANAGER;
-    }
-
-    /**
      * True on macOS, where the Claude CLI stores its OAuth credentials in the
      * login Keychain (a generic password, service "Claude Code-credentials")
      * rather than the ~/.claude/.credentials.json file used on Linux/Windows.
      */
-    private static final boolean IS_MAC =
-            System.getProperty("os.name", "").toLowerCase(java.util.Locale.ROOT).contains("mac");
+    private static final boolean IS_MAC
+            = System.getProperty("os.name", "").toLowerCase(java.util.Locale.ROOT).contains("mac");
 
     /**
      * macOS Keychain service names to try, in order. The CLI writes the blob to
@@ -59,6 +50,15 @@ public class AnthropicApiClient {
      * access prompt; the first poll computes the real value.
      */
     private static volatile long lastCredsFingerprint = IS_MAC ? 0L : fileModifiedMs();
+
+    /**
+     * The shared rate-limit manager for all Claude API access. Used by
+     * ClaudeAiImplementation to defer usage/model refreshes and by Installer to
+     * shut the scheduler down on uninstall.
+     */
+    public static RateLimitManager rateLimitManager() {
+        return RATE_LIMIT_MANAGER;
+    }
 
     private static Path credentialsPath() {
         return Path.of(System.getProperty("user.home"), ".claude", ".credentials.json");
@@ -78,7 +78,8 @@ public class AnthropicApiClient {
      * A cheap value that changes whenever the stored credentials change. On
      * macOS this hashes the Keychain JSON; elsewhere it is the credentials
      * file's last-modified time. Falls back to the file on macOS when the
-     * Keychain is unreadable (e.g. creds exported to disk for headless/SSH use).
+     * Keychain is unreadable (e.g. creds exported to disk for headless/SSH
+     * use).
      */
     private static long credentialsFingerprint() {
         if (IS_MAC) {
@@ -92,8 +93,8 @@ public class AnthropicApiClient {
 
     /**
      * Reads the raw Claude credentials JSON blob, or null if unavailable. On
-     * macOS the login Keychain is tried first, then the file as a fallback;
-     * on other platforms only the file is read.
+     * macOS the login Keychain is tried first, then the file as a fallback; on
+     * other platforms only the file is read.
      */
     private static String readCredentialsJson() {
         if (IS_MAC) {
@@ -186,10 +187,11 @@ public class AnthropicApiClient {
             return -1;
         }
         JsonObject bucket = root.getAsJsonObject(key);
-        if (!bucket.has("utilization") || bucket.get("utilization").isJsonNull()) {
+        String utilizationKey = AnthropicApiJsonKeyEnum.UTILIZATION.key();
+        if (!bucket.has(utilizationKey) || bucket.get(utilizationKey).isJsonNull()) {
             return -1;
         }
-        return bucket.get("utilization").getAsDouble();
+        return bucket.get(utilizationKey).getAsDouble();
     }
 
     private long defaultRateLimit = 2L * 60L * 1000L; // 2 minutes — fallback when no usable Retry-After is supplied
@@ -204,9 +206,11 @@ public class AnthropicApiClient {
             if (root == null) {
                 return null;
             }
-            JsonObject oauth = root.has("claudeAiOauth") ? root.getAsJsonObject("claudeAiOauth") : null;
-            if (oauth != null && oauth.has("accessToken")) {
-                JsonElement tok = oauth.get("accessToken");
+            String oauthKey = ClaudeJsonKeyEnum.CLAUDE_AI_OAUTH.key();
+            String accessTokenKey = ClaudeJsonKeyEnum.ACCESS_TOKEN.key();
+            JsonObject oauth = root.has(oauthKey) ? root.getAsJsonObject(oauthKey) : null;
+            if (oauth != null && oauth.has(accessTokenKey)) {
+                JsonElement tok = oauth.get(accessTokenKey);
                 if (tok.isJsonPrimitive()) {
                     return tok.getAsString();
                 }
@@ -314,7 +318,9 @@ public class AnthropicApiClient {
         if (root == null) {
             return List.of();
         }
-        JsonArray data = root.has("data") ? root.getAsJsonArray("data") : null;
+        String dataKey = AnthropicApiJsonKeyEnum.DATA.key();
+        String modelIdKey = AnthropicApiJsonKeyEnum.MODEL_ID.key();
+        JsonArray data = root.has(dataKey) ? root.getAsJsonArray(dataKey) : null;
         List<String> models = new ArrayList<>();
         if (data != null) {
             for (JsonElement el : data) {
@@ -322,8 +328,8 @@ public class AnthropicApiClient {
                     continue;
                 }
                 JsonObject m = el.getAsJsonObject();
-                if (m.has("id")) {
-                    JsonElement id = m.get("id");
+                if (m.has(modelIdKey)) {
+                    JsonElement id = m.get(modelIdKey);
                     if (id.isJsonPrimitive()) {
                         models.add(id.getAsString());
                     }
@@ -353,8 +359,8 @@ public class AnthropicApiClient {
         if (root == null) {
             return new UsageData(-1, -1);
         }
-        double fiveHour = getUtilization(root, "five_hour");
-        double sevenDay = getUtilization(root, "seven_day");
+        double fiveHour = getUtilization(root, AnthropicApiJsonKeyEnum.FIVE_HOUR.key());
+        double sevenDay = getUtilization(root, AnthropicApiJsonKeyEnum.SEVEN_DAY.key());
         return new UsageData(fiveHour, sevenDay);
     }
 

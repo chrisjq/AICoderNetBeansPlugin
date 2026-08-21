@@ -13,7 +13,7 @@ public class GetPluginVersionTool extends AbstractActionTool {
         super(McpSectionEnum.PLUGIN,
                 McpToolEnum.GET_PLUGIN_VERSION.toolName(),
                 "Returns the version of the AI Coder NetBeans plugin that is currently running.",
-                "GetPluginVersion -> returns the running plugin version");
+                McpToolEnum.GET_PLUGIN_VERSION.toolName() + " -> returns the running plugin version");
     }
 
     @Override

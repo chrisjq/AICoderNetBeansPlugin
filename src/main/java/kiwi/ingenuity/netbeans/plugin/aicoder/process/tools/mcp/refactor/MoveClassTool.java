@@ -32,9 +32,9 @@ public class MoveClassTool implements McpToolInterface {
             return null;
         }
         if (options.contains(McpInstructionOptionEnum.ONLY_MCP_TOOL_ACCESS)) {
-            return "MoveClass - moves a Java class and updates ALL import references project-wide; use ApplyEdit for any content changes to the moved file";
+            return McpToolEnum.MOVE_CLASS.toolName() + " - moves a Java class and updates ALL import references project-wide; use " + McpToolEnum.APPLY_EDIT.toolName() + " for any content changes to the moved file";
         }
-        return "MoveClass -> INSTEAD OF WriteFile+DeleteFile for Java classes — use this first to move the class and update ALL import references project-wide, then use ApplyEdit for any content changes to the moved file";
+        return McpToolEnum.MOVE_CLASS.toolName() + " -> INSTEAD OF " + McpToolEnum.WRITE_FILE.toolName() + "+" + McpToolEnum.DELETE_FILE.toolName() + " for Java classes — use this first to move the class and update ALL import references project-wide, then use " + McpToolEnum.APPLY_EDIT.toolName() + " for any content changes to the moved file";
     }
 
     @Override
@@ -43,7 +43,8 @@ public class MoveClassTool implements McpToolInterface {
         tool.addProperty(ToolSchemaKeyEnum.NAME.key(), McpToolEnum.MOVE_CLASS.toolName());
         tool.addProperty(ToolSchemaKeyEnum.DESCRIPTION.key(),
                 "Moves a Java class to a different package, updating all import references. "
-                + "Provide filePath to target a specific file; omit to use current editor.");
+                + "filePath is required — this tool does not fall back to the focused editor. "
+                + "Call " + McpToolEnum.GET_CURRENT_FILE.toolName() + " if you want the file the user is looking at.");
         JsonObject schema = new JsonObject();
         schema.addProperty(ToolSchemaKeyEnum.TYPE.key(), "object");
         JsonObject props = new JsonObject();
@@ -53,7 +54,7 @@ public class MoveClassTool implements McpToolInterface {
         props.add(MoveClassParamEnum.TARGET_PACKAGE.key(), tp);
         JsonObject fp = new JsonObject();
         fp.addProperty(ToolSchemaKeyEnum.TYPE.key(), "string");
-        fp.addProperty(ToolSchemaKeyEnum.DESCRIPTION.key(), "Absolute path to the source file. Omit to use current editor.");
+        fp.addProperty(ToolSchemaKeyEnum.DESCRIPTION.key(), "Absolute path to the source file. Required — this tool does not fall back to the focused editor. Call GetCurrentFile if you want the file the user is looking at.");
         props.add(MoveClassParamEnum.FILE_PATH.key(), fp);
         JsonObject ln = new JsonObject();
         ln.addProperty(ToolSchemaKeyEnum.TYPE.key(), "integer");

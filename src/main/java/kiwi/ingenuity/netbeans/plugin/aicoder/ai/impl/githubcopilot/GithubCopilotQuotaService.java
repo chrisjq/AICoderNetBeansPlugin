@@ -80,7 +80,7 @@ public final class GithubCopilotQuotaService {
                 Map<String, AccountQuotaSnapshot> snapshots = result.quotaSnapshots();
                 if (snapshots != null) {
                     LOG.log(Level.INFO, "Copilot quota snapshots: {0}", snapshots);
-                    AccountQuotaSnapshot premiumSnapshot = snapshots.get("premium_interactions");
+                    AccountQuotaSnapshot premiumSnapshot = snapshots.get(GithubCopilotJsonKeyEnum.PREMIUM_INTERACTIONS.key());
                     if (premiumSnapshot != null) {
                         java.time.OffsetDateTime resetDateTime = premiumSnapshot.resetDate();
                         String resetDate = resetDateTime != null ? resetDateTime.toString() : null;
@@ -127,8 +127,8 @@ public final class GithubCopilotQuotaService {
             String body;
             while ((body = GithubCopilotModelDiscovery.readFramed(in)) != null) {
                 JsonObject msg = GSON.fromJson(body, JsonObject.class);
-                if (msg != null && msg.has("id") && msg.get("id").isJsonPrimitive()
-                        && msg.get("id").getAsInt() == 2) {
+                if (msg != null && msg.has(GithubCopilotJsonKeyEnum.ID.key()) && msg.get(GithubCopilotJsonKeyEnum.ID.key()).isJsonPrimitive()
+                        && msg.get(GithubCopilotJsonKeyEnum.ID.key()).getAsInt() == 2) {
                     return parseQuotaResponse(body);
                 }
             }
@@ -142,25 +142,33 @@ public final class GithubCopilotQuotaService {
 
     private static QuotaInfo parseQuotaResponse(String responseBody) {
         JsonObject msg = GSON.fromJson(responseBody, JsonObject.class);
-        if (msg == null || !msg.has("result") || !msg.get("result").isJsonObject()) {
+        String resultKey = GithubCopilotJsonKeyEnum.RESULT.key();
+        if (msg == null || !msg.has(resultKey) || !msg.get(resultKey).isJsonObject()) {
             return null;
         }
-        JsonObject result = msg.getAsJsonObject("result");
-        if (!result.has("quotaSnapshots") || !result.get("quotaSnapshots").isJsonObject()) {
+        JsonObject result = msg.getAsJsonObject(resultKey);
+        String snapshotsKey = GithubCopilotJsonKeyEnum.QUOTA_SNAPSHOTS.key();
+        if (!result.has(snapshotsKey) || !result.get(snapshotsKey).isJsonObject()) {
             return null;
         }
-        JsonObject snapshots = result.getAsJsonObject("quotaSnapshots");
+        JsonObject snapshots = result.getAsJsonObject(snapshotsKey);
         LOG.log(Level.INFO, "Copilot quota snapshots: {0}", snapshots);
-        if (!snapshots.has("premium_interactions") || !snapshots.get("premium_interactions").isJsonObject()) {
+        String premiumKey = GithubCopilotJsonKeyEnum.PREMIUM_INTERACTIONS.key();
+        if (!snapshots.has(premiumKey) || !snapshots.get(premiumKey).isJsonObject()) {
             return null;
         }
-        JsonObject premiumSnapshot = snapshots.getAsJsonObject("premium_interactions");
+        JsonObject premiumSnapshot = snapshots.getAsJsonObject(premiumKey);
 
-        boolean unlimited = premiumSnapshot.has("isUnlimitedEntitlement") && premiumSnapshot.get("isUnlimitedEntitlement").getAsBoolean();
-        long usedRequests = premiumSnapshot.has("usedRequests") ? premiumSnapshot.get("usedRequests").getAsLong() : 0;
-        long entitlementRequests = premiumSnapshot.has("entitlementRequests") ? premiumSnapshot.get("entitlementRequests").getAsLong() : 0;
-        double remainingPercentage = premiumSnapshot.has("remainingPercentage") ? premiumSnapshot.get("remainingPercentage").getAsDouble() : 0;
-        String resetDate = premiumSnapshot.has("resetDate") ? premiumSnapshot.get("resetDate").getAsString() : null;
+        String unlimitedKey = GithubCopilotJsonKeyEnum.IS_UNLIMITED_ENTITLEMENT.key();
+        String usedKey = GithubCopilotJsonKeyEnum.USED_REQUESTS.key();
+        String entitlementKey = GithubCopilotJsonKeyEnum.ENTITLEMENT_REQUESTS.key();
+        String remainingKey = GithubCopilotJsonKeyEnum.REMAINING_PERCENTAGE.key();
+        String resetKey = GithubCopilotJsonKeyEnum.RESET_DATE.key();
+        boolean unlimited = premiumSnapshot.has(unlimitedKey) && premiumSnapshot.get(unlimitedKey).getAsBoolean();
+        long usedRequests = premiumSnapshot.has(usedKey) ? premiumSnapshot.get(usedKey).getAsLong() : 0;
+        long entitlementRequests = premiumSnapshot.has(entitlementKey) ? premiumSnapshot.get(entitlementKey).getAsLong() : 0;
+        double remainingPercentage = premiumSnapshot.has(remainingKey) ? premiumSnapshot.get(remainingKey).getAsDouble() : 0;
+        String resetDate = premiumSnapshot.has(resetKey) ? premiumSnapshot.get(resetKey).getAsString() : null;
         return new QuotaInfo(unlimited, usedRequests, entitlementRequests, remainingPercentage, resetDate);
     }
 

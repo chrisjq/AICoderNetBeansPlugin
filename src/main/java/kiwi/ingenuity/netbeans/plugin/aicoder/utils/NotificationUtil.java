@@ -1,6 +1,8 @@
 package kiwi.ingenuity.netbeans.plugin.aicoder.utils;
 
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.mail.AiInboxMessage;
+import kiwi.ingenuity.netbeans.plugin.aicoder.process.McpToolEnum;
+import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.userinput.AskUserQuestionParamEnum;
 
 public class NotificationUtil {
 
@@ -25,9 +27,16 @@ public class NotificationUtil {
         // The header alone reads as an FYI. Three sessions received one, replied "I
         // am ready to execute it" in their own chat, and ended the turn without ever
         // calling ReadAiMessage — so the notification has to name the tools.
-        notifBuilder.append(" — read it with ReadAiMessage.");
+        //
+        // The names come from McpToolEnum rather than being retyped: this text is
+        // an instruction the AI acts on, so if a tool were renamed the notice
+        // would send it after a tool that no longer exists, and we would be back
+        // to the turn ending with the message unread.
+        notifBuilder.append(" — read it with ")
+                .append(McpToolEnum.READ_AI_MESSAGE.toolName()).append('.');
         if (message.expectsReply()) {
-            notifBuilder.append(" A response must be sent to this message with SendAiMessage.");
+            notifBuilder.append(" A response must be sent to this message with ")
+                    .append(McpToolEnum.SEND_AI_MESSAGE.toolName()).append('.');
         }
 
         return notifBuilder.toString();
@@ -54,8 +63,8 @@ public class NotificationUtil {
             String joined = questions.asList().stream()
                     .filter(com.google.gson.JsonElement::isJsonObject)
                     .map(com.google.gson.JsonElement::getAsJsonObject)
-                    .filter(q -> q.has("question"))
-                    .map(q -> q.get("question").getAsString())
+                    .filter(q -> q.has(AskUserQuestionParamEnum.QUESTION.key()))
+                    .map(q -> q.get(AskUserQuestionParamEnum.QUESTION.key()).getAsString())
                     .reduce((a, b) -> a + " | " + b)
                     .orElse("");
             if (!joined.isBlank()) {

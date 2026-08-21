@@ -32,9 +32,9 @@ public class RenameSymbolTool implements McpToolInterface {
             return null;
         }
         if (options.contains(McpInstructionOptionEnum.ONLY_MCP_TOOL_ACCESS)) {
-            return "RenameSymbol - renames any identifier and updates all references";
+            return McpToolEnum.RENAME_SYMBOL.toolName() + " - renames any identifier and updates all references";
         }
-        return "RenameSymbol -> INSTEAD OF find+replace - renames any identifier and updates all references";
+        return McpToolEnum.RENAME_SYMBOL.toolName() + " -> INSTEAD OF find+replace - renames any identifier and updates all references";
     }
 
     @Override
@@ -54,7 +54,7 @@ public class RenameSymbolTool implements McpToolInterface {
         props.add(RenameSymbolParamEnum.NEW_NAME.key(), newName);
         JsonObject fp = new JsonObject();
         fp.addProperty(ToolSchemaKeyEnum.TYPE.key(), "string");
-        fp.addProperty(ToolSchemaKeyEnum.DESCRIPTION.key(), "Absolute path to the file. Omit to use current editor.");
+        fp.addProperty(ToolSchemaKeyEnum.DESCRIPTION.key(), "Absolute path to the file. Required — this tool does not fall back to the focused editor. Call GetCurrentFile if you want the file the user is looking at.");
         props.add(RenameSymbolParamEnum.FILE_PATH.key(), fp);
         JsonObject ln = new JsonObject();
         ln.addProperty(ToolSchemaKeyEnum.TYPE.key(), "integer");

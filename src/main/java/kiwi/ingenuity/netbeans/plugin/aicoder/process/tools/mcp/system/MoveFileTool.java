@@ -44,7 +44,7 @@ public class MoveFileTool implements McpToolInterface {
         if (!options.contains(McpInstructionOptionEnum.TOOL_INSTRUCTION)) {
             return null;
         }
-        return "MoveFile -> moves a file; Java files use MoveRefactoring (updates package declaration "
+        return McpToolEnum.MOVE_FILE.toolName() + " -> moves a file; Java files use MoveRefactoring (updates package declaration "
                 + "and all import references); other files use FileUtil.moveFile()";
     }
 

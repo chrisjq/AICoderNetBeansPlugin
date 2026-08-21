@@ -60,8 +60,8 @@ public final class GithubCopilotModelDiscovery {
 
     /**
      * Starts a fresh discovery cycle: resets the retry counter and submits a
-     * background fetch. Does nothing if a discovery is already in progress.
-     * On failure, retries up to {@value #MAX_RETRIES} times within the cycle.
+     * background fetch. Does nothing if a discovery is already in progress. On
+     * failure, retries up to {@value #MAX_RETRIES} times within the cycle.
      *
      * @param cliPath the located copilot CLI path, or null to use PATH
      */
@@ -180,8 +180,8 @@ public final class GithubCopilotModelDiscovery {
             String body;
             while ((body = readFramed(in)) != null) {
                 JsonObject msg = GSON.fromJson(body, JsonObject.class);
-                if (msg != null && msg.has("id") && msg.get("id").isJsonPrimitive()
-                        && msg.get("id").getAsInt() == 2) {
+                if (msg != null && msg.has(GithubCopilotJsonKeyEnum.ID.key()) && msg.get(GithubCopilotJsonKeyEnum.ID.key()).isJsonPrimitive()
+                        && msg.get(GithubCopilotJsonKeyEnum.ID.key()).getAsInt() == 2) {
                     return assembleModelList(parseModelIds(body));
                 }
             }
@@ -228,16 +228,19 @@ public final class GithubCopilotModelDiscovery {
     static List<String> parseModelIds(String responseBody) {
         List<String> ids = new ArrayList<>();
         JsonObject msg = GSON.fromJson(responseBody, JsonObject.class);
-        if (msg == null || !msg.has("result") || !msg.get("result").isJsonObject()) {
+        String resultKey = GithubCopilotJsonKeyEnum.RESULT.key();
+        if (msg == null || !msg.has(resultKey) || !msg.get(resultKey).isJsonObject()) {
             return ids;
         }
-        JsonObject result = msg.getAsJsonObject("result");
-        if (!result.has("models") || !result.get("models").isJsonArray()) {
+        JsonObject result = msg.getAsJsonObject(resultKey);
+        String modelsKey = GithubCopilotJsonKeyEnum.MODELS.key();
+        if (!result.has(modelsKey) || !result.get(modelsKey).isJsonArray()) {
             return ids;
         }
-        for (JsonElement e : result.getAsJsonArray("models")) {
-            if (e.isJsonObject() && e.getAsJsonObject().has("id")) {
-                ids.add(e.getAsJsonObject().get("id").getAsString());
+        String modelIdKey = GithubCopilotJsonKeyEnum.MODEL_ID.key();
+        for (JsonElement e : result.getAsJsonArray(modelsKey)) {
+            if (e.isJsonObject() && e.getAsJsonObject().has(modelIdKey)) {
+                ids.add(e.getAsJsonObject().get(modelIdKey).getAsString());
             }
         }
         return ids;

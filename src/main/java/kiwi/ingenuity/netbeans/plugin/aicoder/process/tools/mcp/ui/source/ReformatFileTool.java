@@ -1,15 +1,15 @@
 package kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.ui.source;
 
-import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.providers.netbeans.RefactoringProvider;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.McpSectionEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.McpToolEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.locking.LockTypeEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.locking.RequiresLock;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.server.McpHookServer;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.server.McpServerRegistry;
-import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.AbstractFileTool;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.session.AbstractAiSession;
+import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.AbstractFileTool;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.ToolRequestArguments;
+import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.providers.netbeans.RefactoringProvider;
 
 @RequiresLock(LockTypeEnum.FILE_WRITE_LOCK)
 public class ReformatFileTool extends AbstractFileTool {
@@ -18,8 +18,7 @@ public class ReformatFileTool extends AbstractFileTool {
         super(McpSectionEnum.UI_SOURCE,
                 McpToolEnum.REFORMAT_FILE.toolName(),
                 "Reformat the specified Java file using the project's code style settings. "
-                + "Applies indentation, brace placement, and spacing rules. "
-                + "Omit filePath to use the current editor.",
+                + "Applies indentation, brace placement, and spacing rules.",
                 "ReformatFile -> INSTEAD OF manual formatting - applies project code style to a file",
                 "ReformatFile - applies project code style to a file");
     }

@@ -67,23 +67,23 @@ class CodexAppServerHandler implements CodexNotificationListener, CodexServerReq
      * any other item type or malformed payload.
      */
     static JsonArray extractFileChangeChanges(JsonObject params) {
-        if (params == null || !params.has("item") || !params.get("item").isJsonObject()) {
+        if (params == null || !params.has(CodexJsonKeyEnum.ITEM.key()) || !params.get(CodexJsonKeyEnum.ITEM.key()).isJsonObject()) {
             return null;
         }
-        JsonObject item = params.getAsJsonObject("item");
-        String type = item.has("type") && !item.get("type").isJsonNull() ? item.get("type").getAsString() : null;
+        JsonObject item = params.getAsJsonObject(CodexJsonKeyEnum.ITEM.key());
+        String type = item.has(CodexJsonKeyEnum.TYPE.key()) && !item.get(CodexJsonKeyEnum.TYPE.key()).isJsonNull() ? item.get(CodexJsonKeyEnum.TYPE.key()).getAsString() : null;
         if (!"fileChange".equals(type)) {
             return null;
         }
-        return item.has("changes") && item.get("changes").isJsonArray() ? item.getAsJsonArray("changes") : null;
+        return item.has(CodexJsonKeyEnum.CHANGES.key()) && item.get(CodexJsonKeyEnum.CHANGES.key()).isJsonArray() ? item.getAsJsonArray(CodexJsonKeyEnum.CHANGES.key()) : null;
     }
 
     static String extractItemId(JsonObject params) {
-        if (params == null || !params.has("item") || !params.get("item").isJsonObject()) {
+        if (params == null || !params.has(CodexJsonKeyEnum.ITEM.key()) || !params.get(CodexJsonKeyEnum.ITEM.key()).isJsonObject()) {
             return null;
         }
-        JsonObject item = params.getAsJsonObject("item");
-        return item.has("id") && !item.get("id").isJsonNull() ? item.get("id").getAsString() : null;
+        JsonObject item = params.getAsJsonObject(CodexJsonKeyEnum.ITEM.key());
+        return item.has(CodexJsonKeyEnum.ID.key()) && !item.get(CodexJsonKeyEnum.ID.key()).isJsonNull() ? item.get(CodexJsonKeyEnum.ID.key()).getAsString() : null;
     }
 
     /**
@@ -93,23 +93,23 @@ class CodexAppServerHandler implements CodexNotificationListener, CodexServerReq
      * schemas). Returns null on any unexpected shape.
      */
     static String extractTurnStatus(JsonObject params) {
-        if (params == null || !params.has("turn") || !params.get("turn").isJsonObject()) {
+        if (params == null || !params.has(CodexJsonKeyEnum.TURN.key()) || !params.get(CodexJsonKeyEnum.TURN.key()).isJsonObject()) {
             return null;
         }
-        JsonObject turn = params.getAsJsonObject("turn");
-        return turn.has("status") && !turn.get("status").isJsonNull() ? turn.get("status").getAsString() : null;
+        JsonObject turn = params.getAsJsonObject(CodexJsonKeyEnum.TURN.key());
+        return turn.has(CodexJsonKeyEnum.STATUS.key()) && !turn.get(CodexJsonKeyEnum.STATUS.key()).isJsonNull() ? turn.get(CodexJsonKeyEnum.STATUS.key()).getAsString() : null;
     }
 
     static String extractTurnErrorMessage(JsonObject params) {
-        if (params == null || !params.has("turn") || !params.get("turn").isJsonObject()) {
+        if (params == null || !params.has(CodexJsonKeyEnum.TURN.key()) || !params.get(CodexJsonKeyEnum.TURN.key()).isJsonObject()) {
             return null;
         }
-        JsonObject turn = params.getAsJsonObject("turn");
-        if (!turn.has("error") || !turn.get("error").isJsonObject()) {
+        JsonObject turn = params.getAsJsonObject(CodexJsonKeyEnum.TURN.key());
+        if (!turn.has(CodexJsonKeyEnum.ERROR.key()) || !turn.get(CodexJsonKeyEnum.ERROR.key()).isJsonObject()) {
             return null;
         }
-        JsonObject error = turn.getAsJsonObject("error");
-        return error.has("message") && !error.get("message").isJsonNull() ? error.get("message").getAsString() : null;
+        JsonObject error = turn.getAsJsonObject(CodexJsonKeyEnum.ERROR.key());
+        return error.has(CodexJsonKeyEnum.MESSAGE.key()) && !error.get(CodexJsonKeyEnum.MESSAGE.key()).isJsonNull() ? error.get(CodexJsonKeyEnum.MESSAGE.key()).getAsString() : null;
     }
 
     /**
@@ -119,18 +119,18 @@ class CodexAppServerHandler implements CodexNotificationListener, CodexServerReq
      * when absent, null in JSON, or a structured variant (object shape).
      */
     static String extractTurnCodexErrorInfo(JsonObject params) {
-        if (params == null || !params.has("turn") || !params.get("turn").isJsonObject()) {
+        if (params == null || !params.has(CodexJsonKeyEnum.TURN.key()) || !params.get(CodexJsonKeyEnum.TURN.key()).isJsonObject()) {
             return null;
         }
-        JsonObject turn = params.getAsJsonObject("turn");
-        if (!turn.has("error") || !turn.get("error").isJsonObject()) {
+        JsonObject turn = params.getAsJsonObject(CodexJsonKeyEnum.TURN.key());
+        if (!turn.has(CodexJsonKeyEnum.ERROR.key()) || !turn.get(CodexJsonKeyEnum.ERROR.key()).isJsonObject()) {
             return null;
         }
-        JsonObject error = turn.getAsJsonObject("error");
-        if (!error.has("codexErrorInfo") || !error.get("codexErrorInfo").isJsonPrimitive()) {
+        JsonObject error = turn.getAsJsonObject(CodexJsonKeyEnum.ERROR.key());
+        if (!error.has(CodexJsonKeyEnum.CODEX_ERROR_INFO.key()) || !error.get(CodexJsonKeyEnum.CODEX_ERROR_INFO.key()).isJsonPrimitive()) {
             return null;
         }
-        return error.get("codexErrorInfo").getAsString();
+        return error.get(CodexJsonKeyEnum.CODEX_ERROR_INFO.key()).getAsString();
     }
 
     /**
@@ -147,7 +147,7 @@ class CodexAppServerHandler implements CodexNotificationListener, CodexServerReq
         }
         if (changes.size() == 1 && changes.get(0).isJsonObject()) {
             JsonObject c = changes.get(0).getAsJsonObject();
-            String path = c.has("path") && !c.get("path").isJsonNull() ? c.get("path").getAsString() : "a file";
+            String path = c.has(CodexJsonKeyEnum.PATH.key()) && !c.get(CodexJsonKeyEnum.PATH.key()).isJsonNull() ? c.get(CodexJsonKeyEnum.PATH.key()).getAsString() : "a file";
             return "Codex wants to modify " + path;
         }
         return "Codex wants to modify " + changes.size() + " files";
@@ -158,7 +158,7 @@ class CodexAppServerHandler implements CodexNotificationListener, CodexServerReq
             return null;
         }
         JsonObject c = changes.get(0).getAsJsonObject();
-        return c.has("path") && !c.get("path").isJsonNull() ? c.get("path").getAsString() : null;
+        return c.has(CodexJsonKeyEnum.PATH.key()) && !c.get(CodexJsonKeyEnum.PATH.key()).isJsonNull() ? c.get(CodexJsonKeyEnum.PATH.key()).getAsString() : null;
     }
 
     /**
@@ -301,8 +301,8 @@ class CodexAppServerHandler implements CodexNotificationListener, CodexServerReq
     }
 
     private void handleAgentMessageDelta(JsonObject params) {
-        String delta = params.has("delta") && !params.get("delta").isJsonNull() ? params.get("delta").getAsString() : "";
-        String turnId = params.has("turnId") && !params.get("turnId").isJsonNull() ? params.get("turnId").getAsString() : null;
+        String delta = params.has(CodexJsonKeyEnum.DELTA.key()) && !params.get(CodexJsonKeyEnum.DELTA.key()).isJsonNull() ? params.get(CodexJsonKeyEnum.DELTA.key()).getAsString() : "";
+        String turnId = params.has(CodexJsonKeyEnum.TURN_ID.key()) && !params.get(CodexJsonKeyEnum.TURN_ID.key()).isJsonNull() ? params.get(CodexJsonKeyEnum.TURN_ID.key()).getAsString() : null;
         listener.onAiProcessEvent(new TextDeltaEvent(delta, turnId));
     }
 
@@ -333,44 +333,45 @@ class CodexAppServerHandler implements CodexNotificationListener, CodexServerReq
      * break has to be synthesised at the only point that knows a tool ran.
      *
      * <p>
-     * Field names taken from a live notification, not guessed: null null null null     {@code {"item":{"type":"mcpToolCall","tool":"ListAiSessions",
+     * Field names taken from a live notification, not guessed: null null null
+     * null null null     {@code {"item":{"type":"mcpToolCall","tool":"ListAiSessions",
      * "server":"aicoder-nb-ki-plugin",...}}}. Kind.OTHER with a null path
      * deliberately — {@code isFileModification()} stays false so no diff panel
      * is raised; file changes keep their own path below.
      */
     private void announceToolCall(JsonObject params) {
-        if (params == null || !params.has("item") || !params.get("item").isJsonObject()) {
+        if (params == null || !params.has(CodexJsonKeyEnum.ITEM.key()) || !params.get(CodexJsonKeyEnum.ITEM.key()).isJsonObject()) {
             return;
         }
-        JsonObject item = params.getAsJsonObject("item");
-        String type = item.has("type") && !item.get("type").isJsonNull()
-                ? item.get("type").getAsString() : null;
+        JsonObject item = params.getAsJsonObject(CodexJsonKeyEnum.ITEM.key());
+        String type = item.has(CodexJsonKeyEnum.TYPE.key()) && !item.get(CodexJsonKeyEnum.TYPE.key()).isJsonNull()
+                ? item.get(CodexJsonKeyEnum.TYPE.key()).getAsString() : null;
         if (!"mcpToolCall".equals(type)) {
             return;
         }
-        String tool = item.has("tool") && !item.get("tool").isJsonNull()
-                ? item.get("tool").getAsString() : "tool";
+        String tool = item.has(CodexJsonKeyEnum.TOOL.key()) && !item.get(CodexJsonKeyEnum.TOOL.key()).isJsonNull()
+                ? item.get(CodexJsonKeyEnum.TOOL.key()).getAsString() : "tool";
         listener.onAiProcessEvent(new ToolUseEvent(tool, null, null, null, ToolUseEvent.Kind.OTHER));
     }
 
     private void handleTokenUsageUpdated(JsonObject params) {
-        if (params == null || !params.has("tokenUsage") || !params.get("tokenUsage").isJsonObject()) {
+        if (params == null || !params.has(CodexJsonKeyEnum.TOKEN_USAGE.key()) || !params.get(CodexJsonKeyEnum.TOKEN_USAGE.key()).isJsonObject()) {
             return;
         }
-        JsonObject tokenUsage = params.getAsJsonObject("tokenUsage");
+        JsonObject tokenUsage = params.getAsJsonObject(CodexJsonKeyEnum.TOKEN_USAGE.key());
         long contextWindow = 0L;
-        if (tokenUsage.has("modelContextWindow") && !tokenUsage.get("modelContextWindow").isJsonNull()) {
-            contextWindow = tokenUsage.get("modelContextWindow").getAsLong();
+        if (tokenUsage.has(CodexJsonKeyEnum.MODEL_CONTEXT_WINDOW.key()) && !tokenUsage.get(CodexJsonKeyEnum.MODEL_CONTEXT_WINDOW.key()).isJsonNull()) {
+            contextWindow = tokenUsage.get(CodexJsonKeyEnum.MODEL_CONTEXT_WINDOW.key()).getAsLong();
         }
-        if (!tokenUsage.has("last") || !tokenUsage.get("last").isJsonObject()) {
+        if (!tokenUsage.has(CodexJsonKeyEnum.LAST.key()) || !tokenUsage.get(CodexJsonKeyEnum.LAST.key()).isJsonObject()) {
             return;
         }
         // `total` is the thread's lifetime token spend, which can exceed the
         // model context window many times over. `last` is the active turn's
         // context usage and is therefore comparable with modelContextWindow.
-        JsonObject last = tokenUsage.getAsJsonObject("last");
-        long usedTokens = last.has("totalTokens") && !last.get("totalTokens").isJsonNull()
-                ? last.get("totalTokens").getAsLong() : 0L;
+        JsonObject last = tokenUsage.getAsJsonObject(CodexJsonKeyEnum.LAST.key());
+        long usedTokens = last.has(CodexJsonKeyEnum.TOTAL_TOKENS.key()) && !last.get(CodexJsonKeyEnum.TOTAL_TOKENS.key()).isJsonNull()
+                ? last.get(CodexJsonKeyEnum.TOTAL_TOKENS.key()).getAsLong() : 0L;
         if (PluginSettings.isDebugJson()) {
             LOG.log(Level.INFO, "codex tokenUsage: used={0} contextWindow={1}",
                     new Object[]{usedTokens, contextWindow});
@@ -379,22 +380,22 @@ class CodexAppServerHandler implements CodexNotificationListener, CodexServerReq
     }
 
     private void handleRateLimitsUpdated(JsonObject params) {
-        if (params == null || !params.has("rateLimits") || !params.get("rateLimits").isJsonObject()) {
+        if (params == null || !params.has(CodexJsonKeyEnum.RATE_LIMITS.key()) || !params.get(CodexJsonKeyEnum.RATE_LIMITS.key()).isJsonObject()) {
             return;
         }
-        JsonObject rateLimits = params.getAsJsonObject("rateLimits");
-        if (!rateLimits.has("primary") || !rateLimits.get("primary").isJsonObject()) {
+        JsonObject rateLimits = params.getAsJsonObject(CodexJsonKeyEnum.RATE_LIMITS.key());
+        if (!rateLimits.has(CodexJsonKeyEnum.PRIMARY.key()) || !rateLimits.get(CodexJsonKeyEnum.PRIMARY.key()).isJsonObject()) {
             return;
         }
-        JsonObject primary = rateLimits.getAsJsonObject("primary");
-        if (!primary.has("usedPercent") || primary.get("usedPercent").isJsonNull()) {
+        JsonObject primary = rateLimits.getAsJsonObject(CodexJsonKeyEnum.PRIMARY.key());
+        if (!primary.has(CodexJsonKeyEnum.USED_PERCENT.key()) || primary.get(CodexJsonKeyEnum.USED_PERCENT.key()).isJsonNull()) {
             return;
         }
-        double usedPercent = primary.get("usedPercent").getAsDouble();
-        long windowDurationMins = primary.has("windowDurationMins") && !primary.get("windowDurationMins").isJsonNull()
-                ? primary.get("windowDurationMins").getAsLong() : 0L;
-        long resetsAt = primary.has("resetsAt") && !primary.get("resetsAt").isJsonNull()
-                ? primary.get("resetsAt").getAsLong() : 0L;
+        double usedPercent = primary.get(CodexJsonKeyEnum.USED_PERCENT.key()).getAsDouble();
+        long windowDurationMins = primary.has(CodexJsonKeyEnum.WINDOW_DURATION_MINS.key()) && !primary.get(CodexJsonKeyEnum.WINDOW_DURATION_MINS.key()).isJsonNull()
+                ? primary.get(CodexJsonKeyEnum.WINDOW_DURATION_MINS.key()).getAsLong() : 0L;
+        long resetsAt = primary.has(CodexJsonKeyEnum.RESETS_AT.key()) && !primary.get(CodexJsonKeyEnum.RESETS_AT.key()).isJsonNull()
+                ? primary.get(CodexJsonKeyEnum.RESETS_AT.key()).getAsLong() : 0L;
         CodexRateLimitEvent event = new CodexRateLimitEvent(usedPercent, windowDurationMins, resetsAt);
         listener.onAiProcessEvent(event);
         CodexAiImplementation.publishRateLimit(event);
@@ -429,10 +430,10 @@ class CodexAppServerHandler implements CodexNotificationListener, CodexServerReq
     }
 
     private CompletableFuture<JsonObject> handleCommandExecutionApproval(JsonObject params) {
-        String reason = params.has("reason") && !params.get("reason").isJsonNull()
-                ? params.get("reason").getAsString() : null;
-        String command = params.has("command") && !params.get("command").isJsonNull()
-                ? params.get("command").getAsString() : null;
+        String reason = params.has(CodexJsonKeyEnum.REASON.key()) && !params.get(CodexJsonKeyEnum.REASON.key()).isJsonNull()
+                ? params.get(CodexJsonKeyEnum.REASON.key()).getAsString() : null;
+        String command = params.has(CodexJsonKeyEnum.COMMAND.key()) && !params.get(CodexJsonKeyEnum.COMMAND.key()).isJsonNull()
+                ? params.get(CodexJsonKeyEnum.COMMAND.key()).getAsString() : null;
         String displayText = reason != null ? reason
                 : command != null ? "Codex wants to run: " + command
                         : "Codex wants to run a command";
@@ -440,8 +441,8 @@ class CodexAppServerHandler implements CodexNotificationListener, CodexServerReq
     }
 
     private CompletableFuture<JsonObject> handleFileChangeApproval(JsonObject params) {
-        String itemId = params.has("itemId") && !params.get("itemId").isJsonNull()
-                ? params.get("itemId").getAsString() : null;
+        String itemId = params.has(CodexJsonKeyEnum.ITEM_ID.key()) && !params.get(CodexJsonKeyEnum.ITEM_ID.key()).isJsonNull()
+                ? params.get(CodexJsonKeyEnum.ITEM_ID.key()).getAsString() : null;
         // The approval request itself carries no diff (design doc §0a) — the
         // content arrived moments earlier under the same item id via item/started.
         JsonArray changes = itemId != null ? fileChangeCache.remove(itemId) : null;
@@ -450,8 +451,8 @@ class CodexAppServerHandler implements CodexNotificationListener, CodexServerReq
         // reviews Codex edits in the same diff panel as the plugin's own edits.
         if (changes != null && changes.size() == 1 && changes.get(0).isJsonObject()) {
             JsonObject c = changes.get(0).getAsJsonObject();
-            String fp = c.has("path") && !c.get("path").isJsonNull() ? c.get("path").getAsString() : null;
-            String diffHunk = c.has("diff") && !c.get("diff").isJsonNull() ? c.get("diff").getAsString() : null;
+            String fp = c.has(CodexJsonKeyEnum.PATH.key()) && !c.get(CodexJsonKeyEnum.PATH.key()).isJsonNull() ? c.get(CodexJsonKeyEnum.PATH.key()).getAsString() : null;
+            String diffHunk = c.has(CodexJsonKeyEnum.DIFF.key()) && !c.get(CodexJsonKeyEnum.DIFF.key()).isJsonNull() ? c.get(CodexJsonKeyEnum.DIFF.key()).getAsString() : null;
             if (fp != null && diffHunk != null && !diffHunk.isBlank()) {
                 try {
                     String original = Files.readString(Path.of(fp), StandardCharsets.UTF_8);
@@ -502,7 +503,7 @@ class CodexAppServerHandler implements CodexNotificationListener, CodexServerReq
         listener.onAiProcessEvent(new ConfirmEvent(toolName, displayText, filePath, null, decisionFuture));
         return decisionFuture.handle((decision, ex) -> {
             JsonObject result = new JsonObject();
-            result.addProperty("decision", approvalDecision(decision, ex));
+            result.addProperty(CodexJsonKeyEnum.DECISION.key(), approvalDecision(decision, ex));
             return result;
         });
     }
@@ -519,7 +520,7 @@ class CodexAppServerHandler implements CodexNotificationListener, CodexServerReq
         listener.onAiProcessEvent(new PermissionEvent("Write", filePath, null, null, proposed, decisionFuture));
         return decisionFuture.handle((decision, ex) -> {
             JsonObject result = new JsonObject();
-            result.addProperty("decision", approvalDecision(decision, ex));
+            result.addProperty(CodexJsonKeyEnum.DECISION.key(), approvalDecision(decision, ex));
             return result;
         });
     }
@@ -539,10 +540,10 @@ class CodexAppServerHandler implements CodexNotificationListener, CodexServerReq
      * slice).
      */
     private CompletableFuture<JsonObject> handleMcpElicitationRequest(JsonObject params) {
-        String message = params.has("message") && !params.get("message").isJsonNull()
-                ? params.get("message").getAsString() : null;
-        String serverName = params.has("serverName") && !params.get("serverName").isJsonNull()
-                ? params.get("serverName").getAsString() : null;
+        String message = params.has(CodexJsonKeyEnum.MESSAGE.key()) && !params.get(CodexJsonKeyEnum.MESSAGE.key()).isJsonNull()
+                ? params.get(CodexJsonKeyEnum.MESSAGE.key()).getAsString() : null;
+        String serverName = params.has(CodexJsonKeyEnum.SERVER_NAME.key()) && !params.get(CodexJsonKeyEnum.SERVER_NAME.key()).isJsonNull()
+                ? params.get(CodexJsonKeyEnum.SERVER_NAME.key()).getAsString() : null;
         String displayText = message != null ? message
                 : serverName != null ? "MCP server \'" + serverName + "\' requests approval"
                         : "MCP server requests approval";
@@ -560,7 +561,7 @@ class CodexAppServerHandler implements CodexNotificationListener, CodexServerReq
                 decisionFuture, true));
         return decisionFuture.handle((decision, ex) -> {
             JsonObject result = new JsonObject();
-            result.addProperty("action", approvalDecision(decision, ex));
+            result.addProperty(CodexJsonKeyEnum.ACTION.key(), approvalDecision(decision, ex));
             return result;
         });
     }

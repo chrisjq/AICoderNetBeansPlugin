@@ -22,6 +22,7 @@ import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.opencode.OpenCodeAiImpleme
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.opencode.OpenCodeAiProcessManager;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.opencode.OpenCodeConfigOptionsEvent;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.opencode.OpenCodeUsageEvent;
+import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.opencode.acp.AcpJsonKeyEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.opencode.events.OpenCodeModelsEvent;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.opencode.settings.OpenCodePluginSettings;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.opencode.settings.OpenCodeSessionSettings;
@@ -57,21 +58,21 @@ public class OpenCodeAiInfoBarExtension implements AiInfoBarExtension {
                 continue;
             }
             JsonObject opt = el.getAsJsonObject();
-            String id = opt.has("id") ? opt.get("id").getAsString() : null;
-            String type = opt.has("type") ? opt.get("type").getAsString() : null;
+            String id = opt.has(AcpJsonKeyEnum.ID.key()) ? opt.get(AcpJsonKeyEnum.ID.key()).getAsString() : null;
+            String type = opt.has(AcpJsonKeyEnum.TYPE.key()) ? opt.get(AcpJsonKeyEnum.TYPE.key()).getAsString() : null;
             if (id == null || !"select".equals(type)) {
                 continue;
             }
-            String currentValue = opt.has("currentValue") ? opt.get("currentValue").getAsString() : null;
+            String currentValue = opt.has(AcpJsonKeyEnum.CURRENT_VALUE.key()) ? opt.get(AcpJsonKeyEnum.CURRENT_VALUE.key()).getAsString() : null;
             List<OptionValue> values = new ArrayList<>();
-            if (opt.has("options") && opt.get("options").isJsonArray()) {
-                for (JsonElement v : opt.getAsJsonArray("options")) {
+            if (opt.has(AcpJsonKeyEnum.OPTIONS.key()) && opt.get(AcpJsonKeyEnum.OPTIONS.key()).isJsonArray()) {
+                for (JsonElement v : opt.getAsJsonArray(AcpJsonKeyEnum.OPTIONS.key())) {
                     if (v.isJsonObject()) {
                         JsonObject vo = v.getAsJsonObject();
-                        if (vo.has("value")) {
-                            String value = vo.get("value").getAsString();
-                            String name = vo.has("name") && !vo.get("name").isJsonNull()
-                                    ? vo.get("name").getAsString() : value;
+                        if (vo.has(AcpJsonKeyEnum.VALUE.key())) {
+                            String value = vo.get(AcpJsonKeyEnum.VALUE.key()).getAsString();
+                            String name = vo.has(AcpJsonKeyEnum.NAME.key()) && !vo.get(AcpJsonKeyEnum.NAME.key()).isJsonNull()
+                                    ? vo.get(AcpJsonKeyEnum.NAME.key()).getAsString() : value;
                             values.add(new OptionValue(value, name));
                         }
                     }
@@ -101,17 +102,17 @@ public class OpenCodeAiInfoBarExtension implements AiInfoBarExtension {
 
     private static JsonObject buildSelectOption(String id, String currentValue, String[] values) {
         JsonObject opt = new JsonObject();
-        opt.addProperty("id", id);
-        opt.addProperty("type", "select");
-        opt.addProperty("currentValue", currentValue);
+        opt.addProperty(AcpJsonKeyEnum.ID.key(), id);
+        opt.addProperty(AcpJsonKeyEnum.TYPE.key(), "select");
+        opt.addProperty(AcpJsonKeyEnum.CURRENT_VALUE.key(), currentValue);
         JsonArray options = new JsonArray();
         for (String v : values) {
             JsonObject o = new JsonObject();
-            o.addProperty("value", v);
-            o.addProperty("name", v);
+            o.addProperty(AcpJsonKeyEnum.VALUE.key(), v);
+            o.addProperty(AcpJsonKeyEnum.NAME.key(), v);
             options.add(o);
         }
-        opt.add("options", options);
+        opt.add(AcpJsonKeyEnum.OPTIONS.key(), options);
         return opt;
     }
 
@@ -124,16 +125,16 @@ public class OpenCodeAiInfoBarExtension implements AiInfoBarExtension {
                 continue;
             }
             JsonObject opt = el.getAsJsonObject();
-            if (!"model".equals(opt.has("id") ? opt.get("id").getAsString() : null)) {
+            if (!"model".equals(opt.has(AcpJsonKeyEnum.ID.key()) ? opt.get(AcpJsonKeyEnum.ID.key()).getAsString() : null)) {
                 continue;
             }
-            if (!opt.has("options") || !opt.get("options").isJsonArray()) {
+            if (!opt.has(AcpJsonKeyEnum.OPTIONS.key()) || !opt.get(AcpJsonKeyEnum.OPTIONS.key()).isJsonArray()) {
                 return;
             }
             List<String> models = new ArrayList<>();
-            for (JsonElement v : opt.getAsJsonArray("options")) {
-                if (v.isJsonObject() && v.getAsJsonObject().has("value")) {
-                    models.add(v.getAsJsonObject().get("value").getAsString());
+            for (JsonElement v : opt.getAsJsonArray(AcpJsonKeyEnum.OPTIONS.key())) {
+                if (v.isJsonObject() && v.getAsJsonObject().has(AcpJsonKeyEnum.VALUE.key())) {
+                    models.add(v.getAsJsonObject().get(AcpJsonKeyEnum.VALUE.key()).getAsString());
                 }
             }
             if (!models.isEmpty()) {
@@ -155,8 +156,8 @@ public class OpenCodeAiInfoBarExtension implements AiInfoBarExtension {
                 continue;
             }
             JsonObject o = el.getAsJsonObject();
-            if (id.equals(o.has("id") ? o.get("id").getAsString() : null)) {
-                return o.has("currentValue") ? o.get("currentValue").getAsString() : null;
+            if (id.equals(o.has(AcpJsonKeyEnum.ID.key()) ? o.get(AcpJsonKeyEnum.ID.key()).getAsString() : null)) {
+                return o.has(AcpJsonKeyEnum.CURRENT_VALUE.key()) ? o.get(AcpJsonKeyEnum.CURRENT_VALUE.key()).getAsString() : null;
             }
         }
         return null;
@@ -187,10 +188,10 @@ public class OpenCodeAiInfoBarExtension implements AiInfoBarExtension {
                 continue;
             }
             JsonObject opt = el.getAsJsonObject();
-            String id = opt.has("id") ? opt.get("id").getAsString() : null;
+            String id = opt.has(AcpJsonKeyEnum.ID.key()) ? opt.get(AcpJsonKeyEnum.ID.key()).getAsString() : null;
             String preserved = id != null ? extractCurrentValue(displayed, id) : null;
             if (preserved != null) {
-                opt.addProperty("currentValue", preserved);
+                opt.addProperty(AcpJsonKeyEnum.CURRENT_VALUE.key(), preserved);
             }
         }
         return refreshed;
@@ -209,8 +210,8 @@ public class OpenCodeAiInfoBarExtension implements AiInfoBarExtension {
                 continue;
             }
             JsonObject opt = el.getAsJsonObject();
-            if (id.equals(opt.has("id") ? opt.get("id").getAsString() : null)) {
-                opt.addProperty("currentValue", value);
+            if (id.equals(opt.has(AcpJsonKeyEnum.ID.key()) ? opt.get(AcpJsonKeyEnum.ID.key()).getAsString() : null)) {
+                opt.addProperty(AcpJsonKeyEnum.CURRENT_VALUE.key(), value);
                 break;
             }
         }

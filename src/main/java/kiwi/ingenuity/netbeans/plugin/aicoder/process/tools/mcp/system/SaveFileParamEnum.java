@@ -1,20 +1,22 @@
 package kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.system;
 
+import kiwi.ingenuity.netbeans.plugin.aicoder.process.McpToolPropertyEnum;
+
 /**
  * Parameter-name keys for the SaveFileTool MCP tool, shared between its
  * schema() definition and handle() argument extraction so the two cannot drift.
  */
 public enum SaveFileParamEnum {
-    FILE_PATH("filePath"),
-    CONTENT("content");
+    FILE_PATH(McpToolPropertyEnum.FILE_PATH),
+    CONTENT(McpToolPropertyEnum.CONTENT);
 
-    private final String key;
+    private final McpToolPropertyEnum property;
 
-    SaveFileParamEnum(String key) {
-        this.key = key;
+    SaveFileParamEnum(McpToolPropertyEnum property) {
+        this.property = property;
     }
 
     public String key() {
-        return key;
+        return property.key();
     }
 }

@@ -31,9 +31,9 @@ public class InlineVariableTool implements McpToolInterface {
             return null;
         }
         if (options.contains(McpInstructionOptionEnum.ONLY_MCP_TOOL_ACCESS)) {
-            return "InlineVariable - inlines a variable at all use sites";
+            return McpToolEnum.INLINE_VARIABLE.toolName() + " - inlines a variable at all use sites";
         }
-        return "InlineVariable -> INSTEAD OF manual editing - inlines a variable at all use sites";
+        return McpToolEnum.INLINE_VARIABLE.toolName() + " -> INSTEAD OF manual editing - inlines a variable at all use sites";
     }
 
     @Override
@@ -49,7 +49,7 @@ public class InlineVariableTool implements McpToolInterface {
         JsonObject props = new JsonObject();
         JsonObject fp = new JsonObject();
         fp.addProperty(ToolSchemaKeyEnum.TYPE.key(), "string");
-        fp.addProperty(ToolSchemaKeyEnum.DESCRIPTION.key(), "Absolute path to the file. Omit to use current editor.");
+        fp.addProperty(ToolSchemaKeyEnum.DESCRIPTION.key(), "Absolute path to the file. Required — this tool does not fall back to the focused editor. Call GetCurrentFile if you want the file the user is looking at.");
         props.add(InlineVariableParamEnum.FILE_PATH.key(), fp);
         JsonObject ln = new JsonObject();
         ln.addProperty(ToolSchemaKeyEnum.TYPE.key(), "integer");

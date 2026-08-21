@@ -13,15 +13,17 @@ import java.util.logging.Level;
 import java.util.logging.Logger;
 import kiwi.ingenuity.netbeans.plugin.aicoder.StringConst;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.AiTypeEnum;
+import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.McpConfigKeyEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.server.AiMcpRegistrar;
 
 /**
  * Grok-specific MCP registration strategy. Uses {@code grok mcp add/remove}
  * (https://docs.x.ai/build/features/mcp-servers) to manage the per-session HTTP
- * MCP endpoint, and writes a dedicated PreToolUse HTTP hook file under
- * {@code ~/.grok/hooks/} (https://docs.x.ai/build/features/hooks) for the
- * diff-intercept feature — Grok reads standalone hook JSON files, so unlike
- * Claude there is no need to merge into a shared settings.json.
+ * MCP endpoint, and writes a dedicated {@link McpConfigKeyEnum#PRE_TOOL_USE}
+ * HTTP hook file under {@code ~/.grok/hooks/}
+ * (https://docs.x.ai/build/features/hooks) for the diff-intercept feature —
+ * Grok reads standalone hook JSON files, so unlike Claude there is no need to
+ * merge into a shared settings.json.
  */
 public class GrokAiMcpRegistrar extends AiMcpRegistrar {
 
@@ -38,19 +40,19 @@ public class GrokAiMcpRegistrar extends AiMcpRegistrar {
         try {
             Files.createDirectories(hookPath.getParent());
             JsonObject entry = new JsonObject();
-            entry.addProperty("matcher", "Edit|Write");
+            entry.addProperty(McpConfigKeyEnum.MATCHER.key(), "Edit|Write");
             JsonArray innerHooks = new JsonArray();
             JsonObject httpHook = new JsonObject();
-            httpHook.addProperty("type", "http");
-            httpHook.addProperty("url", baseUrl + "/");
+            httpHook.addProperty(McpConfigKeyEnum.TYPE.key(), "http");
+            httpHook.addProperty(McpConfigKeyEnum.URL.key(), baseUrl + "/");
             innerHooks.add(httpHook);
-            entry.add("hooks", innerHooks);
+            entry.add(McpConfigKeyEnum.HOOKS.key(), innerHooks);
             JsonArray preToolUse = new JsonArray();
             preToolUse.add(entry);
             JsonObject hooks = new JsonObject();
-            hooks.add("PreToolUse", preToolUse);
+            hooks.add(McpConfigKeyEnum.PRE_TOOL_USE.key(), preToolUse);
             JsonObject root = new JsonObject();
-            root.add("hooks", hooks);
+            root.add(McpConfigKeyEnum.HOOKS.key(), hooks);
 
             Path tmp = hookPath.resolveSibling(hookPath.getFileName() + ".tmp");
             Files.writeString(tmp, PRETTY_GSON.toJson(root), java.nio.charset.StandardCharsets.UTF_8);

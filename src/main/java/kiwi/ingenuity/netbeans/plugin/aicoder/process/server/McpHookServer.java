@@ -34,6 +34,7 @@ import kiwi.ingenuity.netbeans.plugin.aicoder.ai.mail.AiSessionInboxBroker;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.McpArgumentException;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.McpInstructionOptionEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.McpToolEnum;
+import kiwi.ingenuity.netbeans.plugin.aicoder.process.McpToolPropertyEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.SessionRegistry;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.locking.LockManager;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.session.AbstractAiSession;
@@ -95,6 +96,19 @@ public class McpHookServer {
             return false;
         }
         return tool != McpToolEnum.GET_INSTRUCTIONS;
+    }
+
+    /**
+     * Applies the HTTP connection-management settings above as JDK system
+     * properties. Must run before the first HttpServer is created in the JVM,
+     * since com.sun.net.httpserver reads them once at ServerConfig init.
+     */
+    private static void applyConnectionSettings() {
+        System.setProperty("sun.net.httpserver.idleInterval", Integer.toString(IDLE_INTERVAL_SECONDS));
+        System.setProperty("sun.net.httpserver.maxIdleConnections", Integer.toString(MAX_IDLE_CONNECTIONS));
+        System.setProperty("jdk.httpserver.maxConnections", Integer.toString(MAX_CONNECTIONS));
+        System.setProperty("sun.net.httpserver.maxReqTime", Integer.toString(MAX_REQ_TIME_SECONDS));
+        System.setProperty("sun.net.httpserver.maxRspTime", Integer.toString(MAX_RSP_TIME_SECONDS));
     }
 
     private HttpServer httpServer;
@@ -173,19 +187,6 @@ public class McpHookServer {
         httpServer.start();
         started = true;
         LOG.log(Level.INFO, "MCP hook server listening on port {0}", getPort());
-    }
-
-    /**
-     * Applies the HTTP connection-management settings above as JDK system
-     * properties. Must run before the first HttpServer is created in the JVM,
-     * since com.sun.net.httpserver reads them once at ServerConfig init.
-     */
-    private static void applyConnectionSettings() {
-        System.setProperty("sun.net.httpserver.idleInterval", Integer.toString(IDLE_INTERVAL_SECONDS));
-        System.setProperty("sun.net.httpserver.maxIdleConnections", Integer.toString(MAX_IDLE_CONNECTIONS));
-        System.setProperty("jdk.httpserver.maxConnections", Integer.toString(MAX_CONNECTIONS));
-        System.setProperty("sun.net.httpserver.maxReqTime", Integer.toString(MAX_REQ_TIME_SECONDS));
-        System.setProperty("sun.net.httpserver.maxRspTime", Integer.toString(MAX_RSP_TIME_SECONDS));
     }
 
     // ---- Public API ----
@@ -414,7 +415,11 @@ public class McpHookServer {
     }
 
     private void handleRequest(HttpExchange ex, JsonObject req) throws IOException {
-        String hookEventName = McpHookServerUtil.str(req, "hook_event_name");
+        // Claude's hook vocabulary, not ours. ClaudeHookKeyEnum exists so these
+        // cannot be mistaken for McpToolPropertyEnum's camelCase equivalents —
+        // Claude sends session_id and file_path, our tools take sessionId and
+        // filePath, and aligning either to the other breaks something silently.
+        String hookEventName = McpHookServerUtil.str(req, ClaudeHookKeyEnum.HOOK_EVENT_NAME.key());
         if (hookEventName != null && !"PreToolUse".equals(hookEventName)) {
             // PostToolUse, Notification, Stop, etc. — not yet implemented, no-op
             LOG.log(Level.WARNING, "Hook Event Not Implemented: {0}", hookEventName);
@@ -422,9 +427,9 @@ public class McpHookServer {
             return;
         }
 
-        String sessionId = McpHookServerUtil.str(req, "session_id");
-        String toolName = McpHookServerUtil.str(req, "tool_name");
-        JsonObject input = McpHookServerUtil.obj(req, "tool_input");
+        String sessionId = McpHookServerUtil.str(req, ClaudeHookKeyEnum.SESSION_ID.key());
+        String toolName = McpHookServerUtil.str(req, ClaudeHookKeyEnum.TOOL_NAME.key());
+        JsonObject input = McpHookServerUtil.obj(req, ClaudeHookKeyEnum.TOOL_INPUT.key());
 
         // The hook body session_id is the AI Code session UUID. AiSession
         // registers it as an alias in SessionRegistry on the first stream event, so
@@ -448,16 +453,19 @@ public class McpHookServer {
             return;
         }
 
-        String filePath = McpHookServerUtil.str(input, "file_path");
+        String filePath = McpHookServerUtil.str(input, ClaudeHookKeyEnum.FILE_PATH.key());
         // Edit/Write without a path cannot be previewed — fail closed.
         if (filePath == null || filePath.isBlank()) {
-            McpHookServerUtil.sendJson(ex, 200,
-                    McpHookServerUtil.hookDeny("Access denied: missing file_path"));
+            // Names Claude's key, not ours: the caller here is Claude's Edit/Write
+            // hook, so telling it "missing filePath" would name a field it never
+            // sends. This is why the two vocabularies have separate enums.
+            McpHookServerUtil.sendJson(ex, 200, McpHookServerUtil.hookDeny(
+                    "Access denied: missing " + ClaudeHookKeyEnum.FILE_PATH.key()));
             return;
         }
-        String oldString = McpHookServerUtil.str(input, "old_string");
-        String newString = McpHookServerUtil.str(input, "new_string");
-        String writeContent = McpHookServerUtil.str(input, "content");
+        String oldString = McpHookServerUtil.str(input, ClaudeHookKeyEnum.OLD_STRING.key());
+        String newString = McpHookServerUtil.str(input, ClaudeHookKeyEnum.NEW_STRING.key());
+        String writeContent = McpHookServerUtil.str(input, ClaudeHookKeyEnum.CONTENT.key());
 
         // Out-of-project files cannot be shown in the Accept/Reject diff panel, so they
         // are decided here instead of falling through to the panel — which would defer
@@ -623,13 +631,17 @@ public class McpHookServer {
                 return;
             }
 
-            if (!req.has("id") || req.get("id").isJsonNull()) {
+            // The MCP JSON-RPC envelope we serve — a different vocabulary from
+            // Claude's hook payload handled above, hence a different enum.
+            String idKey = McpProtocolKeyEnum.ID.key();
+            String methodKey = McpProtocolKeyEnum.METHOD.key();
+            if (!req.has(idKey) || req.get(idKey).isJsonNull()) {
                 ex.sendResponseHeaders(202, -1);
                 return;
             }
 
-            JsonElement id = req.get("id");
-            JsonElement methodEl = req.has("method") ? req.get("method") : null;
+            JsonElement id = req.get(idKey);
+            JsonElement methodEl = req.has(methodKey) ? req.get(methodKey) : null;
             String rpcMethod = (methodEl != null && !methodEl.isJsonNull() && methodEl.isJsonPrimitive())
                     ? methodEl.getAsString() : "";
 
@@ -638,24 +650,24 @@ public class McpHookServer {
                     ? path.substring("/mcp/".length()) : null;
             AiTypeEnum aiType = aiTypeKey != null ? AiTypeEnum.fromKey(aiTypeKey) : null;
 
-            JsonObject params = McpHookServerUtil.obj(req, "params");
+            JsonObject params = McpHookServerUtil.obj(req, McpProtocolKeyEnum.PARAMS.key());
 
             switch (rpcMethod) {
                 case "initialize" -> {
                     String instructions = McpHookServerUtil.getInitializeStub(
                             aiType != null ? aiType.getMcpOptions() : Set.of());
                     JsonObject result = new JsonObject();
-                    String clientProto = McpHookServerUtil.str(params, "protocolVersion");
-                    result.addProperty("protocolVersion",
+                    String clientProto = McpHookServerUtil.str(params, McpProtocolKeyEnum.PROTOCOL_VERSION.key());
+                    result.addProperty(McpProtocolKeyEnum.PROTOCOL_VERSION.key(),
                             clientProto != null && !clientProto.isBlank() ? clientProto : "2024-11-05");
                     JsonObject caps = new JsonObject();
-                    caps.add("tools", new JsonObject());
-                    result.add("capabilities", caps);
+                    caps.add(McpProtocolKeyEnum.TOOLS.key(), new JsonObject());
+                    result.add(McpProtocolKeyEnum.CAPABILITIES.key(), caps);
                     JsonObject info = new JsonObject();
-                    info.addProperty("name", StringConst.PLUGIN_ID);
-                    info.addProperty("version", "1.0");
-                    result.add("serverInfo", info);
-                    result.addProperty("instructions", instructions);
+                    info.addProperty(McpProtocolKeyEnum.NAME.key(), StringConst.PLUGIN_ID);
+                    info.addProperty(McpProtocolKeyEnum.VERSION.key(), "1.0");
+                    result.add(McpProtocolKeyEnum.SERVER_INFO.key(), info);
+                    result.addProperty(McpProtocolKeyEnum.INSTRUCTIONS.key(), instructions);
                     McpHookServerUtil.sendJson(ex, 200, McpHookServerUtil.mcpOk(id, result));
                 }
                 case "tools/list" -> {
@@ -668,13 +680,15 @@ public class McpHookServer {
                     for (McpToolInterface h : handlers.values()) {
                         tools.add(h.schema(toolOptions));
                     }
-                    result.add("tools", tools);
+                    result.add(McpProtocolKeyEnum.TOOLS.key(), tools);
                     McpHookServerUtil.sendJson(ex, 200, McpHookServerUtil.mcpOk(id, result));
                 }
                 case "tools/call" -> {
-                    JsonObject argsObj = McpHookServerUtil.obj(params, "arguments");
-                    String sessionId = McpHookServerUtil.str(argsObj, "sessionId");
-                    String secretKey = McpHookServerUtil.str(argsObj, "secretKey");
+                    // The envelope key is MCP's; what is inside it are OUR tool
+                    // properties. Two vocabularies, one line apart.
+                    JsonObject argsObj = McpHookServerUtil.obj(params, McpProtocolKeyEnum.ARGUMENTS.key());
+                    String sessionId = McpHookServerUtil.str(argsObj, McpToolPropertyEnum.SESSION_ID.key());
+                    String secretKey = McpHookServerUtil.str(argsObj, McpToolPropertyEnum.SECRET_KEY.key());
 
                     if (sessionId == null || secretKey == null) {
                         McpHookServerUtil.sendJson(ex, 200,
@@ -696,7 +710,7 @@ public class McpHookServer {
                         return;
                     }
 
-                    String requestedName = McpHookServerUtil.str(params, "name");
+                    String requestedName = McpHookServerUtil.str(params, McpProtocolKeyEnum.NAME.key());
                     McpToolEnum requestedTool = McpToolEnum.of(requestedName);
                     if (isToolGated(session.getAiSession().isInstructionsLoaded(), requestedTool)) {
                         McpHookServerUtil.sendJson(ex, 200, McpHookServerUtil.mcpTextResult(id,
@@ -725,9 +739,9 @@ public class McpHookServer {
 
     private void handleMcpToolCall(HttpExchange ex, JsonObject req, JsonElement id,
             AbstractAiSession session) throws IOException {
-        JsonObject params = McpHookServerUtil.obj(req, "params");
-        String toolName = McpHookServerUtil.str(params, "name");
-        JsonObject argsObj = McpHookServerUtil.obj(params, "arguments");
+        JsonObject params = McpHookServerUtil.obj(req, McpProtocolKeyEnum.PARAMS.key());
+        String toolName = McpHookServerUtil.str(params, McpProtocolKeyEnum.NAME.key());
+        JsonObject argsObj = McpHookServerUtil.obj(params, McpProtocolKeyEnum.ARGUMENTS.key());
 
         McpToolEnum tool = McpToolEnum.of(toolName);
         if (tool == null) {

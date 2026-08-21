@@ -1,6 +1,5 @@
 package kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.claude;
 
-import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.claude.events.ClaudeSessionInfoEvent;
 import com.google.gson.Gson;
 import com.google.gson.JsonArray;
 import com.google.gson.JsonElement;
@@ -12,15 +11,16 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.Consumer;
 import java.util.logging.Level;
 import java.util.logging.Logger;
-import kiwi.ingenuity.netbeans.plugin.aicoder.utils.JsonUtils;
-import kiwi.ingenuity.netbeans.plugin.aicoder.utils.StatusMessageUtil;
-import kiwi.ingenuity.netbeans.plugin.aicoder.process.events.AiProcessEvent;
-import kiwi.ingenuity.netbeans.plugin.aicoder.process.events.AiProcessEventListener;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.events.StatusEvent;
+import kiwi.ingenuity.netbeans.plugin.aicoder.ai.events.StatusEventTypeEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.events.TextDeltaEvent;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.events.ToolUseEvent;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.events.TurnCompleteEvent;
-import kiwi.ingenuity.netbeans.plugin.aicoder.ai.events.StatusEventTypeEnum;
+import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.claude.events.ClaudeSessionInfoEvent;
+import kiwi.ingenuity.netbeans.plugin.aicoder.process.events.AiProcessEvent;
+import kiwi.ingenuity.netbeans.plugin.aicoder.process.events.AiProcessEventListener;
+import kiwi.ingenuity.netbeans.plugin.aicoder.utils.JsonUtils;
+import kiwi.ingenuity.netbeans.plugin.aicoder.utils.StatusMessageUtil;
 
 public class ClaudeStreamJsonParser {
 
@@ -38,6 +38,16 @@ public class ClaudeStreamJsonParser {
         catch (Exception e) {
             return null;
         }
+    }
+
+    private static String apiErrorMessage(JsonObject obj) {
+        for (String key : new String[]{ClaudeJsonKeyEnum.RESULT.key(), ClaudeJsonKeyEnum.ERROR.key(), ClaudeJsonKeyEnum.MESSAGE.key()}) {
+            String v = JsonUtils.getString(obj, key);
+            if (v != null && !v.isBlank()) {
+                return v;
+            }
+        }
+        return "Claude API error — you may have reached your usage/plan limit.";
     }
 
     private final AiProcessEventListener listener;
@@ -107,7 +117,7 @@ public class ClaudeStreamJsonParser {
             // If the unparseable line is a result event (even if malformed), emit FAILED
             // so the turn doesn't stay in processing state. String check is the only option
             // since the JSON didn't parse.
-            if (line.contains("\"type\":\"result\"")) {
+            if (line.contains("\"" + ClaudeJsonKeyEnum.TYPE.key() + "\":\"result\"")) {
                 listener.onAiProcessEvent(new StatusEvent(StatusEventTypeEnum.FAILED,
                         "Claude response could not be parsed. This may indicate an incomplete or corrupted response."));
             }
@@ -288,16 +298,6 @@ public class ClaudeStreamJsonParser {
         return new TurnCompleteEvent();
     }
 
-    private static String apiErrorMessage(JsonObject obj) {
-        for (String key : new String[]{"result", "error", "message"}) {
-            String v = JsonUtils.getString(obj, key);
-            if (v != null && !v.isBlank()) {
-                return v;
-            }
-        }
-        return "Claude API error — you may have reached your usage/plan limit.";
-    }
-
     private AiProcessEvent parseSystem(JsonObject obj) {
         String subtype = JsonUtils.getString(obj, ClaudeJsonKeyEnum.SUBTYPE.key());
         LOG.log(Level.FINE, "claude system event fields: {0}", obj.keySet());
@@ -315,7 +315,7 @@ public class ClaudeStreamJsonParser {
         }
 
         if ("task_notification".equals(subtype)) {
-            String summary = JsonUtils.getString(obj, "summary");
+            String summary = JsonUtils.getString(obj, ClaudeJsonKeyEnum.SUMMARY.key());
             String msg = (summary != null && !summary.isBlank()) ? summary : "Background task completed";
             listener.onAiProcessEvent(new StatusEvent(StatusEventTypeEnum.INFO, msg));
             return null;

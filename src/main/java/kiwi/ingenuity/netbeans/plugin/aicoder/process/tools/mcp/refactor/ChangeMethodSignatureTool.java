@@ -36,9 +36,9 @@ public class ChangeMethodSignatureTool implements McpToolInterface {
             return null;
         }
         if (options.contains(McpInstructionOptionEnum.ONLY_MCP_TOOL_ACCESS)) {
-            return "ChangeMethodSignature - refactors method parameters and updates all callers";
+            return McpToolEnum.CHANGE_METHOD_SIGNATURE.toolName() + " - refactors method parameters and updates all callers";
         }
-        return "ChangeMethodSignature -> INSTEAD OF manual editing - refactors method parameters and updates all callers";
+        return McpToolEnum.CHANGE_METHOD_SIGNATURE.toolName() + " -> INSTEAD OF manual editing - refactors method parameters and updates all callers";
     }
 
     @Override
@@ -68,30 +68,30 @@ public class ChangeMethodSignatureTool implements McpToolInterface {
         JsonObject nameProp = new JsonObject();
         nameProp.addProperty(ToolSchemaKeyEnum.TYPE.key(), "string");
         nameProp.addProperty(ToolSchemaKeyEnum.DESCRIPTION.key(), "Parameter name. Omit to keep the original name.");
-        paramProps.add("name", nameProp);
+        paramProps.add(ChangeMethodSignatureParamEnum.NAME.key(), nameProp);
         JsonObject typeProp = new JsonObject();
         typeProp.addProperty(ToolSchemaKeyEnum.TYPE.key(), "string");
         typeProp.addProperty(ToolSchemaKeyEnum.DESCRIPTION.key(), "Parameter type (e.g. String, int, List<String>). Omit to keep the original type.");
-        paramProps.add("type", typeProp);
+        paramProps.add(ChangeMethodSignatureParamEnum.TYPE.key(), typeProp);
         JsonObject origIdx = new JsonObject();
         origIdx.addProperty(ToolSchemaKeyEnum.TYPE.key(), "integer");
         origIdx.addProperty(ToolSchemaKeyEnum.DESCRIPTION.key(),
                 "0-based index of this param in the original method. Use -1 for new params. "
                 + "Omit to use the param's position in this array.");
-        paramProps.add("originalIndex", origIdx);
+        paramProps.add(ChangeMethodSignatureParamEnum.ORIGINAL_INDEX.key(), origIdx);
         JsonObject defProp = new JsonObject();
         defProp.addProperty(ToolSchemaKeyEnum.TYPE.key(), "string");
         defProp.addProperty(ToolSchemaKeyEnum.DESCRIPTION.key(),
                 "Value inserted at existing call sites for new params (e.g. null, 0). "
                 + "Required when originalIndex is -1.");
-        paramProps.add("defaultValue", defProp);
+        paramProps.add(ChangeMethodSignatureParamEnum.DEFAULT_VALUE.key(), defProp);
         paramItem.add(ToolSchemaKeyEnum.PROPERTIES.key(), paramProps);
         paramsArr.add(ToolSchemaKeyEnum.ITEMS.key(), paramItem);
         props.add(ChangeMethodSignatureParamEnum.PARAMETERS.key(), paramsArr);
 
         JsonObject fp = new JsonObject();
         fp.addProperty(ToolSchemaKeyEnum.TYPE.key(), "string");
-        fp.addProperty(ToolSchemaKeyEnum.DESCRIPTION.key(), "Absolute path to the file. Omit to use current editor.");
+        fp.addProperty(ToolSchemaKeyEnum.DESCRIPTION.key(), "Absolute path to the file. Required — this tool does not fall back to the focused editor. Call GetCurrentFile if you want the file the user is looking at.");
         props.add(ChangeMethodSignatureParamEnum.FILE_PATH.key(), fp);
         JsonObject ln = new JsonObject();
         ln.addProperty(ToolSchemaKeyEnum.TYPE.key(), "integer");
@@ -127,11 +127,18 @@ public class ChangeMethodSignatureTool implements McpToolInterface {
                     continue;
                 }
                 JsonObject p = paramEl.getAsJsonObject();
-                int origIdx = (p.has("originalIndex") && p.get("originalIndex").isJsonPrimitive())
-                        ? p.get("originalIndex").getAsInt() : i;
-                String pName = p.has("name") && p.get("name").isJsonPrimitive() ? p.get("name").getAsString() : null;
-                String pType = p.has("type") && p.get("type").isJsonPrimitive() ? p.get("type").getAsString() : null;
-                String pDefault = p.has("defaultValue") && p.get("defaultValue").isJsonPrimitive() ? p.get("defaultValue").getAsString() : null;
+                String origIdxKey = ChangeMethodSignatureParamEnum.ORIGINAL_INDEX.key();
+                String nameKey = ChangeMethodSignatureParamEnum.NAME.key();
+                String typeKey = ChangeMethodSignatureParamEnum.TYPE.key();
+                String defaultKey = ChangeMethodSignatureParamEnum.DEFAULT_VALUE.key();
+                int origIdx = (p.has(origIdxKey) && p.get(origIdxKey).isJsonPrimitive())
+                        ? p.get(origIdxKey).getAsInt() : i;
+                String pName = p.has(nameKey) && p.get(nameKey).isJsonPrimitive()
+                        ? p.get(nameKey).getAsString() : null;
+                String pType = p.has(typeKey) && p.get(typeKey).isJsonPrimitive()
+                        ? p.get(typeKey).getAsString() : null;
+                String pDefault = p.has(defaultKey) && p.get(defaultKey).isJsonPrimitive()
+                        ? p.get(defaultKey).getAsString() : null;
                 if (origIdx == -1 && (pName == null || pType == null)) {
                     throw new McpArgumentException(-32602,
                             "parameters[" + i + "]: new parameters (originalIndex=-1) require both name and type");

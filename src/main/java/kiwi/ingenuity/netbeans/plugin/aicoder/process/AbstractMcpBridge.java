@@ -10,6 +10,13 @@ import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.McpToolInterface
 
 public abstract class AbstractMcpBridge {
 
+    private static JsonObject deepCopy(JsonObject source) {
+        if (source == null) {
+            return new JsonObject();
+        }
+        return JsonParser.parseString(source.toString()).getAsJsonObject();
+    }
+
     private volatile String sessionId;
     private volatile String secretKey;
     private final AiTypeEnum aiType;
@@ -54,21 +61,14 @@ public abstract class AbstractMcpBridge {
             return "Error: toolName must not be blank";
         }
         JsonObject argsWithAuth = deepCopy(argsFromModel);
-        argsWithAuth.addProperty("sessionId", sessionId);
-        argsWithAuth.addProperty("secretKey", secretKey);
+        argsWithAuth.addProperty(McpToolPropertyEnum.SESSION_ID.key(), sessionId);
+        argsWithAuth.addProperty(McpToolPropertyEnum.SECRET_KEY.key(), secretKey);
         try {
             return executeTool(toolName, argsWithAuth);
         }
         catch (RuntimeException ex) {
             return "Error: " + (ex.getMessage() == null ? ex.getClass().getSimpleName() : ex.getMessage());
         }
-    }
-
-    private static JsonObject deepCopy(JsonObject source) {
-        if (source == null) {
-            return new JsonObject();
-        }
-        return JsonParser.parseString(source.toString()).getAsJsonObject();
     }
 
     protected abstract String executeTool(String toolName, JsonObject argsWithAuth);

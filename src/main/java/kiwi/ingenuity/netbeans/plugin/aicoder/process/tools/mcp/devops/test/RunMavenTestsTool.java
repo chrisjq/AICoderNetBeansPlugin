@@ -18,8 +18,8 @@ public class RunMavenTestsTool extends AbstractTestsTool {
                 "Runs the open Maven project's test suite (mvn test). "
                 + "Maven projects only - do not use for Ant or Gradle projects. "
                 + "Optionally restrict to a single test class (simple or fully qualified name).",
-                "RunMavenTests -> INSTEAD OF Bash mvn test - runs Maven tests with optional class filter",
-                "RunMavenTests - runs Maven tests with optional class filter");
+                McpToolEnum.RUN_MAVEN_TESTS.toolName() + " -> INSTEAD OF Bash mvn test - runs Maven tests with optional class filter",
+                McpToolEnum.RUN_MAVEN_TESTS.toolName() + " - runs Maven tests with optional class filter");
     }
 
     @Override

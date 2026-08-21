@@ -24,6 +24,11 @@ import kiwi.ingenuity.netbeans.plugin.aicoder.ai.http.ChatToolCall;
  */
 public abstract class AbstractChatContextBroker {
 
+    // Bump whenever a ContextJsonKeyEnum value is renamed or removed, and give
+    // the old spelling a migration path. The gate below only fires on THIS
+    // number; an unbumped rename sails through it and restoreFromJson then
+    // silently skips every entry whose keys it can no longer find.
+    // ContextSnapshotFormatTest pins the version-1 spellings.
     private static final int FORMAT_VERSION = 1;
 
     /**
@@ -687,15 +692,15 @@ public abstract class AbstractChatContextBroker {
         lock.lock();
         try {
             JsonObject root = new JsonObject();
-            root.addProperty("version", FORMAT_VERSION);
-            root.addProperty("sessionId", sessionId);
-            root.addProperty("savedAt", System.currentTimeMillis());
-            root.addProperty("calibrationRatio", estimator.calibrationRatio());
+            root.addProperty(ContextJsonKeyEnum.VERSION.key(), FORMAT_VERSION);
+            root.addProperty(ContextJsonKeyEnum.SESSION_ID.key(), sessionId);
+            root.addProperty(ContextJsonKeyEnum.SAVED_AT.key(), System.currentTimeMillis());
+            root.addProperty(ContextJsonKeyEnum.CALIBRATION_RATIO.key(), estimator.calibrationRatio());
             JsonArray arr = new JsonArray();
             for (ContextEntry e : mutableEntries()) {
                 arr.add(e.toJson());
             }
-            root.add("entries", arr);
+            root.add(ContextJsonKeyEnum.ENTRIES.key(), arr);
             debugLog.event("PERSIST", "entries=" + mutableEntries().size());
             return root;
         }
@@ -715,15 +720,15 @@ public abstract class AbstractChatContextBroker {
         lock.lock();
         try {
             mutableEntries().clear();
-            if (root == null || !root.has("version")
-                    || root.get("version").getAsInt() != FORMAT_VERSION) {
-                debugLog.event("RESTORE", "refused: unknown or missing version");
+            if (root == null || !root.has(ContextJsonKeyEnum.VERSION.key())
+                    || root.get(ContextJsonKeyEnum.VERSION.key()).getAsInt() != FORMAT_VERSION) {
+                debugLog.event("RESTORE", "refused: unknown or missing " + ContextJsonKeyEnum.VERSION.key());
                 return;
             }
-            if (root.has("calibrationRatio")) {
-                estimator.restoreRatio(root.get("calibrationRatio").getAsDouble());
+            if (root.has(ContextJsonKeyEnum.CALIBRATION_RATIO.key())) {
+                estimator.restoreRatio(root.get(ContextJsonKeyEnum.CALIBRATION_RATIO.key()).getAsDouble());
             }
-            JsonArray arr = root.getAsJsonArray("entries");
+            JsonArray arr = root.getAsJsonArray(ContextJsonKeyEnum.ENTRIES.key());
             if (arr == null) {
                 return;
             }

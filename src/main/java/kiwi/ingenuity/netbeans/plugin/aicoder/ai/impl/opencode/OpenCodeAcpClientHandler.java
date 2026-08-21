@@ -15,6 +15,7 @@ import kiwi.ingenuity.netbeans.plugin.aicoder.ai.events.StatusEventTypeEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.events.TextDeltaEvent;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.events.ToolUseEvent;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.opencode.acp.AcpClientHandler;
+import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.opencode.acp.AcpJsonKeyEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.opencode.acp.AcpSessionUpdateEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.events.AiProcessEventListener;
 
@@ -32,15 +33,15 @@ class OpenCodeAcpClientHandler implements AcpClientHandler {
     private static final Logger LOG = Logger.getLogger(OpenCodeAcpClientHandler.class.getName());
 
     static String extractFirstLocationPath(JsonObject update) {
-        if (!update.has("locations") || !update.get("locations").isJsonArray()) {
+        if (!update.has(AcpJsonKeyEnum.LOCATIONS.key()) || !update.get(AcpJsonKeyEnum.LOCATIONS.key()).isJsonArray()) {
             return null;
         }
-        JsonArray locations = update.getAsJsonArray("locations");
+        JsonArray locations = update.getAsJsonArray(AcpJsonKeyEnum.LOCATIONS.key());
         if (locations.size() == 0 || !locations.get(0).isJsonObject()) {
             return null;
         }
         JsonObject loc = locations.get(0).getAsJsonObject();
-        return loc.has("path") ? loc.get("path").getAsString() : null;
+        return loc.has(AcpJsonKeyEnum.PATH.key()) ? loc.get(AcpJsonKeyEnum.PATH.key()).getAsString() : null;
     }
 
     static ToolUseEvent.Kind mapToolKind(String kind) {
@@ -63,12 +64,12 @@ class OpenCodeAcpClientHandler implements AcpClientHandler {
             return null;
         }
         // 1. content[0].path
-        if (toolCall.has("content") && toolCall.get("content").isJsonArray()) {
-            JsonArray content = toolCall.getAsJsonArray("content");
+        if (toolCall.has(AcpJsonKeyEnum.CONTENT.key()) && toolCall.get(AcpJsonKeyEnum.CONTENT.key()).isJsonArray()) {
+            JsonArray content = toolCall.getAsJsonArray(AcpJsonKeyEnum.CONTENT.key());
             if (content.size() > 0 && content.get(0).isJsonObject()) {
                 JsonObject c0 = content.get(0).getAsJsonObject();
-                if (c0.has("path") && !c0.get("path").isJsonNull()) {
-                    return c0.get("path").getAsString();
+                if (c0.has(AcpJsonKeyEnum.PATH.key()) && !c0.get(AcpJsonKeyEnum.PATH.key()).isJsonNull()) {
+                    return c0.get(AcpJsonKeyEnum.PATH.key()).getAsString();
                 }
             }
         }
@@ -78,10 +79,10 @@ class OpenCodeAcpClientHandler implements AcpClientHandler {
             return locPath;
         }
         // 3. rawInput.filepath
-        if (toolCall.has("rawInput") && toolCall.get("rawInput").isJsonObject()) {
-            JsonObject rawInput = toolCall.getAsJsonObject("rawInput");
-            if (rawInput.has("filepath") && !rawInput.get("filepath").isJsonNull()) {
-                return rawInput.get("filepath").getAsString();
+        if (toolCall.has(AcpJsonKeyEnum.RAW_INPUT.key()) && toolCall.get(AcpJsonKeyEnum.RAW_INPUT.key()).isJsonObject()) {
+            JsonObject rawInput = toolCall.getAsJsonObject(AcpJsonKeyEnum.RAW_INPUT.key());
+            if (rawInput.has(AcpJsonKeyEnum.FILEPATH.key()) && !rawInput.get(AcpJsonKeyEnum.FILEPATH.key()).isJsonNull()) {
+                return rawInput.get(AcpJsonKeyEnum.FILEPATH.key()).getAsString();
             }
         }
         return null;
@@ -95,12 +96,12 @@ class OpenCodeAcpClientHandler implements AcpClientHandler {
      * {@code content}).
      */
     static String extractRawInputCommand(JsonObject toolCall) {
-        if (toolCall == null || !toolCall.has("rawInput") || !toolCall.get("rawInput").isJsonObject()) {
+        if (toolCall == null || !toolCall.has(AcpJsonKeyEnum.RAW_INPUT.key()) || !toolCall.get(AcpJsonKeyEnum.RAW_INPUT.key()).isJsonObject()) {
             return null;
         }
-        JsonObject rawInput = toolCall.getAsJsonObject("rawInput");
-        return rawInput.has("command") && !rawInput.get("command").isJsonNull()
-                ? rawInput.get("command").getAsString() : null;
+        JsonObject rawInput = toolCall.getAsJsonObject(AcpJsonKeyEnum.RAW_INPUT.key());
+        return rawInput.has(AcpJsonKeyEnum.COMMAND.key()) && !rawInput.get(AcpJsonKeyEnum.COMMAND.key()).isJsonNull()
+                ? rawInput.get(AcpJsonKeyEnum.COMMAND.key()).getAsString() : null;
     }
 
     /**
@@ -110,18 +111,18 @@ class OpenCodeAcpClientHandler implements AcpClientHandler {
      * (non-diff content, missing content, etc.).
      */
     static String extractDiffNewText(JsonObject toolCall) {
-        if (toolCall == null || !toolCall.has("content") || !toolCall.get("content").isJsonArray()) {
+        if (toolCall == null || !toolCall.has(AcpJsonKeyEnum.CONTENT.key()) || !toolCall.get(AcpJsonKeyEnum.CONTENT.key()).isJsonArray()) {
             return null;
         }
-        JsonArray content = toolCall.getAsJsonArray("content");
+        JsonArray content = toolCall.getAsJsonArray(AcpJsonKeyEnum.CONTENT.key());
         if (content.size() == 0 || !content.get(0).isJsonObject()) {
             return null;
         }
         JsonObject c0 = content.get(0).getAsJsonObject();
-        if (!"diff".equals(c0.has("type") ? c0.get("type").getAsString() : null)) {
+        if (!"diff".equals(c0.has(AcpJsonKeyEnum.TYPE.key()) ? c0.get(AcpJsonKeyEnum.TYPE.key()).getAsString() : null)) {
             return null;
         }
-        return c0.has("newText") && !c0.get("newText").isJsonNull() ? c0.get("newText").getAsString() : null;
+        return c0.has(AcpJsonKeyEnum.NEW_TEXT.key()) && !c0.get(AcpJsonKeyEnum.NEW_TEXT.key()).isJsonNull() ? c0.get(AcpJsonKeyEnum.NEW_TEXT.key()).getAsString() : null;
     }
 
     private final AiProcessEventListener listener;
@@ -135,7 +136,7 @@ class OpenCodeAcpClientHandler implements AcpClientHandler {
 
     @Override
     public void onSessionUpdate(String sessionId, JsonObject update) {
-        String raw = update.has("sessionUpdate") ? update.get("sessionUpdate").getAsString() : null;
+        String raw = update.has(AcpJsonKeyEnum.SESSION_UPDATE.key()) ? update.get(AcpJsonKeyEnum.SESSION_UPDATE.key()).getAsString() : null;
         AcpSessionUpdateEnum type = AcpSessionUpdateEnum.fromWire(raw);
         if (type == null) {
             return; // Unknown sessionUpdate value — ignore silently, never throw
@@ -161,26 +162,26 @@ class OpenCodeAcpClientHandler implements AcpClientHandler {
     }
 
     private void handleUsageUpdate(JsonObject update) {
-        int used = update.has("used") ? update.get("used").getAsInt() : 0;
-        int size = update.has("size") ? update.get("size").getAsInt() : 0;
+        int used = update.has(AcpJsonKeyEnum.USED.key()) ? update.get(AcpJsonKeyEnum.USED.key()).getAsInt() : 0;
+        int size = update.has(AcpJsonKeyEnum.SIZE.key()) ? update.get(AcpJsonKeyEnum.SIZE.key()).getAsInt() : 0;
         listener.onAiProcessEvent(new OpenCodeUsageEvent(used, size));
     }
 
     private void handleAgentMessageChunk(JsonObject update) {
-        String messageId = update.has("messageId") ? update.get("messageId").getAsString() : null;
+        String messageId = update.has(AcpJsonKeyEnum.MESSAGE_ID.key()) ? update.get(AcpJsonKeyEnum.MESSAGE_ID.key()).getAsString() : null;
         String text = "";
-        if (update.has("content") && update.get("content").isJsonObject()) {
-            JsonObject content = update.getAsJsonObject("content");
-            if (content.has("text")) {
-                text = content.get("text").getAsString();
+        if (update.has(AcpJsonKeyEnum.CONTENT.key()) && update.get(AcpJsonKeyEnum.CONTENT.key()).isJsonObject()) {
+            JsonObject content = update.getAsJsonObject(AcpJsonKeyEnum.CONTENT.key());
+            if (content.has(AcpJsonKeyEnum.TEXT.key())) {
+                text = content.get(AcpJsonKeyEnum.TEXT.key()).getAsString();
             }
         }
         listener.onAiProcessEvent(new TextDeltaEvent(text, messageId));
     }
 
     private void handleToolEvent(JsonObject update) {
-        String toolName = update.has("title") ? update.get("title").getAsString() : "";
-        String kind = update.has("kind") ? update.get("kind").getAsString() : "";
+        String toolName = update.has(AcpJsonKeyEnum.TITLE.key()) ? update.get(AcpJsonKeyEnum.TITLE.key()).getAsString() : "";
+        String kind = update.has(AcpJsonKeyEnum.KIND.key()) ? update.get(AcpJsonKeyEnum.KIND.key()).getAsString() : "";
         String filePath = extractFirstLocationPath(update);
         listener.onAiProcessEvent(new ToolUseEvent(toolName, filePath, null, null, mapToolKind(kind)));
     }
@@ -204,12 +205,12 @@ class OpenCodeAcpClientHandler implements AcpClientHandler {
      */
     @Override
     public CompletableFuture<JsonObject> onRequestPermission(JsonObject params) {
-        JsonObject toolCall = params.has("toolCall") && params.get("toolCall").isJsonObject()
-                ? params.getAsJsonObject("toolCall") : null;
-        String kind = toolCall != null && toolCall.has("kind") && !toolCall.get("kind").isJsonNull()
-                ? toolCall.get("kind").getAsString() : null;
-        String title = toolCall != null && toolCall.has("title") && !toolCall.get("title").isJsonNull()
-                ? toolCall.get("title").getAsString() : null;
+        JsonObject toolCall = params.has(AcpJsonKeyEnum.TOOL_CALL.key()) && params.get(AcpJsonKeyEnum.TOOL_CALL.key()).isJsonObject()
+                ? params.getAsJsonObject(AcpJsonKeyEnum.TOOL_CALL.key()) : null;
+        String kind = toolCall != null && toolCall.has(AcpJsonKeyEnum.KIND.key()) && !toolCall.get(AcpJsonKeyEnum.KIND.key()).isJsonNull()
+                ? toolCall.get(AcpJsonKeyEnum.KIND.key()).getAsString() : null;
+        String title = toolCall != null && toolCall.has(AcpJsonKeyEnum.TITLE.key()) && !toolCall.get(AcpJsonKeyEnum.TITLE.key()).isJsonNull()
+                ? toolCall.get(AcpJsonKeyEnum.TITLE.key()).getAsString() : null;
         String filePath = extractPermissionFilePath(toolCall);
 
         if ("execute".equals(kind)) {
@@ -309,14 +310,14 @@ class OpenCodeAcpClientHandler implements AcpClientHandler {
         if (ex != null || decision == null) {
             // Turn was cancelled while the permission dialog was open
             JsonObject outcome = new JsonObject();
-            outcome.addProperty("outcome", "cancelled");
-            result.add("outcome", outcome);
+            outcome.addProperty(AcpJsonKeyEnum.OUTCOME.key(), "cancelled");
+            result.add(AcpJsonKeyEnum.OUTCOME.key(), outcome);
         }
         else {
             JsonObject outcome = new JsonObject();
-            outcome.addProperty("outcome", "selected");
-            outcome.addProperty("optionId", decision.allow() ? "once" : "reject");
-            result.add("outcome", outcome);
+            outcome.addProperty(AcpJsonKeyEnum.OUTCOME.key(), "selected");
+            outcome.addProperty(AcpJsonKeyEnum.OPTION_ID.key(), decision.allow() ? "once" : "reject");
+            result.add(AcpJsonKeyEnum.OUTCOME.key(), outcome);
         }
         return result;
     }

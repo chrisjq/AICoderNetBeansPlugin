@@ -4,9 +4,9 @@ import com.google.gson.JsonArray;
 import com.google.gson.JsonObject;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.mail.AiSessionInboxBroker;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.session.AiSession;
-import java.util.Set;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.McpInstructionOptionEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.McpSectionEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.McpToolEnum;
@@ -15,6 +15,7 @@ import kiwi.ingenuity.netbeans.plugin.aicoder.process.session.AbstractAiSession;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.AbstractActionTool;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.McpToolSchemas;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.ToolRequestArguments;
+import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.ToolResponseKeyEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.ToolSchemaKeyEnum;
 
 public class ListAiSessionsTool extends AbstractActionTool {
@@ -22,8 +23,8 @@ public class ListAiSessionsTool extends AbstractActionTool {
     public ListAiSessionsTool() {
         super(McpSectionEnum.PLUGIN,
                 McpToolEnum.LIST_AI_SESSIONS.toolName(),
-                "List all active AI sessions (excluding caller). Each entry includes active=true if the session is busy processing a turn, active=false if idle. Both idle and busy sessions can receive SendAiMessage.",
-                "ListAiSessions -> discover peer AI sessions; call before SendAiMessage to find session IDs");
+                "List all active AI sessions (excluding caller). Each entry includes active=true if the session is busy processing a turn, active=false if idle. Both idle and busy sessions can receive " + McpToolEnum.SEND_AI_MESSAGE.toolName() + ".",
+                McpToolEnum.LIST_AI_SESSIONS.toolName() + " -> discover peer AI sessions; call before " + McpToolEnum.SEND_AI_MESSAGE.toolName() + " to find session IDs");
     }
 
     @Override
@@ -61,7 +62,7 @@ public class ListAiSessionsTool extends AbstractActionTool {
     public String handle(ToolRequestArguments args, AbstractAiSession session) {
         String callerId = args.str(ListAiSessionsParamEnum.SESSION_ID.key());
         if (callerId == null) {
-            return "Error: sessionId is required (pass your own session ID from the session identity block)";
+            return "Error: " + ListAiSessionsParamEnum.SESSION_ID.key() + " is required (pass your own session ID from the session identity block)";
         }
         AiSessionInboxBroker broker = AiSessionInboxBroker.getInstance();
         if (broker.isActive(callerId) && !broker.isInterAiCommsAllowed(callerId)) {
@@ -74,14 +75,17 @@ public class ListAiSessionsTool extends AbstractActionTool {
         JsonArray arr = new JsonArray();
         for (AiSession s : sessions) {
             JsonObject obj = new JsonObject();
-            obj.addProperty("sessionId", s.id());
+            // Response fields, so these come from ToolResponseKeyEnum rather
+            // than the param enum — what a tool returns is a separate contract
+            // from what it accepts, even where the spellings coincide.
+            obj.addProperty(ToolResponseKeyEnum.SESSION_ID.key(), s.id());
             obj.addProperty(ToolSchemaKeyEnum.NAME.key(), s.name());
             if (s.description() != null && !s.description().isBlank()) {
                 obj.addProperty(ToolSchemaKeyEnum.DESCRIPTION.key(), s.description());
             }
             kiwi.ingenuity.netbeans.plugin.aicoder.ai.AiTypeEnum aiType = s.aiType();
             if (aiType != null) {
-                obj.addProperty("aiType", aiType.displayName());
+                obj.addProperty(ToolResponseKeyEnum.AI_TYPE.key(), aiType.displayName());
             }
             AbstractAiSession abstractSession = SessionRegistry.get(s.id());
             if (abstractSession != null) {
@@ -89,7 +93,7 @@ public class ListAiSessionsTool extends AbstractActionTool {
                     obj.addProperty(e.getKey(), e.getValue());
                 }
             }
-            obj.addProperty("active", s.isRunning());
+            obj.addProperty(ToolResponseKeyEnum.ACTIVE.key(), s.isRunning());
             arr.add(obj);
         }
         return arr.toString();

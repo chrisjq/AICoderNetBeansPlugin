@@ -1,21 +1,23 @@
 package kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.database;
 
+import kiwi.ingenuity.netbeans.plugin.aicoder.process.McpToolPropertyEnum;
+
 /**
  * Shared parameter-name keys for the database MCP tools.
  */
 public enum DatabaseParamEnum {
-    CONNECTION_NAME("connectionName"),
-    TABLE_NAME("tableName"),
-    LIMIT("limit"),
-    SQL("sql");
+    CONNECTION_NAME(McpToolPropertyEnum.CONNECTION_NAME),
+    TABLE_NAME(McpToolPropertyEnum.TABLE_NAME),
+    LIMIT(McpToolPropertyEnum.LIMIT),
+    SQL(McpToolPropertyEnum.SQL);
 
-    private final String key;
+    private final McpToolPropertyEnum property;
 
-    DatabaseParamEnum(String key) {
-        this.key = key;
+    DatabaseParamEnum(McpToolPropertyEnum property) {
+        this.property = property;
     }
 
     public String key() {
-        return key;
+        return property.key();
     }
 }

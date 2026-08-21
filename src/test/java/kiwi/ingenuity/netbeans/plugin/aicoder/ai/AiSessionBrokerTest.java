@@ -200,6 +200,48 @@ class AiSessionBrokerTest {
     }
 
     @Test
+    void unregisterNotifiesOnlyForUnreadMessagesAndEvictsAllMessageIds() throws InterruptedException {
+        CountDownLatch latch = new CountDownLatch(1);
+        AtomicReference<String> notification = new AtomicReference<>();
+        AiSession sender = stubSession("sender", "SenderAI");
+        sender.setAiSessionCallback(new AiSessionCallback() {
+            @Override
+            public boolean isRunning() {
+                return true;
+            }
+
+            @Override
+            public void requestGracefulInterrupt(InterruptTypeEnum type) {
+            }
+
+            @Override
+            public void deliverIncomingMessage(String fromSessionId, AbstractNotification message) {
+                notification.set(message.text());
+                latch.countDown();
+            }
+
+            @Override
+            public void applyDescriptionUpdate(String desc) {
+            }
+        });
+        AiSession recipient = stubSession("recipient", "RecipientAI");
+        broker.register(sender);
+        broker.register(recipient);
+        String readId = broker.sendMessage("sender", "recipient", "acknowledged", "read body", null);
+        String unreadId = broker.sendMessage("sender", "recipient", "pending", "unread body", null);
+        broker.readMessage("recipient", recipient.secret(), readId);
+
+        broker.unregister("recipient");
+
+        assertTrue(latch.await(2, TimeUnit.SECONDS));
+        assertTrue(notification.get().contains("pending"));
+        assertFalse(notification.get().contains("acknowledged"));
+        broker.register(recipient);
+        assertNull(broker.readMessage("recipient", recipient.secret(), readId));
+        assertNull(broker.readMessage("recipient", recipient.secret(), unreadId));
+    }
+
+    @Test
     void sendMessagePushesNotificationAsync() throws InterruptedException {
         CountDownLatch latch = new CountDownLatch(1);
         AtomicReference<String> received = new AtomicReference<>();

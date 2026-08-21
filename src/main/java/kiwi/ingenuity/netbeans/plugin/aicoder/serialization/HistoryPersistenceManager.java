@@ -32,9 +32,9 @@ public class HistoryPersistenceManager {
                     continue;
                 }
                 JsonObject o = el.getAsJsonObject();
-                JsonElement roleEl = o.get("role");
-                JsonElement textEl = o.get("text");
-                JsonElement tsEl = o.get("timestamp");
+                JsonElement roleEl = o.get(HistoryPersistenceKeyEnum.ROLE.key());
+                JsonElement textEl = o.get(HistoryPersistenceKeyEnum.TEXT.key());
+                JsonElement tsEl = o.get(HistoryPersistenceKeyEnum.TIMESTAMP.key());
                 if (roleEl == null || textEl == null || tsEl == null) {
                     continue;
                 }
@@ -83,20 +83,20 @@ public class HistoryPersistenceManager {
         JsonArray arr = new JsonArray();
         for (AiMessage m : messages) {
             JsonObject o = new JsonObject();
-            o.addProperty("role", m.role().name());
-            o.addProperty("text", m.markdownText());
-            o.addProperty("timestamp", m.timestamp());
+            o.addProperty(HistoryPersistenceKeyEnum.ROLE.key(), m.role().name());
+            o.addProperty(HistoryPersistenceKeyEnum.TEXT.key(), m.markdownText());
+            o.addProperty(HistoryPersistenceKeyEnum.TIMESTAMP.key(), m.timestamp());
             arr.add(o);
         }
         JsonObject wrapper = new JsonObject();
         if (sessionId != null) {
-            wrapper.addProperty("sessionId", sessionId);
+            wrapper.addProperty(HistoryPersistenceKeyEnum.SESSION_ID.key(), sessionId);
         }
         if (workingDir != null) {
-            wrapper.addProperty("workingDir", workingDir);
+            wrapper.addProperty(HistoryPersistenceKeyEnum.WORKING_DIR.key(), workingDir);
         }
-        wrapper.addProperty("instructionsLoaded", instructionsLoaded);
-        wrapper.add("messages", arr);
+        wrapper.addProperty(HistoryPersistenceKeyEnum.INSTRUCTIONS_LOADED.key(), instructionsLoaded);
+        wrapper.add(HistoryPersistenceKeyEnum.MESSAGES.key(), arr);
 
         Path parent = filePath.getParent();
         if (parent != null) {
@@ -150,13 +150,17 @@ public class HistoryPersistenceManager {
             boolean instructionsLoaded = false;
             if (root.isJsonObject()) {
                 JsonObject wrapper = root.getAsJsonObject();
-                sessionId = wrapper.has("sessionId") ? wrapper.get("sessionId").getAsString() : null;
-                workingDir = wrapper.has("workingDir") ? wrapper.get("workingDir").getAsString() : null;
-                instructionsLoaded = wrapper.has("instructionsLoaded")
-                        && wrapper.get("instructionsLoaded").isJsonPrimitive()
-                        && wrapper.get("instructionsLoaded").getAsBoolean();
-                arr = wrapper.has("messages") && wrapper.get("messages").isJsonArray()
-                        ? wrapper.getAsJsonArray("messages") : new JsonArray();
+                String sessionIdKey = HistoryPersistenceKeyEnum.SESSION_ID.key();
+                String workingDirKey = HistoryPersistenceKeyEnum.WORKING_DIR.key();
+                String loadedKey = HistoryPersistenceKeyEnum.INSTRUCTIONS_LOADED.key();
+                String messagesKey = HistoryPersistenceKeyEnum.MESSAGES.key();
+                sessionId = wrapper.has(sessionIdKey) ? wrapper.get(sessionIdKey).getAsString() : null;
+                workingDir = wrapper.has(workingDirKey) ? wrapper.get(workingDirKey).getAsString() : null;
+                instructionsLoaded = wrapper.has(loadedKey)
+                        && wrapper.get(loadedKey).isJsonPrimitive()
+                        && wrapper.get(loadedKey).getAsBoolean();
+                arr = wrapper.has(messagesKey) && wrapper.get(messagesKey).isJsonArray()
+                        ? wrapper.getAsJsonArray(messagesKey) : new JsonArray();
             }
             else if (root.isJsonArray()) {
                 // Old format — bare array, no session ID or workingDir

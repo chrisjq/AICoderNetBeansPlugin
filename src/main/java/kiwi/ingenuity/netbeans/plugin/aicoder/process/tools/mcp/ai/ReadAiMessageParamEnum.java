@@ -1,21 +1,23 @@
 package kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.ai;
 
+import kiwi.ingenuity.netbeans.plugin.aicoder.process.McpToolPropertyEnum;
+
 /**
  * Parameter-name keys for the ReadAiMessageTool MCP tool, shared between its
  * schema() definition and handle() argument extraction so the two cannot drift.
  */
 public enum ReadAiMessageParamEnum {
-    SESSION_ID("sessionId"),
-    SECRET_KEY("secretKey"),
-    MESSAGE_ID("messageId");
+    SESSION_ID(McpToolPropertyEnum.SESSION_ID),
+    SECRET_KEY(McpToolPropertyEnum.SECRET_KEY),
+    MESSAGE_ID(McpToolPropertyEnum.MESSAGE_ID);
 
-    private final String key;
+    private final McpToolPropertyEnum property;
 
-    ReadAiMessageParamEnum(String key) {
-        this.key = key;
+    ReadAiMessageParamEnum(McpToolPropertyEnum property) {
+        this.property = property;
     }
 
     public String key() {
-        return key;
+        return property.key();
     }
 }

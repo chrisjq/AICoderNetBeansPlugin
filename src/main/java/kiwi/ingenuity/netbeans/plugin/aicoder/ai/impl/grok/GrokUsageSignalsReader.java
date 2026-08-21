@@ -50,16 +50,12 @@ final class GrokUsageSignalsReader {
     private static final Logger LOG = Logger.getLogger(GrokUsageSignalsReader.class.getName());
     private static final Gson GSON = new Gson();
 
-    private GrokUsageSignalsReader() {
-    }
-
     /**
      * Reads the {@code signals.json} written for the given session/working
-     * directory and returns a {@link GrokTokenUsageEvent} built from its
-     * {@code contextTokensUsed}/{@code contextWindowTokens}/
-     * {@code primaryModelId} fields, or {@code null} if the file is missing,
-     * unreadable, or doesn't contain usable data (e.g. right after the CLI has
-     * just started and hasn't written the file yet).
+     * directory and returns a {@link GrokTokenUsageEvent} built from its null     {@link GrokJsonKeyEnum#CONTEXT_TOKENS_USED}/{@link GrokJsonKeyEnum#CONTEXT_WINDOW_TOKENS}/
+     * {@link GrokJsonKeyEnum#PRIMARY_MODEL_ID} fields, or {@code null} if the
+     * file is missing, unreadable, or doesn't contain usable data (e.g. right
+     * after the CLI has just started and hasn't written the file yet).
      */
     static GrokTokenUsageEvent read(File workDir, String sessionId, String fallbackModel) {
         if (workDir == null || sessionId == null || sessionId.isBlank()) {
@@ -75,13 +71,14 @@ final class GrokUsageSignalsReader {
             if (obj == null) {
                 return null;
             }
-            int used = getInt(obj, "contextTokensUsed", -1);
-            int max = getInt(obj, "contextWindowTokens", -1);
+            int used = getInt(obj, GrokJsonKeyEnum.CONTEXT_TOKENS_USED.key(), -1);
+            int max = getInt(obj, GrokJsonKeyEnum.CONTEXT_WINDOW_TOKENS.key(), -1);
             if (used < 0 || max <= 0) {
                 return null;
             }
-            String model = obj.has("primaryModelId") && !obj.get("primaryModelId").isJsonNull()
-                    ? obj.get("primaryModelId").getAsString() : fallbackModel;
+            String modelKey = GrokJsonKeyEnum.PRIMARY_MODEL_ID.key();
+            String model = obj.has(modelKey) && !obj.get(modelKey).isJsonNull()
+                    ? obj.get(modelKey).getAsString() : fallbackModel;
             return new GrokTokenUsageEvent(used, max, model);
         }
         catch (IOException | RuntimeException e) {
@@ -153,5 +150,8 @@ final class GrokUsageSignalsReader {
 
     private static String encodeCwd(String cwd) {
         return URLEncoder.encode(cwd, StandardCharsets.UTF_8).replace("+", "%20");
+    }
+
+    private GrokUsageSignalsReader() {
     }
 }

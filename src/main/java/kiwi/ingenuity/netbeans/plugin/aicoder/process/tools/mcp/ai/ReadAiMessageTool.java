@@ -3,9 +3,9 @@ package kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.ai;
 import com.google.gson.JsonArray;
 import com.google.gson.JsonObject;
 import java.time.Instant;
+import java.util.Set;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.mail.AiInboxMessage;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.mail.AiSessionInboxBroker;
-import java.util.Set;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.McpInstructionOptionEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.McpSectionEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.McpToolEnum;
@@ -20,8 +20,8 @@ public class ReadAiMessageTool extends AbstractActionTool {
     public ReadAiMessageTool() {
         super(McpSectionEnum.PLUGIN,
                 McpToolEnum.READ_AI_MESSAGE.toolName(),
-                "Read the full body of a specific inbox message by ID and mark it read. The message stays in your inbox until you DeleteAiMessage it or it expires.",
-                "ReadAiMessage -> read full body of an inbox message by ID (message stays in inbox until deleted)");
+                "Read the full body of a specific inbox message by ID and mark it read. The message stays in your inbox until you " + McpToolEnum.DELETE_AI_MESSAGE.toolName() + " it or it expires.",
+                McpToolEnum.READ_AI_MESSAGE.toolName() + " -> read full body of an inbox message by ID (message stays in inbox until deleted)");
     }
 
     @Override
@@ -51,7 +51,7 @@ public class ReadAiMessageTool extends AbstractActionTool {
         }
         JsonObject mid = new JsonObject();
         mid.addProperty(ToolSchemaKeyEnum.TYPE.key(), "string");
-        mid.addProperty(ToolSchemaKeyEnum.DESCRIPTION.key(), "The message ID to read (from GetAiMessages).");
+        mid.addProperty(ToolSchemaKeyEnum.DESCRIPTION.key(), "The message ID to read (from " + McpToolEnum.GET_AI_MESSAGES.toolName() + ").");
         props.add(ReadAiMessageParamEnum.MESSAGE_ID.key(), mid);
         schema.add(ToolSchemaKeyEnum.PROPERTIES.key(), props);
         required.add(ReadAiMessageParamEnum.MESSAGE_ID.key());
@@ -69,15 +69,15 @@ public class ReadAiMessageTool extends AbstractActionTool {
     public String handle(ToolRequestArguments args, AbstractAiSession session) {
         String sessionId = args.str(ReadAiMessageParamEnum.SESSION_ID.key());
         if (sessionId == null) {
-            return "Error: sessionId is required";
+            return "Error: " + ReadAiMessageParamEnum.SESSION_ID.key() + " is required";
         }
         String secretKey = args.str(ReadAiMessageParamEnum.SECRET_KEY.key());
         if (secretKey == null) {
-            return "Error: secretKey is required";
+            return "Error: " + ReadAiMessageParamEnum.SECRET_KEY.key() + " is required";
         }
         String messageId = args.str(ReadAiMessageParamEnum.MESSAGE_ID.key());
         if (messageId == null) {
-            return "Error: messageId is required";
+            return "Error: " + ReadAiMessageParamEnum.MESSAGE_ID.key() + " is required";
         }
         AiInboxMessage msg = AiSessionInboxBroker.getInstance().readMessage(sessionId, secretKey, messageId);
         if (msg == null) {

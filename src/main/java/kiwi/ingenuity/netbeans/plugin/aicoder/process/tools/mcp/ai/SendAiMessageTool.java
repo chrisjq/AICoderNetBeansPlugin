@@ -20,7 +20,7 @@ public class SendAiMessageTool extends AbstractActionTool {
         super(McpSectionEnum.PLUGIN,
                 McpToolEnum.SEND_AI_MESSAGE.toolName(),
                 "Send a message to another AI session's inbox. Use ListAiSessions to find peer sessionIds.",
-                "SendAiMessage -> send to a peer AI session's inbox; use expectsReply+replyImportant to be interrupted when they reply");
+                McpToolEnum.SEND_AI_MESSAGE.toolName() + " -> send to a peer AI session's inbox; use expectsReply+replyImportant to be interrupted when they reply");
     }
 
     @Override
@@ -109,10 +109,10 @@ public class SendAiMessageTool extends AbstractActionTool {
         String senderId = args.str(SendAiMessageParamEnum.SESSION_ID.key());
         String secretKey = args.str(SendAiMessageParamEnum.SECRET_KEY.key());
         if (senderId == null || senderId.isBlank()) {
-            return "Error: sessionId is required";
+            return "Error: " + SendAiMessageParamEnum.SESSION_ID.key() + " is required";
         }
         if (secretKey == null || secretKey.isBlank()) {
-            return "Error: secretKey is required";
+            return "Error: " + SendAiMessageParamEnum.SECRET_KEY.key() + " is required";
         }
         AiSessionInboxBroker broker = AiSessionInboxBroker.getInstance();
         if (!broker.validateSecret(senderId, secretKey)) {
@@ -122,16 +122,16 @@ public class SendAiMessageTool extends AbstractActionTool {
         String subject = args.str(SendAiMessageParamEnum.SUBJECT.key());
         String message = args.str(SendAiMessageParamEnum.MESSAGE.key());
         if (targetSessionId == null || targetSessionId.isBlank()) {
-            return "Error: targetSessionId is required";
+            return "Error: " + SendAiMessageParamEnum.TARGET_SESSION_ID.key() + " is required";
         }
         if (subject == null || subject.isBlank()) {
-            return "Error: subject is required";
+            return "Error: " + SendAiMessageParamEnum.SUBJECT.key() + " is required";
         }
         if (subject.length() > AiInboxMessage.MAX_SUBJECT_LENGTH) {
             return "Error: subject exceeds maximum length of " + AiInboxMessage.MAX_SUBJECT_LENGTH + " characters";
         }
         if (message == null || message.isBlank()) {
-            return "Error: message is required";
+            return "Error: " + SendAiMessageParamEnum.MESSAGE.key() + " is required";
         }
         if (message.length() > AiInboxMessage.MAX_MESSAGE_LENGTH) {
             return "Error: message body exceeds maximum length of " + AiInboxMessage.MAX_MESSAGE_LENGTH + " characters";

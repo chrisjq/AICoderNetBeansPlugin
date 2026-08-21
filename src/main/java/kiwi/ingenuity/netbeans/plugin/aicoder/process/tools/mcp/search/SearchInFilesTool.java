@@ -27,9 +27,9 @@ public class SearchInFilesTool implements McpToolInterface {
             return null;
         }
         if (options.contains(McpInstructionOptionEnum.ONLY_MCP_TOOL_ACCESS)) {
-            return "SearchInFiles - text/regex search across project source";
+            return McpToolEnum.SEARCH_IN_FILES.toolName() + " - text/regex search across project source";
         }
-        return "SearchInFiles -> INSTEAD OF Bash grep/rg - text/regex search across project source";
+        return McpToolEnum.SEARCH_IN_FILES.toolName() + " -> INSTEAD OF Bash grep/rg - text/regex search across project source";
     }
 
     @Override

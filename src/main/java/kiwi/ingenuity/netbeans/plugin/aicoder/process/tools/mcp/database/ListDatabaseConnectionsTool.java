@@ -25,7 +25,7 @@ public class ListDatabaseConnectionsTool implements McpToolInterface {
         if (!options.contains(McpInstructionOptionEnum.TOOL_INSTRUCTION)) {
             return null;
         }
-        return "ListDatabaseConnections -> lists the IDE's registered Database Explorer connections "
+        return McpToolEnum.LIST_DATABASE_CONNECTIONS.toolName() + " -> lists the IDE's registered Database Explorer connections "
                 + "(Services > Databases) and whether each is currently connected.";
     }
 

@@ -11,6 +11,7 @@ import kiwi.ingenuity.netbeans.plugin.aicoder.ai.events.PermissionEvent;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.McpInstructionOptionEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.McpSectionEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.McpToolEnum;
+import kiwi.ingenuity.netbeans.plugin.aicoder.process.McpToolPropertyEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.events.AiProcessEventListener;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.locking.LockManager;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.server.McpServerRegistry;
@@ -53,15 +54,15 @@ public class WriteFileTool extends AbstractActionTool {
         JsonObject fp = new JsonObject();
         fp.addProperty(ToolSchemaKeyEnum.TYPE.key(), "string");
         fp.addProperty(ToolSchemaKeyEnum.DESCRIPTION.key(), "Absolute path of the file to write.");
-        props.add("file_path", fp);
+        props.add(McpToolPropertyEnum.FILE_PATH.key(), fp);
         JsonObject content = new JsonObject();
         content.addProperty(ToolSchemaKeyEnum.TYPE.key(), "string");
         content.addProperty(ToolSchemaKeyEnum.DESCRIPTION.key(), "The full content to write to the file.");
-        props.add("content", content);
+        props.add(McpToolPropertyEnum.CONTENT.key(), content);
         schema.add(ToolSchemaKeyEnum.PROPERTIES.key(), props);
         JsonArray req = new JsonArray();
-        req.add("file_path");
-        req.add("content");
+        req.add(McpToolPropertyEnum.FILE_PATH.key());
+        req.add(McpToolPropertyEnum.CONTENT.key());
         schema.add(ToolSchemaKeyEnum.REQUIRED.key(), req);
         tool.add(ToolSchemaKeyEnum.INPUT_SCHEMA.key(), schema);
         return McpToolSchemas.applyCredentialsIfRequested(tool, options);
@@ -79,10 +80,10 @@ public class WriteFileTool extends AbstractActionTool {
 
     @Override
     public String handle(ToolRequestArguments args, AbstractAiSession session) {
-        String filePath = args.str("file_path");
-        String content = args.str("content");
+        String filePath = args.str(McpToolPropertyEnum.FILE_PATH.key());
+        String content = args.str(McpToolPropertyEnum.CONTENT.key());
         if (filePath == null || filePath.isBlank()) {
-            return "Error: file_path is required";
+            return "Error: " + McpToolPropertyEnum.FILE_PATH.key() + " is required";
         }
         var server = McpServerRegistry.getServer();
         if (server == null) {

@@ -19,7 +19,7 @@ public class UpdateSessionDescriptionTool extends AbstractActionTool {
         super(McpSectionEnum.PLUGIN,
                 McpToolEnum.UPDATE_SESSION_DESCRIPTION.toolName(),
                 "Update your session's description visible to peer sessions. Pass your sessionId and secretKey from your session identity.",
-                "UpdateSessionDescription -> call at session start to identify your role to peer sessions (visible in ListAiSessions)");
+                McpToolEnum.UPDATE_SESSION_DESCRIPTION.toolName() + " -> call at session start to identify your role to peer sessions (visible in ListAiSessions)");
     }
 
     @Override
@@ -28,7 +28,7 @@ public class UpdateSessionDescriptionTool extends AbstractActionTool {
                 && options.contains(McpInstructionOptionEnum.TOOL_INSTRUCTION)) {
             // "call at session start" makes literal-minded models fire this on
             // the user's first message, whatever the message actually was.
-            return "UpdateSessionDescription - set your session's description so peer sessions can see your role";
+            return McpToolEnum.UPDATE_SESSION_DESCRIPTION.toolName() + " - set your session's description so peer sessions can see your role";
         }
         return super.instruction(options);
     }

@@ -34,7 +34,7 @@ public class CodexSessionSettings extends AiModelSessionSettings {
     public void populateJsonObject(JsonObject cfgObj) {
         super.populateJsonObject(cfgObj);
         if (threadId != null) {
-            cfgObj.addProperty("threadId", threadId);
+            cfgObj.addProperty(CodexSessionSettingsKeyEnum.THREAD_ID.key(), threadId);
         }
     }
 }

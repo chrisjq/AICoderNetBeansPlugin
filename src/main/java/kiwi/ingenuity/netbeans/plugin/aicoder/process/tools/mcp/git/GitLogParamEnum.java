@@ -1,21 +1,23 @@
 package kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.git;
 
+import kiwi.ingenuity.netbeans.plugin.aicoder.process.McpToolPropertyEnum;
+
 /**
  * Parameter-name keys for the GitLogTool MCP tool, shared between its schema()
  * definition and handle() argument extraction so the two cannot drift.
  */
 public enum GitLogParamEnum {
-    LIMIT("limit"),
-    FILE("file"),
-    FOLLOW("follow");
+    LIMIT(McpToolPropertyEnum.LIMIT),
+    FILE(McpToolPropertyEnum.FILE),
+    FOLLOW(McpToolPropertyEnum.FOLLOW);
 
-    private final String key;
+    private final McpToolPropertyEnum property;
 
-    GitLogParamEnum(String key) {
-        this.key = key;
+    GitLogParamEnum(McpToolPropertyEnum property) {
+        this.property = property;
     }
 
     public String key() {
-        return key;
+        return property.key();
     }
 }

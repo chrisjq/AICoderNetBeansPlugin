@@ -145,11 +145,14 @@ public class SessionPersistenceManager {
                 }
                 JsonObject o = el.getAsJsonObject();
                 try {
-                    String description = o.has("description") && !o.get("description").isJsonNull()
-                            ? o.get("description").getAsString() : null;
+                    String descriptionKey = SessionPersistenceKeyEnum.DESCRIPTION.key();
+                    String aiTypeKey = SessionPersistenceKeyEnum.AI_TYPE.key();
+                    String idKey = SessionPersistenceKeyEnum.ID.key();
+                    String description = o.has(descriptionKey) && !o.get(descriptionKey).isJsonNull()
+                            ? o.get(descriptionKey).getAsString() : null;
                     AiTypeEnum aiType;
                     try {
-                        aiType = o.has("aiType") ? AiTypeEnum.valueOf(o.get("aiType").getAsString()) : null;
+                        aiType = o.has(aiTypeKey) ? AiTypeEnum.valueOf(o.get(aiTypeKey).getAsString()) : null;
                     }
                     catch (IllegalArgumentException e) {
                         LOG.log(Level.WARNING, "Invalid aiType, skipping session:\n{0}", o.toString());
@@ -163,54 +166,61 @@ public class SessionPersistenceManager {
 
                     AiSessionSettingsCreator creator = aiType.getSettingsCreator();
                     AiSessionSettings settings = creator.create();
-                    if (o.has("config") && o.get("config").isJsonObject()) {
-                        JsonObject cfgObj = o.getAsJsonObject("config");
+                    String configKey = SessionPersistenceKeyEnum.CONFIG.key();
+                    if (o.has(configKey) && o.get(configKey).isJsonObject()) {
+                        JsonObject cfgObj = o.getAsJsonObject(configKey);
                         creator.update(settings, cfgObj);
                     }
-                    if (!o.has("id") || !o.has("name") || !o.has("createdAt") || !o.has("lastUsedAt")) {
+                    if (!o.has(idKey) || !o.has(SessionPersistenceKeyEnum.NAME.key())
+                            || !o.has(SessionPersistenceKeyEnum.CREATED_AT.key())
+                            || !o.has(SessionPersistenceKeyEnum.LAST_USED_AT.key())) {
                         LOG.log(Level.WARNING, "Session missing required fields, skipping:\n{0}", o.toString());
                         continue;
                     }
                     Instant createdAt;
                     try {
-                        createdAt = Instant.parse(o.get("createdAt").getAsString());
+                        createdAt = Instant.parse(o.get(SessionPersistenceKeyEnum.CREATED_AT.key()).getAsString());
                     }
                     catch (Exception e) {
-                        LOG.log(Level.WARNING, "Malformed createdAt for session {0}, using epoch", o.get("id").getAsString());
+                        LOG.log(Level.WARNING, "Malformed createdAt for session {0}, using epoch", o.get(idKey).getAsString());
                         createdAt = Instant.EPOCH;
                     }
                     Instant lastUsedAt;
                     try {
-                        lastUsedAt = Instant.parse(o.get("lastUsedAt").getAsString());
+                        lastUsedAt = Instant.parse(o.get(SessionPersistenceKeyEnum.LAST_USED_AT.key()).getAsString());
                     }
                     catch (Exception e) {
-                        LOG.log(Level.WARNING, "Malformed lastUsedAt for session {0}, using epoch", o.get("id").getAsString());
+                        LOG.log(Level.WARNING, "Malformed lastUsedAt for session {0}, using epoch", o.get(idKey).getAsString());
                         lastUsedAt = Instant.EPOCH;
                     }
+                    String projectPathKey = SessionPersistenceKeyEnum.PROJECT_PATH.key();
                     AiSession session = new AiSession(
-                            o.get("id").getAsString(),
-                            o.get("name").getAsString(),
+                            o.get(idKey).getAsString(),
+                            o.get(SessionPersistenceKeyEnum.NAME.key()).getAsString(),
                             description,
                             aiType,
-                            o.has("projectPath") ? o.get("projectPath").getAsString() : null,
+                            o.has(projectPathKey) ? o.get(projectPathKey).getAsString() : null,
                             settings,
                             createdAt,
                             lastUsedAt);
-                    if (o.has("sessionInstructionsDelivery")) {
+                    String deliveryKey = SessionPersistenceKeyEnum.SESSION_INSTRUCTIONS_DELIVERY.key();
+                    if (o.has(deliveryKey)) {
                         try {
                             session.setSessionInstructionsDelivery(SessionInstructionsDeliveryEnum.valueOf(
-                                    o.get("sessionInstructionsDelivery").getAsString()));
+                                    o.get(deliveryKey).getAsString()));
                         }
                         catch (IllegalArgumentException e) {
                             LOG.log(Level.WARNING, "Invalid session instruction delivery mode for session {0}; using first-request delivery",
                                     session.id());
                         }
                     }
-                    if (o.has("startupInstructionsInjected") && !o.get("startupInstructionsInjected").isJsonNull()) {
-                        session.setStartupInstructionsInjected(o.get("startupInstructionsInjected").getAsBoolean());
+                    String injectedKey = SessionPersistenceKeyEnum.STARTUP_INSTRUCTIONS_INJECTED.key();
+                    if (o.has(injectedKey) && !o.get(injectedKey).isJsonNull()) {
+                        session.setStartupInstructionsInjected(o.get(injectedKey).getAsBoolean());
                     }
-                    if (o.has("lastInjectedInstructions") && !o.get("lastInjectedInstructions").isJsonNull()) {
-                        session.setLastInjectedInstructions(o.get("lastInjectedInstructions").getAsString());
+                    String lastInjectedKey = SessionPersistenceKeyEnum.LAST_INJECTED_INSTRUCTIONS.key();
+                    if (o.has(lastInjectedKey) && !o.get(lastInjectedKey).isJsonNull()) {
+                        session.setLastInjectedInstructions(o.get(lastInjectedKey).getAsString());
                     }
                     result.add(session);
                 }
@@ -231,25 +241,28 @@ public class SessionPersistenceManager {
         JsonArray arr = new JsonArray();
         for (AiSession s : sessions) {
             JsonObject o = new JsonObject();
-            o.addProperty("id", s.id());
-            o.addProperty("name", s.name());
+            o.addProperty(SessionPersistenceKeyEnum.ID.key(), s.id());
+            o.addProperty(SessionPersistenceKeyEnum.NAME.key(), s.name());
             if (s.description() != null) {
-                o.addProperty("description", s.description());
+                o.addProperty(SessionPersistenceKeyEnum.DESCRIPTION.key(), s.description());
             }
-            o.addProperty("aiType", s.aiType().name());
+            o.addProperty(SessionPersistenceKeyEnum.AI_TYPE.key(), s.aiType().name());
             if (s.projectPath() != null) {
-                o.addProperty("projectPath", s.projectPath());
+                o.addProperty(SessionPersistenceKeyEnum.PROJECT_PATH.key(), s.projectPath());
             }
             JsonObject cfgObj = new JsonObject();
             AiSessionSettings cfg = s.settings();
             cfg.populateJsonObject(cfgObj);
-            o.add("config", cfgObj);
-            o.addProperty("createdAt", s.createdAt().toString());
-            o.addProperty("lastUsedAt", s.lastUsedAt().toString());
-            o.addProperty("sessionInstructionsDelivery", s.sessionInstructionsDelivery().name());
-            o.addProperty("startupInstructionsInjected", s.isStartupInstructionsInjected());
+            o.add(SessionPersistenceKeyEnum.CONFIG.key(), cfgObj);
+            o.addProperty(SessionPersistenceKeyEnum.CREATED_AT.key(), s.createdAt().toString());
+            o.addProperty(SessionPersistenceKeyEnum.LAST_USED_AT.key(), s.lastUsedAt().toString());
+            o.addProperty(SessionPersistenceKeyEnum.SESSION_INSTRUCTIONS_DELIVERY.key(),
+                    s.sessionInstructionsDelivery().name());
+            o.addProperty(SessionPersistenceKeyEnum.STARTUP_INSTRUCTIONS_INJECTED.key(),
+                    s.isStartupInstructionsInjected());
             if (s.lastInjectedInstructions() != null) {
-                o.addProperty("lastInjectedInstructions", s.lastInjectedInstructions());
+                o.addProperty(SessionPersistenceKeyEnum.LAST_INJECTED_INSTRUCTIONS.key(),
+                        s.lastInjectedInstructions());
             }
             arr.add(o);
         }
