@@ -43,7 +43,8 @@ public class RenameSymbolTool implements McpToolInterface {
         tool.addProperty(ToolSchemaKeyEnum.NAME.key(), McpToolEnum.RENAME_SYMBOL.toolName());
         tool.addProperty(ToolSchemaKeyEnum.DESCRIPTION.key(),
                 "Renames the Java symbol at the specified position across all files in the project. "
-                + "Provide filePath + line to target a specific symbol; omit both to use cursor position.");
+                + "filePath and line are both required — this tool does not act on the user's cursor "
+                + "position; call GetCurrentFile first if that is what you want.");
         JsonObject schema = new JsonObject();
         schema.addProperty(ToolSchemaKeyEnum.TYPE.key(), "object");
         JsonObject props = new JsonObject();
@@ -57,7 +58,8 @@ public class RenameSymbolTool implements McpToolInterface {
         props.add(RenameSymbolParamEnum.FILE_PATH.key(), fp);
         JsonObject ln = new JsonObject();
         ln.addProperty(ToolSchemaKeyEnum.TYPE.key(), "integer");
-        ln.addProperty(ToolSchemaKeyEnum.DESCRIPTION.key(), "1-based line number of the symbol. Omit to use cursor.");
+        ln.addProperty(ToolSchemaKeyEnum.DESCRIPTION.key(),
+                "1-based line number of the symbol. Required — this tool does not follow the user's cursor.");
         props.add(RenameSymbolParamEnum.LINE.key(), ln);
         schema.add(ToolSchemaKeyEnum.PROPERTIES.key(), props);
         JsonArray required = new JsonArray();

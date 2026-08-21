@@ -13,6 +13,7 @@ import javax.swing.SwingUtilities;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.session.AiSession;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.session.SessionInstructionsDeliveryEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.McpInstructionOptionEnum;
+import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.providers.netbeans.EditorContextProvider;
 import org.netbeans.api.project.Project;
 import org.netbeans.api.project.ui.OpenProjects;
 import org.openide.filesystems.FileObject;
@@ -23,6 +24,22 @@ import org.openide.windows.WindowManager;
 public class ContextProvider {
 
     private static final Logger LOG = Logger.getLogger(ContextProvider.class.getName());
+
+    /**
+     * Caret position as {@code " (cursor at line:col)"}, or an empty string
+     * when there is no readable caret.
+     *
+     * <p>
+     * Reported because the caller may legitimately want to know where the user
+     * is looking — but no tool acts on the caret by itself, so this is the only
+     * way that information reaches a decision. The position is a snapshot taken
+     * when the turn was built; the user may have moved since, and
+     * {@code GetCurrentFile} returns the live value.
+     */
+    private static String caretSuffix() {
+        String caret = EditorContextProvider.getCaretLineColumn();
+        return caret == null ? "" : " (cursor at " + caret + ")";
+    }
 
     private volatile FileObject activeFile;
     private final Consumer<FileObject> onFileChanged;
@@ -184,7 +201,8 @@ public class ContextProvider {
                     .append(String.join(", ", currentProjects)).append("\n");
         }
         if (currentFile != null) {
-            ctx.append("Currently open file: ").append(currentFile.getPath()).append("\n");
+            ctx.append("Currently open file: ").append(currentFile.getPath())
+                    .append(caretSuffix()).append("\n");
         }
         return ctx.toString();
     }
@@ -240,7 +258,8 @@ public class ContextProvider {
                         .append(String.join(", ", currentProjects)).append("\n");
             }
             if (currentFile != null) {
-                ctx.append("Currently open file: ").append(currentFile.getPath()).append("\n");
+                ctx.append("Currently open file: ").append(currentFile.getPath())
+                        .append(caretSuffix()).append("\n");
             }
         }
         else {
@@ -259,7 +278,8 @@ public class ContextProvider {
 
             if (!Objects.equals(currentFile, lastSentFile)) {
                 if (currentFile != null) {
-                    ctx.append("Now viewing: ").append(currentFile.getPath()).append("\n");
+                    ctx.append("Now viewing: ").append(currentFile.getPath())
+                            .append(caretSuffix()).append("\n");
                 }
                 else {
                     ctx.append("No file currently open.\n");

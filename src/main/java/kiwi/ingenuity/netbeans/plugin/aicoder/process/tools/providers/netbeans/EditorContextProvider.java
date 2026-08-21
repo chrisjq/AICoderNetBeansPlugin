@@ -85,6 +85,57 @@ public class EditorContextProvider {
         return ref.get();
     }
 
+    /**
+     * Caret position in the focused editor as {@code line:column}, or null when
+     * there is no editor or the caret cannot be read.
+     *
+     * <p>
+     * Unlike {@link #getCurrentFile()} this is safe to call from the EDT: it
+     * reads directly when already on the dispatch thread instead of calling
+     * {@code invokeAndWait}, which throws when invoked from the EDT itself. The
+     * context preamble is built on the EDT, which is why the plain accessor
+     * cannot be reused there.
+     *
+     * <p>
+     * This is informational only. Tools deliberately do not act on the caret —
+     * the caller cannot see it, so a tool that used it would behave differently
+     * depending on where the user last clicked. Supplying the position lets the
+     * caller decide whether the user's location is relevant and pass it
+     * explicitly.
+     */
+    public static String getCaretLineColumn() {
+        AtomicReference<String> ref = new AtomicReference<>(null);
+        Runnable read = () -> {
+            JTextComponent editor = EditorRegistry.lastFocusedComponent();
+            if (editor == null) {
+                return;
+            }
+            try {
+                Document doc = editor.getDocument();
+                int caretPos = editor.getCaretPosition();
+                javax.swing.text.Element root = doc.getDefaultRootElement();
+                int line = root.getElementIndex(caretPos) + 1;
+                int col = caretPos - root.getElement(line - 1).getStartOffset() + 1;
+                ref.set(line + ":" + col);
+            }
+            catch (RuntimeException e) {
+                LOG.log(Level.FINE, "getCaretLineColumn error", e);
+            }
+        };
+        try {
+            if (SwingUtilities.isEventDispatchThread()) {
+                read.run();
+            }
+            else {
+                SwingUtilities.invokeAndWait(read);
+            }
+        }
+        catch (Exception e) {
+            LOG.log(Level.FINE, "getCaretLineColumn dispatch error", e);
+        }
+        return ref.get();
+    }
+
     public static String getCurrentFileContent() {
         AtomicReference<String> ref = new AtomicReference<>("No editor focused");
         try {

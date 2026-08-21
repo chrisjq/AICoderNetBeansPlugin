@@ -11,14 +11,6 @@ import java.util.Map;
 public final class SearchResultFormatter {
 
     /**
-     * A single text match: absolute file path, 1-based line number, and the
-     * (already stripped) line content.
-     */
-    public record Hit(String path, int line, String text) {
-
-    }
-
-    /**
      * Groups hits by file so each absolute path is printed once as a clickable
      * header, with its matches indented beneath as " &lt;line&gt;:
      * &lt;text&gt;". This avoids repeating the (often very long) absolute path
@@ -28,17 +20,20 @@ public final class SearchResultFormatter {
      * @param hits the matches being shown (already capped to maxShown)
      * @param totalHits total matches found across all files (may exceed
      * hits.size())
+     * @param totalFiles number of distinct files containing a match (may exceed
+     * the number of files represented in hits); the caller supplies it because
+     * this method only sees hits that survived truncation
      * @param maxShown the cap applied to hits; used only to phrase the
      * truncation notice
      */
-    public static String groupByFile(List<Hit> hits, int totalHits, int maxShown) {
+    public static String groupByFile(List<Hit> hits, int totalHits, int totalFiles, int maxShown) {
         Map<String, List<Hit>> byFile = new LinkedHashMap<>();
         for (Hit h : hits) {
             byFile.computeIfAbsent(h.path(), k -> new java.util.ArrayList<>()).add(h);
         }
 
         StringBuilder sb = new StringBuilder("Found ").append(totalHits)
-                .append(" match(es) in ").append(byFile.size()).append(" file(s)");
+                .append(" match(es) in ").append(totalFiles).append(" file(s)");
         if (totalHits > maxShown) {
             sb.append(" (showing first ").append(maxShown).append(")");
         }
@@ -54,5 +49,13 @@ public final class SearchResultFormatter {
     }
 
     private SearchResultFormatter() {
+    }
+
+    /**
+     * A single text match: absolute file path, 1-based line number, and the
+     * (already stripped) line content.
+     */
+    public record Hit(String path, int line, String text) {
+
     }
 }

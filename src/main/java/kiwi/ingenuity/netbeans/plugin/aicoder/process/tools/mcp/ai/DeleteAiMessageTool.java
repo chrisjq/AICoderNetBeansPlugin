@@ -5,8 +5,8 @@ import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 import java.util.ArrayList;
 import java.util.List;
-import kiwi.ingenuity.netbeans.plugin.aicoder.ai.mail.AiSessionInboxBroker;
 import java.util.Set;
+import kiwi.ingenuity.netbeans.plugin.aicoder.ai.mail.AiSessionInboxBroker;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.McpInstructionOptionEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.McpSectionEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.McpToolEnum;
@@ -21,7 +21,7 @@ public class DeleteAiMessageTool extends AbstractActionTool {
     public DeleteAiMessageTool() {
         super(McpSectionEnum.PLUGIN,
                 McpToolEnum.DELETE_AI_MESSAGE.toolName(),
-                "Delete one or more inbox messages by id. Pass messageId for a single message or messageIds array for bulk delete. Exactly one of messageId or messageIds must be provided.",
+                "Delete one or more inbox messages by id. Pass messageId for a single message or messageIds array for bulk delete. At least one of the two is required; if both are given they are combined and all are deleted.",
                 "DeleteAiMessage -> delete one or more inbox messages once processed; pass messageIds array for bulk delete");
     }
 

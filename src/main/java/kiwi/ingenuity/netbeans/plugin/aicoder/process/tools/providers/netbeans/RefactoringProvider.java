@@ -55,9 +55,15 @@ public class RefactoringProvider {
         FileObject fo = resolveFileObject(filePath);
         if (fo == null) {
             return filePath != null && !filePath.isBlank()
-                    ? "File not found: " + filePath : "No editor focused";
+                    ? "File not found: " + filePath
+                    : "filePath is required — this tool does not fall back to the focused editor. "
+                    + "Call GetCurrentFile if you want the file the user is looking at.";
         }
-        TreePathHandle handle = resolveHandle(fo, line > 0 ? line : 1);
+        if (line <= 0) {
+            return "line is required and must be 1-based — this tool does not follow the user's cursor. "
+                    + "Call GetCurrentFile if you want the line the user is on.";
+        }
+        TreePathHandle handle = resolveHandle(fo, line);
         if (handle == null) {
             return "Cannot resolve Java element at " + pos(filePath, line);
         }
@@ -77,7 +83,9 @@ public class RefactoringProvider {
         FileObject fo = resolveFileObject(filePath);
         if (fo == null) {
             return filePath != null && !filePath.isBlank()
-                    ? "File not found: " + filePath : "No editor focused";
+                    ? "File not found: " + filePath
+                    : "filePath is required — this tool does not fall back to the focused editor. "
+                    + "Call GetCurrentFile if you want the file the user is looking at.";
         }
         FileObject targetFolder = findOrCreatePackage(fo, targetPackage);
         if (targetFolder == null) {
@@ -95,9 +103,15 @@ public class RefactoringProvider {
         FileObject fo = resolveFileObject(filePath);
         if (fo == null) {
             return filePath != null && !filePath.isBlank()
-                    ? "File not found: " + filePath : "No editor focused";
+                    ? "File not found: " + filePath
+                    : "filePath is required — this tool does not fall back to the focused editor. "
+                    + "Call GetCurrentFile if you want the file the user is looking at.";
         }
-        TreePathHandle handle = resolveHandle(fo, line > 0 ? line : 1);
+        if (line <= 0) {
+            return "line is required and must be 1-based — this tool does not follow the user's cursor. "
+                    + "Call GetCurrentFile if you want the line the user is on.";
+        }
+        TreePathHandle handle = resolveHandle(fo, line);
         if (handle == null) {
             return "Cannot resolve Java element at " + pos(filePath, line);
         }
@@ -112,9 +126,15 @@ public class RefactoringProvider {
         FileObject fo = resolveFileObject(filePath);
         if (fo == null) {
             return filePath != null && !filePath.isBlank()
-                    ? "File not found: " + filePath : "No editor focused";
+                    ? "File not found: " + filePath
+                    : "filePath is required — this tool does not fall back to the focused editor. "
+                    + "Call GetCurrentFile if you want the file the user is looking at.";
         }
-        TreePathHandle handle = resolveHandle(fo, line > 0 ? line : 1);
+        if (line <= 0) {
+            return "line is required and must be 1-based — this tool does not follow the user's cursor. "
+                    + "Call GetCurrentFile if you want the line the user is on.";
+        }
+        TreePathHandle handle = resolveHandle(fo, line);
         if (handle == null) {
             return "Cannot resolve Java element at " + pos(filePath, line);
         }
@@ -151,7 +171,9 @@ public class RefactoringProvider {
         FileObject fo = resolveFileObject(filePath);
         if (fo == null) {
             return filePath != null && !filePath.isBlank()
-                    ? "File not found: " + filePath : "No editor focused";
+                    ? "File not found: " + filePath
+                    : "filePath is required — this tool rewrites a file, so it does not fall back to "
+                    + "the focused editor. Call GetCurrentFile if you want the file the user is looking at.";
         }
         File diskFile = FileUtil.toFile(fo);
         if (diskFile == null) {
@@ -218,7 +240,8 @@ public class RefactoringProvider {
                 FileObject newFo;
                 if (parentFO != null) {
                     newFo = FileUtil.createData(parentFO, f.getName());
-                } else {
+                }
+                else {
                     newFo = FileUtil.createData(f);
                 }
                 try (OutputStream out = newFo.getOutputStream()) {
@@ -698,12 +721,20 @@ public class RefactoringProvider {
         return ref.get();
     }
 
+    /**
+     * Resolves the file a refactoring will act on.
+     *
+     * <p>
+     * There is deliberately no fallback. This used to take whatever file the
+     * editor had focused, which meant a caller that omitted {@code filePath}
+     * refactored a file it had never named — chosen by wherever the user last
+     * clicked. Unlike a search, a refactoring writes, so guessing the target is
+     * not recoverable by trying again. Callers that want the file the user is
+     * looking at should call GetCurrentFile and pass the path it returns.
+     */
     private static FileObject resolveFileObject(String filePath) {
         if (filePath == null || filePath.isBlank()) {
-            filePath = EditorContextProvider.getCurrentFilePath();
-            if (filePath == null) {
-                return null;
-            }
+            return null;
         }
         File f = new File(filePath);
         if (!f.exists()) {

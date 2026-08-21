@@ -9,6 +9,7 @@ import java.nio.file.Path;
 import java.nio.file.PathMatcher;
 import java.util.ArrayList;
 import java.util.EnumSet;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Set;
 import java.util.concurrent.atomic.AtomicReference;
@@ -74,6 +75,12 @@ public class SearchProvider {
         PathMatcher pathMatcher = FileSystems.getDefault().getPathMatcher("glob:" + glob);
 
         List<SearchResultFormatter.Hit> hits = new ArrayList<>();
+        // Both counters span every match, not just the ones that fit under the
+        // cap, so the header can say how much was left out. matchedFiles is
+        // tracked here rather than in the formatter because the formatter only
+        // sees hits that survived truncation — it would report "in 3 file(s)"
+        // for matches actually spread across 40.
+        Set<String> matchedFiles = new LinkedHashSet<>();
         int totalHits = 0;
         for (FileObject root : roots) {
             File rootDir = FileUtil.toFile(root);
@@ -93,6 +100,7 @@ public class SearchProvider {
                         for (int i = 0; i < lines.size(); i++) {
                             if (pattern.matcher(lines.get(i)).find()) {
                                 totalHits++;
+                                matchedFiles.add(p.toString());
                                 if (hits.size() < MAX_FILE_HITS) {
                                     hits.add(new SearchResultFormatter.Hit(
                                             p.toString(), i + 1, lines.get(i).strip()));
@@ -115,7 +123,7 @@ public class SearchProvider {
         if (hits.isEmpty()) {
             return "No matches found for: " + query;
         }
-        return SearchResultFormatter.groupByFile(hits, totalHits, MAX_FILE_HITS);
+        return SearchResultFormatter.groupByFile(hits, totalHits, matchedFiles.size(), MAX_FILE_HITS);
     }
 
     public static String searchTypes(String filePath, String name, String kind, boolean includeDeps) {
@@ -129,7 +137,7 @@ public class SearchProvider {
         FileObject fo = resolveFileObject(filePath);
         if (fo == null) {
             return filePath != null && !filePath.isBlank()
-                    ? "File not found: " + filePath : "No editor focused";
+                    ? "File not found: " + filePath : "No projects open";
         }
         JavaSource js = JavaSource.forFileObject(fo);
         if (js == null) {
@@ -151,7 +159,12 @@ public class SearchProvider {
                 .limit(MAX_TYPE_HITS)
                 .toList();
 
-        StringBuilder sb = new StringBuilder("Found ").append(Math.min(results.size(), MAX_TYPE_HITS))
+        // Report the true total, not the capped one. Saying "Found 100 (showing
+        // first 100)" tells the caller it was truncated but not by how much, so
+        // it cannot judge whether to narrow the query or accept the sample —
+        // 101 results and 10,000 read identically. SearchInFiles already counts
+        // every match and caps only what it prints; this now matches.
+        StringBuilder sb = new StringBuilder("Found ").append(results.size())
                 .append(" type(s)");
         if (results.size() > MAX_TYPE_HITS) {
             sb.append(" (showing first ").append(MAX_TYPE_HITS).append(")");
@@ -177,7 +190,7 @@ public class SearchProvider {
         FileObject fo = resolveFileObject(filePath);
         if (fo == null) {
             return filePath != null && !filePath.isBlank()
-                    ? "File not found: " + filePath : "No editor focused";
+                    ? "File not found: " + filePath : "No projects open";
         }
         JavaSource js = JavaSource.forFileObject(fo);
         if (js == null) {
@@ -194,11 +207,19 @@ public class SearchProvider {
             return "No symbols found matching: " + name;
         }
 
+        // Keep counting past the display cap so the total is the real one. The
+        // loop used to break at MAX_TYPE_HITS, which meant the answer was always
+        // "Found 100 ... showing first 100" — truncation was visible but its
+        // scale was not, and the caller could not tell 101 matches from 10,000.
+        // Only the formatting is capped; resolving the source file is the
+        // expensive part and still happens only for rows that are printed.
         StringBuilder sb = new StringBuilder();
-        int count = 0;
+        int shown = 0;
+        int total = 0;
         for (ClassIndex.Symbols sym : results) {
-            if (count >= MAX_TYPE_HITS) {
-                break;
+            total++;
+            if (shown >= MAX_TYPE_HITS) {
+                continue;
             }
             ElementHandle<TypeElement> enclosing = sym.getEnclosingType();
             FileObject src = SourceUtils.getFile(enclosing, js.getClasspathInfo());
@@ -206,13 +227,13 @@ public class SearchProvider {
             sb.append(enclosing.getQualifiedName()).append(": [")
                     .append(String.join(", ", sym.getSymbols())).append("]  →  ")
                     .append(f != null ? f.getPath() : "[binary]").append("\n");
-            count++;
+            shown++;
         }
-        if (count == 0) {
+        if (total == 0) {
             return "No symbols found matching: " + name;
         }
-        return "Found " + count + " type(s) with matching symbols"
-                + (count >= MAX_TYPE_HITS ? " (showing first " + MAX_TYPE_HITS + ")" : "")
+        return "Found " + total + " type(s) with matching symbols"
+                + (total > MAX_TYPE_HITS ? " (showing first " + MAX_TYPE_HITS + ")" : "")
                 + ":\n\n" + sb;
     }
 
@@ -220,7 +241,7 @@ public class SearchProvider {
         FileObject fo = resolveFileObject(filePath);
         if (fo == null) {
             return filePath != null && !filePath.isBlank()
-                    ? "File not found: " + filePath : "No editor focused";
+                    ? "File not found: " + filePath : "No projects open";
         }
         JavaSource js = JavaSource.forFileObject(fo);
         if (js == null) {
@@ -309,7 +330,7 @@ public class SearchProvider {
         FileObject fo = resolveFileObject(filePath);
         if (fo == null) {
             return filePath != null && !filePath.isBlank()
-                    ? "File not found: " + filePath : "No editor focused";
+                    ? "File not found: " + filePath : "No projects open";
         }
         JavaSource js = JavaSource.forFileObject(fo);
         if (js == null) {
@@ -428,12 +449,22 @@ public class SearchProvider {
         return roots;
     }
 
+    /**
+     * Resolves the file that anchors a search to a project's classpath.
+     *
+     * <p>
+     * When no path is given this used to take whatever file the editor had
+     * focused. That made results depend on where the user's cursor happened to
+     * be — a caller asking the same question twice could get different answers,
+     * and the caller had no way to know which file it had actually searched.
+     * The anchor is now the first open project's source root: still a fallback,
+     * but a deterministic one that does not move while the user clicks around.
+     * Callers that need a specific project should pass {@code filePath}.
+     */
     private static FileObject resolveFileObject(String filePath) {
         if (filePath == null || filePath.isBlank()) {
-            filePath = EditorContextProvider.getCurrentFilePath();
-            if (filePath == null) {
-                return null;
-            }
+            List<FileObject> roots = openProjectSourceRoots();
+            return roots.isEmpty() ? null : roots.get(0);
         }
         return FileUtils.resolveByPath(filePath);
     }

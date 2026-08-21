@@ -12,9 +12,9 @@ import kiwi.ingenuity.netbeans.plugin.aicoder.process.McpSectionEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.McpToolEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.locking.LockTypeEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.locking.RequiresLock;
-import kiwi.ingenuity.netbeans.plugin.aicoder.process.session.AbstractAiSession;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.server.McpHookServer;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.server.McpServerRegistry;
+import kiwi.ingenuity.netbeans.plugin.aicoder.process.session.AbstractAiSession;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.McpToolInterface;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.McpToolSchemas;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.ToolRequestArguments;
@@ -95,7 +95,8 @@ public class ChangeMethodSignatureTool implements McpToolInterface {
         props.add(ChangeMethodSignatureParamEnum.FILE_PATH.key(), fp);
         JsonObject ln = new JsonObject();
         ln.addProperty(ToolSchemaKeyEnum.TYPE.key(), "integer");
-        ln.addProperty(ToolSchemaKeyEnum.DESCRIPTION.key(), "1-based line of the method declaration. Omit to use cursor.");
+        ln.addProperty(ToolSchemaKeyEnum.DESCRIPTION.key(),
+                "1-based line of the method declaration. Required — this tool does not follow the user's cursor.");
         props.add(ChangeMethodSignatureParamEnum.LINE.key(), ln);
         JsonObject mName = new JsonObject();
         mName.addProperty(ToolSchemaKeyEnum.TYPE.key(), "string");

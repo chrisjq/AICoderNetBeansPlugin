@@ -1,6 +1,5 @@
 package kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.providers.netbeans;
 
-import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.providers.netbeans.SearchResultFormatter;
 import java.util.List;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.providers.netbeans.SearchResultFormatter.Hit;
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -8,6 +7,16 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import org.junit.jupiter.api.Test;
 
 class SearchResultFormatterTest {
+
+    private static int countOccurrences(String haystack, String needle) {
+        int count = 0;
+        int idx = 0;
+        while ((idx = haystack.indexOf(needle, idx)) != -1) {
+            count++;
+            idx += needle.length();
+        }
+        return count;
+    }
 
     @Test
     void groupByFile_printsEachPathOnceWithIndentedMatches() {
@@ -17,7 +26,7 @@ class SearchResultFormatterTest {
                 new Hit("/proj/src/Bar.java", 8, "void x() {}")
         );
 
-        String out = SearchResultFormatter.groupByFile(hits, 3, 200);
+        String out = SearchResultFormatter.groupByFile(hits, 3, 2, 200);
 
         // Each file path appears exactly once (no per-line repetition).
         assertEquals(1, countOccurrences(out, "/proj/src/Foo.java"));
@@ -33,26 +42,27 @@ class SearchResultFormatterTest {
     @Test
     void groupByFile_appendsTruncationNoticeWhenCapped() {
         List<Hit> hits = List.of(new Hit("/proj/A.java", 1, "x"));
-        // 500 total found, only 1 shown because maxShown = 1
-        String out = SearchResultFormatter.groupByFile(hits, 500, 1);
-        assertTrue(out.startsWith("Found 500 match(es) in 1 file(s) (showing first 1):"), out);
+        // 500 total found across 40 files, only 1 shown because maxShown = 1
+        String out = SearchResultFormatter.groupByFile(hits, 500, 40, 1);
+        assertTrue(out.startsWith("Found 500 match(es) in 40 file(s) (showing first 1):"), out);
+    }
+
+    @Test
+    void groupByFile_reportsTotalFilesNotJustTheOnesShown() {
+        // The file count comes from the caller, which counted every match. If it
+        // were derived from `hits` it would say "1 file(s)" here, which reads as
+        // a complete answer when 39 files were dropped by the cap.
+        List<Hit> hits = List.of(new Hit("/proj/A.java", 1, "x"));
+        String out = SearchResultFormatter.groupByFile(hits, 500, 40, 1);
+        assertTrue(out.contains("in 40 file(s)"), out);
     }
 
     @Test
     void groupByFile_noTruncationNoticeWhenAllShown() {
         List<Hit> hits = List.of(new Hit("/proj/A.java", 1, "x"));
-        String out = SearchResultFormatter.groupByFile(hits, 1, 200);
+        String out = SearchResultFormatter.groupByFile(hits, 1, 1, 200);
         assertTrue(out.startsWith("Found 1 match(es) in 1 file(s):"), out);
         assertTrue(!out.contains("showing first"), out);
     }
 
-    private static int countOccurrences(String haystack, String needle) {
-        int count = 0;
-        int idx = 0;
-        while ((idx = haystack.indexOf(needle, idx)) != -1) {
-            count++;
-            idx += needle.length();
-        }
-        return count;
-    }
 }

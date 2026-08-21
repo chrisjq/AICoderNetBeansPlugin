@@ -77,7 +77,7 @@ Copying, moving, and deleting files are confirmed as actions rather than diffs, 
 
 Two things to know about these prompts:
 
-- **Auto-accept, in the info bar, approves all of them without asking** — content writes, file actions, and shell commands alike. It is off by default and can be set per session.
+- **Auto-accept, in the info bar, approves content writes and file actions without asking.** It is off by default and can be set per session. It does not cover everything: shell commands, and requests whose subject could not be identified, still prompt every time even with auto-accept on.
 - **A prompt left unanswered expires after 120 seconds.** That is not a rejection: the backend is told it may retry, and the buttons stop responding. If a prompt appears to have gone dead, it timed out.
 
 ## Usage and notifications

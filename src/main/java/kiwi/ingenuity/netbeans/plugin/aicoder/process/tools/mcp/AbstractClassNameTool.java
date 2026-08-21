@@ -49,8 +49,8 @@ public abstract class AbstractClassNameTool implements McpToolInterface {
         JsonObject cn = new JsonObject();
         cn.addProperty(ToolSchemaKeyEnum.TYPE.key(), "string");
         cn.addProperty(ToolSchemaKeyEnum.DESCRIPTION.key(),
-                "Fully qualified class name (e.g. com.example.MyClass). "
-                + "Omit to resolve from the symbol at the current cursor position.");
+                "Fully qualified class name (e.g. com.example.MyClass). Required — this tool does not "
+                + "resolve the symbol under the user's cursor; use SearchTypes to find the class you mean.");
         props.add("className", cn);
         schema.add(ToolSchemaKeyEnum.PROPERTIES.key(), props);
         tool.add(ToolSchemaKeyEnum.INPUT_SCHEMA.key(), schema);

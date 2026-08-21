@@ -8,13 +8,12 @@ import kiwi.ingenuity.netbeans.plugin.aicoder.process.McpArgumentException;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.McpInstructionOptionEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.McpSectionEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.McpToolEnum;
-import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.providers.netbeans.EditorContextProvider;
-import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.providers.netbeans.FindUsagesProvider;
+import kiwi.ingenuity.netbeans.plugin.aicoder.process.session.AbstractAiSession;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.McpToolInterface;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.McpToolSchemas;
-import kiwi.ingenuity.netbeans.plugin.aicoder.process.session.AbstractAiSession;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.ToolRequestArguments;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.ToolSchemaKeyEnum;
+import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.providers.netbeans.FindUsagesProvider;
 import org.openide.util.Exceptions;
 
 public class FindUsagesTool implements McpToolInterface {
@@ -42,8 +41,8 @@ public class FindUsagesTool implements McpToolInterface {
         tool.addProperty(ToolSchemaKeyEnum.DESCRIPTION.key(),
                 "Find all usages of a Java class or method in the open project(s). "
                 + "Returns file paths with line numbers and code snippets. "
-                + "Provide a fully qualified class name (e.g. com.example.MyService), "
-                + "or omit to use the symbol at the current cursor position. "
+                + "Provide a fully qualified class name (e.g. com.example.MyService); it is required, "
+                + "and is not resolved from the user's cursor. "
                 + "Optionally restrict to a specific method name, find subtypes, "
                 + "or include comment occurrences.");
         JsonObject schema = new JsonObject();
@@ -53,8 +52,8 @@ public class FindUsagesTool implements McpToolInterface {
         JsonObject cn = new JsonObject();
         cn.addProperty(ToolSchemaKeyEnum.TYPE.key(), "string");
         cn.addProperty(ToolSchemaKeyEnum.DESCRIPTION.key(),
-                "Fully qualified class name (e.g. com.example.MyService). "
-                + "Omit to resolve from the symbol at the current cursor position.");
+                "Fully qualified class name (e.g. com.example.MyService). Required — this tool does not "
+                + "resolve the symbol under the user's cursor; use SearchTypes to find the class you mean.");
         props.add(FindUsagesParamEnum.CLASS_NAME.key(), cn);
 
         JsonObject mn = new JsonObject();
@@ -92,10 +91,10 @@ public class FindUsagesTool implements McpToolInterface {
     public String handle(ToolRequestArguments args, AbstractAiSession session) throws McpArgumentException {
         String className = args.str(FindUsagesParamEnum.CLASS_NAME.key());
         if (className == null || className.isBlank()) {
-            className = EditorContextProvider.resolveClassAtCursor();
-        }
-        if (className == null || className.isBlank()) {
-            throw new McpArgumentException(-32602, "No className provided and no identifiable symbol at cursor");
+            // No cursor fallback — see GetClassMembersTool for the reasoning.
+            throw new McpArgumentException(-32602,
+                    "className is required — this tool does not read the symbol under the user's cursor. "
+                    + "Call GetCurrentFile for the user's position, or SearchTypes to find the class you mean.");
         }
         try {
             return FindUsagesProvider.findUsages(className, args.str(FindUsagesParamEnum.MEMBER_NAME.key()),

@@ -1,13 +1,12 @@
 package kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.help;
 
-import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.providers.netbeans.ClassAnalysisProvider;
-import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.providers.netbeans.EditorContextProvider;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.McpArgumentException;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.McpSectionEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.McpToolEnum;
-import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.AbstractClassNameTool;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.session.AbstractAiSession;
+import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.AbstractClassNameTool;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.ToolRequestArguments;
+import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.providers.netbeans.ClassAnalysisProvider;
 
 public class GetClassMembersTool extends AbstractClassNameTool {
 
@@ -15,7 +14,7 @@ public class GetClassMembersTool extends AbstractClassNameTool {
         super(McpSectionEnum.HELP,
                 McpToolEnum.GET_CLASS_MEMBERS.toolName(),
                 "Returns the methods and fields declared in a class. "
-                + "Provide a fully qualified class name, or omit to use the symbol at the current cursor position.",
+                + "Provide a fully qualified class name; it is required, and is not resolved from the user's cursor.",
                 "GetClassMembers -> INSTEAD OF Read + manual parsing - lists fields, methods and constructors of a class",
                 "GetClassMembers - lists fields, methods and constructors of a class");
     }
@@ -29,10 +28,13 @@ public class GetClassMembersTool extends AbstractClassNameTool {
     public String handle(ToolRequestArguments args, AbstractAiSession session) throws McpArgumentException {
         String cn = args.str(GetClassMembersParamEnum.CLASS_NAME.key());
         if (cn == null || cn.isBlank()) {
-            cn = EditorContextProvider.resolveClassAtCursor();
-        }
-        if (cn == null || cn.isBlank()) {
-            throw new McpArgumentException(-32602, "No className provided and no identifiable symbol at cursor");
+            // Deliberately no fallback to the symbol under the cursor. The caller
+            // cannot see where the cursor is, so the same call would answer about
+            // a different class depending on where the user last clicked — and
+            // the answer never says which class it described.
+            throw new McpArgumentException(-32602,
+                    "className is required — this tool does not read the symbol under the user's cursor. "
+                    + "Call GetCurrentFile for the user's position, or SearchTypes to find the class you mean.");
         }
         return ClassAnalysisProvider.getClassMembers(cn);
     }

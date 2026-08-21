@@ -38,7 +38,9 @@ public class SearchInFilesTool implements McpToolInterface {
         tool.addProperty(ToolSchemaKeyEnum.NAME.key(), McpToolEnum.SEARCH_IN_FILES.toolName());
         tool.addProperty(ToolSchemaKeyEnum.DESCRIPTION.key(),
                 "Grep-style literal-text or regex search across open-project source files. "
-                + "Returns file:line:content matches, capped at 200. "
+                + "Returns file:line:content matches. At most 200 are listed, but the header "
+                + "reports the true totals, e.g. 'Found 350 match(es) in 12 file(s) (showing "
+                + "first 200)' — narrow the query if the total is far above the cap. "
                 + "A source filePath limits the search to its source classpath; omit it to search every open project's source roots.");
         JsonObject schema = new JsonObject();
         schema.addProperty(ToolSchemaKeyEnum.TYPE.key(), "object");

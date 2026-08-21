@@ -14,7 +14,6 @@ import kiwi.ingenuity.netbeans.plugin.aicoder.process.server.McpHookServer;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.session.AbstractAiSession;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.AbstractFileTool;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.ToolRequestArguments;
-import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.providers.netbeans.EditorContextProvider;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.providers.netbeans.RefactoringProvider;
 import kiwi.ingenuity.netbeans.plugin.aicoder.utils.ProjectPathUtil;
 
@@ -36,7 +35,16 @@ public class DeleteFileTool extends AbstractFileTool {
     @Override
     public String handle(ToolRequestArguments args, AbstractAiSession session) {
         String fp = args.str(DeleteFileParamEnum.FILE_PATH.key());
-        String effectivePath = fp != null ? fp : EditorContextProvider.getCurrentFilePath();
+        if (fp == null || fp.isBlank()) {
+            // No fallback to the focused editor. This tool deletes: omitting the
+            // path used to destroy whatever file the user happened to have open,
+            // chosen by where they last clicked rather than by anything the
+            // caller decided. Nothing about that is recoverable from the caller's
+            // side, so it must name its target.
+            return "file_path is required — this tool does not fall back to the focused editor. "
+                    + "Call GetCurrentFile if you want the file the user is looking at.";
+        }
+        String effectivePath = fp;
         if (effectivePath != null) {
             String sessionId = session.getId();
             if (sessionId == null || !server.isFileAllowed(sessionId, effectivePath)) {

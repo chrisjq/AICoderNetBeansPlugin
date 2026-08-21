@@ -21,7 +21,7 @@ Each session has its own backend, model, settings, working project, chat history
 
 - Streaming Markdown chat with syntax-highlighted code, tool activity, status messages, and dockable session tabs.
 - Paste clipboard images into chat when the selected backend supports image input.
-- AI Manager for creating, opening, duplicating, deleting, and organising sessions.
+- AI Manager for creating, opening, and deleting sessions, with reusable configuration and instruction templates.
 - Per-session session instructions, with delivery on the first user request or automatically at startup.
 - Reusable configuration templates and instruction templates; built-in configuration templates include Coordinator, CoderPeer, and ReviewerPeer.
 - IDE context delivery: open projects, active file, session identity, and later project/file changes are supplied to the assistant. OpenAI-compatible sessions also support managed conversation context.
@@ -88,7 +88,7 @@ The default posture restricts file tools to project directories, disables auto-a
 
 Web requests allow GET by default when web access is enabled. Methods that can change remote state, custom headers, and request bodies are disabled by default and must be enabled globally or for the session.
 
-Database access is opt-in and read-only. The plugin permits only SELECT-style operations against a read-only JDBC connection and enforces the configured row limit.
+Database access is opt-in and read-only. A query must be a single SELECT — anything chained after a `;` is refused — and the JDBC connection is set read-only while it runs, which some drivers treat only as a hint. The configured row limit is enforced. Queries share the IDE's own connection, so they run one at a time and are cut off after five minutes rather than holding it indefinitely.
 
 ### Backend options
 
@@ -171,7 +171,7 @@ Content-changing operations such as `WriteFile`, `ApplyEdit`, and content-bearin
 
 `CopyFile`, `MoveFile`, and `DeleteFile` have no content diff, so they are confirmed as actions before proceeding. Shell commands proposed by a backend are confirmed the same way, showing the command that would run. Refactorings use NetBeans refactoring APIs so project references are updated consistently.
 
-**Auto-accept removes the review step by design.** With it enabled, content writes, file actions, and shell commands are approved automatically and reported to the transcript after the fact rather than before. It is off by default, can be set globally or per session, and is worth leaving off for anything you would not want applied unseen.
+**Auto-accept removes the review step by design.** With it enabled, content writes and file actions are approved automatically and reported to the transcript after the fact rather than before. It does not extend to everything: shell commands, and any request whose subject the plugin could not identify, are still prompted every time regardless of the setting — approving those unseen is the one thing the gate exists to prevent. Auto-accept is off by default, can be set globally or per session, and is worth leaving off for anything you would not want applied unseen.
 
 The local tool server binds only to loopback addresses. Every call is authenticated with the caller's session ID and per-session secret, and sessions cannot act as each other. Project scoping, database access, clipboard access, web permissions, inter-AI messaging, and auto-accept are all separately configurable.
 

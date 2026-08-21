@@ -3,16 +3,16 @@ package kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.search;
 import com.google.gson.JsonArray;
 import com.google.gson.JsonObject;
 import java.util.Set;
-import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.ToolSchemaKeyEnum;
-import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.providers.netbeans.SearchProvider;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.McpArgumentException;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.McpInstructionOptionEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.McpSectionEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.McpToolEnum;
+import kiwi.ingenuity.netbeans.plugin.aicoder.process.session.AbstractAiSession;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.McpToolInterface;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.McpToolSchemas;
-import kiwi.ingenuity.netbeans.plugin.aicoder.process.session.AbstractAiSession;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.ToolRequestArguments;
+import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.ToolSchemaKeyEnum;
+import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.providers.netbeans.SearchProvider;
 
 public class SearchTypesTool implements McpToolInterface {
 
@@ -38,7 +38,9 @@ public class SearchTypesTool implements McpToolInterface {
         tool.addProperty(ToolSchemaKeyEnum.NAME.key(), McpToolEnum.SEARCH_TYPES.toolName());
         tool.addProperty(ToolSchemaKeyEnum.DESCRIPTION.key(),
                 "Find Java types (class/interface/enum/annotation) by name pattern using the IDE index. "
-                + "Returns FQN and source file path for each match, capped at 100.");
+                + "Returns FQN and source file path for each match. At most 100 are listed, but "
+                + "the header reports the true total, e.g. 'Found 3412 type(s) (showing first "
+                + "100)' — narrow the pattern if the total is far above the cap.");
         JsonObject schema = new JsonObject();
         schema.addProperty(ToolSchemaKeyEnum.TYPE.key(), "object");
         JsonObject props = new JsonObject();
