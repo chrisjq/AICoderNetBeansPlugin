@@ -35,7 +35,13 @@ public enum AiTypeEnum {
     //                                                          implemented  enabledByDefault  openAiCompatible
     OLLAMA_LOCAL("Ollama (Local)", "ollama_local", true, false, true, new OllamaSettingsCreator(),
             Set.of(HEADER, ONLY_MCP_TOOL_ACCESS, SOFTEN_TOOL_DIRECTIVES, TOOL_CALLS_VIA_SCHEMA)),
-    OPENCODE("OpenCode", "opencode", true, true, false, new OpenCodeSettingsCreator(), Set.of(HEADER, TOOL_INSTRUCTION, CREDENTIALS)),
+    // FORCE_MCP_TOOL_USE for the same reason as Copilot: OpenCode keeps its own
+    // bash/grep/read/edit tools and reached for them first, shelling out to grep
+    // on project files. The "use the plugin tools INSTEAD OF built-in
+    // Read/Edit/Write/Bash/Grep" guidance is already sent, but it sits below the
+    // GetInstructions preamble and was read past. The flag repeats it as the
+    // first line instead.
+    OPENCODE("OpenCode", "opencode", true, true, false, new OpenCodeSettingsCreator(), Set.of(HEADER, TOOL_INSTRUCTION, CREDENTIALS, FORCE_MCP_TOOL_USE)),
     // MCP not yet registered (design doc §9 slice — later), so mcpOptions below
     // mirrors OpenCode's set as the intended shape rather than a proven one;
     // revisit once Codex is actually wired into McpHookServer.

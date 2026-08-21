@@ -42,6 +42,20 @@ class McpInstructionOptionsTest {
     }
 
     @Test
+    void typesWithTheirOwnFileToolsAreForcedOntoTheMcpServer() {
+        // Both keep native bash/read/edit tools that the plugin cannot withhold
+        // over their transport, and both were observed reaching for them first —
+        // Copilot for view/edit, OpenCode for a shell grep over project files.
+        // FORCE_MCP_TOOL_USE puts the "never read or write files directly with
+        // your own built-in tools" line first, above the GetInstructions
+        // preamble that the equivalent guidance otherwise sits below.
+        for (AiTypeEnum type : new AiTypeEnum[]{AiTypeEnum.GitHubCoPilot, AiTypeEnum.OPENCODE}) {
+            assertTrue(type.getMcpOptions().contains(McpInstructionOptionEnum.FORCE_MCP_TOOL_USE),
+                    type + " falls back to its own file tools without the leading directive");
+        }
+    }
+
+    @Test
     void returnedSetsAreImmutable() {
         assertThrows(UnsupportedOperationException.class,
                 () -> AiTypeEnum.CLAUDE.getMcpOptions().add(McpInstructionOptionEnum.HEADER));
