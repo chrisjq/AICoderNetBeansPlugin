@@ -127,6 +127,9 @@ public class SearchProvider {
     }
 
     public static String searchTypes(String filePath, String name, String kind, boolean includeDeps) {
+        if (filePath == null || filePath.isBlank()) {
+            return searchAcrossOpenProjects(name, kind, includeDeps, true);
+        }
         if (name == null || name.isBlank()) {
             return "name is required";
         }
@@ -180,6 +183,9 @@ public class SearchProvider {
     }
 
     public static String searchSymbols(String filePath, String name, String kind, boolean includeDeps) {
+        if (filePath == null || filePath.isBlank()) {
+            return searchAcrossOpenProjects(name, kind, includeDeps, false);
+        }
         if (name == null || name.isBlank()) {
             return "name is required";
         }
@@ -402,6 +408,47 @@ public class SearchProvider {
         catch (PatternSyntaxException e) {
             return "Invalid regex: " + e.getMessage();
         }
+    }
+
+    private static String searchAcrossOpenProjects(String name, String kind, boolean includeDeps,
+            boolean types) {
+        if (name == null || name.isBlank()) {
+            return "name is required";
+        }
+        List<String> results = new ArrayList<>();
+        for (FileObject root : openProjectSourceRoots()) {
+            FileObject anchor = findJavaSource(root);
+            if (anchor == null) {
+                continue;
+            }
+            String result = types
+                    ? searchTypes(anchor.getPath(), name, kind, includeDeps)
+                    : searchSymbols(anchor.getPath(), name, kind, includeDeps);
+            if (!result.startsWith("No types found") && !result.startsWith("No symbols found")) {
+                results.add(result);
+            }
+        }
+        if (results.isEmpty()) {
+            return types ? "No types found matching: " + name
+                    : "No symbols found matching: " + name;
+        }
+        return String.join("\n", results);
+    }
+
+    private static FileObject findJavaSource(FileObject folder) {
+        if (folder == null) {
+            return null;
+        }
+        if (!folder.isFolder()) {
+            return "java".equals(folder.getExt()) ? folder : null;
+        }
+        for (FileObject child : folder.getChildren()) {
+            FileObject found = findJavaSource(child);
+            if (found != null) {
+                return found;
+            }
+        }
+        return null;
     }
 
     private static ClassIndex.NameKind toNameKind(String kind) {

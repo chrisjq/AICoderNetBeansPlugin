@@ -47,7 +47,7 @@ public class SearchSymbolsTool implements McpToolInterface {
         JsonObject props = new JsonObject();
         JsonObject fp = new JsonObject();
         fp.addProperty(ToolSchemaKeyEnum.TYPE.key(), "string");
-        fp.addProperty(ToolSchemaKeyEnum.DESCRIPTION.key(), "Any source file in the project. Omit to use the first open project's source root.");
+        fp.addProperty(ToolSchemaKeyEnum.DESCRIPTION.key(), "A source file that scopes the search to its project. Omit to search every open project.");
         props.add(SearchSymbolsParamEnum.FILE_PATH.key(), fp);
         JsonObject n = new JsonObject();
         n.addProperty(ToolSchemaKeyEnum.TYPE.key(), "string");
