@@ -2,16 +2,16 @@ package kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.ai;
 
 import com.google.gson.JsonArray;
 import com.google.gson.JsonObject;
-import kiwi.ingenuity.netbeans.plugin.aicoder.ai.mail.AiSessionInboxBroker;
 import java.util.Set;
+import kiwi.ingenuity.netbeans.plugin.aicoder.ai.mail.AiSessionInboxBroker;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.McpInstructionOptionEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.McpSectionEnum;
-import kiwi.ingenuity.netbeans.plugin.aicoder.process.session.AbstractAiSession;
-import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.ToolSchemaKeyEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.McpToolEnum;
+import kiwi.ingenuity.netbeans.plugin.aicoder.process.session.AbstractAiSession;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.AbstractActionTool;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.McpToolSchemas;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.ToolRequestArguments;
+import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.ToolSchemaKeyEnum;
 
 public class UpdateSessionDescriptionTool extends AbstractActionTool {
 
@@ -19,7 +19,7 @@ public class UpdateSessionDescriptionTool extends AbstractActionTool {
         super(McpSectionEnum.PLUGIN,
                 McpToolEnum.UPDATE_SESSION_DESCRIPTION.toolName(),
                 "Update your session's description visible to peer sessions. Pass your sessionId and secretKey from your session identity.",
-                McpToolEnum.UPDATE_SESSION_DESCRIPTION.toolName() + " -> call at session start to identify your role to peer sessions (visible in ListAiSessions)");
+                McpToolEnum.UPDATE_SESSION_DESCRIPTION.toolName() + " -> call at session start to identify your role to peer sessions (visible in " + McpToolEnum.LIST_AI_SESSIONS.toolName() + ")");
     }
 
     @Override
@@ -39,8 +39,8 @@ public class UpdateSessionDescriptionTool extends AbstractActionTool {
         tool.addProperty(ToolSchemaKeyEnum.NAME.key(), McpToolEnum.UPDATE_SESSION_DESCRIPTION.toolName());
         tool.addProperty(ToolSchemaKeyEnum.DESCRIPTION.key(),
                 options.contains(McpInstructionOptionEnum.CREDENTIALS)
-                        ? "Update your session's description visible to peer sessions. Pass your sessionId and secretKey from your session identity."
-                        : "Update your session's description visible to peer sessions.");
+                ? "Update your session's description visible to peer sessions. Pass your sessionId and secretKey from your session identity."
+                : "Update your session's description visible to peer sessions.");
         JsonObject schema = new JsonObject();
         schema.addProperty(ToolSchemaKeyEnum.TYPE.key(), "object");
         JsonObject props = new JsonObject();
@@ -63,7 +63,7 @@ public class UpdateSessionDescriptionTool extends AbstractActionTool {
         }
         JsonObject desc = new JsonObject();
         desc.addProperty(ToolSchemaKeyEnum.TYPE.key(), "string");
-        desc.addProperty(ToolSchemaKeyEnum.DESCRIPTION.key(), "The new description to set for your session (visible to other AI sessions via ListAiSessions).");
+        desc.addProperty(ToolSchemaKeyEnum.DESCRIPTION.key(), "The new description to set for your session (visible to other AI sessions via " + McpToolEnum.LIST_AI_SESSIONS.toolName() + ").");
         props.add(UpdateSessionDescriptionParamEnum.DESCRIPTION.key(), desc);
         schema.add(ToolSchemaKeyEnum.PROPERTIES.key(), props);
         required.add(UpdateSessionDescriptionParamEnum.DESCRIPTION.key());

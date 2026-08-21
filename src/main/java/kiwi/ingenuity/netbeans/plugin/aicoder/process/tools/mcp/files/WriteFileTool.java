@@ -40,7 +40,7 @@ public class WriteFileTool extends AbstractActionTool {
         super(McpSectionEnum.UI_FILES,
                 McpToolEnum.WRITE_FILE.toolName(),
                 "Create or overwrite a file with the given content. The user approves the change in the NetBeans Accept/Reject diff panel before it is applied.",
-                "WriteFile -> create/overwrite a file with content; user approves via the NetBeans diff panel");
+                McpToolEnum.WRITE_FILE.toolName() + " -> create/overwrite a file with content; user approves via the NetBeans diff panel");
     }
 
     @Override

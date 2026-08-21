@@ -19,6 +19,7 @@ import java.util.logging.Logger;
 import javax.swing.SwingUtilities;
 import javax.swing.text.Document;
 import javax.swing.text.JTextComponent;
+import kiwi.ingenuity.netbeans.plugin.aicoder.process.McpToolEnum;
 import org.netbeans.api.editor.EditorRegistry;
 import org.netbeans.api.project.Project;
 import org.netbeans.api.project.ProjectUtils;
@@ -451,7 +452,7 @@ public class EditorContextProvider {
         }
         StringBuilder sb = new StringBuilder("File not found: ").append(filePath);
         if (candidates.isEmpty()) {
-            sb.append("\n\nNo file with that name in the open projects. Use GetProjectStructure for the package layout, or SearchSymbols/SearchInFiles to locate it.");
+            sb.append("\n\nNo file with that name in the open projects. Use ").append(McpToolEnum.GET_PROJECT_STRUCTURE.toolName()).append(" for the package layout, or ").append(McpToolEnum.SEARCH_SYMBOLS.toolName()).append("/").append(McpToolEnum.SEARCH_IN_FILES.toolName()).append(" to locate it.");
         }
         else {
             sb.append("\n\nDid you mean:");

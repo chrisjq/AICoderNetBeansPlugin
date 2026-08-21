@@ -1,11 +1,11 @@
 package kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.ui.file;
 
-import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.providers.netbeans.EditorContextProvider;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.McpSectionEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.McpToolEnum;
-import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.AbstractActionTool;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.session.AbstractAiSession;
+import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.AbstractActionTool;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.ToolRequestArguments;
+import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.providers.netbeans.EditorContextProvider;
 
 public class GetCurrentFileContentTool extends AbstractActionTool {
 
@@ -14,8 +14,8 @@ public class GetCurrentFileContentTool extends AbstractActionTool {
                 McpToolEnum.GET_CURRENT_FILE_CONTENT.toolName(),
                 "Returns the full text content of the file currently open in the active editor, "
                 + "prefixed with its absolute path.",
-                "GetCurrentFileContent -> INSTEAD OF Read tool when you need the active editor's full text",
-                "GetCurrentFileContent - get the active editor's full text");
+                McpToolEnum.GET_CURRENT_FILE_CONTENT.toolName() + " -> INSTEAD OF Read tool when you need the active editor's full text",
+                "" + McpToolEnum.GET_CURRENT_FILE_CONTENT.toolName() + " - get the active editor's full text");
     }
 
     @Override

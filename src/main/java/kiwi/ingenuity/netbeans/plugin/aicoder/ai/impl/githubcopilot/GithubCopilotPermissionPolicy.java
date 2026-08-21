@@ -4,6 +4,7 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
+import kiwi.ingenuity.netbeans.plugin.aicoder.process.McpToolEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.McpToolPropertyEnum;
 
 /**
@@ -139,16 +140,22 @@ final class GithubCopilotPermissionPolicy {
     static String rejectFeedbackFor(Category category, String rawKind) {
         String kind = rawKind == null ? "" : rawKind.toLowerCase(Locale.ROOT);
         if (category == Category.INTERNAL && kind.contains("read")) {
-            return "declined — use the IDE's own tools instead: GetFileContent to read a file, "
-                    + "or SearchInFiles / SearchTypes / GetProjectStructure to locate one.";
+            return "declined — use the IDE's own tools instead: " + McpToolEnum.GET_FILE_CONTENT.toolName()
+                    + " to read a file, or " + McpToolEnum.SEARCH_IN_FILES.toolName() + " / "
+                    + McpToolEnum.SEARCH_TYPES.toolName() + " / "
+                    + McpToolEnum.GET_PROJECT_STRUCTURE.toolName() + " to locate one.";
         }
         if (category == Category.INTERNAL && kind.contains("path")) {
-            return "declined — use GetProjectStructure to inspect the project tree; read files with GetFileContent.";
+            return "declined — use " + McpToolEnum.GET_PROJECT_STRUCTURE.toolName()
+                    + " to inspect the project tree; read files with "
+                    + McpToolEnum.GET_FILE_CONTENT.toolName() + ".";
         }
         if (category == Category.INTERNAL && kind.contains("url")) {
-            return "declined — use the WebRequest tool instead; it also honours this session's web-access settings.";
+            return "declined — use the " + McpToolEnum.WEB_REQUEST.toolName()
+                    + " tool instead; it also honours this session's web-access settings.";
         }
-        return "declined — call GetInstructions for the list of tools this IDE provides, and use those instead.";
+        return "declined — call " + McpToolEnum.GET_INSTRUCTIONS.toolName()
+                + " for the list of tools this IDE provides, and use those instead.";
     }
 
     private static String redact(String key, Object value) {

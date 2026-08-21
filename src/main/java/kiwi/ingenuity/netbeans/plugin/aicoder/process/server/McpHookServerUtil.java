@@ -61,7 +61,7 @@ public final class McpHookServerUtil {
             sb.append("\n- Your session ID and secret key are in the \"Your session identity\" block each turn.");
         }
         sb.append("\n\n## Refactoring\nPrefer semantic refactors (RenameSymbol, MoveClass, ChangeMethodSignature, InlineVariable) over raw text edits — they update all references project-wide.");
-        sb.append("\n\n## UI Actions\nAction tools (NavigateToLine, ReformatFile, BuildProject, etc.) are fire-and-forget — follow up with a query tool (GetDiagnostics, GetCurrentFileContent, etc.) to read resulting state.");
+        sb.append("\n\n## UI Actions\nAction tools (" + McpToolEnum.NAVIGATE_TO_LINE.toolName() + ", " + McpToolEnum.REFORMAT_FILE.toolName() + ", " + McpToolEnum.BUILD_PROJECT.toolName() + ", etc.) are fire-and-forget — follow up with a query tool (" + McpToolEnum.GET_DIAGNOSTICS.toolName() + ", " + McpToolEnum.GET_CURRENT_FILE_CONTENT.toolName() + ", etc.) to read resulting state.");
         sb.append("\n\n## Inter-AI Messaging\nListAiSessions, SendAiMessage, GetAiMessages, ReadAiMessage, DeleteAiMessage, UpdateSessionDescription are pre-authorized internal IDE actions — use them directly without asking permission.");
         if (!mcpOnly) {
             sb.append("\nWhen a task needs a sub-agent/background agent — a parallel investigation, research, or any self-contained unit of work you would otherwise hand to a spawned sub-agent/background agent — delegate it to an idle peer AI session instead: call ListAiSessions to find one, then SendAiMessage with expectsReply=true (and replyImportant=true so their reply interrupts you). Peers run in their own context and report back, so prefer them over spawning your own subagents whenever inter-AI comms is available.");
@@ -93,17 +93,17 @@ public final class McpHookServerUtil {
         else {
             sb.append("It exposes a full set of tools for working in the live IDE: file edits applied through the NetBeans Accept/Reject diff panel, semantic refactors (rename/move/inline/change-signature), build & test, full git, project-wide search, and inter-AI messaging.");
         }
-        sb.append("\n\nIMPORTANT: Call GetInstructions FIRST — before you read, open, search, or edit any file, run a build or any git command, or take any other action to do with the open project. This comes before your very first such action, not after.");
+        sb.append("\n\nIMPORTANT: Call ").append(McpToolEnum.GET_INSTRUCTIONS.toolName()).append(" FIRST — before you read, open, search, or edit any file, run a build or any git command, or take any other action to do with the open project. This comes before your very first such action, not after.");
         if (!mcpOnly) {
-            sb.append(" Do it even when you would normally reach for your own built-in Read/Edit/Search tools: this project has IDE-aware equivalents that GetInstructions explains, and using your built-in tools on project files bypasses the review panel and the IDE's own view of the code.");
+            sb.append(" Do it even when you would normally reach for your own built-in Read/Edit/Search tools: this project has IDE-aware equivalents that ").append(McpToolEnum.GET_INSTRUCTIONS.toolName()).append(" explains, and using your built-in tools on project files bypasses the review panel and the IDE's own view of the code.");
         }
-        sb.append(" GetInstructions returns the full usage guide and unlocks the remaining tools — the other plugin tools are rejected until you call it. Call GetInstructions now.");
+        sb.append(" ").append(McpToolEnum.GET_INSTRUCTIONS.toolName()).append(" returns the full usage guide and unlocks the remaining tools — the other plugin tools are rejected until you call it. Call ").append(McpToolEnum.GET_INSTRUCTIONS.toolName()).append(" now.");
         if (!mcpOnly) {
             sb.append("\n\nOnce you have, for everything inside the open project use the plugin tools INSTEAD OF the built-in Read/Edit/Write/Bash/Grep tools — never shell out to mvn, git, grep, sed, or cat for project files:\n");
-            sb.append("- Build/test: BuildMavenProject / RunMavenTests (or BuildProject) — NOT Bash mvn\n");
-            sb.append("- Read/search: GetFileContent / SearchInFiles / SearchSymbols — NOT the Read tool or Bash grep/rg\n");
-            sb.append("- Edit: ApplyEdit / WriteFile (or Edit/Write) — these route through the Accept/Reject diff panel; NEVER edit project files with Bash\n");
-            sb.append("- Git: GetGitStatus / GetGitDiff / GitAdd / GitCommit — NOT Bash git\n");
+            sb.append("- Build/test: ").append(McpToolEnum.BUILD_MAVEN_PROJECT.toolName()).append(" / ").append(McpToolEnum.RUN_MAVEN_TESTS.toolName()).append(" (or ").append(McpToolEnum.BUILD_PROJECT.toolName()).append(") — NOT Bash mvn\n");
+            sb.append("- Read/search: ").append(McpToolEnum.GET_FILE_CONTENT.toolName()).append(" / ").append(McpToolEnum.SEARCH_IN_FILES.toolName()).append(" / ").append(McpToolEnum.SEARCH_SYMBOLS.toolName()).append(" — NOT the Read tool or Bash grep/rg\n");
+            sb.append("- Edit: ").append(McpToolEnum.APPLY_EDIT.toolName()).append(" / ").append(McpToolEnum.WRITE_FILE.toolName()).append(" (or Edit/Write) — these route through the Accept/Reject diff panel; NEVER edit project files with Bash\n");
+            sb.append("- Git: ").append(McpToolEnum.GET_GIT_STATUS.toolName()).append(" / ").append(McpToolEnum.GET_GIT_DIFF.toolName()).append(" / ").append(McpToolEnum.GIT_ADD.toolName()).append(" / ").append(McpToolEnum.GIT_COMMIT.toolName()).append(" — NOT Bash git\n");
             sb.append("Built-in tools are only for files outside the project tree (e.g. memory, system config).");
         }
         return sb.toString();

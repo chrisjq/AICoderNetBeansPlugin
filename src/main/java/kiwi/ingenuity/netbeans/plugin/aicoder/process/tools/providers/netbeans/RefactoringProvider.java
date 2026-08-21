@@ -17,8 +17,8 @@ import javax.swing.text.BadLocationException;
 import javax.swing.text.Document;
 import javax.swing.text.JTextComponent;
 import javax.swing.text.StyledDocument;
-import kiwi.ingenuity.netbeans.plugin.aicoder.process.McpToolPropertyEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.McpToolEnum;
+import kiwi.ingenuity.netbeans.plugin.aicoder.process.McpToolPropertyEnum;
 import org.netbeans.api.java.classpath.ClassPath;
 import org.netbeans.api.java.source.JavaSource;
 import org.netbeans.api.java.source.TreePathHandle;
@@ -60,12 +60,12 @@ public class RefactoringProvider {
                     ? "File not found: " + filePath
                     : McpToolPropertyEnum.FILE_PATH.key() + " is required — this tool does not fall back to the focused editor. "
                     + "Call " + McpToolEnum.GET_CURRENT_FILE.toolName()
-                      + " if you want the file the user is looking at.";
+                    + " if you want the file the user is looking at.";
         }
         if (line <= 0) {
             return McpToolPropertyEnum.LINE.key() + " is required and must be 1-based — this tool does not follow the user's cursor. "
                     + "Call " + McpToolEnum.GET_CURRENT_FILE.toolName()
-                      + " if you want the line the user is on.";
+                    + " if you want the line the user is on.";
         }
         TreePathHandle handle = resolveHandle(fo, line);
         if (handle == null) {
@@ -90,7 +90,7 @@ public class RefactoringProvider {
                     ? "File not found: " + filePath
                     : McpToolPropertyEnum.FILE_PATH.key() + " is required — this tool does not fall back to the focused editor. "
                     + "Call " + McpToolEnum.GET_CURRENT_FILE.toolName()
-                      + " if you want the file the user is looking at.";
+                    + " if you want the file the user is looking at.";
         }
         FileObject targetFolder = findOrCreatePackage(fo, targetPackage);
         if (targetFolder == null) {
@@ -111,12 +111,12 @@ public class RefactoringProvider {
                     ? "File not found: " + filePath
                     : McpToolPropertyEnum.FILE_PATH.key() + " is required — this tool does not fall back to the focused editor. "
                     + "Call " + McpToolEnum.GET_CURRENT_FILE.toolName()
-                      + " if you want the file the user is looking at.";
+                    + " if you want the file the user is looking at.";
         }
         if (line <= 0) {
             return McpToolPropertyEnum.LINE.key() + " is required and must be 1-based — this tool does not follow the user's cursor. "
                     + "Call " + McpToolEnum.GET_CURRENT_FILE.toolName()
-                      + " if you want the line the user is on.";
+                    + " if you want the line the user is on.";
         }
         TreePathHandle handle = resolveHandle(fo, line);
         if (handle == null) {
@@ -136,12 +136,12 @@ public class RefactoringProvider {
                     ? "File not found: " + filePath
                     : McpToolPropertyEnum.FILE_PATH.key() + " is required — this tool does not fall back to the focused editor. "
                     + "Call " + McpToolEnum.GET_CURRENT_FILE.toolName()
-                      + " if you want the file the user is looking at.";
+                    + " if you want the file the user is looking at.";
         }
         if (line <= 0) {
             return McpToolPropertyEnum.LINE.key() + " is required and must be 1-based — this tool does not follow the user's cursor. "
                     + "Call " + McpToolEnum.GET_CURRENT_FILE.toolName()
-                      + " if you want the line the user is on.";
+                    + " if you want the line the user is on.";
         }
         TreePathHandle handle = resolveHandle(fo, line);
         if (handle == null) {
@@ -165,15 +165,15 @@ public class RefactoringProvider {
     }
 
     public static String fixImports(String filePath) {
-        return runSourceAction(filePath, FIX_IMPORTS_ACTION, "FixImports");
+        return runSourceAction(filePath, FIX_IMPORTS_ACTION, McpToolEnum.FIX_IMPORTS.toolName());
     }
 
     public static String organiseImports(String filePath) {
-        return runSourceAction(filePath, ORGANISE_IMPORTS_ACTION, "OrganiseImports");
+        return runSourceAction(filePath, ORGANISE_IMPORTS_ACTION, McpToolEnum.ORGANISE_IMPORTS.toolName());
     }
 
     public static String organiseMembers(String filePath) {
-        return runSourceAction(filePath, ORGANISE_MEMBERS_ACTION, "OrganiseMembers");
+        return runSourceAction(filePath, ORGANISE_MEMBERS_ACTION, McpToolEnum.ORGANISE_MEMBERS.toolName());
     }
 
     public static String reformatFile(String filePath) {
@@ -183,7 +183,7 @@ public class RefactoringProvider {
                     ? "File not found: " + filePath
                     : McpToolPropertyEnum.FILE_PATH.key() + " is required — this tool rewrites a file, so it does not fall back to "
                     + "the focused editor. Call " + McpToolEnum.GET_CURRENT_FILE.toolName()
-                      + " if you want the file the user is looking at.";
+                    + " if you want the file the user is looking at.";
         }
         File diskFile = FileUtil.toFile(fo);
         if (diskFile == null) {

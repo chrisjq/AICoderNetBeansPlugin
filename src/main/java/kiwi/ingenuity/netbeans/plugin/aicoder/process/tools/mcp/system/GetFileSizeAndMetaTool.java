@@ -3,17 +3,17 @@ package kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.system;
 import com.google.gson.JsonArray;
 import com.google.gson.JsonObject;
 import java.util.Set;
-import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.ToolSchemaKeyEnum;
-import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.providers.netbeans.EditorContextProvider;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.McpArgumentException;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.McpInstructionOptionEnum;
-import kiwi.ingenuity.netbeans.plugin.aicoder.process.server.McpHookServer;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.McpSectionEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.McpToolEnum;
+import kiwi.ingenuity.netbeans.plugin.aicoder.process.server.McpHookServer;
+import kiwi.ingenuity.netbeans.plugin.aicoder.process.session.AbstractAiSession;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.McpToolInterface;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.McpToolSchemas;
-import kiwi.ingenuity.netbeans.plugin.aicoder.process.session.AbstractAiSession;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.ToolRequestArguments;
+import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.ToolSchemaKeyEnum;
+import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.providers.netbeans.EditorContextProvider;
 
 /**
  * Reports a file's size and metadata (byte count, line count, encoding) without
@@ -23,6 +23,16 @@ import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.ToolRequestArgum
  * charset the bytes decode with.
  */
 public class GetFileSizeAndMetaTool implements McpToolInterface {
+
+    private static String description() {
+        return "Returns a file's metadata without its content: exact byte size, line count, the text "
+                + "encoding the IDE uses for it, the last-modified time and age in seconds, whether "
+                + "the file is writable, and whether the editor holds unsaved changes for it. Call "
+                + "this before " + McpToolEnum.GET_FILE_CONTENT.toolName()
+                + " on a large file to decide whether the read must be "
+                + "paged with startLine/endLine. Size and line count are the on-disk copy; an "
+                + "\"unsaved editor changes\" flag warns when the editor's in-memory copy has diverged.";
+    }
 
     private final McpHookServer server;
 
@@ -42,17 +52,9 @@ public class GetFileSizeAndMetaTool implements McpToolInterface {
         }
         return McpToolEnum.GET_FILE_SIZE_AND_META.toolName() + " - reports a file's byte size, line count, encoding, last-modified "
                 + "time and age, writable flag and unsaved-editor-changes flag without returning its "
-                + "content; call it before GetFileContent on a large file to decide whether to page "
+                + "content; call it before " + McpToolEnum.GET_FILE_CONTENT.toolName()
+                + " on a large file to decide whether to page "
                 + "the read with startLine/endLine";
-    }
-
-    private static String description() {
-        return "Returns a file's metadata without its content: exact byte size, line count, the text "
-                + "encoding the IDE uses for it, the last-modified time and age in seconds, whether "
-                + "the file is writable, and whether the editor holds unsaved changes for it. Call "
-                + "this before GetFileContent on a large file to decide whether the read must be "
-                + "paged with startLine/endLine. Size and line count are the on-disk copy; an "
-                + "\"unsaved editor changes\" flag warns when the editor's in-memory copy has diverged.";
     }
 
     @Override

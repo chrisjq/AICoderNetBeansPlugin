@@ -28,7 +28,7 @@ public class ReadAiMessageTool extends AbstractActionTool {
     public JsonObject schema(Set<McpInstructionOptionEnum> options) {
         JsonObject tool = new JsonObject();
         tool.addProperty(ToolSchemaKeyEnum.NAME.key(), McpToolEnum.READ_AI_MESSAGE.toolName());
-        tool.addProperty(ToolSchemaKeyEnum.DESCRIPTION.key(), "Read the full body of a specific inbox message by ID and mark it read. The message stays in your inbox until you DeleteAiMessage it or it expires.");
+        tool.addProperty(ToolSchemaKeyEnum.DESCRIPTION.key(), "Read the full body of a specific inbox message by ID and mark it read. The message stays in your inbox until you " + McpToolEnum.DELETE_AI_MESSAGE.toolName() + " it or it expires.");
         JsonObject schema = new JsonObject();
         schema.addProperty(ToolSchemaKeyEnum.TYPE.key(), "object");
         JsonObject props = new JsonObject();

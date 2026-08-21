@@ -43,13 +43,13 @@ public class InlineVariableTool implements McpToolInterface {
         tool.addProperty(ToolSchemaKeyEnum.DESCRIPTION.key(),
                 "Inlines a variable - replaces all usages with the variable's initializer expression "
                 + "and removes the declaration. filePath and line are both required — this tool does not "
-                + "act on the user's cursor position; call GetCurrentFile first if that is what you want.");
+                + "act on the user's cursor position; call " + McpToolEnum.GET_CURRENT_FILE.toolName() + " first if that is what you want.");
         JsonObject schema = new JsonObject();
         schema.addProperty(ToolSchemaKeyEnum.TYPE.key(), "object");
         JsonObject props = new JsonObject();
         JsonObject fp = new JsonObject();
         fp.addProperty(ToolSchemaKeyEnum.TYPE.key(), "string");
-        fp.addProperty(ToolSchemaKeyEnum.DESCRIPTION.key(), "Absolute path to the file. Required — this tool does not fall back to the focused editor. Call GetCurrentFile if you want the file the user is looking at.");
+        fp.addProperty(ToolSchemaKeyEnum.DESCRIPTION.key(), "Absolute path to the file. Required — this tool does not fall back to the focused editor. Call " + McpToolEnum.GET_CURRENT_FILE.toolName() + " if you want the file the user is looking at.");
         props.add(InlineVariableParamEnum.FILE_PATH.key(), fp);
         JsonObject ln = new JsonObject();
         ln.addProperty(ToolSchemaKeyEnum.TYPE.key(), "integer");

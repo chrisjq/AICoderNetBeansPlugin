@@ -1,11 +1,11 @@
 package kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.ui.diag;
 
-import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.providers.netbeans.RefactoringProvider;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.McpSectionEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.McpToolEnum;
-import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.AbstractActionTool;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.session.AbstractAiSession;
+import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.AbstractActionTool;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.ToolRequestArguments;
+import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.providers.netbeans.RefactoringProvider;
 
 public class RunInspectTool extends AbstractActionTool {
 
@@ -15,8 +15,8 @@ public class RunInspectTool extends AbstractActionTool {
                 "Opens the NetBeans Inspect dialog (Source > Inspect). "
                 + "Select 'All Analysers' configuration and 'All Open Projects' scope, "
                 + "then click Inspect to run static analysis across the entire codebase.",
-                "RunInspect -> INSTEAD OF manual code review - opens NetBeans static analysis for all open projects",
-                "RunInspect - opens NetBeans static analysis for all open projects");
+                "" + McpToolEnum.RUN_INSPECT.toolName() + " -> INSTEAD OF manual code review - opens NetBeans static analysis for all open projects",
+                "" + McpToolEnum.RUN_INSPECT.toolName() + " - opens NetBeans static analysis for all open projects");
     }
 
     @Override

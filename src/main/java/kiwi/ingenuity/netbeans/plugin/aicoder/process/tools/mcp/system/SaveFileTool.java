@@ -79,7 +79,7 @@ public class SaveFileTool extends AbstractFileTool {
             // decided. The content path already required it; this makes the
             // no-content path agree.
             return "filePath is required — this tool does not fall back to the focused editor. "
-                    + "Call GetCurrentFile if you want the file the user is looking at.";
+                    + "Call " + McpToolEnum.GET_CURRENT_FILE.toolName() + " if you want the file the user is looking at.";
         }
         String effectivePath = fp;
         if (effectivePath != null) {
@@ -122,7 +122,7 @@ public class SaveFileTool extends AbstractFileTool {
             AiProcessEventListener listener = session.getAiProcessEventListener();
             if (listener != null) {
                 listener.onAiProcessEvent(new SystemNotificationEvent(
-                        "SaveFile: " + ProjectPathUtil.shortPath(effectivePath)));
+                        McpToolEnum.SAVE_FILE.toolName() + ": " + ProjectPathUtil.shortPath(effectivePath)));
             }
         }
         return result;

@@ -53,7 +53,8 @@ public class FindUsagesTool implements McpToolInterface {
         cn.addProperty(ToolSchemaKeyEnum.TYPE.key(), "string");
         cn.addProperty(ToolSchemaKeyEnum.DESCRIPTION.key(),
                 "Fully qualified class name (e.g. com.example.MyService). Required — this tool does not "
-                + "resolve the symbol under the user's cursor; use SearchTypes to find the class you mean.");
+                + "resolve the symbol under the user's cursor; use " + McpToolEnum.SEARCH_TYPES.toolName()
+                + " to find the class you mean.");
         props.add(FindUsagesParamEnum.CLASS_NAME.key(), cn);
 
         JsonObject mn = new JsonObject();
@@ -94,7 +95,8 @@ public class FindUsagesTool implements McpToolInterface {
             // No cursor fallback — see GetClassMembersTool for the reasoning.
             throw new McpArgumentException(-32602,
                     "className is required — this tool does not read the symbol under the user's cursor. "
-                    + "Call GetCurrentFile for the user's position, or SearchTypes to find the class you mean.");
+                    + "Call " + McpToolEnum.GET_CURRENT_FILE.toolName() + " for the user's position, or "
+                    + McpToolEnum.SEARCH_TYPES.toolName() + " to find the class you mean.");
         }
         try {
             return FindUsagesProvider.findUsages(className, args.str(FindUsagesParamEnum.MEMBER_NAME.key()),

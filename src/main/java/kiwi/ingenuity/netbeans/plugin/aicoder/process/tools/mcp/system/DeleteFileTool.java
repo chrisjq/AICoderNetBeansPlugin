@@ -42,7 +42,7 @@ public class DeleteFileTool extends AbstractFileTool {
             // caller decided. Nothing about that is recoverable from the caller's
             // side, so it must name its target.
             return "filePath is required — this tool does not fall back to the focused editor. "
-                    + "Call GetCurrentFile if you want the file the user is looking at.";
+                    + "Call " + McpToolEnum.GET_CURRENT_FILE.toolName() + " if you want the file the user is looking at.";
         }
         String effectivePath = fp;
         if (effectivePath != null) {

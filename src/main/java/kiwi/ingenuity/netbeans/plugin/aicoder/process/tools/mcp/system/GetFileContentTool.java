@@ -34,7 +34,7 @@ public class GetFileContentTool implements McpToolInterface {
             sb.append("Use this INSTEAD OF the built-in Read tool for project source files so you see "
                     + "what the IDE currently holds, not what is on disk. ");
         }
-        sb.append("Optionally restrict to a line range using " + GetFileContentParamEnum.START_LINE.key() + " and " + GetFileContentParamEnum.END_LINE.key() + ". Output includes a line-number gutter; strip it before using content in ApplyEdit " + McpToolPropertyEnum.OLD_STRING.key() + ".");
+        sb.append("Optionally restrict to a line range using " + GetFileContentParamEnum.START_LINE.key() + " and " + GetFileContentParamEnum.END_LINE.key() + ". Output includes a line-number gutter; strip it before using content in " + McpToolEnum.APPLY_EDIT.toolName() + " " + McpToolPropertyEnum.OLD_STRING.key() + ".");
         return sb.toString();
     }
 

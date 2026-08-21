@@ -39,7 +39,7 @@ public class ApplyEditTool extends AbstractActionTool {
         super(McpSectionEnum.UI_FILES,
                 McpToolEnum.APPLY_EDIT.toolName(),
                 "Replace an exact string in a file. oldString must match the source byte-for-byte including indentation; strip the line-number gutter if text was copied from " + McpToolEnum.GET_FILE_CONTENT.toolName() + ". The user approves the change in the NetBeans Accept/Reject diff panel.",
-                "ApplyEdit -> replace oldString with newString in a file; oldString must be byte-for-byte exact (strip GetFileContent gutter if copying from there); user approves via the NetBeans diff panel");
+                "ApplyEdit -> replace oldString with newString in a file; oldString must be byte-for-byte exact (strip " + McpToolEnum.GET_FILE_CONTENT.toolName() + " gutter if copying from there); user approves via the NetBeans diff panel");
     }
 
     @Override

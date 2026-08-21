@@ -40,7 +40,7 @@ public class GetAiMessagesTool extends AbstractActionTool {
     public JsonObject schema(Set<McpInstructionOptionEnum> options) {
         JsonObject tool = new JsonObject();
         tool.addProperty(ToolSchemaKeyEnum.NAME.key(), McpToolEnum.GET_AI_MESSAGES.toolName());
-        tool.addProperty(ToolSchemaKeyEnum.DESCRIPTION.key(), "List inbox messages (summaries only — id, subject, from). Non-destructive. Use ReadAiMessage to fetch the full body of a specific message.");
+        tool.addProperty(ToolSchemaKeyEnum.DESCRIPTION.key(), "List inbox messages (summaries only — id, subject, from). Non-destructive. Use " + McpToolEnum.READ_AI_MESSAGE.toolName() + " to fetch the full body of a specific message.");
         JsonObject schema = new JsonObject();
         schema.addProperty(ToolSchemaKeyEnum.TYPE.key(), "object");
         JsonObject props = new JsonObject();

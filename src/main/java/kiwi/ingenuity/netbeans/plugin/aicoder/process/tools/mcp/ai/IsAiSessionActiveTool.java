@@ -26,7 +26,7 @@ public class IsAiSessionActiveTool extends AbstractActionTool {
     public JsonObject schema(Set<McpInstructionOptionEnum> options) {
         JsonObject tool = new JsonObject();
         tool.addProperty(ToolSchemaKeyEnum.NAME.key(), McpToolEnum.IS_AI_SESSION_ACTIVE.toolName());
-        tool.addProperty(ToolSchemaKeyEnum.DESCRIPTION.key(), "Check whether a target AI session is open. active=false means idle (available to receive messages); active=true means busy processing a turn. All open sessions can receive SendAiMessage regardless of active state.");
+        tool.addProperty(ToolSchemaKeyEnum.DESCRIPTION.key(), "Check whether a target AI session is open. active=false means idle (available to receive messages); active=true means busy processing a turn. All open sessions can receive " + McpToolEnum.SEND_AI_MESSAGE.toolName() + " regardless of active state.");
         JsonObject schema = new JsonObject();
         schema.addProperty(ToolSchemaKeyEnum.TYPE.key(), "object");
         JsonObject props = new JsonObject();

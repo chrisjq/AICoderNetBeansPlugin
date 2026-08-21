@@ -31,7 +31,7 @@ public class ListAiSessionsTool extends AbstractActionTool {
     public JsonObject schema(Set<McpInstructionOptionEnum> options) {
         JsonObject tool = new JsonObject();
         tool.addProperty(ToolSchemaKeyEnum.NAME.key(), McpToolEnum.LIST_AI_SESSIONS.toolName());
-        tool.addProperty(ToolSchemaKeyEnum.DESCRIPTION.key(), "List all active AI sessions (excluding caller). Each entry includes active=true if the session is busy processing a turn, active=false if idle. Both idle and busy sessions can receive SendAiMessage.");
+        tool.addProperty(ToolSchemaKeyEnum.DESCRIPTION.key(), "List all active AI sessions (excluding caller). Each entry includes active=true if the session is busy processing a turn, active=false if idle. Both idle and busy sessions can receive " + McpToolEnum.SEND_AI_MESSAGE.toolName() + ". ");
         JsonObject schema = new JsonObject();
         schema.addProperty(ToolSchemaKeyEnum.TYPE.key(), "object");
         JsonObject props = new JsonObject();

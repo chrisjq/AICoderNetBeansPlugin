@@ -19,7 +19,7 @@ public class SendAiMessageTool extends AbstractActionTool {
     public SendAiMessageTool() {
         super(McpSectionEnum.PLUGIN,
                 McpToolEnum.SEND_AI_MESSAGE.toolName(),
-                "Send a message to another AI session's inbox. Use ListAiSessions to find peer sessionIds.",
+                "Send a message to another AI session's inbox. Use " + McpToolEnum.LIST_AI_SESSIONS.toolName() + " to find peer sessionIds.",
                 McpToolEnum.SEND_AI_MESSAGE.toolName() + " -> send to a peer AI session's inbox; use expectsReply+replyImportant to be interrupted when they reply");
     }
 
@@ -27,14 +27,14 @@ public class SendAiMessageTool extends AbstractActionTool {
     public JsonObject schema(Set<McpInstructionOptionEnum> options) {
         JsonObject tool = new JsonObject();
         tool.addProperty(ToolSchemaKeyEnum.NAME.key(), McpToolEnum.SEND_AI_MESSAGE.toolName());
-        tool.addProperty(ToolSchemaKeyEnum.DESCRIPTION.key(), "Send a message to another AI session's inbox. Use ListAiSessions to find peer sessionIds.");
+        tool.addProperty(ToolSchemaKeyEnum.DESCRIPTION.key(), "Send a message to another AI session's inbox. Use " + McpToolEnum.LIST_AI_SESSIONS.toolName() + " to find peer sessionIds.");
         JsonObject schema = new JsonObject();
         schema.addProperty(ToolSchemaKeyEnum.TYPE.key(), "object");
         JsonObject props = new JsonObject();
 
         JsonObject tid = new JsonObject();
         tid.addProperty(ToolSchemaKeyEnum.TYPE.key(), "string");
-        tid.addProperty(ToolSchemaKeyEnum.DESCRIPTION.key(), "The sessionId of the target AI session to send the message to (from ListAiSessions).");
+        tid.addProperty(ToolSchemaKeyEnum.DESCRIPTION.key(), "The sessionId of the target AI session to send the message to (from " + McpToolEnum.LIST_AI_SESSIONS.toolName() + ").");
         props.add(SendAiMessageParamEnum.TARGET_SESSION_ID.key(), tid);
 
         JsonObject subj = new JsonObject();

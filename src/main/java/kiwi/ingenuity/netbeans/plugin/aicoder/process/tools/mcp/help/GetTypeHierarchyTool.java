@@ -32,7 +32,8 @@ public class GetTypeHierarchyTool extends AbstractClassNameTool {
             // No cursor fallback — see GetClassMembersTool for the reasoning.
             throw new McpArgumentException(-32602,
                     "className is required — this tool does not read the symbol under the user's cursor. "
-                    + "Call GetCurrentFile for the user's position, or SearchTypes to find the class you mean.");
+                    + "Call " + McpToolEnum.GET_CURRENT_FILE.toolName() + " for the user's position, or "
+                    + McpToolEnum.SEARCH_TYPES.toolName() + " to find the class you mean.");
         }
         return ClassAnalysisProvider.getTypeHierarchy(cn);
     }
