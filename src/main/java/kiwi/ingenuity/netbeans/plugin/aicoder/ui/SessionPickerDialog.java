@@ -3,11 +3,14 @@ package kiwi.ingenuity.netbeans.plugin.aicoder.ui;
 import com.google.gson.JsonObject;
 import java.awt.BorderLayout;
 import java.awt.Component;
+import java.awt.Cursor;
 import java.awt.Dimension;
 import java.awt.FlowLayout;
 import java.awt.GridBagConstraints;
 import java.awt.GridBagLayout;
 import java.awt.Insets;
+import java.awt.event.MouseAdapter;
+import java.awt.event.MouseEvent;
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -32,6 +35,7 @@ import javax.swing.JTextField;
 import javax.swing.ListSelectionModel;
 import javax.swing.SpinnerNumberModel;
 import javax.swing.SwingUtilities;
+import kiwi.ingenuity.netbeans.plugin.aicoder.Installer;
 import kiwi.ingenuity.netbeans.plugin.aicoder.PluginSettings;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.AiTypeEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.AiTypeRegistry;
@@ -46,6 +50,7 @@ import kiwi.ingenuity.netbeans.plugin.aicoder.ai.ui.AiTopComponent;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.server.McpToolsDocumentation;
 import kiwi.ingenuity.netbeans.plugin.aicoder.serialization.SessionPersistenceManager;
 import kiwi.ingenuity.netbeans.plugin.aicoder.serialization.TemplatePersistenceManager;
+import kiwi.ingenuity.netbeans.plugin.aicoder.utils.BrowserUtil;
 import org.netbeans.api.project.Project;
 import org.netbeans.api.project.ui.OpenProjects;
 import org.openide.windows.Mode;
@@ -205,7 +210,49 @@ public class SessionPickerDialog extends JDialog {
         mcpTools.setEditable(false);
         mcpTools.setCaretPosition(0);
         nested.addTab("MCP Tools", new JScrollPane(mcpTools));
+        nested.addTab("About", buildAboutTab());
         return nested;
+    }
+
+    /**
+     * Plugin identity, every value taken from the one place that already defines it rather than restated here: the
+     * version and homepage are filtered into version.properties from the pom, and the name is the bundle key the Plugin
+     * Manager displays. A literal copy in this panel would be the copy that goes stale.
+     */
+    private Component buildAboutTab() {
+        JPanel form = new JPanel(new GridBagLayout());
+        GridBagConstraints c = constraints();
+        addRow(form, c, 0, "Plugin Name:", new JLabel(Installer.displayName()));
+        addRow(form, c, 1, "Plugin Version:", new JLabel(Installer.VERSION));
+        addRow(form, c, 2, "Homepage:", buildLink(Installer.HOMEPAGE));
+        addRow(form, c, 3, "Version Homepage (If Available):", buildLink(Installer.releaseUrl()));
+        c.gridx = 0;
+        c.gridy = 4;
+        c.gridwidth = 2;
+        c.weightx = 1;
+        c.weighty = 1;
+        form.add(new JPanel(), c);
+        return new JScrollPane(form);
+    }
+
+    /**
+     * A URL as a clickable link, or plain text when there is nothing to open - an underlined label that did nothing on
+     * click would be worse than an honest label.
+     */
+    private Component buildLink(String url) {
+        if (url == null || url.isBlank()) {
+            return new JLabel("(not available)");
+        }
+        JLabel link = new JLabel("<html><a href=\"" + url + "\">" + url + "</a></html>");
+        link.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
+        link.setToolTipText(url);
+        link.addMouseListener(new MouseAdapter() {
+            @Override
+            public void mouseClicked(MouseEvent e) {
+                BrowserUtil.openUrl(url);
+            }
+        });
+        return link;
     }
 
     private void populateTypes() {

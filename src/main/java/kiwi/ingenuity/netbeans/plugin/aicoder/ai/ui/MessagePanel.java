@@ -34,6 +34,7 @@ import javax.swing.UIManager;
 import javax.swing.event.HyperlinkEvent;
 import kiwi.ingenuity.netbeans.plugin.aicoder.PluginSettings;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.AiMessage;
+import kiwi.ingenuity.netbeans.plugin.aicoder.utils.BrowserUtil;
 import org.commonmark.ext.gfm.strikethrough.Strikethrough;
 import org.commonmark.ext.gfm.strikethrough.StrikethroughExtension;
 import org.commonmark.ext.gfm.tables.TableBlock;
@@ -169,9 +170,8 @@ public class MessagePanel extends JPanel {
     }
 
     /**
-     * CommonMark's TablesExtension requires a preceding blank line to recognise
-     * a table block when it immediately follows a paragraph or list. This adds
-     * blank lines where they're missing, skipping fenced code block interiors.
+     * CommonMark's TablesExtension requires a preceding blank line to recognise a table block when it immediately
+     * follows a paragraph or list. This adds blank lines where they're missing, skipping fenced code block interiors.
      */
     private static String ensureTableBlankLines(String text) {
         String[] lines = text.split("\n", -1);
@@ -411,8 +411,7 @@ public class MessagePanel extends JPanel {
     }
 
     /**
-     * Opens a project file in a NetBeans editor tab. Returns false if it could
-     * not.
+     * Opens a project file in a NetBeans editor tab. Returns false if it could not.
      */
     private static boolean openInEditor(FileObject fo, String url) {
         if (fo == null) {
@@ -432,8 +431,7 @@ public class MessagePanel extends JPanel {
     }
 
     /**
-     * Opens a local file with the OS default application, in a platform-safe
-     * way.
+     * Opens a local file with the OS default application, in a platform-safe way.
      */
     private static void openInDefaultViewer(java.io.File file, String url) {
         if (file == null) {
@@ -451,7 +449,7 @@ public class MessagePanel extends JPanel {
             LOG.log(Level.FINE, "Desktop.open failed, trying platform command: " + url, ex);
         }
         try {
-            new ProcessBuilder(platformOpenCommand(file.getPath())).start();
+            new ProcessBuilder(BrowserUtil.platformOpenCommand(file.getPath())).start();
         }
         catch (Exception ex) {
             LOG.log(Level.WARNING, "Could not open file: " + url, ex);
@@ -462,36 +460,7 @@ public class MessagePanel extends JPanel {
      * Opens a web URL (or any non-file link) in the system browser.
      */
     private static void openInBrowser(String url) {
-        try {
-            if (java.awt.Desktop.isDesktopSupported()
-                    && java.awt.Desktop.getDesktop().isSupported(java.awt.Desktop.Action.BROWSE)) {
-                java.awt.Desktop.getDesktop().browse(new java.net.URI(url));
-                return;
-            }
-        }
-        catch (Exception ex) {
-            LOG.log(Level.FINE, "Desktop.browse failed, trying platform command: " + url, ex);
-        }
-        try {
-            new ProcessBuilder(platformOpenCommand(url)).start();
-        }
-        catch (Exception ex) {
-            LOG.log(Level.WARNING, "Could not open link: " + url, ex);
-        }
-    }
-
-    /**
-     * Per-OS command to open a file path or URL with its default handler.
-     */
-    private static java.util.List<String> platformOpenCommand(String target) {
-        String os = System.getProperty("os.name", "").toLowerCase(java.util.Locale.ROOT);
-        if (os.contains("mac")) {
-            return java.util.List.of("open", target);
-        }
-        if (os.contains("win")) {
-            return java.util.List.of("rundll32", "url.dll,FileProtocolHandler", target);
-        }
-        return java.util.List.of("xdg-open", target);
+        BrowserUtil.openUrl(url);
     }
 
     private final AiMessage.Role role;

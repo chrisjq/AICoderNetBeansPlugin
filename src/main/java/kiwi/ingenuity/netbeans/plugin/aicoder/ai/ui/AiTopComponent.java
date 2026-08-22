@@ -152,9 +152,8 @@ public final class AiTopComponent extends TopComponent implements AiProcessEvent
     }
 
     /**
-     * Pure form of {@link #confirmLabel(ConfirmEvent)}, with path shortening
-     * already applied, so the fallback rule can be tested without a running
-     * IDE.
+     * Pure form of {@link #confirmLabel(ConfirmEvent)}, with path shortening already applied, so the fallback rule can
+     * be tested without a running IDE.
      *
      * @param shortSrc shortened source path, or null for a non-file confirm
      * @param shortTgt shortened target path, or null when there is no target
@@ -171,13 +170,11 @@ public final class AiTopComponent extends TopComponent implements AiProcessEvent
      * Whether auto-accept may answer this confirmation on the user's behalf.
      *
      * <p>
-     * Auto-accept means "approve things I can see", never "approve things
-     * nobody could identify": a request that arrives without an identifiable
-     * subject, or one whose consequences warrant a human every time, sets
-     * {@link ConfirmEvent#requireExplicitApproval()} and is prompted regardless
-     * of the setting. Copilot's shell path sets it — the alternative was a
-     * command being run unseen, as happened when an unclassified kind was
-     * approved silently and wrote an arbitrary script to /tmp.
+     * Auto-accept means "approve things I can see", never "approve things nobody could identify": a request that
+     * arrives without an identifiable subject, or one whose consequences warrant a human every time, sets
+     * {@link ConfirmEvent#requireExplicitApproval()} and is prompted regardless of the setting. Copilot's shell path
+     * sets it — the alternative was a command being run unseen, as happened when an unclassified kind was approved
+     * silently and wrote an arbitrary script to /tmp.
      *
      * <p>
      * Pure so the rule can be tested without a running IDE.
@@ -205,26 +202,23 @@ public final class AiTopComponent extends TopComponent implements AiProcessEvent
     private boolean assistantTurnActive = false;
 
     /**
-     * Set when the user clicks Stop. Suppresses any buffered TextDeltaEvent or
-     * ToolUseEvent that arrive via invokeLater after cancellation. Cleared when
-     * the cancelled turn is officially done (STOPPED status or
-     * TurnCompleteEvent).
+     * Set when the user clicks Stop. Suppresses any buffered TextDeltaEvent or ToolUseEvent that arrive via invokeLater
+     * after cancellation. Cleared when the cancelled turn is officially done (STOPPED status or TurnCompleteEvent).
      */
     private boolean cancelledThisTurn = false;
 
     /**
-     * Set when a non-text event (tool use, permission) interrupts a streaming
-     * turn, so the next text block gets a blank line separator before it.
+     * Set when a non-text event (tool use, permission) interrupts a streaming turn, so the next text block gets a blank
+     * line separator before it.
      */
     private boolean pendingNewlineBeforeText = false;
     private boolean turnOutputSuppressed = false;
     private String suppressedTurnCompletionMessage = null;
 
     /**
-     * Pre-prompt snapshot of the active file — used to show a diff after the AI
-     * edits it. The stream-json format does not emit tool_use events for
-     * internally-executed tools, so we detect edits by comparing disk content
-     * before/after each turn.
+     * Pre-prompt snapshot of the active file — used to show a diff after the AI edits it. The stream-json format does
+     * not emit tool_use events for internally-executed tools, so we detect edits by comparing disk content before/after
+     * each turn.
      */
     private String preEditFilePath = null;
     private String preEditFileContent = null;
@@ -241,18 +235,15 @@ public final class AiTopComponent extends TopComponent implements AiProcessEvent
     private String pendingSubmitText = null;
 
     /**
-     * False until the first startup attempt resolves to READY or a fatal
-     * startup error. While false, the visible chat input/send controls stay
-     * disabled so the user cannot submit a prompt against a still-loading
-     * backend.
+     * False until the first startup attempt resolves to READY or a fatal startup error. While false, the visible chat
+     * input/send controls stay disabled so the user cannot submit a prompt against a still-loading backend.
      */
     private boolean startupResolved = false;
 
     /**
-     * Outstanding AskUserQuestion/Permission cancellers and open diff windows.
-     * Multiple can be in flight at once (e.g. AskUserQuestion overlapping a
-     * Permission), so track all and complete/close every one on teardown.
-     * EDT-confined — all access is on the event dispatch thread.
+     * Outstanding AskUserQuestion/Permission cancellers and open diff windows. Multiple can be in flight at once (e.g.
+     * AskUserQuestion overlapping a Permission), so track all and complete/close every one on teardown. EDT-confined —
+     * all access is on the event dispatch thread.
      */
     private final Set<Runnable> pendingResponseCancellers
             = Collections.newSetFromMap(new java.util.IdentityHashMap<>());
@@ -441,22 +432,19 @@ public final class AiTopComponent extends TopComponent implements AiProcessEvent
     }
 
     /**
-     * Shortens a path for display in system messages. Delegates to the shared
-     * utility so notifications, confirm prompts and diff messages all render a
-     * path the same way — including the project directory name, which says
-     * which project a file belongs to when several are open.
+     * Shortens a path for display in system messages. Delegates to the shared utility so notifications, confirm prompts
+     * and diff messages all render a path the same way — including the project directory name, which says which project
+     * a file belongs to when several are open.
      */
     private String shortPath(String fp) {
         return ProjectPathUtil.shortPath(fp);
     }
 
     /**
-     * Label for a confirm notification. Not every confirm is about a file: a
-     * shell command has no path at all, and rendering the absent one printed
-     * the literal string "null" to the user ("Execute: null — auto-accepted"),
-     * which says nothing about what was approved. Those events carry the
-     * subject in their display text instead — the command itself — so fall back
-     * to it.
+     * Label for a confirm notification. Not every confirm is about a file: a shell command has no path at all, and
+     * rendering the absent one printed the literal string "null" to the user ("Execute: null — auto-accepted"), which
+     * says nothing about what was approved. Those events carry the subject in their display text instead — the command
+     * itself — so fall back to it.
      */
     private String confirmLabel(ConfirmEvent ce) {
         return buildConfirmLabel(shortPath(ce.filePath()),
@@ -479,7 +467,16 @@ public final class AiTopComponent extends TopComponent implements AiProcessEvent
         }
     }
 
-    private void flushPendingNotifications(AbstractNotification... extra) {
+    /**
+     * Drains queued notifications into a single new turn.
+     *
+     * @return whether a turn was actually submitted. Callers finishing a turn use this to decide whether to show the
+     * session as idle: a queued notification means the session carries straight on, and announcing idle first is what
+     * let a green tab and a live input field appear mid-conversation. A non-empty queue is NOT the same answer - every
+     * entry can be filtered out below and nothing sent - so the decision has to come from here, after filtering, or the
+     * UI would be left permanently busy with no turn running.
+     */
+    private boolean flushPendingNotifications(AbstractNotification... extra) {
         assert SwingUtilities.isEventDispatchThread();
         // If a turn is already in flight, aiBackend.sendPrompt() would no-op and
         // the notifications would be silently dropped. Don't drain now — stash any
@@ -490,7 +487,7 @@ public final class AiTopComponent extends TopComponent implements AiProcessEvent
                     pendingNotifications.addAll(Arrays.asList(extra));
                 }
             }
-            return;
+            return false;
         }
         List<AbstractNotification> all;
         synchronized (this) {
@@ -505,12 +502,13 @@ public final class AiTopComponent extends TopComponent implements AiProcessEvent
                 .map(AbstractNotification::text)
                 .collect(java.util.stream.Collectors.toList());
         if (texts.isEmpty()) {
-            return;
+            return false;
         }
         // Combine into a SINGLE turn — handleSubmit/sendPrompt runs one turn at a
         // time, so submitting in a loop would drop all but the first.
         submitNotificationTurn(NotificationTypeEnum.NEW_INBOX_MESSAGE,
                 String.join("\n\n", texts));
+        return true;
     }
 
     private void submitNotificationTurn(NotificationTypeEnum type, String notificationText) {
@@ -849,8 +847,8 @@ public final class AiTopComponent extends TopComponent implements AiProcessEvent
     }
 
     /**
-     * Resolve (or prompt the user to choose) the working directory for this
-     * session. No-op if already set. Must be called on the EDT.
+     * Resolve (or prompt the user to choose) the working directory for this session. No-op if already set. Must be
+     * called on the EDT.
      */
     private void resolveSessionDir() {
         if (chosenSessionDir != null) {
@@ -1058,8 +1056,8 @@ public final class AiTopComponent extends TopComponent implements AiProcessEvent
     }
 
     /**
-     * Single source of truth for the tab status circle (the HTML dot in the tab
-     * name — NetBeans's tab strip doesn't reliably honour setIcon() here).
+     * Single source of truth for the tab status circle (the HTML dot in the tab name — NetBeans's tab strip doesn't
+     * reliably honour setIcon() here).
      */
     private void setTabStatus(TabStatus status) {
         tabStatus = status;
@@ -1075,9 +1073,8 @@ public final class AiTopComponent extends TopComponent implements AiProcessEvent
     }
 
     /**
-     * Records a THINKING-flash request. Non-EDT callers coalesce to at most one
-     * pending invokeLater; repeated requests while that runnable or the timer
-     * is already active just push the deadline out.
+     * Records a THINKING-flash request. Non-EDT callers coalesce to at most one pending invokeLater; repeated requests
+     * while that runnable or the timer is already active just push the deadline out.
      */
     private void requestThinkingFlash() {
         thinkingFlashDeadlineNanos = System.nanoTime()
@@ -1096,10 +1093,9 @@ public final class AiTopComponent extends TopComponent implements AiProcessEvent
     }
 
     /**
-     * Briefly flashes the THINKING (orange) status dot yellow for
-     * {@link #THINKING_FLASH_MS} whenever AI output arrives while a turn is in
-     * flight, then reverts to plain orange. EDT-only: callers must use
-     * requestThinkingFlash() off-thread.
+     * Briefly flashes the THINKING (orange) status dot yellow for {@link #THINKING_FLASH_MS} whenever AI output arrives
+     * while a turn is in flight, then reverts to plain orange. EDT-only: callers must use requestThinkingFlash()
+     * off-thread.
      */
     private void flashThinking() {
         if (tabStatus != TabStatus.THINKING) {
@@ -1130,8 +1126,8 @@ public final class AiTopComponent extends TopComponent implements AiProcessEvent
     }
 
     /**
-     * Called from the backend event thread — coalesce the flash pulse request,
-     * then dispatch full event handling to the EDT.
+     * Called from the backend event thread — coalesce the flash pulse request, then dispatch full event handling to the
+     * EDT.
      */
     @Override
     public void onAiProcessEvent(AiProcessEvent event) {
@@ -1142,15 +1138,12 @@ public final class AiTopComponent extends TopComponent implements AiProcessEvent
     }
 
     /**
-     * True for events that actually render new AI-generated content in the chat
-     * panel. Internal/plumbing events (status updates, impl events, turn
-     * boundaries) must not trigger the THINKING flash pulse — only output the
-     * user can actually see arriving should. Mirrors handleEvent()'s own
-     * rendering conditions: an empty TextDeltaEvent renders nothing, and a
-     * ToolUseEvent only renders a diff when it's a file modification AND MCP
-     * isn't active (MCP-active sessions render file edits via PermissionEvent
-     * instead) — otherwise every Read/Bash/Grep/MCP tool call would flash the
-     * tab despite adding nothing visible to the chat.
+     * True for events that actually render new AI-generated content in the chat panel. Internal/plumbing events (status
+     * updates, impl events, turn boundaries) must not trigger the THINKING flash pulse — only output the user can
+     * actually see arriving should. Mirrors handleEvent()'s own rendering conditions: an empty TextDeltaEvent renders
+     * nothing, and a ToolUseEvent only renders a diff when it's a file modification AND MCP isn't active (MCP-active
+     * sessions render file edits via PermissionEvent instead) — otherwise every Read/Bash/Grep/MCP tool call would
+     * flash the tab despite adding nothing visible to the chat.
      */
     private boolean isVisibleChatOutput(AiProcessEvent event) {
         if (event instanceof TextDeltaEvent td) {
@@ -1180,13 +1173,20 @@ public final class AiTopComponent extends TopComponent implements AiProcessEvent
             if (event instanceof TurnCompleteEvent) {
                 turnOutputSuppressed = false;
                 assistantTurnActive = false;
-                infoBar.setProcessing(false);
-                setSendEnabled(true);
-                infoBar.setStatusMessage(suppressedTurnCompletionMessage != null
-                        ? suppressedTurnCompletionMessage : "Ready...");
-                suppressedTurnCompletionMessage = null;
                 saveHistory();
-                SwingUtilities.invokeLater(this::flushPendingNotifications);
+                // Hand straight over to any queued notification turn rather than
+                // showing idle and only scheduling the handover afterwards. We are
+                // already on the EDT (onAiProcessEvent dispatches through
+                // invokeLater), so the old extra invokeLater bought nothing except
+                // a window where the tab was green and the input live while the
+                // session was about to carry straight on.
+                if (!flushPendingNotifications()) {
+                    infoBar.setProcessing(false);
+                    setSendEnabled(true);
+                    infoBar.setStatusMessage(suppressedTurnCompletionMessage != null
+                            ? suppressedTurnCompletionMessage : "Ready...");
+                }
+                suppressedTurnCompletionMessage = null;
                 return;
             }
             if (event instanceof StatusEvent se) {
@@ -1217,7 +1217,6 @@ public final class AiTopComponent extends TopComponent implements AiProcessEvent
             cancelledThisTurn = false;
             assistantTurnActive = false;
             pendingNewlineBeforeText = false;
-            infoBar.setProcessing(false);
             conversationPanel.finaliseAssistantMessage();
             // The AI has returned to a non-thinking state. If a question or
             // permission request is still open, the AI has stopped waiting for it
@@ -1231,10 +1230,16 @@ public final class AiTopComponent extends TopComponent implements AiProcessEvent
             pendingResponseCancellers.clear();
             checkForFileChanges();
             saveHistory();
-            infoBar.setStatusMessage("Ready...");
-            refreshInputEnabled();
             fireListenerEvent(SessionLifecycleListener::onTurnComplete);
-            SwingUtilities.invokeLater(this::flushPendingNotifications);
+            // Only report idle if nothing is queued to run next - see
+            // flushPendingNotifications. A mail interrupt ends the Claude turn and
+            // the queued message immediately starts another, so announcing idle
+            // first showed a green tab and an enabled input between the two.
+            if (!flushPendingNotifications()) {
+                infoBar.setProcessing(false);
+                infoBar.setStatusMessage("Ready...");
+                refreshInputEnabled();
+            }
         }
         else if (event instanceof AskUserQuestionEvent aqe) {
             if (assistantTurnActive) {
@@ -1512,9 +1517,8 @@ public final class AiTopComponent extends TopComponent implements AiProcessEvent
     }
 
     /**
-     * If a streaming assistant turn is in progress, finalise it immediately.
-     * Call this before inserting any system message that must appear after the
-     * assistant text that was streaming at the time of the interruption.
+     * If a streaming assistant turn is in progress, finalise it immediately. Call this before inserting any system
+     * message that must appear after the assistant text that was streaming at the time of the interruption.
      */
     private void finaliseActiveAssistantIfNeeded() {
         if (assistantTurnActive) {
@@ -1802,12 +1806,10 @@ public final class AiTopComponent extends TopComponent implements AiProcessEvent
     }
 
     /**
-     * Persists the instruction text just delivered, so it is not delivered
-     * again after an IDE restart. {@code ContextProvider}'s own record is
-     * in-memory and is recreated whenever the session is opened, which is why
-     * an ON_FIRST_REQUEST session used to re-send its instructions on the first
-     * message of every run while ON_START — whose guard was already persisted —
-     * did not.
+     * Persists the instruction text just delivered, so it is not delivered again after an IDE restart.
+     * {@code ContextProvider}'s own record is in-memory and is recreated whenever the session is opened, which is why
+     * an ON_FIRST_REQUEST session used to re-send its instructions on the first message of every run while ON_START —
+     * whose guard was already persisted — did not.
      */
     private void recordInstructionsDelivered(String instructions) {
         if (session == null) {
@@ -1866,11 +1868,10 @@ public final class AiTopComponent extends TopComponent implements AiProcessEvent
     }
 
     /**
-     * Loads and applies saved history for this session. Disk I/O and JSON
-     * parsing (and the stored-session-validity disk scan) run off the EDT on
-     * {@link #PERSIST_EXECUTOR} so opening or creating a session never blocks
-     * the UI while its (possibly large) history file loads; only the final
-     * UI/state mutations in {@link #applyLoadedHistory} run on the EDT.
+     * Loads and applies saved history for this session. Disk I/O and JSON parsing (and the stored-session-validity disk
+     * scan) run off the EDT on {@link #PERSIST_EXECUTOR} so opening or creating a session never blocks the UI while its
+     * (possibly large) history file loads; only the final UI/state mutations in {@link #applyLoadedHistory} run on the
+     * EDT.
      */
     private void loadHistory(CompletableFuture<Void> future) {
         if (historyManager == null || !isSaveHistoryEnabled()) {
@@ -1886,9 +1887,8 @@ public final class AiTopComponent extends TopComponent implements AiProcessEvent
     }
 
     /**
-     * Runs off the EDT (see {@link #PERSIST_EXECUTOR}). Reads and parses the
-     * history file and checks stored-session validity — both potentially slow
-     * disk operations — then hands the result to the EDT.
+     * Runs off the EDT (see {@link #PERSIST_EXECUTOR}). Reads and parses the history file and checks stored-session
+     * validity — both potentially slow disk operations — then hands the result to the EDT.
      */
     private void loadHistoryInBackground(HistoryPersistenceManager manager, CompletableFuture<Void> future) {
         LoadedHistory loaded;
@@ -1921,11 +1921,9 @@ public final class AiTopComponent extends TopComponent implements AiProcessEvent
     }
 
     /**
-     * EDT-only: applies a background-loaded history result to this tab's
-     * conversation panel and session state, then resolves the session working
-     * directory (which depends on {@code chosenSessionDir} possibly having just
-     * been set from the loaded history). No-ops safely if the tab was closed
-     * while the history was loading.
+     * EDT-only: applies a background-loaded history result to this tab's conversation panel and session state, then
+     * resolves the session working directory (which depends on {@code chosenSessionDir} possibly having just been set
+     * from the loaded history). No-ops safely if the tab was closed while the history was loading.
      */
     private void applyLoadedHistory(LoadedHistory loaded, boolean storedSessionValid) {
         if (aiBackend == null) {

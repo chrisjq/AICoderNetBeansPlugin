@@ -34,9 +34,6 @@ public class NotificationUtil {
         // to the turn ending with the message unread.
         notifBuilder.append(" — read it with ")
                 .append(McpToolEnum.READ_AI_MESSAGE.toolName()).append('.');
-        if (message.expectsReply()) {
-            notifBuilder.append(' ').append(formatReplyExpectedInstruction());
-        }
 
         return notifBuilder.toString();
     }
