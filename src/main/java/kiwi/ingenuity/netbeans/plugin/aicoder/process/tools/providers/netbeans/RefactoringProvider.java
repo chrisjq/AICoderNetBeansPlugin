@@ -1,13 +1,19 @@
 package kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.providers.netbeans;
 
+import com.sun.source.tree.ClassTree;
+import com.sun.source.tree.CompilationUnitTree;
+import com.sun.source.tree.LineMap;
 import com.sun.source.tree.MethodTree;
+import com.sun.source.tree.Tree;
 import com.sun.source.tree.VariableTree;
+import com.sun.source.util.SourcePositions;
 import com.sun.source.util.TreePath;
 import java.awt.event.ActionEvent;
 import java.io.File;
 import java.io.IOException;
 import java.io.OutputStream;
 import java.nio.charset.StandardCharsets;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.atomic.AtomicReference;
 import javax.swing.Action;
@@ -96,12 +102,130 @@ public class RefactoringProvider {
         if (targetFolder == null) {
             return "Cannot resolve source root for: " + filePath;
         }
+        // Read the type names BEFORE the move: afterwards fo points at the old
+        // location and the names are no longer resolvable from it.
+        List<String> topLevelTypes = topLevelTypeNames(fo);
+
+        // Two different refactorings, chosen by what the caller can have meant.
+        //
+        // Built from a TreePathHandle, MoveRefactoring moves ONE class and leaves
+        // its file behind with the rest; built from the FileObject it moves the
+        // whole file. Picking the file form for a multi-class file silently took
+        // classes the caller never named, which is what this tool used to do.
+        if (line > 0) {
+            TreePathHandle handle = resolveTopLevelClassHandle(fo, line);
+            if (handle == null) {
+                return "No top-level class declaration found at " + pos(filePath, line)
+                        + (topLevelTypes.isEmpty() ? "" : ". This file declares: " + String.join(", ", topLevelTypes))
+                        + ". Give the line of the class declaration, or omit " + McpToolPropertyEnum.LINE.key()
+                        + " to move the whole file.";
+            }
+            MoveRefactoring byClass = new MoveRefactoring(Lookups.singleton(handle));
+            byClass.setTarget(Lookups.singleton(targetFolder.toURL()));
+            String classErr = runRefactoring(byClass);
+            return classErr != null ? "Refactoring blocked: " + classErr
+                    : "Moved class to '" + targetPackage + "'";
+        }
+
+        // No line given. With one type in the file that is unambiguous; with
+        // several it is not, and moving all of them silently is the bug this
+        // guard exists to prevent - so name them and ask which one.
+        if (topLevelTypes.size() > 1) {
+            return "This file declares " + topLevelTypes.size() + " top-level types ("
+                    + String.join(", ", topLevelTypes) + "), so moving it without "
+                    + McpToolPropertyEnum.LINE.key() + " would move all of them. Pass "
+                    + McpToolPropertyEnum.LINE.key() + " with the declaration line of the class to move.";
+        }
         // Use fo directly (not DataObject) so the Java plugin uses the fresh
         // FileObject rather than a potentially stale cached DataObject primary file.
         MoveRefactoring r = new MoveRefactoring(Lookups.singleton(fo));
         r.setTarget(Lookups.singleton(targetFolder.toURL()));
         String err = runRefactoring(r);
         return err != null ? "Refactoring blocked: " + err : "Moved to '" + targetPackage + "'";
+    }
+
+    /**
+     * The top-level class declared at {@code line}, as a handle the refactoring can move on its own.
+     * <p>
+     * An exact match on the declaration line wins; otherwise a class whose body spans the line is accepted, so a caller
+     * pointing anywhere inside the class still gets it. Only top-level types are considered - a nested class cannot be
+     * moved to another package on its own, and silently moving its outer class instead would be worse than refusing.
+     */
+    private static TreePathHandle resolveTopLevelClassHandle(FileObject fo, int line) {
+        JavaSource js = JavaSource.forFileObject(fo);
+        if (js == null) {
+            return null;
+        }
+        AtomicReference<TreePathHandle> ref = new AtomicReference<>();
+        try {
+            js.runUserActionTask(cc -> {
+                cc.toPhase(JavaSource.Phase.RESOLVED);
+                CompilationUnitTree cu = cc.getCompilationUnit();
+                SourcePositions sp = cc.getTrees().getSourcePositions();
+                LineMap lineMap = cu.getLineMap();
+                ClassTree match = null;
+                for (Tree decl : cu.getTypeDecls()) {
+                    if (!(decl instanceof ClassTree ct)) {
+                        continue;
+                    }
+                    long start = sp.getStartPosition(cu, ct);
+                    long end = sp.getEndPosition(cu, ct);
+                    if (start < 0 || end < 0) {
+                        continue;
+                    }
+                    long startLine = lineMap.getLineNumber(start);
+                    if (startLine == line) {
+                        match = ct;
+                        break;
+                    }
+                    if (line > startLine && line <= lineMap.getLineNumber(end)) {
+                        match = ct;
+                    }
+                }
+                if (match != null) {
+                    TreePath path = TreePath.getPath(cu, match);
+                    if (path != null) {
+                        ref.set(TreePathHandle.create(path, cc));
+                    }
+                }
+            }, true);
+        }
+        catch (IOException | RuntimeException ex) {
+            return null;
+        }
+        return ref.get();
+    }
+
+    /**
+     * Names of the top-level types declared in a Java file, in declaration order.
+     * <p>
+     * Used only to describe what a move actually affected. Returns an empty list when the file cannot be parsed, which
+     * makes the caller silently skip the note rather than fail a refactoring that otherwise succeeded.
+     */
+    private static List<String> topLevelTypeNames(FileObject fo) {
+        JavaSource js = JavaSource.forFileObject(fo);
+        if (js == null) {
+            return List.of();
+        }
+        List<String> names = new ArrayList<>();
+        try {
+            js.runUserActionTask(cc -> {
+                cc.toPhase(JavaSource.Phase.ELEMENTS_RESOLVED);
+                for (Tree decl : cc.getCompilationUnit().getTypeDecls()) {
+                    if (decl instanceof ClassTree ct) {
+                        names.add(ct.getSimpleName().toString());
+                    }
+                }
+            }, true);
+        }
+        catch (IOException | RuntimeException ex) {
+            // Swallowed deliberately: this only decorates a success message. A
+            // file that will not parse still moves correctly, and failing the
+            // refactoring - or reporting a parse error as its outcome - would be
+            // far worse than omitting the note.
+            return List.of();
+        }
+        return names;
     }
 
     public static String inlineVariable(String filePath, int line) {
@@ -331,10 +455,9 @@ public class RefactoringProvider {
     }
 
     /**
-     * Fallback writer for a file that is open in the editor with unsaved
-     * changes (a held write lock prevents a direct FileObject write). Replaces
-     * the whole document and saves; this path can trigger On-Save reformatting,
-     * but it only runs when a direct byte write is impossible.
+     * Fallback writer for a file that is open in the editor with unsaved changes (a held write lock prevents a direct
+     * FileObject write). Replaces the whole document and saves; this path can trigger On-Save reformatting, but it only
+     * runs when a direct byte write is impossible.
      */
     private static String writeViaDocument(FileObject fo, String content) {
         AtomicReference<String> result = new AtomicReference<>("File updated and saved");
@@ -735,12 +858,10 @@ public class RefactoringProvider {
      * Resolves the file a refactoring will act on.
      *
      * <p>
-     * There is deliberately no fallback. This used to take whatever file the
-     * editor had focused, which meant a caller that omitted {@code filePath}
-     * refactored a file it had never named — chosen by wherever the user last
-     * clicked. Unlike a search, a refactoring writes, so guessing the target is
-     * not recoverable by trying again. Callers that want the file the user is
-     * looking at should call GetCurrentFile and pass the path it returns.
+     * There is deliberately no fallback. This used to take whatever file the editor had focused, which meant a caller
+     * that omitted {@code filePath} refactored a file it had never named — chosen by wherever the user last clicked.
+     * Unlike a search, a refactoring writes, so guessing the target is not recoverable by trying again. Callers that
+     * want the file the user is looking at should call GetCurrentFile and pass the path it returns.
      */
     private static FileObject resolveFileObject(String filePath) {
         if (filePath == null || filePath.isBlank()) {

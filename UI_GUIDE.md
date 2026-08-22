@@ -6,7 +6,7 @@ For what the plugin is and how to install it, see the [README](README.md). For t
 
 ## Start here
 
-1. Configure one or more backends in **Tools > Options > AI Coder**.
+1. Enable and configure one or more backends in **Tools > Options > Miscellaneous > AI Coder** (the same panel is also registered under **Advanced**). Some backends, including Ollama (Local), are disabled until you enable them here and will not appear when creating a session.
 2. Open **Tools > AI Manager**.
 3. Create a session, select its backend and project, then choose **Create & Open**.
 4. Work in the session's dockable chat tab.
@@ -16,12 +16,12 @@ For what the plugin is and how to install it, see the [README](README.md). For t
 
 **Tools > AI Manager** is the session control centre.
 
-It has four tabs: **Existing Sessions**, **Create Session**, **Templates**, and **Help** — the last of which includes generated documentation for the MCP tools.
+It has four tabs: **Existing Sessions**, **Create Session**, **Templates**, and **Help**. Help holds two sub-tabs: **MCP Tools**, with generated documentation for the available tools, and **About**, showing the plugin name, installed version, and the project homepage and this version's release page as clickable links.
 
 | Action | Where | What it does |
 |---|---|---|
 | Create & Open | Create Session | Creates one or more named sessions using the selected backend, project, and initial settings, and opens each one. Use the **Count** spinner to create several at once. |
-| Open | Existing Sessions | Opens a selected saved session and restores its available history and working directory. Only sessions whose project is currently open are listed. |
+| Open | Existing Sessions | Opens a selected saved session and restores its available history and working directory. Every saved session is listed; one whose project is not currently open is greyed out, and opening it is refused until that project is open. |
 | Delete | Existing Sessions | Removes the saved session, its history, and its local backend session configuration. |
 
 Both tabs offer a **Close after action** checkbox to dismiss the dialog once the action completes.
@@ -34,15 +34,17 @@ Each session has an independent backend, model, selected project, history, sessi
 
 Choose a descriptive name, an open project, and a backend. The new session inherits global defaults unless you override settings in its configuration.
 
-- Select **Claude**, **GitHub Copilot**, **Grok**, **OpenCode**, **Codex**, or enabled **Ollama (Local)**.
+- Select **Claude**, **GitHub CoPilot**, **Grok**, **OpenCode**, **Codex**, or enabled **Ollama (Local)**.
 - Choose or enter a model where the backend permits it.
-- For OpenCode, choose **Build** for normal work or **Plan** for a read-only proposal.
+- For OpenCode, set **Mode** to `build` for normal work or `plan` for a read-only proposal.
 - Add session instructions when the session needs project-specific rules.
 - Use project-file restriction and the permission controls to set the session's access boundary.
 
 ## Chat tabs and context
 
 Opened sessions appear as dockable NetBeans chat tabs. The chat renders Markdown, code blocks, assistant status, tool activity, notifications, and backend information.
+
+Each chat tab carries a coloured status marker: green when the session is ready for input, orange while a turn is in flight, and red when the backend is not running or has failed. While a turn is in flight the info bar also shows a **■ Stop** button, which cancels the current response; it is hidden when there is nothing to cancel.
 
 At initial delivery, the session supplies identity, open projects, and active-editor context. Later requests send changes where possible, while stateless backends receive the baseline required to work correctly. Context and transcript history are persisted independently when enabled.
 

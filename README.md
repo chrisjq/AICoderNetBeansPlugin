@@ -119,9 +119,11 @@ On initial delivery, the assistant receives session identity, open project locat
 
 Deleting a session removes its saved history and associated local backend configuration for that session.
 
+The Manager's **Help** tab holds generated MCP tool documentation and an **About** page showing the plugin name, installed version, and the project homepage and this version's release page as clickable links.
+
 ## MCP and IDE tool reference
 
-The local MCP server exposes the following NetBeans-aware capabilities to compatible backends. Tool availability is also filtered by backend support and the session permission settings. For the complete tool list, usage rules, permission model, and backend/session settings, see the [tool and settings reference](REFERENCE.md).
+The local MCP server exposes the following NetBeans-aware capabilities to compatible backends. Tool availability is also filtered by backend support and the session permission settings. For the complete tool list, usage rules, permission model, and backend/session settings, see the [tool and settings reference](REFERENCE.md); the same tool documentation is browsable in the IDE under **Tools > AI Manager > Help > MCP Tools**.
 
 ### Build and test
 
@@ -137,7 +139,7 @@ The local MCP server exposes the following NetBeans-aware capabilities to compat
 
 | Tool | Description |
 |---|---|
-| [`SearchInFiles`](REFERENCE.md#searchinfiles), [`SearchTypes`](REFERENCE.md#searchtypes), [`SearchSymbols`](REFERENCE.md#searchsymbols) | IDE-aware text, type, and member search; all three search every open project when no file is supplied |
+| [`SearchInFiles`](REFERENCE.md#searchinfiles), [`SearchTypes`](REFERENCE.md#searchtypes), [`SearchSymbols`](REFERENCE.md#searchsymbols) | IDE-aware text, type, and member search; all three search every open project when no file is supplied, and report the true total when results are truncated |
 | [`FindDeclaration`](REFERENCE.md#finddeclaration), [`FindImplementations`](REFERENCE.md#findimplementations), [`FindUsages`](REFERENCE.md#findusages) | Navigate relationships in Java source |
 | [`GetProjectStructure`](REFERENCE.md#getprojectstructure), [`GetClassMembers`](REFERENCE.md#getclassmembers), [`GetTypeHierarchy`](REFERENCE.md#gettypehierarchy), [`GetJavadoc`](REFERENCE.md#getjavadoc) | Inspect project and classpath information |
 | [`RenameSymbol`](REFERENCE.md#renamesymbol), [`MoveClass`](REFERENCE.md#moveclass), [`MoveFile`](REFERENCE.md#movefile), [`InlineVariable`](REFERENCE.md#inlinevariable), [`ChangeMethodSignature`](REFERENCE.md#changemethodsignature) | IDE refactorings that update references where applicable |

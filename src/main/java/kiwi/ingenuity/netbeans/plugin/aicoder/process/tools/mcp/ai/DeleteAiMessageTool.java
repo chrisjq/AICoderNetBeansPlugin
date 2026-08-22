@@ -30,7 +30,11 @@ public class DeleteAiMessageTool extends AbstractActionTool {
         JsonObject tool = new JsonObject();
         tool.addProperty(ToolSchemaKeyEnum.NAME.key(), McpToolEnum.DELETE_AI_MESSAGE.toolName());
         tool.addProperty(ToolSchemaKeyEnum.DESCRIPTION.key(),
-                "Delete one or more inbox messages by id. Pass " + DeleteAiMessageParamEnum.MESSAGE_ID.key() + " for a single message or " + DeleteAiMessageParamEnum.MESSAGE_IDS.key() + " array for bulk delete. Exactly one of " + DeleteAiMessageParamEnum.MESSAGE_ID.key() + " or " + DeleteAiMessageParamEnum.MESSAGE_IDS.key() + " must be provided.");
+                // "Exactly one" was wrong: handle() below merges both into a single
+                // id list, so a caller obeying the schema avoided a call the tool
+                // supports. The schema is the only description a model sees, so it
+                // has to describe what the handler actually accepts.
+                "Delete one or more inbox messages by id. Pass " + DeleteAiMessageParamEnum.MESSAGE_ID.key() + " for a single message or " + DeleteAiMessageParamEnum.MESSAGE_IDS.key() + " array for bulk delete. At least one of " + DeleteAiMessageParamEnum.MESSAGE_ID.key() + " or " + DeleteAiMessageParamEnum.MESSAGE_IDS.key() + " is required; if both are supplied they are combined.");
         JsonObject schema = new JsonObject();
         schema.addProperty(ToolSchemaKeyEnum.TYPE.key(), "object");
         JsonObject props = new JsonObject();

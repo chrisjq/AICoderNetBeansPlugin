@@ -276,8 +276,9 @@ public class EditorContextProvider {
         }
         sb.append(", encoding ").append(encoding);
 
-        // Last-modified timestamp (UTC, second precision) plus age in seconds so
-        // a caller can judge staleness without a second clock call of its own.
+        // Last-modified timestamp, rendered in the machine's local zone by
+        // DateUtil like every other date an AI sees, plus age in seconds so a
+        // caller can judge staleness without a second clock call of its own.
         long modMillis = f.lastModified();
         if (modMillis > 0) {
             Instant modified = Instant.ofEpochMilli(modMillis);

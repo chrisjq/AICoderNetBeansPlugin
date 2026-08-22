@@ -42,7 +42,10 @@ public class MoveClassTool implements McpToolInterface {
         JsonObject tool = new JsonObject();
         tool.addProperty(ToolSchemaKeyEnum.NAME.key(), McpToolEnum.MOVE_CLASS.toolName());
         tool.addProperty(ToolSchemaKeyEnum.DESCRIPTION.key(),
-                "Moves a Java class to a different package, updating all import references. "
+                "Moves a Java class to a different package, updating the package declaration and all import references. "
+                + "With " + MoveClassParamEnum.LINE.key() + " it moves just the class declared at that line, leaving any other "
+                + "top-level classes in the file behind. Without it the whole file moves, which is refused when the file "
+                + "declares more than one top-level type so that classes you did not name cannot move by accident. "
                 + "filePath is required — this tool does not fall back to the focused editor. "
                 + "Call " + McpToolEnum.GET_CURRENT_FILE.toolName() + " if you want the file the user is looking at.");
         JsonObject schema = new JsonObject();
@@ -58,7 +61,7 @@ public class MoveClassTool implements McpToolInterface {
         props.add(MoveClassParamEnum.FILE_PATH.key(), fp);
         JsonObject ln = new JsonObject();
         ln.addProperty(ToolSchemaKeyEnum.TYPE.key(), "integer");
-        ln.addProperty(ToolSchemaKeyEnum.DESCRIPTION.key(), "1-based line of the class declaration. Omit to use line 1.");
+        ln.addProperty(ToolSchemaKeyEnum.DESCRIPTION.key(), "1-based line of the class declaration to move. Supply it to move that one class out of its file; omit it to move the whole file, which is only allowed when the file declares a single top-level type.");
         props.add(MoveClassParamEnum.LINE.key(), ln);
         schema.add(ToolSchemaKeyEnum.PROPERTIES.key(), props);
         JsonArray required = new JsonArray();
