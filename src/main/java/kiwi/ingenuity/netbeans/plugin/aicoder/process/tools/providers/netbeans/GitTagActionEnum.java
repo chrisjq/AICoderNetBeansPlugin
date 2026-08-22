@@ -1,15 +1,14 @@
 package kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.providers.netbeans;
 
 import java.util.Arrays;
+import java.util.Locale;
 import java.util.stream.Collectors;
 
 /**
- * The action values {@code GitTag} accepts, each with the description shown to
- * the caller.
+ * The action values {@code GitTag} accepts, each with the description shown to the caller.
  * <p>
- * Keeping validation and provider dispatch on this enum prevents an action from
- * being advertised by the tool but falling through to a different provider
- * operation.
+ * Keeping validation and provider dispatch on this enum prevents an action from being advertised by the tool but
+ * falling through to a different provider operation.
  */
 public enum GitTagActionEnum {
     CREATE("create", "Create a new tag"),
@@ -25,14 +24,14 @@ public enum GitTagActionEnum {
      * Resolves a caller-supplied action, ignoring case and surrounding space.
      *
      * @param raw the incoming argument; may be null or blank
-     * @return the matching constant, {@link #DEFAULT} when raw is null or
-     * blank, or null when raw is a non-empty value that is not an action
+     * @return the matching constant, {@link #DEFAULT} when raw is null or blank, or null when raw is a non-empty value
+     * that is not an action
      */
     public static GitTagActionEnum from(String raw) {
         if (raw == null || raw.isBlank()) {
             return DEFAULT;
         }
-        String needle = raw.strip().toLowerCase(java.util.Locale.ROOT);
+        String needle = raw.strip().toLowerCase(Locale.ROOT);
         for (GitTagActionEnum a : values()) {
             if (a.action.equals(needle)) {
                 return a;
@@ -42,8 +41,7 @@ public enum GitTagActionEnum {
     }
 
     /**
-     * Comma-separated actions, marking the default — for schema text and
-     * errors.
+     * Comma-separated actions, marking the default — for schema text and errors.
      */
     public static String actionList() {
         return Arrays.stream(values())

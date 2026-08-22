@@ -40,13 +40,13 @@ public final class OllamaModelDiscovery {
     static List<String> parseModelIds(String responseBody) {
         List<String> ids = new ArrayList<>();
         JsonObject root = JsonParser.parseString(responseBody).getAsJsonObject();
-        JsonElement data = root.get("data");
+        JsonElement data = root.get(OllamaJsonKeyEnum.DATA.key());
         if (data == null || !data.isJsonArray()) {
             return ids;
         }
         for (JsonElement element : data.getAsJsonArray()) {
-            if (element.isJsonObject() && element.getAsJsonObject().has("id")) {
-                ids.add(element.getAsJsonObject().get("id").getAsString());
+            if (element.isJsonObject() && element.getAsJsonObject().has(OllamaJsonKeyEnum.ID.key())) {
+                ids.add(element.getAsJsonObject().get(OllamaJsonKeyEnum.ID.key()).getAsString());
             }
         }
         return ids;
@@ -54,7 +54,7 @@ public final class OllamaModelDiscovery {
 
     static String extractCapabilityHint(String responseBody) {
         JsonObject root = JsonParser.parseString(responseBody).getAsJsonObject();
-        JsonElement capabilities = root.get("capabilities");
+        JsonElement capabilities = root.get(OllamaJsonKeyEnum.CAPABILITIES.key());
         if (capabilities != null && capabilities.isJsonArray()) {
             for (JsonElement element : capabilities.getAsJsonArray()) {
                 if (element.isJsonPrimitive()
@@ -125,7 +125,7 @@ public final class OllamaModelDiscovery {
     private static String fetchCapabilityHint(String baseUrl, String model)
             throws IOException, InterruptedException {
         JsonObject body = new JsonObject();
-        body.addProperty("model", model);
+        body.addProperty(OllamaJsonKeyEnum.MODEL.key(), model);
         HttpRequest request = HttpRequest.newBuilder(URI.create(baseUrl + "/api/show"))
                 .timeout(TIMEOUT)
                 .header("Content-Type", "application/json")

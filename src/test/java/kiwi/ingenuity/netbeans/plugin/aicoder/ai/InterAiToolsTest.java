@@ -21,15 +21,13 @@ import org.junit.jupiter.api.Test;
 class InterAiToolsTest {
 
     /**
-     * Waits for the broker's asynchronous delivery/interrupt dispatch to
-     * finish.
+     * Waits for the broker's asynchronous delivery/interrupt dispatch to finish.
      *
      * <p>
-     * sendMessage() queues delivery and the mail interrupt on the broker's
-     * notifier rather than running them inline, so reading interrupt state
-     * straight after the call observes it before the work has happened. That
-     * bites hardest on the negative assertions: without this barrier a "did not
-     * interrupt" test passes whether or not the production code is correct.
+     * sendMessage() queues delivery and the mail interrupt on the broker's notifier rather than running them inline, so
+     * reading interrupt state straight after the call observes it before the work has happened. That bites hardest on
+     * the negative assertions: without this barrier a "did not interrupt" test passes whether or not the production
+     * code is correct.
      */
     private static void awaitDispatch(AiSessionInboxBroker broker) throws InterruptedException {
         assertTrue(broker.awaitNotifierIdle(5, TimeUnit.SECONDS),
@@ -134,7 +132,7 @@ class InterAiToolsTest {
         broker.register(target);
         String id = broker.sendMessage("sender", "target", "Subject", "body", null);
 
-        AiInboxMessage msg = broker.readMessage("target", target.secret(), id);
+        AiInboxMessage msg = broker.readMessageWithResult("target", target.secret(), id).message();
         assertNotNull(msg);
         assertEquals(id, msg.id());
         assertNotNull(msg.readAt(), "read stamps readAt");
@@ -430,7 +428,7 @@ class InterAiToolsTest {
         broker.register(sessionB);
 
         String originalId = broker.sendMessage("a", "b", "My question", "body", null, false, true, false);
-        broker.readMessage("b", sessionB.secret(), originalId);
+        broker.readMessageWithResult("b", sessionB.secret(), originalId);
         broker.unregister("b");
 
         assertTrue(latch.await(2, TimeUnit.SECONDS),
@@ -477,7 +475,7 @@ class InterAiToolsTest {
         broker.register(sessionB);
 
         String originalId = broker.sendMessage("a", "b", "Urgent question", "body", null, false, true, true);
-        broker.readMessage("b", sessionB.secret(), originalId);
+        broker.readMessageWithResult("b", sessionB.secret(), originalId);
         broker.unregister("b");
 
         assertTrue(latch.await(2, TimeUnit.SECONDS),

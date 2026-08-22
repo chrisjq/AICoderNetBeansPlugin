@@ -18,6 +18,70 @@ import org.junit.jupiter.api.Test;
 
 class OpenAiCompatibleClientTest {
 
+    /**
+     * The follow-up request sent after a malformed schema-mode tool call has been answered with an error.
+     * <p>
+     * Under TOOL_CALLS_VIA_SCHEMA the tools array is deliberately empty, so this history carries a tool call for a
+     * function the request never declares. That is not new — every successful schema-mode call does the same thing with
+     * a real tool name — but the recovery path is the case where the name is not a real tool at all, and two reviewers
+     * independently expected a backend to reject it. What we can pin locally is that we emit a well-formed pair: the
+     * result must carry the id of the call it answers, or the backend cannot match them and the model never sees the
+     * correction it is meant to act on.
+     */
+    @Test
+    void malformedCallRecoveryPairSerialisesWithAMatchingToolCallId() throws Exception {
+        AtomicReference<String> requestBody = new AtomicReference<>();
+        HttpServer server = HttpServer.create(new InetSocketAddress(InetAddress.getLoopbackAddress(), 0), 0);
+        server.createContext("/v1/chat/completions", exchange -> {
+            requestBody.set(new String(exchange.getRequestBody().readAllBytes(), StandardCharsets.UTF_8));
+            byte[] bytes = "data: {\"choices\":[{\"finish_reason\":\"stop\"}]}\n\ndata: [DONE]\n\n"
+                    .getBytes(StandardCharsets.UTF_8);
+            exchange.getResponseHeaders().add("Content-Type", "text/event-stream");
+            exchange.sendResponseHeaders(200, bytes.length);
+            try (OutputStream os = exchange.getResponseBody()) {
+                os.write(bytes);
+            }
+        });
+        server.start();
+        try {
+            String callId = "call_malformed_1";
+            List<ChatMessage> history = List.of(
+                    new ChatMessage(ChatRole.USER, "Message the other session.", List.of(), null),
+                    new ChatMessage(ChatRole.ASSISTANT, null,
+                            List.of(new ChatToolCall(callId, "unknown_tool", "{}")), null),
+                    new ChatMessage(ChatRole.TOOL,
+                            "Error: you supplied tool_arguments but left tool_name empty, so no tool was called.",
+                            List.of(), callId));
+
+            ChatRequest request = new ChatRequest(
+                    "http://" + server.getAddress().getHostString() + ":" + server.getAddress().getPort() + "/",
+                    "",
+                    "qwen2.5-coder:14b",
+                    history,
+                    List.of());
+
+            new OpenAiCompatibleClient().chat(request, delta -> {
+            });
+
+            JsonObject payload = JsonParser.parseString(requestBody.get()).getAsJsonObject();
+            JsonObject assistant = payload.getAsJsonArray("messages").get(1).getAsJsonObject();
+            assertEquals("assistant", assistant.get("role").getAsString());
+            JsonObject call = assistant.getAsJsonArray("tool_calls").get(0).getAsJsonObject();
+            assertEquals(callId, call.get("id").getAsString());
+            assertEquals("unknown_tool", call.getAsJsonObject("function").get("name").getAsString());
+
+            JsonObject toolResult = payload.getAsJsonArray("messages").get(2).getAsJsonObject();
+            assertEquals("tool", toolResult.get("role").getAsString());
+            // The whole point of the synthetic call: without this the error is an
+            // orphan and the model is never told why nothing happened.
+            assertEquals(callId, toolResult.get("tool_call_id").getAsString());
+            assertTrue(toolResult.get("content").getAsString().contains("tool_name"));
+        }
+        finally {
+            server.stop(0);
+        }
+    }
+
     @Test
     void assembleSseAccumulatesTextAndStructuredToolCalls() {
         List<String> lines = List.of(

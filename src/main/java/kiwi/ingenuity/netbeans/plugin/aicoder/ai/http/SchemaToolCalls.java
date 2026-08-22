@@ -11,34 +11,48 @@ import java.util.Set;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.ToolSchemaKeyEnum;
 
 /**
- * Tool calling for backends that misuse the request's
- * {@link OpenAiJsonKeyEnum#TOOLS} array.
+ * Tool calling for backends that misuse the request's {@link OpenAiJsonKeyEnum#TOOLS} array.
  *
  * <p>
- * qwen2.5-coder calls a tool on every turn once {@link OpenAiJsonKeyEnum#TOOLS}
- * is populated — given one irrelevant tool and the message "hi" it invented a
- * city and called it — and returns the call as text rather than in
- * {@link OpenAiJsonKeyEnum#TOOL_CALLS}. Listing the same tools in the prompt
- * carries the information without triggering the template, and a
- * {@link OpenAiJsonKeyEnum#RESPONSE_FORMAT} JSON schema makes the reply shape
- * guaranteed instead of best-effort. Verified against qwen2.5-coder:14b: "hi"
- * answers with an empty {@link OpenAiJsonKeyEnum#TOOL_NAME}, a real request
- * fills it in.
+ * qwen2.5-coder calls a tool on every turn once {@link OpenAiJsonKeyEnum#TOOLS} is populated — given one irrelevant
+ * tool and the message "hi" it invented a city and called it — and returns the call as text rather than in
+ * {@link OpenAiJsonKeyEnum#TOOL_CALLS}. Listing the same tools in the prompt carries the information without triggering
+ * the template, and a {@link OpenAiJsonKeyEnum#RESPONSE_FORMAT} JSON schema makes the reply shape guaranteed instead of
+ * best-effort. Verified against qwen2.5-coder:14b: "hi" answers with an empty {@link OpenAiJsonKeyEnum#TOOL_NAME}, a
+ * real request fills it in.
  */
 public final class SchemaToolCalls {
 
     private static final Gson GSON = new Gson();
 
     /**
-     * The {@code response_format} value constraining the model to a reply that
-     * is either prose or a tool call.
+     * The {@code response_format} value constraining the model to a reply that is either prose or a tool call.
+     *
+     * <p>
+     * {@code knownToolNames} restricts {@link OpenAiJsonKeyEnum#TOOL_NAME} to an enum rather than any string. Backends
+     * that honour this schema build a grammar from it and constrain sampling, so a name that is not a real tool becomes
+     * unrepresentable instead of something we detect after the fact — cheaper than a wasted round trip, and it cannot
+     * be argued with. Pass an empty collection to fall back to a free-form string.
+     *
+     * <p>
+     * The empty string stays in the enum because it is how the model declines to call anything. That leaves one bad
+     * shape still expressible — an empty name with populated arguments — so the caller must still handle
+     * {@link Reply#toolCallError()}. Forbidding that combination needs conditional subschemas, which these backends
+     * support far less reliably than an enum.
      */
-    public static JsonObject responseFormat() {
+    public static JsonObject responseFormat(Collection<String> knownToolNames) {
         JsonObject props = new JsonObject();
         props.add(OpenAiJsonKeyEnum.MESSAGE.key(), stringField(
                 "Your reply to the user. Use this whenever no tool is needed."));
-        props.add(OpenAiJsonKeyEnum.TOOL_NAME.key(), stringField(
-                "Exact name of one tool to call, or \"\" when answering directly."));
+        JsonObject toolName = stringField(
+                "Exact name of one tool to call, or \"\" when answering directly.");
+        if (knownToolNames != null && !knownToolNames.isEmpty()) {
+            List<String> allowed = new ArrayList<>();
+            allowed.add("");
+            allowed.addAll(knownToolNames);
+            toolName.add(OpenAiJsonKeyEnum.ENUM.key(), GSON.toJsonTree(allowed));
+        }
+        props.add(OpenAiJsonKeyEnum.TOOL_NAME.key(), toolName);
         JsonObject args = new JsonObject();
         args.addProperty(OpenAiJsonKeyEnum.TYPE.key(), "object");
         args.addProperty(OpenAiJsonKeyEnum.DESCRIPTION.key(),
@@ -76,9 +90,8 @@ public final class SchemaToolCalls {
     }
 
     /**
-     * Renders tool schemas as prompt text, since the model no longer receives
-     * the tools array. Parameter names must appear here or the model has no way
-     * to know them — the per-tool instruction lines alone do not carry them.
+     * Renders tool schemas as prompt text, since the model no longer receives the tools array. Parameter names must
+     * appear here or the model has no way to know them — the per-tool instruction lines alone do not carry them.
      */
     public static String renderToolList(Collection<JsonObject> toolSchemas) {
         StringBuilder sb = new StringBuilder();
@@ -99,10 +112,9 @@ public final class SchemaToolCalls {
     }
 
     /**
-     * First sentence of a description, to bound prompt size across 80+ tools. A
-     * full stop only ends a sentence when an upper-case word follows, so
-     * abbreviations survive — splitting naively on ". " cut "(e.g. /path)" to
-     * "(e.g" mid-word.
+     * First sentence of a description, to bound prompt size across 80+ tools. A full stop only ends a sentence when an
+     * upper-case word follows, so abbreviations survive — splitting naively on ". " cut "(e.g. /path)" to "(e.g"
+     * mid-word.
      */
     private static String firstSentence(String description) {
         for (int i = 0; i + 2 < description.length(); i++) {
@@ -118,10 +130,9 @@ public final class SchemaToolCalls {
      * Parameter names, required first, optional ones in square brackets.
      *
      * <p>
-     * Required names must appear exactly as-is: marking them instead with a
-     * trailing {@code !} put the marker inside the identifier, and the model
-     * sent {@code "!filePath"} and {@code "description!"} as argument keys.
-     * Brackets decorate only the optional ones, which matter less if mangled.
+     * Required names must appear exactly as-is: marking them instead with a trailing {@code !} put the marker inside
+     * the identifier, and the model sent {@code "!filePath"} and {@code "description!"} as argument keys. Brackets
+     * decorate only the optional ones, which matter less if mangled.
      */
     private static List<String> parameterNames(JsonObject tool) {
         List<String> names = new ArrayList<>();
@@ -151,8 +162,8 @@ public final class SchemaToolCalls {
     }
 
     /**
-     * Reads a schema-shaped reply. Falls back to {@link ToolCallExtractor} when
-     * the model ignores the schema, which it still does occasionally.
+     * Reads a schema-shaped reply. Falls back to {@link ToolCallExtractor} when the model ignores the schema, which it
+     * still does occasionally.
      *
      * @param knownToolNames names that may be invoked; anything else is dropped
      */
@@ -183,23 +194,73 @@ public final class SchemaToolCalls {
         return new Reply(text, ToolCallExtractor.extract(result, knownToolNames));
     }
 
+    /**
+     * Whether the model put anything in {@code tool_arguments} that it could have meant as a call, whatever shape it
+     * arrived in.
+     * <p>
+     * Absent, null, {@code {}}, {@code []} and {@code ""} all mean "no call". Anything else counts, including the wrong
+     * type, because the mistake we are looking for is the model filling in arguments and forgetting the name - and a
+     * model careless enough to do that is careless about the type too.
+     */
+    private static boolean argumentsWereSupplied(JsonElement element) {
+        if (element == null || element.isJsonNull()) {
+            return false;
+        }
+        if (element.isJsonObject()) {
+            return element.getAsJsonObject().size() > 0;
+        }
+        if (element.isJsonArray()) {
+            return element.getAsJsonArray().size() > 0;
+        }
+        return !element.getAsString().isBlank();
+    }
+
     private static Reply fromSchemaObject(JsonObject obj, Set<String> knownToolNames) {
         String message = obj.has(OpenAiJsonKeyEnum.MESSAGE.key()) && obj.get(OpenAiJsonKeyEnum.MESSAGE.key()).isJsonPrimitive()
                 ? obj.get(OpenAiJsonKeyEnum.MESSAGE.key()).getAsString() : null;
         String name = obj.has(OpenAiJsonKeyEnum.TOOL_NAME.key()) && obj.get(OpenAiJsonKeyEnum.TOOL_NAME.key()).isJsonPrimitive()
                 ? obj.get(OpenAiJsonKeyEnum.TOOL_NAME.key()).getAsString() : null;
-        if (name == null || name.isBlank() || !knownToolNames.contains(name)) {
+        JsonElement rawArgumentsElement = obj.get(OpenAiJsonKeyEnum.TOOL_ARGUMENTS.key());
+        JsonObject rawArguments = rawArgumentsElement != null && rawArgumentsElement.isJsonObject()
+                ? rawArgumentsElement.getAsJsonObject() : new JsonObject();
+        if (name == null || name.isBlank()) {
+            // Arguments with no tool name is unambiguously a mistake - there is
+            // nothing else the model could have meant by them. Before this the
+            // call was dropped here in silence, with nothing logged and no error
+            // either way, so the model believed it had run and the user believed
+            // it too. Reachable from any backend that does not constrain
+            // tool_name to the enum in responseFormat.
+            //
+            // Asked of the element rather than rawArguments because a backend
+            // that ignores the schema can send the arguments as a JSON string
+            // instead of an object. That is not an object, so rawArguments would
+            // be empty, and treating "empty" as "none supplied" would drop the
+            // call in silence all over again - the exact bug, one shape along.
+            if (argumentsWereSupplied(rawArgumentsElement)) {
+                String error = "Error: you supplied " + OpenAiJsonKeyEnum.TOOL_ARGUMENTS.key()
+                        + " but left " + OpenAiJsonKeyEnum.TOOL_NAME.key()
+                        + " empty, so no tool was called. Send the same arguments again with "
+                        + OpenAiJsonKeyEnum.TOOL_NAME.key() + " set to the tool you want to run.";
+                if (!rawArgumentsElement.isJsonObject()) {
+                    error += " " + OpenAiJsonKeyEnum.TOOL_ARGUMENTS.key()
+                            + " must be a JSON object, not a string.";
+                }
+                return new Reply(message, List.of(), error);
+            }
             return new Reply(message, List.of());
         }
-        JsonObject arguments = obj.has(OpenAiJsonKeyEnum.TOOL_ARGUMENTS.key()) && obj.get(OpenAiJsonKeyEnum.TOOL_ARGUMENTS.key()).isJsonObject()
-                ? cleanArgumentNames(obj.getAsJsonObject(OpenAiJsonKeyEnum.TOOL_ARGUMENTS.key())) : new JsonObject();
+        if (!knownToolNames.contains(name)) {
+            return new Reply(message, List.of(),
+                    "Error: there is no tool named \"" + name + "\", so nothing was called. "
+                    + "Use one of the tool names exactly as listed, or reply in plain text if no tool is needed.");
+        }
+        JsonObject arguments = cleanArgumentNames(rawArguments);
         return new Reply(message, List.of(new ExtractedToolCall(name, GSON.toJson(arguments))));
     }
 
     /**
-     * Strips decoration the model copies out of the rendered tool list into
-     * argument names — it has produced both {@code "!filePath"} and
-     * {@code "description!"}, each of which reads as a missing argument.
+     * Strips decoration the model copies out of the rendered tool list into argument names — it has produced both
+     * {@code "!filePath"} and {@code "description!"}, each of which reads as a missing argument.
      */
     private static JsonObject cleanArgumentNames(JsonObject arguments) {
         JsonObject cleaned = new JsonObject();
@@ -223,8 +284,16 @@ public final class SchemaToolCalls {
 
     /**
      * Parsed schema reply: at most one of message/call is meaningful.
+     * <p>
+     * {@code toolCallError} is set when the model clearly meant to call a tool but produced something unusable —
+     * arguments with no tool name, or a name that is not a real tool. It is phrased for the model, not the user: the
+     * caller feeds it back as a tool result so the next turn can correct itself. Without it the malformed call is
+     * discarded in silence and the model has no idea anything went wrong.
      */
-    public record Reply(String message, List<ExtractedToolCall> calls) {
+    public record Reply(String message, List<ExtractedToolCall> calls, String toolCallError) {
 
+        public Reply(String message, List<ExtractedToolCall> calls) {
+            this(message, calls, null);
+        }
     }
 }

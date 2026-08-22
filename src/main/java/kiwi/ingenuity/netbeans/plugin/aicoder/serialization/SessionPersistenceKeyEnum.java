@@ -1,31 +1,27 @@
 package kiwi.ingenuity.netbeans.plugin.aicoder.serialization;
 
 /**
- * Field names in the persisted session-index file written by
- * {@link SessionPersistenceManager}.
+ * Field names in the persisted session-index file written by {@link SessionPersistenceManager}.
  * <p>
  * <b>ONLY ADD KEYS HERE. NEVER CHANGE OR REMOVE ONE.</b>
  * <p>
- * These values are an on-disk format. Unlike a wire protocol, where a rename
- * breaks the next request and you find out in seconds, renaming a key here
- * breaks files written months ago: the field reads back absent and the session
- * silently loses its name, project path or AI type. Worse, this loader treats a
- * session missing required fields as malformed and skips it — see
- * {@code SessionPersistenceManager}'s "Session missing required fields,
- * skipping" branch — so a renamed key does not degrade sessions, it deletes
- * them from the user's list.
+ * These values are an on-disk format. Unlike a wire protocol, where a rename breaks the next request and you find out
+ * in seconds, renaming a key here breaks files written months ago: the field reads back absent and the session silently
+ * loses its name, project path or AI type. Worse, this loader treats a session missing required fields as malformed and
+ * skips it — see {@code SessionPersistenceManager}'s "Session missing required fields, skipping" branch — so a renamed
+ * key does not degrade sessions, it deletes them from the user's list.
  * <p>
- * Nothing here has a version gate at all, and no golden test pins these
- * spellings the way {@code ContextSnapshotFormatTest} pins the context
- * snapshot's. Adding one would be worthwhile. Until then this comment is the
- * only guard, so read it as a hard rule rather than advice.
+ * Nothing here has a version gate at all, so the guard is {@code SessionIndexFormatGoldenTest}: one test hand-writes an
+ * index document using these literal strings and loads it, and a separate test saves and asserts the written entry's
+ * key set is exactly these names. It also skips a session on a missing or unknown aiType, so that key is load-critical
+ * too. Change a value here and that test goes red, which is the whole point of it. If it fails after you edited this
+ * enum, the test is right and the edit is wrong.
  * <p>
- * If a key genuinely must change, keep reading the old name as a fallback
- * indefinitely — users restore old profiles and sync stale files between
- * machines, so "everyone will have migrated by now" is not true.
+ * If a key genuinely must change, keep reading the old name as a fallback indefinitely — users restore old profiles and
+ * sync stale files between machines, so "everyone will have migrated by now" is not true.
  * <p>
- * The enum exists so the writer and the reader cannot disagree about a spelling
- * — that mismatch has the same effect as a rename and is easier to introduce.
+ * The enum exists so the writer and the reader cannot disagree about a spelling — that mismatch has the same effect as
+ * a rename and is easier to introduce.
  */
 public enum SessionPersistenceKeyEnum {
     /**

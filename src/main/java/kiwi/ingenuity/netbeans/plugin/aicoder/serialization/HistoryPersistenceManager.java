@@ -15,6 +15,7 @@ import java.nio.file.StandardCopyOption;
 import java.nio.file.StandardOpenOption;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.UUID;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.AiMessage;
@@ -62,17 +63,16 @@ public class HistoryPersistenceManager {
     }
 
     /**
-     * Save messages, session ID, and pinned working directory so the session
-     * can be resumed on next open with the same CWD.
+     * Save messages, session ID, and pinned working directory so the session can be resumed on next open with the same
+     * CWD.
      */
     public void save(List<AiMessage> messages, String sessionId, String workingDir) throws IOException {
         save(messages, sessionId, workingDir, false);
     }
 
     /**
-     * Save messages, session ID, pinned working directory, and whether the full
-     * instruction guide has been loaded this conversation, so the session can
-     * be resumed on next open with the same CWD and gate state. Format:
+     * Save messages, session ID, pinned working directory, and whether the full instruction guide has been loaded this
+     * conversation, so the session can be resumed on next open with the same CWD and gate state. Format:
      * {"sessionId":"<uuid>","workingDir":"/path","instructionsLoaded":bool,"messages":[...]}
      */
     public void save(List<AiMessage> messages, String sessionId, String workingDir,
@@ -103,7 +103,7 @@ public class HistoryPersistenceManager {
             Files.createDirectories(parent);
         }
         byte[] bytes = GSON.toJson(wrapper).getBytes(StandardCharsets.UTF_8);
-        Path tmp = filePath.resolveSibling(filePath.getFileName() + "." + java.util.UUID.randomUUID() + ".tmp");
+        Path tmp = filePath.resolveSibling(filePath.getFileName() + "." + UUID.randomUUID() + ".tmp");
         try {
             try (FileChannel fc = FileChannel.open(tmp, StandardOpenOption.CREATE_NEW, StandardOpenOption.WRITE)) {
                 fc.write(ByteBuffer.wrap(bytes));
@@ -130,8 +130,8 @@ public class HistoryPersistenceManager {
     }
 
     /**
-     * Load messages and session ID. Handles both new format
-     * {"sessionId":...,"messages":[...]} and old bare-array format.
+     * Load messages and session ID. Handles both new format {"sessionId":...,"messages":[...]} and old bare-array
+     * format.
      */
     public LoadedHistory load() throws IOException {
         if (!Files.exists(filePath)) {
@@ -190,9 +190,8 @@ public class HistoryPersistenceManager {
     }
 
     /**
-     * Result of loading history: messages, session ID to resume, the working
-     * directory the session was pinned to, and whether the full instruction
-     * guide was loaded this conversation (all but the flag may be null).
+     * Result of loading history: messages, session ID to resume, the working directory the session was pinned to, and
+     * whether the full instruction guide was loaded this conversation (all but the flag may be null).
      */
     public record LoadedHistory(List<AiMessage> messages, String sessionId, String workingDir,
             boolean instructionsLoaded) {

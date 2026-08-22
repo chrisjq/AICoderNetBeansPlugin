@@ -8,7 +8,6 @@ import java.nio.charset.Charset;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.time.Instant;
-import java.time.temporal.ChronoUnit;
 import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.LinkedHashSet;
@@ -20,6 +19,7 @@ import javax.swing.SwingUtilities;
 import javax.swing.text.Document;
 import javax.swing.text.JTextComponent;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.McpToolEnum;
+import kiwi.ingenuity.netbeans.plugin.aicoder.utils.DateUtil;
 import org.netbeans.api.editor.EditorRegistry;
 import org.netbeans.api.project.Project;
 import org.netbeans.api.project.ProjectUtils;
@@ -87,22 +87,18 @@ public class EditorContextProvider {
     }
 
     /**
-     * Caret position in the focused editor as {@code line:column}, or null when
-     * there is no editor or the caret cannot be read.
+     * Caret position in the focused editor as {@code line:column}, or null when there is no editor or the caret cannot
+     * be read.
      *
      * <p>
-     * Unlike {@link #getCurrentFile()} this is safe to call from the EDT: it
-     * reads directly when already on the dispatch thread instead of calling
-     * {@code invokeAndWait}, which throws when invoked from the EDT itself. The
-     * context preamble is built on the EDT, which is why the plain accessor
-     * cannot be reused there.
+     * Unlike {@link #getCurrentFile()} this is safe to call from the EDT: it reads directly when already on the
+     * dispatch thread instead of calling {@code invokeAndWait}, which throws when invoked from the EDT itself. The
+     * context preamble is built on the EDT, which is why the plain accessor cannot be reused there.
      *
      * <p>
-     * This is informational only. Tools deliberately do not act on the caret —
-     * the caller cannot see it, so a tool that used it would behave differently
-     * depending on where the user last clicked. Supplying the position lets the
-     * caller decide whether the user's location is relevant and pass it
-     * explicitly.
+     * This is informational only. Tools deliberately do not act on the caret — the caller cannot see it, so a tool that
+     * used it would behave differently depending on where the user last clicked. Supplying the position lets the caller
+     * decide whether the user's location is relevant and pass it explicitly.
      */
     public static String getCaretLineColumn() {
         AtomicReference<String> ref = new AtomicReference<>(null);
@@ -224,17 +220,13 @@ public class EditorContextProvider {
     }
 
     /**
-     * Reports a file's metadata without returning its contents: exact byte
-     * size, line count, text encoding, last-modified time and age, whether it
-     * is writable, and whether the editor holds unsaved changes for it. Lets a
-     * caller decide whether a read needs paging (a caller's result limit may
-     * clip a large GetFileContent) before spending the tokens, which charset
-     * the bytes decode with, how stale the on-disk copy is, and whether an edit
-     * will be permitted. The encoding is resolved through NetBeans' own
-     * {@link FileEncodingQuery} so it matches how the editor reads the file
-     * (per-project charset settings, detection); the size/line count are the
-     * on-disk copy — an "unsaved editor changes" flag warns when the editor's
-     * in-memory copy has diverged from it.
+     * Reports a file's metadata without returning its contents: exact byte size, line count, text encoding,
+     * last-modified time and age, whether it is writable, and whether the editor holds unsaved changes for it. Lets a
+     * caller decide whether a read needs paging (a caller's result limit may clip a large GetFileContent) before
+     * spending the tokens, which charset the bytes decode with, how stale the on-disk copy is, and whether an edit will
+     * be permitted. The encoding is resolved through NetBeans' own {@link FileEncodingQuery} so it matches how the
+     * editor reads the file (per-project charset settings, detection); the size/line count are the on-disk copy — an
+     * "unsaved editor changes" flag warns when the editor's in-memory copy has diverged from it.
      */
     public static String getFileSizeAndMeta(String filePath) {
         File f = new File(filePath);
@@ -288,9 +280,9 @@ public class EditorContextProvider {
         // a caller can judge staleness without a second clock call of its own.
         long modMillis = f.lastModified();
         if (modMillis > 0) {
-            Instant modified = Instant.ofEpochMilli(modMillis).truncatedTo(ChronoUnit.SECONDS);
+            Instant modified = Instant.ofEpochMilli(modMillis);
             long ageSeconds = Math.max(0, (System.currentTimeMillis() - modMillis) / 1000);
-            sb.append(", modified ").append(modified).append(" (").append(ageSeconds).append("s ago)");
+            sb.append(", modified ").append(DateUtil.format(modified)).append(" (").append(ageSeconds).append("s ago)");
         }
 
         // Writable flag — lets a caller know an edit will be permitted before it
@@ -316,8 +308,8 @@ public class EditorContextProvider {
     }
 
     /**
-     * Opens a file in the editor and optionally scrolls to a line. Pass
-     * focus=true when showing the user something; false for internal tool use.
+     * Opens a file in the editor and optionally scrolls to a line. Pass focus=true when showing the user something;
+     * false for internal tool use.
      */
     public static String navigateToLine(String filePath, int lineNumber, boolean focus) {
         File f = new File(filePath);

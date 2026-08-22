@@ -1,18 +1,15 @@
 package kiwi.ingenuity.netbeans.plugin.aicoder.ai.http;
 
 /**
- * JSON object key names on the OpenAI-compatible wire: the chat-completion
- * request payload this plugin WRITES, the SSE response it READS back, and the
- * {@code response_format} JSON Schema / structured reply used by
- * {@link SchemaToolCalls}. These are the external contract of every
- * OpenAI-compatible endpoint (Ollama and friends) — the values must not change.
+ * JSON object key names on the OpenAI-compatible wire: the chat-completion request payload this plugin WRITES, the SSE
+ * response it READS back, and the {@code response_format} JSON Schema / structured reply used by
+ * {@link SchemaToolCalls}. These are the external contract of every OpenAI-compatible endpoint (Ollama and friends) —
+ * the values must not change.
  * <p>
- * Direction matters: this enum is for what goes onto or comes off the OpenAI
- * wire. The plugin's OWN MCP tool definitions (name / description / inputSchema
- * as built by {@code McpToolSchemas}) are read with
- * {@link kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.ToolSchemaKeyEnum},
- * never with this enum, even where the spellings coincide — one source of truth
- * per contract.
+ * Direction matters: this enum is for what goes onto or comes off the OpenAI wire. The plugin's OWN MCP tool
+ * definitions (name / description / inputSchema as built by {@code McpToolSchemas}) are read with
+ * {@link kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.ToolSchemaKeyEnum}, never with this enum, even where
+ * the spellings coincide — one source of truth per contract.
  */
 public enum OpenAiJsonKeyEnum {
     // Chat completion request payload (top level)
@@ -53,6 +50,11 @@ public enum OpenAiJsonKeyEnum {
     // To READ the plugin's own MCP tool definitions use ToolSchemaKeyEnum.
     PROPERTIES("properties"),
     REQUIRED("required"),
+    /**
+     * Closed set of permitted values. Used to pin tool_name to the tools that actually exist, so the backend's grammar
+     * rejects anything else outright.
+     */
+    ENUM("enum"),
     SCHEMA("schema"),
     JSON_SCHEMA("json_schema");
 

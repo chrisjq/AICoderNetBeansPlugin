@@ -67,6 +67,20 @@ Every tool additionally takes `sessionId` and `secretKey`, both required — the
 
 > **Not every constraint appears in the schema.** A tool's declared `required` list does not always describe what it will actually accept. Conditional rules — `GitTag`'s `name` being needed only for create/delete, `ChangeMethodSignature` requiring both `name` and `type` for a new parameter, `DeleteAiMessage` needing at least one of `messageId`/`messageIds`, `SaveFile` needing `filePath` whenever `content` is supplied — are enforced when the tool runs, not when the arguments are validated. Several tools declare no `required` list at all despite having real constraints. An invalid combination therefore comes back as an error from the call rather than being rejected up front.
 
+### Dates and times in tool output
+
+Any date a tool shows you is formatted in the **local timezone of the machine running the IDE**, not UTC:
+
+```
+2026-08-22 21:28:48 +12:00 (Pacific/Auckland)
+```
+
+The UTC offset and the zone ID are always present, so the value is unambiguous even when you are reasoning about a commit or a log written elsewhere. A zero offset prints as `Z`.
+
+This applies to the `Server time:` line and the `Sent:`/`Read:` lines of [`GetAiMessages`](#getaimessages) and [`ReadAiMessage`](#readaimessage), the modification time from [`GetFileSizeAndMeta`](#getfilesizeandmeta), and the commit date from [`GitShow`](#gitshow).
+
+It is a display format, not an API. Nothing accepts it back as input, and no standard parser reads it — the zone ID in parentheses is not part of ISO-8601. Timestamps the plugin stores on disk are unaffected and remain machine-readable.
+
 ### Build tools
 
 The Maven, Gradle and Ant tools run their build tool as a command and **time out after 180 seconds**, which a slow test suite or a cold dependency download can exceed. The three IDE action tools (`BuildProject`, `CleanProject`, `CleanAndBuildProject`) invoke the NetBeans action provider instead: they take no parameters, act on the open project, and return immediately without waiting for the build to finish.
@@ -125,7 +139,7 @@ These tools do not read the editor. Each refactoring requires its explicit targe
 | Tool | Detailed description | Parameters |
 |---|---|---|
 | <a id="getfilecontent"></a>`GetFileContent` | Reads a file including unsaved text; use `startLine`/`endLine` to page large files. | • `filePath` (string, required) — absolute file path<br>• `startLine` (integer) — first 1-based line; omit for beginning<br>• `endLine` (integer) — last 1-based line; omit for end |
-| <a id="getfilesizeandmeta"></a>`GetFileSizeAndMeta` | Gets size, lines, encoding, modification, writability, and unsaved-change metadata. | • `filePath` (string, required) — absolute file path |
+| <a id="getfilesizeandmeta"></a>`GetFileSizeAndMeta` | Gets size, lines, encoding, modification time and age, writability, and unsaved-change metadata. | • `filePath` (string, required) — absolute file path |
 | <a id="getcurrentfile"></a>`GetCurrentFile` | Returns active editor path, line, and column. | • _None_ |
 | <a id="getcurrentfilecontent"></a>`GetCurrentFileContent` | Returns active editor content. | • _None_ |
 | <a id="getopenfiles"></a>`GetOpenFiles` | Lists open editor files. | • _None_ |
@@ -160,7 +174,7 @@ Every Git tool requires `projectPath` — the repository or project root — exc
 | <a id="gitfetch"></a>`GitFetch` | Provides the NetBeans-aware git fetch operation. | • `projectPath` (string, required)<br>• `remote` (string, default `origin`) |
 | <a id="gitreset"></a>`GitReset` | Provides the NetBeans-aware git reset operation. | • `projectPath` (string, required)<br>• `files` (array) — unstage these<br>• `revision` (string, default `HEAD`)<br>• `type` (string, default `MIXED`) — SOFT/MIXED/HARD |
 | <a id="gitmerge"></a>`GitMerge` | Provides the NetBeans-aware git merge operation. | • `projectPath` (string, required)<br>• `branch` (string, required) |
-| <a id="gitshow"></a>`GitShow` | Provides the NetBeans-aware git show operation. | • `projectPath` (string, required)<br>• `revision` (string, default `HEAD`) |
+| <a id="gitshow"></a>`GitShow` | Provides the NetBeans-aware git show operation, including the commit Date in local formatted time. | • `projectPath` (string, required)<br>• `revision` (string, default `HEAD`) |
 | <a id="gitblame"></a>`GitBlame` | Provides the NetBeans-aware git blame operation. | • `file` (string, required) — absolute or project-relative<br>• `projectPath` (string) — optional when `file` is absolute |
 | <a id="gitrebase"></a>`GitRebase` | Provides the NetBeans-aware git rebase operation. | • `projectPath` (string, required)<br>• `operation` (string, default `BEGIN`) — BEGIN/CONTINUE/SKIP/ABORT<br>• `upstream` (string) — required for BEGIN |
 | <a id="gitcherrypick"></a>`GitCherryPick` | Provides the NetBeans-aware git cherry pick operation. | • `projectPath` (string, required)<br>• `operation` (string, default `BEGIN`) — BEGIN/CONTINUE/QUIT/ABORT<br>• `revisions` (array) — required for BEGIN |
@@ -187,7 +201,7 @@ Every Git tool requires `projectPath` — the repository or project root — exc
 | <a id="listaisessions"></a>`ListAiSessions` | Lists other AI sessions, each with an `active` flag. Idle and busy sessions can both receive messages. | • _None_ |
 | <a id="sendaimessage"></a>`SendAiMessage` | Delivers a message to a peer session's inbox. | • `targetSessionId` (string, required) — from `ListAiSessions`<br>• `subject` (string, required) — max 100 chars<br>• `message` (string, required) — max 200,000 chars<br>• `replyToMessageId` (string)<br>• `important` (boolean) — interrupts the target now instead of waiting for its turn to end; needs the target's *allow important messages* enabled, else ignored<br>• `expectsReply` (boolean) — notifies you if the recipient exits without replying<br>• `replyImportant` (boolean) — only with `expectsReply`; makes the reply interrupt you |
 | <a id="getaimessages"></a>`GetAiMessages` | Lists inbox summaries; does not mark anything read. | • _None_ |
-| <a id="readaimessage"></a>`ReadAiMessage` | Reads one message in full and marks it read. It stays until deleted. | • `messageId` (string, required) — from `GetAiMessages` |
+| <a id="readaimessage"></a>`ReadAiMessage` | Reads one message in full and marks it read; on the first read of a message that expects a reply, appends a paragraph instructing the reader to reply with `SendAiMessage`. Re-reads do not append it. This makes the instruction self-contained if the notification arrives late or is dropped. The message stays until deleted. | • `messageId` (string, required) — from `GetAiMessages` |
 | <a id="deleteaimessage"></a>`DeleteAiMessage` | Deletes one or several inbox messages. | • `messageId` (string) — a single ID<br>• `messageIds` (array) — bulk delete<br>• at least one is required; supplying both is accepted and deletes the combined set |
 | <a id="isaisessionactive"></a>`IsAiSessionActive` | Reports whether a peer is mid-turn. | • `targetSessionId` (string, required) |
 | <a id="updatesessiondescription"></a>`UpdateSessionDescription` | Sets the description peers see in `ListAiSessions`. | • `description` (string, required) |

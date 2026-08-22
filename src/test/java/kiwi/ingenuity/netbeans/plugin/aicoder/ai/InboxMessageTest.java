@@ -1,12 +1,13 @@
 package kiwi.ingenuity.netbeans.plugin.aicoder.ai;
 
-import kiwi.ingenuity.netbeans.plugin.aicoder.ai.mail.AiInboxMessage;
 import java.time.Instant;
-import org.junit.jupiter.api.Test;
+import kiwi.ingenuity.netbeans.plugin.aicoder.ai.mail.AiInboxMessage;
+import kiwi.ingenuity.netbeans.plugin.aicoder.utils.DateUtil;
 import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import org.junit.jupiter.api.Test;
 
 class InboxMessageTest {
 
@@ -42,7 +43,7 @@ class InboxMessageTest {
         assertTrue(s.contains("id=id1"), "summary shows id");
         assertTrue(s.contains("from=fromX"), "summary shows sender");
         assertTrue(s.contains("[UNREAD]"), "summary marks unread");
-        assertTrue(s.contains("2026-06-15T10:00:00Z"), "summary shows sentAt");
+        assertTrue(s.contains(DateUtil.format(Instant.parse("2026-06-15T10:00:00Z"))), "summary shows sentAt");
     }
 
     @Test

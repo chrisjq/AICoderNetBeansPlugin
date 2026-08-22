@@ -1,5 +1,6 @@
 package kiwi.ingenuity.netbeans.plugin.aicoder.ai;
 
+import com.google.gson.JsonObject;
 import java.time.Instant;
 import java.util.List;
 import java.util.Map;
@@ -16,6 +17,10 @@ import kiwi.ingenuity.netbeans.plugin.aicoder.ai.settings.AiSessionSettings;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.SessionRegistry;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.events.AiProcessEventListener;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.session.AbstractAiSession;
+import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.ToolRequestArguments;
+import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.ai.ReadAiMessageParamEnum;
+import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.ai.ReadAiMessageTool;
+import kiwi.ingenuity.netbeans.plugin.aicoder.utils.NotificationUtil;
 import static org.junit.jupiter.api.Assertions.*;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -125,12 +130,66 @@ class AiSessionBrokerTest {
         String id1 = broker.sendMessage("sender", "target", "Sub1", "msg1", null);
         broker.sendMessage("sender", "target", "Sub2", "msg2", null);
 
-        AiInboxMessage read = broker.readMessage("target", target.secret(), id1);
+        AiInboxMessage read = broker.readMessageWithResult("target", target.secret(), id1).message();
         assertNotNull(read);
         assertNotNull(read.readAt(), "read stamps readAt");
 
         List<AiInboxMessage> remaining = broker.listInbox("target", target.secret());
         assertEquals(2, remaining.size(), "read is non-destructive — message stays");
+    }
+
+    @Test
+    void firstReadResultIsOnlyTrueForFirstReadAndReplyInstructionIsAvailable() {
+        AiSession target = stubSession("target", "TargetAI");
+        broker.register(target);
+        String id = broker.sendMessage("sender", "target", "reply", "please respond", null,
+                false, true, false);
+
+        AiSessionInboxBroker.ReadResult first = broker.readMessageWithResult("target", target.secret(), id);
+        assertNotNull(first.message());
+        assertTrue(first.firstRead());
+        assertTrue(NotificationUtil.formatReplyExpectedInstruction().contains("response"));
+
+        AiSessionInboxBroker.ReadResult second = broker.readMessageWithResult("target", target.secret(), id);
+        assertNotNull(second.message());
+        assertFalse(second.firstRead());
+
+        String noReplyId = broker.sendMessage("sender", "target", "no-reply", "FYI", null,
+                false, false, false);
+        AiSessionInboxBroker.ReadResult noReply = broker.readMessageWithResult(
+                "target", target.secret(), noReplyId);
+        assertNotNull(noReply.message());
+        assertFalse(noReply.message().expectsReply());
+        assertTrue(noReply.firstRead());
+    }
+
+    @Test
+    void readAiMessageToolReturnsReplyInstructionOnlyOnFirstExpectedReplyRead() {
+        String targetId = "read-tool-target-" + System.nanoTime();
+        AiSession target = stubSession(targetId, "TargetAI");
+        AiSessionInboxBroker productionBroker = AiSessionInboxBroker.getInstance();
+        productionBroker.register(target);
+        ReadAiMessageTool tool = new ReadAiMessageTool();
+
+        String expectedInstruction = NotificationUtil.formatReplyExpectedInstruction();
+        String expectedId = productionBroker.sendMessage("sender", targetId, "reply", "please respond",
+                null, false, true, false);
+        JsonObject args = new JsonObject();
+        args.addProperty(ReadAiMessageParamEnum.SESSION_ID.key(), target.id());
+        args.addProperty(ReadAiMessageParamEnum.SECRET_KEY.key(), target.secret());
+        args.addProperty(ReadAiMessageParamEnum.MESSAGE_ID.key(), expectedId);
+        ToolRequestArguments request = new ToolRequestArguments(args);
+
+        String first = tool.handle(request, null);
+        assertTrue(first.contains(expectedInstruction), first);
+        String second = tool.handle(request, null);
+        assertFalse(second.contains(expectedInstruction), second);
+
+        String noReplyId = productionBroker.sendMessage("sender", targetId, "fyi", "just information",
+                null, false, false, false);
+        args.addProperty(ReadAiMessageParamEnum.MESSAGE_ID.key(), noReplyId);
+        String noReply = tool.handle(new ToolRequestArguments(args), null);
+        assertFalse(noReply.contains(expectedInstruction), noReply);
     }
 
     @Test
@@ -185,7 +244,7 @@ class AiSessionBrokerTest {
         AiSession target = stubSession("target", "TargetAI");
         broker.register(target);
 
-        AiInboxMessage result = broker.readMessage("target", target.secret(), "no-such-id");
+        AiInboxMessage result = broker.readMessageWithResult("target", target.secret(), "no-such-id").message();
         assertNull(result);
     }
 
@@ -229,7 +288,7 @@ class AiSessionBrokerTest {
         broker.register(recipient);
         String readId = broker.sendMessage("sender", "recipient", "acknowledged", "read body", null);
         String unreadId = broker.sendMessage("sender", "recipient", "pending", "unread body", null);
-        broker.readMessage("recipient", recipient.secret(), readId);
+        broker.readMessageWithResult("recipient", recipient.secret(), readId);
 
         broker.unregister("recipient");
 
@@ -237,8 +296,8 @@ class AiSessionBrokerTest {
         assertTrue(notification.get().contains("pending"));
         assertFalse(notification.get().contains("acknowledged"));
         broker.register(recipient);
-        assertNull(broker.readMessage("recipient", recipient.secret(), readId));
-        assertNull(broker.readMessage("recipient", recipient.secret(), unreadId));
+        assertNull(broker.readMessageWithResult("recipient", recipient.secret(), readId).message());
+        assertNull(broker.readMessageWithResult("recipient", recipient.secret(), unreadId).message());
     }
 
     @Test
@@ -282,7 +341,7 @@ class AiSessionBrokerTest {
         String readId = broker.sendMessage("sender", "target", "old", "read-old", null);
         String unreadId = broker.sendMessage("sender", "target", "new", "unread", null);
         // mark the first read
-        broker.readMessage("target", target.secret(), readId);
+        broker.readMessageWithResult("target", target.secret(), readId);
 
         long now = System.currentTimeMillis();
         // retention 0ms: any read message is already expired; unread is untouched
@@ -298,7 +357,7 @@ class AiSessionBrokerTest {
         AiSession target = stubSession("target", "TargetAI");
         broker.register(target);
         String readId = broker.sendMessage("sender", "target", "x", "y", null);
-        broker.readMessage("target", target.secret(), readId);
+        broker.readMessageWithResult("target", target.secret(), readId);
 
         // huge retention window -> nothing expires
         broker.purgeExpiredRead(System.currentTimeMillis(), 3_600_000L);

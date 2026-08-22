@@ -1,6 +1,7 @@
 package kiwi.ingenuity.netbeans.plugin.aicoder.ai.mail;
 
 import java.time.Instant;
+import kiwi.ingenuity.netbeans.plugin.aicoder.utils.DateUtil;
 
 public final class AiInboxMessage {
 
@@ -101,10 +102,10 @@ public final class AiInboxMessage {
                 .append(" ").append(readAt != null ? "[READ]" : "[UNREAD]")
                 .append("\nSubject: ").append(subject);
         if (sentAt != null) {
-            sb.append("\nSent: ").append(sentAt);
+            sb.append("\nSent: ").append(DateUtil.format(sentAt));
         }
         if (readAt != null) {
-            sb.append("\nRead: ").append(readAt);
+            sb.append("\nRead: ").append(DateUtil.format(readAt));
         }
         if (replyToId != null) {
             sb.append("\nReply-To: ").append(replyToId);

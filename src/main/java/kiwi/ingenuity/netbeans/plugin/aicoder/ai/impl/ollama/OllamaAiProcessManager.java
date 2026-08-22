@@ -7,10 +7,12 @@ import com.google.gson.JsonParser;
 import java.io.File;
 import java.io.IOException;
 import java.util.ArrayList;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 import kiwi.ingenuity.netbeans.plugin.aicoder.PluginSettings;
@@ -48,6 +50,7 @@ import kiwi.ingenuity.netbeans.plugin.aicoder.process.events.AiProcessEventListe
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.server.McpInstructionRegistry;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.server.McpServerRegistry;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.McpToolInterface;
+import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.ToolSchemaKeyEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.serialization.ContextPersistenceManager;
 import kiwi.ingenuity.netbeans.plugin.aicoder.serialization.SessionPersistenceManager;
 import kiwi.ingenuity.netbeans.plugin.aicoder.utils.StatusMessageUtil;
@@ -55,12 +58,26 @@ import kiwi.ingenuity.netbeans.plugin.aicoder.utils.StatusMessageUtil;
 public class OllamaAiProcessManager extends AiProcessManager {
 
     private static final Logger LOG = Logger.getLogger(OllamaAiProcessManager.class.getName());
+
+    /**
+     * Stand-in tool name for a call the model botched badly enough that we never learned which tool it meant. The error
+     * still has to reach the model as a tool result, and a tool result is only accepted alongside an assistant tool
+     * call carrying the same id, so we synthesise the pair. The name is deliberately not a real tool: nothing is
+     * executed, and it must never collide with one, or a later turn could read the transcript as evidence that tool
+     * actually ran.
+     */
+    private static final String MALFORMED_TOOL_CALL_NAME = "unknown_tool";
+
+    /**
+     * Prefix for the id correlating the synthetic assistant call above with its error result.
+     */
+    private static final String MALFORMED_TOOL_CALL_ID_PREFIX = "call_malformed_";
+
     static final int MAX_TOOL_ITERATIONS = 25;
 
     /**
-     * True for text that is an empty JSON object or array — "{}" or "[]", with
-     * or without a code fence. Anything with actual content is left alone: a
-     * user can legitimately ask for JSON and must still receive it.
+     * True for text that is an empty JSON object or array — "{}" or "[]", with or without a code fence. Anything with
+     * actual content is left alone: a user can legitimately ask for JSON and must still receive it.
      */
     static boolean isEmptyJson(String text) {
         if (text == null || text.isBlank()) {
@@ -114,12 +131,10 @@ public class OllamaAiProcessManager extends AiProcessManager {
     }
 
     /**
-     * ContextBrokerSettings has no equals(): it is a plain mutable settings
-     * bag, not a value type, so field-by-field comparison lives here instead.
-     * Two null-safety branches aside, this is the same six-field comparison
-     * AbstractChatContextBroker.updateSettings() uses to decide whether to log
-     * — duplicated rather than shared, since the two live in different packages
-     * for different purposes (one gates a debug log line, this one resets a
+     * ContextBrokerSettings has no equals(): it is a plain mutable settings bag, not a value type, so field-by-field
+     * comparison lives here instead. Two null-safety branches aside, this is the same six-field comparison
+     * AbstractChatContextBroker.updateSettings() uses to decide whether to log — duplicated rather than shared, since
+     * the two live in different packages for different purposes (one gates a debug log line, this one resets a
      * user-facing warning).
      */
     private static boolean settingsDiffer(ContextBrokerSettings a, ContextBrokerSettings b) {
@@ -133,6 +148,15 @@ public class OllamaAiProcessManager extends AiProcessManager {
                 || a.strategy() != b.strategy()
                 || a.trigger() != b.trigger();
     }
+    /**
+     * Makes each recovery id unique for the life of the session.
+     * <p>
+     * A fixed id would repeat: once a turn recovers and commits, its synthetic pair stays in the transcript, so a
+     * second malformed call in a later turn would put two assistant calls and two results with the same id into the
+     * same request. Tool results are matched to calls by id, so duplicates make the pairing ambiguous and stricter
+     * endpoints reject them outright. The per-turn loop counter is no use here - it restarts every turn.
+     */
+    private final AtomicInteger malformedToolCallCount = new AtomicInteger();
 
     private volatile OllamaMcpRegistrar registrar;
     private volatile HttpAiClient httpClient;
@@ -260,12 +284,18 @@ public class OllamaAiProcessManager extends AiProcessManager {
                     currentSession.aiType(), handlers);
             JsonArray toolSchemas = bridge.listToolsForModel(handlers.values());
             List<JsonObject> tools = new ArrayList<>();
-            Set<String> knownToolNames = new java.util.LinkedHashSet<>();
+            Set<String> knownToolNames = new LinkedHashSet<>();
             for (int i = 0; i < toolSchemas.size(); i++) {
                 JsonObject tool = toolSchemas.get(i).getAsJsonObject();
                 tools.add(tool);
-                if (tool.has("name")) {
-                    knownToolNames.add(tool.get("name").getAsString());
+                // These are OUR tool schemas, built by McpToolSchemas with
+                // ToolSchemaKeyEnum — not anything Ollama sent. Reading them
+                // back through an Ollama-vocabulary constant would mean a
+                // rename of ToolSchemaKeyEnum.NAME still compiles, this test
+                // goes false for every tool, and Ollama silently loses tool
+                // calling entirely.
+                if (tool.has(ToolSchemaKeyEnum.NAME.key())) {
+                    knownToolNames.add(tool.get(ToolSchemaKeyEnum.NAME.key()).getAsString());
                 }
             }
 
@@ -275,7 +305,7 @@ public class OllamaAiProcessManager extends AiProcessManager {
             // by a schema instead. See SchemaToolCalls.
             boolean schemaMode = currentSession.aiType().getMcpOptions()
                     .contains(McpInstructionOptionEnum.TOOL_CALLS_VIA_SCHEMA);
-            JsonObject responseFormat = schemaMode ? SchemaToolCalls.responseFormat() : null;
+            JsonObject responseFormat = schemaMode ? SchemaToolCalls.responseFormat(knownToolNames) : null;
             List<JsonObject> requestTools = schemaMode ? List.of() : tools;
             if (schemaMode) {
                 instructions = instructions
@@ -320,12 +350,12 @@ public class OllamaAiProcessManager extends AiProcessManager {
             // answered with a correction instead of being executed again, and two
             // consecutive all-repeat rounds end the turn rather than grinding out
             // the full iteration cap.
-            Set<String> executedCalls = new java.util.LinkedHashSet<>();
+            Set<String> executedCalls = new LinkedHashSet<>();
             // Identical arguments are not the only way to make no progress: the
             // model varied the description on every UpdateSessionDescription call
             // and got "Description updated." back each time. A tool result already
             // seen this turn means the call told the model nothing new.
-            Set<String> seenResults = new java.util.LinkedHashSet<>();
+            Set<String> seenResults = new LinkedHashSet<>();
             int barrenRounds = 0;
             for (int iteration = 0; iteration < MAX_TOOL_ITERATIONS && !cancelledByUser; iteration++) {
                 String apiKey = resolveApiKey(settings);
@@ -374,16 +404,40 @@ public class OllamaAiProcessManager extends AiProcessManager {
                         localBroker.estimatedTokenTotal(), lastResolvedSettings.tokenThreshold()));
                 List<ExtractedToolCall> calls;
                 String assistantText;
+                String toolCallError = null;
                 if (schemaMode) {
                     // The answer is the schema's message field; the raw content is
                     // a JSON envelope the user must never see.
                     SchemaToolCalls.Reply reply = SchemaToolCalls.parse(result, knownToolNames);
                     calls = reply.calls();
                     assistantText = reply.message();
+                    toolCallError = reply.toolCallError();
                 }
                 else {
                     calls = ToolCallExtractor.extract(result, knownToolNames);
                     assistantText = result.assistantText();
+                }
+                if (calls.isEmpty() && toolCallError != null) {
+                    // The model tried to call a tool and got the envelope wrong.
+                    // Answer it the way a failing tool would, so it can correct
+                    // itself on the next turn instead of the attempt vanishing.
+                    // The correction itself stays between us and the model - the
+                    // user is only told if we give up on it below, because a turn
+                    // that ends with no answer and no explanation looks like a bug.
+                    String malformedCallId = MALFORMED_TOOL_CALL_ID_PREFIX
+                            + malformedToolCallCount.incrementAndGet();
+                    localBroker.append(new ChatMessage(ChatRole.ASSISTANT, null,
+                            List.of(new ChatToolCall(malformedCallId, MALFORMED_TOOL_CALL_NAME, "{}")), null));
+                    localBroker.append(new ChatMessage(ChatRole.TOOL, toolCallError,
+                            List.of(), malformedCallId));
+                    barrenRounds++;
+                    if (barrenRounds >= 2) {
+                        listener.onAiProcessEvent(new StatusEvent(StatusEventTypeEnum.INFO,
+                                "The model kept sending malformed tool calls instead of an answer"));
+                        listener.onAiProcessEvent(new TurnCompleteEvent());
+                        return;
+                    }
+                    continue;
                 }
                 if (calls.isEmpty()) {
                     String finalText = assistantText;
@@ -500,9 +554,8 @@ public class OllamaAiProcessManager extends AiProcessManager {
     }
 
     /**
-     * Last resort when the tool loop ends without an answer: ask once more with
-     * an empty tool list, so the model has nothing to call and must reply in
-     * prose. Without this the user is left with only a status line.
+     * Last resort when the tool loop ends without an answer: ask once more with an empty tool list, so the model has
+     * nothing to call and must reply in prose. Without this the user is left with only a status line.
      *
      * @return true if a non-empty answer was produced and emitted
      */
@@ -546,19 +599,17 @@ public class OllamaAiProcessManager extends AiProcessManager {
     }
 
     /**
-     * The context file lives beside history.json in the same per-session
-     * directory, so it shares SessionPersistenceManager's base directory rather
-     * than inventing a new location.
+     * The context file lives beside history.json in the same per-session directory, so it shares
+     * SessionPersistenceManager's base directory rather than inventing a new location.
      */
     ContextPersistenceManager createContextPersistenceManager() {
         return new ContextPersistenceManager(SessionPersistenceManager.defaultBaseDir());
     }
 
     /**
-     * Three-level fallback per setting: session value if set, else the global
-     * default, else the hardcoded default baked into ContextBrokerSettings.
-     * Session values are nullable precisely so "unset" is distinguishable from
-     * "set to zero/false".
+     * Three-level fallback per setting: session value if set, else the global default, else the hardcoded default baked
+     * into ContextBrokerSettings. Session values are nullable precisely so "unset" is distinguishable from "set to
+     * zero/false".
      */
     ContextBrokerSettings resolveBrokerSettings() {
         ContextBrokerSettings s = ContextBrokerSettings.defaults();
@@ -722,11 +773,9 @@ public class OllamaAiProcessManager extends AiProcessManager {
     }
 
     /**
-     * Wipes the model's memory of the conversation. The chat panel keeps
-     * showing the full transcript, so without an inline notice a user who
-     * scrolls up and references an earlier exchange gets a baffled reply —
-     * before this feature the visible log and the model's memory always agreed,
-     * so this divergence needs calling out.
+     * Wipes the model's memory of the conversation. The chat panel keeps showing the full transcript, so without an
+     * inline notice a user who scrolls up and references an earlier exchange gets a baffled reply — before this feature
+     * the visible log and the model's memory always agreed, so this divergence needs calling out.
      */
     public void clearContext() {
         AbstractChatContextBroker b = broker;
@@ -744,16 +793,14 @@ public class OllamaAiProcessManager extends AiProcessManager {
     }
 
     /**
-     * Trims older context down to the low-water mark right now, ignoring the
-     * threshold. Summarises the evicted span when a summariser is available (it
-     * is, unconditionally, once start() has run), falling back to a drop marker
+     * Trims older context down to the low-water mark right now, ignoring the threshold. Summarises the evicted span
+     * when a summariser is available (it is, unconditionally, once start() has run), falling back to a drop marker
      * otherwise.
      *
-     * Runs on a background thread: summarising makes a network call that can
-     * take seconds, and this is invoked straight from the info bar's Compact
-     * button, on the EDT. Completion is reported the same way a turn reports
-     * usage — an OllamaTokenUsageEvent — so the info bar's existing handling of
-     * that event also clears the gauge's indeterminate state.
+     * Runs on a background thread: summarising makes a network call that can take seconds, and this is invoked straight
+     * from the info bar's Compact button, on the EDT. Completion is reported the same way a turn reports usage — an
+     * OllamaTokenUsageEvent — so the info bar's existing handling of that event also clears the gauge's indeterminate
+     * state.
      */
     public void compactContext() {
         AbstractChatContextBroker b = broker;

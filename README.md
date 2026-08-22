@@ -1,6 +1,6 @@
 # AI Coder for NetBeans
 
-> **Version compatibility:** Version 1.2.21 supports Claude, GitHub Copilot, and Grok only. Current releases also support Ollama (Local), OpenCode, and Codex.
+> **Version compatibility:** Version 1.2.21 supports Claude, GitHub Copilot, and Grok only. If you are running a released version review the documentation at that git tag.
 
 AI Coder is a NetBeans IDE plugin that provides dockable, multi-session AI coding chats with IDE-aware context, project-scoped tools, configurable permissions, and reviewable file changes. It can work with local, CLI-based, SDK-based, ACP, app-server, and OpenAI-compatible backends through one shared chat and tool experience.
 
@@ -109,7 +109,7 @@ For OpenAI-compatible sessions, context management can trim by message count, es
 
 ## Sessions, history, and context
 
-Session definitions are saved in the NetBeans user area and include their name, description, backend-specific settings, associated project, timestamps, and instruction-delivery state. Opening a saved session restores its recorded history and working directory where valid. Corrupt history/context data is ignored and rebuilt rather than blocking a session.
+Session definitions are saved in the NetBeans user area and include their name, description, backend-specific settings, associated project, timestamps, and instruction-delivery state. Opening a saved session restores its recorded history and working directory where valid. Persisted timestamps remain machine-readable and unchanged. Dates displayed to an AI — including inbox server, sent, and read times, file metadata, and Git commit dates — use the machine's local timezone, for example `2026-08-22 21:28:48 +12:00 (Pacific/Auckland)`. Corrupt history/context data is ignored and rebuilt rather than blocking a session.
 
 On initial delivery, the assistant receives session identity, open project locations, and active-editor context. Later requests generally contain only changes to the active file/project state; stateless backends receive the required baseline again. Saved history and model-facing context are independent, allowing the chat transcript and backend context to recover safely.
 

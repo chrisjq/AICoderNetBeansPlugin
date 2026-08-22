@@ -87,9 +87,8 @@ public class McpHookServer {
     }
 
     /**
-     * Gate predicate: while a conversation has not loaded the full instruction
-     * guide, every tool except GetInstructions is blocked. An unknown tool
-     * (null) is also blocked so the AI is steered to GetInstructions first.
+     * Gate predicate: while a conversation has not loaded the full instruction guide, every tool except GetInstructions
+     * is blocked. An unknown tool (null) is also blocked so the AI is steered to GetInstructions first.
      */
     static boolean isToolGated(boolean instructionsLoaded, McpToolEnum tool) {
         if (instructionsLoaded) {
@@ -99,9 +98,8 @@ public class McpHookServer {
     }
 
     /**
-     * Applies the HTTP connection-management settings above as JDK system
-     * properties. Must run before the first HttpServer is created in the JVM,
-     * since com.sun.net.httpserver reads them once at ServerConfig init.
+     * Applies the HTTP connection-management settings above as JDK system properties. Must run before the first
+     * HttpServer is created in the JVM, since com.sun.net.httpserver reads them once at ServerConfig init.
      */
     private static void applyConnectionSettings() {
         System.setProperty("sun.net.httpserver.idleInterval", Integer.toString(IDLE_INTERVAL_SECONDS));
@@ -174,8 +172,8 @@ public class McpHookServer {
     }
 
     /**
-     * Start accepting connections. Called only by the {@link McpServerRegistry}
-     * supervisor after a successful {@link #init()}. Idempotent.
+     * Start accepting connections. Called only by the {@link McpServerRegistry} supervisor after a successful
+     * {@link #init()}. Idempotent.
      */
     public void start() {
         if (started) {
@@ -191,11 +189,10 @@ public class McpHookServer {
 
     // ---- Public API ----
     /**
-     * Register a session's file-scope data. The shared /mcp endpoint handles
-     * all sessions by validating sessionId+secretKey from tool arguments.
+     * Register a session's file-scope data. The shared /mcp endpoint handles all sessions by validating
+     * sessionId+secretKey from tool arguments.
      *
-     * @param aiTypeKey AI type key from {@code AiTypeEnum.key()}, e.g.
-     * {@code "claude"}
+     * @param aiTypeKey AI type key from {@code AiTypeEnum.key()}, e.g. {@code "claude"}
      */
     public void registerSession(String sessionId, AiTypeEnum aiType,
             List<java.io.File> projectDirs, boolean restrictToProjectFiles) {
@@ -216,13 +213,11 @@ public class McpHookServer {
     }
 
     /**
-     * Refreshes a registered session's file-access scope (project dirs +
-     * restrict flag). If the session is not currently tracked (hook-server
-     * restart, or a lost/startup-race registration), re-registers it rather
-     * than no-oping — a silently untracked session would bypass the diff panel
-     * indefinitely. Only open sessions call this (handleSubmit + the
-     * open-projects listener), and componentClosed removes that listener and
-     * calls unregisterSession, so this cannot resurrect a closed session.
+     * Refreshes a registered session's file-access scope (project dirs + restrict flag). If the session is not
+     * currently tracked (hook-server restart, or a lost/startup-race registration), re-registers it rather than
+     * no-oping — a silently untracked session would bypass the diff panel indefinitely. Only open sessions call this
+     * (handleSubmit + the open-projects listener), and componentClosed removes that listener and calls
+     * unregisterSession, so this cannot resurrect a closed session.
      */
     public void updateSessionScope(String sessionId, AiTypeEnum aiType,
             List<java.io.File> projectDirs, boolean restrictToProjectFiles) {
@@ -268,10 +263,9 @@ public class McpHookServer {
     }
 
     /**
-     * True if {@code filePath} resolves to a location inside one of the
-     * session's registered project roots. Independent of the
-     * restrict-to-project flag, so a caller can ask "is this a project file?"
-     * directly. Fails closed when the session has no registered roots.
+     * True if {@code filePath} resolves to a location inside one of the session's registered project roots. Independent
+     * of the restrict-to-project flag, so a caller can ask "is this a project file?" directly. Fails closed when the
+     * session has no registered roots.
      */
     boolean isWithinProjectDirs(String sessionId, String filePath) {
         if (filePath == null || filePath.isBlank()) {
@@ -303,12 +297,10 @@ public class McpHookServer {
     }
 
     /**
-     * True if {@code filePath} is inside this session's own per-session config
-     * directory ({@code ~/.ai-coder/{type}/{sessionId}/}), where the AI keeps
-     * its memory and logs. These live outside every open project, so no diff
-     * panel can be built for them; they pass straight through to the built-in
-     * tool. Scoped to the requesting session, so one session can never write
-     * into another session's memory.
+     * True if {@code filePath} is inside this session's own per-session config directory
+     * ({@code ~/.ai-coder/{type}/{sessionId}/}), where the AI keeps its memory and logs. These live outside every open
+     * project, so no diff panel can be built for them; they pass straight through to the built-in tool. Scoped to the
+     * requesting session, so one session can never write into another session's memory.
      */
     public boolean isOwnSessionConfigFile(String sessionId, String filePath) {
         if (sessionId == null || filePath == null || filePath.isBlank()) {
@@ -335,9 +327,8 @@ public class McpHookServer {
     }
 
     /**
-     * The server's base URL (e.g. {@code http://127.0.0.1:PORT}). Captured at
-     * {@link #init()} so it remains valid after {@link #stop()} nulls the
-     * underlying httpServer (finding 5). Null only if init() never ran.
+     * The server's base URL (e.g. {@code http://127.0.0.1:PORT}). Captured at {@link #init()} so it remains valid after
+     * {@link #stop()} nulls the underlying httpServer (finding 5). Null only if init() never ran.
      */
     public String getBaseUrl() {
         return baseUrl;
@@ -690,15 +681,27 @@ public class McpHookServer {
                     String sessionId = McpHookServerUtil.str(argsObj, McpToolPropertyEnum.SESSION_ID.key());
                     String secretKey = McpHookServerUtil.str(argsObj, McpToolPropertyEnum.SECRET_KEY.key());
 
+                    // Both failures used to read "Authentication failed", which
+                    // tells the model nothing it can act on — it cannot see which
+                    // of the two values we objected to, or that its own identity
+                    // block is the fix. Named separately so a model that dropped
+                    // or corrupted a credential can repair the call itself
+                    // instead of retrying the same broken arguments.
                     if (sessionId == null || secretKey == null) {
-                        McpHookServerUtil.sendJson(ex, 200,
-                                McpHookServerUtil.mcpError(id, -32600, "Authentication failed"));
+                        McpHookServerUtil.sendJson(ex, 200, McpHookServerUtil.mcpError(id, -32600,
+                                "Authentication failed: "
+                                + McpToolPropertyEnum.SESSION_ID.key() + " and "
+                                + McpToolPropertyEnum.SECRET_KEY.key()
+                                + " are both required on every tool call. Copy them verbatim from your session identity block."));
                         return;
                     }
 
                     if (!AiSessionInboxBroker.getInstance().validateSecret(sessionId, secretKey)) {
-                        McpHookServerUtil.sendJson(ex, 200,
-                                McpHookServerUtil.mcpError(id, -32600, "Authentication failed"));
+                        McpHookServerUtil.sendJson(ex, 200, McpHookServerUtil.mcpError(id, -32600,
+                                "Authentication failed: no session matches that "
+                                + McpToolPropertyEnum.SESSION_ID.key() + "/"
+                                + McpToolPropertyEnum.SECRET_KEY.key()
+                                + " pair. Re-read your session identity block and copy both values exactly, character for character."));
                         return;
                     }
 

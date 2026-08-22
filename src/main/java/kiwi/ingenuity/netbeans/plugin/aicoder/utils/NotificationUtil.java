@@ -35,11 +35,15 @@ public class NotificationUtil {
         notifBuilder.append(" — read it with ")
                 .append(McpToolEnum.READ_AI_MESSAGE.toolName()).append('.');
         if (message.expectsReply()) {
-            notifBuilder.append(" A response must be sent to this message with ")
-                    .append(McpToolEnum.SEND_AI_MESSAGE.toolName()).append('.');
+            notifBuilder.append(' ').append(formatReplyExpectedInstruction());
         }
 
         return notifBuilder.toString();
+    }
+
+    public static String formatReplyExpectedInstruction() {
+        return "A response must be sent to this message with "
+                + McpToolEnum.SEND_AI_MESSAGE.toolName() + '.';
     }
 
     // Chat system messages
@@ -52,10 +56,8 @@ public class NotificationUtil {
     }
 
     /**
-     * A question that was shown but never answered — the tool timed out or the
-     * turn was cancelled. Recorded in history (unlike the live question panel,
-     * which is transient) so the conversation shows it was asked and left
-     * unanswered.
+     * A question that was shown but never answered — the tool timed out or the turn was cancelled. Recorded in history
+     * (unlike the live question panel, which is transient) so the conversation shows it was asked and left unanswered.
      */
     public static String formatUnansweredQuestion(com.google.gson.JsonArray questions) {
         StringBuilder sb = new StringBuilder("Question not answered (timed out or cancelled)");

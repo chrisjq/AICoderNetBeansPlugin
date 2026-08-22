@@ -140,6 +140,17 @@ public class SendAiMessageTool extends AbstractActionTool {
             return "Error: inter-AI communication is disabled for this session";
         }
         if (!broker.isActive(targetSessionId)) {
+            // Unlike the sender's credentials, which the MCP server has already
+            // validated before this tool runs, the target ID is an ordinary
+            // argument nothing has checked. A mistyped one and a genuinely
+            // stopped peer both land here needing opposite advice, and the old
+            // shared "is not active" gave the mistyped case the wrong one.
+            if (!broker.isKnownSession(targetSessionId)) {
+                return "Error: no AI session has the ID '" + targetSessionId + "'. Call "
+                        + McpToolEnum.LIST_AI_SESSIONS.toolName()
+                        + " and copy the recipient's " + SendAiMessageParamEnum.TARGET_SESSION_ID.key()
+                        + " verbatim — session IDs are full UUIDs and must match character for character.";
+            }
             return "Error: session '" + targetSessionId + "' is not active";
         }
         if (!broker.isInterAiCommsAllowed(targetSessionId)) {

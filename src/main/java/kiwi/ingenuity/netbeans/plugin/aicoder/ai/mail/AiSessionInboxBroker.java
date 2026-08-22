@@ -1,8 +1,12 @@
 package kiwi.ingenuity.netbeans.plugin.aicoder.ai.mail;
 
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
+import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -11,10 +15,13 @@ import java.util.UUID;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
 import java.util.function.IntSupplier;
+import java.util.logging.Level;
 import java.util.logging.Logger;
 import java.util.stream.Collectors;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.events.AiInboxMessageEvent;
@@ -64,15 +71,15 @@ public final class AiSessionInboxBroker {
     private volatile IntSupplier retentionMinutes = () -> 0;
     private ScheduledExecutorService sweeper;
 
-    private final ExecutorService notifier = new java.util.concurrent.ThreadPoolExecutor(
+    private final ExecutorService notifier = new ThreadPoolExecutor(
             1, 1, 0L, TimeUnit.MILLISECONDS,
-            new java.util.concurrent.LinkedBlockingQueue<>(100),
+            new LinkedBlockingQueue<>(100),
             r -> {
                 Thread t = new Thread(r, "ai-inbox-notifier");
                 t.setDaemon(true);
                 return t;
             },
-            new java.util.concurrent.ThreadPoolExecutor.DiscardOldestPolicy());
+            new ThreadPoolExecutor.DiscardOldestPolicy());
 
     public AiSessionInboxBroker() {
     }
@@ -97,10 +104,9 @@ public final class AiSessionInboxBroker {
     }
 
     /**
-     * Unregisters a session. Senders of unread messages are notified of
-     * non-delivery. Senders whose messages were read but not yet replied to
-     * (expectsReply=true) receive a "no reply" notification; if replyImportant
-     * was set, the sender is interrupted regardless of their own setting.
+     * Unregisters a session. Senders of unread messages are notified of non-delivery. Senders whose messages were read
+     * but not yet replied to (expectsReply=true) receive a "no reply" notification; if replyImportant was set, the
+     * sender is interrupted regardless of their own setting.
      */
     public void unregister(String sessionId) {
         List<AiInboxMessage> unread;
@@ -123,7 +129,7 @@ public final class AiSessionInboxBroker {
             pendingAsRecipient.forEach(e -> pendingReplies.remove(e.messageId()));
             // Remove orphaned entries where the exiting session was the sender
             pendingReplies.entrySet().removeIf(e -> e.getValue().fromSessionId().equals(sessionId));
-            activeIds = new java.util.HashSet<>(inbox.keySet());
+            activeIds = new HashSet<>(inbox.keySet());
         }
         if (unread.isEmpty() && pendingAsRecipient.isEmpty()) {
             return;
@@ -164,7 +170,7 @@ public final class AiSessionInboxBroker {
                     + subjects.stream().map(s -> "\"" + s + "\"").collect(Collectors.joining(", "));
             AiInboxMessage notification = new AiInboxMessage(notifId, sessionId, senderId,
                     notifSubject, notifBody, null, wasImportant, false, false,
-                    java.time.Instant.now(), null, null);
+                    Instant.now(), null, null);
             boolean inserted;
             synchronized (lock) {
                 inserted = inbox.containsKey(senderId);
@@ -203,7 +209,7 @@ public final class AiSessionInboxBroker {
                     + " Subject: \"" + pendingEntry.subject() + "\"";
             AiInboxMessage notification = new AiInboxMessage(notifId, sessionId, senderId,
                     notifSubject, notifBody, pendingEntry.messageId(), pendingEntry.replyImportant(), false, false,
-                    java.time.Instant.now(), null, null);
+                    Instant.now(), null, null);
             boolean inserted;
             synchronized (lock) {
                 inserted = inbox.containsKey(senderId);
@@ -231,6 +237,18 @@ public final class AiSessionInboxBroker {
         synchronized (lock) {
             return inbox.containsKey(sessionId);
         }
+    }
+
+    /**
+     * Whether the IDE knows this session at all, regardless of whether it can currently receive mail.
+     * <p>
+     * Distinct from {@link #isActive(String)}: a sender that mistypes a session ID and a sender addressing a session
+     * that has since stopped both fail the active check, but they need opposite advice — fix the ID, versus pick a
+     * different recipient. Without this the caller can only say "not active", which reads as "they have stopped" and
+     * sends a caller with a corrupted ID looking in entirely the wrong place.
+     */
+    public boolean isKnownSession(String sessionId) {
+        return sessionFromRegistry(sessionId) != null;
     }
 
     public boolean isInterAiCommsAllowed(String sessionId) {
@@ -280,18 +298,15 @@ public final class AiSessionInboxBroker {
     /**
      * Sends a message to another session's inbox.
      *
-     * Returns the generated message ID, or null if the target session is not
-     * active. The active check and inbox insertion are atomic under the same
-     * lock, closing the TOCTOU gap between isActive() and delivery.
+     * Returns the generated message ID, or null if the target session is not active. The active check and inbox
+     * insertion are atomic under the same lock, closing the TOCTOU gap between isActive() and delivery.
      *
-     * When replyToId refers to an expectsReply entry with replyImportant=true,
-     * the reply is automatically upgraded to important so the original sender
-     * is interrupted when the reply arrives.
+     * When replyToId refers to an expectsReply entry with replyImportant=true, the reply is automatically upgraded to
+     * important so the original sender is interrupted when the reply arrives.
      *
-     * When expectsReply=true a lightweight PendingReplyEntry (no body) is
-     * stored. If the recipient exits without replying, the sender receives an
-     * automatic "no reply" notification; if replyImportant=true the sender is
-     * also interrupted regardless of their allowImportantMessages setting.
+     * When expectsReply=true a lightweight PendingReplyEntry (no body) is stored. If the recipient exits without
+     * replying, the sender receives an automatic "no reply" notification; if replyImportant=true the sender is also
+     * interrupted regardless of their allowImportantMessages setting.
      */
     public String sendMessage(String callerSessionId, String targetSessionId,
             String subject, String body, String replyToId,
@@ -316,25 +331,25 @@ public final class AiSessionInboxBroker {
                 // of the original message — prevents spoofing another session's reply state.
                 AiInboxMessage original = inboxMessageById.get(replyToId);
                 if (original != null && callerSessionId.equals(original.toSessionId())) {
-                    original.setRespondedAt(java.time.Instant.now());
+                    original.setRespondedAt(Instant.now());
                 }
             }
             msg = new AiInboxMessage(id, callerSessionId, targetSessionId,
                     truncatedSubject, body, replyToId, effectiveImportant, expectsReply, replyImportant,
-                    java.time.Instant.now(), null, null);
+                    Instant.now(), null, null);
             List<AiInboxMessage> targetInbox = inbox.computeIfAbsent(targetSessionId, k -> new ArrayList<>());
             if (targetInbox.size() >= maxInboxSize.getAsInt()) {
                 AiInboxMessage evicted = targetInbox.remove(0);
                 inboxMessageById.remove(evicted.id());
                 PendingReplyEntry evictedReply = pendingReplies.remove(evicted.id());
                 if (evictedReply != null) {
-                    String failId = java.util.UUID.randomUUID().toString();
+                    String failId = UUID.randomUUID().toString();
                     String failSubject = "Delivery failed — inbox full (session " + targetSessionId + ")";
                     String failBody = "Your message \"" + evictedReply.subject() + "\" was dropped because the recipient's inbox is full.";
                     String failRecipient = evictedReply.fromSessionId();
                     AiInboxMessage failNotif = new AiInboxMessage(failId, targetSessionId, failRecipient,
                             failSubject, failBody, evicted.id(), false, false, false,
-                            java.time.Instant.now(), null, null);
+                            Instant.now(), null, null);
                     if (inbox.containsKey(failRecipient)) {
                         inbox.computeIfAbsent(failRecipient, k -> new ArrayList<>()).add(failNotif);
                         inboxMessageById.put(failId, failNotif);
@@ -372,8 +387,7 @@ public final class AiSessionInboxBroker {
     }
 
     /**
-     * Returns a non-draining snapshot of the inbox. Returns null if
-     * authentication fails.
+     * Returns a non-draining snapshot of the inbox. Returns null if authentication fails.
      */
     public List<AiInboxMessage> listInbox(String sessionId, String secret) {
         if (!validateSecret(sessionId, secret)) {
@@ -386,22 +400,27 @@ public final class AiSessionInboxBroker {
     }
 
     /**
-     * Marks a message as read and returns it. Returns null if not found, not
-     * owned by this session, or authentication fails.
+     * Marks a message as read and returns it. Returns null if not found, not owned by this session, or authentication
+     * fails.
      */
-    public AiInboxMessage readMessage(String sessionId, String secret, String messageId) {
+    /**
+     * Marks a message as read and reports whether this call performed the first read. The message lookup and first-read
+     * decision happen under one lock.
+     */
+    public ReadResult readMessageWithResult(String sessionId, String secret, String messageId) {
         if (!validateSecret(sessionId, secret)) {
-            return null;
+            return new ReadResult(null, false);
         }
         synchronized (lock) {
             AiInboxMessage m = inboxMessageById.get(messageId);
             if (m == null || !m.toSessionId().equals(sessionId)) {
-                return null;
+                return new ReadResult(null, false);
             }
-            if (m.readAt() == null) {
-                m.setReadAt(java.time.Instant.now());
+            boolean firstRead = m.readAt() == null;
+            if (firstRead) {
+                m.setReadAt(Instant.now());
             }
-            return m;
+            return new ReadResult(m, firstRead);
         }
     }
 
@@ -417,15 +436,14 @@ public final class AiSessionInboxBroker {
     }
 
     /**
-     * Deletes inbox messages by id for the authenticated session. Returns the
-     * count actually removed (unknown ids are ignored). Returns 0 on auth
-     * failure.
+     * Deletes inbox messages by id for the authenticated session. Returns the count actually removed (unknown ids are
+     * ignored). Returns 0 on auth failure.
      */
     public int deleteMessages(String sessionId, String secret, List<String> ids) {
         if (!validateSecret(sessionId, secret) || ids == null || ids.isEmpty()) {
             return 0;
         }
-        Set<String> idSet = new java.util.HashSet<>(ids);
+        Set<String> idSet = new HashSet<>(ids);
         synchronized (lock) {
             List<AiInboxMessage> messages = inbox.get(sessionId);
             if (messages == null) {
@@ -458,17 +476,16 @@ public final class AiSessionInboxBroker {
         if (session == null || secret == null) {
             return false;
         }
-        return java.security.MessageDigest.isEqual(
-                session.secret().getBytes(java.nio.charset.StandardCharsets.UTF_8),
-                secret.getBytes(java.nio.charset.StandardCharsets.UTF_8)
+        return MessageDigest.isEqual(
+                session.secret().getBytes(StandardCharsets.UTF_8),
+                secret.getBytes(StandardCharsets.UTF_8)
         );
     }
 
     /**
-     * Removes read messages whose readAt + retentionMs is at or before nowMs.
-     * Iterates the flat inboxMessageById map for efficient expired-only
-     * scanning; uses toSessionId for O(1) inbox list lookup to remove the
-     * entry. Unread messages are never purged.
+     * Removes read messages whose readAt + retentionMs is at or before nowMs. Iterates the flat inboxMessageById map
+     * for efficient expired-only scanning; uses toSessionId for O(1) inbox list lookup to remove the entry. Unread
+     * messages are never purged.
      */
     public void purgeExpiredRead(long nowMs, long retentionMs) {
         synchronized (lock) {
@@ -487,8 +504,8 @@ public final class AiSessionInboxBroker {
     }
 
     /**
-     * Starts the periodic retention sweep (prod only; called from getInstance()
-     * before the instance is published — no concurrent access).
+     * Starts the periodic retention sweep (prod only; called from getInstance() before the instance is published — no
+     * concurrent access).
      */
     private void startSweeper() {
         sweeper = Executors.newSingleThreadScheduledExecutor(r -> {
@@ -504,7 +521,7 @@ public final class AiSessionInboxBroker {
                 }
             }
             catch (Exception e) {
-                LOG.log(java.util.logging.Level.WARNING, "Inbox sweep failed", e);
+                LOG.log(Level.WARNING, "Inbox sweep failed", e);
             }
         }, 60, 60, TimeUnit.SECONDS);
     }
@@ -521,18 +538,15 @@ public final class AiSessionInboxBroker {
     }
 
     /**
-     * Blocks until every notification task submitted before this call has
-     * finished running, or the timeout expires. Returns true if the queue
-     * drained in time.
+     * Blocks until every notification task submitted before this call has finished running, or the timeout expires.
+     * Returns true if the queue drained in time.
      *
      * <p>
-     * {@code notifier} is a single worker over a FIFO queue, so a no-op
-     * submitted now cannot run until everything ahead of it has completed —
-     * awaiting it is therefore an exact barrier rather than a guess. Exists
-     * because delivery and the mail interrupt are dispatched asynchronously:
-     * without a barrier a caller (notably a test) observing state straight
-     * after {@code sendMessage} reads it before the work has run, which makes a
-     * "did not interrupt" assertion pass whether or not the code is correct.
+     * {@code notifier} is a single worker over a FIFO queue, so a no-op submitted now cannot run until everything ahead
+     * of it has completed — awaiting it is therefore an exact barrier rather than a guess. Exists because delivery and
+     * the mail interrupt are dispatched asynchronously: without a barrier a caller (notably a test) observing state
+     * straight after {@code sendMessage} reads it before the work has run, which makes a "did not interrupt" assertion
+     * pass whether or not the code is correct.
      */
     public boolean awaitNotifierIdle(long timeout, TimeUnit unit) throws InterruptedException {
         CountDownLatch drained = new CountDownLatch(1);
@@ -555,6 +569,25 @@ public final class AiSessionInboxBroker {
         catch (InterruptedException e) {
             notifier.shutdownNow();
             Thread.currentThread().interrupt();
+        }
+    }
+
+    public static final class ReadResult {
+
+        private final AiInboxMessage message;
+        private final boolean firstRead;
+
+        private ReadResult(AiInboxMessage message, boolean firstRead) {
+            this.message = message;
+            this.firstRead = firstRead;
+        }
+
+        public AiInboxMessage message() {
+            return message;
+        }
+
+        public boolean firstRead() {
+            return firstRead;
         }
     }
 

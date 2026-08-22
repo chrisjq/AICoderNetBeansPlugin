@@ -2,7 +2,6 @@ package kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.ai;
 
 import com.google.gson.JsonArray;
 import com.google.gson.JsonObject;
-import java.time.Instant;
 import java.util.Set;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.mail.AiInboxMessage;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.mail.AiSessionInboxBroker;
@@ -14,6 +13,8 @@ import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.AbstractActionTo
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.McpToolSchemas;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.ToolRequestArguments;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.ToolSchemaKeyEnum;
+import kiwi.ingenuity.netbeans.plugin.aicoder.utils.DateUtil;
+import kiwi.ingenuity.netbeans.plugin.aicoder.utils.NotificationUtil;
 
 public class ReadAiMessageTool extends AbstractActionTool {
 
@@ -79,13 +80,19 @@ public class ReadAiMessageTool extends AbstractActionTool {
         if (messageId == null) {
             return "Error: " + ReadAiMessageParamEnum.MESSAGE_ID.key() + " is required";
         }
-        AiInboxMessage msg = AiSessionInboxBroker.getInstance().readMessage(sessionId, secretKey, messageId);
+        AiSessionInboxBroker.ReadResult readResult = AiSessionInboxBroker.getInstance()
+                .readMessageWithResult(sessionId, secretKey, messageId);
+        AiInboxMessage msg = readResult.message();
         if (msg == null) {
-            return "Error: message not found — ID is incorrect or the message has expired/been deleted";
+            return "Error: message not found — ID is incorrect or the message has expired/been deleted. Call "
+                    + McpToolEnum.GET_AI_MESSAGES.toolName() + " to list the IDs currently in your inbox.";
         }
         StringBuilder sb = new StringBuilder();
-        sb.append("Server time: ").append(Instant.now()).append("\n");
+        sb.append("Server time: ").append(DateUtil.now()).append("\n");
         sb.append(msg.formatSummary()).append("\n\n").append(msg.body());
+        if (readResult.firstRead() && msg.expectsReply()) {
+            sb.append("\n\n").append(NotificationUtil.formatReplyExpectedInstruction());
+        }
         return sb.toString();
     }
 }

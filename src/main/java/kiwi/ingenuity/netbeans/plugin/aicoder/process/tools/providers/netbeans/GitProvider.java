@@ -11,6 +11,7 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.logging.Level;
 import java.util.logging.Logger;
+import kiwi.ingenuity.netbeans.plugin.aicoder.utils.DateUtil;
 import org.netbeans.api.project.FileOwnerQuery;
 import org.netbeans.api.project.Project;
 import org.netbeans.api.project.ui.OpenProjects;
@@ -42,8 +43,8 @@ public class GitProvider {
     private static final Logger LOG = Logger.getLogger(GitProvider.class.getName());
 
     /**
-     * Message given to a stash push when the caller supplies none. Documented
-     * as the default in GitStash's schema, so the two must agree.
+     * Message given to a stash push when the caller supplies none. Documented as the default in GitStash's schema, so
+     * the two must agree.
      */
     public static final String STASH_DEFAULT_MESSAGE = "WIP";
 
@@ -438,14 +439,11 @@ public class GitProvider {
     }
 
     /**
-     * Resolves the working root for a git operation. {@code projectPath} is
-     * required and is used directly as the target project/repository root
-     * (relative paths are resolved against the default project root, as a
-     * convenience). This lets a caller always explicitly target any open
-     * project's repository, or any repo on disk — instead of relying on
-     * NetBeans' "main project" notion, which is ambiguous (and can be plain
-     * wrong) whenever multiple projects/repos are open at once, or when the git
-     * repository lives outside any open project's directory.
+     * Resolves the working root for a git operation. {@code projectPath} is required and is used directly as the target
+     * project/repository root (relative paths are resolved against the default project root, as a convenience). This
+     * lets a caller always explicitly target any open project's repository, or any repo on disk — instead of relying on
+     * NetBeans' "main project" notion, which is ambiguous (and can be plain wrong) whenever multiple projects/repos are
+     * open at once, or when the git repository lives outside any open project's directory.
      */
     private static File resolveRoot(String projectPath) {
         if (projectPath == null || projectPath.isBlank()) {
@@ -466,13 +464,11 @@ public class GitProvider {
     }
 
     /**
-     * Resolves the best root directory for locating a specific file's git
-     * repository: the NetBeans project that owns the file (so a file in a
-     * non-default open project resolves to its own repo), falling back to the
-     * file's own directory so {@link #findGitRoot} can still walk upward to
-     * find {@code .git}. Only used by {@link #gitBlame} when projectPath is
-     * omitted, since blame is a single-file operation and the project can be
-     * determined from the file itself.
+     * Resolves the best root directory for locating a specific file's git repository: the NetBeans project that owns
+     * the file (so a file in a non-default open project resolves to its own repo), falling back to the file's own
+     * directory so {@link #findGitRoot} can still walk upward to find {@code .git}. Only used by {@link #gitBlame} when
+     * projectPath is omitted, since blame is a single-file operation and the project can be determined from the file
+     * itself.
      */
     private static File resolveRootForFile(File file) {
         FileObject fo = FileUtils.resolveByFile(file);
@@ -741,7 +737,7 @@ public class GitProvider {
             if (author != null) {
                 sb.append("Author: ").append(author.getName()).append(" <").append(author.getEmailAddress()).append(">\n");
             }
-            sb.append("Date:   ").append(info.getCommitTime()).append('\n');
+            sb.append("Date:   ").append(DateUtil.format(info.getCommitTime())).append('\n');
             sb.append('\n').append(info.getFullMessage()).append('\n');
             if (!diff.isBlank()) {
                 sb.append('\n').append(diff);

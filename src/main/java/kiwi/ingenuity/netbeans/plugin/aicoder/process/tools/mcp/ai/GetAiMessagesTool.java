@@ -2,7 +2,6 @@ package kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.ai;
 
 import com.google.gson.JsonArray;
 import com.google.gson.JsonObject;
-import java.time.Instant;
 import java.util.List;
 import java.util.Set;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.mail.AiInboxMessage;
@@ -15,6 +14,7 @@ import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.AbstractActionTo
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.McpToolSchemas;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.ToolRequestArguments;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.ToolSchemaKeyEnum;
+import kiwi.ingenuity.netbeans.plugin.aicoder.utils.DateUtil;
 
 public class GetAiMessagesTool extends AbstractActionTool {
 
@@ -87,10 +87,10 @@ public class GetAiMessagesTool extends AbstractActionTool {
             return "Error: authentication failed — check that sessionId and secretKey match your session identity";
         }
         if (messages.isEmpty()) {
-            return "Server time: " + Instant.now() + "\nInbox is empty.";
+            return "Server time: " + DateUtil.now() + "\nInbox is empty.";
         }
         StringBuilder sb = new StringBuilder();
-        sb.append("Server time: ").append(Instant.now()).append("\n");
+        sb.append("Server time: ").append(DateUtil.now()).append("\n");
         sb.append(messages.size()).append(" message(s):\n\n");
         for (AiInboxMessage msg : messages) {
             sb.append(msg.formatSummary()).append("\n\n");
