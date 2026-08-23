@@ -19,6 +19,7 @@ import java.util.Map;
 import java.util.Set;
 import java.util.logging.Logger;
 import kiwi.ingenuity.netbeans.plugin.aicoder.PluginSettings;
+import java.util.regex.Pattern;
 import kiwi.ingenuity.netbeans.plugin.aicoder.StringConst;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.AiTypeEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.McpInstructionOptionEnum;
@@ -28,6 +29,31 @@ import kiwi.ingenuity.netbeans.plugin.aicoder.process.McpToolPropertyEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.McpToolInterface;
 
 public final class McpHookServerUtil {
+
+    /**
+     * Matches a JSON {@code "secretKey": "..."} pair so its value can be masked.
+     * <p>
+     * Built from {@link McpToolPropertyEnum#SECRET_KEY} for the same reason the Tool Used redaction is: renaming the
+     * property must not silently switch the masking off. Applied to the raw request text rather than a parsed tree
+     * because the debug log deliberately records bodies that failed to parse.
+     */
+    private static final Pattern SECRET_KEY_VALUE = Pattern.compile(
+            "(\"" + Pattern.quote(McpToolPropertyEnum.SECRET_KEY.key()) + "\"\\s*:\\s*\")[^\"]*\"");
+
+    /**
+     * A request body with any session secret masked, for logging.
+     * <p>
+     * The debug-JSON body log used to write requests verbatim, and every tools/call carries the caller's secretKey in
+     * its arguments - so switching debug logging on wrote live session credentials into the IDE log, where any local
+     * process could read them. Verified against a real log: 21 exposed values from this one call site, while the Tool
+     * Used line beside it was correctly masked.
+     */
+    public static String redactSecrets(String body) {
+        if (body == null || body.isEmpty()) {
+            return body;
+        }
+        return SECRET_KEY_VALUE.matcher(body).replaceAll("$1***\"");
+    }
 
     static final Gson GSON = new GsonBuilder().disableHtmlEscaping().create();
 
@@ -271,6 +297,7 @@ public final class McpHookServerUtil {
             sb.append('[').append(sessionName).append("] ");
         }
         sb.append("Tool Used: ").append(toolName);
+        // (see redactSecrets below for the raw-body equivalent of this redaction)
         if (argsObj != null && argsObj.size() > 0) {
             sb.append(" arguments:");
             for (Map.Entry<String, JsonElement> entry : argsObj.entrySet()) {

@@ -391,7 +391,7 @@ public class McpHookServer {
             body = new String(bytes, java.nio.charset.StandardCharsets.UTF_8);
         }
         if (PluginSettings.isDebugJson()) {
-            LOG.log(Level.INFO, "Hook POST body: {0}", body);
+            LOG.log(Level.INFO, "Hook POST body: {0}", McpHookServerUtil.redactSecrets(body));
         }
         JsonObject req;
         try {
@@ -606,7 +606,7 @@ public class McpHookServer {
                 body = new String(bytes, java.nio.charset.StandardCharsets.UTF_8);
             }
             if (PluginSettings.isDebugJson()) {
-                LOG.log(Level.INFO, "MCP body: {0}", body);
+                LOG.log(Level.INFO, "MCP body: {0}", McpHookServerUtil.redactSecrets(body));
             }
 
             JsonObject req;

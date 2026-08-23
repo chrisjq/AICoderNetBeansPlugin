@@ -641,7 +641,13 @@ public class RefactoringProvider {
             }
             SaveCookie save = dob.getLookup().lookup(SaveCookie.class);
             if (save == null) {
-                return new FlushResult(false, null);
+                // Modified with nothing able to save it. Returning "nothing to do"
+                // here would let the caller write bytes over changes it cannot
+                // see - the exact failure this guard exists to prevent - so fail
+                // closed instead.
+                return new FlushResult(false, "Refusing to continue: " + fo.getPath()
+                        + " has unsaved editor changes and offers no way to save them, so proceeding"
+                        + " would discard them. Ask the user to save or revert the file, then retry.");
             }
             save.save();
             return new FlushResult(true, null);

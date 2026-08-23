@@ -14,7 +14,9 @@ public enum AiSessionSettingsKeyEnum {
     MAX_HISTORY("maxHistory"),
     SAVE_HISTORY("saveHistory"),
     /**
-     * Whether to restrict searches to project files
+     * Whether to restrict AI file access to files inside any project currently
+     * open in NetBeans. When off, the AI may work outside project folders —
+     * that is the point of the setting, not a misconfiguration.
      */
     RESTRICT_TO_PROJECT_FILES("restrictToProjectFiles"),
     /**

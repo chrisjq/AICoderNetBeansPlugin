@@ -1,7 +1,7 @@
 package kiwi.ingenuity.netbeans.plugin.aicoder;
 
 public enum AccessControlLabelEnum {
-    RESTRICT_TO_PROJECT_FILES("Restrict AI to project files by default", "Restrict to project files"),
+    RESTRICT_TO_PROJECT_FILES("Restrict AI to open project files by default", "Restrict to open project files"),
     ALLOW_WEB_REQUESTS("Allow AI web requests by default", "Allow web requests"),
     ALLOW_WEB_REQUEST_GET("Allow GET by default", "Allow GET"),
     ALLOW_WEB_REQUEST_POST("Allow POST by default", "Allow POST"),

@@ -94,6 +94,13 @@ public class GetFileContentTool implements McpToolInterface {
 
     @Override
     public boolean isMutating() {
+        // Deliberately false even though reading flushes unsaved editor changes to
+        // disk, which is a write. What it writes is the user's own text, exactly as
+        // they typed it - nothing the AI produced - so it is a save of their work
+        // rather than a change to the project. Classifying it mutating would put
+        // every file read behind the plugin-wide mutation lock, serialising the most
+        // frequent operation against every build, refactor and edit for no gain.
+        // Reviewed and kept: this is a considered exception, not an oversight.
         return false;
     }
 
