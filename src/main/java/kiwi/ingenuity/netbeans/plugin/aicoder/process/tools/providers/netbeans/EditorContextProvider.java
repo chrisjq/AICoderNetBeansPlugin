@@ -192,6 +192,15 @@ public class EditorContextProvider {
         if (!f.exists() || !f.isFile()) {
             return buildNotFoundMessage(filePath);
         }
+        // This reads from disk, so unsaved editor changes would be invisible - and
+        // the write tools work on disk too, so a caller would then edit text the
+        // user cannot see. Flushing first makes the read match both what is on
+        // screen and what a later ApplyEdit will match against.
+        RefactoringProvider.FlushResult flush
+                = RefactoringProvider.flushUnsavedEditorChanges(FileUtils.resolveByFile(f));
+        if (flush.error() != null) {
+            return flush.error();
+        }
         try {
             List<String> lines = Files.readAllLines(f.toPath(), StandardCharsets.UTF_8);
             int from = startLine > 0 ? Math.max(0, startLine - 1) : 0;

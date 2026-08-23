@@ -5,11 +5,11 @@
     <modelVersion>4.0.0</modelVersion>
     <groupId>kiwi.ingenuity.aicoder</groupId>
     <artifactId>AiCoderNetbeansPlugin</artifactId>
-    <version>1.3.17</version>
+    <version>1.3.19</version>
     <packaging>nbm</packaging>
 
     <name>AI Coder for NetBeans</name>
-    <description>Interactive AI coding assistant as a dockable panel in NetBeans. Supports Claude, Grok, and GitHub Copilot backends. Provides streaming chat, context injection, and Accept/Reject diffs for file edits proposed by the AI.</description>
+    <description>Interactive AI coding assistant as a dockable panel in NetBeans. Supports Claude, Codex, GitHub Copilot, Grok, OpenCode and Ollama (Local) backends. Provides streaming chat, context injection, a built-in MCP server exposing IDE-aware tools, and Accept/Reject diffs for file edits proposed by the AI.</description>
     <url>https://github.com/chrisjq/AICoderNetBeansPlugin</url>
     <inceptionYear>2026</inceptionYear>
 

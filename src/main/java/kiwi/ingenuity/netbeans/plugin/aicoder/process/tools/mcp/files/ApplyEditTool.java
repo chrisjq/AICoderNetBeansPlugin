@@ -23,15 +23,13 @@ import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.ToolSchemaKeyEnu
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.providers.netbeans.RefactoringProvider;
 
 /**
- * Replaces an exact string in a file, routed through the NetBeans Accept/Reject
- * diff panel (PermissionEvent) before applying. Used so GitHub Copilot edits go
- * through the same review UX.
+ * Replaces an exact string in a file, routed through the NetBeans Accept/Reject diff panel (PermissionEvent) before
+ * applying. Used so GitHub Copilot edits go through the same review UX.
  *
  * <p>
- * Locks the target file (not a global lock — see usesOwnFileLocking()) from
- * before the diff is shown through the user's decision and the write, so the
- * file can't change underneath a pending decision. A different file being
- * edited concurrently is unaffected.
+ * Locks the target file (not a global lock — see usesOwnFileLocking()) from before the diff is shown through the user's
+ * decision and the write, so the file can't change underneath a pending decision. A different file being edited
+ * concurrently is unaffected.
  */
 public class ApplyEditTool extends AbstractActionTool {
 
@@ -46,7 +44,7 @@ public class ApplyEditTool extends AbstractActionTool {
     public JsonObject schema(Set<McpInstructionOptionEnum> options) {
         JsonObject tool = new JsonObject();
         tool.addProperty(ToolSchemaKeyEnum.NAME.key(), McpToolEnum.APPLY_EDIT.toolName());
-        tool.addProperty(ToolSchemaKeyEnum.DESCRIPTION.key(), "Replace an exact string in a file. oldString must match the source byte-for-byte including indentation; strip the line-number gutter if text was copied from " + McpToolEnum.GET_FILE_CONTENT.toolName() + ". The user approves the change in the NetBeans Accept/Reject diff panel.");
+        tool.addProperty(ToolSchemaKeyEnum.DESCRIPTION.key(), "Replace an exact string in a file. oldString must match the source byte-for-byte including indentation; strip the line-number gutter if text was copied from " + McpToolEnum.GET_FILE_CONTENT.toolName() + ". Any unsaved editor changes are saved first, so oldString is matched against what the user has on screen. The user approves the change in the NetBeans Accept/Reject diff panel.");
         JsonObject schema = new JsonObject();
         schema.addProperty(ToolSchemaKeyEnum.TYPE.key(), "object");
         JsonObject props = new JsonObject();

@@ -19,13 +19,13 @@ import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.providers.netbeans.E
 public class GetFileContentTool implements McpToolInterface {
 
     /**
-     * Model-facing tool description. Callers with ONLY_MCP_TOOL_ACCESS have no
-     * built-in Read tool, so the comparison against it is omitted rather than
-     * pointing them at something they cannot call.
+     * Model-facing tool description. Callers with ONLY_MCP_TOOL_ACCESS have no built-in Read tool, so the comparison
+     * against it is omitted rather than pointing them at something they cannot call.
      */
     private static String description(Set<McpInstructionOptionEnum> options) {
         StringBuilder sb = new StringBuilder(
-                "Returns the in-memory content of a file (including unsaved editor changes). ");
+                "Returns the content of a file, saving any unsaved editor changes first so what you read is what the "
+                + "user has on screen and what a later edit will match against. ");
         if (options.contains(McpInstructionOptionEnum.ONLY_MCP_TOOL_ACCESS)) {
             sb.append("Use this for project source files so you see what the IDE currently holds, "
                     + "not what is on disk. ");
@@ -57,10 +57,10 @@ public class GetFileContentTool implements McpToolInterface {
         if (options.contains(McpInstructionOptionEnum.ONLY_MCP_TOOL_ACCESS)) {
             return McpToolEnum.GET_FILE_CONTENT.toolName() + " - reads project source files with live NetBeans annotations (compilation errors, warnings); do not guess paths — use " + McpToolEnum.GET_PROJECT_STRUCTURE.toolName() + " for package layout or " + McpToolEnum.SEARCH_SYMBOLS.toolName() + "/" + McpToolEnum.SEARCH_IN_FILES.toolName() + " to locate a file first";
         }
-        return McpToolEnum.GET_FILE_CONTENT.toolName() + " -> INSTEAD OF Read tool for project source files; reads NetBeans "
-                + "in-memory content including unsaved changes; output carries a line-number gutter — strip it before using in " + McpToolEnum.APPLY_EDIT.toolName() + " " + McpToolPropertyEnum.OLD_STRING.key() + ". "
+        return McpToolEnum.GET_FILE_CONTENT.toolName() + " -> INSTEAD OF Read tool for project source files; saves any "
+                + "unsaved editor changes first so you read what the user has on screen; output carries a line-number gutter — strip it before using in " + McpToolEnum.APPLY_EDIT.toolName() + " " + McpToolPropertyEnum.OLD_STRING.key() + ". "
                 + "Full rewrite: " + McpToolEnum.GET_FILE_CONTENT.toolName() + " → " + McpToolEnum.SAVE_FILE.toolName() + " (" + McpToolPropertyEnum.CONTENT.key() + "). "
-                + "Partial edit: " + McpToolEnum.GET_FILE_CONTENT.toolName() + " → " + McpToolEnum.SAVE_FILE.toolName() + " (flush) → Read (built-in) → Edit (built-in). "
+                + "Partial edit: " + McpToolEnum.GET_FILE_CONTENT.toolName() + " → Read (built-in) → Edit (built-in). "
                 + "Do not guess paths — use " + McpToolEnum.GET_PROJECT_STRUCTURE.toolName() + " for package layout or " + McpToolEnum.SEARCH_SYMBOLS.toolName() + "/" + McpToolEnum.SEARCH_IN_FILES.toolName() + " to locate a file first";
     }
 

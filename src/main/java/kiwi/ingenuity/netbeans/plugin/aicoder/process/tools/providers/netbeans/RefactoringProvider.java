@@ -44,6 +44,7 @@ import org.openide.filesystems.FileObject;
 import org.openide.filesystems.FileUtil;
 import org.openide.loaders.DataObject;
 import org.openide.loaders.DataObjectNotFoundException;
+import org.openide.text.NbDocument;
 import org.openide.util.lookup.Lookups;
 import org.openide.windows.TopComponent;
 import org.openide.windows.WindowManager;
@@ -329,7 +330,23 @@ public class RefactoringProvider {
                 Reformat reformat = Reformat.get(doc);
                 reformat.lock();
                 try {
-                    reformat.reformat(0, doc.getLength());
+                    // Wrapped in the document's atomic lock, which is the shape
+                    // Reformat's own javadoc prescribes. Without it a whole-file
+                    // reformat is recorded as many separate edits, so the user
+                    // needs a long run of Ctrl+Z to undo one tool call.
+                    if (doc instanceof StyledDocument styled) {
+                        NbDocument.runAtomic(styled, () -> {
+                            try {
+                                reformat.reformat(0, doc.getLength());
+                            }
+                            catch (BadLocationException e) {
+                                result.set("Reformat error: " + e.getMessage());
+                            }
+                        });
+                    }
+                    else {
+                        reformat.reformat(0, doc.getLength());
+                    }
                 }
                 catch (BadLocationException e) {
                     result.set("Reformat error: " + e.getMessage());
@@ -392,6 +409,14 @@ public class RefactoringProvider {
         if (fo == null) {
             return "File not found: " + filePath;
         }
+        // Flush first so the editor and disk agree before we overwrite. The caller
+        // composed this content from an earlier read, which came from disk, so any
+        // unsaved edits were invisible to it; saving them at least records them in
+        // the editor's undo history and VCS instead of dropping them silently.
+        FlushResult flush = flushUnsavedEditorChanges(fo);
+        if (flush.error() != null) {
+            return flush.error();
+        }
         // Apply the accepted change as exact bytes. Saving through the editor would
         // run NetBeans "On Save" tasks (reformat / trailing-whitespace removal) that
         // mutate the bytes and desync external tools tracking the file on disk. Only
@@ -402,14 +427,14 @@ public class RefactoringProvider {
         catch (FileAlreadyLockedException lockEx) {
             String viaDoc = writeViaDocument(fo, content);
             GitProvider.refreshVcsStatus(filePath);
-            return viaDoc;
+            return viaDoc + flushNote(flush);
         }
         catch (IOException e) {
             return "Write error: " + e.getMessage();
         }
         fo.refresh();
         GitProvider.refreshVcsStatus(filePath);
-        return "File updated and saved";
+        return "File updated and saved" + flushNote(flush);
     }
 
     public static String applyEdit(String filePath, String oldString, String newString) {
@@ -423,6 +448,13 @@ public class RefactoringProvider {
         FileObject fo = resolveFileObject(filePath);
         if (fo == null) {
             return "File not found: " + filePath;
+        }
+        // Flush BEFORE reading: the match below and the write further down both
+        // work on disk bytes, so a dirty buffer would mean editing text the user
+        // cannot see and discarding the text they can.
+        FlushResult flush = flushUnsavedEditorChanges(fo);
+        if (flush.error() != null) {
+            return flush.error();
         }
         String content;
         try {
@@ -444,14 +476,14 @@ public class RefactoringProvider {
         catch (FileAlreadyLockedException lockEx) {
             String viaDoc = writeViaDocument(fo, updated);
             GitProvider.refreshVcsStatus(filePath);
-            return viaDoc;
+            return viaDoc + flushNote(flush);
         }
         catch (IOException e) {
             return "Edit error: " + e.getMessage();
         }
         fo.refresh();
         GitProvider.refreshVcsStatus(filePath);
-        return "File updated and saved";
+        return "File updated and saved" + flushNote(flush);
     }
 
     /**
@@ -583,6 +615,53 @@ public class RefactoringProvider {
             GitProvider.refreshVcsStatus(sourceParent.getAbsolutePath());
         }
         return "File moved";
+    }
+
+    /**
+     * Saves a file's unsaved editor changes before a tool reads or writes that file on disk.
+     * <p>
+     * Every disk-based tool here reads and writes bytes, and the editor holds its own copy. Touching the file while the
+     * buffer is dirty loses whatever the user had typed: the tool computes its result from disk, which never contained
+     * those edits, and the write then either replaces the document or makes the editor reload. Verified by experiment -
+     * a one-line ApplyEdit against a file with an unsaved line silently discarded that line and reported success, and
+     * the diff panel could not show it because the diff was computed from disk in the first place.
+     * <p>
+     * Flushing first makes disk and buffer agree, so the AI edits what the user actually has on screen and the diff
+     * they approve is the real one. A save that FAILS returns an error instead: continuing would destroy the very
+     * changes this exists to protect.
+     */
+    public static FlushResult flushUnsavedEditorChanges(FileObject fo) {
+        if (fo == null) {
+            return new FlushResult(false, null);
+        }
+        try {
+            DataObject dob = DataObject.find(fo);
+            if (!dob.isModified()) {
+                return new FlushResult(false, null);
+            }
+            SaveCookie save = dob.getLookup().lookup(SaveCookie.class);
+            if (save == null) {
+                return new FlushResult(false, null);
+            }
+            save.save();
+            return new FlushResult(true, null);
+        }
+        catch (DataObjectNotFoundException e) {
+            // Not known to the IDE, so there is no buffer to lose.
+            return new FlushResult(false, null);
+        }
+        catch (IOException e) {
+            return new FlushResult(false, "Refusing to continue: " + fo.getPath()
+                    + " has unsaved editor changes that could not be saved first (" + e.getMessage()
+                    + "). Proceeding would discard them. Ask the user to save or revert the file, then retry.");
+        }
+    }
+
+    /**
+     * Suffix describing a flush, for appending to a tool's success message.
+     */
+    public static String flushNote(FlushResult flush) {
+        return flush.flushed() ? " (unsaved editor changes were saved first)" : "";
     }
 
     public static String saveFile(String filePath) {
@@ -897,7 +976,10 @@ public class RefactoringProvider {
             }
         }
         for (FileObject root : cp.getRoots()) {
-            if (FileUtil.isParentOf(root, sourceFile)) {
+            // getRelativePath rather than the deprecated FileUtil.isParentOf: it
+            // answers the same question (is sourceFile under root) by returning
+            // null when it is not, and is the supported form as of NetBeans 22.
+            if (FileUtil.getRelativePath(root, sourceFile) != null) {
                 try {
                     return FileUtil.createFolder(root, packagePath);
                 }
@@ -914,5 +996,33 @@ public class RefactoringProvider {
     }
 
     private RefactoringProvider() {
+    }
+
+    /**
+     * Outcome of flushing a file's editor buffer before a tool touches the file on disk.
+     */
+    public static final class FlushResult {
+
+        private final boolean flushed;
+        private final String error;
+
+        FlushResult(boolean flushed, String error) {
+            this.flushed = flushed;
+            this.error = error;
+        }
+
+        /**
+         * Whether unsaved editor changes were written to disk.
+         */
+        public boolean flushed() {
+            return flushed;
+        }
+
+        /**
+         * Message to return to the caller instead of proceeding, or null when it is safe to continue.
+         */
+        public String error() {
+            return error;
+        }
     }
 }

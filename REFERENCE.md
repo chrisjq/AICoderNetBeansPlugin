@@ -41,7 +41,8 @@ For OpenAI-compatible sessions, context trimming can trigger on message count, e
 Call `GetInstructions` before other plugin tools. Use the IDE-aware tools below rather than shell equivalents. Paths must be absolute. Tool calls are authenticated for their own session and are restricted by the current permission settings.
 
 - No tool falls back to the file the user is looking at. Pass `filePath` explicitly, and call `GetCurrentFile` when you want the focused editor's file.
-- Read a file with `GetFileContent` before changing it; it includes unsaved editor content.
+- Read a file with `GetFileContent` before changing it.
+- Reading or writing a file **saves its unsaved editor changes first**. These tools work on disk, and the editor holds its own copy, so a tool that ignored the buffer would show you text the user cannot see and overwrite the text they can. Flushing first makes the two agree, so what you read is what you edit and the diff the user approves is the real one. The result says so when a flush happened. If the save fails the tool refuses outright rather than proceeding and discarding the user's work.
 - For large files, call `GetFileSizeAndMeta` first and page `GetFileContent` with start/end lines.
 - Use semantic refactorings before textual edits whenever possible.
 - `WriteFile`, `ApplyEdit`, and content-bearing `SaveFile` show the Accept/Reject diff. `CopyFile`, `MoveFile`, and `DeleteFile` are confirmed as actions, as are shell commands proposed by a backend. **Auto-accept approves the content writes and file actions without asking, but not shell commands, and not a request whose subject the plugin could not identify** — those are prompted every time regardless of the setting. See [Concurrency and limits](#concurrency-and-limits) for how long a prompt waits before it expires.
@@ -141,14 +142,14 @@ These tools do not read the editor. Each refactoring requires its explicit targe
 
 | Tool | Detailed description | Parameters |
 |---|---|---|
-| <a id="getfilecontent"></a>`GetFileContent` | Reads a file including unsaved text; use `startLine`/`endLine` to page large files. | • `filePath` (string, required) — absolute file path<br>• `startLine` (integer) — first 1-based line; omit for beginning<br>• `endLine` (integer) — last 1-based line; omit for end |
+| <a id="getfilecontent"></a>`GetFileContent` | Reads a file, saving its unsaved editor changes first so the text matches what the user has on screen; use `startLine`/`endLine` to page large files. | • `filePath` (string, required) — absolute file path<br>• `startLine` (integer) — first 1-based line; omit for beginning<br>• `endLine` (integer) — last 1-based line; omit for end |
 | <a id="getfilesizeandmeta"></a>`GetFileSizeAndMeta` | Gets size, lines, encoding, modification time and age, writability, and unsaved-change metadata. | • `filePath` (string, required) — absolute file path |
 | <a id="getcurrentfile"></a>`GetCurrentFile` | Returns active editor path, line, and column. | • _None_ |
 | <a id="getcurrentfilecontent"></a>`GetCurrentFileContent` | Returns active editor content. | • _None_ |
 | <a id="getopenfiles"></a>`GetOpenFiles` | Lists open editor files. | • _None_ |
 | <a id="getselectedtext"></a>`GetSelectedText` | Returns active-editor selection. | • _None_ |
-| <a id="writefile"></a>`WriteFile` | Creates or replaces `filePath` with `content`; shows the diff review. | • `filePath` (string, required) — absolute file path<br>• `content` (string, required) — full file content |
-| <a id="applyedit"></a>`ApplyEdit` | Replaces exact `oldString` with `newString` in `filePath`; shows the diff review. | • `filePath` (string, required) — absolute file path<br>• `oldString` (string, required) — exact text to replace<br>• `newString` (string, required) — replacement text |
+| <a id="writefile"></a>`WriteFile` | Creates or replaces `filePath` with `content`; unsaved editor changes are saved first; shows the diff review. | • `filePath` (string, required) — absolute file path<br>• `content` (string, required) — full file content |
+| <a id="applyedit"></a>`ApplyEdit` | Replaces exact `oldString` with `newString` in `filePath`; unsaved editor changes are saved first, so `oldString` is matched against what the user has on screen; shows the diff review. | • `filePath` (string, required) — absolute file path<br>• `oldString` (string, required) — exact text to replace<br>• `newString` (string, required) — replacement text |
 | <a id="savefile"></a>`SaveFile` | Saves supplied `content` to `filePath`, or flushes that file's unsaved editor changes when `content` is omitted; content changes show review. | • `filePath` (string, required) — in both modes; no fallback to the focused editor<br>• `content` (string) — full replacement content; omit to flush unsaved editor changes |
 | <a id="copyfile"></a>`CopyFile` | Copies source to a target directory; optional base `newName`; requires confirmation. | • `sourcePath` (string, required) — absolute source file<br>• `targetDirectory` (string, required) — existing destination directory<br>• `newName` (string) — base name without extension; omit to keep name |
 | <a id="deletefile"></a>`DeleteFile` | Deletes `filePath`, closes its editor, and refreshes VCS; requires confirmation. | • `filePath` (string, required) — never falls back to the focused editor |

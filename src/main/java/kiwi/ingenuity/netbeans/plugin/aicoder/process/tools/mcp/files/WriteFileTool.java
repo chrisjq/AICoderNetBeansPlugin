@@ -23,16 +23,14 @@ import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.ToolSchemaKeyEnu
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.providers.netbeans.RefactoringProvider;
 
 /**
- * Writes full file content (creating or overwriting), routed through the
- * NetBeans Accept/Reject diff panel (PermissionEvent) before applying. Used so
- * GitHub Copilot file creation goes through the review UX (Copilot's native
+ * Writes full file content (creating or overwriting), routed through the NetBeans Accept/Reject diff panel
+ * (PermissionEvent) before applying. Used so GitHub Copilot file creation goes through the review UX (Copilot's native
  * `create` tool is denied).
  *
  * <p>
- * Locks the target file (not a global lock — see usesOwnFileLocking()) from
- * before the diff is shown through the user's decision and the write, so the
- * file can't change underneath a pending decision. A different file being
- * edited concurrently is unaffected.
+ * Locks the target file (not a global lock — see usesOwnFileLocking()) from before the diff is shown through the user's
+ * decision and the write, so the file can't change underneath a pending decision. A different file being edited
+ * concurrently is unaffected.
  */
 public class WriteFileTool extends AbstractActionTool {
 
@@ -47,7 +45,7 @@ public class WriteFileTool extends AbstractActionTool {
     public JsonObject schema(Set<McpInstructionOptionEnum> options) {
         JsonObject tool = new JsonObject();
         tool.addProperty(ToolSchemaKeyEnum.NAME.key(), McpToolEnum.WRITE_FILE.toolName());
-        tool.addProperty(ToolSchemaKeyEnum.DESCRIPTION.key(), "Create or overwrite a file with the given content. The user approves the change in the NetBeans Accept/Reject diff panel before it is applied.");
+        tool.addProperty(ToolSchemaKeyEnum.DESCRIPTION.key(), "Create or overwrite a file with the given content. Any unsaved editor changes are saved first so the diff reflects what the user actually has. The user approves the change in the NetBeans Accept/Reject diff panel before it is applied.");
         JsonObject schema = new JsonObject();
         schema.addProperty(ToolSchemaKeyEnum.TYPE.key(), "object");
         JsonObject props = new JsonObject();
