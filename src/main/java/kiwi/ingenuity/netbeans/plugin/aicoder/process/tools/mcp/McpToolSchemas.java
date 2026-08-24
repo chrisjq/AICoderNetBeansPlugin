@@ -9,13 +9,12 @@ import kiwi.ingenuity.netbeans.plugin.aicoder.process.McpInstructionOptionEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.McpToolPropertyEnum;
 
 /**
- * Credential (sessionId/secretKey) schema injection for MCP tools.
+ * Schema injection helpers for MCP tools.
  */
 public final class McpToolSchemas {
 
     /**
-     * If options contains CREDENTIALS, inject sessionId/secretKey; else return
-     * unchanged.
+     * If options contains CREDENTIALS, inject sessionId/secretKey; else return unchanged.
      */
     public static JsonObject applyCredentialsIfRequested(JsonObject toolSchema, Set<McpInstructionOptionEnum> options) {
         Objects.requireNonNull(options, "options");
@@ -23,8 +22,7 @@ public final class McpToolSchemas {
     }
 
     /**
-     * Unconditionally inject sessionId + secretKey into the tool's inputSchema
-     * (idempotent).
+     * Unconditionally inject sessionId + secretKey into the tool's inputSchema (idempotent).
      */
     public static JsonObject injectCredentials(JsonObject toolSchema) {
         if (toolSchema == null || !toolSchema.has(ToolSchemaKeyEnum.INPUT_SCHEMA.key())) {

@@ -46,12 +46,10 @@ class CodexAiProcessManagerTest {
     }
 
     /**
-     * A minimal real {@code sh} process speaking just enough of the handshake
-     * to satisfy {@code spawnAndHandshake}: replies to {@code initialize} (id
-     * 1) then {@code thread/start} (id 2), then exits with {@code exitCode} —
-     * simulating a crash immediately after a successful handshake. Ids are
-     * deterministic because each spawn gets a fresh {@code CodexJsonRpcClient}
-     * whose id counter always starts at 1.
+     * A minimal real {@code sh} process speaking just enough of the handshake to satisfy {@code spawnAndHandshake}:
+     * replies to {@code initialize} (id 1) then {@code thread/start} (id 2), then exits with {@code exitCode} —
+     * simulating a crash immediately after a successful handshake. Ids are deterministic because each spawn gets a
+     * fresh {@code CodexJsonRpcClient} whose id counter always starts at 1.
      */
     private static File fakeCodexThatExitsAfterHandshake(int exitCode) throws IOException {
         File script = File.createTempFile("fake-codex-", ".sh");
@@ -77,13 +75,11 @@ class CodexAiProcessManagerTest {
     // ActiveTurnNotSteerable) can only arrive as a genuine JSON-RPC error, never a
     // "successful" body. ----
     /**
-     * Handshake identical to {@link #fakeCodexThatExitsAfterHandshake}, then
-     * answers {@code turn/start} (id 3) so a turn is genuinely in flight,
-     * {@code touch}es {@code markerFile} the instant {@code turn/steer} (id 4)
-     * actually arrives — proving the request was sent, not just that no
-     * exception was thrown — then answers it with {@code steerResponseLine} and
-     * sleeps so the connection stays up for the rest of the test instead of
-     * triggering a crash/EXITED event.
+     * Handshake identical to {@link #fakeCodexThatExitsAfterHandshake}, then answers {@code turn/start} (id 3) so a
+     * turn is genuinely in flight, {@code touch}es {@code markerFile} the instant {@code turn/steer} (id 4) actually
+     * arrives — proving the request was sent, not just that no exception was thrown — then answers it with
+     * {@code steerResponseLine} and sleeps so the connection stays up for the rest of the test instead of triggering a
+     * crash/EXITED event.
      */
     private static File fakeCodexHandshakeTurnThenSteer(File markerFile, String steerResponseLine) throws IOException {
         File script = File.createTempFile("fake-codex-", ".sh");
@@ -106,10 +102,9 @@ class CodexAiProcessManagerTest {
     }
 
     /**
-     * Handshake identical to {@link #fakeCodexThatExitsAfterHandshake}, but
-     * sleeps afterward instead of exiting — a real, connected, idle
-     * (never-processing) session with no turn started, for testing the
-     * Mail-while-idle no-op path.
+     * Handshake identical to {@link #fakeCodexThatExitsAfterHandshake}, but sleeps afterward instead of exiting — a
+     * real, connected, idle (never-processing) session with no turn started, for testing the Mail-while-idle no-op
+     * path.
      */
     private static File fakeCodexHandshakeThenSleep() throws IOException {
         File script = File.createTempFile("fake-codex-", ".sh");
@@ -495,10 +490,10 @@ class CodexAiProcessManagerTest {
     }
 
     @Test
-    void buildMcpConfigArgsCarriesUrlAndAutoApprovalMode() {
+    void buildMcpConfigArgsCarriesUrlApprovalModeAndToolTimeout() {
         List<String> args = CodexAiProcessManager.buildMcpConfigArgs("http://127.0.0.1:1234/mcp/codex");
 
-        assertEquals(4, args.size(), "two -c flag/value pairs");
+        assertEquals(6, args.size(), "three -c flag/value pairs");
         assertEquals("-c", args.get(0));
         assertEquals("mcp_servers." + CodexAiProcessManager.MCP_SERVER_NAME + ".url=\"http://127.0.0.1:1234/mcp/codex\"",
                 args.get(1));
@@ -508,6 +503,9 @@ class CodexAiProcessManagerTest {
         // decide from. Valid values are auto/prompt/writes/approve.
         assertEquals("mcp_servers." + CodexAiProcessManager.MCP_SERVER_NAME + ".default_tools_approval_mode=\"approve\"",
                 args.get(3));
+        assertEquals("-c", args.get(4));
+        assertEquals("mcp_servers." + CodexAiProcessManager.MCP_SERVER_NAME + ".tool_timeout_sec="
+                + TimeUnit.MILLISECONDS.toSeconds(CodexTimeoutEnum.MCP_TOOL_TIMEOUT_MILLIS.millis()), args.get(5));
     }
 
     // ---- extractModel: thread/start echoes the applied model back as a top-level
@@ -604,13 +602,10 @@ class CodexAiProcessManagerTest {
     }
 
     /**
-     * {@code processing}/{@code cancelledByUser}/{@code currentProcess} are
-     * {@code protected} on the base class in a different package — a subclass
-     * (even a test-only one) can set them from its own code, a plain top-level
-     * test class cannot. Exists purely to simulate "a turn was in flight" /
-     * "the user pressed stop" without driving a real handshake for tests that
-     * only care about {@code handleProcessExit}/{@code onHandlerDisconnected}'s
-     * own logic.
+     * {@code processing}/{@code cancelledByUser}/{@code currentProcess} are {@code protected} on the base class in a
+     * different package — a subclass (even a test-only one) can set them from its own code, a plain top-level test
+     * class cannot. Exists purely to simulate "a turn was in flight" / "the user pressed stop" without driving a real
+     * handshake for tests that only care about {@code handleProcessExit}/{@code onHandlerDisconnected}'s own logic.
      */
     private static final class TestableCodexAiProcessManager extends CodexAiProcessManager {
 

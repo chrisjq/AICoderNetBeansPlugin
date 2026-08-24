@@ -6,11 +6,13 @@ import com.google.gson.JsonObject;
 import com.google.gson.JsonSyntaxException;
 import com.sun.net.httpserver.HttpExchange;
 import com.sun.net.httpserver.HttpServer;
+import java.io.File;
 import java.io.IOException;
 import java.io.InputStream;
 import java.net.Inet6Address;
 import java.net.InetAddress;
 import java.net.InetSocketAddress;
+import java.nio.file.Path;
 import java.util.Collections;
 import java.util.List;
 import java.util.Map;
@@ -25,7 +27,6 @@ import java.util.concurrent.locks.ReentrantLock;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 import kiwi.ingenuity.netbeans.plugin.aicoder.PluginSettings;
-import kiwi.ingenuity.netbeans.plugin.aicoder.PluginUtil;
 import kiwi.ingenuity.netbeans.plugin.aicoder.StringConst;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.AiTypeEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.events.PermissionDecision;
@@ -38,6 +39,7 @@ import kiwi.ingenuity.netbeans.plugin.aicoder.process.McpToolPropertyEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.SessionRegistry;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.locking.LockManager;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.session.AbstractAiSession;
+import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.TimeoutEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.McpToolInterface;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.providers.netbeans.RefactoringProvider;
 import org.openide.util.Exceptions;
@@ -56,35 +58,11 @@ public class McpHookServer {
     // NOTE: the JDK reads these once, when com.sun.net.httpserver's ServerConfig
     // first initialises (the first HttpServer created in this JVM), so they only
     // take effect if set before any other such server has been created.
-    private static final int IDLE_INTERVAL_SECONDS = 5 * 60;   // JDK default 30 — idle keep-alive window
+    private static final int IDLE_INTERVAL_SECONDS = (int) (TimeoutEnum.MCP_HTTP_IDLE_INTERVAL_MILLIS.millis() / 1000);   // JDK default 30 — idle keep-alive window
     private static final int MAX_IDLE_CONNECTIONS = 200;       // JDK default 200 — cached idle connections
     private static final int MAX_CONNECTIONS = -1;             // JDK default -1 — total connection cap (unlimited)
     private static final int MAX_REQ_TIME_SECONDS = -1;        // JDK default -1 — max time to read a request (off)
     private static final int MAX_RSP_TIME_SECONDS = -1;        // JDK default -1 — max time to write a response (off)
-
-    private static java.nio.file.Path resolveRealPath(java.nio.file.Path p) {
-        try {
-            return p.toRealPath();
-        }
-        catch (IOException e) {
-            // Path may not exist yet (e.g. WriteFile creating a new file).
-            // Resolve the deepest existing ancestor so symlinked paths still
-            // match the registered project dirs, then re-append the tail.
-            java.nio.file.Path abs = p.toAbsolutePath().normalize();
-            java.nio.file.Path tail = abs.getFileName();
-            java.nio.file.Path parent = abs.getParent();
-            while (parent != null) {
-                try {
-                    return parent.toRealPath().resolve(tail);
-                }
-                catch (IOException ex) {
-                    tail = parent.getFileName().resolve(tail);
-                    parent = parent.getParent();
-                }
-            }
-            return abs;
-        }
-    }
 
     /**
      * Gate predicate: while a conversation has not loaded the full instruction guide, every tool except GetInstructions
@@ -109,14 +87,71 @@ public class McpHookServer {
         System.setProperty("sun.net.httpserver.maxRspTime", Integer.toString(MAX_RSP_TIME_SECONDS));
     }
 
+    public static String fileAccessDeniedMessage(McpHookServer server, String sessionId, String filePath) {
+        if (sessionId == null || sessionId.isBlank()) {
+            return "Access denied: file access scope is unavailable because this tool call has no "
+                    + McpToolPropertyEnum.SESSION_ID.key() + ". Retry with a valid session identity.";
+        }
+        if (server == null) {
+            return "Access denied: file access scope is unavailable because the MCP server is not running. "
+                    + "Retry after MCP session setup completes.";
+        }
+        return server.fileScope.fileAccessDeniedMessage(sessionId, filePath);
+    }
+
+    /**
+     * Static, null-tolerant form of {@link #isFileAccessible(String, String)} — see {@link #isProjectFileAllowed} for
+     * why a static overload exists (the {@code server == null || sessionId == null || ...} guard repeated at each call
+     * site collapses into one call). This is the rule for the fourteen plain-scope tools
+     * (Delete/Copy/Move/Close/NavigateToLine, Reformat, the refactor tools, and organise-imports/fix-imports): a
+     * session may operate on its own config directory with any of them, the same as it may operate on a project file.
+     */
+    public static boolean isFileAccessible(McpHookServer server, String sessionId, String filePath) {
+        return server != null && sessionId != null && server.isFileAccessible(sessionId, filePath);
+    }
+
+    /**
+     * May this session access {@code filePath} under the plain project-scope rule ONLY — {@link #isFileAllowed}, with
+     * no config-dir exemption. This is deliberately narrower than {@link #isFileAccessible}: it exists for the write
+     * tools (ApplyEdit, WriteFile, SaveFile), which check {@link
+     * #isOwnSessionConfigFile} explicitly first — that branch bypasses review entirely, so once it has been ruled out,
+     * the remaining gate must NOT grant the config-dir exemption a second time.
+     * <p>
+     * Static and tolerant of a null {@code server} (unlike the instance methods above, which assume a live server) so
+     * that the {@code server == null || sessionId == null || !server.isFileAllowed(...)} guard repeated verbatim at
+     * each call site collapses into one call: {@code if (!McpHookServer.isProjectFileAllowed(server, sessionId, fp))}.
+     */
+    public static boolean isProjectFileAllowed(McpHookServer server, String sessionId, String filePath) {
+        return server != null && sessionId != null
+                && !server.isSessionPersistenceWriteDenied(filePath)
+                && server.isFileAllowed(sessionId, filePath);
+    }
+
+    /**
+     * May this session WRITE {@code filePath} under the plain-scope rule — {@link #isFileAccessible}, minus anything
+     * {@link SessionFileScopeRegistry#isSessionPersistenceWriteDenied} refuses. The write counterpart of
+     * {@link #isFileAccessible}, for the mutating members of that tool group (Delete, Move, and Copy's destination):
+     * those three share the config-dir exemption with the read tools, so they cannot use {@link #isProjectFileAllowed},
+     * but they must not inherit the read exemption granted to {@code sessions.json} and the template files at the
+     * persistence base's root.
+     * <p>
+     * Copy's SOURCE deliberately keeps using {@link #isFileAccessible}: reading a file out is a read, and denying it
+     * there would take away an access the read tools still grant. Move's source does not — moving a file away deletes
+     * it from where it was.
+     */
+    public static boolean isFileWritable(McpHookServer server, String sessionId, String filePath) {
+        return isFileAccessible(server, sessionId, filePath)
+                && !server.isSessionPersistenceWriteDenied(filePath);
+    }
+
     private HttpServer httpServer;
     private int port;
     private ExecutorService executor;
     private final Set<String> activeSessions = Collections.newSetFromMap(new ConcurrentHashMap<>());
     private final Map<String, ReentrantLock> hookLocks = new ConcurrentHashMap<>();
-    private final Map<String, List<java.io.File>> sessionProjectDirs = new ConcurrentHashMap<>();
-    private final Map<String, Boolean> sessionRestrictToProject = new ConcurrentHashMap<>();
-    private final Map<String, String> sessionAiTypeKey = new ConcurrentHashMap<>();
+    // All file/project access-scope state and policy: see SessionFileScopeRegistry's
+    // class javadoc for the two directory trees it distinguishes.
+    private final SessionFileScopeRegistry fileScope = new SessionFileScopeRegistry();
     private boolean started = false;
     private volatile boolean stopped = false;
     private String name = "";
@@ -195,17 +230,14 @@ public class McpHookServer {
      * @param aiTypeKey AI type key from {@code AiTypeEnum.key()}, e.g. {@code "claude"}
      */
     public void registerSession(String sessionId, AiTypeEnum aiType,
-            List<java.io.File> projectDirs, boolean restrictToProjectFiles) {
+            List<File> projectDirs, boolean restrictToProjectFiles) {
         if (sessionId == null) {
             return;
         }
         // Pure bookkeeping: the supervisor (McpServerRegistry) owns starting the
         // HTTP listener via start(), so by the time a session registers here the
-        // server is already accepting connections. The backing maps are all
-        // concurrent, so no synchronization is required.
-        sessionAiTypeKey.put(sessionId, aiType.key());
-        sessionProjectDirs.put(sessionId, projectDirs);
-        sessionRestrictToProject.put(sessionId, restrictToProjectFiles);
+        // server is already accepting connections.
+        fileScope.registerScope(sessionId, aiType, projectDirs, restrictToProjectFiles);
         LockManager.getInstance().releaseOrphanedLocks(Set.copyOf(activeSessions));
         if (activeSessions.add(sessionId)) {
             hookLocks.put(sessionId, new ReentrantLock(true));
@@ -220,15 +252,11 @@ public class McpHookServer {
      * unregisterSession, so this cannot resurrect a closed session.
      */
     public void updateSessionScope(String sessionId, AiTypeEnum aiType,
-            List<java.io.File> projectDirs, boolean restrictToProjectFiles) {
+            List<File> projectDirs, boolean restrictToProjectFiles) {
         if (sessionId == null) {
             return;
         }
-        if (aiType != null) {
-            sessionAiTypeKey.put(sessionId, aiType.key());
-        }
-        sessionProjectDirs.put(sessionId, projectDirs);
-        sessionRestrictToProject.put(sessionId, restrictToProjectFiles);
+        fileScope.updateScope(sessionId, aiType, projectDirs, restrictToProjectFiles);
         if (activeSessions.add(sessionId)) {
             hookLocks.put(sessionId, new ReentrantLock(true));
         }
@@ -241,25 +269,43 @@ public class McpHookServer {
         LockManager.getInstance().releaseAllLocks(sessionId);
         activeSessions.remove(sessionId);
         hookLocks.remove(sessionId);
-        sessionProjectDirs.remove(sessionId);
-        sessionRestrictToProject.remove(sessionId);
-        sessionAiTypeKey.remove(sessionId);
+        // Keep the last scope snapshot during teardown so in-flight calls see the
+        // same policy they started with. Unknown sessions still fail closed because
+        // they never had a restrict entry.
         // Lifecycle is owned by McpServerRegistry. Self-stopping here would create
         // a second owner and allow reuse of a dead HttpServer.
     }
 
     public boolean isFileAllowed(String sessionId, String filePath) {
-        if (filePath == null || filePath.isBlank()) {
-            return false;
-        }
-        Boolean restrict = sessionRestrictToProject.get(sessionId);
-        if (restrict == null || !restrict) {
-            return true;
-        }
-        // Restrict is on: the file must resolve inside one of the session's registered
-        // project roots. An empty dir list fails closed (never fail-open, which would
-        // open the whole FS if scope was never populated).
-        return isWithinProjectDirs(sessionId, filePath);
+        return fileScope.isFileAllowed(sessionId, filePath);
+    }
+
+    /**
+     * True when {@code filePath} is ANY session's serialized-conversation history/context file — see
+     * {@link SessionFileScopeRegistry}'s class javadoc for the full rationale (a directory tree distinct from {@link
+     * #isOwnSessionConfigFile}'s, vetoed for every session rather than exempted for the caller's own). The native
+     * Claude Edit/Write hook does not call {@link #isFileAllowed} (it inlines the equivalent checks), so it re-checks
+     * this directly instead of inheriting it — see the hook dispatch below.
+     */
+    private boolean isSessionPersistenceDirFile(String filePath) {
+        return fileScope.isSessionPersistenceDirFile(filePath);
+    }
+
+    /**
+     * True when {@code filePath} may not be written anywhere under the serialized-conversation tree — see
+     * {@link SessionFileScopeRegistry#isSessionPersistenceWriteDenied} for why this is wider than
+     * {@link #isSessionPersistenceDirFile} and where the read/write split falls.
+     */
+    boolean isSessionPersistenceWriteDenied(String filePath) {
+        return fileScope.isSessionPersistenceWriteDenied(filePath);
+    }
+
+    boolean isUnrestrictedFileAccess(String sessionId) {
+        return fileScope.isUnrestrictedFileAccess(sessionId);
+    }
+
+    public String fileAccessDeniedMessage(String sessionId, String filePath) {
+        return fileAccessDeniedMessage(this, sessionId, filePath);
     }
 
     /**
@@ -268,32 +314,11 @@ public class McpHookServer {
      * session has no registered roots.
      */
     boolean isWithinProjectDirs(String sessionId, String filePath) {
-        if (filePath == null || filePath.isBlank()) {
-            return false;
-        }
-        List<java.io.File> dirs = sessionProjectDirs.get(sessionId);
-        if (dirs == null || dirs.isEmpty()) {
-            return false;
-        }
-        java.nio.file.Path resolvedFile = resolveRealPath(java.nio.file.Path.of(filePath));
-        return dirs.stream().anyMatch(d -> {
-            java.nio.file.Path dir = resolveRealPath(d.toPath());
-            return resolvedFile.equals(dir) || resolvedFile.startsWith(dir);
-        });
+        return fileScope.isWithinProjectDirs(sessionId, filePath);
     }
 
     boolean isUnderAnyOpenProject(String filePath) {
-        if (filePath == null || filePath.isBlank()) {
-            return false;
-        }
-        java.nio.file.Path f = resolveRealPath(java.nio.file.Path.of(filePath));
-        for (org.netbeans.api.project.Project p : org.netbeans.api.project.ui.OpenProjects.getDefault().getOpenProjects()) {
-            java.nio.file.Path d = resolveRealPath(java.nio.file.Path.of(p.getProjectDirectory().getPath()));
-            if (f.equals(d) || f.startsWith(d)) {
-                return true;
-            }
-        }
-        return false;
+        return fileScope.isUnderAnyOpenProject(filePath);
     }
 
     /**
@@ -303,23 +328,40 @@ public class McpHookServer {
      * requesting session, so one session can never write into another session's memory.
      */
     public boolean isOwnSessionConfigFile(String sessionId, String filePath) {
-        if (sessionId == null || filePath == null || filePath.isBlank()) {
-            return false;
-        }
-        String aiTypeKey = sessionAiTypeKey.get(sessionId);
-        if (aiTypeKey == null || aiTypeKey.isBlank()) {
-            return false;
-        }
-        try {
-            java.nio.file.Path sessionDir = PluginUtil.getPluginConfigDir()
-                    .resolve(aiTypeKey).resolve(sessionId);
-            java.nio.file.Path resolvedDir = resolveRealPath(sessionDir);
-            java.nio.file.Path resolvedFile = resolveRealPath(java.nio.file.Path.of(filePath));
-            return resolvedFile.equals(resolvedDir) || resolvedFile.startsWith(resolvedDir);
-        }
-        catch (IOException e) {
-            return false;
-        }
+        return fileScope.isOwnSessionConfigFile(sessionId, filePath);
+    }
+
+    /**
+     * May this session access {@code filePath} at all — for a plain read/query/action gate, not a write that needs the
+     * diff-panel routing decision below. True when either {@link #isFileAllowed} (in project scope) or
+     * {@link #isOwnSessionConfigFile} (this session's own memory/logs/tool_results, exempt from restrict-to-project)
+     * holds.
+     * <p>
+     * This is the single source of truth for that OR — it was previously written out at each read-style call site, and
+     * one of them (GetFileContentTool) was found with only the first half, so a session could write its own log via a
+     * tool that already used both checks and then be refused reading it back through one that had only {@link
+     * #isFileAllowed}. Confirmed by the user to be the correct rule for every plain-scope tool —
+     * Delete/Copy/Move/Close/NavigateToLine/Reformat, the refactor tools, and organise-imports/fix-imports included: a
+     * session's own config directory follows the same rule as a project file for the session that owns it, for all of
+     * these.
+     * <p>
+     * Do NOT use this for the write tools (ApplyEdit, WriteFile, SaveFile) or the native Claude Edit/Write hook: those
+     * need the two predicates evaluated as a routing decision, not flattened into one boolean. Own-config-dir writes
+     * bypass the diff panel and fire no notification because that data belongs to the session itself and is
+     * auto-accepted by design — not because a panel could not be built for it — so collapsing the two checks would let
+     * an ordinary project file take the no-review/no-notification branch too.
+     */
+    public boolean isFileAccessible(String sessionId, String filePath) {
+        return fileScope.isFileAccessible(sessionId, filePath);
+    }
+
+    /**
+     * Resolves this session's own per-session config directory ({@code ~/.ai-coder/{type}/{sessionId}/}), or null when
+     * the session type is unknown. The build/test providers park complete build logs there so the session can read them
+     * back via {@link #isOwnSessionConfigFile} even under restrict-to-project.
+     */
+    public Path sessionConfigDirOrNull(String sessionId) {
+        return fileScope.sessionConfigDirOrNull(sessionId);
     }
 
     public int getPort() {
@@ -391,14 +433,14 @@ public class McpHookServer {
             body = new String(bytes, java.nio.charset.StandardCharsets.UTF_8);
         }
         if (PluginSettings.isDebugJson()) {
-            LOG.log(Level.INFO, "Hook POST body: {0}", McpHookServerUtil.redactSecrets(body));
+            LOG.log(Level.INFO, "Hook POST body: {0}", McpHookServerUtil.redactAllSecrets(body));
         }
         JsonObject req;
         try {
             req = McpHookServerUtil.GSON.fromJson(body, JsonObject.class);
         }
         catch (JsonSyntaxException e) {
-            LOG.log(Level.WARNING, "Hook: bad JSON: {0}", body);
+            LOG.log(Level.WARNING, "Hook: bad JSON: {0}", McpHookServerUtil.redactAllSecrets(body));
             McpHookServerUtil.sendJson(ex, 400, "{\"error\":\"bad json\"}");
             return;
         }
@@ -458,26 +500,45 @@ public class McpHookServer {
         String newString = McpHookServerUtil.str(input, ClaudeHookKeyEnum.NEW_STRING.key());
         String writeContent = McpHookServerUtil.str(input, ClaudeHookKeyEnum.CONTENT.key());
 
-        // Out-of-project files cannot be shown in the Accept/Reject diff panel, so they
-        // are decided here instead of falling through to the panel — which would defer
-        // forever (the "no panel, no response" hang).
+        // 0. ANY session's serialized-conversation directory (history.json, context.json,
+        //    and their siblings) is never accessible to any tool, including this native
+        //    hook and regardless of which session is asking — see
+        //    isSessionPersistenceDirFile for why. Checked first because it does NOT call
+        //    isFileAllowed (whose own veto this bypasses otherwise) and must not fall
+        //    through to either case below.
+        //    Uses the WRITE predicate, not the read one: this hook only ever fires for
+        //    Edit and Write (see the matcher registered by ClaudeAiMcpRegistrar), so the
+        //    base-level read exemption for sessions.json must not apply here. Without
+        //    this, an unrestricted session reached sessions.json through case 2 below
+        //    and was answered hookAllow — a write with no diff panel at all.
+        if (isSessionPersistenceWriteDenied(filePath)) {
+            McpHookServerUtil.sendJson(ex, 200, McpHookServerUtil.hookDeny(fileAccessDeniedMessage(sessionId, filePath)));
+            return;
+        }
+
+        // Two cases are decided here, before falling through to the diff panel below —
+        // not because a diff panel could not be rendered for these paths (it could: the
+        // panel builds its diff from originalContent/proposedContent strings, not from a
+        // FileObject anchored to a project), but because these are deliberate policy
+        // decisions about which writes get reviewed at all.
         //
         // 1. The session's OWN per-session config dir (memory, logs) always passes
-        //    straight through to the built-in tool. Scoped to this session's dir, so one
+        //    straight through to the built-in tool with no diff, no PermissionEvent, and
+        //    no notification. This is a product decision: a session's own working data is
+        //    auto-accepted rather than reviewed. Scoped to this session's dir, so one
         //    session can never write into another session's memory.
         if (isOwnSessionConfigFile(sessionId, filePath)) {
             McpHookServerUtil.sendJson(ex, 200, McpHookServerUtil.hookAllow());
             return;
         }
-        // 2. A file outside every open project cannot be diffed. Honour the restrict flag:
-        //    restrict ON -> deny (session is scoped to its projects); restrict OFF -> let
-        //    the built-in tool write it directly. Files inside a project fall through to
-        //    the diff panel below.
+        // 2. A file outside every open project is not offered a diff review either;
+        //    instead the restrict flag decides its fate directly: restrict ON -> deny
+        //    (session is scoped to its projects); restrict OFF -> let the built-in tool
+        //    write it directly. Files inside a project fall through to the diff panel below.
         if (!isWithinProjectDirs(sessionId, filePath) && !isUnderAnyOpenProject(filePath)) {
-            boolean restrict = Boolean.TRUE.equals(sessionRestrictToProject.get(sessionId));
-            McpHookServerUtil.sendJson(ex, 200, restrict
-                    ? McpHookServerUtil.hookDeny("Access denied: " + filePath + " is outside the allowed project scope for this session")
-                    : McpHookServerUtil.hookAllow());
+            McpHookServerUtil.sendJson(ex, 200, isUnrestrictedFileAccess(sessionId)
+                    ? McpHookServerUtil.hookAllow()
+                    : McpHookServerUtil.hookDeny(fileAccessDeniedMessage(sessionId, filePath)));
             return;
         }
 
@@ -505,10 +566,8 @@ public class McpHookServer {
         // the same file, since they'd otherwise share no coordination at all.
         LockManager lockManager = LockManager.getInstance();
         if (!lockManager.acquireFileLock(sessionId, filePath)) {
-            String holder = lockManager.getFileLockHolder(filePath);
             McpHookServerUtil.sendJson(ex, 200, McpHookServerUtil.hookDeny(
-                    "File is locked by " + (holder != null ? "session " + holder : "another in-progress edit")
-                    + " — try again shortly"));
+                    LockManager.fileLockedMessage(lockManager.getFileLockHolder(filePath))));
             return;
         }
         sessionHookLock.lock();
@@ -519,7 +578,7 @@ public class McpHookServer {
 
             PermissionDecision decision;
             try {
-                decision = future.get(120, TimeUnit.SECONDS);
+                decision = future.get(TimeoutEnum.USER_APPROVAL_WAIT_MILLIS.millis(), TimeUnit.MILLISECONDS);
             }
             catch (TimeoutException e) {
                 LOG.log(Level.WARNING, "Permission request timed out for: {0}", filePath);

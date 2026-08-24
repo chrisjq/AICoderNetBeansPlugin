@@ -20,7 +20,6 @@ import java.util.logging.Logger;
 public final class GithubCopilotQuotaService {
 
     private static final Logger LOG = Logger.getLogger(GithubCopilotQuotaService.class.getName());
-    private static final long TIMEOUT_SECONDS = 30;
     private static final Gson GSON = new Gson();
 
     public static void getQuotaAsync(String cliPath, Consumer<QuotaInfo> onResult) {
@@ -74,8 +73,8 @@ public final class GithubCopilotQuotaService {
         // a valid result or be mistaken for a fetch failure.
         CopilotClient client = new CopilotClient(opts);
         try {
-            client.start().get(TIMEOUT_SECONDS, TimeUnit.SECONDS);
-            AccountGetQuotaResult result = client.getRpc().account.getQuota().get(TIMEOUT_SECONDS, TimeUnit.SECONDS);
+            client.start().get(GithubCopilotTimeoutEnum.COPILOT_QUOTA_SERVICE_MILLIS.millis(), TimeUnit.MILLISECONDS);
+            AccountGetQuotaResult result = client.getRpc().account.getQuota().get(GithubCopilotTimeoutEnum.COPILOT_QUOTA_SERVICE_MILLIS.millis(), TimeUnit.MILLISECONDS);
             if (result != null) {
                 Map<String, AccountQuotaSnapshot> snapshots = result.quotaSnapshots();
                 if (snapshots != null) {
@@ -110,7 +109,7 @@ public final class GithubCopilotQuotaService {
         Process proc = new ProcessBuilder(buildServerCommand(cliPath)).start();
         Thread watchdog = new Thread(() -> {
             try {
-                Thread.sleep(TIMEOUT_SECONDS * 1000);
+                Thread.sleep(GithubCopilotTimeoutEnum.COPILOT_QUOTA_SERVICE_MILLIS.millis());
                 proc.destroyForcibly();
             }
             catch (InterruptedException ignored) {

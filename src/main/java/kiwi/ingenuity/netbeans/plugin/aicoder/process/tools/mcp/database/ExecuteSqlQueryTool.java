@@ -43,8 +43,9 @@ public class ExecuteSqlQueryTool implements McpToolInterface {
                 + "IDE's Database Explorer, and returns the result rows. Only SELECT statements are "
                 + "accepted — anything else is rejected before it reaches the database, and the JDBC "
                 + "connection itself is switched to read-only for the duration of the query as a second "
-                + "layer of enforcement. Results are capped at this session's configured database row limit "
-                + "(currently " + PluginSettings.getDatabaseRowLimit() + "); if more rows exist than were "
+                + "layer of enforcement. Results are capped at this session's effective database row limit — "
+                + "a per-session override if one is configured, otherwise the plugin default (currently "
+                + PluginSettings.getDatabaseRowLimit() + "); if more rows exist than were "
                 + "returned, the output ends with a '... (row limit N reached, results may be truncated)' note. "
                 + "Use ListDatabaseConnections first to find the " + DatabaseParamEnum.CONNECTION_NAME.key() + ".");
         JsonObject schema = new JsonObject();

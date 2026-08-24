@@ -18,15 +18,15 @@ import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.opencode.acp.AcpClientHand
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.opencode.acp.AcpJsonKeyEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.opencode.acp.AcpSessionUpdateEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.events.AiProcessEventListener;
+import kiwi.ingenuity.netbeans.plugin.aicoder.process.server.McpHookServerUtil;
 
 /**
- * Maps inbound ACP traffic to plugin events. All methods are called on
- * AcpConnection's dispatcher thread pool, never on the reader thread.
+ * Maps inbound ACP traffic to plugin events. All methods are called on AcpConnection's dispatcher thread pool, never on
+ * the reader thread.
  *
  * <p>
- * {@code session/request_permission} is routed through the existing
- * {@link PermissionEvent} + diff-panel mechanism. We reply with the chosen
- * optionId once the user accepts or rejects in the panel.
+ * {@code session/request_permission} is routed through the existing {@link PermissionEvent} + diff-panel mechanism. We
+ * reply with the chosen optionId once the user accepts or rejects in the panel.
  */
 class OpenCodeAcpClientHandler implements AcpClientHandler {
 
@@ -55,9 +55,8 @@ class OpenCodeAcpClientHandler implements AcpClientHandler {
     }
 
     /**
-     * Extracts the target file path from a {@code session/request_permission}
-     * {@code toolCall} object. Priority: {@code content[0].path} →
-     * {@code locations[0].path} → {@code rawInput.filepath}.
+     * Extracts the target file path from a {@code session/request_permission} {@code toolCall} object. Priority:
+     * {@code content[0].path} → {@code locations[0].path} → {@code rawInput.filepath}.
      */
     static String extractPermissionFilePath(JsonObject toolCall) {
         if (toolCall == null) {
@@ -89,11 +88,9 @@ class OpenCodeAcpClientHandler implements AcpClientHandler {
     }
 
     /**
-     * Extracts {@code rawInput.command} from a {@code toolCall} — the shell
-     * command text for an {@code execute}-kind permission request (live-probed
-     * shape: {@code
-     * rawInput:{"command":"echo hi"}}, empty {@code locations}, no
-     * {@code content}).
+     * Extracts {@code rawInput.command} from a {@code toolCall} — the shell command text for an {@code execute}-kind
+     * permission request (live-probed shape: {@code
+     * rawInput:{"command":"echo hi"}}, empty {@code locations}, no {@code content}).
      */
     static String extractRawInputCommand(JsonObject toolCall) {
         if (toolCall == null || !toolCall.has(AcpJsonKeyEnum.RAW_INPUT.key()) || !toolCall.get(AcpJsonKeyEnum.RAW_INPUT.key()).isJsonObject()) {
@@ -105,10 +102,8 @@ class OpenCodeAcpClientHandler implements AcpClientHandler {
     }
 
     /**
-     * Extracts {@code content[0].newText} when
-     * {@code content[0].type == "diff"} — the full proposed file content ACP
-     * sends for an edit permission request. Returns null for any other shape
-     * (non-diff content, missing content, etc.).
+     * Extracts {@code content[0].newText} when {@code content[0].type == "diff"} — the full proposed file content ACP
+     * sends for an edit permission request. Returns null for any other shape (non-diff content, missing content, etc.).
      */
     static String extractDiffNewText(JsonObject toolCall) {
         if (toolCall == null || !toolCall.has(AcpJsonKeyEnum.CONTENT.key()) || !toolCall.get(AcpJsonKeyEnum.CONTENT.key()).isJsonArray()) {
@@ -187,20 +182,15 @@ class OpenCodeAcpClientHandler implements AcpClientHandler {
     }
 
     /**
-     * Routes {@code session/request_permission} by {@code toolCall.kind}, not
-     * by whether a file path happened to resolve (design doc / live probe,
-     * "Write: null" defect):
+     * Routes {@code session/request_permission} by {@code toolCall.kind}, not by whether a file path happened to
+     * resolve (design doc / live probe, "Write: null" defect):
      * <ul>
-     * <li>{@code execute} — a shell command. There is no diff to render, so
-     * this raises {@link ConfirmEvent} (yes/no), not
-     * {@link PermissionEvent}.</li>
-     * <li>a resolvable file path — unchanged {@link PermissionEvent} "Write"
-     * path.</li>
-     * <li>neither — the subject could not be identified. Falling back to the
-     * old "Write: null" text let auto-accept approve an unseen action of
-     * unknown kind. Raise {@link ConfirmEvent} instead, showing the kind and
-     * title so there is at least something real to see, and never treat it as
-     * silently approvable.</li>
+     * <li>{@code execute} — a shell command. There is no diff to render, so this raises {@link ConfirmEvent} (yes/no),
+     * not {@link PermissionEvent}.</li>
+     * <li>a resolvable file path — unchanged {@link PermissionEvent} "Write" path.</li>
+     * <li>neither — the subject could not be identified. Falling back to the old "Write: null" text let auto-accept
+     * approve an unseen action of unknown kind. Raise {@link ConfirmEvent} instead, showing the kind and title so there
+     * is at least something real to see, and never treat it as silently approvable.</li>
      * </ul>
      */
     @Override
@@ -254,7 +244,7 @@ class OpenCodeAcpClientHandler implements AcpClientHandler {
             LOG.log(Level.WARNING,
                     "OpenCode permission request with no extractable file path and kind != execute "
                     + "-> ConfirmEvent(kind={0}, title={1}) instead of \"Write: null\". Raw params: {2}",
-                    new Object[]{kind, title, params});
+                    new Object[]{kind, title, McpHookServerUtil.redactAllSecrets(String.valueOf(params))});
         }
         String toolName = kind != null && !kind.isBlank() ? kind : "Unknown";
         String displayText = title != null && !title.isBlank()
@@ -269,10 +259,8 @@ class OpenCodeAcpClientHandler implements AcpClientHandler {
     }
 
     /**
-     * Raises a {@link ConfirmEvent} (yes/no, no diff to render) and maps the
-     * eventual {@link PermissionDecision} to the ACP wire reply via
-     * {@link #mapDecisionToAcpResult}. Mirrors
-     * {@code CodexAppServerHandler.raiseConfirmAndReply}.
+     * Raises a {@link ConfirmEvent} (yes/no, no diff to render) and maps the eventual {@link PermissionDecision} to the
+     * ACP wire reply via {@link #mapDecisionToAcpResult}. Mirrors {@code CodexAppServerHandler.raiseConfirmAndReply}.
      */
     private CompletableFuture<JsonObject> raiseConfirmAndReply(
             String toolName, String displayText, String filePath, String targetPath,
@@ -286,23 +274,19 @@ class OpenCodeAcpClientHandler implements AcpClientHandler {
 
     /**
      * Maps a completed {@link PermissionDecision} future to the ACP {@code
-     * session/request_permission} wire response. Shared by every
-     * {@code onRequestPermission} branch (execute/edit/unidentified) so the
-     * decision→outcome mapping lives in one place.
+     * session/request_permission} wire response. Shared by every {@code onRequestPermission} branch
+     * (execute/edit/unidentified) so the decision→outcome mapping lives in one place.
      *
      * <p>
-     * NOTE: We always reply "once" for an allow, never "always". The diff
-     * panel's auto-accept path calls {@code PermissionDecision.allowed()}
-     * directly, so we cannot distinguish it from an explicit user click.
-     * Replying "always" would configure OpenCode to skip future permission
-     * requests permanently — a side-effect the user did not request from the
-     * auto-accept toggle.
+     * NOTE: We always reply "once" for an allow, never "always". The diff panel's auto-accept path calls
+     * {@code PermissionDecision.allowed()} directly, so we cannot distinguish it from an explicit user click. Replying
+     * "always" would configure OpenCode to skip future permission requests permanently — a side-effect the user did not
+     * request from the auto-accept toggle.
      *
      * <p>
-     * NOTE: Unlike the Claude/MCP path (which applies the edit itself and then
-     * sends "deny" to prevent a double-write), here answering "once" lets
-     * OpenCode perform the write/command itself. We MUST NOT apply the edit
-     * ourselves — doing so would double-apply it.
+     * NOTE: Unlike the Claude/MCP path (which applies the edit itself and then sends "deny" to prevent a double-write),
+     * here answering "once" lets OpenCode perform the write/command itself. We MUST NOT apply the edit ourselves —
+     * doing so would double-apply it.
      */
     private JsonObject mapDecisionToAcpResult(PermissionDecision decision, Throwable ex) {
         pendingPermission = null;
@@ -323,9 +307,8 @@ class OpenCodeAcpClientHandler implements AcpClientHandler {
     }
 
     /**
-     * Cancels any in-flight permission dialog by completing its future
-     * exceptionally. Called by the process manager on turn cancel and stop. The
-     * {@code handle} in {@link #onRequestPermission} maps this to
+     * Cancels any in-flight permission dialog by completing its future exceptionally. Called by the process manager on
+     * turn cancel and stop. The {@code handle} in {@link #onRequestPermission} maps this to
      * {@code {"outcome":{"outcome":"cancelled"}}} back to OpenCode.
      */
     void cancelPendingPermissions() {

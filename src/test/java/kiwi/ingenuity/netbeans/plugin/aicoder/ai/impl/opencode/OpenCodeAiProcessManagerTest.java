@@ -2,8 +2,14 @@ package kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.opencode;
 
 import com.google.gson.JsonArray;
 import com.google.gson.JsonObject;
+import com.google.gson.JsonParser;
+import java.io.BufferedReader;
 import java.io.File;
 import java.io.IOException;
+import java.io.InputStreamReader;
+import java.io.PipedInputStream;
+import java.io.PipedOutputStream;
+import java.nio.charset.StandardCharsets;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
@@ -19,8 +25,11 @@ import kiwi.ingenuity.netbeans.plugin.aicoder.ai.events.StatusEventTypeEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.events.TextDeltaEvent;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.events.ToolUseEvent;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.events.TurnCompleteEvent;
+import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.opencode.acp.AcpClientHandler;
+import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.opencode.acp.AcpConnection;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.opencode.settings.OpenCodeSessionSettings;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.session.AiSession;
+import kiwi.ingenuity.netbeans.plugin.aicoder.ai.session.InterruptTypeEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.ui.PermissionDiffPolicy;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.SessionRegistry;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.events.AiProcessEvent;
@@ -93,6 +102,33 @@ class OpenCodeAiProcessManagerTest {
         }
         opt.add("options", options);
         return opt;
+    }
+
+    private static AcpClientHandler noopAcpHandler() {
+        return new AcpClientHandler() {
+            @Override
+            public void onSessionUpdate(String sessionId, JsonObject update) {
+            }
+
+            @Override
+            public CompletableFuture<JsonObject> onRequestPermission(JsonObject params) {
+                return CompletableFuture.completedFuture(new JsonObject());
+            }
+
+            @Override
+            public CompletableFuture<JsonObject> onWriteTextFile(JsonObject params) {
+                return CompletableFuture.completedFuture(new JsonObject());
+            }
+
+            @Override
+            public CompletableFuture<JsonObject> onReadTextFile(JsonObject params) {
+                return CompletableFuture.completedFuture(new JsonObject());
+            }
+
+            @Override
+            public void onDisconnected(Exception cause) {
+            }
+        };
     }
 
     // ---- Payload builder tests ----
@@ -917,6 +953,224 @@ class OpenCodeAiProcessManagerTest {
         assertNull(manager.pendingAcpResumeId, "pendingAcpResumeId must be cleared by stop");
     }
 
+    /**
+     * Fix B regression guard: stop() used to block the calling thread on session/close's response for up to
+     * {@link OpenCodeTimeoutEnum#SESSION_CLOSE_WAIT_MILLIS} (5 s) via a synchronous {@code .get(5, SECONDS)} — reached
+     * directly from {@code AiTopComponent.componentClosed()} on the EDT. An agent that reads every message but never
+     * answers session/close reproduces exactly the hang that used to freeze the IDE: before the fix this test took
+     * roughly 5 s to reach the elapsed-time assertion below; after the fix stop() must return almost immediately
+     * regardless of whether a response ever arrives, and the graceful close/teardown must still complete on its own
+     * once the background wait elapses.
+     */
+    @Test
+    void stopReturnsPromptlyEvenWhenAgentNeverAnswersSessionClose() throws Exception {
+        PipedInputStream agentIn = new PipedInputStream(65536);
+        PipedOutputStream pluginOut = new PipedOutputStream(agentIn);
+        PipedInputStream pluginIn = new PipedInputStream(65536);
+        PipedOutputStream agentOut = new PipedOutputStream(pluginIn);
+
+        // A "hung" agent: drains its input (so plugin-side writes never block on a full
+        // pipe) but never writes a response, so session/close's future never completes on
+        // its own — only the reaper's bounded wait can end it.
+        BufferedReader agentReader = new BufferedReader(new InputStreamReader(agentIn, StandardCharsets.UTF_8));
+        Thread agentThread = new Thread(() -> {
+            try {
+                while (agentReader.readLine() != null) {
+                    // deliberately never respond
+                }
+            }
+            catch (IOException e) {
+                // pipe torn down once the plugin side closes — expected
+            }
+        }, "hung-acp-agent");
+        agentThread.setDaemon(true);
+        agentThread.start();
+        AcpConnection conn = new AcpConnection(pluginOut, pluginIn, noopAcpHandler());
+
+        OpenCodeAiProcessManager manager = new OpenCodeAiProcessManager(e -> {
+        }) {
+            {
+                running = true;
+                processing = true;
+                connection = conn;
+                acpSessionId = "ses_hungtest";
+            }
+        };
+
+        try {
+            long t0 = System.nanoTime();
+            manager.stop();
+            long elapsedMs = (System.nanoTime() - t0) / 1_000_000;
+
+            assertTrue(elapsedMs < 500,
+                    "stop() blocked for " + elapsedMs + " ms waiting on session/close — would freeze the EDT");
+            assertFalse(manager.isRunning(), "running must be false immediately after stop() returns");
+
+            // The background reaper's bounded wait (SESSION_CLOSE_WAIT_MILLIS = 5 s) must still
+            // close the connection once it gives up — closing the plugin-side writer delivers EOF
+            // to the hung agent, which is the only way its read loop above can exit.
+            agentThread.join(TimeUnit.SECONDS.toMillis(10));
+            assertFalse(agentThread.isAlive(),
+                    "the hung agent must see EOF once the background reaper's wait times out and closes the connection");
+        }
+        finally {
+            agentOut.close();
+        }
+    }
+
+    @Test
+    void stopSendsSessionCancelBeforeSessionClose() throws Exception {
+        PipedInputStream agentIn = new PipedInputStream(65536);
+        PipedOutputStream pluginOut = new PipedOutputStream(agentIn);
+        PipedInputStream pluginIn = new PipedInputStream(65536);
+        PipedOutputStream agentOut = new PipedOutputStream(pluginIn);
+        RecordingFakeAgent agent = new RecordingFakeAgent(agentIn, agentOut);
+        Thread agentThread = new Thread(agent, "fake-acp-agent-stop");
+        agentThread.setDaemon(true);
+        agentThread.start();
+        AcpConnection conn = new AcpConnection(pluginOut, pluginIn, noopAcpHandler());
+
+        List<AiProcessEvent> events = new ArrayList<>();
+        OpenCodeAiProcessManager manager = new OpenCodeAiProcessManager(events::add) {
+            {
+                running = true;
+                processing = true; // tab closed mid-turn — the case that matters most
+                connection = conn;
+                acpSessionId = "ses_stoptest";
+            }
+        };
+
+        try {
+            // stop() now only starts the graceful session/close on a background thread (Fix
+            // B — see stopReturnsPromptlyEvenWhenAgentNeverAnswersSessionClose) rather than
+            // waiting for it itself, so the join below — not the stop() call — is what
+            // guarantees both outbound messages were written AND read by the time the
+            // assertions run.
+            manager.stop();
+
+            agentThread.join(TimeUnit.SECONDS.toMillis(5));
+            assertFalse(agentThread.isAlive(), "fake agent must finish after the connection closes");
+            assertTrue(agent.reachedEof(), "fake agent must see clean EOF, not a torn pipe");
+
+            assertEquals(List.of("session/cancel", "session/close"), agent.methodOrder(),
+                    "stop() must put session/cancel on the wire before session/close");
+
+            JsonObject cancelMsg = agent.messageWithMethod("session/cancel");
+            assertNotNull(cancelMsg, "cancel must be on the wire");
+            assertFalse(cancelMsg.has("id"), "session/cancel must be a notification, not a request");
+            assertEquals("ses_stoptest",
+                    cancelMsg.getAsJsonObject("params").get("sessionId").getAsString());
+
+            JsonObject closeMsg = agent.messageWithMethod("session/close");
+            assertNotNull(closeMsg, "close request must be on the wire");
+            assertTrue(closeMsg.has("id"), "session/close must be a request expecting a response");
+            assertEquals("ses_stoptest",
+                    closeMsg.getAsJsonObject("params").get("sessionId").getAsString());
+
+            assertFalse(manager.isRunning(), "running must be false after stop");
+        }
+        finally {
+            conn.close();
+            agentOut.close();
+        }
+    }
+
+    @Test
+    void stopSendsSessionCancelEvenWhenNoTurnIsInFlight() throws Exception {
+        // Pins the deliberate unconditional choice: session/cancel is a
+        // notification (no response channel, nothing to error back) and
+        // session/close implies cancellation anyway, so sending it while idle
+        // is harmless — and unconditional cannot drift from the turn state the
+        // way a gate could.
+        PipedInputStream agentIn = new PipedInputStream(65536);
+        PipedOutputStream pluginOut = new PipedOutputStream(agentIn);
+        PipedInputStream pluginIn = new PipedInputStream(65536);
+        PipedOutputStream agentOut = new PipedOutputStream(pluginIn);
+        RecordingFakeAgent agent = new RecordingFakeAgent(agentIn, agentOut);
+        Thread agentThread = new Thread(agent, "fake-acp-agent-idle");
+        agentThread.setDaemon(true);
+        agentThread.start();
+        AcpConnection conn = new AcpConnection(pluginOut, pluginIn, noopAcpHandler());
+
+        OpenCodeAiProcessManager manager = new OpenCodeAiProcessManager(e -> {
+        }) {
+            {
+                running = true;
+                connection = conn;
+                acpSessionId = "ses_idletest";
+            }
+        };
+
+        try {
+            manager.stop();
+
+            assertEquals(List.of("session/cancel", "session/close"), agent.methodOrder(),
+                    "idle stop() must still cancel before closing");
+        }
+        finally {
+            conn.close();
+            agentOut.close();
+            agentThread.join(TimeUnit.SECONDS.toMillis(5));
+        }
+    }
+
+    @Test
+    void interruptStillSendsOnlyTheCancelNotification() throws Exception {
+        // Guard on existing behaviour: interrupt(Cancel) sends exactly one
+        // session/cancel notification — no id, correct session — and fires
+        // STOPPED. The refactor that extracted the shared cancel mechanism
+        // must not have changed what interrupt puts on the wire.
+        PipedInputStream agentIn = new PipedInputStream(65536);
+        PipedOutputStream pluginOut = new PipedOutputStream(agentIn);
+        PipedInputStream pluginIn = new PipedInputStream(65536);
+        PipedOutputStream agentOut = new PipedOutputStream(pluginIn);
+        RecordingFakeAgent agent = new RecordingFakeAgent(agentIn, agentOut);
+        Thread agentThread = new Thread(agent, "fake-acp-agent-interrupt");
+        agentThread.setDaemon(true);
+        agentThread.start();
+        AcpConnection conn = new AcpConnection(pluginOut, pluginIn, noopAcpHandler());
+
+        List<AiProcessEvent> events = new ArrayList<>();
+        OpenCodeAiProcessManager manager = new OpenCodeAiProcessManager(events::add) {
+            {
+                running = true;
+                processing = true;
+                connection = conn;
+                acpSessionId = "ses_interrupttest";
+            }
+        };
+
+        try {
+            manager.interrupt(InterruptTypeEnum.Cancel);
+
+            // Fire-and-forget: no response to await, so poll briefly for the
+            // single notification to reach the recording agent.
+            long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(5);
+            while (agent.methodOrder().isEmpty() && System.nanoTime() < deadline) {
+                Thread.sleep(10);
+            }
+
+            assertEquals(List.of("session/cancel"), agent.methodOrder(),
+                    "interrupt(Cancel) must send exactly one notification, unchanged");
+
+            JsonObject cancelMsg = agent.messageWithMethod("session/cancel");
+            assertNotNull(cancelMsg);
+            assertFalse(cancelMsg.has("id"), "must remain a notification, not a request");
+            assertEquals("ses_interrupttest",
+                    cancelMsg.getAsJsonObject("params").get("sessionId").getAsString());
+
+            assertFalse(manager.isProcessing(), "interrupt must clear processing");
+            assertEquals(1, events.size(), "exactly one event must fire");
+            assertInstanceOf(StatusEvent.class, events.get(0));
+            assertEquals(StatusEventTypeEnum.STOPPED, ((StatusEvent) events.get(0)).type());
+        }
+        finally {
+            conn.close();
+            agentOut.close();
+            agentThread.join(TimeUnit.SECONDS.toMillis(5));
+        }
+    }
+
     // ---- Slice 7 BUG FIX: ACP session id persistence via settings ----
     @Test
     void handshakeWritesAcpSessionIdToSettings() throws Exception {
@@ -1388,5 +1642,76 @@ class OpenCodeAiProcessManagerTest {
 
         assertEquals("ses_must-survive", settings.acpSessionId(),
                 "after successful resume, settings.acpSessionId must be the requested resume id, not a new one");
+    }
+
+    // ---- I2: stop() must cancel in-flight work before session/close ----
+    /**
+     * Minimal fake ACP agent over piped streams: records every incoming message in arrival order and answers every
+     * request — a message carrying both id and method, per JSON-RPC 2.0 — with an empty success result, so callers'
+     * bounded .get() waits complete promptly instead of burning their whole timeout budget.
+     */
+    private static final class RecordingFakeAgent implements Runnable {
+
+        private final BufferedReader in;
+        private final PipedOutputStream out;
+        private final List<JsonObject> messages = new ArrayList<>();
+        private volatile boolean reachedEof = false;
+
+        RecordingFakeAgent(PipedInputStream pluginToAgent, PipedOutputStream agentToPlugin) {
+            this.in = new BufferedReader(new InputStreamReader(pluginToAgent, StandardCharsets.UTF_8));
+            this.out = agentToPlugin;
+        }
+
+        List<String> methodOrder() {
+            synchronized (messages) {
+                List<String> order = new ArrayList<>();
+                for (JsonObject m : messages) {
+                    if (m.has("method")) {
+                        order.add(m.get("method").getAsString());
+                    }
+                }
+                return order;
+            }
+        }
+
+        JsonObject messageWithMethod(String method) {
+            synchronized (messages) {
+                for (JsonObject m : messages) {
+                    if (m.has("method") && method.equals(m.get("method").getAsString())) {
+                        return m;
+                    }
+                }
+            }
+            return null;
+        }
+
+        boolean reachedEof() {
+            return reachedEof;
+        }
+
+        @Override
+        public void run() {
+            try {
+                String line;
+                while ((line = in.readLine()) != null) {
+                    JsonObject msg = JsonParser.parseString(line).getAsJsonObject();
+                    synchronized (messages) {
+                        messages.add(msg);
+                    }
+                    if (msg.has("id") && msg.has("method")) {
+                        JsonObject response = new JsonObject();
+                        response.addProperty("jsonrpc", "2.0");
+                        response.addProperty("id", msg.get("id").getAsLong());
+                        response.add("result", new JsonObject());
+                        out.write((response.toString() + "\n").getBytes(StandardCharsets.UTF_8));
+                        out.flush();
+                    }
+                }
+                reachedEof = true;
+            }
+            catch (IOException e) {
+                // Pipe torn down under us — expected once the plugin side closes.
+            }
+        }
     }
 }

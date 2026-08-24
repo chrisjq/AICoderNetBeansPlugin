@@ -1,26 +1,48 @@
 package kiwi.ingenuity.netbeans.plugin.aicoder.process.locking;
 
+import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.TimeoutEnum;
+
 public enum LockTypeEnum {
-    GIT_LOCK("Git Operations", 5),
-    BUILD_LOCK("Build Operations", 10),
-    REFACTOR_LOCK("Refactoring", 3),
-    FILE_WRITE_LOCK("File I/O", 2),
-    SESSION_LOCK("Session Management", 1),
-    PROJECT_STRUCTURE_LOCK("Project Structure", 5);
+    GIT_LOCK("Git Operations", TimeoutEnum.GIT_LOCK_LIFETIME_MILLIS.millis(), TimeoutEnum.GIT_LOCK_WAIT_MILLIS),
+    BUILD_LOCK("Build Operations", TimeoutEnum.BUILD_LOCK_LIFETIME_MILLIS.millis(), TimeoutEnum.BUILD_LOCK_WAIT_MILLIS),
+    REFACTOR_LOCK("Refactoring", TimeoutEnum.REFACTOR_LOCK_LIFETIME_MILLIS.millis(), TimeoutEnum.REFACTOR_LOCK_WAIT_MILLIS),
+    FILE_WRITE_LOCK("File I/O", TimeoutEnum.FILE_WRITE_LOCK_LIFETIME_MILLIS.millis(), TimeoutEnum.FILE_WRITE_LOCK_WAIT_MILLIS),
+    SESSION_LOCK("Session Management", TimeoutEnum.SESSION_LOCK_LIFETIME_MILLIS.millis(), TimeoutEnum.SESSION_LOCK_WAIT_MILLIS),
+    PROJECT_STRUCTURE_LOCK("Project Structure", TimeoutEnum.PROJECT_STRUCTURE_LOCK_LIFETIME_MILLIS.millis(), TimeoutEnum.PROJECT_STRUCTURE_LOCK_WAIT_MILLIS);
 
     private final String description;
-    private final int timeoutMinutes;
+    private final long lifetimeMillis;
+    private final TimeoutEnum waitTimeout;
 
-    LockTypeEnum(String description, int timeoutMinutes) {
+    LockTypeEnum(String description, long lifetimeMillis, TimeoutEnum waitTimeout) {
         this.description = description;
-        this.timeoutMinutes = timeoutMinutes;
+        this.lifetimeMillis = lifetimeMillis;
+        this.waitTimeout = waitTimeout;
     }
 
     public String getDescription() {
         return description;
     }
 
-    public int getTimeoutMinutes() {
-        return timeoutMinutes;
+    /**
+     * Maximum age of a held lock before it is treated as stale and released. This is not an acquisition wait timeout.
+     */
+    public long getLifetimeMillis() {
+        return lifetimeMillis;
+    }
+
+    /**
+     * Maximum time a caller waits for a live lock holder before acquisition fails.
+     */
+    public long getWaitTimeoutMillis() {
+        return waitTimeout.millis();
+    }
+
+    /**
+     * The TimeoutEnum constant this lock's acquisition wait comes from. Lock contention messages report the waited
+     * duration from this constant so retuning it can never leave the message stale.
+     */
+    public TimeoutEnum getWaitTimeout() {
+        return waitTimeout;
     }
 }

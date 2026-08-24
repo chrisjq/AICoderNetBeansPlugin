@@ -5,6 +5,7 @@ import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import static kiwi.ingenuity.netbeans.plugin.aicoder.ai.AiTypeEnum.CLAUDE;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.events.ConfirmEvent;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.events.PermissionDecision;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.events.PermissionEvent;
@@ -25,7 +26,9 @@ class MutationToolsNotificationTest {
     private static final String SESSION_ID = "test-session";
 
     private static McpHookServer allowAllServer() {
-        return new McpHookServer(0);
+        McpHookServer server = new McpHookServer(0);
+        server.registerSession(SESSION_ID, CLAUDE, List.of(), false);
+        return server;
     }
 
     private static ToolRequestArguments deleteArgs(String filePath) {
@@ -223,7 +226,7 @@ class MutationToolsNotificationTest {
             }
         };
         DeleteFileTool tool = new DeleteFileTool(allowAllServer());
-        tool.confirmTimeoutSeconds = 0; // immediate timeout
+        tool.confirmTimeoutMillis = 0; // immediate timeout
 
         String result = tool.handle(deleteArgs(file.getAbsolutePath()), session);
 

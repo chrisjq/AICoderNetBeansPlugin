@@ -64,6 +64,8 @@ public class RenameSymbolTool implements McpToolInterface {
         schema.add(ToolSchemaKeyEnum.PROPERTIES.key(), props);
         JsonArray required = new JsonArray();
         required.add(RenameSymbolParamEnum.NEW_NAME.key());
+        required.add(RenameSymbolParamEnum.FILE_PATH.key());
+        required.add(RenameSymbolParamEnum.LINE.key());
         schema.add(ToolSchemaKeyEnum.REQUIRED.key(), required);
         tool.add(ToolSchemaKeyEnum.INPUT_SCHEMA.key(), schema);
         return McpToolSchemas.applyCredentialsIfRequested(tool, options);
@@ -75,8 +77,8 @@ public class RenameSymbolTool implements McpToolInterface {
         if (fp != null) {
             McpHookServer server = McpServerRegistry.getServer();
             String sessionId = session.getId();
-            if (server == null || sessionId == null || !server.isFileAllowed(sessionId, fp)) {
-                return "Access denied: " + fp + " is outside the allowed project scope for this session.";
+            if (!McpHookServer.isFileAccessible(server, sessionId, fp)) {
+                return McpHookServer.fileAccessDeniedMessage(server, sessionId, fp);
             }
         }
         return RefactoringProvider.renameSymbol(fp, args.intOr(RenameSymbolParamEnum.LINE.key(), 0), args.require(RenameSymbolParamEnum.NEW_NAME.key()));

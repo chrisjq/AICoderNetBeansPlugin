@@ -22,7 +22,6 @@ public final class OllamaModelDiscovery {
     private static final HttpClient HTTP_CLIENT = HttpClient.newBuilder()
             .followRedirects(HttpClient.Redirect.NORMAL)
             .build();
-    private static final Duration TIMEOUT = Duration.ofSeconds(15);
     private static final Map<String, List<String>> MODEL_CACHE = new ConcurrentHashMap<>();
 
     static String[] assembleModelList(List<String> discoveredIds) {
@@ -111,7 +110,7 @@ public final class OllamaModelDiscovery {
 
     private static List<String> fetchModelIds(String baseUrl) throws IOException, InterruptedException {
         HttpRequest request = HttpRequest.newBuilder(URI.create(baseUrl + "/v1/models"))
-                .timeout(TIMEOUT)
+                .timeout(Duration.ofMillis(OllamaTimeoutEnum.OLLAMA_MODEL_DISCOVERY_MILLIS.millis()))
                 .GET()
                 .build();
         HttpResponse<String> response = HTTP_CLIENT.send(request,
@@ -127,7 +126,7 @@ public final class OllamaModelDiscovery {
         JsonObject body = new JsonObject();
         body.addProperty(OllamaJsonKeyEnum.MODEL.key(), model);
         HttpRequest request = HttpRequest.newBuilder(URI.create(baseUrl + "/api/show"))
-                .timeout(TIMEOUT)
+                .timeout(Duration.ofMillis(OllamaTimeoutEnum.OLLAMA_MODEL_DISCOVERY_MILLIS.millis()))
                 .header("Content-Type", "application/json")
                 .POST(HttpRequest.BodyPublishers.ofString(body.toString(), StandardCharsets.UTF_8))
                 .build();

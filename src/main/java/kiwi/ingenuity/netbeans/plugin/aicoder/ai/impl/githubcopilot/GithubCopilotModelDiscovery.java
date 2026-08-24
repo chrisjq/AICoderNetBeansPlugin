@@ -22,18 +22,16 @@ import java.util.logging.Logger;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.githubcopilot.settings.GithubCopilotPluginSettings;
 
 /**
- * Phase 1 of adopting the official GitHub Copilot SDK for Java: query the real
- * list of models available to the account via
- * {@code CopilotClient.listModels()} and feed it into the model dropdown. The
- * {@code copilot -p} runtime is unchanged; this only refreshes the model list.
+ * Phase 1 of adopting the official GitHub Copilot SDK for Java: query the real list of models available to the account
+ * via {@code CopilotClient.listModels()} and feed it into the model dropdown. The {@code copilot -p} runtime is
+ * unchanged; this only refreshes the model list.
  * <p>
- * Discovery is best-effort and fully isolated: any failure (CLI missing, RPC
- * error, timeout) is swallowed and the hardcoded fallback list remains in use.
+ * Discovery is best-effort and fully isolated: any failure (CLI missing, RPC error, timeout) is swallowed and the
+ * hardcoded fallback list remains in use.
  */
 public final class GithubCopilotModelDiscovery {
 
     private static final Logger LOG = Logger.getLogger(GithubCopilotModelDiscovery.class.getName());
-    private static final long TIMEOUT_SECONDS = 30;
     private static final Gson GSON = new Gson();
 
     private static final int MAX_RETRIES = 20;
@@ -41,9 +39,8 @@ public final class GithubCopilotModelDiscovery {
     private static volatile int retryCount = 0;
 
     /**
-     * Builds the dropdown list from discovered model ids: "auto" first (it
-     * always works), then the discovered ids in order, de-duplicated and
-     * trimmed, blanks dropped. Pure and side-effect free.
+     * Builds the dropdown list from discovered model ids: "auto" first (it always works), then the discovered ids in
+     * order, de-duplicated and trimmed, blanks dropped. Pure and side-effect free.
      */
     static String[] assembleModelList(List<String> discoveredIds) {
         LinkedHashSet<String> out = new LinkedHashSet<>();
@@ -59,9 +56,8 @@ public final class GithubCopilotModelDiscovery {
     }
 
     /**
-     * Starts a fresh discovery cycle: resets the retry counter and submits a
-     * background fetch. Does nothing if a discovery is already in progress. On
-     * failure, retries up to {@value #MAX_RETRIES} times within the cycle.
+     * Starts a fresh discovery cycle: resets the retry counter and submits a background fetch. Does nothing if a
+     * discovery is already in progress. On failure, retries up to {@value #MAX_RETRIES} times within the cycle.
      *
      * @param cliPath the located copilot CLI path, or null to use PATH
      */
@@ -139,8 +135,8 @@ public final class GithubCopilotModelDiscovery {
             opts.setCliPath(cliPath);
         }
         try (CopilotClient client = new CopilotClient(opts)) {
-            client.start().get(TIMEOUT_SECONDS, TimeUnit.SECONDS);
-            List<ModelInfo> models = client.listModels().get(TIMEOUT_SECONDS, TimeUnit.SECONDS);
+            client.start().get(GithubCopilotTimeoutEnum.COPILOT_MODEL_DISCOVERY_MILLIS.millis(), TimeUnit.MILLISECONDS);
+            List<ModelInfo> models = client.listModels().get(GithubCopilotTimeoutEnum.COPILOT_MODEL_DISCOVERY_MILLIS.millis(), TimeUnit.MILLISECONDS);
             List<String> ids = new ArrayList<>();
             if (models != null) {
                 for (ModelInfo m : models) {
@@ -154,16 +150,15 @@ public final class GithubCopilotModelDiscovery {
     }
 
     /**
-     * Tier 2: drive the CLI's JSON-RPC server directly — spawn
-     * {@code copilot --server --stdio}, do a {@code ping} handshake, then call
-     * {@code models.list}. Uses only gson; no SDK classes. Mirrors exactly what
-     * the SDK does on the wire (LSP-framed JSON-RPC 2.0).
+     * Tier 2: drive the CLI's JSON-RPC server directly — spawn {@code copilot --server --stdio}, do a {@code ping}
+     * handshake, then call {@code models.list}. Uses only gson; no SDK classes. Mirrors exactly what the SDK does on
+     * the wire (LSP-framed JSON-RPC 2.0).
      */
     private static String[] discoverViaRpc(String cliPath) throws Exception {
         Process proc = new ProcessBuilder(buildServerCommand(cliPath)).start();
         Thread watchdog = new Thread(() -> {
             try {
-                Thread.sleep(TIMEOUT_SECONDS * 1000);
+                Thread.sleep(GithubCopilotTimeoutEnum.COPILOT_MODEL_DISCOVERY_MILLIS.millis());
                 proc.destroyForcibly();
             }
             catch (InterruptedException ignored) {
@@ -194,8 +189,7 @@ public final class GithubCopilotModelDiscovery {
     }
 
     /**
-     * Per-OS command to start the CLI as a stdio JSON-RPC server (mirrors the
-     * SDK).
+     * Per-OS command to start the CLI as a stdio JSON-RPC server (mirrors the SDK).
      */
     private static List<String> buildServerCommand(String cliPath) {
         String path = (cliPath != null && !cliPath.isBlank()) ? cliPath : "copilot";
@@ -222,8 +216,7 @@ public final class GithubCopilotModelDiscovery {
     }
 
     /**
-     * Extracts {@code result.models[].id} from a {@code models.list} response
-     * body.
+     * Extracts {@code result.models[].id} from a {@code models.list} response body.
      */
     static List<String> parseModelIds(String responseBody) {
         List<String> ids = new ArrayList<>();
@@ -253,8 +246,8 @@ public final class GithubCopilotModelDiscovery {
     }
 
     /**
-     * Reads one LSP-framed message (Content-Length header + body). Returns the
-     * body as a UTF-8 string, or null at end of stream.
+     * Reads one LSP-framed message (Content-Length header + body). Returns the body as a UTF-8 string, or null at end
+     * of stream.
      */
     static String readFramed(InputStream in) throws java.io.IOException {
         ByteArrayOutputStream header = new ByteArrayOutputStream();

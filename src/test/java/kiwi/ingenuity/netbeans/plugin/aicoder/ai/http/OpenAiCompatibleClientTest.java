@@ -278,4 +278,36 @@ class OpenAiCompatibleClientTest {
         assertEquals("hello", result.assistantText());
         assertNull(result.promptTokens());
     }
+
+    // Redaction of the "ollama sse"/"ollama request" debug logs (this class's
+    // former bespoke redactToolCallArguments) is now handled by
+    // McpHookServerUtil.redactAllSecrets, a value-based redactor that masks
+    // any live session secret regardless of surrounding shape (native JSON,
+    // JSON escaped inside another JSON string, Map.toString(), or bare text) —
+    // see McpHookServerUtilTest for that coverage. Nothing left to test here:
+    // this class just calls the shared redactor before logging.
+    /**
+     * A tool_calls delta is excluded from the "ollama sse" debug log entirely (see readSseDataLines) rather than
+     * redacted, because a single chunk's arguments fragment is frequently not complete JSON on its own and a secret's
+     * characters can straddle two chunks — no per-line mechanism can safely redact that. isToolCallDelta is the
+     * predicate deciding what gets excluded; this pins its behaviour directly.
+     */
+    @Test
+    void isToolCallDeltaRecognisesAToolCallsDeltaChunk() {
+        assertTrue(OpenAiCompatibleClient.isToolCallDelta(
+                "{\"choices\":[{\"delta\":{\"tool_calls\":[{\"index\":0,\"function\":{\"arguments\":\"{\\\"a\"}}]}}]}"));
+    }
+
+    @Test
+    void isToolCallDeltaIgnoresOrdinaryContentDeltas() {
+        assertFalse(OpenAiCompatibleClient.isToolCallDelta("{\"choices\":[{\"delta\":{\"content\":\"hello\"}}]}"));
+    }
+
+    @Test
+    void isToolCallDeltaTreatsUnparseableOrControlLinesAsNotAToolCall() {
+        assertFalse(OpenAiCompatibleClient.isToolCallDelta("[DONE]"));
+        assertFalse(OpenAiCompatibleClient.isToolCallDelta("not json at all"));
+        assertFalse(OpenAiCompatibleClient.isToolCallDelta(""));
+        assertFalse(OpenAiCompatibleClient.isToolCallDelta(null));
+    }
 }

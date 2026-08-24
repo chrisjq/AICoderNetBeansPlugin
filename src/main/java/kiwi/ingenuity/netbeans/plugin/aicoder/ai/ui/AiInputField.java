@@ -7,6 +7,7 @@ import java.awt.Toolkit;
 import java.awt.datatransfer.Clipboard;
 import java.awt.datatransfer.DataFlavor;
 import java.awt.datatransfer.StringSelection;
+import java.awt.datatransfer.UnsupportedFlavorException;
 import java.awt.event.ActionEvent;
 import java.awt.event.FocusAdapter;
 import java.awt.event.FocusEvent;
@@ -16,7 +17,6 @@ import java.awt.image.BufferedImage;
 import java.io.File;
 import java.io.IOException;
 import java.util.List;
-import java.util.UUID;
 import java.util.function.Consumer;
 import java.util.logging.Level;
 import java.util.logging.Logger;
@@ -24,15 +24,21 @@ import javax.imageio.ImageIO;
 import javax.swing.AbstractAction;
 import javax.swing.BorderFactory;
 import javax.swing.JTextArea;
+import javax.swing.SwingUtilities;
 import javax.swing.TransferHandler;
 import javax.swing.text.BadLocationException;
 import javax.swing.text.DefaultEditorKit;
+import kiwi.ingenuity.netbeans.plugin.aicoder.ai.session.AiSession;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.PromptHistory;
+import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.TempFile;
+import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.TempFileRegistry;
 
 /**
- * Multi-line text input for prompts. Enter = submit, Shift+Enter = newline,
- * Up/Down = prompt history navigation. Dropped files insert @/path references.
- * Pasted images save to a temp PNG and insert @/path.
+ * Multi-line text input for prompts. Enter = submit, Shift+Enter = newline, Up/Down = prompt history navigation.
+ * Dropped files insert @/path references. Pasted images are saved through {@link TempFileRegistry} into the owning
+ * session's registry-owned temp directory and inserted as the short marker @tmp.&lt;filename&gt; — expanded back to the
+ * absolute path only in what is actually sent to the agent (see
+ * {@link kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.TmpMarkerExpander}), never in what the user sees.
  */
 public class AiInputField extends JTextArea {
 
@@ -42,13 +48,25 @@ public class AiInputField extends JTextArea {
     private static final Color HINT_COLOR = new Color(0x58, 0x5b, 0x70);
 
     private final PromptHistory history;
+    /**
+     * The session this input field belongs to; pasted-image temp files are minted against it so they live in that
+     * session's own temp directory and die with it. May be null while the panel is still being wired up — pastes are
+     * refused gracefully until a session arrives.
+     */
+    private final AiSession session;
     private Consumer<String> submitCallback;
+    /**
+     * Notified on the EDT when a pasted image could not be saved (e.g. no temp storage available for this session, or
+     * the PNG write failed). Optional — a paste failure is otherwise only logged.
+     */
+    private Consumer<String> pasteErrorCallback;
     private boolean showingHint = false;
     private boolean canSend = true;
     private final Color normalForeground;
 
-    public AiInputField(PromptHistory history) {
+    public AiInputField(PromptHistory history, AiSession session) {
         this.history = history;
+        this.session = session;
         setLineWrap(true);
         setWrapStyleWord(true);
         setRows(3);
@@ -65,8 +83,14 @@ public class AiInputField extends JTextArea {
     }
 
     /**
-     * Controls whether Enter submits. When false, Enter inserts a newline
-     * instead.
+     * See {@link #pasteErrorCallback}.
+     */
+    public void setPasteErrorCallback(Consumer<String> callback) {
+        this.pasteErrorCallback = callback;
+    }
+
+    /**
+     * Controls whether Enter submits. When false, Enter inserts a newline instead.
      */
     public void setCanSend(boolean canSend) {
         this.canSend = canSend;
@@ -251,7 +275,20 @@ public class AiInputField extends JTextArea {
         });
     }
 
+    /**
+     * Decides synchronously whether the clipboard holds a pasteable image (the paste Action needs the answer
+     * immediately to know whether to fall through to a normal text paste), then hands the actual encode+write off the
+     * EDT. A 4K screenshot is tens of MB of ARGB pixels — allocating a {@link BufferedImage}, drawing into it and
+     * PNG-encoding it are all too slow to run on the calling thread without freezing the UI, so only cheap checks
+     * (clipboard flavor, image presence, and — for a non-{@link BufferedImage} {@link Image} — its reported dimensions)
+     * happen here.
+     */
     private boolean tryPasteImage() {
+        if (session == null) {
+            // Panel not fully wired to a session yet; refusing beats minting
+            // into nowhere (or an NPE) on the EDT during a paste.
+            return false;
+        }
         Clipboard cb = Toolkit.getDefaultToolkit().getSystemClipboard();
         try {
             if (!cb.isDataFlavorAvailable(DataFlavor.imageFlavor)) {
@@ -261,34 +298,103 @@ public class AiInputField extends JTextArea {
             if (img == null) {
                 return false;
             }
-
-            BufferedImage bi;
-            if (img instanceof BufferedImage bimg) {
-                bi = bimg;
+            if (!(img instanceof BufferedImage) && (img.getWidth(null) <= 0 || img.getHeight(null) <= 0)) {
+                return false;
             }
-            else {
-                int w = img.getWidth(null);
-                int h = img.getHeight(null);
-                if (w <= 0 || h <= 0) {
-                    return false;
-                }
-                bi = new BufferedImage(w, h, BufferedImage.TYPE_INT_ARGB);
-                Graphics2D g = bi.createGraphics();
-                g.drawImage(img, 0, 0, null);
-                g.dispose();
-            }
-
-            File tmp = new File(System.getProperty("java.io.tmpdir"),
-                    "ai-coder-paste-" + UUID.randomUUID() + ".png");
-            ImageIO.write(bi, "PNG", tmp);
-            insertAtCursor("@" + tmp.getAbsolutePath() + " ");
+            pasteImageAsync(img);
             return true;
         }
-        catch (IOException | UnsupportedOperationException
-                | java.awt.datatransfer.UnsupportedFlavorException ex) {
+        catch (IOException | UnsupportedOperationException | UnsupportedFlavorException ex) {
             LOG.log(Level.FINE, "Image paste failed", ex);
             return false;
         }
+    }
+
+    /**
+     * Runs the encode+write on a background thread so the EDT is never held for the duration. Package-private (not
+     * private) purely so tests can drive it directly without going through the real system clipboard.
+     */
+    void pasteImageAsync(Image img) {
+        Thread worker = new Thread(() -> encodeAndSavePastedImage(img), "ai-coder-image-paste");
+        worker.setDaemon(true);
+        worker.start();
+    }
+
+    private void encodeAndSavePastedImage(Image img) {
+        BufferedImage bi;
+        if (img instanceof BufferedImage bimg) {
+            bi = bimg;
+        }
+        else {
+            int w = img.getWidth(null);
+            int h = img.getHeight(null);
+            bi = new BufferedImage(w, h, BufferedImage.TYPE_INT_ARGB);
+            Graphics2D g = bi.createGraphics();
+            g.drawImage(img, 0, 0, null);
+            g.dispose();
+        }
+
+        TempFile tmp = createPasteTempFile(session.id());
+        if (tmp == null) {
+            reportPasteFailure("Could not save the pasted image — temp storage isn't available for this session");
+            return;
+        }
+        try {
+            writePastedImage(bi, tmp.path().toFile());
+        }
+        catch (IOException ex) {
+            LOG.log(Level.FINE, "Image paste failed", ex);
+            // createPasteTempFile already registered (and created) the file; a write
+            // failure must not leave that empty .png tracked until the age sweep gets
+            // to it hours later.
+            cleanupFailedPasteTempFile(tmp);
+            reportPasteFailure("Could not save the pasted image");
+            return;
+        }
+        // Insert on the EDT, and only after the write actually succeeded. insertAtCursor
+        // reads the caret position fresh when it runs rather than one captured up front,
+        // so this is correct even though the user may have kept typing (moving the caret)
+        // while the write was in flight.
+        String marker = "@tmp." + tmp.path().getFileName() + " ";
+        SwingUtilities.invokeLater(() -> insertAtCursor(marker));
+    }
+
+    /**
+     * Creates the temp file the pasted image is written into. Package-private so tests can substitute a fake without a
+     * live MCP server — {@link TempFileRegistry#createTempFile} needs the plugin's session-config-dir resolution, which
+     * a plain unit test does not have.
+     */
+    TempFile createPasteTempFile(String sessionId) {
+        return TempFileRegistry.createTempFile(sessionId, "ai-coder-paste", ".png");
+    }
+
+    /**
+     * Encodes and writes the pasted image. Package-private so tests can force a failure deterministically instead of
+     * needing a genuinely corrupt image or a full disk.
+     */
+    void writePastedImage(BufferedImage image, File target) throws IOException {
+        ImageIO.write(image, "PNG", target);
+    }
+
+    /**
+     * Removes a temp file left behind by a failed image-paste write. Package-private so tests can observe the call —
+     * {@link TempFileRegistry#deleteTempFile} is a silent no-op for a {@link TempFile} it never tracked (e.g. one a
+     * test fabricates directly), so asserting on this method is how the cleanup itself gets verified.
+     */
+    void cleanupFailedPasteTempFile(TempFile tempFile) {
+        TempFileRegistry.deleteTempFile(tempFile);
+    }
+
+    /**
+     * Reports an image-paste failure to {@link #pasteErrorCallback} on the EDT, if one is registered. Always safe to
+     * call from a background thread.
+     */
+    private void reportPasteFailure(String message) {
+        Consumer<String> callback = pasteErrorCallback;
+        if (callback == null) {
+            return;
+        }
+        SwingUtilities.invokeLater(() -> callback.accept(message));
     }
 
     /**

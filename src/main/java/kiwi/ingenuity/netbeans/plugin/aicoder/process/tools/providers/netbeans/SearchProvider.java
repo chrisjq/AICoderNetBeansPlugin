@@ -63,9 +63,7 @@ public class SearchProvider {
 
         Pattern pattern;
         try {
-            String expr = isRegex ? query : Pattern.quote(query);
-            pattern = caseSensitive ? Pattern.compile(expr)
-                    : Pattern.compile(expr, Pattern.CASE_INSENSITIVE);
+            pattern = LineMatcher.compile(query, isRegex, caseSensitive);
         }
         catch (PatternSyntaxException e) {
             return "Invalid regex: " + e.getMessage();
@@ -98,7 +96,7 @@ public class SearchProvider {
                     try {
                         List<String> lines = Files.readAllLines(p);
                         for (int i = 0; i < lines.size(); i++) {
-                            if (pattern.matcher(lines.get(i)).find()) {
+                            if (LineMatcher.findWithTimeout(pattern, lines.get(i))) {
                                 totalHits++;
                                 matchedFiles.add(p.toString());
                                 if (hits.size() < MAX_FILE_HITS) {
@@ -107,6 +105,12 @@ public class SearchProvider {
                                 }
                             }
                         }
+                    }
+                    catch (LineMatcher.RegexTimeoutException e) {
+                        // A pathological pattern must not hang the handler thread; report and
+                        // stop so the caller learns the query (not the corpus) is the problem.
+                        return "Regex timed out after " + e.timeoutMillis()
+                                + " ms — the pattern backtracks catastrophically; simplify it.";
                     }
                     catch (IOException e) {
                         // Skip unreadable / non-UTF-8 files (e.g. MalformedInputException)
@@ -468,17 +472,14 @@ public class SearchProvider {
     }
 
     /**
-     * Java source roots of every open project, used when no {@code filePath}
-     * narrows the search.
+     * Java source roots of every open project, used when no {@code filePath} narrows the search.
      *
      * <p>
-     * This used to fall back to whatever file the editor happened to have
-     * focused and take its SOURCE classpath. That made a project-wide search
-     * depend on unrelated editor state: with a non-source file in front — a
-     * pom, a README — {@code ClassPath.getClassPath} returns null and every
-     * search failed, reporting "Cannot resolve source classpath for: null"
-     * because the caller's own filePath was still null at that point. Searching
-     * the open projects is what the caller asked for when they omitted a path.
+     * This used to fall back to whatever file the editor happened to have focused and take its SOURCE classpath. That
+     * made a project-wide search depend on unrelated editor state: with a non-source file in front — a pom, a README —
+     * {@code ClassPath.getClassPath} returns null and every search failed, reporting "Cannot resolve source classpath
+     * for: null" because the caller's own filePath was still null at that point. Searching the open projects is what
+     * the caller asked for when they omitted a path.
      */
     private static List<FileObject> openProjectSourceRoots() {
         List<FileObject> roots = new ArrayList<>();
@@ -500,13 +501,11 @@ public class SearchProvider {
      * Resolves the file that anchors a search to a project's classpath.
      *
      * <p>
-     * When no path is given this used to take whatever file the editor had
-     * focused. That made results depend on where the user's cursor happened to
-     * be — a caller asking the same question twice could get different answers,
-     * and the caller had no way to know which file it had actually searched.
-     * The anchor is now the first open project's source root: still a fallback,
-     * but a deterministic one that does not move while the user clicks around.
-     * Callers that need a specific project should pass {@code filePath}.
+     * When no path is given this used to take whatever file the editor had focused. That made results depend on where
+     * the user's cursor happened to be — a caller asking the same question twice could get different answers, and the
+     * caller had no way to know which file it had actually searched. The anchor is now the first open project's source
+     * root: still a fallback, but a deterministic one that does not move while the user clicks around. Callers that
+     * need a specific project should pass {@code filePath}.
      */
     private static FileObject resolveFileObject(String filePath) {
         if (filePath == null || filePath.isBlank()) {

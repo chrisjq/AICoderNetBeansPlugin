@@ -111,6 +111,10 @@ public class ChangeMethodSignatureTool implements McpToolInterface {
         overload.addProperty(ToolSchemaKeyEnum.DESCRIPTION.key(), "When true, creates a new overload instead of modifying the original method.");
         props.add(ChangeMethodSignatureParamEnum.OVERLOAD_METHOD.key(), overload);
         schema.add(ToolSchemaKeyEnum.PROPERTIES.key(), props);
+        JsonArray required = new JsonArray();
+        required.add(ChangeMethodSignatureParamEnum.FILE_PATH.key());
+        required.add(ChangeMethodSignatureParamEnum.LINE.key());
+        schema.add(ToolSchemaKeyEnum.REQUIRED.key(), required);
         tool.add(ToolSchemaKeyEnum.INPUT_SCHEMA.key(), schema);
         return McpToolSchemas.applyCredentialsIfRequested(tool, options);
     }
@@ -143,8 +147,16 @@ public class ChangeMethodSignatureTool implements McpToolInterface {
                     throw new McpArgumentException(-32602,
                             "parameters[" + i + "]: new parameters (originalIndex=-1) require both name and type");
                 }
+                if (origIdx == -1 && pDefault == null) {
+                    throw new McpArgumentException(-32602,
+                            "parameters[" + i + "]: new parameters (originalIndex=-1) require defaultValue — "
+                            + "it is inserted at every existing call site");
+                }
+                // Partial updates (name-only / type-only) pass through as ParameterInfo(origIdx);
+                // RefactoringProvider.mergeParameterInfos resolves them against the live signature,
+                // so they rename/retype instead of silently doing nothing.
                 paramList.add((pName != null && pType != null)
-                        ? new ParameterInfo(origIdx, pName, pType, pDefault != null ? pDefault : "")
+                        ? new ParameterInfo(origIdx, pName, pType, pDefault)
                         : new ParameterInfo(origIdx));
             }
             paramInfos = paramList.toArray(ParameterInfo[]::new);
@@ -154,8 +166,8 @@ public class ChangeMethodSignatureTool implements McpToolInterface {
         if (fp != null) {
             McpHookServer server = McpServerRegistry.getServer();
             String sessionId = session.getId();
-            if (server == null || sessionId == null || !server.isFileAllowed(sessionId, fp)) {
-                return "Access denied: " + fp + " is outside the allowed project scope for this session.";
+            if (!McpHookServer.isFileAccessible(server, sessionId, fp)) {
+                return McpHookServer.fileAccessDeniedMessage(server, sessionId, fp);
             }
         }
         return RefactoringProvider.changeMethodSignature(

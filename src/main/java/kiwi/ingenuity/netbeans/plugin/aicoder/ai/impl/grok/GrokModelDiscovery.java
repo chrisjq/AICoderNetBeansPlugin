@@ -1,6 +1,7 @@
 package kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.grok;
 
 import java.io.BufferedReader;
+import java.io.IOException;
 import java.io.InputStreamReader;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
@@ -14,9 +15,9 @@ import java.util.logging.Logger;
 import java.util.regex.Pattern;
 
 /**
- * Live discovery of the real model list available to the logged-in account, via
- * {@code grok models} (https://docs.x.ai/build/cli/reference). Confirmed
- * against a real installed grok CLI (v0.2.93); actual output looks like:
+ * Live discovery of the real model list available to the logged-in account, via {@code grok models}
+ * (https://docs.x.ai/build/cli/reference). Confirmed against a real installed grok CLI (v0.2.93); actual output looks
+ * like:
  * <pre>
  * You are logged in with grok.com.
  *
@@ -25,21 +26,17 @@ import java.util.regex.Pattern;
  * Available models:
  *   * grok-4.5 (default)
  *   - grok-composer-2.5-fast
- * </pre> The CLI has no {@code --json}/structured-output flag for this
- * subcommand (checked via {@code grok models --help}), so stdout is parsed
- * line-by-line: each {@code "  * "}/{@code "  - "} bullet's first token is taken
- * as the model id (dropping a trailing {@code " (default)"} marker or any other
- * trailing description text), everything else (banner lines, headers, blank
- * lines) is discarded. Any failure (grok not installed, not logged in,
- * unexpected future format change) is swallowed and the caller keeps using the
- * hardcoded {@link GrokPluginSettings#KNOWN_MODELS} fallback list. Mirrors
- * {@code GithubCopilotModelDiscovery}'s discover-once-per-IDE-run / cache /
- * broadcast shape.
+ * </pre> The CLI has no {@code --json}/structured-output flag for this subcommand (checked via
+ * {@code grok models --help}), so stdout is parsed line-by-line: each {@code "  * "}/{@code "  - "} bullet's first token
+ * is taken as the model id (dropping a trailing {@code " (default)"} marker or any other trailing description text),
+ * everything else (banner lines, headers, blank lines) is discarded. Any failure (grok not installed, not logged in,
+ * unexpected future format change) is swallowed and the caller keeps using the hardcoded
+ * {@link GrokPluginSettings#KNOWN_MODELS} fallback list. Mirrors {@code GithubCopilotModelDiscovery}'s
+ * discover-once-per-IDE-run / cache / broadcast shape.
  */
 public final class GrokModelDiscovery {
 
     private static final Logger LOG = Logger.getLogger(GrokModelDiscovery.class.getName());
-    private static final long TIMEOUT_SECONDS = 15;
     // A model id is a bare token like "grok-4.5" or "grok-composer-2.5-fast"
     // — alphanumerics, dots, underscores, hyphens — and always contains at
     // least one hyphen (distinguishing it from stray words in banner/header
@@ -49,11 +46,15 @@ public final class GrokModelDiscovery {
     private static final int MAX_RETRIES = 20;
     private static final AtomicBoolean inProgress = new AtomicBoolean(false);
     private static volatile int retryCount = 0;
+    /**
+     * Test seam: when non-null, replaces {@link GrokTimeoutEnum#GROK_MODEL_DISCOVERY_MILLIS} as the whole-attempt
+     * budget so a hung fake CLI fails a test in milliseconds instead of seconds. Null in production.
+     */
+    static volatile Long discoveryBudgetMillisForTests = null;
 
     /**
-     * Starts a fresh discovery cycle: resets the retry counter and submits a
-     * background fetch. Does nothing if a discovery is already in progress.
-     * On failure, retries up to {@value #MAX_RETRIES} times within the cycle.
+     * Starts a fresh discovery cycle: resets the retry counter and submits a background fetch. Does nothing if a
+     * discovery is already in progress. On failure, retries up to {@value #MAX_RETRIES} times within the cycle.
      *
      * @param executablePath the located grok CLI path, or null to use PATH
      */
@@ -111,19 +112,53 @@ public final class GrokModelDiscovery {
         t.start();
     }
 
-    private static List<String> discover(String executablePath) throws Exception {
+    static List<String> discover(String executablePath) throws Exception {
         String path = (executablePath != null && !executablePath.isBlank()) ? executablePath : "grok";
         List<String> cmd = GrokExecutableLocator.buildHostCommand(path, "models");
         Process p = new ProcessBuilder(cmd).redirectErrorStream(true).start();
+        // readLine() only returns at EOF, so draining on THIS thread would block forever on a
+        // CLI that hangs with the pipe open — wedging the in-progress latch in tryDiscover for
+        // the rest of the IDE run. Drain on a helper daemon thread and bound the WHOLE attempt
+        // (drain + process exit) against one deadline, mirroring
+        // GithubCopilotModelDiscovery's watchdog shape.
         List<String> lines = new ArrayList<>();
-        try (BufferedReader r = new BufferedReader(new InputStreamReader(p.getInputStream(), StandardCharsets.UTF_8))) {
-            String line;
-            while ((line = r.readLine()) != null) {
-                lines.add(line);
+        Thread drainer = new Thread(() -> {
+            try (BufferedReader r = new BufferedReader(
+                    new InputStreamReader(p.getInputStream(), StandardCharsets.UTF_8))) {
+                String line;
+                while ((line = r.readLine()) != null) {
+                    lines.add(line);
+                }
             }
+            catch (IOException e) {
+                LOG.log(Level.FINE, "grok model discovery stdout drain ended", e);
+            }
+        }, "grok-model-discovery-drain");
+        drainer.setDaemon(true);
+        drainer.start();
+        long budget = discoveryBudgetMillisForTests != null
+                ? discoveryBudgetMillisForTests
+                : GrokTimeoutEnum.GROK_MODEL_DISCOVERY_MILLIS.millis();
+        long deadline = System.nanoTime() + budget * 1_000_000L;
+        try {
+            drainer.join(budget);
         }
-        boolean finished = p.waitFor(TIMEOUT_SECONDS, TimeUnit.SECONDS);
-        if (!finished) {
+        catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            p.destroyForcibly();
+            throw e;
+        }
+        if (drainer.isAlive()) {
+            // Stdout never reached EOF within the budget: hung CLI. Killing the process closes
+            // the pipe so the daemon drain thread exits; report no models (the caller retries,
+            // then falls back to the static list) so tryDiscover's finally can release the
+            // in-progress latch on every path.
+            p.destroyForcibly();
+            return List.of();
+        }
+        long remainingMs = Math.max(0L, (deadline - System.nanoTime()) / 1_000_000L);
+        if (!p.waitFor(remainingMs, TimeUnit.MILLISECONDS)) {
+            // Output fully drained but the process would not exit — same treatment as above.
             p.destroyForcibly();
             return List.of();
         }
@@ -134,8 +169,8 @@ public final class GrokModelDiscovery {
     }
 
     /**
-     * Extracts bare model ids from raw {@code grok models} stdout lines.
-     * Package-private (not private) so it can be unit tested directly.
+     * Extracts bare model ids from raw {@code grok models} stdout lines. Package-private (not private) so it can be
+     * unit tested directly.
      */
     static List<String> parseModelIds(List<String> lines) {
         LinkedHashSet<String> out = new LinkedHashSet<>();

@@ -16,6 +16,7 @@ import kiwi.ingenuity.netbeans.plugin.aicoder.process.McpSectionEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.McpToolEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.events.AiProcessEventListener;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.session.AbstractAiSession;
+import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.TimeoutEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.McpToolInterface;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.McpToolSchemas;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.ToolRequestArguments;
@@ -130,7 +131,7 @@ public class AskUserQuestionTool implements McpToolInterface {
         CompletableFuture<String> future = new CompletableFuture<>();
         listenerSupplier.get().onAiProcessEvent(new AskUserQuestionEvent(questions, future));
         try {
-            return future.get(300, TimeUnit.SECONDS);
+            return future.get(TimeoutEnum.USER_QUESTION_WAIT_MILLIS.millis(), TimeUnit.MILLISECONDS);
         }
         catch (TimeoutException e) {
             future.cancel(true);

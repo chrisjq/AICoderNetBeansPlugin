@@ -1,5 +1,7 @@
 package kiwi.ingenuity.netbeans.plugin.aicoder.process;
 
+import java.util.Collection;
+import java.util.Collections;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 import kiwi.ingenuity.netbeans.plugin.aicoder.Registry;
@@ -32,5 +34,16 @@ public final class SessionRegistry implements Registry {
 
     public static AbstractAiSession get(String sessionId) {
         return SESSIONS.get(sessionId);
+    }
+
+    /**
+     * Every currently-registered session, including alias entries (the same session may appear more than once — see
+     * {@link #registerAlias}). Backed by the live {@code ConcurrentHashMap}, so this is a thin, allocation-free
+     * wrapper, not a defensive copy — safe because {@code ConcurrentHashMap.values()} already tolerates concurrent
+     * iteration without a snapshot; {@code unmodifiableCollection} only blocks callers from mutating the registry
+     * through the view.
+     */
+    public static Collection<AbstractAiSession> allSessions() {
+        return Collections.unmodifiableCollection(SESSIONS.values());
     }
 }

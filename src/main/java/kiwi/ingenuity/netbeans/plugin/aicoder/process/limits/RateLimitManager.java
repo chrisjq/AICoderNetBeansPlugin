@@ -17,19 +17,17 @@ public class RateLimitManager {
     private static final Logger LOG = Logger.getLogger(RateLimitManager.class.getName());
     private static final long RATE_LIMIT_OFFSET_MS = 10_000;
     /**
-     * Hard cap on how far into the future a single rate-limit window may
-     * extend. A malformed, absurdly large, or hostile {@code Retry-After} must
-     * never be able to brick usage/model fetching until the IDE restarts — the
-     * worst case is now a bounded wait rather than a permanent lockout of the
-     * shared, static rate-limit manager.
+     * Hard cap on how far into the future a single rate-limit window may extend. A malformed, absurdly large, or
+     * hostile {@code Retry-After} must never be able to brick usage/model fetching until the IDE restarts — the worst
+     * case is now a bounded wait rather than a permanent lockout of the shared, static rate-limit manager.
      */
     private static final long MAX_RATE_LIMIT_MS = 15L * 60L * 1000L; // 15 minutes
+    private static final long RESCHEDULE_BUFFER_MS = 250;
     private long rateLimitUntilMs = 0;
     private String rateLimitReason = null;
     private final ReentrantReadWriteLock lock = new ReentrantReadWriteLock();
     private final List<RateLimitListener> listeners = new ArrayList<>();
 
-    private static final long RESCHEDULE_BUFFER_MS = 250;
     private final ScheduledExecutorService scheduler
             = Executors.newSingleThreadScheduledExecutor(r -> {
                 Thread t = new Thread(r, "rate-limit-scheduler");
@@ -152,13 +150,12 @@ public class RateLimitManager {
     }
 
     /**
-     * Runs {@code task} now if not rate-limited, otherwise schedules it to run
-     * once the current rate-limit window elapses. Coalesces by {@code key}: if
-     * a task for this key is already pending or in flight, the new request is
+     * Runs {@code task} now if not rate-limited, otherwise schedules it to run once the current rate-limit window
+     * elapses. Coalesces by {@code key}: if a task for this key is already pending or in flight, the new request is
      * dropped.
      *
-     * @return true if the task was accepted (run or scheduled), false if it was
-     * coalesced away or the scheduler has been shut down.
+     * @return true if the task was accepted (run or scheduled), false if it was coalesced away or the scheduler has
+     * been shut down.
      */
     public boolean submitWhenClear(String key, Runnable task) {
         if (!pendingKeys.add(key)) {
@@ -181,16 +178,24 @@ public class RateLimitManager {
     }
 
     private void runWhenClear(String key, Runnable task) {
-        long remaining = getRetryAfterMs();
-        if (remaining > 0) {
-            // Rate-limit window was extended after initial submit — reschedule
-            try {
-                scheduler.schedule(() -> runWhenClear(key, task), remaining + RESCHEDULE_BUFFER_MS, TimeUnit.MILLISECONDS);
+        long remaining;
+        lock.readLock().lock();
+        try {
+            long now = System.currentTimeMillis();
+            remaining = rateLimitUntilMs > now ? rateLimitUntilMs - now : 0;
+            if (remaining > 0) {
+                // Rate-limit window was extended after initial submit — reschedule
+                try {
+                    scheduler.schedule(() -> runWhenClear(key, task), remaining + RESCHEDULE_BUFFER_MS, TimeUnit.MILLISECONDS);
+                }
+                catch (RejectedExecutionException e) {
+                    pendingKeys.remove(key);
+                }
+                return;
             }
-            catch (RejectedExecutionException e) {
-                pendingKeys.remove(key);
-            }
-            return;
+        }
+        finally {
+            lock.readLock().unlock();
         }
         try {
             task.run();
@@ -205,8 +210,7 @@ public class RateLimitManager {
     }
 
     /**
-     * Shuts down the deferred-task scheduler. Called from
-     * Installer.uninstalled().
+     * Shuts down the deferred-task scheduler. Called from Installer.uninstalled().
      */
     public void shutdown() {
         scheduler.shutdownNow();

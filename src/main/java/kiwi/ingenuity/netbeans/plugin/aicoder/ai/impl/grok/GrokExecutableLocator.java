@@ -1,18 +1,17 @@
 package kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.grok;
 
-import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.grok.settings.GrokPluginSettings;
 import java.io.File;
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 import java.util.concurrent.TimeUnit;
+import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.grok.settings.GrokPluginSettings;
 
 /**
- * Locates and validates the {@code grok} CLI executable (xAI's Grok CLI, see
- * https://docs.x.ai/build/cli). Mirrors ClaudeExecutableLocator's approach:
- * stored preference &gt; PATH (restricted to trusted dirs) &gt; well-known
- * install locations, with Flatpak host-path resolution.
+ * Locates and validates the {@code grok} CLI executable (xAI's Grok CLI, see https://docs.x.ai/build/cli). Mirrors
+ * ClaudeExecutableLocator's approach: stored preference &gt; PATH (restricted to trusted dirs) &gt; well-known install
+ * locations, with Flatpak host-path resolution.
  */
 public final class GrokExecutableLocator {
 
@@ -47,8 +46,8 @@ public final class GrokExecutableLocator {
     }
 
     /**
-     * Locate the grok binary. Returns the path on success, or null if not
-     * found. Order: stored preference → PATH → well-known locations.
+     * Locate the grok binary. Returns the path on success, or null if not found. Order: stored preference → PATH →
+     * well-known locations.
      */
     public static String locate() {
         String stored = GrokPluginSettings.getExecutable();
@@ -132,8 +131,8 @@ public final class GrokExecutableLocator {
     }
 
     /**
-     * Run {@code grok --version} with the given executable. Returns the version
-     * string on success, or throws IOException on failure or 10-second timeout.
+     * Run {@code grok --version} with the given executable. Returns the version string on success, or throws
+     * IOException on failure or timeout (see GrokTimeoutEnum.GROK_EXECUTABLE_TEST_MILLIS).
      */
     public static String testExecutable(String path) throws IOException, InterruptedException {
         List<String> cmd = buildHostCommand(path, "version");
@@ -144,7 +143,7 @@ public final class GrokExecutableLocator {
         try (java.io.InputStream is = p.getInputStream()) {
             output = new String(is.readNBytes(64 * 1024)).strip();
         }
-        boolean finished = p.waitFor(10, TimeUnit.SECONDS);
+        boolean finished = p.waitFor(GrokTimeoutEnum.GROK_EXECUTABLE_TEST_MILLIS.millis(), TimeUnit.MILLISECONDS);
         if (!finished) {
             p.destroyForcibly();
             throw new IOException("Timed out waiting for: " + path + " version");

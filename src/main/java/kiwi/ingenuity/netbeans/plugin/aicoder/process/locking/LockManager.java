@@ -7,19 +7,30 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.function.BooleanSupplier;
 import java.util.logging.Level;
 import java.util.logging.Logger;
+import javax.swing.SwingUtilities;
 import kiwi.ingenuity.netbeans.plugin.aicoder.PluginSettings;
+import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.TimeoutEnum;
 
 public class LockManager {
 
     private static final Logger LOG = Logger.getLogger(LockManager.class.getName());
     private static volatile LockManager instance;
+    // ---- Test seam (package-private; production keeps the defaults) ----
+    /**
+     * When non-null, used instead of {@link LockTypeEnum#getWaitTimeoutMillis()} as every lock type's acquisition wait,
+     * so a test can assert a contended-acquire-fails property in milliseconds rather than waiting out a real timeout
+     * (e.g. {@code BUILD_LOCK}'s deliberate 120s). Same pattern as {@code TempFileRegistry.maxAgeMillis}. Null in
+     * production.
+     */
+    static volatile Long waitTimeoutOverrideMillisForTests = null;
 
     /**
-     * Routine acquire/release chatter is gated by the same setting as MCP tool-use
-     * logging ({@link PluginSettings#isLogToolUse()}), so the NetBeans log stays
-     * quiet during normal operation. Warnings for contention/expiry stay always-on.
+     * Routine acquire/release chatter is gated by the same setting as MCP tool-use logging
+     * ({@link PluginSettings#isLogToolUse()}), so the NetBeans log stays quiet during normal operation. Warnings for
+     * contention/expiry stay always-on.
      */
     private static void logLockLifecycle(String message, Object... params) {
         if (PluginSettings.isLogToolUse()) {
@@ -40,6 +51,23 @@ public class LockManager {
         return lInstance;
     }
 
+    /**
+     * Contention message for a failed per-file lock acquisition, shared by every caller (ApplyEditTool, WriteFileTool
+     * and the native edit/write hook) so the advice cannot drift between them. A file lock is held from just before a
+     * diff is shown until the write completes, so the holder is usually blocked on a USER reviewing that diff — up to
+     * {@link TimeoutEnum#USER_APPROVAL_WAIT_MILLIS}. The wording therefore points at the human decision rather than
+     * suggesting a retry: retrying achieves nothing while the panel is open, and "try again shortly" has been observed
+     * to send AI sessions into sleep-and-retry loops.
+     */
+    public static String fileLockedMessage(String holder) {
+        return "File is locked by " + (holder != null ? "session " + holder : "another in-progress edit")
+                + " — that edit is waiting for the USER to review a diff, which can take up to "
+                + TimeoutEnum.USER_APPROVAL_WAIT_MILLIS.millis() / 1000 + "s ("
+                + TimeoutEnum.USER_APPROVAL_WAIT_MILLIS.name() + ")."
+                + " Retrying cannot succeed until the user decides, so do not sleep and retry in a loop:"
+                + " work on other files meanwhile, or report this to the user.";
+    }
+
     private final Map<LockTypeEnum, ResourceLock> globalLocks = new ConcurrentHashMap<>();
     private final Map<String, ResourceLock> fileLocks = new ConcurrentHashMap<>();
     private final Map<String, Set<ResourceLock>> sessionLocks = new ConcurrentHashMap<>();
@@ -56,11 +84,19 @@ public class LockManager {
         }
     }
 
-    public synchronized boolean acquireLock(String sessionId, LockTypeEnum lockType) {
+    public boolean acquireLock(String sessionId, LockTypeEnum lockType) {
+        return acquireWithWait(lockType, () -> tryAcquireLock(sessionId, lockType));
+    }
+
+    private synchronized boolean tryAcquireLock(String sessionId, LockTypeEnum lockType) {
         if (globalLocks.containsKey(lockType)) {
             ResourceLock existing = globalLocks.get(lockType);
             if (existing.getSessionId().equals(sessionId)) {
                 if (!existing.isExpired()) {
+                    // Nested re-acquire of the caller's own global lock: succeed without touching
+                    // either map (no duplicate object is created here), so one outer release later
+                    // still ends up holding exactly one mapping. The warning documents the nested
+                    // call deliberately; inner/outer releases are NOT refcounted by design.
                     LOG.log(Level.WARNING, "Session {0} re-acquired lock {1} — possible nested tool call", new Object[]{sessionId, lockType});
                     return true;
                 }
@@ -82,7 +118,7 @@ public class LockManager {
             }
         }
 
-        long timeoutMillis = lockType.getTimeoutMinutes() * 60 * 1000;
+        long timeoutMillis = lockType.getLifetimeMillis();
         ResourceLock lock = new ResourceLock(lockType, sessionId, timeoutMillis);
         globalLocks.put(lockType, lock);
         sessionLocks.computeIfAbsent(sessionId, k -> new HashSet<>()).add(lock);
@@ -90,11 +126,16 @@ public class LockManager {
         return true;
     }
 
-    public synchronized boolean acquireFileLock(String sessionId, String filePath) {
+    public boolean acquireFileLock(String sessionId, String filePath) {
         return acquireFileLocks(sessionId, Set.of(filePath));
     }
 
-    public synchronized boolean acquireFileLocks(String sessionId, Set<String> filePaths) {
+    public boolean acquireFileLocks(String sessionId, Set<String> filePaths) {
+        return acquireWithWait(LockTypeEnum.FILE_WRITE_LOCK,
+                () -> tryAcquireFileLocks(sessionId, filePaths));
+    }
+
+    private synchronized boolean tryAcquireFileLocks(String sessionId, Set<String> filePaths) {
         for (String filePath : filePaths) {
             // Check exact file lock
             if (fileLocks.containsKey(filePath)) {
@@ -137,18 +178,50 @@ public class LockManager {
             }
         }
 
-        long timeoutMillis = LockTypeEnum.FILE_WRITE_LOCK.getTimeoutMinutes() * 60 * 1000;
+        long timeoutMillis = LockTypeEnum.FILE_WRITE_LOCK.getLifetimeMillis();
         ResourceLock lock = new ResourceLock(LockTypeEnum.FILE_WRITE_LOCK, sessionId, timeoutMillis,
                 ResourceLock.LockScope.FILE, filePaths);
         for (String filePath : filePaths) {
-            fileLocks.put(filePath, lock);
+            ResourceLock previous = fileLocks.put(filePath, lock);
+            // Re-acquiring a path this session already holds (nested tool call on the same
+            // file) used to silently orphan the superseded ResourceLock in sessionLocks
+            // forever, poisoning releaseAllLocks bookkeeping. Retire the old object as soon
+            // as it no longer guards any remaining path.
+            if (previous != null && previous != lock && sessionId.equals(previous.getSessionId())) {
+                dropIfFullySuperseded(sessionId, previous);
+            }
         }
         sessionLocks.computeIfAbsent(sessionId, k -> new HashSet<>()).add(lock);
         logLockLifecycle("Acquired file locks for {0} files by session {1}", filePaths.size(), sessionId);
         return true;
     }
 
-    public synchronized boolean acquireDirectoryLock(String sessionId, String dirPath) {
+    /**
+     * Removes a same-session {@code ResourceLock} from the session's tracking set once none of its paths map to it
+     * anymore. A multi-path lock that still guards at least one untouched path must stay tracked until its last path is
+     * released or superseded. Caller must hold the manager monitor.
+     */
+    private void dropIfFullySuperseded(String sessionId, ResourceLock superseded) {
+        boolean stillGuardsAPath = superseded.getLockedPaths().stream()
+                .anyMatch(p -> fileLocks.get(p) == superseded);
+        if (stillGuardsAPath) {
+            return;
+        }
+        Set<ResourceLock> sl = sessionLocks.get(sessionId);
+        if (sl != null) {
+            sl.remove(superseded);
+            if (sl.isEmpty()) {
+                sessionLocks.remove(sessionId, sl);
+            }
+        }
+    }
+
+    public boolean acquireDirectoryLock(String sessionId, String dirPath) {
+        return acquireWithWait(LockTypeEnum.REFACTOR_LOCK,
+                () -> tryAcquireDirectoryLock(sessionId, dirPath));
+    }
+
+    private synchronized boolean tryAcquireDirectoryLock(String sessionId, String dirPath) {
         List<Map.Entry<String, ResourceLock>> toEvict = new ArrayList<>();
         for (Map.Entry<String, ResourceLock> entry : fileLocks.entrySet()) {
             ResourceLock existing = entry.getValue();
@@ -180,13 +253,48 @@ public class LockManager {
             }
         }
 
-        long timeoutMillis = LockTypeEnum.REFACTOR_LOCK.getTimeoutMinutes() * 60 * 1000;
+        long timeoutMillis = LockTypeEnum.REFACTOR_LOCK.getLifetimeMillis();
         ResourceLock lock = new ResourceLock(LockTypeEnum.REFACTOR_LOCK, sessionId, timeoutMillis,
                 ResourceLock.LockScope.DIRECTORY, Set.of(dirPath));
         fileLocks.put(dirPath, lock);
         sessionLocks.computeIfAbsent(sessionId, k -> new HashSet<>()).add(lock);
         logLockLifecycle("Acquired directory lock for {0} by session {1}", dirPath, sessionId);
         return true;
+    }
+
+    /**
+     * Polls outside the manager monitor so a holder can always release while a contender waits. Each retry runs the
+     * normal stale-lock eviction logic.
+     */
+    private boolean acquireWithWait(LockTypeEnum lockType, BooleanSupplier tryAcquire) {
+        if (tryAcquire.getAsBoolean()) {
+            return true;
+        }
+        Long override = waitTimeoutOverrideMillisForTests;
+        long waitMillis = override != null ? override : lockType.getWaitTimeoutMillis();
+        if (waitMillis <= 0) {
+            return false;
+        }
+        if (SwingUtilities.isEventDispatchThread()) {
+            LOG.log(Level.WARNING, "Refusing to wait for {0} on the EDT", lockType);
+            return false;
+        }
+        long deadline = System.nanoTime() + waitMillis * 1_000_000L;
+        while (System.nanoTime() < deadline) {
+            try {
+                long remainingMillis = Math.max(1,
+                        (deadline - System.nanoTime() + 999_999L) / 1_000_000L);
+                Thread.sleep(Math.min(TimeoutEnum.LOCK_WAIT_POLL_MILLIS.millis(), remainingMillis));
+            }
+            catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                return false;
+            }
+            if (tryAcquire.getAsBoolean()) {
+                return true;
+            }
+        }
+        return false;
     }
 
     public synchronized void releaseLock(String sessionId, LockTypeEnum lockType) {
@@ -210,7 +318,10 @@ public class LockManager {
             LOG.log(Level.WARNING, "Session {0} attempted to release file lock for {1} held by {2}", new Object[]{sessionId, filePath, lock.getSessionId()});
         }
         if (lock != null && lock.getSessionId().equals(sessionId)) {
-            fileLocks.remove(filePath);
+            // Two-arg remove: if a newer mapping for this path exists (it should not while we
+            // hold the monitor, but this makes stale-object handling structurally safe), only
+            // ever retire the object the caller actually holds.
+            fileLocks.remove(filePath, lock);
             boolean allPathsReleased = lock.getLockedPaths().stream().noneMatch(fileLocks::containsKey);
             if (allPathsReleased) {
                 Set<ResourceLock> sl = sessionLocks.get(sessionId);
@@ -229,11 +340,13 @@ public class LockManager {
         }
         for (ResourceLock lock : locks) {
             if (lock.getScope() == ResourceLock.LockScope.GLOBAL) {
-                globalLocks.remove(lock.getLockType());
+                globalLocks.remove(lock.getLockType(), lock);
             }
             else {
                 for (String path : lock.getLockedPaths()) {
-                    fileLocks.remove(path);
+                    // Identity-checked removal: a stale lock object in this session's set must
+                    // never evict a DIFFERENT session's newer live mapping for the same path.
+                    fileLocks.remove(path, lock);
                 }
             }
         }
@@ -306,7 +419,7 @@ public class LockManager {
         cleanupThread = new Thread(() -> {
             while (true) {
                 try {
-                    Thread.sleep(30000);
+                    Thread.sleep(TimeoutEnum.LOCK_CLEANUP_INTERVAL_MILLIS.millis());
                     cleanupExpiredLocks();
                 }
                 catch (InterruptedException e) {

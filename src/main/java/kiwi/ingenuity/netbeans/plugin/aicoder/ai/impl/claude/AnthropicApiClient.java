@@ -23,38 +23,33 @@ public class AnthropicApiClient {
     private static final Gson GSON = new Gson();
     private static final String API_BASE = "https://api.anthropic.com";
     private static final String API_VERSION = "2023-06-01";
-    private static final int TIMEOUT_MS = 10_000;
     private static final int MAX_RESPONSE_BYTES = 1024 * 1024; // 1 MB
     static final RateLimitManager RATE_LIMIT_MANAGER = new RateLimitManager();
 
     /**
-     * True on macOS, where the Claude CLI stores its OAuth credentials in the
-     * login Keychain (a generic password, service "Claude Code-credentials")
-     * rather than the ~/.claude/.credentials.json file used on Linux/Windows.
+     * True on macOS, where the Claude CLI stores its OAuth credentials in the login Keychain (a generic password,
+     * service "Claude Code-credentials") rather than the ~/.claude/.credentials.json file used on Linux/Windows.
      */
     private static final boolean IS_MAC
             = System.getProperty("os.name", "").toLowerCase(java.util.Locale.ROOT).contains("mac");
 
     /**
-     * macOS Keychain service names to try, in order. The CLI writes the blob to
-     * "Claude Code-credentials"; some versions have historically read it back
-     * from "Claude Code" (no suffix), so both are attempted.
+     * macOS Keychain service names to try, in order. The CLI writes the blob to "Claude Code-credentials"; some
+     * versions have historically read it back from "Claude Code" (no suffix), so both are attempted.
      */
     private static final String[] MAC_KEYCHAIN_SERVICES = {"Claude Code-credentials", "Claude Code"};
 
     /**
-     * Last-seen fingerprint of the OAuth credentials — the file's last-modified
-     * time on Linux/Windows, or a content hash of the Keychain blob on macOS
-     * (there is no file to stat). A change means the user re-authenticated.
-     * Seeded lazily on macOS (0) so plugin class-load never triggers a Keychain
-     * access prompt; the first poll computes the real value.
+     * Last-seen fingerprint of the OAuth credentials — the file's last-modified time on Linux/Windows, or a content
+     * hash of the Keychain blob on macOS (there is no file to stat). A change means the user re-authenticated. Seeded
+     * lazily on macOS (0) so plugin class-load never triggers a Keychain access prompt; the first poll computes the
+     * real value.
      */
     private static volatile long lastCredsFingerprint = IS_MAC ? 0L : fileModifiedMs();
 
     /**
-     * The shared rate-limit manager for all Claude API access. Used by
-     * ClaudeAiImplementation to defer usage/model refreshes and by Installer to
-     * shut the scheduler down on uninstall.
+     * The shared rate-limit manager for all Claude API access. Used by ClaudeAiImplementation to defer usage/model
+     * refreshes and by Installer to shut the scheduler down on uninstall.
      */
     public static RateLimitManager rateLimitManager() {
         return RATE_LIMIT_MANAGER;
@@ -75,11 +70,9 @@ public class AnthropicApiClient {
     }
 
     /**
-     * A cheap value that changes whenever the stored credentials change. On
-     * macOS this hashes the Keychain JSON; elsewhere it is the credentials
-     * file's last-modified time. Falls back to the file on macOS when the
-     * Keychain is unreadable (e.g. creds exported to disk for headless/SSH
-     * use).
+     * A cheap value that changes whenever the stored credentials change. On macOS this hashes the Keychain JSON;
+     * elsewhere it is the credentials file's last-modified time. Falls back to the file on macOS when the Keychain is
+     * unreadable (e.g. creds exported to disk for headless/SSH use).
      */
     private static long credentialsFingerprint() {
         if (IS_MAC) {
@@ -92,9 +85,8 @@ public class AnthropicApiClient {
     }
 
     /**
-     * Reads the raw Claude credentials JSON blob, or null if unavailable. On
-     * macOS the login Keychain is tried first, then the file as a fallback; on
-     * other platforms only the file is read.
+     * Reads the raw Claude credentials JSON blob, or null if unavailable. On macOS the login Keychain is tried first,
+     * then the file as a fallback; on other platforms only the file is read.
      */
     private static String readCredentialsJson() {
         if (IS_MAC) {
@@ -114,10 +106,9 @@ public class AnthropicApiClient {
     }
 
     /**
-     * Returns the Claude OAuth JSON from the macOS login Keychain via the
-     * {@code security} tool, trying each known service name, or null if not
-     * found or access was denied (e.g. a headless / SSH session with no GUI
-     * Keychain authorization). Never blocks longer than a few seconds.
+     * Returns the Claude OAuth JSON from the macOS login Keychain via the {@code security} tool, trying each known
+     * service name, or null if not found or access was denied (e.g. a headless / SSH session with no GUI Keychain
+     * authorization). Never blocks longer than a few seconds.
      */
     private static String readMacKeychainJson() {
         for (String service : MAC_KEYCHAIN_SERVICES) {
@@ -159,18 +150,15 @@ public class AnthropicApiClient {
     }
 
     /**
-     * Clears any active rate limit if the OAuth credentials file has changed
-     * since we last looked — i.e. the user re-authenticated (ran
-     * {@code claude login}) after the plugin started. A rate limit incurred
-     * with a missing or expired token must NOT keep blocking a freshly written,
-     * valid one: {@link #get} short-circuits on {@code isRateLimited()} before
-     * it ever reads the token, so without this a new key would never be picked
-     * up until the IDE restarts. Call from usage/model refresh triggers, off
-     * the deferred scheduler thread, so the clear happens before the next fetch
-     * is submitted.
+     * Clears any active rate limit if the OAuth credentials file has changed since we last looked — i.e. the user
+     * re-authenticated (ran {@code claude login}) after the plugin started. A rate limit incurred with a missing or
+     * expired token must NOT keep blocking a freshly written, valid one: {@link #get} short-circuits on
+     * {@code isRateLimited()} before it ever reads the token, so without this a new key would never be picked up until
+     * the IDE restarts. Call from usage/model refresh triggers, off the deferred scheduler thread, so the clear happens
+     * before the next fetch is submitted.
      *
-     * @return true if the credentials file changed since the last check (the
-     * caller may want to re-run a usage/model fetch), false otherwise.
+     * @return true if the credentials file changed since the last check (the caller may want to re-run a usage/model
+     * fetch), false otherwise.
      */
     public static boolean refreshCredentialsState() {
         long current = credentialsFingerprint();
@@ -239,8 +227,8 @@ public class AnthropicApiClient {
             conn.setRequestMethod("GET");
             conn.setRequestProperty("anthropic-version", API_VERSION);
             conn.setRequestProperty("Authorization", "Bearer " + token);
-            conn.setConnectTimeout(TIMEOUT_MS);
-            conn.setReadTimeout(TIMEOUT_MS);
+            conn.setConnectTimeout((int) ClaudeTimeoutEnum.ANTHROPIC_API_CONNECT_READ_MILLIS.millis());
+            conn.setReadTimeout((int) ClaudeTimeoutEnum.ANTHROPIC_API_CONNECT_READ_MILLIS.millis());
             int code = conn.getResponseCode();
             if (code == 429) {
                 long retryAfterMs = parseRetryAfter(conn);

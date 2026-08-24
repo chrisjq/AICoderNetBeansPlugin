@@ -19,12 +19,11 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
 /**
- * Lifecycle tests for the rev-2 supervisor {@link McpServerRegistry}, where the
- * supervisor owns ALL registration logic. {@code register()} returns a future
- * (waited on via {@link #register}); {@code deregister()} and its per-type
- * teardown are fire-and-forget on the supervisor thread, so teardown/stop
- * assertions poll ({@link #awaitCount}/{@link #awaitServerStopped}). Liveness
- * is a plain TCP connect to avoid the surefire/NbPreferences MCP-HTTP path.
+ * Lifecycle tests for the rev-2 supervisor {@link McpServerRegistry}, where the supervisor owns ALL registration logic.
+ * {@code register()} returns a future (waited on via {@link #register}); {@code deregister()} and its per-type teardown
+ * are fire-and-forget on the supervisor thread, so teardown/stop assertions poll
+ * ({@link #awaitCount}/{@link #awaitServerStopped}). Liveness is a plain TCP connect to avoid the
+ * surefire/NbPreferences MCP-HTTP path.
  */
 class McpServerRegistryTest {
 
@@ -304,6 +303,50 @@ class McpServerRegistryTest {
         assertNotNull(McpServerRegistry.getServer());
     }
 
+    @Test
+    void stopAllTearsDownHooksAndEndpointsOfStillRegisteredTypes() {
+        // IDE-exit / uninstall path: sessions are still registered (their DEREGISTER
+        // events, if any, are discarded once the shutdown flag is set), so stopAll
+        // itself must guarantee the per-type CLI teardown — once per TYPE, not per
+        // session — before the supervisor exits. stopAll joins the supervisor, so
+        // teardown must be complete by the time it returns.
+        FakeRegistrar c1 = new FakeRegistrar("c1", AiTypeEnum.CLAUDE);
+        FakeRegistrar c2 = new FakeRegistrar("c2", AiTypeEnum.CLAUDE);
+        FakeRegistrar copilot = new FakeRegistrar("g1", AiTypeEnum.GitHubCoPilot);
+        assertTrue(register(c1));
+        assertTrue(register(c2));
+        assertTrue(register(copilot));
+        c1.events.clear();
+        c2.events.clear();
+        copilot.events.clear();
+
+        McpServerRegistry.stopAll();
+
+        assertEquals(1, c1.count("unregisterHooks") + c2.count("unregisterHooks"),
+                "exactly one hook teardown for the Claude type");
+        assertEquals(1, c1.count("remove") + c2.count("remove"),
+                "exactly one endpoint removal for the Claude type");
+        assertEquals(1, copilot.count("unregisterHooks"));
+        assertEquals(1, copilot.count("remove"));
+        assertNull(McpServerRegistry.getServer());
+    }
+
+    @Test
+    void stopAllDoesNotTearDownTypesAlreadyDeregistered() throws Exception {
+        // A type whose last session deregistered in-run already had its teardown;
+        // the shutdown sweep must not undo hooks a second time.
+        FakeRegistrar claude = new FakeRegistrar("c1", AiTypeEnum.CLAUDE);
+        assertTrue(register(claude));
+        claude.events.clear(); // registration itself records a "remove" before "add"
+        McpServerRegistry.deregister(claude);
+        awaitCount(claude, "unregisterHooks", 1, 3000);
+
+        McpServerRegistry.stopAll();
+
+        assertEquals(1, claude.count("unregisterHooks"), "no second teardown at shutdown");
+        assertEquals(1, claude.count("remove"), "endpoint removed once, at deregister time");
+    }
+
     // ---- endpointUrlFor tests ----
     @Test
     void endpointUrlForReturnsNullWhenServerNotRunning() {
@@ -339,9 +382,8 @@ class McpServerRegistryTest {
     }
 
     /**
-     * Records which lifecycle callbacks the registry invoked. {@code events} is
-     * written by the supervisor thread and read by the test thread, so it is
-     * thread-safe.
+     * Records which lifecycle callbacks the registry invoked. {@code events} is written by the supervisor thread and
+     * read by the test thread, so it is thread-safe.
      */
     private static final class FakeRegistrar extends AiMcpRegistrar {
 

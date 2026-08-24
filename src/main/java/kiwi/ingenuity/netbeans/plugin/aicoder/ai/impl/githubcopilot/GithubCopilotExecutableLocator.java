@@ -20,21 +20,18 @@ public final class GithubCopilotExecutableLocator {
     );
 
     /**
-     * True when running inside a Flatpak sandbox (e.g. NetBeans from Flathub).
-     * Inside Flatpak, host binaries are not at their normal paths but are
-     * accessible via the /run/host/ mount point.
+     * True when running inside a Flatpak sandbox (e.g. NetBeans from Flathub). Inside Flatpak, host binaries are not at
+     * their normal paths but are accessible via the /run/host/ mount point.
      */
     public static boolean isRunningInFlatpak() {
         return System.getenv("FLATPAK_ID") != null;
     }
 
     /**
-     * Resolve the actual path to use when executing a binary. In a Flatpak
-     * sandbox, absolute host paths (e.g. /usr/bin/copilot) are not directly
-     * executable, but the host filesystem is mounted at /run/host/, so
-     * /run/host/usr/bin/copilot can be executed directly without flatpak-spawn
-     * (which requires org.freedesktop.Flatpak D-Bus access that NetBeans
-     * lacks).
+     * Resolve the actual path to use when executing a binary. In a Flatpak sandbox, absolute host paths (e.g.
+     * /usr/bin/copilot) are not directly executable, but the host filesystem is mounted at /run/host/, so
+     * /run/host/usr/bin/copilot can be executed directly without flatpak-spawn (which requires org.freedesktop.Flatpak
+     * D-Bus access that NetBeans lacks).
      */
     public static String resolveExecutable(String path) {
         if (isRunningInFlatpak() && path != null && path.startsWith("/")) {
@@ -47,8 +44,7 @@ public final class GithubCopilotExecutableLocator {
     }
 
     /**
-     * Build a command list for executing a binary, resolving the path for the
-     * current environment (Flatpak or normal).
+     * Build a command list for executing a binary, resolving the path for the current environment (Flatpak or normal).
      */
     public static List<String> buildHostCommand(String executable, String... args) {
         List<String> cmd = new ArrayList<>();
@@ -58,8 +54,8 @@ public final class GithubCopilotExecutableLocator {
     }
 
     /**
-     * Locate the copilot binary. Returns the path on success, or null if not
-     * found. Order: stored preference → PATH → well-known locations.
+     * Locate the copilot binary. Returns the path on success, or null if not found. Order: stored preference → PATH →
+     * well-known locations.
      */
     public static String locate() {
         String stored = GithubCopilotPluginSettings.getExecutable();
@@ -143,8 +139,8 @@ public final class GithubCopilotExecutableLocator {
     }
 
     /**
-     * Run `copilot --version` with the given executable. Returns the version
-     * string on success, or throws IOException on failure or 10-second timeout.
+     * Run `copilot --version` with the given executable. Returns the version string on success, or throws IOException
+     * on failure or timeout (see GithubCopilotTimeoutEnum.COPILOT_EXECUTABLE_TEST_MILLIS).
      */
     public static String testExecutable(String path) throws IOException, InterruptedException {
         List<String> cmd = buildHostCommand(path, "--version");
@@ -158,7 +154,7 @@ public final class GithubCopilotExecutableLocator {
         try (java.io.InputStream is = p.getInputStream()) {
             output = new String(is.readNBytes(64 * 1024)).strip();
         }
-        boolean finished = p.waitFor(10, TimeUnit.SECONDS);
+        boolean finished = p.waitFor(GithubCopilotTimeoutEnum.COPILOT_EXECUTABLE_TEST_MILLIS.millis(), TimeUnit.MILLISECONDS);
         if (!finished) {
             p.destroyForcibly();
             throw new IOException("Timed out waiting for: " + path + " --version");

@@ -5,12 +5,10 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import org.junit.jupiter.api.Test;
 
 /**
- * Covers only the SELECT-only guard in {@link DatabaseProvider#executeSqlQuery}
- * — the one piece of this provider that's pure logic. It rejects before ever
- * looking up a connection, so it's testable without a live, registered Database
- * Explorer connection (which isn't mockable the way a git client is). The
- * connection-listing/schema/query paths need a real registered
- * DatabaseConnection and are verified manually instead.
+ * Covers only the SELECT-only guard in {@link DatabaseProvider#executeSqlQuery} — the one piece of this provider that's
+ * pure logic. It rejects before ever looking up a connection, so it's testable without a live, registered Database
+ * Explorer connection (which isn't mockable the way a git client is). The connection-listing/schema/query paths need a
+ * real registered DatabaseConnection and are verified manually instead.
  */
 class DatabaseProviderTest {
 
@@ -58,11 +56,10 @@ class DatabaseProviderTest {
     }
 
     /**
-     * The prefix test only ever examined the first six characters, so a driver
-     * configured to allow multiple statements per call would happily run the
-     * second one. The read-only connection was meant to be the second line of
-     * defence, but setReadOnly is a hint that several drivers ignore — so for
-     * those this was the only thing standing between a SELECT and a DROP.
+     * The prefix test only ever examined the first six characters, so a driver configured to allow multiple statements
+     * per call would happily run the second one. The read-only connection was meant to be the second line of defence,
+     * but setReadOnly is a hint that several drivers ignore — so for those this was the only thing standing between a
+     * SELECT and a DROP.
      */
     @Test
     void executeSqlQuery_rejectsAStatementChainedAfterTheSelect() {
@@ -75,8 +72,8 @@ class DatabaseProviderTest {
     }
 
     /**
-     * A semicolon that merely terminates the single statement is not a chain,
-     * and rejecting it would break ordinary copy-pasted SQL.
+     * A semicolon that merely terminates the single statement is not a chain, and rejecting it would break ordinary
+     * copy-pasted SQL.
      */
     @Test
     void executeSqlQuery_allowsATrailingSemicolonWithNothingAfterIt() {
@@ -97,5 +94,33 @@ class DatabaseProviderTest {
     void getTableData_rejectsInvalidTableIdentifier() {
         assertEquals("Invalid tableName: users; DROP TABLE x",
                 DatabaseProvider.getTableData("any", "users; DROP TABLE x", 10));
+    }
+
+    @Test
+    void formatCellValue_leavesShortValuesUnchanged() {
+        assertEquals("hello", DatabaseProvider.formatCellValue("hello"));
+        assertEquals("null", DatabaseProvider.formatCellValue(null));
+    }
+
+    @Test
+    void formatCellValue_truncatesLargeValuesWithVisibleMarker() {
+        String large = "x".repeat(DatabaseProvider.MAX_VALUE_CHARS + 50);
+        String rendered = DatabaseProvider.formatCellValue(large);
+        assertTrue(rendered.startsWith("x".repeat(DatabaseProvider.MAX_VALUE_CHARS)), rendered);
+        assertTrue(rendered.contains("…[truncated " + large.length() + " chars]"), rendered);
+        assertTrue(rendered.length() < large.length(), "must be shorter than the raw value");
+    }
+
+    @Test
+    void appendBounded_stopsAtResultSizeLimitAndIsVisible() {
+        StringBuilder sb = new StringBuilder();
+        String chunk = "a".repeat(1_000);
+        boolean limited = false;
+        while (!limited) {
+            limited = DatabaseProvider.appendBounded(sb, chunk);
+        }
+        assertEquals(DatabaseProvider.MAX_RESULT_CHARS, sb.length());
+        assertTrue(DatabaseProvider.appendBounded(sb, "more"));
+        assertEquals(DatabaseProvider.MAX_RESULT_CHARS, sb.length());
     }
 }

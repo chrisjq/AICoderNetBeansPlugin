@@ -32,45 +32,37 @@ import kiwi.ingenuity.netbeans.plugin.aicoder.ai.session.AiSession;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.session.InterruptTypeEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.events.AiProcessEventListener;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.server.McpServerRegistry;
+import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.TimeoutEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.utils.StatusMessageUtil;
 
 /**
- * Drives GitHub Copilot via a persistent SDK session (one CopilotClient +
- * CopilotSession per plugin AI session), replacing the previous one-shot
- * `copilot -p ... --output-format json` process-per-turn model. The persistent
- * session is what makes graceful mid-turn interrupt (session.abort()) and live
- * context-window usage (session.usage_info) possible — neither is exposed by
- * one-shot -p mode in CLI 1.0.70.
+ * Drives GitHub Copilot via a persistent SDK session (one CopilotClient + CopilotSession per plugin AI session),
+ * replacing the previous one-shot `copilot -p ... --output-format json` process-per-turn model. The persistent session
+ * is what makes graceful mid-turn interrupt (session.abort()) and live context-window usage (session.usage_info)
+ * possible — neither is exposed by one-shot -p mode in CLI 1.0.70.
  */
 public class GithubCopilotProcessManager extends AiProcessManager {
 
     private static final Logger LOG = Logger.getLogger(GithubCopilotProcessManager.class.getName());
     /**
-     * The sdk sends a reset date but it is incorrect, set to true when the sdk
-     * returns it correctly.
+     * The sdk sends a reset date but it is incorrect, set to true when the sdk returns it correctly.
      */
     private static final boolean ENABLE_RESET_DATE = false;
 
     /**
-     * Copilot's own tools that this plugin withholds, because an IDE-aware
-     * equivalent exists and routes through NetBeans' view of the code:
-     * {@code edit}/{@code create} are covered by ApplyEdit/WriteFile via the
-     * diff panel, {@code glob} by
-     * SearchTypes/SearchInFiles/GetProjectStructure, and {@code view} by
-     * GetFileContent.
+     * Copilot's own tools that this plugin withholds, because an IDE-aware equivalent exists and routes through
+     * NetBeans' view of the code: {@code edit}/{@code create} are covered by ApplyEdit/WriteFile via the diff panel,
+     * {@code glob} by SearchTypes/SearchInFiles/GetProjectStructure, and {@code view} by GetFileContent.
      *
      * <p>
-     * Withholding beats denying at the permission gate. The gate still refuses
-     * these (kind {@code read}), but only after Copilot has spent a tool call
-     * on one, and every refusal posts a system message — a short survey
-     * produced six. Excluded, they are never offered, so there is nothing to
-     * refuse and nothing to announce, and the "Internal Command" notice stays
-     * rare enough to be worth reading.
+     * Withholding beats denying at the permission gate. The gate still refuses these (kind {@code read}), but only
+     * after Copilot has spent a tool call on one, and every refusal posts a system message — a short survey produced
+     * six. Excluded, they are never offered, so there is nothing to refuse and nothing to announce, and the "Internal
+     * Command" notice stays rare enough to be worth reading.
      *
      * <p>
-     * {@code bash} is deliberately NOT excluded: running commands is the one
-     * capability the plugin's tools do not cover, so it stays available and is
-     * gated by an explicit confirmation instead (kind {@code shell}).
+     * {@code bash} is deliberately NOT excluded: running commands is the one capability the plugin's tools do not
+     * cover, so it stays available and is gated by an explicit confirmation instead (kind {@code shell}).
      */
     private static final List<String> EXCLUDED_NATIVE_TOOLS = List.of("edit", "create", "glob", "view");
 
@@ -182,7 +174,7 @@ public class GithubCopilotProcessManager extends AiProcessManager {
         GithubCopilotMcpRegistrar reg = new GithubCopilotMcpRegistrar(sessionId);
         boolean mcpReady;
         try {
-            mcpReady = McpServerRegistry.register(reg).get(2, TimeUnit.MINUTES);
+            mcpReady = McpServerRegistry.register(reg).get(TimeoutEnum.MCP_REGISTRATION_WAIT_MILLIS.millis(), TimeUnit.MILLISECONDS);
         }
         catch (InterruptedException e) {
             Thread.currentThread().interrupt();
@@ -246,7 +238,7 @@ public class GithubCopilotProcessManager extends AiProcessManager {
         opts.setCliPath(executablePath);
         client = new CopilotClient(opts);
         try {
-            client.start().get(2, TimeUnit.MINUTES);
+            client.start().get(TimeoutEnum.MCP_REGISTRATION_WAIT_MILLIS.millis(), TimeUnit.MILLISECONDS);
             copilotSession = createOrResumeSession(client, model);
             copilotSessionId = copilotSession.getSessionId();
             eventBridge.attach(copilotSession);
@@ -271,10 +263,9 @@ public class GithubCopilotProcessManager extends AiProcessManager {
     }
 
     /**
-     * Resume an existing Copilot session only when it is actually present in
-     * the SDK session store; otherwise create a fresh one under the stable
-     * plugin session id so later reopen/resume uses the same id without a noisy
-     * "session not found" exception on first start.
+     * Resume an existing Copilot session only when it is actually present in the SDK session store; otherwise create a
+     * fresh one under the stable plugin session id so later reopen/resume uses the same id without a noisy "session not
+     * found" exception on first start.
      */
     private CopilotSession createOrResumeSession(CopilotClient client, String model)
             throws ExecutionException, InterruptedException, TimeoutException {
@@ -286,7 +277,7 @@ public class GithubCopilotProcessManager extends AiProcessManager {
             GithubCopilotPermissionHandler handler = new GithubCopilotPermissionHandler(listener, sessionId);
             permissionHandler = handler;
             return client.resumeSession(copilotSessionId, buildResumeConfig(model, mcpServers, handler))
-                    .get(2, TimeUnit.MINUTES);
+                    .get(TimeoutEnum.MCP_REGISTRATION_WAIT_MILLIS.millis(), TimeUnit.MILLISECONDS);
         }
         catch (ExecutionException resumeFailure) {
             if (isCorruptedSessionFailure(resumeFailure)) {
@@ -305,7 +296,7 @@ public class GithubCopilotProcessManager extends AiProcessManager {
         if (targetSessionId == null || targetSessionId.isBlank()) {
             return false;
         }
-        List<SessionMetadata> sessions = client.listSessions().get(2, TimeUnit.MINUTES);
+        List<SessionMetadata> sessions = client.listSessions().get(TimeoutEnum.MCP_REGISTRATION_WAIT_MILLIS.millis(), TimeUnit.MILLISECONDS);
         return sessionListContains(sessions, targetSessionId);
     }
 
@@ -315,7 +306,7 @@ public class GithubCopilotProcessManager extends AiProcessManager {
         GithubCopilotPermissionHandler handler = new GithubCopilotPermissionHandler(listener, sessionId);
         permissionHandler = handler;
         return client.createSession(buildCreateConfig(targetSessionId, model, mcpServers, handler))
-                .get(2, TimeUnit.MINUTES);
+                .get(TimeoutEnum.MCP_REGISTRATION_WAIT_MILLIS.millis(), TimeUnit.MILLISECONDS);
     }
 
     private Map<String, com.github.copilot.rpc.McpServerConfig> buildMcpServers() {
@@ -323,19 +314,79 @@ public class GithubCopilotProcessManager extends AiProcessManager {
         if (endpoint == null || sessionId == null) {
             return Map.of();
         }
-        McpHttpServerConfig mcpServer = new McpHttpServerConfig().setUrl(endpoint).setTools(List.of("*"));
+        McpHttpServerConfig mcpServer = new McpHttpServerConfig()
+                .setUrl(endpoint)
+                .setTools(List.of("*"))
+                // McpServerConfig#setTimeout expects milliseconds, matching this enum.
+                .setTimeout(Math.toIntExact(GithubCopilotTimeoutEnum.MCP_TOOL_TIMEOUT_MILLIS.millis()));
         return Map.of(StringConst.PLUGIN_ID, mcpServer);
     }
 
     /**
-     * Maps a session-start failure to the same fatal-error events the old
-     * process-based flow reported after a nonzero exit + stderr grep — now read
-     * directly off the failed future's message instead of joined stderr lines.
-     * Message text confirmed live against the real CLI (not guessed): "Not
-     * authenticated..." and "...is not available." respectively.
+     * Maps a session-start failure to the same fatal-error events the old process-based flow reported after a nonzero
+     * exit + stderr grep — now read directly off the failed future's message instead of joined stderr lines. Message
+     * text confirmed live against the real CLI (not guessed): "Not authenticated..." and "...is not available."
+     * respectively.
      */
     private void handleSessionStartFailure(Exception e) {
         running = false;
+        // Best-effort teardown of whatever start() set up before failing: a
+        // started CopilotClient owns a spawned `copilot --server` OS process,
+        // and nothing else would ever close it when this start never completes.
+        // Mirrors stop()'s ordering (dispose AI session -> deregister MCP ->
+        // cancel pending dialogs -> close client) with every step guarded so
+        // cleanup cannot mask the original failure.
+        GithubCopilotAiSession sess = copilotAiSession;
+        copilotAiSession = null;
+        if (sess != null) {
+            try {
+                sess.dispose();
+            }
+            catch (Exception disposeEx) {
+                LOG.log(Level.FINE, "Ignoring error disposing AI session after failed start", disposeEx);
+            }
+        }
+        GithubCopilotMcpRegistrar reg = registrar;
+        registrar = null;
+        if (reg != null) {
+            try {
+                McpServerRegistry.deregister(reg);
+            }
+            catch (Exception deregEx) {
+                LOG.log(Level.WARNING, "Could not deregister MCP endpoint after failed start", deregEx);
+            }
+        }
+        GithubCopilotPermissionHandler permHandler = permissionHandler;
+        permissionHandler = null;
+        if (permHandler != null) {
+            try {
+                permHandler.cancelPendingPermissions();
+            }
+            catch (Exception cancelEx) {
+                LOG.log(Level.FINE, "Ignoring error cancelling pending permissions after failed start", cancelEx);
+            }
+        }
+        CopilotSession staleSession = copilotSession;
+        copilotSession = null;
+        eventBridge = null;
+        if (staleSession != null) {
+            try {
+                staleSession.close();
+            }
+            catch (Exception closeEx) {
+                LOG.log(Level.FINE, "Ignoring error closing Copilot session after failed start", closeEx);
+            }
+        }
+        CopilotClient staleClient = client;
+        client = null;
+        if (staleClient != null) {
+            try {
+                staleClient.close();
+            }
+            catch (Exception closeEx) {
+                LOG.log(Level.FINE, "Ignoring error closing Copilot client after failed start", closeEx);
+            }
+        }
         String msg = e.getMessage() != null ? e.getMessage() : "";
         String lower = msg.toLowerCase();
         if (msg.contains("could not be loaded") || msg.contains("corrupted")) {
@@ -414,12 +465,10 @@ public class GithubCopilotProcessManager extends AiProcessManager {
     }
 
     /**
-     * Re-establishes the CopilotSession after a model change and then sends the
-     * queued prompt. Runs on a background thread: createOrResumeSession()
-     * blocks on RPC for up to two minutes per call, and every sendPrompt()
-     * caller is on the EDT. The RPC deliberately happens OUTSIDE the monitor so
-     * a concurrent stop() (e.g. the user closing the tab mid-recycle) is not
-     * blocked by it; only publishing the new session takes the lock.
+     * Re-establishes the CopilotSession after a model change and then sends the queued prompt. Runs on a background
+     * thread: createOrResumeSession() blocks on RPC for up to two minutes per call, and every sendPrompt() caller is on
+     * the EDT. The RPC deliberately happens OUTSIDE the monitor so a concurrent stop() (e.g. the user closing the tab
+     * mid-recycle) is not blocked by it; only publishing the new session takes the lock.
      */
     private void reestablishAndSend(String text, File workingDir, List<File> projectDirs) {
         CopilotSession created = null;
@@ -452,12 +501,10 @@ public class GithubCopilotProcessManager extends AiProcessManager {
     }
 
     /**
-     * Graceful interrupt: Cancel aborts the current turn without tearing down
-     * the session (session.abort()) — previously this had to kill the whole OS
-     * process since one-shot -p had no in-band signal. Mail interjects the
-     * inter-AI mail notification into the running turn via immediate-mode send
-     * instead of killing anything — Mail was always meant to interrupt and
-     * inject, never to kill (confirmed with Chris).
+     * Graceful interrupt: Cancel aborts the current turn without tearing down the session (session.abort()) —
+     * previously this had to kill the whole OS process since one-shot -p had no in-band signal. Mail interjects the
+     * inter-AI mail notification into the running turn via immediate-mode send instead of killing anything — Mail was
+     * always meant to interrupt and inject, never to kill (confirmed with Chris).
      */
     @Override
     public void interrupt(InterruptTypeEnum type) {

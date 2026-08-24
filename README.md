@@ -40,11 +40,31 @@ Each session has its own backend, model, settings, working project, chat history
   - **Claude:** the `claude` CLI, authenticated with `claude login`.
   - **GitHub Copilot:** the `copilot` CLI and a Copilot-enabled GitHub account.
   - **Grok:** the `grok` CLI, authenticated with `grok login`.
-  - **OpenCode:** the `opencode` CLI.
+  - **OpenCode:** the `opencode` CLI. Raise OpenCode's MCP execution timeout before using long-running tools — see the note below.
   - **Codex:** the `codex` CLI/app-server, authenticated with `codex login`.
   - **Ollama (Local):** a reachable OpenAI-compatible Ollama endpoint; no CLI is required by the plugin.
 
 > NetBeans must be able to launch configured CLIs and use loopback networking. Sandboxed installations that block process creation, the host `PATH`, or local HTTP connections can prevent CLI/ACP/app-server backends and the MCP tool server from working.
+
+### OpenCode: raising the MCP tool timeout
+
+OpenCode applies its own timeout to MCP tool calls and ends longer ones with `MCP error -32001: Request timed out`. Tools that legitimately run for minutes — full test runs, clean builds (the plugin allows a build up to 10 minutes), or any prompt that waits on your approval — will fail against the default.
+
+The plugin cannot set this for you: it supplies its MCP server to OpenCode over ACP, whose transport definition has no timeout field. Add it to your own OpenCode config (`~/.config/opencode/opencode.json` or a project `opencode.json`):
+
+```json
+{
+  "experimental": {
+    "mcp_timeout": 3600000
+  }
+}
+```
+
+**The value is in milliseconds** — the example above is one hour. OpenCode's config schema defines `experimental.mcp_timeout` as "Timeout in milliseconds for model context protocol (MCP) requests". Beware that [anomalyco/opencode#8212](https://github.com/anomalyco/opencode/issues/8212) quotes `3600`, which is 3.6 *seconds* and shorter than the default — it will make the problem worse, not better.
+
+Note also that the per-server `timeout` field documented for MCP servers does **not** help here: it applies to tool discovery, not execution.
+
+Other backends are less affected: Grok already allows a long tool timeout, and Codex accepts a per-server `tool_timeout_sec`. Claude's HTTP transport currently has an upstream limit that its configuration does not override.
 
 ## Installation
 

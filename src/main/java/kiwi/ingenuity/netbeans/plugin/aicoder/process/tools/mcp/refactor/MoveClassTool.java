@@ -66,6 +66,7 @@ public class MoveClassTool implements McpToolInterface {
         schema.add(ToolSchemaKeyEnum.PROPERTIES.key(), props);
         JsonArray required = new JsonArray();
         required.add(MoveClassParamEnum.TARGET_PACKAGE.key());
+        required.add(MoveClassParamEnum.FILE_PATH.key());
         schema.add(ToolSchemaKeyEnum.REQUIRED.key(), required);
         tool.add(ToolSchemaKeyEnum.INPUT_SCHEMA.key(), schema);
         return McpToolSchemas.applyCredentialsIfRequested(tool, options);
@@ -77,8 +78,8 @@ public class MoveClassTool implements McpToolInterface {
         if (fp != null) {
             McpHookServer server = McpServerRegistry.getServer();
             String sessionId = session.getId();
-            if (server == null || sessionId == null || !server.isFileAllowed(sessionId, fp)) {
-                return "Access denied: " + fp + " is outside the allowed project scope for this session.";
+            if (!McpHookServer.isFileAccessible(server, sessionId, fp)) {
+                return McpHookServer.fileAccessDeniedMessage(server, sessionId, fp);
             }
         }
         return RefactoringProvider.moveClass(fp, args.intOr(MoveClassParamEnum.LINE.key(), 0), args.require(MoveClassParamEnum.TARGET_PACKAGE.key()));

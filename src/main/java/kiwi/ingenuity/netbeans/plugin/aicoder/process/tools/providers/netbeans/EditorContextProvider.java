@@ -2,19 +2,22 @@ package kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.providers.netbeans;
 
 import java.awt.Toolkit;
 import java.awt.datatransfer.DataFlavor;
+import java.io.BufferedReader;
 import java.io.File;
 import java.io.IOException;
 import java.nio.charset.Charset;
-import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.time.Instant;
 import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.TreeSet;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.logging.Level;
 import java.util.logging.Logger;
+import java.util.regex.Pattern;
+import java.util.regex.PatternSyntaxException;
 import javax.swing.SwingUtilities;
 import javax.swing.text.Document;
 import javax.swing.text.JTextComponent;
@@ -36,6 +39,8 @@ public class EditorContextProvider {
 
     private static final Logger LOG = Logger.getLogger(EditorContextProvider.class.getName());
     private static final int MAX_FILE_CONTENT_CHARS = 200_000;
+    private static final int MAX_FILTER_MATCHES = 200;
+    private static final int MAX_FILTER_CONTEXT_LINES = 50;
 
     public static String getSelectedText() {
         AtomicReference<String> ref = new AtomicReference<>("No editor focused");
@@ -202,7 +207,7 @@ public class EditorContextProvider {
             return flush.error();
         }
         try {
-            List<String> lines = Files.readAllLines(f.toPath(), StandardCharsets.UTF_8);
+            List<String> lines = Files.readAllLines(f.toPath(), RefactoringProvider.resolveCharset(f));
             int from = startLine > 0 ? Math.max(0, startLine - 1) : 0;
             int to = endLine > 0 ? Math.min(lines.size(), endLine) : lines.size();
             StringBuilder sb = new StringBuilder();
@@ -226,6 +231,108 @@ public class EditorContextProvider {
         catch (IOException e) {
             return "Error reading file: " + e.getMessage();
         }
+    }
+
+    /**
+     * Pattern-matches lines within a single file, without ever holding the whole file in memory — the motivating case
+     * is grepping a 115k+ line build/test log, not a handful of source lines. Runs two sequential streaming passes
+     * instead: the first counts every match and records which line numbers must be shown (matches plus their
+     * {@code contextLines} neighbours) in a bounded {@link TreeSet}; the second re-reads the file and emits only those
+     * lines. Two passes of cheap sequential I/O is the trade against holding either the full content or a sliding
+     * window in memory to support look-ahead context — the file is read fully, twice, rather than partially, once, held
+     * in memory.
+     *
+     * <p>
+     * {@code maxMatches <= 0} means "use the default cap" ({@link #MAX_FILTER_MATCHES}), matching the
+     * {@code startLine}/{@code endLine} 0-means-omitted convention used by {@link #getFileContent}.
+     * {@code contextLines} is clamped to {@code [0, MAX_FILTER_CONTEXT_LINES]} defensively even though the tool layer
+     * should already have done so, so a direct caller cannot request an unbounded context window.
+     */
+    public static String filterFileContent(String filePath, String pattern, boolean isRegex,
+            boolean caseSensitive, int contextLines, int maxMatches) {
+        File f = new File(filePath);
+        if (!f.exists() || !f.isFile()) {
+            return buildNotFoundMessage(filePath);
+        }
+        // Same reasoning as getFileContent: a pattern typed into the editor but not
+        // yet saved would otherwise be invisible to a filter over the on-disk copy,
+        // which is a false negative from the one operation this tool exists to do.
+        RefactoringProvider.FlushResult flush
+                = RefactoringProvider.flushUnsavedEditorChanges(FileUtils.resolveByFile(f));
+        if (flush.error() != null) {
+            return flush.error();
+        }
+
+        Pattern compiled;
+        try {
+            compiled = LineMatcher.compile(pattern, isRegex, caseSensitive);
+        }
+        catch (PatternSyntaxException e) {
+            return "Invalid regex: " + e.getMessage();
+        }
+
+        int cap = maxMatches > 0 ? maxMatches : MAX_FILTER_MATCHES;
+        int context = Math.max(0, Math.min(contextLines, MAX_FILTER_CONTEXT_LINES));
+        Charset charset = RefactoringProvider.resolveCharset(filePath);
+
+        TreeSet<Integer> linesToShow = new TreeSet<>();
+        TreeSet<Integer> matchedLines = new TreeSet<>();
+        int totalMatches = 0;
+        try (BufferedReader reader = Files.newBufferedReader(f.toPath(), charset)) {
+            String line;
+            int lineNo = 0;
+            while ((line = reader.readLine()) != null) {
+                lineNo++;
+                if (LineMatcher.findWithTimeout(compiled, line)) {
+                    // Counted for every match so the header can report the true total
+                    // even past the cap — silent truncation is the failure mode to avoid.
+                    totalMatches++;
+                    if (totalMatches <= cap) {
+                        matchedLines.add(lineNo);
+                        for (int l = Math.max(1, lineNo - context); l <= lineNo + context; l++) {
+                            linesToShow.add(l);
+                        }
+                    }
+                }
+            }
+        }
+        catch (LineMatcher.RegexTimeoutException e) {
+            // A pathological pattern must not hang the handler thread; report it like an
+            // invalid pattern — the query, not the file, is the problem.
+            return "Regex timed out after " + e.timeoutMillis()
+                    + " ms — the pattern backtracks catastrophically; simplify it.";
+        }
+        catch (IOException e) {
+            return "Error reading file: " + e.getMessage();
+        }
+
+        if (totalMatches == 0) {
+            return "No matches found for: " + pattern;
+        }
+
+        StringBuilder sb = new StringBuilder("Found ").append(totalMatches)
+                .append(" match(es) in ").append(filePath);
+        if (totalMatches > cap) {
+            sb.append(" (showing first ").append(cap).append(")");
+        }
+        sb.append(":\n\n");
+        try (BufferedReader reader = Files.newBufferedReader(f.toPath(), charset)) {
+            String line;
+            int lineNo = 0;
+            while ((line = reader.readLine()) != null) {
+                lineNo++;
+                if (!linesToShow.contains(lineNo)) {
+                    continue;
+                }
+                // grep -C convention: ':' marks an actual match, '-' marks context so
+                // the two are never confused when they appear interleaved.
+                sb.append(lineNo).append(matchedLines.contains(lineNo) ? ": " : "- ").append(line).append("\n");
+            }
+        }
+        catch (IOException e) {
+            return "Error reading file: " + e.getMessage();
+        }
+        return sb.toString().strip();
     }
 
     /**
@@ -275,12 +382,13 @@ public class EditorContextProvider {
         StringBuilder sb = new StringBuilder();
         sb.append(filePath).append(": ").append(bytes).append(" bytes");
         try {
-            long lineCount = Files.readAllLines(f.toPath(), StandardCharsets.UTF_8).size();
+            long lineCount = Files.readAllLines(f.toPath(), RefactoringProvider.resolveCharset(fo)).size();
             sb.append(", ").append(lineCount).append(" lines");
         }
         catch (IOException e) {
             // Size and encoding are still useful even if the file is not
-            // decodable as UTF-8 text (e.g. a binary or non-UTF-8 file).
+            // decodable as its resolved charset (e.g. a binary file, or the
+            // charset guess above did not match the actual bytes).
             sb.append(", line count unavailable (").append(e.getMessage()).append(")");
         }
         sb.append(", encoding ").append(encoding);
@@ -334,6 +442,7 @@ public class EditorContextProvider {
         org.openide.text.Line.ShowVisibilityType visibility = focus
                 ? org.openide.text.Line.ShowVisibilityType.FOCUS
                 : org.openide.text.Line.ShowVisibilityType.NONE;
+        AtomicReference<String> result = new AtomicReference<>();
         try {
             SwingUtilities.invokeAndWait(() -> {
                 try {
@@ -342,16 +451,21 @@ public class EditorContextProvider {
                     if (lc != null) {
                         org.openide.text.Line line = lc.getLineSet().getCurrent(effectiveLine - 1);
                         line.show(org.openide.text.Line.ShowOpenType.OPEN, visibility);
+                        result.set("Navigated to " + filePath + ":" + effectiveLine);
+                        return;
+                    }
+                    org.openide.cookies.OpenCookie oc = dob.getLookup().lookup(org.openide.cookies.OpenCookie.class);
+                    if (oc != null) {
+                        oc.open();
+                        result.set("Navigated to " + filePath + ":" + effectiveLine);
                     }
                     else {
-                        org.openide.cookies.OpenCookie oc = dob.getLookup().lookup(org.openide.cookies.OpenCookie.class);
-                        if (oc != null) {
-                            oc.open();
-                        }
+                        result.set("Cannot open file in NetBeans: " + filePath);
                     }
                 }
                 catch (org.openide.loaders.DataObjectNotFoundException ex) {
                     LOG.log(Level.FINE, "navigateToLine: file not found in DataObject system", ex);
+                    result.set("Cannot open file in NetBeans: " + filePath);
                 }
             });
         }
@@ -359,7 +473,7 @@ public class EditorContextProvider {
             LOG.log(Level.FINE, "navigateToLine error", e);
             return "Error navigating: " + e.getMessage();
         }
-        return "Navigated to " + filePath + ":" + effectiveLine;
+        return result.get();
     }
 
     public static String getOpenFiles() {

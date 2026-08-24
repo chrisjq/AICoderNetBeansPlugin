@@ -1,5 +1,6 @@
 package kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.refactor;
 
+import com.google.gson.JsonArray;
 import com.google.gson.JsonObject;
 import java.util.Set;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.McpArgumentException;
@@ -57,6 +58,10 @@ public class InlineVariableTool implements McpToolInterface {
                 "1-based line of the variable declaration or usage. Required — this tool does not follow the user's cursor.");
         props.add(InlineVariableParamEnum.LINE.key(), ln);
         schema.add(ToolSchemaKeyEnum.PROPERTIES.key(), props);
+        JsonArray required = new JsonArray();
+        required.add(InlineVariableParamEnum.FILE_PATH.key());
+        required.add(InlineVariableParamEnum.LINE.key());
+        schema.add(ToolSchemaKeyEnum.REQUIRED.key(), required);
         tool.add(ToolSchemaKeyEnum.INPUT_SCHEMA.key(), schema);
         return McpToolSchemas.applyCredentialsIfRequested(tool, options);
     }
@@ -67,8 +72,8 @@ public class InlineVariableTool implements McpToolInterface {
         if (fp != null) {
             McpHookServer server = McpServerRegistry.getServer();
             String sessionId = session.getId();
-            if (server == null || sessionId == null || !server.isFileAllowed(sessionId, fp)) {
-                return "Access denied: " + fp + " is outside the allowed project scope for this session.";
+            if (!McpHookServer.isFileAccessible(server, sessionId, fp)) {
+                return McpHookServer.fileAccessDeniedMessage(server, sessionId, fp);
             }
         }
         return RefactoringProvider.inlineVariable(fp, args.intOr(InlineVariableParamEnum.LINE.key(), 0));

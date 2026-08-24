@@ -4,7 +4,6 @@ import com.google.gson.Gson;
 import com.google.gson.JsonArray;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
-import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
@@ -19,6 +18,8 @@ import kiwi.ingenuity.netbeans.plugin.aicoder.ai.events.TurnCompleteEvent;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.claude.events.ClaudeSessionInfoEvent;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.events.AiProcessEvent;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.events.AiProcessEventListener;
+import kiwi.ingenuity.netbeans.plugin.aicoder.process.server.McpHookServerUtil;
+import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.providers.netbeans.RefactoringProvider;
 import kiwi.ingenuity.netbeans.plugin.aicoder.utils.JsonUtils;
 import kiwi.ingenuity.netbeans.plugin.aicoder.utils.StatusMessageUtil;
 
@@ -27,13 +28,18 @@ public class ClaudeStreamJsonParser {
     private static final Logger LOG = Logger.getLogger(ClaudeStreamJsonParser.class.getName());
     private static final Gson GSON = new Gson();
 
+    /**
+     * Decodes with {@link RefactoringProvider#resolveCharset}, the same charset the write side of every disk-based tool
+     * uses — not hardcoded UTF-8. Missing file and undecodable content both still return null, which callers treat as
+     * "no known content"; a genuinely empty file decodes to "", never null, so the two are never conflated.
+     */
     private static String readFileQuietly(String path) {
         if (path == null || path.isBlank()) {
             return null;
         }
         try {
             java.nio.file.Path p = java.nio.file.Path.of(path);
-            return Files.exists(p) ? Files.readString(p, StandardCharsets.UTF_8) : null;
+            return Files.exists(p) ? Files.readString(p, RefactoringProvider.resolveCharset(path)) : null;
         }
         catch (Exception e) {
             return null;
@@ -112,7 +118,10 @@ public class ClaudeStreamJsonParser {
             // NOTE: cannot multi-catch (JsonSyntaxException | RuntimeException) — they are
             // related by subclassing, which is a compile error; RuntimeException covers both.
             parseFailure = true;
-            LOG.log(Level.WARNING, "Skipping unparseable line: {0}", line);
+            // Redaction here is best-effort only: a chunk boundary can split a secret across two
+            // lines, so no per-line redactor can ever see it whole — the same limitation that
+            // gates input_json_delta fragments out of the "ai json" log in ClaudeAiProcessManager.
+            LOG.log(Level.WARNING, "Skipping unparseable line: {0}", McpHookServerUtil.redactAllSecrets(line));
 
             // If the unparseable line is a result event (even if malformed), emit FAILED
             // so the turn doesn't stay in processing state. String check is the only option

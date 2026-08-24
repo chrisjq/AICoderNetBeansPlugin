@@ -6,11 +6,14 @@ import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.Collection;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.logging.Level;
 import java.util.logging.Logger;
+import kiwi.ingenuity.netbeans.plugin.aicoder.process.server.McpHookServer;
+import kiwi.ingenuity.netbeans.plugin.aicoder.process.server.McpServerRegistry;
 import kiwi.ingenuity.netbeans.plugin.aicoder.utils.DateUtil;
 import org.netbeans.api.project.FileOwnerQuery;
 import org.netbeans.api.project.Project;
@@ -25,6 +28,7 @@ import org.netbeans.libs.git.GitMergeResult;
 import org.netbeans.libs.git.GitPullResult;
 import org.netbeans.libs.git.GitPushResult;
 import org.netbeans.libs.git.GitRebaseResult;
+import org.netbeans.libs.git.GitRefUpdateResult;
 import org.netbeans.libs.git.GitRemoteConfig;
 import org.netbeans.libs.git.GitRepository;
 import org.netbeans.libs.git.GitRevertResult;
@@ -168,7 +172,7 @@ public class GitProvider {
         }
     }
 
-    public static String gitCommit(String projectPath, String message, List<String> files) {
+    public static String gitCommit(String projectPath, String message, List<String> files, String sessionId) {
         File root = resolveRoot(projectPath);
         if (root == null) {
             return noRepoError(projectPath);
@@ -178,8 +182,12 @@ public class GitProvider {
             return "Not a git repository: " + root;
         }
         try (GitClient client = GitRepository.getInstance(gitRoot).createClient()) {
+            File[] commitTargets = resolveFiles(root, files);
+            if (!areCommitTargetsAllowed(commitTargets, McpServerRegistry.getServer(), sessionId)) {
+                return "Error: commit paths are not within the allowed project directories";
+            }
             if (files != null && !files.isEmpty()) {
-                client.add(resolveFiles(root, files), NULL_PM);
+                client.add(commitTargets, NULL_PM);
             }
             GitUser user;
             try {
@@ -188,7 +196,7 @@ public class GitProvider {
             catch (GitException ex) {
                 user = null;
             }
-            GitRevisionInfo info = client.commit(new File[]{gitRoot}, message, user, user, NULL_PM);
+            GitRevisionInfo info = client.commit(commitTargets, message, user, user, NULL_PM);
             FileUtil.refreshFor(root);
             String rev = info.getRevision();
             return "Committed: " + rev.substring(0, Math.min(7, rev.length())) + " " + info.getShortMessage();
@@ -219,6 +227,9 @@ public class GitProvider {
         if (file != null && !file.isBlank()) {
             File f = new File(file);
             target = f.isAbsolute() ? f : new File(root, file);
+        }
+        if (target != null && !isWithinRepository(gitRoot, target)) {
+            return "File is outside repository: " + file;
         }
         try (GitClient client = GitRepository.getInstance(gitRoot).createClient()) {
             SearchCriteria criteria = new SearchCriteria();
@@ -274,16 +285,7 @@ public class GitProvider {
             }
             String refspec = "refs/heads/" + branchName + ":refs/heads/" + branchName;
             GitPushResult result = client.push(remoteName, List.of(refspec), List.of(), NULL_PM);
-            Map<String, GitTransportUpdate> updates = result.getRemoteRepositoryUpdates();
-            if (updates.isEmpty()) {
-                return "Push complete (nothing to update)";
-            }
-            StringBuilder sb = new StringBuilder("Push complete:\n");
-            for (Map.Entry<String, GitTransportUpdate> e : updates.entrySet()) {
-                sb.append("  ").append(e.getKey()).append(": ")
-                        .append(e.getValue().getResult()).append('\n');
-            }
-            return sb.toString().strip();
+            return formatTransportUpdates("Push", result.getRemoteRepositoryUpdates());
         }
         catch (GitException e) {
             LOG.log(Level.WARNING, "gitPush error", e);
@@ -316,11 +318,19 @@ public class GitProvider {
             String fetchRefSpec = "+refs/heads/*:refs/remotes/" + remoteName + "/*";
             String branchToMerge = "refs/remotes/" + remoteName + "/" + branchName;
             GitPullResult result = client.pull(remoteName, List.of(fetchRefSpec), branchToMerge, NULL_PM);
-            GitMergeResult merge = result.getMergeResult();
-            if (merge != null) {
-                return "Pull complete: " + merge.getMergeStatus();
+            Map<String, GitTransportUpdate> fetchUpdates = result.getFetchResult();
+            if (!areTransportUpdatesSuccessful(fetchUpdates)) {
+                return formatTransportUpdates("Pull fetch", fetchUpdates);
             }
-            return "Pull complete";
+            GitMergeResult merge = result.getMergeResult();
+            if (merge == null) {
+                return "Pull complete";
+            }
+            GitMergeResult.MergeStatus status = merge.getMergeStatus();
+            if (isSuccessfulMergeStatus(status)) {
+                return "Pull complete: " + status;
+            }
+            return "Pull failed: " + status;
         }
         catch (GitException e) {
             LOG.log(Level.WARNING, "gitPull error", e);
@@ -388,39 +398,59 @@ public class GitProvider {
         }
     }
 
+    /**
+     * Guarded here rather than per-caller so every call site — including any added later — is protected at once.
+     * {@code FileOwnerQuery.getOwner()} can throw {@code ExceptionInInitializerError}/{@code NoClassDefFoundError} when
+     * the IDE's ProjectManager Lookup is unavailable; those are Errors, not Exceptions, so {@code catch(Throwable)} is
+     * required to contain them.
+     * <p>
+     * Most callers (RefactoringProvider's write/edit/delete/copy/move) treat this as a best-effort cosmetic refresh
+     * after an already-completed file operation and ignore the returned string either way — a stale VCS badge is a much
+     * smaller problem than reporting a completed operation as failed, so swallowing the failure into a returned message
+     * here is CORRECT for them, not the false-success pattern the rest of this review targets. Do not "fix" this back
+     * into throwing. RefreshFileStatusTool is the one caller where this refresh IS the operation, and it returns this
+     * method's result directly — for that caller, this branch is what turns an uncaught Error into a real, reportable
+     * failure message instead.
+     */
     public static String refreshVcsStatus(String filePath) {
-        if (filePath != null && !filePath.isBlank()) {
-            FileObject fo = FileUtils.resolveByPath(filePath);
-            if (fo != null) {
-                Project p = FileOwnerQuery.getOwner(fo);
-                if (p != null) {
-                    File dir = FileUtil.toFile(p.getProjectDirectory());
-                    if (dir != null) {
-                        FileUtil.refreshFor(dir);
-                        return "Refreshed VCS status for project: " + p.getProjectDirectory().getName();
+        try {
+            if (filePath != null && !filePath.isBlank()) {
+                FileObject fo = FileUtils.resolveByPath(filePath);
+                if (fo != null) {
+                    Project p = FileOwnerQuery.getOwner(fo);
+                    if (p != null) {
+                        File dir = FileUtil.toFile(p.getProjectDirectory());
+                        if (dir != null) {
+                            FileUtil.refreshFor(dir);
+                            return "Refreshed VCS status for project: " + p.getProjectDirectory().getName();
+                        }
                     }
+                    File f = FileUtil.toFile(fo);
+                    if (f != null) {
+                        FileUtil.refreshFor(f);
+                    }
+                    return "Refreshed VCS status for: " + filePath;
                 }
-                File f = FileUtil.toFile(fo);
-                if (f != null) {
-                    FileUtil.refreshFor(f);
+                return "File not found: " + filePath;
+            }
+            Project[] projects = OpenProjects.getDefault().getOpenProjects();
+            if (projects.length == 0) {
+                return "No open projects to refresh";
+            }
+            int count = 0;
+            for (Project p : projects) {
+                File dir = FileUtil.toFile(p.getProjectDirectory());
+                if (dir != null) {
+                    FileUtil.refreshFor(dir);
+                    count++;
                 }
-                return "Refreshed VCS status for: " + filePath;
             }
-            return "File not found: " + filePath;
+            return "Refreshed VCS status for " + count + " project" + (count != 1 ? "s" : "");
         }
-        Project[] projects = OpenProjects.getDefault().getOpenProjects();
-        if (projects.length == 0) {
-            return "No open projects to refresh";
+        catch (Throwable t) {
+            LOG.log(Level.WARNING, "refreshVcsStatus failed for " + filePath, t);
+            return "Could not refresh VCS status: " + t.getMessage();
         }
-        int count = 0;
-        for (Project p : projects) {
-            File dir = FileUtil.toFile(p.getProjectDirectory());
-            if (dir != null) {
-                FileUtil.refreshFor(dir);
-                count++;
-            }
-        }
-        return "Refreshed VCS status for " + count + " project" + (count != 1 ? "s" : "");
     }
 
     private static File getOpenProjectRoot() {
@@ -517,6 +547,83 @@ public class GitProvider {
             }
         }
         return result.toArray(File[]::new);
+    }
+
+    static boolean areCommitTargetsAllowed(File[] targets, McpHookServer server, String sessionId) {
+        if (server == null || sessionId == null) {
+            return false;
+        }
+        for (File target : targets) {
+            if (!server.isFileAllowed(sessionId, target.getPath())) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    static String formatTransportResults(String operation, Map<String, GitRefUpdateResult> results) {
+        if (results == null || results.isEmpty()) {
+            return operation + " complete (nothing to update)";
+        }
+        int successes = 0;
+        for (GitRefUpdateResult result : results.values()) {
+            if (isSuccessfulTransportResult(result)) {
+                successes++;
+            }
+        }
+        String prefix;
+        if (successes == results.size()) {
+            prefix = operation + " complete:";
+        }
+        else if (successes == 0) {
+            prefix = operation + " failed:";
+        }
+        else {
+            prefix = operation + " partially completed:";
+        }
+        StringBuilder sb = new StringBuilder(prefix).append('\n');
+        for (Map.Entry<String, GitRefUpdateResult> entry : results.entrySet()) {
+            sb.append("  ").append(entry.getKey()).append(": ").append(entry.getValue()).append('\n');
+        }
+        return sb.toString().strip();
+    }
+
+    static boolean isSuccessfulTransportResult(GitRefUpdateResult result) {
+        return result == GitRefUpdateResult.NO_CHANGE
+                || result == GitRefUpdateResult.NEW
+                || result == GitRefUpdateResult.FORCED
+                || result == GitRefUpdateResult.FAST_FORWARD
+                || result == GitRefUpdateResult.UP_TO_DATE
+                || result == GitRefUpdateResult.RENAMED
+                || result == GitRefUpdateResult.OK;
+    }
+
+    static boolean isSuccessfulMergeStatus(GitMergeResult.MergeStatus status) {
+        return status == GitMergeResult.MergeStatus.FAST_FORWARD
+                || status == GitMergeResult.MergeStatus.ALREADY_UP_TO_DATE
+                || status == GitMergeResult.MergeStatus.MERGED;
+    }
+
+    private static String formatTransportUpdates(String operation, Map<String, GitTransportUpdate> updates) {
+        Map<String, GitRefUpdateResult> results = new LinkedHashMap<>();
+        if (updates != null) {
+            for (Map.Entry<String, GitTransportUpdate> entry : updates.entrySet()) {
+                results.put(entry.getKey(), entry.getValue().getResult());
+            }
+        }
+        return formatTransportResults(operation, results);
+    }
+
+    private static boolean areTransportUpdatesSuccessful(Map<String, GitTransportUpdate> updates) {
+        if (updates == null || updates.isEmpty()) {
+            return true;
+        }
+        for (GitTransportUpdate update : updates.values()) {
+            if (!isSuccessfulTransportResult(update.getResult())) {
+                return false;
+            }
+        }
+        return true;
     }
 
     private static char statusChar(GitStatus.Status status) {
@@ -629,15 +736,7 @@ public class GitProvider {
         }
         String remoteName = (remote != null && !remote.isBlank()) ? remote : "origin";
         try (GitClient client = GitRepository.getInstance(gitRoot).createClient()) {
-            Map<String, GitTransportUpdate> updates = client.fetch(remoteName, NULL_PM);
-            if (updates.isEmpty()) {
-                return "Fetch complete (nothing to update)";
-            }
-            StringBuilder sb = new StringBuilder("Fetch complete:\n");
-            for (Map.Entry<String, GitTransportUpdate> e : updates.entrySet()) {
-                sb.append("  ").append(e.getKey()).append(": ").append(e.getValue().getResult()).append('\n');
-            }
-            return sb.toString().strip();
+            return formatTransportUpdates("Fetch", client.fetch(remoteName, NULL_PM));
         }
         catch (GitException e) {
             LOG.log(Level.WARNING, "gitFetch error", e);

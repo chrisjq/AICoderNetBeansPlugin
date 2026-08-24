@@ -11,26 +11,31 @@ import java.nio.ByteBuffer;
 import java.nio.channels.FileChannel;
 import java.nio.channels.FileLock;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.FileVisitResult;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.SimpleFileVisitor;
 import java.nio.file.StandardCopyOption;
 import java.nio.file.StandardOpenOption;
+import java.nio.file.attribute.BasicFileAttributes;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Set;
 import java.util.logging.Level;
 import java.util.logging.Logger;
+import java.util.stream.Collectors;
 import kiwi.ingenuity.netbeans.plugin.aicoder.PluginUtil;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.AiTypeEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.session.AiSession;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.session.SessionInstructionsDeliveryEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.settings.AiSessionSettings;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.settings.AiSessionSettingsCreator;
+import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.TempFileRegistry;
 
 /**
- * Manages persistent storage and retrieval of AI session data. Handles JSON
- * serialization of sessions to disk with proper file locking and atomicity
- * guarantees.
+ * Manages persistent storage and retrieval of AI session data. Handles JSON serialization of sessions to disk with
+ * proper file locking and atomicity guarantees.
  */
 public class SessionPersistenceManager {
 
@@ -43,15 +48,42 @@ public class SessionPersistenceManager {
      */
     private static final Gson GSON = new GsonBuilder().setPrettyPrinting().create();
     /**
-     * Serializes all instances in this JVM before acquiring the cross-process
-     * file lock. FileChannel.lock() throws OverlappingFileLockException if the
-     * same JVM holds it twice, so we need intra-JVM serialization independently
-     * of per-instance synchronized methods.
+     * Serializes all instances in this JVM before acquiring the cross-process file lock. FileChannel.lock() throws
+     * OverlappingFileLockException if the same JVM holds it twice, so we need intra-JVM serialization independently of
+     * per-instance synchronized methods.
      */
     private static final Object JVM_LOCK = new Object();
 
     public static Path defaultBaseDir() {
         return Path.of(System.getProperty("user.home"), ".netbeans", ".aicoder");
+    }
+
+    private static void deleteRecursively(Path root) throws IOException {
+        Files.walkFileTree(root, new SimpleFileVisitor<>() {
+            @Override
+            public FileVisitResult visitFile(Path file, BasicFileAttributes attrs) throws IOException {
+                Files.deleteIfExists(file);
+                return FileVisitResult.CONTINUE;
+            }
+
+            @Override
+            public FileVisitResult postVisitDirectory(Path dir, IOException exc) throws IOException {
+                Files.deleteIfExists(dir);
+                return FileVisitResult.CONTINUE;
+            }
+        });
+    }
+
+    /**
+     * Renders a single JSON property for a log line without ever serialising its enclosing object, so a future
+     * sensitive field cannot start leaking through error logging. Absent or non-scalar values collapse to a placeholder
+     * that names the key instead.
+     */
+    private static String scalarOrPlaceholder(JsonObject o, String key) {
+        if (o.has(key) && o.get(key).isJsonPrimitive()) {
+            return o.get(key).getAsString();
+        }
+        return "<" + key + ":absent-or-non-scalar>";
     }
 
     /**
@@ -92,29 +124,61 @@ public class SessionPersistenceManager {
 
     public synchronized void delete(String sessionId) throws IOException {
         AiSession deleted = withFileLock(() -> {
+            // Decide sweep eligibility BEFORE loading: a MISSING index proves nothing about
+            // orphanhood — the directories under baseDir may be intact histories whose index
+            // was lost or deleted separately. Sweeping against the empty loaded list would
+            // destroy every one of them on a single unrelated delete(). Skip the sweep in
+            // that case; once any save() rebuilds an index, normal sweeping resumes. An index
+            // that EXISTS but lists nothing is different: there, "unreferenced" is proven.
+            boolean indexExisted = Files.exists(sessionsFile);
             List<AiSession> all = new ArrayList<>(loadAllLocked());
             AiSession match = all.stream().filter(s -> s.id().equals(sessionId)).findFirst().orElse(null);
             all.removeIf(s -> s.id().equals(sessionId));
             persist(all);
+            // Sweeping after the sessions index is durably updated makes a crash between
+            // persisting sessions.json and removing the deleted session's directory tree
+            // self-healing: the next delete collects whatever that crash orphaned, instead of
+            // leaving unreferenced conversation directories behind forever (review fix 15).
+            if (indexExisted) {
+                purgeOrphanHistoryDirsLocked(all);
+            }
+            else {
+                LOG.log(Level.WARNING,
+                        "Skipping orphan-history sweep for delete of {0}: {1} did not exist, so "
+                        + "unreferenced directories cannot be distinguished from recoverable histories",
+                        new Object[]{sessionId, sessionsFile.getFileName()});
+            }
             return match;
         });
-        // History file lives in its own directory — no file lock needed
-        Path hist = historyPath(sessionId);
-        Files.deleteIfExists(hist);
-        Path dir = hist.getParent();
-        if (dir != null && Files.isDirectory(dir)) {
-            boolean isEmpty;
-            try (var stream = Files.list(dir)) {
-                isEmpty = stream.findFirst().isEmpty();
-            }
-            if (isEmpty) {
-                Files.deleteIfExists(dir);
-            }
-        }
         // Remove the per-session config dir (~/.ai-coder/{type}/{sessionId}):
         // logs, memory, and any other per-session data an AI impl stored there.
         if (deleted != null) {
+            TempFileRegistry.cleanupSession(sessionId);
             PluginUtil.deleteAiSessionConfigDir(deleted.aiType(), sessionId);
+        }
+    }
+
+    /**
+     * Deletes every directory directly under {@code baseDir} that no remaining persisted session references. Only
+     * directories are considered — sessions.json, sessions.lock and temp files are regular files and are left alone.
+     * Runs while holding the JVM-wide and cross-process locks, so the referenced-id set matches exactly what was just
+     * persisted.
+     */
+    private void purgeOrphanHistoryDirsLocked(List<AiSession> keptSessions) throws IOException {
+        Set<String> referencedIds = keptSessions.stream()
+                .map(AiSession::id)
+                .collect(Collectors.toSet());
+        List<Path> orphaned;
+        try (var dirs = Files.list(baseDir)) {
+            orphaned = dirs
+                    .filter(Files::isDirectory)
+                    .filter(dir -> !referencedIds.contains(dir.getFileName().toString()))
+                    .collect(Collectors.toList());
+        }
+        for (Path dir : orphaned) {
+            LOG.log(Level.WARNING, "Removing orphaned session directory {0}: not referenced by {1}",
+                    new Object[]{dir, sessionsFile.getFileName()});
+            deleteRecursively(dir);
         }
     }
 
@@ -155,12 +219,16 @@ public class SessionPersistenceManager {
                         aiType = o.has(aiTypeKey) ? AiTypeEnum.valueOf(o.get(aiTypeKey).getAsString()) : null;
                     }
                     catch (IllegalArgumentException e) {
-                        LOG.log(Level.WARNING, "Invalid aiType, skipping session:\n{0}", o.toString());
+                        // Log the offending value and key names only — never serialise the whole
+                        // entry object into the log (review fix 15).
+                        LOG.log(Level.WARNING, "Invalid aiType value {0} for session id {1}; skipping entry",
+                                new Object[]{scalarOrPlaceholder(o, aiTypeKey), scalarOrPlaceholder(o, idKey)});
                         continue;
                     }
 
                     if (aiType == null) {
-                        LOG.log(Level.WARNING, "Missing aiType, skipping session:\n{0}", o.toString());
+                        LOG.log(Level.WARNING, "Missing aiType for session id {0}; skipping entry",
+                                scalarOrPlaceholder(o, idKey));
                         continue;
                     }
 
@@ -171,10 +239,18 @@ public class SessionPersistenceManager {
                         JsonObject cfgObj = o.getAsJsonObject(configKey);
                         creator.update(settings, cfgObj);
                     }
-                    if (!o.has(idKey) || !o.has(SessionPersistenceKeyEnum.NAME.key())
-                            || !o.has(SessionPersistenceKeyEnum.CREATED_AT.key())
-                            || !o.has(SessionPersistenceKeyEnum.LAST_USED_AT.key())) {
-                        LOG.log(Level.WARNING, "Session missing required fields, skipping:\n{0}", o.toString());
+                    List<String> missingKeys = new ArrayList<>();
+                    for (String requiredKey : new String[]{idKey,
+                        SessionPersistenceKeyEnum.NAME.key(),
+                        SessionPersistenceKeyEnum.CREATED_AT.key(),
+                        SessionPersistenceKeyEnum.LAST_USED_AT.key()}) {
+                        if (!o.has(requiredKey)) {
+                            missingKeys.add(requiredKey);
+                        }
+                    }
+                    if (!missingKeys.isEmpty()) {
+                        LOG.log(Level.WARNING, "Session id {0} missing required keys {1}; skipping entry",
+                                new Object[]{scalarOrPlaceholder(o, idKey), missingKeys});
                         continue;
                     }
                     Instant createdAt;

@@ -4,6 +4,7 @@ import java.io.IOException;
 import java.net.InetAddress;
 import java.net.InetSocketAddress;
 import java.net.Socket;
+import java.util.EnumMap;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.concurrent.ArrayBlockingQueue;
@@ -14,20 +15,18 @@ import java.util.logging.Level;
 import java.util.logging.Logger;
 import kiwi.ingenuity.netbeans.plugin.aicoder.PluginSettings;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.AiTypeEnum;
+import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.TimeoutEnum;
 
 /**
- * Manages the lifecycle of the single shared {@link McpHookServer}. A dedicated
- * daemon supervisor thread owns ALL registration logic; callers only fire
- * events. The single thread gives a total order over every mutation, so there
- * are no locks in the registry beyond the event queue and one lazy-spawn guard.
+ * Manages the lifecycle of the single shared {@link McpHookServer}. A dedicated daemon supervisor thread owns ALL
+ * registration logic; callers only fire events. The single thread gives a total order over every mutation, so there are
+ * no locks in the registry beyond the event queue and one lazy-spawn guard.
  * <p>
- * {@link #register} enqueues a REGISTER and returns a future the caller waits
- * on; {@link #deregister} is fully fire-and-forget. The supervisor dedupes,
- * tracks per-type first/last-of-type (derived from its own registration map),
- * installs and tears down hooks/endpoints, and reconciles the server against
- * desired state: registrations non-empty → server up, empty → server down. Its
- * queue poll timeout doubles as a health tick that resurrects a
- * dead/unresponsive server, so MCP no longer stays down until an IDE restart.
+ * {@link #register} enqueues a REGISTER and returns a future the caller waits on; {@link #deregister} is fully
+ * fire-and-forget. The supervisor dedupes, tracks per-type first/last-of-type (derived from its own registration map),
+ * installs and tears down hooks/endpoints, and reconciles the server against desired state: registrations non-empty →
+ * server up, empty → server down. Its queue poll timeout doubles as a health tick that resurrects a dead/unresponsive
+ * server, so MCP no longer stays down until an IDE restart.
  */
 public final class McpServerRegistry {
 
@@ -39,9 +38,8 @@ public final class McpServerRegistry {
     private static final BlockingQueue<McpRegistryEvent> QUEUE = new ArrayBlockingQueue<>(128);
 
     /**
-     * Desired state, touched ONLY by the supervisor thread (single-writer, so
-     * no concurrency needed): sessionId → its registrar. Non-empty → server up.
-     * Per-type counts are derived from this map in event order.
+     * Desired state, touched ONLY by the supervisor thread (single-writer, so no concurrency needed): sessionId → its
+     * registrar. Non-empty → server up. Per-type counts are derived from this map in event order.
      */
     private static final Map<String, AiMcpRegistrar> registrations = new HashMap<>();
 
@@ -55,27 +53,24 @@ public final class McpServerRegistry {
     private static volatile boolean shutdown = false; // supervisor stop signal
 
     /**
-     * Test seam: when non-null, overrides the configured hook-server port.
-     * Tests set this to 0 to bind an ephemeral port. Never set in production.
-     * Public so tests outside this package (e.g. tool-level tests that need a
-     * real registered server for isFileAllowed()) can use it too.
+     * Test seam: when non-null, overrides the configured hook-server port. Tests set this to 0 to bind an ephemeral
+     * port. Never set in production. Public so tests outside this package (e.g. tool-level tests that need a real
+     * registered server for isFileAllowed()) can use it too.
      */
     public static volatile Integer portOverride = null;
 
     /**
-     * Test seam: supervisor queue-poll / health-tick interval, in milliseconds.
-     * Shorten in tests to assert health-tick behaviour quickly. Production
-     * keeps the 60-second default.
+     * Test seam: supervisor queue-poll / health-tick interval, in milliseconds. Shorten in tests to assert health-tick
+     * behaviour quickly. Production keeps the 60-second default.
      */
-    static volatile long pollIntervalMillis = 60000;
+    static volatile long pollIntervalMillis = TimeoutEnum.MCP_REGISTRY_POLL_INTERVAL_MILLIS.millis();
 
     // ---- Public API (thin — callers only fire events) ----
     /**
-     * Enqueue a REGISTER and return immediately. The returned future completes
-     * with {@code true} once the supervisor has the server running and this
-     * type's hooks/endpoint installed, or {@code false} on any failure. Callers
-     * (the process managers) wait on it with their own timeout and keep their
-     * existing FAILED-StatusEvent + abort behaviour on false/timeout.
+     * Enqueue a REGISTER and return immediately. The returned future completes with {@code true} once the supervisor
+     * has the server running and this type's hooks/endpoint installed, or {@code false} on any failure. Callers (the
+     * process managers) wait on it with their own timeout and keep their existing FAILED-StatusEvent + abort behaviour
+     * on false/timeout.
      */
     public static CompletableFuture<Boolean> register(AiMcpRegistrar registrar) {
         CompletableFuture<Boolean> future = new CompletableFuture<>();
@@ -103,8 +98,8 @@ public final class McpServerRegistry {
     }
 
     /**
-     * Enqueue a DEREGISTER and return immediately (fire-and-forget). No-op if
-     * no supervisor is running (nothing is registered).
+     * Enqueue a DEREGISTER and return immediately (fire-and-forget). No-op if no supervisor is running (nothing is
+     * registered).
      */
     public static void deregister(AiMcpRegistrar registrar) {
         synchronized (SUPERVISOR_LOCK) {
@@ -115,12 +110,13 @@ public final class McpServerRegistry {
     }
 
     /**
-     * Force everything down (Installer.uninstalled). Signals shutdown, enqueues
-     * STOP_ALL, interrupts and briefly joins the supervisor, then drains the
-     * queue completing any pending REGISTER futures with false so no caller
-     * ever hangs. Never nulls the supervisor reference while its thread is
-     * still alive; a later {@link #register} lazily spawns a fresh one with
-     * clean state.
+     * Force everything down (Installer's shutdown path — both normal IDE exit and plugin disable/uninstall). Signals
+     * shutdown, enqueues STOP_ALL, interrupts and joins the supervisor, then drains the queue completing any pending
+     * REGISTER futures with false so no caller ever hangs. The supervisor's exit path undoes each still-registered
+     * type's CLI hooks/endpoint before stopping the server (see {@code teardownRemainingTypes()}), so the join waits
+     * {@link TimeoutEnum#MCP_SHUTDOWN_TEARDOWN_WAIT_MILLIS} — long enough for that bounded teardown, never unbounded.
+     * Never nulls the supervisor reference while its thread is still alive; a later {@link #register} lazily spawns a
+     * fresh one with clean state.
      */
     public static void stopAll() {
         synchronized (SUPERVISOR_LOCK) {
@@ -130,7 +126,7 @@ public final class McpServerRegistry {
                 enqueue(McpRegistryEvent.stopAll());
                 t.interrupt();
                 try {
-                    t.join(2000);
+                    t.join(TimeoutEnum.MCP_SHUTDOWN_TEARDOWN_WAIT_MILLIS.millis());
                 }
                 catch (InterruptedException e) {
                     Thread.currentThread().interrupt();
@@ -154,22 +150,21 @@ public final class McpServerRegistry {
     }
 
     /**
-     * Returns the shared server, or null if no sessions are currently
-     * registered (or the supervisor has not yet brought it up).
+     * Returns the shared server, or null if no sessions are currently registered (or the supervisor has not yet brought
+     * it up).
      */
     public static McpHookServer getServer() {
         return sharedServer;
     }
 
     /**
-     * The MCP endpoint URL for an AI type, or null when the shared server is
-     * not running. Single source of truth for the {@code {base}/mcp/{key}}
-     * route — callers must not build this string themselves, because a future
-     * route change would silently break only those callers.
+     * The MCP endpoint URL for an AI type, or null when the shared server is not running. Single source of truth for
+     * the {@code {base}/mcp/{key}} route — callers must not build this string themselves, because a future route change
+     * would silently break only those callers.
      *
      * <p>
-     * Safe to call from any thread: reads the volatile {@code sharedServer}
-     * once into a local, so the reference cannot flip mid-method.
+     * Safe to call from any thread: reads the volatile {@code sharedServer} once into a local, so the reference cannot
+     * flip mid-method.
      */
     public static String endpointUrlFor(AiTypeEnum type) {
         McpHookServer s = sharedServer;
@@ -230,16 +225,45 @@ public final class McpServerRegistry {
             }
         }
         finally {
-            // Shutdown cleanup so a freshly spawned supervisor starts clean.
+            // Shutdown cleanup so a freshly spawned supervisor starts clean. Clear the
+            // stopAll interrupt before the teardown: it waits on bounded CLI
+            // subprocesses whose waitFor a pending interrupt would abort instantly.
+            Thread.interrupted();
+            teardownRemainingTypes();
             stopServerQuietly();
             registrations.clear();
         }
     }
 
     /**
-     * Handle one event. Wrapped in catch(Throwable) so a poisoned event can
-     * never kill the supervisor (finding 3): the in-flight REGISTER future is
-     * completed false, the error logged SEVERE, and the loop continues.
+     * Undoes each still-registered type's external CLI state (user-scope MCP endpoint + hooks) exactly once as the
+     * supervisor exits. On IDE shutdown / plugin uninstall the closing tabs' DEREGISTER events are still queued and are
+     * discarded once the shutdown flag is set, so without this the endpoint and hook written by
+     * {@code registerHooks}/{@code addMcpEndpoint} would outlive the plugin in the user's CLI config, pointing at a
+     * dead port — permanently on uninstall. Types whose last session already deregistered in-run are no longer in
+     * {@code registrations} and are not touched again. Each registrar call is internally bounded (the CLI commands
+     * self-cap at a few seconds), keeping shutdown cost bounded and typically sub-second. Supervisor thread only.
+     */
+    private static void teardownRemainingTypes() {
+        Map<AiTypeEnum, AiMcpRegistrar> firstOfType = new EnumMap<>(AiTypeEnum.class);
+        for (AiMcpRegistrar registrar : registrations.values()) {
+            firstOfType.putIfAbsent(registrar.getAiType(), registrar);
+        }
+        for (AiMcpRegistrar registrar : firstOfType.values()) {
+            try {
+                registrar.removeMcpEndpoint();
+                registrar.unregisterHooks();
+            }
+            catch (Exception e) {
+                LOG.log(Level.WARNING,
+                        "Hook/endpoint teardown failed for AI type " + registrar.getAiType() + " during shutdown", e);
+            }
+        }
+    }
+
+    /**
+     * Handle one event. Wrapped in catch(Throwable) so a poisoned event can never kill the supervisor (finding 3): the
+     * in-flight REGISTER future is completed false, the error logged SEVERE, and the loop continues.
      */
     private static void handleEvent(McpRegistryEvent event) {
         try {
@@ -331,19 +355,16 @@ public final class McpServerRegistry {
     }
 
     /**
-     * Count of currently-registered sessions of the given AI type (supervisor
-     * thread only).
+     * Count of currently-registered sessions of the given AI type (supervisor thread only).
      */
     private static long typeCount(AiTypeEnum type) {
         return registrations.values().stream().filter(r -> r.getAiType() == type).count();
     }
 
     /**
-     * Enforces the one invariant: registrations non-empty → a running server;
-     * empty → no server. On a health tick, also replaces a server that no
-     * longer accepts connections. Any startup failure is logged and retried on
-     * the next tick (self-heal). Runs only on the supervisor thread and never
-     * throws.
+     * Enforces the one invariant: registrations non-empty → a running server; empty → no server. On a health tick, also
+     * replaces a server that no longer accepts connections. Any startup failure is logged and retried on the next tick
+     * (self-heal). Runs only on the supervisor thread and never throws.
      */
     private static void reconcile(boolean healthTick) {
         McpHookServer s = sharedServer;
@@ -385,8 +406,8 @@ public final class McpServerRegistry {
     }
 
     /**
-     * Cheap liveness probe: can we open a TCP connection to the server's port?
-     * Used only on health ticks to catch a referenced-but-dead listener.
+     * Cheap liveness probe: can we open a TCP connection to the server's port? Used only on health ticks to catch a
+     * referenced-but-dead listener.
      */
     private static boolean isResponsive(McpHookServer server) {
         try (Socket sock = new Socket()) {
@@ -399,10 +420,8 @@ public final class McpServerRegistry {
     }
 
     /**
-     * Create the hook server, retrying briefly on bind failure. After a
-     * previous server is stopped the OS may not release the socket instantly; a
-     * short bounded retry rides out that window so a restart on the same port
-     * succeeds.
+     * Create the hook server, retrying briefly on bind failure. After a previous server is stopped the OS may not
+     * release the socket instantly; a short bounded retry rides out that window so a restart on the same port succeeds.
      */
     private static McpHookServer createServerWithRetry(int port) throws IOException {
         IOException last = null;

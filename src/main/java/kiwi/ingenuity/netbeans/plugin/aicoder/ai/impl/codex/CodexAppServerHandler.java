@@ -7,7 +7,6 @@ import com.github.difflib.patch.PatchFailedException;
 import com.google.gson.JsonArray;
 import com.google.gson.JsonObject;
 import java.io.IOException;
-import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Arrays;
@@ -29,23 +28,20 @@ import kiwi.ingenuity.netbeans.plugin.aicoder.ai.events.TurnCompleteEvent;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.codex.events.CodexRateLimitEvent;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.codex.events.CodexTokenUsageEvent;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.events.AiProcessEventListener;
+import kiwi.ingenuity.netbeans.plugin.aicoder.process.server.McpHookServerUtil;
+import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.providers.netbeans.RefactoringProvider;
 
 /**
- * Maps inbound {@code app-server} traffic to plugin events (design doc §8) and
- * bridges its two approval-request kinds to the plugin's existing
- * {@link ConfirmEvent} confirm flow (§0a "Working flow for the permission
- * bridge"). Combined in one class, like {@code OpenCodeAcpClientHandler},
- * rather than split into the design doc §6 sketch of separate
- * {@code CodexStreamParser}/{@code CodexPermissionBridge} classes: the
- * fileChange approval request carries no diff of its own and depends on the
- * {@code changes[]} cached from an earlier {@code item/started} notification
- * for the same item id, so the two concerns share state and splitting them
- * would only mean passing that cache between two objects.
+ * Maps inbound {@code app-server} traffic to plugin events (design doc §8) and bridges its two approval-request kinds
+ * to the plugin's existing {@link ConfirmEvent} confirm flow (§0a "Working flow for the permission bridge"). Combined
+ * in one class, like {@code OpenCodeAcpClientHandler}, rather than split into the design doc §6 sketch of separate
+ * {@code CodexStreamParser}/{@code CodexPermissionBridge} classes: the fileChange approval request carries no diff of
+ * its own and depends on the {@code changes[]} cached from an earlier {@code item/started} notification for the same
+ * item id, so the two concerns share state and splitting them would only mean passing that cache between two objects.
  *
  * <p>
- * {@link #onNotification} and {@link #onServerRequest} are invoked on
- * {@link CodexJsonRpcClient}'s notify/dispatch executors — never the reader
- * thread, never the EDT.
+ * {@link #onNotification} and {@link #onServerRequest} are invoked on {@link CodexJsonRpcClient}'s notify/dispatch
+ * executors — never the reader thread, never the EDT.
  */
 class CodexAppServerHandler implements CodexNotificationListener, CodexServerRequestHandler, CodexConnectionListener {
 
@@ -62,16 +58,15 @@ class CodexAppServerHandler implements CodexNotificationListener, CodexServerReq
     static final String METHOD_ACCOUNT_RATE_LIMITS_UPDATED = "account/rateLimits/updated";
 
     /**
-     * Extracts {@code item.changes} from an {@code item/started} notification
-     * when the item is a fileChange, for caching by item id. Returns null for
-     * any other item type or malformed payload.
+     * Extracts {@code item.changes} from an {@code item/started} notification when the item is a fileChange, for
+     * caching by item id. Returns null for any other item type or malformed payload.
      */
     static JsonArray extractFileChangeChanges(JsonObject params) {
         if (params == null || !params.has(CodexJsonKeyEnum.ITEM.key()) || !params.get(CodexJsonKeyEnum.ITEM.key()).isJsonObject()) {
             return null;
         }
         JsonObject item = params.getAsJsonObject(CodexJsonKeyEnum.ITEM.key());
-        String type = item.has(CodexJsonKeyEnum.TYPE.key()) && !item.get(CodexJsonKeyEnum.TYPE.key()).isJsonNull() ? item.get(CodexJsonKeyEnum.TYPE.key()).getAsString() : null;
+        String type = item.has(CodexJsonKeyEnum.TYPE.key()) && item.get(CodexJsonKeyEnum.TYPE.key()).isJsonPrimitive() ? item.get(CodexJsonKeyEnum.TYPE.key()).getAsString() : null;
         if (!"fileChange".equals(type)) {
             return null;
         }
@@ -83,21 +78,19 @@ class CodexAppServerHandler implements CodexNotificationListener, CodexServerReq
             return null;
         }
         JsonObject item = params.getAsJsonObject(CodexJsonKeyEnum.ITEM.key());
-        return item.has(CodexJsonKeyEnum.ID.key()) && !item.get(CodexJsonKeyEnum.ID.key()).isJsonNull() ? item.get(CodexJsonKeyEnum.ID.key()).getAsString() : null;
+        return item.has(CodexJsonKeyEnum.ID.key()) && item.get(CodexJsonKeyEnum.ID.key()).isJsonPrimitive() ? item.get(CodexJsonKeyEnum.ID.key()).getAsString() : null;
     }
 
     /**
-     * {@code turn/started}/{@code turn/completed} both carry
-     * {@code turn.status} (design doc:
-     * {@code TurnStartedNotification}/{@code TurnCompletedNotification}
-     * schemas). Returns null on any unexpected shape.
+     * {@code turn/started}/{@code turn/completed} both carry {@code turn.status} (design doc:
+     * {@code TurnStartedNotification}/{@code TurnCompletedNotification} schemas). Returns null on any unexpected shape.
      */
     static String extractTurnStatus(JsonObject params) {
         if (params == null || !params.has(CodexJsonKeyEnum.TURN.key()) || !params.get(CodexJsonKeyEnum.TURN.key()).isJsonObject()) {
             return null;
         }
         JsonObject turn = params.getAsJsonObject(CodexJsonKeyEnum.TURN.key());
-        return turn.has(CodexJsonKeyEnum.STATUS.key()) && !turn.get(CodexJsonKeyEnum.STATUS.key()).isJsonNull() ? turn.get(CodexJsonKeyEnum.STATUS.key()).getAsString() : null;
+        return turn.has(CodexJsonKeyEnum.STATUS.key()) && turn.get(CodexJsonKeyEnum.STATUS.key()).isJsonPrimitive() ? turn.get(CodexJsonKeyEnum.STATUS.key()).getAsString() : null;
     }
 
     static String extractTurnErrorMessage(JsonObject params) {
@@ -109,14 +102,13 @@ class CodexAppServerHandler implements CodexNotificationListener, CodexServerReq
             return null;
         }
         JsonObject error = turn.getAsJsonObject(CodexJsonKeyEnum.ERROR.key());
-        return error.has(CodexJsonKeyEnum.MESSAGE.key()) && !error.get(CodexJsonKeyEnum.MESSAGE.key()).isJsonNull() ? error.get(CodexJsonKeyEnum.MESSAGE.key()).getAsString() : null;
+        return error.has(CodexJsonKeyEnum.MESSAGE.key()) && error.get(CodexJsonKeyEnum.MESSAGE.key()).isJsonPrimitive() ? error.get(CodexJsonKeyEnum.MESSAGE.key()).getAsString() : null;
     }
 
     /**
-     * Extracts the {@code codexErrorInfo} discriminant from a turn error, if
-     * present and a plain string (e.g.
-     * {@code "unauthorized"}, {@code "contextWindowExceeded"}). Returns null
-     * when absent, null in JSON, or a structured variant (object shape).
+     * Extracts the {@code codexErrorInfo} discriminant from a turn error, if present and a plain string (e.g.
+     * {@code "unauthorized"}, {@code "contextWindowExceeded"}). Returns null when absent, null in JSON, or a structured
+     * variant (object shape).
      */
     static String extractTurnCodexErrorInfo(JsonObject params) {
         if (params == null || !params.has(CodexJsonKeyEnum.TURN.key()) || !params.get(CodexJsonKeyEnum.TURN.key()).isJsonObject()) {
@@ -135,11 +127,9 @@ class CodexAppServerHandler implements CodexNotificationListener, CodexServerReq
 
     /**
      * Builds a short, single-line summary of a cached fileChange's {@code
-     * changes[]} for {@link ConfirmEvent#displayText()} — not the raw unified
-     * diff. {@code ConfirmPanel} renders {@code displayText} as one bold HTML
-     * line (design doc out of scope: no diff-panel rendering this slice), so a
-     * multi-line diff dump would collapse unreadably rather than display as
-     * intended.
+     * changes[]} for {@link ConfirmEvent#displayText()} — not the raw unified diff. {@code ConfirmPanel} renders
+     * {@code displayText} as one bold HTML line (design doc out of scope: no diff-panel rendering this slice), so a
+     * multi-line diff dump would collapse unreadably rather than display as intended.
      */
     static String summarizeFileChanges(JsonArray changes) {
         if (changes == null || changes.size() == 0) {
@@ -147,7 +137,7 @@ class CodexAppServerHandler implements CodexNotificationListener, CodexServerReq
         }
         if (changes.size() == 1 && changes.get(0).isJsonObject()) {
             JsonObject c = changes.get(0).getAsJsonObject();
-            String path = c.has(CodexJsonKeyEnum.PATH.key()) && !c.get(CodexJsonKeyEnum.PATH.key()).isJsonNull() ? c.get(CodexJsonKeyEnum.PATH.key()).getAsString() : "a file";
+            String path = c.has(CodexJsonKeyEnum.PATH.key()) && c.get(CodexJsonKeyEnum.PATH.key()).isJsonPrimitive() ? c.get(CodexJsonKeyEnum.PATH.key()).getAsString() : "a file";
             return "Codex wants to modify " + path;
         }
         return "Codex wants to modify " + changes.size() + " files";
@@ -158,19 +148,16 @@ class CodexAppServerHandler implements CodexNotificationListener, CodexServerReq
             return null;
         }
         JsonObject c = changes.get(0).getAsJsonObject();
-        return c.has(CodexJsonKeyEnum.PATH.key()) && !c.get(CodexJsonKeyEnum.PATH.key()).isJsonNull() ? c.get(CodexJsonKeyEnum.PATH.key()).getAsString() : null;
+        return c.has(CodexJsonKeyEnum.PATH.key()) && c.get(CodexJsonKeyEnum.PATH.key()).isJsonPrimitive() ? c.get(CodexJsonKeyEnum.PATH.key()).getAsString() : null;
     }
 
     /**
-     * {@code codexErrorInfo == "unauthorized"} is the schema-documented
-     * plain-string variant, but a live probe against a real 401 (missing bearer
-     * token on the Responses websocket) showed {@code codexErrorInfo} collapse
-     * to the generic string {@code "other"} by the time {@code turn/completed}
-     * fires — the only reliable signal left at that point is the
-     * {@code error.message} text itself ("unexpected status 401 Unauthorized:
-     * ..."). Check both: the schema path in case some other auth failure
-     * genuinely reports it, and the message-text path for the one this project
-     * has actually observed.
+     * {@code codexErrorInfo == "unauthorized"} is the schema-documented plain-string variant, but a live probe against
+     * a real 401 (missing bearer token on the Responses websocket) showed {@code codexErrorInfo} collapse to the
+     * generic string {@code "other"} by the time {@code turn/completed} fires — the only reliable signal left at that
+     * point is the {@code error.message} text itself ("unexpected status 401 Unauthorized: ..."). Check both: the
+     * schema path in case some other auth failure genuinely reports it, and the message-text path for the one this
+     * project has actually observed.
      */
     private static String buildFailedMessage(JsonObject params) {
         String codexErrorInfo = extractTurnCodexErrorInfo(params);
@@ -188,17 +175,15 @@ class CodexAppServerHandler implements CodexNotificationListener, CodexServerReq
     }
 
     /**
-     * Maps a completed {@link PermissionDecision} future to a Codex approval
-     * string. Used by both the {@code decision}-field methods (file-change,
-     * command) and the {@code action}-field method (MCP elicitation); the
+     * Maps a completed {@link PermissionDecision} future to a Codex approval string. Used by both the
+     * {@code decision}-field methods (file-change, command) and the {@code action}-field method (MCP elicitation); the
      * string value is identical.
      *
      * <ul>
      * <li>{@code "accept"} — user approved
-     * <li>{@code "decline"} — user deliberately rejected; agent continues the
-     * turn
-     * <li>{@code "cancel"} — exceptional completion (panel closed, process
-     * interrupted); agent interrupts the turn immediately
+     * <li>{@code "decline"} — user deliberately rejected; agent continues the turn
+     * <li>{@code "cancel"} — exceptional completion (panel closed, process interrupted); agent interrupts the turn
+     * immediately
      * </ul>
      */
     private static String approvalDecision(PermissionDecision decision, Throwable ex) {
@@ -209,15 +194,13 @@ class CodexAppServerHandler implements CodexNotificationListener, CodexServerReq
     }
 
     /**
-     * Applies a Codex unified-diff hunk (the {@code diff} field from an
-     * {@code item/started} {@code changes[]} entry) to {@code original} file
-     * content. The hunk uses standard unified-diff format but carries no
-     * {@code ---}/{@code +++} header lines — those are prepended here so that
-     * {@link UnifiedDiffUtils#parseUnifiedDiff} can locate hunk boundaries.
+     * Applies a Codex unified-diff hunk (the {@code diff} field from an {@code item/started} {@code changes[]} entry)
+     * to {@code original} file content. The hunk uses standard unified-diff format but carries no
+     * {@code ---}/{@code +++} header lines — those are prepended here so that {@link UnifiedDiffUtils#parseUnifiedDiff}
+     * can locate hunk boundaries.
      *
-     * @throws PatchFailedException if the hunk does not match the file content
-     * (stale read, CRLF vs LF, whitespace mismatch); callers fall back to the
-     * blind {@link ConfirmEvent} path
+     * @throws PatchFailedException if the hunk does not match the file content (stale read, CRLF vs LF, whitespace
+     * mismatch); callers fall back to the blind {@link ConfirmEvent} path
      */
     static String applyUnifiedDiff(String original, String diffHunk) throws PatchFailedException {
         List<String> diffLines = Arrays.asList(
@@ -231,15 +214,13 @@ class CodexAppServerHandler implements CodexNotificationListener, CodexServerReq
     private final AiProcessEventListener listener;
     private final Runnable disconnectCallback;
     /**
-     * item id -> changes[] cached from item/started, consumed by the matching
-     * approval request.
+     * item id -> changes[] cached from item/started, consumed by the matching approval request.
      */
     private final ConcurrentHashMap<String, JsonArray> fileChangeCache = new ConcurrentHashMap<>();
     /**
-     * Outstanding approval decision future — at most one per turn (Codex
-     * approvals are sequential: each blocks the turn until answered). Written
-     * by the three raise* methods; read by {@link #cancelPendingPermissions()}
-     * on stop/interrupt.
+     * Outstanding approval decision future — at most one per turn (Codex approvals are sequential: each blocks the turn
+     * until answered). Written by the three raise* methods; read by {@link #cancelPendingPermissions()} on
+     * stop/interrupt.
      */
     private volatile CompletableFuture<PermissionDecision> pendingPermission;
 
@@ -256,12 +237,10 @@ class CodexAppServerHandler implements CodexNotificationListener, CodexServerReq
     }
 
     /**
-     * Cancels any outstanding approval dialog when the turn is stopped or
-     * interrupted. Completes the pending future exceptionally, which routes
-     * through the existing {@link #approvalDecision} path and replies
-     * {@code "cancel"} to Codex — immediately interrupting the turn rather than
-     * leaving the dialog up and the turn wedged. Safe to call when no approval
-     * is in flight.
+     * Cancels any outstanding approval dialog when the turn is stopped or interrupted. Completes the pending future
+     * exceptionally, which routes through the existing {@link #approvalDecision} path and replies {@code "cancel"} to
+     * Codex — immediately interrupting the turn rather than leaving the dialog up and the turn wedged. Safe to call
+     * when no approval is in flight.
      */
     void cancelPendingPermissions() {
         CompletableFuture<PermissionDecision> pf = pendingPermission;
@@ -273,36 +252,49 @@ class CodexAppServerHandler implements CodexNotificationListener, CodexServerReq
 
     @Override
     public void onNotification(String method, JsonObject params) {
+        // item/started notifications for an mcpToolCall item carry the tool's
+        // arguments verbatim, including this session's secretKey — see
+        // announceToolCall's javadoc for the confirmed live shape.
         if (PluginSettings.isDebugJson()) {
-            LOG.log(Level.INFO, "codex notification: {0} {1}", new Object[]{method, params});
+            LOG.log(Level.INFO, "codex notification: {0} {1}",
+                    new Object[]{method, McpHookServerUtil.redactAllSecrets(String.valueOf(params))});
         }
-        switch (method) {
-            case METHOD_AGENT_MESSAGE_DELTA:
-                handleAgentMessageDelta(params);
-                break;
-            case METHOD_ITEM_STARTED:
-                handleItemStarted(params);
-                break;
-            case METHOD_TURN_STARTED:
-                listener.onAiProcessEvent(new StatusEvent(StatusEventTypeEnum.THINKING, ""));
-                break;
-            case METHOD_TURN_COMPLETED:
-                handleTurnCompleted(params);
-                break;
-            case METHOD_THREAD_TOKEN_USAGE:
-                handleTokenUsageUpdated(params);
-                break;
-            case METHOD_ACCOUNT_RATE_LIMITS_UPDATED:
-                handleRateLimitsUpdated(params);
-                break;
-            default:
-                break; // Unrecognised notification — ignore silently, never throw.
+        try {
+            switch (method) {
+                case METHOD_AGENT_MESSAGE_DELTA:
+                    handleAgentMessageDelta(params);
+                    break;
+                case METHOD_ITEM_STARTED:
+                    handleItemStarted(params);
+                    break;
+                case METHOD_TURN_STARTED:
+                    listener.onAiProcessEvent(new StatusEvent(StatusEventTypeEnum.THINKING, ""));
+                    break;
+                case METHOD_TURN_COMPLETED:
+                    handleTurnCompleted(params);
+                    break;
+                case METHOD_THREAD_TOKEN_USAGE:
+                    handleTokenUsageUpdated(params);
+                    break;
+                case METHOD_ACCOUNT_RATE_LIMITS_UPDATED:
+                    handleRateLimitsUpdated(params);
+                    break;
+                default:
+                    break; // Unrecognised notification — ignore silently, never throw.
+            }
+        }
+        catch (Throwable t) {
+            // This executor drains every inbound notification FIFO, so a throw
+            // escaping one malformed payload would silently kill the worker and
+            // drop all later traffic until the next connection. Log and keep
+            // draining instead.
+            LOG.log(Level.WARNING, "codex notification handler threw for " + method, t);
         }
     }
 
     private void handleAgentMessageDelta(JsonObject params) {
-        String delta = params.has(CodexJsonKeyEnum.DELTA.key()) && !params.get(CodexJsonKeyEnum.DELTA.key()).isJsonNull() ? params.get(CodexJsonKeyEnum.DELTA.key()).getAsString() : "";
-        String turnId = params.has(CodexJsonKeyEnum.TURN_ID.key()) && !params.get(CodexJsonKeyEnum.TURN_ID.key()).isJsonNull() ? params.get(CodexJsonKeyEnum.TURN_ID.key()).getAsString() : null;
+        String delta = params.has(CodexJsonKeyEnum.DELTA.key()) && params.get(CodexJsonKeyEnum.DELTA.key()).isJsonPrimitive() ? params.get(CodexJsonKeyEnum.DELTA.key()).getAsString() : "";
+        String turnId = params.has(CodexJsonKeyEnum.TURN_ID.key()) && params.get(CodexJsonKeyEnum.TURN_ID.key()).isJsonPrimitive() ? params.get(CodexJsonKeyEnum.TURN_ID.key()).getAsString() : null;
         listener.onAiProcessEvent(new TextDeltaEvent(delta, turnId));
     }
 
@@ -319,37 +311,32 @@ class CodexAppServerHandler implements CodexNotificationListener, CodexServerReq
     }
 
     /**
-     * Raises a ToolUseEvent for an {@code item/started} notification describing
-     * an MCP tool call, so the UI knows a tool ran between two runs of agent
-     * text.
+     * Raises a ToolUseEvent for an {@code item/started} notification describing an MCP tool call, so the UI knows a
+     * tool ran between two runs of agent text.
      *
      * <p>
-     * That event is what sets AiTopComponent's
-     * {@code pendingNewlineBeforeText}, the only thing that separates the
-     * model's narration either side of a tool call. Codex raised no such event,
-     * so the two blocks were appended to one bubble verbatim and collided — a
-     * live transcript reads "...instruction now.At 00:17 the weather
-     * station...". The blocks carry no trailing whitespace of their own, so the
-     * break has to be synthesised at the only point that knows a tool ran.
+     * That event is what sets AiTopComponent's {@code pendingNewlineBeforeText}, the only thing that separates the
+     * model's narration either side of a tool call. Codex raised no such event, so the two blocks were appended to one
+     * bubble verbatim and collided — a live transcript reads "...instruction now.At 00:17 the weather station...". The
+     * blocks carry no trailing whitespace of their own, so the break has to be synthesised at the only point that knows
+     * a tool ran.
      *
      * <p>
-     * Field names taken from a live notification, not guessed: null null null
-     * null null null     {@code {"item":{"type":"mcpToolCall","tool":"ListAiSessions",
-     * "server":"aicoder-nb-ki-plugin",...}}}. Kind.OTHER with a null path
-     * deliberately — {@code isFileModification()} stays false so no diff panel
-     * is raised; file changes keep their own path below.
+     * Field names taken from a live notification, not guessed: null null null null null null null null null null     {@code {"item":{"type":"mcpToolCall","tool":"ListAiSessions",
+     * "server":"aicoder-nb-ki-plugin",...}}}. Kind.OTHER with a null path deliberately — {@code isFileModification()}
+     * stays false so no diff panel is raised; file changes keep their own path below.
      */
     private void announceToolCall(JsonObject params) {
         if (params == null || !params.has(CodexJsonKeyEnum.ITEM.key()) || !params.get(CodexJsonKeyEnum.ITEM.key()).isJsonObject()) {
             return;
         }
         JsonObject item = params.getAsJsonObject(CodexJsonKeyEnum.ITEM.key());
-        String type = item.has(CodexJsonKeyEnum.TYPE.key()) && !item.get(CodexJsonKeyEnum.TYPE.key()).isJsonNull()
+        String type = item.has(CodexJsonKeyEnum.TYPE.key()) && item.get(CodexJsonKeyEnum.TYPE.key()).isJsonPrimitive()
                 ? item.get(CodexJsonKeyEnum.TYPE.key()).getAsString() : null;
         if (!"mcpToolCall".equals(type)) {
             return;
         }
-        String tool = item.has(CodexJsonKeyEnum.TOOL.key()) && !item.get(CodexJsonKeyEnum.TOOL.key()).isJsonNull()
+        String tool = item.has(CodexJsonKeyEnum.TOOL.key()) && item.get(CodexJsonKeyEnum.TOOL.key()).isJsonPrimitive()
                 ? item.get(CodexJsonKeyEnum.TOOL.key()).getAsString() : "tool";
         listener.onAiProcessEvent(new ToolUseEvent(tool, null, null, null, ToolUseEvent.Kind.OTHER));
     }
@@ -360,7 +347,7 @@ class CodexAppServerHandler implements CodexNotificationListener, CodexServerReq
         }
         JsonObject tokenUsage = params.getAsJsonObject(CodexJsonKeyEnum.TOKEN_USAGE.key());
         long contextWindow = 0L;
-        if (tokenUsage.has(CodexJsonKeyEnum.MODEL_CONTEXT_WINDOW.key()) && !tokenUsage.get(CodexJsonKeyEnum.MODEL_CONTEXT_WINDOW.key()).isJsonNull()) {
+        if (tokenUsage.has(CodexJsonKeyEnum.MODEL_CONTEXT_WINDOW.key()) && tokenUsage.get(CodexJsonKeyEnum.MODEL_CONTEXT_WINDOW.key()).isJsonPrimitive()) {
             contextWindow = tokenUsage.get(CodexJsonKeyEnum.MODEL_CONTEXT_WINDOW.key()).getAsLong();
         }
         if (!tokenUsage.has(CodexJsonKeyEnum.LAST.key()) || !tokenUsage.get(CodexJsonKeyEnum.LAST.key()).isJsonObject()) {
@@ -370,7 +357,7 @@ class CodexAppServerHandler implements CodexNotificationListener, CodexServerReq
         // model context window many times over. `last` is the active turn's
         // context usage and is therefore comparable with modelContextWindow.
         JsonObject last = tokenUsage.getAsJsonObject(CodexJsonKeyEnum.LAST.key());
-        long usedTokens = last.has(CodexJsonKeyEnum.TOTAL_TOKENS.key()) && !last.get(CodexJsonKeyEnum.TOTAL_TOKENS.key()).isJsonNull()
+        long usedTokens = last.has(CodexJsonKeyEnum.TOTAL_TOKENS.key()) && last.get(CodexJsonKeyEnum.TOTAL_TOKENS.key()).isJsonPrimitive()
                 ? last.get(CodexJsonKeyEnum.TOTAL_TOKENS.key()).getAsLong() : 0L;
         if (PluginSettings.isDebugJson()) {
             LOG.log(Level.INFO, "codex tokenUsage: used={0} contextWindow={1}",
@@ -388,13 +375,13 @@ class CodexAppServerHandler implements CodexNotificationListener, CodexServerReq
             return;
         }
         JsonObject primary = rateLimits.getAsJsonObject(CodexJsonKeyEnum.PRIMARY.key());
-        if (!primary.has(CodexJsonKeyEnum.USED_PERCENT.key()) || primary.get(CodexJsonKeyEnum.USED_PERCENT.key()).isJsonNull()) {
+        if (!primary.has(CodexJsonKeyEnum.USED_PERCENT.key()) || !primary.get(CodexJsonKeyEnum.USED_PERCENT.key()).isJsonPrimitive()) {
             return;
         }
         double usedPercent = primary.get(CodexJsonKeyEnum.USED_PERCENT.key()).getAsDouble();
-        long windowDurationMins = primary.has(CodexJsonKeyEnum.WINDOW_DURATION_MINS.key()) && !primary.get(CodexJsonKeyEnum.WINDOW_DURATION_MINS.key()).isJsonNull()
+        long windowDurationMins = primary.has(CodexJsonKeyEnum.WINDOW_DURATION_MINS.key()) && primary.get(CodexJsonKeyEnum.WINDOW_DURATION_MINS.key()).isJsonPrimitive()
                 ? primary.get(CodexJsonKeyEnum.WINDOW_DURATION_MINS.key()).getAsLong() : 0L;
-        long resetsAt = primary.has(CodexJsonKeyEnum.RESETS_AT.key()) && !primary.get(CodexJsonKeyEnum.RESETS_AT.key()).isJsonNull()
+        long resetsAt = primary.has(CodexJsonKeyEnum.RESETS_AT.key()) && primary.get(CodexJsonKeyEnum.RESETS_AT.key()).isJsonPrimitive()
                 ? primary.get(CodexJsonKeyEnum.RESETS_AT.key()).getAsLong() : 0L;
         CodexRateLimitEvent event = new CodexRateLimitEvent(usedPercent, windowDurationMins, resetsAt);
         listener.onAiProcessEvent(event);
@@ -413,26 +400,39 @@ class CodexAppServerHandler implements CodexNotificationListener, CodexServerReq
 
     @Override
     public CompletableFuture<JsonObject> onServerRequest(String method, JsonObject params) {
-        switch (method) {
-            case METHOD_COMMAND_EXECUTION_APPROVAL:
-                return handleCommandExecutionApproval(params);
-            case METHOD_FILE_CHANGE_APPROVAL:
-                return handleFileChangeApproval(params);
-            case METHOD_MCP_ELICITATION:
-                return handleMcpElicitationRequest(params);
-            default:
-                // Unrecognised server request — Slice 4 adds siblings (MCP tool call,
-                // network access). Refuse cleanly rather than leaving Codex's turn
-                // blocked forever on an answer this slice cannot give.
-                return CompletableFuture.failedFuture(
-                        new UnsupportedOperationException("Unhandled Codex server request: " + method));
+        try {
+            switch (method) {
+                case METHOD_COMMAND_EXECUTION_APPROVAL:
+                    return handleCommandExecutionApproval(params);
+                case METHOD_FILE_CHANGE_APPROVAL:
+                    return handleFileChangeApproval(params);
+                case METHOD_MCP_ELICITATION:
+                    return handleMcpElicitationRequest(params);
+                default:
+                    // Unrecognised server request — Slice 4 adds siblings (MCP tool call,
+                    // network access). Refuse cleanly rather than leaving Codex's turn
+                    // blocked forever on an answer this slice cannot give.
+                    return CompletableFuture.failedFuture(
+                            new UnsupportedOperationException("Unhandled Codex server request: " + method));
+            }
+        }
+        catch (Throwable t) {
+            // A handler throwing synchronously must still yield an answer: this
+            // failed future routes through CodexJsonRpcClient's exceptionally
+            // path as a JSON-RPC INTERNAL_ERROR response, so Codex's approval
+            // request is never left hanging until its own timeout wedges the
+            // turn. The throwable itself is logged here and deliberately kept
+            // off the wire.
+            LOG.log(Level.WARNING, "codex server request handler threw for " + method, t);
+            return CompletableFuture.failedFuture(
+                    new IllegalStateException("Internal error handling " + method));
         }
     }
 
     private CompletableFuture<JsonObject> handleCommandExecutionApproval(JsonObject params) {
-        String reason = params.has(CodexJsonKeyEnum.REASON.key()) && !params.get(CodexJsonKeyEnum.REASON.key()).isJsonNull()
+        String reason = params.has(CodexJsonKeyEnum.REASON.key()) && params.get(CodexJsonKeyEnum.REASON.key()).isJsonPrimitive()
                 ? params.get(CodexJsonKeyEnum.REASON.key()).getAsString() : null;
-        String command = params.has(CodexJsonKeyEnum.COMMAND.key()) && !params.get(CodexJsonKeyEnum.COMMAND.key()).isJsonNull()
+        String command = params.has(CodexJsonKeyEnum.COMMAND.key()) && params.get(CodexJsonKeyEnum.COMMAND.key()).isJsonPrimitive()
                 ? params.get(CodexJsonKeyEnum.COMMAND.key()).getAsString() : null;
         String displayText = reason != null ? reason
                 : command != null ? "Codex wants to run: " + command
@@ -441,7 +441,7 @@ class CodexAppServerHandler implements CodexNotificationListener, CodexServerReq
     }
 
     private CompletableFuture<JsonObject> handleFileChangeApproval(JsonObject params) {
-        String itemId = params.has(CodexJsonKeyEnum.ITEM_ID.key()) && !params.get(CodexJsonKeyEnum.ITEM_ID.key()).isJsonNull()
+        String itemId = params.has(CodexJsonKeyEnum.ITEM_ID.key()) && params.get(CodexJsonKeyEnum.ITEM_ID.key()).isJsonPrimitive()
                 ? params.get(CodexJsonKeyEnum.ITEM_ID.key()).getAsString() : null;
         // The approval request itself carries no diff (design doc §0a) — the
         // content arrived moments earlier under the same item id via item/started.
@@ -451,11 +451,11 @@ class CodexAppServerHandler implements CodexNotificationListener, CodexServerReq
         // reviews Codex edits in the same diff panel as the plugin's own edits.
         if (changes != null && changes.size() == 1 && changes.get(0).isJsonObject()) {
             JsonObject c = changes.get(0).getAsJsonObject();
-            String fp = c.has(CodexJsonKeyEnum.PATH.key()) && !c.get(CodexJsonKeyEnum.PATH.key()).isJsonNull() ? c.get(CodexJsonKeyEnum.PATH.key()).getAsString() : null;
-            String diffHunk = c.has(CodexJsonKeyEnum.DIFF.key()) && !c.get(CodexJsonKeyEnum.DIFF.key()).isJsonNull() ? c.get(CodexJsonKeyEnum.DIFF.key()).getAsString() : null;
+            String fp = c.has(CodexJsonKeyEnum.PATH.key()) && c.get(CodexJsonKeyEnum.PATH.key()).isJsonPrimitive() ? c.get(CodexJsonKeyEnum.PATH.key()).getAsString() : null;
+            String diffHunk = c.has(CodexJsonKeyEnum.DIFF.key()) && c.get(CodexJsonKeyEnum.DIFF.key()).isJsonPrimitive() ? c.get(CodexJsonKeyEnum.DIFF.key()).getAsString() : null;
             if (fp != null && diffHunk != null && !diffHunk.isBlank()) {
                 try {
-                    String original = Files.readString(Path.of(fp), StandardCharsets.UTF_8);
+                    String original = Files.readString(Path.of(fp), RefactoringProvider.resolveCharset(fp));
                     String proposed = applyUnifiedDiff(original, diffHunk);
                     if (PluginSettings.isDebugJson()) {
                         LOG.log(Level.INFO, "codex fileChange approval: diff panel path for {0}", fp);
@@ -483,19 +483,16 @@ class CodexAppServerHandler implements CodexNotificationListener, CodexServerReq
     }
 
     /**
-     * Raises a {@link ConfirmEvent} and maps the eventual
-     * {@link PermissionDecision} to Codex's {@code decision} reply shape
-     * (schema: FileChangeRequestApprovalResponse /
-     * CommandExecutionRequestApprovalResponse). Three distinct values:
+     * Raises a {@link ConfirmEvent} and maps the eventual {@link PermissionDecision} to Codex's {@code decision} reply
+     * shape (schema: FileChangeRequestApprovalResponse / CommandExecutionRequestApprovalResponse). Three distinct
+     * values:
      * <ul>
      * <li>{@code "accept"} — user approved
-     * <li>{@code "decline"} — user deliberately rejected; agent continues the
-     * turn
-     * <li>{@code "cancel"} — future completed exceptionally (panel closed,
-     * process stopped); agent interrupts the turn immediately
+     * <li>{@code "decline"} — user deliberately rejected; agent continues the turn
+     * <li>{@code "cancel"} — future completed exceptionally (panel closed, process stopped); agent interrupts the turn
+     * immediately
      * </ul>
-     * Does not block the calling dispatch-thread — chain completes when the
-     * user answers.
+     * Does not block the calling dispatch-thread — chain completes when the user answers.
      */
     private CompletableFuture<JsonObject> raiseConfirmAndReply(String toolName, String displayText, String filePath) {
         CompletableFuture<PermissionDecision> decisionFuture = new CompletableFuture<>();
@@ -509,10 +506,9 @@ class CodexAppServerHandler implements CodexNotificationListener, CodexServerReq
     }
 
     /**
-     * Like {@link #raiseConfirmAndReply} but raises a {@link PermissionEvent}
-     * so the user sees the full Accept/Reject diff panel, identical to the
-     * plugin's own {@code ApplyEdit}/{@code WriteFile} review. Same
-     * {@code decision} reply shape and decline-vs-cancel semantics.
+     * Like {@link #raiseConfirmAndReply} but raises a {@link PermissionEvent} so the user sees the full Accept/Reject
+     * diff panel, identical to the plugin's own {@code ApplyEdit}/{@code WriteFile} review. Same {@code decision} reply
+     * shape and decline-vs-cancel semantics.
      */
     private CompletableFuture<JsonObject> raisePermissionAndReply(String filePath, String proposed) {
         CompletableFuture<PermissionDecision> decisionFuture = new CompletableFuture<>();
@@ -526,23 +522,19 @@ class CodexAppServerHandler implements CodexNotificationListener, CodexServerReq
     }
 
     /**
-     * Handles {@code mcpServer/elicitation/request} — gating IDE MCP tool calls
-     * that Codex routes through this approval channel. Unlike
-     * file-change/command approvals, the response field is {@code "action"}
-     * (not {@code "decision"}), and the vocabulary has no
-     * {@code acceptForSession} — only {@code accept | decline | cancel}
-     * (schema: McpServerElicitationRequestResponse).
+     * Handles {@code mcpServer/elicitation/request} — gating IDE MCP tool calls that Codex routes through this approval
+     * channel. Unlike file-change/command approvals, the response field is {@code "action"} (not {@code "decision"}),
+     * and the vocabulary has no {@code acceptForSession} — only {@code accept | decline | cancel} (schema:
+     * McpServerElicitationRequestResponse).
      *
      * <p>
-     * NOTE: {@code persist:["session","always"]} in {@code _meta} signals
-     * auto-accept intent. This is NOT wired here — the decision to expose
-     * auto-accept to the user must be made deliberately (flagged for a future
-     * slice).
+     * NOTE: {@code persist:["session","always"]} in {@code _meta} signals auto-accept intent. This is NOT wired here —
+     * the decision to expose auto-accept to the user must be made deliberately (flagged for a future slice).
      */
     private CompletableFuture<JsonObject> handleMcpElicitationRequest(JsonObject params) {
-        String message = params.has(CodexJsonKeyEnum.MESSAGE.key()) && !params.get(CodexJsonKeyEnum.MESSAGE.key()).isJsonNull()
+        String message = params.has(CodexJsonKeyEnum.MESSAGE.key()) && params.get(CodexJsonKeyEnum.MESSAGE.key()).isJsonPrimitive()
                 ? params.get(CodexJsonKeyEnum.MESSAGE.key()).getAsString() : null;
-        String serverName = params.has(CodexJsonKeyEnum.SERVER_NAME.key()) && !params.get(CodexJsonKeyEnum.SERVER_NAME.key()).isJsonNull()
+        String serverName = params.has(CodexJsonKeyEnum.SERVER_NAME.key()) && params.get(CodexJsonKeyEnum.SERVER_NAME.key()).isJsonPrimitive()
                 ? params.get(CodexJsonKeyEnum.SERVER_NAME.key()).getAsString() : null;
         String displayText = message != null ? message
                 : serverName != null ? "MCP server \'" + serverName + "\' requests approval"

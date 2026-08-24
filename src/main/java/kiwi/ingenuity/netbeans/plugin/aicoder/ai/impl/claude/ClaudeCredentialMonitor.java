@@ -5,29 +5,25 @@ import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
 import java.util.logging.Level;
 import java.util.logging.Logger;
+import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.TimeoutEnum;
 
 /**
- * Watches the Claude OAuth credentials file and, when the user
- * (re-)authenticates after the plugin has started, proactively refreshes the
- * usage/model data.
+ * Watches the Claude OAuth credentials file and, when the user (re-)authenticates after the plugin has started,
+ * proactively refreshes the usage/model data.
  *
  * <p>
- * The usage/model fetches are otherwise only triggered by UI events (tab
- * switch, session start, turn complete), so a {@code claude login} performed
- * while the panel simply sits idle would go unnoticed until the next such
- * event. This monitor polls the credentials file's modification time on a cheap
- * fixed interval and, on a change, drops any stale rate limit and re-fetches —
- * so a late login recovers on its own rather than staying blank until an IDE
- * restart.
+ * The usage/model fetches are otherwise only triggered by UI events (tab switch, session start, turn complete), so a
+ * {@code claude login} performed while the panel simply sits idle would go unnoticed until the next such event. This
+ * monitor polls the credentials file's modification time on a cheap fixed interval and, on a change, drops any stale
+ * rate limit and re-fetches — so a late login recovers on its own rather than staying blank until an IDE restart.
  *
  * <p>
- * Lifecycle is owned by {@code Installer}: {@link #start()} on plugin
- * activation, {@link #stop()} on uninstall.
+ * Lifecycle is owned by Claude's type lifecycle: {@link #start()} when the first Claude session is created,
+ * {@link #stop()} on plugin uninstall.
  */
 public final class ClaudeCredentialMonitor {
 
     private static final Logger LOG = Logger.getLogger(ClaudeCredentialMonitor.class.getName());
-    private static final long POLL_INTERVAL_SECONDS = 30;
 
     private static final ClaudeCredentialMonitor INSTANCE = new ClaudeCredentialMonitor();
 
@@ -41,8 +37,7 @@ public final class ClaudeCredentialMonitor {
     }
 
     /**
-     * Starts polling. Idempotent — a second call while already running is a
-     * no-op.
+     * Starts polling. Idempotent — a second call while already running is a no-op.
      */
     public synchronized void start() {
         if (scheduler != null) {
@@ -54,7 +49,8 @@ public final class ClaudeCredentialMonitor {
             return t;
         });
         scheduler.scheduleWithFixedDelay(this::poll,
-                POLL_INTERVAL_SECONDS, POLL_INTERVAL_SECONDS, TimeUnit.SECONDS);
+                TimeoutEnum.CLAUDE_CREDENTIAL_POLL_MILLIS.millis(),
+                TimeoutEnum.CLAUDE_CREDENTIAL_POLL_MILLIS.millis(), TimeUnit.MILLISECONDS);
     }
 
     /**

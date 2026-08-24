@@ -18,6 +18,7 @@ import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.TimeUnit;
 import java.util.logging.Level;
 import java.util.logging.Logger;
+import kiwi.ingenuity.netbeans.plugin.aicoder.Installer;
 import kiwi.ingenuity.netbeans.plugin.aicoder.PluginSettings;
 import kiwi.ingenuity.netbeans.plugin.aicoder.StringConst;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.AiProcessManager;
@@ -34,36 +35,31 @@ import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.opencode.settings.OpenCode
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.opencode.settings.OpenCodeSessionSettings;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.session.InterruptTypeEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.events.AiProcessEventListener;
+import kiwi.ingenuity.netbeans.plugin.aicoder.process.server.McpHookServerUtil;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.server.McpServerRegistry;
 import kiwi.ingenuity.netbeans.plugin.aicoder.utils.StatusMessageUtil;
 
 /**
- * Manages an OpenCode agent via one long-lived {@code opencode acp} process per
- * plugin session. The process is spawned lazily on the first
- * {@link #sendPrompt} call. MCP wiring is deferred to a later slice.
+ * Manages an OpenCode agent via one long-lived {@code opencode acp} process per plugin session. The process is spawned
+ * lazily on the first {@link #sendPrompt} call. MCP wiring is deferred to a later slice.
  *
  * <p>
- * <b>Safety invariant:</b> The child process is always launched with
- * {@code OPENCODE_CONFIG_CONTENT} set to force {@code ask} permission for all
- * file edits, bash commands and external-directory access. Without this,
- * OpenCode's defaults allow silent file mutations even when the client
- * advertises {@code fs.writeTextFile} capability — confirmed by live probe
- * (design doc §4).
+ * <b>Safety invariant:</b> The child process is always launched with {@code OPENCODE_CONFIG_CONTENT} set to force
+ * {@code ask} permission for all file edits, bash commands and external-directory access. Without this, OpenCode's
+ * defaults allow silent file mutations even when the client advertises {@code fs.writeTextFile} capability — confirmed
+ * by live probe (design doc §4).
  */
 public class OpenCodeAiProcessManager extends AiProcessManager {
 
     private static final Logger LOG = Logger.getLogger(OpenCodeAiProcessManager.class.getName());
     private static final Gson GSON = new GsonBuilder().disableHtmlEscaping().create();
     private static final int MAX_STDERR_LINES = 100;
-    static final String PLUGIN_VERSION = "1.2";
 
     /**
-     * Builds the value for the OPENCODE_CONFIG_CONTENT environment variable.
-     * Forces "ask" permission for all edit, bash and external-directory
-     * operations, and denies sub-agent spawning outright. This MERGES with the
-     * user's existing config — it does not replace it (verified by live probe,
-     * design doc §4) — so it constrains only the sessions this plugin launches
-     * and leaves the user's own {@code opencode} CLI usage alone.
+     * Builds the value for the OPENCODE_CONFIG_CONTENT environment variable. Forces "ask" permission for all edit, bash
+     * and external-directory operations, and denies sub-agent spawning outright. This MERGES with the user's existing
+     * config — it does not replace it (verified by live probe, design doc §4) — so it constrains only the sessions this
+     * plugin launches and leaves the user's own {@code opencode} CLI usage alone.
      */
     static String buildPermissionConfigJson() {
         JsonObject permission = new JsonObject();
@@ -150,8 +146,10 @@ public class OpenCodeAiProcessManager extends AiProcessManager {
                 ? sessionResult.get(AcpJsonKeyEnum.SESSION_ID.key()).getAsString() : null;
     }
 
-    private volatile AcpConnection connection = null;
-    private volatile String acpSessionId = null;
+    // Package-private like pendingAcpResumeId/sessionConfigOptions below, so tests
+    // can inject a pipe-backed AcpConnection and assert wire ordering.
+    volatile AcpConnection connection = null;
+    volatile String acpSessionId = null;
     volatile String pendingAcpResumeId = null;
     volatile JsonArray sessionConfigOptions = null;
     private volatile OpenCodeAcpClientHandler activeHandler = null;
@@ -187,6 +185,15 @@ public class OpenCodeAiProcessManager extends AiProcessManager {
         }
         sessionId = currentSession.id();
 
+        // Opt-in hardening (off by default): pin experimental.mcp_timeout into
+        // the user's global OpenCode config so long MCP tool calls survive
+        // OpenCode's short default. Invasive enough to stay behind a flag — it
+        // persists outside the IDE and applies to every server, not just ours.
+        // See OpenCodeMcpTimeoutPinner.
+        if (OpenCodeMcpTimeoutPinner.PIN_MCP_TIMEOUT) {
+            OpenCodeMcpTimeoutPinner.applyMcpTimeoutPin();
+        }
+
         // MCP registration: start the shared HTTP server. Degrade gracefully on failure.
         OpenCodeAiMcpRegistrar reg = new OpenCodeAiMcpRegistrar(sessionId);
         try {
@@ -218,12 +225,10 @@ public class OpenCodeAiProcessManager extends AiProcessManager {
     }
 
     /**
-     * Spawns the opencode process and performs the ACP handshake. Always called
-     * on a background thread — this method blocks up to 30 s on
-     * {@code initialize} and again on {@code session/new}. The instance monitor
-     * is held only for brief state writes, never across the blocking waits, so
-     * other synchronized methods (stop(), cancel via interrupt()) can run
-     * concurrently.
+     * Spawns the opencode process and performs the ACP handshake. Always called on a background thread — this method
+     * blocks up to 30 s on {@code initialize} and again on {@code session/new}. The instance monitor is held only for
+     * brief state writes, never across the blocking waits, so other synchronized methods (stop(), cancel via
+     * interrupt()) can run concurrently.
      */
     protected void spawnAndHandshake(File workDir) throws Exception {
         List<String> cmd = OpenCodeExecutableLocator.buildHostCommand(
@@ -255,7 +260,7 @@ public class OpenCodeAiProcessManager extends AiProcessManager {
         // ---- Blocking wait 1: initialize (outside the monitor) ----
         JsonObject initResult;
         try {
-            initResult = conn.sendRequest(AcpMethodEnum.INITIALIZE, buildInitializeParams(PLUGIN_VERSION))
+            initResult = conn.sendRequest(AcpMethodEnum.INITIALIZE, buildInitializeParams(Installer.VERSION))
                     .get(30, TimeUnit.SECONDS);
         }
         catch (Exception e) {
@@ -401,15 +406,12 @@ public class OpenCodeAiProcessManager extends AiProcessManager {
     }
 
     /**
-     * Reconciles the session's chosen model against what the agent actually
-     * started with. {@code session/new} carries no model parameter — OpenCode
-     * always picks its own model when a session is created — so without this,
-     * every session silently ran whatever OpenCode defaulted to (typically
-     * {@code opencode/big-pickle}) regardless of what the user chose per
-     * session. Unlike mode/effort, an unavailable choice is never silently
-     * substituted here: it is surfaced (status message + log) instead, because
-     * running a different model than the user asked for without telling them is
-     * the entire bug this method exists to fix.
+     * Reconciles the session's chosen model against what the agent actually started with. {@code session/new} carries
+     * no model parameter — OpenCode always picks its own model when a session is created — so without this, every
+     * session silently ran whatever OpenCode defaulted to (typically {@code opencode/big-pickle}) regardless of what
+     * the user chose per session. Unlike mode/effort, an unavailable choice is never silently substituted here: it is
+     * surfaced (status message + log) instead, because running a different model than the user asked for without
+     * telling them is the entire bug this method exists to fix.
      */
     private boolean applyInitialModelOption(OpenCodeSessionSettings s) {
         String agentCurrentModel = null;
@@ -579,7 +581,7 @@ public class OpenCodeAiProcessManager extends AiProcessManager {
                 String line;
                 while ((line = reader.readLine()) != null) {
                     if (PluginSettings.isDebugJson()) {
-                        LOG.log(Level.WARNING, "opencode stderr: {0}", line);
+                        LOG.log(Level.WARNING, "opencode stderr: {0}", McpHookServerUtil.redactAllSecrets(line));
                     }
                     recentStderr.add(line);
                     while (recentStderr.size() > MAX_STDERR_LINES) {
@@ -645,10 +647,10 @@ public class OpenCodeAiProcessManager extends AiProcessManager {
     }
 
     /**
-     * Background-thread entry point when no ACP connection exists yet. Calls
-     * {@link #spawnAndHandshake} (which blocks up to 60 s), then re-enters
-     * {@link #sendPrompt} once the connection is live. Runs entirely outside
-     * the instance monitor during the blocking wait.
+     * Background-thread entry point when no ACP connection exists yet. Calls {@link #spawnAndHandshake} (which blocks
+     * up to 60 s), then hands the prompt to {@link #sendTurn} once the connection is live — holding {@code processing}
+     * true across the hand-off so an EDT {@link #sendPrompt} landing in between cannot slip past its guard and start a
+     * duplicate turn/handshake. Runs entirely outside the instance monitor during the blocking wait.
      */
     private void handshakeAndSend(String text, File workDir, List<File> projectDirs) {
         try {
@@ -662,18 +664,30 @@ public class OpenCodeAiProcessManager extends AiProcessManager {
                     StatusMessageUtil.formatSendFailed(e.getMessage())));
             return;
         }
-        // Reset processing so the re-entry into sendPrompt can rearm it.
-        synchronized (this) {
-            processing = false;
-            if (!running) {
-                return; // stop() was called while we were handshaking
-            }
-        }
-        // Connection is now established; re-enter the normal send path.
-        sendPrompt(text, workDir, projectDirs);
+        deliverAfterHandshake(text);
     }
 
-    private synchronized void sendTurn(String text) {
+    /**
+     * Post-handshake delivery of the prompt queued by {@link #sendPrompt}, extracted from {@link #handshakeAndSend} so
+     * tests can drive the hand-off without spawning a real CLI. Keep {@code processing} true through the hand-off
+     * below: sendTurn rearms it, so only paths that never reach sendTurn clear it — exactly once, under the monitor.
+     * Clearing it unconditionally here reopened a window in which an EDT sendPrompt saw !processing and raced this
+     * thread with a second submit.
+     */
+    void deliverAfterHandshake(String text) {
+        synchronized (this) {
+            if (!running || pendingDiff) {
+                processing = false; // stop()/diff panel won the race; nobody else will rearm
+                return;
+            }
+        }
+        // Connection is now established; deliver through the normal turn path. Deliberately
+        // sendTurn(), not sendPrompt(): with processing still held true, sendPrompt's own
+        // guard would reject the re-entry and silently drop the prompt.
+        sendTurn(text);
+    }
+
+    synchronized void sendTurn(String text) {
         JsonObject promptItem = new JsonObject();
         promptItem.addProperty(AcpJsonKeyEnum.TYPE.key(), "text");
         promptItem.addProperty(AcpJsonKeyEnum.TEXT.key(), text);
@@ -779,14 +793,25 @@ public class OpenCodeAiProcessManager extends AiProcessManager {
             h.cancelPendingPermissions();
         }
         if (conn != null && sid != null) {
-            JsonObject params = new JsonObject();
-            params.addProperty(AcpJsonKeyEnum.SESSION_ID.key(), sid);
-            conn.sendNotification(AcpMethodEnum.SESSION_CANCEL, params);
+            sendCancelNotification(conn, sid);
             if (PluginSettings.isDebugJson()) {
                 LOG.log(Level.INFO, "OpenCode interrupt: session/cancel sent (session={0})", sid);
             }
         }
         listener.onAiProcessEvent(new StatusEvent(StatusEventTypeEnum.STOPPED, StatusMessageUtil.formatStopped()));
+    }
+
+    /**
+     * Sends {@code session/cancel} as a fire-and-forget notification over the given connection. The one shared
+     * mechanism for every cancel — mid-turn interrupts and teardown alike — so the two paths cannot drift apart again
+     * (stop() historically forgot the cancel entirely; review finding I2). Harmless when no turn is in flight: a
+     * JSON-RPC notification expects no response, so no error can come back, and an agent with nothing to cancel simply
+     * ignores it.
+     */
+    private void sendCancelNotification(AcpConnection conn, String sid) {
+        JsonObject params = new JsonObject();
+        params.addProperty(AcpJsonKeyEnum.SESSION_ID.key(), sid);
+        conn.sendNotification(AcpMethodEnum.SESSION_CANCEL, params);
     }
 
     @Override
@@ -816,17 +841,45 @@ public class OpenCodeAiProcessManager extends AiProcessManager {
             h.cancelPendingPermissions();
         }
         if (conn != null && sid != null) {
-            try {
-                JsonObject params = new JsonObject();
-                params.addProperty(AcpJsonKeyEnum.SESSION_ID.key(), sid);
-                conn.sendRequest(AcpMethodEnum.SESSION_CLOSE, params).get(5, TimeUnit.SECONDS);
-            }
-            catch (Exception e) {
-                LOG.log(Level.FINE, "session/close timed out or failed during stop", e);
-            }
-            conn.close();
+            // Cancel in-flight work BEFORE session/close. The ACP spec makes
+            // close imply cancellation, so an agent answers close only after
+            // its own wind-down finishes — for a long tool call that can exceed
+            // the bounded wait below, and "graceful close" silently degrades to
+            // an abrupt kill exactly when work was running. Sending the cancel
+            // first means the agent is already cancelling by the time the close
+            // request arrives, so the wait now covers only the tail of that
+            // wind-down. Sent unconditionally: harmless when idle (a
+            // notification expects no response), and unconditional cannot drift
+            // from the turn state the way a gate could.
+            sendCancelNotification(conn, sid);
+            JsonObject params = new JsonObject();
+            params.addProperty(AcpJsonKeyEnum.SESSION_ID.key(), sid);
+            CompletableFuture<JsonObject> closeFuture = conn.sendRequest(AcpMethodEnum.SESSION_CLOSE, params);
+            // stop() runs synchronously from AiTopComponent.componentClosed() (EDT), so the
+            // bounded wait for session/close's response must happen on a background thread,
+            // never here — mirrors ClaudePersistentSession.close()'s reaper thread. The
+            // graceful close is still attempted (that is why the cancel notification above is
+            // sent first); conn.close()/proc.destroy() just run unconditionally once the wait
+            // returns or times out, instead of blocking the caller for it.
+            Thread reaper = new Thread(() -> {
+                try {
+                    closeFuture.get(OpenCodeTimeoutEnum.SESSION_CLOSE_WAIT_MILLIS.millis(), TimeUnit.MILLISECONDS);
+                }
+                catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                }
+                catch (Exception e) {
+                    LOG.log(Level.FINE, "session/close timed out or failed during stop", e);
+                }
+                conn.close();
+                if (proc != null) {
+                    proc.destroy();
+                }
+            }, "opencode-stop-reaper");
+            reaper.setDaemon(true);
+            reaper.start();
         }
-        if (proc != null) {
+        else if (proc != null) {
             proc.destroy();
         }
 
@@ -875,21 +928,19 @@ public class OpenCodeAiProcessManager extends AiProcessManager {
     }
 
     /**
-     * The configOptions array captured from the session/new response (design
-     * doc §13). Null before the ACP handshake completes.
+     * The configOptions array captured from the session/new response (design doc §13). Null before the ACP handshake
+     * completes.
      */
     public JsonArray configOptions() {
         return sessionConfigOptions;
     }
 
     /**
-     * Changes one session config option (model, effort, or mode — the only
-     * three ids OpenCode accepts; anything else fails server-side with
-     * InvalidConfigOptionError). Completes with the COMPLETE configOptions
-     * snapshot from the response, not just the changed entry — options are
-     * interdependent (e.g. effort depends on the selected model), and no
-     * config_option_update notification is sent for this change, so the
-     * response is the only source of truth (design doc §13).
+     * Changes one session config option (model, effort, or mode — the only three ids OpenCode accepts; anything else
+     * fails server-side with InvalidConfigOptionError). Completes with the COMPLETE configOptions snapshot from the
+     * response, not just the changed entry — options are interdependent (e.g. effort depends on the selected model),
+     * and no config_option_update notification is sent for this change, so the response is the only source of truth
+     * (design doc §13).
      */
     public CompletableFuture<JsonArray> setConfigOption(String configId, String value) {
         AcpConnection conn = connection;

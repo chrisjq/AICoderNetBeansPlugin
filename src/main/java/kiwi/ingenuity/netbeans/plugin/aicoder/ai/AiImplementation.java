@@ -18,9 +18,8 @@ public abstract class AiImplementation {
     protected final AiTypeEnum type;
     protected final AiProcessEventListener listener;
     /**
-     * UI-side hook for locating a missing CLI executable (shows a file chooser)
-     * without this class needing to know about Swing/EDT. See
-     * {@link ExecutablePrompter}.
+     * UI-side hook for locating a missing CLI executable (shows a file chooser) without this class needing to know
+     * about Swing/EDT. See {@link ExecutablePrompter}.
      */
     protected final ExecutablePrompter prompter;
     /**
@@ -53,8 +52,8 @@ public abstract class AiImplementation {
     }
 
     /**
-     * Graceful interrupt that aborts the in-flight turn. Backends that support
-     * a graceful interrupt keep partial output; others terminate the process.
+     * Graceful interrupt that aborts the in-flight turn. Backends that support a graceful interrupt keep partial
+     * output; others terminate the process.
      */
     public void interrupt(InterruptTypeEnum type) {
         delegate().interrupt(type);
@@ -111,6 +110,14 @@ public abstract class AiImplementation {
 
     public AiInfoBarExtension createInfoBarExtension(AiSession session, AiSessionHost host) {
         return null;
+    }
+
+    /**
+     * Type-wide services that should start when the first session of this AI type is created. The registry owns this
+     * object rather than retaining this UI-bound implementation instance until plugin shutdown.
+     */
+    public AiTypeLifecycle typeLifecycle() {
+        return AiTypeLifecycle.NO_OP;
     }
 
     public void registerLifecycleListeners(SessionLifecycleSource source) {

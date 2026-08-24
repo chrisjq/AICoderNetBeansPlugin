@@ -26,27 +26,23 @@ import kiwi.ingenuity.netbeans.plugin.aicoder.process.events.AiProcessEventListe
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.server.McpHookServerUtil;
 
 /**
- * Registers typed SDK event listeners on a live CopilotSession and translates
- * them into the plugin's AiProcessEvent types. Replaces
- * GithubCopilotStreamJsonParser (which parsed copilot -p's JSON-line stdout) —
- * the SDK delivers typed events directly over the persistent session, so there
- * is no line parsing left to do. Registered once per session, not per turn.
+ * Registers typed SDK event listeners on a live CopilotSession and translates them into the plugin's AiProcessEvent
+ * types. Replaces GithubCopilotStreamJsonParser (which parsed copilot -p's JSON-line stdout) — the SDK delivers typed
+ * events directly over the persistent session, so there is no line parsing left to do. Registered once per session, not
+ * per turn.
  */
 public final class GithubCopilotSessionEventBridge {
 
     private static final Logger LOG = Logger.getLogger(GithubCopilotSessionEventBridge.class.getName());
 
     /**
-     * Raw SDK-event logging, gated on the same debug flag Claude and Ollama
-     * use. The Copilot path had none, so a turn that produced no output left
-     * nothing to inspect. Logs the event type and its data on every event.
+     * Raw SDK-event logging, gated on the same debug flag Claude and Ollama use. The Copilot path had none, so a turn
+     * that produced no output left nothing to inspect. Logs the event type and its data on every event.
      */
     /**
-     * Expands a tool's arguments into one log property per key, so the line
-     * reads {@code path[/x/README.md]} like the MCP tools rather than a single
-     * {@code arguments[{path=...}]} blob. The SDK hands arguments back as an
-     * Object that is a String-keyed Map in practice; anything else is logged
-     * whole under a single key.
+     * Expands a tool's arguments into one log property per key, so the line reads {@code path[/x/README.md]} like the
+     * MCP tools rather than a single {@code arguments[{path=...}]} blob. The SDK hands arguments back as an Object that
+     * is a String-keyed Map in practice; anything else is logged whole under a single key.
      */
     private static JsonObject toArgsObject(Object arguments) {
         JsonObject obj = new JsonObject();
@@ -84,17 +80,15 @@ public final class GithubCopilotSessionEventBridge {
     }
 
     /**
-     * Registers a callback for a human-readable error reported mid-session
-     * (e.g. quota exceeded, rate limited). The plugin surfaces this in the
-     * turn's exit message so the user sees why a turn produced no output.
+     * Registers a callback for a human-readable error reported mid-session (e.g. quota exceeded, rate limited). The
+     * plugin surfaces this in the turn's exit message so the user sees why a turn produced no output.
      */
     public void setOnError(Consumer<String> cb) {
         this.onError = cb;
     }
 
     /**
-     * Session name used to prefix tool-use log lines, matching the other
-     * backends.
+     * Session name used to prefix tool-use log lines, matching the other backends.
      */
     public void setSessionNameSupplier(Supplier<String> supplier) {
         if (supplier != null) {
@@ -126,7 +120,16 @@ public final class GithubCopilotSessionEventBridge {
         // double lines.
         session.on(ToolExecutionStartEvent.class, e -> {
             ToolExecutionStartEvent.ToolExecutionStartEventData data = e.getData();
-            logRaw("tool.start", data);
+            // Not logRaw(): data.arguments() carries this session's secretKey for
+            // MCP tool calls, and an opaque third-party toString() is not something
+            // we can guarantee stays secret-free today or after an SDK upgrade — a
+            // security-sensitive log line must be built only from named accessors we
+            // control, never from an object we do not own the shape of.
+            if (PluginSettings.isDebugJson()) {
+                LOG.log(Level.INFO, "copilot event [tool.start]: toolName={0} mcpServerName={1}",
+                        new Object[]{data == null ? null : data.toolName(),
+                            data == null ? null : data.mcpServerName()});
+            }
             if (data == null || !PluginSettings.isLogToolUse()) {
                 return;
             }

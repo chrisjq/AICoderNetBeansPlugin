@@ -9,7 +9,6 @@ import java.awt.Window;
 import java.beans.PropertyChangeListener;
 import java.io.File;
 import java.io.IOException;
-import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
@@ -74,6 +73,10 @@ import kiwi.ingenuity.netbeans.plugin.aicoder.process.events.AiProcessEvent;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.events.AiProcessEventListener;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.events.AiProcessImplEvent;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.server.McpHookServer;
+import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.TempFileRegistry;
+import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.TimeoutEnum;
+import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.TmpMarkerExpander;
+import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.providers.netbeans.RefactoringProvider;
 import kiwi.ingenuity.netbeans.plugin.aicoder.serialization.HistoryPersistenceManager;
 import kiwi.ingenuity.netbeans.plugin.aicoder.serialization.HistoryPersistenceManager.LoadedHistory;
 import kiwi.ingenuity.netbeans.plugin.aicoder.serialization.SessionPersistenceManager;
@@ -100,11 +103,10 @@ public final class AiTopComponent extends TopComponent implements AiProcessEvent
     // Safe to parallelize because ordering *within* one tab's own chain is now
     // enforced explicitly, not by relying on single-thread submission order — see
     // the CompletableFuture threaded through startAiProcess()/loadHistory().
-    private static final ExecutorService PERSIST_EXECUTOR = Executors.newFixedThreadPool(4, r -> {
-        Thread t = new Thread(r, "ai-session-persist");
-        t.setDaemon(true);
-        return t;
-    });
+    // Volatile, not final: shutdownPersistExecutor() retires it at plugin shutdown
+    // and resetPersistExecutorForTests() swaps in a fresh pool between tests.
+    private static volatile ExecutorService PERSIST_EXECUTOR = newPersistExecutor();
+
     // Tab status circle:
     //   green  = ready / idle (AI is running and waiting for user input),
     //   orange = AI is thinking (a turn is in flight),
@@ -138,6 +140,50 @@ public final class AiTopComponent extends TopComponent implements AiProcessEvent
     // its minimum and its initial size, so the window always opens at the
     // minimum. Set here in one place to adjust the input area size.
     private static final int INPUT_AREA_HEIGHT = 80;
+
+    private static ExecutorService newPersistExecutor() {
+        return Executors.newFixedThreadPool(4, r -> {
+            Thread t = new Thread(r, "ai-session-persist");
+            t.setDaemon(true);
+            return t;
+        });
+    }
+
+    /**
+     * Retires the shared persist pool at plugin shutdown: lets already-queued history/session saves finish inside a
+     * bounded window ({@link TimeoutEnum#PERSIST_EXECUTOR_SHUTDOWN_WAIT_MILLIS}) rather than discarding them, then
+     * releases the worker threads. Without this the four core threads never terminate, and after a disable/uninstall
+     * without an IDE restart they pin the module's classloader for the rest of the IDE run. Called only by the module
+     * installer's shutdown path.
+     */
+    public static void shutdownPersistExecutor() {
+        ExecutorService pool = PERSIST_EXECUTOR;
+        pool.shutdown();
+        try {
+            if (!pool.awaitTermination(TimeoutEnum.PERSIST_EXECUTOR_SHUTDOWN_WAIT_MILLIS.millis(),
+                    TimeUnit.MILLISECONDS)) {
+                LOG.warning("Session-persist tasks still running at plugin shutdown; abandoning the bounded wait");
+            }
+        }
+        catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+        }
+    }
+
+    /**
+     * The live shared pool (test aid).
+     */
+    static ExecutorService persistExecutor() {
+        return PERSIST_EXECUTOR;
+    }
+
+    /**
+     * Replaces a retired pool with a fresh one so later tests sharing this JVM still have a working executor (test aid
+     * — production shuts down exactly once, at plugin shutdown).
+     */
+    static void resetPersistExecutorForTests() {
+        PERSIST_EXECUTOR = newPersistExecutor();
+    }
 
     private static String toHex(Color color) {
         return String.format("#%02X%02X%02X", color.getRed(), color.getGreen(), color.getBlue());
@@ -286,7 +332,7 @@ public final class AiTopComponent extends TopComponent implements AiProcessEvent
         conversationPanel = new ConversationPanel();
         promptHistory = new PromptHistory();
         infoBar = new AiInfoBar();
-        inputField = new AiInputField(promptHistory);
+        inputField = new AiInputField(promptHistory, session);
         contextLabel = new JLabel("No file open");
         contextLabel.setFont(contextLabel.getFont().deriveFont(11f));
         contextLabel.setBorder(BorderFactory.createEmptyBorder(2, 8, 2, 8));
@@ -301,6 +347,7 @@ public final class AiTopComponent extends TopComponent implements AiProcessEvent
         });
 
         inputField.setSubmitCallback(this::handleSubmit);
+        inputField.setPasteErrorCallback(conversationPanel::addSystemMessage);
         inputField.setEnabled(false);
         inputField.setCanSend(false);
         sendButton.setEnabled(false);
@@ -594,14 +641,7 @@ public final class AiTopComponent extends TopComponent implements AiProcessEvent
         // Immediately propagate restrictToProjectFiles to the MCP hook server's
         // scope map so file-tool permission changes take effect on the next tool
         // call, not only after the next user submit.
-        Object mcpObj = aiBackend != null ? aiBackend.getMcpServer() : null;
-        if (mcpObj instanceof McpHookServer mcp) {
-            List<java.io.File> dirs = contextProvider != null
-                    ? contextProvider.getAllOpenProjectDirs() : List.of();
-            boolean restrict = session.settings() != null
-                    && session.settings().effectiveRestrictToProjectFiles();
-            mcp.updateSessionScope(session.id(), session.aiType(), dirs, restrict);
-        }
+        refreshMcpSessionScope();
     }
 
     public void closeWithoutPrompt() {
@@ -701,12 +741,7 @@ public final class AiTopComponent extends TopComponent implements AiProcessEvent
                 if (!OpenProjects.PROPERTY_OPEN_PROJECTS.equals(evt.getPropertyName())) {
                     return;
                 }
-                Object mcpObj = aiBackend != null ? aiBackend.getMcpServer() : null;
-                if (mcpObj instanceof McpHookServer mcp) {
-                    List<File> dirs = contextProvider != null ? contextProvider.getAllOpenProjectDirs() : List.of();
-                    boolean restrict = session.settings() != null && session.settings().effectiveRestrictToProjectFiles();
-                    mcp.updateSessionScope(session.id(), session.aiType(), dirs, restrict);
-                }
+                refreshMcpSessionScope();
                 File sessionDir = aiBackend != null ? aiBackend.getSessionWorkingDir() : null;
                 if (sessionDir == null) {
                     sessionDir = chosenSessionDir;
@@ -741,15 +776,10 @@ public final class AiTopComponent extends TopComponent implements AiProcessEvent
             AiSessionInboxBroker.getInstance().register(session);
         }
         refreshSessionIdentity();
-        // Register session file scope with MCP server
-        Object mcpObj = aiBackend != null ? aiBackend.getMcpServer() : null;
-        if (mcpObj instanceof McpHookServer mcpServer) {
-            List<File> dirs = contextProvider != null
-                    ? contextProvider.getAllOpenProjectDirs() : List.of();
-            boolean restrict = session.settings() != null
-                    && session.settings().effectiveRestrictToProjectFiles();
-            mcpServer.registerSession(session.id(), session.aiType(), dirs, restrict);
-        }
+        // Register session file scope with MCP server when it is already available.
+        // startAiProcess() refreshes it again after async backend startup completes,
+        // which closes the null-server race during session open.
+        refreshMcpSessionScope();
         if (aiTypePropertyListener == null) {
             aiTypePropertyListener = this::handleAiTypeProperty;
             AiTypePropertyBus.getInstance().addListener(session.aiType(), aiTypePropertyListener);
@@ -802,6 +832,20 @@ public final class AiTopComponent extends TopComponent implements AiProcessEvent
         updateContextLabel(); // initial
     }
 
+    private void refreshMcpSessionScope() {
+        List<File> dirs = contextProvider != null ? contextProvider.getAllOpenProjectDirs() : List.of();
+        refreshMcpSessionScope(dirs);
+    }
+
+    private void refreshMcpSessionScope(List<File> dirs) {
+        Object mcpObj = aiBackend != null ? aiBackend.getMcpServer() : null;
+        if (mcpObj instanceof McpHookServer mcp) {
+            boolean restrict = session.settings() != null
+                    && session.settings().effectiveRestrictToProjectFiles();
+            mcp.updateSessionScope(session.id(), session.aiType(), dirs != null ? dirs : List.of(), restrict);
+        }
+    }
+
     private CompletableFuture<Void> startAiProcess() {
         CompletableFuture<Void> ret = new CompletableFuture<>();
         if (!new AiTypeRegistry().getSettings(session.aiType()).enabled()) {
@@ -834,6 +878,7 @@ public final class AiTopComponent extends TopComponent implements AiProcessEvent
                     // blocks its PERSIST_EXECUTOR thread forever (pool is bounded and
                     // shared with history load/save, so repeated failures exhaust it).
                     SwingUtilities.invokeLater(() -> {
+                        refreshMcpSessionScope();
                         backend.onStarted(AiTopComponent.this);
                         ret.complete(null);
                     });
@@ -930,14 +975,7 @@ public final class AiTopComponent extends TopComponent implements AiProcessEvent
 
     @Override
     public void componentClosed() {
-        for (AiDiffTopComponent d : new ArrayList<>(openDiffs)) {
-            d.cancelAndClose();
-        }
-        openDiffs.clear();
-        for (Runnable c : new ArrayList<>(pendingResponseCancellers)) {
-            c.run();
-        }
-        pendingResponseCancellers.clear();
+        drainPendingInteractions();
         AiSessionInboxBroker.getInstance().unregister(session.id());
         // Remove the open-projects listener BEFORE unregistering the session, so it can
         // never re-register (resurrect) the session via updateSessionScope. Once removed,
@@ -956,6 +994,19 @@ public final class AiTopComponent extends TopComponent implements AiProcessEvent
         Object mcpObj = aiBackend != null ? aiBackend.getMcpServer() : null;
         if (mcpObj instanceof McpHookServer mcpServer) {
             mcpServer.unregisterSession(session.id());
+        }
+        // The tab is closing — NOT necessarily the session being deleted (the user may have
+        // chosen "Keep for later" in canClose(), which runs before this). Its pasted-image
+        // temp files are working data for the CURRENT tab, not part of what "keep for later"
+        // promises to preserve, so they are swept here regardless of that choice. Async: a
+        // recursive directory delete must not stall the EDT while other sessions are mid-turn.
+        // A no-op if the session was instead permanently deleted (deleteSessionOnClose already
+        // removed everything, tmp/ included, moments before this runs).
+        try {
+            TempFileRegistry.cleanupSessionAsync(session.id());
+        }
+        catch (Exception e) {
+            LOG.log(Level.WARNING, "Error sweeping temp dir during session close", e);
         }
         turnOutputSuppressed = false;
         suppressedTurnCompletionMessage = null;
@@ -1347,6 +1398,7 @@ public final class AiTopComponent extends TopComponent implements AiProcessEvent
                     if (conversationPanel != null) {
                         conversationPanel.finaliseAssistantMessage();
                     }
+                    drainPendingInteractions();
                     refreshInputEnabled();
                 }
                 case EXITED, FAILED -> {
@@ -1428,9 +1480,13 @@ public final class AiTopComponent extends TopComponent implements AiProcessEvent
 
         String sessionInstructions = session.settings() != null
                 ? session.settings().sessionInstructions() : null;
+        // Expand @tmp.<filename> markers to the absolute path ONLY in what the agent
+        // receives — `text` itself is left untouched below for display and history, so
+        // the transcript keeps showing the short marker the user actually typed/pasted.
+        TmpMarkerExpander.Result tmpExpansion = TmpMarkerExpander.expand(text, session);
         String fullPrompt = contextProvider != null
-                ? contextProvider.buildPreamble(text, sessionInstructions)
-                : text;
+                ? contextProvider.buildPreamble(tmpExpansion.expandedText(), sessionInstructions)
+                : tmpExpansion.expandedText();
         boolean instructionsIncluded = contextProvider != null
                 && contextProvider.consumeSessionInstructionsInjected();
         if (instructionsIncluded) {
@@ -1438,6 +1494,10 @@ public final class AiTopComponent extends TopComponent implements AiProcessEvent
             recordInstructionsDelivered(sessionInstructions);
         }
         conversationPanel.addUserMessage(text);
+        for (String missingName : tmpExpansion.missingFiles()) {
+            conversationPanel.addSystemMessage("Could not find pasted file @tmp." + missingName
+                    + " — it may have been cleaned up, so the agent will see the marker text instead of the file.");
+        }
         infoBar.setProcessing(true);
         infoBar.setStatusMessage("Thinking…");
         diffShownForCurrentTurn = false;
@@ -1445,12 +1505,7 @@ public final class AiTopComponent extends TopComponent implements AiProcessEvent
         // Refresh the MCP file-access scope to the currently-open projects so a
         // project opened after session start is reachable by plugin tools too
         // (the CLI already gets it via --add-dir / projectDirs below).
-        Object mcpObj = aiBackend != null ? aiBackend.getMcpServer() : null;
-        if (mcpObj instanceof McpHookServer mcp) {
-            boolean restrict = session.settings() != null
-                    && session.settings().effectiveRestrictToProjectFiles();
-            mcp.updateSessionScope(session.id(), session.aiType(), projectDirs, restrict);
-        }
+        refreshMcpSessionScope(projectDirs);
         if (aiBackend != null) {
             if (contextProvider != null) {
                 aiBackend.updatePinnedContext(
@@ -1511,9 +1566,29 @@ public final class AiTopComponent extends TopComponent implements AiProcessEvent
         infoBar.setProcessing(false);
         assistantTurnActive = false;
         conversationPanel.finaliseAssistantMessage();
+        drainPendingInteractions();
         infoBar.setStatusMessage("Stopped at user's request");
         refreshInputEnabled();
         fireListenerEvent(SessionLifecycleListener::onStopped);
+    }
+
+    private void drainPendingInteractions() {
+        for (AiDiffTopComponent diff : new ArrayList<>(openDiffs)) {
+            diff.cancelAndClose();
+        }
+        openDiffs.clear();
+        for (Runnable canceller : new ArrayList<>(pendingResponseCancellers)) {
+            canceller.run();
+        }
+        pendingResponseCancellers.clear();
+        clearPendingDiffAndRefreshInput();
+    }
+
+    private void clearPendingDiffAndRefreshInput() {
+        if (aiBackend != null) {
+            aiBackend.setPendingDiff(false);
+        }
+        refreshInputEnabled();
     }
 
     /**
@@ -1611,7 +1686,7 @@ public final class AiTopComponent extends TopComponent implements AiProcessEvent
             public void onRejected(String message) {
                 openDiffs.remove(diff);
                 try {
-                    Files.writeString(Path.of(fp), original, StandardCharsets.UTF_8);
+                    Files.writeString(Path.of(fp), original, RefactoringProvider.resolveCharset(fp));
                     LOG.log(Level.INFO, "Reverted {0} after user rejected AI''s edit", fp);
                 }
                 catch (IOException e) {
@@ -1645,7 +1720,7 @@ public final class AiTopComponent extends TopComponent implements AiProcessEvent
             try {
                 Path p = Path.of(foPath);
                 if (Files.exists(p) && !Files.isDirectory(p)) {
-                    String content = Files.readString(p, StandardCharsets.UTF_8);
+                    String content = Files.readString(p, RefactoringProvider.resolveCharset(foPath));
                     SwingUtilities.invokeLater(() -> {
                         preEditFilePath = foPath;
                         preEditFileContent = content;
@@ -1675,17 +1750,24 @@ public final class AiTopComponent extends TopComponent implements AiProcessEvent
             return;
         }
 
+        if (aiBackend != null) {
+            aiBackend.setPendingDiff(true);
+        }
+        inputField.setEnabled(false);
+        sendButton.setEnabled(false);
+
         RequestProcessor.getDefault().execute(() -> {
             String original = "";
             try {
                 Path p = Path.of(fp);
                 if (Files.exists(p)) {
-                    original = Files.readString(p, StandardCharsets.UTF_8);
+                    original = Files.readString(p, RefactoringProvider.resolveCharset(fp));
                 }
             }
             catch (IOException e) {
                 LOG.log(Level.WARNING, "Could not read file for permission diff — denying: " + fp, e);
                 SwingUtilities.invokeLater(() -> {
+                    clearPendingDiffAndRefreshInput();
                     conversationPanel.addSystemMessage(
                             NotificationUtil.formatPermissionDenied(pe.toolName(), shortPath(fp),
                                     "could not read file for diff preview"));
@@ -1699,6 +1781,11 @@ public final class AiTopComponent extends TopComponent implements AiProcessEvent
     }
 
     private void finishPermissionDiff(PermissionEvent pe, String fp, String original) {
+        if (aiBackend == null || !aiBackend.isProcessing()) {
+            pe.response().complete(PermissionDecision.denied("Permission request cancelled"));
+            clearPendingDiffAndRefreshInput();
+            return;
+        }
         PermissionDiffPolicy.Decision decision = PermissionDiffPolicy.decide(
                 pe.toolName(), fp, original, pe.oldString(), pe.newString(), pe.writeContent());
         switch (decision.outcome()) {
@@ -1708,10 +1795,12 @@ public final class AiTopComponent extends TopComponent implements AiProcessEvent
                 conversationPanel.addSystemMessage(
                         NotificationUtil.formatPermissionDenied(pe.toolName(), shortPath(fp), decision.reason()));
                 pe.response().complete(PermissionDecision.denied(decision.reason()));
+                clearPendingDiffAndRefreshInput();
                 return;
             }
             case ALLOW_SILENT -> {
                 pe.response().complete(PermissionDecision.allowed());
+                clearPendingDiffAndRefreshInput();
                 return;
             }
             case SHOW_DIFF -> {
@@ -1722,6 +1811,7 @@ public final class AiTopComponent extends TopComponent implements AiProcessEvent
         final String prop = decision.proposedContent();
         if (prop == null) {
             pe.response().complete(PermissionDecision.denied("Could not build permission diff preview"));
+            clearPendingDiffAndRefreshInput();
             return;
         }
 
@@ -1737,6 +1827,7 @@ public final class AiTopComponent extends TopComponent implements AiProcessEvent
             if (aiBackend == null) {
                 pendingResponseCancellers.remove(canceller);
                 pe.response().complete(PermissionDecision.denied("Permission request cancelled"));
+                clearPendingDiffAndRefreshInput();
                 return;
             }
             AiDiffTopComponent diff = new AiDiffTopComponent(fp, orig, prop, session.name(), true);
@@ -1746,6 +1837,7 @@ public final class AiTopComponent extends TopComponent implements AiProcessEvent
                     openDiffs.remove(diff);
                     pendingResponseCancellers.remove(canceller);
                     pe.response().complete(PermissionDecision.allowed());
+                    clearPendingDiffAndRefreshInput();
                     conversationPanel.addSystemMessage(NotificationUtil.formatFileAcceptedTool(pe.toolName(), shortPath(fp)));
                     new Timer(600, ev -> {
                         try {
@@ -1769,6 +1861,7 @@ public final class AiTopComponent extends TopComponent implements AiProcessEvent
                     openDiffs.remove(diff);
                     pendingResponseCancellers.remove(canceller);
                     pe.response().complete(PermissionDecision.denied(message));
+                    clearPendingDiffAndRefreshInput();
                     conversationPanel.addSystemMessage(NotificationUtil.formatFileRejectedTool(pe.toolName(), shortPath(fp), message));
                 }
             });
@@ -1793,7 +1886,7 @@ public final class AiTopComponent extends TopComponent implements AiProcessEvent
             return;
         }
         try {
-            String current = Files.readString(Path.of(fp), StandardCharsets.UTF_8);
+            String current = Files.readString(Path.of(fp), RefactoringProvider.resolveCharset(fp));
             if (!current.equals(original)) {
                 LOG.log(Level.INFO, "File change detected via snapshot fallback: {0}", fp);
                 ToolUseEvent tu = new ToolUseEvent("Edit", fp, current, original, ToolUseEvent.Kind.EDIT);

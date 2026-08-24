@@ -7,7 +7,12 @@ import java.util.Properties;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 import javax.swing.SwingUtilities;
+import kiwi.ingenuity.netbeans.plugin.aicoder.ai.AiTypeRegistry;
+import kiwi.ingenuity.netbeans.plugin.aicoder.ai.mail.AiSessionInboxBroker;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.ui.AiTopComponent;
+import kiwi.ingenuity.netbeans.plugin.aicoder.process.locking.LockManager;
+import kiwi.ingenuity.netbeans.plugin.aicoder.process.server.McpServerRegistry;
+import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.TempFileRegistry;
 import org.openide.modules.ModuleInstall;
 import org.openide.util.NbBundle;
 import org.openide.windows.TopComponent;
@@ -77,31 +82,58 @@ public class Installer extends ModuleInstall {
     @Override
     public void restored() {
         LOG.log(Level.INFO, StringConst.PLUGIN_NAME + " plugin v{0} activated. Use Tools > AI Coder to open the panel.", VERSION);
-        // Recover usage/model fetching when the user authenticates after startup.
-        kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.claude.ClaudeCredentialMonitor.getInstance().start();
     }
 
     @Override
     public void uninstalled() {
+        shutdownPluginState();
+    }
+
+    /**
+     * Called when the IDE itself is shutting down (module stays installed) — as opposed to {@link #uninstalled()},
+     * which fires only when the user disables/uninstalls the plugin via the Plugins manager and NEVER on a normal exit.
+     * Runs the same teardown either way: closing every open AI session releases its live process/MCP-scope/listener
+     * state (and, via {@code componentClosed}, sweeps its temp dir), and {@link TempFileRegistry#cleanupAll()} catches
+     * anything not tied to a still-open session. Persisted session data (sessions.json, history) is untouched by either
+     * path — only live state and registry-owned temp directories are cleaned up.
+     */
+    @Override
+    public void close() {
+        shutdownPluginState();
+    }
+
+    private void shutdownPluginState() {
         try {
-            SwingUtilities.invokeAndWait(() -> {
-                for (TopComponent tc : new ArrayList<>(TopComponent.getRegistry().getOpened())) {
-                    if (tc instanceof AiTopComponent && tc.isOpened()) {
-                        tc.close();
-                    }
-                }
-            });
+            if (SwingUtilities.isEventDispatchThread()) {
+                closeAiTopComponents();
+            }
+            else {
+                SwingUtilities.invokeAndWait(this::closeAiTopComponents);
+            }
         }
         catch (Exception ex) {
-            // best effort
+            LOG.log(Level.WARNING, "Error closing AI top components", ex);
         }
+        finally {
+            // Let queued history/session saves land inside a bounded window, then
+            // release the persist threads so a disabled module's classloader can be
+            // collected instead of being pinned by the idle pool.
+            AiTopComponent.shutdownPersistExecutor();
+            // Force-stop the MCP server in case any session cleanup was incomplete.
+            McpServerRegistry.stopAll();
+            AiSessionInboxBroker.getInstance().shutdownNotifier();
+            AiSessionInboxBroker.getInstance().shutdownSweeper();
+            LockManager.getInstance().shutdown();
+            AiTypeRegistry.shutdownLifecycles();
+            TempFileRegistry.cleanupAll();
+        }
+    }
 
-        // Force-stop the MCP server in case any session cleanup was incomplete.
-        kiwi.ingenuity.netbeans.plugin.aicoder.process.server.McpServerRegistry.stopAll();
-        kiwi.ingenuity.netbeans.plugin.aicoder.ai.mail.AiSessionInboxBroker.getInstance().shutdownNotifier();
-        kiwi.ingenuity.netbeans.plugin.aicoder.ai.mail.AiSessionInboxBroker.getInstance().shutdownSweeper();
-        kiwi.ingenuity.netbeans.plugin.aicoder.process.locking.LockManager.getInstance().shutdown();
-        kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.claude.ClaudeCredentialMonitor.getInstance().stop();
-        kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.claude.AnthropicApiClient.rateLimitManager().shutdown();
+    private void closeAiTopComponents() {
+        for (TopComponent tc : new ArrayList<>(TopComponent.getRegistry().getOpened())) {
+            if (tc instanceof AiTopComponent && tc.isOpened()) {
+                tc.close();
+            }
+        }
     }
 }

@@ -31,6 +31,13 @@ public enum ClaudeJsonKeyEnum {
     REQUEST("request"),
     // Session ID carried on every stream-json event (the Claude Code session UUID)
     SESSION_ID("session_id"),
+    // stream_event fields (--include-partial-messages): the raw Messages-API SSE
+    // event wrapped one level deep. event.delta.type "input_json_delta" is a
+    // tool-input fragment (partial_json); "text_delta" is assistant text — both
+    // nest under the same event.delta.type, which is why they must be told apart
+    // by value, not by presence of the field.
+    EVENT("event"),
+    DELTA("delta"),
     // System event fields: estimated_tokens on the thinking_tokens subtype,
     // summary on the task_notification subtype. (The subtype names themselves
     // are VALUES and stay literals in the parser.)

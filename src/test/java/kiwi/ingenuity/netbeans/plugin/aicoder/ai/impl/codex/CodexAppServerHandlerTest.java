@@ -3,14 +3,21 @@ package kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.codex;
 import com.github.difflib.patch.PatchFailedException;
 import com.google.gson.JsonArray;
 import com.google.gson.JsonObject;
+import com.google.gson.JsonParser;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.concurrent.CancellationException;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.logging.Handler;
+import java.util.logging.Level;
+import java.util.logging.LogRecord;
+import java.util.logging.Logger;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.events.ConfirmEvent;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.events.PermissionDecision;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.events.PermissionEvent;
@@ -22,7 +29,10 @@ import kiwi.ingenuity.netbeans.plugin.aicoder.ai.events.TurnCompleteEvent;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.codex.events.CodexRateLimitEvent;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.codex.events.CodexTokenUsageEvent;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.events.AiProcessEvent;
+import kiwi.ingenuity.netbeans.plugin.aicoder.process.events.AiProcessEventListener;
+import org.junit.jupiter.api.AfterEach;
 import static org.junit.jupiter.api.Assertions.*;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -164,8 +174,7 @@ class CodexAppServerHandlerTest {
     }
 
     /**
-     * Item shape copied from a live item/started notification, not invented:
-     * {@code {"item":{"type":"mcpToolCall","tool":"ListAiSessions",
+     * Item shape copied from a live item/started notification, not invented: null     {@code {"item":{"type":"mcpToolCall","tool":"ListAiSessions",
      * "server":"aicoder-nb-ki-plugin","status":"inProgress",...}}}.
      */
     @Test
@@ -192,9 +201,8 @@ class CodexAppServerHandlerTest {
     }
 
     /**
-     * Only tool calls announce themselves. Reasoning and agentMessage items also
-     * arrive as item/started, and raising an event for those would insert a
-     * paragraph break where no tool ran.
+     * Only tool calls announce themselves. Reasoning and agentMessage items also arrive as item/started, and raising an
+     * event for those would insert a paragraph break where no tool ran.
      */
     @Test
     void nonToolCallItemStarted_firesNothing() {
@@ -855,5 +863,206 @@ class CodexAppServerHandlerTest {
         // Exceptional completion (process stopped) → "cancel" (interrupts the turn)
         ce.response().completeExceptionally(new RuntimeException("stopped"));
         assertEquals("cancel", reply.get(2, TimeUnit.SECONDS).get("action").getAsString());
+    }
+
+    // ---- Malformed-payload hardening: reverting any single guard turns exactly the matching
+    // assertion red (event lost behind the Throwable net, or a "handler threw" warning). ----
+    private final List<AiProcessEvent> hardeningEvents = new ArrayList<>();
+    private final AiProcessEventListener hardeningListener = hardeningEvents::add;
+    private CodexAppServerHandler hardenedHandler;
+    private WarningCapture warnings;
+
+    @BeforeEach
+    void setUp() {
+        hardenedHandler = new CodexAppServerHandler(hardeningListener, () -> {
+        });
+        warnings = new WarningCapture();
+        Logger.getLogger(CodexAppServerHandler.class.getName()).addHandler(warnings);
+    }
+
+    @AfterEach
+    void tearDown() {
+        Logger.getLogger(CodexAppServerHandler.class.getName()).removeHandler(warnings);
+    }
+
+    private static JsonObject json(String json) {
+        return JsonParser.parseString(json).getAsJsonObject();
+    }
+
+    private static class WarningCapture extends Handler {
+
+        final List<LogRecord> records = new ArrayList<>();
+
+        @Override
+        public void publish(LogRecord record) {
+            if (record.getLevel().intValue() >= Level.WARNING.intValue()) {
+                records.add(record);
+            }
+        }
+
+        boolean anyContains(String fragment) {
+            return records.stream().map(WarningCapture::render)
+                    .anyMatch(text -> text.contains(fragment));
+        }
+
+        private static String render(LogRecord record) {
+            String text = String.valueOf(record.getMessage());
+            Object[] params = record.getParameters();
+            if (params != null) {
+                for (Object param : params) {
+                    text += " " + param;
+                }
+            }
+            return text;
+        }
+
+        @Override
+        public void flush() {
+        }
+
+        @Override
+        public void close() {
+        }
+    }
+
+    @Test
+    void agentMessageDelta_objectDelta_stillEmitsTextDelta() {
+        hardenedHandler.onNotification(CodexAppServerHandler.METHOD_AGENT_MESSAGE_DELTA,
+                json("{\"delta\":{\"boom\":1},\"turnId\":\"t1\"}"));
+
+        TextDeltaEvent delta = hardeningEvents.stream()
+                .filter(TextDeltaEvent.class::isInstance)
+                .map(TextDeltaEvent.class::cast)
+                .findFirst().orElse(null);
+        assertTrue(delta != null, "malformed delta must degrade to \"\", not lose the event");
+        assertEquals("", delta.text());
+        assertEquals("t1", delta.turnId());
+        assertFalse(warnings.anyContains("handler threw"),
+                "guarded payloads must stay off the Throwable net");
+    }
+
+    @Test
+    void tokenUsage_nullContextWindow_emitsZeroedContextWindow() {
+        hardenedHandler.onNotification(CodexAppServerHandler.METHOD_THREAD_TOKEN_USAGE,
+                json("{\"tokenUsage\":{\"modelContextWindow\":null,\"last\":{\"totalTokens\":5}}}"));
+
+        CodexTokenUsageEvent usage = hardeningEvents.stream()
+                .filter(CodexTokenUsageEvent.class::isInstance)
+                .map(CodexTokenUsageEvent.class::cast)
+                .findFirst().orElse(null);
+        assertTrue(usage != null);
+        assertEquals(5L, usage.usedTokens());
+        assertEquals(0L, usage.contextWindow());
+    }
+
+    @Test
+    void rateLimits_nonPrimitiveWindowFields_stillPublishes() {
+        hardenedHandler.onNotification(CodexAppServerHandler.METHOD_ACCOUNT_RATE_LIMITS_UPDATED,
+                json("{\"rateLimits\":{\"primary\":{\"usedPercent\":12.5,"
+                        + "\"windowDurationMins\":[5],\"resetsAt\":null}}}"));
+
+        CodexRateLimitEvent limits = hardeningEvents.stream()
+                .filter(CodexRateLimitEvent.class::isInstance)
+                .map(CodexRateLimitEvent.class::cast)
+                .findFirst().orElse(null);
+        assertTrue(limits != null);
+        assertEquals(12.5, limits.usedPercent());
+        assertEquals(0L, limits.windowDurationMins());
+        assertEquals(0L, limits.resetsAtEpochSeconds());
+    }
+
+    @Test
+    void serverRequest_nullParams_yieldsFailedFutureInsteadOfThrowing() {
+        CompletableFuture<JsonObject> reply = assertDoesNotThrow(()
+                -> hardenedHandler.onServerRequest(CodexAppServerHandler.METHOD_COMMAND_EXECUTION_APPROVAL, null));
+
+        assertTrue(reply.isDone());
+        assertTrue(reply.isCompletedExceptionally(), "null params must fail the reply, not throw");
+        ExecutionException failure = assertThrows(ExecutionException.class,
+                () -> reply.get(1, TimeUnit.SECONDS));
+        assertTrue(failure.getCause() instanceof IllegalStateException,
+                "net converts any synchronous throw into the INTERNAL_ERROR failed future");
+        assertTrue(warnings.anyContains("server request handler threw"));
+    }
+
+    @Test
+    void notificationThrow_doesNotKillWorker_laterNotificationsStillProcessed() {
+        hardenedHandler.onNotification(CodexAppServerHandler.METHOD_AGENT_MESSAGE_DELTA, null);
+
+        hardenedHandler.onNotification(CodexAppServerHandler.METHOD_TURN_STARTED, new JsonObject());
+
+        assertTrue(hardeningEvents.stream().anyMatch(StatusEvent.class::isInstance),
+                "notify worker must survive a throwing notification");
+        assertTrue(warnings.anyContains("notification handler threw"));
+    }
+
+    @Test
+    void elicitation_objectMessage_fallsBackToGenericText_andCancelsCleanly() {
+        CompletableFuture<JsonObject> reply = hardenedHandler.onServerRequest(
+                CodexAppServerHandler.METHOD_MCP_ELICITATION,
+                json("{\"message\":{\"deep\":true}}"));
+
+        ConfirmEvent confirm = hardeningEvents.stream()
+                .filter(ConfirmEvent.class::isInstance)
+                .map(ConfirmEvent.class::cast)
+                .findFirst().orElse(null);
+        assertTrue(confirm != null);
+        assertEquals("McpElicitation", confirm.toolName());
+        assertEquals("MCP server requests approval", confirm.displayText());
+
+        confirm.response().completeExceptionally(new CancellationException("panel closed"));
+        JsonObject decision = assertDoesNotThrow(() -> reply.get(1, TimeUnit.SECONDS));
+        assertEquals("cancel", decision.get("action").getAsString());
+    }
+
+    @Test
+    void commandApproval_unreadableFields_useFallbackDisplayText() {
+        hardenedHandler.onServerRequest(CodexAppServerHandler.METHOD_COMMAND_EXECUTION_APPROVAL,
+                json("{\"reason\":{},\"command\":[]}"));
+
+        ConfirmEvent confirm = hardeningEvents.stream()
+                .filter(ConfirmEvent.class::isInstance)
+                .map(ConfirmEvent.class::cast)
+                .findFirst().orElse(null);
+        assertTrue(confirm != null);
+        assertEquals("Command", confirm.toolName());
+        assertEquals("Codex wants to run a command", confirm.displayText());
+    }
+
+    @Test
+    void fileChangeApproval_unreadableChangePath_fallsBackToBlindConfirm() {
+        hardenedHandler.onNotification(CodexAppServerHandler.METHOD_ITEM_STARTED,
+                json("{\"item\":{\"type\":\"fileChange\",\"id\":\"i1\","
+                        + "\"changes\":[{\"path\":{\"deep\":1}}]}}"));
+
+        CompletableFuture<JsonObject> reply = hardenedHandler.onServerRequest(
+                CodexAppServerHandler.METHOD_FILE_CHANGE_APPROVAL,
+                json("{\"itemId\":\"i1\"}"));
+
+        ConfirmEvent confirm = hardeningEvents.stream()
+                .filter(ConfirmEvent.class::isInstance)
+                .map(ConfirmEvent.class::cast)
+                .findFirst().orElse(null);
+        assertTrue(confirm != null);
+        assertEquals("FileChange", confirm.toolName());
+        assertEquals("Codex wants to modify a file", confirm.displayText());
+        assertNull(confirm.filePath());
+
+        confirm.response().completeExceptionally(new CancellationException("x"));
+        JsonObject decision = assertDoesNotThrow(() -> reply.get(1, TimeUnit.SECONDS));
+        assertEquals("cancel", decision.get("decision").getAsString());
+    }
+
+    @Test
+    void extractors_tolerateWrongJsonTypes() {
+        assertNull(CodexAppServerHandler.extractItemId(json("{\"item\":{\"id\":{}}}")));
+        assertNull(CodexAppServerHandler.extractTurnStatus(json("{\"turn\":{\"status\":{\"deep\":1}}}")));
+        assertNull(CodexAppServerHandler.extractFileChangeChanges(
+                json("{\"item\":{\"type\":null,\"changes\":[]}}")));
+        assertNull(CodexAppServerHandler.firstChangedPath(
+                JsonParser.parseString("[{\"path\":[]}]").getAsJsonArray()));
+        assertEquals("Codex wants to modify a file",
+                CodexAppServerHandler.summarizeFileChanges(
+                        JsonParser.parseString("[{\"path\":{}}]").getAsJsonArray()));
     }
 }

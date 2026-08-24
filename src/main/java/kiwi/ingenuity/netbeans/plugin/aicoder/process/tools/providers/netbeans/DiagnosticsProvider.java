@@ -43,13 +43,15 @@ public class DiagnosticsProvider {
         }
 
         StringBuilder sb = new StringBuilder();
+        List<String> failures = new ArrayList<>();
         for (FileObject fo : javaFiles) {
-            JavaSource js = JavaSource.forFileObject(fo);
-            if (js == null) {
-                continue;
-            }
             File f = FileUtil.toFile(fo);
             String path = f != null ? f.getPath() : fo.getPath();
+            JavaSource js = JavaSource.forFileObject(fo);
+            if (js == null) {
+                failures.add(path);
+                continue;
+            }
             try {
                 js.runUserActionTask(cc -> {
                     cc.toPhase(JavaSource.Phase.RESOLVED);
@@ -76,9 +78,19 @@ public class DiagnosticsProvider {
             }
             catch (Throwable e) {
                 LOG.log(Level.FINE, "Could not get diagnostics for " + path, e);
+                failures.add(path);
             }
         }
-        return sb.isEmpty() ? "No diagnostics found" : sb.toString().strip();
+        return formatDiagnosticsResult(sb.toString(), failures);
+    }
+
+    static String formatDiagnosticsResult(String diagnostics, List<String> failures) {
+        String diagnosticText = diagnostics == null ? "" : diagnostics.strip();
+        if (!failures.isEmpty()) {
+            String failureMessage = "Could not analyse diagnostics for: " + String.join(", ", failures);
+            return diagnosticText.isEmpty() ? failureMessage : diagnosticText + "\n" + failureMessage;
+        }
+        return diagnosticText.isEmpty() ? "No diagnostics found" : diagnosticText;
     }
 
     private DiagnosticsProvider() {

@@ -17,12 +17,12 @@ import java.util.function.Consumer;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.claude.ClaudeJsonKeyEnum;
+import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.claude.ClaudeTimeoutEnum;
 
 /**
- * Owns ONE long-lived {@code claude --input-format stream-json} process for the
- * whole plugin session. stdin is held open for the session's lifetime; each
- * user turn is written as a stream-json {@code user} line. A single reader
- * thread feeds every stdout line to {@code lineConsumer}.
+ * Owns ONE long-lived {@code claude --input-format stream-json} process for the whole plugin session. stdin is held
+ * open for the session's lifetime; each user turn is written as a stream-json {@code user} line. A single reader thread
+ * feeds every stdout line to {@code lineConsumer}.
  */
 public final class ClaudePersistentSession {
 
@@ -32,6 +32,7 @@ public final class ClaudePersistentSession {
     public static ClaudePersistentSession launch(List<String> command, File workDir,
             Consumer<String> lineConsumer, Consumer<String> stderrConsumer) throws IOException {
         ProcessBuilder pb = new ProcessBuilder(command);
+        configureMcpToolTimeout(pb);
         if (workDir != null && workDir.isDirectory()) {
             pb.directory(workDir);
         }
@@ -41,6 +42,28 @@ public final class ClaudePersistentSession {
         s.readerThread.start();
         s.stderrThread.start();
         return s;
+    }
+
+    /**
+     * Sets a default for Claude's HTTP MCP per-request timeout without overriding a value explicitly supplied in the
+     * parent environment.
+     */
+    static void configureMcpToolTimeout(ProcessBuilder processBuilder) {
+        String configured = processBuilder.environment().putIfAbsent("MCP_TOOL_TIMEOUT",
+                Long.toString(ClaudeTimeoutEnum.MCP_TOOL_TIMEOUT_MILLIS.millis()));
+        if (configured == null) {
+            return;
+        }
+        try {
+            if (Long.parseLong(configured) < 60_000L) {
+                LOG.log(Level.INFO, "MCP_TOOL_TIMEOUT={0} ms is below 60000 ms; "
+                        + "Claude will retain its 60-second HTTP MCP per-request limit", configured);
+            }
+        }
+        catch (NumberFormatException e) {
+            LOG.log(Level.INFO, "MCP_TOOL_TIMEOUT is not a valid millisecond value; "
+                    + "preserving the user-supplied value", e);
+        }
     }
 
     public static String frameUserMessage(String text) {
@@ -58,11 +81,18 @@ public final class ClaudePersistentSession {
         return GSON.toJson(userMessage) + "\n";
     }
 
-    private static void pump(InputStream in, Consumer<String> consumer) {
+    static void pump(InputStream in, Consumer<String> consumer) {
         try (BufferedReader r = new BufferedReader(new InputStreamReader(in, StandardCharsets.UTF_8))) {
             String line;
             while ((line = r.readLine()) != null) {
-                consumer.accept(line);
+                try {
+                    consumer.accept(line);
+                }
+                catch (RuntimeException e) {
+                    // A throwing downstream listener must not kill the reader thread: the process
+                    // stays alive, so a dead reader would silently wedge the turn with no output.
+                    LOG.log(Level.WARNING, "Claude stream listener threw; continuing", e);
+                }
             }
         }
         catch (IOException e) {

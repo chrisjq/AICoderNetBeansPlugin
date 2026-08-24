@@ -12,6 +12,11 @@ import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.ai.ListAiSession
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.ai.ReadAiMessageTool;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.ai.SendAiMessageTool;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.ai.UpdateSessionDescriptionTool;
+import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.database.ExecuteSqlQueryTool;
+import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.database.GetTableDataTool;
+import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.database.GetTableSchemaTool;
+import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.database.ListDatabaseConnectionsTool;
+import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.database.ListTablesTool;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.devops.build.BuildAntProjectTool;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.devops.build.BuildGradleProjectTool;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.devops.build.BuildMavenProjectTool;
@@ -42,11 +47,6 @@ import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.git.GitRevertToo
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.git.GitShowTool;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.git.GitStashTool;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.git.GitTagTool;
-import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.database.ExecuteSqlQueryTool;
-import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.database.GetTableDataTool;
-import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.database.GetTableSchemaTool;
-import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.database.ListDatabaseConnectionsTool;
-import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.database.ListTablesTool;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.help.GetClassMembersTool;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.help.GetJavadocTool;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.help.GetProjectStructureTool;
@@ -57,6 +57,7 @@ import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.refactor.ChangeM
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.refactor.InlineVariableTool;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.refactor.MoveClassTool;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.refactor.RenameSymbolTool;
+import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.search.FilterFileContentTool;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.search.FindDeclarationTool;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.search.FindImplementationsTool;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.search.FindUsagesTool;
@@ -65,13 +66,13 @@ import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.search.SearchSym
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.search.SearchTypesTool;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.system.CopyFileTool;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.system.DeleteFileTool;
-import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.system.WebRequestTool;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.system.GetClipboardTool;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.system.GetFileContentTool;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.system.GetFileSizeAndMetaTool;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.system.MoveFileTool;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.system.RefreshFileStatusTool;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.system.SaveFileTool;
+import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.system.WebRequestTool;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.ui.build.BuildProjectTool;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.ui.build.CleanAndBuildProjectTool;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.ui.build.CleanProjectTool;
@@ -89,9 +90,6 @@ import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.ui.source.Organi
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.ui.source.ReformatFileTool;
 
 public final class ToolHandlerFactory {
-
-    private ToolHandlerFactory() {
-    }
 
     public static Map<McpToolEnum, McpToolInterface> getToolHandlers(McpHookServer server) {
         Map<McpToolEnum, McpToolInterface> map = new LinkedHashMap<>();
@@ -147,6 +145,7 @@ public final class ToolHandlerFactory {
         map.put(McpToolEnum.INLINE_VARIABLE, new InlineVariableTool());
         map.put(McpToolEnum.CHANGE_METHOD_SIGNATURE, new ChangeMethodSignatureTool());
         map.put(McpToolEnum.SEARCH_IN_FILES, new SearchInFilesTool());
+        map.put(McpToolEnum.FILTER_FILE_CONTENT, new FilterFileContentTool(server));
         map.put(McpToolEnum.SEARCH_TYPES, new SearchTypesTool());
         map.put(McpToolEnum.SEARCH_SYMBOLS, new SearchSymbolsTool());
         map.put(McpToolEnum.FIND_DECLARATION, new FindDeclarationTool());
@@ -180,5 +179,8 @@ public final class ToolHandlerFactory {
         map.put(McpToolEnum.IS_AI_SESSION_ACTIVE, new IsAiSessionActiveTool());
         map.put(McpToolEnum.UPDATE_SESSION_DESCRIPTION, new UpdateSessionDescriptionTool());
         return Collections.unmodifiableMap(map);
+    }
+
+    private ToolHandlerFactory() {
     }
 }

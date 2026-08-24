@@ -1,51 +1,58 @@
 package kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.providers.netbeans;
 
+import java.io.ByteArrayOutputStream;
 import java.io.File;
+import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicReference;
 import java.util.logging.Level;
 import java.util.logging.Logger;
+import kiwi.ingenuity.netbeans.plugin.aicoder.process.server.McpServerRegistry;
+import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.TimeoutEnum;
 import org.netbeans.api.project.Project;
 import org.netbeans.api.project.ui.OpenProjects;
 import org.openide.filesystems.FileUtil;
 import org.openide.modules.InstalledFileLocator;
-import java.io.ByteArrayOutputStream;
-import java.io.InputStream;
-import java.util.concurrent.atomic.AtomicReference;
 
 public class BuildAndTestAntProvider {
 
     private static final Logger LOG = Logger.getLogger(BuildAndTestAntProvider.class.getName());
-    private static final int TIMEOUT_SECONDS = 180;
     private static final int MAX_OUTPUT_BYTES = 2 * 1024 * 1024;
 
-    public static String buildProject(String projectPath) {
-        File root = resolveRoot(projectPath);
+    public static String buildProject(String sessionId, String projectPath) {
+        File root = resolveRoot(sessionId, projectPath);
         if (root == null) {
             return "No open project found";
         }
-        return runAnt(root, "jar");
+        return runAnt(sessionId, root, "jar");
     }
 
-    public static String runTests(String testClass, String projectPath) {
-        File root = resolveRoot(projectPath);
+    public static String runTests(String sessionId, String testClass, String projectPath) {
+        File root = resolveRoot(sessionId, projectPath);
         if (root == null) {
             return "No open project found";
         }
         if (testClass != null && !testClass.isBlank()) {
-            return runAnt(root, "test", "-Dtest.includes=" + testClass);
+            return runAnt(sessionId, root, "test", "-Dtest.includes=" + testClass);
         }
-        return runAnt(root, "test");
+        return runAnt(sessionId, root, "test");
     }
 
-    private static File resolveRoot(String projectPath) {
+    private static File resolveRoot(String sessionId, String projectPath) {
         if (projectPath != null && !projectPath.isBlank()) {
             File dir = new File(projectPath);
-            return dir.isDirectory() ? dir : null;
+            if (!dir.isDirectory()) {
+                return null;
+            }
+            var server = McpServerRegistry.getServer();
+            return server != null && server.isFileAllowed(sessionId, dir.getAbsolutePath()) ? dir : null;
         }
-        return getOpenProjectRoot();
+        File dir = getOpenProjectRoot();
+        var server = McpServerRegistry.getServer();
+        return dir != null && server != null && server.isFileAllowed(sessionId, dir.getAbsolutePath()) ? dir : null;
     }
 
     private static File getOpenProjectRoot() {
@@ -77,13 +84,14 @@ public class BuildAndTestAntProvider {
         return windows ? "ant.bat" : "ant";
     }
 
-    private static String runAnt(File dir, String... targets) {
+    private static String runAnt(String sessionId, File dir, String... targets) {
         List<String> cmd = new ArrayList<>();
         cmd.add(resolveAnt());
         cmd.addAll(List.of(targets));
         Process p = null;
         Thread reader = null;
         AtomicReference<String> outputRef = new AtomicReference<>("");
+        AtomicReference<Exception> readerFailure = new AtomicReference<>();
         try {
             ProcessBuilder pb = new ProcessBuilder(cmd);
             pb.directory(dir);
@@ -103,12 +111,13 @@ public class BuildAndTestAntProvider {
                     }
                     outputRef.set(baos.toString(StandardCharsets.UTF_8));
                 }
-                catch (Exception ignored) {
+                catch (Exception e) {
+                    readerFailure.set(e);
                 }
             }, "ant-output-reader");
             reader.setDaemon(true);
             reader.start();
-            boolean finished = p.waitFor(TIMEOUT_SECONDS, TimeUnit.SECONDS);
+            boolean finished = p.waitFor(TimeoutEnum.BUILD_PROCESS_MILLIS.millis(), TimeUnit.MILLISECONDS);
             if (!finished) {
                 p.destroyForcibly();
             }
@@ -119,12 +128,19 @@ public class BuildAndTestAntProvider {
                 Thread.currentThread().interrupt();
             }
             String output = outputRef.get();
+            Exception outputError = readerFailure.get();
+            if (outputError != null) {
+                return BuildOutputFormatter.attachLog(sessionId, BuildOutputFormatter.Backend.ANT,
+                        "Error reading Ant output: " + outputError.getMessage(), output);
+            }
             if (!finished) {
-                return "Timed out after " + TIMEOUT_SECONDS + "s\n\n" + output;
+                return BuildOutputFormatter.attachLog(sessionId, BuildOutputFormatter.Backend.ANT,
+                        "Timed out after " + TimeUnit.MILLISECONDS.toSeconds(TimeoutEnum.BUILD_PROCESS_MILLIS.millis()) + "s",
+                        output);
             }
             int exit = p.exitValue();
-            String header = exit == 0 ? "BUILD SUCCESSFUL\n\n" : "BUILD FAILED (exit " + exit + ")\n\n";
-            return header + output;
+            return BuildOutputFormatter.formatResult(sessionId, BuildOutputFormatter.Backend.ANT,
+                    exit == 0, exit, output);
         }
         catch (InterruptedException ie) {
             Thread.currentThread().interrupt();

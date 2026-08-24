@@ -1,5 +1,6 @@
 package kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp;
 
+import com.google.gson.JsonArray;
 import com.google.gson.JsonObject;
 import java.util.Set;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.McpInstructionOptionEnum;
@@ -53,6 +54,9 @@ public abstract class AbstractFileTool implements McpToolInterface {
         fp.addProperty(ToolSchemaKeyEnum.DESCRIPTION.key(), "Absolute path to the file. Required — this tool does not fall back to the focused editor. Call " + McpToolEnum.GET_CURRENT_FILE.toolName() + " if you want the file the user is looking at.");
         props.add(McpToolPropertyEnum.FILE_PATH.key(), fp);
         schema.add(ToolSchemaKeyEnum.PROPERTIES.key(), props);
+        JsonArray required = new JsonArray();
+        required.add(McpToolPropertyEnum.FILE_PATH.key());
+        schema.add(ToolSchemaKeyEnum.REQUIRED.key(), required);
         tool.add(ToolSchemaKeyEnum.INPUT_SCHEMA.key(), schema);
         return McpToolSchemas.applyCredentialsIfRequested(tool, options);
     }

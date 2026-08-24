@@ -108,8 +108,12 @@ public class GetFileContentTool implements McpToolInterface {
     public String handle(ToolRequestArguments args, AbstractAiSession session) throws McpArgumentException {
         String fp = args.require(GetFileContentParamEnum.FILE_PATH.key());
         String sessionId = session.getId();
-        if (sessionId == null || !server.isFileAllowed(sessionId, fp)) {
-            return "Access denied: " + fp + " is outside the allowed project scope for this session.";
+        // isFileAccessible covers the session's OWN config directory too, readable
+        // even under restrict-to-project. Build/test tools park their complete
+        // logs there precisely so the AI can read them back here instead of
+        // shelling out to Bash.
+        if (sessionId == null || !server.isFileAccessible(sessionId, fp)) {
+            return McpHookServer.fileAccessDeniedMessage(server, sessionId, fp);
         }
         return EditorContextProvider.getFileContent(fp, args.intOr(GetFileContentParamEnum.START_LINE.key(), 0), args.intOr(GetFileContentParamEnum.END_LINE.key(), 0));
     }

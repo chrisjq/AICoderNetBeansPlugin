@@ -7,6 +7,7 @@ import kiwi.ingenuity.netbeans.plugin.aicoder.process.McpArgumentException;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.McpInstructionOptionEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.McpSectionEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.McpToolEnum;
+import kiwi.ingenuity.netbeans.plugin.aicoder.process.server.McpHookServer;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.server.McpServerRegistry;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.session.AbstractAiSession;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.McpToolInterface;
@@ -70,8 +71,8 @@ public class NavigateToLineTool implements McpToolInterface {
         String fp = args.require(NavigateToLineParamEnum.FILE_PATH.key());
         var server = McpServerRegistry.getServer();
         String sessionId = session.getId();
-        if (server == null || sessionId == null || !server.isFileAllowed(sessionId, fp)) {
-            return "Access denied: " + fp + " is outside the allowed project scope for this session.";
+        if (!McpHookServer.isFileAccessible(server, sessionId, fp)) {
+            return McpHookServer.fileAccessDeniedMessage(server, sessionId, fp);
         }
         return EditorContextProvider.navigateToLine(fp, args.intOr(NavigateToLineParamEnum.LINE.key(), 1));
     }

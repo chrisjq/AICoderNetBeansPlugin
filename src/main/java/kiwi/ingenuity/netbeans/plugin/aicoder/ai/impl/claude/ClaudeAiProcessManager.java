@@ -3,6 +3,7 @@ package kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.claude;
 import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
 import com.google.gson.JsonObject;
+import com.google.gson.JsonParser;
 import java.io.File;
 import java.io.IOException;
 import java.nio.file.Files;
@@ -25,22 +26,46 @@ import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.claude.session.ClaudePersi
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.session.InterruptTypeEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.McpToolEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.events.AiProcessEventListener;
+import kiwi.ingenuity.netbeans.plugin.aicoder.process.server.McpHookServerUtil;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.server.McpServerRegistry;
+import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.TimeoutEnum;
+import kiwi.ingenuity.netbeans.plugin.aicoder.utils.JsonUtils;
 import kiwi.ingenuity.netbeans.plugin.aicoder.utils.StatusMessageUtil;
 
 /**
- * Manages Claude via ONE long-lived {@code claude --input-format stream-json}
- * process per plugin session (see {@link ClaudePersistentSession}). The process
- * is launched lazily on the first turn and kept alive across turns. On an
- * unexpected process exit (e.g. credit exhausted) the turn is unwedged and the
- * exit surfaced, but the process is NOT auto-restarted — the next user message
- * relaunches it via {@code --resume}.
+ * Manages Claude via ONE long-lived {@code claude --input-format stream-json} process per plugin session (see
+ * {@link ClaudePersistentSession}). The process is launched lazily on the first turn and kept alive across turns. On an
+ * unexpected process exit (e.g. credit exhausted) the turn is unwedged and the exit surfaced, but the process is NOT
+ * auto-restarted — the next user message relaunches it via {@code --resume}.
  */
 public class ClaudeAiProcessManager extends AiProcessManager {
 
     private static final Logger LOG = Logger.getLogger(ClaudeAiProcessManager.class.getName());
     private static final Gson GSON = new GsonBuilder().disableHtmlEscaping().create();
     private static final int MAX_STDERR_LINES = 100;
+    /**
+     * Master switch for logging {@code input_json_delta} tool-input fragments to "ai json". Default OFF.
+     *
+     * <p>
+     * Why off: a fragment cannot be redacted — a secret's characters can straddle two separate chunks, and no per-line
+     * redactor can ever see it whole. This is demonstrated, not theoretical: a live-captured log line contains {@code "partial_json":"{\"sessionId\": \"b154400c-bbb"} — a
+     * 36-character UUID cut off after 12. Individually these fragments are
+     * near-unreadable anyway, and the ASSEMBLED tool input is already logged
+     * in the following {@code assistant} event (see
+     * {@link ClaudeStreamJsonParser}), which is the version anyone would
+     * actually want to read.
+     *
+     * <p>
+     * Flip to {@code true} only when debugging a tool input that never
+     * assembles — a stream dying mid-block, or the CLI truncating — where the
+     * fragments are the only evidence left. Everything else in the stream
+     * keeps logging regardless of this flag: {@code message_start} (token
+     * accounting), {@code message_stop}/{@code message_delta} (stop reasons),
+     * {@code content_block_start}/{@code stop}, and {@code content_block_delta}
+     * carrying {@code text_delta} (the assistant's own live text) — see
+     * {@link #isInputJsonDeltaFragment}, which this flag gates.
+     */
+    static final boolean LOG_INPUT_JSON_DELTA_FRAGMENTS = false;
 
     private static JsonObject buildInterruptRequest() {
         JsonObject interrupt = new JsonObject();
@@ -50,6 +75,39 @@ public class ClaudeAiProcessManager extends AiProcessManager {
         request.addProperty(ClaudeJsonKeyEnum.SUBTYPE.key(), "interrupt");
         interrupt.add(ClaudeJsonKeyEnum.REQUEST.key(), request);
         return interrupt;
+    }
+
+    /**
+     * True iff {@code line} is a {@code stream_event} wrapping a {@code content_block_delta} whose {@code delta.type}
+     * is {@code input_json_delta} — a tool-input fragment. Confirmed against a live-captured log line (see
+     * {@link #LOG_INPUT_JSON_DELTA_FRAGMENTS}); the other {@code content_block_delta} carrier, {@code text_delta} (the
+     * assistant's own live-typing text), deliberately does NOT match this predicate, nor do
+     * {@code content_block_start/stop}, {@code message_start} (full usage/token accounting), {@code message_delta}, or
+     * {@code message_stop} (stop reason) — none of those carry tool arguments, and message_start especially is
+     * genuinely useful for debugging. Parses defensively: anything unparseable or not matching returns false, so the
+     * failure mode is "logs too much" rather than "silently swallows real content". Detection is unconditional —
+     * {@link #LOG_INPUT_JSON_DELTA_FRAGMENTS} only gates whether a detected fragment is then logged, not whether it is
+     * detected, so this method's tests do not depend on the flag.
+     */
+    static boolean isInputJsonDeltaFragment(String line) {
+        if (line == null || line.isBlank()) {
+            return false;
+        }
+        try {
+            JsonObject obj = JsonParser.parseString(line).getAsJsonObject();
+            if (!"stream_event".equals(JsonUtils.getString(obj, ClaudeJsonKeyEnum.TYPE.key()))) {
+                return false;
+            }
+            JsonObject event = obj.getAsJsonObject(ClaudeJsonKeyEnum.EVENT.key());
+            if (event == null || !"content_block_delta".equals(JsonUtils.getString(event, ClaudeJsonKeyEnum.TYPE.key()))) {
+                return false;
+            }
+            JsonObject delta = event.getAsJsonObject(ClaudeJsonKeyEnum.DELTA.key());
+            return delta != null && "input_json_delta".equals(JsonUtils.getString(delta, ClaudeJsonKeyEnum.TYPE.key()));
+        }
+        catch (RuntimeException e) {
+            return false;
+        }
     }
 
     private volatile boolean firstMessage = true;
@@ -119,7 +177,7 @@ public class ClaudeAiProcessManager extends AiProcessManager {
         ClaudeAiMcpRegistrar reg = new ClaudeAiMcpRegistrar(sessionId, executablePath);
         boolean mcpReady;
         try {
-            mcpReady = McpServerRegistry.register(reg).get(2, TimeUnit.MINUTES);
+            mcpReady = McpServerRegistry.register(reg).get(TimeoutEnum.MCP_REGISTRATION_WAIT_MILLIS.millis(), TimeUnit.MILLISECONDS);
         }
         catch (InterruptedException e) {
             Thread.currentThread().interrupt();
@@ -243,7 +301,7 @@ public class ClaudeAiProcessManager extends AiProcessManager {
             String pid = claudeAiSession.getId();
             p.setFileAllowed(path -> {
                 var server = McpServerRegistry.getServer();
-                return server == null || pid == null || server.isFileAllowed(pid, path);
+                return server != null && pid != null && server.isFileAllowed(pid, path);
             });
         }
         parser = p;
@@ -251,14 +309,28 @@ public class ClaudeAiProcessManager extends AiProcessManager {
         final String sid = sessionId;
         ClaudePersistentSession launched = launchPersistentSession(cmd, workDir,
                 line -> {
-                    if (PluginSettings.isDebugJson()) {
-                        LOG.log(Level.INFO, "ai json [{0}]: {1}", new Object[]{sid, line});
+                    // input_json_delta fragments are excluded by default (not just redacted),
+                    // behind LOG_INPUT_JSON_DELTA_FRAGMENTS — see that flag's javadoc for the
+                    // full trade-off (a fragment cannot be made safe, not that it's
+                    // uninteresting; the assembled tool_use block IS visible, fully redacted,
+                    // in the following "assistant" event). text_delta fragments (assistant's
+                    // own live-typing text) share the same event.delta nesting and are never
+                    // excluded — only input_json_delta is, and only while the flag is off.
+                    if (PluginSettings.isDebugJson()
+                    && (LOG_INPUT_JSON_DELTA_FRAGMENTS || !isInputJsonDeltaFragment(line))) {
+                        LOG.log(Level.INFO, "ai json [{0}]: {1}",
+                                new Object[]{sid, McpHookServerUtil.redactAllSecrets(line)});
                     }
                     p.parseLine(line);
                 },
                 err -> {
+                    // Claude's stream-json protocol runs on stdout, not stderr, so a
+                    // tool_use block's secretKey argument should never appear here — but
+                    // redacting anyway costs nothing and removes the risk if the CLI ever
+                    // echoes malformed/offending input to stderr on a parse failure.
                     if (PluginSettings.isDebugJson()) {
-                        LOG.log(Level.WARNING, "claude stderr [{0}]: {1}", new Object[]{sid, err});
+                        LOG.log(Level.WARNING, "claude stderr [{0}]: {1}",
+                                new Object[]{sid, McpHookServerUtil.redactAllSecrets(err)});
                     }
                     addStderr(err);
                 });
@@ -271,9 +343,8 @@ public class ClaudeAiProcessManager extends AiProcessManager {
     }
 
     /**
-     * Called when the persistent process exits. Unwedges the current turn and
-     * surfaces the exit, but does NOT auto-restart: running stays true so the
-     * user's next message relaunches the process via ensureSession (--resume).
+     * Called when the persistent process exits. Unwedges the current turn and surfaces the exit, but does NOT
+     * auto-restart: running stays true so the user's next message relaunches the process via ensureSession (--resume).
      * Ignores stale exits from a superseded session (recycle/stop/relaunch).
      */
     private void handleProcessExit(ClaudePersistentSession dead) {

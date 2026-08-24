@@ -12,10 +12,13 @@ import java.awt.event.ActionEvent;
 import java.io.File;
 import java.io.IOException;
 import java.io.OutputStream;
+import java.nio.charset.Charset;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.atomic.AtomicReference;
+import java.util.logging.Level;
+import java.util.logging.Logger;
 import javax.swing.Action;
 import javax.swing.JEditorPane;
 import javax.swing.SwingUtilities;
@@ -28,6 +31,7 @@ import kiwi.ingenuity.netbeans.plugin.aicoder.process.McpToolPropertyEnum;
 import org.netbeans.api.java.classpath.ClassPath;
 import org.netbeans.api.java.source.JavaSource;
 import org.netbeans.api.java.source.TreePathHandle;
+import org.netbeans.api.queries.FileEncodingQuery;
 import org.netbeans.modules.editor.indent.api.Reformat;
 import org.netbeans.modules.refactoring.api.AbstractRefactoring;
 import org.netbeans.modules.refactoring.api.MoveRefactoring;
@@ -51,6 +55,8 @@ import org.openide.windows.WindowManager;
 
 public class RefactoringProvider {
 
+    private static final Logger LOG = Logger.getLogger(RefactoringProvider.class.getName());
+
     private static final String RUN_INSPECT_ACTION
             = "Actions/Source/org-netbeans-modules-analysis-RunAnalysisAction.instance";
     private static final String FIX_IMPORTS_ACTION
@@ -59,6 +65,39 @@ public class RefactoringProvider {
             = "Editors/text/x-java/Actions/organize-imports.instance";
     private static final String ORGANISE_MEMBERS_ACTION
             = "Editors/text/x-java/Actions/organize-members.instance";
+
+    /**
+     * The single source of truth for "what charset does this file's byte I/O use" across the whole plugin —
+     * {@link EditorContextProvider}, {@code AiTopComponent}, and {@code CodexAppServerHandler} all resolve through this
+     * method rather than deciding independently, so a read and its matching write can never disagree. Resolves via
+     * NetBeans' {@link FileEncodingQuery} against the best-available {@link FileObject}
+     * ({@link FileUtils#resolveByFile}), which is how the editor itself decides a file's encoding (per-project
+     * settings, detection). Falls back to UTF-8 — a documented default, never {@link Charset#defaultCharset()} — when
+     * there is no resolvable FileObject (a path outside every open project and every registered source root) or the
+     * query itself is unavailable (e.g. outside a fully started IDE).
+     */
+    public static Charset resolveCharset(FileObject fo) {
+        if (fo != null) {
+            try {
+                Charset cs = FileEncodingQuery.getEncoding(fo);
+                if (cs != null) {
+                    return cs;
+                }
+            }
+            catch (Throwable t) {
+                LOG.log(Level.FINE, "encoding query failed for " + fo, t);
+            }
+        }
+        return StandardCharsets.UTF_8;
+    }
+
+    public static Charset resolveCharset(File f) {
+        return f == null ? StandardCharsets.UTF_8 : resolveCharset(FileUtils.resolveByFile(f));
+    }
+
+    public static Charset resolveCharset(String filePath) {
+        return filePath == null || filePath.isBlank() ? StandardCharsets.UTF_8 : resolveCharset(new File(filePath));
+    }
 
     public static String renameSymbol(String filePath, int line, String newName) {
         FileObject fo = resolveFileObject(filePath);
@@ -275,7 +314,9 @@ public class RefactoringProvider {
         ChangeParametersRefactoring r = new ChangeParametersRefactoring(handle);
         // setParameterInfo must always be called — NB crashes with NPE if paramInfos is null.
         // When the caller omits parameters, preserve all existing params unchanged via ParameterInfo(i).
-        r.setParameterInfo(parameters != null ? parameters : existingParamInfos(fo, handle));
+        // Partial entries (name-only / type-only updates) are resolved against the current
+        // signature here, so they actually rename/retype instead of silently doing nothing.
+        r.setParameterInfo(mergeParameterInfos(parameters, existingParamInfos(fo, handle)));
         if (methodName != null && !methodName.isBlank()) {
             r.setMethodName(methodName);
         }
@@ -396,7 +437,7 @@ public class RefactoringProvider {
                     newFo = FileUtil.createData(f);
                 }
                 try (OutputStream out = newFo.getOutputStream()) {
-                    out.write(content.getBytes(StandardCharsets.UTF_8));
+                    out.write(content.getBytes(resolveCharset(newFo)));
                 }
                 GitProvider.refreshVcsStatus(filePath);
                 return "File created and saved";
@@ -422,7 +463,7 @@ public class RefactoringProvider {
         // mutate the bytes and desync external tools tracking the file on disk. Only
         // fall back to the editor document when the file is locked (open + unsaved).
         try (OutputStream out = fo.getOutputStream()) {
-            out.write(content.getBytes(StandardCharsets.UTF_8));
+            out.write(content.getBytes(resolveCharset(fo)));
         }
         catch (FileAlreadyLockedException lockEx) {
             String viaDoc = writeViaDocument(fo, content);
@@ -444,7 +485,10 @@ public class RefactoringProvider {
         if (oldString == null) {
             return McpToolPropertyEnum.OLD_STRING.key() + " is required";
         }
-        final String replacement = newString != null ? newString : "";
+        if (newString == null) {
+            return McpToolPropertyEnum.NEW_STRING.key() + " is required";
+        }
+        final String replacement = newString;
         FileObject fo = resolveFileObject(filePath);
         if (fo == null) {
             return "File not found: " + filePath;
@@ -456,9 +500,14 @@ public class RefactoringProvider {
         if (flush.error() != null) {
             return flush.error();
         }
+        // Resolved once and reused for every decode/encode below — the initial read,
+        // the staleness re-check, and the final write must all agree, or oldString's
+        // byte-for-byte match against what was read either fails or matches the wrong
+        // text and clobbers it.
+        Charset charset = resolveCharset(fo);
         String content;
         try {
-            content = new String(fo.asBytes(), StandardCharsets.UTF_8);
+            content = new String(fo.asBytes(), charset);
         }
         catch (IOException e) {
             return "Read error: " + e.getMessage();
@@ -468,10 +517,19 @@ public class RefactoringProvider {
             return McpToolPropertyEnum.OLD_STRING.key() + " not found in file";
         }
         String updated = content.substring(0, idx) + replacement + content.substring(idx + oldString.length());
+        try {
+            String current = new String(fo.asBytes(), charset);
+            if (!current.equals(content)) {
+                return "Edit refused: file changed after approval; please retry";
+            }
+        }
+        catch (IOException e) {
+            return "Read error before edit: " + e.getMessage();
+        }
         // Exact-byte write so the result is precisely the accepted diff (no On-Save
         // reformatting). Fall back to the editor document only when the file is locked.
         try (OutputStream out = fo.getOutputStream()) {
-            out.write(updated.getBytes(StandardCharsets.UTF_8));
+            out.write(updated.getBytes(charset));
         }
         catch (FileAlreadyLockedException lockEx) {
             String viaDoc = writeViaDocument(fo, updated);
@@ -506,6 +564,10 @@ public class RefactoringProvider {
                     doc.remove(0, doc.getLength());
                     doc.insertString(0, content, null);
                     SaveCookie save = dob.getLookup().lookup(SaveCookie.class);
+                    if (save == null) {
+                        result.set("Write error: file is locked and cannot be saved");
+                        return;
+                    }
                     if (save != null) {
                         save.save();
                     }
@@ -620,11 +682,13 @@ public class RefactoringProvider {
     /**
      * Saves a file's unsaved editor changes before a tool reads or writes that file on disk.
      * <p>
-     * Every disk-based tool here reads and writes bytes, and the editor holds its own copy. Touching the file while the
-     * buffer is dirty loses whatever the user had typed: the tool computes its result from disk, which never contained
-     * those edits, and the write then either replaces the document or makes the editor reload. Verified by experiment -
-     * a one-line ApplyEdit against a file with an unsaved line silently discarded that line and reported success, and
-     * the diff panel could not show it because the diff was computed from disk in the first place.
+     * Disk-based read/write tools here (including ApplyEdit and writeFileContent) flush before accessing bytes, while
+     * delete/copy/move operate on filesystem objects without a read/write byte path and do not flush. The editor holds
+     * its own copy. Touching the file while the buffer is dirty loses whatever the user had typed: the tool computes
+     * its result from disk, which never contained those edits, and the write then either replaces the document or makes
+     * the editor reload. Verified by experiment - a one-line ApplyEdit against a file with an unsaved line silently
+     * discarded that line and reported success, and the diff panel could not show it because the diff was computed from
+     * disk in the first place.
      * <p>
      * Flushing first makes disk and buffer agree, so the AI edits what the user actually has on screen and the diff
      * they approve is the real one. A save that FAILS returns an error instead: continuing would destroy the very
@@ -705,8 +769,7 @@ public class RefactoringProvider {
                 for (TopComponent tc : WindowManager.getDefault().getRegistry().getOpened()) {
                     DataObject dob = tc.getLookup().lookup(DataObject.class);
                     if (dob != null && fo.equals(dob.getPrimaryFile())) {
-                        tc.close();
-                        result.set("Tab closed");
+                        result.set(tc.close() ? "Tab closed" : "Unable to close tab");
                         return;
                     }
                 }
@@ -762,6 +825,7 @@ public class RefactoringProvider {
             if (action == null) {
                 return label + " not available in this NetBeans installation";
             }
+            AtomicReference<String> saveError = new AtomicReference<>();
             SwingUtilities.invokeAndWait(() -> {
                 JTextComponent editor = getEditorFor(fo);
                 // Pass editor as source so NB BaseAction.getTextComponent() uses it directly
@@ -769,8 +833,11 @@ public class RefactoringProvider {
                         ? new ActionEvent(editor, ActionEvent.ACTION_PERFORMED, "")
                         : new ActionEvent(action, 0, "");
                 action.actionPerformed(evt);
-                saveFo(fo);
+                saveError.set(saveFo(fo));
             });
+            if (saveError.get() != null) {
+                return "Error: " + saveError.get();
+            }
         }
         catch (InterruptedException e) {
             Thread.currentThread().interrupt();
@@ -815,6 +882,44 @@ public class RefactoringProvider {
         return ref.get();
     }
 
+    /**
+     * Resolves caller-supplied parameter entries against the method's current signature so a PARTIAL update
+     * ({@code name}-only or {@code type}-only — exactly the shape the ChangeMethodSignature tool schema's own example
+     * shows) is no longer a silent no-op: anything an entry omits is filled in from the existing parameter at
+     * {@code originalIndex}. Entries naming both fields pass through untouched, as do brand-new parameters
+     * ({@code originalIndex == -1}), which the tool layer has already validated for required fields. A null
+     * {@code defaultValue} stays null on existing-index entries — NetBeans reads that as "keep call-site arguments as
+     * they are", whereas substituting an empty string would rewrite every call site to pass nothing.
+     *
+     * @param requested entries built by the tool from the JSON {@code parameters} array, or null when omitted
+     * @param existing the method's current parameters (see {@link #existingParamInfos})
+     */
+    static ParameterInfo[] mergeParameterInfos(ParameterInfo[] requested, ParameterInfo[] existing) {
+        if (requested == null || requested.length == 0) {
+            return existing;
+        }
+        if (existing.length == 0) {
+            // Nothing to resolve against (e.g. unresolvable signature) — hand through untouched.
+            return requested;
+        }
+        ParameterInfo[] merged = new ParameterInfo[requested.length];
+        for (int i = 0; i < requested.length; i++) {
+            ParameterInfo req = requested[i];
+            int idx = req.getOriginalIndex();
+            if (idx >= 0 && idx < existing.length && (req.getName() == null || req.getType() == null)) {
+                ParameterInfo ex = existing[idx];
+                merged[i] = new ParameterInfo(idx,
+                        req.getName() != null ? req.getName() : ex.getName(),
+                        req.getType() != null ? req.getType() : ex.getType(),
+                        req.getDefaultValue());
+            }
+            else {
+                merged[i] = req;
+            }
+        }
+        return merged;
+    }
+
     private static JTextComponent getEditorFor(FileObject fo) {
         try {
             EditorCookie ec = DataObject.find(fo).getLookup().lookup(EditorCookie.class);
@@ -830,34 +935,39 @@ public class RefactoringProvider {
         return null;
     }
 
-    private static void saveFo(FileObject fo) {
+    private static String saveFo(FileObject fo) {
         try {
             DataObject dob = DataObject.find(fo);
             SaveCookie save = dob.getLookup().lookup(SaveCookie.class);
             if (save != null) {
                 save.save();
             }
+            return null;
         }
-        catch (Exception ignored) {
+        catch (Exception e) {
+            String message = e.getMessage();
+            return message != null ? message : e.getClass().getName();
         }
     }
 
     private static String runRefactoring(AbstractRefactoring refactoring) {
         try {
             Problem p = refactoring.preCheck();
-            if (p != null && p.isFatal()) {
+            if (p != null) {
                 return p.getMessage();
             }
             RefactoringSession session = RefactoringSession.create("CC Plugin Refactoring");
-            p = refactoring.prepare(session);
-            if (p != null && p.isFatal()) {
-                return p.getMessage();
+            try {
+                p = refactoring.prepare(session);
+                if (p != null) {
+                    return p.getMessage();
+                }
+                p = session.doRefactoring(true);
+                return p != null ? p.getMessage() : null;
             }
-            p = session.doRefactoring(true);
-            if (p != null && p.isFatal()) {
-                return p.getMessage();
+            finally {
+                session.finished();
             }
-            return null;
         }
         catch (Exception e) {
             String msg = e.getMessage();

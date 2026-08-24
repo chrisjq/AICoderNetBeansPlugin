@@ -1,5 +1,6 @@
 package kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.system;
 
+import com.google.gson.JsonArray;
 import com.google.gson.JsonObject;
 import java.util.Set;
 import java.util.concurrent.CompletableFuture;
@@ -16,6 +17,7 @@ import kiwi.ingenuity.netbeans.plugin.aicoder.process.locking.LockTypeEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.locking.RequiresLock;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.server.McpHookServer;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.session.AbstractAiSession;
+import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.TimeoutEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.AbstractFileTool;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.McpToolSchemas;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.ToolRequestArguments;
@@ -64,6 +66,9 @@ public class SaveFileTool extends AbstractFileTool {
                 "New file content. When provided, replaces the entire file and saves in one operation.");
         props.add(SaveFileParamEnum.CONTENT.key(), ct);
         schema.add(ToolSchemaKeyEnum.PROPERTIES.key(), props);
+        JsonArray required = new JsonArray();
+        required.add(SaveFileParamEnum.FILE_PATH.key());
+        schema.add(ToolSchemaKeyEnum.REQUIRED.key(), required);
         tool.add(ToolSchemaKeyEnum.INPUT_SCHEMA.key(), schema);
         return McpToolSchemas.applyCredentialsIfRequested(tool, options);
     }
@@ -81,17 +86,21 @@ public class SaveFileTool extends AbstractFileTool {
             return "filePath is required — this tool does not fall back to the focused editor. "
                     + "Call " + McpToolEnum.GET_CURRENT_FILE.toolName() + " if you want the file the user is looking at.";
         }
-        String effectivePath = fp;
-        if (effectivePath != null) {
-            String sessionId = session.getId();
-            if (sessionId == null || !server.isFileAllowed(sessionId, effectivePath)) {
-                return "Access denied: " + effectivePath + " is outside the allowed project scope for this session.";
-            }
+        String sessionId = session.getId();
+        boolean ownConfigFile = server.isOwnSessionConfigFile(sessionId, fp);
+        if (!ownConfigFile && !McpHookServer.isProjectFileAllowed(server, sessionId, fp)) {
+            return McpHookServer.fileAccessDeniedMessage(server, sessionId, fp);
         }
         String content = args.str(SaveFileParamEnum.CONTENT.key());
         if (content != null) {
-            if (fp == null) {
-                return "filePath is required when content is provided";
+            if (ownConfigFile) {
+                // The session's own config dir (memory, logs) is its own working data, so
+                // it is auto-accepted: written directly with no diff panel and no
+                // PermissionEvent — not because a panel could not be rendered for it (the
+                // panel builds from content strings, not a project-anchored FileObject),
+                // but because this is a deliberate policy choice, consistent with the
+                // built-in Write hook and ApplyEdit/WriteFile's own-config branch.
+                return RefactoringProvider.writeFileContent(fp, content);
             }
             AiProcessEventListener listener = session.getAiProcessEventListener();
             if (listener == null) {
@@ -101,7 +110,7 @@ public class SaveFileTool extends AbstractFileTool {
             listener.onAiProcessEvent(new PermissionEvent("Write", fp, null, null, content, future));
             PermissionDecision decision;
             try {
-                decision = future.get(120, TimeUnit.SECONDS);
+                decision = future.get(TimeoutEnum.USER_APPROVAL_WAIT_MILLIS.millis(), TimeUnit.MILLISECONDS);
             }
             catch (TimeoutException e) {
                 return "Timed out waiting for the user to review this change in the diff panel — "
@@ -117,12 +126,15 @@ public class SaveFileTool extends AbstractFileTool {
             }
             return RefactoringProvider.writeFileContent(fp, content);
         }
-        String result = RefactoringProvider.saveFile(effectivePath);
-        if ("File saved".equals(result)) {
+        String result = RefactoringProvider.saveFile(fp);
+        // No notification for the session's own config dir either — flushing its own
+        // working data to disk is not something the user needs to be told about, same
+        // as the write branch above never surfaces a PermissionEvent for it.
+        if ("File saved".equals(result) && !ownConfigFile) {
             AiProcessEventListener listener = session.getAiProcessEventListener();
             if (listener != null) {
                 listener.onAiProcessEvent(new SystemNotificationEvent(
-                        McpToolEnum.SAVE_FILE.toolName() + ": " + ProjectPathUtil.shortPath(effectivePath)));
+                        McpToolEnum.SAVE_FILE.toolName() + ": " + ProjectPathUtil.shortPath(fp)));
             }
         }
         return result;

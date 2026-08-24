@@ -24,8 +24,8 @@ public class CloseFileTool extends AbstractFileTool {
         if (fp != null) {
             McpHookServer server = McpServerRegistry.getServer();
             String sessionId = session.getId();
-            if (server == null || sessionId == null || !server.isFileAllowed(sessionId, fp)) {
-                return "Access denied: " + fp + " is outside the allowed project scope for this session.";
+            if (!McpHookServer.isFileAccessible(server, sessionId, fp)) {
+                return McpHookServer.fileAccessDeniedMessage(server, sessionId, fp);
             }
         }
         return RefactoringProvider.closeFile(fp);

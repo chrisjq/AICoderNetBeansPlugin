@@ -1,11 +1,13 @@
 package kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.files;
 
 import com.google.gson.JsonObject;
+import java.nio.file.Path;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.TimeUnit;
+import kiwi.ingenuity.netbeans.plugin.aicoder.PluginUtil;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.AiTypeEnum;
 import static kiwi.ingenuity.netbeans.plugin.aicoder.ai.AiTypeEnum.CLAUDE;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.events.PermissionDecision;
@@ -73,6 +75,30 @@ class WriteFileToolTest {
         }
         finally {
             lockManager.releaseFileLock("otherSession", filePath);
+        }
+    }
+
+    @Test
+    void handle_ownSessionConfigFile_writesDirectlyWithNoPermissionEvent() throws Exception {
+        // Restrict on, no project dirs registered — isFileAllowed alone would deny this;
+        // only the own-config-dir bypass can let it through, and it must do so without
+        // ever raising a PermissionEvent.
+        String sessionId = "write-file-own-config-" + UUID.randomUUID();
+        McpServerRegistry.getServer().registerSession(sessionId, CLAUDE, List.of(), true);
+        Path configDir = PluginUtil.getPluginAiSessionConfigDir(CLAUDE, sessionId);
+        Path file = configDir.resolve("memory.md");
+        try {
+            WriteFileTool tool = new WriteFileTool();
+            RecordingListener listener = new RecordingListener();
+            FakeSession session = new FakeSession(sessionId, listener);
+
+            String result = tool.handle(args(file.toString(), "remembered fact"), session);
+
+            assertTrue(result.toLowerCase().contains("saved"), "expected success, got: " + result);
+            assertTrue(listener.events.isEmpty(), "own config dir write must bypass the diff panel — no PermissionEvent");
+        }
+        finally {
+            PluginUtil.deleteAiSessionConfigDir(CLAUDE, sessionId);
         }
     }
 

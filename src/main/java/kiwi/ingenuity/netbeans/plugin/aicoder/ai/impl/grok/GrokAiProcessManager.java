@@ -20,28 +20,27 @@ import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.grok.events.GrokTokenUsage
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.grok.session.GrokAiSession;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.session.InterruptTypeEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.events.AiProcessEventListener;
+import kiwi.ingenuity.netbeans.plugin.aicoder.process.server.McpHookServerUtil;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.server.McpServerRegistry;
+import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.TimeoutEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.utils.StatusMessageUtil;
 
 /**
- * Manages the {@code grok} CLI (xAI's Grok CLI, https://docs.x.ai/build/cli).
- * Unlike Claude's persistent {@code --input-format stream-json} conversation,
- * grok's headless mode (https://docs.x.ai/build/cli/headless-scripting) is a
- * one-shot process per turn: each prompt spawns {@code grok -p "<prompt>"} with
- * either {@code -s <sessionId>} (first turn, creates the named headless
- * session) or {@code -r <sessionId>} (subsequent turns, resumes it) so the
- * grok-side session persists across turns even though the OS process does not.
- * Output is captured with {@code --output-format json} and parsed by
- * {@link GrokResponseParser} once the process exits.
+ * Manages the {@code grok} CLI (xAI's Grok CLI, https://docs.x.ai/build/cli). Unlike Claude's persistent
+ * {@code --input-format stream-json} conversation, grok's headless mode
+ * (https://docs.x.ai/build/cli/headless-scripting) is a one-shot process per turn: each prompt spawns
+ * {@code grok -p "<prompt>"} with either {@code -s <sessionId>} (first turn, creates the named headless session) or
+ * {@code -r <sessionId>} (subsequent turns, resumes it) so the grok-side session persists across turns even though the
+ * OS process does not. Output is captured with {@code --output-format json} and parsed by {@link GrokResponseParser}
+ * once the process exits.
  */
 public class GrokAiProcessManager extends AiProcessManager {
 
     private static final Logger LOG = Logger.getLogger(GrokAiProcessManager.class.getName());
 
     /**
-     * Ask the process to exit gracefully (SIGTERM-equivalent), give it up to 5
-     * seconds to do so, and only escalate to a forced kill if it is still alive
-     * afterwards.
+     * Ask the process to exit gracefully (SIGTERM-equivalent), give it up to 5 seconds to do so, and only escalate to a
+     * forced kill if it is still alive afterwards.
      */
     private static void terminateProcess(Process p) {
         if (p == null) {
@@ -60,20 +59,18 @@ public class GrokAiProcessManager extends AiProcessManager {
     }
 
     /**
-     * Grant the headless CLI access to every open NetBeans project, mirroring
-     * Claude's {@code --add-dir} loop.
+     * Grant the headless CLI access to every open NetBeans project, mirroring Claude's {@code --add-dir} loop.
      *
      * <p>
      * Grok exposes no {@code --add-dir}. Instead:
      * <ul>
-     * <li>{@code --cwd} pins the session working directory (also set on
-     * {@link ProcessBuilder#directory(File)} for child processes)</li>
-     * <li>path-scoped {@code --allow} rules grant native Read/Edit/Write/Grep
-     * under each project root (repeatable; works with headless mode)</li>
+     * <li>{@code --cwd} pins the session working directory (also set on {@link ProcessBuilder#directory(File)} for
+     * child processes)</li>
+     * <li>path-scoped {@code --allow} rules grant native Read/Edit/Write/Grep under each project root (repeatable;
+     * works with headless mode)</li>
      * </ul>
-     * MCP tools already receive the same list via
-     * {@code McpHookServer.updateSessionScope}; these flags cover the CLI's own
-     * filesystem tools.
+     * MCP tools already receive the same list via {@code McpHookServer.updateSessionScope}; these flags cover the CLI's
+     * own filesystem tools.
      */
     static void appendProjectDirArgs(List<String> args, File workDir, List<File> projDirs) {
         if (workDir != null && workDir.isDirectory()) {
@@ -149,7 +146,8 @@ public class GrokAiProcessManager extends AiProcessManager {
         GrokAiMcpRegistrar reg = new GrokAiMcpRegistrar(sessionId, executablePath);
         boolean mcpReady;
         try {
-            mcpReady = McpServerRegistry.register(reg).get(2, TimeUnit.MINUTES);
+            mcpReady = McpServerRegistry.register(reg)
+                    .get(TimeoutEnum.MCP_REGISTRATION_WAIT_MILLIS.millis(), TimeUnit.MILLISECONDS);
         }
         catch (InterruptedException e) {
             Thread.currentThread().interrupt();
@@ -255,7 +253,7 @@ public class GrokAiProcessManager extends AiProcessManager {
                     String line;
                     while ((line = r.readLine()) != null) {
                         if (debugJson) {
-                            LOG.log(Level.WARNING, "grok stderr [{0}]: {1}", new Object[]{sid, line});
+                            LOG.log(Level.WARNING, "grok stderr [{0}]: {1}", new Object[]{sid, McpHookServerUtil.redactAllSecrets(line)});
                         }
                         stderrLines.add(line);
                     }
@@ -271,7 +269,7 @@ public class GrokAiProcessManager extends AiProcessManager {
                 String line;
                 while ((line = r.readLine()) != null) {
                     if (debugJson) {
-                        LOG.log(Level.INFO, "grok json [{0}]: {1}", new Object[]{sid, line});
+                        LOG.log(Level.INFO, "grok json [{0}]: {1}", new Object[]{sid, McpHookServerUtil.redactSecrets(line)});
                     }
                     stdout.append(line).append('\n');
                 }
@@ -363,10 +361,9 @@ public class GrokAiProcessManager extends AiProcessManager {
     }
 
     /**
-     * After a non-success first-turn attempt, keep {@code -s} if grok never
-     * created the session; switch to {@code -r} only when the session directory
-     * already exists (e.g. CLI created it then exited non-zero, or user
-     * cancelled mid-create).
+     * After a non-success first-turn attempt, keep {@code -s} if grok never created the session; switch to {@code -r}
+     * only when the session directory already exists (e.g. CLI created it then exited non-zero, or user cancelled
+     * mid-create).
      */
     private void resolveFirstMessageAfterAttempt(boolean wasFirst, String sid) {
         if (!wasFirst) {
@@ -378,10 +375,9 @@ public class GrokAiProcessManager extends AiProcessManager {
     }
 
     /**
-     * Grok headless mode has no documented mid-turn graceful-abort control
-     * message (unlike Claude's stdin control_request or Copilot's
-     * session.abort()), so Cancel hard-kills the OS process. Mail has nothing
-     * to inject into since there is no persistent session to interrupt.
+     * Grok headless mode has no documented mid-turn graceful-abort control message (unlike Claude's stdin
+     * control_request or Copilot's session.abort()), so Cancel hard-kills the OS process. Mail has nothing to inject
+     * into since there is no persistent session to interrupt.
      */
     @Override
     public synchronized void interrupt(InterruptTypeEnum type) {

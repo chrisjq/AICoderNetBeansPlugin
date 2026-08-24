@@ -16,11 +16,9 @@ import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.ToolSchemaKeyEnu
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.providers.netbeans.EditorContextProvider;
 
 /**
- * Reports a file's size and metadata (byte count, line count, encoding) without
- * returning its contents. Cheap to call before a GetFileContent when a caller's
- * result limit might clip a large file — the byte count says up front whether
- * the read must be paged with startLine/endLine, and the encoding says which
- * charset the bytes decode with.
+ * Reports a file's size and metadata (byte count, line count, encoding) without returning its contents. Cheap to call
+ * before a GetFileContent when a caller's result limit might clip a large file — the byte count says up front whether
+ * the read must be paged with startLine/endLine, and the encoding says which charset the bytes decode with.
  */
 public class GetFileSizeAndMetaTool implements McpToolInterface {
 
@@ -86,8 +84,8 @@ public class GetFileSizeAndMetaTool implements McpToolInterface {
     public String handle(ToolRequestArguments args, AbstractAiSession session) throws McpArgumentException {
         String fp = args.require(GetFileSizeAndMetaParamEnum.FILE_PATH.key());
         String sessionId = session.getId();
-        if (sessionId == null || !server.isFileAllowed(sessionId, fp)) {
-            return "Access denied: " + fp + " is outside the allowed project scope for this session.";
+        if (sessionId == null || !server.isFileAccessible(sessionId, fp)) {
+            return McpHookServer.fileAccessDeniedMessage(server, sessionId, fp);
         }
         return EditorContextProvider.getFileSizeAndMeta(fp);
     }

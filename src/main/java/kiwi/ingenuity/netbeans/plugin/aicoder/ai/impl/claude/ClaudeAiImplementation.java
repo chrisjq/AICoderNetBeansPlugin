@@ -13,6 +13,7 @@ import kiwi.ingenuity.netbeans.plugin.aicoder.ai.AiImplementation;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.AiModelCatalog;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.AiSessionHost;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.AiTypeEnum;
+import kiwi.ingenuity.netbeans.plugin.aicoder.ai.AiTypeLifecycle;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.AiTypePropertyBus;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.ExecutablePrompter;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.events.StatusEvent;
@@ -32,9 +33,8 @@ import kiwi.ingenuity.netbeans.plugin.aicoder.process.events.AiProcessEventListe
 import kiwi.ingenuity.netbeans.plugin.aicoder.utils.StatusMessageUtil;
 
 /**
- * Thin adapter so the generic multi-AI system (AiSession, AiTopComponent, etc.)
- * can use the Claude implementation without any behavior change for Claude
- * users. All Claude-specific code stays in this package or the classes it owns.
+ * Thin adapter so the generic multi-AI system (AiSession, AiTopComponent, etc.) can use the Claude implementation
+ * without any behavior change for Claude users. All Claude-specific code stays in this package or the classes it owns.
  */
 public class ClaudeAiImplementation extends AiImplementation {
 
@@ -42,27 +42,34 @@ public class ClaudeAiImplementation extends AiImplementation {
 
     private static final Object MODEL_LOCK = new Object();
     private static final AiModelCatalog MODEL_CATALOG = new AiModelCatalog();
+    private static final AiTypeLifecycle TYPE_LIFECYCLE = new AiTypeLifecycle() {
+        @Override
+        public void start() {
+            ClaudeCredentialMonitor.getInstance().start();
+        }
+
+        @Override
+        public void stop() {
+            ClaudeCredentialMonitor.getInstance().stop();
+            AnthropicApiClient.rateLimitManager().shutdown();
+        }
+    };
 
     private static final int MAX_MODEL_DISCOVERY_RETRIES = 20;
     private static int modelDiscoveryRetries = 0; // guarded by MODEL_LOCK
     private static volatile ClaudeUsageEvent cachedUsageEvent = null;
     private static volatile long lastUsageFetchAttemptMs = 0;
     /**
-     * Learned minimum gap between usage-endpoint fetch attempts. Starts at
-     * {@link #INITIAL_USAGE_INTERVAL_MS} — a conservative baseline rather than
-     * 0, since direct testing against /api/oauth/usage showed the real limit
-     * trips after as few as 3 requests within a few seconds, so waiting for the
-     * first 429 before throttling at all would still let an initial burst
-     * through. From there, every subsequent 429 grows the interval further by
-     * {@link #OFFSET_MS} (see {@link #recordUsageFetch429IfApplicable()}) — a
-     * plain additive ratchet rather than a one-shot measurement, since
-     * Anthropic's Retry-After header on this endpoint is always "0" (it never
-     * varies and retrying immediately keeps failing for tens of seconds), so
-     * there is no reliable single-shot signal to derive an exact value from.
-     * The interval never shrinks back down since there's no signal for when
-     * that would be safe. onTurnComplete() fires this on every single turn, so
-     * without a floor a fast multi-turn conversation hammers /api/oauth/usage
-     * far faster than Anthropic allows.
+     * Learned minimum gap between usage-endpoint fetch attempts. Starts at {@link #INITIAL_USAGE_INTERVAL_MS} — a
+     * conservative baseline rather than 0, since direct testing against /api/oauth/usage showed the real limit trips
+     * after as few as 3 requests within a few seconds, so waiting for the first 429 before throttling at all would
+     * still let an initial burst through. From there, every subsequent 429 grows the interval further by
+     * {@link #OFFSET_MS} (see {@link #recordUsageFetch429IfApplicable()}) — a plain additive ratchet rather than a
+     * one-shot measurement, since Anthropic's Retry-After header on this endpoint is always "0" (it never varies and
+     * retrying immediately keeps failing for tens of seconds), so there is no reliable single-shot signal to derive an
+     * exact value from. The interval never shrinks back down since there's no signal for when that would be safe.
+     * onTurnComplete() fires this on every single turn, so without a floor a fast multi-turn conversation hammers
+     * /api/oauth/usage far faster than Anthropic allows.
      */
     private static final long INITIAL_USAGE_INTERVAL_MS = 30_000L;
     private static volatile long learnedUsageIntervalMs = INITIAL_USAGE_INTERVAL_MS;
@@ -73,10 +80,9 @@ public class ClaudeAiImplementation extends AiImplementation {
     }
 
     /**
-     * Invoked by {@link ClaudeCredentialMonitor} when
-     * ~/.claude/.credentials.json changes (the user ran {@code claude login}
-     * after the plugin started). Resets model discovery state so the fresh
-     * credentials are used to re-fetch models, and triggers usage fetch.
+     * Invoked by {@link ClaudeCredentialMonitor} when ~/.claude/.credentials.json changes (the user ran
+     * {@code claude login} after the plugin started). Resets model discovery state so the fresh credentials are used to
+     * re-fetch models, and triggers usage fetch.
      */
     public static void onCredentialsChanged() {
         synchronized (MODEL_LOCK) {
@@ -88,11 +94,9 @@ public class ClaudeAiImplementation extends AiImplementation {
     }
 
     /**
-     * Fires cached models to this session's dropdown immediately (if
-     * available), then re-fetches from the API if the last successful fetch was
-     * more than {@link #MODEL_REFRESH_INTERVAL_MS} ago. Only called once per
-     * session (from {@link #registerLifecycleListeners}) and on credentials
-     * change.
+     * Fires cached models to this session's dropdown immediately (if available), then re-fetches from the API if the
+     * last successful fetch was more than {@link #MODEL_REFRESH_INTERVAL_MS} ago. Only called once per session (from
+     * {@link #registerLifecycleListeners}) and on credentials change.
      */
     public static void triggerModelDiscovery() {
         AnthropicApiClient.refreshCredentialsState();
@@ -106,10 +110,8 @@ public class ClaudeAiImplementation extends AiImplementation {
     }
 
     /**
-     * Submits a model fetch to the rate-limit manager. Coalesced by the
-     * {@code "models"} key so only one fetch runs at a time. On failure,
-     * retries up to {@link #MAX_MODEL_DISCOVERY_RETRIES} times within the
-     * current fetch cycle.
+     * Submits a model fetch to the rate-limit manager. Coalesced by the {@code "models"} key so only one fetch runs at
+     * a time. On failure, retries up to {@link #MAX_MODEL_DISCOVERY_RETRIES} times within the current fetch cycle.
      */
     private static void submitModelFetch() {
         AnthropicApiClient.rateLimitManager().submitWhenClear("models", ClaudeAiImplementation::doFetchModels);
@@ -168,27 +170,23 @@ public class ClaudeAiImplementation extends AiImplementation {
     }
 
     /**
-     * True when the last usage-fetch attempt was recent enough that a new one
-     * would almost certainly retrigger the same server-side rate limit already
-     * learned about — skips the network call entirely rather than hitting the
-     * endpoint and eating another 429/backoff cycle. Package- visible (not
-     * private) purely so it's unit-testable as a pure function.
+     * True when the last usage-fetch attempt was recent enough that a new one would almost certainly retrigger the same
+     * server-side rate limit already learned about — skips the network call entirely rather than hitting the endpoint
+     * and eating another 429/backoff cycle. Package- visible (not private) purely so it's unit-testable as a pure
+     * function.
      */
     static boolean shouldThrottleUsageFetch(long now, long lastAttemptMs, long learnedIntervalMs) {
         return learnedIntervalMs > 0 && now - lastAttemptMs < learnedIntervalMs;
     }
 
     /**
-     * Called on a failed usage fetch. Only grows the throttle when the failure
-     * was actually the rate limiter tripping (not some other network/parse
-     * error) — {@code RateLimitManager.isRateLimited()} is true immediately
-     * after {@code AnthropicApiClient.get()} calls {@code setRateLimit()} on a
-     * 429, so this reliably distinguishes a rate-limit failure from any other
-     * exception without needing to parse the exception message. Each 429 adds
-     * another {@link #OFFSET_MS} step — a fresh attempt only happens after
-     * waiting at least the current learned interval (see
-     * {@link #shouldThrottleUsageFetch}), so a 429 here means that interval
-     * still wasn't long enough and needs to grow further.
+     * Called on a failed usage fetch. Only grows the throttle when the failure was actually the rate limiter tripping
+     * (not some other network/parse error) — {@code RateLimitManager.isRateLimited()} is true immediately after
+     * {@code AnthropicApiClient.get()} calls {@code setRateLimit()} on a 429, so this reliably distinguishes a
+     * rate-limit failure from any other exception without needing to parse the exception message. Each 429 adds another
+     * {@link #OFFSET_MS} step — a fresh attempt only happens after waiting at least the current learned interval (see
+     * {@link #shouldThrottleUsageFetch}), so a 429 here means that interval still wasn't long enough and needs to grow
+     * further.
      */
     private static void recordUsageFetch429IfApplicable() {
         if (AnthropicApiClient.rateLimitManager().isRateLimited()) {
@@ -207,6 +205,11 @@ public class ClaudeAiImplementation extends AiImplementation {
     @Override
     protected ClaudeAiProcessManager delegate() {
         return delegate;
+    }
+
+    @Override
+    public AiTypeLifecycle typeLifecycle() {
+        return TYPE_LIFECYCLE;
     }
 
     public String getCurrentModel() {
@@ -254,16 +257,12 @@ public class ClaudeAiImplementation extends AiImplementation {
     }
 
     /**
-     * Run after every {@code delegate.start()}. Applies session paths, then —
-     * if this session already exists in Claude's on-disk store — switches the
-     * freshly started manager to RESUME it. start() always defaults to
-     * create-via {@code --session-id}, which the Claude CLI rejects for an id
-     * that already exists, so the process exits immediately. That is why an
-     * in-place restart of a dead session "sends but dies again": every other
-     * start path (componentOpened) reaches resumeSession() via loadHistory(),
-     * but the resend-into-dead-session path did not. resumeSession() flips the
-     * next turn to {@code --resume}, so a restart behaves like reopening the
-     * tab.
+     * Run after every {@code delegate.start()}. Applies session paths, then — if this session already exists in
+     * Claude's on-disk store — switches the freshly started manager to RESUME it. start() always defaults to create-via
+     * {@code --session-id}, which the Claude CLI rejects for an id that already exists, so the process exits
+     * immediately. That is why an in-place restart of a dead session "sends but dies again": every other start path
+     * (componentOpened) reaches resumeSession() via loadHistory(), but the resend-into-dead-session path did not.
+     * resumeSession() flips the next turn to {@code --resume}, so a restart behaves like reopening the tab.
      */
     @Override
     protected void afterStart() {

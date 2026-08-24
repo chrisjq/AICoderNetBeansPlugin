@@ -26,13 +26,31 @@ import java.util.function.Consumer;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 import kiwi.ingenuity.netbeans.plugin.aicoder.PluginSettings;
+import kiwi.ingenuity.netbeans.plugin.aicoder.process.server.McpHookServerUtil;
+import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.TimeoutEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.ToolSchemaKeyEnum;
 
 public class OpenAiCompatibleClient implements HttpAiClient {
 
     private static final Logger LOG = Logger.getLogger(OpenAiCompatibleClient.class.getName());
     private static final Gson GSON = new Gson();
-    private static final Duration DEFAULT_TIMEOUT = Duration.ofSeconds(300);
+    private static final Duration DEFAULT_TIMEOUT = Duration.ofMillis(TimeoutEnum.OPENAI_HTTP_REQUEST_TIMEOUT_MILLIS.millis());
+    /**
+     * Master switch for logging tool_calls SSE deltas to "ollama sse". Default OFF.
+     *
+     * <p>
+     * Why off: a single chunk is frequently not a complete JSON object on its own (arguments stream in fragments — see
+     * {@link PartialToolCall}), and even when it is, a secret's own characters can straddle two separate chunks — no
+     * per-line redaction can catch that. Individually these fragments are near-unreadable anyway, and the ASSEMBLED
+     * call is already logged in the next turn's "ollama request" log, which replays the complete history — the version
+     * anyone would actually want to read.
+     *
+     * <p>
+     * Flip to {@code true} only when debugging a tool call whose arguments never assemble correctly and the
+     * request-history replay isn't enough to diagnose it. Ordinary content deltas keep logging regardless of this flag
+     * — see {@link #isToolCallDelta}, which this flag gates.
+     */
+    static final boolean LOG_TOOL_CALL_SSE_DELTAS = false;
 
     static ChatResult assembleSse(List<String> sseDataLines) {
         StringBuilder assistantText = new StringBuilder();
@@ -104,14 +122,41 @@ public class OpenAiCompatibleClient implements HttpAiClient {
                     continue;
                 }
                 String data = line.substring(5).stripLeading();
-                if (PluginSettings.isDebugJson()) {
-                    LOG.log(Level.INFO, "ollama sse: {0}", data);
+                // Tool-call deltas are excluded by default (not just redacted), behind
+                // LOG_TOOL_CALL_SSE_DELTAS — see that flag's javadoc for the full trade-off
+                // (a fragment cannot be made safe, not that it's uninteresting; the
+                // assembled call is already visible, fully redacted, in the next turn's
+                // "ollama request" log, which replays the complete history). Ordinary
+                // content deltas are never excluded, flag or no flag.
+                if (PluginSettings.isDebugJson() && (LOG_TOOL_CALL_SSE_DELTAS || !isToolCallDelta(data))) {
+                    LOG.log(Level.INFO, "ollama sse: {0}", McpHookServerUtil.redactAllSecrets(data));
                 }
                 lines.add(data);
                 emitTextDelta(data, onTextDelta);
             }
         }
         return lines;
+    }
+
+    static boolean isToolCallDelta(String data) {
+        if (data == null || data.isBlank() || "[DONE]".equals(data)) {
+            return false;
+        }
+        try {
+            JsonObject root = JsonParser.parseString(data).getAsJsonObject();
+            JsonArray choices = root.getAsJsonArray(OpenAiJsonKeyEnum.CHOICES.key());
+            if (choices == null || choices.isEmpty()) {
+                return false;
+            }
+            JsonObject choice = choices.get(0).getAsJsonObject();
+            JsonObject delta = choice.getAsJsonObject(OpenAiJsonKeyEnum.DELTA.key());
+            return delta != null && delta.has(OpenAiJsonKeyEnum.TOOL_CALLS.key());
+        }
+        catch (RuntimeException e) {
+            // Unparseable — cannot confirm it's a tool-call fragment, so it is not
+            // excluded on a hunch; ordinary content keeps streaming to the log as before.
+            return false;
+        }
     }
 
     private static void emitTextDelta(String data, Consumer<String> onTextDelta) {
@@ -266,7 +311,7 @@ public class OpenAiCompatibleClient implements HttpAiClient {
     public OpenAiCompatibleClient() {
         this(HttpClient.newBuilder()
                 .followRedirects(HttpClient.Redirect.NORMAL)
-                .connectTimeout(Duration.ofSeconds(10))
+                .connectTimeout(Duration.ofMillis(TimeoutEnum.OPENAI_HTTP_CONNECT_TIMEOUT_MILLIS.millis()))
                 .build());
     }
 
@@ -294,7 +339,7 @@ public class OpenAiCompatibleClient implements HttpAiClient {
         }
         String payloadJson = GSON.toJson(buildPayload(request));
         if (PluginSettings.isDebugJson()) {
-            LOG.log(Level.INFO, "ollama request: {0}", payloadJson);
+            LOG.log(Level.INFO, "ollama request: {0}", McpHookServerUtil.redactAllSecrets(payloadJson));
         }
         builder.POST(HttpRequest.BodyPublishers.ofString(payloadJson, StandardCharsets.UTF_8));
 
@@ -303,7 +348,10 @@ public class OpenAiCompatibleClient implements HttpAiClient {
             try (InputStream body = response.body()) {
                 if (response.statusCode() < 200 || response.statusCode() >= 300) {
                     String errorBody = new String(body.readAllBytes(), StandardCharsets.UTF_8);
-                    throw new IOException("HTTP " + response.statusCode() + " from " + endpoint + ": " + errorBody);
+                    // Server error bodies can echo request content (and occasionally auth
+                    // material) — never surface them unredacted through exception messages.
+                    throw new IOException("HTTP " + response.statusCode() + " from " + endpoint
+                            + ": " + McpHookServerUtil.redactAllSecrets(errorBody));
                 }
                 List<String> sseDataLines = readSseDataLines(body, onTextDelta);
                 return assembleSse(sseDataLines);

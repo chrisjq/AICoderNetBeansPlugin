@@ -6,18 +6,18 @@ import com.google.gson.JsonObject;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Set;
-import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.ToolSchemaKeyEnum;
-import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.providers.netbeans.GitProvider;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.McpArgumentException;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.McpInstructionOptionEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.McpSectionEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.McpToolEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.locking.LockTypeEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.locking.RequiresLock;
+import kiwi.ingenuity.netbeans.plugin.aicoder.process.session.AbstractAiSession;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.McpToolInterface;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.McpToolSchemas;
-import kiwi.ingenuity.netbeans.plugin.aicoder.process.session.AbstractAiSession;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.ToolRequestArguments;
+import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.ToolSchemaKeyEnum;
+import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.providers.netbeans.GitProvider;
 
 @RequiresLock(LockTypeEnum.GIT_LOCK)
 public class GitCommitTool implements McpToolInterface {
@@ -99,6 +99,10 @@ public class GitCommitTool implements McpToolInterface {
                 }
             }
         }
-        return GitProvider.gitCommit(args.require(GitCommonParamEnum.PROJECT_PATH.key()), message, files);
+        return GitProvider.gitCommit(
+                args.require(GitCommonParamEnum.PROJECT_PATH.key()),
+                message,
+                files,
+                session.getId());
     }
 }

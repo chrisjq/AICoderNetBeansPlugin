@@ -58,9 +58,9 @@ public class GetTableDataTool implements McpToolInterface {
         JsonObject limit = new JsonObject();
         limit.addProperty(ToolSchemaKeyEnum.TYPE.key(), "integer");
         limit.addProperty(ToolSchemaKeyEnum.DESCRIPTION.key(),
-                "Maximum rows to return. Optional — defaults to, and is capped at, the row limit "
-                + "configured in this session's or the plugin's database access settings (currently "
-                + PluginSettings.getDatabaseRowLimit() + ").");
+                "Maximum rows to return. Optional — defaults to, and is capped at, this session's "
+                + "effective database row limit: a per-session override if one is configured, otherwise "
+                + "the plugin default (currently " + PluginSettings.getDatabaseRowLimit() + ").");
         props.add(DatabaseParamEnum.LIMIT.key(), limit);
         schema.add(ToolSchemaKeyEnum.PROPERTIES.key(), props);
         JsonArray required = new JsonArray();

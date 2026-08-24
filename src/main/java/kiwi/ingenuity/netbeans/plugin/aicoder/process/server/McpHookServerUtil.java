@@ -10,6 +10,7 @@ import java.io.IOException;
 import java.io.OutputStream;
 import java.io.PrintWriter;
 import java.io.StringWriter;
+import java.net.URI;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
@@ -18,44 +19,110 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
 import java.util.logging.Logger;
-import kiwi.ingenuity.netbeans.plugin.aicoder.PluginSettings;
 import java.util.regex.Pattern;
+import kiwi.ingenuity.netbeans.plugin.aicoder.PluginSettings;
 import kiwi.ingenuity.netbeans.plugin.aicoder.StringConst;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.AiTypeEnum;
+import kiwi.ingenuity.netbeans.plugin.aicoder.ai.session.AiSession;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.McpInstructionOptionEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.McpSectionEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.McpToolEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.McpToolPropertyEnum;
+import kiwi.ingenuity.netbeans.plugin.aicoder.process.SessionRegistry;
+import kiwi.ingenuity.netbeans.plugin.aicoder.process.session.AbstractAiSession;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.McpToolInterface;
 
 public final class McpHookServerUtil {
 
     /**
-     * Matches a JSON {@code "secretKey": "..."} pair so its value can be masked.
+     * Matches a raw JSON {@code "secretKey": "..."} pair so its value can be masked even when the body is malformed or
+     * truncated before the value's closing quote.
      * <p>
      * Built from {@link McpToolPropertyEnum#SECRET_KEY} for the same reason the Tool Used redaction is: renaming the
      * property must not silently switch the masking off. Applied to the raw request text rather than a parsed tree
      * because the debug log deliberately records bodies that failed to parse.
      */
     private static final Pattern SECRET_KEY_VALUE = Pattern.compile(
-            "(\"" + Pattern.quote(McpToolPropertyEnum.SECRET_KEY.key()) + "\"\\s*:\\s*\")[^\"]*\"");
+            "(\"" + Pattern.quote(McpToolPropertyEnum.SECRET_KEY.key()) + "\"\\s*:\\s*\")((?:\\\\.|[^\"\\\\])*)(\"?)");
+
+    /**
+     * Below this length a "secret" is not trusted for value-based redaction: a blank or one-or-two-character value
+     * would turn {@link #redactKnownSecrets} into "replace every occurrence of a common character", masking the entire
+     * log line instead of the credential. Real session secrets are {@code UUID.randomUUID()} (36 chars, see
+     * {@link AiSession#secret()}); 16 is comfortably below that while still ruling out any degenerate value.
+     */
+    private static final int MIN_SECRET_LENGTH = 16;
+    static final Gson GSON = new GsonBuilder().disableHtmlEscaping().create();
 
     /**
      * A request body with any session secret masked, for logging.
      * <p>
      * The debug-JSON body log used to write requests verbatim, and every tools/call carries the caller's secretKey in
      * its arguments - so switching debug logging on wrote live session credentials into the IDE log, where any local
-     * process could read them. Verified against a real log: 21 exposed values from this one call site, while the Tool
-     * Used line beside it was correctly masked.
+     * process could read them. This operates on raw text so malformed request bodies are covered too.
      */
     public static String redactSecrets(String body) {
         if (body == null || body.isEmpty()) {
             return body;
         }
-        return SECRET_KEY_VALUE.matcher(body).replaceAll("$1***\"");
+        return SECRET_KEY_VALUE.matcher(body).replaceAll("$1***$3");
     }
 
-    static final Gson GSON = new GsonBuilder().disableHtmlEscaping().create();
+    /**
+     * Masks every currently-live session secret found verbatim in {@code text}, regardless of the surrounding shape —
+     * native JSON, JSON escaped inside another JSON string, a Java {@code Map.toString()} rendering, or anything else
+     * no one has anticipated yet. {@link #redactSecrets} only catches a {@code "secretKey":"..."}-shaped pattern; three
+     * separate leak sites this project found in one day used three different shapes, which is exactly the blind spot a
+     * fixed pattern has and value-based matching does not.
+     * <p>
+     * Source of truth: {@link SessionRegistry#allSessions()}, the same live-session set
+     * {@code AiSessionInboxBroker.validateSecret} reads. {@code SessionRegistry} is backed by a
+     * {@code ConcurrentHashMap}, so iterating it here — including from a logging call on any thread — is safe without
+     * extra locking, and neither {@code SessionRegistry} nor {@link AiSession#secret()} logs anything themselves, so
+     * there is no reentrancy or lock-inversion risk. Never logs the secret set itself, on any path, including malformed
+     * input — there is nothing to log here but the (masked) result.
+     * <p>
+     * Cannot mask a secret it does not know about: a session that failed to register, one already unregistered by the
+     * time this runs, or a value this plugin never issued. {@link #redactSecrets}'s pattern match is the backstop for
+     * exactly that gap — see {@link #redactAllSecrets}.
+     */
+    public static String redactKnownSecrets(String text) {
+        if (text == null || text.isEmpty()) {
+            return text;
+        }
+        String result = text;
+        for (AbstractAiSession session : SessionRegistry.allSessions()) {
+            AiSession aiSession = session.getAiSession();
+            if (aiSession != null) {
+                result = maskIfLongEnough(result, aiSession.secret());
+            }
+        }
+        return result;
+    }
+
+    /**
+     * Masks every occurrence of {@code secret} in {@code text}, or returns {@code text} unchanged if {@code secret} is
+     * null/blank or shorter than {@link #MIN_SECRET_LENGTH} — the guard against a degenerate registry value masking the
+     * entire log line. Split out from {@link #redactKnownSecrets} so the guard is testable directly, since
+     * {@link AiSession} always generates a real 36-char UUID and offers no way to register a deliberately short one
+     * through its public API.
+     */
+    static String maskIfLongEnough(String text, String secret) {
+        if (text == null || secret == null || secret.length() < MIN_SECRET_LENGTH) {
+            return text;
+        }
+        return text.contains(secret) ? text.replace(secret, "***") : text;
+    }
+
+    /**
+     * Belt and braces: masks every known-live secret by value first ({@link #redactKnownSecrets}, format-agnostic),
+     * then runs the pattern-based {@link #redactSecrets} backstop for a secret this redactor cannot know about
+     * (unregistered/never-issued). Neither alone is sufficient — this is the one both new and existing call sites
+     * should route through.
+     */
+    public static String redactAllSecrets(String text) {
+        return redactSecrets(redactKnownSecrets(text));
+    }
 
     public static String getGlobalInstructionsHeader(Set<McpInstructionOptionEnum> options) {
         if (!options.contains(McpInstructionOptionEnum.HEADER)) {
@@ -136,9 +203,8 @@ public final class McpHookServerUtil {
     }
 
     /**
-     * Builds the MCP instructions string from a handler map and per-tool
-     * overrides. Section grouping comes from handler.section(); instruction
-     * text comes from overrides map if present, else handler.instruction().
+     * Builds the MCP instructions string from a handler map and per-tool overrides. Section grouping comes from
+     * handler.section(); instruction text comes from overrides map if present, else handler.instruction().
      */
     public static String buildInstructions(AiTypeEnum type, String overrideInstructionsHeader, Map<McpToolEnum, McpToolInterface> handlers,
             Map<McpToolEnum, String> overrides) {
@@ -173,9 +239,8 @@ public final class McpHookServerUtil {
     }
 
     /**
-     * Injects sessionId and secretKey as required parameters into a tool's
-     * inputSchema. Adds the properties to the schema.properties object and adds
-     * both to the schema.required array. Skips if already present.
+     * Injects sessionId and secretKey as required parameters into a tool's inputSchema. Adds the properties to the
+     * schema.properties object and adds both to the schema.required array. Skips if already present.
      */
     public static JsonObject injectSessionParams(JsonObject toolSchema) {
         return kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.McpToolSchemas.injectCredentials(toolSchema);
@@ -183,9 +248,65 @@ public final class McpHookServerUtil {
 
     // ---- HTTP helpers ----
     public static void addCors(HttpExchange ex) {
-        ex.getResponseHeaders().add("Access-Control-Allow-Origin", "*");
+        String origin = ex.getRequestHeaders().getFirst("Origin");
+        if (isAllowedCorsOrigin(origin)) {
+            ex.getResponseHeaders().add("Access-Control-Allow-Origin", origin);
+            ex.getResponseHeaders().add("Vary", "Origin");
+        }
         ex.getResponseHeaders().add("Access-Control-Allow-Methods", "POST, OPTIONS");
         ex.getResponseHeaders().add("Access-Control-Allow-Headers", "Content-Type");
+    }
+
+    static boolean isAllowedCorsOrigin(String origin) {
+        if (origin == null || origin.isBlank()) {
+            return false;
+        }
+        try {
+            URI uri = URI.create(origin);
+            String scheme = uri.getScheme();
+            String host = uri.getHost();
+            if (scheme == null || host == null) {
+                return false;
+            }
+            if (!"http".equalsIgnoreCase(scheme) && !"https".equalsIgnoreCase(scheme)) {
+                return false;
+            }
+            String normalizedHost = normalizeCorsHost(host);
+            return "localhost".equals(normalizedHost)
+                    || isIpv4Loopback(normalizedHost)
+                    || "::1".equals(normalizedHost)
+                    || "0:0:0:0:0:0:0:1".equals(normalizedHost);
+        }
+        catch (IllegalArgumentException e) {
+            return false;
+        }
+    }
+
+    private static String normalizeCorsHost(String host) {
+        String normalized = host.toLowerCase(Locale.ROOT);
+        if (normalized.length() > 1 && normalized.startsWith("[") && normalized.endsWith("]")) {
+            return normalized.substring(1, normalized.length() - 1);
+        }
+        return normalized;
+    }
+
+    private static boolean isIpv4Loopback(String host) {
+        String[] parts = host.split("\\.", -1);
+        if (parts.length != 4 || !"127".equals(parts[0])) {
+            return false;
+        }
+        for (String part : parts) {
+            try {
+                int value = Integer.parseInt(part);
+                if (value < 0 || value > 255) {
+                    return false;
+                }
+            }
+            catch (NumberFormatException e) {
+                return false;
+            }
+        }
+        return true;
     }
 
     public static void sendJson(HttpExchange ex, int status, String json) throws IOException {

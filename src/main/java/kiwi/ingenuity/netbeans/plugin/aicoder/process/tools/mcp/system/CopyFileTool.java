@@ -17,6 +17,7 @@ import kiwi.ingenuity.netbeans.plugin.aicoder.process.locking.LockTypeEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.locking.RequiresLock;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.server.McpHookServer;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.session.AbstractAiSession;
+import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.TimeoutEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.McpToolInterface;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.McpToolSchemas;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.ToolRequestArguments;
@@ -28,7 +29,7 @@ import kiwi.ingenuity.netbeans.plugin.aicoder.utils.ProjectPathUtil;
 public class CopyFileTool implements McpToolInterface {
 
     private final McpHookServer server;
-    long confirmTimeoutSeconds = 120;
+    long confirmTimeoutMillis = TimeoutEnum.USER_APPROVAL_WAIT_MILLIS.millis();
 
     public CopyFileTool(McpHookServer server) {
         this.server = server;
@@ -84,11 +85,15 @@ public class CopyFileTool implements McpToolInterface {
         String sourcePath = args.require(CopyFileParamEnum.SOURCE_PATH.key());
         String targetDir = args.require(CopyFileParamEnum.TARGET_DIRECTORY.key());
         String sessionId = session.getId();
-        if (sessionId == null || !server.isFileAllowed(sessionId, sourcePath)) {
-            return "Access denied: " + sourcePath + " is outside the allowed project scope for this session.";
+        // Source stays on the READ gate — copying a file out reads it, and denying that
+        // here would withdraw an access GetFileContent still grants. The destination is a
+        // write, so it uses the write gate and does not inherit the read exemption the
+        // persistence base's index/template files carry.
+        if (!McpHookServer.isFileAccessible(server, sessionId, sourcePath)) {
+            return McpHookServer.fileAccessDeniedMessage(server, sessionId, sourcePath);
         }
-        if (sessionId == null || !server.isFileAllowed(sessionId, targetDir)) {
-            return "Access denied: " + targetDir + " is outside the allowed project scope for this session.";
+        if (!McpHookServer.isFileWritable(server, sessionId, targetDir)) {
+            return McpHookServer.fileAccessDeniedMessage(server, sessionId, targetDir);
         }
         String newName = args.str(CopyFileParamEnum.NEW_NAME.key());
         if (!new java.io.File(sourcePath).exists()) {
@@ -104,7 +109,7 @@ public class CopyFileTool implements McpToolInterface {
                 + ProjectPathUtil.shortPath(targetDir) + "?", sourcePath, targetDir, future));
         PermissionDecision decision;
         try {
-            decision = future.get(confirmTimeoutSeconds, TimeUnit.SECONDS);
+            decision = future.get(confirmTimeoutMillis, TimeUnit.MILLISECONDS);
         }
         catch (TimeoutException e) {
             future.complete(PermissionDecision.denied("timed out"));

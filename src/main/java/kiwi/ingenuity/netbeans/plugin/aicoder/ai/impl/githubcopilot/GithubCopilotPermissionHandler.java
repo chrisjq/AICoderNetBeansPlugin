@@ -16,35 +16,29 @@ import kiwi.ingenuity.netbeans.plugin.aicoder.ai.events.PermissionDecision;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.events.SystemNotificationEvent;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.events.ToolUseEvent;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.events.AiProcessEventListener;
+import kiwi.ingenuity.netbeans.plugin.aicoder.process.server.McpHookServerUtil;
 
 /**
- * Replaces {@code PermissionHandler.APPROVE_ALL}. Our own MCP server's tool
- * calls are approved immediately — they are already gated by the plugin
- * (project scope, diff panel, web/database permissions), so asking again is
- * pure noise. Everything else — shell, write, url, and anything unrecognised —
- * raises a {@link ConfirmEvent} so the user is actually asked, matching
- * OpenCode's forced {@code ask} and Codex's {@code approvalPolicy}: this is the
- * only backend that previously had no user-visible gate for shell execution at
- * all.
+ * Replaces {@code PermissionHandler.APPROVE_ALL}. Our own MCP server's tool calls are approved immediately — they are
+ * already gated by the plugin (project scope, diff panel, web/database permissions), so asking again is pure noise.
+ * Everything else — shell, write, url, and anything unrecognised — raises a {@link ConfirmEvent} so the user is
+ * actually asked, matching OpenCode's forced {@code ask} and Codex's {@code approvalPolicy}: this is the only backend
+ * that previously had no user-visible gate for shell execution at all.
  *
  * <p>
- * See {@link GithubCopilotPermissionPolicy} for the kind-matching rules and why
- * they are deliberately generous rather than exact.
+ * See {@link GithubCopilotPermissionPolicy} for the kind-matching rules and why they are deliberately generous rather
+ * than exact.
  */
 class GithubCopilotPermissionHandler implements PermissionHandler {
 
     private static final Logger LOG = Logger.getLogger(GithubCopilotPermissionHandler.class.getName());
 
     /**
-     * Sent as the {@code reject} feedback when the user declines without typing
-     * a reason. Copilot prefixes its own sentence and appends ours, so a live
-     * refusal reads: <em>"The user rejected this tool call. User feedback:
-     * …"</em>
-     * — which makes a bare "denied by user" pure repetition, wasting the one
-     * channel available for telling the model what to do next. Copilot
-     * classifies a rejection as recoverable, so it may retry unless told
-     * otherwise; this matches the wording the file tools already use ("do not
-     * retry without asking").
+     * Sent as the {@code reject} feedback when the user declines without typing a reason. Copilot prefixes its own
+     * sentence and appends ours, so a live refusal reads: <em>"The user rejected this tool call. User feedback: …"</em>
+     * — which makes a bare "denied by user" pure repetition, wasting the one channel available for telling the model
+     * what to do next. Copilot classifies a rejection as recoverable, so it may retry unless told otherwise; this
+     * matches the wording the file tools already use ("do not retry without asking").
      */
     private static final String DEFAULT_REJECT_FEEDBACK
             = "declined in the IDE — do not retry without asking the user first";
@@ -53,10 +47,9 @@ class GithubCopilotPermissionHandler implements PermissionHandler {
     private final String sessionId;
 
     /**
-     * Outstanding confirm-dialog decision future — at most one at a time
-     * (Copilot's permission requests block the turn until answered, same as
-     * Codex). Written by {@link #handle}; read by
-     * {@link #cancelPendingPermissions()} on stop/interrupt.
+     * Outstanding confirm-dialog decision future — at most one at a time (Copilot's permission requests block the turn
+     * until answered, same as Codex). Written by {@link #handle}; read by {@link #cancelPendingPermissions()} on
+     * stop/interrupt.
      */
     private volatile CompletableFuture<PermissionDecision> pendingPermission;
 
@@ -74,7 +67,8 @@ class GithubCopilotPermissionHandler implements PermissionHandler {
         if (PluginSettings.isDebugJson()) {
             LOG.log(Level.INFO,
                     "GitHub Copilot permission request: session={0}, kind={1}, toolCallId={2}, extensionData={3}",
-                    new Object[]{sessionId, kind, request.getToolCallId(), extensionData});
+                    new Object[]{sessionId, kind, request.getToolCallId(),
+                        McpHookServerUtil.redactAllSecrets(String.valueOf(extensionData))});
         }
         GithubCopilotPermissionPolicy.Category category
                 = GithubCopilotPermissionPolicy.classify(kind, StringConst.PLUGIN_ID, extensionData);
@@ -132,12 +126,10 @@ class GithubCopilotPermissionHandler implements PermissionHandler {
     }
 
     /**
-     * Cancels any outstanding permission dialog when the turn is stopped or
-     * interrupted. Completes the pending future exceptionally, which routes
-     * through {@link #handle}'s {@code .handle()} continuation and replies
-     * {@link PermissionRequestResult#userNotAvailable()} to Copilot instead of
-     * leaving the dialog open and the turn wedged. Safe to call when no
-     * permission request is in flight. Mirrors {@code
+     * Cancels any outstanding permission dialog when the turn is stopped or interrupted. Completes the pending future
+     * exceptionally, which routes through {@link #handle}'s {@code .handle()} continuation and replies
+     * {@link PermissionRequestResult#userNotAvailable()} to Copilot instead of leaving the dialog open and the turn
+     * wedged. Safe to call when no permission request is in flight. Mirrors {@code
      * CodexAppServerHandler.cancelPendingPermissions()} / {@code
      * OpenCodeAcpClientHandler.cancelPendingPermissions()}.
      */

@@ -1,10 +1,17 @@
 package kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.system;
 
+import com.google.gson.JsonArray;
 import com.google.gson.JsonObject;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
+import java.util.UUID;
+import kiwi.ingenuity.netbeans.plugin.aicoder.PluginUtil;
+import static kiwi.ingenuity.netbeans.plugin.aicoder.ai.AiTypeEnum.CLAUDE;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.events.PermissionDecision;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.events.PermissionEvent;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.session.AiSession;
@@ -15,6 +22,7 @@ import kiwi.ingenuity.netbeans.plugin.aicoder.process.server.McpHookServer;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.session.AbstractAiSession;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.McpToolInterface;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.ToolRequestArguments;
+import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.ToolSchemaKeyEnum;
 import static org.junit.jupiter.api.Assertions.*;
 import org.junit.jupiter.api.Test;
 
@@ -34,7 +42,9 @@ class SaveFileToolTest {
     }
 
     private static McpHookServer allowAllServer() {
-        return new McpHookServer(0);
+        McpHookServer server = new McpHookServer(0);
+        server.registerSession(SESSION_ID, CLAUDE, List.of(), false);
+        return server;
     }
 
     @Test
@@ -103,20 +113,96 @@ class SaveFileToolTest {
                 "no-content flush path must not fire PermissionEvent");
     }
 
+    @Test
+    void saveFileWithContent_ownSessionConfigDir_writesDirectlyWithNoPermissionEvent() throws Exception {
+        // Mirrors the GetFileSizeAndMetaTool regression test: restrict on, zero project
+        // dirs — isProjectFileAllowed alone would deny this, so only the own-config-dir
+        // bypass can let it through, and it must do so without ever asking for approval.
+        String sessionId = "save-file-test-" + UUID.randomUUID();
+        McpHookServer server = new McpHookServer(0);
+        server.init();
+        try {
+            server.registerSession(sessionId, CLAUDE, List.of(), true);
+            Path configDir = PluginUtil.getPluginAiSessionConfigDir(CLAUDE, sessionId);
+            Path memoryFile = configDir.resolve("memory.md");
+
+            StubSession session = new StubSession(sessionId, PermissionDecision.denied(null));
+            SaveFileTool tool = new SaveFileTool(server);
+
+            String result = tool.handle(args(memoryFile.toString(), "remembered fact"), session);
+
+            assertTrue(result.toLowerCase().contains("saved"),
+                    "own config dir write must succeed even though the stub session auto-denies: " + result);
+            assertTrue(session.captured.isEmpty(),
+                    "own config dir write must bypass the diff panel — no PermissionEvent may be fired");
+            assertEquals("remembered fact", Files.readString(memoryFile));
+        }
+        finally {
+            server.stop();
+            PluginUtil.deleteAiSessionConfigDir(CLAUDE, sessionId);
+        }
+    }
+
+    @Test
+    void saveFileWithoutContent_ownSessionConfigDir_flushesWithNoSystemNotification() throws Exception {
+        String sessionId = "save-file-test-" + UUID.randomUUID();
+        McpHookServer server = new McpHookServer(0);
+        server.init();
+        try {
+            server.registerSession(sessionId, CLAUDE, List.of(), true);
+            Path configDir = PluginUtil.getPluginAiSessionConfigDir(CLAUDE, sessionId);
+            Path memoryFile = Files.createFile(configDir.resolve("memory.md"));
+            Files.writeString(memoryFile, "already on disk");
+
+            StubSession session = new StubSession(sessionId, PermissionDecision.denied(null));
+            SaveFileTool tool = new SaveFileTool(server);
+
+            String result = tool.handle(args(memoryFile.toString(), null), session);
+
+            assertFalse(result.startsWith("Access denied"), "own config dir flush must not be denied: " + result);
+            assertTrue(session.captured.isEmpty(),
+                    "own config dir flush must not surface a SystemNotificationEvent either");
+        }
+        finally {
+            server.stop();
+            PluginUtil.deleteAiSessionConfigDir(CLAUDE, sessionId);
+        }
+    }
+
+    @Test
+    void schemaRequiresFilePathDespiteOverridingSchemaItself() {
+        // SaveFileTool overrides schema() rather than relying on
+        // AbstractFileTool's, so a base-class-only fix would miss it.
+        SaveFileTool tool = new SaveFileTool(allowAllServer());
+
+        JsonObject schema = tool.schema(Set.of())
+                .getAsJsonObject(ToolSchemaKeyEnum.INPUT_SCHEMA.key());
+        JsonArray required = schema.getAsJsonArray(ToolSchemaKeyEnum.REQUIRED.key());
+
+        assertEquals(1, required.size());
+        assertEquals(SaveFileParamEnum.FILE_PATH.key(), required.get(0).getAsString());
+    }
+
     private static class StubSession extends AbstractAiSession {
 
         final List<AiProcessEvent> captured = new ArrayList<>();
+        private final String id;
         private final PermissionDecision autoDecision;
 
         StubSession(PermissionDecision autoDecision) {
-            super(new AiSession(SESSION_ID, "Test", null, null, null, null,
+            this(SESSION_ID, autoDecision);
+        }
+
+        StubSession(String id, PermissionDecision autoDecision) {
+            super(new AiSession(id, "Test", null, null, null, null,
                     Instant.EPOCH, Instant.EPOCH));
+            this.id = id;
             this.autoDecision = autoDecision;
         }
 
         @Override
         public String getId() {
-            return SESSION_ID;
+            return id;
         }
 
         @Override

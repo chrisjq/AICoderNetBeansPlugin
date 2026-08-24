@@ -14,8 +14,10 @@ import kiwi.ingenuity.netbeans.plugin.aicoder.process.McpToolEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.McpToolPropertyEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.events.AiProcessEventListener;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.locking.LockManager;
+import kiwi.ingenuity.netbeans.plugin.aicoder.process.server.McpHookServer;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.server.McpServerRegistry;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.session.AbstractAiSession;
+import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.TimeoutEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.AbstractActionTool;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.McpToolSchemas;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.ToolRequestArguments;
@@ -92,20 +94,21 @@ public class ApplyEditTool extends AbstractActionTool {
         if (server == null) {
             return "Error: file path is not within the allowed project directories";
         }
-        // The session's own config dir (memory, logs) is written directly, never shown in
-        // a review panel — consistent with the built-in Edit hook. Checked before the
+        // The session's own config dir (memory, logs) is its own working data, so it is
+        // auto-accepted: written directly with no diff panel and no PermissionEvent — not
+        // because a panel could not be rendered for it (the panel builds from content
+        // strings, not a project-anchored FileObject), but because this is a deliberate
+        // policy choice. Consistent with the built-in Edit hook. Checked before the
         // project-scope gate so it works even for a restrict-to-project session.
         if (server.isOwnSessionConfigFile(session.getId(), filePath)) {
             return RefactoringProvider.applyEdit(filePath, oldString, newString);
         }
-        if (!server.isFileAllowed(session.getId(), filePath)) {
-            return "Error: file path is not within the allowed project directories";
+        if (!McpHookServer.isProjectFileAllowed(server, session.getId(), filePath)) {
+            return McpHookServer.fileAccessDeniedMessage(server, session.getId(), filePath);
         }
         LockManager lockManager = LockManager.getInstance();
         if (!lockManager.acquireFileLock(session.getId(), filePath)) {
-            String holder = lockManager.getFileLockHolder(filePath);
-            return "File is locked by " + (holder != null ? "session " + holder : "another in-progress edit")
-                    + " — try again shortly";
+            return LockManager.fileLockedMessage(lockManager.getFileLockHolder(filePath));
         }
         try {
             AiProcessEventListener listener = session.getAiProcessEventListener();
@@ -116,7 +119,7 @@ public class ApplyEditTool extends AbstractActionTool {
             listener.onAiProcessEvent(new PermissionEvent("Edit", filePath, oldString, newString, null, future));
             PermissionDecision decision;
             try {
-                decision = future.get(120, TimeUnit.SECONDS);
+                decision = future.get(TimeoutEnum.USER_APPROVAL_WAIT_MILLIS.millis(), TimeUnit.MILLISECONDS);
             }
             catch (TimeoutException e) {
                 // A timeout is not a rejection — the user simply never acted on the diff

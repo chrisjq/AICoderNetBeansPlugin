@@ -12,6 +12,7 @@ import kiwi.ingenuity.netbeans.plugin.aicoder.process.locking.LockTypeEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.locking.RequiresLock;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.server.McpHookServer;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.session.AbstractAiSession;
+import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.TimeoutEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.AbstractFileTool;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.ToolRequestArguments;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.providers.netbeans.RefactoringProvider;
@@ -21,7 +22,7 @@ import kiwi.ingenuity.netbeans.plugin.aicoder.utils.ProjectPathUtil;
 public class DeleteFileTool extends AbstractFileTool {
 
     private final McpHookServer server;
-    long confirmTimeoutSeconds = 120;
+    long confirmTimeoutMillis = TimeoutEnum.USER_APPROVAL_WAIT_MILLIS.millis();
 
     public DeleteFileTool(McpHookServer server) {
         super(McpSectionEnum.SYSTEM,
@@ -47,8 +48,10 @@ public class DeleteFileTool extends AbstractFileTool {
         String effectivePath = fp;
         if (effectivePath != null) {
             String sessionId = session.getId();
-            if (sessionId == null || !server.isFileAllowed(sessionId, effectivePath)) {
-                return "Access denied: " + effectivePath + " is outside the allowed project scope for this session.";
+            // isFileWritable, not isFileAccessible: a delete is a write, so it must not
+            // inherit the read exemption the persistence base's index/template files carry.
+            if (!McpHookServer.isFileWritable(server, sessionId, effectivePath)) {
+                return McpHookServer.fileAccessDeniedMessage(server, sessionId, effectivePath);
             }
         }
         if (effectivePath == null || !new java.io.File(effectivePath).exists()) {
@@ -64,7 +67,7 @@ public class DeleteFileTool extends AbstractFileTool {
                 effectivePath, null, future));
         PermissionDecision decision;
         try {
-            decision = future.get(confirmTimeoutSeconds, TimeUnit.SECONDS);
+            decision = future.get(confirmTimeoutMillis, TimeUnit.MILLISECONDS);
         }
         catch (TimeoutException e) {
             future.complete(PermissionDecision.denied("timed out"));

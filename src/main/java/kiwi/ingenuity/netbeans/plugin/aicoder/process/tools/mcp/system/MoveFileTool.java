@@ -17,6 +17,7 @@ import kiwi.ingenuity.netbeans.plugin.aicoder.process.locking.LockTypeEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.locking.RequiresLock;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.server.McpHookServer;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.session.AbstractAiSession;
+import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.TimeoutEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.McpToolInterface;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.McpToolSchemas;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.ToolRequestArguments;
@@ -28,7 +29,7 @@ import kiwi.ingenuity.netbeans.plugin.aicoder.utils.ProjectPathUtil;
 public class MoveFileTool implements McpToolInterface {
 
     private final McpHookServer server;
-    long confirmTimeoutSeconds = 120;
+    long confirmTimeoutMillis = TimeoutEnum.USER_APPROVAL_WAIT_MILLIS.millis();
 
     public MoveFileTool(McpHookServer server) {
         this.server = server;
@@ -82,11 +83,14 @@ public class MoveFileTool implements McpToolInterface {
         String sourcePath = args.require(MoveFileParamEnum.SOURCE_PATH.key());
         String targetDir = args.require(MoveFileParamEnum.TARGET_DIRECTORY.key());
         String sessionId = session.getId();
-        if (sessionId == null || !server.isFileAllowed(sessionId, sourcePath)) {
-            return "Access denied: " + sourcePath + " is outside the allowed project scope for this session.";
+        // Both sides are writes: the move deletes the source from where it was and
+        // creates it under the target. Neither may inherit the read exemption the
+        // persistence base's index/template files carry.
+        if (!McpHookServer.isFileWritable(server, sessionId, sourcePath)) {
+            return McpHookServer.fileAccessDeniedMessage(server, sessionId, sourcePath);
         }
-        if (sessionId == null || !server.isFileAllowed(sessionId, targetDir)) {
-            return "Access denied: " + targetDir + " is outside the allowed project scope for this session.";
+        if (!McpHookServer.isFileWritable(server, sessionId, targetDir)) {
+            return McpHookServer.fileAccessDeniedMessage(server, sessionId, targetDir);
         }
         if (!new java.io.File(sourcePath).exists()) {
             return RefactoringProvider.moveFile(sourcePath, targetDir);
@@ -101,7 +105,7 @@ public class MoveFileTool implements McpToolInterface {
                 + ProjectPathUtil.shortPath(targetDir) + "?", sourcePath, targetDir, future));
         PermissionDecision decision;
         try {
-            decision = future.get(confirmTimeoutSeconds, TimeUnit.SECONDS);
+            decision = future.get(confirmTimeoutMillis, TimeUnit.MILLISECONDS);
         }
         catch (TimeoutException e) {
             future.complete(PermissionDecision.denied("timed out"));

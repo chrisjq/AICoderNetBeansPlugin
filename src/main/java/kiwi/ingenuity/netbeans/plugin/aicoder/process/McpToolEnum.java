@@ -7,10 +7,9 @@ import kiwi.ingenuity.netbeans.plugin.aicoder.StringConst;
 public enum McpToolEnum {
 
     /**
-     * IMPORTANT: When adding a new MCP tool to McpHookServer, add its enum
-     * constant here at the same time — allMcpNames() auto-generates the
-     * --allowedTools entry from this list. Constants are grouped by
-     * McpSectionEnum to make coverage easy to audit.
+     * IMPORTANT: When adding a new MCP tool to McpHookServer, add its enum constant here at the same time —
+     * allMcpNames() auto-generates the --allowedTools entry from this list. Constants are grouped by McpSectionEnum to
+     * make coverage easy to audit.
      *
      * Tool names are qualified with the shared MCP server name.
      */
@@ -65,6 +64,7 @@ public enum McpToolEnum {
     CHANGE_METHOD_SIGNATURE("ChangeMethodSignature"),
     // SEARCH
     SEARCH_IN_FILES("SearchInFiles"),
+    FILTER_FILE_CONTENT("FilterFileContent"),
     SEARCH_TYPES("SearchTypes"),
     SEARCH_SYMBOLS("SearchSymbols"),
     FIND_DECLARATION("FindDeclaration"),
@@ -117,8 +117,7 @@ public enum McpToolEnum {
     UPDATE_SESSION_DESCRIPTION("UpdateSessionDescription");
 
     /**
-     * Comma-separated list of all plugin MCP tool names for --allowedTools,
-     * qualified with the shared MCP server name.
+     * Comma-separated list of all plugin MCP tool names for --allowedTools, qualified with the shared MCP server name.
      */
     public static String allMcpNames() {
         String prefix = "mcp__" + StringConst.PLUGIN_ID + "__";
@@ -145,8 +144,7 @@ public enum McpToolEnum {
     private final String toolName;
 
     /**
-     * @param toolName the bare name as registered in the MCP server (e.g.
-     * "FindUsages").
+     * @param toolName the bare name as registered in the MCP server (e.g. "FindUsages").
      */
     McpToolEnum(String toolName) {
         this.toolName = toolName;
