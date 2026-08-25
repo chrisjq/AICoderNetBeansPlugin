@@ -11,6 +11,7 @@ import static kiwi.ingenuity.netbeans.plugin.aicoder.ai.AiTypeEnum.CLAUDE;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.session.AiSession;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.McpSectionEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.McpToolEnum;
+import kiwi.ingenuity.netbeans.plugin.aicoder.process.McpToolPropertyEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.events.AiProcessEventListener;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.session.AbstractAiSession;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.McpToolInterface;
@@ -151,6 +152,21 @@ class GitProjectPathScopeTest {
         assertNull(McpToolInvoker.gitScopeDenialOrNull(new GetPluginVersionTool(),
                 projectPathArgs(outsideDir), new FakeSession(restrictedSessionId)),
                 "the git guard must not fire for a non-git tool");
+    }
+
+    @Test
+    void accessIsRefusedBeforeScopeSoTheMessageBlamesTheRightSetting() throws Exception {
+        FakeSession session = new FakeSession(restrictedSessionId);
+        session.getSettings().setAllowGitAccess(Boolean.FALSE);
+
+        JsonObject args = new JsonObject();
+        args.addProperty(McpToolPropertyEnum.PROJECT_PATH.key(), outsideDir.toString());
+
+        String result = McpToolInvoker.invoke(McpToolEnum.GET_GIT_STATUS,
+                new GetGitStatusTool(), args, session);
+
+        assertTrue(result.contains("Git access is disabled"),
+                "scope was reported first — the two checks are the wrong way round: " + result);
     }
 
     @Test

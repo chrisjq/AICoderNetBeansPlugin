@@ -14,6 +14,7 @@ import javax.swing.SpinnerNumberModel;
 import javax.swing.border.TitledBorder;
 import kiwi.ingenuity.netbeans.plugin.aicoder.AccessControlLabelEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.DatabaseAccessOptionEnum;
+import kiwi.ingenuity.netbeans.plugin.aicoder.GitAccessOptionEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.PluginSettings;
 import kiwi.ingenuity.netbeans.plugin.aicoder.WebRequestAccessOptionEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.AiTypeEnum;
@@ -23,8 +24,7 @@ import kiwi.ingenuity.netbeans.plugin.aicoder.ai.settings.OpenAiClientSessionSet
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.settings.OpenAiContextSettingsPanel;
 
 /**
- * Shared controls for global defaults, a session override, and a template
- * snapshot.
+ * Shared controls for global defaults, a session override, and a template snapshot.
  */
 public final class AiSessionConfigPanel extends JPanel {
 
@@ -51,6 +51,10 @@ public final class AiSessionConfigPanel extends JPanel {
         for (DatabaseAccessOptionEnum option : DatabaseAccessOptionEnum.values()) {
             target.setAllowDatabaseAccessOption(option, source.allowDatabaseAccessOption(option));
         }
+        target.setAllowGitAccess(source.allowGitAccess());
+        for (GitAccessOptionEnum option : GitAccessOptionEnum.values()) {
+            target.setAllowGitAccessOption(option, source.allowGitAccessOption(option));
+        }
         target.setDatabaseRowLimit(source.databaseRowLimit());
     }
 
@@ -68,6 +72,26 @@ public final class AiSessionConfigPanel extends JPanel {
         return gc;
     }
 
+    private static void addRowTo(JPanel panel, GridBagConstraints c, int row, JLabel label, java.awt.Component field) {
+        c.gridy = row;
+        c.gridx = 0;
+        c.weightx = 0;
+        c.gridwidth = 1;
+        panel.add(label, c);
+        c.gridx = 1;
+        c.weightx = 1;
+        panel.add(field, c);
+    }
+
+    private static void addFullTo(JPanel panel, GridBagConstraints c, int row, java.awt.Component field) {
+        c.gridy = row;
+        c.gridx = 0;
+        c.gridwidth = 2;
+        c.weightx = 1;
+        panel.add(field, c);
+        c.gridwidth = 1;
+    }
+
     private final AiSessionConfigPanelMode mode;
     private final JSpinner maxHistory = new JSpinner(new SpinnerNumberModel(0, 0, 10000, 10));
     private final JCheckBox saveHistory = new JCheckBox("Save conversation history");
@@ -77,6 +101,7 @@ public final class AiSessionConfigPanel extends JPanel {
     private final AiMessagingSettingsPanel messaging;
     private final WebRequestAccessSettingsPanel web;
     private final DatabaseAccessSettingsPanel database;
+    private final GitAccessSettingsPanel git;
     private final OpenAiContextSettingsPanel contextPanel;
     private final JPanel typePanelHolder = new JPanel(new BorderLayout());
     @SuppressWarnings("rawtypes")
@@ -95,6 +120,7 @@ public final class AiSessionConfigPanel extends JPanel {
         messaging = new AiMessagingSettingsPanel(sessionLabels);
         web = new WebRequestAccessSettingsPanel(sessionLabels);
         database = new DatabaseAccessSettingsPanel(sessionLabels);
+        git = new GitAccessSettingsPanel(sessionLabels);
         restrict.setText(sessionLabels ? AccessControlLabelEnum.RESTRICT_TO_PROJECT_FILES.displayLabel()
                 : AccessControlLabelEnum.RESTRICT_TO_PROJECT_FILES.globalLabel());
         setLayout(new GridBagLayout());
@@ -113,15 +139,17 @@ public final class AiSessionConfigPanel extends JPanel {
             addFullTo(generalGroup, gc, 2, autoAccept);
             addFullTo(generalGroup, gc, 3, web);
             addFullTo(generalGroup, gc, 4, database);
-            addFullTo(generalGroup, gc, 5, clipboard);
-            addFullTo(generalGroup, gc, 6, messaging);
+            addFullTo(generalGroup, gc, 5, git);
+            addFullTo(generalGroup, gc, 6, clipboard);
+            addFullTo(generalGroup, gc, 7, messaging);
             addFull(c, 0, generalGroup);
 
             JPanel openAiGroup = buildGroupPanel("OpenAI Compatible Settings");
             GridBagConstraints oc = groupConstraints();
             addFullTo(openAiGroup, oc, 0, contextPanel);
             addFull(c, 1, openAiGroup);
-        } else {
+        }
+        else {
             // General Settings group — visible always
             JPanel generalGroup = buildGroupPanel("General Settings");
             GridBagConstraints gc = groupConstraints();
@@ -131,8 +159,9 @@ public final class AiSessionConfigPanel extends JPanel {
             addFullTo(generalGroup, gc, 3, autoAccept);
             addFullTo(generalGroup, gc, 4, web);
             addFullTo(generalGroup, gc, 5, database);
-            addFullTo(generalGroup, gc, 6, clipboard);
-            addFullTo(generalGroup, gc, 7, messaging);
+            addFullTo(generalGroup, gc, 6, git);
+            addFullTo(generalGroup, gc, 7, clipboard);
+            addFullTo(generalGroup, gc, 8, messaging);
             addFull(c, 0, generalGroup);
 
             // OpenAI Compatible Settings group — hidden until an OpenAI-compatible session is loaded
@@ -167,6 +196,7 @@ public final class AiSessionConfigPanel extends JPanel {
         messaging.addChangeListener(listener);
         web.addChangeListener(listener);
         database.addChangeListener(listener);
+        git.addChangeListener(listener);
         database.addRowLimitChangeListener(e -> listener.actionPerformed(null));
         contextPanel.addChangeListener(listener);
         if (currentTypePanel != null) {
@@ -196,6 +226,10 @@ public final class AiSessionConfigPanel extends JPanel {
         PluginSettings.setAllowDatabaseAccess(values.allowDatabaseAccess());
         for (DatabaseAccessOptionEnum option : DatabaseAccessOptionEnum.values()) {
             PluginSettings.setAllowDatabaseAccessOption(option, values.allowDatabaseAccessOption(option));
+        }
+        PluginSettings.setAllowGitAccess(values.allowGitAccess());
+        for (GitAccessOptionEnum option : GitAccessOptionEnum.values()) {
+            PluginSettings.setAllowGitAccessOption(option, values.allowGitAccessOption(option));
         }
         PluginSettings.setDatabaseRowLimit(values.databaseRowLimit());
         PluginSettings.setEnableClipboardAccess(values.enableClipboardAccess());
@@ -276,6 +310,10 @@ public final class AiSessionConfigPanel extends JPanel {
         for (DatabaseAccessOptionEnum option : DatabaseAccessOptionEnum.values()) {
             result.setAllowDatabaseAccessOption(option, database.isOptionSelected(option));
         }
+        result.setAllowGitAccess(git.isAllowGitAccessSelected());
+        for (GitAccessOptionEnum option : GitAccessOptionEnum.values()) {
+            result.setAllowGitAccessOption(option, git.isOptionSelected(option));
+        }
         result.setDatabaseRowLimit(database.getRowLimitValue());
         return result;
     }
@@ -335,6 +373,10 @@ public final class AiSessionConfigPanel extends JPanel {
         for (DatabaseAccessOptionEnum option : DatabaseAccessOptionEnum.values()) {
             database.setOptionSelected(option, settings.effectiveAllowDatabaseAccessOption(option));
         }
+        git.setAllowGitAccessSelected(settings.effectiveAllowGitAccess());
+        for (GitAccessOptionEnum option : GitAccessOptionEnum.values()) {
+            git.setOptionSelected(option, settings.effectiveAllowGitAccessOption(option));
+        }
         database.setRowLimitValue(settings.effectiveDatabaseRowLimit());
     }
 
@@ -370,23 +412,4 @@ public final class AiSessionConfigPanel extends JPanel {
         c.gridwidth = 1;
     }
 
-    private static void addRowTo(JPanel panel, GridBagConstraints c, int row, JLabel label, java.awt.Component field) {
-        c.gridy = row;
-        c.gridx = 0;
-        c.weightx = 0;
-        c.gridwidth = 1;
-        panel.add(label, c);
-        c.gridx = 1;
-        c.weightx = 1;
-        panel.add(field, c);
-    }
-
-    private static void addFullTo(JPanel panel, GridBagConstraints c, int row, java.awt.Component field) {
-        c.gridy = row;
-        c.gridx = 0;
-        c.gridwidth = 2;
-        c.weightx = 1;
-        panel.add(field, c);
-        c.gridwidth = 1;
-    }
 }

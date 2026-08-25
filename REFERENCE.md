@@ -1,7 +1,7 @@
 
 # AI Coder reference
 
-This is the detailed reference for the plugin's settings and MCP/IDE tools. Backend availability and a session's permission settings determine which tools are offered.
+This is the detailed reference for the plugin's settings and MCP/IDE tools. Backend availability determines which tools are offered — some are registered only for certain AI types. A session's permission settings do not change the list: a tool the session lacks permission for is still offered and is refused when called.
 
 For what the plugin is and how to install it, see the [README](README.md). For using the NetBeans interface, see the [UI guide](UI_GUIDE.md).
 
@@ -20,6 +20,7 @@ Open global defaults at **Tools > Options > AI Coder**. A session may override e
 | Inter-AI | Enable messaging, automatic inbox notices, and important-message interruption. Messaging and automatic notices are off by default. |
 | Web requests | A master switch and separate permissions for HTTP methods, headers, and bodies. GET is allowed by default when web access is enabled; state-changing methods, custom headers, and bodies are off by default. Loopback and private-network destinations are additionally blocked unless their own per-plugin or per-session options — "Allow localhost destinations" and "Allow private network destinations" — are enabled; both are off by default, and a refusal names the exact setting that would permit it. |
 | Database | Master switch, read-only sub-permissions, and result-row limit. Disabled by default; the default limit is 25 rows. Only a single SELECT statement is permitted, and the JDBC connection is additionally set read-only for the duration of the query. |
+| Git access | Master switch and separate Read/Write sub-permissions. Enabled with both on by default. All 21 Git tools are always listed; a call is refused at call time when the tool's permission is off. The five non-mutating tools — `GetGitStatus`, `GetGitDiff`, `GitLog`, `GitShow`, `GitBlame` — require Read; the remaining sixteen require Write. The split is taken from each tool's own `isMutating()` declaration, so `GitBranch`, `GitTag`, `GitRemote` and `GitStash` require Write even when only listing, and `GitFetch` requires Write although it does not touch the working tree. |
 | Clipboard | Allow reading clipboard text. Disabled by default. |
 | Infrastructure | MCP loopback port, save-session-on-close prompting, inbox retention and maximum size, debug JSON/context logging, and tool-use logging. Inbox defaults: 60 minutes and 1,000 messages. |
 
@@ -160,6 +161,8 @@ These tools do not read the editor. Each refactoring requires its explicit targe
 | <a id="getclipboard"></a>`GetClipboard` | Reads clipboard text when clipboard permission is enabled. | • _None_ |
 
 ### Git tools
+
+Git tools are gated by the **Allow git access** master switch and its **Read** / **Write** sub-permissions. All 21 Git tools are always listed; a call is refused at call time when the tool's permission is off. The six read-only tools (status, diff, log, show, blame, and remote list) require **Read**; the remaining fifteen require **Write**. Git access is enabled with both Read and Write on by default; the built-in ReviewerPeer template sets Write off.
 
 Every Git tool requires `projectPath` — the repository or project root — except `GitBlame`, where it is optional if `file` is absolute. Some parameters below are required only for particular `action`/`operation` values; those are enforced by the handler rather than by the JSON schema, so an invalid combination returns an error rather than being rejected up front.
 

@@ -1,6 +1,7 @@
 package kiwi.ingenuity.netbeans.plugin.aicoder.ai.settings;
 
 import kiwi.ingenuity.netbeans.plugin.aicoder.DatabaseAccessOptionEnum;
+import kiwi.ingenuity.netbeans.plugin.aicoder.GitAccessOptionEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.WebRequestAccessOptionEnum;
 
 /**
@@ -112,6 +113,18 @@ public enum AiSessionSettingsKeyEnum {
      */
     ALLOW_DATABASE_EXECUTE_SQL("allowDatabaseExecuteSql"),
     /**
+     * Whether to allow git access at all
+     */
+    ALLOW_GIT_ACCESS("allowGitAccess"),
+    /**
+     * Whether to allow non-mutating git commands (status, diff, log, show, blame)
+     */
+    ALLOW_GIT_READ("allowGitRead"),
+    /**
+     * Whether to allow git commands that modify the repository
+     */
+    ALLOW_GIT_WRITE("allowGitWrite"),
+    /**
      * Maximum rows returned by a database read
      */
     DATABASE_ROW_LIMIT("databaseRowLimit"),
@@ -165,6 +178,15 @@ public enum AiSessionSettingsKeyEnum {
                 ALLOW_DATABASE_SELECT;
             case EXECUTE_SQL ->
                 ALLOW_DATABASE_EXECUTE_SQL;
+        };
+    }
+
+    public static AiSessionSettingsKeyEnum forGitAccessOption(GitAccessOptionEnum option) {
+        return switch (option) {
+            case READ ->
+                ALLOW_GIT_READ;
+            case WRITE ->
+                ALLOW_GIT_WRITE;
         };
     }
 

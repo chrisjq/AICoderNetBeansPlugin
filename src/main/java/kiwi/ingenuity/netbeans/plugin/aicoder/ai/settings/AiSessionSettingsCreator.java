@@ -4,20 +4,20 @@ import com.google.gson.JsonObject;
 import javax.swing.JComponent;
 import javax.swing.JPanel;
 import kiwi.ingenuity.netbeans.plugin.aicoder.DatabaseAccessOptionEnum;
+import kiwi.ingenuity.netbeans.plugin.aicoder.GitAccessOptionEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.WebRequestAccessOptionEnum;
 
 /**
- * Base class for creating and updating AI session settings. Implements a chain
- * of responsibility pattern where subclasses handle specific setting types.
- * Handles deserialization of JSON configuration into mutable settings objects.
+ * Base class for creating and updating AI session settings. Implements a chain of responsibility pattern where
+ * subclasses handle specific setting types. Handles deserialization of JSON configuration into mutable settings
+ * objects.
  */
 public abstract class AiSessionSettingsCreator<E extends AiSessionSettings> {
 
     public abstract E create();
 
     /**
-     * Creates a transient, typed panel for settings selected while creating a
-     * session.
+     * Creates a transient, typed panel for settings selected while creating a session.
      */
     public AiSessionCreateSettingsPanel<E> createSettingsPanel() {
         return new AiSessionCreateSettingsPanel<>() {
@@ -98,6 +98,16 @@ public abstract class AiSessionSettingsCreator<E extends AiSessionSettings> {
         key = AiSessionSettingsKeyEnum.DATABASE_ROW_LIMIT.key();
         if (cfgObj.has(key) && cfgObj.get(key).isJsonPrimitive()) {
             settings.setDatabaseRowLimit(cfgObj.get(key).getAsInt());
+        }
+        key = AiSessionSettingsKeyEnum.ALLOW_GIT_ACCESS.key();
+        if (cfgObj.has(key) && cfgObj.get(key).isJsonPrimitive()) {
+            settings.setAllowGitAccess(cfgObj.get(key).getAsBoolean());
+        }
+        for (GitAccessOptionEnum option : GitAccessOptionEnum.values()) {
+            key = AiSessionSettingsKeyEnum.forGitAccessOption(option).key();
+            if (cfgObj.has(key) && cfgObj.get(key).isJsonPrimitive()) {
+                settings.setAllowGitAccessOption(option, cfgObj.get(key).getAsBoolean());
+            }
         }
         key = AiSessionSettingsKeyEnum.ENABLE_CLIPBOARD_ACCESS.key();
         if (cfgObj.has(key) && cfgObj.get(key).isJsonPrimitive()) {

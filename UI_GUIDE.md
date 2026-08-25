@@ -46,6 +46,10 @@ Opened sessions appear as dockable NetBeans chat tabs. The chat renders Markdown
 
 Each chat tab carries a coloured status marker: green when the session is ready for input, orange while a turn is in flight, and red when the backend is not running or has failed. While a turn is in flight the info bar also shows a **■ Stop** button, which cancels the current response; it is hidden when there is nothing to cancel.
 
+Above the Send button sit two controls: the **⚙** gear on the left opens Session Configuration, and the **⬇** toggle on the right controls auto-scrolling. Auto-scroll is on when a session opens and is not saved between sessions, so each tab starts following the conversation and each can be set independently — useful when watching one session stream while reading back through another.
+
+Switching it off holds your position: new assistant text, system notices and inbox notifications arrive without moving the view. Switching it back on jumps to the latest message immediately. Two things ignore the setting: your own messages, because you pressed Send and expect to see them, and questions or Yes/No prompts, because those block the assistant until you answer and must not be hidden. The tooltip reports the current state as *Auto Scroll - Enabled* or *Auto Scroll - Disabled*.
+
 At initial delivery, the session supplies identity, open projects, and active-editor context. Later requests send changes where possible, while stateless backends receive the baseline required to work correctly. Context and transcript history are persisted independently when enabled.
 
 Paste an image from the clipboard into chat when the selected backend supports image input.

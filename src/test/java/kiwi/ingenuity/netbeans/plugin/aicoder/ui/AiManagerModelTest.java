@@ -9,6 +9,8 @@ import javax.swing.SwingUtilities;
 import javax.swing.table.TableModel;
 import javax.swing.table.TableRowSorter;
 import kiwi.ingenuity.netbeans.plugin.aicoder.DatabaseAccessOptionEnum;
+import kiwi.ingenuity.netbeans.plugin.aicoder.GitAccessOptionEnum;
+import kiwi.ingenuity.netbeans.plugin.aicoder.PluginSettings;
 import kiwi.ingenuity.netbeans.plugin.aicoder.WebRequestAccessOptionEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.AiTypeEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.session.AiSession;
@@ -42,6 +44,9 @@ class AiManagerModelTest {
         values.setAllowWebRequestAccess(WebRequestAccessOptionEnum.HEADERS, true);
         values.setAllowDatabaseAccess(true);
         values.setAllowDatabaseAccessOption(DatabaseAccessOptionEnum.EXECUTE_SQL, true);
+        values.setAllowGitAccess(false);
+        values.setAllowGitAccessOption(GitAccessOptionEnum.READ, true);
+        values.setAllowGitAccessOption(GitAccessOptionEnum.WRITE, false);
         values.setEnableClipboardAccess(true);
         return values;
     }
@@ -132,6 +137,57 @@ class AiManagerModelTest {
         assertEquals(1, sorter.convertRowIndexToModel(0));
     }
 
+    /**
+     * applyGlobal is the Tools &gt; Options "Apply" path — the only way the plugin-wide git defaults are ever written.
+     * It is NOT covered by the session/template test below, which deliberately asserts that global mode REJECTS
+     * loadSession/applySession.
+     * <p>
+     * Note the shape: the stored values are moved AWAY from what the panel holds before applyGlobal is called. Loading
+     * and re-applying the same values would pass whether or not applyGlobal writes the git settings at all, because
+     * PluginSettings would already hold them.
+     */
+    @Test
+    void applyGlobalWritesGitAccessBackToPluginSettings() throws Exception {
+        boolean savedMaster = PluginSettings.isAllowGitAccess();
+        boolean savedRead = PluginSettings.isAllowGitAccessOption(GitAccessOptionEnum.READ);
+        boolean savedWrite = PluginSettings.isAllowGitAccessOption(GitAccessOptionEnum.WRITE);
+        try {
+            PluginSettings.setAllowGitAccess(true);
+            PluginSettings.setAllowGitAccessOption(GitAccessOptionEnum.READ, true);
+            PluginSettings.setAllowGitAccessOption(GitAccessOptionEnum.WRITE, false);
+
+            AiSessionConfigPanel panel
+                    = onEdt(() -> new AiSessionConfigPanel(AiSessionConfigPanelMode.GLOBAL));
+            onEdt(() -> {
+                panel.loadGlobal();
+                return null;
+            });
+
+            // Panel now holds true/true/false. Move the store to the opposite of each so a
+            // no-op applyGlobal cannot be mistaken for a working one.
+            PluginSettings.setAllowGitAccess(false);
+            PluginSettings.setAllowGitAccessOption(GitAccessOptionEnum.READ, false);
+            PluginSettings.setAllowGitAccessOption(GitAccessOptionEnum.WRITE, true);
+
+            onEdt(() -> {
+                panel.applyGlobal();
+                return null;
+            });
+
+            assertTrue(PluginSettings.isAllowGitAccess(),
+                    "master flag not written — its line is missing from applyGlobal");
+            assertTrue(PluginSettings.isAllowGitAccessOption(GitAccessOptionEnum.READ),
+                    "READ not written by applyGlobal");
+            assertFalse(PluginSettings.isAllowGitAccessOption(GitAccessOptionEnum.WRITE),
+                    "WRITE not written by applyGlobal");
+        }
+        finally {
+            PluginSettings.setAllowGitAccess(savedMaster);
+            PluginSettings.setAllowGitAccessOption(GitAccessOptionEnum.READ, savedRead);
+            PluginSettings.setAllowGitAccessOption(GitAccessOptionEnum.WRITE, savedWrite);
+        }
+    }
+
     @Test
     void sessionAndTemplateModesBindGenericSettingsButGlobalModeRejectsThem() throws Exception {
         AiSessionSettings values = configuredSettings();
@@ -152,6 +208,11 @@ class AiManagerModelTest {
             assertEquals(values.effectiveRestrictToProjectFiles(), target.restrictToProjectFiles());
             assertEquals(values.effectiveAllowWebRequests(), target.allowWebRequests());
             assertEquals(values.effectiveAllowDatabaseAccess(), target.allowDatabaseAccess());
+            assertEquals(values.allowGitAccess(), target.allowGitAccess(), "allowGitAccess");
+            for (GitAccessOptionEnum option : GitAccessOptionEnum.values()) {
+                assertEquals(values.allowGitAccessOption(option),
+                        target.allowGitAccessOption(option), option.name());
+            }
             assertEquals(values.effectiveEnableClipboardAccess(), target.enableClipboardAccess());
         }
 

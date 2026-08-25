@@ -38,6 +38,9 @@ public enum PluginSettingsKeyEnum {
     ALLOW_DATABASE_SCHEMA("ai.session.allowDatabaseAccess.schema", false),
     ALLOW_DATABASE_SELECT("ai.session.allowDatabaseAccess.select", false),
     ALLOW_DATABASE_EXECUTE_SQL("ai.session.allowDatabaseAccess.executeSql", false),
+    ALLOW_GIT_ACCESS("ai.session.allowGitAccess", true),
+    ALLOW_GIT_READ("ai.session.allowGitAccess.read", true),
+    ALLOW_GIT_WRITE("ai.session.allowGitAccess.write", true),
     DATABASE_ROW_LIMIT("ai.session.databaseRowLimit", 25),
     ENABLE_CLIPBOARD_ACCESS("ai.session.enableClipboardAccess", false),
     CONTEXT_TRIM_TRIGGER("ai.contextTrimTrigger", "ESTIMATED_TOKENS"),
@@ -71,6 +74,15 @@ public enum PluginSettingsKeyEnum {
                 ALLOW_WEB_REQUEST_LOCALHOST;
             case PRIVATE_NETWORKS ->
                 ALLOW_WEB_REQUEST_PRIVATE_NETWORKS;
+        };
+    }
+
+    public static PluginSettingsKeyEnum forGitAccessOption(GitAccessOptionEnum option) {
+        return switch (option) {
+            case READ ->
+                ALLOW_GIT_READ;
+            case WRITE ->
+                ALLOW_GIT_WRITE;
         };
     }
 

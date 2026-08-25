@@ -101,6 +101,7 @@ The General options tab establishes defaults. Sessions can override the followin
 | Inter-AI | Enable inter-AI messaging, automatic inbox notices, and important-message interruption |
 | Web requests | Master switch plus independent permissions for GET, POST, PUT, PATCH, DELETE, HEAD, OPTIONS, request headers, and request bodies, and for reaching localhost or private-network destinations |
 | Database | Master switch, read-only sub-permissions, and database row limit |
+| Git | Master switch plus separate Read and Write permissions for the Git tools |
 | Clipboard | Explicit opt-in for clipboard reads |
 | Infrastructure | MCP loopback port, save-session-on-close prompt behavior, inbox retention/size, debug JSON, debug context, and tool-use logging |
 
@@ -109,6 +110,8 @@ The default posture restricts file tools to project directories, disables auto-a
 Web requests allow GET by default when web access is enabled. Methods that can change remote state, custom headers, and request bodies are disabled by default and must be enabled globally or for the session.
 
 Where a request may go is controlled separately from what it may do. Destinations that resolve to loopback, link-local, private or site-local, carrier-grade NAT, IPv6 unique-local, multicast, or any-local addresses are refused — on the entered URL and on every redirect hop, so a public address cannot redirect into your network. Two options relax this, both off by default: **Allow localhost destinations** covers loopback and any-local (wildcard) addresses, for a local model server or dev server on your own machine, and **Allow private network destinations** covers the rest — private and site-local ranges, link-local, carrier-grade NAT, and IPv6 unique-local. Multicast is never permitted. A refusal names the setting that would allow it, so the assistant can tell you which one to turn on. Note that enabling localhost also makes this plugin's own tool server reachable over HTTP, though a request still cannot authenticate to it, and that `169.254.169.254` — the cloud metadata endpoint — falls under private networks, which matters if you run the IDE on a cloud VM.
+
+Git access is enabled by default, with both Read and Write on, so existing behaviour is unchanged. Turning Write off leaves a session able to inspect the repository — `GetGitStatus`, `GetGitDiff`, `GitLog`, `GitShow`, `GitBlame` — while refusing the sixteen tools that alter it. The split follows each tool's own mutating flag rather than a separate list, so `GitBranch`, `GitTag`, `GitRemote` and `GitStash` need Write even when only listing, and `GitFetch` needs it despite not touching the working tree. A refusal names the setting that would allow it.
 
 Database access is opt-in and read-only. A query must be a single SELECT — anything chained after a `;` is refused — and the JDBC connection is set read-only while it runs, which some drivers treat only as a hint. The configured row limit is enforced. Queries share the IDE's own connection, so they run one at a time and are cut off after five minutes rather than holding it indefinitely.
 
@@ -145,7 +148,7 @@ The Manager's **Help** tab holds generated MCP tool documentation and an **About
 
 ## MCP and IDE tool reference
 
-The local MCP server exposes the following NetBeans-aware capabilities to compatible backends. Tool availability is also filtered by backend support and the session permission settings. For the complete tool list, usage rules, permission model, and backend/session settings, see the [tool and settings reference](REFERENCE.md); the same tool documentation is browsable in the IDE under **Tools > AI Manager > Help > MCP Tools**.
+The local MCP server exposes the following NetBeans-aware capabilities to compatible backends. Tool availability varies by backend — some tools are registered only for certain AI types. Tools gated by a session permission (web requests, database access, git) are always listed and are refused at call time when the permission is off. For the complete tool list, usage rules, permission model, and backend/session settings, see the [tool and settings reference](REFERENCE.md); the same tool documentation is browsable in the IDE under **Tools > AI Manager > Help > MCP Tools**.
 
 ### Build and test
 

@@ -2,6 +2,7 @@ package kiwi.ingenuity.netbeans.plugin.aicoder.ai.settings;
 
 import com.google.gson.JsonObject;
 import kiwi.ingenuity.netbeans.plugin.aicoder.DatabaseAccessOptionEnum;
+import kiwi.ingenuity.netbeans.plugin.aicoder.GitAccessOptionEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.PluginSettings;
 import kiwi.ingenuity.netbeans.plugin.aicoder.WebRequestAccessOptionEnum;
 
@@ -37,6 +38,9 @@ public class AiSessionSettings {
     private volatile Boolean allowDatabaseSelect;
     private volatile Boolean allowDatabaseExecuteSql;
     private volatile Integer databaseRowLimit;
+    private volatile Boolean allowGitAccess;
+    private volatile Boolean allowGitRead;
+    private volatile Boolean allowGitWrite;
     private volatile Boolean enableClipboardAccess;
 
     public AiSessionSettings() {
@@ -199,6 +203,19 @@ public class AiSessionSettings {
         };
     }
 
+    public Boolean allowGitAccess() {
+        return allowGitAccess;
+    }
+
+    public Boolean allowGitAccessOption(GitAccessOptionEnum option) {
+        return switch (option) {
+            case READ ->
+                allowGitRead;
+            case WRITE ->
+                allowGitWrite;
+        };
+    }
+
     public Integer databaseRowLimit() {
         return databaseRowLimit;
     }
@@ -214,6 +231,15 @@ public class AiSessionSettings {
     public boolean effectiveAllowDatabaseAccessOption(DatabaseAccessOptionEnum option) {
         Boolean value = allowDatabaseAccessOption(option);
         return value != null ? value : PluginSettings.isAllowDatabaseAccessOption(option);
+    }
+
+    public boolean effectiveAllowGitAccess() {
+        return allowGitAccess != null ? allowGitAccess : PluginSettings.isAllowGitAccess();
+    }
+
+    public boolean effectiveAllowGitAccessOption(GitAccessOptionEnum option) {
+        Boolean value = allowGitAccessOption(option);
+        return value != null ? value : PluginSettings.isAllowGitAccessOption(option);
     }
 
     public int effectiveDatabaseRowLimit() {
@@ -306,6 +332,19 @@ public class AiSessionSettings {
         }
     }
 
+    public void setAllowGitAccess(Boolean newAllowGitAccess) {
+        this.allowGitAccess = newAllowGitAccess;
+    }
+
+    public void setAllowGitAccessOption(GitAccessOptionEnum option, Boolean allowed) {
+        switch (option) {
+            case READ ->
+                allowGitRead = allowed;
+            case WRITE ->
+                allowGitWrite = allowed;
+        }
+    }
+
     public void setDatabaseRowLimit(Integer newDatabaseRowLimit) {
         this.databaseRowLimit = newDatabaseRowLimit;
     }
@@ -350,6 +389,14 @@ public class AiSessionSettings {
         for (DatabaseAccessOptionEnum o : DatabaseAccessOptionEnum.values()) {
             if (allowDatabaseAccessOption(o) == null) {
                 setAllowDatabaseAccessOption(o, PluginSettings.isAllowDatabaseAccessOption(o));
+            }
+        }
+        if (allowGitAccess == null) {
+            allowGitAccess = PluginSettings.isAllowGitAccess();
+        }
+        for (GitAccessOptionEnum o : GitAccessOptionEnum.values()) {
+            if (allowGitAccessOption(o) == null) {
+                setAllowGitAccessOption(o, PluginSettings.isAllowGitAccessOption(o));
             }
         }
         if (databaseRowLimit == null) {
@@ -409,6 +456,15 @@ public class AiSessionSettings {
             Boolean value = allowDatabaseAccessOption(option);
             if (value != null) {
                 cfgObj.addProperty(AiSessionSettingsKeyEnum.forDatabaseAccessOption(option).key(), value);
+            }
+        }
+        if (allowGitAccess != null) {
+            cfgObj.addProperty(AiSessionSettingsKeyEnum.ALLOW_GIT_ACCESS.key(), allowGitAccess);
+        }
+        for (GitAccessOptionEnum option : GitAccessOptionEnum.values()) {
+            Boolean value = allowGitAccessOption(option);
+            if (value != null) {
+                cfgObj.addProperty(AiSessionSettingsKeyEnum.forGitAccessOption(option).key(), value);
             }
         }
         if (databaseRowLimit != null) {

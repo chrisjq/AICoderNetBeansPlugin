@@ -15,6 +15,7 @@ import kiwi.ingenuity.netbeans.plugin.aicoder.process.session.AbstractAiSession;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.TimeoutEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.McpToolInterface;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.ToolRequestArguments;
+import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.git.GitAccessGuard;
 
 /**
  * Runs a single MCP tool call with the same locking/handler semantics for both the HTTP {@code tools/call} path and
@@ -35,6 +36,14 @@ public final class McpToolInvoker {
                 session == null ? null : session.getSessionName(), tool.toolName(), argsObj);
         // After logging (a refused attempt is still worth a log line) and before any lock
         // is taken, so a denial cannot make a caller wait on a lock it will not get to use.
+        //
+        // Access BEFORE scope, deliberately. If git is switched off entirely, "git access is
+        // disabled" is the truthful answer; running scope first would blame a perfectly valid
+        // projectPath and send the user hunting a scoping problem that does not exist.
+        String gitAccessDenial = GitAccessGuard.denialOrNull(handler, session);
+        if (gitAccessDenial != null) {
+            return gitAccessDenial;
+        }
         String gitScopeDenial = gitScopeDenialOrNull(handler, argsObj, session);
         if (gitScopeDenial != null) {
             return gitScopeDenial;

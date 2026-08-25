@@ -21,6 +21,7 @@ import java.util.function.Function;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 import kiwi.ingenuity.netbeans.plugin.aicoder.DatabaseAccessOptionEnum;
+import kiwi.ingenuity.netbeans.plugin.aicoder.GitAccessOptionEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.WebRequestAccessOptionEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.settings.AiSessionSettings;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.settings.ConfigTemplate;
@@ -117,8 +118,7 @@ public final class TemplatePersistenceManager {
     }
 
     /**
-     * Seeds only an empty special-instruction store. Future defaults belong in
-     * the factory.
+     * Seeds only an empty special-instruction store. Future defaults belong in the factory.
      */
     public List<SpecialInstructionTemplate> saveSpecialInstructionDefaultsIfEmpty() throws IOException {
         List<SpecialInstructionTemplate> current = loadSpecialInstructionTemplates();
@@ -155,6 +155,9 @@ public final class TemplatePersistenceManager {
         coordinator.setAllowDatabaseAccessOption(DatabaseAccessOptionEnum.SCHEMA, false);
         coordinator.setAllowDatabaseAccessOption(DatabaseAccessOptionEnum.SELECT, false);
         coordinator.setAllowDatabaseAccessOption(DatabaseAccessOptionEnum.EXECUTE_SQL, false);
+        coordinator.setAllowGitAccess(true);
+        coordinator.setAllowGitAccessOption(GitAccessOptionEnum.READ, true);
+        coordinator.setAllowGitAccessOption(GitAccessOptionEnum.WRITE, true);
         coordinator.setDatabaseRowLimit(25);
         coordinator.setEnableClipboardAccess(false);
 
@@ -182,6 +185,9 @@ public final class TemplatePersistenceManager {
         coderPeer.setAllowDatabaseAccessOption(DatabaseAccessOptionEnum.SCHEMA, false);
         coderPeer.setAllowDatabaseAccessOption(DatabaseAccessOptionEnum.SELECT, false);
         coderPeer.setAllowDatabaseAccessOption(DatabaseAccessOptionEnum.EXECUTE_SQL, false);
+        coderPeer.setAllowGitAccess(true);
+        coderPeer.setAllowGitAccessOption(GitAccessOptionEnum.READ, true);
+        coderPeer.setAllowGitAccessOption(GitAccessOptionEnum.WRITE, true);
         coderPeer.setDatabaseRowLimit(25);
         coderPeer.setEnableClipboardAccess(false);
 
@@ -209,6 +215,12 @@ public final class TemplatePersistenceManager {
         reviewerPeer.setAllowDatabaseAccessOption(DatabaseAccessOptionEnum.SCHEMA, false);
         reviewerPeer.setAllowDatabaseAccessOption(DatabaseAccessOptionEnum.SELECT, false);
         reviewerPeer.setAllowDatabaseAccessOption(DatabaseAccessOptionEnum.EXECUTE_SQL, false);
+        // A reviewing session reads history, diffs and blame; it has no business committing,
+        // resetting or pushing. This is the one place the READ/WRITE split earns its keep in a
+        // shipped default.
+        reviewerPeer.setAllowGitAccess(true);
+        reviewerPeer.setAllowGitAccessOption(GitAccessOptionEnum.READ, true);
+        reviewerPeer.setAllowGitAccessOption(GitAccessOptionEnum.WRITE, false);
         reviewerPeer.setDatabaseRowLimit(25);
         reviewerPeer.setEnableClipboardAccess(false);
 

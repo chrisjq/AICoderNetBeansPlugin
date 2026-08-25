@@ -7,6 +7,7 @@ import java.nio.file.Path;
 import java.time.Instant;
 import java.util.List;
 import kiwi.ingenuity.netbeans.plugin.aicoder.DatabaseAccessOptionEnum;
+import kiwi.ingenuity.netbeans.plugin.aicoder.GitAccessOptionEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.WebRequestAccessOptionEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.settings.AiModelSessionSettings;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.settings.AiSessionSettings;
@@ -36,6 +37,9 @@ class TemplatePersistenceManagerTest {
             settings.setAllowDatabaseAccessOption(option, option.ordinal() % 2 == 1);
         }
         settings.setDatabaseRowLimit(73);
+        settings.setAllowGitAccess(false);
+        settings.setAllowGitAccessOption(GitAccessOptionEnum.READ, true);
+        settings.setAllowGitAccessOption(GitAccessOptionEnum.WRITE, false);
         settings.setEnableClipboardAccess(true);
         return settings;
     }
@@ -57,6 +61,11 @@ class TemplatePersistenceManagerTest {
             assertEquals(expected.allowDatabaseAccessOption(option), actual.allowDatabaseAccessOption(option), option.name());
         }
         assertEquals(expected.databaseRowLimit(), actual.databaseRowLimit());
+        assertEquals(expected.allowGitAccess(), actual.allowGitAccess(), "allowGitAccess");
+        for (GitAccessOptionEnum option : GitAccessOptionEnum.values()) {
+            assertEquals(expected.allowGitAccessOption(option),
+                    actual.allowGitAccessOption(option), option.name());
+        }
         assertEquals(expected.enableClipboardAccess(), actual.enableClipboardAccess());
     }
 
@@ -164,6 +173,32 @@ class TemplatePersistenceManagerTest {
                     template.settings().allowWebRequestAccess(WebRequestAccessOptionEnum.PRIVATE_NETWORKS),
                     template.name() + " must deny private-network destinations");
         }
+    }
+
+    @Test
+    void builtInTemplatesPinGitAccessWithReviewerReadOnly() throws Exception {
+        TemplatePersistenceManager manager = new TemplatePersistenceManager(temp);
+        manager.saveConfigDefaultsIfEmpty();
+
+        java.util.Map<String, ConfigTemplate> byName = new java.util.HashMap<>();
+        for (ConfigTemplate template : manager.loadConfigTemplates()) {
+            byName.put(template.name(), template);
+        }
+
+        for (ConfigTemplate template : byName.values()) {
+            assertEquals(Boolean.TRUE, template.settings().allowGitAccess(), template.name());
+            assertEquals(Boolean.TRUE,
+                    template.settings().allowGitAccessOption(GitAccessOptionEnum.READ),
+                    template.name());
+        }
+
+        assertEquals(Boolean.TRUE,
+                byName.get("Coordinator").settings().allowGitAccessOption(GitAccessOptionEnum.WRITE));
+        assertEquals(Boolean.TRUE,
+                byName.get("CoderPeer").settings().allowGitAccessOption(GitAccessOptionEnum.WRITE));
+        assertEquals(Boolean.FALSE,
+                byName.get("ReviewerPeer").settings().allowGitAccessOption(GitAccessOptionEnum.WRITE),
+                "reviewer templates must not be able to mutate the repository");
     }
 
     @Test

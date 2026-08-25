@@ -22,7 +22,10 @@ public enum AccessControlLabelEnum {
     ALLOW_DATABASE_LIST_TABLES("Allow table listing by default", "Allow table listing"),
     ALLOW_DATABASE_SCHEMA("Allow table schema lookups by default", "Allow table schema lookups"),
     ALLOW_DATABASE_SELECT("Allow Select Query by default", "Allow Select Query"),
-    ALLOW_DATABASE_EXECUTE_SQL("Allow arbitrary SELECT queries by default", "Allow arbitrary SELECT queries");
+    ALLOW_DATABASE_EXECUTE_SQL("Allow arbitrary SELECT queries by default", "Allow arbitrary SELECT queries"),
+    ALLOW_GIT_ACCESS("Allow AI git access by default", "Allow git access"),
+    ALLOW_GIT_READ("Allow read-only git commands by default", "Allow read-only git commands"),
+    ALLOW_GIT_WRITE("Allow git commands that modify the repository by default", "Allow git commands that modify the repository");
 
     private final String globalLabel;
     private final String sessionLabel;

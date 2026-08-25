@@ -4,6 +4,7 @@ import com.google.gson.JsonObject;
 import java.time.Instant;
 import java.util.UUID;
 import kiwi.ingenuity.netbeans.plugin.aicoder.DatabaseAccessOptionEnum;
+import kiwi.ingenuity.netbeans.plugin.aicoder.GitAccessOptionEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.WebRequestAccessOptionEnum;
 
 /**
@@ -59,6 +60,10 @@ public final class ConfigTemplate {
         target.setAllowDatabaseAccess(source.effectiveAllowDatabaseAccess());
         for (DatabaseAccessOptionEnum option : DatabaseAccessOptionEnum.values()) {
             target.setAllowDatabaseAccessOption(option, source.effectiveAllowDatabaseAccessOption(option));
+        }
+        target.setAllowGitAccess(source.effectiveAllowGitAccess());
+        for (GitAccessOptionEnum option : GitAccessOptionEnum.values()) {
+            target.setAllowGitAccessOption(option, source.effectiveAllowGitAccessOption(option));
         }
         target.setDatabaseRowLimit(source.effectiveDatabaseRowLimit());
         target.setEnableClipboardAccess(source.effectiveEnableClipboardAccess());

@@ -137,6 +137,22 @@ public final class PluginSettings {
         prefs().putBoolean(PluginSettingsKeyEnum.ALLOW_DATABASE_ACCESS.key(), v);
     }
 
+    public static boolean isAllowGitAccess() {
+        return getBoolean(PluginSettingsKeyEnum.ALLOW_GIT_ACCESS);
+    }
+
+    public static void setAllowGitAccess(boolean v) {
+        prefs().putBoolean(PluginSettingsKeyEnum.ALLOW_GIT_ACCESS.key(), v);
+    }
+
+    public static boolean isAllowGitAccessOption(GitAccessOptionEnum option) {
+        return getBoolean(PluginSettingsKeyEnum.forGitAccessOption(option));
+    }
+
+    public static void setAllowGitAccessOption(GitAccessOptionEnum option, boolean v) {
+        prefs().putBoolean(PluginSettingsKeyEnum.forGitAccessOption(option).key(), v);
+    }
+
     public static boolean isEnableClipboardAccess() {
         return getBoolean(PluginSettingsKeyEnum.ENABLE_CLIPBOARD_ACCESS);
     }

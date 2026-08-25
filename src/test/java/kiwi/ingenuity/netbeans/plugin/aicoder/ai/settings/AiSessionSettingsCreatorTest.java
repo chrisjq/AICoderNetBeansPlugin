@@ -1,6 +1,7 @@
 package kiwi.ingenuity.netbeans.plugin.aicoder.ai.settings;
 
 import com.google.gson.JsonObject;
+import kiwi.ingenuity.netbeans.plugin.aicoder.GitAccessOptionEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.WebRequestAccessOptionEnum;
 import static org.junit.jupiter.api.Assertions.*;
 import org.junit.jupiter.api.Test;
@@ -38,6 +39,9 @@ class AiSessionSettingsCreatorTest {
         cfg.addProperty("allowWebRequestPost", false);
         cfg.addProperty("allowWebRequestHeaders", false);
         cfg.addProperty("allowWebRequestBody", true);
+        cfg.addProperty("allowGitAccess", false);
+        cfg.addProperty("allowGitRead", true);
+        cfg.addProperty("allowGitWrite", false);
 
         AiSessionSettingsCreator<AiSessionSettings> creator = baseCreator();
         AiSessionSettings settings = creator.create();
@@ -59,6 +63,11 @@ class AiSessionSettingsCreatorTest {
                 settings.allowWebRequestAccess(WebRequestAccessOptionEnum.HEADERS));
         assertEquals(true,
                 settings.allowWebRequestAccess(WebRequestAccessOptionEnum.BODY));
+        assertEquals(false, settings.allowGitAccess());
+        assertEquals(true,
+                settings.allowGitAccessOption(GitAccessOptionEnum.READ));
+        assertEquals(false,
+                settings.allowGitAccessOption(GitAccessOptionEnum.WRITE));
     }
 
     @Test
@@ -77,6 +86,10 @@ class AiSessionSettingsCreatorTest {
         assertNull(settings.allowWebRequests());
         for (WebRequestAccessOptionEnum option : WebRequestAccessOptionEnum.values()) {
             assertNull(settings.allowWebRequestAccess(option));
+        }
+        assertNull(settings.allowGitAccess());
+        for (GitAccessOptionEnum option : GitAccessOptionEnum.values()) {
+            assertNull(settings.allowGitAccessOption(option));
         }
     }
 
@@ -106,6 +119,9 @@ class AiSessionSettingsCreatorTest {
         original.setAllowWebRequestAccess(WebRequestAccessOptionEnum.POST, false);
         original.setAllowWebRequestAccess(WebRequestAccessOptionEnum.HEADERS, false);
         original.setAllowWebRequestAccess(WebRequestAccessOptionEnum.BODY, true);
+        original.setAllowGitAccess(false);
+        original.setAllowGitAccessOption(GitAccessOptionEnum.READ, true);
+        original.setAllowGitAccessOption(GitAccessOptionEnum.WRITE, false);
         JsonObject cfg = new JsonObject();
         original.populateJsonObject(cfg);
 
@@ -124,6 +140,11 @@ class AiSessionSettingsCreatorTest {
         for (WebRequestAccessOptionEnum option : WebRequestAccessOptionEnum.values()) {
             assertEquals(original.allowWebRequestAccess(option),
                     loaded.allowWebRequestAccess(option));
+        }
+        assertEquals(original.allowGitAccess(), loaded.allowGitAccess());
+        for (GitAccessOptionEnum option : GitAccessOptionEnum.values()) {
+            assertEquals(original.allowGitAccessOption(option),
+                    loaded.allowGitAccessOption(option));
         }
     }
 

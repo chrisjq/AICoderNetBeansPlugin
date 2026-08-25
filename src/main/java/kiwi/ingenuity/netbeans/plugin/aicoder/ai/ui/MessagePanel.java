@@ -6,6 +6,7 @@ import java.awt.Component;
 import java.awt.Cursor;
 import java.awt.Dimension;
 import java.awt.Insets;
+import java.awt.Rectangle;
 import java.awt.Toolkit;
 import java.awt.datatransfer.StringSelection;
 import java.awt.event.ActionEvent;
@@ -26,12 +27,15 @@ import javax.swing.JComponent;
 import javax.swing.JEditorPane;
 import javax.swing.JLayeredPane;
 import javax.swing.JPanel;
+import javax.swing.JScrollBar;
 import javax.swing.JScrollPane;
 import javax.swing.KeyStroke;
 import javax.swing.SwingUtilities;
 import javax.swing.Timer;
 import javax.swing.UIManager;
 import javax.swing.event.HyperlinkEvent;
+import javax.swing.text.DefaultCaret;
+import javax.swing.text.JTextComponent;
 import kiwi.ingenuity.netbeans.plugin.aicoder.PluginSettings;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.AiMessage;
 import kiwi.ingenuity.netbeans.plugin.aicoder.utils.BrowserUtil;
@@ -463,6 +467,43 @@ public class MessagePanel extends JPanel {
         BrowserUtil.openUrl(url);
     }
 
+    /**
+     * ---- Syntax-highlighted code block (RSyntaxTextArea) ----
+     */
+    /**
+     * Installs a caret that never scrolls its component into view.
+     * <p>
+     * Every text component in a message sits inside ConversationPanel's viewport, so when a caret asks to be made
+     * visible the request propagates up and moves the WHOLE conversation — jumping the user to a message they were not
+     * reading, regardless of the auto-scroll setting, because it never goes near {@code scrollToBottom()}.
+     * <p>
+     * {@code NEVER_UPDATE} is NOT sufficient and was tried first: it only suppresses caret movement caused by DOCUMENT
+     * CHANGES. The actual call arrives asynchronously via {@code DefaultCaret.repaintNewCaret} →
+     * {@code adjustVisibility}, which no update policy governs. A stack trace from a live session is what established
+     * this, after three plausible-sounding fixes had failed:
+     * <pre>
+     *   JViewport.scrollRectToVisible
+     *   JComponent.scrollRectToVisible (×5, propagating up the hierarchy)
+     *   DefaultCaret.adjustVisibility(DefaultCaret.java:317)
+     *   FlatCaret.adjustVisibility(FlatCaret.java:151)
+     *   DefaultCaret.repaintNewCaret(DefaultCaret.java:1402)
+     * </pre> Overriding {@code adjustVisibility} to do nothing is the only reliable way to stop it: it cuts the scroll
+     * off at its source rather than trying to predict when it fires. Selection and copy still work — only the
+     * auto-scrolling is removed, which is what a read-only transcript wants anyway.
+     */
+    private static void installQuietCaret(JTextComponent component) {
+        DefaultCaret quiet = new DefaultCaret() {
+            @Override
+            protected void adjustVisibility(Rectangle nloc) {
+                // Deliberately nothing. See the javadoc above.
+            }
+        };
+        quiet.setUpdatePolicy(DefaultCaret.NEVER_UPDATE);
+        // A read-only transcript has no insertion point to advertise.
+        quiet.setBlinkRate(0);
+        component.setCaret(quiet);
+    }
+
     private final AiMessage.Role role;
     private final JPanel contentPanel;
     private final boolean restored;
@@ -714,6 +755,17 @@ public class MessagePanel extends JPanel {
             }
         };
         pane.setEditable(false);
+        // Stop the caret dragging the conversation.
+        //
+        // This pane sits DIRECTLY inside ConversationPanel's viewport — unlike a code block,
+        // which has its own RTextScrollPane to absorb the scroll — so a caret update here
+        // propagates scrollRectToVisible all the way up and jumps the whole conversation to
+        // this message. DefaultCaret's default policy updates on every document change, and
+        // an HTMLDocument fires those as it lays out.
+        //
+        // That is why the view still moved at turn end and on send with auto-scroll OFF: it
+        // never went through scrollToBottom(), so the flag never got a say.
+        installQuietCaret(pane);
         pane.setFocusable(true);
         pane.setOpaque(false);
         pane.setBorder(BorderFactory.createEmptyBorder(1, 0, 1, 0));
@@ -817,11 +869,18 @@ public class MessagePanel extends JPanel {
         return pane;
     }
 
-    /**
-     * ---- Syntax-highlighted code block (RSyntaxTextArea) ----
-     */
     private JComponent makeCodeBlock(String code, String lang) {
         RSyntaxTextArea rsta = new RSyntaxTextArea(code.stripTrailing());
+        // Same treatment as the message panes, and needed for two reasons here.
+        //
+        // Horizontally: the constructor leaves the caret at the END of the text, so a block that
+        // is ONE long line used to open scrolled hard right, showing the tail and hiding the
+        // start of the statement. With the caret quiet, nothing scrolls and it opens at 0.
+        //
+        // Vertically: this scroll pane sets VERTICAL_SCROLLBAR_NEVER, so it cannot satisfy a
+        // vertical scrollRectToVisible itself — the request would propagate straight up and
+        // move the whole conversation.
+        installQuietCaret(rsta);
         rsta.setSyntaxEditingStyle(langToSyntax(lang));
         rsta.setEditable(false);
         rsta.setCodeFoldingEnabled(false);
@@ -862,7 +921,18 @@ public class MessagePanel extends JPanel {
 
             @Override
             public Dimension getPreferredSize() {
-                return rsp.getPreferredSize();
+                Dimension preferred = rsp.getPreferredSize();
+                // Reserve a strip at the bottom for the horizontal scrollbar.
+                //
+                // The scrollbar policy is AS_NEEDED, so the bar only appears for code wider than
+                // the panel. When it did appear, ScrollPaneLayout took its height out of the
+                // viewport — and because this pane's preferred height was just the scroll pane's,
+                // there was no slack to take it from, so the last line of code was clipped behind
+                // the bar. Adding the height here means the code keeps its full height and the
+                // bar gets its own space; when no bar is showing the strip is simply empty.
+                JScrollBar horizontal = rsp.getHorizontalScrollBar();
+                int barHeight = horizontal == null ? 0 : horizontal.getPreferredSize().height;
+                return new Dimension(preferred.width, preferred.height + barHeight);
             }
         };
         layered.add(rsp, JLayeredPane.DEFAULT_LAYER);

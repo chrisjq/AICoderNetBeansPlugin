@@ -3,7 +3,6 @@ package kiwi.ingenuity.netbeans.plugin.aicoder.ai.ui;
 import java.awt.BorderLayout;
 import java.awt.Color;
 import java.awt.Dimension;
-import java.awt.FlowLayout;
 import java.awt.Insets;
 import java.awt.Window;
 import java.beans.PropertyChangeListener;
@@ -31,6 +30,7 @@ import javax.swing.JOptionPane;
 import javax.swing.JPanel;
 import javax.swing.JScrollPane;
 import javax.swing.JSplitPane;
+import javax.swing.JToggleButton;
 import javax.swing.SwingUtilities;
 import javax.swing.Timer;
 import javax.swing.UIManager;
@@ -229,6 +229,14 @@ public final class AiTopComponent extends TopComponent implements AiProcessEvent
         return autoAccept && !event.requireExplicitApproval();
     }
 
+    /**
+     * Tooltip for the auto-scroll toggle, reporting the state it is currently IN rather than the one clicking would
+     * move it to. Both readings are common in toolbars, so the wording says which it means outright.
+     */
+    private static String autoScrollTooltip(boolean enabled) {
+        return "Auto Scroll - " + (enabled ? "Enabled" : "Disabled");
+    }
+
     private final ConversationPanel conversationPanel;
     private final AiInfoBar infoBar;
     private final AiInputField inputField;
@@ -406,11 +414,33 @@ public final class AiTopComponent extends TopComponent implements AiProcessEvent
         configButton.setMargin(new Insets(0, 4, 0, 4));
         configButton.addActionListener(e -> openSessionConfig());
 
+        // On by default for a freshly opened session, which is what it has always done — the
+        // toggle exists to let the user stop it, not to change the starting behaviour.
+        //
+        // The initial state is READ FROM the panel rather than hardcoded here. Two independent
+        // "true"s would be two defaults that merely happen to agree; change one and the button
+        // silently misreports what the panel is actually doing.
+        JToggleButton autoScrollButton
+                = new JToggleButton("⬇", conversationPanel.isAutoScrollToLatest());
+        autoScrollButton.setToolTipText(autoScrollTooltip(autoScrollButton.isSelected()));
+        autoScrollButton.setMargin(new Insets(0, 4, 0, 4));
+        autoScrollButton.setFocusable(false);
+        autoScrollButton.addActionListener(e -> {
+            boolean enabled = autoScrollButton.isSelected();
+            conversationPanel.setAutoScrollToLatest(enabled);
+            autoScrollButton.setToolTipText(autoScrollTooltip(enabled));
+        });
+
         JPanel inputRow = new JPanel(new BorderLayout(4, 0));
         inputRow.add(inputScrollPane, BorderLayout.CENTER);
         JPanel eastPanel = new JPanel(new BorderLayout());
-        JPanel buttonStrip = new JPanel(new FlowLayout(FlowLayout.LEFT, 0, 0));
-        buttonStrip.add(configButton);
+        // BorderLayout rather than FlowLayout so the two buttons sit at OPPOSITE ends of the
+        // strip instead of bunching together. The strip is added to eastPanel's NORTH, so it
+        // spans the full width of the Send button below it — which makes ⚙ line up with Send's
+        // left edge and the auto-scroll toggle with its right.
+        JPanel buttonStrip = new JPanel(new BorderLayout(0, 0));
+        buttonStrip.add(configButton, BorderLayout.WEST);
+        buttonStrip.add(autoScrollButton, BorderLayout.EAST);
         eastPanel.add(buttonStrip, BorderLayout.NORTH);
         eastPanel.add(sendButton, BorderLayout.CENTER);
         inputRow.add(eastPanel, BorderLayout.EAST);
@@ -559,7 +589,10 @@ public final class AiTopComponent extends TopComponent implements AiProcessEvent
     }
 
     private void submitNotificationTurn(NotificationTypeEnum type, String notificationText) {
-        handleSubmit(type.prefix() + " " + notificationText);
+        // userInitiated=false: this fires from flushPendingNotifications at turn end because
+        // mail is waiting, not because anyone clicked Send. It renders as a user message, but
+        // the user did not ask for it, so it must respect the auto-scroll setting.
+        handleSubmit(type.prefix() + " " + notificationText, false);
     }
 
     public void rename(String newName) {
@@ -1444,6 +1477,15 @@ public final class AiTopComponent extends TopComponent implements AiProcessEvent
     }
 
     private void handleSubmit(String text) {
+        handleSubmit(text, true);
+    }
+
+    /**
+     * @param userInitiated false when the plugin submits a turn on the user's behalf — currently the
+     * queued-inbox-notification flush at turn end. Only the auto-scroll decision depends on it: a turn the user did not
+     * ask for must not drag their view to the bottom.
+     */
+    private void handleSubmit(String text, boolean userInitiated) {
         if (text == null || text.isBlank()) {
             return;
         }
@@ -1493,7 +1535,7 @@ public final class AiTopComponent extends TopComponent implements AiProcessEvent
             conversationPanel.addSystemMessage("Session Instructions Sent");
             recordInstructionsDelivered(sessionInstructions);
         }
-        conversationPanel.addUserMessage(text);
+        conversationPanel.addUserMessage(text, userInitiated);
         for (String missingName : tmpExpansion.missingFiles()) {
             conversationPanel.addSystemMessage("Could not find pasted file @tmp." + missingName
                     + " — it may have been cleaned up, so the agent will see the marker text instead of the file.");

@@ -1104,6 +1104,22 @@ class OpenCodeAiProcessManagerTest {
         try {
             manager.stop();
 
+            // The join — not the stop() call — is what guarantees both outbound messages were
+            // written AND READ by the time the assertion runs, exactly as
+            // stopSendsSessionCancelBeforeSessionClose documents.
+            //
+            // stop() does flush both lines synchronously before returning, so the dispatch is
+            // never in doubt. The race is in OBSERVATION: RecordingFakeAgent records a message
+            // only when its own reader thread gets to it, so asserting straight after stop()
+            // samples whatever has been read so far. Under full-suite scheduling pressure that
+            // thread can be descheduled between the two lines and methodOrder() returns
+            // [session/cancel] alone — observed once, roughly 1 run in 10.
+            //
+            // The join in the finally block below cannot help: it runs after the assertion.
+            agentThread.join(TimeUnit.SECONDS.toMillis(5));
+            assertFalse(agentThread.isAlive(), "fake agent must finish after the connection closes");
+            assertTrue(agent.reachedEof(), "fake agent must see clean EOF, not a torn pipe");
+
             assertEquals(List.of("session/cancel", "session/close"), agent.methodOrder(),
                     "idle stop() must still cancel before closing");
         }
