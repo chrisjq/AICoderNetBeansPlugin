@@ -56,7 +56,7 @@ public class SendAiMessageTool extends AbstractActionTool {
 
         JsonObject important = new JsonObject();
         important.addProperty(ToolSchemaKeyEnum.TYPE.key(), "boolean");
-        important.addProperty(ToolSchemaKeyEnum.DESCRIPTION.key(), "If true, sends a graceful interrupt to the target so it can read this message sooner, instead of waiting for its current turn to finish. Requires allowImportantMessages to be enabled on the target session; it is ignored otherwise.");
+        important.addProperty(ToolSchemaKeyEnum.DESCRIPTION.key(), "If true, sends a graceful interrupt to the target so it can read this message sooner, instead of waiting for its current turn to finish. Requires allowImportantMessages to be enabled on the target session; it is ignored otherwise. It is ALSO ignored when the target's backend has no mid-turn channel — check interruptible in " + McpToolEnum.LIST_AI_SESSIONS.toolName() + " first. Setting it against an interruptible=false peer does nothing at all.");
         props.add(SendAiMessageParamEnum.IMPORTANT.key(), important);
 
         JsonObject expectsReply = new JsonObject();

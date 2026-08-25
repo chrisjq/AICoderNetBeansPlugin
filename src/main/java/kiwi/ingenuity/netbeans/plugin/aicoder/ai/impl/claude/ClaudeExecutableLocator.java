@@ -2,6 +2,7 @@ package kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.claude;
 
 import java.io.File;
 import java.io.IOException;
+import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
@@ -154,7 +155,11 @@ public final class ClaudeExecutableLocator {
         // stdout). --version output is tiny. try-with-resources closes the stream.
         String output;
         try (java.io.InputStream is = p.getInputStream()) {
-            output = new String(is.readNBytes(64 * 1024)).strip();
+            // Explicit UTF-8, not the platform default. JDK 17 decodes with the host default
+            // charset (a legacy codepage on Windows); JDK 18+ uses UTF-8 by specification. This
+            // plugin is compiled for 17 but NetBeans 22 runs on 17 through 21, so leaving it
+            // implicit means the same probe output decodes differently depending on the JVM.
+            output = new String(is.readNBytes(64 * 1024), StandardCharsets.UTF_8).strip();
         }
         boolean finished = p.waitFor(ClaudeTimeoutEnum.CLAUDE_EXECUTABLE_TEST_MILLIS.millis(), TimeUnit.MILLISECONDS);
         if (!finished) {

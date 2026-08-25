@@ -402,7 +402,25 @@ public class MessagePanel extends JPanel {
      * True if the file belongs to one of the currently open NetBeans projects.
      */
     private static boolean isInOpenProject(FileObject fo) {
-        Project owner = FileOwnerQuery.getOwner(fo);
+        Project owner;
+        try {
+            owner = FileOwnerQuery.getOwner(fo);
+        }
+        catch (Throwable t) {
+            // FileOwnerQuery initialises ProjectManager lazily, and that initialisation can fail
+            // with ExceptionInInitializerError / NoClassDefFoundError when the project modules
+            // are not in the Lookup — "No ProjectManagerImplementation found in global Lookup".
+            // This is not theoretical: it is the same failure GitProvider.refreshVcsStatus was
+            // hardened against after it appeared in this project's own test runs.
+            //
+            // Catching Throwable rather than Exception is the point. Those are Errors, so a
+            // catch(Exception) would not stop them — and this method runs on the EDT from a
+            // hyperlink click, where an escaping Error kills the event dispatch thread and takes
+            // the UI with it. Treating an unanswerable question as "not in an open project" only
+            // costs the link its in-IDE open; the fallback path still handles it.
+            LOG.log(Level.FINE, "Could not determine the owning project for " + fo, t);
+            return false;
+        }
         if (owner == null) {
             return false;
         }

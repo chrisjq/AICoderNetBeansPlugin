@@ -63,7 +63,19 @@ public enum ToolResponseKeyEnum {
     /**
      * True while the peer is mid-turn; both states can still receive mail.
      */
-    ACTIVE("active");
+    ACTIVE("active"),
+    /**
+     * When mail reaches this peer if it is mid-turn — see
+     * {@link kiwi.ingenuity.netbeans.plugin.aicoder.ai.MailDeliveryTimingEnum}. Lets a sender see
+     * whether marking a message important can actually reach the target sooner, instead of
+     * setting the flag blind and assuming it worked.
+     */
+    MAIL_DELIVERY("mailDelivery"),
+    /**
+     * Whether marking a message important changes anything for this peer. False means the flag is
+     * inert: the backend has no mid-turn channel and the message waits for the turn to end.
+     */
+    INTERRUPTIBLE("interruptible");
 
     private final String key;
 

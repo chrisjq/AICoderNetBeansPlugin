@@ -24,16 +24,23 @@ import static kiwi.ingenuity.netbeans.plugin.aicoder.process.McpInstructionOptio
  * configurations.
  */
 public enum AiTypeEnum {
-    //                                                          implemented  enabledByDefault  openAiCompatible
-    CLAUDE("Claude", "claude", true, true, false, new ClaudeSettingsCreator(), Set.of(HEADER, TOOL_INSTRUCTION, CREDENTIALS)),
-    GROK("Grok", "grok", true, true, false, new GrokSettingsCreator(), Set.of(HEADER, TOOL_INSTRUCTION, CREDENTIALS)),
-    GitHubCoPilot("GitHub CoPilot", "github_copilot", true, true, false, new GithubCopilotSettingsCreator(), Set.of(HEADER, TOOL_INSTRUCTION, CREDENTIALS, FORCE_MCP_TOOL_USE)),
+    //                                                          implemented  enabledByDefault  openAiCompatible  mailDeliveryTiming
+    // ClaudeAiProcessManager:444 sends control_request(interrupt) for Mail — byte-identical to
+    // what Cancel sends, so the CLI cannot tell mail from the Stop button and ends the turn,
+    // taking any in-flight tool call with it.
+    CLAUDE("Claude", "claude", true, true, false, MailDeliveryTimingEnum.ABORTS_TURN, new ClaudeSettingsCreator(), Set.of(HEADER, TOOL_INSTRUCTION, CREDENTIALS)),
+    // GrokAiProcessManager:412 — "Mail IGNORED, no persistent session to inject into".
+    GROK("Grok", "grok", true, true, false, MailDeliveryTimingEnum.AFTER_TURN, new GrokSettingsCreator(), Set.of(HEADER, TOOL_INSTRUCTION, CREDENTIALS)),
+    // GithubCopilotProcessManager:562 injects via immediate-mode setPrompt, described in its own
+    // javadoc as "instead of killing anything".
+    GitHubCoPilot("GitHub CoPilot", "github_copilot", true, true, false, MailDeliveryTimingEnum.DURING_TURN, new GithubCopilotSettingsCreator(), Set.of(HEADER, TOOL_INSTRUCTION, CREDENTIALS, FORCE_MCP_TOOL_USE)),
     // No TOOL_INSTRUCTION: under TOOL_CALLS_VIA_SCHEMA the tool list is rendered
     // into the prompt from the schemas, carrying names, parameters and
     // descriptions. The per-tool instruction lines describe the same tools
     // without the parameters, so enabling both only duplicated ~9k characters.
-    //                                                          implemented  enabledByDefault  openAiCompatible
-    OLLAMA_LOCAL("Ollama (Local)", "ollama_local", true, false, true, new OllamaSettingsCreator(),
+    //                                                          implemented  enabledByDefault  openAiCompatible  mailDeliveryTiming
+    // OllamaAiProcessManager:701 — "Mail IGNORED, no channel to inject into".
+    OLLAMA_LOCAL("Ollama (Local)", "ollama_local", true, false, true, MailDeliveryTimingEnum.AFTER_TURN, new OllamaSettingsCreator(),
             Set.of(HEADER, ONLY_MCP_TOOL_ACCESS, SOFTEN_TOOL_DIRECTIVES, TOOL_CALLS_VIA_SCHEMA)),
     // FORCE_MCP_TOOL_USE for the same reason as Copilot: OpenCode keeps its own
     // bash/grep/read/edit tools and reached for them first, shelling out to grep
@@ -41,11 +48,14 @@ public enum AiTypeEnum {
     // Read/Edit/Write/Bash/Grep" guidance is already sent, but it sits below the
     // GetInstructions preamble and was read past. The flag repeats it as the
     // first line instead.
-    OPENCODE("OpenCode", "opencode", true, true, false, new OpenCodeSettingsCreator(), Set.of(HEADER, TOOL_INSTRUCTION, CREDENTIALS, FORCE_MCP_TOOL_USE)),
+    // OpenCodeAiProcessManager:757 — "Mail IGNORED (unimplemented)".
+    OPENCODE("OpenCode", "opencode", true, true, false, MailDeliveryTimingEnum.AFTER_TURN, new OpenCodeSettingsCreator(), Set.of(HEADER, TOOL_INSTRUCTION, CREDENTIALS, FORCE_MCP_TOOL_USE)),
     // MCP not yet registered (design doc §9 slice — later), so mcpOptions below
     // mirrors OpenCode's set as the intended shape rather than a proven one;
     // revisit once Codex is actually wired into McpHookServer.
-    CODEX("Codex", "codex", true, true, false, new CodexSettingsCreator(), Set.of(HEADER, TOOL_INSTRUCTION, CREDENTIALS));
+    // CodexAiProcessManager interjects via turn/steer and its javadoc states it "never escalates
+    // to Cancel", so the turn survives.
+    CODEX("Codex", "codex", true, true, false, MailDeliveryTimingEnum.DURING_TURN, new CodexSettingsCreator(), Set.of(HEADER, TOOL_INSTRUCTION, CREDENTIALS));
 
     public static AiTypeEnum fromKey(String key) {
         if (key == null) {
@@ -92,16 +102,32 @@ public enum AiTypeEnum {
      * sessionId/secretKey.
      */
     private final Set<McpInstructionOptionEnum> mcpOptions;
+    /**
+     * When an inbox message reaches this backend if it is mid-turn, and at what cost. Decides
+     * both whether marking a message important can do anything and whether the recipient needs
+     * telling afterwards that an aborted tool call was not a user rejection.
+     */
+    private final MailDeliveryTimingEnum mailDeliveryTiming;
 
     AiTypeEnum(String displayName, String key, boolean isImplemented, boolean enabledByDefault,
-            boolean openAiCompatible, AiSessionSettingsCreator settingCreator, Set<McpInstructionOptionEnum> options) {
+            boolean openAiCompatible, MailDeliveryTimingEnum mailDeliveryTiming,
+            AiSessionSettingsCreator settingCreator, Set<McpInstructionOptionEnum> options) {
         this.displayName = displayName;
         this.key = key;
         this.implemented = isImplemented;
         this.enabledByDefault = enabledByDefault;
         this.openAiCompatible = openAiCompatible;
+        this.mailDeliveryTiming = mailDeliveryTiming;
         this.settingCreator = settingCreator;
         this.mcpOptions = options;
+    }
+
+    /**
+     * When an inbox message reaches this backend if it is mid-turn. Senders use this to tell
+     * whether an important message can actually interrupt the target.
+     */
+    public MailDeliveryTimingEnum mailDeliveryTiming() {
+        return mailDeliveryTiming;
     }
 
     /**

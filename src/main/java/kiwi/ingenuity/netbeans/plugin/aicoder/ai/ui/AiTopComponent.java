@@ -42,6 +42,7 @@ import kiwi.ingenuity.netbeans.plugin.aicoder.ai.AiTypePropertyBus;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.AiTypeRegistry;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.ContextProvider;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.ExecutablePrompter;
+import kiwi.ingenuity.netbeans.plugin.aicoder.ai.MailDeliveryTimingEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.events.AiInboxMessageEvent;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.events.AiPropertyEvent;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.events.AiPropertyListener;
@@ -238,6 +239,12 @@ public final class AiTopComponent extends TopComponent implements AiProcessEvent
     }
 
     private final ConversationPanel conversationPanel;
+    /**
+     * Set when an inbox message lands while a turn is in flight, so the interruption it causes
+     * can be explained afterwards even if the assistant reads the message itself and leaves the
+     * pending-notification queue empty. See {@code explainInboxInterruptIfNeeded}.
+     */
+    private volatile boolean mailArrivedDuringTurn;
     private final AiInfoBar infoBar;
     private final AiInputField inputField;
     private final JButton sendButton;
@@ -588,6 +595,46 @@ public final class AiTopComponent extends TopComponent implements AiProcessEvent
         return true;
     }
 
+    /**
+     * Tells the assistant that its turn was cut short to deliver mail, when the inbox flush had
+     * nothing left to say. Returns true if a turn was submitted.
+     * <p>
+     * This closes a gap that produces a FALSE BELIEF ABOUT THE USER. A mail interrupt aborts
+     * whatever tool call is in flight, and every backend reports a mid-turn abort as a user
+     * cancellation — Claude sends the same {@code control_request(interrupt)} for mail as for the
+     * Stop button, so the two are indistinguishable on the wire. The assistant therefore reads
+     * "the user rejected this call".
+     * <p>
+     * Normally {@code flushPendingNotifications} repairs that by immediately delivering the mail,
+     * which explains the interruption implicitly. But if the assistant READ the message itself
+     * during the interrupted turn, the queue is empty, the flush does nothing, and the
+     * INTERRUPTED status has already been deliberately suppressed. The assistant is left with an
+     * aborted tool call and no explanation at all — and concludes the user refused something.
+     * <p>
+     * Observed, not theoretical: a session in this IDE reported to the user that they had
+     * rejected a command they never saw.
+     */
+    private boolean explainInboxInterruptIfNeeded() {
+        if (!mailArrivedDuringTurn) {
+            return false;
+        }
+        mailArrivedDuringTurn = false;
+        // Only backends whose mail delivery actually aborts the turn. Codex steers, Copilot
+        // injects, Grok and Ollama drop it — none of them abort anything, so telling those
+        // sessions their turn was interrupted would be a plain falsehood about their own
+        // history, which is precisely the failure this notice exists to prevent.
+        if (session.aiType().mailDeliveryTiming() != MailDeliveryTimingEnum.ABORTS_TURN) {
+            return false;
+        }
+        submitNotificationTurn(NotificationTypeEnum.INBOX_INTERRUPT_NOTICE,
+                "Your turn was interrupted so an inbox message could reach you, and you have "
+                + "already read it. That interrupt is what aborted any tool call that was in "
+                + "flight — NOT a rejection, cancellation, or refusal by the user. Do not tell "
+                + "the user they declined or rejected anything. If the work that was cut short "
+                + "is still valid, resume it.");
+        return true;
+    }
+
     private void submitNotificationTurn(NotificationTypeEnum type, String notificationText) {
         // userInitiated=false: this fires from flushPendingNotifications at turn end because
         // mail is waiting, not because anyone clicked Send. It renders as a user message, but
@@ -840,6 +887,12 @@ public final class AiTopComponent extends TopComponent implements AiProcessEvent
 
     private void handleGlobalProperty(AiPropertyEvent event) {
         if (event instanceof AiInboxMessageEvent ime && session.id().equals(ime.targetSessionId())) {
+            // Recorded BEFORE the EDT hop, while isProcessing() still reflects the turn this
+            // message is about to interrupt. Read inside invokeLater it would often be false
+            // already, and the interruption would go unexplained.
+            if (aiBackend != null && aiBackend.isProcessing()) {
+                mailArrivedDuringTurn = true;
+            }
             SwingUtilities.invokeLater(() -> {
                 // Mail arrives asynchronously, so it can land mid-stream. Without
                 // this the notice is appended after a still-growing assistant
@@ -1264,7 +1317,7 @@ public final class AiTopComponent extends TopComponent implements AiProcessEvent
                 // invokeLater), so the old extra invokeLater bought nothing except
                 // a window where the tab was green and the input live while the
                 // session was about to carry straight on.
-                if (!flushPendingNotifications()) {
+                if (!flushPendingNotifications() && !explainInboxInterruptIfNeeded()) {
                     infoBar.setProcessing(false);
                     setSendEnabled(true);
                     infoBar.setStatusMessage(suppressedTurnCompletionMessage != null
@@ -1534,6 +1587,12 @@ public final class AiTopComponent extends TopComponent implements AiProcessEvent
         if (instructionsIncluded) {
             conversationPanel.addSystemMessage("Session Instructions Sent");
             recordInstructionsDelivered(sessionInstructions);
+        }
+        // A genuine new turn starts clean: anything that arrived during the PREVIOUS turn has
+        // either been flushed or explained by now, and carrying the flag forward would explain
+        // an interruption that did not happen.
+        if (userInitiated) {
+            mailArrivedDuringTurn = false;
         }
         conversationPanel.addUserMessage(text, userInitiated);
         for (String missingName : tmpExpansion.missingFiles()) {

@@ -779,7 +779,13 @@ public class GitProvider {
             else {
                 GitClient.ResetType type;
                 try {
-                    type = GitClient.ResetType.valueOf((resetType != null ? resetType : "MIXED").toUpperCase());
+                    // Locale.ROOT, not the default locale. The CALLER's value is what gets
+                    // folded, and callers pass lowercase ("mixed", "soft"). Under a Turkish
+                    // locale "mixed" uppercases to "MİXED" — dotted capital I — and valueOf
+                    // throws, so the requested reset type is silently replaced by the MIXED
+                    // fallback below. Verified against a real JDK, not assumed.
+                    type = GitClient.ResetType.valueOf(
+                            (resetType != null ? resetType : "MIXED").toUpperCase(Locale.ROOT));
                 }
                 catch (IllegalArgumentException ex) {
                     type = GitClient.ResetType.MIXED;
@@ -940,7 +946,11 @@ public class GitProvider {
         }
         GitClient.RebaseOperationType op;
         try {
-            op = GitClient.RebaseOperationType.valueOf((operation != null ? operation : "BEGIN").toUpperCase());
+            // Locale.ROOT — see gitReset. Lowercase caller input is what breaks: "begin",
+            // "continue" and "skip" all contain an i, so a Turkish locale turns them into
+            // "BEGİN", "CONTİNUE" and "SKİP" and valueOf rejects them.
+            op = GitClient.RebaseOperationType.valueOf(
+                    (operation != null ? operation : "BEGIN").toUpperCase(Locale.ROOT));
         }
         catch (IllegalArgumentException ex) {
             return "Invalid operation. Use: BEGIN, CONTINUE, SKIP, ABORT";
@@ -980,7 +990,10 @@ public class GitProvider {
         }
         GitClient.CherryPickOperation op;
         try {
-            op = GitClient.CherryPickOperation.valueOf((operation != null ? operation : "BEGIN").toUpperCase());
+            // Locale.ROOT — see gitReset. Same exposure as gitRebase: "begin", "continue" and
+            // "quit" all contain an i.
+            op = GitClient.CherryPickOperation.valueOf(
+                    (operation != null ? operation : "BEGIN").toUpperCase(Locale.ROOT));
         }
         catch (IllegalArgumentException ex) {
             return "Invalid operation. Use: BEGIN, CONTINUE, QUIT, ABORT";
