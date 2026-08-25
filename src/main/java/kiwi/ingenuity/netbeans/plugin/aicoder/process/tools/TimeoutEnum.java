@@ -35,9 +35,15 @@ public enum TimeoutEnum {
      * How old a plugin-created temp file (pasted images, tool-result logs) may get before the periodic age sweep
      * deletes it. Deliberately uncritical: session close, IDE shutdown and plugin uninstall each remove whole temp
      * directories regardless of age, so this value only bounds how much a very long-lived session can accumulate.
-     * Erring long costs trivial disk.
+     * <p>
+     * The trade is against live references, not disk: a spooled build log or a pasted image older than this is swept
+     * while its session is still open, so an agent that revisits a tool-result log — or a {@code @tmp.} marker left
+     * unsent in the input box — finds it gone. Both degrade safely (the log is re-creatable by re-running the tool, and
+     * TmpMarkerExpander reports an unresolvable marker to the user rather than sending a dead path), which is what
+     * makes four hours acceptable rather than merely tidy: long enough to outlast an ordinary working session, short
+     * enough that an abandoned one does not hoard build logs until the IDE closes.
      */
-    TEMP_FILE_MAX_AGE_MILLIS(21_600_000L, Kind.LOCK_LIFETIME),
+    TEMP_FILE_MAX_AGE_MILLIS(14_400_000L, Kind.LOCK_LIFETIME),
     TEMP_FILE_SWEEP_INTERVAL_MILLIS(60_000L, Kind.BACKGROUND_INTERVAL),
     DATABASE_QUERY_TIMEOUT_MILLIS(300_000L, Kind.EXTERNAL_IO),
     OPENAI_HTTP_REQUEST_TIMEOUT_MILLIS(300_000L, Kind.EXTERNAL_IO),

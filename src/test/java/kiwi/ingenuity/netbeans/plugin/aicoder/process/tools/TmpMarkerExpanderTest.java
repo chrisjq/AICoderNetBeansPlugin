@@ -1,5 +1,6 @@
 package kiwi.ingenuity.netbeans.plugin.aicoder.process.tools;
 
+import java.io.IOException;
 import java.nio.file.Path;
 import java.time.Instant;
 import java.util.List;
@@ -25,6 +26,19 @@ class TmpMarkerExpanderTest {
                 Instant.now(), Instant.now());
     }
 
+    /**
+     * The expansion TmpMarkerExpander emits for {@code file}, as a REAL path.
+     * <p>
+     * The expander resolves symlinks deliberately — its containment check compares {@code candidate.toRealPath()}
+     * against the session tmp dir's real path — so the expected text must resolve them too. Comparing against the
+     * unresolved {@code @TempDir} path passes on Linux and FAILS on macOS, where JUnit's temp directory lives under
+     * {@code /var/folders/...} and {@code /var} is a symlink to {@code /private/var}. Asserting the unresolved path
+     * would be asserting the platform, not the behaviour.
+     */
+    private static String expansionOf(Path file) throws IOException {
+        return "@" + file.toRealPath();
+    }
+
     @TempDir
     Path root; // stands in for ~/.ai-coder
 
@@ -40,14 +54,14 @@ class TmpMarkerExpanderTest {
     }
 
     @Test
-    void expand_resolvesMarkerToAbsolutePath() {
+    void expand_resolvesMarkerToAbsolutePath() throws IOException {
         AiSession s = session("ses-a");
         Path file = TempFileRegistry.createTempFile(s, "ai-coder-paste", ".png").path();
         String marker = "@tmp." + file.getFileName();
 
         TmpMarkerExpander.Result result = TmpMarkerExpander.expand("look at " + marker, s);
 
-        assertEquals("look at @" + file, result.expandedText());
+        assertEquals("look at " + expansionOf(file), result.expandedText());
         assertTrue(result.missingFiles().isEmpty());
     }
 
@@ -68,7 +82,7 @@ class TmpMarkerExpanderTest {
     }
 
     @Test
-    void expand_multipleMarkersInOneMessage_allExpand() {
+    void expand_multipleMarkersInOneMessage_allExpand() throws IOException {
         AiSession s = session("ses-a");
         Path first = TempFileRegistry.createTempFile(s, "ai-coder-paste", ".png").path();
         Path second = TempFileRegistry.createTempFile(s, "ai-coder-paste", ".png").path();
@@ -76,18 +90,19 @@ class TmpMarkerExpanderTest {
         String text = "@tmp." + first.getFileName() + " and @tmp." + second.getFileName();
         TmpMarkerExpander.Result result = TmpMarkerExpander.expand(text, s);
 
-        assertEquals("@" + first + " and @" + second, result.expandedText());
+        assertEquals(expansionOf(first) + " and " + expansionOf(second), result.expandedText());
     }
 
     @Test
-    void expand_markerMidSentence_expands() {
+    void expand_markerMidSentence_expands() throws IOException {
         AiSession s = session("ses-a");
         Path file = TempFileRegistry.createTempFile(s, "ai-coder-paste", ".png").path();
 
         String text = "Please look at @tmp." + file.getFileName() + " and tell me what you see.";
         TmpMarkerExpander.Result result = TmpMarkerExpander.expand(text, s);
 
-        assertEquals("Please look at @" + file + " and tell me what you see.", result.expandedText());
+        assertEquals("Please look at " + expansionOf(file) + " and tell me what you see.",
+                result.expandedText());
     }
 
     @Test

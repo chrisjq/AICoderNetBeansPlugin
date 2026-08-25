@@ -448,7 +448,23 @@ public class GitProvider {
             return "Refreshed VCS status for " + count + " project" + (count != 1 ? "s" : "");
         }
         catch (Throwable t) {
-            LOG.log(Level.WARNING, "refreshVcsStatus failed for " + filePath, t);
+            // A headless JVM (the unit-test harness) registers no ProjectManagerImplementation in global Lookup, so
+            // FileOwnerQuery's first call throws ExceptionInInitializerError and every later one
+            // NoClassDefFoundError once the class is poisoned. That is EXPECTED there and says nothing about this
+            // call, so it drops to FINE: at WARNING it printed a full stack trace roughly ten times per suite run
+            // and buried the real failures in the build output.
+            // Matched on the CAUSE, not merely the type: demoting every NoClassDefFoundError here would equally
+            // silence an unrelated missing class on this call path, which inside a running IDE is a real defect
+            // worth shouting about. Only the known ProjectManager-initialisation failure is quietened; anything
+            // else — including a different classloading failure — still logs WARNING.
+            // Note this is deliberately invisible at the IDE log's default threshold, so absence of this warning
+            // does NOT prove the refresh succeeded; the returned string is what callers and the user actually see.
+            String cause = String.valueOf(t.getMessage());
+            boolean projectManagerUnavailable = (t instanceof NoClassDefFoundError
+                    || t instanceof ExceptionInInitializerError)
+                    && cause.contains("ProjectManager");
+            LOG.log(projectManagerUnavailable ? Level.FINE : Level.WARNING,
+                    "refreshVcsStatus failed for " + filePath, t);
             return "Could not refresh VCS status: " + t.getMessage();
         }
     }

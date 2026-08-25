@@ -99,7 +99,7 @@ The General options tab establishes defaults. Sessions can override the followin
 | Change review | Auto-accept policy and diff presentation |
 | Session instructions | Session instructions and startup/first-request delivery behavior |
 | Inter-AI | Enable inter-AI messaging, automatic inbox notices, and important-message interruption |
-| Web requests | Master switch plus independent permissions for GET, POST, PUT, PATCH, DELETE, HEAD, OPTIONS, request headers, and request bodies |
+| Web requests | Master switch plus independent permissions for GET, POST, PUT, PATCH, DELETE, HEAD, OPTIONS, request headers, and request bodies, and for reaching localhost or private-network destinations |
 | Database | Master switch, read-only sub-permissions, and database row limit |
 | Clipboard | Explicit opt-in for clipboard reads |
 | Infrastructure | MCP loopback port, save-session-on-close prompt behavior, inbox retention/size, debug JSON, debug context, and tool-use logging |
@@ -107,6 +107,8 @@ The General options tab establishes defaults. Sessions can override the followin
 The default posture restricts file tools to project directories, disables auto-accept and clipboard access, and disables inter-AI messaging and automatic inbox notices. Important-message interruption is enabled when messaging is enabled. Database access is disabled by default with a row limit of 25; inbox entries are retained for 60 minutes with a maximum of 1,000 entries.
 
 Web requests allow GET by default when web access is enabled. Methods that can change remote state, custom headers, and request bodies are disabled by default and must be enabled globally or for the session.
+
+Where a request may go is controlled separately from what it may do. Destinations that resolve to loopback, link-local, private or site-local, carrier-grade NAT, IPv6 unique-local, multicast, or any-local addresses are refused — on the entered URL and on every redirect hop, so a public address cannot redirect into your network. Two options relax this, both off by default: **Allow localhost destinations** covers loopback and any-local (wildcard) addresses, for a local model server or dev server on your own machine, and **Allow private network destinations** covers the rest — private and site-local ranges, link-local, carrier-grade NAT, and IPv6 unique-local. Multicast is never permitted. A refusal names the setting that would allow it, so the assistant can tell you which one to turn on. Note that enabling localhost also makes this plugin's own tool server reachable over HTTP, though a request still cannot authenticate to it, and that `169.254.169.254` — the cloud metadata endpoint — falls under private networks, which matters if you run the IDE on a cloud VM.
 
 Database access is opt-in and read-only. A query must be a single SELECT — anything chained after a `;` is refused — and the JDBC connection is set read-only while it runs, which some drivers treat only as a hint. The configured row limit is enforced. Queries share the IDE's own connection, so they run one at a time and are cut off after five minutes rather than holding it indefinitely.
 

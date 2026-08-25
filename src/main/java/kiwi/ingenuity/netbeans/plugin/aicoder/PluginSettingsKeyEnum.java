@@ -25,6 +25,8 @@ public enum PluginSettingsKeyEnum {
     ALLOW_WEB_REQUEST_OPTIONS("ai.session.allowWebRequests.options", false),
     ALLOW_WEB_REQUEST_HEADERS("ai.session.allowWebRequests.headers", false),
     ALLOW_WEB_REQUEST_BODY("ai.session.allowWebRequests.body", false),
+    ALLOW_WEB_REQUEST_LOCALHOST("ai.session.allowWebRequests.localhost", false),
+    ALLOW_WEB_REQUEST_PRIVATE_NETWORKS("ai.session.allowWebRequests.privateNetworks", false),
     AUTO_NOTIFY_INBOX("ai.session.autoNotifyInbox", false),
     ALLOW_IMPORTANT_MESSAGES("ai.session.allowImportantMessages", true),
     INBOX_RETENTION_MINUTES("ai.inbox.retentionMinutes", 60),
@@ -65,6 +67,10 @@ public enum PluginSettingsKeyEnum {
                 ALLOW_WEB_REQUEST_HEADERS;
             case BODY ->
                 ALLOW_WEB_REQUEST_BODY;
+            case LOCALHOST ->
+                ALLOW_WEB_REQUEST_LOCALHOST;
+            case PRIVATE_NETWORKS ->
+                ALLOW_WEB_REQUEST_PRIVATE_NETWORKS;
         };
     }
 

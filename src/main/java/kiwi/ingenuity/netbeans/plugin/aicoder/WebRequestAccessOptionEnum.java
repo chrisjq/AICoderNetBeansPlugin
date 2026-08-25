@@ -11,7 +11,19 @@ public enum WebRequestAccessOptionEnum {
     HEAD("HEAD", AccessControlLabelEnum.ALLOW_WEB_REQUEST_HEAD),
     OPTIONS("OPTIONS", AccessControlLabelEnum.ALLOW_WEB_REQUEST_OPTIONS),
     HEADERS(null, AccessControlLabelEnum.ALLOW_WEB_REQUEST_HEADERS),
-    BODY(null, AccessControlLabelEnum.ALLOW_WEB_REQUEST_BODY);
+    BODY(null, AccessControlLabelEnum.ALLOW_WEB_REQUEST_BODY),
+    LOCALHOST(null, AccessControlLabelEnum.ALLOW_WEB_REQUEST_LOCALHOST),
+    PRIVATE_NETWORKS(null, AccessControlLabelEnum.ALLOW_WEB_REQUEST_PRIVATE_NETWORKS);
+
+    public static WebRequestAccessOptionEnum forMethod(String method) {
+        String normalised = method.trim().toUpperCase(Locale.ROOT);
+        for (WebRequestAccessOptionEnum option : values()) {
+            if (option.isMethod() && normalised.equals(option.methodName())) {
+                return option;
+            }
+        }
+        throw new IllegalArgumentException("Unsupported method: " + method);
+    }
 
     private final String methodName;
     private final AccessControlLabelEnum label;
@@ -33,13 +45,4 @@ public enum WebRequestAccessOptionEnum {
         return label;
     }
 
-    public static WebRequestAccessOptionEnum forMethod(String method) {
-        String normalised = method.trim().toUpperCase(Locale.ROOT);
-        for (WebRequestAccessOptionEnum option : values()) {
-            if (option.isMethod() && normalised.equals(option.methodName())) {
-                return option;
-            }
-        }
-        throw new IllegalArgumentException("Unsupported method: " + method);
-    }
 }

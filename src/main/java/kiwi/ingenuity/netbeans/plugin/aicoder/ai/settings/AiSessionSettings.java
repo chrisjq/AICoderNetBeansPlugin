@@ -28,6 +28,8 @@ public class AiSessionSettings {
     private volatile Boolean allowWebRequestOptions;
     private volatile Boolean allowWebRequestHeaders;
     private volatile Boolean allowWebRequestBody;
+    private volatile Boolean allowWebRequestLocalhost;
+    private volatile Boolean allowWebRequestPrivateNetworks;
     private volatile Boolean allowDatabaseAccess;
     private volatile Boolean allowDatabaseReadOnly;
     private volatile Boolean allowListTables;
@@ -138,6 +140,10 @@ public class AiSessionSettings {
                 allowWebRequestHeaders;
             case BODY ->
                 allowWebRequestBody;
+            case LOCALHOST ->
+                allowWebRequestLocalhost;
+            case PRIVATE_NETWORKS ->
+                allowWebRequestPrivateNetworks;
         };
     }
 
@@ -274,6 +280,10 @@ public class AiSessionSettings {
                 allowWebRequestHeaders = allowed;
             case BODY ->
                 allowWebRequestBody = allowed;
+            case LOCALHOST ->
+                allowWebRequestLocalhost = allowed;
+            case PRIVATE_NETWORKS ->
+                allowWebRequestPrivateNetworks = allowed;
         }
     }
 
@@ -356,8 +366,7 @@ public class AiSessionSettings {
     }
 
     /**
-     * Populates a JSON object with this settings' configuration. Only non-null
-     * values are added to the JSON object.
+     * Populates a JSON object with this settings' configuration. Only non-null values are added to the JSON object.
      */
     public void populateJsonObject(JsonObject cfgObj) {
         if (maxHistory != null) {

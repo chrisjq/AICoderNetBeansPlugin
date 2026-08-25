@@ -12,6 +12,8 @@ public enum AccessControlLabelEnum {
     ALLOW_WEB_REQUEST_OPTIONS("Allow OPTIONS by default", "Allow OPTIONS"),
     ALLOW_WEB_REQUEST_HEADERS("Allow custom headers by default", "Allow custom headers"),
     ALLOW_WEB_REQUEST_BODY("Allow request bodies by default", "Allow request bodies"),
+    ALLOW_WEB_REQUEST_LOCALHOST("Allow localhost destinations by default", "Allow localhost destinations"),
+    ALLOW_WEB_REQUEST_PRIVATE_NETWORKS("Allow private network destinations by default", "Allow private network destinations"),
     ALLOW_INTER_AI_COMMS("Allow inter-AI communication by default", "Allow inter-AI communication"),
     AUTO_NOTIFY_INBOX("Auto-notify AI sessions on inbox messages", "Auto-notify on incoming messages"),
     ALLOW_IMPORTANT_MESSAGES("Allow important messages (interrupt receiving session)", "Allow important messages, interrupt this session"),

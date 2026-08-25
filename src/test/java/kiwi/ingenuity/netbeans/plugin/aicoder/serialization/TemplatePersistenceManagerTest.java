@@ -138,6 +138,34 @@ class TemplatePersistenceManagerTest {
         assertEquals(instructionDefaults, manager.saveSpecialInstructionDefaultsIfEmpty());
     }
 
+    /**
+     * Every built-in template pins EVERY web-request option explicitly, including the destination options.
+     * <p>
+     * These templates hard-deny POST, HEADERS and BODY, so their intent is lockdown. An option left null does not mean
+     * "off" — it means "inherit the global default", so a user who switches the global "Allow localhost destinations"
+     * on would silently grant network access to every session created from a template that reads as locked down.
+     * Pinning them keeps the template self-describing: what it shows is what a session gets, whatever the global
+     * happens to be.
+     */
+    @Test
+    void builtInTemplatesPinEveryWebOptionIncludingDestinations() throws Exception {
+        TemplatePersistenceManager manager = new TemplatePersistenceManager(temp);
+
+        for (ConfigTemplate template : manager.saveConfigDefaultsIfEmpty()) {
+            for (WebRequestAccessOptionEnum option : WebRequestAccessOptionEnum.values()) {
+                assertNotNull(template.settings().allowWebRequestAccess(option),
+                        template.name() + " leaves " + option
+                        + " unpinned, so it inherits the global default instead of the template's own value");
+            }
+            assertEquals(Boolean.FALSE,
+                    template.settings().allowWebRequestAccess(WebRequestAccessOptionEnum.LOCALHOST),
+                    template.name() + " must deny localhost destinations");
+            assertEquals(Boolean.FALSE,
+                    template.settings().allowWebRequestAccess(WebRequestAccessOptionEnum.PRIVATE_NETWORKS),
+                    template.name() + " must deny private-network destinations");
+        }
+    }
+
     @Test
     void instructionTemplateCrudAndEmptyDefaultSeedingAreSafe() throws Exception {
         TemplatePersistenceManager manager = new TemplatePersistenceManager(temp);

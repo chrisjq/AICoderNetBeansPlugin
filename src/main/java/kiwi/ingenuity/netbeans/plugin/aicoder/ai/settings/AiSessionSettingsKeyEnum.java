@@ -4,8 +4,8 @@ import kiwi.ingenuity.netbeans.plugin.aicoder.DatabaseAccessOptionEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.WebRequestAccessOptionEnum;
 
 /**
- * Enumerates configuration keys for AiSessionSettings. Defines all JSON config
- * keys used when persisting and loading session settings.
+ * Enumerates configuration keys for AiSessionSettings. Defines all JSON config keys used when persisting and loading
+ * session settings.
  */
 public enum AiSessionSettingsKeyEnum {
     /**
@@ -14,9 +14,8 @@ public enum AiSessionSettingsKeyEnum {
     MAX_HISTORY("maxHistory"),
     SAVE_HISTORY("saveHistory"),
     /**
-     * Whether to restrict AI file access to files inside any project currently
-     * open in NetBeans. When off, the AI may work outside project folders —
-     * that is the point of the setting, not a misconfiguration.
+     * Whether to restrict AI file access to files inside any project currently open in NetBeans. When off, the AI may
+     * work outside project folders — that is the point of the setting, not a misconfiguration.
      */
     RESTRICT_TO_PROJECT_FILES("restrictToProjectFiles"),
     /**
@@ -80,12 +79,20 @@ public enum AiSessionSettingsKeyEnum {
      */
     ALLOW_WEB_REQUEST_BODY("allowWebRequestBody"),
     /**
+     * Whether to allow destinations that resolve to loopback / any-local addresses
+     */
+    ALLOW_WEB_REQUEST_LOCALHOST("allowWebRequestLocalhost"),
+    /**
+     * Whether to allow destinations that resolve to private-network address classes
+     */
+    ALLOW_WEB_REQUEST_PRIVATE_NETWORKS("allowWebRequestPrivateNetworks"),
+    /**
      * Whether to allow database access at all
      */
     ALLOW_DATABASE_ACCESS("allowDatabaseAccess"),
     /**
-     * Read-only flag (no write support implemented; kept as a real setting
-     * rather than hardcoded so enforcement stays honest)
+     * Read-only flag (no write support implemented; kept as a real setting rather than hardcoded so enforcement stays
+     * honest)
      */
     ALLOW_DATABASE_READ_ONLY("allowDatabaseReadOnly"),
     /**
@@ -139,6 +146,10 @@ public enum AiSessionSettingsKeyEnum {
                 ALLOW_WEB_REQUEST_HEADERS;
             case BODY ->
                 ALLOW_WEB_REQUEST_BODY;
+            case LOCALHOST ->
+                ALLOW_WEB_REQUEST_LOCALHOST;
+            case PRIVATE_NETWORKS ->
+                ALLOW_WEB_REQUEST_PRIVATE_NETWORKS;
         };
     }
 
