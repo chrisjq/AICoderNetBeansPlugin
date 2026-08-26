@@ -111,15 +111,19 @@ public final class AiTopComponent extends TopComponent implements AiProcessEvent
     // Tab status circle:
     //   green  = ready / idle (AI is running and waiting for user input),
     //   orange = AI is thinking (a turn is in flight),
+    //   white  = blocked waiting on user (confirm / question / diff panel on screen),
     //   red    = not running — the plugin/tab just started, or a fatal error
     //            occurred (auth failure, abnormal process exit).
-    // The icon and the HTML tab-name dot are both driven from setTabStatus() so
-    // the two renderers can never drift. Each status has exactly one Color
-    // constant below; the icon and the HTML hex string are both derived from
-    // it so they can never go out of sync.
+    // The HTML tab-name dot is driven from setTabStatus() via tabStatusColor().
+    // Each status has exactly one Color constant below; the hex string is
+    // derived from it so the two can never go out of sync.
     private static final Color STATUS_COLOR_GREEN = new Color(0x4C, 0xAF, 0x50);
     private static final Color STATUS_COLOR_ORANGE = new Color(0xFF, 0x98, 0x00);
     private static final Color STATUS_COLOR_RED = new Color(0xF4, 0x43, 0x36);
+    // White for "blocked waiting on user" (confirm / question / diff panel).
+    // If this renders badly on a light theme (invisible or off-white), change
+    // only this one constant — the hex string below derives from it.
+    private static final Color STATUS_COLOR_WHITE = new Color(0xFF, 0xFF, 0xFF);
     // Briefly shown in place of orange each time AI output arrives while the
     // tab is THINKING. See flashThinking(). A paler gold (0xFFC855) rendered
     // black in the tab strip in testing — magenta is confirmed to render
@@ -130,6 +134,7 @@ public final class AiTopComponent extends TopComponent implements AiProcessEvent
     private static final String STATUS_HEX_GREEN = toHex(STATUS_COLOR_GREEN);
     private static final String STATUS_HEX_ORANGE = toHex(STATUS_COLOR_ORANGE);
     private static final String STATUS_HEX_RED = toHex(STATUS_COLOR_RED);
+    private static final String STATUS_HEX_WHITE = toHex(STATUS_COLOR_WHITE);
     private static final String STATUS_HEX_ORANGE_LIGHT = toHex(THINKING_FLASH_COLOR);
 
     /**
@@ -238,11 +243,34 @@ public final class AiTopComponent extends TopComponent implements AiProcessEvent
         return "Auto Scroll - " + (enabled ? "Enabled" : "Disabled");
     }
 
+    /**
+     * Pure colour mapping for the tab status dot — the single source of truth, delegated to by
+     * {@link #tabStatusColor()}. Package-private and static so it can be unit-tested without the NetBeans window
+     * system.
+     *
+     * <p>
+     * Takes the enum rather than its name so the switch stays exhaustive: adding a {@code TabStatus} without a colour
+     * is then a compile error rather than a runtime one. Do not add a {@code default} branch — it would defeat exactly
+     * that check.
+     */
+    static String resolvedTabStatusColor(TabStatus status, boolean flashActive) {
+        return switch (status) {
+            case READY ->
+                STATUS_HEX_GREEN;
+            case THINKING ->
+                flashActive ? STATUS_HEX_ORANGE_LIGHT : STATUS_HEX_ORANGE;
+            case FATAL ->
+                STATUS_HEX_RED;
+            case AWAITING_USER ->
+                STATUS_HEX_WHITE;
+        };
+    }
+
     private final ConversationPanel conversationPanel;
     /**
-     * Set when an inbox message lands while a turn is in flight, so the interruption it causes
-     * can be explained afterwards even if the assistant reads the message itself and leaves the
-     * pending-notification queue empty. See {@code explainInboxInterruptIfNeeded}.
+     * Set when an inbox message lands while a turn is in flight, so the interruption it causes can be explained
+     * afterwards even if the assistant reads the message itself and leaves the pending-notification queue empty. See
+     * {@code explainInboxInterruptIfNeeded}.
      */
     private volatile boolean mailArrivedDuringTurn;
     private final AiInfoBar infoBar;
@@ -596,23 +624,21 @@ public final class AiTopComponent extends TopComponent implements AiProcessEvent
     }
 
     /**
-     * Tells the assistant that its turn was cut short to deliver mail, when the inbox flush had
-     * nothing left to say. Returns true if a turn was submitted.
+     * Tells the assistant that its turn was cut short to deliver mail, when the inbox flush had nothing left to say.
+     * Returns true if a turn was submitted.
      * <p>
-     * This closes a gap that produces a FALSE BELIEF ABOUT THE USER. A mail interrupt aborts
-     * whatever tool call is in flight, and every backend reports a mid-turn abort as a user
-     * cancellation — Claude sends the same {@code control_request(interrupt)} for mail as for the
-     * Stop button, so the two are indistinguishable on the wire. The assistant therefore reads
-     * "the user rejected this call".
+     * This closes a gap that produces a FALSE BELIEF ABOUT THE USER. A mail interrupt aborts whatever tool call is in
+     * flight, and every backend reports a mid-turn abort as a user cancellation — Claude sends the same
+     * {@code control_request(interrupt)} for mail as for the Stop button, so the two are indistinguishable on the wire.
+     * The assistant therefore reads "the user rejected this call".
      * <p>
-     * Normally {@code flushPendingNotifications} repairs that by immediately delivering the mail,
-     * which explains the interruption implicitly. But if the assistant READ the message itself
-     * during the interrupted turn, the queue is empty, the flush does nothing, and the
-     * INTERRUPTED status has already been deliberately suppressed. The assistant is left with an
-     * aborted tool call and no explanation at all — and concludes the user refused something.
+     * Normally {@code flushPendingNotifications} repairs that by immediately delivering the mail, which explains the
+     * interruption implicitly. But if the assistant READ the message itself during the interrupted turn, the queue is
+     * empty, the flush does nothing, and the INTERRUPTED status has already been deliberately suppressed. The assistant
+     * is left with an aborted tool call and no explanation at all — and concludes the user refused something.
      * <p>
-     * Observed, not theoretical: a session in this IDE reported to the user that they had
-     * rejected a command they never saw.
+     * Observed, not theoretical: a session in this IDE reported to the user that they had rejected a command they never
+     * saw.
      */
     private boolean explainInboxInterruptIfNeeded() {
         if (!mailArrivedDuringTurn) {
@@ -1182,14 +1208,7 @@ public final class AiTopComponent extends TopComponent implements AiProcessEvent
     }
 
     private String tabStatusColor() {
-        return switch (tabStatus) {
-            case READY ->
-                STATUS_HEX_GREEN;
-            case THINKING ->
-                thinkingFlashActive ? STATUS_HEX_ORANGE_LIGHT : STATUS_HEX_ORANGE;
-            case FATAL ->
-                STATUS_HEX_RED;
-        };
+        return resolvedTabStatusColor(tabStatus, thinkingFlashActive);
     }
 
     /**
@@ -1207,6 +1226,24 @@ public final class AiTopComponent extends TopComponent implements AiProcessEvent
             }
         }
         updateTabHtmlName();
+    }
+
+    /**
+     * Enter the "blocked waiting on user" state: mark the diff as pending, disable input, and switch the tab dot to
+     * white ({@code AWAITING_USER}). Called from all four panels that block on user interaction (question, confirm,
+     * non-MCP diff, permission diff).
+     * <p>
+     * Do NOT collapse this into {@code refreshInputEnabled()} — when {@code aiBackend == null} that method takes the
+     * early-return branch and would ENABLE the input while a panel is on screen. The direct disables here are
+     * intentional.
+     */
+    private void enterAwaitingUserState() {
+        if (aiBackend != null) {
+            aiBackend.setPendingDiff(true);
+        }
+        inputField.setEnabled(false);
+        sendButton.setEnabled(false);
+        setTabStatus(TabStatus.AWAITING_USER);
     }
 
     /**
@@ -1383,11 +1420,7 @@ public final class AiTopComponent extends TopComponent implements AiProcessEvent
                 assistantTurnActive = false;
                 conversationPanel.finaliseAssistantMessage();
             }
-            if (aiBackend != null) {
-                aiBackend.setPendingDiff(true);
-            }
-            inputField.setEnabled(false);
-            sendButton.setEnabled(false);
+            enterAwaitingUserState();
             Runnable aqeCanceller = () -> aqe.response().complete(null);
             pendingResponseCancellers.add(aqeCanceller);
             conversationPanel.showQuestion(aqe);
@@ -1422,11 +1455,7 @@ public final class AiTopComponent extends TopComponent implements AiProcessEvent
                 assistantTurnActive = false;
                 conversationPanel.finaliseAssistantMessage();
             }
-            if (aiBackend != null) {
-                aiBackend.setPendingDiff(true);
-            }
-            inputField.setEnabled(false);
-            sendButton.setEnabled(false);
+            enterAwaitingUserState();
             Runnable canceller = () -> ce.response().complete(PermissionDecision.denied("cancelled"));
             pendingResponseCancellers.add(canceller);
             conversationPanel.showConfirm(ce);
@@ -1648,6 +1677,7 @@ public final class AiTopComponent extends TopComponent implements AiProcessEvent
             inputField.setEnabled(false);
             inputField.setCanSend(false);
             sendButton.setEnabled(false);
+            setTabStatus(TabStatus.AWAITING_USER);
         }
         else {
             inputField.setEnabled(true);
@@ -1755,11 +1785,7 @@ public final class AiTopComponent extends TopComponent implements AiProcessEvent
         String proposed = tu.proposedContent() != null ? tu.proposedContent() : "";
         String original = tu.originalContent() != null ? tu.originalContent() : "";
 
-        if (aiBackend != null) {
-            aiBackend.setPendingDiff(true);
-        }
-        inputField.setEnabled(false);
-        sendButton.setEnabled(false);
+        enterAwaitingUserState();
         finaliseActiveAssistantIfNeeded();
         conversationPanel.addSystemMessage(NotificationUtil.formatToolActionQuestion(tu.toolName(), shortPath(fp)));
 
@@ -1851,11 +1877,7 @@ public final class AiTopComponent extends TopComponent implements AiProcessEvent
             return;
         }
 
-        if (aiBackend != null) {
-            aiBackend.setPendingDiff(true);
-        }
-        inputField.setEnabled(false);
-        sendButton.setEnabled(false);
+        enterAwaitingUserState();
 
         RequestProcessor.getDefault().execute(() -> {
             String original = "";
@@ -2189,7 +2211,7 @@ public final class AiTopComponent extends TopComponent implements AiProcessEvent
     /**
      * Tab status-circle states. See the STATUS_HEX_* colour legend above.
      */
-    private enum TabStatus {
-        READY, THINKING, FATAL
+    enum TabStatus {
+        READY, THINKING, FATAL, AWAITING_USER
     }
 }

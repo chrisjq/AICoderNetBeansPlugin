@@ -19,9 +19,8 @@ import static kiwi.ingenuity.netbeans.plugin.aicoder.process.McpInstructionOptio
 import static kiwi.ingenuity.netbeans.plugin.aicoder.process.McpInstructionOptionEnum.TOOL_INSTRUCTION;
 
 /**
- * Enumerates available AI implementations and their configurations. Each type
- * maintains a settings creator for initializing and updating type-specific
- * configurations.
+ * Enumerates available AI implementations and their configurations. Each type maintains a settings creator for
+ * initializing and updating type-specific configurations.
  */
 public enum AiTypeEnum {
     //                                                          implemented  enabledByDefault  openAiCompatible  mailDeliveryTiming
@@ -50,9 +49,20 @@ public enum AiTypeEnum {
     // first line instead.
     // OpenCodeAiProcessManager:757 — "Mail IGNORED (unimplemented)".
     OPENCODE("OpenCode", "opencode", true, true, false, MailDeliveryTimingEnum.AFTER_TURN, new OpenCodeSettingsCreator(), Set.of(HEADER, TOOL_INSTRUCTION, CREDENTIALS, FORCE_MCP_TOOL_USE)),
-    // MCP not yet registered (design doc §9 slice — later), so mcpOptions below
-    // mirrors OpenCode's set as the intended shape rather than a proven one;
-    // revisit once Codex is actually wired into McpHookServer.
+    // MCP IS registered now: CodexAiProcessManager.buildMcpConfigArgs passes
+    // -c mcp_servers.<name>.url / .default_tools_approval_mode / .tool_timeout_sec at
+    // spawn time, with CodexAiMcpRegistrar alongside it. So the options below are the
+    // live set, not a placeholder.
+    // Codex is NOT MCP-only: it keeps its own shell and patch tools and asks for them via
+    // item/commandExecution/requestApproval and the file-change approval path
+    // (CodexAppServerHandler), so it can bypass the plugin tools exactly as OpenCode can.
+    // FORCE_MCP_TOOL_USE is nevertheless absent, and that is defensible: Codex's native tool
+    // calls are already surfaced to the user. A file change raises a PermissionEvent and gets
+    // the same Accept/Reject diff panel as the plugin's own ApplyEdit/WriteFile, and a command
+    // raises a ConfirmEvent. So a native edit here is reviewed, whereas OpenCode's `sed` runs
+    // through its own bash tool and bypasses the panel entirely — that asymmetry, not the
+    // mere presence of built-in tools, is what earned OpenCode and Copilot the flag. Both got
+    // it only after an OBSERVED bypass. Add it to Codex if one is ever seen here.
     // CodexAiProcessManager interjects via turn/steer and its javadoc states it "never escalates
     // to Cancel", so the turn survives.
     CODEX("Codex", "codex", true, true, false, MailDeliveryTimingEnum.DURING_TURN, new CodexSettingsCreator(), Set.of(HEADER, TOOL_INSTRUCTION, CREDENTIALS));
@@ -86,9 +96,8 @@ public enum AiTypeEnum {
      */
     private final boolean implemented;
     /**
-     * Whether this AI type communicates via the OpenAI-compatible HTTP API.
-     * True only for types whose session settings extend
-     * OpenAiClientSessionSettings.
+     * Whether this AI type communicates via the OpenAI-compatible HTTP API. True only for types whose session settings
+     * extend OpenAiClientSessionSettings.
      */
     private final boolean openAiCompatible;
     /**
@@ -96,16 +105,14 @@ public enum AiTypeEnum {
      */
     private final AiSessionSettingsCreator settingCreator;
     /**
-     * Controls what this AI type receives in instruction text and tool schemas.
-     * Types that reach the plugin through a bridge which injects credentials
-     * server-side omit CREDENTIALS, so they are never shown
-     * sessionId/secretKey.
+     * Controls what this AI type receives in instruction text and tool schemas. Types that reach the plugin through a
+     * bridge which injects credentials server-side omit CREDENTIALS, so they are never shown sessionId/secretKey.
      */
     private final Set<McpInstructionOptionEnum> mcpOptions;
     /**
-     * When an inbox message reaches this backend if it is mid-turn, and at what cost. Decides
-     * both whether marking a message important can do anything and whether the recipient needs
-     * telling afterwards that an aborted tool call was not a user rejection.
+     * When an inbox message reaches this backend if it is mid-turn, and at what cost. Decides both whether marking a
+     * message important can do anything and whether the recipient needs telling afterwards that an aborted tool call
+     * was not a user rejection.
      */
     private final MailDeliveryTimingEnum mailDeliveryTiming;
 
@@ -123,8 +130,8 @@ public enum AiTypeEnum {
     }
 
     /**
-     * When an inbox message reaches this backend if it is mid-turn. Senders use this to tell
-     * whether an important message can actually interrupt the target.
+     * When an inbox message reaches this backend if it is mid-turn. Senders use this to tell whether an important
+     * message can actually interrupt the target.
      */
     public MailDeliveryTimingEnum mailDeliveryTiming() {
         return mailDeliveryTiming;
@@ -159,9 +166,8 @@ public enum AiTypeEnum {
     }
 
     /**
-     * Returns true if this AI type communicates via the OpenAI-compatible HTTP
-     * API. When true, the session settings will be an instance of
-     * OpenAiClientSessionSettings and context management controls apply.
+     * Returns true if this AI type communicates via the OpenAI-compatible HTTP API. When true, the session settings
+     * will be an instance of OpenAiClientSessionSettings and context management controls apply.
      */
     public boolean isOpenAiCompatible() {
         return openAiCompatible;
