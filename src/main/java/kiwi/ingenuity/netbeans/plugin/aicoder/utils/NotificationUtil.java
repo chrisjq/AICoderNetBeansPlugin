@@ -114,8 +114,11 @@ public class NotificationUtil {
     }
 
     public static String toolNameLabel(String toolName) {
-        if (toolName != null && !toolName.isEmpty()) {
-            return toolName + ": ";
+        // isBlank, not isEmpty: a whitespace-only name is as absent as a null one, and treating
+        // it as present rendered "   : some/file — accepted" with a dangling colon. Trimmed too,
+        // so a stray space in the name cannot push the colon away from it.
+        if (toolName != null && !toolName.isBlank()) {
+            return toolName.trim() + ": ";
         }
 
         return "";

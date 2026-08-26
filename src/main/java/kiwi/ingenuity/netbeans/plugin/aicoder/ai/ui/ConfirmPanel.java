@@ -11,6 +11,7 @@ import javax.swing.JPanel;
 import javax.swing.SwingUtilities;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.events.ConfirmEvent;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.events.PermissionDecision;
+import kiwi.ingenuity.netbeans.plugin.aicoder.utils.NotificationUtil;
 
 class ConfirmPanel extends JPanel {
 
@@ -18,6 +19,26 @@ class ConfirmPanel extends JPanel {
 
     private static String esc(String s) {
         return s.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;");
+    }
+
+    /**
+     * The question put to the user, as "Allow &lt;Tool&gt;: &lt;details&gt;".
+     * <p>
+     * The tool name matters here more than anywhere else in the UI: this panel is the approval point, and the verb is
+     * the thing actually being approved. A shell confirm arrives with {@code displayText} set to the bare command —
+     * "opencode --help 2>&1" — which on its own does not say whether the AI wants to RUN that or merely read a file of
+     * that name. The outcome line already names the tool ("Execute: … — accepted"), so without this the question and
+     * its answer were formatted differently and only the answer said what happened.
+     * <p>
+     * Pure so the wording can be tested without a running IDE, matching {@code AiTopComponent.buildConfirmLabel}.
+     */
+    static String buildConfirmPrompt(String toolName, String displayText) {
+        String body = displayText != null && !displayText.isBlank()
+                ? displayText.trim() : "(no details)";
+        // The colon is always present, so an unnamed confirm still reads as a prompt rather than
+        // running the words together — "Allow: rm -rf /tmp/scratch", not "Allow rm -rf ...".
+        String label = NotificationUtil.toolNameLabel(toolName);
+        return label.isEmpty() ? "Allow: " + body : "Allow " + label + body;
     }
 
     private boolean responded = false;
@@ -40,7 +61,8 @@ class ConfirmPanel extends JPanel {
                 BorderFactory.createMatteBorder(0, 3, 0, 0, BORDER_COLOR),
                 BorderFactory.createEmptyBorder(4, 8, 6, 4)));
 
-        WrappingHtmlLabel label = new WrappingHtmlLabel(event.displayText());
+        WrappingHtmlLabel label = new WrappingHtmlLabel(
+                buildConfirmPrompt(event.toolName(), event.displayText()));
         label.setAlignmentX(Component.LEFT_ALIGNMENT);
         label.setBorder(BorderFactory.createEmptyBorder(0, 0, 4, 0));
         add(label);
