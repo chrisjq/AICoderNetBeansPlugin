@@ -96,3 +96,5 @@ Info bars may display backend-reported context and account usage:
 - Context gauge showing used versus total active context window where a backend reports it.
 
 If inter-AI messaging is enabled, the inbox can show notices for peer messages. Automatic notices and interruption for important messages are separately configurable. When a message that expects a reply is read for the first time, its contents also instruct the assistant to reply with `SendAiMessage`; that instruction is not repeated on later reads.
+
+Enabling important-message interruption does not guarantee it happens: the backend must also have a way to reach a session mid-turn. Claude, Codex and GitHub Copilot do; Grok, Ollama and OpenCode do not, so their messages always wait for the current turn to finish. `ListAiSessions` reports the effective behaviour per session as `mailDelivery`, combining the setting and the backend, so an assistant can see whether marking a message important will achieve anything before it does so.
