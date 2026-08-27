@@ -523,12 +523,46 @@ public class MessagePanel extends JPanel {
         component.setCaret(quiet);
     }
 
+    /**
+     * Pure decision rule for the throttle — extracted so the throttle/debounce distinction is testable
+     * deterministically without any timer or wall-clock sleeps. A rebuild is due now exactly when none is already
+     * pending AND at least the throttle interval has elapsed since the last rebuild (the leading edge). Pending always
+     * short-circuits to {@code false}, regardless of elapsed time: a rebuild that is already scheduled must not be
+     * duplicated nor have its deadline pushed out by a new delta.
+     *
+     * @param nowMillis current wall-clock time in millis
+     * @param lastRebuildMillis millis of the most recent rebuild
+     * @param rebuildPending true if a rebuild is already scheduled (timer armed)
+     * @return true to render immediately
+     */
+    static boolean shouldRebuildNow(long nowMillis, long lastRebuildMillis, boolean rebuildPending) {
+        if (rebuildPending) {
+            return false;
+        }
+        long interval = TimeoutEnum.MESSAGE_REBUILD_THROTTLE_MILLIS.millis();
+        return nowMillis - lastRebuildMillis >= interval;
+    }
+
     private final AiMessage.Role role;
     private final JPanel contentPanel;
     private final boolean restored;
     private final StringBuilder accumulatedText = new StringBuilder();
     private boolean finalised = false;
     private boolean textExpanded = false;
+    /**
+     * Single-shot throttle timer that bounds streamed deltas to at most one {@link #rebuildContent()} per throttle
+     * window (see {@link TimeoutEnum#MESSAGE_REBUILD_THROTTLE_MILLIS}). Each delta appends its text immediately but
+     * defers the full (O(message-size)) markdown re-parse + component rebuild to the next window boundary — so N deltas
+     * no longer rebuild the whole message N times. A delta arriving while a rebuild is already pending does NOT reset
+     * the timer's deadline (that rule lives in {@link #shouldRebuildNow(long, long, boolean)}); it is a throttle, not a
+     * debounce, so rendering continues during uninterrupted streaming. {@code null} until first used.
+     */
+    private Timer rebuildTimer;
+    /**
+     * Wall-clock millis of the most recent {@link #rebuildContent()}; the throttle's leading edge is measured from
+     * here.
+     */
+    private long lastRebuildMillis = System.currentTimeMillis();
 
     public MessagePanel(AiMessage.Role role, boolean restored) {
         this.role = role;
@@ -607,15 +641,76 @@ public class MessagePanel extends JPanel {
             return;
         }
         accumulatedText.append(delta);
-        rebuildContent();
+        // Throttle the full rebuild instead of doing it per delta: a streaming
+        // reply arriving as N small deltas would otherwise re-parse + re-render
+        // the whole message N times (O(N²) on the EDT), which is what froze the
+        // IDE when several sessions streamed at once. Only the render frequency
+        // is reduced — the text is never coalesced away.
+        scheduleRebuild();
     }
 
+    /**
+     * Schedules a rebuild at most once per throttle window, with a leading edge. A delta arriving while a rebuild is
+     * already pending does NOT reset the timer's deadline — that is the line that separates a throttle from a debounce,
+     * and it keeps continuous streaming rendering roughly every 250 ms (bounded by elapsed time, never by chunk count)
+     * instead of going blank until the model pauses. When the interval has elapsed since the last render and nothing is
+     * pending, it renders immediately; otherwise it arms a single-shot timer to fire at the interval boundary.
+     * {@link #finalise()} forces the mandatory tail flush.
+     */
+    private void scheduleRebuild() {
+        if (finalised) {
+            return;
+        }
+        long now = System.currentTimeMillis();
+        if (rebuildTimer == null) {
+            rebuildTimer = new Timer((int) TimeoutEnum.MESSAGE_REBUILD_THROTTLE_MILLIS.millis(), e -> {
+                lastRebuildMillis = System.currentTimeMillis();
+                rebuildContent();
+            });
+            rebuildTimer.setRepeats(false);
+        }
+        boolean pending = rebuildTimer.isRunning();
+        if (shouldRebuildNow(now, lastRebuildMillis, pending)) {
+            lastRebuildMillis = now;
+            rebuildContent();
+        }
+        else if (!pending) {
+            long interval = TimeoutEnum.MESSAGE_REBUILD_THROTTLE_MILLIS.millis();
+            long delay = Math.max(1L, interval - (now - lastRebuildMillis));
+            rebuildTimer.setInitialDelay((int) delay);
+            rebuildTimer.start();
+        }
+        // else: pending -> append only; never restart, extend or reschedule the timer (the anti-debounce rule).
+    }
+
+    /**
+     * Finalises the message and flushes any buffered-but-unrendered text. This is the mandatory tail flush: whatever
+     * deltas arrived since the last throttled rebuild must be rendered now — a user who stops mid-stream (cancel, Stop,
+     * turn end, session close) still sees every character that had arrived. The pending timer, if any, is cancelled so
+     * the authoritative final rebuild is this one.
+     */
     public void finalise() {
         finalised = true;
+        stopRebuildTimer();
         rebuildContent();
     }
 
-    void rebuildContent() {
+    private void stopRebuildTimer() {
+        if (rebuildTimer != null) {
+            rebuildTimer.stop();
+        }
+    }
+
+    @Override
+    public void removeNotify() {
+        // A session closed mid-stream must not leave a dangling timer firing into a
+        // component that is being torn down. Persistence reads the buffer (complete),
+        // so text is never lost here; this only prevents the timer from outliving it.
+        stopRebuildTimer();
+        super.removeNotify();
+    }
+
+    protected void rebuildContent() {
         contentPanel.removeAll();
         String fullText = accumulatedText.toString();
 

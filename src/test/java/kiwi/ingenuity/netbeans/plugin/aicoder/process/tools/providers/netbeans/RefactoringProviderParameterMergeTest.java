@@ -23,10 +23,24 @@ class RefactoringProviderParameterMergeTest {
     }
 
     @Test
-    void omittedOrNullRequested_returnsExistingUnchanged() {
+    void nullRequested_returnsExistingUnchanged() {
         ParameterInfo[] ex = existing();
         assertSame(ex, RefactoringProvider.mergeParameterInfos(null, ex));
-        assertSame(ex, RefactoringProvider.mergeParameterInfos(new ParameterInfo[0], ex));
+    }
+
+    /**
+     * An empty array is an explicit "I want no parameters", not a second way of saying "omitted". The schema calls
+     * {@code parameters} the complete desired list, so {@code []} must clear. It used to return {@code existing}, which
+     * made removing every parameter impossible and silent — the refactoring reported success having changed nothing.
+     */
+    @Test
+    void emptyRequested_clearsAllParameters() {
+        ParameterInfo[] ex = existing();
+
+        ParameterInfo[] merged = RefactoringProvider.mergeParameterInfos(new ParameterInfo[0], ex);
+
+        assertEquals(0, merged.length,
+                "an explicit empty parameter list must remove every parameter, not preserve them");
     }
 
     @Test

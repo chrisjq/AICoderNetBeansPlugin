@@ -19,6 +19,7 @@ import java.util.regex.Pattern;
 import java.util.regex.PatternSyntaxException;
 import javax.lang.model.element.Element;
 import javax.lang.model.element.TypeElement;
+import kiwi.ingenuity.netbeans.plugin.aicoder.process.McpToolPropertyEnum;
 import org.netbeans.api.java.classpath.ClassPath;
 import org.netbeans.api.java.source.ClassIndex;
 import org.netbeans.api.java.source.ElementHandle;
@@ -42,6 +43,25 @@ public class SearchProvider {
         if (query == null || query.isBlank()) {
             return "query is required";
         }
+
+        String glob = (filePattern == null || filePattern.isBlank()) ? "*.java" : filePattern;
+        PathMatcher pathMatcher;
+        try {
+            pathMatcher = FileSystems.getDefault().getPathMatcher("glob:" + glob);
+        }
+        catch (IllegalArgumentException e) {
+            // A malformed glob is the caller's mistake, exactly like the invalid regex handled below, and gets the same
+            // treatment. Left unguarded this escaped as an internal error (-32603), which tells the caller the tool
+            // broke rather than that its filePattern was wrong — so it could not tell a bad argument from a real bug.
+            // IllegalArgumentException is the widest of the documented failures: getPathMatcher throws
+            // PatternSyntaxException (a subclass) for a bad pattern and plain IllegalArgumentException for malformed
+            // syntax, and catching the supertype covers both without swallowing anything else.
+            //
+            // Checked HERE, before the roots are resolved, so a bad argument is reported on its own terms rather than
+            // being masked by "No projects open" — and so it is reachable without a live project.
+            return "Invalid " + McpToolPropertyEnum.FILE_PATTERN.key() + ": " + glob + " — " + e.getMessage();
+        }
+
         List<FileObject> roots;
         if (filePath != null && !filePath.isBlank()) {
             FileObject fo = resolveFileObject(filePath);
@@ -68,9 +88,6 @@ public class SearchProvider {
         catch (PatternSyntaxException e) {
             return "Invalid regex: " + e.getMessage();
         }
-
-        String glob = (filePattern == null || filePattern.isBlank()) ? "*.java" : filePattern;
-        PathMatcher pathMatcher = FileSystems.getDefault().getPathMatcher("glob:" + glob);
 
         List<SearchResultFormatter.Hit> hits = new ArrayList<>();
         // Both counters span every match, not just the ones that fit under the

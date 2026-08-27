@@ -363,6 +363,11 @@ public final class AiTopComponent extends TopComponent implements AiProcessEvent
     private final AtomicBoolean thinkingFlashRequestQueued = new AtomicBoolean(false);
 
     private volatile boolean skipClosePrompt = false;
+    /**
+     * Last tab label actually pushed to the window system, so {@link #updateTabHtmlName()} can skip identical re-sets.
+     * EDT-only, like the tab state it mirrors — no synchronisation needed.
+     */
+    private String lastTabHtml = null;
 
     public AiTopComponent(AiSession session, SessionPersistenceManager sessionPersistenceManager) {
         this.session = session;
@@ -1189,15 +1194,36 @@ public final class AiTopComponent extends TopComponent implements AiProcessEvent
 
     @Override
     public String getHtmlDisplayName() {
+        return buildTabHtml();
+    }
+
+    /**
+     * The tab label: a status-coloured bullet followed by the escaped display name. One source of truth, so what
+     * {@link #getHtmlDisplayName()} returns and what {@link #updateTabHtmlName()} pushes cannot drift apart.
+     */
+    private String buildTabHtml() {
         String safeName = getDisplayName()
                 .replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;");
         return "<html><font color='" + tabStatusColor() + "'>&#9679;</font> " + safeName + "</html>";
     }
 
+    /**
+     * Pushes the tab label to the window system, but only when it actually changed.
+     *
+     * <p>
+     * setHtmlDisplayName fires a property change and NetBeans re-parses this HTML to repaint the tab strip, so a
+     * redundant call is real work for no visible difference — and most calls ARE redundant. setSendEnabled routes
+     * through setTabStatus on every refreshInputEnabled, and during a turn the status is already THINKING, so a
+     * streaming session repainted its tab continuously to render a byte-identical string. Genuine state changes still
+     * repaint; only the no-ops are dropped.
+     */
     private void updateTabHtmlName() {
-        String safeName = getDisplayName()
-                .replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;");
-        setHtmlDisplayName("<html><font color='" + tabStatusColor() + "'>&#9679;</font> " + safeName + "</html>");
+        String html = buildTabHtml();
+        if (html.equals(lastTabHtml)) {
+            return;
+        }
+        lastTabHtml = html;
+        setHtmlDisplayName(html);
     }
 
     /**

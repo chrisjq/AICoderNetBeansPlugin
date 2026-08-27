@@ -515,16 +515,37 @@ public class GitProvider {
      * directory so {@link #findGitRoot} can still walk upward to find {@code .git}. Only used by {@link #gitBlame} when
      * projectPath is omitted, since blame is a single-file operation and the project can be determined from the file
      * itself.
+     * <p>
+     * The owner lookup is contained by {@code catch(Throwable)} for the same reason as {@link #refreshVcsStatus}:
+     * {@code FileOwnerQuery.getOwner()} throws {@code ExceptionInInitializerError}/{@code NoClassDefFoundError} —
+     * Errors, not Exceptions — when the IDE's ProjectManager Lookup is unavailable. Unguarded, that escaped
+     * {@code gitBlame} as a raw Error whenever a caller passed an absolute filePath without a projectPath. Falling
+     * through to the file's own directory is a genuine degradation and not a swallowed failure: {@link #findGitRoot}
+     * still walks upward from there and finds the same repository in every layout except a file owned by a project that
+     * sits below its own git root.
      */
     private static File resolveRootForFile(File file) {
         FileObject fo = FileUtils.resolveByFile(file);
         if (fo != null) {
-            Project owner = FileOwnerQuery.getOwner(fo);
-            if (owner != null) {
-                File dir = FileUtil.toFile(owner.getProjectDirectory());
-                if (dir != null) {
-                    return dir;
+            try {
+                Project owner = FileOwnerQuery.getOwner(fo);
+                if (owner != null) {
+                    File dir = FileUtil.toFile(owner.getProjectDirectory());
+                    if (dir != null) {
+                        return dir;
+                    }
                 }
+            }
+            catch (Throwable t) {
+                // Same discrimination as refreshVcsStatus: the headless ProjectManager-initialisation failure is
+                // EXPECTED and drops to FINE, but any other classloading failure on this path is a real defect inside a
+                // running IDE and must still be shouted about. Do not demote this to a blanket FINE.
+                String cause = String.valueOf(t.getMessage());
+                boolean projectManagerUnavailable = (t instanceof NoClassDefFoundError
+                        || t instanceof ExceptionInInitializerError)
+                        && cause.contains("ProjectManager");
+                LOG.log(projectManagerUnavailable ? Level.FINE : Level.WARNING,
+                        "Project owner lookup failed for " + file + ", falling back to its own directory", t);
             }
         }
         return file.isDirectory() ? file : file.getParentFile();

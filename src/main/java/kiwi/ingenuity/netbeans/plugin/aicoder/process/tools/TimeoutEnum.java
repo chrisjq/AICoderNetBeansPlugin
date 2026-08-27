@@ -5,8 +5,8 @@ import java.util.Arrays;
 /**
  * <b>Every duration in the plugin belongs here</b>, unless it is domain-specific — that is, owned by one AI backend,
  * which keeps its own enum ({@code OpenCodeTimeoutEnum}, {@code GrokTimeoutEnum}, {@code CodexTimeoutEnum}). There is
- * no other exemption. UI delays, poll intervals and animation timings are durations like any other and live here too:
- * a literal in a {@code new Timer(...)} call is a magic number wherever it appears, and putting it here is what makes
+ * no other exemption. UI delays, poll intervals and animation timings are durations like any other and live here too: a
+ * literal in a {@code new Timer(...)} call is a magic number wherever it appears, and putting it here is what makes
  * every timing in the system findable and tunable from one place.
  * <p>
  * A UI timing does NOT need to be kept out to protect {@link #MUTATION_LOCK_WAIT_MILLIS} — that calculation filters on
@@ -56,8 +56,8 @@ public enum TimeoutEnum {
     TEMP_FILE_MAX_AGE_MILLIS(14_400_000L, Kind.LOCK_LIFETIME),
     TEMP_FILE_SWEEP_INTERVAL_MILLIS(60_000L, Kind.BACKGROUND_INTERVAL),
     /**
-     * Delay before re-stating a file the user has just accepted an AI diff for, so the IDE picks up the new bytes.
-     * The write itself has already completed by then; this only defers the refresh briefly.
+     * Delay before re-stating a file the user has just accepted an AI diff for, so the IDE picks up the new bytes. The
+     * write itself has already completed by then; this only defers the refresh briefly.
      * <p>
      * The original choice of 600 ms was an undocumented literal at the call site and no rationale was recorded, so
      * treat it as "short enough to be imperceptible, long enough to land after the accept settles" rather than as a
@@ -65,8 +65,8 @@ public enum TimeoutEnum {
      */
     ACCEPTED_DIFF_REFRESH_DELAY_MILLIS(600L, Kind.UI_FEEDBACK),
     /**
-     * Tick interval for the session clock in the info bar. One second because the clock renders whole seconds —
-     * shorter repaints without changing the text, longer drops digits.
+     * Tick interval for the session clock in the info bar. One second because the clock renders whole seconds — shorter
+     * repaints without changing the text, longer drops digits.
      */
     CLOCK_TICK_MILLIS(1_000L, Kind.UI_FEEDBACK),
     /**
@@ -84,6 +84,21 @@ public enum TimeoutEnum {
      * scrolling to the end. Streaming resizes the panel repeatedly; this samples until height stabilises.
      */
     SCROLL_SETTLE_POLL_MILLIS(30L, Kind.UI_FEEDBACK),
+    /**
+     * Throttle window bounding streamed chat deltas to at most one re-render per window — a rate limiter, NOT a
+     * debounce. Each delta appends its text immediately but defers the full markdown re-parse + component rebuild (the
+     * O(message-size) work in {@code MessagePanel.rebuildContent()}) to the next window boundary; a delta arriving
+     * while a rebuild is already pending does not reset the timer's deadline. So continuous streaming keeps rendering
+     * about every 100 ms (bounded by elapsed time, never by chunk count) rather than going blank until the model
+     * pauses. Without the throttle, N small deltas rebuild the whole message N times — O(N²) on the EDT, which
+     * saturated the UI thread and froze the IDE when several sessions streamed at once. The mandatory flush on message
+     * finalise guarantees no buffered tail is ever dropped and no timer is left armed.
+     * <p>
+     * 100 ms is a deliberate trade: ten renders a second reads as smooth streaming while still capping the rebuild cost
+     * at ten per second per session rather than one per token. Raise it if several sessions streaming at once still
+     * strain the EDT — the throttle's protection scales directly with this number.
+     */
+    MESSAGE_REBUILD_THROTTLE_MILLIS(100L, Kind.UI_FEEDBACK),
     DATABASE_QUERY_TIMEOUT_MILLIS(300_000L, Kind.EXTERNAL_IO),
     OPENAI_HTTP_REQUEST_TIMEOUT_MILLIS(300_000L, Kind.EXTERNAL_IO),
     OPENAI_HTTP_CONNECT_TIMEOUT_MILLIS(10_000L, Kind.EXTERNAL_IO),

@@ -199,6 +199,7 @@ public final class McpHookServerUtil {
             sb.append("- Git: ").append(McpToolEnum.GET_GIT_STATUS.toolName()).append(" / ").append(McpToolEnum.GET_GIT_DIFF.toolName()).append(" / ").append(McpToolEnum.GIT_ADD.toolName()).append(" / ").append(McpToolEnum.GIT_COMMIT.toolName()).append(" — NOT Bash git\n");
             sb.append("Built-in tools are only for files outside the project tree (e.g. memory, system config).");
         }
+        sb.append("\n\nAlways use MCP Toolsdescribed in ").append(McpToolEnum.GET_INSTRUCTIONS.toolName()).append(" over other tool calls you have access to.");
         return sb.toString();
     }
 

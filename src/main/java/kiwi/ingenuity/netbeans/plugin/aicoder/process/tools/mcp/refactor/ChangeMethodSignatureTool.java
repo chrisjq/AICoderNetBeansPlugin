@@ -25,6 +25,56 @@ import org.netbeans.modules.refactoring.java.api.ChangeParametersRefactoring.Par
 @RequiresLock(LockTypeEnum.REFACTOR_LOCK)
 public class ChangeMethodSignatureTool implements McpToolInterface {
 
+    static ParameterInfo[] toParameterInfos(JsonArray paramsArr) throws McpArgumentException {
+        if (paramsArr == null) {
+            return null;
+        }
+        List<ParameterInfo> paramList = new ArrayList<>();
+        for (int i = 0; i < paramsArr.size(); i++) {
+            JsonElement paramEl = paramsArr.get(i);
+            if (!paramEl.isJsonObject()) {
+                // Refuse rather than skip. Dropping the entry produced a SHORTER parameter list than the caller asked
+                // for and said nothing about it, so a malformed entry silently removed a parameter from the method and
+                // every call site — reported as a success. Rejecting matches how the other malformed-entry cases below
+                // are handled, and the caller can see exactly which entry was wrong.
+                throw new McpArgumentException(-32602,
+                        "parameters[" + i + "]: each entry must be an object, got: " + paramEl);
+            }
+            JsonObject p = paramEl.getAsJsonObject();
+            String origIdxKey = ChangeMethodSignatureParamEnum.ORIGINAL_INDEX.key();
+            String nameKey = ChangeMethodSignatureParamEnum.NAME.key();
+            String typeKey = ChangeMethodSignatureParamEnum.TYPE.key();
+            String defaultKey = ChangeMethodSignatureParamEnum.DEFAULT_VALUE.key();
+            int origIdx = (p.has(origIdxKey) && p.get(origIdxKey).isJsonPrimitive())
+                    ? p.get(origIdxKey).getAsInt() : i;
+            String pName = p.has(nameKey) && p.get(nameKey).isJsonPrimitive()
+                    ? p.get(nameKey).getAsString() : null;
+            String pType = p.has(typeKey) && p.get(typeKey).isJsonPrimitive()
+                    ? p.get(typeKey).getAsString() : null;
+            String pDefault = p.has(defaultKey) && p.get(defaultKey).isJsonPrimitive()
+                    ? p.get(defaultKey).getAsString() : null;
+            if (origIdx == -1 && (pName == null || pType == null)) {
+                throw new McpArgumentException(-32602,
+                        "parameters[" + i + "]: new parameters (originalIndex=-1) require both name and type");
+            }
+            if (origIdx == -1 && pDefault == null) {
+                throw new McpArgumentException(-32602,
+                        "parameters[" + i + "]: new parameters (originalIndex=-1) require defaultValue — "
+                        + "it is inserted at every existing call site");
+            }
+            // Carry whatever was supplied, even if only one of name/type is present. The four-arg constructor takes
+            // nulls for the fields the caller omitted, and RefactoringProvider.mergeParameterInfos restores each null
+            // from the existing signature — which is exactly the documented "omit a field to keep it" contract.
+            // Requiring BOTH before building the full ParameterInfo discarded a name-only or type-only edit here, one
+            // layer above the merger, so the merger saw two nulls and dutifully restored both old values: the rename
+            // was accepted, reported as applied, and silently did nothing.
+            paramList.add((pName != null || pType != null || pDefault != null)
+                    ? new ParameterInfo(origIdx, pName, pType, pDefault)
+                    : new ParameterInfo(origIdx));
+        }
+        return paramList.toArray(ParameterInfo[]::new);
+    }
+
     @Override
     public McpSectionEnum section() {
         return McpSectionEnum.REFACTORING;
@@ -48,7 +98,8 @@ public class ChangeMethodSignatureTool implements McpToolInterface {
         tool.addProperty(ToolSchemaKeyEnum.DESCRIPTION.key(),
                 "Changes a method's parameter list, name, return type, or creates an overload. "
                 + "All existing call sites are updated. "
-                + "parameters: the complete desired parameter list - omit to keep existing params. "
+                + "parameters: the complete desired parameter list - omit to keep existing params, "
+                + "or pass [] to remove every parameter. "
                 + "For each parameter: set originalIndex to its index in the original method "
                 + "(0-based) to preserve it, or -1 for a new parameter; "
                 + "omit name/type to preserve the original name and type unchanged. "
@@ -121,46 +172,8 @@ public class ChangeMethodSignatureTool implements McpToolInterface {
 
     @Override
     public String handle(ToolRequestArguments args, AbstractAiSession session) throws McpArgumentException {
-        ParameterInfo[] paramInfos = null;
-        JsonArray paramsArr = args.array(ChangeMethodSignatureParamEnum.PARAMETERS.key());
-        if (paramsArr != null) {
-            List<ParameterInfo> paramList = new ArrayList<>();
-            for (int i = 0; i < paramsArr.size(); i++) {
-                JsonElement paramEl = paramsArr.get(i);
-                if (!paramEl.isJsonObject()) {
-                    continue;
-                }
-                JsonObject p = paramEl.getAsJsonObject();
-                String origIdxKey = ChangeMethodSignatureParamEnum.ORIGINAL_INDEX.key();
-                String nameKey = ChangeMethodSignatureParamEnum.NAME.key();
-                String typeKey = ChangeMethodSignatureParamEnum.TYPE.key();
-                String defaultKey = ChangeMethodSignatureParamEnum.DEFAULT_VALUE.key();
-                int origIdx = (p.has(origIdxKey) && p.get(origIdxKey).isJsonPrimitive())
-                        ? p.get(origIdxKey).getAsInt() : i;
-                String pName = p.has(nameKey) && p.get(nameKey).isJsonPrimitive()
-                        ? p.get(nameKey).getAsString() : null;
-                String pType = p.has(typeKey) && p.get(typeKey).isJsonPrimitive()
-                        ? p.get(typeKey).getAsString() : null;
-                String pDefault = p.has(defaultKey) && p.get(defaultKey).isJsonPrimitive()
-                        ? p.get(defaultKey).getAsString() : null;
-                if (origIdx == -1 && (pName == null || pType == null)) {
-                    throw new McpArgumentException(-32602,
-                            "parameters[" + i + "]: new parameters (originalIndex=-1) require both name and type");
-                }
-                if (origIdx == -1 && pDefault == null) {
-                    throw new McpArgumentException(-32602,
-                            "parameters[" + i + "]: new parameters (originalIndex=-1) require defaultValue — "
-                            + "it is inserted at every existing call site");
-                }
-                // Partial updates (name-only / type-only) pass through as ParameterInfo(origIdx);
-                // RefactoringProvider.mergeParameterInfos resolves them against the live signature,
-                // so they rename/retype instead of silently doing nothing.
-                paramList.add((pName != null && pType != null)
-                        ? new ParameterInfo(origIdx, pName, pType, pDefault)
-                        : new ParameterInfo(origIdx));
-            }
-            paramInfos = paramList.toArray(ParameterInfo[]::new);
-        }
+        ParameterInfo[] paramInfos = toParameterInfos(
+                args.array(ChangeMethodSignatureParamEnum.PARAMETERS.key()));
         Boolean overload = args.has(ChangeMethodSignatureParamEnum.OVERLOAD_METHOD.key()) ? args.bool(ChangeMethodSignatureParamEnum.OVERLOAD_METHOD.key()) : null;
         String fp = args.str(ChangeMethodSignatureParamEnum.FILE_PATH.key());
         if (fp != null) {

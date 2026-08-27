@@ -131,6 +131,16 @@ public class RefactoringProvider {
         if (!isValidJavaPackageName(targetPackage)) {
             return "Error: invalid target package name '" + targetPackage + "'";
         }
+        // A negative line is malformed, not omitted. Only absent-or-zero means "whole file" (MoveClassTool defaults the
+        // parameter to 0), so falling through with -1 would silently reinterpret a bad value as a BROADER operation
+        // than the caller asked for, and for a single-type file it would move it with no complaint at all. Refuse
+        // instead — the same reasoning as the multi-type guard further down, applied to the input rather than the file.
+        // Validated here with the other arguments, before any file or source-root resolution, so a malformed line is
+        // rejected on its own terms and does not depend on the IDE being able to resolve the file first.
+        if (line < 0) {
+            return "Error: " + McpToolPropertyEnum.LINE.key()
+                    + " must be 1-based, or omitted to move the whole file. Received: " + line;
+        }
         FileObject fo = resolveFileObject(filePath);
         if (fo == null) {
             return filePath != null && !filePath.isBlank()
@@ -918,11 +928,18 @@ public class RefactoringProvider {
      * {@code defaultValue} stays null on existing-index entries — NetBeans reads that as "keep call-site arguments as
      * they are", whereas substituting an empty string would rewrite every call site to pass nothing.
      *
+     * An EMPTY {@code requested} array is not the same as a null one and must not be folded into it. The tool schema
+     * calls {@code parameters} "the complete desired parameter list — omit to keep existing params", so {@code []} is
+     * an explicit request for a method with no parameters, while omission is the no-change signal. Treating both as
+     * "keep existing" made removing every parameter impossible AND silent: the refactoring ran, changed nothing, and
+     * still reported "Method signature updated". Only null returns {@code existing} now; an empty array falls through
+     * and yields an empty result.
+     *
      * @param requested entries built by the tool from the JSON {@code parameters} array, or null when omitted
      * @param existing the method's current parameters (see {@link #existingParamInfos})
      */
     static ParameterInfo[] mergeParameterInfos(ParameterInfo[] requested, ParameterInfo[] existing) {
-        if (requested == null || requested.length == 0) {
+        if (requested == null) {
             return existing;
         }
         if (existing.length == 0) {

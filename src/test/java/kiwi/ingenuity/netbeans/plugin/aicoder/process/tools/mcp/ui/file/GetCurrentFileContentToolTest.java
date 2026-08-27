@@ -4,6 +4,7 @@ import com.google.gson.JsonObject;
 import java.util.Set;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.ToolSchemaKeyEnum;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
 
 /**
@@ -13,6 +14,7 @@ import org.junit.jupiter.api.Test;
  */
 class GetCurrentFileContentToolTest {
 
+    @Disabled("user request: Editor/Window tool group tests disabled")
     @Test
     void descriptionDisclosesTruncationCap() {
         JsonObject tool = new GetCurrentFileContentTool().schema(Set.of());
