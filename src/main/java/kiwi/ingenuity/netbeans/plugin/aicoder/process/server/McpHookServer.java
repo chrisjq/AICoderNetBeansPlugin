@@ -499,6 +499,12 @@ public class McpHookServer {
         String oldString = McpHookServerUtil.str(input, ClaudeHookKeyEnum.OLD_STRING.key());
         String newString = McpHookServerUtil.str(input, ClaudeHookKeyEnum.NEW_STRING.key());
         String writeContent = McpHookServerUtil.str(input, ClaudeHookKeyEnum.CONTENT.key());
+        // Edit's replace_all. Read here rather than dropped: it is part of the caller's contract, and ignoring it
+        // applied ONE replacement while answering "File updated and saved" — a partial edit reported as complete,
+        // with nothing to alert the caller. Threaded to both the preview and the apply, which must agree exactly.
+        boolean replaceAll = input.has(ClaudeHookKeyEnum.REPLACE_ALL.key())
+                && input.get(ClaudeHookKeyEnum.REPLACE_ALL.key()).getAsJsonPrimitive().isBoolean()
+                && input.get(ClaudeHookKeyEnum.REPLACE_ALL.key()).getAsBoolean();
 
         // 0. ANY session's serialized-conversation directory (history.json, context.json,
         //    and their siblings) is never accessible to any tool, including this native
@@ -574,7 +580,7 @@ public class McpHookServer {
         try {
             CompletableFuture<PermissionDecision> future = new CompletableFuture<>();
             procListener.onAiProcessEvent(
-                    new PermissionEvent(toolName, filePath, oldString, newString, writeContent, future));
+                    new PermissionEvent(toolName, filePath, oldString, newString, writeContent, replaceAll, future));
 
             PermissionDecision decision;
             try {
@@ -600,7 +606,7 @@ public class McpHookServer {
             if (decision != null && decision.allow()) {
                 String applyResult = "Write".equals(toolName)
                         ? RefactoringProvider.writeFileContent(filePath, writeContent)
-                        : RefactoringProvider.applyEdit(filePath, oldString, newString);
+                        : RefactoringProvider.applyEdit(filePath, oldString, newString, replaceAll);
                 String allowedResponse = McpHookServerUtil.hookDeny("Applied by NetBeans plugin: " + applyResult);
                 if (PluginSettings.isDebugJson()) {
                     LOG.log(Level.INFO, "Hook response (applied): {0}", allowedResponse);

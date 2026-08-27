@@ -1,9 +1,8 @@
 package kiwi.ingenuity.netbeans.plugin.aicoder.process.server;
 
 /**
- * Claude PreToolUse hook payload and response keys. These are Claude's names
- * and must NOT be aligned with McpToolPropertyEnum's camelCase. Values are an
- * external contract and must never change.
+ * Claude PreToolUse hook payload and response keys. These are Claude's names and must NOT be aligned with
+ * McpToolPropertyEnum's camelCase. Values are an external contract and must never change.
  */
 public enum ClaudeHookKeyEnum {
     /**
@@ -34,6 +33,11 @@ public enum ClaudeHookKeyEnum {
      * Claude Edit replacement text.
      */
     NEW_STRING("new_string"),
+    /**
+     * Edit's "replace every occurrence" flag. Present in Claude's Edit schema, so it arrives on the wire whether or not
+     * we read it — and ignoring it silently applied one replacement while reporting success for all of them.
+     */
+    REPLACE_ALL("replace_all"),
     /**
      * Claude Write content.
      */

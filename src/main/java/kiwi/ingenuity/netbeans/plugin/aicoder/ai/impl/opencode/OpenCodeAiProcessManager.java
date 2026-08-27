@@ -54,6 +54,37 @@ public class OpenCodeAiProcessManager extends AiProcessManager {
     private static final Logger LOG = Logger.getLogger(OpenCodeAiProcessManager.class.getName());
     private static final Gson GSON = new GsonBuilder().disableHtmlEscaping().create();
     private static final int MAX_STDERR_LINES = 100;
+    /**
+     * Developer switch for mid-turn mail steering. NOT a user setting and deliberately not surfaced in the UI — flip it
+     * here in source if you are working on it.
+     *
+     * <p>
+     * <b>OFF because it does not work.</b> The mechanism is implemented and every part of it verified against a real
+     * agent: the plugin passes {@code --port}, locks the agent's HTTP server with a per-process password, confirms
+     * {@code /api/session/…/prompt} is declared in the agent's own OpenAPI document, and POSTs
+     * {@code {"prompt":{"text":…},"delivery":"steer"}} to it — {@code delivery} being a real enum in that schema,
+     * {@code ["steer","queue"]}. The request is accepted. The agent simply never acts on it until the running turn
+     * ends, which is the one thing that would have made it worth doing.
+     *
+     * <p>
+     * Tested on opencode 1.18.23 four ways: a blocking POST with a 5 s bound (timed out, our own timeout closing the
+     * connection), the same with a long bound, asynchronous fire-and-forget, and finally a three-phase task with
+     * checkpoints after each phase to rule out "the turn was too short to cross a promotion boundary". In every case
+     * the peer reported the message arriving only after the whole turn finished. {@code POST …/prompt} waits on the
+     * running turn regardless of {@code delivery}; the sibling {@code /session/…/prompt_async} returns immediately but
+     * its schema has no {@code delivery} field at all, so it cannot steer.
+     *
+     * <p>
+     * Left in rather than deleted so it can be re-tested cheaply against a future opencode: set this true, rebuild, and
+     * send a peer important-flagged mail mid-turn. If their transcript shows it before the turn ends, the upstream
+     * behaviour has changed and this can become the default.
+     *
+     * <p>
+     * While off, OpenCode spawns exactly as it always did — no {@code --port}, no probe, no HTTP calls — and reports
+     * {@code AFTER_TURN} honestly, because reporting mid-turn capability we cannot deliver would make ListAiSessions
+     * lie to every peer that reads it.
+     */
+    static final boolean EXPERIMENTAL_STEERING = false;
 
     /**
      * Builds the value for the OPENCODE_CONFIG_CONTENT environment variable. Forces "ask" permission for all edit, bash
@@ -154,7 +185,34 @@ public class OpenCodeAiProcessManager extends AiProcessManager {
     volatile JsonArray sessionConfigOptions = null;
     private volatile OpenCodeAcpClientHandler activeHandler = null;
     private final List<String> recentStderr = new CopyOnWriteArrayList<>();
+
     private volatile OpenCodeAiMcpRegistrar registrar = null;
+    /**
+     * Port handed to {@code opencode acp --port}. The agent starts an HTTP server alongside the stdio ACP channel, and
+     * that server is the only way to deliver mail mid-turn (ACP itself has no injection method — its sole mid-turn
+     * control is session/cancel). Nothing announces the port, so the plugin picks a free one and tells the agent,
+     * rather than trying to discover it afterwards. Zero until a process is spawned.
+     */
+    private volatile int httpPort = 0;
+    /**
+     * Whether this agent's HTTP server advertises the steer route. Resolved once after the handshake by asking the
+     * server for its own OpenAPI document, so an opencode too old to support steering simply degrades to today's
+     * behaviour instead of erroring. False until proven otherwise.
+     */
+    private volatile boolean steerCapable = false;
+    /**
+     * Per-process secret handed to the spawned agent as {@code OPENCODE_SERVER_PASSWORD}, and presented back on every
+     * request we make to it. Distinct per process on purpose — opencode's session store is shared across agents, so
+     * without it a request that reached the wrong agent's server would be honoured rather than refused. Null until a
+     * process is spawned.
+     */
+    private volatile String openCodeMCPPassword = null;
+    /**
+     * Null unless {@link #EXPERIMENTAL_STEERING} is on. Because that flag is a compile-time constant, the branch is
+     * dead code when it is false and {@link OpenCodeSteerClient} is never initialised — so its static HttpClient and
+     * the threads behind it are never created for a build that does not use them.
+     */
+    private final OpenCodeSteerClient steerClient = EXPERIMENTAL_STEERING ? new OpenCodeSteerClient() : null;
     private OpenCodeAiSession openCodeAiSession = null;
     volatile Runnable onSessionEstablished = null;
 
@@ -220,6 +278,9 @@ public class OpenCodeAiProcessManager extends AiProcessManager {
                         System.identityHashCode(currentSession.settings()), m});
         }
         openCodeAiSession = new OpenCodeAiSession(currentSession, listener);
+        // Live check, not a snapshot: capability is probed asynchronously after the handshake and is reset whenever
+        // the process is recycled, so ListAiSessions must read it at the moment a peer asks.
+        openCodeAiSession.setSteerCapableSupplier(() -> steerCapable);
         running = true;
         listener.onAiProcessEvent(new StatusEvent(StatusEventTypeEnum.READY, StatusMessageUtil.formatReady("OpenCode")));
     }
@@ -231,12 +292,38 @@ public class OpenCodeAiProcessManager extends AiProcessManager {
      * interrupt()) can run concurrently.
      */
     protected void spawnAndHandshake(File workDir) throws Exception {
-        List<String> cmd = OpenCodeExecutableLocator.buildHostCommand(
-                executablePath, "acp", "--cwd", workDir.getAbsolutePath());
+        // --port is what makes the agent's embedded HTTP server reachable, and that server is the only channel for
+        // mid-turn mail. Left to itself opencode binds 4096 or an ephemeral port and announces neither, so we choose.
+        // Safe on every realistic install: the flag has been on the acp command since Nov 2025, and opencode ignores
+        // unknown flags (exit 0) rather than failing, so an older build simply starts without a port we can reach and
+        // the capability probe below turns steering off. Never pass --mdns alongside it: that flips the server's
+        // bind from 127.0.0.1 to 0.0.0.0, exposing an unauthenticated agent API to the LAN.
+        // Only claim a port when steering is being worked on. With it off there is nothing to talk to the HTTP
+        // server about, and passing --port would add a failure mode for no benefit: if the chosen port is taken
+        // between our picking it and the agent binding it, opencode exits with ServeError and the session fails to
+        // start at all. Verified — it does not fall back to another port.
+        int port = EXPERIMENTAL_STEERING ? OpenCodeSteerClient.pickFreePort() : 0;
+        List<String> cmd = port > 0
+                ? OpenCodeExecutableLocator.buildHostCommand(
+                        executablePath, "acp", "--cwd", workDir.getAbsolutePath(),
+                        "--port", Integer.toString(port))
+                : OpenCodeExecutableLocator.buildHostCommand(
+                        executablePath, "acp", "--cwd", workDir.getAbsolutePath());
 
+        // Locks the agent's HTTP server to this plugin. Verified against opencode 1.18.23: with this set, /doc and
+        // POST /api/session/{id}/prompt both answer 401 unauthenticated and 200 with the credentials, while the ACP
+        // stdio channel is unaffected. Two things depend on it. First, opencode keeps sessions in a shared SQLite
+        // store, so any agent's server resolves any session id — a steer that reached the wrong server would be
+        // honoured, not refused, and inter-AI mail would land in another agent's turn. Second, without it the agent
+        // API is unauthenticated on loopback, so any local process could prompt, steer or abort the user's sessions.
+        // The documented default username is used; only the password varies per process.
+        String openCodeMCPPassword = EXPERIMENTAL_STEERING ? OpenCodeSteerClient.generateServerPassword() : null;
         ProcessBuilder pb = new ProcessBuilder(cmd);
         pb.directory(workDir);
         pb.environment().put("OPENCODE_CONFIG_CONTENT", buildPermissionConfigJson());
+        if (openCodeMCPPassword != null) {
+            pb.environment().put("OPENCODE_SERVER_PASSWORD", openCodeMCPPassword);
+        }
 
         recentStderr.clear();
         Process process = pb.start();
@@ -248,6 +335,11 @@ public class OpenCodeAiProcessManager extends AiProcessManager {
                 throw new IOException("stop() called before handshake began");
             }
             currentProcess = process;
+            httpPort = port;
+            this.openCodeMCPPassword = openCodeMCPPassword;
+            // Reset per-spawn: a recycled process may be a different opencode build, and carrying the previous
+            // answer over would have us POST steers at a port nothing is listening on.
+            steerCapable = false;
         }
 
         startStderrDrainer(process);
@@ -385,6 +477,113 @@ public class OpenCodeAiProcessManager extends AiProcessManager {
         if (sessionConfigOptions != null) {
             listener.onAiProcessEvent(new OpenCodeConfigOptionsEvent(sessionConfigOptions));
         }
+        if (EXPERIMENTAL_STEERING) {
+            probeSteerCapabilityAsync(process, port, openCodeMCPPassword);
+        }
+    }
+
+    /**
+     * Delivers an inbox notification into the running turn, so the agent reads its mail without being cancelled.
+     *
+     * <p>
+     * ACP has no method for this — its only mid-turn control is session/cancel, which would end the turn and take any
+     * in-flight tool call with it. opencode's core does support steering, but exposes it solely on the HTTP API its
+     * agent already runs, so delivery goes over that rather than over the ACP channel. The steered text arrives in the
+     * transcript as a user message via the same event stream, so the user sees what the agent was told.
+     *
+     * <p>
+     * Sends a notification, not the message body, matching Codex: the agent is told mail exists and fetches it with the
+     * inbox tools. That keeps one copy of the message (the inbox) rather than pasting a second into the conversation,
+     * and avoids putting arbitrary text into a turn the user did not author.
+     *
+     * <p>
+     * Every failure path is a silent no-op by design. The message is already queued in the inbox and will be delivered
+     * at end of turn exactly as before this existed, so a refused or impossible steer costs promptness, never the
+     * message.
+     */
+    private void interruptMail() {
+        if (!EXPERIMENTAL_STEERING) {
+            // Pre-steering behaviour: the message stays queued and arrives at the normal end-of-turn inbox flush.
+            // Logged rather than dropped in silence — see EXPERIMENTAL_STEERING for what was tried and why it is off.
+            if (PluginSettings.isDebugJson()) {
+                LOG.log(Level.INFO,
+                        "OpenCode interrupt: Mail deferred to end-of-turn flush — no working mid-turn channel "
+                        + "(session={0})", acpSessionId);
+            }
+            return;
+        }
+        String sid;
+        int port;
+        boolean capable;
+        String cOpenCodeMCPPassword;
+        synchronized (this) {
+            if (!processing) {
+                if (PluginSettings.isDebugJson()) {
+                    LOG.log(Level.INFO,
+                            "OpenCode interrupt: Mail IGNORED, no turn in flight — message will arrive via normal "
+                            + "inbox flush (session={0})", acpSessionId);
+                }
+                return;
+            }
+            sid = acpSessionId;
+            port = httpPort;
+            capable = steerCapable;
+            cOpenCodeMCPPassword = openCodeMCPPassword;
+        }
+        if (!capable || sid == null || sid.isBlank() || port <= 0) {
+            if (PluginSettings.isDebugJson()) {
+                LOG.log(Level.INFO,
+                        "OpenCode interrupt: Mail IGNORED, steering unavailable — message will arrive via normal "
+                        + "inbox flush (session={0}, port={1}, steerCapable={2})",
+                        new Object[]{sid, port, capable});
+            }
+            return;
+        }
+        // Off the caller's thread: this is an HTTP round trip, and the caller may be the EDT or the inbox broker.
+        Thread steer = new Thread(() -> {
+            // "dispatched", not "delivered": the endpoint does not answer during a turn, so this only says the
+            // request left here. Whether the agent acted on it shows up in that session's transcript, not here.
+            boolean dispatched = steerClient.sendSteer(port, sid, InterruptTypeEnum.MAIL_NOTIFICATION_TEXT, cOpenCodeMCPPassword);
+            if (PluginSettings.isDebugJson()) {
+                LOG.log(Level.INFO, "OpenCode interrupt: Mail steer {0} (session={1})",
+                        new Object[]{dispatched ? "dispatched" : "could not be dispatched — end-of-turn flush only", sid});
+            }
+        }, "opencode-mail-steer");
+        steer.setDaemon(true);
+        steer.start();
+    }
+
+    /**
+     * Asks the agent's own HTTP server whether it advertises the steer route, and records the answer.
+     *
+     * <p>
+     * Off-thread deliberately: the probe is only needed by the time mail arrives, and doing it inline would add its
+     * timeout to session startup on any build that turns out not to support steering — the one case where the user
+     * gains nothing by waiting.
+     *
+     * <p>
+     * The result is pinned to the process that was just spawned. A slow probe answering after that process has been
+     * replaced must not enable steering against a port belonging to a session that no longer exists.
+     */
+    private void probeSteerCapabilityAsync(Process spawned, int port, String password) {
+        Thread probe = new Thread(() -> {
+            // Doubles as an authentication check: wrong or missing credentials answer 401, which reads here as
+            // "not capable" and leaves the session on end-of-turn delivery. Do not "optimise" this into an
+            // unauthenticated request — it would report capable for a server we cannot actually steer.
+            boolean capable = steerClient.probeSteerCapability(port, password);
+            synchronized (this) {
+                if (currentProcess != spawned) {
+                    return;
+                }
+                steerCapable = capable;
+            }
+            if (PluginSettings.isDebugJson()) {
+                LOG.log(Level.INFO, "OpenCode steer capability: {0} (port={1}, session={2})",
+                        new Object[]{capable ? "AVAILABLE" : "unavailable", port, acpSessionId});
+            }
+        }, "opencode-steer-probe");
+        probe.setDaemon(true);
+        probe.start();
     }
 
     boolean applyInitialModeIfNeeded() {
@@ -748,17 +947,11 @@ public class OpenCodeAiProcessManager extends AiProcessManager {
 
     @Override
     public void interrupt(InterruptTypeEnum type) {
+        if (type == InterruptTypeEnum.Mail) {
+            interruptMail();
+            return;
+        }
         if (type != InterruptTypeEnum.Cancel) {
-            // Mail is unimplemented here — this drop was previously silent, the same
-            // shape as the bug just fixed in CodexAiProcessManager. Logged rather than
-            // fixed: implementing ACP mid-turn steering (if OpenCode's protocol even
-            // supports it) is out of scope for this task, which is Codex-specific;
-            // reported to the Planner separately as a likely second instance.
-            if (type == InterruptTypeEnum.Mail && PluginSettings.isDebugJson()) {
-                LOG.log(Level.INFO,
-                        "OpenCode interrupt: Mail IGNORED (unimplemented) — message will arrive via normal inbox "
-                        + "flush (session={0})", acpSessionId);
-            }
             return;
         }
         AcpConnection conn;

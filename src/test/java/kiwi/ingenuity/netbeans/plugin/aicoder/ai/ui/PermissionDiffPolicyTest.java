@@ -27,6 +27,38 @@ class PermissionDiffPolicyTest {
         assertEquals(PermissionDiffPolicy.Outcome.ALLOW_SILENT, d.outcome());
     }
 
+    /**
+     * The preview must replace every occurrence when replaceAll is set, because the apply will. If the two disagree the
+     * user approves one diff and a different edit lands — the panel would become a lie rather than a gate.
+     */
+    @Test
+    void editReplaceAllPreviewsEveryOccurrence() {
+        String orig = "x = foo;\ny = foo;\nz = foo;\n";
+        var d = PermissionDiffPolicy.decide("Edit", "/tmp/a.java", orig, "foo", "bar", null, true);
+        assertEquals(PermissionDiffPolicy.Outcome.SHOW_DIFF, d.outcome(), d.reason());
+        assertEquals("x = bar;\ny = bar;\nz = bar;\n", d.proposedContent());
+    }
+
+    /**
+     * Default stays single-replacement: every existing caller passes no flag and must keep the old behaviour.
+     */
+    @Test
+    void editWithoutReplaceAllPreviewsOnlyTheFirstOccurrence() {
+        String orig = "x = foo;\ny = foo;\n";
+        var d = PermissionDiffPolicy.decide("Edit", "/tmp/a.java", orig, "foo", "bar", null, false);
+        assertEquals("x = bar;\ny = foo;\n", d.proposedContent());
+    }
+
+    /**
+     * Overlapping matches must advance past the replacement, not rescan it — otherwise "aa" -> "aaa" over "aaaa" either
+     * loops forever or produces a different count than the apply does.
+     */
+    @Test
+    void editReplaceAllHandlesOverlappingAndSubstringMatches() {
+        var d = PermissionDiffPolicy.decide("Edit", "/tmp/a.txt", "aaaa", "aa", "b", null, true);
+        assertEquals("bb", d.proposedContent());
+    }
+
     @Test
     void editMissingOldString_denies() {
         var d = PermissionDiffPolicy.decide("Edit", "/tmp/a.java", "hello", null, "x", null);

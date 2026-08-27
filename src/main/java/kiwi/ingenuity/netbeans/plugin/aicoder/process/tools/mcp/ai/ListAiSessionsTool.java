@@ -6,6 +6,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.AiTypeEnum;
+import kiwi.ingenuity.netbeans.plugin.aicoder.ai.MailDeliveryTimingEnum;
 import static kiwi.ingenuity.netbeans.plugin.aicoder.ai.MailDeliveryTimingEnum.AFTER_TURN;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.mail.AiSessionInboxBroker;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.session.AiSession;
@@ -101,6 +102,7 @@ public class ListAiSessionsTool extends AbstractActionTool {
             if (s.description() != null && !s.description().isBlank()) {
                 obj.addProperty(ToolSchemaKeyEnum.DESCRIPTION.key(), s.description());
             }
+            AbstractAiSession abstractSession = SessionRegistry.get(s.id());
             AiTypeEnum aiType = s.aiType();
             if (aiType != null) {
                 obj.addProperty(ToolResponseKeyEnum.AI_TYPE.key(), aiType.displayName());
@@ -109,9 +111,17 @@ public class ListAiSessionsTool extends AbstractActionTool {
                 // session must permit interruption, and its backend must have a mid-turn
                 // channel. Either one missing and important=true is silently inert, so a sender
                 // that could not see this set the flag blind and had no way to tell.
-                if (s.allowsImportantMessages() && aiType.mailDeliveryTiming() != AFTER_TURN) {
+                //
+                // Asked of the live session rather than the type, because for OpenCode it is not a property of the
+                // type: mail goes over the HTTP API its agent runs beside ACP, and whether that route exists depends
+                // on the build actually spawned. Falls back to the type's declared timing when the session is not
+                // registered (not yet started, or already gone).
+                MailDeliveryTimingEnum timing = abstractSession != null
+                        ? abstractSession.getMailDeliveryTiming()
+                        : aiType.mailDeliveryTiming();
+                if (s.allowsImportantMessages() && timing != AFTER_TURN) {
                     obj.addProperty(ToolResponseKeyEnum.MAIL_DELIVERY.key(),
-                            "Read " + aiType.mailDeliveryTiming().description() + " when "
+                            "Read " + timing.description() + " when "
                             + SendAiMessageParamEnum.IMPORTANT.key() + "=true, otherwise at "
                             + AFTER_TURN.description() + ".");
                 }
@@ -120,7 +130,6 @@ public class ListAiSessionsTool extends AbstractActionTool {
                             "Read at " + AFTER_TURN.description() + ".");
                 }
             }
-            AbstractAiSession abstractSession = SessionRegistry.get(s.id());
             if (abstractSession != null) {
                 for (Map.Entry<String, String> e : abstractSession.getInfo().entrySet()) {
                     obj.addProperty(e.getKey(), e.getValue());

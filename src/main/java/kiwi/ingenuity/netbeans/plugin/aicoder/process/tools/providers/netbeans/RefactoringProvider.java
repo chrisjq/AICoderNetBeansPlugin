@@ -26,6 +26,7 @@ import javax.swing.text.BadLocationException;
 import javax.swing.text.Document;
 import javax.swing.text.JTextComponent;
 import javax.swing.text.StyledDocument;
+import kiwi.ingenuity.netbeans.plugin.aicoder.ai.ui.PermissionDiffPolicy;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.McpToolEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.McpToolPropertyEnum;
 import org.netbeans.api.java.classpath.ClassPath;
@@ -482,6 +483,15 @@ public class RefactoringProvider {
     }
 
     public static String applyEdit(String filePath, String oldString, String newString) {
+        return applyEdit(filePath, oldString, newString, false);
+    }
+
+    /**
+     * @param replaceAll replace every occurrence rather than the first. Shares
+     * {@link PermissionDiffPolicy#replaceEvery} with the preview so the approved diff and the written bytes cannot
+     * diverge — see that method for why neither side uses String.replace/replaceAll.
+     */
+    public static String applyEdit(String filePath, String oldString, String newString, boolean replaceAll) {
         if (filePath == null || filePath.isBlank()) {
             return McpToolPropertyEnum.FILE_PATH.key() + " is required";
         }
@@ -528,7 +538,9 @@ public class RefactoringProvider {
         if (idx < 0) {
             return McpToolPropertyEnum.OLD_STRING.key() + " not found in file";
         }
-        String updated = content.substring(0, idx) + replacement + content.substring(idx + oldString.length());
+        String updated = replaceAll
+                ? PermissionDiffPolicy.replaceEvery(content, oldString, replacement)
+                : PermissionDiffPolicy.replaceFirst(content, oldString, replacement);
         try {
             // Refresh here too: this guard exists to catch the file moving under us between match and write, and it
             // cannot do that if it re-reads the same cache the match already used.

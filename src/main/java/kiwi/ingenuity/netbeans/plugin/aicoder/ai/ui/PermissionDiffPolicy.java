@@ -1,23 +1,32 @@
 package kiwi.ingenuity.netbeans.plugin.aicoder.ai.ui;
 
 /**
- * Pure decision rules for the Accept/Reject permission path. Kept free of Swing
- * so unit tests can lock the fail-closed behaviour that protects the diff gate.
+ * Pure decision rules for the Accept/Reject permission path. Kept free of Swing so unit tests can lock the fail-closed
+ * behaviour that protects the diff gate.
  */
 public final class PermissionDiffPolicy {
 
     /**
-     * @param toolName Edit or Write (other tools should not reach the
-     * permission path)
+     * @param toolName Edit or Write (other tools should not reach the permission path)
      * @param filePath target path (must be non-blank)
-     * @param original current file text, or empty string if the file does not
-     * exist yet
+     * @param original current file text, or empty string if the file does not exist yet
      * @param oldString Edit only
      * @param newString Edit only
      * @param writeContent Write only
      */
     public static Decision decide(String toolName, String filePath, String original,
             String oldString, String newString, String writeContent) {
+        return decide(toolName, filePath, original, oldString, newString, writeContent, false);
+    }
+
+    /**
+     * @param replaceAll Edit only — replace every occurrence rather than the first. Must match what the apply side
+     * ({@code RefactoringProvider.applyEdit}) is going to do with the same inputs: the panel's whole purpose is that
+     * the user approves the exact change that lands, so a preview showing one replacement while the apply performs
+     * twelve turns the gate into a lie.
+     */
+    public static Decision decide(String toolName, String filePath, String original,
+            String oldString, String newString, String writeContent, boolean replaceAll) {
         if (filePath == null || filePath.isBlank()) {
             return Decision.deny("Missing file path");
         }
@@ -37,8 +46,9 @@ public final class PermissionDiffPolicy {
                 }
                 return Decision.deny("Edit old_string was not found in the file — refusing silent apply");
             }
-            int idx = orig.indexOf(oldString);
-            proposed = orig.substring(0, idx) + newString + orig.substring(idx + oldString.length());
+            proposed = replaceAll
+                    ? replaceEvery(orig, oldString, newString)
+                    : replaceFirst(orig, oldString, newString);
         }
         else {
             return Decision.deny("Unsupported tool for permission diff: " + toolName);
@@ -47,6 +57,43 @@ public final class PermissionDiffPolicy {
             return Decision.allowSilent(proposed);
         }
         return Decision.showDiff(proposed);
+    }
+
+    /**
+     * Literal single replacement. Deliberately not {@code String.replaceFirst}, which takes a REGEX — the caller's
+     * old_string is arbitrary source text and would be interpreted, so a stray {@code (} or {@code .} would either
+     * throw or silently match the wrong span.
+     */
+    public static String replaceFirst(String orig, String oldString, String newString) {
+        int idx = orig.indexOf(oldString);
+        if (idx < 0) {
+            return orig;
+        }
+        return orig.substring(0, idx) + newString + orig.substring(idx + oldString.length());
+    }
+
+    /**
+     * Literal replacement of every occurrence, scanning left to right and resuming AFTER each replacement.
+     *
+     * <p>
+     * Not {@code String.replaceAll} (regex, same trap as above) and not {@code String.replace} — that would be correct
+     * here, but this must stay character-identical to what the apply side does, and keeping both on one explicit
+     * algorithm is what guarantees that. Advancing past the inserted text also means a replacement can never be
+     * rescanned, so {@code "aa" -> "aaa"} terminates instead of growing forever.
+     */
+    public static String replaceEvery(String orig, String oldString, String newString) {
+        if (oldString.isEmpty()) {
+            return orig;
+        }
+        StringBuilder out = new StringBuilder();
+        int from = 0;
+        int idx;
+        while ((idx = orig.indexOf(oldString, from)) >= 0) {
+            out.append(orig, from, idx).append(newString);
+            from = idx + oldString.length();
+        }
+        out.append(orig, from, orig.length());
+        return out.toString();
     }
 
     private static String diagnoseWhitespaceMismatch(String orig, String oldString) {

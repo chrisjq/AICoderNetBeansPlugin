@@ -1914,7 +1914,7 @@ public final class AiTopComponent extends TopComponent implements AiProcessEvent
             return;
         }
         PermissionDiffPolicy.Decision decision = PermissionDiffPolicy.decide(
-                pe.toolName(), fp, original, pe.oldString(), pe.newString(), pe.writeContent());
+                pe.toolName(), fp, original, pe.oldString(), pe.newString(), pe.writeContent(), pe.replaceAll());
         switch (decision.outcome()) {
             case DENY -> {
                 LOG.log(Level.WARNING, "Permission denied for {0}: {1}",
