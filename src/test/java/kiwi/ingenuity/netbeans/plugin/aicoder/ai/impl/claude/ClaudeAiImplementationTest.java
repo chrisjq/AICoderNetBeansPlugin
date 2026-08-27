@@ -1,6 +1,7 @@
 package kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.claude;
 
 import java.time.Instant;
+import java.util.concurrent.atomic.AtomicInteger;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.AiTypeEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.claude.settings.ClaudePluginSettings;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.claude.settings.ClaudeSessionSettings;
@@ -11,10 +12,9 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import org.junit.jupiter.api.Test;
 
 /**
- * Covers {@link ClaudeAiImplementation#shouldThrottleUsageFetch} — the pure
- * gate that decides whether a usage-endpoint fetch attempt should be skipped
- * because it's too soon after the previous one, given a learned minimum
- * interval derived from an earlier 429.
+ * Covers {@link ClaudeAiImplementation#shouldThrottleUsageFetch} — the pure gate that decides whether a usage-endpoint
+ * fetch attempt should be skipped because it's too soon after the previous one, given a learned minimum interval
+ * derived from an earlier 429.
  */
 class ClaudeAiImplementationTest {
 
@@ -60,6 +60,42 @@ class ClaudeAiImplementationTest {
         impl.setModel("claude-sonnet-4.5");
 
         assertEquals("claude-sonnet-4.5", settings.model(), "setModel must update the session settings");
+    }
+
+    /**
+     * {@code applySessionSettings} runs on every OK of the session config dialog, whether or not the model was touched.
+     * Claude's {@code setModel} recycles the CLI session unconditionally, so without this comparison every config save
+     * threw away a warm session — and, if a turn was in flight, stranded it: the session was nulled while
+     * {@code processing} stayed true, which is the state that makes Stop a silent no-op.
+     *
+     * <p>
+     * Exercised through Claude, but the guard lives in {@code AiImplementation} and so covers every backend.
+     */
+    @Test
+    void applySessionSettingsSkipsSetModelWhenTheModelIsUnchanged() {
+        ClaudeSessionSettings settings = new ClaudeSessionSettings();
+        settings.setModel("claude-opus-5");
+        AtomicInteger setModelCalls = new AtomicInteger();
+        ClaudeAiImplementation impl = new ClaudeAiImplementation(e -> {
+        }, null) {
+            {
+                currentSession = newSession("claude-apply-1", settings);
+            }
+
+            @Override
+            public void setModel(String model) {
+                setModelCalls.incrementAndGet();
+                super.setModel(model);
+            }
+        };
+
+        impl.applySessionSettings(settings);
+        assertEquals(1, setModelCalls.get(),
+                "the first apply genuinely changes the model and must go through");
+
+        impl.applySessionSettings(settings);
+        assertEquals(1, setModelCalls.get(),
+                "re-applying the SAME model must not call setModel again — for Claude that recycles the CLI session");
     }
 
     @Test

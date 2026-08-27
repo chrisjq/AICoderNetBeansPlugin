@@ -4,6 +4,7 @@ import java.io.File;
 import java.io.IOException;
 import java.nio.file.Path;
 import java.util.List;
+import java.util.Objects;
 import kiwi.ingenuity.netbeans.plugin.aicoder.PluginUtil;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.session.AiSession;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.session.InterruptTypeEnum;
@@ -73,9 +74,23 @@ public abstract class AiImplementation {
 
     public abstract void setModel(String model);
 
+    /**
+     * Pushes session settings into the running backend. Called on every OK of the session config dialog, whether or not
+     * anything about the model was touched.
+     *
+     * <p>
+     * Only forwards a model that actually differs from the one the backend is already on. {@code setModel} is not a
+     * plain setter for every backend — Claude and Copilot recycle the CLI session from it — so calling it with an
+     * unchanged value discarded a warm session on every config save. Worse for Claude, whose recycle carried no
+     * in-flight-turn guard: saving the dialog mid-turn killed the session while the turn stayed marked in flight, and
+     * from there Stop was a silent no-op and the chat input never re-enabled. The guard in
+     * ClaudeAiProcessManager.recycleForModelChange() now covers that too; this comparison stops the pointless recycle
+     * happening at all, for every backend at once.
+     */
     public void applySessionSettings(AiSessionSettings settings) {
         if (settings instanceof AiModelSessionSettings modelSettings
-                && modelSettings.model() != null && !modelSettings.model().isBlank()) {
+                && modelSettings.model() != null && !modelSettings.model().isBlank()
+                && !Objects.equals(modelSettings.model(), delegate().getModel())) {
             setModel(modelSettings.model());
         }
     }

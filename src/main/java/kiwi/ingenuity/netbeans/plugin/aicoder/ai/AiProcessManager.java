@@ -10,18 +10,16 @@ import kiwi.ingenuity.netbeans.plugin.aicoder.process.server.McpHookServer;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.server.McpServerRegistry;
 
 /**
- * Shared state and trivial accessors for the per-AI process managers
- * ({@code ClaudeAiProcessManager}, {@code GithubCopilotProcessManager}).
+ * Shared state and trivial accessors for the per-AI process managers ({@code ClaudeAiProcessManager},
+ * {@code GithubCopilotProcessManager}).
  *
  * <p>
- * Holds the common per-session/turn state and its synchronized accessors. The
- * turn <em>lifecycle</em> (start, sendPrompt, cancel, interrupt, stop,
- * resumeSession) stays backend-specific because the two CLIs behave differently
- * — e.g. Claude uses {@code --resume} plus a graceful stdin interrupt and keeps
- * {@code firstMessage}/{@code cachedContextWindow}, while Copilot uses
- * {@code --session-id}, a hard kill, and {@code sessionCorrupted}/
- * {@code copilotSessionId} recovery. Those remain as abstract methods declared
- * here and implemented by each subclass.
+ * Holds the common per-session/turn state and its synchronized accessors. The turn <em>lifecycle</em> (start,
+ * sendPrompt, cancel, interrupt, stop, resumeSession) stays backend-specific because the two CLIs behave differently —
+ * e.g. Claude uses {@code --resume} plus a graceful stdin interrupt and keeps
+ * {@code firstMessage}/{@code cachedContextWindow}, while Copilot uses {@code --session-id}, a hard kill, and
+ * {@code sessionCorrupted}/ {@code copilotSessionId} recovery. Those remain as abstract methods declared here and
+ * implemented by each subclass.
  */
 public abstract class AiProcessManager {
 
@@ -84,6 +82,10 @@ public abstract class AiProcessManager {
         return sessionWorkingDir;
     }
 
+    public String getModel() {
+        return model;
+    }
+
     public void setModel(String model) {
         this.model = model;
     }
@@ -117,8 +119,8 @@ public abstract class AiProcessManager {
     public abstract void sendPrompt(String text, File workingDir, List<File> projectDirs);
 
     /**
-     * Abort the in-flight turn. Backends that support a graceful interrupt
-     * (keeping partial output / context) do so; others terminate the process.
+     * Abort the in-flight turn. Backends that support a graceful interrupt (keeping partial output / context) do so;
+     * others terminate the process.
      */
     public abstract void interrupt(InterruptTypeEnum type);
 

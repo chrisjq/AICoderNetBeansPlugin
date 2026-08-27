@@ -18,9 +18,9 @@ import kiwi.ingenuity.netbeans.plugin.aicoder.ai.session.InterruptTypeEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.events.AiProcessEvent;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.events.AiProcessEventListener;
 import org.junit.jupiter.api.AfterEach;
+import static org.junit.jupiter.api.Assertions.*;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
-import static org.junit.jupiter.api.Assertions.*;
 
 class ClaudeAiProcessManagerStateTest {
 
@@ -106,10 +106,20 @@ class ClaudeAiProcessManagerStateTest {
         manager.sendPrompt("turn 1", workDir, List.of());
         ClaudePersistentSession sessionA = manager.getPersistentSession();
 
+        // Turn 1 must finish before recycling. This used to recycle mid-turn, which
+        // stranded the manager as processing-with-no-session and made everything below
+        // vacuous: sendPrompt("turn 2") early-returned on its own processing guard,
+        // sessionB came back NULL, and assertNotSame(sessionA, null) passed without ever
+        // proving turn 2 got a fresh session. The stale-exit half of the test was real;
+        // the "different session" half was a false confirmation masked by that bug.
+        manager.getSession().sendRawLine("{\"type\":\"result\",\"subtype\":\"success\"}");
+        awaitTrue(() -> !manager.isProcessing(), "turn 1 complete");
+
         manager.recycleForModelChange();
 
         manager.sendPrompt("turn 2", workDir, List.of());
         ClaudePersistentSession sessionB = manager.getPersistentSession();
+        assertNotNull(sessionB, "turn 2 must have launched a genuinely new session, not returned null");
         assertNotSame(sessionA, sessionB);
 
         events.clear();
@@ -117,6 +127,53 @@ class ClaudeAiProcessManagerStateTest {
         Thread.sleep(200); // Fixed short sleep: asserting absence of EXITED event; no event expected
 
         assertFalse(events.hasEvent(StatusEvent.class, e -> ((StatusEvent) e).type() == StatusEventTypeEnum.EXITED));
+    }
+
+    /**
+     * REACHABILITY half. Uses only the real public API, so it proves the stranded state can occur in production — not
+     * merely that we can recover from one we manufactured ourselves.
+     *
+     * <p>
+     * Asserts the invariant rather than the mechanism: it does not care whether the fix declines the recycle or ends
+     * the turn first, only that "in flight with no session" never survives the call.
+     */
+    @Test
+    void recycleMidTurnMustNotStrandTheTurn() {
+        manager.sendPrompt("turn 1", workDir, List.of());
+        assertTrue(manager.isProcessing(), "precondition: a turn must be in flight");
+        assertNotNull(manager.getPersistentSession(), "precondition: a session must be attached");
+
+        manager.recycleForModelChange();
+
+        assertFalse(manager.isProcessing() && manager.getPersistentSession() == null,
+                "recycleForModelChange() must not leave the manager processing with no session: interrupt() checks "
+                + "the session before processing, so Stop becomes a silent no-op and the input never re-enables");
+    }
+
+    /**
+     * RECOVERY half. Deliberately manufactures the stranded state rather than reaching it through the API, because once
+     * the reachability fix lands the real path can no longer produce it. Recovery still has to work — any future path
+     * that strands a turn must not cost the user their session.
+     */
+    @Test
+    void cancelStillNotifiesWhenSessionIsMissing() {
+        manager.sendPrompt("turn 1", workDir, List.of());
+        assertTrue(manager.isProcessing(), "precondition: a turn must be in flight");
+
+        manager.orphanSessionForTest();
+        events.clear();
+
+        manager.interrupt(InterruptTypeEnum.Cancel);
+
+        assertTrue(events.hasEvent(StatusEvent.class, e -> ((StatusEvent) e).type() == StatusEventTypeEnum.STOPPED),
+                "Cancel must fire STOPPED even with no live session to send the interrupt to — the UI re-enables its "
+                + "input on this event alone, so no event means a permanently disabled chat");
+        assertFalse(manager.isProcessing(), "Cancel must clear processing");
+        // Guards the trap in the obvious fix: awaitingCancelResult gates sendPrompt, and the watchdog clears it only
+        // by comparing against the session it captured. Setting it with no session means that comparison never
+        // matches, the flag is never cleared, and the user is locked out of sending for good.
+        assertFalse(manager.isAwaitingCancelResult(),
+                "awaitingCancelResult must NOT be set when no interrupt was actually sent");
     }
 
     @Test
@@ -177,6 +234,7 @@ class ClaudeAiProcessManagerStateTest {
     }
 
     static class RecordingEventListener implements AiProcessEventListener {
+
         private final List<AiProcessEvent> events = Collections.synchronizedList(new ArrayList<>());
 
         @Override
@@ -200,6 +258,7 @@ class ClaudeAiProcessManagerStateTest {
     }
 
     static class TestableClaudeAiProcessManager extends ClaudeAiProcessManager {
+
         private boolean firstSessionDead = false;
 
         TestableClaudeAiProcessManager(AiProcessEventListener listener) {
@@ -233,6 +292,14 @@ class ClaudeAiProcessManagerStateTest {
 
         ClaudePersistentSession getSession() {
             return persistentSession;
+        }
+
+        /**
+         * Drops the session WITHOUT clearing {@code processing} — the stranded state, manufactured directly. Only for
+         * the recovery test; the reachability test uses the real {@code recycleForModelChange()}.
+         */
+        void orphanSessionForTest() {
+            persistentSession = null;
         }
     }
 }

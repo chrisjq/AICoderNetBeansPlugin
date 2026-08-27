@@ -10,6 +10,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Objects;
 import java.util.Set;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.TimeUnit;
@@ -120,6 +121,12 @@ public class ClaudeAiProcessManager extends AiProcessManager {
     private ClaudeStreamJsonParser parser = null;
     private final List<String> recentStderr = new CopyOnWriteArrayList<>();
     private Set<String> launchedProjectDirs = Set.of();
+    // The model the live session was actually launched under, which is not always the model field: a switch
+    // requested mid-turn updates the field immediately but is deferred by recycleForModelChange(). Compared in
+    // ensureSession so the deferred switch is picked up at the start of the next turn. Without it the guard in
+    // recycleForModelChange() would strand the new model — --resume makes the CLI keep the session's original
+    // model, so the command-line --model on a resumed session is ignored and the switch never takes effect.
+    private String launchedModel;
     private int launchCount = 0;
 
     int cancelWatchdogMillis = 5000;
@@ -286,7 +293,7 @@ public class ClaudeAiProcessManager extends AiProcessManager {
                 .map(File::getPath)
                 .toList());
         if (persistentSession != null && persistentSession.isAlive()) {
-            if (launchedProjectDirs.containsAll(currentDirs)) {
+            if (launchedProjectDirs.containsAll(currentDirs) && Objects.equals(launchedModel, model)) {
                 return persistentSession;
             }
             persistentSession.close();
@@ -336,6 +343,7 @@ public class ClaudeAiProcessManager extends AiProcessManager {
                 });
         persistentSession = launched;
         launchedProjectDirs = currentDirs;
+        launchedModel = model;
         launchCount++;
         launched.process().onExit().thenRun(() -> handleProcessExit(launched));
         firstMessage = false;
@@ -414,34 +422,28 @@ public class ClaudeAiProcessManager extends AiProcessManager {
 
     @Override
     public void interrupt(InterruptTypeEnum type) {
+        // Deliberately NOT gated on the session being alive. The transport's liveness must never decide whether the
+        // user is told: the UI re-enables its input on STOPPED alone, so returning early here — as this method used
+        // to for a null session — leaves Stop an inert button and the chat permanently unusable. Codex, OpenCode,
+        // Grok and Ollama all gate on `processing` and treat the transport as optional; this now matches them.
         ClaudePersistentSession s = persistentSession;
-        if (s == null) {
-            // "Stop did nothing because nothing was running" and "Stop ran but
-            // output kept coming" are indistinguishable after the fact — this
-            // branch is the first of those. A silent no-op is what let Codex's
-            // equivalent Mail drop go unnoticed for so long, so both types are
-            // logged here, not just Cancel.
-            if (PluginSettings.isDebugJson()) {
-                LOG.log(Level.INFO, "Claude interrupt: IGNORED, no session (type={0}, session={1})",
-                        new Object[]{type, sessionId});
-            }
-            return;
-        }
-        String interruptLine = GSON.toJson(buildInterruptRequest());
         switch (type) {
             case Mail -> {
                 synchronized (this) {
-                    if (!processing) {
+                    // Mail genuinely does need a live session — there is nothing to inject into otherwise — and it
+                    // has somewhere safe to land: the message stays queued and arrives on the next inbox flush.
+                    if (s == null || !processing) {
                         if (PluginSettings.isDebugJson()) {
                             LOG.log(Level.INFO,
-                                    "Claude interrupt: Mail IGNORED, no turn in flight — message will arrive via "
-                                    + "normal inbox flush (session={0})", sessionId);
+                                    "Claude interrupt: Mail IGNORED (session={0}, sessionAlive={1}, turnInFlight={2})"
+                                    + " — message will arrive via normal inbox flush",
+                                    new Object[]{sessionId, s != null, processing});
                         }
                         return;
                     }
                     turnInterrupted = true;
                 }
-                s.sendRawLine(interruptLine);
+                s.sendRawLine(GSON.toJson(buildInterruptRequest()));
             }
             case Cancel -> {
                 synchronized (this) {
@@ -452,8 +454,12 @@ public class ClaudeAiProcessManager extends AiProcessManager {
                         return;
                     }
                     cancelledByUser = true;
-                    awaitingCancelResult = true;
                     processing = false;
+                    // Only await a result that can actually arrive. The watchdog clears this flag by comparing
+                    // against the session it captured, so setting it with no session means the comparison never
+                    // matches, the flag is never cleared, and sendPrompt — which gates on it — refuses every
+                    // subsequent message. That would trade a stuck turn for a permanently unusable session.
+                    awaitingCancelResult = s != null;
                 }
                 // Stamping the moment the user actually pressed Stop is the only way
                 // to measure the wind-down tail afterwards: without it, "it carried
@@ -461,35 +467,48 @@ public class ClaudeAiProcessManager extends AiProcessManager {
                 // wind-down, and the agent's own log gives no click time to compare
                 // against.
                 if (PluginSettings.isDebugJson()) {
-                    LOG.log(Level.INFO, "Claude interrupt: user pressed Stop, cancelling turn (session={0}, connected=true)",
-                            sessionId);
+                    LOG.log(Level.INFO, "Claude interrupt: user pressed Stop, cancelling turn (session={0}, connected={1})",
+                            new Object[]{sessionId, s != null});
                 }
-                s.sendRawLine(interruptLine);
-                if (PluginSettings.isDebugJson()) {
-                    LOG.log(Level.INFO, "Claude interrupt: control_request(interrupt) sent (session={0})", sessionId);
+                if (s != null) {
+                    s.sendRawLine(GSON.toJson(buildInterruptRequest()));
+                    if (PluginSettings.isDebugJson()) {
+                        LOG.log(Level.INFO, "Claude interrupt: control_request(interrupt) sent (session={0})", sessionId);
+                    }
                 }
+                // Fired whether or not anything could be sent — see the note at the top of this method.
                 listener.onAiProcessEvent(new StatusEvent(StatusEventTypeEnum.STOPPED, StatusMessageUtil.formatStopped()));
-                Thread watchdog = new Thread(() -> {
-                    try {
-                        Thread.sleep(cancelWatchdogMillis);
-                    }
-                    catch (InterruptedException e) {
-                        Thread.currentThread().interrupt();
-                        return;
-                    }
-                    synchronized (ClaudeAiProcessManager.this) {
-                        if (!awaitingCancelResult || persistentSession != s) {
-                            return;
-                        }
-                        persistentSession = null;
-                        awaitingCancelResult = false;
-                    }
-                    s.close();
-                }, "ai-cancel-watchdog");
-                watchdog.setDaemon(true);
-                watchdog.start();
+                if (s != null) {
+                    startCancelWatchdog(s);
+                }
             }
         }
+    }
+
+    /**
+     * Force-closes the session if the CLI never answers the interrupt. Started only when an interrupt was actually
+     * sent: with no session there is no reply to wait for, and the capture-compare below could never match.
+     */
+    private void startCancelWatchdog(ClaudePersistentSession s) {
+        Thread watchdog = new Thread(() -> {
+            try {
+                Thread.sleep(cancelWatchdogMillis);
+            }
+            catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                return;
+            }
+            synchronized (ClaudeAiProcessManager.this) {
+                if (!awaitingCancelResult || persistentSession != s) {
+                    return;
+                }
+                persistentSession = null;
+                awaitingCancelResult = false;
+            }
+            s.close();
+        }, "ai-cancel-watchdog");
+        watchdog.setDaemon(true);
+        watchdog.start();
     }
 
     @Override
@@ -530,10 +549,30 @@ public class ClaudeAiProcessManager extends AiProcessManager {
         firstMessage = true;
         recentStderr.clear();
         launchedProjectDirs = Set.of();
+        launchedModel = null;
         launchCount = 0;
     }
 
+    /**
+     * Drops the CLI session so the next turn relaunches under the newly selected model.
+     *
+     * <p>
+     * Refuses while a turn is in flight. Without this guard the method nulls {@code persistentSession} and kills the
+     * process while {@code processing} stays true — and it does so silently, clearing no state and firing no event.
+     * {@link #interrupt} checks the session before it checks {@code processing}, so from that moment Stop is a no-op
+     * and the chat input never re-enables; the user's only escape is closing the tab. GithubCopilotProcessManager has
+     * always carried this guard. Deferring costs nothing: {@link #ensureSession} compares {@code launchedModel} against
+     * the current model and relaunches at the start of the next turn, where no turn can be orphaned.
+     */
     public synchronized void recycleForModelChange() {
+        if (!running || processing) {
+            if (PluginSettings.isDebugJson()) {
+                LOG.log(Level.INFO, "Claude recycleForModelChange: DEFERRED to next turn "
+                        + "(running={0}, turnInFlight={1}, session={2})",
+                        new Object[]{running, processing, sessionId});
+            }
+            return;
+        }
         ClaudePersistentSession s = persistentSession;
         persistentSession = null;
         if (s != null) {
