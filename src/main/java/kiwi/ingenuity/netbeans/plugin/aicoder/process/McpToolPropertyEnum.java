@@ -75,6 +75,10 @@ public enum McpToolPropertyEnum {
      */
     END_LINE("endLine"),
     /**
+     * Directory below which to search for files.
+     */
+    DIRECTORY_PATH("directoryPath"),
+    /**
      * Whether a message requires a reply.
      */
     EXPECTS_REPLY("expectsReply"),

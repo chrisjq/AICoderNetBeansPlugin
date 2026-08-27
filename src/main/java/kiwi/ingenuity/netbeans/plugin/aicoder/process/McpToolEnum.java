@@ -64,6 +64,7 @@ public enum McpToolEnum {
     CHANGE_METHOD_SIGNATURE("ChangeMethodSignature"),
     // SEARCH
     SEARCH_IN_FILES("SearchInFiles"),
+    FIND_FILE("FindFile"),
     FILTER_FILE_CONTENT("FilterFileContent"),
     SEARCH_TYPES("SearchTypes"),
     SEARCH_SYMBOLS("SearchSymbols"),

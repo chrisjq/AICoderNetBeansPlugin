@@ -59,6 +59,7 @@ import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.refactor.MoveCla
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.refactor.RenameSymbolTool;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.search.FilterFileContentTool;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.search.FindDeclarationTool;
+import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.search.FindFileTool;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.search.FindImplementationsTool;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.search.FindUsagesTool;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.search.SearchInFilesTool;
@@ -145,6 +146,7 @@ public final class ToolHandlerFactory {
         map.put(McpToolEnum.INLINE_VARIABLE, new InlineVariableTool());
         map.put(McpToolEnum.CHANGE_METHOD_SIGNATURE, new ChangeMethodSignatureTool());
         map.put(McpToolEnum.SEARCH_IN_FILES, new SearchInFilesTool());
+        map.put(McpToolEnum.FIND_FILE, new FindFileTool(server));
         map.put(McpToolEnum.FILTER_FILE_CONTENT, new FilterFileContentTool(server));
         map.put(McpToolEnum.SEARCH_TYPES, new SearchTypesTool());
         map.put(McpToolEnum.SEARCH_SYMBOLS, new SearchSymbolsTool());

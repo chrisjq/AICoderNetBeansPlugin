@@ -25,6 +25,8 @@ import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.files.ApplyEditT
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.files.WriteFileTool;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.search.FilterFileContentParamEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.search.FilterFileContentTool;
+import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.search.FindFileParamEnum;
+import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.search.FindFileTool;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.system.CopyFileParamEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.system.CopyFileTool;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.system.DeleteFileParamEnum;
@@ -109,6 +111,15 @@ class SessionHistoryFileProtectionTest {
         JsonObject o = new JsonObject();
         o.addProperty(FilterFileContentParamEnum.FILE_PATH.key(), historyFile.toString());
         o.addProperty(FilterFileContentParamEnum.PATTERN.key(), "messages");
+        String result = tool.handle(new ToolRequestArguments(o), new FakeSession(sessionId));
+        assertTrue(result.startsWith("Access denied"), result);
+    }
+
+    @Test
+    void findFile_deniesProtectedDirectory() throws Exception {
+        FindFileTool tool = new FindFileTool(server);
+        JsonObject o = new JsonObject();
+        o.addProperty(FindFileParamEnum.DIRECTORY_PATH.key(), historyFile.getParent().toString());
         String result = tool.handle(new ToolRequestArguments(o), new FakeSession(sessionId));
         assertTrue(result.startsWith("Access denied"), result);
     }
