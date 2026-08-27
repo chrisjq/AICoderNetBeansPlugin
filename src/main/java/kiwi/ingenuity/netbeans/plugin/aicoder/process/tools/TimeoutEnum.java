@@ -3,6 +3,16 @@ package kiwi.ingenuity.netbeans.plugin.aicoder.process.tools;
 import java.util.Arrays;
 
 /**
+ * <b>Every duration in the plugin belongs here</b>, unless it is domain-specific — that is, owned by one AI backend,
+ * which keeps its own enum ({@code OpenCodeTimeoutEnum}, {@code GrokTimeoutEnum}, {@code CodexTimeoutEnum}). There is
+ * no other exemption. UI delays, poll intervals and animation timings are durations like any other and live here too:
+ * a literal in a {@code new Timer(...)} call is a magic number wherever it appears, and putting it here is what makes
+ * every timing in the system findable and tunable from one place.
+ * <p>
+ * A UI timing does NOT need to be kept out to protect {@link #MUTATION_LOCK_WAIT_MILLIS} — that calculation filters on
+ * {@link Kind#OPERATION_OR_WAIT} alone, so any other {@link Kind} is already excluded structurally. Choosing the right
+ * Kind is the whole mechanism; keeping a value out of this enum is not.
+ * <p>
  * Shared durations for user-facing tools and their supporting services. Lock lifetime and lock acquisition wait remain
  * distinct: lifetime releases abandoned locks, while a wait only bounds contention for a live holder. External I/O
  * timeouts (HTTP, database) are a separate {@link Kind#EXTERNAL_IO} category, deliberately excluded from
@@ -45,6 +55,35 @@ public enum TimeoutEnum {
      */
     TEMP_FILE_MAX_AGE_MILLIS(14_400_000L, Kind.LOCK_LIFETIME),
     TEMP_FILE_SWEEP_INTERVAL_MILLIS(60_000L, Kind.BACKGROUND_INTERVAL),
+    /**
+     * Delay before re-stating a file the user has just accepted an AI diff for, so the IDE picks up the new bytes.
+     * The write itself has already completed by then; this only defers the refresh briefly.
+     * <p>
+     * The original choice of 600 ms was an undocumented literal at the call site and no rationale was recorded, so
+     * treat it as "short enough to be imperceptible, long enough to land after the accept settles" rather than as a
+     * tuned value.
+     */
+    ACCEPTED_DIFF_REFRESH_DELAY_MILLIS(600L, Kind.UI_FEEDBACK),
+    /**
+     * Tick interval for the session clock in the info bar. One second because the clock renders whole seconds —
+     * shorter repaints without changing the text, longer drops digits.
+     */
+    CLOCK_TICK_MILLIS(1_000L, Kind.UI_FEEDBACK),
+    /**
+     * How long a code block's copy button shows its confirmation tick before reverting to the copy glyph. Long enough
+     * to register, short enough to be back to normal before a second copy.
+     */
+    COPY_FEEDBACK_RESET_MILLIS(1_200L, Kind.UI_FEEDBACK),
+    /**
+     * Duration of the tab status dot's flash each time AI output arrives mid-turn. Short enough that continuous
+     * streaming reads as a steady pulse rather than a colour change.
+     */
+    THINKING_FLASH_MILLIS(250L, Kind.UI_FEEDBACK),
+    /**
+     * Poll interval while waiting for the conversation view's layout to stop changing after new content, before
+     * scrolling to the end. Streaming resizes the panel repeatedly; this samples until height stabilises.
+     */
+    SCROLL_SETTLE_POLL_MILLIS(30L, Kind.UI_FEEDBACK),
     DATABASE_QUERY_TIMEOUT_MILLIS(300_000L, Kind.EXTERNAL_IO),
     OPENAI_HTTP_REQUEST_TIMEOUT_MILLIS(300_000L, Kind.EXTERNAL_IO),
     OPENAI_HTTP_CONNECT_TIMEOUT_MILLIS(10_000L, Kind.EXTERNAL_IO),
@@ -111,6 +150,12 @@ public enum TimeoutEnum {
         /**
          * Bounds a call to another process or machine (HTTP, database). Never a mutation lock.
          */
-        EXTERNAL_IO
+        EXTERNAL_IO,
+        /**
+         * A purely presentational delay on the EDT — an animation pulse, a label reverting, a clock tick, a settle
+         * poll. Bounds nothing and blocks nothing; changing one can only alter how the UI looks. Excluded from
+         * {@link #MUTATION_LOCK_WAIT_MILLIS} like every non-{@link #OPERATION_OR_WAIT} kind.
+         */
+        UI_FEEDBACK
     }
 }

@@ -439,6 +439,9 @@ public class RefactoringProvider {
                 try (OutputStream out = newFo.getOutputStream()) {
                     out.write(content.getBytes(resolveCharset(newFo)));
                 }
+                // For consistency with the other two write paths below. NetBeans performed this write itself, so its
+                // cached size should already be right — this is not a known defect, just one less special case.
+                FileUtils.refreshAfterWrite(newFo);
                 GitProvider.refreshVcsStatus(filePath);
                 return "File created and saved";
             }
@@ -473,7 +476,7 @@ public class RefactoringProvider {
         catch (IOException e) {
             return "Write error: " + e.getMessage();
         }
-        fo.refresh();
+        FileUtils.refreshAfterWrite(fo);
         GitProvider.refreshVcsStatus(filePath);
         return "File updated and saved" + flushNote(flush);
     }
@@ -500,6 +503,15 @@ public class RefactoringProvider {
         if (flush.error() != null) {
             return flush.error();
         }
+        // Observed 2026-08-27: a 282-line/10828-byte file written by a peer session was seen by NetBeans as
+        // 120 lines/4334 bytes. Anchors past line 120 were rejected as "not found"; an anchor before it applied,
+        // and the write below persisted the truncated read — cutting the file to 119 lines.
+        //
+        // NOT COVERED BY A TEST, deliberately. A unit test against a temp file passes either way: the headless
+        // harness has no live MasterFileSystem to hold a stale cache, so the defect cannot be reproduced there. A
+        // test was written, observed to pass under revert, and deleted rather than kept as false assurance. Verify
+        // manually: edit near the end of a file the IDE never observed (e.g. one a peer session created).
+        FileUtils.refreshBeforeRead(fo);
         // Resolved once and reused for every decode/encode below — the initial read,
         // the staleness re-check, and the final write must all agree, or oldString's
         // byte-for-byte match against what was read either fails or matches the wrong
@@ -518,6 +530,9 @@ public class RefactoringProvider {
         }
         String updated = content.substring(0, idx) + replacement + content.substring(idx + oldString.length());
         try {
+            // Refresh here too: this guard exists to catch the file moving under us between match and write, and it
+            // cannot do that if it re-reads the same cache the match already used.
+            FileUtils.refreshBeforeRead(fo);
             String current = new String(fo.asBytes(), charset);
             if (!current.equals(content)) {
                 return "Edit refused: file changed after approval; please retry";
@@ -539,7 +554,7 @@ public class RefactoringProvider {
         catch (IOException e) {
             return "Edit error: " + e.getMessage();
         }
-        fo.refresh();
+        FileUtils.refreshAfterWrite(fo);
         GitProvider.refreshVcsStatus(filePath);
         return "File updated and saved" + flushNote(flush);
     }
@@ -1067,6 +1082,11 @@ public class RefactoringProvider {
             return null;
         }
         // Refresh so NB re-validates any FileObjects marked [invalid] after refactoring.
+        //
+        // Note this does NOT give a fresh view of file CONTENT: filePath arrives via the /share symlink while
+        // resolveByFile looks the object up under the canonical root, so this refreshes a different filesystem
+        // location than the FileObject returned. Content reads must call FileUtils.refreshBeforeRead on the resolved
+        // object — see applyEdit.
         FileUtil.refreshFor(f.getParentFile(), f);
         return FileUtils.resolveByFile(f);
     }

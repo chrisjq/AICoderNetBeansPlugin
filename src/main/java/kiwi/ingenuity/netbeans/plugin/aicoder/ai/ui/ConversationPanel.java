@@ -23,6 +23,7 @@ import kiwi.ingenuity.netbeans.plugin.aicoder.PluginSettings;
 import kiwi.ingenuity.netbeans.plugin.aicoder.PluginSettingsKeyEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.AiMessage;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.events.AskUserQuestionEvent;
+import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.TimeoutEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.events.ConfirmEvent;
 import org.openide.util.NbPreferences;
 
@@ -39,7 +40,7 @@ public class ConversationPanel extends JScrollPane {
      * "scroll to the bottom" cannot be done in a fixed number of them — it has to watch the scrollbar maximum until it
      * stops growing.
      */
-    private static final int SETTLE_POLL_MILLIS = 30;
+    private static final int SETTLE_POLL_MILLIS = (int) TimeoutEnum.SCROLL_SETTLE_POLL_MILLIS.millis();
     private static final int SETTLE_STABLE_TICKS = 5;
     /**
      * Hard stop, ~1.2s. Without it the poll's only exit is convergence, so a maximum that oscillated rather than

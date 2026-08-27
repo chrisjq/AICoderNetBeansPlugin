@@ -19,6 +19,7 @@ import javax.swing.JSeparator;
 import javax.swing.SwingConstants;
 import javax.swing.Timer;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.ui.events.AiInfoBarListener;
+import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.TimeoutEnum;
 
 public class AiInfoBar extends JPanel {
 
@@ -112,7 +113,7 @@ public class AiInfoBar extends JPanel {
 
         add(rightPanel, BorderLayout.EAST);
 
-        clockTimer = new Timer(1000, e -> updateClock());
+        clockTimer = new Timer((int) TimeoutEnum.CLOCK_TICK_MILLIS.millis(), e -> updateClock());
         clockTimer.setCoalesce(true);
     }
 

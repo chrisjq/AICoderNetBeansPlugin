@@ -38,6 +38,7 @@ import javax.swing.text.DefaultCaret;
 import javax.swing.text.JTextComponent;
 import kiwi.ingenuity.netbeans.plugin.aicoder.PluginSettings;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.AiMessage;
+import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.TimeoutEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.utils.BrowserUtil;
 import org.commonmark.ext.gfm.strikethrough.Strikethrough;
 import org.commonmark.ext.gfm.strikethrough.StrikethroughExtension;
@@ -970,7 +971,8 @@ public class MessagePanel extends JPanel {
             Toolkit.getDefaultToolkit().getSystemClipboard()
                     .setContents(new StringSelection(codeText), null);
             copyBtn.setText("✓");
-            Timer t = new Timer(1200, ev -> copyBtn.setText("⎘"));
+            Timer t = new Timer((int) TimeoutEnum.COPY_FEEDBACK_RESET_MILLIS.millis(),
+                    ev -> copyBtn.setText("⎘"));
             t.setRepeats(false);
             t.start();
         });

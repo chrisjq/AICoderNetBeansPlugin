@@ -185,12 +185,12 @@ final class OpenCodeMcpTimeoutPinner {
 
     /**
      * Reads the given global config file, pins the timeout into its text and writes it back atomically; a missing file
-     * is created as clean JSON. The value is {@link TimeoutEnum#MUTATION_LOCK_WAIT_MILLIS} — the shared ceiling every
-     * mutation-lock handler must finish inside — expressed in milliseconds, which is the unit OpenCode's schema
-     * defines.
+     * is created as clean JSON. The value comes from {@link OpenCodeTimeoutEnum#MCP_TOOL_TIMEOUT_MILLIS}, which
+     * derives from {@link TimeoutEnum#MUTATION_LOCK_WAIT_MILLIS} — the shared ceiling every mutation-lock handler
+     * must finish inside — expressed in milliseconds, which is the unit OpenCode's schema defines.
      */
     static void applyMcpTimeoutToFile(Path configFile) throws IOException {
-        long timeoutMillis = TimeoutEnum.MUTATION_LOCK_WAIT_MILLIS;
+        long timeoutMillis = OpenCodeTimeoutEnum.MCP_TOOL_TIMEOUT_MILLIS.millis();
         boolean existed = Files.isRegularFile(configFile);
         String original = existed ? Files.readString(configFile, StandardCharsets.UTF_8) : "{}";
         McpTimeoutPinResult result = pinMcpTimeout(original, timeoutMillis);

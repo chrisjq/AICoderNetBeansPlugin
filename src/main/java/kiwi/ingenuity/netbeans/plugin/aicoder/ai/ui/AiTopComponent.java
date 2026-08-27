@@ -77,6 +77,7 @@ import kiwi.ingenuity.netbeans.plugin.aicoder.process.server.McpHookServer;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.TempFileRegistry;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.TimeoutEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.TmpMarkerExpander;
+import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.providers.netbeans.FileUtils;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.providers.netbeans.RefactoringProvider;
 import kiwi.ingenuity.netbeans.plugin.aicoder.serialization.HistoryPersistenceManager;
 import kiwi.ingenuity.netbeans.plugin.aicoder.serialization.HistoryPersistenceManager.LoadedHistory;
@@ -86,7 +87,6 @@ import kiwi.ingenuity.netbeans.plugin.aicoder.utils.ProjectPathUtil;
 import org.netbeans.api.project.Project;
 import org.netbeans.api.project.ui.OpenProjects;
 import org.openide.filesystems.FileObject;
-import org.openide.filesystems.FileUtil;
 import org.openide.util.RequestProcessor;
 import org.openide.windows.TopComponent;
 import org.openide.windows.WindowManager;
@@ -140,7 +140,7 @@ public final class AiTopComponent extends TopComponent implements AiProcessEvent
     /**
      * Duration of the "AI output received" flash pulse, in milliseconds.
      */
-    private static final int THINKING_FLASH_MS = 250;
+    private static final int THINKING_FLASH_MS = (int) TimeoutEnum.THINKING_FLASH_MILLIS.millis();
 
     // Height (px) of the resizable input region below the infobar — used as both
     // its minimum and its initial size, so the window always opens at the
@@ -1814,6 +1814,10 @@ public final class AiTopComponent extends TopComponent implements AiProcessEvent
                 openDiffs.remove(diff);
                 try {
                     Files.writeString(Path.of(fp), original, RefactoringProvider.resolveCharset(fp));
+                    // This write bypasses NetBeans, so its cached copy still holds the edit the user just rejected.
+                    // Without the refresh the editor can keep showing the rejected text, and worse, the next
+                    // ApplyEdit matches against that stale copy and writes it back — silently undoing the revert.
+                    FileUtils.refreshAfterWrite(fp);
                     LOG.log(Level.INFO, "Reverted {0} after user rejected AI''s edit", fp);
                 }
                 catch (IOException e) {
@@ -1962,16 +1966,8 @@ public final class AiTopComponent extends TopComponent implements AiProcessEvent
                     pe.response().complete(PermissionDecision.allowed());
                     clearPendingDiffAndRefreshInput();
                     conversationPanel.addSystemMessage(NotificationUtil.formatFileAcceptedTool(pe.toolName(), shortPath(fp)));
-                    new Timer(600, ev -> {
-                        try {
-                            FileObject fo = FileUtil.toFileObject(new File(fp));
-                            if (fo != null) {
-                                fo.refresh();
-                            }
-                        }
-                        catch (Exception ignored) {
-                        }
-                    }) {
+                    new Timer((int) TimeoutEnum.ACCEPTED_DIFF_REFRESH_DELAY_MILLIS.millis(),
+                            ev -> FileUtils.refreshAfterWrite(fp)) {
                         {
                             setRepeats(false);
                             start();
