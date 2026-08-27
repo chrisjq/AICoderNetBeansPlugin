@@ -9,8 +9,10 @@ import java.nio.file.Path;
 import java.nio.file.PathMatcher;
 import java.util.ArrayList;
 import java.util.EnumSet;
+import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.logging.Level;
@@ -19,12 +21,15 @@ import java.util.regex.Pattern;
 import java.util.regex.PatternSyntaxException;
 import javax.lang.model.element.Element;
 import javax.lang.model.element.TypeElement;
+import kiwi.ingenuity.netbeans.plugin.aicoder.process.McpToolEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.McpToolPropertyEnum;
 import org.netbeans.api.java.classpath.ClassPath;
 import org.netbeans.api.java.source.ClassIndex;
+import org.netbeans.api.java.source.ClasspathInfo;
 import org.netbeans.api.java.source.ElementHandle;
 import org.netbeans.api.java.source.JavaSource;
 import org.netbeans.api.java.source.SourceUtils;
+import org.netbeans.api.project.FileOwnerQuery;
 import org.netbeans.api.project.Project;
 import org.netbeans.api.project.ProjectUtils;
 import org.netbeans.api.project.SourceGroup;
@@ -68,11 +73,17 @@ public class SearchProvider {
             if (fo == null) {
                 return "File not found: " + filePath;
             }
-            ClassPath cp = ClassPath.getClassPath(fo, ClassPath.SOURCE);
-            if (cp == null) {
-                return "Cannot resolve source classpath for: " + filePath;
+            List<FileObject> projectRoots = owningProjectSourceRoots(fo);
+            if (!projectRoots.isEmpty()) {
+                roots = projectRoots;
             }
-            roots = List.of(cp.getRoots());
+            else {
+                ClassPath cp = ClassPath.getClassPath(fo, ClassPath.SOURCE);
+                if (cp == null) {
+                    return "Cannot resolve source classpath for: " + filePath;
+                }
+                roots = List.of(cp.getRoots());
+            }
         }
         else {
             roots = openProjectSourceRoots();
@@ -148,9 +159,6 @@ public class SearchProvider {
     }
 
     public static String searchTypes(String filePath, String name, String kind, boolean includeDeps) {
-        if (filePath == null || filePath.isBlank()) {
-            return searchAcrossOpenProjects(name, kind, includeDeps, true);
-        }
         if (name == null || name.isBlank()) {
             return "name is required";
         }
@@ -158,55 +166,65 @@ public class SearchProvider {
         if (invalidPattern != null) {
             return invalidPattern;
         }
-        FileObject fo = resolveFileObject(filePath);
-        if (fo == null) {
-            return filePath != null && !filePath.isBlank()
-                    ? "File not found: " + filePath : "No projects open";
-        }
-        JavaSource js = JavaSource.forFileObject(fo);
-        if (js == null) {
-            return "Not a Java source file: " + filePath;
+        SearchAnchors anchors = resolveSearchAnchors(filePath);
+        if (anchors.error() != null) {
+            return anchors.error();
         }
 
         Set<ClassIndex.SearchScope> scopes = includeDeps
                 ? EnumSet.of(ClassIndex.SearchScope.SOURCE, ClassIndex.SearchScope.DEPENDENCIES)
                 : EnumSet.of(ClassIndex.SearchScope.SOURCE);
 
-        ClassIndex ci = js.getClasspathInfo().getClassIndex();
-        Set<ElementHandle<TypeElement>> results = ci.getDeclaredTypes(name, toNameKind(kind), scopes);
-        if (results == null || results.isEmpty()) {
+        // Keyed by qualified name so a type reachable from more than one root is counted and printed ONCE. Every root
+        // resolves the same dependency jars, so without this every dependency hit appeared once per root: a five-type
+        // answer was printed as ten rows under two separate "Found 5" headers. Project source types never duplicated,
+        // which is why only includeDeps=true showed it.
+        Map<String, TypeHit> hits = new LinkedHashMap<>();
+        for (FileObject anchor : anchors.anchors()) {
+            JavaSource js = JavaSource.forFileObject(anchor);
+            if (js == null) {
+                continue;
+            }
+            ClasspathInfo classpath = js.getClasspathInfo();
+            Set<ElementHandle<TypeElement>> found
+                    = classpath.getClassIndex().getDeclaredTypes(name, toNameKind(kind), scopes);
+            if (found == null) {
+                continue;
+            }
+            for (ElementHandle<TypeElement> handle : found) {
+                hits.putIfAbsent(handle.getQualifiedName(), new TypeHit(handle, classpath));
+            }
+        }
+        if (hits.isEmpty()) {
             return "No types found matching: " + name;
         }
 
-        List<ElementHandle<TypeElement>> sorted = results.stream()
-                .sorted((a, b) -> a.getQualifiedName().compareTo(b.getQualifiedName()))
-                .limit(MAX_TYPE_HITS)
+        List<TypeHit> sorted = hits.values().stream()
+                .sorted((a, b) -> a.handle().getQualifiedName().compareTo(b.handle().getQualifiedName()))
                 .toList();
 
-        // Report the true total, not the capped one. Saying "Found 100 (showing
-        // first 100)" tells the caller it was truncated but not by how much, so
-        // it cannot judge whether to narrow the query or accept the sample —
-        // 101 results and 10,000 read identically. SearchInFiles already counts
-        // every match and caps only what it prints; this now matches.
-        StringBuilder sb = new StringBuilder("Found ").append(results.size())
-                .append(" type(s)");
-        if (results.size() > MAX_TYPE_HITS) {
+        // ONE header for the whole answer. Results used to be produced per root and concatenated, so the output carried
+        // several "Found N" lines and no aggregate — 2 in one block and 5 in another when the true answer was 7. A
+        // caller parsing the first total, which is the obvious thing to do, read 2.
+        //
+        // Report the true total, not the capped one. Saying "Found 100 (showing first 100)" tells the caller it was
+        // truncated but not by how much, so it cannot judge whether to narrow the query or accept the sample — 101
+        // results and 10,000 read identically.
+        StringBuilder sb = new StringBuilder("Found ").append(sorted.size()).append(" type(s)");
+        if (sorted.size() > MAX_TYPE_HITS) {
             sb.append(" (showing first ").append(MAX_TYPE_HITS).append(")");
         }
         sb.append(":\n\n");
-        for (ElementHandle<TypeElement> h : sorted) {
-            FileObject src = SourceUtils.getFile(h, js.getClasspathInfo());
+        sorted.stream().limit(MAX_TYPE_HITS).forEach(hit -> {
+            FileObject src = SourceUtils.getFile(hit.handle(), hit.classpath());
             File f = src != null ? FileUtil.toFile(src) : null;
-            sb.append(h.getQualifiedName()).append("  →  ")
+            sb.append(hit.handle().getQualifiedName()).append("  →  ")
                     .append(f != null ? f.getPath() : "[binary]").append("\n");
-        }
+        });
         return sb.toString();
     }
 
     public static String searchSymbols(String filePath, String name, String kind, boolean includeDeps) {
-        if (filePath == null || filePath.isBlank()) {
-            return searchAcrossOpenProjects(name, kind, includeDeps, false);
-        }
         if (name == null || name.isBlank()) {
             return "name is required";
         }
@@ -214,57 +232,62 @@ public class SearchProvider {
         if (invalidPattern != null) {
             return invalidPattern;
         }
-        FileObject fo = resolveFileObject(filePath);
-        if (fo == null) {
-            return filePath != null && !filePath.isBlank()
-                    ? "File not found: " + filePath : "No projects open";
-        }
-        JavaSource js = JavaSource.forFileObject(fo);
-        if (js == null) {
-            return "Not a Java source file: " + filePath;
+        SearchAnchors anchors = resolveSearchAnchors(filePath);
+        if (anchors.error() != null) {
+            return anchors.error();
         }
 
         Set<ClassIndex.SearchScope> scopes = includeDeps
                 ? EnumSet.of(ClassIndex.SearchScope.SOURCE, ClassIndex.SearchScope.DEPENDENCIES)
                 : EnumSet.of(ClassIndex.SearchScope.SOURCE);
 
-        ClassIndex ci = js.getClasspathInfo().getClassIndex();
-        Iterable<ClassIndex.Symbols> results = ci.getDeclaredSymbols(name, toNameKind(kind), scopes);
-        if (results == null) {
+        // De-duplicated by enclosing type for the same reason as searchTypes: dependencies resolve from every root, so
+        // the identical block was previously emitted once per root under its own "Found N" header.
+        Map<String, SymbolHit> hits = new LinkedHashMap<>();
+        for (FileObject anchor : anchors.anchors()) {
+            JavaSource js = JavaSource.forFileObject(anchor);
+            if (js == null) {
+                continue;
+            }
+            ClasspathInfo classpath = js.getClasspathInfo();
+            Iterable<ClassIndex.Symbols> found
+                    = classpath.getClassIndex().getDeclaredSymbols(name, toNameKind(kind), scopes);
+            if (found == null) {
+                continue;
+            }
+            for (ClassIndex.Symbols symbols : found) {
+                ElementHandle<TypeElement> enclosing = symbols.getEnclosingType();
+                hits.putIfAbsent(enclosing.getQualifiedName(),
+                        new SymbolHit(enclosing, List.copyOf(symbols.getSymbols()), classpath));
+            }
+        }
+        if (hits.isEmpty()) {
             return "No symbols found matching: " + name;
         }
 
-        // Keep counting past the display cap so the total is the real one. The
-        // loop used to break at MAX_TYPE_HITS, which meant the answer was always
-        // "Found 100 ... showing first 100" — truncation was visible but its
-        // scale was not, and the caller could not tell 101 matches from 10,000.
-        // Only the formatting is capped; resolving the source file is the
-        // expensive part and still happens only for rows that are printed.
+        // Count every hit, cap only what is printed, and emit ONE total for the whole answer. Resolving the source file
+        // is the expensive part and still happens only for rows that are printed.
+        List<SymbolHit> sorted = hits.values().stream()
+                .sorted((a, b) -> a.enclosing().getQualifiedName().compareTo(b.enclosing().getQualifiedName()))
+                .toList();
         StringBuilder sb = new StringBuilder();
-        int shown = 0;
-        int total = 0;
-        for (ClassIndex.Symbols sym : results) {
-            total++;
-            if (shown >= MAX_TYPE_HITS) {
-                continue;
-            }
-            ElementHandle<TypeElement> enclosing = sym.getEnclosingType();
-            FileObject src = SourceUtils.getFile(enclosing, js.getClasspathInfo());
+        sorted.stream().limit(MAX_TYPE_HITS).forEach(hit -> {
+            FileObject src = SourceUtils.getFile(hit.enclosing(), hit.classpath());
             File f = src != null ? FileUtil.toFile(src) : null;
-            sb.append(enclosing.getQualifiedName()).append(": [")
-                    .append(String.join(", ", sym.getSymbols())).append("]  →  ")
+            sb.append(hit.enclosing().getQualifiedName()).append(": [")
+                    .append(String.join(", ", hit.symbols())).append("]  →  ")
                     .append(f != null ? f.getPath() : "[binary]").append("\n");
-            shown++;
-        }
-        if (total == 0) {
-            return "No symbols found matching: " + name;
-        }
-        return "Found " + total + " type(s) with matching symbols"
-                + (total > MAX_TYPE_HITS ? " (showing first " + MAX_TYPE_HITS + ")" : "")
+        });
+        return "Found " + sorted.size() + " type(s) with matching symbols"
+                + (sorted.size() > MAX_TYPE_HITS ? " (showing first " + MAX_TYPE_HITS + ")" : "")
                 + ":\n\n" + sb;
     }
 
     public static String findDeclaration(String filePath, int line, int column) {
+        String missingPath = requireFilePathForLineLookup(filePath);
+        if (missingPath != null) {
+            return missingPath;
+        }
         FileObject fo = resolveFileObject(filePath);
         if (fo == null) {
             return filePath != null && !filePath.isBlank()
@@ -279,12 +302,21 @@ public class SearchProvider {
         try {
             js.runUserActionTask(ci -> {
                 ci.toPhase(JavaSource.Phase.RESOLVED);
-                int offset = JavaSourceUtils.lineOffset(ci, line, column);
-                if (offset < 0) {
+                if (JavaSourceUtils.lineStart(ci, line) < 0) {
                     result.set("Line " + line + " is out of range");
                     return;
                 }
-                Element element = JavaSourceUtils.elementAt(ci, offset);
+                // An explicit column is honoured exactly; column <= 1 means the caller did not specify one (the tool
+                // defaults it to 1), so find the line's first resolvable identifier rather than its first token.
+                int offset = column > 1
+                        ? JavaSourceUtils.lineOffset(ci, line, column)
+                        : JavaSourceUtils.firstElementOffsetOnLine(ci, line);
+                if (offset < 0) {
+                    result.set("No Java element at line " + line);
+                    return;
+                }
+                Element method = column > 1 ? null : JavaSourceUtils.methodDeclaredOnLine(ci, line);
+                Element element = method != null ? method : JavaSourceUtils.elementAt(ci, offset);
                 if (element == null) {
                     result.set("No Java element at line " + line);
                     return;
@@ -354,6 +386,10 @@ public class SearchProvider {
     }
 
     public static String findImplementations(String filePath, int line) {
+        String missingPath = requireFilePathForLineLookup(filePath);
+        if (missingPath != null) {
+            return missingPath;
+        }
         FileObject fo = resolveFileObject(filePath);
         if (fo == null) {
             return filePath != null && !filePath.isBlank()
@@ -368,12 +404,7 @@ public class SearchProvider {
         try {
             js.runUserActionTask(ci -> {
                 ci.toPhase(JavaSource.Phase.RESOLVED);
-                int sp = JavaSourceUtils.lineStart(ci, line);
-                if (sp < 0) {
-                    return;
-                }
-                TreePath tp = JavaSourceUtils.enclosingClass(
-                        ci.getTreeUtilities().pathFor(sp));
+                TreePath tp = JavaSourceUtils.classAtLine(ci, line);
                 if (tp == null) {
                     return;
                 }
@@ -431,29 +462,36 @@ public class SearchProvider {
         }
     }
 
-    private static String searchAcrossOpenProjects(String name, String kind, boolean includeDeps,
-            boolean types) {
-        if (name == null || name.isBlank()) {
-            return "name is required";
+    /**
+     * Decides what a search covers.
+     * <p>
+     * With no {@code filePath} this is every open project's Java source roots — unchanged, and independently confirmed
+     * to work: a token occurring only in {@code src/main} is found from the default path.
+     * <p>
+     * With a {@code filePath} it is every source root of the project that OWNS that file, which is the fix. Previously
+     * the anchor file's own {@code ClasspathInfo} was used, meaning its single source root, so anchoring on a main file
+     * silently discarded every test type and vice versa — while the schema described the parameter as scoping to a
+     * project. Widening to the owning project keeps the parameter's real purpose, which is choosing ONE project when
+     * several are open, without dropping half of it.
+     */
+    private static SearchAnchors resolveSearchAnchors(String filePath) {
+        if (filePath == null || filePath.isBlank()) {
+            List<FileObject> anchors = javaAnchors(openProjectSourceRoots());
+            return anchors.isEmpty()
+                    ? new SearchAnchors("No projects open", List.of())
+                    : new SearchAnchors(null, anchors);
         }
-        List<String> results = new ArrayList<>();
-        for (FileObject root : openProjectSourceRoots()) {
-            FileObject anchor = findJavaSource(root);
-            if (anchor == null) {
-                continue;
-            }
-            String result = types
-                    ? searchTypes(anchor.getPath(), name, kind, includeDeps)
-                    : searchSymbols(anchor.getPath(), name, kind, includeDeps);
-            if (!result.startsWith("No types found") && !result.startsWith("No symbols found")) {
-                results.add(result);
-            }
+        FileObject fo = FileUtils.resolveByPath(filePath);
+        if (fo == null) {
+            return new SearchAnchors("File not found: " + filePath, List.of());
         }
-        if (results.isEmpty()) {
-            return types ? "No types found matching: " + name
-                    : "No symbols found matching: " + name;
+        if (JavaSource.forFileObject(fo) == null) {
+            return new SearchAnchors("Not a Java source file: " + filePath, List.of());
         }
-        return String.join("\n", results);
+        // Fall back to the supplied file itself when the project's roots cannot be resolved: that is exactly the old
+        // narrower behaviour, which is worse but never wrong-by-crash.
+        List<FileObject> anchors = javaAnchors(owningProjectSourceRoots(fo));
+        return new SearchAnchors(null, anchors.isEmpty() ? List.of(fo) : anchors);
     }
 
     private static FileObject findJavaSource(FileObject folder) {
@@ -498,6 +536,60 @@ public class SearchProvider {
      * for: null" because the caller's own filePath was still null at that point. Searching the open projects is what
      * the caller asked for when they omitted a path.
      */
+    /**
+     * Every Java source root of the project that owns {@code fo}.
+     * <p>
+     * This is the fix for a silent-omission defect. An anchored search used to take
+     * {@code JavaSource.forFileObject(fo)} and query that ONE file's {@code ClasspathInfo}, which is its own source
+     * root — so anchoring on a {@code src/main} file dropped every {@code src/test} type, and anchoring on a test file
+     * dropped every main type, despite both being the same Maven project and the schema calling {@code filePath} "any
+     * source file in the target project". Nothing in the output said a root had been excluded. Two peers hit this
+     * independently on three different tools: 2 types instead of 7, and a main-only query returning 0 from a test
+     * anchor.
+     * <p>
+     * Widening to the owning project — rather than to every open project — is what keeps the parameter meaningful: its
+     * purpose is to pick ONE project when several are open.
+     * <p>
+     * {@code FileOwnerQuery.getOwner} is contained by {@code catch(Throwable)} for the same reason as
+     * {@code GitProvider.resolveRootForFile}: it throws
+     * {@code ExceptionInInitializerError}/{@code NoClassDefFoundError} — Errors, not Exceptions — when the IDE's
+     * ProjectManager Lookup is unavailable. Falling back to the file's own root then restores exactly the old
+     * behaviour, which is narrower than ideal but never wrong-by-crash.
+     */
+    private static List<FileObject> owningProjectSourceRoots(FileObject fo) {
+        try {
+            Project owner = FileOwnerQuery.getOwner(fo);
+            if (owner != null) {
+                List<FileObject> roots = new ArrayList<>();
+                for (SourceGroup group : ProjectUtils.getSources(owner).getSourceGroups("java")) {
+                    roots.add(group.getRootFolder());
+                }
+                if (!roots.isEmpty()) {
+                    return roots;
+                }
+            }
+        }
+        catch (Throwable t) {
+            LOG.log(Level.FINE, "Project owner lookup unavailable; anchoring the search on the file's own root", t);
+        }
+        return List.of();
+    }
+
+    /**
+     * One Java file per root, to anchor a {@code ClasspathInfo} query at each. A root with no Java source in it is
+     * skipped rather than failing the whole search.
+     */
+    private static List<FileObject> javaAnchors(List<FileObject> roots) {
+        List<FileObject> anchors = new ArrayList<>();
+        for (FileObject root : roots) {
+            FileObject anchor = findJavaSource(root);
+            if (anchor != null) {
+                anchors.add(anchor);
+            }
+        }
+        return anchors;
+    }
+
     private static List<FileObject> openProjectSourceRoots() {
         List<FileObject> roots = new ArrayList<>();
         for (Project project : OpenProjects.getDefault().getOpenProjects()) {
@@ -524,6 +616,27 @@ public class SearchProvider {
      * root: still a fallback, but a deterministic one that does not move while the user clicks around. Callers that
      * need a specific project should pass {@code filePath}.
      */
+    /**
+     * Refuses a line-based lookup that was given no file.
+     * <p>
+     * {@link #resolveFileObject} falls back to the first open project's SOURCE ROOT, which is a directory.
+     * {@code JavaSource.forFileObject} returns null for a directory, so the documented "omit filePath" fallback could
+     * never work for the two line-based tools: it reported {@code "Not a Java source file: null"}, quoting the null
+     * path back at the caller. Picking some arbitrary first Java file instead would be worse — a line number resolved
+     * against a file the caller never named produces a confident WRONG answer rather than an error. A line only means
+     * something relative to a specific file, so the honest contract is to require one.
+     * <p>
+     * {@code SearchTypes}/{@code SearchSymbols} never reach this: they route a null path to
+     * {@link #searchAcrossOpenProjects} first, where searching every root genuinely is meaningful.
+     */
+    private static String requireFilePathForLineLookup(String filePath) {
+        return filePath == null || filePath.isBlank()
+                ? McpToolPropertyEnum.FILE_PATH.key() + " is required — a line number can only be resolved against a "
+                + "specific file. Call " + McpToolEnum.GET_CURRENT_FILE.toolName()
+                + " if you want the file the user is looking at."
+                : null;
+    }
+
     private static FileObject resolveFileObject(String filePath) {
         if (filePath == null || filePath.isBlank()) {
             List<FileObject> roots = openProjectSourceRoots();
@@ -533,5 +646,24 @@ public class SearchProvider {
     }
 
     private SearchProvider() {
+    }
+
+    /**
+     * A type hit plus the classpath it was found through, which {@code SourceUtils.getFile} needs to resolve its source
+     * file. Once results are merged across roots the two can no longer be assumed to come from the same anchor.
+     */
+    private record TypeHit(ElementHandle<TypeElement> handle, ClasspathInfo classpath) {
+
+    }
+
+    private record SymbolHit(ElementHandle<TypeElement> enclosing, List<String> symbols, ClasspathInfo classpath) {
+
+    }
+
+    /**
+     * The set of files to anchor {@code ClasspathInfo} queries at, or the error to return instead.
+     */
+    private record SearchAnchors(String error, List<FileObject> anchors) {
+
     }
 }

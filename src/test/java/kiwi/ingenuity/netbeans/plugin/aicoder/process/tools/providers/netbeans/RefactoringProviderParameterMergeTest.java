@@ -1,8 +1,10 @@
 package kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.providers.netbeans;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertSame;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import org.junit.jupiter.api.Test;
 import org.netbeans.modules.refactoring.java.api.ChangeParametersRefactoring.ParameterInfo;
 
@@ -26,6 +28,57 @@ class RefactoringProviderParameterMergeTest {
     void nullRequested_returnsExistingUnchanged() {
         ParameterInfo[] ex = existing();
         assertSame(ex, RefactoringProvider.mergeParameterInfos(null, ex));
+    }
+
+    /**
+     * The guard in front of {@code setParameterInfo}. An out-of-range {@code originalIndex} has no existing parameter
+     * to resolve against, so it falls through the merge untouched and still has a null type. Handing that to NetBeans
+     * took the IDE down inside the refactoring — its transformer dereferences the type while rewriting call sites. It
+     * must be a readable error instead.
+     */
+    @Test
+    void outOfRangeOriginalIndexIsRefusedBeforeReachingNetBeans() {
+        ParameterInfo[] merged = RefactoringProvider.mergeParameterInfos(
+                new ParameterInfo[]{new ParameterInfo(99)}, existing());
+
+        String error = RefactoringProvider.validateParameterInfos(merged, existing().length);
+
+        assertNotNull(error, "an index the method does not have must be refused, not passed to NetBeans");
+        assertTrue(error.contains("99"), "the refusal must quote the offending index: " + error);
+        assertTrue(error.contains("parameters[0]"), "the refusal must say which entry was wrong: " + error);
+    }
+
+    @Test
+    void aMethodWithNoParametersRejectsAnyExistingIndex() {
+        ParameterInfo[] merged = RefactoringProvider.mergeParameterInfos(
+                new ParameterInfo[]{new ParameterInfo(0)}, new ParameterInfo[0]);
+
+        String error = RefactoringProvider.validateParameterInfos(merged, 0);
+
+        assertNotNull(error, "index 0 is out of range when the method declares nothing");
+        assertTrue(error.contains("-1"), "the message must point at the only valid option: " + error);
+    }
+
+    /**
+     * The negative control. Without this, the two assertions above would also pass if the guard refused EVERYTHING,
+     * which would break every legitimate signature change.
+     */
+    @Test
+    void fullyResolvedEntriesAreAllowedThrough() {
+        ParameterInfo[] merged = RefactoringProvider.mergeParameterInfos(
+                new ParameterInfo[]{new ParameterInfo(1, "renamed", null, null)}, existing());
+
+        assertNull(RefactoringProvider.validateParameterInfos(merged, existing().length),
+                "a partial entry the merge could resolve must be accepted");
+    }
+
+    @Test
+    void newParameterIsAllowedThrough() {
+        ParameterInfo[] merged = RefactoringProvider.mergeParameterInfos(
+                new ParameterInfo[]{new ParameterInfo(-1, "extra", "String", "\"\"")}, existing());
+
+        assertNull(RefactoringProvider.validateParameterInfos(merged, existing().length),
+                "originalIndex -1 is how a new parameter is declared and must be accepted");
     }
 
     /**

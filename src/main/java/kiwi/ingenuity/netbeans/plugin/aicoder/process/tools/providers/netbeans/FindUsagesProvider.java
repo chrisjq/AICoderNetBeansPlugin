@@ -4,7 +4,11 @@ import com.sun.source.util.TreePath;
 import java.io.File;
 import java.io.IOException;
 import java.nio.file.Files;
+import java.util.ArrayList;
 import java.util.Collection;
+import java.util.LinkedHashSet;
+import java.util.List;
+import java.util.Set;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.logging.Level;
 import java.util.logging.Logger;
@@ -113,22 +117,28 @@ public class FindUsagesProvider {
                     return "No usages found for " + target;
                 }
 
-                StringBuilder sb = new StringBuilder();
-                sb.append("Found ").append(elements.size()).append(" usage(s) of ")
-                        .append(target).append(":\n\n");
+                List<RawUsage> raw = new ArrayList<>();
                 for (RefactoringElement elem : elements) {
                     FileObject fo = elem.getParentFile();
                     File f = fo != null ? FileUtil.toFile(fo) : null;
                     String path = f != null ? f.getPath() : (fo != null ? fo.getPath() : "?");
                     PositionBounds pos = elem.getPosition();
-                    int line = (pos != null && fo != null)
-                            ? offsetToLine(fo, pos.getBegin().getOffset()) : 1;
+                    int offset = pos != null ? pos.getBegin().getOffset() : -1;
+                    int line = (pos != null && fo != null) ? offsetToLine(fo, offset) : 1;
                     String text = elem.getText();
                     if (text == null || text.isBlank()) {
                         text = elem.getDisplayText();
                     }
-                    sb.append(path).append(":").append(line)
-                            .append("  →  ").append(text != null ? text.strip() : "").append("\n");
+                    raw.add(new RawUsage(path, offset, line, text));
+                }
+                List<String> lines = dedupe(raw, memberName != null && !memberName.isBlank()
+                        ? memberName : normalizedName);
+
+                StringBuilder sb = new StringBuilder();
+                sb.append("Found ").append(lines.size()).append(" usage(s) of ")
+                        .append(target).append(":\n\n");
+                for (String line : lines) {
+                    sb.append(line).append("\n");
                 }
                 return sb.toString();
             }
@@ -140,6 +150,47 @@ public class FindUsagesProvider {
             String msg = e.getMessage();
             return "FindUsages error: " + (msg != null ? msg : e.getClass().getName());
         }
+    }
+
+    /**
+     * WhereUsedQuery's reference and subclass passes can report one occurrence at different offsets. When the target
+     * occurs only once in the rendered line, that rendered line is the stable occurrence identity; when it occurs more
+     * than once, retain offset identity so distinct same-line uses remain separate. Position-less entries stay unique.
+     */
+    static List<String> dedupe(List<RawUsage> raw, String targetName) {
+        Set<String> seenPositions = new LinkedHashSet<>();
+        List<String> lines = new ArrayList<>();
+        String simpleTarget = targetName == null ? "" : targetName.substring(targetName.lastIndexOf('.') + 1);
+        int index = 0;
+        for (RawUsage u : raw) {
+            String rendered = u.text != null ? u.text.strip() : "";
+            String key;
+            if (u.offset < 0) {
+                key = u.path + "#" + index + "#none";
+            }
+            else if (!simpleTarget.isBlank() && occurrenceCount(rendered, simpleTarget) == 1) {
+                key = u.path + "#" + u.line + "#" + rendered;
+            }
+            else {
+                key = u.path + "#" + u.offset;
+            }
+            index++;
+            if (!seenPositions.add(key)) {
+                continue;
+            }
+            lines.add(u.path + ":" + u.line + "  →  " + rendered);
+        }
+        return lines;
+    }
+
+    private static int occurrenceCount(String text, String target) {
+        int count = 0;
+        int index = 0;
+        while ((index = text.indexOf(target, index)) >= 0) {
+            count++;
+            index += target.length();
+        }
+        return count;
     }
 
     private static int offsetToLine(FileObject fo, int offset) {
@@ -165,6 +216,26 @@ public class FindUsagesProvider {
     }
 
     private FindUsagesProvider() {
+    }
+
+    /**
+     * One raw candidate usage before dedup — package-private so a test can drive {@link #dedupe} directly without a
+     * live JavaSource/RefactoringSession, which a plain JUnit run does not have (same nbplatform limitation as this
+     * package's other providers).
+     */
+    static final class RawUsage {
+
+        final String path;
+        final int offset;
+        final int line;
+        final String text;
+
+        RawUsage(String path, int offset, int line, String text) {
+            this.path = path;
+            this.offset = offset;
+            this.line = line;
+            this.text = text;
+        }
     }
 
 }

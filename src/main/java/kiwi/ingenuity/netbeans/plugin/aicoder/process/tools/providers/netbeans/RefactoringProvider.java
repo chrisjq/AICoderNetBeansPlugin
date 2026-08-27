@@ -327,7 +327,13 @@ public class RefactoringProvider {
         // When the caller omits parameters, preserve all existing params unchanged via ParameterInfo(i).
         // Partial entries (name-only / type-only updates) are resolved against the current
         // signature here, so they actually rename/retype instead of silently doing nothing.
-        r.setParameterInfo(mergeParameterInfos(parameters, existingParamInfos(fo, handle)));
+        ParameterInfo[] existing = existingParamInfos(fo, handle);
+        ParameterInfo[] merged = mergeParameterInfos(parameters, existing);
+        String parameterError = validateParameterInfos(merged, existing.length);
+        if (parameterError != null) {
+            return parameterError;
+        }
+        r.setParameterInfo(merged);
         if (methodName != null && !methodName.isBlank()) {
             r.setMethodName(methodName);
         }
@@ -884,6 +890,41 @@ public class RefactoringProvider {
             return "Error: " + e.getMessage();
         }
         return label + " applied";
+    }
+
+    /**
+     * Last check before the array is handed to {@code ChangeParametersRefactoring.setParameterInfo}, which is the point
+     * of no return: NetBeans' transformer dereferences each entry's type while rewriting call sites, so an entry whose
+     * type is still null takes the IDE down inside the refactoring rather than failing our call. See the note in
+     * {@link #existingParamInfos} — {@code ParameterInfo(index)} alone leaves the type null.
+     * <p>
+     * {@link #mergeParameterInfos} resolves an omitted name/type from the parameter at {@code originalIndex}, but it
+     * can only do that when the index actually points at one. An out-of-range index — {@code {"originalIndex": 99}}
+     * against a three-parameter method — falls through its merge branch untouched and arrives here still null-typed.
+     * That is a caller mistake, so it must come back as a readable error naming the offending entry, not as a crash and
+     * not as an internal error the caller cannot act on.
+     *
+     * @param merged the resolved entries about to be set
+     * @param existingCount how many parameters the method currently declares
+     * @return an error message to return to the caller, or null when the array is safe to hand over
+     */
+    static String validateParameterInfos(ParameterInfo[] merged, int existingCount) {
+        for (int i = 0; i < merged.length; i++) {
+            ParameterInfo p = merged[i];
+            int idx = p.getOriginalIndex();
+            if (idx < -1 || idx >= existingCount) {
+                String valid = existingCount == 0
+                        ? "the method has no parameters, so only -1 (a new parameter) is valid"
+                        : "valid values are 0.." + (existingCount - 1) + " to keep an existing parameter, or -1 for a new one";
+                return "Error: parameters[" + i + "]: originalIndex " + idx + " does not match this method, which declares "
+                        + existingCount + " parameter(s) — " + valid;
+            }
+            if (p.getType() == null || p.getType().isBlank()) {
+                return "Error: parameters[" + i + "]: type is required and could not be resolved from the existing "
+                        + "signature — supply type explicitly for this entry";
+            }
+        }
+        return null;
     }
 
     /**

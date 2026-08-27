@@ -88,6 +88,31 @@ class SearchProviderTest {
                 "a valid glob must not be refused: " + result);
     }
 
+    /**
+     * The two line-based tools documented a fallback that could not work. {@code resolveFileObject} falls back to the
+     * first open project's SOURCE ROOT — a directory — and {@code JavaSource.forFileObject} returns null for a
+     * directory, so omitting filePath produced {@code "Not a Java source file: null"}, quoting the null path back at
+     * the caller. A line number is only meaningful against a named file, so it is now refused explicitly.
+     */
+    @Test
+    void findDeclarationRefusesAMissingFilePathInsteadOfReportingANullPath() {
+        String result = SearchProvider.findDeclaration(null, 17, 5);
+
+        assertTrue(result.contains(McpToolPropertyEnum.FILE_PATH.key()),
+                "the refusal must name the parameter the caller has to supply: " + result);
+        assertFalse(result.contains("null"),
+                "the old failure quoted the literal null path back; that must not reappear: " + result);
+    }
+
+    @Test
+    void findImplementationsRefusesAMissingFilePathInsteadOfReportingANullPath() {
+        String result = SearchProvider.findImplementations("   ", 12);
+
+        assertTrue(result.contains(McpToolPropertyEnum.FILE_PATH.key()),
+                "blank is as unusable as null and must be refused the same way: " + result);
+        assertFalse(result.contains("null"), result);
+    }
+
     @Test
     void filePatternGlob_defaultJavaPattern_onlyMatchesJavaLeaves() {
         // Default filePattern when omitted is "*.java" (SearchProvider :72).
