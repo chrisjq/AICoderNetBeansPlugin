@@ -12,9 +12,7 @@ public class RunInspectTool extends AbstractActionTool {
     public RunInspectTool() {
         super(McpSectionEnum.UI_DIALOG,
                 McpToolEnum.RUN_INSPECT.toolName(),
-                "Opens the NetBeans Inspect dialog (Source > Inspect). "
-                + "Select 'All Analysers' configuration and 'All Open Projects' scope, "
-                + "then click Inspect to run static analysis across the entire codebase.",
+                "For interactive work with the user, opens NetBeans Source > Inspect for static analysis of all open projects (fire-and-forget; follow with " + McpToolEnum.GET_DIAGNOSTICS.toolName() + ").",
                 "" + McpToolEnum.RUN_INSPECT.toolName() + " -> INSTEAD OF manual code review - opens NetBeans static analysis for all open projects",
                 "" + McpToolEnum.RUN_INSPECT.toolName() + " - opens NetBeans static analysis for all open projects");
     }

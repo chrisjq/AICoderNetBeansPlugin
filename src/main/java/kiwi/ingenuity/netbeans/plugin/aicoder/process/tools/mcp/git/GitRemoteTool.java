@@ -31,11 +31,11 @@ public class GitRemoteTool implements McpToolInterface {
             return null;
         }
         if (options.contains(McpInstructionOptionEnum.ONLY_MCP_TOOL_ACCESS)) {
-            return "GitRemote - list, add, or remove git remotes. "
-                    + "Requires projectPath to select the target git repository or project root.";
+            return McpToolEnum.GIT_REMOTE.toolName() + " - list, add, or remove git remotes. "
+                    + "Requires " + GitCommonParamEnum.PROJECT_PATH.key() + " to select the target git repository or project root.";
         }
-        return "GitRemote -> INSTEAD OF Bash git remote - list, add, or remove git remotes. "
-                + "Requires projectPath to select the target git repository or project root.";
+        return McpToolEnum.GIT_REMOTE.toolName() + " -> INSTEAD OF Bash git remote - list, add, or remove git remotes. "
+                + "Requires " + GitCommonParamEnum.PROJECT_PATH.key() + " to select the target git repository or project root.";
     }
 
     @Override
@@ -43,9 +43,7 @@ public class GitRemoteTool implements McpToolInterface {
         JsonObject tool = new JsonObject();
         tool.addProperty(ToolSchemaKeyEnum.NAME.key(), McpToolEnum.GIT_REMOTE.toolName());
         tool.addProperty(ToolSchemaKeyEnum.DESCRIPTION.key(),
-                "Manages git remotes. Actions: " + GitRemoteActionEnum.actionList() + ". "
-                + "add adds a new remote; remove deletes one. "
-                + "Equivalent to: git remote [-v|add|remove] [name] [url]");
+                "Manages git remotes (Actions: " + GitRemoteActionEnum.actionList() + ").");
         JsonObject schema = new JsonObject();
         schema.addProperty(ToolSchemaKeyEnum.TYPE.key(), "object");
         JsonObject props = new JsonObject();
@@ -64,9 +62,7 @@ public class GitRemoteTool implements McpToolInterface {
         JsonObject projectPath = new JsonObject();
         projectPath.addProperty(ToolSchemaKeyEnum.TYPE.key(), "string");
         projectPath.addProperty(ToolSchemaKeyEnum.DESCRIPTION.key(),
-                "Path to the target git repository or project root (relative paths are resolved "
-                + "against the default project). Required — selects which project/repo to operate "
-                + "on when multiple are open, or when the repo lives outside any open project.");
+                "Target git repository or project root; relative paths resolve against the default project.");
         props.add(GitCommonParamEnum.PROJECT_PATH.key(), projectPath);
         schema.add(ToolSchemaKeyEnum.PROPERTIES.key(), props);
         JsonArray required = new JsonArray();

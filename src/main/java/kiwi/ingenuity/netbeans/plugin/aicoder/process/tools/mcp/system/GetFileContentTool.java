@@ -23,19 +23,8 @@ public class GetFileContentTool implements McpToolInterface {
      * against it is omitted rather than pointing them at something they cannot call.
      */
     private static String description(Set<McpInstructionOptionEnum> options) {
-        StringBuilder sb = new StringBuilder(
-                "Returns the content of a file, saving any unsaved editor changes first so what you read is what the "
-                + "user has on screen and what a later edit will match against. ");
-        if (options.contains(McpInstructionOptionEnum.ONLY_MCP_TOOL_ACCESS)) {
-            sb.append("Use this for project source files so you see what the IDE currently holds, "
-                    + "not what is on disk. ");
-        }
-        else {
-            sb.append("Use this INSTEAD OF the built-in Read tool for project source files so you see "
-                    + "what the IDE currently holds, not what is on disk. ");
-        }
-        sb.append("Optionally restrict to a line range using " + GetFileContentParamEnum.START_LINE.key() + " and " + GetFileContentParamEnum.END_LINE.key() + ". Output includes a line-number gutter; strip it before using content in " + McpToolEnum.APPLY_EDIT.toolName() + " " + McpToolPropertyEnum.OLD_STRING.key() + ".");
-        return sb.toString();
+        return "Read file content with unsaved editor changes flushed first. Output includes a line-number gutter; strip it before using in "
+                + McpToolEnum.APPLY_EDIT.toolName() + " " + McpToolPropertyEnum.OLD_STRING.key() + ". Omit " + GetFileContentParamEnum.START_LINE.key() + "/" + GetFileContentParamEnum.END_LINE.key() + " for full file.";
     }
 
     private final McpHookServer server;

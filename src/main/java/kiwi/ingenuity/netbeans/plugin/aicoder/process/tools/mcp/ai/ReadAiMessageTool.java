@@ -21,7 +21,7 @@ public class ReadAiMessageTool extends AbstractActionTool {
     public ReadAiMessageTool() {
         super(McpSectionEnum.PLUGIN,
                 McpToolEnum.READ_AI_MESSAGE.toolName(),
-                "Read the full body of a specific inbox message by ID and mark it read. The message stays in your inbox until you " + McpToolEnum.DELETE_AI_MESSAGE.toolName() + " it or it expires.",
+                "Read and mark an inbox message by ID. It remains until " + McpToolEnum.DELETE_AI_MESSAGE.toolName() + " or expiry.",
                 McpToolEnum.READ_AI_MESSAGE.toolName() + " -> read full body of an inbox message by ID (message stays in inbox until deleted)");
     }
 
@@ -29,7 +29,7 @@ public class ReadAiMessageTool extends AbstractActionTool {
     public JsonObject schema(Set<McpInstructionOptionEnum> options) {
         JsonObject tool = new JsonObject();
         tool.addProperty(ToolSchemaKeyEnum.NAME.key(), McpToolEnum.READ_AI_MESSAGE.toolName());
-        tool.addProperty(ToolSchemaKeyEnum.DESCRIPTION.key(), "Read the full body of a specific inbox message by ID and mark it read. The message stays in your inbox until you " + McpToolEnum.DELETE_AI_MESSAGE.toolName() + " it or it expires.");
+        tool.addProperty(ToolSchemaKeyEnum.DESCRIPTION.key(), "Read and mark an inbox message by ID. It remains until " + McpToolEnum.DELETE_AI_MESSAGE.toolName() + " or expiry.");
         JsonObject schema = new JsonObject();
         schema.addProperty(ToolSchemaKeyEnum.TYPE.key(), "object");
         JsonObject props = new JsonObject();
@@ -41,18 +41,18 @@ public class ReadAiMessageTool extends AbstractActionTool {
         if (options.contains(McpInstructionOptionEnum.CREDENTIALS)) {
             JsonObject sid = new JsonObject();
             sid.addProperty(ToolSchemaKeyEnum.TYPE.key(), "string");
-            sid.addProperty(ToolSchemaKeyEnum.DESCRIPTION.key(), "Your own session ID (from your session identity block).");
+            sid.addProperty(ToolSchemaKeyEnum.DESCRIPTION.key(), "Your own session ID from the session identity block.");
             props.add(ReadAiMessageParamEnum.SESSION_ID.key(), sid);
             JsonObject sk = new JsonObject();
             sk.addProperty(ToolSchemaKeyEnum.TYPE.key(), "string");
-            sk.addProperty(ToolSchemaKeyEnum.DESCRIPTION.key(), "Your secret key (from your session identity block). Authenticates that you own this session. Retain this value for the entire session — it does not change unless a new identity block is explicitly sent.");
+            sk.addProperty(ToolSchemaKeyEnum.DESCRIPTION.key(), "Your secret key from the session identity block.");
             props.add(ReadAiMessageParamEnum.SECRET_KEY.key(), sk);
             required.add(ReadAiMessageParamEnum.SESSION_ID.key());
             required.add(ReadAiMessageParamEnum.SECRET_KEY.key());
         }
         JsonObject mid = new JsonObject();
         mid.addProperty(ToolSchemaKeyEnum.TYPE.key(), "string");
-        mid.addProperty(ToolSchemaKeyEnum.DESCRIPTION.key(), "The message ID to read (from " + McpToolEnum.GET_AI_MESSAGES.toolName() + ").");
+        mid.addProperty(ToolSchemaKeyEnum.DESCRIPTION.key(), "Message ID from " + McpToolEnum.GET_AI_MESSAGES.toolName() + ".");
         props.add(ReadAiMessageParamEnum.MESSAGE_ID.key(), mid);
         schema.add(ToolSchemaKeyEnum.PROPERTIES.key(), props);
         required.add(ReadAiMessageParamEnum.MESSAGE_ID.key());

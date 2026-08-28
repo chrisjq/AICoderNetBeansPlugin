@@ -16,6 +16,7 @@ import java.util.concurrent.locks.ReentrantLock;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 import kiwi.ingenuity.netbeans.plugin.aicoder.PluginSettings;
+import kiwi.ingenuity.netbeans.plugin.aicoder.process.McpToolPropertyEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.TimeoutEnum;
 import org.netbeans.api.db.explorer.ConnectionManager;
 import org.netbeans.api.db.explorer.DatabaseConnection;
@@ -82,9 +83,10 @@ public class DatabaseProvider {
             return "No database connections registered. Add one via Services > Databases in the IDE first.";
         }
         StringBuilder sb = new StringBuilder();
-        sb.append("Pass the exact connectionName= value below (either the display name or the JDBC URL) to the other database tools.\n\n");
+        sb.append("Pass the exact ").append(McpToolPropertyEnum.CONNECTION_NAME.key())
+                .append("= value below (either the display name or the JDBC URL) to the other database tools.\n\n");
         for (DatabaseConnection c : conns) {
-            sb.append("connectionName=\"").append(c.getDisplayName()).append('"')
+            sb.append(McpToolPropertyEnum.CONNECTION_NAME.key()).append("=\"").append(c.getDisplayName()).append('"')
                     .append("  (url: ").append(c.getDatabaseURL()).append(')')
                     .append(isConnected(c) ? " [connected]" : " [not connected — connect it via Services > Databases first]")
                     .append('\n');
@@ -125,7 +127,7 @@ public class DatabaseProvider {
 
     public static String getTableSchema(String connectionName, String tableName) {
         if (!isValidIdentifier(tableName)) {
-            return "Invalid tableName: " + tableName;
+            return "Invalid " + McpToolPropertyEnum.TABLE_NAME.key() + ": " + tableName;
         }
         DatabaseConnection dc = findConnection(connectionName);
         if (dc == null) {

@@ -12,9 +12,9 @@ import kiwi.ingenuity.netbeans.plugin.aicoder.process.McpSectionEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.McpToolEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.locking.LockTypeEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.locking.RequiresLock;
+import kiwi.ingenuity.netbeans.plugin.aicoder.process.session.AbstractAiSession;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.McpToolInterface;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.McpToolSchemas;
-import kiwi.ingenuity.netbeans.plugin.aicoder.process.session.AbstractAiSession;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.ToolRequestArguments;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.ToolSchemaKeyEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.providers.netbeans.GitProvider;
@@ -33,11 +33,11 @@ public class GitAddTool implements McpToolInterface {
             return null;
         }
         if (options.contains(McpInstructionOptionEnum.ONLY_MCP_TOOL_ACCESS)) {
-            return "GitAdd - stages files for commit; pass [\".\" ] to stage all. "
-                    + "Requires projectPath to select the target git repository or project root.";
+            return McpToolEnum.GIT_ADD.toolName() + " - stages files for commit; pass [\".\" ] to stage all. "
+                    + "Requires " + GitCommonParamEnum.PROJECT_PATH.key() + " to select the target git repository or project root.";
         }
-        return "GitAdd -> INSTEAD OF Bash git add - stages files for commit; pass [\".\" ] to stage all. "
-                + "Requires projectPath to select the target git repository or project root.";
+        return McpToolEnum.GIT_ADD.toolName() + " -> INSTEAD OF Bash git add - stages files for commit; pass [\".\" ] to stage all. "
+                + "Requires " + GitCommonParamEnum.PROJECT_PATH.key() + " to select the target git repository or project root.";
     }
 
     @Override
@@ -45,8 +45,7 @@ public class GitAddTool implements McpToolInterface {
         JsonObject tool = new JsonObject();
         tool.addProperty(ToolSchemaKeyEnum.NAME.key(), McpToolEnum.GIT_ADD.toolName());
         tool.addProperty(ToolSchemaKeyEnum.DESCRIPTION.key(),
-                "Stages one or more files for the next commit (git add). "
-                + "Pass [\".\" ] in files to stage all changes.");
+                "Stages files for commit. Pass [\".\" ] to stage all.");
         JsonObject schema = new JsonObject();
         schema.addProperty(ToolSchemaKeyEnum.TYPE.key(), "object");
         JsonObject props = new JsonObject();
@@ -55,14 +54,12 @@ public class GitAddTool implements McpToolInterface {
         JsonObject items = new JsonObject();
         items.addProperty(ToolSchemaKeyEnum.TYPE.key(), "string");
         files.add(ToolSchemaKeyEnum.ITEMS.key(), items);
-        files.addProperty(ToolSchemaKeyEnum.DESCRIPTION.key(), "File paths to stage. Use [\".\" ] to stage all changes.");
+        files.addProperty(ToolSchemaKeyEnum.DESCRIPTION.key(), "Paths to stage. Use [\".\" ] for all changes.");
         props.add(GitAddParamEnum.FILES.key(), files);
         JsonObject projectPath = new JsonObject();
         projectPath.addProperty(ToolSchemaKeyEnum.TYPE.key(), "string");
         projectPath.addProperty(ToolSchemaKeyEnum.DESCRIPTION.key(),
-                "Path to the target git repository or project root (relative paths are resolved "
-                + "against the default project). Required — selects which project/repo to operate "
-                + "on when multiple are open, or when the repo lives outside any open project.");
+                "Target git repository or project root; relative paths resolve against the default project.");
         props.add(GitCommonParamEnum.PROJECT_PATH.key(), projectPath);
         schema.add(ToolSchemaKeyEnum.PROPERTIES.key(), props);
         JsonArray required = new JsonArray();
@@ -82,7 +79,7 @@ public class GitAddTool implements McpToolInterface {
     public String handle(ToolRequestArguments args, AbstractAiSession session) throws McpArgumentException {
         JsonArray arr = args.array(GitAddParamEnum.FILES.key());
         if (arr == null || arr.isEmpty()) {
-            throw new McpArgumentException(-32602, "files is required and must be non-empty");
+            throw new McpArgumentException(-32602, GitAddParamEnum.FILES.key() + " is required and must be non-empty");
         }
         List<String> files = new ArrayList<>();
         for (int i = 0; i < arr.size(); i++) {
@@ -92,7 +89,7 @@ public class GitAddTool implements McpToolInterface {
             }
         }
         if (files.isEmpty()) {
-            throw new McpArgumentException(-32602, "files must contain at least one non-null string path");
+            throw new McpArgumentException(-32602, GitAddParamEnum.FILES.key() + " must contain at least one non-null string path");
         }
         return GitProvider.gitAdd(args.require(GitCommonParamEnum.PROJECT_PATH.key()), files);
     }

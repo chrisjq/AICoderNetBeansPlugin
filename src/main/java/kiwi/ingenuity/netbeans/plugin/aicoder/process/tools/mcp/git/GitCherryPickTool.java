@@ -34,11 +34,11 @@ public class GitCherryPickTool implements McpToolInterface {
             return null;
         }
         if (options.contains(McpInstructionOptionEnum.ONLY_MCP_TOOL_ACCESS)) {
-            return "GitCherryPick - applies commits onto current branch; supports BEGIN/CONTINUE/QUIT/ABORT. "
-                    + "Requires projectPath to select the target git repository or project root.";
+            return McpToolEnum.GIT_CHERRY_PICK.toolName() + " - applies commits onto current branch; supports BEGIN/CONTINUE/QUIT/ABORT. "
+                    + "Requires " + GitCommonParamEnum.PROJECT_PATH.key() + " to select the target git repository or project root.";
         }
-        return "GitCherryPick -> INSTEAD OF Bash git cherry-pick - applies commits onto current branch; supports BEGIN/CONTINUE/QUIT/ABORT. "
-                + "Requires projectPath to select the target git repository or project root.";
+        return McpToolEnum.GIT_CHERRY_PICK.toolName() + " -> INSTEAD OF Bash git cherry-pick - applies commits onto current branch; supports BEGIN/CONTINUE/QUIT/ABORT. "
+                + "Requires " + GitCommonParamEnum.PROJECT_PATH.key() + " to select the target git repository or project root.";
     }
 
     @Override
@@ -46,15 +46,13 @@ public class GitCherryPickTool implements McpToolInterface {
         JsonObject tool = new JsonObject();
         tool.addProperty(ToolSchemaKeyEnum.NAME.key(), McpToolEnum.GIT_CHERRY_PICK.toolName());
         tool.addProperty(ToolSchemaKeyEnum.DESCRIPTION.key(),
-                "Cherry-picks one or more commits onto the current branch. "
-                + "operation=BEGIN applies the given revisions. CONTINUE/QUIT/ABORT manage conflicts. "
-                + "Equivalent to: git cherry-pick <revisions>");
+                "Cherry-picks commits onto current branch. " + GitCherryPickParamEnum.OPERATION.key() + ": BEGIN (apply revisions), CONTINUE/QUIT/ABORT (manage).");
         JsonObject schema = new JsonObject();
         schema.addProperty(ToolSchemaKeyEnum.TYPE.key(), "object");
         JsonObject props = new JsonObject();
         JsonObject operation = new JsonObject();
         operation.addProperty(ToolSchemaKeyEnum.TYPE.key(), "string");
-        operation.addProperty(ToolSchemaKeyEnum.DESCRIPTION.key(), "Operation: BEGIN (default), CONTINUE, QUIT, ABORT.");
+        operation.addProperty(ToolSchemaKeyEnum.DESCRIPTION.key(), "Operation: BEGIN, CONTINUE, QUIT, ABORT.");
         props.add(GitCherryPickParamEnum.OPERATION.key(), operation);
         JsonObject revisions = new JsonObject();
         revisions.addProperty(ToolSchemaKeyEnum.TYPE.key(), "array");
@@ -66,9 +64,7 @@ public class GitCherryPickTool implements McpToolInterface {
         JsonObject projectPath = new JsonObject();
         projectPath.addProperty(ToolSchemaKeyEnum.TYPE.key(), "string");
         projectPath.addProperty(ToolSchemaKeyEnum.DESCRIPTION.key(),
-                "Path to the target git repository or project root (relative paths are resolved "
-                + "against the default project). Required — selects which project/repo to operate "
-                + "on when multiple are open, or when the repo lives outside any open project.");
+                "Target git repository or project root; relative paths resolve against the default project.");
         props.add(GitCommonParamEnum.PROJECT_PATH.key(), projectPath);
         schema.add(ToolSchemaKeyEnum.PROPERTIES.key(), props);
         JsonArray required = new JsonArray();
@@ -96,10 +92,10 @@ public class GitCherryPickTool implements McpToolInterface {
         }
 
         if (operation != null && !VALID_OPERATIONS.contains(operation)) {
-            return "Error: unsupported operation '" + operation + "'. Valid values: BEGIN, CONTINUE, QUIT, ABORT";
+            return "Error: unsupported " + GitCherryPickParamEnum.OPERATION.key() + " '" + operation + "'. Valid values: BEGIN, CONTINUE, QUIT, ABORT";
         }
         if ("BEGIN".equals(operation) && (revisions == null || revisions.isEmpty())) {
-            return "Error: revisions are required for operation=BEGIN";
+            return "Error: " + GitCherryPickParamEnum.REVISIONS.key() + " are required for " + GitCherryPickParamEnum.OPERATION.key() + "=BEGIN";
         }
 
         return GitProvider.gitCherryPick(args.require(GitCommonParamEnum.PROJECT_PATH.key()), operation, revisions);

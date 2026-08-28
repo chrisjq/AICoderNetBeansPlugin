@@ -7,6 +7,7 @@ import java.util.List;
 import java.util.Set;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.McpToolInterface;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.ToolSchemaKeyEnum;
+import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.git.GitCommonParamEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.ui.build.BuildProjectTool;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.ui.build.CleanAndBuildProjectTool;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.ui.build.CleanProjectTool;
@@ -63,13 +64,16 @@ class UiToolsParamContractTest {
     }
 
     @Test
-    void fourBuildAndDiagActionToolsAdvertiseNoParameters() {
+    void threeBuildActionToolsAdvertiseAndRequireProjectPath() {
         List<McpToolInterface> tools = List.of(
                 new BuildProjectTool(),
                 new CleanAndBuildProjectTool(),
-                new CleanProjectTool(),
-                new RunInspectTool());
-        assertNoParameters(tools);
+                new CleanProjectTool());
+        for (McpToolInterface tool : tools) {
+            assertEquals(Set.of(GitCommonParamEnum.PROJECT_PATH.key()), propertyKeys(tool));
+            assertEquals(Set.of(GitCommonParamEnum.PROJECT_PATH.key()), requiredKeys(tool));
+        }
+        assertNoParameters(List.of(new RunInspectTool()));
     }
 
     @Disabled("user request: Editor/Window tool group tests disabled")
@@ -108,11 +112,11 @@ class UiToolsParamContractTest {
     }
 
     @Test
-    void navigateToLineAdvertisesAndRequiresExactlyTheFilePathAndLineItsHandlerReads() {
+    void navigateToLineAdvertisesFilePathAndOptionalLine() {
         NavigateToLineTool tool = new NavigateToLineTool();
-        Set<String> expected = Set.of(NavigateToLineParamEnum.FILE_PATH.key(), NavigateToLineParamEnum.LINE.key());
-        assertEquals(expected, propertyKeys(tool));
-        assertEquals(expected, requiredKeys(tool));
+        Set<String> expectedProperties = Set.of(NavigateToLineParamEnum.FILE_PATH.key(), NavigateToLineParamEnum.LINE.key(), NavigateToLineParamEnum.FOCUS.key());
+        assertEquals(expectedProperties, propertyKeys(tool));
+        assertEquals(Set.of(NavigateToLineParamEnum.FILE_PATH.key()), requiredKeys(tool));
     }
 
     private static void assertNoParameters(List<McpToolInterface> tools) {

@@ -12,6 +12,7 @@ import kiwi.ingenuity.netbeans.plugin.aicoder.process.McpArgumentException;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.McpInstructionOptionEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.McpSectionEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.McpToolEnum;
+import kiwi.ingenuity.netbeans.plugin.aicoder.process.McpToolPropertyEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.events.AiProcessEventListener;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.locking.LockTypeEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.locking.RequiresLock;
@@ -46,7 +47,7 @@ public class CopyFileTool implements McpToolInterface {
             return null;
         }
         return McpToolEnum.COPY_FILE.toolName() + " -> copies a file to a target directory using FileUtil.copyFile(); "
-                + "optionally rename via newName (base name, no extension)";
+                + "optionally rename via " + McpToolPropertyEnum.NEW_NAME.key() + " (base name, no extension)";
     }
 
     @Override
@@ -54,8 +55,8 @@ public class CopyFileTool implements McpToolInterface {
         JsonObject tool = new JsonObject();
         tool.addProperty(ToolSchemaKeyEnum.NAME.key(), McpToolEnum.COPY_FILE.toolName());
         tool.addProperty(ToolSchemaKeyEnum.DESCRIPTION.key(),
-                "Copy a file to a target directory. Optionally supply newName (base name without extension) "
-                + "to rename the copy. Refreshes VCS status after the operation.");
+                "Copy a file to a target directory. Optionally supply " + McpToolPropertyEnum.NEW_NAME.key()
+                + " (base name without extension) to rename the copy. Refreshes VCS status after the operation.");
         JsonObject schema = new JsonObject();
         schema.addProperty(ToolSchemaKeyEnum.TYPE.key(), "object");
         JsonObject props = new JsonObject();

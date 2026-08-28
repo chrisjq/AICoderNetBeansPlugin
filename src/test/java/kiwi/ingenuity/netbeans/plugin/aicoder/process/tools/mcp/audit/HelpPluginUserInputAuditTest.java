@@ -18,6 +18,7 @@ import kiwi.ingenuity.netbeans.plugin.aicoder.process.session.AbstractAiSession;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.McpToolInterface;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.ToolRequestArguments;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.ToolSchemaKeyEnum;
+import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.git.GitCommonParamEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.help.GetClassMembersParamEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.help.GetClassMembersTool;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.help.GetJavadocParamEnum;
@@ -151,33 +152,69 @@ class HelpPluginUserInputAuditTest {
 
     // ---- GetJavadocTool ----
     @Test
-    void javadocRequiresClassName() {
+    void javadocRequiresBothProjectPathAndClassName() {
         GetJavadocTool tool = new GetJavadocTool();
+        // No params at all -> projectPath is reported first (its require() runs first).
         McpArgumentException noParam = assertThrows(McpArgumentException.class,
                 () -> tool.handle(args(empty()), session));
-        assertTrue(noParam.getMessage().contains(GetJavadocParamEnum.CLASS_NAME.key()), noParam.getMessage());
+        assertTrue(noParam.getMessage().contains(GitCommonParamEnum.PROJECT_PATH.key()), noParam.getMessage());
         assertEquals(-32602, noParam.getCode());
 
-        JsonObject blank = new JsonObject();
-        blank.addProperty(GetJavadocParamEnum.CLASS_NAME.key(), "  ");
-        assertThrows(McpArgumentException.class, () -> tool.handle(args(blank), session));
+        // projectPath present, className missing -> className is required.
+        JsonObject noClass = new JsonObject();
+        noClass.addProperty(GitCommonParamEnum.PROJECT_PATH.key(), "/some/project");
+        McpArgumentException noClassEx = assertThrows(McpArgumentException.class,
+                () -> tool.handle(args(noClass), session));
+        assertTrue(noClassEx.getMessage().contains(GetJavadocParamEnum.CLASS_NAME.key()), noClassEx.getMessage());
+        assertEquals(-32602, noClassEx.getCode());
+
+        // blank className is rejected too.
+        JsonObject blankClass = new JsonObject();
+        blankClass.addProperty(GitCommonParamEnum.PROJECT_PATH.key(), "/some/project");
+        blankClass.addProperty(GetJavadocParamEnum.CLASS_NAME.key(), "  ");
+        assertThrows(McpArgumentException.class, () -> tool.handle(args(blankClass), session));
     }
 
     @Test
-    void javadocAcceptsOptionalMemberNameWithoutError() throws Exception {
+    void javadocRejectsUnresolvableProjectPath() throws Exception {
         GetJavadocTool tool = new GetJavadocTool();
         JsonObject o = new JsonObject();
+        o.addProperty(GitCommonParamEnum.PROJECT_PATH.key(), "/definitely/not/an/open/project");
         o.addProperty(GetJavadocParamEnum.CLASS_NAME.key(), "java.lang.String");
-        // memberName is read and forwarded to the provider; its output-differentiating
-        // effect can only be shown with the live project index (untestable headless).
-        // Here we prove the optional parameter is accepted (no rejection) AND that the
-        // tool degrades gracefully when no source file exists headless.
+        String result = tool.handle(args(o), session);
+        assertNotNull(result);
+        // Headless there is no open project, so the explicit projectPath cannot be matched:
+        // the tool must refuse with a clear message rather than guess a first root or crash.
+        assertTrue(result.contains("No open project matches"), "expected graceful project refusal, got: " + result);
+    }
+
+    @Test
+    void javadocWithProjectPathAndMemberNameIsAcceptedAndForwarded() throws Exception {
+        GetJavadocTool tool = new GetJavadocTool();
+        JsonObject o = new JsonObject();
+        o.addProperty(GitCommonParamEnum.PROJECT_PATH.key(), "/some/project");
+        o.addProperty(GetJavadocParamEnum.CLASS_NAME.key(), "java.lang.String");
+        // memberName is optional; supplying it along with both required params must not be
+        // rejected — the arguments are forwarded to the provider, which headless refuses the
+        // project gracefully instead of reporting a missing-required error or crashing.
         o.addProperty(GetJavadocParamEnum.MEMBER_NAME.key(), "valueOf");
         String result = tool.handle(args(o), session);
         assertNotNull(result);
-        assertFalse(result.contains("required"), "valid className must not be rejected: " + result);
-        assertTrue(result.toLowerCase().contains("no java source") || result.toLowerCase().contains("not found"),
-                "expected graceful no-source degradation, got: " + result);
+        assertFalse(result.contains("required"), "valid params must not be rejected: " + result);
+    }
+
+    @Test
+    void javadocSchemaDeclaresRequiredProjectPathAndClassName() {
+        GetJavadocTool tool = new GetJavadocTool();
+        JsonObject schema = tool.schema(Set.of());
+        JsonObject input = schema.getAsJsonObject(ToolSchemaKeyEnum.INPUT_SCHEMA.key());
+        JsonArray required = input.getAsJsonArray(ToolSchemaKeyEnum.REQUIRED.key());
+        assertTrue(required.contains(new JsonPrimitive(GitCommonParamEnum.PROJECT_PATH.key())),
+                "projectPath must be required");
+        assertTrue(required.contains(new JsonPrimitive(GetJavadocParamEnum.CLASS_NAME.key())),
+                "className must be required");
+        assertFalse(required.contains(new JsonPrimitive(GetJavadocParamEnum.MEMBER_NAME.key())),
+                "memberName must not be required");
     }
 
     // ---- GetProjectStructureTool (no parameters) ----

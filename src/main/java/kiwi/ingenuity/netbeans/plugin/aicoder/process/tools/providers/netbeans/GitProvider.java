@@ -13,8 +13,10 @@ import java.util.Map;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 import kiwi.ingenuity.netbeans.plugin.aicoder.PluginSettings;
+import kiwi.ingenuity.netbeans.plugin.aicoder.process.McpToolPropertyEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.server.McpHookServer;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.server.McpServerRegistry;
+import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.git.GitCommonParamEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.utils.DateUtil;
 import org.netbeans.api.project.FileOwnerQuery;
 import org.netbeans.api.project.Project;
@@ -507,7 +509,7 @@ public class GitProvider {
     private static String noRepoError(String projectPath) {
         return (projectPath != null && !projectPath.isBlank())
                 ? "Repository not found: " + projectPath
-                : "projectPath is required";
+                : GitCommonParamEnum.PROJECT_PATH.key() + " is required";
     }
 
     /**
@@ -903,7 +905,7 @@ public class GitProvider {
 
     public static String gitBlame(String projectPath, String filePath) {
         if (filePath == null || filePath.isBlank()) {
-            return "filePath is required";
+            return McpToolPropertyEnum.FILE_PATH.key() + " is required";
         }
         File file = new File(filePath);
         File root;

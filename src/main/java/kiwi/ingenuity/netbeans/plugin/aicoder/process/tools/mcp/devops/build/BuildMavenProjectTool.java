@@ -15,13 +15,11 @@ public class BuildMavenProjectTool extends AbstractBuildTool {
     public BuildMavenProjectTool() {
         super(McpSectionEnum.DEVOPS_BUILD,
                 McpToolEnum.BUILD_MAVEN_PROJECT.toolName(),
-                "Builds the open Maven project (mvn package -DskipTests). "
+                "Builds the Maven project at " + BuildMavenProjectParamEnum.PROJECT_PATH.key() + " (mvn package -DskipTests). "
                 + "Maven projects only - do not use for Ant or Gradle projects. "
-                + "On success returns the results summary and result line; on failure the complete "
-                + "failure detail including compile errors, never truncated. The complete log is "
-                + "always written to a file whose path is included in the response. ",
-                McpToolEnum.BUILD_MAVEN_PROJECT.toolName() + " -> INSTEAD OF Bash mvn package - builds Maven project and returns a result summary (complete log written to a file)",
-                McpToolEnum.BUILD_MAVEN_PROJECT.toolName() + " - builds Maven project and returns a result summary (complete log written to a file)");
+                + "Returns a summary; the full log is written to a file.",
+                McpToolEnum.BUILD_MAVEN_PROJECT.toolName() + " -> INSTEAD OF Bash mvn package - requires " + BuildMavenProjectParamEnum.PROJECT_PATH.key() + "; builds Maven project and returns a result summary (complete log written to a file)",
+                McpToolEnum.BUILD_MAVEN_PROJECT.toolName() + " - requires " + BuildMavenProjectParamEnum.PROJECT_PATH.key() + "; builds Maven project and returns a result summary (complete log written to a file)");
     }
 
     @Override

@@ -17,8 +17,7 @@ public class ReformatFileTool extends AbstractFileTool {
     public ReformatFileTool() {
         super(McpSectionEnum.UI_SOURCE,
                 McpToolEnum.REFORMAT_FILE.toolName(),
-                "Reformat the specified Java file using the project's code style settings. "
-                + "Applies indentation, brace placement, and spacing rules.",
+                "Reformats the specified file using its code-style settings in the user's editor, then saves it.",
                 "" + McpToolEnum.REFORMAT_FILE.toolName() + " -> INSTEAD OF manual formatting - applies project code style to a file",
                 "" + McpToolEnum.REFORMAT_FILE.toolName() + " - applies project code style to a file");
     }

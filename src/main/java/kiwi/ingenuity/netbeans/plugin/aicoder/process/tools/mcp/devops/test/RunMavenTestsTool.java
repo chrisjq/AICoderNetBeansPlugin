@@ -15,14 +15,11 @@ public class RunMavenTestsTool extends AbstractTestsTool {
     public RunMavenTestsTool() {
         super(McpSectionEnum.DEVOPS_TEST,
                 McpToolEnum.RUN_MAVEN_TESTS.toolName(),
-                "Runs the open Maven project's test suite (mvn test). "
+                "Runs the Maven project's tests at " + RunMavenTestsParamEnum.PROJECT_PATH.key() + " (mvn test); optionally filter by test class. "
                 + "Maven projects only - do not use for Ant or Gradle projects. "
-                + "Optionally restrict to a single test class (simple or fully qualified name). "
-                + "On success returns the results summary and result line; on failure the complete "
-                + "failure detail with every failed test, never truncated. The complete log is "
-                + "always written to a file whose path is included in the response. ",
-                McpToolEnum.RUN_MAVEN_TESTS.toolName() + " -> INSTEAD OF Bash mvn test - runs Maven tests with optional class filter",
-                McpToolEnum.RUN_MAVEN_TESTS.toolName() + " - runs Maven tests with optional class filter");
+                + "Returns a summary; the full log is written to a file.",
+                McpToolEnum.RUN_MAVEN_TESTS.toolName() + " -> INSTEAD OF Bash mvn test - requires " + RunMavenTestsParamEnum.PROJECT_PATH.key() + "; runs Maven tests with optional class filter",
+                McpToolEnum.RUN_MAVEN_TESTS.toolName() + " - requires " + RunMavenTestsParamEnum.PROJECT_PATH.key() + "; runs Maven tests with optional class filter");
     }
 
     @Override

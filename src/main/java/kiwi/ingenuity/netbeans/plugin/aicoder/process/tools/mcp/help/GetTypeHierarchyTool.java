@@ -13,8 +13,7 @@ public class GetTypeHierarchyTool extends AbstractClassNameTool {
     public GetTypeHierarchyTool() {
         super(McpSectionEnum.HELP,
                 McpToolEnum.GET_TYPE_HIERARCHY.toolName(),
-                "Returns the full supertype and subtype hierarchy for a class or interface in the open project: "
-                + "direct and indirect supertypes (extends/implements chain) plus all known subtypes and implementors. "
+                "Returns the full supertype and subtype hierarchy for a class or interface in the open project. "
                 + "Provide a fully qualified class name; it is required, and is not resolved from the user's cursor.",
                 McpToolEnum.GET_TYPE_HIERARCHY.toolName() + " -> INSTEAD OF manual search - shows the full supertype/subtype tree for a class",
                 McpToolEnum.GET_TYPE_HIERARCHY.toolName() + " - shows the full supertype/subtype tree for a class");
@@ -31,7 +30,7 @@ public class GetTypeHierarchyTool extends AbstractClassNameTool {
         if (cn == null || cn.isBlank()) {
             // No cursor fallback — see GetClassMembersTool for the reasoning.
             throw new McpArgumentException(-32602,
-                    "className is required — this tool does not read the symbol under the user's cursor. "
+                    GetTypeHierarchyParamEnum.CLASS_NAME.key() + " is required — this tool does not read the symbol under the user's cursor. "
                     + "Call " + McpToolEnum.GET_CURRENT_FILE.toolName() + " for the user's position, or "
                     + McpToolEnum.SEARCH_TYPES.toolName() + " to find the class you mean.");
         }

@@ -27,13 +27,13 @@ public class GitLogTool implements McpToolInterface {
             return null;
         }
         if (options.contains(McpInstructionOptionEnum.ONLY_MCP_TOOL_ACCESS)) {
-            return "GitLog - shows recent commit history (short hash + message). "
-                    + "Requires projectPath to select the target git repository or project root. "
-                    + "Optionally pass file to scope history to a single path (with follow=true to track it across renames).";
+            return McpToolEnum.GIT_LOG.toolName() + " - shows recent commit history (short hash + message). "
+                    + "Requires " + GitCommonParamEnum.PROJECT_PATH.key() + " to select the target git repository or project root. "
+                    + "Optionally pass " + GitLogParamEnum.FILE.key() + " to scope history to a single path (with " + GitLogParamEnum.FOLLOW.key() + "=true to track it across renames).";
         }
-        return "GitLog -> INSTEAD OF Bash git log - shows recent commit history (short hash + message). "
-                + "Requires projectPath to select the target git repository or project root. "
-                + "Optionally pass file to scope history to a single path (with follow=true to track it across renames).";
+        return McpToolEnum.GIT_LOG.toolName() + " -> INSTEAD OF Bash git log - shows recent commit history (short hash + message). "
+                + "Requires " + GitCommonParamEnum.PROJECT_PATH.key() + " to select the target git repository or project root. "
+                + "Optionally pass " + GitLogParamEnum.FILE.key() + " to scope history to a single path (with " + GitLogParamEnum.FOLLOW.key() + "=true to track it across renames).";
     }
 
     @Override
@@ -41,8 +41,7 @@ public class GitLogTool implements McpToolInterface {
         JsonObject tool = new JsonObject();
         tool.addProperty(ToolSchemaKeyEnum.NAME.key(), McpToolEnum.GIT_LOG.toolName());
         tool.addProperty(ToolSchemaKeyEnum.DESCRIPTION.key(),
-                "Returns recent commit history, newest first (short hash + subject). "
-                + "Equivalent to: git log --oneline");
+                "Returns recent commit history (short hash + subject, newest first).");
         JsonObject schema = new JsonObject();
         schema.addProperty(ToolSchemaKeyEnum.TYPE.key(), "object");
         JsonObject props = new JsonObject();
@@ -53,21 +52,17 @@ public class GitLogTool implements McpToolInterface {
         JsonObject projectPath = new JsonObject();
         projectPath.addProperty(ToolSchemaKeyEnum.TYPE.key(), "string");
         projectPath.addProperty(ToolSchemaKeyEnum.DESCRIPTION.key(),
-                "Path to the target git repository or project root (relative paths are resolved "
-                + "against the default project). Required — selects which project/repo to operate "
-                + "on when multiple are open, or when the repo lives outside any open project.");
+                "Target git repository or project root; relative paths resolve against the default project.");
         props.add(GitCommonParamEnum.PROJECT_PATH.key(), projectPath);
         JsonObject file = new JsonObject();
         file.addProperty(ToolSchemaKeyEnum.TYPE.key(), "string");
         file.addProperty(ToolSchemaKeyEnum.DESCRIPTION.key(),
-                "Optional. Scope history to a single file (like 'git log -- <file>'). Absolute path, "
-                + "or relative to the project root. Omit to log the whole repository.");
+                "Scope history to single file (absolute or project-relative). Omit to log entire repo.");
         props.add(GitLogParamEnum.FILE.key(), file);
         JsonObject follow = new JsonObject();
         follow.addProperty(ToolSchemaKeyEnum.TYPE.key(), "boolean");
         follow.addProperty(ToolSchemaKeyEnum.DESCRIPTION.key(),
-                "Optional. When a file is given, follow it across renames (like 'git log --follow'). "
-                + "Default: false. Ignored when no file is set.");
+                "Follow file across renames (git log --" + GitLogParamEnum.FOLLOW.key() + "). Default: false. Ignored without file.");
         props.add(GitLogParamEnum.FOLLOW.key(), follow);
         schema.add(ToolSchemaKeyEnum.PROPERTIES.key(), props);
         JsonArray required = new JsonArray();

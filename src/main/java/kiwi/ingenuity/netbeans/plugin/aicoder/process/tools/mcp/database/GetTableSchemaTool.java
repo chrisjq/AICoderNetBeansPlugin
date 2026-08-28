@@ -36,16 +36,17 @@ public class GetTableSchemaTool implements McpToolInterface {
         JsonObject tool = new JsonObject();
         tool.addProperty(ToolSchemaKeyEnum.NAME.key(), McpToolEnum.GET_TABLE_SCHEMA.toolName());
         tool.addProperty(ToolSchemaKeyEnum.DESCRIPTION.key(),
-                "Returns the schema (columns, types, nullability, primary keys) for a table, read via "
-                + "JDBC DatabaseMetaData on a connection already registered and connected in the IDE's "
-                + "Database Explorer. Use ListDatabaseConnections first to find the " + DatabaseParamEnum.CONNECTION_NAME.key() + ".");
+                "Returns a table's schema (columns, types, nullability, primary keys) on a registered, "
+                + "connected Database Explorer connection. Find the connection via "
+                + McpToolEnum.LIST_DATABASE_CONNECTIONS.toolName() + ".");
         JsonObject schema = new JsonObject();
         schema.addProperty(ToolSchemaKeyEnum.TYPE.key(), "object");
         JsonObject props = new JsonObject();
         JsonObject connectionName = new JsonObject();
         connectionName.addProperty(ToolSchemaKeyEnum.TYPE.key(), "string");
         connectionName.addProperty(ToolSchemaKeyEnum.DESCRIPTION.key(),
-                "Display name of a registered Database Explorer connection (see ListDatabaseConnections).");
+                "Display name of a registered Database Explorer connection (see "
+                + McpToolEnum.LIST_DATABASE_CONNECTIONS.toolName() + ").");
         props.add(DatabaseParamEnum.CONNECTION_NAME.key(), connectionName);
         JsonObject tableName = new JsonObject();
         tableName.addProperty(ToolSchemaKeyEnum.TYPE.key(), "string");

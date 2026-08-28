@@ -30,11 +30,11 @@ public class GitBranchTool implements McpToolInterface {
             return null;
         }
         if (options.contains(McpInstructionOptionEnum.ONLY_MCP_TOOL_ACCESS)) {
-            return "GitBranch - lists branches or creates a new one. "
-                    + "Requires projectPath to select the target git repository or project root.";
+            return McpToolEnum.GIT_BRANCH.toolName() + " - lists branches or creates a new one. "
+                    + "Requires " + GitCommonParamEnum.PROJECT_PATH.key() + " to select the target git repository or project root.";
         }
-        return "GitBranch -> INSTEAD OF Bash git branch - lists branches or creates a new one. "
-                + "Requires projectPath to select the target git repository or project root.";
+        return McpToolEnum.GIT_BRANCH.toolName() + " -> INSTEAD OF Bash git branch - lists branches or creates a new one. "
+                + "Requires " + GitCommonParamEnum.PROJECT_PATH.key() + " to select the target git repository or project root.";
     }
 
     @Override
@@ -42,8 +42,7 @@ public class GitBranchTool implements McpToolInterface {
         JsonObject tool = new JsonObject();
         tool.addProperty(ToolSchemaKeyEnum.NAME.key(), McpToolEnum.GIT_BRANCH.toolName());
         tool.addProperty(ToolSchemaKeyEnum.DESCRIPTION.key(),
-                "Lists local branches (current branch marked with *), or creates a new branch from HEAD. "
-                + "Set all=true to include remote-tracking branches.");
+                "Lists or creates branches. Set all=true for remote-tracking branches too.");
         JsonObject schema = new JsonObject();
         schema.addProperty(ToolSchemaKeyEnum.TYPE.key(), "object");
         JsonObject props = new JsonObject();
@@ -53,14 +52,12 @@ public class GitBranchTool implements McpToolInterface {
         props.add(GitBranchParamEnum.ALL.key(), all);
         JsonObject create = new JsonObject();
         create.addProperty(ToolSchemaKeyEnum.TYPE.key(), "string");
-        create.addProperty(ToolSchemaKeyEnum.DESCRIPTION.key(), "If provided, creates a new branch with this name from HEAD instead of listing.");
+        create.addProperty(ToolSchemaKeyEnum.DESCRIPTION.key(), "Create branch from HEAD instead of listing.");
         props.add(GitBranchParamEnum.CREATE.key(), create);
         JsonObject projectPath = new JsonObject();
         projectPath.addProperty(ToolSchemaKeyEnum.TYPE.key(), "string");
         projectPath.addProperty(ToolSchemaKeyEnum.DESCRIPTION.key(),
-                "Path to the target git repository or project root (relative paths are resolved "
-                + "against the default project). Required — selects which project/repo to operate "
-                + "on when multiple are open, or when the repo lives outside any open project.");
+                "Target git repository or project root; relative paths resolve against the default project.");
         props.add(GitCommonParamEnum.PROJECT_PATH.key(), projectPath);
         schema.add(ToolSchemaKeyEnum.PROPERTIES.key(), props);
         JsonArray required = new JsonArray();

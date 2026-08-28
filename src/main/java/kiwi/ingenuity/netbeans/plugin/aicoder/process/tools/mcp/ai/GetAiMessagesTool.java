@@ -21,7 +21,7 @@ public class GetAiMessagesTool extends AbstractActionTool {
     public GetAiMessagesTool() {
         super(McpSectionEnum.PLUGIN,
                 McpToolEnum.GET_AI_MESSAGES.toolName(),
-                "List inbox messages (summaries only — id, subject, from). Non-destructive. Use " + McpToolEnum.READ_AI_MESSAGE.toolName() + " to fetch the full body of a specific message.",
+                "List inbox message summaries (id, subject, sender). Use " + McpToolEnum.READ_AI_MESSAGE.toolName() + " to fetch a full message.",
                 McpToolEnum.GET_AI_MESSAGES.toolName() + " -> list inbox summaries; call at session start and after interrupts to check for messages");
     }
 
@@ -40,7 +40,7 @@ public class GetAiMessagesTool extends AbstractActionTool {
     public JsonObject schema(Set<McpInstructionOptionEnum> options) {
         JsonObject tool = new JsonObject();
         tool.addProperty(ToolSchemaKeyEnum.NAME.key(), McpToolEnum.GET_AI_MESSAGES.toolName());
-        tool.addProperty(ToolSchemaKeyEnum.DESCRIPTION.key(), "List inbox messages (summaries only — id, subject, from). Non-destructive. Use " + McpToolEnum.READ_AI_MESSAGE.toolName() + " to fetch the full body of a specific message.");
+        tool.addProperty(ToolSchemaKeyEnum.DESCRIPTION.key(), "List inbox message summaries (id, subject, sender). Use " + McpToolEnum.READ_AI_MESSAGE.toolName() + " to fetch a full message.");
         JsonObject schema = new JsonObject();
         schema.addProperty(ToolSchemaKeyEnum.TYPE.key(), "object");
         JsonObject props = new JsonObject();
@@ -52,11 +52,11 @@ public class GetAiMessagesTool extends AbstractActionTool {
         if (options.contains(McpInstructionOptionEnum.CREDENTIALS)) {
             JsonObject sid = new JsonObject();
             sid.addProperty(ToolSchemaKeyEnum.TYPE.key(), "string");
-            sid.addProperty(ToolSchemaKeyEnum.DESCRIPTION.key(), "Your own session ID (from your session identity block).");
+            sid.addProperty(ToolSchemaKeyEnum.DESCRIPTION.key(), "Your own session ID from the session identity block.");
             props.add(GetAiMessagesParamEnum.SESSION_ID.key(), sid);
             JsonObject sk = new JsonObject();
             sk.addProperty(ToolSchemaKeyEnum.TYPE.key(), "string");
-            sk.addProperty(ToolSchemaKeyEnum.DESCRIPTION.key(), "Your secret key (from your session identity block). Authenticates that you own this session. Retain this value for the entire session — it does not change unless a new identity block is explicitly sent.");
+            sk.addProperty(ToolSchemaKeyEnum.DESCRIPTION.key(), "Your secret key from the session identity block.");
             props.add(GetAiMessagesParamEnum.SECRET_KEY.key(), sk);
             required.add(GetAiMessagesParamEnum.SESSION_ID.key());
             required.add(GetAiMessagesParamEnum.SECRET_KEY.key());
@@ -84,7 +84,7 @@ public class GetAiMessagesTool extends AbstractActionTool {
         }
         List<AiInboxMessage> messages = AiSessionInboxBroker.getInstance().listInbox(sessionId, secretKey);
         if (messages == null) {
-            return "Error: authentication failed — check that sessionId and secretKey match your session identity";
+            return "Error: authentication failed — check that " + GetAiMessagesParamEnum.SESSION_ID.key() + " and " + GetAiMessagesParamEnum.SECRET_KEY.key() + " match your session identity";
         }
         if (messages.isEmpty()) {
             return "Server time: " + DateUtil.now() + "\nInbox is empty.";

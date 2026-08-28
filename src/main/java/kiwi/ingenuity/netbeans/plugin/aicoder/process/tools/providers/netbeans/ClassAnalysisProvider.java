@@ -15,6 +15,7 @@ import javax.lang.model.element.TypeElement;
 import javax.lang.model.type.DeclaredType;
 import javax.lang.model.type.TypeKind;
 import javax.lang.model.type.TypeMirror;
+import kiwi.ingenuity.netbeans.plugin.aicoder.process.McpToolPropertyEnum;
 import org.netbeans.api.java.source.ClassIndex;
 import org.netbeans.api.java.source.ElementHandle;
 import org.netbeans.api.java.source.JavaSource;
@@ -24,7 +25,7 @@ public class ClassAnalysisProvider {
 
     public static String getClassMembers(String className) {
         if (className == null || className.isBlank()) {
-            return "className is required";
+            return McpToolPropertyEnum.CLASS_NAME.key() + " is required";
         }
         String normalizedName = className.replace('$', '.');
         FileObject fo = FileUtils.locateSourceFile(normalizedName);
@@ -83,7 +84,7 @@ public class ClassAnalysisProvider {
 
     public static String getTypeHierarchy(String className) {
         if (className == null || className.isBlank()) {
-            return "className is required";
+            return McpToolPropertyEnum.CLASS_NAME.key() + " is required";
         }
         String normalizedName = className.replace('$', '.');
         FileObject fo = FileUtils.locateSourceFile(normalizedName);

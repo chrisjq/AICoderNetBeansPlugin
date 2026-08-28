@@ -34,7 +34,7 @@ public class DeleteAiMessageTool extends AbstractActionTool {
                 // id list, so a caller obeying the schema avoided a call the tool
                 // supports. The schema is the only description a model sees, so it
                 // has to describe what the handler actually accepts.
-                "Delete one or more inbox messages by id. Pass " + DeleteAiMessageParamEnum.MESSAGE_ID.key() + " for a single message or " + DeleteAiMessageParamEnum.MESSAGE_IDS.key() + " array for bulk delete. At least one of " + DeleteAiMessageParamEnum.MESSAGE_ID.key() + " or " + DeleteAiMessageParamEnum.MESSAGE_IDS.key() + " is required; if both are supplied they are combined.");
+                "Delete inbox messages by ID. Provide " + DeleteAiMessageParamEnum.MESSAGE_ID.key() + ", " + DeleteAiMessageParamEnum.MESSAGE_IDS.key() + ", or both; both are combined.");
         JsonObject schema = new JsonObject();
         schema.addProperty(ToolSchemaKeyEnum.TYPE.key(), "object");
         JsonObject props = new JsonObject();
@@ -46,25 +46,25 @@ public class DeleteAiMessageTool extends AbstractActionTool {
         if (options.contains(McpInstructionOptionEnum.CREDENTIALS)) {
             JsonObject sid = new JsonObject();
             sid.addProperty(ToolSchemaKeyEnum.TYPE.key(), "string");
-            sid.addProperty(ToolSchemaKeyEnum.DESCRIPTION.key(), "Your own session ID (from your session identity block).");
+            sid.addProperty(ToolSchemaKeyEnum.DESCRIPTION.key(), "Your own session ID from the session identity block.");
             props.add(DeleteAiMessageParamEnum.SESSION_ID.key(), sid);
             JsonObject sk = new JsonObject();
             sk.addProperty(ToolSchemaKeyEnum.TYPE.key(), "string");
-            sk.addProperty(ToolSchemaKeyEnum.DESCRIPTION.key(), "Your secret key (from your session identity block). Authenticates that you own this session. Retain this value for the entire session — it does not change unless a new identity block is explicitly sent.");
+            sk.addProperty(ToolSchemaKeyEnum.DESCRIPTION.key(), "Your secret key from the session identity block.");
             props.add(DeleteAiMessageParamEnum.SECRET_KEY.key(), sk);
             required.add(DeleteAiMessageParamEnum.SESSION_ID.key());
             required.add(DeleteAiMessageParamEnum.SECRET_KEY.key());
         }
         JsonObject mid = new JsonObject();
         mid.addProperty(ToolSchemaKeyEnum.TYPE.key(), "string");
-        mid.addProperty(ToolSchemaKeyEnum.DESCRIPTION.key(), "A single message ID to delete.");
+        mid.addProperty(ToolSchemaKeyEnum.DESCRIPTION.key(), "Single message ID to delete.");
         props.add(DeleteAiMessageParamEnum.MESSAGE_ID.key(), mid);
         JsonObject mids = new JsonObject();
         mids.addProperty(ToolSchemaKeyEnum.TYPE.key(), "array");
         JsonObject items = new JsonObject();
         items.addProperty(ToolSchemaKeyEnum.TYPE.key(), "string");
         mids.add(ToolSchemaKeyEnum.ITEMS.key(), items);
-        mids.addProperty(ToolSchemaKeyEnum.DESCRIPTION.key(), "A list of message IDs to delete.");
+        mids.addProperty(ToolSchemaKeyEnum.DESCRIPTION.key(), "Message IDs to delete.");
         props.add(DeleteAiMessageParamEnum.MESSAGE_IDS.key(), mids);
         schema.add(ToolSchemaKeyEnum.PROPERTIES.key(), props);
         schema.add(ToolSchemaKeyEnum.REQUIRED.key(), required);

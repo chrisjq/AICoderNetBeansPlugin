@@ -4,7 +4,6 @@ import com.google.gson.JsonArray;
 import com.google.gson.JsonObject;
 import java.util.Set;
 import kiwi.ingenuity.netbeans.plugin.aicoder.DatabaseAccessOptionEnum;
-import kiwi.ingenuity.netbeans.plugin.aicoder.PluginSettings;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.McpArgumentException;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.McpInstructionOptionEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.McpSectionEnum;
@@ -38,18 +37,18 @@ public class GetTableDataTool implements McpToolInterface {
         JsonObject tool = new JsonObject();
         tool.addProperty(ToolSchemaKeyEnum.NAME.key(), McpToolEnum.GET_TABLE_DATA.toolName());
         tool.addProperty(ToolSchemaKeyEnum.DESCRIPTION.key(),
-                "Returns up to `limit` rows of a table's data (equivalent to SELECT * FROM <table>) on a "
-                + "connection already registered and connected in the IDE's Database Explorer. Read-only: "
-                + "enforced via a row cap (see `limit`) and a read-only JDBC connection. If more rows exist "
-                + "than were returned, the output ends with a '... (row limit N reached, results may be "
-                + "truncated)' note. Use ListDatabaseConnections first to find the " + DatabaseParamEnum.CONNECTION_NAME.key() + ".");
+                "Returns up to `" + DatabaseParamEnum.LIMIT.key() + "` rows of a table (SELECT * FROM <table>) on a registered, connected "
+                + "Database Explorer connection. Read-only. Results are capped and truncation is flagged in "
+                + "the output. Find the connection via "
+                + McpToolEnum.LIST_DATABASE_CONNECTIONS.toolName() + ".");
         JsonObject schema = new JsonObject();
         schema.addProperty(ToolSchemaKeyEnum.TYPE.key(), "object");
         JsonObject props = new JsonObject();
         JsonObject connectionName = new JsonObject();
         connectionName.addProperty(ToolSchemaKeyEnum.TYPE.key(), "string");
         connectionName.addProperty(ToolSchemaKeyEnum.DESCRIPTION.key(),
-                "Display name of a registered Database Explorer connection (see ListDatabaseConnections).");
+                "Display name of a registered Database Explorer connection (see "
+                + McpToolEnum.LIST_DATABASE_CONNECTIONS.toolName() + ").");
         props.add(DatabaseParamEnum.CONNECTION_NAME.key(), connectionName);
         JsonObject tableName = new JsonObject();
         tableName.addProperty(ToolSchemaKeyEnum.TYPE.key(), "string");
@@ -58,9 +57,7 @@ public class GetTableDataTool implements McpToolInterface {
         JsonObject limit = new JsonObject();
         limit.addProperty(ToolSchemaKeyEnum.TYPE.key(), "integer");
         limit.addProperty(ToolSchemaKeyEnum.DESCRIPTION.key(),
-                "Maximum rows to return. Optional — defaults to, and is capped at, this session's "
-                + "effective database row limit: a per-session override if one is configured, otherwise "
-                + "the plugin default (currently " + PluginSettings.getDatabaseRowLimit() + ").");
+                "Maximum rows to return. Optional; defaults to the session's effective database row limit.");
         props.add(DatabaseParamEnum.LIMIT.key(), limit);
         schema.add(ToolSchemaKeyEnum.PROPERTIES.key(), props);
         JsonArray required = new JsonArray();

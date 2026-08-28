@@ -30,6 +30,7 @@ import javax.swing.text.JTextComponent;
 import kiwi.ingenuity.netbeans.plugin.aicoder.PluginSettings;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.McpToolEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.McpToolPropertyEnum;
+import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.system.GetFileContentParamEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.utils.DateUtil;
 import kiwi.ingenuity.netbeans.plugin.aicoder.utils.OperatingSystemEnum;
 import org.netbeans.api.editor.EditorRegistry;
@@ -231,7 +232,8 @@ public class EditorContextProvider {
                 sb.append(String.format("%4d  %s%n", i + 1, lines.get(i)));
                 if (sb.length() > MAX_FILE_CONTENT_CHARS) {
                     sb.append("\n[Truncated: output exceeded ").append(MAX_FILE_CONTENT_CHARS)
-                            .append(" characters. Use startLine/endLine to read a specific range.]");
+                            .append(" characters. Use ").append(GetFileContentParamEnum.START_LINE.key()).append("/")
+                            .append(GetFileContentParamEnum.END_LINE.key()).append(" to read a specific range.]");
                     break;
                 }
             }
@@ -706,8 +708,9 @@ public class EditorContextProvider {
         }
     }
 
-    public static String navigateToLine(String filePath, int lineNumber) {
-        return navigateToLine(filePath, lineNumber, true);
+    public static String navigateToLine(String filePath, Integer lineNumber, boolean focus) {
+        return lineNumber == null ? openFile(filePath, focus)
+                : navigateToLine(filePath, lineNumber.intValue(), focus);
     }
 
     /**
@@ -723,7 +726,7 @@ public class EditorContextProvider {
         if (fo == null) {
             return "Cannot resolve file: " + filePath;
         }
-        final int effectiveLine = Math.max(1, lineNumber);
+        final int effectiveLine = lineNumber;
         org.openide.text.Line.ShowVisibilityType visibility = focus
                 ? org.openide.text.Line.ShowVisibilityType.FOCUS
                 : org.openide.text.Line.ShowVisibilityType.NONE;
@@ -732,16 +735,23 @@ public class EditorContextProvider {
             SwingUtilities.invokeAndWait(() -> {
                 try {
                     org.openide.loaders.DataObject dob = org.openide.loaders.DataObject.find(fo);
+                    TopComponent previouslyActive = focus ? null : TopComponent.getRegistry().getActivated();
                     org.openide.cookies.LineCookie lc = dob.getLookup().lookup(org.openide.cookies.LineCookie.class);
                     if (lc != null) {
                         org.openide.text.Line line = lc.getLineSet().getCurrent(effectiveLine - 1);
                         line.show(org.openide.text.Line.ShowOpenType.OPEN, visibility);
+                        if (!focus && previouslyActive != null) {
+                            previouslyActive.requestActive();
+                        }
                         result.set("Navigated to " + filePath + ":" + effectiveLine);
                         return;
                     }
                     org.openide.cookies.OpenCookie oc = dob.getLookup().lookup(org.openide.cookies.OpenCookie.class);
                     if (oc != null) {
                         oc.open();
+                        if (!focus && previouslyActive != null) {
+                            previouslyActive.requestActive();
+                        }
                         result.set("Navigated to " + filePath + ":" + effectiveLine);
                     }
                     else {
@@ -757,6 +767,72 @@ public class EditorContextProvider {
         catch (Exception e) {
             LOG.log(Level.FINE, "navigateToLine error", e);
             return "Error navigating: " + e.getMessage();
+        }
+        return result.get();
+    }
+
+    public static String openFile(String filePath, boolean focus) {
+        File f = new File(filePath);
+        if (!f.exists()) {
+            return "File not found: " + filePath;
+        }
+        FileObject fo = FileUtils.resolveByFile(f);
+        if (fo == null) {
+            return "Cannot resolve file: " + filePath;
+        }
+        AtomicReference<String> result = new AtomicReference<>();
+        try {
+            SwingUtilities.invokeAndWait(() -> {
+                try {
+                    DataObject dob = DataObject.find(fo);
+                    TopComponent previouslyActive = focus ? null : TopComponent.getRegistry().getActivated();
+                    org.openide.cookies.EditorCookie ec = dob.getLookup().lookup(org.openide.cookies.EditorCookie.class);
+                    boolean targetWasActive = false;
+                    if (!focus && ec != null && previouslyActive != null) {
+                        javax.swing.JEditorPane[] panes = ec.getOpenedPanes();
+                        if (panes != null && panes.length > 0) {
+                            targetWasActive = previouslyActive == SwingUtilities.getAncestorOfClass(TopComponent.class, panes[0]);
+                        }
+                    }
+                    if (ec != null) {
+                        ec.open();
+                        if (focus) {
+                            javax.swing.JEditorPane[] panes = ec.getOpenedPanes();
+                            if (panes != null && panes.length > 0) {
+                                TopComponent editor = (TopComponent) SwingUtilities.getAncestorOfClass(TopComponent.class, panes[0]);
+                                if (editor != null) {
+                                    editor.requestActive();
+                                }
+                                panes[0].requestFocusInWindow();
+                            }
+                        }
+                        else if (previouslyActive != null && !targetWasActive) {
+                            previouslyActive.requestActive();
+                        }
+                        result.set("Opened " + filePath);
+                        return;
+                    }
+                    org.openide.cookies.OpenCookie oc = dob.getLookup().lookup(org.openide.cookies.OpenCookie.class);
+                    if (oc != null) {
+                        oc.open();
+                        if (!focus && previouslyActive != null) {
+                            previouslyActive.requestActive();
+                        }
+                        result.set("Opened " + filePath);
+                    }
+                    else {
+                        result.set("Cannot open file in NetBeans: " + filePath);
+                    }
+                }
+                catch (org.openide.loaders.DataObjectNotFoundException ex) {
+                    LOG.log(Level.FINE, "openFile: file not found in DataObject system", ex);
+                    result.set("Cannot open file in NetBeans: " + filePath);
+                }
+            });
+        }
+        catch (Exception e) {
+            LOG.log(Level.FINE, "openFileWithoutMovingCaret error", e);
+            return "Error opening file: " + e.getMessage();
         }
         return result.get();
     }

@@ -38,15 +38,15 @@ public class ApplyEditTool extends AbstractActionTool {
     public ApplyEditTool() {
         super(McpSectionEnum.UI_FILES,
                 McpToolEnum.APPLY_EDIT.toolName(),
-                "Replace an exact string in a file. oldString must match the source byte-for-byte including indentation; strip the line-number gutter if text was copied from " + McpToolEnum.GET_FILE_CONTENT.toolName() + ". The user approves the change in the NetBeans Accept/Reject diff panel.",
-                "ApplyEdit -> replace oldString with newString in a file; oldString must be byte-for-byte exact (strip " + McpToolEnum.GET_FILE_CONTENT.toolName() + " gutter if copying from there); user approves via the NetBeans diff panel");
+                "Replace an exact string in a file. " + McpToolPropertyEnum.OLD_STRING.key() + " must match the source byte-for-byte including indentation; strip the line-number gutter if text was copied from " + McpToolEnum.GET_FILE_CONTENT.toolName() + ". The user approves the change in the NetBeans Accept/Reject diff panel.",
+                McpToolEnum.APPLY_EDIT.toolName() + " -> replace " + McpToolPropertyEnum.OLD_STRING.key() + " with " + McpToolPropertyEnum.NEW_STRING.key() + " in a file; " + McpToolPropertyEnum.OLD_STRING.key() + " must be byte-for-byte exact (strip " + McpToolEnum.GET_FILE_CONTENT.toolName() + " gutter if copying from there); user approves via the NetBeans diff panel");
     }
 
     @Override
     public JsonObject schema(Set<McpInstructionOptionEnum> options) {
         JsonObject tool = new JsonObject();
         tool.addProperty(ToolSchemaKeyEnum.NAME.key(), McpToolEnum.APPLY_EDIT.toolName());
-        tool.addProperty(ToolSchemaKeyEnum.DESCRIPTION.key(), "Replace an exact string in a file. oldString must match the source byte-for-byte including indentation; strip the line-number gutter if text was copied from " + McpToolEnum.GET_FILE_CONTENT.toolName() + ". Any unsaved editor changes are saved first, so oldString is matched against what the user has on screen. The user approves the change in the NetBeans Accept/Reject diff panel.");
+        tool.addProperty(ToolSchemaKeyEnum.DESCRIPTION.key(), "Replace an exact string in a file, routing edits through the user's Accept/Reject diff panel. " + McpToolPropertyEnum.OLD_STRING.key() + " must match the source byte-for-byte including indentation; strip the line-number gutter if text was copied from " + McpToolEnum.GET_FILE_CONTENT.toolName() + ". Any unsaved editor changes are saved first, so " + McpToolPropertyEnum.OLD_STRING.key() + " is matched against what the user has on screen. Replaces only the first occurrence — make " + McpToolPropertyEnum.OLD_STRING.key() + " unique enough to identify the intended site.");
         JsonObject schema = new JsonObject();
         schema.addProperty(ToolSchemaKeyEnum.TYPE.key(), "object");
         JsonObject props = new JsonObject();

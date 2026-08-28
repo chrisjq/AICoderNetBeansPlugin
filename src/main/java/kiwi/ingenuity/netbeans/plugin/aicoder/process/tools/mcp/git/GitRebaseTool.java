@@ -32,11 +32,11 @@ public class GitRebaseTool implements McpToolInterface {
             return null;
         }
         if (options.contains(McpInstructionOptionEnum.ONLY_MCP_TOOL_ACCESS)) {
-            return "GitRebase - rebases current branch onto upstream; supports BEGIN/CONTINUE/SKIP/ABORT. "
-                    + "Requires projectPath to select the target git repository or project root.";
+            return McpToolEnum.GIT_REBASE.toolName() + " - rebases current branch onto upstream; supports BEGIN/CONTINUE/SKIP/ABORT. "
+                    + "Requires " + GitCommonParamEnum.PROJECT_PATH.key() + " to select the target git repository or project root.";
         }
-        return "GitRebase -> INSTEAD OF Bash git rebase - rebases current branch onto upstream; supports BEGIN/CONTINUE/SKIP/ABORT. "
-                + "Requires projectPath to select the target git repository or project root.";
+        return McpToolEnum.GIT_REBASE.toolName() + " -> INSTEAD OF Bash git rebase - rebases current branch onto upstream; supports BEGIN/CONTINUE/SKIP/ABORT. "
+                + "Requires " + GitCommonParamEnum.PROJECT_PATH.key() + " to select the target git repository or project root.";
     }
 
     @Override
@@ -44,8 +44,7 @@ public class GitRebaseTool implements McpToolInterface {
         JsonObject tool = new JsonObject();
         tool.addProperty(ToolSchemaKeyEnum.NAME.key(), McpToolEnum.GIT_REBASE.toolName());
         tool.addProperty(ToolSchemaKeyEnum.DESCRIPTION.key(),
-                "Rebases the current branch. operation=BEGIN starts a rebase onto upstream. "
-                + "CONTINUE/SKIP/ABORT manage an in-progress rebase. "
+                "Rebases the current branch. operation=BEGIN starts onto upstream; CONTINUE/SKIP/ABORT manage in-progress rebase. "
                 + "Equivalent to: git rebase [upstream] / git rebase --continue|--skip|--abort");
         JsonObject schema = new JsonObject();
         schema.addProperty(ToolSchemaKeyEnum.TYPE.key(), "object");
@@ -56,14 +55,12 @@ public class GitRebaseTool implements McpToolInterface {
         props.add(GitRebaseParamEnum.UPSTREAM.key(), upstream);
         JsonObject operation = new JsonObject();
         operation.addProperty(ToolSchemaKeyEnum.TYPE.key(), "string");
-        operation.addProperty(ToolSchemaKeyEnum.DESCRIPTION.key(), "Operation: BEGIN (default), CONTINUE, SKIP, ABORT.");
+        operation.addProperty(ToolSchemaKeyEnum.DESCRIPTION.key(), "Operation: BEGIN, CONTINUE, SKIP, ABORT. Default: BEGIN.");
         props.add(GitRebaseParamEnum.OPERATION.key(), operation);
         JsonObject projectPath = new JsonObject();
         projectPath.addProperty(ToolSchemaKeyEnum.TYPE.key(), "string");
         projectPath.addProperty(ToolSchemaKeyEnum.DESCRIPTION.key(),
-                "Path to the target git repository or project root (relative paths are resolved "
-                + "against the default project). Required — selects which project/repo to operate "
-                + "on when multiple are open, or when the repo lives outside any open project.");
+                "Target git repository or project root; relative paths resolve against the default project.");
         props.add(GitCommonParamEnum.PROJECT_PATH.key(), projectPath);
         schema.add(ToolSchemaKeyEnum.PROPERTIES.key(), props);
         JsonArray required = new JsonArray();

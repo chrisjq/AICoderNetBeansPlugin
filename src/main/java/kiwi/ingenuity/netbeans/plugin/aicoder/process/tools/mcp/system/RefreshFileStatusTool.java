@@ -5,6 +5,7 @@ import java.util.Set;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.McpInstructionOptionEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.McpSectionEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.McpToolEnum;
+import kiwi.ingenuity.netbeans.plugin.aicoder.process.McpToolPropertyEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.session.AbstractAiSession;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.McpToolInterface;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.McpToolSchemas;
@@ -35,7 +36,8 @@ public class RefreshFileStatusTool implements McpToolInterface {
                 "Refreshes NetBeans' view of the filesystem and VCS (git) status. "
                 + "Call this after every git commit, and after creating or modifying files outside the IDE "
                 + "(e.g. files written directly by AI Coder), so NetBeans detects new files and updates git decorations immediately. "
-                + "Omit filePath to refresh all open projects; provide a file path to refresh only that file's project.");
+                + "Omit " + McpToolPropertyEnum.FILE_PATH.key()
+                + " to refresh all open projects; provide a file path to refresh only that file's project.");
         JsonObject schema = new JsonObject();
         schema.addProperty(ToolSchemaKeyEnum.TYPE.key(), "object");
         JsonObject props = new JsonObject();

@@ -33,13 +33,13 @@ public class GitCommitTool implements McpToolInterface {
             return null;
         }
         if (options.contains(McpInstructionOptionEnum.ONLY_MCP_TOOL_ACCESS)) {
-            return "GitCommit - commits staged changes with a message; "
-                    + "optionally stages files first via the files parameter. "
-                    + "Requires projectPath to select the target git repository or project root.";
+            return McpToolEnum.GIT_COMMIT.toolName() + " - commits staged changes with a message; "
+                    + "optionally stages files first via the " + GitCommitParamEnum.FILES.key() + " parameter. "
+                    + "Requires " + GitCommonParamEnum.PROJECT_PATH.key() + " to select the target git repository or project root.";
         }
-        return "GitCommit -> INSTEAD OF Bash git commit - commits staged changes with a message; "
-                + "optionally stages files first via the files parameter. "
-                + "Requires projectPath to select the target git repository or project root.";
+        return McpToolEnum.GIT_COMMIT.toolName() + " -> INSTEAD OF Bash git commit - commits staged changes with a message; "
+                + "optionally stages files first via the " + GitCommitParamEnum.FILES.key() + " parameter. "
+                + "Requires " + GitCommonParamEnum.PROJECT_PATH.key() + " to select the target git repository or project root.";
     }
 
     @Override
@@ -47,9 +47,7 @@ public class GitCommitTool implements McpToolInterface {
         JsonObject tool = new JsonObject();
         tool.addProperty(ToolSchemaKeyEnum.NAME.key(), McpToolEnum.GIT_COMMIT.toolName());
         tool.addProperty(ToolSchemaKeyEnum.DESCRIPTION.key(),
-                "Commits staged changes with the given message (git commit -m). "
-                + "If files is provided, stages those files first (git add) before committing. "
-                + "Pass files=[\".\"] to stage all changes then commit in one step.");
+                "Commits staged changes with message. Pass " + GitCommitParamEnum.FILES.key() + " to stage first; use [\".\" ] for all.");
         JsonObject schema = new JsonObject();
         schema.addProperty(ToolSchemaKeyEnum.TYPE.key(), "object");
         JsonObject props = new JsonObject();
@@ -62,14 +60,12 @@ public class GitCommitTool implements McpToolInterface {
         JsonObject items = new JsonObject();
         items.addProperty(ToolSchemaKeyEnum.TYPE.key(), "string");
         files.add(ToolSchemaKeyEnum.ITEMS.key(), items);
-        files.addProperty(ToolSchemaKeyEnum.DESCRIPTION.key(), "Optional file paths to stage before committing. Omit to commit already-staged changes.");
+        files.addProperty(ToolSchemaKeyEnum.DESCRIPTION.key(), "Paths to stage before committing (omit for already-staged).");
         props.add(GitCommitParamEnum.FILES.key(), files);
         JsonObject projectPath = new JsonObject();
         projectPath.addProperty(ToolSchemaKeyEnum.TYPE.key(), "string");
         projectPath.addProperty(ToolSchemaKeyEnum.DESCRIPTION.key(),
-                "Path to the target git repository or project root (relative paths are resolved "
-                + "against the default project). Required — selects which project/repo to operate "
-                + "on when multiple are open, or when the repo lives outside any open project.");
+                "Target git repository or project root; relative paths resolve against the default project.");
         props.add(GitCommonParamEnum.PROJECT_PATH.key(), projectPath);
         schema.add(ToolSchemaKeyEnum.PROPERTIES.key(), props);
         JsonArray required = new JsonArray();

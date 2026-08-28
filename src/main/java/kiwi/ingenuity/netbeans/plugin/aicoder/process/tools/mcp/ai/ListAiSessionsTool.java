@@ -62,7 +62,7 @@ public class ListAiSessionsTool extends AbstractActionTool {
         if (options.contains(McpInstructionOptionEnum.CREDENTIALS)) {
             JsonObject sid = new JsonObject();
             sid.addProperty(ToolSchemaKeyEnum.TYPE.key(), "string");
-            sid.addProperty(ToolSchemaKeyEnum.DESCRIPTION.key(), "Your own session ID (from your session identity block). Used to exclude yourself from the results.");
+            sid.addProperty(ToolSchemaKeyEnum.DESCRIPTION.key(), "Your own session ID from the session identity block; used to exclude yourself.");
             props.add(ListAiSessionsParamEnum.SESSION_ID.key(), sid);
             required.add(ListAiSessionsParamEnum.SESSION_ID.key());
         }

@@ -15,7 +15,7 @@ public class CloseFileTool extends AbstractFileTool {
         super(McpSectionEnum.UI_FILES,
                 McpToolEnum.CLOSE_FILE.toolName(),
                 "Close the editor tab for the specified file.",
-                "CloseFile -> close the editor tab for a specified file");
+                McpToolEnum.CLOSE_FILE.toolName() + " -> close the editor tab for a specified file");
     }
 
     @Override

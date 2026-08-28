@@ -12,9 +12,7 @@ import java.util.logging.Level;
 import java.util.logging.Logger;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.server.McpServerRegistry;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.TimeoutEnum;
-import org.netbeans.api.project.Project;
-import org.netbeans.api.project.ui.OpenProjects;
-import org.openide.filesystems.FileUtil;
+import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.git.GitCommonParamEnum;
 
 public class BuildAndTestMavenProvider {
 
@@ -22,78 +20,66 @@ public class BuildAndTestMavenProvider {
     private static final int MAX_OUTPUT_BYTES = 2 * 1024 * 1024;
 
     public static String buildProject(String sessionId, String projectPath) {
-        File root = resolveRoot(sessionId, projectPath);
-        if (root == null) {
-            return "No open project found";
+        RootResult resolved = resolveRoot(sessionId, projectPath);
+        if (resolved.error() != null) {
+            return resolved.error();
         }
+        File root = resolved.root();
         return runMaven(sessionId, root, "package", "-DskipTests");
     }
 
     public static String cleanAndBuildProject(String sessionId, String projectPath) {
-        File root = resolveRoot(sessionId, projectPath);
-        if (root == null) {
-            return "No open project found";
+        RootResult resolved = resolveRoot(sessionId, projectPath);
+        if (resolved.error() != null) {
+            return resolved.error();
         }
+        File root = resolved.root();
         return runMaven(sessionId, root, "clean", "package", "-DskipTests");
     }
 
     public static String downloadSources(String sessionId, String projectPath) {
-        File root = resolveRoot(sessionId, projectPath);
-        if (root == null) {
-            return "No open project found";
+        RootResult resolved = resolveRoot(sessionId, projectPath);
+        if (resolved.error() != null) {
+            return resolved.error();
         }
+        File root = resolved.root();
         return runMaven(sessionId, root, "dependency:sources");
     }
 
     public static String downloadJavadoc(String sessionId, String projectPath) {
-        File root = resolveRoot(sessionId, projectPath);
-        if (root == null) {
-            return "No open project found";
+        RootResult resolved = resolveRoot(sessionId, projectPath);
+        if (resolved.error() != null) {
+            return resolved.error();
         }
+        File root = resolved.root();
         return runMaven(sessionId, root, "dependency:resolve", "-Dclassifier=javadoc");
     }
 
     public static String runTests(String sessionId, String testClass, String projectPath) {
-        File root = resolveRoot(sessionId, projectPath);
-        if (root == null) {
-            return "No open project found";
+        RootResult resolved = resolveRoot(sessionId, projectPath);
+        if (resolved.error() != null) {
+            return resolved.error();
         }
+        File root = resolved.root();
         if (testClass != null && !testClass.isBlank()) {
             return runMaven(sessionId, root, "test", "-Dtest=" + testClass);
         }
         return runMaven(sessionId, root, "test");
     }
 
-    private static File resolveRoot(String sessionId, String projectPath) {
-        if (projectPath != null && !projectPath.isBlank()) {
-            File dir = new File(projectPath);
-            if (!dir.isDirectory()) {
-                return null;
-            }
-            var server = McpServerRegistry.getServer();
-            return server != null && server.isFileAllowed(sessionId, dir.getAbsolutePath()) ? dir : null;
+    private static RootResult resolveRoot(String sessionId, String projectPath) {
+        if (projectPath == null || projectPath.isBlank()) {
+            return new RootResult(null, GitCommonParamEnum.PROJECT_PATH.key() + " is required");
         }
-        File dir = getOpenProjectRoot();
+        File dir = new File(projectPath);
+        if (!dir.isDirectory()) {
+            return new RootResult(null, "Not a project directory: " + projectPath);
+        }
         var server = McpServerRegistry.getServer();
-        return dir != null && server != null && server.isFileAllowed(sessionId, dir.getAbsolutePath()) ? dir : null;
-    }
-
-    private static File getOpenProjectRoot() {
-        OpenProjects op = OpenProjects.getDefault();
-        Project main = op.getMainProject();
-        if (main != null) {
-            File dir = FileUtil.toFile(main.getProjectDirectory());
-            if (dir != null && new File(dir, "pom.xml").exists()) {
-                return dir;
-            }
+        if (server == null || !server.isFileAllowed(sessionId, dir.getAbsolutePath())) {
+            return new RootResult(null, "Access denied: " + projectPath);
         }
-        for (Project p : op.getOpenProjects()) {
-            File dir = FileUtil.toFile(p.getProjectDirectory());
-            if (dir != null && new File(dir, "pom.xml").exists()) {
-                return dir;
-            }
-        }
-        return null;
+        return new RootResult(dir, null);
     }
 
     private static String runMaven(String sessionId, File dir, String... goals) {
@@ -184,4 +170,6 @@ public class BuildAndTestMavenProvider {
 
     private BuildAndTestMavenProvider() {
     }
+
+    private record RootResult(File root, String error) {}
 }

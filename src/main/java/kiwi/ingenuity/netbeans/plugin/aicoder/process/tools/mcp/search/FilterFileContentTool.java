@@ -24,10 +24,8 @@ import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.providers.netbeans.E
 public class FilterFileContentTool implements McpToolInterface {
 
     private static String description() {
-        return "Pattern-matches lines in the file at filePath and returns matching line numbers and "
-                + "content, with an optional context window per match. Literal text by default; set isRegex "
-                + "for a pattern. At most 200 matches are shown by default, but the header reports the true "
-                + "total when capped — narrow the pattern if the total is far above the cap.";
+        return "Pattern-matches lines in a file and returns matching line numbers and content. "
+                + "Default: literal text, 200 matches max, header reports true total.";
     }
 
     private final McpHookServer server;
@@ -77,8 +75,7 @@ public class FilterFileContentTool implements McpToolInterface {
         JsonObject cl = new JsonObject();
         cl.addProperty(ToolSchemaKeyEnum.TYPE.key(), "integer");
         cl.addProperty(ToolSchemaKeyEnum.DESCRIPTION.key(),
-                "Lines of surrounding context to include per match, like grep -C. Default: 0. Matched lines "
-                + "are shown as 'N: text'; context lines as 'N- text'.");
+                "Lines of surrounding context per match (like grep -C). Default: 0.");
         props.add(FilterFileContentParamEnum.CONTEXT_LINES.key(), cl);
         JsonObject mm = new JsonObject();
         mm.addProperty(ToolSchemaKeyEnum.TYPE.key(), "integer");

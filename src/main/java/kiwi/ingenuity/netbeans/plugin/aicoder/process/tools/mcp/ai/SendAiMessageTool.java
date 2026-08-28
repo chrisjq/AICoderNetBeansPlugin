@@ -20,21 +20,21 @@ public class SendAiMessageTool extends AbstractActionTool {
         super(McpSectionEnum.PLUGIN,
                 McpToolEnum.SEND_AI_MESSAGE.toolName(),
                 "Send a message to another AI session's inbox. Use " + McpToolEnum.LIST_AI_SESSIONS.toolName() + " to find peer sessionIds.",
-                McpToolEnum.SEND_AI_MESSAGE.toolName() + " -> send to a peer AI session's inbox; use expectsReply+replyImportant to be interrupted when they reply");
+                McpToolEnum.SEND_AI_MESSAGE.toolName() + " -> send to a peer AI session's inbox; use " + SendAiMessageParamEnum.EXPECTS_REPLY.key() + "+" + SendAiMessageParamEnum.REPLY_IMPORTANT.key() + " to be interrupted when they reply");
     }
 
     @Override
     public JsonObject schema(Set<McpInstructionOptionEnum> options) {
         JsonObject tool = new JsonObject();
         tool.addProperty(ToolSchemaKeyEnum.NAME.key(), McpToolEnum.SEND_AI_MESSAGE.toolName());
-        tool.addProperty(ToolSchemaKeyEnum.DESCRIPTION.key(), "Send a message to another AI session's inbox. Use " + McpToolEnum.LIST_AI_SESSIONS.toolName() + " to find peer sessionIds.");
+        tool.addProperty(ToolSchemaKeyEnum.DESCRIPTION.key(), "Send a message to another AI session. Use " + McpToolEnum.LIST_AI_SESSIONS.toolName() + " to find the target session ID.");
         JsonObject schema = new JsonObject();
         schema.addProperty(ToolSchemaKeyEnum.TYPE.key(), "object");
         JsonObject props = new JsonObject();
 
         JsonObject tid = new JsonObject();
         tid.addProperty(ToolSchemaKeyEnum.TYPE.key(), "string");
-        tid.addProperty(ToolSchemaKeyEnum.DESCRIPTION.key(), "The sessionId of the target AI session to send the message to (from " + McpToolEnum.LIST_AI_SESSIONS.toolName() + ").");
+        tid.addProperty(ToolSchemaKeyEnum.DESCRIPTION.key(), "Required target session ID from " + McpToolEnum.LIST_AI_SESSIONS.toolName() + ".");
         props.add(SendAiMessageParamEnum.TARGET_SESSION_ID.key(), tid);
 
         JsonObject subj = new JsonObject();
@@ -56,17 +56,17 @@ public class SendAiMessageTool extends AbstractActionTool {
 
         JsonObject important = new JsonObject();
         important.addProperty(ToolSchemaKeyEnum.TYPE.key(), "boolean");
-        important.addProperty(ToolSchemaKeyEnum.DESCRIPTION.key(), "If true, sends a graceful interrupt to the target so it can read this message sooner, instead of waiting for its current turn to finish. This has no effect unless the target session permits interruption AND its backend has a mid-turn channel — check mailDelivery in " + McpToolEnum.LIST_AI_SESSIONS.toolName() + " first. Where mailDelivery says the peer reads at end of turn, setting this does nothing at all.");
+        important.addProperty(ToolSchemaKeyEnum.DESCRIPTION.key(), "If true, request prompt delivery; it interrupts a running target only when mailDelivery supports mid-turn delivery and the target allows important messages. Check mailDelivery in " + McpToolEnum.LIST_AI_SESSIONS.toolName() + " first.");
         props.add(SendAiMessageParamEnum.IMPORTANT.key(), important);
 
         JsonObject expectsReply = new JsonObject();
         expectsReply.addProperty(ToolSchemaKeyEnum.TYPE.key(), "boolean");
-        expectsReply.addProperty(ToolSchemaKeyEnum.DESCRIPTION.key(), "If true, the broker tracks that you expect a reply. If the recipient exits without replying, you will automatically receive a notification. Combine with replyImportant=true if you want to be interrupted when the reply (or the no-reply notification) arrives.");
+        expectsReply.addProperty(ToolSchemaKeyEnum.DESCRIPTION.key(), "If true, notify you if the recipient exits without replying.");
         props.add(SendAiMessageParamEnum.EXPECTS_REPLY.key(), expectsReply);
 
         JsonObject replyImportant = new JsonObject();
         replyImportant.addProperty(ToolSchemaKeyEnum.TYPE.key(), "boolean");
-        replyImportant.addProperty(ToolSchemaKeyEnum.DESCRIPTION.key(), "Only meaningful when expectsReply=true. If true, any reply to this message is automatically marked important so you receive a graceful interrupt when it arrives — you do not need to set important=true on the reply yourself. The automatic no-reply notification (sent when the recipient exits without responding) is also marked important and will interrupt you.");
+        replyImportant.addProperty(ToolSchemaKeyEnum.DESCRIPTION.key(), "If true with " + SendAiMessageParamEnum.EXPECTS_REPLY.key() + ", interrupt you when a reply or no-reply notification arrives.");
         props.add(SendAiMessageParamEnum.REPLY_IMPORTANT.key(), replyImportant);
 
         JsonArray required = new JsonArray();
@@ -78,12 +78,12 @@ public class SendAiMessageTool extends AbstractActionTool {
         if (options.contains(McpInstructionOptionEnum.CREDENTIALS)) {
             JsonObject sessionId = new JsonObject();
             sessionId.addProperty(ToolSchemaKeyEnum.TYPE.key(), "string");
-            sessionId.addProperty(ToolSchemaKeyEnum.DESCRIPTION.key(), "Your sessionId for authentication (from your session identity block).");
+            sessionId.addProperty(ToolSchemaKeyEnum.DESCRIPTION.key(), "Your own session ID from the session identity block.");
             props.add(SendAiMessageParamEnum.SESSION_ID.key(), sessionId);
 
             JsonObject secretKey = new JsonObject();
             secretKey.addProperty(ToolSchemaKeyEnum.TYPE.key(), "string");
-            secretKey.addProperty(ToolSchemaKeyEnum.DESCRIPTION.key(), "Your secret key for authentication (from your session identity block). Keep this secret.");
+            secretKey.addProperty(ToolSchemaKeyEnum.DESCRIPTION.key(), "Your secret key from the session identity block.");
             props.add(SendAiMessageParamEnum.SECRET_KEY.key(), secretKey);
 
             required.add(SendAiMessageParamEnum.SESSION_ID.key());

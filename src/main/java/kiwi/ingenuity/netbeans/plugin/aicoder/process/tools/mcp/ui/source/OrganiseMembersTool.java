@@ -17,10 +17,9 @@ public class OrganiseMembersTool extends AbstractFileTool {
     public OrganiseMembersTool() {
         super(McpSectionEnum.UI_SOURCE,
                 McpToolEnum.ORGANISE_MEMBERS.toolName(),
-                "Organise members: sorts class members (fields, constructors, methods) "
-                + "according to the configured member order in Tools > Options > Editor > Java.",
-                "OrganiseMembers -> INSTEAD OF manual member reordering - sorts class members by configured order",
-                "OrganiseMembers - sorts class members by configured order");
+                "Organises class members by configured member order in the user's editor, then saves the file.",
+                McpToolEnum.ORGANISE_MEMBERS.toolName() + " -> INSTEAD OF manual member reordering - sorts class members by configured order",
+                McpToolEnum.ORGANISE_MEMBERS.toolName() + " - sorts class members by configured order");
     }
 
     @Override

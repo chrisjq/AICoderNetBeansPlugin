@@ -96,23 +96,17 @@ public class ChangeMethodSignatureTool implements McpToolInterface {
         JsonObject tool = new JsonObject();
         tool.addProperty(ToolSchemaKeyEnum.NAME.key(), McpToolEnum.CHANGE_METHOD_SIGNATURE.toolName());
         tool.addProperty(ToolSchemaKeyEnum.DESCRIPTION.key(),
-                "Changes a method's parameter list, name, return type, or creates an overload. "
-                + "All existing call sites are updated. "
-                + "parameters: the complete desired parameter list - omit to keep existing params, "
-                + "or pass [] to remove every parameter. "
-                + "For each parameter: set originalIndex to its index in the original method "
-                + "(0-based) to preserve it, or -1 for a new parameter; "
-                + "omit name/type to preserve the original name and type unchanged. "
-                + "New parameters require a defaultValue inserted at existing call sites. "
-                + "methodName: rename the method. returnType: change the return type. "
-                + "overloadMethod: when true, adds a new overload instead of modifying the original. "
-                + "parameters example: [{\"originalIndex\":0},{\"originalIndex\":1,\"name\":\"newName\"},{\"originalIndex\":-1,\"name\":\"extra\",\"type\":\"String\",\"defaultValue\":\"\\\"\\\"\"}]");
+                "Changes a method's parameter list, name, return type, or adds an overload; all existing call sites are updated. "
+                + ChangeMethodSignatureParamEnum.PARAMETERS.key() + ": the complete desired list, or [] to remove every parameter; see per-parameter rules below.");
         JsonObject schema = new JsonObject();
         schema.addProperty(ToolSchemaKeyEnum.TYPE.key(), "object");
         JsonObject props = new JsonObject();
 
         JsonObject paramsArr = new JsonObject();
         paramsArr.addProperty(ToolSchemaKeyEnum.TYPE.key(), "array");
+        paramsArr.addProperty(ToolSchemaKeyEnum.DESCRIPTION.key(),
+                "The complete desired parameter list. Omit to keep existing params, or [] to remove every parameter. "
+                + "Example: [{\"originalIndex\":0},{\"originalIndex\":1,\"name\":\"newName\"},{\"originalIndex\":-1,\"name\":\"extra\",\"type\":\"String\",\"defaultValue\":\"\\\"\\\"\"}]");
         JsonObject paramItem = new JsonObject();
         paramItem.addProperty(ToolSchemaKeyEnum.TYPE.key(), "object");
         JsonObject paramProps = new JsonObject();
@@ -127,14 +121,13 @@ public class ChangeMethodSignatureTool implements McpToolInterface {
         JsonObject origIdx = new JsonObject();
         origIdx.addProperty(ToolSchemaKeyEnum.TYPE.key(), "integer");
         origIdx.addProperty(ToolSchemaKeyEnum.DESCRIPTION.key(),
-                "0-based index of this param in the original method. Use -1 for new params. "
-                + "Omit to use the param's position in this array.");
+                "0-based index in the original method; -1 for a new parameter. Default: this param's position in the array.");
         paramProps.add(ChangeMethodSignatureParamEnum.ORIGINAL_INDEX.key(), origIdx);
         JsonObject defProp = new JsonObject();
         defProp.addProperty(ToolSchemaKeyEnum.TYPE.key(), "string");
         defProp.addProperty(ToolSchemaKeyEnum.DESCRIPTION.key(),
                 "Value inserted at existing call sites for new params (e.g. null, 0). "
-                + "Required when originalIndex is -1.");
+                + "Required when " + ChangeMethodSignatureParamEnum.ORIGINAL_INDEX.key() + " is -1.");
         paramProps.add(ChangeMethodSignatureParamEnum.DEFAULT_VALUE.key(), defProp);
         paramItem.add(ToolSchemaKeyEnum.PROPERTIES.key(), paramProps);
         paramsArr.add(ToolSchemaKeyEnum.ITEMS.key(), paramItem);

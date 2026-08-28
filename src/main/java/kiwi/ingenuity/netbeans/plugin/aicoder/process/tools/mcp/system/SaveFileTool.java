@@ -33,13 +33,13 @@ public class SaveFileTool extends AbstractFileTool {
     public SaveFileTool(McpHookServer server) {
         super(McpSectionEnum.SYSTEM,
                 McpToolEnum.SAVE_FILE.toolName(),
-                "Save a file. When 'content' is provided, replaces the entire file content and saves "
-                + "(works for open or closed files; creates new files). Without 'content', saves "
+                "Save a file. When " + SaveFileParamEnum.CONTENT.key() + " is provided, replaces the entire file content and saves "
+                + "(works for open or closed files; creates new files). Without " + SaveFileParamEnum.CONTENT.key() + ", saves "
                 + "existing unsaved editor changes to disk.",
-                McpToolEnum.SAVE_FILE.toolName() + " -> with 'content': write+save in one step INSTEAD OF Read+Edit (no built-in "
+                McpToolEnum.SAVE_FILE.toolName() + " -> with " + SaveFileParamEnum.CONTENT.key() + ": write+save in one step INSTEAD OF Read+Edit (no built-in "
                 + "tools needed); refresh is automatic for both new and existing files; "
-                + "without 'content': flush unsaved NetBeans changes before Read+Edit",
-                McpToolEnum.SAVE_FILE.toolName() + " - with 'content': write+save in one step; refresh is automatic for both new and existing files; without 'content': flush unsaved NetBeans changes");
+                + "without " + SaveFileParamEnum.CONTENT.key() + ": flush unsaved NetBeans changes before Read+Edit",
+                McpToolEnum.SAVE_FILE.toolName() + " - with " + SaveFileParamEnum.CONTENT.key() + ": write+save in one step; refresh is automatic for both new and existing files; without " + SaveFileParamEnum.CONTENT.key() + ": flush unsaved NetBeans changes");
         this.server = server;
     }
 
@@ -48,8 +48,8 @@ public class SaveFileTool extends AbstractFileTool {
         JsonObject tool = new JsonObject();
         tool.addProperty(ToolSchemaKeyEnum.NAME.key(), McpToolEnum.SAVE_FILE.toolName());
         tool.addProperty(ToolSchemaKeyEnum.DESCRIPTION.key(),
-                "Save a file. When 'content' is provided, replaces the entire file content and saves "
-                + "(works for open or closed files; creates new files). Without 'content', saves "
+                "Save a file. When " + SaveFileParamEnum.CONTENT.key() + " is provided, replaces the entire file content and saves "
+                + "(works for open or closed files; creates new files). Without " + SaveFileParamEnum.CONTENT.key() + ", saves "
                 + "existing unsaved editor changes to disk.");
         JsonObject schema = new JsonObject();
         schema.addProperty(ToolSchemaKeyEnum.TYPE.key(), "object");
@@ -57,7 +57,7 @@ public class SaveFileTool extends AbstractFileTool {
         JsonObject fp = new JsonObject();
         fp.addProperty(ToolSchemaKeyEnum.TYPE.key(), "string");
         fp.addProperty(ToolSchemaKeyEnum.DESCRIPTION.key(),
-                "Absolute path to the file. Required — this tool does not fall back to the "
+                "Absolute path to the file. Required — no fallback to the "
                 + "focused editor. Call " + McpToolEnum.GET_CURRENT_FILE.toolName() + " for the file the user is looking at.");
         props.add(SaveFileParamEnum.FILE_PATH.key(), fp);
         JsonObject ct = new JsonObject();
@@ -83,7 +83,7 @@ public class SaveFileTool extends AbstractFileTool {
             // chosen by where they last clicked, not by anything the caller
             // decided. The content path already required it; this makes the
             // no-content path agree.
-            return "filePath is required — this tool does not fall back to the focused editor. "
+            return SaveFileParamEnum.FILE_PATH.key() + " is required — this tool does not fall back to the focused editor. "
                     + "Call " + McpToolEnum.GET_CURRENT_FILE.toolName() + " if you want the file the user is looking at.";
         }
         String sessionId = session.getId();

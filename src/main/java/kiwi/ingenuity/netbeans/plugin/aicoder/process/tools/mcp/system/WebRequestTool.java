@@ -384,17 +384,11 @@ public class WebRequestTool implements McpToolInterface {
         JsonObject tool = new JsonObject();
         tool.addProperty(ToolSchemaKeyEnum.NAME.key(), McpToolEnum.WEB_REQUEST.toolName());
         tool.addProperty(ToolSchemaKeyEnum.DESCRIPTION.key(),
-                "Fetches an HTTP or HTTPS URL with optional method, headers, request body, timeout, "
-                + "and response truncation. Supports GET, POST, PUT, PATCH, DELETE, HEAD, and OPTIONS. "
-                + "Refuses destinations that resolve to loopback, link-local, private/site-local, "
-                + "carrier-grade NAT (100.64.0.0/10), IPv6 unique-local (fc00::/7), multicast, or "
-                + "any-local addresses — this is a deliberate policy, not a bug, so a request cannot "
-                + "reach this plugin's own local endpoints or your internal network — unless this "
-                + "session's settings explicitly allow localhost or private-network destinations; a "
-                + "refusal names the exact setting that would permit it. Redirects (up to 5 hops) are "
-                + "followed automatically, but every redirect target is re-checked against the same "
-                + "policy before it is requested. The response body is capped at " + WebRequestParamEnum.MAX_CHARS.key()
-                + " characters (default 20000, maximum 200000).");
+                "Fetch HTTP/HTTPS URL with optional method, headers, body, timeout. Blocks loopback, link-local, "
+                + "private, CGN (100.64.0.0/10), IPv6 unique-local (fc00::/7), multicast, and any-local addresses "
+                + "unless settings allow (refusal names the enabling setting). Follows up to 5 redirects; every "
+                + "redirect target is re-checked against the address policy. Response body capped at " + WebRequestParamEnum.MAX_CHARS.key()
+                + " (default 20000, max 200000).");
         JsonObject schema = new JsonObject();
         schema.addProperty(ToolSchemaKeyEnum.TYPE.key(), "object");
         JsonObject props = new JsonObject();
@@ -431,8 +425,7 @@ public class WebRequestTool implements McpToolInterface {
         JsonObject maxChars = new JsonObject();
         maxChars.addProperty(ToolSchemaKeyEnum.TYPE.key(), "integer");
         maxChars.addProperty(ToolSchemaKeyEnum.DESCRIPTION.key(),
-                "Maximum number of response-body characters to return. Default: 20000, clamped to the "
-                + "range 1-200000 regardless of what is requested.");
+                "Max response characters. Default: 20000, clamped to 1-200000.");
         props.add(WebRequestParamEnum.MAX_CHARS.key(), maxChars);
 
         schema.add(ToolSchemaKeyEnum.PROPERTIES.key(), props);

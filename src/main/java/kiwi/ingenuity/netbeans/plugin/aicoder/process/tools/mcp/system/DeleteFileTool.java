@@ -42,7 +42,7 @@ public class DeleteFileTool extends AbstractFileTool {
             // chosen by where they last clicked rather than by anything the
             // caller decided. Nothing about that is recoverable from the caller's
             // side, so it must name its target.
-            return "filePath is required — this tool does not fall back to the focused editor. "
+            return DeleteFileParamEnum.FILE_PATH.key() + " is required — this tool does not fall back to the focused editor. "
                     + "Call " + McpToolEnum.GET_CURRENT_FILE.toolName() + " if you want the file the user is looking at.";
         }
         String effectivePath = fp;

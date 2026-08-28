@@ -34,10 +34,8 @@ public class ListDatabaseConnectionsTool implements McpToolInterface {
         JsonObject tool = new JsonObject();
         tool.addProperty(ToolSchemaKeyEnum.NAME.key(), McpToolEnum.LIST_DATABASE_CONNECTIONS.toolName());
         tool.addProperty(ToolSchemaKeyEnum.DESCRIPTION.key(),
-                "Lists the database connections registered in the IDE's Database Explorer (Services > "
-                + "Databases), with each connection's display name, JDBC URL, and connected/disconnected "
-                + "status. Only connections already registered (and, for querying, already connected) via "
-                + "the IDE are usable — this tool never accepts raw JDBC URLs or credentials.");
+                "Lists the IDE's registered Database Explorer connections and each one's display name, "
+                + "JDBC URL, and connected/disconnected status. No parameters.");
         JsonObject schema = new JsonObject();
         schema.addProperty(ToolSchemaKeyEnum.TYPE.key(), "object");
         schema.add(ToolSchemaKeyEnum.PROPERTIES.key(), new JsonObject());

@@ -15,14 +15,11 @@ public class RunGradleTestsTool extends AbstractTestsTool {
     public RunGradleTestsTool() {
         super(McpSectionEnum.DEVOPS_TEST,
                 McpToolEnum.RUN_GRADLE_TESTS.toolName(),
-                "Runs the open Gradle project's test suite (./gradlew test). "
+                "Runs the Gradle project's tests at " + RunGradleTestsParamEnum.PROJECT_PATH.key() + " (./gradlew test); optionally filter by test class. "
                 + "Gradle projects only - do not use for Maven or Ant projects. "
-                + "Optionally restrict to a single test class (simple or fully qualified name). "
-                + "On success returns the result line; on failure the complete "
-                + "failure detail, never truncated. The complete log is "
-                + "always written to a file whose path is included in the response. ",
-                McpToolEnum.RUN_GRADLE_TESTS.toolName() + " -> INSTEAD OF Bash gradlew test - runs Gradle tests with optional class filter",
-                McpToolEnum.RUN_GRADLE_TESTS.toolName() + " - runs Gradle tests with optional class filter");
+                + "Returns a summary; the full log is written to a file.",
+                McpToolEnum.RUN_GRADLE_TESTS.toolName() + " -> INSTEAD OF Bash gradlew test - requires " + RunGradleTestsParamEnum.PROJECT_PATH.key() + "; runs Gradle tests with optional class filter",
+                McpToolEnum.RUN_GRADLE_TESTS.toolName() + " - requires " + RunGradleTestsParamEnum.PROJECT_PATH.key() + "; runs Gradle tests with optional class filter");
     }
 
     @Override

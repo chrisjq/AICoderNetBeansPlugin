@@ -14,6 +14,7 @@ import java.util.logging.Level;
 import java.util.logging.Logger;
 import javax.lang.model.element.Element;
 import javax.lang.model.element.TypeElement;
+import kiwi.ingenuity.netbeans.plugin.aicoder.process.McpToolPropertyEnum;
 import org.netbeans.api.java.source.JavaSource;
 import org.netbeans.api.java.source.TreePathHandle;
 import org.netbeans.modules.refactoring.api.Problem;
@@ -33,7 +34,7 @@ public class FindUsagesProvider {
     public static String findUsages(String className, String memberName,
             boolean findSubclasses, boolean directSubclassesOnly, boolean searchInComments) {
         if (className == null || className.isBlank()) {
-            return "className is required";
+            return McpToolPropertyEnum.CLASS_NAME.key() + " is required";
         }
         // Normalise inner class notation: com.example.Outer$Inner → com.example.Outer.Inner
         String normalizedName = className.replace('$', '.');

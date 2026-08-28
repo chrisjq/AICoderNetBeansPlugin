@@ -15,14 +15,11 @@ public class RunAntTestsTool extends AbstractTestsTool {
     public RunAntTestsTool() {
         super(McpSectionEnum.DEVOPS_TEST,
                 McpToolEnum.RUN_ANT_TESTS.toolName(),
-                "Runs the open Ant project's test suite (ant test). "
+                "Runs the Ant project's tests at " + RunAntTestsParamEnum.PROJECT_PATH.key() + " (ant test); optionally filter by test class. "
                 + "Ant projects only - do not use for Maven or Gradle projects. "
-                + "Optionally restrict to a single test class via -Dtest.includes. "
-                + "On success returns the result line; on failure the complete "
-                + "failure detail, never truncated. The complete log is "
-                + "always written to a file whose path is included in the response. ",
-                McpToolEnum.RUN_ANT_TESTS.toolName() + " -> INSTEAD OF Bash ant test - runs Ant tests with optional class filter",
-                McpToolEnum.RUN_ANT_TESTS.toolName() + " - runs Ant tests with optional class filter");
+                + "Returns a summary; the full log is written to a file.",
+                McpToolEnum.RUN_ANT_TESTS.toolName() + " -> INSTEAD OF Bash ant test - requires " + RunAntTestsParamEnum.PROJECT_PATH.key() + "; runs Ant tests with optional class filter",
+                McpToolEnum.RUN_ANT_TESTS.toolName() + " - requires " + RunAntTestsParamEnum.PROJECT_PATH.key() + "; runs Ant tests with optional class filter");
     }
 
     @Override

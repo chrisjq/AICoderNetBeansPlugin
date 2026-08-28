@@ -23,22 +23,10 @@ import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.providers.netbeans.E
 public class GetFileInfoTool implements McpToolInterface {
 
     private static String description() {
-        return "Returns metadata for any path — regular file, directory or symlink — without its content. For a file: "
-                + "exact byte size, line count, the text encoding the IDE uses for it, its MIME type as the IDE "
-                + "resolves it, created and last-modified times "
-                + "with age in seconds, whether it is writable, whether it is a symbolic link, and whether the editor "
-                + "holds unsaved changes for it. For a directory: immediate-entry counts split into files and "
-                + "directories, each split hidden vs non-hidden, plus created and modified times. For a symbolic link: "
-                + "resolves the target and reports the target's info with both the link and resolved path shown; a "
-                + "broken link is reported as such rather than failing. Created time appears only on platforms that "
-                + "record a real file birth time (Windows and macOS). Elsewhere — Linux in particular — the runtime "
-                + "would substitute the inode change time, which is a real timestamp but not the creation date and is "
-                + "indistinguishable from one, so the field is simply ABSENT: do not read its absence as an error, and "
-                + "do not expect a note explaining it. Call this before " + McpToolEnum.GET_FILE_CONTENT.toolName()
-                + " on a large file to decide whether the read must be "
-                + "paged with " + GetFileContentParamEnum.START_LINE.key() + "/"
-                + GetFileContentParamEnum.END_LINE.key() + ". Size and line count are the on-disk copy; an "
-                + "\"unsaved editor changes\" flag warns when the editor's in-memory copy has diverged.";
+        return "Returns file/directory/symlink metadata: size, lines, encoding, MIME type, timestamps, writable/unsaved-changes flags. "
+                + "For symlinks, resolves and reports target. Call before " + McpToolEnum.GET_FILE_CONTENT.toolName()
+                + " on large files to decide whether to page with " + GetFileContentParamEnum.START_LINE.key() + "/"
+                + GetFileContentParamEnum.END_LINE.key() + ".";
     }
 
     private final McpHookServer server;

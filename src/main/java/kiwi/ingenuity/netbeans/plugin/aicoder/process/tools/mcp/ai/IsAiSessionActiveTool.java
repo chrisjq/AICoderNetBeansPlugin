@@ -18,7 +18,7 @@ public class IsAiSessionActiveTool extends AbstractActionTool {
     public IsAiSessionActiveTool() {
         super(McpSectionEnum.PLUGIN,
                 McpToolEnum.IS_AI_SESSION_ACTIVE.toolName(),
-                "Check whether a target AI session is open. active=false means idle (available to receive messages); active=true means busy processing a turn. All open sessions can receive " + McpToolEnum.SEND_AI_MESSAGE.toolName() + " regardless of active state.",
+                "Check whether a target AI session is open and whether it is idle or busy. Open sessions can receive messages regardless of state.",
                 McpToolEnum.IS_AI_SESSION_ACTIVE.toolName() + " -> check before " + McpToolEnum.SEND_AI_MESSAGE.toolName() + " if you need the session to respond promptly; active=false means idle (can still receive), active=true means busy");
     }
 
@@ -26,13 +26,13 @@ public class IsAiSessionActiveTool extends AbstractActionTool {
     public JsonObject schema(Set<McpInstructionOptionEnum> options) {
         JsonObject tool = new JsonObject();
         tool.addProperty(ToolSchemaKeyEnum.NAME.key(), McpToolEnum.IS_AI_SESSION_ACTIVE.toolName());
-        tool.addProperty(ToolSchemaKeyEnum.DESCRIPTION.key(), "Check whether a target AI session is open. active=false means idle (available to receive messages); active=true means busy processing a turn. All open sessions can receive " + McpToolEnum.SEND_AI_MESSAGE.toolName() + " regardless of active state.");
+        tool.addProperty(ToolSchemaKeyEnum.DESCRIPTION.key(), "Check whether a target AI session is open and whether it is idle or busy. Open sessions can receive messages regardless of state.");
         JsonObject schema = new JsonObject();
         schema.addProperty(ToolSchemaKeyEnum.TYPE.key(), "object");
         JsonObject props = new JsonObject();
         JsonObject tid = new JsonObject();
         tid.addProperty(ToolSchemaKeyEnum.TYPE.key(), "string");
-        tid.addProperty(ToolSchemaKeyEnum.DESCRIPTION.key(), "The sessionId of the AI session to check (from " + McpToolEnum.LIST_AI_SESSIONS.toolName() + " or your session identity).");
+        tid.addProperty(ToolSchemaKeyEnum.DESCRIPTION.key(), "Target session ID from " + McpToolEnum.LIST_AI_SESSIONS.toolName() + " or your session identity.");
         props.add(IsAiSessionActiveParamEnum.TARGET_SESSION_ID.key(), tid);
         schema.add(ToolSchemaKeyEnum.PROPERTIES.key(), props);
         JsonArray required = new JsonArray();

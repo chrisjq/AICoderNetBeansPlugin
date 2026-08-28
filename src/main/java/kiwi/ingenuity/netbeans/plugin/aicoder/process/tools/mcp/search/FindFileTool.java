@@ -65,16 +65,8 @@ public class FindFileTool implements McpToolInterface {
     public JsonObject schema(Set<McpInstructionOptionEnum> options) {
         JsonObject tool = new JsonObject();
         tool.addProperty(ToolSchemaKeyEnum.NAME.key(), McpToolEnum.FIND_FILE.toolName());
-        tool.addProperty(ToolSchemaKeyEnum.DESCRIPTION.key(), "Finds files OR directories by leaf name below "
-                + FindFileParamEnum.DIRECTORY_PATH.key() + " — set " + FindFileParamEnum.TYPE.key()
-                + " to choose which. Omit " + FindFileParamEnum.DIRECTORY_PATH.key()
-                + " to search every accessible open-project directory. Omit " + FindFileParamEnum.PATTERN.key()
-                + " to list everything. Literal text by default; set " + FindFileParamEnum.IS_REGEX.key()
-                + " for a pattern. Results are capped but the header reports the true total. Descent is limited to "
-                + FindFileProvider.MAX_DEPTH_CEILING + " directory levels even when "
-                + FindFileParamEnum.MAX_DEPTH.key() + " is unset, so a search always terminates. If the filesystem "
-                + "refuses an entry the walk continues and the header gains a note counting what was skipped — an "
-                + "unreadable directory hides its whole subtree, so treat such a result as partial.");
+        tool.addProperty(ToolSchemaKeyEnum.DESCRIPTION.key(), "Finds files or directories by name below a directory or across open projects. "
+                + "Default: literal text, results capped (header reports true total). Depth capped at 100 levels.");
         JsonObject schema = new JsonObject();
         schema.addProperty(ToolSchemaKeyEnum.TYPE.key(), "object");
         JsonObject props = new JsonObject();
@@ -83,8 +75,7 @@ public class FindFileTool implements McpToolInterface {
         addBooleanProperty(props, FindFileParamEnum.IS_REGEX, "Treat " + FindFileParamEnum.PATTERN.key()
                 + " as regex. Default: false (literal text).");
         addBooleanProperty(props, FindFileParamEnum.CASE_SENSITIVE, "Case-sensitive match. Default: false.");
-        addBooleanProperty(props, FindFileParamEnum.IGNORE_HIDDEN, "Skip hidden files and directories, and everything inside a hidden directory. A leading-dot name such as .git or .env is hidden on EVERY platform including Windows; on Windows the DOS hidden attribute additionally hides files whose names do not start with a dot. Default: true. Set false to include them. A " + FindFileParamEnum.DIRECTORY_PATH.key()
-                + " that is itself hidden is always searched, since naming it is an explicit request.");
+        addBooleanProperty(props, FindFileParamEnum.IGNORE_HIDDEN, "Skip hidden files and directories. Default: true. Leading-dot names are hidden on all platforms.");
         addStringProperty(props, FindFileParamEnum.TYPE, "What to match: " + FindFileTypeEnum.typeList()
                 + ". Use " + FindFileTypeEnum.DIR.type()
                 + " to find directory names, including empty directories. The starting directory is never returned as a match.");

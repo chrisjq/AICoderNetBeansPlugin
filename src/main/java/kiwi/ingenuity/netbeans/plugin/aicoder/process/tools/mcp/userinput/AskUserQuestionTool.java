@@ -58,8 +58,8 @@ public class AskUserQuestionTool implements McpToolInterface {
         JsonObject tool = new JsonObject();
         tool.addProperty(ToolSchemaKeyEnum.NAME.key(), McpToolEnum.ASK_USER_QUESTION.toolName());
         tool.addProperty(ToolSchemaKeyEnum.DESCRIPTION.key(),
-                "Ask the user one or more questions with selectable options. "
-                + "Use this whenever you need clarification or a decision from the user.");
+                "Ask the user one or more questions with selectable options. Use when you need "
+                + "clarification or a decision from the user.");
 
         JsonObject schema = new JsonObject();
         schema.addProperty(ToolSchemaKeyEnum.TYPE.key(), "object");
@@ -126,7 +126,7 @@ public class AskUserQuestionTool implements McpToolInterface {
     public String handle(ToolRequestArguments args, AbstractAiSession session) throws McpArgumentException {
         JsonArray questions = args.array(AskUserQuestionParamEnum.QUESTIONS.key());
         if (questions == null || questions.isEmpty()) {
-            throw new McpArgumentException(-32602, "Missing questions parameter");
+            throw new McpArgumentException(-32602, "Missing " + AskUserQuestionParamEnum.QUESTIONS.key() + " parameter");
         }
         CompletableFuture<String> future = new CompletableFuture<>();
         listenerSupplier.get().onAiProcessEvent(new AskUserQuestionEvent(questions, future));

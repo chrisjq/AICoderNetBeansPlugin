@@ -10,6 +10,7 @@ import java.util.concurrent.TimeUnit;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.AiTypeEnum;
 import static kiwi.ingenuity.netbeans.plugin.aicoder.ai.AiTypeEnum.CLAUDE;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.session.AiSession;
+import kiwi.ingenuity.netbeans.plugin.aicoder.process.McpArgumentException;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.McpToolEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.McpToolPropertyEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.events.AiProcessEventListener;
@@ -27,6 +28,7 @@ import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.ui.source.Organi
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.ui.source.ReformatFileTool;
 import org.junit.jupiter.api.AfterEach;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Disabled;
@@ -75,9 +77,16 @@ class UiToolsHandleGateEndToEndTest {
     }
 
     private static ToolRequestArguments navigateArgs(String filePath, int line) {
+        return navigateArgs(filePath, Integer.valueOf(line), true);
+    }
+
+    private static ToolRequestArguments navigateArgs(String filePath, Integer line, boolean focus) {
         JsonObject o = new JsonObject();
         o.addProperty(NavigateToLineParamEnum.FILE_PATH.key(), filePath);
-        o.addProperty(NavigateToLineParamEnum.LINE.key(), line);
+        if (line != null) {
+            o.addProperty(NavigateToLineParamEnum.LINE.key(), line);
+        }
+        o.addProperty(NavigateToLineParamEnum.FOCUS.key(), focus);
         return new ToolRequestArguments(o);
     }
 
@@ -188,13 +197,10 @@ class UiToolsHandleGateEndToEndTest {
 
     @Disabled("user request: Editor/Window tool group tests disabled")
     @Test
-    @Timeout(value = 45)
-    void navigateToLineAcceptsLineZeroLikeAnyOtherInteger() throws Exception {
-        Path file = inDir.resolve("NavigateZero.java");
-        Files.writeString(file, "class NavigateZero {}");
-        String result = new NavigateToLineTool().handle(navigateArgs(file.toString(), 0), session(restrictedSessionId));
-        assertFalse(result.startsWith("Access denied"), "in-scope file must not be refused: " + result);
-        assertFalse(result.contains("Invalid integer"), "line=0 must parse: " + result);
+    void navigateToLineRejectsNonPositiveLine() {
+        McpArgumentException ex = assertThrows(McpArgumentException.class,
+                () -> new NavigateToLineTool().handle(navigateArgs(inDir.resolve("NavigateZero.java").toString(), 0), session(restrictedSessionId)));
+        assertTrue(ex.getMessage().contains("must be at least 1"));
     }
 
     @Test

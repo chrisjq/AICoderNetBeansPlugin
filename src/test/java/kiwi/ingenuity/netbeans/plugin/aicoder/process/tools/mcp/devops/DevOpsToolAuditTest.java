@@ -16,6 +16,7 @@ import kiwi.ingenuity.netbeans.plugin.aicoder.process.server.McpServerRegistry;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.session.AbstractAiSession;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.McpToolInterface;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.ToolRequestArguments;
+import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.ToolSchemaKeyEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.devops.build.BuildAntProjectParamEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.devops.build.BuildAntProjectTool;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.devops.build.BuildGradleProjectParamEnum;
@@ -34,6 +35,7 @@ import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.devops.test.RunG
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.devops.test.RunGradleTestsTool;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.devops.test.RunMavenTestsParamEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.devops.test.RunMavenTestsTool;
+import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.git.GitCommonParamEnum;
 import org.junit.jupiter.api.AfterEach;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
@@ -104,7 +106,7 @@ class DevOpsToolAuditTest {
         String result = new BuildMavenProjectTool().handle(
                 args(BuildMavenProjectParamEnum.PROJECT_PATH.key(), outsideDir.toString()), session);
 
-        assertEquals(NO_PROJECT, result, "projectPath outside the session scope must be refused before any build");
+        assertEquals("Access denied: " + outsideDir, result, "projectPath outside the session scope must be refused before any build");
         assertNoWrapperRan(mavenRoot);
     }
 
@@ -112,7 +114,7 @@ class DevOpsToolAuditTest {
     void mavenBuild_missingProjectPathFindsNoOpenProject() throws Exception {
         String result = new BuildMavenProjectTool().handle(args(), session);
 
-        assertEquals(NO_PROJECT, result, "with no open project headless and no projectPath, nothing can be built");
+        assertEquals("projectPath is required", result, "missing projectPath must be rejected explicitly");
         assertNoWrapperRan(mavenRoot);
     }
 
@@ -121,7 +123,7 @@ class DevOpsToolAuditTest {
         String result = new BuildMavenProjectTool().handle(
                 args(BuildMavenProjectParamEnum.PROJECT_PATH.key(), tempDir.resolve("missing").toString()), session);
 
-        assertEquals(NO_PROJECT, result, "a projectPath that is not an existing directory must be refused");
+        assertEquals("Not a project directory: " + tempDir.resolve("missing"), result, "a projectPath that is not an existing directory must be refused");
         assertNoWrapperRan(mavenRoot);
     }
 
@@ -131,7 +133,7 @@ class DevOpsToolAuditTest {
         String result = new BuildMavenProjectTool().handle(
                 args(BuildMavenProjectParamEnum.PROJECT_PATH.key(), mavenRoot.toString()), session);
 
-        assertEquals(NO_PROJECT, result, "the isFileAllowed gate fails closed when no server is registered");
+        assertEquals("Access denied: " + mavenRoot, result, "the isFileAllowed gate fails closed when no server is registered");
         assertNoWrapperRan(mavenRoot);
     }
 
@@ -205,7 +207,7 @@ class DevOpsToolAuditTest {
         String result = new BuildGradleProjectTool().handle(
                 args(BuildGradleProjectParamEnum.PROJECT_PATH.key(), outsideDir.toString()), session);
 
-        assertEquals(NO_PROJECT, result, "gradle build with an out-of-scope projectPath must be refused");
+        assertEquals("Access denied: " + outsideDir, result, "gradle build with an out-of-scope projectPath must be refused");
         assertNoWrapperRan(gradleRoot);
     }
 
@@ -245,7 +247,7 @@ class DevOpsToolAuditTest {
         String result = new BuildAntProjectTool().handle(
                 args(BuildAntProjectParamEnum.PROJECT_PATH.key(), outsideDir.toString()), session);
 
-        assertEquals(NO_PROJECT, result, "ant build with an out-of-scope projectPath must be refused");
+        assertEquals("Access denied: " + outsideDir, result, "ant build with an out-of-scope projectPath must be refused");
     }
 
     @Test
@@ -256,6 +258,49 @@ class DevOpsToolAuditTest {
 
         assertNotEquals(NO_PROJECT, result,
                 "RunAntTests with an in-scope projectPath + testClass must reach the ant launcher");
+    }
+
+    @Test
+    void allDevopsToolsAdvertiseRequiredProjectPath() {
+        List<McpToolInterface> tools = List.of(
+                new BuildAntProjectTool(),
+                new BuildGradleProjectTool(),
+                new BuildMavenProjectTool(),
+                new CleanAndBuildMavenProjectTool(),
+                new DownloadMavenJavadocTool(),
+                new DownloadMavenSourcesTool(),
+                new RunAntTestsTool(),
+                new RunGradleTestsTool(),
+                new RunMavenTestsTool());
+        for (McpToolInterface tool : tools) {
+            JsonObject schema = tool.schema(java.util.Set.of())
+                    .getAsJsonObject(ToolSchemaKeyEnum.INPUT_SCHEMA.key());
+            JsonObject props = schema.getAsJsonObject(ToolSchemaKeyEnum.PROPERTIES.key());
+            assertTrue(props.has(GitCommonParamEnum.PROJECT_PATH.key()));
+            assertEquals(1, schema.getAsJsonArray(ToolSchemaKeyEnum.REQUIRED.key()).size());
+            assertEquals(GitCommonParamEnum.PROJECT_PATH.key(),
+                    schema.getAsJsonArray(ToolSchemaKeyEnum.REQUIRED.key()).get(0).getAsString());
+        }
+    }
+
+    @Test
+    void allDevopsToolsRejectMissingProjectPathAtRuntime() throws Exception {
+        List<McpToolInterface> tools = List.of(
+                new BuildAntProjectTool(),
+                new BuildGradleProjectTool(),
+                new BuildMavenProjectTool(),
+                new CleanAndBuildMavenProjectTool(),
+                new DownloadMavenJavadocTool(),
+                new DownloadMavenSourcesTool(),
+                new RunAntTestsTool(),
+                new RunGradleTestsTool(),
+                new RunMavenTestsTool());
+        for (McpToolInterface tool : tools) {
+            String result = tool.handle(args(), session);
+            assertEquals("projectPath is required", result, tool.schema(java.util.Set.of())
+                    .get(ToolSchemaKeyEnum.NAME.key()).getAsString()
+                    + " must reject missing projectPath");
+        }
     }
 
     // ---- helpers ----

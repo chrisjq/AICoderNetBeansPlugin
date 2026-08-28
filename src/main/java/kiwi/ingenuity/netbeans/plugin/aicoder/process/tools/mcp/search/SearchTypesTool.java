@@ -38,9 +38,7 @@ public class SearchTypesTool implements McpToolInterface {
         tool.addProperty(ToolSchemaKeyEnum.NAME.key(), McpToolEnum.SEARCH_TYPES.toolName());
         tool.addProperty(ToolSchemaKeyEnum.DESCRIPTION.key(),
                 "Find Java types (class/interface/enum/annotation) by name pattern using the IDE index. "
-                + "Returns FQN and source file path for each match. At most 100 are listed, but "
-                + "the header reports the true total, e.g. 'Found 3412 type(s) (showing first "
-                + "100)' — narrow the pattern if the total is far above the cap.");
+                + "Returns FQN and source file. Capped at 100 matches; the header reports the true total.");
         JsonObject schema = new JsonObject();
         schema.addProperty(ToolSchemaKeyEnum.TYPE.key(), "object");
         JsonObject props = new JsonObject();

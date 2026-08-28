@@ -37,11 +37,8 @@ public class SearchSymbolsTool implements McpToolInterface {
         JsonObject tool = new JsonObject();
         tool.addProperty(ToolSchemaKeyEnum.NAME.key(), McpToolEnum.SEARCH_SYMBOLS.toolName());
         tool.addProperty(ToolSchemaKeyEnum.DESCRIPTION.key(),
-                "Find methods, fields, and nested types by member name across the project. "
-                + "Returns enclosing type FQN, matching symbol names, and source file. At most 100 "
-                + "are listed, but the header reports the true total, e.g. 'Found 3412 type(s) with "
-                + "matching symbols (showing first 100)' — narrow the pattern if the total is far "
-                + "above the cap.");
+                "Find methods, fields, and nested types by name across the project. "
+                + "Returns enclosing type FQN and source file. Capped at 100 matches; the header reports the true total.");
         JsonObject schema = new JsonObject();
         schema.addProperty(ToolSchemaKeyEnum.TYPE.key(), "object");
         JsonObject props = new JsonObject();

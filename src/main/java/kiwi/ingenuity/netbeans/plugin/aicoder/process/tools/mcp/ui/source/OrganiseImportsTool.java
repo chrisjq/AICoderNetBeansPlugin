@@ -17,10 +17,9 @@ public class OrganiseImportsTool extends AbstractFileTool {
     public OrganiseImportsTool() {
         super(McpSectionEnum.UI_SOURCE,
                 McpToolEnum.ORGANISE_IMPORTS.toolName(),
-                "Organise imports: sorts and groups existing import statements by package. "
-                + "Does not add or remove imports - use " + McpToolEnum.FIX_IMPORTS.toolName() + " for that.",
-                "OrganiseImports -> INSTEAD OF manual import sorting - sorts and groups existing imports",
-                "OrganiseImports - sorts and groups existing imports");
+                "Runs the IDE Organise Imports action in the user's editor, then saves the file.",
+                McpToolEnum.ORGANISE_IMPORTS.toolName() + " -> INSTEAD OF manual import sorting - sorts and groups existing imports",
+                McpToolEnum.ORGANISE_IMPORTS.toolName() + " - sorts and groups existing imports");
     }
 
     @Override

@@ -4,7 +4,6 @@ import com.google.gson.JsonArray;
 import com.google.gson.JsonObject;
 import java.util.Set;
 import kiwi.ingenuity.netbeans.plugin.aicoder.DatabaseAccessOptionEnum;
-import kiwi.ingenuity.netbeans.plugin.aicoder.PluginSettings;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.McpArgumentException;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.McpInstructionOptionEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.McpSectionEnum;
@@ -39,22 +38,18 @@ public class ExecuteSqlQueryTool implements McpToolInterface {
         JsonObject tool = new JsonObject();
         tool.addProperty(ToolSchemaKeyEnum.NAME.key(), McpToolEnum.EXECUTE_SQL_QUERY.toolName());
         tool.addProperty(ToolSchemaKeyEnum.DESCRIPTION.key(),
-                "Executes a read-only SELECT query on a connection already registered and connected in the "
-                + "IDE's Database Explorer, and returns the result rows. Only SELECT statements are "
-                + "accepted — anything else is rejected before it reaches the database, and the JDBC "
-                + "connection itself is switched to read-only for the duration of the query as a second "
-                + "layer of enforcement. Results are capped at this session's effective database row limit — "
-                + "a per-session override if one is configured, otherwise the plugin default (currently "
-                + PluginSettings.getDatabaseRowLimit() + "); if more rows exist than were "
-                + "returned, the output ends with a '... (row limit N reached, results may be truncated)' note. "
-                + "Use ListDatabaseConnections first to find the " + DatabaseParamEnum.CONNECTION_NAME.key() + ".");
+                "Executes a read-only SELECT query on a registered, connected Database Explorer connection. "
+                + "SELECT only. Rows are capped at the session's effective database row limit; truncation is "
+                + "flagged in the output. Find the connection via "
+                + McpToolEnum.LIST_DATABASE_CONNECTIONS.toolName() + ".");
         JsonObject schema = new JsonObject();
         schema.addProperty(ToolSchemaKeyEnum.TYPE.key(), "object");
         JsonObject props = new JsonObject();
         JsonObject connectionName = new JsonObject();
         connectionName.addProperty(ToolSchemaKeyEnum.TYPE.key(), "string");
         connectionName.addProperty(ToolSchemaKeyEnum.DESCRIPTION.key(),
-                "Display name of a registered Database Explorer connection (see ListDatabaseConnections).");
+                "Display name of a registered Database Explorer connection (see "
+                + McpToolEnum.LIST_DATABASE_CONNECTIONS.toolName() + ").");
         props.add(DatabaseParamEnum.CONNECTION_NAME.key(), connectionName);
         JsonObject sql = new JsonObject();
         sql.addProperty(ToolSchemaKeyEnum.TYPE.key(), "string");

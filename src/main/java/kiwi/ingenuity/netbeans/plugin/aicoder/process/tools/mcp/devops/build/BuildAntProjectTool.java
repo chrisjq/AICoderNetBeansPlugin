@@ -15,13 +15,10 @@ public class BuildAntProjectTool extends AbstractBuildTool {
     public BuildAntProjectTool() {
         super(McpSectionEnum.DEVOPS_BUILD,
                 McpToolEnum.BUILD_ANT_PROJECT.toolName(),
-                "Builds the open Ant project (ant jar). "
-                + "Ant projects only - do not use for Maven or Gradle projects. "
-                + "On success returns the result line; on failure the complete "
-                + "failure detail including compile errors, never truncated. The complete log is "
-                + "always written to a file whose path is included in the response. ",
-                McpToolEnum.BUILD_ANT_PROJECT.toolName() + " -> INSTEAD OF Bash ant jar - builds Ant project and returns a result summary (complete log written to a file)",
-                McpToolEnum.BUILD_ANT_PROJECT.toolName() + " - builds Ant project and returns a result summary (complete log written to a file)");
+                "Builds the Ant project at " + BuildAntProjectParamEnum.PROJECT_PATH.key() + " (ant jar)."
+                + "Returns a summary; the full log is written to a file.",
+                McpToolEnum.BUILD_ANT_PROJECT.toolName() + " -> INSTEAD OF Bash ant jar - requires " + BuildAntProjectParamEnum.PROJECT_PATH.key() + "; builds Ant project and returns a result summary (complete log written to a file)",
+                McpToolEnum.BUILD_ANT_PROJECT.toolName() + " - requires " + BuildAntProjectParamEnum.PROJECT_PATH.key() + "; builds Ant project and returns a result summary (complete log written to a file)");
     }
 
     @Override

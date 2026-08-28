@@ -47,7 +47,7 @@ public class WriteFileTool extends AbstractActionTool {
     public JsonObject schema(Set<McpInstructionOptionEnum> options) {
         JsonObject tool = new JsonObject();
         tool.addProperty(ToolSchemaKeyEnum.NAME.key(), McpToolEnum.WRITE_FILE.toolName());
-        tool.addProperty(ToolSchemaKeyEnum.DESCRIPTION.key(), "Create or overwrite a file with the given content. Any unsaved editor changes are saved before the write, so they are not lost — note the review diff is built from the file on disk beforehand and so does not show them. The user approves the change in the NetBeans Accept/Reject diff panel before it is applied.");
+        tool.addProperty(ToolSchemaKeyEnum.DESCRIPTION.key(), "Create or overwrite a file with the given content; routed through the user's Accept/Reject diff panel. Unsaved editor changes are saved first, but the review diff is built from the on-disk file and so won't show them.");
         JsonObject schema = new JsonObject();
         schema.addProperty(ToolSchemaKeyEnum.TYPE.key(), "object");
         JsonObject props = new JsonObject();

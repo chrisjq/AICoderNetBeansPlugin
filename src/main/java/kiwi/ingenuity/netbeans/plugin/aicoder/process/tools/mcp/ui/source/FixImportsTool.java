@@ -17,8 +17,7 @@ public class FixImportsTool extends AbstractFileTool {
     public FixImportsTool() {
         super(McpSectionEnum.UI_SOURCE,
                 McpToolEnum.FIX_IMPORTS.toolName(),
-                "Fix imports: removes unused imports and adds missing ones for the specified Java file. "
-                + "A disambiguation dialog appears if a type name is ambiguous.",
+                "Adds missing imports and removes unused ones in the user's IDE editor, then saves the file.",
                 "" + McpToolEnum.FIX_IMPORTS.toolName() + " -> INSTEAD OF manual import editing - removes unused and adds missing imports",
                 "" + McpToolEnum.FIX_IMPORTS.toolName() + " - removes unused and adds missing imports");
     }

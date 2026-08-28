@@ -39,7 +39,7 @@ public class FindDeclarationTool implements McpToolInterface {
         tool.addProperty(ToolSchemaKeyEnum.DESCRIPTION.key(),
                 "Go-to-definition: resolves the Java symbol at a file position to its declaration. "
                 + "Returns file:line (source) or [binary] FQN (for library types with no source). "
-                + "When column is omitted, resolves the first identifier found on the given line.");
+                + "When " + FindDeclarationParamEnum.COLUMN.key() + " is omitted, resolves the first identifier found on the given line.");
         JsonObject schema = new JsonObject();
         schema.addProperty(ToolSchemaKeyEnum.TYPE.key(), "object");
         JsonObject props = new JsonObject();
@@ -53,7 +53,7 @@ public class FindDeclarationTool implements McpToolInterface {
         props.add(FindDeclarationParamEnum.LINE.key(), ln);
         JsonObject col = new JsonObject();
         col.addProperty(ToolSchemaKeyEnum.TYPE.key(), "integer");
-        col.addProperty(ToolSchemaKeyEnum.DESCRIPTION.key(), "1-based column. Omit to use first identifier on the line.");
+        col.addProperty(ToolSchemaKeyEnum.DESCRIPTION.key(), "1-based " + FindDeclarationParamEnum.COLUMN.key() + ". Omit to use first identifier on the line.");
         props.add(FindDeclarationParamEnum.COLUMN.key(), col);
         schema.add(ToolSchemaKeyEnum.PROPERTIES.key(), props);
         JsonArray required = new JsonArray();

@@ -15,13 +15,11 @@ public class CleanAndBuildMavenProjectTool extends AbstractBuildTool {
     public CleanAndBuildMavenProjectTool() {
         super(McpSectionEnum.DEVOPS_BUILD,
                 McpToolEnum.CLEAN_AND_BUILD_MAVEN_PROJECT.toolName(),
-                "Cleans then builds the open Maven project (mvn clean package -DskipTests). "
+                "Cleans and builds the Maven project at " + CleanAndBuildMavenProjectParamEnum.PROJECT_PATH.key() + " (mvn clean package -DskipTests). "
                 + "Maven projects only - do not use for Ant or Gradle projects. "
-                + "On success returns the results summary and result line; on failure the complete "
-                + "failure detail including compile errors, never truncated. The complete log is "
-                + "always written to a file whose path is included in the response. ",
-                McpToolEnum.CLEAN_AND_BUILD_MAVEN_PROJECT.toolName() + " -> INSTEAD OF Bash mvn clean package - cleans and builds Maven project and returns a result summary (complete log written to a file)",
-                McpToolEnum.CLEAN_AND_BUILD_MAVEN_PROJECT.toolName() + " - cleans and builds Maven project and returns a result summary (complete log written to a file)");
+                + "Returns a summary; the full log is written to a file.",
+                McpToolEnum.CLEAN_AND_BUILD_MAVEN_PROJECT.toolName() + " -> INSTEAD OF Bash mvn clean package - requires " + CleanAndBuildMavenProjectParamEnum.PROJECT_PATH.key() + "; cleans and builds Maven project and returns a result summary (complete log written to a file)",
+                McpToolEnum.CLEAN_AND_BUILD_MAVEN_PROJECT.toolName() + " - requires " + CleanAndBuildMavenProjectParamEnum.PROJECT_PATH.key() + "; cleans and builds Maven project and returns a result summary (complete log written to a file)");
     }
 
     @Override

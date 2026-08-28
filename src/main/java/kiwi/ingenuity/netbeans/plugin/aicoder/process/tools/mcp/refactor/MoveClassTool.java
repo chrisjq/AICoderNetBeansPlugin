@@ -42,11 +42,9 @@ public class MoveClassTool implements McpToolInterface {
         JsonObject tool = new JsonObject();
         tool.addProperty(ToolSchemaKeyEnum.NAME.key(), McpToolEnum.MOVE_CLASS.toolName());
         tool.addProperty(ToolSchemaKeyEnum.DESCRIPTION.key(),
-                "Moves a Java class to a different package, updating the package declaration and all import references. "
-                + "With " + MoveClassParamEnum.LINE.key() + " it moves just the class declared at that line, leaving any other "
-                + "top-level classes in the file behind. Without it the whole file moves, which is refused when the file "
-                + "declares more than one top-level type so that classes you did not name cannot move by accident. "
-                + "filePath is required — this tool does not fall back to the focused editor. "
+                "Moves a Java class to a different package, updating the package declaration and all import references; edits route through the Accept/Reject diff panel. "
+                + "With " + MoveClassParamEnum.LINE.key() + " it moves just the class declared at that line; without it the whole file moves (refused for multi-type files). "
+                + MoveClassParamEnum.FILE_PATH.key() + " is required — this tool does not fall back to the focused editor. "
                 + "Call " + McpToolEnum.GET_CURRENT_FILE.toolName() + " if you want the file the user is looking at.");
         JsonObject schema = new JsonObject();
         schema.addProperty(ToolSchemaKeyEnum.TYPE.key(), "object");
@@ -61,7 +59,7 @@ public class MoveClassTool implements McpToolInterface {
         props.add(MoveClassParamEnum.FILE_PATH.key(), fp);
         JsonObject ln = new JsonObject();
         ln.addProperty(ToolSchemaKeyEnum.TYPE.key(), "integer");
-        ln.addProperty(ToolSchemaKeyEnum.DESCRIPTION.key(), "1-based line of the class declaration to move. Supply it to move that one class out of its file; omit it to move the whole file, which is only allowed when the file declares a single top-level type.");
+        ln.addProperty(ToolSchemaKeyEnum.DESCRIPTION.key(), "1-based line of the class declaration to move. Omit to move the whole file (single top-level type only). Default: move the whole file.");
         props.add(MoveClassParamEnum.LINE.key(), ln);
         schema.add(ToolSchemaKeyEnum.PROPERTIES.key(), props);
         JsonArray required = new JsonArray();

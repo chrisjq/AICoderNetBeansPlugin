@@ -164,37 +164,6 @@ public class FileUtils {
         return null;
     }
 
-    /**
-     * Returns the first .java file found across all registered source roots. Used to bootstrap a ClasspathInfo for
-     * classpath-level queries.
-     */
-    public static FileObject findProjectSourceFile() {
-        for (FileObject root : GlobalPathRegistry.getDefault().getSourceRoots()) {
-            FileObject found = findJavaFile(root);
-            if (found != null) {
-                return found;
-            }
-        }
-        return null;
-    }
-
-    public static FileObject findJavaFile(FileObject dir) {
-        for (FileObject child : dir.getChildren()) {
-            if ("java".equals(child.getExt())) {
-                return child;
-            }
-        }
-        for (FileObject child : dir.getChildren()) {
-            if (child.isFolder()) {
-                FileObject found = findJavaFile(child);
-                if (found != null) {
-                    return found;
-                }
-            }
-        }
-        return null;
-    }
-
     private FileUtils() {
     }
 }

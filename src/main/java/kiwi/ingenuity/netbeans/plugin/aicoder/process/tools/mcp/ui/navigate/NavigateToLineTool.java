@@ -29,9 +29,9 @@ public class NavigateToLineTool implements McpToolInterface {
             return null;
         }
         if (options.contains(McpInstructionOptionEnum.ONLY_MCP_TOOL_ACCESS)) {
-            return "NavigateToLine - jumps the editor to any file:line";
+            return McpToolEnum.NAVIGATE_TO_LINE.toolName() + " - jumps the editor to any file:line";
         }
-        return "NavigateToLine -> INSTEAD OF asking user to open file - jumps the editor to any file:line";
+        return McpToolEnum.NAVIGATE_TO_LINE.toolName() + " -> INSTEAD OF asking user to open file - jumps the editor to any file:line";
     }
 
     @Override
@@ -39,8 +39,8 @@ public class NavigateToLineTool implements McpToolInterface {
         JsonObject tool = new JsonObject();
         tool.addProperty(ToolSchemaKeyEnum.NAME.key(), McpToolEnum.NAVIGATE_TO_LINE.toolName());
         tool.addProperty(ToolSchemaKeyEnum.DESCRIPTION.key(),
-                "Opens a file in the NetBeans editor and jumps to the specified line. "
-                + "Use after " + McpToolEnum.FIND_USAGES.toolName() + " or " + McpToolEnum.GET_TYPE_HIERARCHY.toolName() + " results to jump directly to a location.");
+                "For interactive work with the user, opens a file and moves to " + NavigateToLineParamEnum.LINE.key() + " when supplied; omit " + NavigateToLineParamEnum.LINE.key() + " to leave the caret unchanged. "
+                + NavigateToLineParamEnum.FOCUS.key() + " defaults to true; set false to open or navigate without stealing focus.");
         JsonObject schema = new JsonObject();
         schema.addProperty(ToolSchemaKeyEnum.TYPE.key(), "object");
         JsonObject props = new JsonObject();
@@ -50,12 +50,15 @@ public class NavigateToLineTool implements McpToolInterface {
         props.add(NavigateToLineParamEnum.FILE_PATH.key(), fp);
         JsonObject ln = new JsonObject();
         ln.addProperty(ToolSchemaKeyEnum.TYPE.key(), "integer");
-        ln.addProperty(ToolSchemaKeyEnum.DESCRIPTION.key(), "Line number to navigate to (1-based).");
+        ln.addProperty(ToolSchemaKeyEnum.DESCRIPTION.key(), "1-based line to navigate to. Omit to leave the caret unchanged.");
         props.add(NavigateToLineParamEnum.LINE.key(), ln);
+        JsonObject focus = new JsonObject();
+        focus.addProperty(ToolSchemaKeyEnum.TYPE.key(), "boolean");
+        focus.addProperty(ToolSchemaKeyEnum.DESCRIPTION.key(), "Activate the editor. Default: true.");
+        props.add(NavigateToLineParamEnum.FOCUS.key(), focus);
         schema.add(ToolSchemaKeyEnum.PROPERTIES.key(), props);
         JsonArray required = new JsonArray();
         required.add(NavigateToLineParamEnum.FILE_PATH.key());
-        required.add(NavigateToLineParamEnum.LINE.key());
         schema.add(ToolSchemaKeyEnum.REQUIRED.key(), required);
         tool.add(ToolSchemaKeyEnum.INPUT_SCHEMA.key(), schema);
         return McpToolSchemas.applyCredentialsIfRequested(tool, options);
@@ -74,6 +77,14 @@ public class NavigateToLineTool implements McpToolInterface {
         if (!McpHookServer.isFileAccessible(server, sessionId, fp)) {
             return McpHookServer.fileAccessDeniedMessage(server, sessionId, fp);
         }
-        return EditorContextProvider.navigateToLine(fp, args.intOr(NavigateToLineParamEnum.LINE.key(), 1));
+        Integer line = null;
+        if (args.has(NavigateToLineParamEnum.LINE.key())) {
+            line = args.intOr(NavigateToLineParamEnum.LINE.key(), 1);
+            if (line < 1) {
+                throw new McpArgumentException(-32602, NavigateToLineParamEnum.LINE.key() + " must be at least 1");
+            }
+        }
+        boolean focus = !args.has(NavigateToLineParamEnum.FOCUS.key()) || args.bool(NavigateToLineParamEnum.FOCUS.key());
+        return EditorContextProvider.navigateToLine(fp, line, focus);
     }
 }

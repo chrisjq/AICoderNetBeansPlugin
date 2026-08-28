@@ -33,7 +33,7 @@ public class GetClassMembersTool extends AbstractClassNameTool {
             // a different class depending on where the user last clicked — and
             // the answer never says which class it described.
             throw new McpArgumentException(-32602,
-                    "className is required — this tool does not read the symbol under the user's cursor. "
+                    GetClassMembersParamEnum.CLASS_NAME.key() + " is required — this tool does not read the symbol under the user's cursor. "
                     + "Call " + McpToolEnum.GET_CURRENT_FILE.toolName() + " for the user's position, or "
                     + McpToolEnum.SEARCH_TYPES.toolName() + " to find the class you mean.");
         }

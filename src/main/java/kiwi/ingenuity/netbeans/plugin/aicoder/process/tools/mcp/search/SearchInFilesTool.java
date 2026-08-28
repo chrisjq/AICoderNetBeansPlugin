@@ -37,11 +37,8 @@ public class SearchInFilesTool implements McpToolInterface {
         JsonObject tool = new JsonObject();
         tool.addProperty(ToolSchemaKeyEnum.NAME.key(), McpToolEnum.SEARCH_IN_FILES.toolName());
         tool.addProperty(ToolSchemaKeyEnum.DESCRIPTION.key(),
-                "Grep-style literal-text or regex search across open-project source files. "
-                + "Returns file:line:content matches. At most 200 are listed, but the header "
-                + "reports the true totals, e.g. 'Found 350 match(es) in 12 file(s) (showing "
-                + "first 200)' — narrow the query if the total is far above the cap. "
-                + "A source filePath limits the search to its source classpath; omit it to search every open project's source roots.");
+                "Grep-style text/regex search across open-project source files. "
+                + "Returns file:line:content matches. Capped at 200 matches; the header reports the true total. Omit " + SearchInFilesParamEnum.FILE_PATH.key() + " to search all open projects.");
         JsonObject schema = new JsonObject();
         schema.addProperty(ToolSchemaKeyEnum.TYPE.key(), "object");
         JsonObject props = new JsonObject();
@@ -63,7 +60,7 @@ public class SearchInFilesTool implements McpToolInterface {
         props.add(SearchInFilesParamEnum.CASE_SENSITIVE.key(), cs);
         JsonObject rx = new JsonObject();
         rx.addProperty(ToolSchemaKeyEnum.TYPE.key(), "boolean");
-        rx.addProperty(ToolSchemaKeyEnum.DESCRIPTION.key(), "Treat query as regex. Default: false (literal text).");
+        rx.addProperty(ToolSchemaKeyEnum.DESCRIPTION.key(), "Treat " + SearchInFilesParamEnum.QUERY.key() + " as regex. Default: false (literal text).");
         props.add(SearchInFilesParamEnum.IS_REGEX.key(), rx);
         schema.add(ToolSchemaKeyEnum.PROPERTIES.key(), props);
         JsonArray required = new JsonArray();

@@ -15,13 +15,11 @@ public class BuildGradleProjectTool extends AbstractBuildTool {
     public BuildGradleProjectTool() {
         super(McpSectionEnum.DEVOPS_BUILD,
                 McpToolEnum.BUILD_GRADLE_PROJECT.toolName(),
-                "Builds the open Gradle project (./gradlew build -x test). "
+                "Builds the Gradle project at " + BuildGradleProjectParamEnum.PROJECT_PATH.key() + " (./gradlew build -x test). "
                 + "Gradle projects only - do not use for Maven or Ant projects. "
-                + "On success returns the result line; on failure the complete "
-                + "failure detail, never truncated. The complete log is "
-                + "always written to a file whose path is included in the response. ",
-                McpToolEnum.BUILD_GRADLE_PROJECT.toolName() + " -> INSTEAD OF Bash gradlew build - builds Gradle project and returns a result summary (complete log written to a file)",
-                McpToolEnum.BUILD_GRADLE_PROJECT.toolName() + " - builds Gradle project and returns a result summary (complete log written to a file)");
+                + "Returns a summary; the full log is written to a file.",
+                McpToolEnum.BUILD_GRADLE_PROJECT.toolName() + " -> INSTEAD OF Bash gradlew build - requires " + BuildGradleProjectParamEnum.PROJECT_PATH.key() + "; builds Gradle project and returns a result summary (complete log written to a file)",
+                McpToolEnum.BUILD_GRADLE_PROJECT.toolName() + " - requires " + BuildGradleProjectParamEnum.PROJECT_PATH.key() + "; builds Gradle project and returns a result summary (complete log written to a file)");
     }
 
     @Override

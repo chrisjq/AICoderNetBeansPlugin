@@ -39,12 +39,10 @@ public class FindUsagesTool implements McpToolInterface {
         JsonObject tool = new JsonObject();
         tool.addProperty(ToolSchemaKeyEnum.NAME.key(), McpToolEnum.FIND_USAGES.toolName());
         tool.addProperty(ToolSchemaKeyEnum.DESCRIPTION.key(),
-                "Find all usages of a Java class or method in the open project(s). "
+                "Find all usages of a Java class or method in open project(s). "
                 + "Returns file paths with line numbers and code snippets. "
-                + "Provide a fully qualified class name (e.g. com.example.MyService); it is required, "
-                + "and is not resolved from the user's cursor. "
-                + "Optionally restrict to a specific method name, find subtypes, "
-                + "or include comment occurrences.");
+                + "Provide fully qualified class name (e.g. com.example.MyService); use " + McpToolEnum.SEARCH_TYPES.toolName()
+                + " if you need to find the class first.");
         JsonObject schema = new JsonObject();
         schema.addProperty(ToolSchemaKeyEnum.TYPE.key(), "object");
         JsonObject props = new JsonObject();
@@ -52,9 +50,8 @@ public class FindUsagesTool implements McpToolInterface {
         JsonObject cn = new JsonObject();
         cn.addProperty(ToolSchemaKeyEnum.TYPE.key(), "string");
         cn.addProperty(ToolSchemaKeyEnum.DESCRIPTION.key(),
-                "Fully qualified class name (e.g. com.example.MyService). Required — this tool does not "
-                + "resolve the symbol under the user's cursor; use " + McpToolEnum.SEARCH_TYPES.toolName()
-                + " to find the class you mean.");
+                "Fully qualified class name (e.g. com.example.MyService). Required — use " + McpToolEnum.SEARCH_TYPES.toolName()
+                + " to find the class if needed.");
         props.add(FindUsagesParamEnum.CLASS_NAME.key(), cn);
 
         JsonObject mn = new JsonObject();
@@ -70,7 +67,7 @@ public class FindUsagesTool implements McpToolInterface {
         JsonObject ds = new JsonObject();
         ds.addProperty(ToolSchemaKeyEnum.TYPE.key(), "boolean");
         ds.addProperty(ToolSchemaKeyEnum.DESCRIPTION.key(),
-                "When findSubclasses is true, limit to direct subtypes only. Default: false (all transitive).");
+                "When " + FindUsagesParamEnum.FIND_SUBCLASSES.key() + " is true, limit to direct subtypes only. Default: false (all transitive).");
         props.add(FindUsagesParamEnum.DIRECT_SUBCLASSES_ONLY.key(), ds);
 
         JsonObject sc = new JsonObject();
@@ -94,7 +91,7 @@ public class FindUsagesTool implements McpToolInterface {
         if (className == null || className.isBlank()) {
             // No cursor fallback — see GetClassMembersTool for the reasoning.
             throw new McpArgumentException(-32602,
-                    "className is required — this tool does not read the symbol under the user's cursor. "
+                    FindUsagesParamEnum.CLASS_NAME.key() + " is required — this tool does not read the symbol under the user's cursor. "
                     + "Call " + McpToolEnum.GET_CURRENT_FILE.toolName() + " for the user's position, or "
                     + McpToolEnum.SEARCH_TYPES.toolName() + " to find the class you mean.");
         }

@@ -1,20 +1,21 @@
 package kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.ui.file;
 
-import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.providers.netbeans.DiagnosticsProvider;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.McpSectionEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.McpToolEnum;
-import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.AbstractActionTool;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.session.AbstractAiSession;
+import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.AbstractActionTool;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.ToolRequestArguments;
+import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.providers.netbeans.DiagnosticsProvider;
 
 public class GetDiagnosticsTool extends AbstractActionTool {
 
     public GetDiagnosticsTool() {
         super(McpSectionEnum.UI_FILES,
                 McpToolEnum.GET_DIAGNOSTICS.toolName(),
-                "Returns compiler errors and warnings for all open Java files in the IDE.",
-                "GetDiagnostics -> INSTEAD OF Bash compiler invocation - check for compiler errors BEFORE proposing fixes or building",
-                "GetDiagnostics - check for compiler errors BEFORE proposing fixes or building");
+                "Reports errors and warnings only for files currently open in the editor, reflecting the user's on-screen work. "
+                + "Do not open files for diagnostics or treat it as build/test verification; use " + McpToolEnum.BUILD_MAVEN_PROJECT.toolName() + " and " + McpToolEnum.RUN_MAVEN_TESTS.toolName() + " (or equivalent tools) to verify changes.",
+                McpToolEnum.GET_DIAGNOSTICS.toolName() + " -> reports errors/warnings only for files the user has open; do not open files or use it for build/test verification — use " + McpToolEnum.BUILD_MAVEN_PROJECT.toolName() + " and " + McpToolEnum.RUN_MAVEN_TESTS.toolName(),
+                McpToolEnum.GET_DIAGNOSTICS.toolName() + " - reports errors/warnings only for files the user has open; do not open files or use it for build/test verification — use " + McpToolEnum.BUILD_MAVEN_PROJECT.toolName() + " and " + McpToolEnum.RUN_MAVEN_TESTS.toolName());
     }
 
     @Override

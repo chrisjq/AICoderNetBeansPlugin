@@ -126,7 +126,7 @@ public class RefactoringProvider {
 
     public static String moveClass(String filePath, int line, String targetPackage) {
         if (targetPackage == null || targetPackage.isBlank()) {
-            return "Error: targetPackage is required";
+            return "Error: " + McpToolPropertyEnum.TARGET_PACKAGE.key() + " is required";
         }
         if (!isValidJavaPackageName(targetPackage)) {
             return "Error: invalid target package name '" + targetPackage + "'";
@@ -372,7 +372,7 @@ public class RefactoringProvider {
         if (diskFile == null) {
             return "Cannot reformat non-disk file: " + fo.getPath();
         }
-        String navResult = EditorContextProvider.navigateToLine(diskFile.getPath(), 1, false);
+        String navResult = EditorContextProvider.openFile(diskFile.getPath(), false);
         if (navResult.startsWith("File not found") || navResult.startsWith("Error")) {
             return navResult;
         }
@@ -659,10 +659,10 @@ public class RefactoringProvider {
 
     public static String copyFile(String sourcePath, String targetDirectory, String newName) {
         if (sourcePath == null || sourcePath.isBlank()) {
-            return "sourcePath is required";
+            return McpToolPropertyEnum.SOURCE_PATH.key() + " is required";
         }
         if (targetDirectory == null || targetDirectory.isBlank()) {
-            return "targetDirectory is required";
+            return McpToolPropertyEnum.TARGET_DIRECTORY.key() + " is required";
         }
         FileObject fo = resolveFileObject(sourcePath);
         if (fo == null) {
@@ -685,10 +685,10 @@ public class RefactoringProvider {
 
     public static String moveFile(String sourcePath, String targetDirectory) {
         if (sourcePath == null || sourcePath.isBlank()) {
-            return "sourcePath is required";
+            return McpToolPropertyEnum.SOURCE_PATH.key() + " is required";
         }
         if (targetDirectory == null || targetDirectory.isBlank()) {
-            return "targetDirectory is required";
+            return McpToolPropertyEnum.TARGET_DIRECTORY.key() + " is required";
         }
         FileObject fo = resolveFileObject(sourcePath);
         if (fo == null) {
@@ -859,7 +859,7 @@ public class RefactoringProvider {
         if (diskFile2 == null) {
             return "Cannot run " + label + " on non-disk file: " + fo.getPath();
         }
-        String navResult = EditorContextProvider.navigateToLine(diskFile2.getPath(), 1, false);
+        String navResult = EditorContextProvider.openFile(diskFile2.getPath(), false);
         if (navResult.startsWith("File not found") || navResult.startsWith("Error")) {
             return navResult;
         }
@@ -871,6 +871,9 @@ public class RefactoringProvider {
             AtomicReference<String> saveError = new AtomicReference<>();
             SwingUtilities.invokeAndWait(() -> {
                 JTextComponent editor = getEditorFor(fo);
+                if (editor != null) {
+                    editor.getCaret().setDot(editor.getCaret().getDot());
+                }
                 // Pass editor as source so NB BaseAction.getTextComponent() uses it directly
                 ActionEvent evt = editor != null
                         ? new ActionEvent(editor, ActionEvent.ACTION_PERFORMED, "")

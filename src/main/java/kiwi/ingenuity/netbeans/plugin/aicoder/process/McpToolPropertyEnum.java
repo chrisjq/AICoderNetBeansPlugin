@@ -111,6 +111,10 @@ public enum McpToolPropertyEnum {
      */
     FORCE("force"),
     /**
+     * Whether an opened editor should receive focus.
+     */
+    FOCUS("focus"),
+    /**
      * Question heading shown to the user.
      */
     HEADER("header"),
