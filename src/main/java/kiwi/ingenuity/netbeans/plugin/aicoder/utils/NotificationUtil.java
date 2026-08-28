@@ -2,6 +2,7 @@ package kiwi.ingenuity.netbeans.plugin.aicoder.utils;
 
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.mail.AiInboxMessage;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.McpToolEnum;
+import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.ai.SendAiMessageParamEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.userinput.AskUserQuestionParamEnum;
 
 public class NotificationUtil {
@@ -40,7 +41,7 @@ public class NotificationUtil {
 
     public static String formatReplyExpectedInstruction() {
         return "A response must be sent to this message with "
-                + McpToolEnum.SEND_AI_MESSAGE.toolName() + '.';
+                + McpToolEnum.SEND_AI_MESSAGE.toolName() + "with the " + SendAiMessageParamEnum.REPLY_TO_MESSAGE_ID.key() + " parameter set to this message's id.";
     }
 
     // Chat system messages

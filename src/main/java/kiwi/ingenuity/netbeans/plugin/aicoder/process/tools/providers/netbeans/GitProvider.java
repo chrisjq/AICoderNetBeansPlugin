@@ -12,6 +12,7 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.logging.Level;
 import java.util.logging.Logger;
+import kiwi.ingenuity.netbeans.plugin.aicoder.PluginSettings;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.server.McpHookServer;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.server.McpServerRegistry;
 import kiwi.ingenuity.netbeans.plugin.aicoder.utils.DateUtil;
@@ -544,8 +545,16 @@ public class GitProvider {
                 boolean projectManagerUnavailable = (t instanceof NoClassDefFoundError
                         || t instanceof ExceptionInInitializerError)
                         && cause.contains("ProjectManager");
-                LOG.log(projectManagerUnavailable ? Level.FINE : Level.WARNING,
-                        "Project owner lookup failed for " + file + ", falling back to its own directory", t);
+                // The WARNING half is a real defect worth surfacing, so it is NOT gated. Only the expected-and-noisy
+                // FINE half sits behind the debug flag.
+                if (!projectManagerUnavailable) {
+                    LOG.log(Level.WARNING,
+                            "Project owner lookup failed for " + file + ", falling back to its own directory", t);
+                }
+                else if (PluginSettings.isDebugJson()) {
+                    LOG.log(Level.FINE,
+                            "Project owner lookup unavailable for " + file + ", falling back to its own directory", t);
+                }
             }
         }
         return file.isDirectory() ? file : file.getParentFile();

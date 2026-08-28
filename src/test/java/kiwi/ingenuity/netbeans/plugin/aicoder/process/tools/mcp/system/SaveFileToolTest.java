@@ -115,7 +115,7 @@ class SaveFileToolTest {
 
     @Test
     void saveFileWithContent_ownSessionConfigDir_writesDirectlyWithNoPermissionEvent() throws Exception {
-        // Mirrors the GetFileSizeAndMetaTool regression test: restrict on, zero project
+        // Mirrors the GetFileInfoTool regression test: restrict on, zero project
         // dirs — isProjectFileAllowed alone would deny this, so only the own-config-dir
         // bypass can let it through, and it must do so without ever asking for approval.
         String sessionId = "save-file-test-" + UUID.randomUUID();

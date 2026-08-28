@@ -96,6 +96,15 @@ public class McpHookServer {
             return "Access denied: file access scope is unavailable because the MCP server is not running. "
                     + "Retry after MCP session setup completes.";
         }
+        // A path the filesystem cannot represent is refused for a completely different reason than one that is simply
+        // out of scope, and saying "outside the allowed project scope" for it is misleading: a caller reads that as a
+        // permissions problem and retries with a different prefix, when the real fault is a stray character in the
+        // string it sent. The scope check denies both — correctly, and fail-closed — so only the explanation needs to
+        // tell them apart.
+        if (SessionFileScopeRegistry.isMalformedPath(filePath)) {
+            return "Malformed path: the supplied path contains characters the filesystem cannot represent, so it "
+                    + "cannot refer to any file. Check the path for stray control characters and resend it.";
+        }
         return server.fileScope.fileAccessDeniedMessage(sessionId, filePath);
     }
 

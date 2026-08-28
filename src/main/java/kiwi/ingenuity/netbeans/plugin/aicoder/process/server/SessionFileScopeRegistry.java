@@ -2,6 +2,7 @@ package kiwi.ingenuity.netbeans.plugin.aicoder.process.server;
 
 import java.io.File;
 import java.io.IOException;
+import java.nio.file.InvalidPathException;
 import java.nio.file.Path;
 import java.util.List;
 import java.util.Map;
@@ -47,6 +48,37 @@ class SessionFileScopeRegistry {
      */
     private static final Set<String> BASE_LEVEL_FILES_EXEMPT
             = Set.of("sessions.json", "config-templates.json", "instruction-templates.json");
+
+    /**
+     * Converts a caller-supplied string to a {@link Path}, or null when the platform cannot represent it.
+     * <p>
+     * {@code Path.of} throws {@link InvalidPathException} for a string the filesystem rejects outright — an embedded
+     * NUL is the usual case. Every scope check below runs BEFORE the tool handler, so an unguarded conversion here
+     * escaped as a JSON-RPC {@code -32603 Internal error} for EVERY tool that takes a file path, not just the one being
+     * called. Guarding inside the individual tools could never fix it, because the throw happened first.
+     * <p>
+     * A null return means "deny", and that is the safe direction: a path the filesystem cannot even represent is not
+     * inside any project directory, so refusing it is both correct and fail-closed.
+     */
+    /**
+     * True when the platform cannot turn this string into a path at all.
+     * <p>
+     * Used only to choose the REFUSAL WORDING. The decision to deny is made by the scope checks themselves and does not
+     * consult this — so a malformed path is refused whether or not anyone asks this question, and the two concerns
+     * cannot drift apart into a case that is explained but not denied.
+     */
+    static boolean isMalformedPath(String filePath) {
+        return filePath != null && !filePath.isBlank() && pathOrNull(filePath) == null;
+    }
+
+    private static Path pathOrNull(String filePath) {
+        try {
+            return Path.of(filePath);
+        }
+        catch (InvalidPathException e) {
+            return null;
+        }
+    }
 
     private static Path resolveRealPath(Path p) {
         try {
@@ -116,6 +148,17 @@ class SessionFileScopeRegistry {
         // WHICH session owns it — see isSessionPersistenceDirFile for why this is
         // checked before, not after, the unrestricted-access shortcut below.
         if (isSessionPersistenceDirFile(filePath)) {
+            return false;
+        }
+        // Checked before the unrestricted-access shortcut so a malformed path is denied
+        // the same way regardless of restrict-to-project — otherwise an unrestricted
+        // session's malformed path sailed past this method entirely (true, wrongly) and
+        // reached the tool's own Path.of call downstream, producing "Not a usable path"
+        // instead of the "Malformed path" wording every restricted session already got
+        // from fileAccessDeniedMessage. isMalformedPath is false for a path that is simply
+        // not there yet (Path.of succeeds for a not-yet-existing path), so this can never
+        // block a WriteFile destination or a Copy/MoveFile target.
+        if (isMalformedPath(filePath)) {
             return false;
         }
         if (isUnrestrictedFileAccess(sessionId)) {
@@ -211,8 +254,12 @@ class SessionFileScopeRegistry {
             return null;
         }
         try {
+            Path requested = pathOrNull(filePath);
+            if (requested == null) {
+                return null;
+            }
             Path baseDir = resolveRealPath(SessionPersistenceManager.defaultBaseDir());
-            Path resolvedFile = resolveRealPath(Path.of(filePath));
+            Path resolvedFile = resolveRealPath(requested);
             return resolvedFile.startsWith(baseDir) ? baseDir.relativize(resolvedFile) : null;
         }
         catch (Exception e) {
@@ -269,7 +316,11 @@ class SessionFileScopeRegistry {
         if (dirs == null || dirs.isEmpty()) {
             return false;
         }
-        Path resolvedFile = resolveRealPath(Path.of(filePath));
+        Path requested = pathOrNull(filePath);
+        if (requested == null) {
+            return false;
+        }
+        Path resolvedFile = resolveRealPath(requested);
         return dirs.stream().anyMatch(d -> {
             Path dir = resolveRealPath(d.toPath());
             return resolvedFile.equals(dir) || resolvedFile.startsWith(dir);
@@ -280,7 +331,11 @@ class SessionFileScopeRegistry {
         if (filePath == null || filePath.isBlank()) {
             return false;
         }
-        Path f = resolveRealPath(Path.of(filePath));
+        Path requested = pathOrNull(filePath);
+        if (requested == null) {
+            return false;
+        }
+        Path f = resolveRealPath(requested);
         for (Project p : OpenProjects.getDefault().getOpenProjects()) {
             Path d = resolveRealPath(Path.of(p.getProjectDirectory().getPath()));
             if (f.equals(d) || f.startsWith(d)) {
@@ -307,8 +362,12 @@ class SessionFileScopeRegistry {
         try {
             Path sessionDir = PluginUtil.getPluginConfigDir()
                     .resolve(aiType.key()).resolve(sessionId);
+            Path requested = pathOrNull(filePath);
+            if (requested == null) {
+                return false;
+            }
             Path resolvedDir = resolveRealPath(sessionDir);
-            Path resolvedFile = resolveRealPath(Path.of(filePath));
+            Path resolvedFile = resolveRealPath(requested);
             return resolvedFile.equals(resolvedDir) || resolvedFile.startsWith(resolvedDir);
         }
         catch (IOException e) {

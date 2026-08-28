@@ -10,7 +10,10 @@ public enum FindFileParamEnum {
     PATTERN(McpToolPropertyEnum.PATTERN),
     IS_REGEX(McpToolPropertyEnum.IS_REGEX),
     CASE_SENSITIVE(McpToolPropertyEnum.CASE_SENSITIVE),
-    MAX_MATCHES(McpToolPropertyEnum.MAX_MATCHES);
+    IGNORE_HIDDEN(McpToolPropertyEnum.IGNORE_HIDDEN),
+    MAX_DEPTH(McpToolPropertyEnum.MAX_DEPTH),
+    MAX_MATCHES(McpToolPropertyEnum.MAX_MATCHES),
+    TYPE(McpToolPropertyEnum.TYPE);
 
     private final McpToolPropertyEnum property;
 

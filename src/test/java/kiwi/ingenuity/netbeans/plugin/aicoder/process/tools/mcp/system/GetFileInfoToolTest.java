@@ -21,22 +21,22 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import org.junit.jupiter.api.Test;
 
 /**
- * Regression test for the bug the user named specifically: GetFileSizeAndMetaTool previously checked only
+ * Regression test for the bug the user named specifically: GetFileInfoTool previously checked only
  * {@code isFileAllowed}, so a session could read its own tool_results log via GetFileContent (which already OR'd in
- * isOwnSessionConfigFile) but not stat the same file via GetFileSizeAndMeta — exactly the half-implemented-rule failure
- * that motivated centralising the check into {@link McpHookServer#isFileAccessible}.
+ * isOwnSessionConfigFile) but not stat the same file via GetFileInfo — exactly the half-implemented-rule failure that
+ * motivated centralising the check into {@link McpHookServer#isFileAccessible}.
  */
-class GetFileSizeAndMetaToolTest {
+class GetFileInfoToolTest {
 
     private static ToolRequestArguments args(String filePath) {
         JsonObject o = new JsonObject();
-        o.addProperty(GetFileSizeAndMetaParamEnum.FILE_PATH.key(), filePath);
+        o.addProperty(GetFileInfoParamEnum.FILE_PATH.key(), filePath);
         return new ToolRequestArguments(o);
     }
 
     @Test
     void handle_ownSessionConfigFile_notDeniedUnderRestrictToProjectWithNoProjectDirs() throws Exception {
-        String sessionId = "gfsam-test-" + UUID.randomUUID();
+        String sessionId = "gfit-test-" + UUID.randomUUID();
         McpHookServer server = new McpHookServer(0);
         server.init();
         try {
@@ -47,7 +47,7 @@ class GetFileSizeAndMetaToolTest {
             Path logFile = Files.createFile(configDir.resolve("build-maven-test.log"));
             Files.writeString(logFile, "BUILD SUCCESS\n");
 
-            GetFileSizeAndMetaTool tool = new GetFileSizeAndMetaTool(server);
+            GetFileInfoTool tool = new GetFileInfoTool(server);
             String result = tool.handle(args(logFile.toString()), new FakeSession(sessionId));
 
             assertFalse(result.startsWith("Access denied"), "own config-dir file must not be denied: " + result);

@@ -165,8 +165,8 @@ The local MCP server exposes the following NetBeans-aware capabilities to compat
 | Tool | Description |
 |---|---|
 | [`SearchInFiles`](REFERENCE.md#searchinfiles), [`SearchTypes`](REFERENCE.md#searchtypes), [`SearchSymbols`](REFERENCE.md#searchsymbols) | IDE-aware text, type, and member search; all three search every open project when no file is supplied, and report the true total when results are truncated |
-| [`FindFile`](REFERENCE.md#findfile) | Find files by leaf name under a permitted directory; omit the directory to search accessible open projects, and omit the pattern to list every file |
 | [`FilterFileContent`](REFERENCE.md#filterfilecontent) | Pattern-match lines within a single named file, with optional context per match; reaches files off the source classpath that project search cannot see |
+| [`FindFile`](REFERENCE.md#findfile) | Locate files or directories by name below a permitted directory, with depth limiting and hidden-entry filtering; reaches paths off the source classpath that project search cannot see |
 | [`FindDeclaration`](REFERENCE.md#finddeclaration), [`FindImplementations`](REFERENCE.md#findimplementations), [`FindUsages`](REFERENCE.md#findusages) | Navigate relationships in Java source |
 | [`GetProjectStructure`](REFERENCE.md#getprojectstructure), [`GetClassMembers`](REFERENCE.md#getclassmembers), [`GetTypeHierarchy`](REFERENCE.md#gettypehierarchy), [`GetJavadoc`](REFERENCE.md#getjavadoc) | Inspect project and classpath information |
 | [`RenameSymbol`](REFERENCE.md#renamesymbol), [`MoveClass`](REFERENCE.md#moveclass), [`MoveFile`](REFERENCE.md#movefile), [`InlineVariable`](REFERENCE.md#inlinevariable), [`ChangeMethodSignature`](REFERENCE.md#changemethodsignature) | IDE refactorings that update references where applicable |
@@ -176,7 +176,7 @@ The local MCP server exposes the following NetBeans-aware capabilities to compat
 
 | Tool | Description |
 |---|---|
-| [`GetFileContent`](REFERENCE.md#getfilecontent), [`GetFileSizeAndMeta`](REFERENCE.md#getfilesizeandmeta), [`GetCurrentFile`](REFERENCE.md#getcurrentfile), [`GetCurrentFileContent`](REFERENCE.md#getcurrentfilecontent), [`GetOpenFiles`](REFERENCE.md#getopenfiles), [`GetSelectedText`](REFERENCE.md#getselectedtext) | Read editor and filesystem context, including unsaved editor content where applicable |
+| [`GetFileContent`](REFERENCE.md#getfilecontent), [`GetFileInfo`](REFERENCE.md#getfileinfo), [`GetCurrentFile`](REFERENCE.md#getcurrentfile), [`GetCurrentFileContent`](REFERENCE.md#getcurrentfilecontent), [`GetOpenFiles`](REFERENCE.md#getopenfiles), [`GetSelectedText`](REFERENCE.md#getselectedtext) | Read editor and filesystem context, including unsaved editor content where applicable. `GetFileInfo` describes files, directories and symbolic links |
 | [`WriteFile`](REFERENCE.md#writefile), [`ApplyEdit`](REFERENCE.md#applyedit), [`SaveFile`](REFERENCE.md#savefile) | Propose or save content changes through the review gate |
 | [`CopyFile`](REFERENCE.md#copyfile), [`MoveFile`](REFERENCE.md#movefile), [`DeleteFile`](REFERENCE.md#deletefile) | Copy, relocate, or remove files with explicit confirmation |
 | [`CloseFile`](REFERENCE.md#closefile), [`RefreshFileStatus`](REFERENCE.md#refreshfilestatus) | Manage open files and refresh NetBeans/VCS state |

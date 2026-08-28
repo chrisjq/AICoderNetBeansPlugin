@@ -33,8 +33,8 @@ import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.system.DeleteFil
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.system.DeleteFileTool;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.system.GetFileContentParamEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.system.GetFileContentTool;
-import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.system.GetFileSizeAndMetaParamEnum;
-import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.system.GetFileSizeAndMetaTool;
+import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.system.GetFileInfoParamEnum;
+import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.system.GetFileInfoTool;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.system.MoveFileParamEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.system.MoveFileTool;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.system.SaveFileParamEnum;
@@ -125,9 +125,9 @@ class SessionHistoryFileProtectionTest {
     }
 
     @Test
-    void getFileSizeAndMeta_deniesHistoryFile() throws Exception {
-        GetFileSizeAndMetaTool tool = new GetFileSizeAndMetaTool(server);
-        String result = tool.handle(args(GetFileSizeAndMetaParamEnum.FILE_PATH.key(), historyFile.toString()), new FakeSession(sessionId));
+    void getFileInfo_deniesHistoryFile() throws Exception {
+        GetFileInfoTool tool = new GetFileInfoTool(server);
+        String result = tool.handle(args(GetFileInfoParamEnum.FILE_PATH.key(), historyFile.toString()), new FakeSession(sessionId));
         assertTrue(result.startsWith("Access denied"), result);
     }
 

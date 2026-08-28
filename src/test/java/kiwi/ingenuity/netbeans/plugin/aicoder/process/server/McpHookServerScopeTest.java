@@ -1,5 +1,6 @@
 package kiwi.ingenuity.netbeans.plugin.aicoder.process.server;
 
+import java.io.File;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
@@ -446,6 +447,74 @@ class McpHookServerScopeTest {
         try {
             assertFalse(s.isFileAllowed("missing", file.toString()));
             assertTrue(s.fileAccessDeniedMessage("missing", file.toString()).contains("scope is not yet registered"));
+        }
+        finally {
+            s.stop();
+        }
+    }
+
+    // ---- Malformed-path wording must be the SAME regardless of restrict-to-project.
+    // Before the fix, isFileAllowed's isUnrestrictedFileAccess shortcut returned true
+    // for a malformed path without ever checking whether the path could be represented
+    // at all, so an unrestricted session sailed past this gate and only failed later
+    // inside the tool's own Path.of call, with a different message
+    // ("Not a usable path") than a restricted session got from fileAccessDeniedMessage
+    // ("Malformed path"). See SessionFileScopeRegistry.isFileAllowed and
+    // McpHookServer.fileAccessDeniedMessage. ----
+    @Test
+    void isFileAllowed_deniesMalformedPath_restrictedSession() throws Exception {
+        String sessionId = "malformed-path-test-" + UUID.randomUUID();
+        String nulPath = "/tmp/project/file" + ((char) 0) + ".txt";
+        McpHookServer s = new McpHookServer(0);
+        s.init();
+        try {
+            s.registerSession(sessionId, CLAUDE, List.of(new File("/tmp/project")), true);
+            assertFalse(s.isFileAllowed(sessionId, nulPath));
+            assertTrue(s.fileAccessDeniedMessage(sessionId, nulPath).startsWith("Malformed path:"),
+                    "a malformed path must be reported as malformed, not as an out-of-scope path");
+        }
+        finally {
+            s.stop();
+        }
+    }
+
+    @Test
+    void isFileAllowed_deniesMalformedPath_unrestrictedSession() throws Exception {
+        // Pins the actual fix: an unrestricted session must get the SAME denial and the
+        // SAME wording as a restricted one for a path the filesystem cannot represent,
+        // instead of the unrestricted shortcut waving it through to fail differently
+        // downstream inside the tool handler.
+        String sessionId = "malformed-path-test-" + UUID.randomUUID();
+        String nulPath = "/tmp/project/file" + ((char) 0) + ".txt";
+        McpHookServer s = new McpHookServer(0);
+        s.init();
+        try {
+            s.registerSession(sessionId, CLAUDE, List.of(), false);
+            assertFalse(s.isFileAllowed(sessionId, nulPath),
+                    "an unrestricted session must still deny a malformed path");
+            assertTrue(s.fileAccessDeniedMessage(sessionId, nulPath).startsWith("Malformed path:"),
+                    "must get the same malformed-path wording as a restricted session, not the "
+                    + "unrestricted shortcut waving it through to a different failure downstream");
+        }
+        finally {
+            s.stop();
+        }
+    }
+
+    @Test
+    void fileAccessDeniedMessage_wellFormedOutOfScopePath_stillGetsScopeWording() throws Exception {
+        // Negative control: the malformed-path check added to isFileAllowed must not
+        // swallow the ordinary "outside the allowed project scope" wording for a path
+        // the filesystem CAN represent — only genuinely unrepresentable paths route to
+        // the malformed-path message.
+        String sessionId = "malformed-path-test-" + UUID.randomUUID();
+        McpHookServer s = new McpHookServer(0);
+        s.init();
+        try {
+            s.registerSession(sessionId, CLAUDE, List.of(new File("/tmp/project")), true);
+            String message = s.fileAccessDeniedMessage(sessionId, "/tmp/outside/Secret.java");
+            assertTrue(message.endsWith("is outside the allowed project scope for this session."),
+                    "a well-formed but out-of-scope path must keep the ordinary scope wording: " + message);
         }
         finally {
             s.stop();

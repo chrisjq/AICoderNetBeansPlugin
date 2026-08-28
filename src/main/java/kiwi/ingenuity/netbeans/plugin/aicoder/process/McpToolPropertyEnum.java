@@ -123,6 +123,10 @@ public enum McpToolPropertyEnum {
      */
     IMPORTANT("important"),
     /**
+     * Whether hidden files and directories are excluded from a walk.
+     */
+    IGNORE_HIDDEN("ignoreHidden"),
+    /**
      * Whether search includes dependency artifacts.
      */
     INCLUDE_DEPS("includeDeps"),
@@ -158,6 +162,10 @@ public enum McpToolPropertyEnum {
      * Maximum returned character count.
      */
     MAX_CHARS("maxChars"),
+    /**
+     * Maximum directory depth to descend during a recursive walk.
+     */
+    MAX_DEPTH("maxDepth"),
     /**
      * Maximum number of matches to include in a result.
      */

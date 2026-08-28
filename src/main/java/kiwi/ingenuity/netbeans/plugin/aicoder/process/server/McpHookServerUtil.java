@@ -31,6 +31,7 @@ import kiwi.ingenuity.netbeans.plugin.aicoder.process.McpToolPropertyEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.SessionRegistry;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.session.AbstractAiSession;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.McpToolInterface;
+import kiwi.ingenuity.netbeans.plugin.aicoder.utils.OperatingSystemEnum;
 
 public final class McpHookServerUtil {
 
@@ -148,6 +149,14 @@ public final class McpHookServerUtil {
             sb.append("- Use plugin tools for ALL project work — they are the only tools available.\n");
         }
         sb.append("- The IDE is running — never claim tools are unavailable or the environment is headless. If a tool exists for the task, use it.\n");
+        // Stated once, up front, because an AI otherwise guesses the platform from path separators and gets it wrong:
+        // it drives shell syntax, path separators, executable names, and which file metadata actually exists.
+        //
+        // The RAW os.name is sent, not OperatingSystemEnum's label. The enum exists to make internal branching
+        // decisions and collapses everything unrecognised into one bucket; an AI is better served by the actual
+        // string, which stays accurate on platforms the enum never enumerates.
+        sb.append("- The IDE is running on ").append(OperatingSystemEnum.rawName())
+                .append(" — assume that platform's shell syntax, path separators and executable names.\n");
         sb.append("- After writing or creating any project file, call RefreshFileStatus so NetBeans detects the change.\n");
         sb.append("- Write project file paths as absolute paths with line numbers (e.g. /path/Foo.java:42) — they render as clickable links.");
         if (hasCreds) {

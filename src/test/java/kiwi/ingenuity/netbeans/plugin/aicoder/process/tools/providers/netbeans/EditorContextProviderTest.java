@@ -6,12 +6,41 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Comparator;
 import java.util.List;
+import kiwi.ingenuity.netbeans.plugin.aicoder.utils.OperatingSystemEnum;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import org.junit.jupiter.api.Assumptions;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.condition.DisabledOnOs;
+import org.junit.jupiter.api.condition.EnabledOnOs;
+import org.junit.jupiter.api.condition.OS;
+import org.junit.jupiter.api.io.TempDir;
 
 class EditorContextProviderTest {
+
+    /**
+     * The created-time reporting rule (see {@link #fileInfoCreatedTime_followsPlatformBirthTimeRule} for why the old OR
+     * was tautological). Factored here so the file and directory reporting paths pin the same rule, and deleting either
+     * the no-birth-time branch or the formatted-date emission fails the matching assertion.
+     */
+    private static void assertCreatedTimeFollowsPlatformRule(String out) {
+        if (OperatingSystemEnum.current().providesFileCreationTime()) {
+            assertTrue(out.contains(", created "),
+                    "a platform with real birth times must report one: " + out);
+        }
+        else {
+            // Absent, not explained. An unsupported field is the normal state on this platform, so a per-call notice
+            // would appear on every result forever — noise an AI reads and discards each time. The assertion is on
+            // ABSENCE, which is what the caller actually observes.
+            //
+            // Matched as ", created " — the field's own separator — NOT a bare "created". A temp fixture named
+            // "...getfileinfo-created<random>.txt" makes the loose form match the FILE NAME and fail a correct
+            // implementation, which is exactly how an over-broad assertion invents a defect.
+            assertFalse(out.contains(", created "),
+                    "created time must be omitted entirely, with no placeholder: " + out);
+        }
+    }
 
     /**
      * The file-content header reports the exact whole-file byte count so a caller whose result limit clips large reads
@@ -36,18 +65,18 @@ class EditorContextProviderTest {
     }
 
     /**
-     * GetFileSizeAndMeta reports the exact byte size, line count and an encoding without returning the file's content,
-     * so a caller can size a read before spending tokens on it. (Encoding resolves to "unknown" outside the running
-     * IDE, where the path is not a registered FileObject — the byte/line facts are what this asserts.)
+     * GetFileInfo reports the exact byte size, line count and an encoding without returning the file's content, so a
+     * caller can size a read before spending tokens on it. (Encoding resolves to "unknown" outside the running IDE,
+     * where the path is not a registered FileObject — the byte/line facts are what this asserts.)
      */
     @Test
-    void fileSizeAndMetaReportsBytesLinesAndEncoding() throws IOException {
-        Path file = Files.createTempFile("aicoder-getfilesize", ".txt");
+    void fileInfoReportsBytesLinesAndEncoding() throws IOException {
+        Path file = Files.createTempFile("aicoder-getfileinfo", ".txt");
         try {
             byte[] content = "line one\nline two\nline three\n".getBytes(StandardCharsets.UTF_8);
             Files.write(file, content);
 
-            String out = EditorContextProvider.getFileSizeAndMeta(file.toString());
+            String out = EditorContextProvider.getFileInfo(file.toString());
 
             assertTrue(out.contains(content.length + " bytes"),
                     "must state the exact byte count (" + content.length + "): " + out);
@@ -57,6 +86,28 @@ class EditorContextProviderTest {
                     "must report the last-modified time and age in seconds: " + out);
             assertTrue(out.contains("writable") || out.contains("read-only"),
                     "must report the writable flag: " + out);
+            assertTrue(out.contains("not a symbolic link"), "must state the link status: " + out);
+        }
+        finally {
+            Files.deleteIfExists(file);
+        }
+    }
+
+    /**
+     * The created-time reporting rule, asserted without hardcoding the platform the suite happens to run on: a platform
+     * that exposes a real birth time must report it as a formatted date, or degrade plainly when the specific
+     * filesystem offers none; one that does not must state the exact no-birth-time wording and must NOT invent a
+     * formatted date. The old assertion here was a tautology — it OR'd against the bare substring {@code "created "},
+     * which the Linux message {@code ", created time not reported on Linux"} satisfies simply because it CONTAINS that
+     * substring — so it passed without ever exercising either branch. These pin each branch.
+     */
+    @Test
+    void fileInfoCreatedTime_followsPlatformBirthTimeRule() throws IOException {
+        Path file = Files.createTempFile("aicoder-getfileinfo-created", ".txt");
+        try {
+            Files.writeString(file, "x\n");
+            String out = EditorContextProvider.getFileInfo(file.toString());
+            assertCreatedTimeFollowsPlatformRule(out);
         }
         finally {
             Files.deleteIfExists(file);
@@ -64,9 +115,106 @@ class EditorContextProviderTest {
     }
 
     @Test
-    void fileSizeAndMetaReportsMissingFile() {
-        String out = EditorContextProvider.getFileSizeAndMeta("/no/such/aicoder/file.txt");
+    @EnabledOnOs({OS.WINDOWS, OS.MAC})
+    void createdTime_isActuallyProvidedOnPlatformsThatExposeIt() throws IOException {
+        Path file = Files.createTempFile("aicoder-getfileinfo-created-value", ".txt");
+        try {
+            Files.writeString(file, "x\n");
+            String out = EditorContextProvider.getFileInfo(file.toString());
+            assertTrue(out.contains("created "), "a real created time must be reported: " + out);
+            assertFalse(out.contains("created time not provided"),
+                    "Windows and macOS must not degrade the created time: " + out);
+        }
+        finally {
+            Files.deleteIfExists(file);
+        }
+    }
+
+    @Test
+    void fileInfoReportsMissingFile() {
+        String out = EditorContextProvider.getFileInfo("/no/such/aicoder/file.txt");
         assertTrue(out.startsWith("File not found:"), "missing file must be reported: " + out);
+    }
+
+    @Test
+    void fileInfoReportsDirectoryWithHiddenAndNonHiddenCounts(@TempDir Path tempDir) throws IOException {
+        Files.createDirectories(tempDir.resolve("sub1"));
+        Files.createDirectories(tempDir.resolve(".hiddendir"));
+        Files.writeString(tempDir.resolve("a.txt"), "a");
+        Files.writeString(tempDir.resolve(".hiddenfile"), "b");
+
+        String out = EditorContextProvider.getFileInfo(tempDir.toString());
+
+        assertTrue(out.contains("directory"), "must identify a directory: " + out);
+        assertTrue(out.contains("2 files"), "must count both files: " + out);
+        assertTrue(out.contains("1 hidden, 1 visible"), "file hidden split is wrong: " + out);
+        assertTrue(out.contains("2 directories"), "must count both directories: " + out);
+        assertTrue(out.contains("immediate entries only (not recursive)"),
+                "must state the count is immediate, not recursive: " + out);
+        assertCreatedTimeFollowsPlatformRule(out);
+    }
+
+    @DisabledOnOs(OS.WINDOWS)
+    @Test
+    void fileInfoResolvesSymlinkToDirectory(@TempDir Path tempDir) throws IOException {
+        Path targetDir = Files.createDirectories(tempDir.resolve("targetdir"));
+        Files.writeString(targetDir.resolve("inner.txt"), "x");
+        Path dirLink = tempDir.resolve("dirlink");
+        try {
+            Files.createSymbolicLink(dirLink, targetDir.getFileName());
+        }
+        catch (UnsupportedOperationException | IOException | SecurityException e) {
+            Assumptions.assumeTrue(false, "filesystem does not support symbolic links: " + e);
+            return;
+        }
+
+        String out = EditorContextProvider.getFileInfo(dirLink.toString());
+
+        assertTrue(out.contains("(symbolic link) ->"), "must show link and resolved path: " + out);
+        assertTrue(out.contains("targetdir"), "must name the resolved target path: " + out);
+        assertTrue(out.contains("directory"), "must report the target's directory info: " + out);
+        assertTrue(out.contains("1 file"), "must report the target dir's entry counts: " + out);
+    }
+
+    @DisabledOnOs(OS.WINDOWS)
+    @Test
+    void fileInfoResolvesSymlinkToFile(@TempDir Path tempDir) throws IOException {
+        Path targetFile = Files.writeString(tempDir.resolve("target.txt"), "hello\n");
+        Path fileLink = tempDir.resolve("filelink");
+        try {
+            Files.createSymbolicLink(fileLink, targetFile.getFileName());
+        }
+        catch (UnsupportedOperationException | IOException | SecurityException e) {
+            Assumptions.assumeTrue(false, "filesystem does not support symbolic links: " + e);
+            return;
+        }
+
+        String out = EditorContextProvider.getFileInfo(fileLink.toString());
+
+        assertTrue(out.contains("(symbolic link) ->"), "must show link and resolved path: " + out);
+        assertTrue(out.contains("target.txt"), "must name the resolved target path: " + out);
+        assertTrue(out.contains("6 bytes"), "must report the target's byte size: " + out);
+        assertTrue(out.contains("1 lines"), "must report the target's line count: " + out);
+        assertTrue(out.contains(", symbolic link"), "must state the path is a link: " + out);
+    }
+
+    @DisabledOnOs(OS.WINDOWS)
+    @Test
+    void fileInfoReportsBrokenLinkWithoutThrowing(@TempDir Path tempDir) throws IOException {
+        Path link = tempDir.resolve("broken");
+        try {
+            Files.createSymbolicLink(link, Path.of("does-not-exist.txt"));
+        }
+        catch (UnsupportedOperationException | IOException | SecurityException e) {
+            Assumptions.assumeTrue(false, "filesystem does not support symbolic links: " + e);
+            return;
+        }
+
+        String out = EditorContextProvider.getFileInfo(link.toString());
+
+        assertTrue(out.contains("symbolic link"), "must identify the path as a link: " + out);
+        assertTrue(out.contains("broken") || out.contains("cyclic"),
+                "must say the link is broken rather than throwing: " + out);
     }
 
     // ---- Bug fix: GetFileContent miss self-correction ----
