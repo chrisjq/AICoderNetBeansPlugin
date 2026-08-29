@@ -1,4 +1,4 @@
-package kiwi.ingenuity.netbeans.plugin.aicoder.process.tools;
+package kiwi.ingenuity.netbeans.plugin.aicoder.process.tempfile;
 
 import java.io.File;
 import java.io.IOException;
@@ -17,6 +17,7 @@ import java.util.stream.Stream;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.session.AiSession;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.server.McpHookServer;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.server.McpServerRegistry;
+import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.TimeoutEnum;
 
 /**
  * Single owner of every temp file the plugin creates (pasted images, spooled tool results) and of the directories

@@ -348,7 +348,16 @@ public class ConversationPanel extends JScrollPane {
      * unblocks the MCP tool thread.
      */
     public void showConfirm(ConfirmEvent event) {
-        ConfirmPanel cp = new ConfirmPanel(event);
+        showConfirm(event, null, null);
+    }
+
+    /**
+     * Render a ConfirmEvent inline with per-backend tooltips on the Yes/No buttons
+     * ({@code AiTypeEnum.confirmAcceptTooltip()/confirmRejectTooltip()}); {@code null} omits that button's tooltip. The
+     * ConfirmPanel completes event.response() when the user clicks Yes or No, which unblocks the MCP tool thread.
+     */
+    public void showConfirm(ConfirmEvent event, String acceptTooltip, String rejectTooltip) {
+        ConfirmPanel cp = new ConfirmPanel(event, acceptTooltip, rejectTooltip);
         cp.setAlignmentX(Component.LEFT_ALIGNMENT);
         inner.add(cp);
         inner.revalidate();

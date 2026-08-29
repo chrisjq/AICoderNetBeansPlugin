@@ -12,7 +12,7 @@ import kiwi.ingenuity.netbeans.plugin.aicoder.ai.mail.AiSessionInboxBroker;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.ui.AiTopComponent;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.locking.LockManager;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.server.McpServerRegistry;
-import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.TempFileRegistry;
+import kiwi.ingenuity.netbeans.plugin.aicoder.process.tempfile.TempFileRegistry;
 import org.openide.modules.ModuleInstall;
 import org.openide.util.NbBundle;
 import org.openide.windows.TopComponent;

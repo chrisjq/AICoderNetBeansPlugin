@@ -68,6 +68,16 @@ class ConfirmPanel extends JPanel {
     }
 
     /**
+     * The tooltip variant: carries the backend's per-type tooltip text
+     * ({@code AiTypeEnum.confirmAcceptTooltip()/confirmRejectTooltip()}) onto the two buttons. A backend that supplies
+     * none passes {@code null} for both and the buttons carry no tooltip.
+     */
+    ConfirmPanel(ConfirmEvent event, String acceptTooltip, String rejectTooltip) {
+        this(buildConfirmPrompt(event.toolName(), event.displayText()), "Yes", "No", event.response(),
+                acceptTooltip, rejectTooltip);
+    }
+
+    /**
      * The same inline confirm item, driven by a bare response future and explicit button labels, so a flow that has no
      * {@link ConfirmEvent} can reuse this widget rather than growing a near-identical one. The multi-file review uses
      * it for its main-panel affordance: "Accept Diffs" starts stepping through the per-file diffs, "Reject" declines
@@ -75,6 +85,17 @@ class ConfirmPanel extends JPanel {
      */
     ConfirmPanel(String prompt, String acceptLabel, String rejectLabel,
             java.util.concurrent.CompletableFuture<PermissionDecision> response) {
+        this(prompt, acceptLabel, rejectLabel, response, null, null);
+    }
+
+    /**
+     * Full form with per-backend tooltip text for the accept and reject buttons; {@code null} shows no tooltip. The
+     * tooltip-free constructor above delegates here with {@code null}, which is what keeps the multi-file batch gate
+     * ("Accept Diffs"/"Reject") free of backend tooltips that would not mean anything there.
+     */
+    ConfirmPanel(String prompt, String acceptLabel, String rejectLabel,
+            java.util.concurrent.CompletableFuture<PermissionDecision> response,
+            String acceptTooltip, String rejectTooltip) {
         setLayout(new BoxLayout(this, BoxLayout.Y_AXIS));
         setOpaque(false);
         // Align with the messages around us. Children are LEFT_ALIGNMENT below,
@@ -100,6 +121,8 @@ class ConfirmPanel extends JPanel {
         btnRow.setAlignmentX(Component.LEFT_ALIGNMENT);
         yesBtn = new JButton(acceptLabel);
         noBtn = new JButton(rejectLabel);
+        yesBtn.setToolTipText(acceptTooltip);
+        noBtn.setToolTipText(rejectTooltip);
         yesBtn.addActionListener(e -> respond(response, true));
         noBtn.addActionListener(e -> respond(response, false));
         btnRow.add(yesBtn);

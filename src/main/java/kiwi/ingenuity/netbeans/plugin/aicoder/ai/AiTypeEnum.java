@@ -27,12 +27,12 @@ public enum AiTypeEnum {
     // ClaudeAiProcessManager:444 sends control_request(interrupt) for Mail — byte-identical to
     // what Cancel sends, so the CLI cannot tell mail from the Stop button and ends the turn,
     // taking any in-flight tool call with it.
-    CLAUDE("Claude", "claude", true, true, false, MailDeliveryTimingEnum.ABORTS_TURN, new ClaudeSettingsCreator(), Set.of(HEADER, TOOL_INSTRUCTION, CREDENTIALS)),
+    CLAUDE("Claude", "claude", true, true, false, MailDeliveryTimingEnum.ABORTS_TURN, new ClaudeSettingsCreator(), Set.of(HEADER, TOOL_INSTRUCTION, CREDENTIALS), null, null),
     // GrokAiProcessManager:412 — "Mail IGNORED, no persistent session to inject into".
-    GROK("Grok", "grok", true, true, false, MailDeliveryTimingEnum.AFTER_TURN, new GrokSettingsCreator(), Set.of(HEADER, TOOL_INSTRUCTION, CREDENTIALS)),
+    GROK("Grok", "grok", true, true, false, MailDeliveryTimingEnum.AFTER_TURN, new GrokSettingsCreator(), Set.of(HEADER, TOOL_INSTRUCTION, CREDENTIALS), null, null),
     // GithubCopilotProcessManager:562 injects via immediate-mode setPrompt, described in its own
     // javadoc as "instead of killing anything".
-    GitHubCoPilot("GitHub CoPilot", "github_copilot", true, true, false, MailDeliveryTimingEnum.DURING_TURN, new GithubCopilotSettingsCreator(), Set.of(HEADER, TOOL_INSTRUCTION, CREDENTIALS, FORCE_MCP_TOOL_USE)),
+    GitHubCoPilot("GitHub CoPilot", "github_copilot", true, true, false, MailDeliveryTimingEnum.DURING_TURN, new GithubCopilotSettingsCreator(), Set.of(HEADER, TOOL_INSTRUCTION, CREDENTIALS, FORCE_MCP_TOOL_USE), null, null),
     // No TOOL_INSTRUCTION: under TOOL_CALLS_VIA_SCHEMA the tool list is rendered
     // into the prompt from the schemas, carrying names, parameters and
     // descriptions. The per-tool instruction lines describe the same tools
@@ -40,15 +40,15 @@ public enum AiTypeEnum {
     //                                                          implemented  enabledByDefault  openAiCompatible  mailDeliveryTiming
     // OllamaAiProcessManager:701 — "Mail IGNORED, no channel to inject into".
     OLLAMA_LOCAL("Ollama (Local)", "ollama_local", true, false, true, MailDeliveryTimingEnum.AFTER_TURN, new OllamaSettingsCreator(),
-            Set.of(HEADER, ONLY_MCP_TOOL_ACCESS, SOFTEN_TOOL_DIRECTIVES, TOOL_CALLS_VIA_SCHEMA)),
+            Set.of(HEADER, ONLY_MCP_TOOL_ACCESS, SOFTEN_TOOL_DIRECTIVES, TOOL_CALLS_VIA_SCHEMA), null, null),
     // FORCE_MCP_TOOL_USE for the same reason as Copilot: OpenCode keeps its own
     // bash/grep/read/edit tools and reached for them first, shelling out to grep
     // on project files. The "use the plugin tools INSTEAD OF built-in
     // Read/Edit/Write/Bash/Grep" guidance is already sent, but it sits below the
     // GetInstructions preamble and was read past. The flag repeats it as the
     // first line instead.
-    // OpenCodeAiProcessManager:757 — "Mail IGNORED (unimplemented)".
-    OPENCODE("OpenCode", "opencode", true, true, false, MailDeliveryTimingEnum.AFTER_TURN, new OpenCodeSettingsCreator(), Set.of(HEADER, TOOL_INSTRUCTION, CREDENTIALS, FORCE_MCP_TOOL_USE)),
+    OPENCODE("OpenCode", "opencode", true, true, false, MailDeliveryTimingEnum.ABORTS_TURN, new OpenCodeSettingsCreator(), Set.of(HEADER, TOOL_INSTRUCTION, CREDENTIALS, FORCE_MCP_TOOL_USE),
+            "Accept", "Reject, you may need to remind it to use MCP tool manually."),
     // MCP IS registered now: CodexAiProcessManager.buildMcpConfigArgs passes
     // -c mcp_servers.<name>.url / .default_tools_approval_mode / .tool_timeout_sec at
     // spawn time, with CodexAiMcpRegistrar alongside it. So the options below are the
@@ -65,7 +65,7 @@ public enum AiTypeEnum {
     // it only after an OBSERVED bypass. Add it to Codex if one is ever seen here.
     // CodexAiProcessManager interjects via turn/steer and its javadoc states it "never escalates
     // to Cancel", so the turn survives.
-    CODEX("Codex", "codex", true, true, false, MailDeliveryTimingEnum.DURING_TURN, new CodexSettingsCreator(), Set.of(HEADER, TOOL_INSTRUCTION, CREDENTIALS));
+    CODEX("Codex", "codex", true, true, false, MailDeliveryTimingEnum.DURING_TURN, new CodexSettingsCreator(), Set.of(HEADER, TOOL_INSTRUCTION, CREDENTIALS), null, null);
 
     public static AiTypeEnum fromKey(String key) {
         if (key == null) {
@@ -115,10 +115,21 @@ public enum AiTypeEnum {
      * was not a user rejection.
      */
     private final MailDeliveryTimingEnum mailDeliveryTiming;
+    /**
+     * Tooltip for the confirm dialog's accept button, or {@code null} when this backend supplies none. A tooltip that
+     * says nothing useful teaches the user to ignore them all, so a backend gets text only when it has genuinely
+     * backend-specific advice for the moment of decision.
+     */
+    private final String confirmAcceptTooltip;
+    /**
+     * Tooltip for the confirm dialog's reject button, or {@code null} when this backend supplies none.
+     */
+    private final String confirmRejectTooltip;
 
     AiTypeEnum(String displayName, String key, boolean isImplemented, boolean enabledByDefault,
             boolean openAiCompatible, MailDeliveryTimingEnum mailDeliveryTiming,
-            AiSessionSettingsCreator settingCreator, Set<McpInstructionOptionEnum> options) {
+            AiSessionSettingsCreator settingCreator, Set<McpInstructionOptionEnum> options,
+            String confirmAcceptTooltip, String confirmRejectTooltip) {
         this.displayName = displayName;
         this.key = key;
         this.implemented = isImplemented;
@@ -127,6 +138,8 @@ public enum AiTypeEnum {
         this.mailDeliveryTiming = mailDeliveryTiming;
         this.settingCreator = settingCreator;
         this.mcpOptions = options;
+        this.confirmAcceptTooltip = confirmAcceptTooltip;
+        this.confirmRejectTooltip = confirmRejectTooltip;
     }
 
     /**
@@ -135,6 +148,20 @@ public enum AiTypeEnum {
      */
     public MailDeliveryTimingEnum mailDeliveryTiming() {
         return mailDeliveryTiming;
+    }
+
+    /**
+     * Tooltip text for the confirm dialog's accept button for this backend, or {@code null} to show no tooltip.
+     */
+    public String confirmAcceptTooltip() {
+        return confirmAcceptTooltip;
+    }
+
+    /**
+     * Tooltip text for the confirm dialog's reject button for this backend, or {@code null} to show no tooltip.
+     */
+    public String confirmRejectTooltip() {
+        return confirmRejectTooltip;
     }
 
     /**

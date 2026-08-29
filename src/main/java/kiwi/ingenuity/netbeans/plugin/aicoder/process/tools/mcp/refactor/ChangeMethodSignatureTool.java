@@ -154,6 +154,10 @@ public class ChangeMethodSignatureTool implements McpToolInterface {
         overload.addProperty(ToolSchemaKeyEnum.TYPE.key(), "boolean");
         overload.addProperty(ToolSchemaKeyEnum.DESCRIPTION.key(), "When true, creates a new overload instead of modifying the original method.");
         props.add(ChangeMethodSignatureParamEnum.OVERLOAD_METHOD.key(), overload);
+        JsonObject cw = new JsonObject();
+        cw.addProperty(ToolSchemaKeyEnum.TYPE.key(), "boolean");
+        cw.addProperty(ToolSchemaKeyEnum.DESCRIPTION.key(), "When a refactoring reports only non-fatal warnings, apply it anyway and report the warnings alongside the result instead of refusing. Fatal problems always refuse regardless of this flag — these tools apply changes immediately with no diff panel to review them in, so a fatal problem (the engine's own signal that the result would be broken) is never applied unreviewed. Default: false.");
+        props.add(ChangeMethodSignatureParamEnum.COMMIT_WITH_WARNING.key(), cw);
         schema.add(ToolSchemaKeyEnum.PROPERTIES.key(), props);
         JsonArray required = new JsonArray();
         required.add(ChangeMethodSignatureParamEnum.FILE_PATH.key());
@@ -182,6 +186,7 @@ public class ChangeMethodSignatureTool implements McpToolInterface {
                 paramInfos,
                 args.str(ChangeMethodSignatureParamEnum.METHOD_NAME.key()),
                 args.str(ChangeMethodSignatureParamEnum.RETURN_TYPE.key()),
-                overload);
+                overload,
+                args.bool(ChangeMethodSignatureParamEnum.COMMIT_WITH_WARNING.key()));
     }
 }

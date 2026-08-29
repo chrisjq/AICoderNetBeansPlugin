@@ -30,15 +30,16 @@ import javax.swing.text.BadLocationException;
 import javax.swing.text.DefaultEditorKit;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.session.AiSession;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.PromptHistory;
-import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.TempFile;
-import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.TempFileRegistry;
+import kiwi.ingenuity.netbeans.plugin.aicoder.process.tempfile.TempFile;
+import kiwi.ingenuity.netbeans.plugin.aicoder.process.tempfile.TempFileDirEnum;
+import kiwi.ingenuity.netbeans.plugin.aicoder.process.tempfile.TempFileRegistry;
 
 /**
  * Multi-line text input for prompts. Enter = submit, Shift+Enter = newline, Up/Down = prompt history navigation.
  * Dropped files insert @/path references. Pasted images are saved through {@link TempFileRegistry} into the owning
  * session's registry-owned temp directory and inserted as the short marker @tmp.&lt;filename&gt; — expanded back to the
  * absolute path only in what is actually sent to the agent (see
- * {@link kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.TmpMarkerExpander}), never in what the user sees.
+ * {@link kiwi.ingenuity.netbeans.plugin.aicoder.process.tempfile.TmpMarkerExpander}), never in what the user sees.
  */
 public class AiInputField extends JTextArea {
 
@@ -365,7 +366,8 @@ public class AiInputField extends JTextArea {
      * a plain unit test does not have.
      */
     TempFile createPasteTempFile(String sessionId) {
-        return TempFileRegistry.createTempFile(sessionId, "ai-coder-paste", ".png");
+        return TempFileRegistry.createTempFile(sessionId, TempFileDirEnum.PASTED_IMAGES.dirName(),
+                "ai-coder-paste", ".png");
     }
 
     /**

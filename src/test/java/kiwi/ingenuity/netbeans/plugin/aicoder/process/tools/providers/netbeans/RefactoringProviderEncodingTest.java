@@ -103,6 +103,23 @@ class RefactoringProviderEncodingTest {
     }
 
     @Test
+    void applyEditNotFoundMentionsTheGetFileContentGutter() throws IOException {
+        Path file = tempFile(".txt");
+        try {
+            Files.writeString(file, "four leading spaces:    text");
+            String result = RefactoringProvider.applyEdit(file.toString(), " five leading spaces:     text", "replacement");
+
+            assertTrue(result.contains("oldString not found in file"), "unexpected result: " + result);
+            assertTrue(result.contains("GetFileContent"), "the recovery hint must name its source: " + result);
+            assertTrue(result.contains("byte-for-byte") && result.contains("leading whitespace"),
+                    "the recovery hint must explain the exact-match requirement: " + result);
+        }
+        finally {
+            Files.deleteIfExists(file);
+        }
+    }
+
+    @Test
     void writeFileContentRoundTripsMultiByteContentExactlyForNewFile() throws IOException {
         Path dir = Files.createTempDirectory("aicoder-encoding-new");
         Path file = dir.resolve("new-file.txt");

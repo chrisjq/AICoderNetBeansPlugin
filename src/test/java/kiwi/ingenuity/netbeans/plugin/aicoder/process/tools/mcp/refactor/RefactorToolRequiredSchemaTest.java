@@ -3,10 +3,13 @@ package kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.refactor;
 import com.google.gson.JsonArray;
 import com.google.gson.JsonObject;
 import java.util.HashSet;
+import java.util.List;
 import java.util.Set;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.McpToolInterface;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.ToolSchemaKeyEnum;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import org.junit.jupiter.api.Test;
 
 /**
@@ -36,11 +39,12 @@ class RefactorToolRequiredSchemaTest {
     }
 
     @Test
-    void moveClassRequiresTargetPackageAndFilePathButNotLine() {
-        // line is genuinely optional: omitting it moves the whole file.
+    void moveClassRequiresOnlyTargetPackageUnconditionally() {
+        // filePath and filePaths are exactly-one-of, enforced in handle() rather than the schema's required array —
+        // requiring filePath unconditionally would mis-describe a filePaths-only call as invalid. line is also
+        // genuinely optional: omitting it moves the whole file.
         assertEquals(Set.of(
-                MoveClassParamEnum.TARGET_PACKAGE.key(),
-                MoveClassParamEnum.FILE_PATH.key()),
+                MoveClassParamEnum.TARGET_PACKAGE.key()),
                 requiredKeys(new MoveClassTool()));
     }
 
@@ -58,5 +62,26 @@ class RefactorToolRequiredSchemaTest {
                 ChangeMethodSignatureParamEnum.FILE_PATH.key(),
                 ChangeMethodSignatureParamEnum.LINE.key()),
                 requiredKeys(new ChangeMethodSignatureTool()));
+    }
+
+    /**
+     * commitWithWarning is shared by all four tools via {@code RefactoringProvider.runRefactoring} and must be exposed
+     * uniformly: a boolean, and never unconditionally required (its whole point is that it is safe to omit — the
+     * default, false, is today's existing refuse-on-any-problem behaviour).
+     */
+    @Test
+    void allFourRefactoringToolsExposeCommitWithWarningAsAnOptionalBoolean() {
+        List<McpToolInterface> tools = List.of(
+                new RenameSymbolTool(), new MoveClassTool(), new InlineVariableTool(), new ChangeMethodSignatureTool());
+        String key = MoveClassParamEnum.COMMIT_WITH_WARNING.key();
+        for (McpToolInterface tool : tools) {
+            JsonObject schema = tool.schema(Set.of()).getAsJsonObject(ToolSchemaKeyEnum.INPUT_SCHEMA.key());
+            JsonObject props = schema.getAsJsonObject(ToolSchemaKeyEnum.PROPERTIES.key());
+            assertTrue(props.has(key), tool.getClass().getSimpleName() + " must expose " + key);
+            assertEquals("boolean", props.getAsJsonObject(key).get(ToolSchemaKeyEnum.TYPE.key()).getAsString(),
+                    tool.getClass().getSimpleName() + "'s " + key + " must be a boolean");
+            assertFalse(requiredKeys(tool).contains(key),
+                    tool.getClass().getSimpleName() + " must not require " + key + " unconditionally");
+        }
     }
 }

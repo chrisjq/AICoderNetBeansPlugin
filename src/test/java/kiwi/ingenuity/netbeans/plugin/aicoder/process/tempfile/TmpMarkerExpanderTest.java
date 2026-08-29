@@ -1,8 +1,13 @@
-package kiwi.ingenuity.netbeans.plugin.aicoder.process.tools;
+package kiwi.ingenuity.netbeans.plugin.aicoder.process.tempfile;
 
+import kiwi.ingenuity.netbeans.plugin.aicoder.process.tempfile.TempFileDirEnum;
+import kiwi.ingenuity.netbeans.plugin.aicoder.process.tempfile.TmpMarkerExpander;
+import kiwi.ingenuity.netbeans.plugin.aicoder.process.tempfile.TempFileRegistry;
 import java.io.IOException;
+import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Instant;
+import java.util.Arrays;
 import java.util.List;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.AiTypeEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.session.AiSession;
@@ -63,6 +68,107 @@ class TmpMarkerExpanderTest {
 
         assertEquals("look at " + expansionOf(file), result.expandedText());
         assertTrue(result.missingFiles().isEmpty());
+    }
+
+    /**
+     * THE REGRESSION THIS TASK RISKED. Pasted images now land in {@code tmp/pasted_images/} rather than the tmp root.
+     * The marker carries no directory, so an expander that only looked in the root would report every pasted image as
+     * missing, tell the user "Could not find pasted file", and send the raw marker to the agent — image pasting broken
+     * outright by what looked like a one-line change.
+     */
+    @Test
+    void expand_resolvesMarkerForFileInASubdirectory() throws IOException {
+        AiSession s = session("ses-a");
+        Path file = TempFileRegistry.createTempFile(s.id(), TempFileDirEnum.PASTED_IMAGES.dirName(),
+                "ai-coder-paste", ".png").path();
+        String marker = "@tmp." + file.getFileName();
+
+        TmpMarkerExpander.Result result = TmpMarkerExpander.expand("look at " + marker, s);
+
+        assertEquals("look at " + expansionOf(file), result.expandedText());
+        assertTrue(result.missingFiles().isEmpty(), "a file in an enumerated subdirectory must resolve");
+    }
+
+    /**
+     * The containment guard is the traversal defence, so confirm rather than assume it still passes a file one level
+     * down: a subdirectory of the tmp root still startsWith the root, so a legitimate spooled file is not silently
+     * refused as an escape.
+     */
+    @Test
+    void expand_subdirectoryFileStillSatisfiesTheContainmentGuard() throws IOException {
+        AiSession s = session("ses-a");
+        Path file = TempFileRegistry.createTempFile(s.id(), TempFileDirEnum.TOOL_RESULTS.dirName(),
+                "git-diff", ".log").path();
+
+        TmpMarkerExpander.Result result = TmpMarkerExpander.expand("@tmp." + file.getFileName(), s);
+
+        assertEquals(expansionOf(file), result.expandedText(),
+                "containment must accept a subdirectory, not reject it as an escape");
+        assertTrue(result.missingFiles().isEmpty());
+    }
+
+    /**
+     * Root-first, so anything minted before the subdirectories existed still resolves — including a marker left unsent
+     * in the input box across an upgrade.
+     */
+    @Test
+    void expand_resolvesMarkerForFileStillInTheTmpRoot() throws IOException {
+        AiSession s = session("ses-a");
+        Path file = TempFileRegistry.createTempFile(s, "ai-coder-paste", ".png").path();
+
+        TmpMarkerExpander.Result result = TmpMarkerExpander.expand("@tmp." + file.getFileName(), s);
+
+        assertEquals(expansionOf(file), result.expandedText(), "a file still in the root must keep resolving");
+        assertTrue(result.missingFiles().isEmpty());
+    }
+
+    /**
+     * DUPLICATE NAMES ACROSS DIRECTORIES: the root wins.
+     *
+     * <p>
+     * The marker cannot distinguish them, so the tie has to break somewhere and it must be deterministic. Root first is
+     * the compatible choice; among subdirectories the order is alphabetical by directory name rather than enum
+     * declaration order, so reordering the enum — a harmless-looking edit — cannot silently change which file a marker
+     * resolves to.</p>
+     */
+    @Test
+    void expand_sameNameInRootAndSubdirectory_rootWins() throws IOException {
+        AiSession s = session("ses-a");
+        Path inRoot = TempFileRegistry.createTempFile(s, "dup", ".png").path();
+        String name = inRoot.getFileName().toString();
+        Path subDir = inRoot.getParent().resolve(TempFileDirEnum.PASTED_IMAGES.dirName());
+        Files.createDirectories(subDir);
+        Files.writeString(subDir.resolve(name), "shadow");
+
+        TmpMarkerExpander.Result result = TmpMarkerExpander.expand("@tmp." + name, s);
+
+        assertEquals(expansionOf(inRoot), result.expandedText(), "the root copy must win");
+    }
+
+    /**
+     * And among subdirectories the winner is the alphabetically-first directory name, independent of the order the enum
+     * happens to declare them in.
+     */
+    @Test
+    void expand_sameNameInTwoSubdirectories_alphabeticallyFirstDirWins() throws IOException {
+        AiSession s = session("ses-a");
+        Path seed = TempFileRegistry.createTempFile(s, "dup", ".png").path();
+        String name = seed.getFileName().toString();
+        Path tmpRoot = seed.getParent();
+        Files.delete(seed); // force the search past the root
+
+        List<String> dirs = Arrays.stream(TempFileDirEnum.values())
+                .map(TempFileDirEnum::dirName).sorted().toList();
+        for (String dir : dirs) {
+            Path d = tmpRoot.resolve(dir);
+            Files.createDirectories(d);
+            Files.writeString(d.resolve(name), dir);
+        }
+
+        TmpMarkerExpander.Result result = TmpMarkerExpander.expand("@tmp." + name, s);
+
+        assertEquals(expansionOf(tmpRoot.resolve(dirs.get(0)).resolve(name)), result.expandedText(),
+                "the alphabetically-first directory must win, regardless of enum declaration order");
     }
 
     @Test

@@ -102,7 +102,7 @@ public class RefactoringProvider {
         return filePath == null || filePath.isBlank() ? StandardCharsets.UTF_8 : resolveCharset(new File(filePath));
     }
 
-    public static String renameSymbol(String filePath, int line, String newName) {
+    public static String renameSymbol(String filePath, int line, String newName, boolean commitWithWarning) {
         FileObject fo = resolveFileObject(filePath);
         if (fo == null) {
             return filePath != null && !filePath.isBlank()
@@ -122,11 +122,10 @@ public class RefactoringProvider {
         }
         RenameRefactoring r = new RenameRefactoring(Lookups.fixed(handle, fo));
         r.setNewName(newName);
-        String err = runRefactoring(r);
-        return err != null ? "Refactoring blocked: " + err : "Renamed to '" + newName + "'";
+        return runRefactoring(r, commitWithWarning, "Renamed to '" + newName + "'");
     }
 
-    public static String moveClass(String filePath, int line, String targetPackage) {
+    public static String moveClass(String filePath, int line, String targetPackage, boolean commitWithWarning) {
         if (targetPackage == null || targetPackage.isBlank()) {
             return "Error: " + McpToolPropertyEnum.TARGET_PACKAGE.key() + " is required";
         }
@@ -175,9 +174,7 @@ public class RefactoringProvider {
             }
             MoveRefactoring byClass = new MoveRefactoring(Lookups.singleton(handle));
             byClass.setTarget(Lookups.singleton(targetFolder.toURL()));
-            String classErr = runRefactoring(byClass);
-            return classErr != null ? "Refactoring blocked: " + classErr
-                    : "Moved class to '" + targetPackage + "'";
+            return runRefactoring(byClass, commitWithWarning, "Moved class to '" + targetPackage + "'");
         }
 
         // No line given. With one type in the file that is unambiguous; with
@@ -193,8 +190,68 @@ public class RefactoringProvider {
         // FileObject rather than a potentially stale cached DataObject primary file.
         MoveRefactoring r = new MoveRefactoring(Lookups.singleton(fo));
         r.setTarget(Lookups.singleton(targetFolder.toURL()));
-        String err = runRefactoring(r);
-        return err != null ? "Refactoring blocked: " + err : "Moved to '" + targetPackage + "'";
+        return runRefactoring(r, commitWithWarning, "Moved to '" + targetPackage + "'");
+    }
+
+    /**
+     * Moves several Java classes to the same target package in ONE refactoring. NetBeans' {@link MoveRefactoring}
+     * takes a {@link org.openide.util.Lookup}, and a lookup can hold many {@link FileObject}s (the same pattern
+     * {@code renameSymbol} already uses via {@code Lookups.fixed} for a single file's handle+FileObject pair), so the
+     * whole batch is one preCheck/prepare/doRefactoring transaction rather than N of them. There is no partial
+     * application to manage: NetBeans either commits every file or reports a single {@link Problem} and commits
+     * nothing, exactly like the single-file path above.
+     * <p>
+     * Every path is validated — resolvable, exactly one top-level type, and a shared target folder — before anything
+     * moves, so a bad file among several is caught while nothing has changed. {@code line} has no meaning here: a line
+     * number cannot identify a class across several files, so every file in a batch moves as a whole, and a file
+     * declaring more than one top-level type is refused for the same reason the single-file path refuses it — moving
+     * it would silently take classes nobody named.
+     */
+    public static String moveClasses(List<String> filePaths, String targetPackage, boolean commitWithWarning) {
+        if (targetPackage == null || targetPackage.isBlank()) {
+            return "Error: " + McpToolPropertyEnum.TARGET_PACKAGE.key() + " is required";
+        }
+        if (!isValidJavaPackageName(targetPackage)) {
+            return "Error: invalid target package name '" + targetPackage + "'";
+        }
+        if (filePaths == null || filePaths.isEmpty()) {
+            return "Error: " + McpToolPropertyEnum.FILE_PATHS.key() + " must contain at least one path";
+        }
+
+        List<FileObject> resolved = new ArrayList<>(filePaths.size());
+        FileObject targetFolder = null;
+        for (String filePath : filePaths) {
+            FileObject fo = resolveFileObject(filePath);
+            if (fo == null) {
+                return filePath != null && !filePath.isBlank()
+                        ? "File not found: " + filePath
+                        : McpToolPropertyEnum.FILE_PATHS.key() + " contains a blank path";
+            }
+            List<String> topLevelTypes = topLevelTypeNames(fo);
+            if (topLevelTypes.size() > 1) {
+                return filePath + " declares " + topLevelTypes.size() + " top-level types ("
+                        + String.join(", ", topLevelTypes) + "). A batch move has no " + McpToolPropertyEnum.LINE.key()
+                        + " to pick one, so every file in the batch must declare exactly one top-level type — move "
+                        + "this file on its own with " + McpToolPropertyEnum.LINE.key() + " instead.";
+            }
+            FileObject folder = findOrCreatePackage(fo, targetPackage);
+            if (folder == null) {
+                return "Cannot resolve source root for: " + filePath;
+            }
+            if (targetFolder == null) {
+                targetFolder = folder;
+            }
+            else if (!targetFolder.equals(folder)) {
+                return filePath + " resolves to a different source root than the rest of the batch (target would be "
+                        + folder.getPath() + " instead of " + targetFolder.getPath() + "). Move it in its own call.";
+            }
+            resolved.add(fo);
+        }
+
+        MoveRefactoring r = new MoveRefactoring(Lookups.fixed(resolved.toArray()));
+        r.setTarget(Lookups.singleton(targetFolder.toURL()));
+        String success = "Moved " + resolved.size() + " file(s) to '" + targetPackage + "': " + String.join(", ", filePaths);
+        return runRefactoring(r, commitWithWarning, success);
     }
 
     /**
@@ -281,7 +338,7 @@ public class RefactoringProvider {
         return names;
     }
 
-    public static String inlineVariable(String filePath, int line) {
+    public static String inlineVariable(String filePath, int line, boolean commitWithWarning) {
         FileObject fo = resolveFileObject(filePath);
         if (fo == null) {
             return filePath != null && !filePath.isBlank()
@@ -301,12 +358,11 @@ public class RefactoringProvider {
         }
         // InlineRefactoring requires (TreePathHandle, Type); use TEMP for local variable inline
         InlineRefactoring r = new InlineRefactoring(handle, InlineRefactoring.Type.TEMP);
-        String err = runRefactoring(r);
-        return err != null ? "Refactoring blocked: " + err : "Inlined variable";
+        return runRefactoring(r, commitWithWarning, "Inlined variable");
     }
 
     public static String changeMethodSignature(String filePath, int line, ParameterInfo[] parameters,
-            String methodName, String returnType, Boolean overloadMethod) {
+            String methodName, String returnType, Boolean overloadMethod, boolean commitWithWarning) {
         FileObject fo = resolveFileObject(filePath);
         if (fo == null) {
             return filePath != null && !filePath.isBlank()
@@ -345,8 +401,7 @@ public class RefactoringProvider {
         if (overloadMethod != null) {
             r.setOverloadMethod(overloadMethod);
         }
-        String err = runRefactoring(r);
-        return err != null ? "Refactoring blocked: " + err : "Method signature updated";
+        return runRefactoring(r, commitWithWarning, "Method signature updated");
     }
 
     public static String fixImports(String filePath) {
@@ -642,7 +697,10 @@ public class RefactoringProvider {
         }
         int idx = content.indexOf(oldString);
         if (idx < 0) {
-            return McpToolPropertyEnum.OLD_STRING.key() + " not found in file";
+            return McpToolPropertyEnum.OLD_STRING.key()
+                    + " not found in file. A common cause is copying from GetFileContent and leaving its line-number gutter; "
+                    + McpToolPropertyEnum.OLD_STRING.key()
+                    + " must match the file byte-for-byte, including leading whitespace.";
         }
         String updated = replaceAll
                 ? PermissionDiffPolicy.replaceEvery(content, oldString, replacement)
@@ -859,13 +917,17 @@ public class RefactoringProvider {
             return "Target directory not found: " + targetDirectory;
         }
         File sourceParent = FileUtil.toFile(fo.getParent());
+        String problemSuffix = null;
         if ("java".equals(fo.getExt())) {
             MoveRefactoring r = new MoveRefactoring(Lookups.singleton(fo));
             r.setTarget(Lookups.singleton(targetFo.toURL()));
-            String err = runRefactoring(r);
-            if (err != null) {
-                return "Refactoring blocked: " + err;
+            // commitWithWarning is not exposed on this tool (plain file move, not one of the four refactoring
+            // tools) — false preserves this call's existing behaviour: any problem, fatal or not, refuses.
+            RefactoringRunResult result = runRefactoringInternal(r, false);
+            if (!result.committed) {
+                return result.blockedMessage;
             }
+            problemSuffix = result.problemSuffix;
         }
         else {
             try {
@@ -879,7 +941,7 @@ public class RefactoringProvider {
         if (sourceParent != null) {
             GitProvider.refreshVcsStatus(sourceParent.getAbsolutePath());
         }
-        return "File moved";
+        return problemSuffix != null ? "File moved" + problemSuffix : "File moved";
     }
 
     /**
@@ -1198,20 +1260,69 @@ public class RefactoringProvider {
         }
     }
 
-    private static String runRefactoring(AbstractRefactoring refactoring) {
+    /**
+     * Runs a refactoring's preCheck/prepare/doRefactoring pipeline and formats the outcome around {@code
+     * successMessage}. Convenience wrapper around {@link #runRefactoringInternal} for the common case: a caller with
+     * one success string and nothing to do after the refactoring itself. {@link #moveFile} calls
+     * {@link #runRefactoringInternal} directly instead, because it still has its own file-move bookkeeping to run
+     * after a successful Java move and before it knows its own final message.
+     */
+    private static String runRefactoring(AbstractRefactoring refactoring, boolean commitWithWarning, String successMessage) {
+        RefactoringRunResult result = runRefactoringInternal(refactoring, commitWithWarning);
+        if (!result.committed) {
+            return result.blockedMessage;
+        }
+        return result.problemSuffix != null ? successMessage + result.problemSuffix : successMessage;
+    }
+
+    // flattenProblems/blockedMessageOrNull/buildProblemSuffix/RefactoringRunResult below are package-private rather
+    // than private, purely as a test seam: that logic is pure (it classifies and formats Problem objects, never
+    // touching the live refactoring engine), so it is exactly what a unit test should exercise directly — driving it
+    // end to end instead would need a live NetBeans project with a real Java source, the same gap the single-file
+    // success path already has.
+
+    /**
+     * Runs a refactoring's preCheck/prepare/doRefactoring pipeline, collecting EVERY problem reported at each stage —
+     * {@link Problem} is a linked list via {@link Problem#getNext()}, so reporting only the head (the original
+     * behaviour here) silently hid every problem after the first — and classifying each with {@link Problem#isFatal()}
+     * so the caller can tell advice from a veto.
+     * <p>
+     * {@code commitWithWarning} is OUR policy, not something the refactoring engine enforces for us. Nothing in the
+     * {@code Problem} API documents what {@code doRefactoring} itself would do if invoked past a fatal problem —
+     * {@code isFatal()} is known to disable the Refactor button in NetBeans' own interactive dialogs, but whether the
+     * engine would refuse outright or would happily commit broken code is not established by the API surface, and
+     * this method never finds out, because a fatal problem stops it before {@code doRefactoring} is ever called. The
+     * actual reason to refuse by default on ANY problem, fatal or not, is that these tools apply their change
+     * immediately with no diff panel and no confirm step — a non-fatal problem is still the engine's own considered
+     * guess that something behind the scenes will break, and committing that guess unreviewed is not a decision a
+     * tool should make silently on an AI's behalf. {@code commitWithWarning = true} is permission to accept that risk
+     * for non-fatal problems specifically. FATAL problems always block regardless: the flag means "proceed despite
+     * advice", never "ignore errors".
+     * <p>
+     * A problem {@code doRefactoring} itself returns is reported separately from the pre-commit checks and never
+     * blocks anything, fatal or not — by the time {@code doRefactoring} runs, the files are already being written, so
+     * unlike a preCheck/prepare refusal this can never read as "nothing happened".
+     */
+    private static RefactoringRunResult runRefactoringInternal(AbstractRefactoring refactoring, boolean commitWithWarning) {
         try {
-            Problem p = refactoring.preCheck();
-            if (p != null) {
-                return p.getMessage();
+            List<Problem> preProblems = flattenProblems(refactoring.preCheck());
+            String blocked = blockedMessageOrNull(preProblems, commitWithWarning);
+            if (blocked != null) {
+                return RefactoringRunResult.blocked(blocked);
             }
+
             RefactoringSession session = RefactoringSession.create("CC Plugin Refactoring");
             try {
-                p = refactoring.prepare(session);
-                if (p != null) {
-                    return p.getMessage();
+                List<Problem> prepareProblems = flattenProblems(refactoring.prepare(session));
+                List<Problem> tolerated = new ArrayList<>(preProblems);
+                tolerated.addAll(prepareProblems);
+                blocked = blockedMessageOrNull(prepareProblems, commitWithWarning);
+                if (blocked != null) {
+                    return RefactoringRunResult.blocked(blocked);
                 }
-                p = session.doRefactoring(true);
-                return p != null ? p.getMessage() : null;
+
+                List<Problem> postProblems = flattenProblems(session.doRefactoring(true));
+                return RefactoringRunResult.committed(buildProblemSuffix(tolerated, postProblems));
             }
             finally {
                 session.finished();
@@ -1219,7 +1330,101 @@ public class RefactoringProvider {
         }
         catch (Exception e) {
             String msg = e.getMessage();
-            return msg != null ? msg : e.getClass().getName();
+            return RefactoringRunResult.blocked("Refactoring blocked: " + (msg != null ? msg : e.getClass().getName()));
+        }
+    }
+
+    /**
+     * Walks a {@link Problem} chain via {@link Problem#getNext()} into a plain list, head first. Empty (never null)
+     * when {@code head} is null. Package-private: see the test-seam note above.
+     */
+    static List<Problem> flattenProblems(Problem head) {
+        List<Problem> problems = new ArrayList<>();
+        for (Problem p = head; p != null; p = p.getNext()) {
+            problems.add(p);
+        }
+        return problems;
+    }
+
+    /**
+     * Null when this stage's problems do not block proceeding: none at all, or all non-fatal with {@code
+     * commitWithWarning} true. Otherwise the full "Refactoring blocked" text. Package-private: see the test-seam note
+     * above.
+     * <p>
+     * A fatal problem always blocks and the message never mentions {@code commitWithWarning} — suggesting it there
+     * would invite a retry that cannot work, since the flag has no effect on a fatal problem. A warnings-only refusal
+     * (no fatal problems, {@code commitWithWarning} false or absent) DOES name the flag and say it will let the
+     * refactoring proceed: an AI reading this refusal cannot see the schema, and a refusal that does not say how to
+     * get past it leaves only worse options — giving up, retrying the identical call, or hand-editing the files.
+     */
+    static String blockedMessageOrNull(List<Problem> problems, boolean commitWithWarning) {
+        if (problems.isEmpty()) {
+            return null;
+        }
+        boolean anyFatal = problems.stream().anyMatch(Problem::isFatal);
+        if (!anyFatal && commitWithWarning) {
+            return null;
+        }
+        StringBuilder sb = new StringBuilder("Refactoring blocked");
+        sb.append(anyFatal ? " — fatal problem(s) reported:\n" : " — warning(s) reported, no fatal problems:\n");
+        appendProblemLines(sb, problems);
+        if (!anyFatal) {
+            sb.append("\nSet ").append(McpToolPropertyEnum.COMMIT_WITH_WARNING.key())
+                    .append(" to true to apply this refactoring despite these warnings.");
+        }
+        return sb.toString();
+    }
+
+    /**
+     * The trailing text to append after a success message when a refactoring committed with problems still worth
+     * reporting: non-fatal problems tolerated pre-commit via {@code commitWithWarning}, and/or problems
+     * {@code doRefactoring} itself returned after already writing the change to disk. Null when both are empty — a
+     * clean commit gets no suffix at all. Package-private: see the test-seam note above.
+     */
+    static String buildProblemSuffix(List<Problem> tolerated, List<Problem> postCommit) {
+        StringBuilder suffix = new StringBuilder();
+        if (!tolerated.isEmpty()) {
+            suffix.append("\n\nCommitted with warning(s) tolerated by ")
+                    .append(McpToolPropertyEnum.COMMIT_WITH_WARNING.key()).append(":\n");
+            appendProblemLines(suffix, tolerated);
+        }
+        if (!postCommit.isEmpty()) {
+            suffix.append("\n\nThe refactoring engine reported problem(s) AFTER applying this change "
+                    + "(already written to disk):\n");
+            appendProblemLines(suffix, postCommit);
+        }
+        return suffix.length() > 0 ? suffix.toString() : null;
+    }
+
+    private static void appendProblemLines(StringBuilder sb, List<Problem> problems) {
+        for (Problem p : problems) {
+            sb.append(p.isFatal() ? "[FATAL] " : "[WARNING] ").append(p.getMessage()).append('\n');
+        }
+    }
+
+    /**
+     * Outcome of {@link #runRefactoringInternal}: either blocked with the full refusal text, or committed with an
+     * optional trailing problem report to append after a caller's own success message. Package-private: see the
+     * test-seam note above.
+     */
+    static final class RefactoringRunResult {
+
+        final boolean committed;
+        final String blockedMessage;
+        final String problemSuffix;
+
+        private RefactoringRunResult(boolean committed, String blockedMessage, String problemSuffix) {
+            this.committed = committed;
+            this.blockedMessage = blockedMessage;
+            this.problemSuffix = problemSuffix;
+        }
+
+        static RefactoringRunResult blocked(String message) {
+            return new RefactoringRunResult(false, message, null);
+        }
+
+        static RefactoringRunResult committed(String problemSuffix) {
+            return new RefactoringRunResult(true, null, problemSuffix);
         }
     }
 

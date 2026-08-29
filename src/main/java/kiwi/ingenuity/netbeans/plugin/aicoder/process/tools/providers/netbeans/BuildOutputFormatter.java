@@ -5,7 +5,8 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.function.Predicate;
 import java.util.regex.Pattern;
-import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.ToolResultSpooler;
+import kiwi.ingenuity.netbeans.plugin.aicoder.process.tempfile.TempFileDirEnum;
+import kiwi.ingenuity.netbeans.plugin.aicoder.process.tempfile.TempFileSpooler;
 
 /**
  * Turns raw build/test process output into a response worth reading, and parks the complete log where the calling AI
@@ -16,10 +17,10 @@ import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.ToolResultSpooler;
  * <li>Success — the results/summary block plus the build result line only.</li>
  * <li>Failure — the COMPLETE failure detail verbatim (every [ERROR] line for Maven, the whole failure block for Gradle,
  * javac diagnostics plus the trailer for Ant), never truncated.</li>
- * <li>The full unabridged output is ALWAYS spooled via {@link ToolResultSpooler} into the session's registry-owned temp
- * tree ({@code ~/.ai-coder/{type}/{sessionId}/tmp/tool_results/}, whose lifetime — age sweep plus wholesale removal on
+ * <li>The full unabridged output is ALWAYS spooled via {@link kiwi.ingenuity.netbeans.plugin.aicoder.process.tempfile.TempFileSpooler}
+ * into the session's registry-owned temp tree ({@code ~/.ai-coder/{type}/{sessionId}/tmp/tool_results/}, whose lifetime — age sweep plus wholesale removal on
  * session close, IDE shutdown and plugin uninstall — is owned by
- * {@link kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.TempFileRegistry}), and its path is appended to the
+ * {@link kiwi.ingenuity.netbeans.plugin.aicoder.process.tempfile.TempFileRegistry}), and its path is appended to the
  * response. That tree is exempt from restrict-to-project via
  * {@link kiwi.ingenuity.netbeans.plugin.aicoder.process.server.McpHookServer#isOwnSessionConfigFile}, so GetFileContent
  * can read it back without widening any scope rule.</li>
@@ -61,7 +62,7 @@ public final class BuildOutputFormatter {
      */
     public static String formatResult(String sessionId, Backend backend, boolean success,
             int exitCode, String output) {
-        Path logFile = ToolResultSpooler.spool(sessionId, backend.logTag(), output);
+        Path logFile = TempFileSpooler.spool(sessionId, TempFileDirEnum.TOOL_RESULTS, backend.logTag(), ".log", output);
         if (logFile == null) {
             // No readable copy of the full log exists anywhere, so the only safe
             // response is everything — byte-for-byte what these tools did before.
@@ -80,7 +81,7 @@ public final class BuildOutputFormatter {
      * @param message the leading explanation line, verbatim as before
      */
     public static String attachLog(String sessionId, Backend backend, String message, String output) {
-        Path logFile = ToolResultSpooler.spool(sessionId, backend.logTag(), output);
+        Path logFile = TempFileSpooler.spool(sessionId, TempFileDirEnum.TOOL_RESULTS, backend.logTag(), ".log", output);
         String base = message + "\n\n" + output;
         return logFile != null ? base + "\n\nComplete log written to: " + logFile : base;
     }

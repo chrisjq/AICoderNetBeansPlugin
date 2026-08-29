@@ -61,6 +61,10 @@ public class RenameSymbolTool implements McpToolInterface {
         ln.addProperty(ToolSchemaKeyEnum.DESCRIPTION.key(),
                 "1-based line number of the symbol. Required — this tool does not follow the user's cursor.");
         props.add(RenameSymbolParamEnum.LINE.key(), ln);
+        JsonObject cw = new JsonObject();
+        cw.addProperty(ToolSchemaKeyEnum.TYPE.key(), "boolean");
+        cw.addProperty(ToolSchemaKeyEnum.DESCRIPTION.key(), "When a refactoring reports only non-fatal warnings, apply it anyway and report the warnings alongside the result instead of refusing. Fatal problems always refuse regardless of this flag — these tools apply changes immediately with no diff panel to review them in, so a fatal problem (the engine's own signal that the result would be broken) is never applied unreviewed. Default: false.");
+        props.add(RenameSymbolParamEnum.COMMIT_WITH_WARNING.key(), cw);
         schema.add(ToolSchemaKeyEnum.PROPERTIES.key(), props);
         JsonArray required = new JsonArray();
         required.add(RenameSymbolParamEnum.NEW_NAME.key());
@@ -81,6 +85,7 @@ public class RenameSymbolTool implements McpToolInterface {
                 return McpHookServer.fileAccessDeniedMessage(server, sessionId, fp);
             }
         }
-        return RefactoringProvider.renameSymbol(fp, args.intOr(RenameSymbolParamEnum.LINE.key(), 0), args.require(RenameSymbolParamEnum.NEW_NAME.key()));
+        return RefactoringProvider.renameSymbol(fp, args.intOr(RenameSymbolParamEnum.LINE.key(), 0),
+                args.require(RenameSymbolParamEnum.NEW_NAME.key()), args.bool(RenameSymbolParamEnum.COMMIT_WITH_WARNING.key()));
     }
 }

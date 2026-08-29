@@ -12,14 +12,16 @@ import org.junit.jupiter.api.Test;
  * The mail-interrupt explanation: that an aborted tool call was interrupted rather than refused, and that it may have
  * run anyway.
  *
- * <p>Both failures this pins were observed, not theorised. A session reported to the user that they had rejected a
- * command they never saw; and separately, a SendAiMessage reported as rejected had in fact been delivered, so the
- * session told the user it was never sent and a round trip was spent undoing that.</p>
+ * <p>
+ * Both failures this pins were observed, not theorised. A session reported to the user that they had rejected a command
+ * they never saw; and separately, a SendAiMessage reported as rejected had in fact been delivered, so the session told
+ * the user it was never sent and a round trip was spent undoing that.</p>
  *
- * <p>Source-level, because {@code AiTopComponent} eagerly builds a real backend and cannot be instantiated in a unit
- * test. These assertions are deliberately built from occurrence COUNTS and relative ORDER rather than from extracted
- * method bodies — no marker declaration is used as a boundary, so a member reordering cannot break them, which is the
- * failure that took out eight tests in this package earlier today.</p>
+ * <p>
+ * Source-level, because {@code AiTopComponent} eagerly builds a real backend and cannot be instantiated in a unit test.
+ * These assertions are deliberately built from occurrence COUNTS and relative ORDER rather than from extracted method
+ * bodies — no marker declaration is used as a boundary, so a member reordering cannot break them, which is the failure
+ * that took out eight tests in this package earlier today.</p>
  */
 class AiTopComponentInboxInterruptWiringTest {
 
@@ -37,10 +39,11 @@ class AiTopComponentInboxInterruptWiringTest {
     /**
      * The explanation's text with Java's concatenation seams closed up.
      *
-     * <p>The constant is written as several adjacent string literals, so a sentence that reads as one phrase at
-     * runtime is split by {@code " + "} in the source. Asserting on the raw source would therefore fail for wording
-     * that is actually present, and would break again every time the literal is re-wrapped. Joining the chunks tests
-     * what the assistant will read.</p>
+     * <p>
+     * The constant is written as several adjacent string literals, so a sentence that reads as one phrase at runtime is
+     * split by {@code " + "} in the source. Asserting on the raw source would therefore fail for wording that is
+     * actually present, and would break again every time the literal is re-wrapped. Joining the chunks tests what the
+     * assistant will read.</p>
      */
     private String explanationText() throws IOException {
         String source = readSource();
@@ -120,12 +123,14 @@ class AiTopComponentInboxInterruptWiringTest {
     /**
      * THE CUT IS BY PROVENANCE, NOT BY CONTENT — the constraint that decides whether this feature is safe.
      *
-     * <p>A content scan would truncate any message containing the marker. Both of these demonstrably occur: a user can
+     * <p>
+     * A content scan would truncate any message containing the marker. Both of these demonstrably occur: a user can
      * type or paste "[SYSTEM]", and an assistant discussing this very feature writes it — this session has done so
      * repeatedly today. Either would be silently cut mid-message, which is worse than the bug being fixed.</p>
      *
-     * <p>So the split is structural: agent-only text arrives as its own parameter and the visible text is displayed
-     * from its own variable. Nothing is searched, so nothing can be falsely matched.</p>
+     * <p>
+     * So the split is structural: agent-only text arrives as its own parameter and the visible text is displayed from
+     * its own variable. Nothing is searched, so nothing can be falsely matched.</p>
      */
     @Test
     void theBlockIsByProvenanceNotByScanningForTheTags() throws IOException {
@@ -151,7 +156,8 @@ class AiTopComponentInboxInterruptWiringTest {
      * the no-visible branch: the composed prompt never included expandedText(), so THE MAIL NEVER REACHED THE MODEL,
      * and the display guard was still false, so IT WAS NEVER SHOWN EITHER. Lost from both sides, silently.
      *
-     * <p>Both sites now read the CURRENT text. The delimited block is what makes that safe to keep: with the agent-only
+     * <p>
+     * Both sites now read the CURRENT text. The delimited block is what makes that safe to keep: with the agent-only
      * text wrapped rather than positioned, appending to the visible text cannot break it no matter where the appending
      * happens.</p>
      */
@@ -189,13 +195,15 @@ class AiTopComponentInboxInterruptWiringTest {
      * A MALFORMED BLOCK RENDERS AS-IS — unclosed, nested, tags out of order, anything. No strip, no repair, no
      * best-effort fallback.
      *
-     * <p>We compose those tags ourselves, so a malformed block means WE have a bug. Rendering it puts that bug in front
-     * of the user immediately; swallowing text while guessing at what was meant hides it. A visible "&lt;SYSTEM&gt;" in
+     * <p>
+     * We compose those tags ourselves, so a malformed block means WE have a bug. Rendering it puts that bug in front of
+     * the user immediately; swallowing text while guessing at what was meant hides it. A visible "&lt;SYSTEM&gt;" in
      * the transcript gets reported and fixed — text that silently vanishes does not.</p>
      *
-     * <p>This holds by construction rather than by a rule: the transcript is BUILT from the visible text and never
-     * DERIVED by removing anything, so there is no parse to be malformed. These assertions exist to stop someone later
-     * adding a "helpful" strip — the one change that would turn a cosmetic defect back into a vanishing one.</p>
+     * <p>
+     * This holds by construction rather than by a rule: the transcript is BUILT from the visible text and never DERIVED
+     * by removing anything, so there is no parse to be malformed. These assertions exist to stop someone later adding a
+     * "helpful" strip — the one change that would turn a cosmetic defect back into a vanishing one.</p>
      */
     @Test
     void aMalformedBlockRendersAsIsWithNoRecoveryLogic() throws IOException {
@@ -255,9 +263,10 @@ class AiTopComponentInboxInterruptWiringTest {
     /**
      * BOTH turn-completion paths must offer the empty-queue explanation, not just one.
      *
-     * <p>They drifted: the suppressed-turn path had the fallback and ordinary turn completion did not, so the notice
-     * was missing from the path most turns take — and that is exactly the mechanism's own scenario, where the session
-     * read the mail itself during the interrupted turn and nothing else is left to tell it the abort was not a user
+     * <p>
+     * They drifted: the suppressed-turn path had the fallback and ordinary turn completion did not, so the notice was
+     * missing from the path most turns take — and that is exactly the mechanism's own scenario, where the session read
+     * the mail itself during the interrupted turn and nothing else is left to tell it the abort was not a user
      * rejection.</p>
      */
     @Test
@@ -309,7 +318,8 @@ class AiTopComponentInboxInterruptWiringTest {
      * none of them abort anything, so telling those sessions their turn was interrupted would be a plain falsehood
      * about their own history.
      *
-     * <p>The flag is cleared BEFORE that gate on purpose: an interrupt those backends never had must not be reported on
+     * <p>
+     * The flag is cleared BEFORE that gate on purpose: an interrupt those backends never had must not be reported on
      * some later turn either.</p>
      */
     @Test
@@ -328,7 +338,7 @@ class AiTopComponentInboxInterruptWiringTest {
 
     /**
      * The second, sharper half. "Rejected" reads as "it did not happen", so the notice has to say outright that it may
-     * have happened anyway, and name the cases where the effect outlives the report.
+     * have happened anyway and direct the session to check the actual result before resuming.
      */
     @Test
     void theWordingWarnsThatAnAbortedCallMayHaveAlreadyRun() throws IOException {
@@ -336,12 +346,10 @@ class AiTopComponentInboxInterruptWiringTest {
 
         assertTrue(wording.contains("MAY HAVE ALREADY RUN"),
                 "the notice must say an aborted call may have taken effect: " + wording);
-        assertTrue(wording.contains("VERIFY"),
-                "it must tell the session to verify rather than assume: " + wording);
-        assertTrue(wording.contains("message") && wording.contains("delivered"),
-                "a message reported as rejected may have been delivered — the observed case: " + wording);
-        assertTrue(wording.contains("build") || wording.contains("test run"),
-                "a build or test run reported as cancelled may have started: " + wording);
+        assertTrue(wording.contains("Check its result."),
+                "it must direct the session to check the interrupted call's result: " + wording);
+        assertTrue(wording.contains("Read your inbox and resume your work."),
+                "it must direct the session to process mail before resuming: " + wording);
     }
 
     /**

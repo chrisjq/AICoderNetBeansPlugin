@@ -43,6 +43,11 @@ public enum McpToolPropertyEnum {
      */
     COLUMN("column"),
     /**
+     * Whether a refactoring proceeds despite non-fatal problems, reporting them instead of refusing. Never overrides a
+     * fatal problem.
+     */
+    COMMIT_WITH_WARNING("commitWithWarning"),
+    /**
      * Registered database connection name.
      */
     CONNECTION_NAME("connectionName"),
@@ -90,6 +95,10 @@ public enum McpToolPropertyEnum {
      * Absolute path of the file to act on.
      */
     FILE_PATH("filePath"),
+    /**
+     * Absolute paths of several files to act on together.
+     */
+    FILE_PATHS("filePaths"),
     /**
      * Glob pattern limiting candidate files.
      */

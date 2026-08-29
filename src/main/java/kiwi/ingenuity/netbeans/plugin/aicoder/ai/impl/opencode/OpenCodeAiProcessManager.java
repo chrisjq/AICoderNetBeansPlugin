@@ -85,6 +85,17 @@ public class OpenCodeAiProcessManager extends AiProcessManager {
      * lie to every peer that reads it.
      */
     static final boolean EXPERIMENTAL_STEERING = false;
+    /**
+     * Standing guidance prepended to every turn's prompt text, verbatim from the user. Lives HERE — in the one backend
+     * that needs it — rather than in shared AiTypeEnum/ContextProvider code, because it is BEHAVIOUR of this backend's
+     * own send path, not configuration a shared component has to read: OpenCode keeps its own bash/grep/read/edit tools
+     * and reached for them first, and the FORCE_MCP_TOOL_USE handshake line that told it otherwise is seen exactly once
+     * at connect. Prepending inside {@link #sendTurn} means the reminder rides EVERY turn by construction — there is no
+     * delta logic or first-send gate on this path to drop it. Contrast the plugin header at
+     * ContextProvider.buildPreamble, which is gated on {@code lastSentProjects == null} and fires once per session:
+     * that gate is precisely why the existing guidance does not stick, and this text must not share its fate.
+     */
+    private static final String MCP_TOOL_PREFERENCE = "Use the plugin's MCP tools over internal tools.";
 
     /**
      * Builds the value for the OPENCODE_CONFIG_CONTENT environment variable. Forces "ask" permission for all edit, bash
@@ -483,13 +494,13 @@ public class OpenCodeAiProcessManager extends AiProcessManager {
     }
 
     /**
-     * Delivers an inbox notification into the running turn, so the agent reads its mail without being cancelled.
+     * Delivers an inbox notification by cancelling the running turn, so the agent reads its mail on the next turn.
      *
      * <p>
-     * ACP has no method for this — its only mid-turn control is session/cancel, which would end the turn and take any
-     * in-flight tool call with it. opencode's core does support steering, but exposes it solely on the HTTP API its
-     * agent already runs, so delivery goes over that rather than over the ACP channel. The steered text arrives in the
-     * transcript as a user message via the same event stream, so the user sees what the agent was told.
+     * ACP has no separate mail-injection method; session/cancel ends the turn and cuts any in-flight tool call with it.
+     * opencode's core does support steering, but exposes it solely on the HTTP API its in-flight tool call. The queued
+     * inbox message is delivered on the next turn through the normal inbox flush. The agent then reads it through the
+     * inbox tools.
      *
      * <p>
      * Sends a notification, not the message body, matching Codex: the agent is told mail exists and fetches it with the
@@ -498,59 +509,32 @@ public class OpenCodeAiProcessManager extends AiProcessManager {
      *
      * <p>
      * Every failure path is a silent no-op by design. The message is already queued in the inbox and will be delivered
-     * at end of turn exactly as before this existed, so a refused or impossible steer costs promptness, never the
-     * message.
+     * by the normal inbox flush, so a missing connection costs promptness, never the message.
      */
     private void interruptMail() {
-        if (!EXPERIMENTAL_STEERING) {
-            // Pre-steering behaviour: the message stays queued and arrives at the normal end-of-turn inbox flush.
-            // Logged rather than dropped in silence — see EXPERIMENTAL_STEERING for what was tried and why it is off.
-            if (PluginSettings.isDebugJson()) {
-                LOG.log(Level.INFO,
-                        "OpenCode interrupt: Mail deferred to end-of-turn flush — no working mid-turn channel "
-                        + "(session={0})", acpSessionId);
-            }
-            return;
-        }
+        AcpConnection conn;
         String sid;
-        int port;
-        boolean capable;
-        String cOpenCodeMCPPassword;
+        OpenCodeAcpClientHandler h;
         synchronized (this) {
             if (!processing) {
                 if (PluginSettings.isDebugJson()) {
-                    LOG.log(Level.INFO,
-                            "OpenCode interrupt: Mail IGNORED, no turn in flight — message will arrive via normal "
-                            + "inbox flush (session={0})", acpSessionId);
+                    LOG.log(Level.INFO, "OpenCode interrupt: Mail IGNORED, no turn in flight (session={0})", acpSessionId);
                 }
                 return;
             }
+            conn = connection;
             sid = acpSessionId;
-            port = httpPort;
-            capable = steerCapable;
-            cOpenCodeMCPPassword = openCodeMCPPassword;
+            h = activeHandler;
         }
-        if (!capable || sid == null || sid.isBlank() || port <= 0) {
-            if (PluginSettings.isDebugJson()) {
-                LOG.log(Level.INFO,
-                        "OpenCode interrupt: Mail IGNORED, steering unavailable — message will arrive via normal "
-                        + "inbox flush (session={0}, port={1}, steerCapable={2})",
-                        new Object[]{sid, port, capable});
-            }
-            return;
+        if (h != null) {
+            h.cancelPendingPermissions();
         }
-        // Off the caller's thread: this is an HTTP round trip, and the caller may be the EDT or the inbox broker.
-        Thread steer = new Thread(() -> {
-            // "dispatched", not "delivered": the endpoint does not answer during a turn, so this only says the
-            // request left here. Whether the agent acted on it shows up in that session's transcript, not here.
-            boolean dispatched = steerClient.sendSteer(port, sid, InterruptTypeEnum.MAIL_NOTIFICATION_TEXT, cOpenCodeMCPPassword);
+        if (conn != null && sid != null) {
+            sendCancelNotification(conn, sid);
             if (PluginSettings.isDebugJson()) {
-                LOG.log(Level.INFO, "OpenCode interrupt: Mail steer {0} (session={1})",
-                        new Object[]{dispatched ? "dispatched" : "could not be dispatched — end-of-turn flush only", sid});
+                LOG.log(Level.INFO, "OpenCode interrupt: Mail cancel sent (session={0})", sid);
             }
-        }, "opencode-mail-steer");
-        steer.setDaemon(true);
-        steer.start();
+        }
     }
 
     /**
@@ -889,7 +873,7 @@ public class OpenCodeAiProcessManager extends AiProcessManager {
     synchronized void sendTurn(String text) {
         JsonObject promptItem = new JsonObject();
         promptItem.addProperty(AcpJsonKeyEnum.TYPE.key(), "text");
-        promptItem.addProperty(AcpJsonKeyEnum.TEXT.key(), text);
+        promptItem.addProperty(AcpJsonKeyEnum.TEXT.key(), MCP_TOOL_PREFERENCE + "\n\n" + text);
         JsonArray promptArray = new JsonArray();
         promptArray.add(promptItem);
 

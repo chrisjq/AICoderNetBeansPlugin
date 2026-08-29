@@ -8,6 +8,8 @@ import kiwi.ingenuity.netbeans.plugin.aicoder.process.McpInstructionOptionEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.McpSectionEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.McpToolEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.session.AbstractAiSession;
+import kiwi.ingenuity.netbeans.plugin.aicoder.process.tempfile.TempFileDirEnum;
+import kiwi.ingenuity.netbeans.plugin.aicoder.process.tempfile.TempFileSpooler;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.McpToolInterface;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.McpToolSchemas;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.ToolRequestArguments;
@@ -69,6 +71,9 @@ public class GitBlameTool implements McpToolInterface {
 
     @Override
     public String handle(ToolRequestArguments args, AbstractAiSession session) throws McpArgumentException {
-        return GitProvider.gitBlame(args.str(GitCommonParamEnum.PROJECT_PATH.key()), args.require(GitBlameParamEnum.FILE.key()));
+        String output = GitProvider.gitBlame(args.str(GitCommonParamEnum.PROJECT_PATH.key()),
+                args.require(GitBlameParamEnum.FILE.key()));
+        return TempFileSpooler.spoolIfLarge(session.getId(), TempFileDirEnum.TOOL_RESULTS, "git-blame", ".log", output,
+                TempFileSpooler.DEFAULT_RESULT_SPOOL_THRESHOLD_CHARS);
     }
 }

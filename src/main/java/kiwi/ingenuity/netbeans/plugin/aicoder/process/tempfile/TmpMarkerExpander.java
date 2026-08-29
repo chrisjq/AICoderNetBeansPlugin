@@ -1,9 +1,10 @@
-package kiwi.ingenuity.netbeans.plugin.aicoder.process.tools;
+package kiwi.ingenuity.netbeans.plugin.aicoder.process.tempfile;
 
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.List;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -14,10 +15,10 @@ import kiwi.ingenuity.netbeans.plugin.aicoder.ai.session.AiSession;
  * the agent actually needs. Callers keep the ORIGINAL text for display and history, and send only {@link
  * #expand}'s result to the agent — the short marker is what the user and the conversation transcript ever see.
  * <p>
- * {@code <filename>} names a file directly inside the SUBMITTING session's own temp directory
- * ({@code ~/.ai-coder/{type}/{sessionId}/tmp/}), resolved against that session and no other. Treated as hostile input
- * throughout: a marker that fails any check below is left exactly as written in the output — never expanded, never
- * thrown for.
+ * {@code <filename>} names a file inside the SUBMITTING session's own temp directory
+ * ({@code ~/.ai-coder/{type}/{sessionId}/tmp/}) — either directly in it or in one of the {@link TempFileDirEnum}
+ * subdirectories — resolved against that session and no other. Treated as hostile input throughout: a marker that fails
+ * any check below is left exactly as written in the output — never expanded, never thrown for.
  */
 public final class TmpMarkerExpander {
 
@@ -62,8 +63,8 @@ public final class TmpMarkerExpander {
             missing.add(name);
             return null;
         }
-        Path candidate = realTmpDir.resolve(name);
-        if (!Files.exists(candidate)) {
+        Path candidate = locate(realTmpDir, name);
+        if (candidate == null) {
             missing.add(name);
             return null;
         }
@@ -74,6 +75,10 @@ public final class TmpMarkerExpander {
                 // impossible in practice, but a symlinked candidate could still resolve
                 // outside the tmp dir. Stay silent rather than expand — this is not a
                 // "file went missing" case, it is a "this should not happen" case.
+                //
+                // Still correct now that files live one level down: a subdirectory of the
+                // tmp root still startsWith it, so a legitimate spooled file passes and
+                // only a genuine escape fails.
                 return null;
             }
             return "@" + realCandidate;
@@ -81,6 +86,43 @@ public final class TmpMarkerExpander {
         catch (IOException e) {
             return null;
         }
+    }
+
+    /**
+     * Finds the file a bare {@code @tmp.<name>} marker refers to, or null when it is in none of the searched places.
+     *
+     * <p>
+     * The marker carries NO directory: the user types {@code @tmp.image.png}, not a path, so the name alone has to be
+     * enough. Content now lives in {@link TempFileDirEnum} subdirectories, so this searches the tmp root first and then
+     * each of those directories.</p>
+     *
+     * <p>
+     * ROOT FIRST, deliberately. It is where files lived before the subdirectories existed, so anything already there
+     * keeps resolving, including a marker sitting unsent in the input box across an upgrade.</p>
+     *
+     * <p>
+     * Then the enum's directories in ALPHABETICAL order of directory name, NOT declaration order. Two files with the
+     * same name in different directories are possible and the marker cannot distinguish them, so the tie has to break
+     * somehow. Alphabetical is stable under reordering the enum, which is otherwise a harmless-looking edit that would
+     * silently change which file a marker resolves to. It is a tie-break, not a feature: minted names carry a session
+     * id and a random component, so a real collision is close to unreachable.</p>
+     *
+     * <p>
+     * Searching {@link TempFileDirEnum#values()} rather than a fixed list means adding a constant makes that
+     * directory's files addressable by marker with no change here.</p>
+     */
+    private static Path locate(Path realTmpDir, String name) {
+        Path atRoot = realTmpDir.resolve(name);
+        if (Files.exists(atRoot)) {
+            return atRoot;
+        }
+        return Arrays.stream(TempFileDirEnum.values())
+                .map(TempFileDirEnum::dirName)
+                .sorted()
+                .map(dirName -> realTmpDir.resolve(dirName).resolve(name))
+                .filter(Files::exists)
+                .findFirst()
+                .orElse(null);
     }
 
     private static Path resolveRealSessionTmpDir(AiSession session) {

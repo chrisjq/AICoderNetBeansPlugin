@@ -3,9 +3,8 @@ package kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.refactor;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.McpToolPropertyEnum;
 
 /**
- * Parameter-name keys for the ChangeMethodSignatureTool MCP tool, shared
- * between its schema() definition and handle() argument extraction so the two
- * cannot drift.
+ * Parameter-name keys for the ChangeMethodSignatureTool MCP tool, shared between its schema() definition and handle()
+ * argument extraction so the two cannot drift.
  */
 public enum ChangeMethodSignatureParamEnum {
     PARAMETERS(McpToolPropertyEnum.PARAMETERS),
@@ -19,7 +18,8 @@ public enum ChangeMethodSignatureParamEnum {
     NAME(McpToolPropertyEnum.NAME),
     TYPE(McpToolPropertyEnum.TYPE),
     ORIGINAL_INDEX(McpToolPropertyEnum.ORIGINAL_INDEX),
-    DEFAULT_VALUE(McpToolPropertyEnum.DEFAULT_VALUE);
+    DEFAULT_VALUE(McpToolPropertyEnum.DEFAULT_VALUE),
+    COMMIT_WITH_WARNING(McpToolPropertyEnum.COMMIT_WITH_WARNING);
 
     private final McpToolPropertyEnum property;
 

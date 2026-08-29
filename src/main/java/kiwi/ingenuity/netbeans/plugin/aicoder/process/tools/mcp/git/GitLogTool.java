@@ -8,6 +8,8 @@ import kiwi.ingenuity.netbeans.plugin.aicoder.process.McpInstructionOptionEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.McpSectionEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.McpToolEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.session.AbstractAiSession;
+import kiwi.ingenuity.netbeans.plugin.aicoder.process.tempfile.TempFileDirEnum;
+import kiwi.ingenuity.netbeans.plugin.aicoder.process.tempfile.TempFileSpooler;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.McpToolInterface;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.McpToolSchemas;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.ToolRequestArguments;
@@ -79,10 +81,12 @@ public class GitLogTool implements McpToolInterface {
 
     @Override
     public String handle(ToolRequestArguments args, AbstractAiSession session) throws McpArgumentException {
-        return GitProvider.gitLog(
+        String output = GitProvider.gitLog(
                 args.require(GitCommonParamEnum.PROJECT_PATH.key()),
                 args.intOr(GitLogParamEnum.LIMIT.key(), 20, 1, 1000),
                 args.str(GitLogParamEnum.FILE.key()),
                 args.bool(GitLogParamEnum.FOLLOW.key()));
+        return TempFileSpooler.spoolIfLarge(session.getId(), TempFileDirEnum.TOOL_RESULTS, "git-log", ".log", output,
+                TempFileSpooler.DEFAULT_RESULT_SPOOL_THRESHOLD_CHARS);
     }
 }

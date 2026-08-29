@@ -74,13 +74,14 @@ import kiwi.ingenuity.netbeans.plugin.aicoder.events.GlobalPropertyBus;
 import kiwi.ingenuity.netbeans.plugin.aicoder.events.SessionLifecycleListener;
 import kiwi.ingenuity.netbeans.plugin.aicoder.events.SessionLifecycleSource;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.PromptHistory;
+import kiwi.ingenuity.netbeans.plugin.aicoder.process.SessionRegistry;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.events.AiProcessEvent;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.events.AiProcessEventListener;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.events.AiProcessImplEvent;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.server.McpHookServer;
-import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.TempFileRegistry;
+import kiwi.ingenuity.netbeans.plugin.aicoder.process.tempfile.TempFileRegistry;
+import kiwi.ingenuity.netbeans.plugin.aicoder.process.tempfile.TmpMarkerExpander;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.TimeoutEnum;
-import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.TmpMarkerExpander;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.providers.netbeans.FileUtils;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.providers.netbeans.RefactoringProvider;
 import kiwi.ingenuity.netbeans.plugin.aicoder.serialization.HistoryPersistenceManager;
@@ -150,6 +151,59 @@ public final class AiTopComponent extends TopComponent implements AiProcessEvent
     // its minimum and its initial size, so the window always opens at the
     // minimum. Set here in one place to adjust the input area size.
     private static final int INPUT_AREA_HEIGHT = 80;
+    /**
+     * The one explanation of a mail interrupt, shared by both delivery paths so their wording cannot drift.
+     *
+     * <p>
+     * Deliberately says nothing about whether the assistant has already read the message: the empty-queue path runs
+     * because it read the mail itself, the flush path runs with the mail appended after this text, and this sentence
+     * has to be true in both.</p>
+     *
+     * <p>
+     * The second paragraph is the harder half. An aborted call MAY ALREADY HAVE TAKEN EFFECT — the interrupt can land
+     * after the call did its work, so "rejected" describes the interrupt, not the outcome. Observed twice in one day: a
+     * SendAiMessage reported as rejected WAS delivered, and the session told the user it had never been sent, which
+     * cost a round trip to undo. "Rejected" reads as "it did not happen", so the notice has to say outright that it may
+     * have.</p>
+     */
+    private static final String INBOX_INTERRUPT_EXPLANATION
+            = "Your turn was interrupted so an inbox message could reach you. That interrupt is what aborted any tool "
+            + "call or task that was in flight — NOT a rejection, cancellation, or refusal by the user. Do not tell the user "
+            + "they declined or rejected anything.\n\n"
+            + "IMPORTANT: a tool call reported to you as rejected or cancelled MAY HAVE ALREADY RUN. Check its result. Read your inbox and resume your work.";
+    /**
+     * @param userInitiated false when the plugin submits a turn on the user's behalf — currently the
+     * queued-inbox-notification flush at turn end. Only the auto-scroll decision depends on it: a turn the user did not
+     * ask for must not drag their view to the bottom.
+     */
+    /**
+     * DELIMITS the agent-only block inside a prompt the PLUGIN composed, so what the assistant sees is marked by
+     * WRAPPING rather than by position.
+     *
+     * <p>
+     * A positional cut was the earlier design and it had a real bug: whether text was visible was decided before
+     * deferred inbox notifications were appended, so a notice-only turn that arrived with mail queued dropped that mail
+     * from the prompt AND from the transcript. Repairing that flag would have fixed the instance and left the shape
+     * fragile — anyone appending to the visible text afterwards would silently have to know the cut was positional. A
+     * delimited block cannot be broken by appending, wherever the appending happens.</p>
+     *
+     * <p>
+     * THE UI NEVER SEARCHES FOR THESE TAGS, and nothing is ever stripped. The split is by PROVENANCE: agent-only text
+     * arrives as a separate parameter to {@link #handleSubmit(String, boolean, String)}, the transcript is rendered
+     * from the visible variable, and the two are never the same string. The tags exist only in the AGENT-FACING prompt,
+     * to tell the model where its system block begins and ends.</p>
+     *
+     * <p>
+     * That is why a collision is harmless, and why MALFORMED IS NOT A CASE THAT CAN ARISE. A user who types
+     * "&lt;SYSTEM&gt;" has their message rendered in full — their text is never the {@code agentOnlyText} parameter. An
+     * assistant that writes it while discussing this feature — which this session has done repeatedly today — is
+     * rendered in full too, because assistant output travels a different path and is not subject to this at all. An
+     * unclosed or nested tag cannot hide anything either: the user's view is BUILT from the visible text, never DERIVED
+     * by removing a block from a combined string, so there is no parse to go wrong. This fails toward showing by
+     * construction rather than by a rule someone has to remember.</p>
+     */
+    static final String SYSTEM_BLOCK_OPEN = "<SYSTEM>";
+    static final String SYSTEM_BLOCK_CLOSE = "</SYSTEM>";
 
     private static ExecutorService newPersistExecutor() {
         return Executors.newFixedThreadPool(4, r -> {
@@ -518,6 +572,9 @@ public final class AiTopComponent extends TopComponent implements AiProcessEvent
 
             @Override
             public void requestGracefulInterrupt(InterruptTypeEnum type) {
+                if (type == InterruptTypeEnum.Mail) {
+                    mailArrivedDuringTurn = true;
+                }
                 if (aiBackend != null) {
                     aiBackend.interrupt(type);
                 }
@@ -639,47 +696,26 @@ public final class AiTopComponent extends TopComponent implements AiProcessEvent
     }
 
     /**
-     * The one explanation of a mail interrupt, shared by both delivery paths so their wording cannot drift.
-     *
-     * <p>Deliberately says nothing about whether the assistant has already read the message: the empty-queue path runs
-     * because it read the mail itself, the flush path runs with the mail appended after this text, and this sentence
-     * has to be true in both.</p>
-     *
-     * <p>The second paragraph is the harder half. An aborted call MAY ALREADY HAVE TAKEN EFFECT — the interrupt can
-     * land after the call did its work, so "rejected" describes the interrupt, not the outcome. Observed twice in one
-     * day: a SendAiMessage reported as rejected WAS delivered, and the session told the user it had never been sent,
-     * which cost a round trip to undo. "Rejected" reads as "it did not happen", so the notice has to say outright that
-     * it may have.</p>
-     */
-    private static final String INBOX_INTERRUPT_EXPLANATION
-            = "Your turn was interrupted so an inbox message could reach you. That interrupt is what aborted any tool "
-            + "call that was in flight — NOT a rejection, cancellation, or refusal by the user. Do not tell the user "
-            + "they declined or rejected anything.\n\n"
-            + "IMPORTANT: a tool call reported to you as rejected or cancelled MAY HAVE ALREADY RUN. The abort can "
-            + "arrive after the call has taken effect, so that report describes the interrupt, not the outcome. A "
-            + "message you were told was rejected may in fact have been delivered; a build or test run you were told "
-            + "was cancelled may have started or even finished. VERIFY the actual state before telling the user what "
-            + "happened — check the inbox, re-read the file, re-run the query — rather than assuming the call did "
-            + "nothing. If the work that was cut short is still valid, resume it.";
-
-    /**
      * The explanation if a mail interrupt aborted this turn and the assistant should be told, or null if not.
      *
-     * <p>CONSUMES the flag, which is what stops the notice being sent twice for one interrupt. Whichever delivery path
+     * <p>
+     * CONSUMES the flag, which is what stops the notice being sent twice for one interrupt. Whichever delivery path
      * asks first gets the text and clears the flag; the other then gets null and stays silent. A session told twice
      * that it was interrupted starts narrating the interruption to the user, which is its own noise.</p>
      *
-     * <p>Only for backends whose mail delivery actually aborts the turn. Codex steers, Copilot injects, Grok and
-     * Ollama drop it — none of them abort anything, so telling those sessions their turn was interrupted would be a
-     * plain falsehood about their own history, which is precisely the failure this notice exists to prevent. The flag
-     * is cleared for them too: the interrupt they did not have must not be reported on some later turn either.</p>
+     * <p>
+     * Only for backends whose mail delivery actually aborts the turn. Codex steers, Copilot injects, Grok and Ollama
+     * drop it — none of them abort anything, so telling those sessions their turn was interrupted would be a plain
+     * falsehood about their own history, which is precisely the failure this notice exists to prevent. The flag is
+     * cleared for them too: the interrupt they did not have must not be reported on some later turn either.</p>
      */
     private String consumeInboxInterruptExplanation() {
         if (!mailArrivedDuringTurn) {
             return null;
         }
         mailArrivedDuringTurn = false;
-        if (session.aiType().mailDeliveryTiming() != MailDeliveryTimingEnum.ABORTS_TURN) {
+        var liveSession = SessionRegistry.get(session.id());
+        if (liveSession == null || liveSession.getMailDeliveryTiming() != MailDeliveryTimingEnum.ABORTS_TURN) {
             return null;
         }
         return INBOX_INTERRUPT_EXPLANATION;
@@ -981,12 +1017,6 @@ public final class AiTopComponent extends TopComponent implements AiProcessEvent
 
     private void handleGlobalProperty(AiPropertyEvent event) {
         if (event instanceof AiInboxMessageEvent ime && session.id().equals(ime.targetSessionId())) {
-            // Recorded BEFORE the EDT hop, while isProcessing() still reflects the turn this
-            // message is about to interrupt. Read inside invokeLater it would often be false
-            // already, and the interruption would go unexplained.
-            if (aiBackend != null && aiBackend.isProcessing()) {
-                mailArrivedDuringTurn = true;
-            }
             SwingUtilities.invokeLater(() -> {
                 // Mail arrives asynchronously, so it can land mid-stream. Without
                 // this the notice is appended after a still-growing assistant
@@ -1556,7 +1586,8 @@ public final class AiTopComponent extends TopComponent implements AiProcessEvent
             enterAwaitingUserState();
             Runnable canceller = () -> ce.response().complete(PermissionDecision.denied("cancelled"));
             pendingResponseCancellers.add(canceller);
-            conversationPanel.showConfirm(ce);
+            conversationPanel.showConfirm(ce, session.aiType().confirmAcceptTooltip(),
+                    session.aiType().confirmRejectTooltip());
             ce.response().whenComplete((decision, ex) -> SwingUtilities.invokeLater(() -> {
                 pendingResponseCancellers.remove(canceller);
                 if (aiBackend != null) {
@@ -1663,37 +1694,6 @@ public final class AiTopComponent extends TopComponent implements AiProcessEvent
     private void handleSubmit(String text) {
         handleSubmit(text, true);
     }
-
-    /**
-     * @param userInitiated false when the plugin submits a turn on the user's behalf — currently the
-     * queued-inbox-notification flush at turn end. Only the auto-scroll decision depends on it: a turn the user did not
-     * ask for must not drag their view to the bottom.
-     */
-    /**
-     * DELIMITS the agent-only block inside a prompt the PLUGIN composed, so what the assistant sees is marked by
-     * WRAPPING rather than by position.
-     *
-     * <p>A positional cut was the earlier design and it had a real bug: whether text was visible was decided before
-     * deferred inbox notifications were appended, so a notice-only turn that arrived with mail queued dropped that mail
-     * from the prompt AND from the transcript. Repairing that flag would have fixed the instance and left the shape
-     * fragile — anyone appending to the visible text afterwards would silently have to know the cut was positional. A
-     * delimited block cannot be broken by appending, wherever the appending happens.</p>
-     *
-     * <p>THE UI NEVER SEARCHES FOR THESE TAGS, and nothing is ever stripped. The split is by PROVENANCE: agent-only
-     * text arrives as a separate parameter to {@link #handleSubmit(String, boolean, String)}, the transcript is
-     * rendered from the visible variable, and the two are never the same string. The tags exist only in the
-     * AGENT-FACING prompt, to tell the model where its system block begins and ends.</p>
-     *
-     * <p>That is why a collision is harmless, and why MALFORMED IS NOT A CASE THAT CAN ARISE. A user who types
-     * "&lt;SYSTEM&gt;" has their message rendered in full — their text is never the {@code agentOnlyText} parameter. An
-     * assistant that writes it while discussing this feature — which this session has done repeatedly today — is
-     * rendered in full too, because assistant output travels a different path and is not subject to this at all. An
-     * unclosed or nested tag cannot hide anything either: the user's view is BUILT from the visible text, never
-     * DERIVED by removing a block from a combined string, so there is no parse to go wrong. This fails toward showing
-     * by construction rather than by a rule someone has to remember.</p>
-     */
-    static final String SYSTEM_BLOCK_OPEN = "<SYSTEM>";
-    static final String SYSTEM_BLOCK_CLOSE = "</SYSTEM>";
 
     private void handleSubmit(String text, boolean userInitiated) {
         handleSubmit(text, userInitiated, null);

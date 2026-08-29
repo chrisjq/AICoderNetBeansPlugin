@@ -1,4 +1,4 @@
-package kiwi.ingenuity.netbeans.plugin.aicoder.process.tools;
+package kiwi.ingenuity.netbeans.plugin.aicoder.process.tempfile;
 
 import java.nio.file.Path;
 

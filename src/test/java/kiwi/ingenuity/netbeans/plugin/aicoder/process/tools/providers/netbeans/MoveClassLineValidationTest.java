@@ -22,7 +22,7 @@ class MoveClassLineValidationTest {
 
     @Test
     void negativeLineIsRejectedAsMalformed() {
-        String result = RefactoringProvider.moveClass("/tmp/does-not-matter.java", -1, VALID_PACKAGE);
+        String result = RefactoringProvider.moveClass("/tmp/does-not-matter.java", -1, VALID_PACKAGE, false);
 
         assertTrue(result.contains(McpToolPropertyEnum.LINE.key()),
                 "the refusal must name the offending parameter: " + result);
@@ -37,7 +37,7 @@ class MoveClassLineValidationTest {
         // 0 is what the tool passes when the caller omits line, and it must still mean "move the whole file". The call
         // cannot complete headless, so it is only asserted NOT to fail the line check — it gets past validation and
         // stops at file resolution instead, which is the correct next failure.
-        String result = RefactoringProvider.moveClass(null, 0, VALID_PACKAGE);
+        String result = RefactoringProvider.moveClass(null, 0, VALID_PACKAGE, false);
 
         assertFalse(result.contains("must be 1-based"),
                 "an omitted line must not be treated as malformed: " + result);

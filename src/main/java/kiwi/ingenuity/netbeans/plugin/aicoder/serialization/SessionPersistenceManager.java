@@ -31,7 +31,7 @@ import kiwi.ingenuity.netbeans.plugin.aicoder.ai.session.AiSession;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.session.SessionInstructionsDeliveryEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.settings.AiSessionSettings;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.settings.AiSessionSettingsCreator;
-import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.TempFileRegistry;
+import kiwi.ingenuity.netbeans.plugin.aicoder.process.tempfile.TempFileRegistry;
 
 /**
  * Manages persistent storage and retrieval of AI session data. Handles JSON serialization of sessions to disk with

@@ -1,5 +1,7 @@
-package kiwi.ingenuity.netbeans.plugin.aicoder.process.tools;
+package kiwi.ingenuity.netbeans.plugin.aicoder.process.tempfile;
 
+import kiwi.ingenuity.netbeans.plugin.aicoder.process.tempfile.TempFile;
+import kiwi.ingenuity.netbeans.plugin.aicoder.process.tempfile.TempFileRegistry;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -226,7 +228,7 @@ class TempFileRegistryTest {
         assertTrue(Files.isRegularFile(spooled.path()));
         assertEquals(1, TempFileRegistry.trackedFileCount());
 
-        // ToolResultSpooler-style: the caller only fills in content afterwards.
+        // TempFileSpooler-style: the caller only fills in content afterwards.
         Files.writeString(spooled.path(), "log text");
         assertTrue(await(() -> !Files.exists(spooled.path())), "cached file was not aged out");
     }

@@ -1,5 +1,7 @@
-package kiwi.ingenuity.netbeans.plugin.aicoder.process.tools;
+package kiwi.ingenuity.netbeans.plugin.aicoder.process.tempfile;
 
+import kiwi.ingenuity.netbeans.plugin.aicoder.process.tempfile.TempFile;
+import kiwi.ingenuity.netbeans.plugin.aicoder.process.tempfile.TempFileRegistry;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Instant;

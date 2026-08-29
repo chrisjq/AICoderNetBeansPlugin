@@ -8,6 +8,8 @@ import kiwi.ingenuity.netbeans.plugin.aicoder.process.McpInstructionOptionEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.McpSectionEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.McpToolEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.session.AbstractAiSession;
+import kiwi.ingenuity.netbeans.plugin.aicoder.process.tempfile.TempFileDirEnum;
+import kiwi.ingenuity.netbeans.plugin.aicoder.process.tempfile.TempFileSpooler;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.McpToolInterface;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.McpToolSchemas;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.ToolRequestArguments;
@@ -71,6 +73,8 @@ public class GitShowTool implements McpToolInterface {
         if (revision == null) {
             revision = "HEAD";
         }
-        return GitProvider.gitShow(args.require(GitCommonParamEnum.PROJECT_PATH.key()), revision);
+        String output = GitProvider.gitShow(args.require(GitCommonParamEnum.PROJECT_PATH.key()), revision);
+        return TempFileSpooler.spoolIfLarge(session.getId(), TempFileDirEnum.TOOL_RESULTS, "git-show", ".log", output,
+                TempFileSpooler.DEFAULT_RESULT_SPOOL_THRESHOLD_CHARS);
     }
 }
