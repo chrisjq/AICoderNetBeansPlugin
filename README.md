@@ -13,7 +13,7 @@ AI Coder is a NetBeans IDE plugin that provides dockable, multi-session AI codin
 | [**Grok**](https://docs.x.ai/build/overview) | Headless `grok` CLI prompt sessions | Executable and model | Enabled |
 | [**OpenCode**](https://opencode.ai/docs) | Long-lived `opencode acp` session | Executable, editable/discovered model, and Build or Plan agent mode | Enabled |
 | [**Codex**](https://developers.openai.com/codex/cli/) | Long-lived Codex app-server session | Executable, editable model, reasoning effort, and sandbox/approval options | Enabled |
-| [**Ollama (Local)**](https://docs.ollama.com/cli) | OpenAI-compatible HTTP API | Base URL, editable/discovered model, and context-management options | Implemented; enable in Options |
+| [**Ollama (Local)**](https://docs.ollama.com/cli) | OpenAI-compatible HTTP API | Base URL, editable/discovered model, and context-management options | Implemented; enable in Options. Note: Not as live tested as the other implementations, feel free to send me some hardware I can thrash :)  |
 
 Each session has its own backend, model, settings, working project, chat history, session instructions, and optional persisted backend session/thread state. Multiple sessions and backends can run at the same time, though their file-, build- and Git-changing work is serialised across the whole plugin — see [Concurrency and limits](REFERENCE.md#concurrency-and-limits).
 

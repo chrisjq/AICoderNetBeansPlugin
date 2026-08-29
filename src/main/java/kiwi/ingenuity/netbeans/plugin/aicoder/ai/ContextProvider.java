@@ -27,15 +27,12 @@ public class ContextProvider {
     private static final Logger LOG = Logger.getLogger(ContextProvider.class.getName());
 
     /**
-     * Caret position as {@code " (cursor at line:col)"}, or an empty string
-     * when there is no readable caret.
+     * Caret position as {@code " (cursor at line:col)"}, or an empty string when there is no readable caret.
      *
      * <p>
-     * Reported because the caller may legitimately want to know where the user
-     * is looking — but no tool acts on the caret by itself, so this is the only
-     * way that information reaches a decision. The position is a snapshot taken
-     * when the turn was built; the user may have moved since, and
-     * {@code GetCurrentFile} returns the live value.
+     * Reported because the caller may legitimately want to know where the user is looking — but no tool acts on the
+     * caret by itself, so this is the only way that information reaches a decision. The position is a snapshot taken
+     * when the turn was built; the user may have moved since, and {@code GetCurrentFile} returns the live value.
      */
     private static String caretSuffix() {
         String caret = EditorContextProvider.getCaretLineColumn();
@@ -105,9 +102,8 @@ public class ContextProvider {
     }
 
     /**
-     * Reset context tracking so the next buildPreamble() call always sends the
-     * full context. Call when starting a new session or resuming from saved
-     * history.
+     * Reset context tracking so the next buildPreamble() call always sends the full context. Call when starting a new
+     * session or resuming from saved history.
      */
     public void resetSentContext() {
         lastSentProjects = null;
@@ -116,21 +112,17 @@ public class ContextProvider {
     }
 
     /**
-     * Prepend context to the user prompt — but only what has changed since the
-     * last send.
+     * Prepend context to the user prompt — but only what has changed since the last send.
      *
-     * Delegates to {@link #buildPreamble(String, String)} with no tool
-     * instructions.
+     * Delegates to {@link #buildPreamble(String, String)} with no tool instructions.
      */
     public String buildPreamble(String userPrompt) {
         return buildPreamble(userPrompt, null);
     }
 
     /**
-     * The session identity block — emitted for every AI type; carries
-     * sessionId/secretKey only for types with
-     * McpInstructionOptionEnum.CREDENTIALS. Returns an empty string when no
-     * session is set.
+     * The session identity block — emitted for every AI type; carries sessionId/secretKey only for types with
+     * McpInstructionOptionEnum.CREDENTIALS. Returns an empty string when no session is set.
      */
     public String buildIdentityBlock() {
         AiSession s = session;
@@ -182,8 +174,8 @@ public class ContextProvider {
     }
 
     /**
-     * The project baseline — plugin banner, open project paths, current file.
-     * Always returns the full current baseline without delta logic.
+     * The project baseline — plugin banner, open project paths, current file. Always returns the full current baseline
+     * without delta logic.
      */
     public String buildProjectBaseline() {
         List<String> currentProjects = getOpenProjectPaths();
@@ -238,12 +230,7 @@ public class ContextProvider {
 
         StringBuilder ctx = new StringBuilder();
 
-        // A stateless backend keeps nothing from earlier turns, so sending only
-        // what changed would leave it with no project paths at all from turn two
-        // onwards. Repeat the baseline every time for those.
-        boolean statelessTurns = s != null && s.aiType().getMcpOptions()
-                .contains(McpInstructionOptionEnum.STATELESS_TURNS);
-        if (lastSentProjects == null || statelessTurns) {
+        if (lastSentProjects == null) {
             // First send — establish full baseline so AI has complete context.
             // Also instruct AI to use tools directly: the diff panel handles review.
             ctx.append("[AI Coder NetBeans Plugin v").append(kiwi.ingenuity.netbeans.plugin.aicoder.Installer.VERSION)
@@ -335,8 +322,7 @@ public class ContextProvider {
     }
 
     /**
-     * Returns and clears whether the most recently built preamble delivered
-     * session instructions.
+     * Returns and clears whether the most recently built preamble delivered session instructions.
      */
     public boolean consumeSessionInstructionsInjected() {
         boolean injected = sessionInstructionsInjectedInLastPreamble;
@@ -348,12 +334,10 @@ public class ContextProvider {
      * True when {@code sessionInstructions} still needs delivering.
      *
      * <p>
-     * Checks the session's persisted record as well as this provider's
-     * in-memory one. The in-memory copy is recreated every time the session is
-     * opened, so on its own it made an ON_FIRST_REQUEST session re-deliver its
-     * instructions on the first message after every IDE restart — while
-     * ON_START did not, because its guard was already persisted. Comparing the
-     * text rather than a flag keeps edited instructions being re-delivered.
+     * Checks the session's persisted record as well as this provider's in-memory one. The in-memory copy is recreated
+     * every time the session is opened, so on its own it made an ON_FIRST_REQUEST session re-deliver its instructions
+     * on the first message after every IDE restart — while ON_START did not, because its guard was already persisted.
+     * Comparing the text rather than a flag keeps edited instructions being re-delivered.
      */
     private boolean instructionsStillNeedSending(AiSession s, String sessionInstructions, boolean isFirstSend) {
         if (!isFirstSend && Objects.equals(sessionInstructions, lastInjectedSessionInstructions)) {
@@ -363,11 +347,10 @@ public class ContextProvider {
     }
 
     /**
-     * Returns the best working directory for a new AI session. Priority: single
-     * project → NetBeans main project → project containing active file → first
-     * open project → user home. Never returns null. Call
-     * {@link #isWorkingDirectoryAmbiguous()} to detect when no automatic rule
-     * applied and the user should be prompted to choose.
+     * Returns the best working directory for a new AI session. Priority: single project → NetBeans main project →
+     * project containing active file → first open project → user home. Never returns null. Call
+     * {@link #isWorkingDirectoryAmbiguous()} to detect when no automatic rule applied and the user should be prompted
+     * to choose.
      */
     public File resolveWorkingDirectory() {
         Project[] projects = OpenProjects.getDefault().getOpenProjects();
@@ -398,9 +381,8 @@ public class ContextProvider {
     }
 
     /**
-     * Returns true when multiple projects are open and no automatic rule (main
-     * project, active file) picked a winner. When true, the caller should
-     * prompt the user to choose.
+     * Returns true when multiple projects are open and no automatic rule (main project, active file) picked a winner.
+     * When true, the caller should prompt the user to choose.
      */
     public boolean isWorkingDirectoryAmbiguous() {
         Project[] projects = OpenProjects.getDefault().getOpenProjects();
@@ -428,8 +410,7 @@ public class ContextProvider {
     }
 
     /**
-     * All open project directories — queried fresh each time so new projects
-     * are picked up.
+     * All open project directories — queried fresh each time so new projects are picked up.
      */
     public List<File> getAllOpenProjectDirs() {
         List<File> dirs = new ArrayList<>();
@@ -452,8 +433,7 @@ public class ContextProvider {
     }
 
     /**
-     * Display name for context header: "Filename.java — ProjectName" or "No
-     * file open".
+     * Display name for context header: "Filename.java — ProjectName" or "No file open".
      */
     public String getContextHeaderText() {
         if (activeFile == null) {

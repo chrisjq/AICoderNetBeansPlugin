@@ -7,6 +7,7 @@ import java.awt.event.ComponentAdapter;
 import java.awt.event.ComponentEvent;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.concurrent.CompletableFuture;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 import java.util.prefs.PreferenceChangeListener;
@@ -23,8 +24,9 @@ import kiwi.ingenuity.netbeans.plugin.aicoder.PluginSettings;
 import kiwi.ingenuity.netbeans.plugin.aicoder.PluginSettingsKeyEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.AiMessage;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.events.AskUserQuestionEvent;
-import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.TimeoutEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.events.ConfirmEvent;
+import kiwi.ingenuity.netbeans.plugin.aicoder.ai.events.PermissionDecision;
+import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.TimeoutEnum;
 import org.openide.util.NbPreferences;
 
 /**
@@ -352,6 +354,21 @@ public class ConversationPanel extends JScrollPane {
         inner.revalidate();
         // Unconditional, same reasoning as showQuestion: this blocks an MCP tool thread until
         // the user clicks Yes or No, so it must be visible.
+        forceScrollToBottom();
+    }
+
+    /**
+     * Render the main-panel affordance for a multi-file change set inline, using the same widget a ConfirmEvent gets.
+     * Completing the supplied future with allow starts stepping through the per-file diffs; deny declines the whole set
+     * without opening any, so a change the user has already decided against costs one click rather than N.
+     */
+    public void showMultiConfirm(String prompt, CompletableFuture<PermissionDecision> response) {
+        ConfirmPanel cp = new ConfirmPanel(prompt, "Accept Diffs", "Reject", response);
+        cp.setAlignmentX(Component.LEFT_ALIGNMENT);
+        inner.add(cp);
+        inner.revalidate();
+        // Unconditional, same reasoning as showConfirm: this blocks the AI until the user
+        // decides, so it must be visible.
         forceScrollToBottom();
     }
 

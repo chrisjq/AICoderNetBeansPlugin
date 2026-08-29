@@ -14,6 +14,8 @@ import java.io.IOException;
 import java.io.OutputStream;
 import java.nio.charset.Charset;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.atomic.AtomicReference;
@@ -478,15 +480,47 @@ public class RefactoringProvider {
         if (flush.error() != null) {
             return flush.error();
         }
+        Charset charset = resolveCharset(fo);
+        // The baseline for the locked-document guard below, read immediately after the flush.
+        //
+        // The caller supplies complete NEW content, so there is no "what it was before" to inherit from it — but this
+        // method can establish one itself. flushUnsavedEditorChanges has just left the document and disk in agreement
+        // on every path that reaches here: either the document was not modified (NetBeans' own statement that the
+        // buffer matches disk), or it was saved successfully, or the file has no document at all. So the bytes on disk
+        // right now ARE what the editor is showing, which is exactly the baseline the guard needs.
+        //
+        // Read with the same size check applyEdit uses: a baseline we cannot trust is worse than none, because the
+        // guard would then compare the document against a truncated view and refuse or allow on noise.
+        File onDisk = FileUtil.toFile(fo);
+        if (onDisk == null) {
+            return "Write refused: no disk path for " + filePath;
+        }
+        Path diskPath = onDisk.toPath();
+        String baseline;
+        try {
+            long sizeOnDisk = Files.size(diskPath);
+            byte[] bytes = Files.readAllBytes(diskPath);
+            String shortRead = describeShortRead(filePath, bytes.length, sizeOnDisk);
+            if (shortRead != null) {
+                return shortRead;
+            }
+            baseline = new String(bytes, charset);
+        }
+        catch (IOException e) {
+            return "Read error before write: " + e.getMessage();
+        }
         // Apply the accepted change as exact bytes. Saving through the editor would
         // run NetBeans "On Save" tasks (reformat / trailing-whitespace removal) that
         // mutate the bytes and desync external tools tracking the file on disk. Only
         // fall back to the editor document when the file is locked (open + unsaved).
         try (OutputStream out = fo.getOutputStream()) {
-            out.write(content.getBytes(resolveCharset(fo)));
+            out.write(content.getBytes(charset));
         }
         catch (FileAlreadyLockedException lockEx) {
-            String viaDoc = writeViaDocument(fo, content);
+            // Reaching here is itself evidence someone typed: the lock is held by a DIRTY document, and the flush above
+            // left it clean, so it was dirtied after the flush. Require the document to still match the baseline before
+            // replacing it wholesale — otherwise this overwrites the user's own typing and saves it, silently.
+            String viaDoc = writeViaDocument(fo, content, baseline);
             GitProvider.refreshVcsStatus(filePath);
             return viaDoc + flushNote(flush);
         }
@@ -500,6 +534,33 @@ public class RefactoringProvider {
 
     public static String applyEdit(String filePath, String oldString, String newString) {
         return applyEdit(filePath, oldString, newString, false);
+    }
+
+    /**
+     * Fail-closed check on a content read that is about to drive a write: null when the bytes read account for the
+     * whole file, otherwise the error to return instead of writing.
+     *
+     * <p>
+     * A read-modify-write is only as safe as its read. If fewer bytes came back than the file actually holds, the
+     * replacement built from them is missing the tail, and writing it destroys that tail silently. Refusing is always
+     * recoverable — the caller retries and nothing is lost — so this errs towards refusing.</p>
+     *
+     * <p>
+     * Pure, and separate from the read, so a test can drive a disagreement between "bytes read" and "size on disk"
+     * without needing a live filesystem to produce a genuinely stale cache. The truncation itself cannot be reproduced
+     * headlessly; this decision can.</p>
+     *
+     * @param filePath the path to name in the error, as the caller supplied it
+     * @param bytesRead how many bytes the read actually returned
+     * @param sizeOnDisk how many bytes the file holds, stat'd from disk
+     */
+    static String describeShortRead(String filePath, long bytesRead, long sizeOnDisk) {
+        if (bytesRead == sizeOnDisk) {
+            return null;
+        }
+        return "Edit refused: read " + bytesRead + " bytes of " + filePath + " but it is " + sizeOnDisk
+                + " bytes on disk. The IDE's view of this file is stale, so the edit was NOT applied and nothing "
+                + "was changed. Retry — the read is re-taken each attempt.";
     }
 
     /**
@@ -529,15 +590,38 @@ public class RefactoringProvider {
         if (flush.error() != null) {
             return flush.error();
         }
-        // Observed 2026-08-27: a 282-line/10828-byte file written by a peer session was seen by NetBeans as
-        // 120 lines/4334 bytes. Anchors past line 120 were rejected as "not found"; an anchor before it applied,
-        // and the write below persisted the truncated read — cutting the file to 119 lines.
+        // WHY THIS READS FROM DISK RATHER THAN THROUGH THE FileObject.
         //
-        // NOT COVERED BY A TEST, deliberately. A unit test against a temp file passes either way: the headless
-        // harness has no live MasterFileSystem to hold a stale cache, so the defect cannot be reproduced there. A
-        // test was written, observed to pass under revert, and deleted rather than kept as false assurance. Verify
-        // manually: edit near the end of a file the IDE never observed (e.g. one a peer session created).
-        FileUtils.refreshBeforeRead(fo);
+        // NetBeans caches a FileObject's length, and asBytes() returns only that many bytes. When the cache is stale
+        // the read comes back TRUNCATED, and a read-modify-write then persists the truncation — silently destroying
+        // everything past the boundary. This has now happened twice, measured both times:
+        //
+        //   2026-08-27: a 282-line/10828-byte file written by a peer session was seen as 120 lines/4334 bytes.
+        //               Anchors past line 120 were "not found"; one before it applied, and the write cut the file
+        //               to 119 lines.
+        //   2026-08-29: this file's sibling AiDiffTopComponent.java, 969 lines/36240 bytes on disk and untouched
+        //               since 2026-07-11, was seen as 114 lines/4097 bytes. Every anchor past line 114 was rejected
+        //               across a whole session while java.nio reads of the same path returned all 969 lines. A
+        //               top-of-file edit then reported SUCCESS and left 114 lines/4097 bytes on disk.
+        //
+        // fo.refresh() did not save us either time: it re-stats from last-modified, and a file whose mtime has not
+        // changed keeps its stale cached length indefinitely. That is why the read below no longer goes through the
+        // FileObject at all. flushUnsavedEditorChanges above has already made disk authoritative, so nothing is lost
+        // by reading it directly; the FileObject is still used for the WRITE, with refreshAfterWrite to re-sync.
+        //
+        // The size guard is the part that does not depend on that diagnosis being right: a read whose byte count
+        // disagrees with the file's real size on disk is refused rather than written. A read we cannot trust must
+        // become a loud, retryable refusal — never a silent write.
+        //
+        // The TRUNCATION ITSELF IS STILL NOT COVERED BY A TEST, deliberately: the headless harness has no live
+        // MasterFileSystem to hold a stale cache, so a temp-file test passes either way. One was written in August,
+        // observed to pass under revert, and deleted rather than kept as false assurance. The guard's decision IS
+        // tested — see describeShortRead and RefactoringProviderShortReadGuardTest.
+        File onDisk = FileUtil.toFile(fo);
+        if (onDisk == null) {
+            return "Edit refused: no disk path for " + filePath;
+        }
+        Path diskPath = onDisk.toPath();
         // Resolved once and reused for every decode/encode below — the initial read,
         // the staleness re-check, and the final write must all agree, or oldString's
         // byte-for-byte match against what was read either fails or matches the wrong
@@ -545,7 +629,13 @@ public class RefactoringProvider {
         Charset charset = resolveCharset(fo);
         String content;
         try {
-            content = new String(fo.asBytes(), charset);
+            long sizeOnDisk = Files.size(diskPath);
+            byte[] bytes = Files.readAllBytes(diskPath);
+            String shortRead = describeShortRead(filePath, bytes.length, sizeOnDisk);
+            if (shortRead != null) {
+                return shortRead;
+            }
+            content = new String(bytes, charset);
         }
         catch (IOException e) {
             return "Read error: " + e.getMessage();
@@ -558,10 +648,16 @@ public class RefactoringProvider {
                 ? PermissionDiffPolicy.replaceEvery(content, oldString, replacement)
                 : PermissionDiffPolicy.replaceFirst(content, oldString, replacement);
         try {
-            // Refresh here too: this guard exists to catch the file moving under us between match and write, and it
-            // cannot do that if it re-reads the same cache the match already used.
-            FileUtils.refreshBeforeRead(fo);
-            String current = new String(fo.asBytes(), charset);
+            // This guard exists to catch the file moving under us between match and write. It reads from disk for the
+            // same reason the match above does — re-reading the same cache the match used would compare one possibly
+            // truncated read against another and call them equal, which is how a stale view got all the way to a write.
+            long sizeOnDisk = Files.size(diskPath);
+            byte[] bytes = Files.readAllBytes(diskPath);
+            String shortRead = describeShortRead(filePath, bytes.length, sizeOnDisk);
+            if (shortRead != null) {
+                return shortRead;
+            }
+            String current = new String(bytes, charset);
             if (!current.equals(content)) {
                 return "Edit refused: file changed after approval; please retry";
             }
@@ -571,11 +667,21 @@ public class RefactoringProvider {
         }
         // Exact-byte write so the result is precisely the accepted diff (no On-Save
         // reformatting). Fall back to the editor document only when the file is locked.
+        //
+        // KNOWN, ACCEPTED RACE: another process can write this file between the verification just above and the
+        // stream opening below, and we would overwrite it. The window is bounded by that verification — it is the gap
+        // between two adjacent statements, not an unchecked write — and closing it properly needs OS-level locking or
+        // a write-to-temp-and-atomic-move, and the latter would give up the exact-byte FileObject semantics this write
+        // exists to preserve. Documented rather than half-closed: a race that reads as closed is worse than an open one
+        // someone can see.
         try (OutputStream out = fo.getOutputStream()) {
             out.write(updated.getBytes(charset));
         }
         catch (FileAlreadyLockedException lockEx) {
-            String viaDoc = writeViaDocument(fo, updated);
+            // Locked means the file is open in the editor with unsaved changes — which may be changes the user made
+            // AFTER our verification. The fallback is handed the verified pre-edit content so it can refuse rather
+            // than overwrite them.
+            String viaDoc = writeViaDocument(fo, updated, content);
             GitProvider.refreshVcsStatus(filePath);
             return viaDoc + flushNote(flush);
         }
@@ -588,11 +694,61 @@ public class RefactoringProvider {
     }
 
     /**
+     * Normalises line endings so document text and disk bytes can be compared for equality.
+     *
+     * <p>
+     * NetBeans documents hold {@code \n} internally whatever the file uses on disk, so a CRLF file read as bytes and
+     * the same file read from its document differ on every single line. Comparing them raw is not a stricter check, it
+     * is a broken one — it would report "changed" for every CRLF file and turn the locked-file path into a path that
+     * never works.</p>
+     */
+    private static String normaliseLineEndings(String text) {
+        return text == null ? null : text.replace("\r\n", "\n").replace('\r', '\n');
+    }
+
+    /**
+     * True when the editor document still holds the text that passed disk verification, so replacing it would discard
+     * nothing the caller has not accounted for.
+     *
+     * <p>
+     * NOT a plain {@code equals}: see {@link #normaliseLineEndings} for why line endings are normalised on both sides
+     * first. Do not "simplify" this back to {@code documentText.equals(verifiedContent)} — that breaks every file with
+     * CRLF endings.</p>
+     *
+     * <p>
+     * Pure, and separate from the write, so a test can drive identical text, changed text and the CRLF-versus-LF case
+     * directly. That last one is the whole reason this function exists rather than an inline comparison.</p>
+     */
+    static boolean documentMatchesVerified(String documentText, String verifiedContent) {
+        if (documentText == null || verifiedContent == null) {
+            return false;
+        }
+        return normaliseLineEndings(documentText).equals(normaliseLineEndings(verifiedContent));
+    }
+
+    /**
      * Fallback writer for a file that is open in the editor with unsaved changes (a held write lock prevents a direct
      * FileObject write). Replaces the whole document and saves; this path can trigger On-Save reformatting, but it only
      * runs when a direct byte write is impossible.
+     *
+     * <p>
+     * Refuses if the document no longer holds {@code verifiedContent}. The lock we are here because of is taken by a
+     * dirty document, and the likeliest reason it is dirty is that the USER typed after
+     * {@code flushUnsavedEditorChanges} made disk authoritative and after both disk verifications passed. Replacing the
+     * document wholesale at that point would overwrite their typing and then save it — silent destruction of the user's
+     * own work, the same class of defect as the truncating write, through a different door. Refuse first; never write
+     * and then report.</p>
+     *
+     * <p>
+     * There is no unguarded form and no null-baseline escape. Both callers establish a baseline from disk — a
+     * read-modify-write inherits the content it verified, and a whole-file write reads it straight after the flush — so
+     * a null here would mean a caller lost track of its own state, and the only safe answer to that is to refuse. A
+     * guard with an opt-out is the one a future caller opts out of.</p>
+     *
+     * @param content the text to write
+     * @param verifiedContent the content the document must still hold; required, and a null refuses the write
      */
-    private static String writeViaDocument(FileObject fo, String content) {
+    private static String writeViaDocument(FileObject fo, String content, String verifiedContent) {
         AtomicReference<String> result = new AtomicReference<>("File updated and saved");
         try {
             SwingUtilities.invokeAndWait(() -> {
@@ -604,6 +760,12 @@ public class RefactoringProvider {
                         return;
                     }
                     StyledDocument doc = ec.openDocument();
+                    String documentText = doc.getText(0, doc.getLength());
+                    if (!documentMatchesVerified(documentText, verifiedContent)) {
+                        result.set("Edit refused: this file changed in the editor after it was verified, so the edit "
+                                + "was NOT applied and nothing was changed. Retry — the read is re-taken each attempt.");
+                        return;
+                    }
                     doc.remove(0, doc.getLength());
                     doc.insertString(0, content, null);
                     SaveCookie save = dob.getLookup().lookup(SaveCookie.class);
@@ -611,9 +773,7 @@ public class RefactoringProvider {
                         result.set("Write error: file is locked and cannot be saved");
                         return;
                     }
-                    if (save != null) {
-                        save.save();
-                    }
+                    save.save();
                 }
                 catch (Exception e) {
                     result.set("Write error: " + e.getMessage());
@@ -1158,8 +1318,9 @@ public class RefactoringProvider {
         //
         // Note this does NOT give a fresh view of file CONTENT: filePath arrives via the /share symlink while
         // resolveByFile looks the object up under the canonical root, so this refreshes a different filesystem
-        // location than the FileObject returned. Content reads must call FileUtils.refreshBeforeRead on the resolved
-        // object — see applyEdit.
+        // location than the FileObject returned. Nor would refreshing the resolved object be enough — refresh() re-stats
+        // from last-modified, so an unchanged mtime keeps a stale cached length and asBytes() keeps returning a short
+        // read. Content reads must go to disk and check the byte count against the real size — see applyEdit.
         FileUtil.refreshFor(f.getParentFile(), f);
         return FileUtils.resolveByFile(f);
     }

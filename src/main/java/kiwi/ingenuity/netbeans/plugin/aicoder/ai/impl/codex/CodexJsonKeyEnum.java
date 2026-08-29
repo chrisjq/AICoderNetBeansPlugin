@@ -133,6 +133,15 @@ public enum CodexJsonKeyEnum {
      */
     DIFF("diff"),
     /**
+     * What a change does to its file: a {@code PatchChangeKind} object whose {@link #TYPE} is add, delete or update
+     * (schema: FileUpdateChange, where it is required). Not a bare string.
+     */
+    KIND("kind"),
+    /**
+     * Destination path on an {@code update} change that is also a rename; absent or null when the file stays put.
+     */
+    MOVE_PATH("move_path"),
+    /**
      * Streaming text delta.
      */
     DELTA("delta"),

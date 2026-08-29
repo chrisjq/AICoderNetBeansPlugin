@@ -55,11 +55,9 @@ import org.openide.loaders.DataObjectNotFoundException;
 import org.openide.windows.TopComponent;
 
 /**
- * Side-by-side diff view. Default shows a compact "changes only" view with
- * configurable context lines; a toggle switches to the full file view. A
- * minimap bar on the right shows change positions and supports click-to-jump.
- * Left and right panes scroll vertically together but independently
- * horizontally.
+ * Side-by-side diff view. Default shows a compact "changes only" view with configurable context lines; a toggle
+ * switches to the full file view. A minimap bar on the right shows change positions and supports click-to-jump. Left
+ * and right panes scroll vertically together but independently horizontally.
  */
 public class AiDiffTopComponent extends TopComponent {
 
@@ -265,6 +263,7 @@ public class AiDiffTopComponent extends TopComponent {
     private final String filePath;
     private final String sessionName;
     private final boolean rejectNoteOnly;
+    private final boolean hideDecisionMessage;
     private DiffDecisionListener decisionListener;
     private boolean decided = false;
     private boolean compactView = true;
@@ -281,13 +280,18 @@ public class AiDiffTopComponent extends TopComponent {
     private JTextField decisionMessageField;
 
     public AiDiffTopComponent(String filePath, String originalContent, String proposedContent, String sessionName) {
-        this(filePath, originalContent, proposedContent, sessionName, false);
+        this(filePath, originalContent, proposedContent, sessionName, false, false);
     }
 
     public AiDiffTopComponent(String filePath, String originalContent, String proposedContent, String sessionName, boolean rejectNoteOnly) {
+        this(filePath, originalContent, proposedContent, sessionName, rejectNoteOnly, false);
+    }
+
+    public AiDiffTopComponent(String filePath, String originalContent, String proposedContent, String sessionName, boolean rejectNoteOnly, boolean hideDecisionMessage) {
         this.filePath = filePath;
         this.sessionName = sessionName != null ? sessionName : "AI";
         this.rejectNoteOnly = rejectNoteOnly;
+        this.hideDecisionMessage = hideDecisionMessage;
         String displayPath = computeDisplayPath(filePath);
         String fileName = Path.of(filePath).getFileName().toString();
         boolean isNewFile = originalContent == null || originalContent.isBlank();
@@ -532,14 +536,17 @@ public class AiDiffTopComponent extends TopComponent {
         JPanel panel = new JPanel(new BorderLayout(8, 4));
         panel.setBorder(BorderFactory.createEmptyBorder(4, 8, 4, 8));
 
-        JPanel messagePanel = new JPanel(new BorderLayout(4, 0));
-        JLabel messageLabel = new JLabel(rejectNoteOnly ? "Reject note:" : "Message:");
-        decisionMessageField = new JTextField();
-        decisionMessageField.setToolTipText(rejectNoteOnly
-                ? "Optional note returned only when rejecting this change"
-                : "Optional note sent back with Accept or Reject");
-        messagePanel.add(messageLabel, BorderLayout.WEST);
-        messagePanel.add(decisionMessageField, BorderLayout.CENTER);
+        if (!hideDecisionMessage) {
+            JPanel messagePanel = new JPanel(new BorderLayout(4, 0));
+            JLabel messageLabel = new JLabel(rejectNoteOnly ? "Reject note:" : "Message:");
+            decisionMessageField = new JTextField();
+            decisionMessageField.setToolTipText(rejectNoteOnly
+                    ? "Optional note returned only when rejecting this change"
+                    : "Optional note sent back with Accept or Reject");
+            messagePanel.add(messageLabel, BorderLayout.WEST);
+            messagePanel.add(decisionMessageField, BorderLayout.CENTER);
+            panel.add(messagePanel, BorderLayout.CENTER);
+        }
 
         JPanel buttons = new JPanel(new FlowLayout(FlowLayout.RIGHT, 8, 0));
         JButton rejectBtn = new JButton("Reject");
@@ -549,7 +556,6 @@ public class AiDiffTopComponent extends TopComponent {
         buttons.add(rejectBtn);
         buttons.add(acceptBtn);
 
-        panel.add(messagePanel, BorderLayout.CENTER);
         panel.add(buttons, BorderLayout.EAST);
         return panel;
     }
@@ -619,9 +625,8 @@ public class AiDiffTopComponent extends TopComponent {
     }
 
     /**
-     * Closes this diff without firing the decision listener. Called by the host
-     * AiTopComponent on teardown so late clicks cannot act on a stopped
-     * backend.
+     * Closes this diff without firing the decision listener. Called by the host AiTopComponent on teardown so late
+     * clicks cannot act on a stopped backend.
      */
     public void cancelAndClose() {
         decided = true;

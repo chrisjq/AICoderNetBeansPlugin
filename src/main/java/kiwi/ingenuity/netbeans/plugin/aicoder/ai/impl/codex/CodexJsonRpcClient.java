@@ -12,6 +12,7 @@ import java.io.OutputStreamWriter;
 import java.io.PrintWriter;
 import java.nio.charset.StandardCharsets;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.CompletionException;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -232,11 +233,23 @@ public class CodexJsonRpcClient {
         }
     }
 
+    /**
+     * The error response is the ONLY channel that can carry a REASON back to Codex for a request we refuse — the
+     * approval responses themselves have a decision field and nothing else — so the handler's message must arrive
+     * intact and readable.
+     *
+     * <p>The cause is unwrapped for exactly that reason. This is a dependent stage, so a handler's exception reaches
+     * here inside a {@link CompletionException}, whose {@code getMessage()} is the cause's {@code toString()} — the
+     * wire message would read "java.lang.UnsupportedOperationException: only add and update are supported" and the
+     * explanation would be buried behind a Java class name that means nothing to the model reading it.</p>
+     */
     private void handleInboundRequest(long id, String method, JsonObject params) {
         requestHandler.onServerRequest(method, params)
                 .thenAccept(result -> sendSuccessResponse(id, result))
                 .exceptionally(ex -> {
-                    sendErrorResponse(id, CodexJsonRpcErrorCodeEnum.INTERNAL_ERROR.code(), ex.getMessage());
+                    Throwable reason = ex instanceof CompletionException && ex.getCause() != null ? ex.getCause() : ex;
+                    String message = reason.getMessage() != null ? reason.getMessage() : reason.toString();
+                    sendErrorResponse(id, CodexJsonRpcErrorCodeEnum.INTERNAL_ERROR.code(), message);
                     return null;
                 });
     }

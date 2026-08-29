@@ -198,6 +198,32 @@ class CodexJsonRpcClientTest {
         assertTrue(reply.has("error"), "unsupported server requests must be answered with an error, not left hanging");
     }
 
+    /**
+     * The error response is the ONLY channel that can carry a reason back to Codex — FileChangeRequestApprovalResponse
+     * has just a decision field and no message — so a handler refusing a request must be able to say why, and that
+     * text must arrive intact. A dependent stage wraps the cause in a CompletionException, whose getMessage() is the
+     * cause's toString(), so without unwrapping the wire message reads
+     * "java.lang.UnsupportedOperationException: <reason>" and the reason is buried behind a Java class name.
+     */
+    @Test
+    void inboundServerRequestFailureSendsTheReasonWithoutTheExceptionClassName() throws Exception {
+        serverRequestReply = CompletableFuture.failedFuture(
+                new UnsupportedOperationException("this client supports only add and update file changes"));
+
+        JsonObject inboundReq = new JsonObject();
+        inboundReq.addProperty("jsonrpc", "2.0");
+        inboundReq.addProperty("id", 11);
+        inboundReq.addProperty("method", "item/fileChange/requestApproval");
+        inboundReq.add("params", new JsonObject());
+        serverSend(inboundReq);
+
+        JsonObject reply = serverRead();
+        String message = reply.getAsJsonObject("error").get("message").getAsString();
+
+        assertEquals("this client supports only add and update file changes", message,
+                "the reason must reach Codex verbatim, with no exception class name prefixed");
+    }
+
     @Test
     void deadlockGuard_readerNotBlockedByLongRunningServerRequest() throws Exception {
         CompletableFuture<JsonObject> slowReply = new CompletableFuture<>();

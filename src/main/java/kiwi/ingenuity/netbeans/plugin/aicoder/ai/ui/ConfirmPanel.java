@@ -41,11 +41,40 @@ class ConfirmPanel extends JPanel {
         return label.isEmpty() ? "Allow: " + body : "Allow " + label + body;
     }
 
+    /**
+     * The prompt for a multi-file change set: a header naming how many files, then one line per file in the order the
+     * AI supplied. Every file is named individually rather than counted, because the count alone does not tell the user
+     * what they would be approving.
+     *
+     * <p>
+     * Pure so the wording can be tested without a running IDE, matching {@link #buildConfirmPrompt}.</p>
+     */
+    static String buildMultiConfirmPrompt(java.util.List<String> renderedPaths) {
+        StringBuilder sb = new StringBuilder("Allow MultiEdit: ")
+                .append(renderedPaths.size())
+                .append(renderedPaths.size() == 1 ? " file" : " files");
+        for (String p : renderedPaths) {
+            sb.append('\n').append("  ").append(p);
+        }
+        return sb.toString();
+    }
+
     private boolean responded = false;
     private final JButton yesBtn;
     private final JButton noBtn;
 
     ConfirmPanel(ConfirmEvent event) {
+        this(buildConfirmPrompt(event.toolName(), event.displayText()), "Yes", "No", event.response());
+    }
+
+    /**
+     * The same inline confirm item, driven by a bare response future and explicit button labels, so a flow that has no
+     * {@link ConfirmEvent} can reuse this widget rather than growing a near-identical one. The multi-file review uses
+     * it for its main-panel affordance: "Accept Diffs" starts stepping through the per-file diffs, "Reject" declines
+     * the whole change set without opening any.
+     */
+    ConfirmPanel(String prompt, String acceptLabel, String rejectLabel,
+            java.util.concurrent.CompletableFuture<PermissionDecision> response) {
         setLayout(new BoxLayout(this, BoxLayout.Y_AXIS));
         setOpaque(false);
         // Align with the messages around us. Children are LEFT_ALIGNMENT below,
@@ -61,8 +90,7 @@ class ConfirmPanel extends JPanel {
                 BorderFactory.createMatteBorder(0, 3, 0, 0, BORDER_COLOR),
                 BorderFactory.createEmptyBorder(4, 8, 6, 4)));
 
-        WrappingHtmlLabel label = new WrappingHtmlLabel(
-                buildConfirmPrompt(event.toolName(), event.displayText()));
+        WrappingHtmlLabel label = new WrappingHtmlLabel(prompt);
         label.setAlignmentX(Component.LEFT_ALIGNMENT);
         label.setBorder(BorderFactory.createEmptyBorder(0, 0, 4, 0));
         add(label);
@@ -70,16 +98,16 @@ class ConfirmPanel extends JPanel {
         JPanel btnRow = new JPanel(new FlowLayout(FlowLayout.LEFT, 4, 0));
         btnRow.setOpaque(false);
         btnRow.setAlignmentX(Component.LEFT_ALIGNMENT);
-        yesBtn = new JButton("Yes");
-        noBtn = new JButton("No");
-        yesBtn.addActionListener(e -> respond(event, true));
-        noBtn.addActionListener(e -> respond(event, false));
+        yesBtn = new JButton(acceptLabel);
+        noBtn = new JButton(rejectLabel);
+        yesBtn.addActionListener(e -> respond(response, true));
+        noBtn.addActionListener(e -> respond(response, false));
         btnRow.add(yesBtn);
         btnRow.add(noBtn);
         add(btnRow);
 
         // Disable buttons when the future is resolved externally (timeout or Stop)
-        event.response().whenComplete((d, ex) -> SwingUtilities.invokeLater(() -> {
+        response.whenComplete((d, ex) -> SwingUtilities.invokeLater(() -> {
             if (!responded) {
                 responded = true;
                 yesBtn.setEnabled(false);
@@ -97,13 +125,13 @@ class ConfirmPanel extends JPanel {
         return new Dimension(Integer.MAX_VALUE, getPreferredSize().height);
     }
 
-    private void respond(ConfirmEvent event, boolean allow) {
+    private void respond(java.util.concurrent.CompletableFuture<PermissionDecision> response, boolean allow) {
         if (responded) {
             return;
         }
         responded = true;
         yesBtn.setEnabled(false);
         noBtn.setEnabled(false);
-        event.response().complete(allow ? PermissionDecision.allowed() : PermissionDecision.denied(null));
+        response.complete(allow ? PermissionDecision.allowed() : PermissionDecision.denied(null));
     }
 }

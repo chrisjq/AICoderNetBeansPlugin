@@ -84,34 +84,23 @@ public class FileUtils {
     }
 
     /**
-     * Re-stats a {@link FileObject} against disk before its content is read.
-     *
-     * <p>
-     * NetBeans caches a FileObject's size, and {@code asBytes()} reads only as many bytes as that cached size claims.
-     * When a file is changed by something the IDE did not observe — another AI session, a build, an external tool — the
-     * cache stays at the old length and the read comes back truncated. In a read-modify-write that truncation is then
-     * persisted, silently destroying everything past the boundary.
-     *
-     * <p>
-     * Call this on the RESOLVED FileObject rather than refreshing a path. Callers address this project through
-     * {@code /share}, a symlink, while {@link #resolveByFile} looks FileObjects up under the canonical root — so a
-     * path-based {@code FileUtil.refreshFor} on the caller's string refreshes a different filesystem location than the
-     * object actually read, and has no effect. Refreshing the object itself cannot miss.
-     *
-     * <p>
-     * Deliberately NOT done on every resolve: this is filesystem I/O, and only content reads need it.
-     *
-     * @param fo the file object about to be read; null is ignored
-     */
-    public static void refreshBeforeRead(FileObject fo) {
-        if (fo != null) {
-            fo.refresh();
-        }
-    }
-
-    /**
      * Re-stats a {@link FileObject} after its content has been written, so the IDE's cached size and the editor's view
      * match the bytes now on disk. Without it the next cached read sees the pre-write length.
+     *
+     * <p>
+     * <b>There is deliberately no refreshBeforeRead sibling, and refreshing before a read is not a way to make one
+     * safe.</b> NetBeans caches a FileObject's size and {@code asBytes()} returns only that many bytes, so a stale
+     * cache yields a TRUNCATED read — which a read-modify-write then persists, destroying everything past the boundary.
+     * {@code refresh()} does not fix that: it re-stats from last-modified time, so a file whose mtime has not changed
+     * keeps its stale cached length however often it is called. A 969-line file was read as 114 lines on 2026-08-29 and
+     * a 282-line file as 120 lines on 2026-08-27, both while a refresh ran before every read. A method named for
+     * refreshing before a read is a trap for exactly the reader who goes looking for one, so it was deleted rather than
+     * left with a warning. Content reads must go to disk with {@code java.nio} and check the byte count against the
+     * file's real size — see {@code RefactoringProvider.applyEdit}.
+     *
+     * <p>
+     * This method rests on the same last-modified assumption and is sound only because it runs AFTER a write, and a
+     * write does change mtime. Do not repurpose it as a general "make this FileObject current" call.
      *
      * @param fo the file object just written; null is ignored
      */

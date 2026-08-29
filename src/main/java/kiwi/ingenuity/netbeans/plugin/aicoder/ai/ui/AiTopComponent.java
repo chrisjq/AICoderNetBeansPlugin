@@ -15,6 +15,7 @@ import java.util.Arrays;
 import java.util.Collections;
 import java.util.List;
 import java.util.Set;
+import java.util.concurrent.CancellationException;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -48,6 +49,8 @@ import kiwi.ingenuity.netbeans.plugin.aicoder.ai.events.AiPropertyEvent;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.events.AiPropertyListener;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.events.AskUserQuestionEvent;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.events.ConfirmEvent;
+import kiwi.ingenuity.netbeans.plugin.aicoder.ai.events.MultiPermissionEvent;
+import kiwi.ingenuity.netbeans.plugin.aicoder.ai.events.MultiPermissionItem;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.events.PermissionDecision;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.events.PermissionEvent;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.events.StatusEvent;
@@ -59,6 +62,7 @@ import kiwi.ingenuity.netbeans.plugin.aicoder.ai.events.TurnCompleteEvent;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.mail.AiSessionInboxBroker;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.notification.AbstractNotification;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.notification.NotificationTypeEnum;
+import kiwi.ingenuity.netbeans.plugin.aicoder.ai.permission.MultiPermissionReview;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.session.AiSession;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.session.AiSessionCallback;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.session.InterruptTypeEnum;
@@ -621,11 +625,64 @@ public final class AiTopComponent extends TopComponent implements AiProcessEvent
         if (texts.isEmpty()) {
             return false;
         }
+        // If a mail interrupt aborted the turn, say so IN THIS TURN rather than leaving it to the arriving mail to
+        // imply. The message explains why new mail exists; it says nothing about the tool call that just died, and a
+        // session read that silence as a user rejection while the mail sat in front of it. Passed as AGENT-ONLY text so
+        // the assistant gets it and the user's transcript keeps only the inbox lines. Consumed here so the empty-queue
+        // path cannot repeat it.
+        String interrupt = consumeInboxInterruptExplanation();
         // Combine into a SINGLE turn — handleSubmit/sendPrompt runs one turn at a
         // time, so submitting in a loop would drop all but the first.
         submitNotificationTurn(NotificationTypeEnum.NEW_INBOX_MESSAGE,
-                String.join("\n\n", texts));
+                String.join("\n\n", texts), interrupt);
         return true;
+    }
+
+    /**
+     * The one explanation of a mail interrupt, shared by both delivery paths so their wording cannot drift.
+     *
+     * <p>Deliberately says nothing about whether the assistant has already read the message: the empty-queue path runs
+     * because it read the mail itself, the flush path runs with the mail appended after this text, and this sentence
+     * has to be true in both.</p>
+     *
+     * <p>The second paragraph is the harder half. An aborted call MAY ALREADY HAVE TAKEN EFFECT — the interrupt can
+     * land after the call did its work, so "rejected" describes the interrupt, not the outcome. Observed twice in one
+     * day: a SendAiMessage reported as rejected WAS delivered, and the session told the user it had never been sent,
+     * which cost a round trip to undo. "Rejected" reads as "it did not happen", so the notice has to say outright that
+     * it may have.</p>
+     */
+    private static final String INBOX_INTERRUPT_EXPLANATION
+            = "Your turn was interrupted so an inbox message could reach you. That interrupt is what aborted any tool "
+            + "call that was in flight — NOT a rejection, cancellation, or refusal by the user. Do not tell the user "
+            + "they declined or rejected anything.\n\n"
+            + "IMPORTANT: a tool call reported to you as rejected or cancelled MAY HAVE ALREADY RUN. The abort can "
+            + "arrive after the call has taken effect, so that report describes the interrupt, not the outcome. A "
+            + "message you were told was rejected may in fact have been delivered; a build or test run you were told "
+            + "was cancelled may have started or even finished. VERIFY the actual state before telling the user what "
+            + "happened — check the inbox, re-read the file, re-run the query — rather than assuming the call did "
+            + "nothing. If the work that was cut short is still valid, resume it.";
+
+    /**
+     * The explanation if a mail interrupt aborted this turn and the assistant should be told, or null if not.
+     *
+     * <p>CONSUMES the flag, which is what stops the notice being sent twice for one interrupt. Whichever delivery path
+     * asks first gets the text and clears the flag; the other then gets null and stays silent. A session told twice
+     * that it was interrupted starts narrating the interruption to the user, which is its own noise.</p>
+     *
+     * <p>Only for backends whose mail delivery actually aborts the turn. Codex steers, Copilot injects, Grok and
+     * Ollama drop it — none of them abort anything, so telling those sessions their turn was interrupted would be a
+     * plain falsehood about their own history, which is precisely the failure this notice exists to prevent. The flag
+     * is cleared for them too: the interrupt they did not have must not be reported on some later turn either.</p>
+     */
+    private String consumeInboxInterruptExplanation() {
+        if (!mailArrivedDuringTurn) {
+            return null;
+        }
+        mailArrivedDuringTurn = false;
+        if (session.aiType().mailDeliveryTiming() != MailDeliveryTimingEnum.ABORTS_TURN) {
+            return null;
+        }
+        return INBOX_INTERRUPT_EXPLANATION;
     }
 
     /**
@@ -637,40 +694,45 @@ public final class AiTopComponent extends TopComponent implements AiProcessEvent
      * {@code control_request(interrupt)} for mail as for the Stop button, so the two are indistinguishable on the wire.
      * The assistant therefore reads "the user rejected this call".
      * <p>
-     * Normally {@code flushPendingNotifications} repairs that by immediately delivering the mail, which explains the
-     * interruption implicitly. But if the assistant READ the message itself during the interrupted turn, the queue is
-     * empty, the flush does nothing, and the INTERRUPTED status has already been deliberately suppressed. The assistant
-     * is left with an aborted tool call and no explanation at all — and concludes the user refused something.
+     * This path covers the case where the assistant READ the message itself during the interrupted turn: the queue is
+     * empty, the flush has nothing to deliver, and the INTERRUPTED status has already been deliberately suppressed, so
+     * the assistant is left with an aborted tool call and no explanation at all.
+     * <p>
+     * The other case — mail IS waiting — is handled inside {@code flushPendingNotifications}, which carries the same
+     * explanation into the turn that delivers it. That used to be left implicit, on the reasoning that arriving mail
+     * explains the interruption by itself. It does not: the message says why new mail exists, not why the tool call
+     * died, and a session in this IDE read the abort as a user rejection while the mail was sitting right there in
+     * front of it.
      * <p>
      * Observed, not theoretical: a session in this IDE reported to the user that they had rejected a command they never
-     * saw.
+     * saw, and separately reported a message as rejected that had in fact been delivered.
      */
     private boolean explainInboxInterruptIfNeeded() {
-        if (!mailArrivedDuringTurn) {
+        String explanation = consumeInboxInterruptExplanation();
+        if (explanation == null) {
             return false;
         }
-        mailArrivedDuringTurn = false;
-        // Only backends whose mail delivery actually aborts the turn. Codex steers, Copilot
-        // injects, Grok and Ollama drop it — none of them abort anything, so telling those
-        // sessions their turn was interrupted would be a plain falsehood about their own
-        // history, which is precisely the failure this notice exists to prevent.
-        if (session.aiType().mailDeliveryTiming() != MailDeliveryTimingEnum.ABORTS_TURN) {
-            return false;
-        }
-        submitNotificationTurn(NotificationTypeEnum.INBOX_INTERRUPT_NOTICE,
-                "Your turn was interrupted so an inbox message could reach you, and you have "
-                + "already read it. That interrupt is what aborted any tool call that was in "
-                + "flight — NOT a rejection, cancellation, or refusal by the user. Do not tell "
-                + "the user they declined or rejected anything. If the work that was cut short "
-                + "is still valid, resume it.");
+        // Agent-only, and there is nothing else in this turn — the session already read the mail, so the explanation IS
+        // the whole content. With no visible text handleSubmit renders nothing at all rather than an empty bubble.
+        submitNotificationTurn(NotificationTypeEnum.INBOX_INTERRUPT_NOTICE, null, explanation);
         return true;
     }
 
     private void submitNotificationTurn(NotificationTypeEnum type, String notificationText) {
+        submitNotificationTurn(type, notificationText, null);
+    }
+
+    /**
+     * @param notificationText what the user sees, prefixed with the type marker; blank submits nothing visible
+     * @param agentOnlyText what only the assistant sees
+     */
+    private void submitNotificationTurn(NotificationTypeEnum type, String notificationText, String agentOnlyText) {
         // userInitiated=false: this fires from flushPendingNotifications at turn end because
         // mail is waiting, not because anyone clicked Send. It renders as a user message, but
         // the user did not ask for it, so it must respect the auto-scroll setting.
-        handleSubmit(type.prefix() + " " + notificationText, false);
+        String visible = notificationText == null || notificationText.isBlank()
+                ? "" : type.prefix() + " " + notificationText;
+        handleSubmit(visible, false, agentOnlyText);
     }
 
     public void rename(String newName) {
@@ -743,6 +805,7 @@ public final class AiTopComponent extends TopComponent implements AiProcessEvent
         // the inter-AI capability blurb on the live comms setting on its own.
         refreshSessionIdentity();
         infoBar.setSaveHistory(session.settings().effectiveSaveHistory());
+        infoBar.setAutoAccept(session.settings().effectiveAutoAccept());
         if (aiBackend != null) {
             aiBackend.applySessionSettings(session.settings());
         }
@@ -1352,8 +1415,8 @@ public final class AiTopComponent extends TopComponent implements AiProcessEvent
         if (event instanceof ToolUseEvent tu) {
             return tu.isFileModification() && (aiBackend == null || !aiBackend.isMcpActive());
         }
-        return event instanceof PermissionEvent || event instanceof AskUserQuestionEvent
-                || event instanceof ConfirmEvent;
+        return event instanceof PermissionEvent || event instanceof MultiPermissionEvent
+                || event instanceof AskUserQuestionEvent || event instanceof ConfirmEvent;
     }
 
     private void handleEvent(AiProcessEvent event) {
@@ -1380,6 +1443,9 @@ public final class AiTopComponent extends TopComponent implements AiProcessEvent
                 // invokeLater), so the old extra invokeLater bought nothing except
                 // a window where the tab was green and the input live while the
                 // session was about to carry straight on.
+                //
+                // DELIBERATELY SYMMETRIC with the ordinary turn-completion path below — see the longer note there.
+                // Both must offer the empty-queue explanation; change one and you must change the other.
                 if (!flushPendingNotifications() && !explainInboxInterruptIfNeeded()) {
                     infoBar.setProcessing(false);
                     setSendEnabled(true);
@@ -1435,7 +1501,13 @@ public final class AiTopComponent extends TopComponent implements AiProcessEvent
             // flushPendingNotifications. A mail interrupt ends the Claude turn and
             // the queued message immediately starts another, so announcing idle
             // first showed a green tab and an enabled input between the two.
-            if (!flushPendingNotifications()) {
+            //
+            // DELIBERATELY SYMMETRIC with the suppressed-turn path above: both must offer the empty-queue
+            // explanation, because that is the case where the session read the mail itself during the interrupted
+            // turn and nothing else is left to tell it the abort was not a user rejection. This path handles ordinary
+            // turn completion — the one most turns take — and used to omit the fallback, so the notice was missing
+            // exactly where it was most needed. Change one of these two sites and you must change the other.
+            if (!flushPendingNotifications() && !explainInboxInterruptIfNeeded()) {
                 infoBar.setProcessing(false);
                 infoBar.setStatusMessage("Ready...");
                 refreshInputEnabled();
@@ -1505,6 +1577,10 @@ public final class AiTopComponent extends TopComponent implements AiProcessEvent
         else if (event instanceof PermissionEvent pe) {
             pendingNewlineBeforeText = true;
             showPermissionDiff(pe);
+        }
+        else if (event instanceof MultiPermissionEvent mpe) {
+            pendingNewlineBeforeText = true;
+            showMultiPermissionReview(mpe);
         }
         else if (event instanceof ToolUseEvent tu) {
             if (cancelledThisTurn) {
@@ -1593,9 +1669,64 @@ public final class AiTopComponent extends TopComponent implements AiProcessEvent
      * queued-inbox-notification flush at turn end. Only the auto-scroll decision depends on it: a turn the user did not
      * ask for must not drag their view to the bottom.
      */
+    /**
+     * DELIMITS the agent-only block inside a prompt the PLUGIN composed, so what the assistant sees is marked by
+     * WRAPPING rather than by position.
+     *
+     * <p>A positional cut was the earlier design and it had a real bug: whether text was visible was decided before
+     * deferred inbox notifications were appended, so a notice-only turn that arrived with mail queued dropped that mail
+     * from the prompt AND from the transcript. Repairing that flag would have fixed the instance and left the shape
+     * fragile — anyone appending to the visible text afterwards would silently have to know the cut was positional. A
+     * delimited block cannot be broken by appending, wherever the appending happens.</p>
+     *
+     * <p>THE UI NEVER SEARCHES FOR THESE TAGS, and nothing is ever stripped. The split is by PROVENANCE: agent-only
+     * text arrives as a separate parameter to {@link #handleSubmit(String, boolean, String)}, the transcript is
+     * rendered from the visible variable, and the two are never the same string. The tags exist only in the
+     * AGENT-FACING prompt, to tell the model where its system block begins and ends.</p>
+     *
+     * <p>That is why a collision is harmless, and why MALFORMED IS NOT A CASE THAT CAN ARISE. A user who types
+     * "&lt;SYSTEM&gt;" has their message rendered in full — their text is never the {@code agentOnlyText} parameter. An
+     * assistant that writes it while discussing this feature — which this session has done repeatedly today — is
+     * rendered in full too, because assistant output travels a different path and is not subject to this at all. An
+     * unclosed or nested tag cannot hide anything either: the user's view is BUILT from the visible text, never
+     * DERIVED by removing a block from a combined string, so there is no parse to go wrong. This fails toward showing
+     * by construction rather than by a rule someone has to remember.</p>
+     */
+    static final String SYSTEM_BLOCK_OPEN = "<SYSTEM>";
+    static final String SYSTEM_BLOCK_CLOSE = "</SYSTEM>";
+
     private void handleSubmit(String text, boolean userInitiated) {
-        if (text == null || text.isBlank()) {
+        handleSubmit(text, userInitiated, null);
+    }
+
+    /**
+     * @param agentOnlyText text the assistant must receive but the user must NOT see. APPENDED to the prompt and
+     * omitted from {@code conversationPanel.addUserMessage}, which is the single call that feeds both the transcript
+     * and saved history — so nothing hidden here can reappear on reload.
+     * <p>
+     * ORDER IS LOAD-BEARING, not incidental: the prompt is composed as the visible text, then
+     * {@link #SYSTEM_CUT_MARKER}, then the agent-only block. Everything the user should see comes before the cut and
+     * everything hidden after it. Putting the agent-only block FIRST — as an earlier iteration did — moves the marker
+     * ahead of the inbox notification lines and hides the very thing the user asked to keep. It also keeps deferred
+     * notifications safe: they are appended to the visible text at the top of this method, so they land before the cut
+     * and stay visible without needing a special case.
+     * <p>
+     * Same split the {@code TmpMarkerExpander} block below already uses in the other direction: what the agent receives
+     * and what the user sees are deliberately not the same string. Used for the mail-interrupt explanation, which is
+     * written for the model — it is long, it is about protocol rather than about the user's work, and the user asked
+     * not to have it in their conversation. The wording itself is unchanged: it is a correctness mechanism that cost
+     * two false "the user rejected this" reports to earn, so it is hidden, never shortened.
+     * <p>
+     * When {@code text} is blank and only hidden text exists, NOTHING is rendered — no empty bubble.
+     */
+    private void handleSubmit(String text, boolean userInitiated, String agentOnlyText) {
+        boolean hasVisible = text != null && !text.isBlank();
+        boolean hasHidden = agentOnlyText != null && !agentOnlyText.isBlank();
+        if (!hasVisible && !hasHidden) {
             return;
+        }
+        if (text == null) {
+            text = "";
         }
         synchronized (this) {
             if (!deferredNotifications.isEmpty()) {
@@ -1605,7 +1736,10 @@ public final class AiTopComponent extends TopComponent implements AiProcessEvent
                         .collect(java.util.stream.Collectors.joining("\n"));
                 deferredNotifications.clear();
                 if (!deferred.isEmpty()) {
-                    text = text + "\n\n[Pending inbox messages]\n" + deferred;
+                    // No leading blank line when there was nothing before it — a notice-only turn that picks up
+                    // deferred mail should read as the mail, not as a gap followed by it.
+                    text = text.isBlank() ? "[Pending inbox messages]\n" + deferred
+                            : text + "\n\n[Pending inbox messages]\n" + deferred;
                 }
             }
         }
@@ -1634,9 +1768,18 @@ public final class AiTopComponent extends TopComponent implements AiProcessEvent
         // receives — `text` itself is left untouched below for display and history, so
         // the transcript keeps showing the short marker the user actually typed/pasted.
         TmpMarkerExpander.Result tmpExpansion = TmpMarkerExpander.expand(text, session);
+        // The visible text ALWAYS goes to the agent, and the agent-only block is WRAPPED and appended after it.
+        //
+        // Recomputed from the current text rather than from the flag taken on entry: `text` has grown since then if
+        // deferred inbox notifications were appended above. Branching on the stale flag dropped that mail from the
+        // prompt entirely, because the no-visible-text branch never used expandedText() at all.
+        String visibleForAgent = tmpExpansion.expandedText();
+        String agentText = !hasHidden ? visibleForAgent
+                : (visibleForAgent.isBlank() ? "" : visibleForAgent + "\n\n")
+                + SYSTEM_BLOCK_OPEN + "\n" + agentOnlyText + "\n" + SYSTEM_BLOCK_CLOSE;
         String fullPrompt = contextProvider != null
-                ? contextProvider.buildPreamble(tmpExpansion.expandedText(), sessionInstructions)
-                : tmpExpansion.expandedText();
+                ? contextProvider.buildPreamble(agentText, sessionInstructions)
+                : agentText;
         boolean instructionsIncluded = contextProvider != null
                 && contextProvider.consumeSessionInstructionsInjected();
         if (instructionsIncluded) {
@@ -1649,7 +1792,14 @@ public final class AiTopComponent extends TopComponent implements AiProcessEvent
         if (userInitiated) {
             mailArrivedDuringTurn = false;
         }
-        conversationPanel.addUserMessage(text, userInitiated);
+        // The single call that feeds BOTH the transcript and saved history, so skipping it for a hidden-only submit
+        // keeps the text out of the panel and out of any reload.
+        //
+        // Tested against the CURRENT text, not the flag from entry: deferred inbox notifications may have arrived in it
+        // since. Using the stale flag hid real mail from the user on a notice-only turn.
+        if (!text.isBlank()) {
+            conversationPanel.addUserMessage(text, userInitiated);
+        }
         for (String missingName : tmpExpansion.missingFiles()) {
             conversationPanel.addSystemMessage("Could not find pasted file @tmp." + missingName
                     + " — it may have been cleaned up, so the agent will see the marker text instead of the file.");
@@ -2016,6 +2166,32 @@ public final class AiTopComponent extends TopComponent implements AiProcessEvent
         });
     }
 
+    /**
+     * Entry point for a multi-file change set. The review object owns the batch for its whole life — it walks the items
+     * in the AI-supplied order, accumulates the per-file decisions, produces the single aggregate reply and renders the
+     * record written here. This method only decides between the auto-accept path and the interactive one; the walking
+     * is {@link MultiReviewDriver}'s job.
+     *
+     * <p>
+     * Auto-accept still constructs the review and still logs every file. Skipping it and losing the per-file record is
+     * exactly the defect this feature replaces — a blind "Codex wants to modify 3 files".</p>
+     */
+    private void showMultiPermissionReview(MultiPermissionEvent mpe) {
+        MultiPermissionReview review = new MultiPermissionReview(mpe, ProjectPathUtil::shortPath);
+
+        if (infoBar.isAutoAccept()) {
+            LOG.log(Level.INFO, "Auto-accepted multi-file change set of {0} files", mpe.items().size());
+            finaliseActiveAssistantIfNeeded();
+            review.autoAcceptAll();
+            conversationPanel.addSystemMessage(review.log());
+            return;
+        }
+
+        enterAwaitingUserState();
+        finaliseActiveAssistantIfNeeded();
+        new MultiReviewDriver(review, mpe.items()).start();
+    }
+
     private void checkForFileChanges() {
         if (diffShownForCurrentTurn) {
             return;
@@ -2227,6 +2403,253 @@ public final class AiTopComponent extends TopComponent implements AiProcessEvent
         }
         catch (IOException e) {
             LOG.log(Level.WARNING, "Could not save history", e);
+        }
+    }
+
+    /**
+     * Drives one {@link MultiPermissionReview} through the UI: shows the main-panel affordance, opens each file's diff
+     * in turn, and tears the batch down on whichever exit path fires first.
+     *
+     * <p>
+     * Every exit route funnels through {@link #finish()}, which closes anything this batch opened and writes the log
+     * exactly once. That matters most on the paths the user did not choose: on a timeout or a turn cancellation a diff
+     * panel may still be on screen, and leaving it there would show a panel whose decision has already been made.</p>
+     *
+     * <p>
+     * All methods run on the EDT, matching the rest of this class; the file reads are the only work pushed off it.</p>
+     */
+    private final class MultiReviewDriver {
+
+        private final MultiPermissionReview review;
+        private final List<MultiPermissionItem> items;
+        /**
+         * Resolves the main-panel affordance. Held so teardown can complete it, which is what greys its buttons out —
+         * otherwise a live-looking Accept/Reject would sit under a batch that has already been answered.
+         */
+        private final CompletableFuture<PermissionDecision> gate = new CompletableFuture<>();
+        /**
+         * Registered in {@code pendingResponseCancellers} so a stop, a turn end or the panel closing routes through
+         * {@code review.cancelled(...)} rather than completing the response directly. The single-file canceller
+         * completes the future as denied, which for a batch would bypass the review entirely: the log would be wrong,
+         * and the backends would read a deliberate "no" where an interruption happened.
+         */
+        private final Runnable canceller;
+        /**
+         * ONE deadline for the whole batch, armed when the review starts and never re-armed per file. The set gets the
+         * same total human-attention budget a single diff gets, so each panel after the first inherits whatever is left
+         * of it — rather than N files silently buying N times the wait. Fires on the EDT, like everything else here.
+         */
+        private final Timer deadline;
+        private AiDiffTopComponent openDiff;
+        private boolean finished;
+
+        MultiReviewDriver(MultiPermissionReview review, List<MultiPermissionItem> items) {
+            this.review = review;
+            this.items = items;
+            this.canceller = () -> cancel(new CancellationException("Multi-file review cancelled"));
+            this.deadline = new Timer((int) TimeoutEnum.USER_APPROVAL_WAIT_MILLIS.millis(), ev -> expire());
+            this.deadline.setRepeats(false);
+        }
+
+        void start() {
+            pendingResponseCancellers.add(canceller);
+            deadline.start();
+            // Fail fast on anything unrenderable. An item with no proposed content is a file the user cannot review,
+            // and the decided behaviour is that it declines the whole set — so say so NOW rather than after they have
+            // stepped through the files that did render. Making them work first and then refusing is a worse version
+            // of the same answer.
+            MultiPermissionItem unrenderable = firstUnrenderable();
+            if (unrenderable != null) {
+                review.renderFailed(unrenderable.filePath());
+                finish();
+                return;
+            }
+            conversationPanel.showMultiConfirm(
+                    ConfirmPanel.buildMultiConfirmPrompt(items.stream().map(i -> shortPath(i.filePath())).toList()),
+                    gate);
+            gate.whenComplete((decision, ex) -> SwingUtilities.invokeLater(() -> {
+                if (review.isFinished()) {
+                    return;
+                }
+                if (ex != null) {
+                    cancel(ex);
+                }
+                else if (decision != null && decision.allow()) {
+                    openNext();
+                }
+                else {
+                    review.rejectAll();
+                    finish();
+                }
+            }));
+        }
+
+        /**
+         * The first item the producer could not render, or null if every file has proposed content. Checked once up
+         * front rather than on arrival at each file — see {@link #start()}.
+         */
+        private MultiPermissionItem firstUnrenderable() {
+            for (MultiPermissionItem item : items) {
+                if (item.proposedContent() == null) {
+                    return item;
+                }
+            }
+            return null;
+        }
+
+        /**
+         * Opens the diff for the item currently awaiting a decision. The file read is pushed off the EDT; a file that
+         * cannot be read is a file the user cannot review, so it declines the whole set rather than falling back to a
+         * blind yes/no.
+         */
+        private void openNext() {
+            MultiPermissionItem item = review.currentItem();
+            if (item == null) {
+                finish();
+                return;
+            }
+            String fp = item.filePath();
+            if (fp == null || fp.isBlank()) {
+                review.renderFailed(fp);
+                finish();
+                return;
+            }
+            RequestProcessor.getDefault().execute(() -> {
+                String original = "";
+                boolean readable = true;
+                try {
+                    Path p = Path.of(fp);
+                    if (Files.exists(p)) {
+                        original = Files.readString(p, RefactoringProvider.resolveCharset(fp));
+                    }
+                }
+                catch (IOException | RuntimeException e) {
+                    LOG.log(Level.WARNING, "Could not read file for multi-file review diff: " + fp, e);
+                    readable = false;
+                }
+                final String orig = original;
+                final boolean ok = readable;
+                SwingUtilities.invokeLater(() -> {
+                    if (review.isFinished()) {
+                        return;
+                    }
+                    if (!ok) {
+                        review.renderFailed(fp);
+                        finish();
+                        return;
+                    }
+                    openDiffFor(item, fp, orig);
+                });
+            });
+        }
+
+        private void openDiffFor(MultiPermissionItem item, String fp, String original) {
+            if (aiBackend == null) {
+                cancel(new CancellationException("Session closed during multi-file review"));
+                return;
+            }
+            String proposed = item.proposedContent();
+            if (proposed == null) {
+                review.renderFailed(fp);
+                finish();
+                return;
+            }
+            diffShownForCurrentTurn = true;
+            // Message field hidden: this batch answers with ONE aggregate decision, and that reply carries no
+            // message or reason field, so anything typed here could never be delivered.
+            AiDiffTopComponent diff = new AiDiffTopComponent(fp, original, proposed, session.name(), true, true);
+            diff.addDecisionListener(new DiffDecisionListener() {
+                @Override
+                public void onAccepted(String message) {
+                    forget(diff);
+                    if (review.isFinished()) {
+                        return;
+                    }
+                    review.accept();
+                    if (review.isFinished()) {
+                        finish();
+                    }
+                    else {
+                        openNext();
+                    }
+                }
+
+                @Override
+                public void onRejected(String message) {
+                    // Also fires when the user closes the diff tab without deciding, matching the
+                    // single-file path: closing a diff is a rejection, not an interruption.
+                    forget(diff);
+                    if (review.isFinished()) {
+                        return;
+                    }
+                    review.reject();
+                    finish();
+                }
+            });
+            openDiff = diff;
+            openDiffs.add(diff);
+            diff.open();
+            diff.requestActive();
+        }
+
+        private void forget(AiDiffTopComponent diff) {
+            openDiffs.remove(diff);
+            if (openDiff == diff) {
+                openDiff = null;
+            }
+        }
+
+        /**
+         * The turn was cancelled, the session stopped, or the component closed. Routes through the review so the
+         * response completes EXCEPTIONALLY — that is how the backends tell an interruption from a deliberate "no".
+         */
+        private void cancel(Throwable cause) {
+            review.cancelled(cause);
+            finish();
+        }
+
+        /**
+         * The whole-set deadline expired. Declines everything and tears down, so the user is not left looking at a
+         * panel whose decision has already been made. Recorded as a timeout rather than a rejection: the reply is the
+         * same either way, but the log must not attribute an expiry to the user.
+         */
+        private void expire() {
+            if (review.isFinished()) {
+                return;
+            }
+            LOG.log(Level.INFO, "Multi-file review timed out after {0} ms",
+                    TimeoutEnum.USER_APPROVAL_WAIT_MILLIS.millis());
+            review.timedOut();
+            finish();
+        }
+
+        /**
+         * Tears the batch down on whichever route got here first. Idempotent: the review resolves the response exactly
+         * once, and this guard makes the UI side match, so the log is written once and no closed panel is closed twice.
+         */
+        private void finish() {
+            if (finished) {
+                return;
+            }
+            finished = true;
+            // Stop the deadline on EVERY exit, not just its own. A timer left armed after the set resolved would fire
+            // into a finished review, which is harmless because late calls are ignored — but relying on that would be
+            // relying on a coincidence to cover a leak.
+            deadline.stop();
+            pendingResponseCancellers.remove(canceller);
+            if (!gate.isDone()) {
+                // Greys out the main-panel buttons. Re-enters this driver's own gate callback,
+                // which returns immediately because the review is already finished.
+                gate.complete(PermissionDecision.denied(null));
+            }
+            AiDiffTopComponent stillOpen = openDiff;
+            openDiff = null;
+            if (stillOpen != null) {
+                openDiffs.remove(stillOpen);
+                stillOpen.cancelAndClose();
+            }
+            conversationPanel.addSystemMessage(review.log());
+            clearPendingDiffAndRefreshInput();
         }
     }
 

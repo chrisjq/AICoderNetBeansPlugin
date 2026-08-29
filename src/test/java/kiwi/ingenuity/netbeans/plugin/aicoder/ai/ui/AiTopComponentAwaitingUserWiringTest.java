@@ -104,6 +104,20 @@ class AiTopComponentAwaitingUserWiringTest {
                 "showPermissionDiff() must call enterAwaitingUserState()");
     }
 
+    /**
+     * A batch awaiting per-file review is as much an "awaiting user" state as a single diff — the AI is blocked on it
+     * the same way. Sibling of {@link #showPermissionDiffSiteCallsEnterAwaitingUserState()}, added when the multi-file
+     * path arrived so the new site cannot silently drop the call the four older ones make.
+     */
+    @Test
+    void showMultiPermissionReviewSiteCallsEnterAwaitingUserState() throws IOException {
+        String source = readSource();
+        assertBlockContains(source,
+                "private void showMultiPermissionReview(MultiPermissionEvent mpe)",
+                "enterAwaitingUserState()",
+                "showMultiPermissionReview() must call enterAwaitingUserState()");
+    }
+
     @Test
     void refreshInputEnabledIsPendingDiffBranchSetsAwaitingUser() throws IOException {
         String source = readSource();
