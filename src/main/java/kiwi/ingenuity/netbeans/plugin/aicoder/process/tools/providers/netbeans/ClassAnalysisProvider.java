@@ -15,6 +15,7 @@ import javax.lang.model.element.TypeElement;
 import javax.lang.model.type.DeclaredType;
 import javax.lang.model.type.TypeKind;
 import javax.lang.model.type.TypeMirror;
+import kiwi.ingenuity.netbeans.plugin.aicoder.process.McpToolEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.McpToolPropertyEnum;
 import org.netbeans.api.java.source.ClassIndex;
 import org.netbeans.api.java.source.ElementHandle;
@@ -22,6 +23,8 @@ import org.netbeans.api.java.source.JavaSource;
 import org.openide.filesystems.FileObject;
 
 public class ClassAnalysisProvider {
+
+    private static final String IN_AN_OPEN_PROJECT = "in an open project";
 
     public static String getClassMembers(String className) {
         if (className == null || className.isBlank()) {
@@ -62,7 +65,7 @@ public class ClassAnalysisProvider {
                                 .map(p -> p.asType().toString() + " " + p.getSimpleName())
                                 .collect(Collectors.joining(", "));
                         String ret = kind == ElementKind.CONSTRUCTOR
-                                ? "" : " : " + ee.getReturnType();
+                                     ? "" : " : " + ee.getReturnType();
                         sb.append("  [").append(kind).append("] ")
                                 .append(modStr).append(e.getSimpleName())
                                 .append("(").append(params).append(")").append(ret).append("\n");
@@ -89,7 +92,7 @@ public class ClassAnalysisProvider {
         String normalizedName = className.replace('$', '.');
         FileObject fo = FileUtils.locateSourceFile(normalizedName);
         if (fo == null) {
-            return "Source file not found for " + normalizedName;
+            return noSourceMessage(normalizedName);
         }
         JavaSource js = JavaSource.forFileObject(fo);
         if (js == null) {
@@ -169,6 +172,17 @@ public class ClassAnalysisProvider {
         }
 
         return sb.toString();
+    }
+
+    /**
+     * GetTypeHierarchy's refusal for a type with no source in an open project. Live v1.4.15:
+     * {@code java.lang.Exception} got only "Source file not found for java.lang.Exception", which did not say that JDK
+     * and library types are out of scope or where to look instead.
+     */
+    static String noSourceMessage(String typeName) {
+        return "No source for " + typeName + " " + IN_AN_OPEN_PROJECT + ". " + McpToolEnum.GET_TYPE_HIERARCHY.toolName()
+                + " only covers types whose source is " + IN_AN_OPEN_PROJECT + ". "
+                + "Use " + McpToolEnum.GET_JAVADOC.toolName() + " to see such a type's superclass and interfaces.";
     }
 
     private ClassAnalysisProvider() {

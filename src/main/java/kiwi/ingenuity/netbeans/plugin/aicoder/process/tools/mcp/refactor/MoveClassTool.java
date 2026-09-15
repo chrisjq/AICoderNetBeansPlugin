@@ -45,10 +45,11 @@ public class MoveClassTool implements McpToolInterface {
         JsonObject tool = new JsonObject();
         tool.addProperty(ToolSchemaKeyEnum.NAME.key(), McpToolEnum.MOVE_CLASS.toolName());
         tool.addProperty(ToolSchemaKeyEnum.DESCRIPTION.key(),
-                "Moves one or more Java classes to a different package, updating the package declaration and all import references; edits route through the Accept/Reject diff panel. "
-                + "Exactly one of " + MoveClassParamEnum.FILE_PATH.key() + " (one file) or " + MoveClassParamEnum.FILE_PATHS.key() + " (several files, moved together in a single refactoring) is required. "
-                + "With " + MoveClassParamEnum.LINE.key() + " (single-file only; rejected together with " + MoveClassParamEnum.FILE_PATHS.key() + ") it moves just the class declared at that line; without it each file moves as a whole (refused for a file with more than one top-level type). "
-                + "This tool does not fall back to the focused editor — call " + McpToolEnum.GET_CURRENT_FILE.toolName() + " if you want the file the user is looking at.");
+                         "Moves one or more Java classes to a different package, updating the package declaration and all import references; edits route through the Accept/Reject diff panel. "
+                         + "Exactly one of " + MoveClassParamEnum.FILE_PATH.key() + " (one file) or " + MoveClassParamEnum.FILE_PATHS.key() + " (several files, moved together in a single refactoring) is required. "
+                         + "With " + MoveClassParamEnum.LINE.key() + " (single-file only; rejected together with " + MoveClassParamEnum.FILE_PATHS.key() + ") it moves just the class declared at that line; without it each file moves as a whole (refused for a file with more than one top-level type). "
+                         + MoveClassParamEnum.TARGET_PROJECT_PATH.key() + " is optional: omitted, the move stays inside the source file's own project (refused if " + MoveClassParamEnum.TARGET_PACKAGE.key() + " actually belongs to a different open project); given, the move crosses into that project instead. "
+                         + "This tool does not fall back to the focused editor — call " + McpToolEnum.GET_CURRENT_FILE.toolName() + " if you want the file the user is looking at.");
         JsonObject schema = new JsonObject();
         schema.addProperty(ToolSchemaKeyEnum.TYPE.key(), "object");
         JsonObject props = new JsonObject();
@@ -56,6 +57,11 @@ public class MoveClassTool implements McpToolInterface {
         tp.addProperty(ToolSchemaKeyEnum.TYPE.key(), "string");
         tp.addProperty(ToolSchemaKeyEnum.DESCRIPTION.key(), "Target package (e.g. com.example.ui).");
         props.add(MoveClassParamEnum.TARGET_PACKAGE.key(), tp);
+        JsonObject tpp = new JsonObject();
+        tpp.addProperty(ToolSchemaKeyEnum.TYPE.key(), "string");
+        tpp.addProperty(ToolSchemaKeyEnum.DESCRIPTION.key(), "Optional absolute path of the OPEN project the class should end up in — omit to keep the move inside the source file's own project (default). "
+                        + "Required to move a class across module boundaries: without it, a " + MoveClassParamEnum.TARGET_PACKAGE.key() + " that only exists in a different open project is refused rather than silently created in the wrong one.");
+        props.add(MoveClassParamEnum.TARGET_PROJECT_PATH.key(), tpp);
         JsonObject fp = new JsonObject();
         fp.addProperty(ToolSchemaKeyEnum.TYPE.key(), "string");
         fp.addProperty(ToolSchemaKeyEnum.DESCRIPTION.key(), "Absolute path to the source file. Exactly one of this or " + MoveClassParamEnum.FILE_PATHS.key() + " is required — this tool does not fall back to the focused editor. Call " + McpToolEnum.GET_CURRENT_FILE.toolName() + " if you want the file the user is looking at.");
@@ -92,11 +98,12 @@ public class MoveClassTool implements McpToolInterface {
         boolean hasMulti = fpsArr != null;
         if (hasSingle == hasMulti) {
             throw new McpArgumentException(-32602, "Exactly one of " + MoveClassParamEnum.FILE_PATH.key()
-                    + " and " + MoveClassParamEnum.FILE_PATHS.key()
-                    + " is required — supplying both or neither is not allowed.");
+                                           + " and " + MoveClassParamEnum.FILE_PATHS.key()
+                                           + " is required — supplying both or neither is not allowed.");
         }
 
         boolean commitWithWarning = args.bool(MoveClassParamEnum.COMMIT_WITH_WARNING.key());
+        String targetProjectPath = args.str(MoveClassParamEnum.TARGET_PROJECT_PATH.key());
 
         if (hasSingle) {
             McpHookServer server = McpServerRegistry.getServer();
@@ -105,13 +112,13 @@ public class MoveClassTool implements McpToolInterface {
                 return McpHookServer.fileAccessDeniedMessage(server, sessionId, fp);
             }
             return RefactoringProvider.moveClass(fp, args.intOr(MoveClassParamEnum.LINE.key(), 0),
-                    args.require(MoveClassParamEnum.TARGET_PACKAGE.key()), commitWithWarning);
+                                                 args.require(MoveClassParamEnum.TARGET_PACKAGE.key()), targetProjectPath, commitWithWarning);
         }
 
         if (args.has(MoveClassParamEnum.LINE.key())) {
             throw new McpArgumentException(-32602, MoveClassParamEnum.LINE.key()
-                    + " cannot be used with " + MoveClassParamEnum.FILE_PATHS.key()
-                    + " — a line number cannot identify a class across several files.");
+                                           + " cannot be used with " + MoveClassParamEnum.FILE_PATHS.key()
+                                           + " — a line number cannot identify a class across several files.");
         }
         List<String> paths = new ArrayList<>();
         for (int index = 0; index < fpsArr.size(); index++) {
@@ -119,13 +126,13 @@ public class MoveClassTool implements McpToolInterface {
             if (!element.isJsonPrimitive() || !element.getAsJsonPrimitive().isString()
                     || element.getAsString().isBlank()) {
                 throw new McpArgumentException(-32602, MoveClassParamEnum.FILE_PATHS.key() + "[" + index
-                        + "] must be a non-blank string path; received " + element);
+                                               + "] must be a non-blank string path; received " + element);
             }
             paths.add(element.getAsString());
         }
         if (paths.isEmpty()) {
             throw new McpArgumentException(-32602, MoveClassParamEnum.FILE_PATHS.key()
-                    + " must contain at least one non-null string path");
+                                           + " must contain at least one non-null string path");
         }
         McpHookServer server = McpServerRegistry.getServer();
         String sessionId = session.getId();
@@ -134,6 +141,7 @@ public class MoveClassTool implements McpToolInterface {
                 return McpHookServer.fileAccessDeniedMessage(server, sessionId, path);
             }
         }
-        return RefactoringProvider.moveClasses(paths, args.require(MoveClassParamEnum.TARGET_PACKAGE.key()), commitWithWarning);
+        return RefactoringProvider.moveClasses(paths, args.require(MoveClassParamEnum.TARGET_PACKAGE.key()),
+                                               targetProjectPath, commitWithWarning);
     }
 }

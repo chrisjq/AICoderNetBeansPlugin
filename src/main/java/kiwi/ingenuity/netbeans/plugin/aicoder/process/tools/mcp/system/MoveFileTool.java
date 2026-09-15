@@ -54,10 +54,10 @@ public class MoveFileTool implements McpToolInterface {
         JsonObject tool = new JsonObject();
         tool.addProperty(ToolSchemaKeyEnum.NAME.key(), McpToolEnum.MOVE_FILE.toolName());
         tool.addProperty(ToolSchemaKeyEnum.DESCRIPTION.key(),
-                "Move a file to a target directory. Java files are moved via MoveRefactoring so the "
-                + "package declaration and all import references are updated automatically. "
-                + "Other file types are moved with FileUtil.moveFile(). "
-                + "Refreshes VCS status in both source and target directories after the operation.");
+                         "Move a file to a target directory. Java files are moved via MoveRefactoring so the "
+                         + "package declaration and all import references are updated automatically. "
+                         + "Other file types are moved with FileUtil.moveFile(). "
+                         + "Refreshes VCS status in both source and target directories after the operation.");
         JsonObject schema = new JsonObject();
         schema.addProperty(ToolSchemaKeyEnum.TYPE.key(), "object");
         JsonObject props = new JsonObject();
@@ -67,8 +67,20 @@ public class MoveFileTool implements McpToolInterface {
         props.add(MoveFileParamEnum.SOURCE_PATH.key(), src);
         JsonObject dir = new JsonObject();
         dir.addProperty(ToolSchemaKeyEnum.TYPE.key(), "string");
-        dir.addProperty(ToolSchemaKeyEnum.DESCRIPTION.key(), "Absolute path to the destination directory (must exist).");
+        dir.addProperty(ToolSchemaKeyEnum.DESCRIPTION.key(), "Absolute path to the destination directory (must exist), or a path relative to "
+                        + MoveFileParamEnum.TARGET_PROJECT_PATH.key() + " when that is given.");
         props.add(MoveFileParamEnum.TARGET_DIRECTORY.key(), dir);
+        JsonObject tpp = new JsonObject();
+        tpp.addProperty(ToolSchemaKeyEnum.TYPE.key(), "string");
+        tpp.addProperty(ToolSchemaKeyEnum.DESCRIPTION.key(), "Optional absolute path of the OPEN project the file should end up in — omit to keep the move inside the source file's own project (default). "
+                        + "When given, " + MoveFileParamEnum.TARGET_DIRECTORY.key() + " may be relative to it (e.g. " + MoveFileParamEnum.TARGET_PROJECT_PATH.key()
+                        + "=/path/to/app-platform-rest, " + MoveFileParamEnum.TARGET_DIRECTORY.key() + "=src/main/java/kiwi/ingenuity/platform/rest/oauth); "
+                        + "an absolute " + MoveFileParamEnum.TARGET_DIRECTORY.key() + " not under it is refused.");
+        props.add(MoveFileParamEnum.TARGET_PROJECT_PATH.key(), tpp);
+        JsonObject cw = new JsonObject();
+        cw.addProperty(ToolSchemaKeyEnum.TYPE.key(), "boolean");
+        cw.addProperty(ToolSchemaKeyEnum.DESCRIPTION.key(), "When a Java move reports only non-fatal warnings (e.g. a cross-module move whose target lacks a dependency on the source module), apply it anyway and report the warnings alongside the result instead of refusing. Fatal problems always refuse regardless of this flag. Default: false.");
+        props.add(MoveFileParamEnum.COMMIT_WITH_WARNING.key(), cw);
         schema.add(ToolSchemaKeyEnum.PROPERTIES.key(), props);
         JsonArray required = new JsonArray();
         required.add(MoveFileParamEnum.SOURCE_PATH.key());
@@ -81,7 +93,17 @@ public class MoveFileTool implements McpToolInterface {
     @Override
     public String handle(ToolRequestArguments args, AbstractAiSession session) throws McpArgumentException {
         String sourcePath = args.require(MoveFileParamEnum.SOURCE_PATH.key());
-        String targetDir = args.require(MoveFileParamEnum.TARGET_DIRECTORY.key());
+        String rawTargetDir = args.require(MoveFileParamEnum.TARGET_DIRECTORY.key());
+        String targetProjectPath = args.str(MoveFileParamEnum.TARGET_PROJECT_PATH.key());
+        boolean commitWithWarning = args.bool(MoveFileParamEnum.COMMIT_WITH_WARNING.key());
+        // #17b: combined BEFORE any access check, so the check below and the eventual move agree on the same
+        // absolute path — see resolveMoveTargetDirectory's own javadoc.
+        RefactoringProvider.TargetDirectoryResolution resolution
+                = RefactoringProvider.resolveMoveTargetDirectory(rawTargetDir, targetProjectPath);
+        if (resolution.error() != null) {
+            return resolution.error();
+        }
+        String targetDir = resolution.path();
         String sessionId = session.getId();
         // Both sides are writes: the move deletes the source from where it was and
         // creates it under the target. Neither may inherit the read exemption the
@@ -93,16 +115,16 @@ public class MoveFileTool implements McpToolInterface {
             return McpHookServer.fileAccessDeniedMessage(server, sessionId, targetDir);
         }
         if (!new java.io.File(sourcePath).exists()) {
-            return RefactoringProvider.moveFile(sourcePath, targetDir);
+            return RefactoringProvider.moveFile(sourcePath, targetDir, commitWithWarning);
         }
         AiProcessEventListener listener = session.getAiProcessEventListener();
         if (listener == null) {
-            return RefactoringProvider.moveFile(sourcePath, targetDir);
+            return RefactoringProvider.moveFile(sourcePath, targetDir, commitWithWarning);
         }
         CompletableFuture<PermissionDecision> future = new CompletableFuture<>();
         listener.onAiProcessEvent(new ConfirmEvent("Move",
-                "Move " + ProjectPathUtil.shortPath(sourcePath) + " → "
-                + ProjectPathUtil.shortPath(targetDir) + "?", sourcePath, targetDir, future));
+                                                   "Move " + ProjectPathUtil.shortPath(sourcePath) + " → "
+                                                   + ProjectPathUtil.shortPath(targetDir) + "?", sourcePath, targetDir, future));
         PermissionDecision decision;
         try {
             decision = future.get(confirmTimeoutMillis, TimeUnit.MILLISECONDS);
@@ -119,6 +141,6 @@ public class MoveFileTool implements McpToolInterface {
         if (decision == null || !decision.allow()) {
             return "User declined the move — do not retry without asking.";
         }
-        return RefactoringProvider.moveFile(sourcePath, targetDir);
+        return RefactoringProvider.moveFile(sourcePath, targetDir, commitWithWarning);
     }
 }

@@ -65,6 +65,19 @@ class GitReadToolsAuditTest {
     }
 
     @Test
+    void getGitStatus_hidesIgnoredPathsButShowsUntrackedPaths() throws Exception {
+        Files.writeString(repo.resolve(".git/info/exclude"), "ignored/\n");
+        Files.createDirectories(repo.resolve("ignored/nested"));
+        Files.writeString(repo.resolve("ignored/nested/file.txt"), "ignored");
+        Files.writeString(repo.resolve("untracked.txt"), "untracked");
+
+        String result = new GetGitStatusTool().handle(new ToolRequestArguments(base()), session);
+
+        assertFalse(result.contains("ignored"), result);
+        assertTrue(result.contains("?? untracked.txt"), result);
+    }
+
+    @Test
     void getGitStatus_cleanCommittedRepoPrintsBranchLine() throws Exception {
         String result = new GetGitStatusTool().handle(new ToolRequestArguments(base()), session);
 
@@ -86,7 +99,7 @@ class GitReadToolsAuditTest {
     @Test
     void getGitStatus_missingProjectPathThrows() {
         assertThrows(McpArgumentException.class,
-                () -> new GetGitStatusTool().handle(new ToolRequestArguments(new JsonObject()), session));
+                     () -> new GetGitStatusTool().handle(new ToolRequestArguments(new JsonObject()), session));
     }
 
     @Test
@@ -183,7 +196,7 @@ class GitReadToolsAuditTest {
         assertTrue(result.contains("second"), result);
         assertTrue(result.contains("initial"), result);
         assertFalse(result.contains("config change"),
-                "log scoped to a.txt must exclude commits touching only b.txt: " + result);
+                    "log scoped to a.txt must exclude commits touching only b.txt: " + result);
     }
 
     @Test
@@ -209,7 +222,7 @@ class GitReadToolsAuditTest {
 
         assertTrue(noFollow.contains("rename f"), noFollow);
         assertFalse(noFollow.contains("create f"),
-                "without follow the pre-rename commit must stay hidden: " + noFollow);
+                    "without follow the pre-rename commit must stay hidden: " + noFollow);
     }
 
     // ---- GitBlame: projectPath, file ----
@@ -238,7 +251,7 @@ class GitReadToolsAuditTest {
     @Test
     void gitBlame_missingFileThrows() {
         assertThrows(McpArgumentException.class,
-                () -> new GitBlameTool().handle(new ToolRequestArguments(base()), session));
+                     () -> new GitBlameTool().handle(new ToolRequestArguments(base()), session));
     }
 
     @Test

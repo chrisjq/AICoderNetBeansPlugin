@@ -218,6 +218,15 @@ public class EditorContextProvider {
         }
         try {
             List<String> lines = Files.readAllLines(f.toPath(), RefactoringProvider.resolveCharset(f));
+            // Live v1.4.15: startLine 999 on a 13-line file returned the header "lines 999–13 of 13" and no content.
+            if (startLine > 0 && startLine > lines.size()) {
+                return GetFileContentParamEnum.START_LINE.key() + " " + startLine + " is past the end of "
+                        + FileUtils.toIdePath(f) + " (" + lines.size() + " lines).";
+            }
+            if (startLine > 0 && endLine > 0 && endLine < startLine) {
+                return GetFileContentParamEnum.END_LINE.key() + " (" + endLine + ") must not be before "
+                        + GetFileContentParamEnum.START_LINE.key() + " (" + startLine + ").";
+            }
             int from = startLine > 0 ? Math.max(0, startLine - 1) : 0;
             int to = endLine > 0 ? Math.min(lines.size(), endLine) : lines.size();
             StringBuilder sb = new StringBuilder();
@@ -225,7 +234,7 @@ public class EditorContextProvider {
             // truncates large results (many agent harnesses cap at ~20 KB) can
             // see up front that it needs to page through with startLine/endLine,
             // rather than discovering it from a clipped first read.
-            sb.append("File: ").append(filePath).append(" (lines ")
+            sb.append("File: ").append(FileUtils.toIdePath(f)).append(" (lines ")
                     .append(from + 1).append("–").append(to).append(" of ").append(lines.size())
                     .append(", ").append(f.length()).append(" bytes)\n\n");
             for (int i = from; i < to; i++) {
@@ -260,7 +269,7 @@ public class EditorContextProvider {
      * should already have done so, so a direct caller cannot request an unbounded context window.
      */
     public static String filterFileContent(String filePath, String pattern, boolean isRegex,
-            boolean caseSensitive, int contextLines, int maxMatches) {
+                                           boolean caseSensitive, int contextLines, int maxMatches) {
         File f = new File(filePath);
         if (!f.exists() || !f.isFile()) {
             return buildNotFoundMessage(filePath);
@@ -322,7 +331,7 @@ public class EditorContextProvider {
         }
 
         StringBuilder sb = new StringBuilder("Found ").append(totalMatches)
-                .append(" match(es) in ").append(filePath);
+                .append(" match(es) in ").append(FileUtils.toIdePath(f));
         if (totalMatches > cap) {
             sb.append(" (showing first ").append(cap).append(")");
         }
@@ -386,7 +395,7 @@ public class EditorContextProvider {
 
         Path target = link;
         if (isLink) {
-            sb.append(filePath).append(" (symbolic link) -> ");
+            sb.append(FileUtils.toIdePath(filePath)).append(" (symbolic link) -> ");
             try {
                 // toRealPath resolves symlinks fully and throws on a broken or cyclic
                 // chain (e.g. "Too many levels of symbolic links") — the resolver is
@@ -402,13 +411,13 @@ public class EditorContextProvider {
         else {
             try {
                 if (!Files.exists(target)) {
-                    return "File not found: " + filePath;
+                    return "File not found: " + FileUtils.toIdePath(filePath);
                 }
             }
             catch (Throwable t) {
-                return "Error reading " + filePath + ": " + t.getMessage();
+                return "Error reading " + FileUtils.toIdePath(filePath) + ": " + t.getMessage();
             }
-            sb.append(filePath);
+            sb.append(FileUtils.toIdePath(filePath));
         }
 
         boolean isDir;
@@ -710,7 +719,7 @@ public class EditorContextProvider {
 
     public static String navigateToLine(String filePath, Integer lineNumber, boolean focus) {
         return lineNumber == null ? openFile(filePath, focus)
-                : navigateToLine(filePath, lineNumber.intValue(), focus);
+               : navigateToLine(filePath, lineNumber.intValue(), focus);
     }
 
     /**
@@ -720,16 +729,16 @@ public class EditorContextProvider {
     public static String navigateToLine(String filePath, int lineNumber, boolean focus) {
         File f = new File(filePath);
         if (!f.exists()) {
-            return "File not found: " + filePath;
+            return "File not found: " + FileUtils.toIdePath(filePath);
         }
         FileObject fo = FileUtils.resolveByFile(f);
         if (fo == null) {
-            return "Cannot resolve file: " + filePath;
+            return "Cannot resolve file: " + FileUtils.toIdePath(filePath);
         }
         final int effectiveLine = lineNumber;
         org.openide.text.Line.ShowVisibilityType visibility = focus
-                ? org.openide.text.Line.ShowVisibilityType.FOCUS
-                : org.openide.text.Line.ShowVisibilityType.NONE;
+                                                              ? org.openide.text.Line.ShowVisibilityType.FOCUS
+                                                              : org.openide.text.Line.ShowVisibilityType.NONE;
         AtomicReference<String> result = new AtomicReference<>();
         try {
             SwingUtilities.invokeAndWait(() -> {
@@ -743,7 +752,7 @@ public class EditorContextProvider {
                         if (!focus && previouslyActive != null) {
                             previouslyActive.requestActive();
                         }
-                        result.set("Navigated to " + filePath + ":" + effectiveLine);
+                        result.set("Navigated to " + FileUtils.toIdePath(filePath) + ":" + effectiveLine);
                         return;
                     }
                     org.openide.cookies.OpenCookie oc = dob.getLookup().lookup(org.openide.cookies.OpenCookie.class);
@@ -752,15 +761,15 @@ public class EditorContextProvider {
                         if (!focus && previouslyActive != null) {
                             previouslyActive.requestActive();
                         }
-                        result.set("Navigated to " + filePath + ":" + effectiveLine);
+                        result.set("Navigated to " + FileUtils.toIdePath(filePath) + ":" + effectiveLine);
                     }
                     else {
-                        result.set("Cannot open file in NetBeans: " + filePath);
+                        result.set("Cannot open file in NetBeans: " + FileUtils.toIdePath(filePath));
                     }
                 }
                 catch (org.openide.loaders.DataObjectNotFoundException ex) {
                     LOG.log(Level.FINE, "navigateToLine: file not found in DataObject system", ex);
-                    result.set("Cannot open file in NetBeans: " + filePath);
+                    result.set("Cannot open file in NetBeans: " + FileUtils.toIdePath(filePath));
                 }
             });
         }
@@ -778,7 +787,7 @@ public class EditorContextProvider {
         }
         FileObject fo = FileUtils.resolveByFile(f);
         if (fo == null) {
-            return "Cannot resolve file: " + filePath;
+            return "Cannot resolve file: " + FileUtils.toIdePath(filePath);
         }
         AtomicReference<String> result = new AtomicReference<>();
         try {
@@ -809,7 +818,7 @@ public class EditorContextProvider {
                         else if (previouslyActive != null && !targetWasActive) {
                             previouslyActive.requestActive();
                         }
-                        result.set("Opened " + filePath);
+                        result.set("Opened " + FileUtils.toIdePath(filePath));
                         return;
                     }
                     org.openide.cookies.OpenCookie oc = dob.getLookup().lookup(org.openide.cookies.OpenCookie.class);
@@ -818,7 +827,7 @@ public class EditorContextProvider {
                         if (!focus && previouslyActive != null) {
                             previouslyActive.requestActive();
                         }
-                        result.set("Opened " + filePath);
+                        result.set("Opened " + FileUtils.toIdePath(filePath));
                     }
                     else {
                         result.set("Cannot open file in NetBeans: " + filePath);
@@ -927,7 +936,7 @@ public class EditorContextProvider {
                 }
             }
         }
-        StringBuilder sb = new StringBuilder("File not found: ").append(filePath);
+        StringBuilder sb = new StringBuilder("File not found: ").append(FileUtils.toIdePath(filePath));
         if (candidates.isEmpty()) {
             sb.append("\n\nNo file with that name in the open projects. Use ").append(McpToolEnum.GET_PROJECT_STRUCTURE.toolName()).append(" for the package layout, or ").append(McpToolEnum.SEARCH_SYMBOLS.toolName()).append("/").append(McpToolEnum.SEARCH_IN_FILES.toolName()).append(" to locate it.");
         }

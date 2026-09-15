@@ -3,12 +3,15 @@ package kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.devops.test;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.McpToolPropertyEnum;
 
 /**
- * Parameter-name keys for the RunAntTestsTool MCP tool, shared between its
- * schema() definition and handle() argument extraction so the two cannot drift.
+ * Parameter-name keys for the RunAntTestsTool MCP tool, shared between its schema() definition and handle() argument
+ * extraction so the two cannot drift.
  */
 public enum RunAntTestsParamEnum {
     TEST_CLASS(McpToolPropertyEnum.TEST_CLASS),
-    PROJECT_PATH(McpToolPropertyEnum.PROJECT_PATH);
+    PROJECT_PATH(McpToolPropertyEnum.PROJECT_PATH),
+    TARGETS(McpToolPropertyEnum.TARGETS),
+    PROPERTIES(McpToolPropertyEnum.PROPERTIES),
+    KEEP_GOING(McpToolPropertyEnum.KEEP_GOING);
 
     private final McpToolPropertyEnum property;
 

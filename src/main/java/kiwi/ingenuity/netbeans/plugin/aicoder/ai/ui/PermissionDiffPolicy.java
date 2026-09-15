@@ -15,7 +15,7 @@ public final class PermissionDiffPolicy {
      * @param writeContent Write only
      */
     public static Decision decide(String toolName, String filePath, String original,
-            String oldString, String newString, String writeContent) {
+                                  String oldString, String newString, String writeContent) {
         return decide(toolName, filePath, original, oldString, newString, writeContent, false);
     }
 
@@ -26,7 +26,7 @@ public final class PermissionDiffPolicy {
      * twelve turns the gate into a lie.
      */
     public static Decision decide(String toolName, String filePath, String original,
-            String oldString, String newString, String writeContent, boolean replaceAll) {
+                                  String oldString, String newString, String writeContent, boolean replaceAll) {
         if (filePath == null || filePath.isBlank()) {
             return Decision.deny("Missing file path");
         }
@@ -47,8 +47,8 @@ public final class PermissionDiffPolicy {
                 return Decision.deny("Edit old_string was not found in the file — refusing silent apply");
             }
             proposed = replaceAll
-                    ? replaceEvery(orig, oldString, newString)
-                    : replaceFirst(orig, oldString, newString);
+                       ? replaceEvery(orig, oldString, newString)
+                       : replaceFirst(orig, oldString, newString);
         }
         else {
             return Decision.deny("Unsupported tool for permission diff: " + toolName);
@@ -96,7 +96,10 @@ public final class PermissionDiffPolicy {
         return out.toString();
     }
 
-    private static String diagnoseWhitespaceMismatch(String orig, String oldString) {
+    public static String diagnoseWhitespaceMismatch(String orig, String oldString) {
+        if (orig == null || oldString == null || orig.contains(oldString)) {
+            return null;
+        }
         String[] origLines = orig.split("\n", -1);
         String[] oldLines = oldString.split("\n", -1);
         if (oldLines.length > origLines.length) {

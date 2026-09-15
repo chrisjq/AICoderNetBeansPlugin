@@ -213,17 +213,20 @@ class CodexAppServerHandler implements CodexNotificationListener, CodexServerReq
      * content. The hunk uses standard unified-diff format but carries no {@code ---}/{@code +++} header lines — those
      * are prepended here so that {@link UnifiedDiffUtils#parseUnifiedDiff} can locate hunk boundaries.
      *
-     * <p>ONLY for {@code update}. An {@code add} change's {@code diff} field is not a diff at all — see
+     * <p>
+     * ONLY for {@code update}. An {@code add} change's {@code diff} field is not a diff at all — see
      * {@link #proposedContentFor}.</p>
      *
-     * <p>THE TRAILING NEWLINE IS STRIPPED FROM THE HUNK, and that is load-bearing. {@code split("\n", -1)} keeps
-     * trailing empty strings, so a hunk ending in a newline yields one final "" element; the parser reads that as an
-     * extra CONTEXT LINE expecting an empty line, the file has real text there, and the patch fails with
+     * <p>
+     * THE TRAILING NEWLINE IS STRIPPED FROM THE HUNK, and that is load-bearing. {@code split("\n", -1)} keeps trailing
+     * empty strings, so a hunk ending in a newline yields one final "" element; the parser reads that as an extra
+     * CONTEXT LINE expecting an empty line, the file has real text there, and the patch fails with
      * CONTENT_DOES_NOT_MATCH_TARGET. Every Codex hunk ends with a newline, so this failed for every single-file edit
      * for as long as this method has existed — silently, because the caller fell back to a blind confirm. Confirmed
      * against a hunk captured from a live run on 2026-08-29.</p>
      *
-     * <p>A genuinely blank context line is " " (a space) in unified-diff format, never "", so stripping exactly one
+     * <p>
+     * A genuinely blank context line is " " (a space) in unified-diff format, never "", so stripping exactly one
      * trailing newline cannot discard real content. The ORIGINAL keeps {@code split("\n", -1)} untouched: there the
      * trailing empty element represents the file's final newline, and dropping it would strip that newline on every
      * write.</p>
@@ -264,9 +267,9 @@ class CodexAppServerHandler implements CodexNotificationListener, CodexServerReq
             }
             JsonObject change = element.getAsJsonObject();
             String filePath = change.has(CodexJsonKeyEnum.PATH.key()) && change.get(CodexJsonKeyEnum.PATH.key()).isJsonPrimitive()
-                    ? change.get(CodexJsonKeyEnum.PATH.key()).getAsString() : null;
+                              ? change.get(CodexJsonKeyEnum.PATH.key()).getAsString() : null;
             String diffHunk = change.has(CodexJsonKeyEnum.DIFF.key()) && change.get(CodexJsonKeyEnum.DIFF.key()).isJsonPrimitive()
-                    ? change.get(CodexJsonKeyEnum.DIFF.key()).getAsString() : null;
+                              ? change.get(CodexJsonKeyEnum.DIFF.key()).getAsString() : null;
             items.add(new MultiPermissionItem(
                     filePath != null && !filePath.isBlank() ? filePath : UNNAMED_CHANGE_PATH,
                     proposedContentFor(filePath, diffHunk, changeKind(change), changeMovePath(change))));
@@ -277,7 +280,8 @@ class CodexAppServerHandler implements CodexNotificationListener, CodexServerReq
     /**
      * Why an approval request was refused outright, or null when every change in it can be reviewed.
      *
-     * <p>Returned to Codex as the message of a JSON-RPC error rather than as a decline, because a decline cannot carry
+     * <p>
+     * Returned to Codex as the message of a JSON-RPC error rather than as a decline, because a decline cannot carry
      * one: FileChangeRequestApprovalResponse has a {@code decision} field and nothing else. A silent decline tells the
      * model only that the answer was no, so its rational next move is to retry the same unsupported patch. The error
      * channel is the only way to say why, and naming the path and the kind lets it act on this one specifically.</p>
@@ -294,7 +298,7 @@ class CodexAppServerHandler implements CodexNotificationListener, CodexServerReq
             }
             JsonObject change = element.getAsJsonObject();
             String path = change.has(CodexJsonKeyEnum.PATH.key()) && change.get(CodexJsonKeyEnum.PATH.key()).isJsonPrimitive()
-                    ? change.get(CodexJsonKeyEnum.PATH.key()).getAsString() : UNNAMED_CHANGE_PATH;
+                          ? change.get(CodexJsonKeyEnum.PATH.key()).getAsString() : UNNAMED_CHANGE_PATH;
             String kind = changeKind(change);
             if (KIND_ADD.equals(kind)) {
                 continue;
@@ -337,17 +341,24 @@ class CodexAppServerHandler implements CodexNotificationListener, CodexServerReq
         return change.get(CodexJsonKeyEnum.KIND.key()).toString();
     }
 
-    /** A change that creates a file: no prior content, an all-additions hunk. */
+    /**
+     * A change that creates a file: no prior content, an all-additions hunk.
+     */
     static final String KIND_ADD = "add";
-    /** A change that removes a file. */
+    /**
+     * A change that removes a file.
+     */
     static final String KIND_DELETE = "delete";
-    /** A change that edits a file in place, or — with move_path — also renames it. */
+    /**
+     * A change that edits a file in place, or — with move_path — also renames it.
+     */
     static final String KIND_UPDATE = "update";
 
     /**
      * The {@code type} out of a change's {@code kind}, or null when absent or malformed.
      *
-     * <p>The schema makes {@code kind} an OBJECT — {@code {"type":"add"}} — not a bare string, so that is what is read
+     * <p>
+     * The schema makes {@code kind} an OBJECT — {@code {"type":"add"}} — not a bare string, so that is what is read
      * first. A plain string is accepted as well: it costs one branch and means a variant that flattens the field does
      * not silently read as "kind unknown", which would send every change down the update path.</p>
      */
@@ -359,7 +370,7 @@ class CodexAppServerHandler implements CodexNotificationListener, CodexServerReq
         if (kind.isJsonObject()) {
             JsonObject asObject = kind.getAsJsonObject();
             return asObject.has(CodexJsonKeyEnum.TYPE.key()) && asObject.get(CodexJsonKeyEnum.TYPE.key()).isJsonPrimitive()
-                    ? asObject.get(CodexJsonKeyEnum.TYPE.key()).getAsString() : null;
+                   ? asObject.get(CodexJsonKeyEnum.TYPE.key()).getAsString() : null;
         }
         return kind.isJsonPrimitive() ? kind.getAsString() : null;
     }
@@ -374,7 +385,7 @@ class CodexAppServerHandler implements CodexNotificationListener, CodexServerReq
         }
         JsonObject kind = change.get(CodexJsonKeyEnum.KIND.key()).getAsJsonObject();
         return kind.has(CodexJsonKeyEnum.MOVE_PATH.key()) && kind.get(CodexJsonKeyEnum.MOVE_PATH.key()).isJsonPrimitive()
-                ? kind.get(CodexJsonKeyEnum.MOVE_PATH.key()).getAsString() : null;
+               ? kind.get(CodexJsonKeyEnum.MOVE_PATH.key()).getAsString() : null;
     }
 
     /**
@@ -382,8 +393,9 @@ class CodexAppServerHandler implements CodexNotificationListener, CodexServerReq
      * the change does. Null is a normal result here, not an error to propagate: the review turns it into a decline the
      * user can read, which keeps one code path instead of two.
      *
-     * <p>Driven by the change's {@code kind}, not by whether a file read happens to succeed. The protocol states what
-     * each change is; inferring it from a failed read conflates cases that must stay apart:</p>
+     * <p>
+     * Driven by the change's {@code kind}, not by whether a file read happens to succeed. The protocol states what each
+     * change is; inferring it from a failed read conflates cases that must stay apart:</p>
      *
      * <ul>
      * <li><b>add</b> — the file does not exist yet, so the original is EMPTY and the all-additions hunk applies to
@@ -457,15 +469,17 @@ class CodexAppServerHandler implements CodexNotificationListener, CodexServerReq
     /**
      * item id -> changes[] from item/started, consumed by the matching approval request.
      *
-     * <p>A FUTURE per item, not the array itself, because the two sides arrive on DIFFERENT executors and nothing
-     * orders them: notifications are drained by the single {@code codex-notify} thread while approvals run on the
+     * <p>
+     * A FUTURE per item, not the array itself, because the two sides arrive on DIFFERENT executors and nothing orders
+     * them: notifications are drained by the single {@code codex-notify} thread while approvals run on the
      * {@code codex-dispatch} pool. The old map held the array and the approval did a plain {@code remove}, so an
      * approval that won the race read null and fell through to the blind confirm — observed live in one run out of
      * three. The notify thread also carries every streaming text delta, so item/started can queue behind a burst while
      * the approval starts immediately on a fresh dispatch thread.</p>
      *
-     * <p>Either side may create the entry. Whichever arrives first installs the future; the notification completes it
-     * and the approval composes on it, so the ordering assumption is removed rather than merely narrowed.</p>
+     * <p>
+     * Either side may create the entry. Whichever arrives first installs the future; the notification completes it and
+     * the approval composes on it, so the ordering assumption is removed rather than merely narrowed.</p>
      */
     private final ConcurrentHashMap<String, CompletableFuture<JsonArray>> fileChangeCache = new ConcurrentHashMap<>();
     /**
@@ -594,7 +608,8 @@ class CodexAppServerHandler implements CodexNotificationListener, CodexServerReq
      * a tool ran.
      *
      * <p>
-     * Field names taken from a live notification, not guessed: null null null null null null null null null null null null     {@code {"item":{"type":"mcpToolCall","tool":"ListAiSessions",
+     * Field names taken from a live notification, not guessed: null null null null null null null null null null null
+     * null null null null null null null null     {@code {"item":{"type":"mcpToolCall","tool":"ListAiSessions",
      * "server":"aicoder-nb-ki-plugin",...}}}. Kind.OTHER with a null path deliberately — {@code isFileModification()}
      * stays false so no diff panel is raised; file changes keep their own path below.
      */
@@ -604,12 +619,12 @@ class CodexAppServerHandler implements CodexNotificationListener, CodexServerReq
         }
         JsonObject item = params.getAsJsonObject(CodexJsonKeyEnum.ITEM.key());
         String type = item.has(CodexJsonKeyEnum.TYPE.key()) && item.get(CodexJsonKeyEnum.TYPE.key()).isJsonPrimitive()
-                ? item.get(CodexJsonKeyEnum.TYPE.key()).getAsString() : null;
+                      ? item.get(CodexJsonKeyEnum.TYPE.key()).getAsString() : null;
         if (!"mcpToolCall".equals(type)) {
             return;
         }
         String tool = item.has(CodexJsonKeyEnum.TOOL.key()) && item.get(CodexJsonKeyEnum.TOOL.key()).isJsonPrimitive()
-                ? item.get(CodexJsonKeyEnum.TOOL.key()).getAsString() : "tool";
+                      ? item.get(CodexJsonKeyEnum.TOOL.key()).getAsString() : "tool";
         listener.onAiProcessEvent(new ToolUseEvent(tool, null, null, null, ToolUseEvent.Kind.OTHER));
     }
 
@@ -630,7 +645,7 @@ class CodexAppServerHandler implements CodexNotificationListener, CodexServerReq
         // context usage and is therefore comparable with modelContextWindow.
         JsonObject last = tokenUsage.getAsJsonObject(CodexJsonKeyEnum.LAST.key());
         long usedTokens = last.has(CodexJsonKeyEnum.TOTAL_TOKENS.key()) && last.get(CodexJsonKeyEnum.TOTAL_TOKENS.key()).isJsonPrimitive()
-                ? last.get(CodexJsonKeyEnum.TOTAL_TOKENS.key()).getAsLong() : 0L;
+                          ? last.get(CodexJsonKeyEnum.TOTAL_TOKENS.key()).getAsLong() : 0L;
         if (PluginSettings.isDebugJson()) {
             LOG.log(Level.INFO, "codex tokenUsage: used={0} contextWindow={1}",
                     new Object[]{usedTokens, contextWindow});
@@ -652,9 +667,9 @@ class CodexAppServerHandler implements CodexNotificationListener, CodexServerReq
         }
         double usedPercent = primary.get(CodexJsonKeyEnum.USED_PERCENT.key()).getAsDouble();
         long windowDurationMins = primary.has(CodexJsonKeyEnum.WINDOW_DURATION_MINS.key()) && primary.get(CodexJsonKeyEnum.WINDOW_DURATION_MINS.key()).isJsonPrimitive()
-                ? primary.get(CodexJsonKeyEnum.WINDOW_DURATION_MINS.key()).getAsLong() : 0L;
+                                  ? primary.get(CodexJsonKeyEnum.WINDOW_DURATION_MINS.key()).getAsLong() : 0L;
         long resetsAt = primary.has(CodexJsonKeyEnum.RESETS_AT.key()) && primary.get(CodexJsonKeyEnum.RESETS_AT.key()).isJsonPrimitive()
-                ? primary.get(CodexJsonKeyEnum.RESETS_AT.key()).getAsLong() : 0L;
+                        ? primary.get(CodexJsonKeyEnum.RESETS_AT.key()).getAsLong() : 0L;
         CodexRateLimitEvent event = new CodexRateLimitEvent(usedPercent, windowDurationMins, resetsAt);
         listener.onAiProcessEvent(event);
         CodexAiImplementation.publishRateLimit(event);
@@ -703,30 +718,32 @@ class CodexAppServerHandler implements CodexNotificationListener, CodexServerReq
 
     private CompletableFuture<JsonObject> handleCommandExecutionApproval(JsonObject params) {
         String reason = params.has(CodexJsonKeyEnum.REASON.key()) && params.get(CodexJsonKeyEnum.REASON.key()).isJsonPrimitive()
-                ? params.get(CodexJsonKeyEnum.REASON.key()).getAsString() : null;
+                        ? params.get(CodexJsonKeyEnum.REASON.key()).getAsString() : null;
         String command = params.has(CodexJsonKeyEnum.COMMAND.key()) && params.get(CodexJsonKeyEnum.COMMAND.key()).isJsonPrimitive()
-                ? params.get(CodexJsonKeyEnum.COMMAND.key()).getAsString() : null;
+                         ? params.get(CodexJsonKeyEnum.COMMAND.key()).getAsString() : null;
         String displayText = reason != null ? reason
-                : command != null ? "Codex wants to run: " + command
-                        : "Codex wants to run a command";
+                             : command != null ? "Codex wants to run: " + command
+                               : "Codex wants to run a command";
         return raiseConfirmAndReply("Command", displayText, null);
     }
 
     /**
      * Waits — without blocking the dispatch thread — for this item's {@code item/started} to be drained, then answers.
      *
-     * <p>The approval carries no diff of its own (design doc §0a); the content arrives separately under the same item
-     * id. Those two are handled on different executors and nothing orders them, so this COMPOSES on a future rather
-     * than reading a map that may not be populated yet. Returning a chained future keeps the dispatch thread free:
-     * sleeping or polling here would stall every other inbound message, which would be worse than the bug.</p>
+     * <p>
+     * The approval carries no diff of its own (design doc §0a); the content arrives separately under the same item id.
+     * Those two are handled on different executors and nothing orders them, so this COMPOSES on a future rather than
+     * reading a map that may not be populated yet. Returning a chained future keeps the dispatch thread free: sleeping
+     * or polling here would stall every other inbound message, which would be worse than the bug.</p>
      *
-     * <p>Bounded by {@link CodexTimeoutEnum#FILE_CHANGE_CACHE_WAIT_MILLIS}; on expiry the changes are treated as absent
+     * <p>
+     * Bounded by {@link CodexTimeoutEnum#FILE_CHANGE_CACHE_WAIT_MILLIS}; on expiry the changes are treated as absent
      * and the existing blind-confirm fallback runs, logged distinctly so "raced and lost" is never confused with
      * "genuinely no changes".</p>
      */
     private CompletableFuture<JsonObject> handleFileChangeApproval(JsonObject params) {
         String itemId = params.has(CodexJsonKeyEnum.ITEM_ID.key()) && params.get(CodexJsonKeyEnum.ITEM_ID.key()).isJsonPrimitive()
-                ? params.get(CodexJsonKeyEnum.ITEM_ID.key()).getAsString() : null;
+                        ? params.get(CodexJsonKeyEnum.ITEM_ID.key()).getAsString() : null;
         if (itemId == null) {
             return respondToFileChange(null, null);
         }
@@ -887,12 +904,12 @@ class CodexAppServerHandler implements CodexNotificationListener, CodexServerReq
      */
     private CompletableFuture<JsonObject> handleMcpElicitationRequest(JsonObject params) {
         String message = params.has(CodexJsonKeyEnum.MESSAGE.key()) && params.get(CodexJsonKeyEnum.MESSAGE.key()).isJsonPrimitive()
-                ? params.get(CodexJsonKeyEnum.MESSAGE.key()).getAsString() : null;
+                         ? params.get(CodexJsonKeyEnum.MESSAGE.key()).getAsString() : null;
         String serverName = params.has(CodexJsonKeyEnum.SERVER_NAME.key()) && params.get(CodexJsonKeyEnum.SERVER_NAME.key()).isJsonPrimitive()
-                ? params.get(CodexJsonKeyEnum.SERVER_NAME.key()).getAsString() : null;
+                            ? params.get(CodexJsonKeyEnum.SERVER_NAME.key()).getAsString() : null;
         String displayText = message != null ? message
-                : serverName != null ? "MCP server \'" + serverName + "\' requests approval"
-                        : "MCP server requests approval";
+                             : serverName != null ? "MCP server \'" + serverName + "\' requests approval"
+                               : "MCP server requests approval";
         if (PluginSettings.isDebugJson()) {
             LOG.log(Level.INFO, "codex mcpServer/elicitation/request: serverName={0}", serverName);
         }
@@ -904,7 +921,7 @@ class CodexAppServerHandler implements CodexNotificationListener, CodexServerReq
         // to show. Auto-accepting would answer, on the user's behalf, a question
         // neither they nor this code has seen.
         listener.onAiProcessEvent(new ConfirmEvent("McpElicitation", displayText, null, null,
-                decisionFuture, true));
+                                                   decisionFuture, true));
         return decisionFuture.handle((decision, ex) -> {
             JsonObject result = new JsonObject();
             result.addProperty(CodexJsonKeyEnum.ACTION.key(), approvalDecision(decision, ex));

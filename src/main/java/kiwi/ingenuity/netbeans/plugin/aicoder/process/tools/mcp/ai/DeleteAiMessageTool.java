@@ -20,9 +20,9 @@ public class DeleteAiMessageTool extends AbstractActionTool {
 
     public DeleteAiMessageTool() {
         super(McpSectionEnum.PLUGIN,
-                McpToolEnum.DELETE_AI_MESSAGE.toolName(),
-                "Delete one or more inbox messages by id. Pass " + DeleteAiMessageParamEnum.MESSAGE_ID.key() + " for a single message or " + DeleteAiMessageParamEnum.MESSAGE_IDS.key() + " array for bulk delete. At least one of the two is required; if both are given they are combined and all are deleted.",
-                McpToolEnum.DELETE_AI_MESSAGE.toolName() + " -> delete one or more inbox messages once processed; pass " + DeleteAiMessageParamEnum.MESSAGE_IDS.key() + " array for bulk delete");
+              McpToolEnum.DELETE_AI_MESSAGE.toolName(),
+              "Delete one or more inbox messages by id. Pass " + DeleteAiMessageParamEnum.MESSAGE_ID.key() + " for a single message or " + DeleteAiMessageParamEnum.MESSAGE_IDS.key() + " array for bulk delete. At least one of the two is required; if both are given they are combined and all are deleted.",
+              McpToolEnum.DELETE_AI_MESSAGE.toolName() + " -> delete one or more inbox messages once processed; pass " + DeleteAiMessageParamEnum.MESSAGE_IDS.key() + " array for bulk delete");
     }
 
     @Override
@@ -30,11 +30,11 @@ public class DeleteAiMessageTool extends AbstractActionTool {
         JsonObject tool = new JsonObject();
         tool.addProperty(ToolSchemaKeyEnum.NAME.key(), McpToolEnum.DELETE_AI_MESSAGE.toolName());
         tool.addProperty(ToolSchemaKeyEnum.DESCRIPTION.key(),
-                // "Exactly one" was wrong: handle() below merges both into a single
-                // id list, so a caller obeying the schema avoided a call the tool
-                // supports. The schema is the only description a model sees, so it
-                // has to describe what the handler actually accepts.
-                "Delete inbox messages by ID. Provide " + DeleteAiMessageParamEnum.MESSAGE_ID.key() + ", " + DeleteAiMessageParamEnum.MESSAGE_IDS.key() + ", or both; both are combined.");
+                         // "Exactly one" was wrong: handle() below merges both into a single
+                         // id list, so a caller obeying the schema avoided a call the tool
+                         // supports. The schema is the only description a model sees, so it
+                         // has to describe what the handler actually accepts.
+                         "Delete inbox messages by ID. Provide " + DeleteAiMessageParamEnum.MESSAGE_ID.key() + ", " + DeleteAiMessageParamEnum.MESSAGE_IDS.key() + ", or both; both are combined.");
         JsonObject schema = new JsonObject();
         schema.addProperty(ToolSchemaKeyEnum.TYPE.key(), "object");
         JsonObject props = new JsonObject();
@@ -106,7 +106,23 @@ public class DeleteAiMessageTool extends AbstractActionTool {
         if (!AiSessionInboxBroker.getInstance().validateSecret(sessionId, secretKey)) {
             return "Error: authentication failed — check that " + DeleteAiMessageParamEnum.SESSION_ID.key() + " and " + DeleteAiMessageParamEnum.SECRET_KEY.key() + " match your session identity";
         }
-        int deleted = AiSessionInboxBroker.getInstance().deleteMessages(sessionId, secretKey, ids);
-        return "Deleted " + deleted + " message(s).";
+        List<String> distinctIds = ids.stream().distinct().toList();
+        int deleted = AiSessionInboxBroker.getInstance().deleteMessages(sessionId, secretKey, distinctIds);
+        return deleteResultMessage(deleted, distinctIds.size());
+    }
+
+    /**
+     * Says when requested IDs matched nothing. Live v1.4.15: a wrong ID returned "Deleted 0 message(s)." as a success,
+     * while ReadAiMessage reports the same ID as an error.
+     */
+    static String deleteResultMessage(int deleted, int requested) {
+        if (deleted >= requested) {
+            return "Deleted " + deleted + " message(s).";
+        }
+        String unmatched = (requested - deleted) + " ID(s) matched no message — the ID is incorrect or the message has "
+                + "expired or was already deleted.";
+        return deleted == 0
+               ? "Error: nothing deleted. " + unmatched
+               : "Deleted " + deleted + " of " + requested + " message(s). " + unmatched;
     }
 }

@@ -2,6 +2,7 @@ package kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.system;
 
 import com.google.gson.JsonArray;
 import com.google.gson.JsonObject;
+import java.io.File;
 import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
@@ -32,14 +33,13 @@ public class SaveFileTool extends AbstractFileTool {
 
     public SaveFileTool(McpHookServer server) {
         super(McpSectionEnum.SYSTEM,
-                McpToolEnum.SAVE_FILE.toolName(),
-                "Save a file. When " + SaveFileParamEnum.CONTENT.key() + " is provided, replaces the entire file content and saves "
-                + "(works for open or closed files; creates new files). Without " + SaveFileParamEnum.CONTENT.key() + ", saves "
-                + "existing unsaved editor changes to disk.",
-                McpToolEnum.SAVE_FILE.toolName() + " -> with " + SaveFileParamEnum.CONTENT.key() + ": write+save in one step INSTEAD OF Read+Edit (no built-in "
-                + "tools needed); refresh is automatic for both new and existing files; "
-                + "without " + SaveFileParamEnum.CONTENT.key() + ": flush unsaved NetBeans changes before Read+Edit",
-                McpToolEnum.SAVE_FILE.toolName() + " - with " + SaveFileParamEnum.CONTENT.key() + ": write+save in one step; refresh is automatic for both new and existing files; without " + SaveFileParamEnum.CONTENT.key() + ": flush unsaved NetBeans changes");
+              McpToolEnum.SAVE_FILE.toolName(),
+              "Save a file. When " + SaveFileParamEnum.CONTENT.key() + " is provided, creates a new file with the given content and saves it "
+              + "(works for open or closed files). Without " + SaveFileParamEnum.CONTENT.key() + ", saves "
+              + "existing unsaved editor changes to disk.",
+              McpToolEnum.SAVE_FILE.toolName() + " -> with " + SaveFileParamEnum.CONTENT.key() + ": creates a new file ONLY; to update existing files use " + McpToolEnum.APPLY_EDIT.toolName() + "; "
+              + "without " + SaveFileParamEnum.CONTENT.key() + ": flush unsaved NetBeans changes before Read+Edit",
+              McpToolEnum.SAVE_FILE.toolName() + " - with " + SaveFileParamEnum.CONTENT.key() + ": creates a new file ONLY; use " + McpToolEnum.APPLY_EDIT.toolName() + " to update existing files; without " + SaveFileParamEnum.CONTENT.key() + ": flush unsaved NetBeans changes");
         this.server = server;
     }
 
@@ -48,22 +48,22 @@ public class SaveFileTool extends AbstractFileTool {
         JsonObject tool = new JsonObject();
         tool.addProperty(ToolSchemaKeyEnum.NAME.key(), McpToolEnum.SAVE_FILE.toolName());
         tool.addProperty(ToolSchemaKeyEnum.DESCRIPTION.key(),
-                "Save a file. When " + SaveFileParamEnum.CONTENT.key() + " is provided, replaces the entire file content and saves "
-                + "(works for open or closed files; creates new files). Without " + SaveFileParamEnum.CONTENT.key() + ", saves "
-                + "existing unsaved editor changes to disk.");
+                         "Save a file. When " + SaveFileParamEnum.CONTENT.key() + " is provided, creates a new file with the given content and saves it "
+                         + "(works for open or closed files). Without " + SaveFileParamEnum.CONTENT.key() + ", saves "
+                         + "existing unsaved editor changes to disk.");
         JsonObject schema = new JsonObject();
         schema.addProperty(ToolSchemaKeyEnum.TYPE.key(), "object");
         JsonObject props = new JsonObject();
         JsonObject fp = new JsonObject();
         fp.addProperty(ToolSchemaKeyEnum.TYPE.key(), "string");
         fp.addProperty(ToolSchemaKeyEnum.DESCRIPTION.key(),
-                "Absolute path to the file. Required — no fallback to the "
-                + "focused editor. Call " + McpToolEnum.GET_CURRENT_FILE.toolName() + " for the file the user is looking at.");
+                       "Absolute path to the file. Required — no fallback to the "
+                       + "focused editor. Call " + McpToolEnum.GET_CURRENT_FILE.toolName() + " for the file the user is looking at.");
         props.add(SaveFileParamEnum.FILE_PATH.key(), fp);
         JsonObject ct = new JsonObject();
         ct.addProperty(ToolSchemaKeyEnum.TYPE.key(), "string");
         ct.addProperty(ToolSchemaKeyEnum.DESCRIPTION.key(),
-                "New file content. When provided, replaces the entire file and saves in one operation.");
+                       "New file content. When provided, creates a new file with this content. To update an existing file, use " + McpToolEnum.APPLY_EDIT.toolName() + ".");
         props.add(SaveFileParamEnum.CONTENT.key(), ct);
         schema.add(ToolSchemaKeyEnum.PROPERTIES.key(), props);
         JsonArray required = new JsonArray();
@@ -106,6 +106,11 @@ public class SaveFileTool extends AbstractFileTool {
             if (listener == null) {
                 return RefactoringProvider.writeFileContent(fp, content);
             }
+            // Refuse to overwrite existing project files: SaveFile with content creates NEW files only.
+            // For existing files, use ApplyEdit to update them.
+            if (new File(fp).exists()) {
+                return "File already exists: " + fp + ". Use " + McpToolEnum.APPLY_EDIT.toolName() + " to update it.";
+            }
             CompletableFuture<PermissionDecision> future = new CompletableFuture<>();
             listener.onAiProcessEvent(new PermissionEvent("Write", fp, null, null, content, future));
             PermissionDecision decision;
@@ -121,8 +126,8 @@ public class SaveFileTool extends AbstractFileTool {
             }
             if (decision == null || !decision.allow()) {
                 return decision != null && decision.message() != null && !decision.message().isBlank()
-                        ? "User rejected the write: " + decision.message().trim() + " — do not retry this change"
-                        : "User rejected the write — do not retry this change";
+                       ? "User rejected the write: " + decision.message().trim() + " — do not retry this change"
+                       : "User rejected the write — do not retry this change";
             }
             return RefactoringProvider.writeFileContent(fp, content);
         }

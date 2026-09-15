@@ -3,12 +3,14 @@ package kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.system;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.McpToolPropertyEnum;
 
 /**
- * Parameter-name keys for the MoveFileTool MCP tool, shared between its
- * schema() definition and handle() argument extraction so the two cannot drift.
+ * Parameter-name keys for the MoveFileTool MCP tool, shared between its schema() definition and handle() argument
+ * extraction so the two cannot drift.
  */
 public enum MoveFileParamEnum {
     SOURCE_PATH(McpToolPropertyEnum.SOURCE_PATH),
-    TARGET_DIRECTORY(McpToolPropertyEnum.TARGET_DIRECTORY);
+    TARGET_DIRECTORY(McpToolPropertyEnum.TARGET_DIRECTORY),
+    TARGET_PROJECT_PATH(McpToolPropertyEnum.TARGET_PROJECT_PATH),
+    COMMIT_WITH_WARNING(McpToolPropertyEnum.COMMIT_WITH_WARNING);
 
     private final McpToolPropertyEnum property;
 

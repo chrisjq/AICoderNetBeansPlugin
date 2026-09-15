@@ -69,4 +69,19 @@ class FindUsagesProviderTest {
 
         assertEquals(2, lines.size(), "position-less elements have nothing to dedup against and must both survive");
     }
+
+    @Test
+    void formatUsages_capsTheListingAndReportsTheTrueTotal() {
+        List<String> lines = new java.util.ArrayList<>();
+        for (int i = 1; i <= 5; i++) {
+            lines.add("/project/A.java:" + i + "  →  Foo");
+        }
+
+        String capped = FindUsagesProvider.formatUsages("com.example.Foo", lines, 3);
+
+        assertEquals("Found 5 usage(s) of com.example.Foo (showing first 3):\n\n"
+                + "/project/A.java:1  →  Foo\n/project/A.java:2  →  Foo\n/project/A.java:3  →  Foo\n", capped);
+        assertEquals("Found 2 usage(s) of com.example.Foo:\n\n/project/A.java:1  →  Foo\n/project/A.java:2  →  Foo\n",
+                     FindUsagesProvider.formatUsages("com.example.Foo", lines.subList(0, 2), 3));
+    }
 }

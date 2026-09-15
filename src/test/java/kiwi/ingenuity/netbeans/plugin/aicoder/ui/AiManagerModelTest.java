@@ -1,5 +1,8 @@
 package kiwi.ingenuity.netbeans.plugin.aicoder.ui;
 
+import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.time.Instant;
 import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
@@ -32,7 +35,7 @@ class AiManagerModelTest {
 
     private static AiSession session(String id, String name, String projectPath, Instant created, Instant used) {
         return new AiSession(id, name, null, AiTypeEnum.CLAUDE, projectPath,
-                new AiSessionSettings(), created, used);
+                             new AiSessionSettings(), created, used);
     }
 
     private static AiSessionSettings configuredSettings() {
@@ -57,9 +60,9 @@ class AiManagerModelTest {
 
     private static TableModel newTemplateTableModel() {
         return new SimpleTableModel<ConfigTemplate>(new String[]{"Name", "Updated", "Created"},
-                ConfigTemplate::name,
-                ConfigTemplate::updatedAt,
-                ConfigTemplate::createdAt);
+                                                    ConfigTemplate::name,
+                                                    ConfigTemplate::updatedAt,
+                                                    ConfigTemplate::createdAt);
     }
 
     @SuppressWarnings({"unchecked", "rawtypes"})
@@ -101,8 +104,8 @@ class AiManagerModelTest {
         assertEquals(2, model.getRowCount());
         assertEquals(5, model.getColumnCount());
         assertEquals(List.of("Name", "Type", "Project", "Last Use", "Created"),
-                java.util.stream.IntStream.range(0, model.getColumnCount())
-                        .mapToObj(model::getColumnName).toList());
+                     java.util.stream.IntStream.range(0, model.getColumnCount())
+                             .mapToObj(model::getColumnName).toList());
         assertEquals("Zulu", model.getValueAt(0, 0));
         assertEquals(AiTypeEnum.CLAUDE.displayName(), model.getValueAt(0, 1));
         assertEquals("zulu", model.getValueAt(0, 2));
@@ -117,6 +120,71 @@ class AiManagerModelTest {
     }
 
     @Test
+    void createSessionProjectLabelsUseTableNamesUnlessTheyAreAmbiguous() {
+        assertEquals("app-platform", SessionPickerDialog.projectDisplayLabel(
+                     "/code/app-platform", List.of("/code/app-platform", "/code/utilities")));
+        assertEquals("/other/app-platform", SessionPickerDialog.projectDisplayLabel(
+                     "/other/app-platform", List.of("/code/app-platform", "/other/app-platform")));
+    }
+
+    @Test
+    void sessionOpenProjectFlagIsPrecomputedFromSuppliedDirs() throws IOException {
+        Path openDir = Files.createTempDirectory("aicoder-open");
+        Path closedDir = Files.createTempDirectory("aicoder-closed");
+        Instant now = Instant.now();
+        AiSession open = session("o", "Open", openDir.toString(), now, now);
+        AiSession closed = session("c", "Closed", closedDir.toString(), now, now);
+        AiSession noProject = session("n", "NoProject", null, now, now);
+
+        SessionTableModel model = new SessionTableModel();
+        setRows(model, List.of(open, closed, noProject));
+        assertEquals(3, model.getRowCount());
+
+        model.setOpenProjectDirs(List.of(openDir.toFile()));
+        assertTrue(model.isProjectOpen(0), "a session whose project is in the supplied set must read as open");
+        assertFalse(model.isProjectOpen(1), "a session whose project is outside the supplied set must read as closed");
+        assertTrue(model.isProjectOpen(2), "a session without a project must never read as closed");
+
+        model.setOpenProjectDirs(List.of());
+        assertFalse(model.isProjectOpen(0), "the flag must react to the supplied set changing");
+        assertTrue(model.isProjectOpen(2), "no-project session stays open for an empty set too");
+    }
+
+    @Test
+    void sessionProjectOpenFlagMatchesSymlinkedAliases() throws IOException {
+        Path real = Files.createTempDirectory("aicoder-real");
+        Path aliasParent = Files.createTempDirectory("aicoder-alias-parent");
+        Path alias = aliasParent.resolve("alias");
+        if (!aliasIsSupported(real, alias)) {
+            return;
+        }
+        Instant now = Instant.now();
+        AiSession viaAlias = session("a", "ViaAlias", alias.toAbsolutePath().toString(), now, now);
+        AiSession viaReal = session("r", "ViaReal", real.toAbsolutePath().toString(), now, now);
+
+        SessionTableModel model = new SessionTableModel();
+        setRows(model, List.of(viaAlias, viaReal));
+
+        model.setOpenProjectDirs(List.of(real.toFile()));
+        assertTrue(model.isProjectOpen(0), "a session spelled through the alias must match the same open project");
+        assertTrue(model.isProjectOpen(1), "the real spelling must also match");
+
+        model.setOpenProjectDirs(List.of(alias.toFile()));
+        assertTrue(model.isProjectOpen(0), "the reverse alias direction must match too");
+        assertTrue(model.isProjectOpen(1), "the real spelling must match a project supplied through the alias");
+    }
+
+    private static boolean aliasIsSupported(Path real, Path alias) {
+        try {
+            Files.createSymbolicLink(alias, real);
+            return true;
+        }
+        catch (UnsupportedOperationException | IOException e) {
+            return false;
+        }
+    }
+
+    @Test
     void templateTableModelRendersTemplateColumnsAndSorts() throws Exception {
         TableModel model = newTemplateTableModel();
         AiSessionSettings settings = new AiSessionSettings();
@@ -126,8 +194,8 @@ class AiManagerModelTest {
         setRows(model, List.of(zulu, alpha));
 
         assertEquals(List.of("Name", "Updated", "Created"),
-                java.util.stream.IntStream.range(0, model.getColumnCount())
-                        .mapToObj(model::getColumnName).toList());
+                     java.util.stream.IntStream.range(0, model.getColumnCount())
+                             .mapToObj(model::getColumnName).toList());
         assertEquals("Zulu", model.getValueAt(0, 0));
         assertEquals(DATE_FORMAT.format(zulu.updatedAt()), model.getValueAt(0, 1));
         assertEquals(DATE_FORMAT.format(zulu.createdAt()), model.getValueAt(0, 2));
@@ -175,11 +243,11 @@ class AiManagerModelTest {
             });
 
             assertTrue(PluginSettings.isAllowGitAccess(),
-                    "master flag not written — its line is missing from applyGlobal");
+                       "master flag not written — its line is missing from applyGlobal");
             assertTrue(PluginSettings.isAllowGitAccessOption(GitAccessOptionEnum.READ),
-                    "READ not written by applyGlobal");
+                       "READ not written by applyGlobal");
             assertFalse(PluginSettings.isAllowGitAccessOption(GitAccessOptionEnum.WRITE),
-                    "WRITE not written by applyGlobal");
+                        "WRITE not written by applyGlobal");
         }
         finally {
             PluginSettings.setAllowGitAccess(savedMaster);
@@ -192,7 +260,7 @@ class AiManagerModelTest {
     void sessionAndTemplateModesBindGenericSettingsButGlobalModeRejectsThem() throws Exception {
         AiSessionSettings values = configuredSettings();
         for (AiSessionConfigPanelMode mode : List.of(AiSessionConfigPanelMode.SESSION,
-                AiSessionConfigPanelMode.TEMPLATE)) {
+                                                     AiSessionConfigPanelMode.TEMPLATE)) {
             AiSessionConfigPanel panel = onEdt(() -> new AiSessionConfigPanel(mode));
             onEdt(() -> {
                 panel.loadSession(values);
@@ -211,7 +279,7 @@ class AiManagerModelTest {
             assertEquals(values.allowGitAccess(), target.allowGitAccess(), "allowGitAccess");
             for (GitAccessOptionEnum option : GitAccessOptionEnum.values()) {
                 assertEquals(values.allowGitAccessOption(option),
-                        target.allowGitAccessOption(option), option.name());
+                             target.allowGitAccessOption(option), option.name());
             }
             assertEquals(values.effectiveEnableClipboardAccess(), target.enableClipboardAccess());
         }

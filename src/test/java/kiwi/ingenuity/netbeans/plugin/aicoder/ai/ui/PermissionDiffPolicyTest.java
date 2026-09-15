@@ -2,6 +2,7 @@ package kiwi.ingenuity.netbeans.plugin.aicoder.ai.ui;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import org.junit.jupiter.api.Test;
@@ -100,9 +101,9 @@ class PermissionDiffPolicyTest {
         var d = PermissionDiffPolicy.decide("Edit", "/tmp/a.java", orig, oldString, "x", null);
         assertEquals(PermissionDiffPolicy.Outcome.DENY, d.outcome());
         assertTrue(d.reason().contains("A match WAS found ignoring leading whitespace"),
-                "expected whitespace hint, got: " + d.reason());
+                   "expected whitespace hint, got: " + d.reason());
         assertTrue(d.reason().contains("2 spaces"),
-                "expected delta of 2 spaces, got: " + d.reason());
+                   "expected delta of 2 spaces, got: " + d.reason());
     }
 
     @Test
@@ -110,9 +111,9 @@ class PermissionDiffPolicyTest {
         var d = PermissionDiffPolicy.decide("Edit", "/tmp/a.java", "hello world", "xyz", "y", null);
         assertEquals(PermissionDiffPolicy.Outcome.DENY, d.outcome());
         assertTrue(d.reason().contains("not found"),
-                "expected original not-found message, got: " + d.reason());
+                   "expected original not-found message, got: " + d.reason());
         assertFalse(d.reason().contains("A match WAS found"),
-                "should NOT produce whitespace hint, got: " + d.reason());
+                    "should NOT produce whitespace hint, got: " + d.reason());
     }
 
     @Test
@@ -123,7 +124,7 @@ class PermissionDiffPolicyTest {
         var d = PermissionDiffPolicy.decide("Edit", "/tmp/a.java", orig, oldString, "x", null);
         assertEquals(PermissionDiffPolicy.Outcome.DENY, d.outcome());
         assertFalse(d.reason().contains("A match WAS found"),
-                "different internal whitespace must not produce a false whitespace hint; got: " + d.reason());
+                    "different internal whitespace must not produce a false whitespace hint; got: " + d.reason());
     }
 
     @Test
@@ -134,9 +135,9 @@ class PermissionDiffPolicyTest {
         var d = PermissionDiffPolicy.decide("Edit", "/tmp/a.java", orig, oldString, "x", null);
         assertEquals(PermissionDiffPolicy.Outcome.DENY, d.outcome());
         assertTrue(d.reason().contains("A match WAS found"),
-                "expected a whitespace hint, got: " + d.reason());
+                   "expected a whitespace hint, got: " + d.reason());
         assertFalse(d.reason().contains("indentation"),
-                "must NOT claim indentation for a CRLF mismatch, got: " + d.reason());
+                    "must NOT claim indentation for a CRLF mismatch, got: " + d.reason());
     }
 
     @Test
@@ -147,9 +148,9 @@ class PermissionDiffPolicyTest {
         var d = PermissionDiffPolicy.decide("Edit", "/tmp/a.java", orig, oldString, "x", null);
         assertEquals(PermissionDiffPolicy.Outcome.DENY, d.outcome());
         assertTrue(d.reason().contains("A match WAS found"),
-                "expected a whitespace hint, got: " + d.reason());
+                   "expected a whitespace hint, got: " + d.reason());
         assertFalse(d.reason().contains("indentation"),
-                "must NOT claim indentation for a trailing-whitespace mismatch, got: " + d.reason());
+                    "must NOT claim indentation for a trailing-whitespace mismatch, got: " + d.reason());
     }
 
     @Test
@@ -163,8 +164,89 @@ class PermissionDiffPolicyTest {
         var d = PermissionDiffPolicy.decide("Edit", "/tmp/a.java", orig, oldString, "x", null);
         assertEquals(PermissionDiffPolicy.Outcome.DENY, d.outcome());
         assertTrue(d.reason().contains("A match WAS found"),
-                "expected a whitespace hint, got: " + d.reason());
+                   "expected a whitespace hint, got: " + d.reason());
         assertFalse(d.reason().contains("indentation differs by"),
-                "must NOT claim space-delta when tabs are involved, got: " + d.reason());
+                    "must NOT claim space-delta when tabs are involved, got: " + d.reason());
+    }
+
+    @Test
+    void diagnoseWhitespaceMismatch_offBy2Spaces_consistent() {
+        String content = "    public void foo() {\n"
+                + "        System.out.println(\"hello\");\n"
+                + "    }\n";
+        String oldString = "  public void foo() {\n"
+                + "      System.out.println(\"hello\");\n"
+                + "  }\n";
+
+        String hint = PermissionDiffPolicy.diagnoseWhitespaceMismatch(content, oldString);
+
+        assertNotNull(hint, "should detect indentation mismatch");
+        assertTrue(hint.contains("indentation differs by 2 spaces"), "should mention 2-space difference: " + hint);
+        assertTrue(hint.contains("line-number gutter"), "should mention the gutter as cause: " + hint);
+    }
+
+    @Test
+    void diagnoseWhitespaceMismatch_offBy2SpacesPlus_gutterBug() {
+        String content = "    public void foo() {\n"
+                + "        System.out.println(\"hello\");\n"
+                + "    }\n";
+        String oldString = "      public void foo() {\n"
+                + "          System.out.println(\"hello\");\n"
+                + "      }\n";
+
+        String hint = PermissionDiffPolicy.diagnoseWhitespaceMismatch(content, oldString);
+
+        assertNotNull(hint, "should detect indentation mismatch with +2 gutter offset");
+        assertTrue(hint.contains("indentation differs by 2 spaces"), "should mention 2-space difference: " + hint);
+        assertTrue(hint.contains("line-number gutter"), "should mention the gutter as cause: " + hint);
+    }
+
+    @Test
+    void diagnoseWhitespaceMismatch_exactMatch_returnsNull() {
+        String content = "    int x = 5;\n"
+                + "    int y = 10;\n";
+        String oldString = "    int x = 5;\n"
+                + "    int y = 10;\n";
+
+        String hint = PermissionDiffPolicy.diagnoseWhitespaceMismatch(content, oldString);
+
+        assertNull(hint, "should return null when exact match found");
+    }
+
+    @Test
+    void diagnoseWhitespaceMismatch_noMatch_returnsNull() {
+        String content = "public class Foo {\n"
+                + "    private int bar;\n"
+                + "}\n";
+        String oldString = "private String baz;\n";
+
+        String hint = PermissionDiffPolicy.diagnoseWhitespaceMismatch(content, oldString);
+
+        assertNull(hint, "should return null when no matching line found");
+    }
+
+    @Test
+    void diagnoseWhitespaceMismatch_multiLineConsistent() {
+        String content = "public class Test {\n"
+                + "    public void method1() {\n"
+                + "        System.out.println(\"a\");\n"
+                + "    }\n"
+                + "    public void method2() {\n"
+                + "        System.out.println(\"b\");\n"
+                + "    }\n"
+                + "}\n";
+        String oldString = "  public class Test {\n"
+                + "      public void method1() {\n"
+                + "          System.out.println(\"a\");\n"
+                + "      }\n"
+                + "      public void method2() {\n"
+                + "          System.out.println(\"b\");\n"
+                + "      }\n"
+                + "  }\n";
+
+        String hint = PermissionDiffPolicy.diagnoseWhitespaceMismatch(content, oldString);
+
+        assertNotNull(hint, "should detect consistent indentation difference");
+        assertTrue(hint.contains("indentation differs by 2 spaces"), "should report 2-space delta: " + hint);
     }
 }

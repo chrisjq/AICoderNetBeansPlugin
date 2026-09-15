@@ -40,7 +40,16 @@ public enum TimeoutEnum {
     SESSION_LOCK_WAIT_MILLIS(5_000L, Kind.OPERATION_OR_WAIT),
     PROJECT_STRUCTURE_LOCK_WAIT_MILLIS(5_000L, Kind.OPERATION_OR_WAIT),
     LOCK_WAIT_POLL_MILLIS(50L, Kind.BACKGROUND_INTERVAL),
-    MCP_REGISTRY_POLL_INTERVAL_MILLIS(60_000L, Kind.BACKGROUND_INTERVAL),
+    MCP_REGISTRY_POLL_INTERVAL_MILLIS(120_000L, Kind.BACKGROUND_INTERVAL),
+    /**
+     * Bound on the bare TCP connect {@code McpServerRegistry.isResponsive} uses to decide whether the shared hook
+     * server is still alive. Was a 500 ms literal — fine for an idle machine, but a CPU-saturated one can delay the
+     * server's own accept loop past that, making a live server look dead and triggering a replacement that silently
+     * dropped every session's {@code SessionFileScopeRegistry} scope (#15/#21). {@link Kind#EXTERNAL_IO}: it waits on
+     * this JVM's own listener thread accepting a connection, not a mutation-lock handler, so it must not raise
+     * {@link #MUTATION_LOCK_WAIT_MILLIS}.
+     */
+    MCP_HEALTH_PROBE_TIMEOUT_MILLIS(3_000L, Kind.EXTERNAL_IO),
     /**
      * How old a plugin-created temp file (pasted images, tool-result logs) may get before the periodic age sweep
      * deletes it. Deliberately uncritical: session close, IDE shutdown and plugin uninstall each remove whole temp

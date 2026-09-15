@@ -27,7 +27,7 @@ public class ProjectActionProvider {
         if (projectPath == null || projectPath.isBlank()) {
             return GitCommonParamEnum.PROJECT_PATH.key() + " is required";
         }
-        File requested = FileUtil.normalizeFile(new File(projectPath));
+        File requested = FileUtils.toRealPath(new File(projectPath));
         if (!requested.isDirectory()) {
             return "Project path is not a directory: " + projectPath;
         }
@@ -38,7 +38,7 @@ public class ProjectActionProvider {
         Project project = null;
         for (Project candidate : OpenProjects.getDefault().getOpenProjects()) {
             File root = FileUtil.toFile(candidate.getProjectDirectory());
-            if (root != null && FileUtil.normalizeFile(root).equals(requested)) {
+            if (root != null && FileUtils.toRealPath(root).equals(requested)) {
                 project = candidate;
                 break;
             }

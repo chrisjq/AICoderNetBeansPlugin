@@ -20,13 +20,16 @@ public class BuildProjectTool extends AbstractActionTool {
 
     public BuildProjectTool() {
         super(McpSectionEnum.UI_BUILD,
-                McpToolEnum.BUILD_PROJECT.toolName(),
-                "Triggers the user's IDE Build action for the required " + GitCommonParamEnum.PROJECT_PATH.key()
-                + " and shows results in the Output window. Fire-and-forget; use devops build/test tools for an AI-readable result summary and log.",
-                McpToolEnum.BUILD_PROJECT.toolName() + " -> INSTEAD OF Bash build commands - requires "
-                + GitCommonParamEnum.PROJECT_PATH.key() + "; triggers the user's IDE Build action",
-                McpToolEnum.BUILD_PROJECT.toolName() + " - requires " + GitCommonParamEnum.PROJECT_PATH.key()
-                + "; triggers the user's IDE Build action");
+              McpToolEnum.BUILD_PROJECT.toolName(),
+              "Triggers the user's IDE Build action for the required " + GitCommonParamEnum.PROJECT_PATH.key()
+              + " and shows results in the Output window. Fire-and-forget, and takes NO build options — it runs the "
+              + "project's generic IDE action, which has no argument channel. Use " + McpToolEnum.BUILD_MAVEN_PROJECT.toolName()
+              + " / " + McpToolEnum.BUILD_GRADLE_PROJECT.toolName() + " / " + McpToolEnum.BUILD_ANT_PROJECT.toolName()
+              + " instead for goals/tasks/targets, skip-tests, profiles, and an AI-readable result summary and log.",
+              McpToolEnum.BUILD_PROJECT.toolName() + " -> INSTEAD OF Bash build commands - requires "
+              + GitCommonParamEnum.PROJECT_PATH.key() + "; triggers the user's IDE Build action",
+              McpToolEnum.BUILD_PROJECT.toolName() + " - requires " + GitCommonParamEnum.PROJECT_PATH.key()
+              + "; triggers the user's IDE Build action");
     }
 
     @Override
@@ -37,7 +40,7 @@ public class BuildProjectTool extends AbstractActionTool {
         JsonObject projectPath = new JsonObject();
         projectPath.addProperty(ToolSchemaKeyEnum.TYPE.key(), "string");
         projectPath.addProperty(ToolSchemaKeyEnum.DESCRIPTION.key(),
-                "Required absolute path to the open project root.");
+                                "Required absolute path to the open project root.");
         props.add(GitCommonParamEnum.PROJECT_PATH.key(), projectPath);
         JsonArray required = new JsonArray();
         required.add(GitCommonParamEnum.PROJECT_PATH.key());

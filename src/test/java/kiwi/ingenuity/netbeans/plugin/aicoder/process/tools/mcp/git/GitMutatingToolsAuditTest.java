@@ -146,9 +146,9 @@ class GitMutatingToolsAuditTest {
 
         String result = new GitAddTool().handle(new ToolRequestArguments(args), session);
 
-        assertTrue(result.contains("Added 1 path(s)"), result);
+        assertTrue(result.contains("Staged 1 file(s) for 1 requested path(s)"), result);
         assertTrue(git(repo, "status", "--porcelain").contains("M  a.txt"),
-                "a.txt must be staged after GitAdd: " + git(repo, "status", "--porcelain"));
+                   "a.txt must be staged after GitAdd: " + git(repo, "status", "--porcelain"));
     }
 
     @Test
@@ -160,10 +160,40 @@ class GitMutatingToolsAuditTest {
 
         String result = new GitAddTool().handle(new ToolRequestArguments(args), session);
 
-        assertTrue(result.contains("Added"), result);
+        assertTrue(result.contains("Staged 2 file(s) for 1 requested path(s)"), result);
         String porcelain = git(repo, "status", "--porcelain");
         assertTrue(porcelain.contains("M  a.txt"), porcelain);
         assertTrue(porcelain.contains("M  b.txt"), porcelain);
+    }
+
+    @Test
+    void gitAddDotReportsTheStagedFileCount() throws Exception {
+        String[] newFiles = {"new1.txt", "new2.txt", "new3.txt", "new4.txt", "new5.txt"};
+        for (String name : newFiles) {
+            Files.writeString(repo.resolve(name), name);
+        }
+        JsonObject args = base();
+        args.add(GitAddParamEnum.FILES.key(), arr("."));
+
+        String result = new GitAddTool().handle(new ToolRequestArguments(args), session);
+
+        assertTrue(result.contains("Staged " + newFiles.length + " file(s) for 1 requested path(s)"),
+                   "the count must be the real staged count, not the 1 requested path: " + result);
+        long porcelainStaged = git(repo, "status", "--porcelain").lines().filter(l -> l.startsWith("A")).count();
+        assertTrue(result.contains(porcelainStaged + " file(s)"),
+                   "reported count must equal the porcelain staged count " + porcelainStaged + ": " + result);
+    }
+
+    @Test
+    void gitAddOfUnchangedPathsReportsNothingToStage() throws Exception {
+        JsonObject args = base();
+        args.add(GitAddParamEnum.FILES.key(), arr("."));
+
+        String result = new GitAddTool().handle(new ToolRequestArguments(args), session);
+
+        assertTrue(result.contains("Nothing to stage for the requested path(s)"), result);
+        assertTrue(git(repo, "status", "--porcelain").isBlank(),
+                   "a clean tree must stay clean after GitAdd: " + git(repo, "status", "--porcelain"));
     }
 
     // ---- GitCommit ----
@@ -178,9 +208,9 @@ class GitMutatingToolsAuditTest {
         String result = new GitCommitTool().handle(new ToolRequestArguments(args), session);
 
         assertTrue(result.contains("Committed"),
-                "commit of staged changes must succeed; actual result: " + result);
+                   "commit of staged changes must succeed; actual result: " + result);
         assertTrue(git(repo, "log", "--oneline", "-1").contains("commit without files"),
-                git(repo, "log", "--oneline", "-1"));
+                   git(repo, "log", "--oneline", "-1"));
     }
 
     /**
@@ -199,9 +229,9 @@ class GitMutatingToolsAuditTest {
         String result = new GitCommitTool().handle(new ToolRequestArguments(args), session);
 
         assertTrue(result.contains("not within the allowed project directories"),
-                "with no server the commit gate must fail closed; actual result: " + result);
+                   "with no server the commit gate must fail closed; actual result: " + result);
         assertFalse(git(repo, "log", "--oneline", "-1").contains("must not be committed"),
-                "the refused commit must not reach the repository: " + git(repo, "log", "--oneline", "-1"));
+                    "the refused commit must not reach the repository: " + git(repo, "log", "--oneline", "-1"));
     }
 
     @Test
@@ -215,9 +245,97 @@ class GitMutatingToolsAuditTest {
         String result = new GitCommitTool().handle(new ToolRequestArguments(args), session);
 
         assertTrue(result.contains("Committed"),
-                "GitCommit files parameter must stage then commit; actual result: " + result);
+                   "GitCommit files parameter must stage then commit; actual result: " + result);
         assertTrue(git(repo, "log", "--oneline", "-1").contains("commit with files"),
-                git(repo, "log", "--oneline", "-1"));
+                   git(repo, "log", "--oneline", "-1"));
+    }
+
+    @Test
+    void gitCommitWithDotStagesAndCommitsDeletedFile() throws Exception {
+        startServerScopedToRepo();
+        Files.delete(repo.resolve("a.txt"));
+        JsonObject args = base();
+        args.addProperty(GitCommitParamEnum.MESSAGE.key(), "remove via dot");
+        args.add(GitCommitParamEnum.FILES.key(), arr("."));
+
+        String result = new GitCommitTool().handle(new ToolRequestArguments(args), session);
+
+        assertTrue(result.contains("Committed"), result);
+        assertTrue(git(repo, "show", "--format=", "--name-only", "HEAD").contains("a.txt"));
+    }
+
+    @Test
+    void gitCommitWithExplicitDeletedPathStagesAndCommitsIt() throws Exception {
+        startServerScopedToRepo();
+        Files.delete(repo.resolve("a.txt"));
+        JsonObject args = base();
+        args.addProperty(GitCommitParamEnum.MESSAGE.key(), "remove explicit");
+        args.add(GitCommitParamEnum.FILES.key(), arr("a.txt"));
+
+        String result = new GitCommitTool().handle(new ToolRequestArguments(args), session);
+
+        assertTrue(result.contains("Committed"), result);
+        assertTrue(git(repo, "show", "--format=", "--name-only", "HEAD").contains("a.txt"));
+    }
+
+    @Test
+    void gitCommitRefusesWhenNothingIsStaged() throws Exception {
+        startServerScopedToRepo();
+        JsonObject args = base();
+        args.addProperty(GitCommitParamEnum.MESSAGE.key(), "must be empty");
+
+        String result = new GitCommitTool().handle(new ToolRequestArguments(args), session);
+
+        assertTrue(result.contains("nothing to commit"), result);
+    }
+
+    @Test
+    void gitCommitWithFilesRefusesOtherAlreadyStagedChanges() throws Exception {
+        startServerScopedToRepo();
+        Files.writeString(repo.resolve("a.txt"), "already staged");
+        git(repo, "add", "a.txt");
+        Files.writeString(repo.resolve("b.txt"), "requested");
+        JsonObject args = base();
+        args.addProperty(GitCommitParamEnum.MESSAGE.key(), "must refuse");
+        args.add(GitCommitParamEnum.FILES.key(), arr("b.txt"));
+
+        String result = new GitCommitTool().handle(new ToolRequestArguments(args), session);
+
+        assertTrue(result.contains("other changes are already staged"), result);
+        assertTrue(result.contains("a.txt"), result);
+    }
+
+    @Test
+    void gitCommitWithFilesIgnoresUntrackedChangesOutsideTheRequest() throws Exception {
+        startServerScopedToRepo();
+        Files.writeString(repo.resolve("b.txt"), "requested");
+        Files.writeString(repo.resolve("untracked.txt"), "untracked");
+        Files.writeString(repo.resolve(".git/info/exclude"), "ignored/\n");
+        Files.createDirectories(repo.resolve("ignored"));
+        Files.writeString(repo.resolve("ignored/file.txt"), "ignored");
+        JsonObject args = base();
+        args.addProperty(GitCommitParamEnum.MESSAGE.key(), "commit requested only");
+        args.add(GitCommitParamEnum.FILES.key(), arr("b.txt"));
+
+        String result = new GitCommitTool().handle(new ToolRequestArguments(args), session);
+
+        assertTrue(result.contains("Committed"), result);
+        assertTrue(git(repo, "status", "--porcelain").contains("?? untracked.txt"));
+    }
+
+    @Test
+    void gitCommitEmptyIndexIgnoresUntrackedChanges() throws Exception {
+        startServerScopedToRepo();
+        Files.writeString(repo.resolve("untracked.txt"), "untracked");
+        Files.writeString(repo.resolve(".git/info/exclude"), "ignored/\n");
+        Files.createDirectories(repo.resolve("ignored"));
+        Files.writeString(repo.resolve("ignored/file.txt"), "ignored");
+        JsonObject args = base();
+        args.addProperty(GitCommitParamEnum.MESSAGE.key(), "must remain empty");
+
+        String result = new GitCommitTool().handle(new ToolRequestArguments(args), session);
+
+        assertTrue(result.contains("nothing to commit"), result);
     }
 
     // ---- GitCheckout ----
@@ -279,7 +397,7 @@ class GitMutatingToolsAuditTest {
         noForce.addProperty(GitDeleteBranchParamEnum.FORCE.key(), false);
         String refused = new GitDeleteBranchTool().handle(new ToolRequestArguments(noForce), session);
         assertTrue(refused.toLowerCase().contains("not merged"),
-                "unmerged branch without force must be refused: " + refused);
+                   "unmerged branch without force must be refused: " + refused);
         assertTrue(git(repo, "branch").contains("unmerged"), git(repo, "branch"));
 
         JsonObject force = base();
@@ -324,7 +442,7 @@ class GitMutatingToolsAuditTest {
 
         assertTrue(result.contains("Reverted"), result);
         assertTrue(!git(repo, "ls-files").contains("w.txt"),
-                "revert must remove the file added by the reverted commit: " + git(repo, "ls-files"));
+                   "revert must remove the file added by the reverted commit: " + git(repo, "ls-files"));
     }
 
     // ---- GitReset ----
@@ -357,7 +475,7 @@ class GitMutatingToolsAuditTest {
 
         assertTrue(result.toLowerCase().contains("reset soft"), "lowercase 'soft' must fold to SOFT: " + result);
         assertTrue(git(repo, "status", "--porcelain").contains("M  a.txt"),
-                "soft reset leaves the change staged: " + git(repo, "status", "--porcelain"));
+                   "soft reset leaves the change staged: " + git(repo, "status", "--porcelain"));
     }
 
     @Test
@@ -375,7 +493,7 @@ class GitMutatingToolsAuditTest {
 
         assertTrue(result.toLowerCase().contains("reset mixed"), result);
         assertTrue(git(repo, "status", "--porcelain").contains(" M a.txt"),
-                "mixed reset leaves the change unstaged: " + git(repo, "status", "--porcelain"));
+                   "mixed reset leaves the change unstaged: " + git(repo, "status", "--porcelain"));
     }
 
     @Test
@@ -391,7 +509,7 @@ class GitMutatingToolsAuditTest {
 
         assertTrue(result.contains("Reset 1 file"), result);
         assertTrue(git(repo, "status", "--porcelain").contains(" M a.txt"),
-                "files reset must unstage: " + git(repo, "status", "--porcelain"));
+                   "files reset must unstage: " + git(repo, "status", "--porcelain"));
     }
 
     // ---- GitRebase ----
@@ -421,7 +539,7 @@ class GitMutatingToolsAuditTest {
         String a = new GitRebaseTool().handle(new ToolRequestArguments(abort), session);
         assertTrue(!a.contains("Invalid operation"), "ABORT must not be rejected: " + a);
         assertTrue(git(repo, "log", "--oneline", "-1").contains("topic change"),
-                "ABORT must restore the pre-rebase ref: " + git(repo, "log", "--oneline", "-1"));
+                   "ABORT must restore the pre-rebase ref: " + git(repo, "log", "--oneline", "-1"));
     }
 
     @Test
@@ -477,7 +595,7 @@ class GitMutatingToolsAuditTest {
 
         assertTrue(!b.contains("Invalid operation"), "BEGIN must not be rejected: " + b);
         assertTrue(git(repo, "log", "--oneline", "-1").contains("cherry commit"),
-                "cherry-pick must create a commit: " + git(repo, "log", "--oneline", "-1"));
+                   "cherry-pick must create a commit: " + git(repo, "log", "--oneline", "-1"));
     }
 
     @Test
@@ -512,7 +630,7 @@ class GitMutatingToolsAuditTest {
         String a = new GitCherryPickTool().handle(new ToolRequestArguments(abort), session);
         assertTrue(!a.contains("Invalid operation"), "ABORT must be wired, not rejected: " + a);
         assertTrue(git(repo, "log", "--oneline", "-1").contains("f master change"),
-                "ABORT must restore the pre-pick HEAD: " + git(repo, "log", "--oneline", "-1"));
+                   "ABORT must restore the pre-pick HEAD: " + git(repo, "log", "--oneline", "-1"));
     }
 
     // ---- GitStash ----
@@ -539,11 +657,29 @@ class GitMutatingToolsAuditTest {
         String po = new GitStashTool().handle(new ToolRequestArguments(pop), session);
         assertTrue(po.contains("Popped"), po);
         assertTrue(Files.readString(repo.resolve("a.txt")).strip().equals("dirty"),
-                "pop must restore the stashed content; porcelain: " + git(repo, "status", "--porcelain"));
+                   "pop must restore the stashed content; porcelain: " + git(repo, "status", "--porcelain"));
         assertTrue(Files.exists(repo.resolve("untracked.txt")),
-                "includeUntracked pop must restore the untracked file; porcelain: " + git(repo, "status", "--porcelain"));
+                   "includeUntracked pop must restore the untracked file; porcelain: " + git(repo, "status", "--porcelain"));
         assertTrue(git(repo, "status", "--porcelain").contains("a.txt"),
-                "the stashed change must be visible in porcelain after pop: " + git(repo, "status", "--porcelain"));
+                   "the stashed change must be visible in porcelain after pop: " + git(repo, "status", "--porcelain"));
+    }
+
+    @Test
+    void gitStashPreservesMessageFormatMetacharactersVerbatim() throws Exception {
+        for (String message : List.of("/v/{prefix}", "don't", "{0}", "plain text")) {
+            Files.writeString(repo.resolve("a.txt"), message);
+            JsonObject push = base();
+            push.addProperty(GitStashParamEnum.ACTION.key(), "push");
+            push.addProperty(GitStashParamEnum.MESSAGE.key(), message);
+
+            String result = new GitStashTool().handle(new ToolRequestArguments(push), session);
+
+            assertTrue(result.contains("Stashed"), result);
+            JsonObject list = base();
+            list.addProperty(GitStashParamEnum.ACTION.key(), "list");
+            assertTrue(new GitStashTool().handle(new ToolRequestArguments(list), session).contains(message),
+                       "stash list must preserve message: " + message);
+        }
     }
 
     @Test
@@ -564,9 +700,9 @@ class GitMutatingToolsAuditTest {
         String ap = new GitStashTool().handle(new ToolRequestArguments(apply), session);
         assertTrue(ap.contains("Applied"), ap);
         assertTrue(Files.readString(repo.resolve("a.txt")).strip().equals("dirty"),
-                "apply must restore the stashed content; porcelain: " + git(repo, "status", "--porcelain"));
+                   "apply must restore the stashed content; porcelain: " + git(repo, "status", "--porcelain"));
         assertTrue(new GitStashTool().handle(new ToolRequestArguments(list), session).contains("stash one"),
-                "apply must leave the entry in the stash");
+                   "apply must leave the entry in the stash");
 
         JsonObject drop = base();
         drop.addProperty(GitStashParamEnum.ACTION.key(), "drop");
@@ -574,7 +710,7 @@ class GitMutatingToolsAuditTest {
         String dr = new GitStashTool().handle(new ToolRequestArguments(drop), session);
         assertTrue(dr.contains("Dropped"), dr);
         assertTrue(!new GitStashTool().handle(new ToolRequestArguments(list), session).contains("stash one"),
-                "drop must remove the entry");
+                   "drop must remove the entry");
     }
 
     @Test
@@ -583,7 +719,7 @@ class GitMutatingToolsAuditTest {
         JsonObject first = base();
         first.addProperty(GitStashParamEnum.MESSAGE.key(), "first");
         assertTrue(new GitStashTool().handle(new ToolRequestArguments(first), session).contains("Stashed"),
-                "omitted action must default to push");
+                   "omitted action must default to push");
         Files.writeString(repo.resolve("a.txt"), "two");
         JsonObject second = base();
         second.addProperty(GitStashParamEnum.ACTION.key(), "push");
@@ -596,8 +732,8 @@ class GitMutatingToolsAuditTest {
         String pp = new GitStashTool().handle(new ToolRequestArguments(popLater), session);
         assertTrue(pp.contains("Popped"), pp);
         assertTrue(Files.readString(repo.resolve("a.txt")).strip().equals("one"),
-                "index 1 must select the older stash whose content was 'one'; porcelain: "
-                + git(repo, "status", "--porcelain"));
+                   "index 1 must select the older stash whose content was 'one'; porcelain: "
+                   + git(repo, "status", "--porcelain"));
     }
 
     // ---- GitTag ----
@@ -664,7 +800,7 @@ class GitMutatingToolsAuditTest {
         add.addProperty(GitRemoteParamEnum.NAME.key(), "origin");
         add.addProperty(GitRemoteParamEnum.URL.key(), bare.toString());
         assertTrue(new GitRemoteTool().handle(new ToolRequestArguments(add), session).contains("Added remote"),
-                "add remote for bare origin");
+                   "add remote for bare origin");
 
         JsonObject push = base();
         push.addProperty(GitPushParamEnum.REMOTE.key(), "origin");
@@ -689,14 +825,14 @@ class GitMutatingToolsAuditTest {
         String fetched = new GitFetchTool().handle(new ToolRequestArguments(fetch), session);
         assertTrue(fetched.contains("complete"), "fetch: " + fetched);
         assertTrue(git(repo, "log", "origin/dev", "--oneline", "-1").contains("remote advance"),
-                "fetch must update the remote-tracking ref: " + git(repo, "log", "origin/dev", "--oneline", "-1"));
+                   "fetch must update the remote-tracking ref: " + git(repo, "log", "origin/dev", "--oneline", "-1"));
 
         JsonObject pull = base();
         pull.addProperty(GitPullParamEnum.REMOTE.key(), "origin");
         String pulled = new GitPullTool().handle(new ToolRequestArguments(pull), session);
         assertTrue(pulled.contains("complete"), "pull: " + pulled);
         assertTrue(git(repo, "log", "--oneline", "-1").contains("remote advance"),
-                "pull must fast-forward local dev: " + git(repo, "log", "--oneline", "-1"));
+                   "pull must fast-forward local dev: " + git(repo, "log", "--oneline", "-1"));
     }
 
     // ---- helpers ----

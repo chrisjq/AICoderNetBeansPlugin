@@ -6,7 +6,9 @@ import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
+import kiwi.ingenuity.netbeans.plugin.aicoder.process.server.RawJsonArgumentScanner;
 
 public final class ToolCallExtractor {
 
@@ -29,13 +31,15 @@ public final class ToolCallExtractor {
         try {
             JsonElement parsed = JsonParser.parseString(stripCodeFence(assistantText));
             List<ExtractedToolCall> out = new ArrayList<>();
+            Map<String, Integer> rawObjectDuplicates
+                    = RawJsonArgumentScanner.duplicateKeys(stripCodeFence(assistantText), OpenAiJsonKeyEnum.ARGUMENTS.key());
             if (parsed.isJsonObject()) {
-                addIfKnownTool(parsed.getAsJsonObject(), knownToolNames, out);
+                addIfKnownTool(parsed.getAsJsonObject(), knownToolNames, out, rawObjectDuplicates);
             }
             else if (parsed.isJsonArray()) {
                 for (JsonElement element : parsed.getAsJsonArray()) {
                     if (element != null && element.isJsonObject()) {
-                        addIfKnownTool(element.getAsJsonObject(), knownToolNames, out);
+                        addIfKnownTool(element.getAsJsonObject(), knownToolNames, out, rawObjectDuplicates);
                     }
                 }
             }
@@ -50,11 +54,9 @@ public final class ToolCallExtractor {
      * Unwraps a markdown code fence around a text-form tool call.
      *
      * <p>
-     * Models that emit tool calls as assistant text rather than in the
-     * structured {@link OpenAiJsonKeyEnum#TOOL_CALLS} field frequently wrap
-     * them in ```json ... ```. The backticks are not JSON, so the payload must
-     * be unwrapped before parsing — otherwise the call is missed and the raw
-     * block is shown to the user as if it were the answer.
+     * Models that emit tool calls as assistant text rather than in the structured {@link OpenAiJsonKeyEnum#TOOL_CALLS}
+     * field frequently wrap them in ```json ... ```. The backticks are not JSON, so the payload must be unwrapped
+     * before parsing — otherwise the call is missed and the raw block is shown to the user as if it were the answer.
      *
      * @return the fenced content, or the input stripped if it is not fenced
      */
@@ -77,6 +79,8 @@ public final class ToolCallExtractor {
         return inner.strip();
     }
 
+    // Structured ChatToolCall values no longer contain the raw response envelope, so nested duplicate keys
+    // cannot be recovered here; the text path above scans before Gson materialises the object.
     private static List<ExtractedToolCall> fromStructured(List<ChatToolCall> toolCalls) {
         List<ExtractedToolCall> out = new ArrayList<>();
         for (ChatToolCall call : toolCalls) {
@@ -84,13 +88,14 @@ public final class ToolCallExtractor {
                 continue;
             }
             out.add(new ExtractedToolCall(call.name(),
-                    call.argumentsJson() == null ? "{}" : call.argumentsJson()));
+                                          call.argumentsJson() == null ? "{}" : call.argumentsJson()));
         }
         return out.isEmpty() ? List.of() : List.copyOf(out);
     }
 
     private static void addIfKnownTool(JsonObject obj, Set<String> knownToolNames,
-            List<ExtractedToolCall> out) {
+                                       List<ExtractedToolCall> out,
+                                       Map<String, Integer> rawObjectDuplicates) {
         JsonElement nameEl = obj.get(OpenAiJsonKeyEnum.NAME.key());
         JsonElement argumentsEl = obj.get(OpenAiJsonKeyEnum.ARGUMENTS.key());
         if (nameEl == null || !nameEl.isJsonPrimitive() || !nameEl.getAsJsonPrimitive().isString()) {
@@ -101,12 +106,16 @@ public final class ToolCallExtractor {
             return;
         }
         JsonObject argumentsObj;
+        Map<String, Integer> duplicates = Map.of();
         if (argumentsEl != null && argumentsEl.isJsonObject()) {
             argumentsObj = argumentsEl.getAsJsonObject();
+            duplicates = rawObjectDuplicates == null ? Map.of() : rawObjectDuplicates;
         }
         else if (argumentsEl != null && argumentsEl.isJsonPrimitive() && argumentsEl.getAsJsonPrimitive().isString()) {
+            String rawJson = argumentsEl.getAsString();
+            duplicates = RawJsonArgumentScanner.duplicateTopLevelKeys(rawJson);
             try {
-                JsonElement parsedArgs = JsonParser.parseString(argumentsEl.getAsString());
+                JsonElement parsedArgs = JsonParser.parseString(rawJson);
                 argumentsObj = parsedArgs.isJsonObject() ? parsedArgs.getAsJsonObject() : new JsonObject();
             }
             catch (RuntimeException ex) {
@@ -116,7 +125,7 @@ public final class ToolCallExtractor {
         else {
             argumentsObj = new JsonObject();
         }
-        out.add(new ExtractedToolCall(name, GSON.toJson(argumentsObj)));
+        out.add(new ExtractedToolCall(name, GSON.toJson(argumentsObj), duplicates));
     }
 
     private ToolCallExtractor() {

@@ -53,7 +53,22 @@ class MoveClassToolMultiFileTest {
         JsonObject filePaths = props.getAsJsonObject(MoveClassParamEnum.FILE_PATHS.key());
         assertEquals("array", filePaths.get(ToolSchemaKeyEnum.TYPE.key()).getAsString());
         assertEquals("string", filePaths.getAsJsonObject(ToolSchemaKeyEnum.ITEMS.key())
-                .get(ToolSchemaKeyEnum.TYPE.key()).getAsString());
+                     .get(ToolSchemaKeyEnum.TYPE.key()).getAsString());
+    }
+
+    @Test
+    void schemaExposesTargetProjectPathAsAnOptionalString() {
+        // #17: targetProjectPath must be advertised so a caller can move a class across module boundaries, but never
+        // required — omitting it keeps today's same-project behaviour.
+        JsonObject schema = schemaOf(new MoveClassTool());
+        JsonObject props = schema.getAsJsonObject(ToolSchemaKeyEnum.PROPERTIES.key());
+
+        assertTrue(props.has(MoveClassParamEnum.TARGET_PROJECT_PATH.key()), "schema must expose targetProjectPath");
+        assertEquals("string", props.getAsJsonObject(MoveClassParamEnum.TARGET_PROJECT_PATH.key())
+                     .get(ToolSchemaKeyEnum.TYPE.key()).getAsString());
+        var required = schema.getAsJsonArray(ToolSchemaKeyEnum.REQUIRED.key());
+        assertFalse(required.contains(new com.google.gson.JsonPrimitive(MoveClassParamEnum.TARGET_PROJECT_PATH.key())),
+                    "targetProjectPath must not be unconditionally required: " + required);
     }
 
     @Test
@@ -64,7 +79,7 @@ class MoveClassToolMultiFileTest {
         for (var el : required) {
             assertFalse(el.getAsString().equals(MoveClassParamEnum.FILE_PATH.key())
                     || el.getAsString().equals(MoveClassParamEnum.FILE_PATHS.key()),
-                    "exactly-one-of parameters must not be unconditionally required: " + required);
+                        "exactly-one-of parameters must not be unconditionally required: " + required);
         }
         assertTrue(required.contains(new com.google.gson.JsonPrimitive(MoveClassParamEnum.TARGET_PACKAGE.key())));
     }
@@ -80,10 +95,10 @@ class MoveClassToolMultiFileTest {
 
         // The exactly-one-of check runs before the session is ever touched, so a null session is safe here.
         McpArgumentException ex = assertThrows(McpArgumentException.class,
-                () -> new MoveClassTool().handle(new ToolRequestArguments(o), null));
+                                               () -> new MoveClassTool().handle(new ToolRequestArguments(o), null));
         assertTrue(ex.getMessage().contains(MoveClassParamEnum.FILE_PATH.key())
                 && ex.getMessage().contains(MoveClassParamEnum.FILE_PATHS.key()),
-                "the error must name both keys: " + ex.getMessage());
+                   "the error must name both keys: " + ex.getMessage());
     }
 
     @Test
@@ -92,10 +107,10 @@ class MoveClassToolMultiFileTest {
         o.addProperty(MoveClassParamEnum.TARGET_PACKAGE.key(), VALID_PACKAGE);
 
         McpArgumentException ex = assertThrows(McpArgumentException.class,
-                () -> new MoveClassTool().handle(new ToolRequestArguments(o), null));
+                                               () -> new MoveClassTool().handle(new ToolRequestArguments(o), null));
         assertTrue(ex.getMessage().contains(MoveClassParamEnum.FILE_PATH.key())
                 && ex.getMessage().contains(MoveClassParamEnum.FILE_PATHS.key()),
-                "the error must name both keys: " + ex.getMessage());
+                   "the error must name both keys: " + ex.getMessage());
     }
 
     @Test
@@ -105,10 +120,10 @@ class MoveClassToolMultiFileTest {
         o.addProperty(MoveClassParamEnum.TARGET_PACKAGE.key(), VALID_PACKAGE);
 
         McpArgumentException ex = assertThrows(McpArgumentException.class,
-                () -> new MoveClassTool().handle(new ToolRequestArguments(o), null));
+                                               () -> new MoveClassTool().handle(new ToolRequestArguments(o), null));
 
         assertTrue(ex.getMessage().contains("must contain at least one non-null string path"),
-                "empty filePaths must explain that its array is empty: " + ex.getMessage());
+                   "empty filePaths must explain that its array is empty: " + ex.getMessage());
     }
 
     @Test
@@ -122,12 +137,12 @@ class MoveClassToolMultiFileTest {
         o.addProperty(MoveClassParamEnum.TARGET_PACKAGE.key(), VALID_PACKAGE);
 
         McpArgumentException ex = assertThrows(McpArgumentException.class,
-                () -> new MoveClassTool().handle(new ToolRequestArguments(o), null));
+                                               () -> new MoveClassTool().handle(new ToolRequestArguments(o), null));
 
         assertTrue(ex.getMessage().contains("filePaths[1]"),
-                "the error must name the bad array index: " + ex.getMessage());
+                   "the error must name the bad array index: " + ex.getMessage());
         assertTrue(ex.getMessage().contains("42"),
-                "the error must name the received non-string value: " + ex.getMessage());
+                   "the error must name the received non-string value: " + ex.getMessage());
     }
 
     @Test
@@ -141,9 +156,9 @@ class MoveClassToolMultiFileTest {
         o.addProperty(MoveClassParamEnum.TARGET_PACKAGE.key(), VALID_PACKAGE);
 
         McpArgumentException ex = assertThrows(McpArgumentException.class,
-                () -> new MoveClassTool().handle(new ToolRequestArguments(o), new FakeSession(SESSION_ID, null)));
+                                               () -> new MoveClassTool().handle(new ToolRequestArguments(o), new FakeSession(SESSION_ID, null)));
         assertTrue(ex.getMessage().contains(MoveClassParamEnum.LINE.key()),
-                "the error must name the offending parameter: " + ex.getMessage());
+                   "the error must name the offending parameter: " + ex.getMessage());
         assertTrue(ex.getMessage().contains(MoveClassParamEnum.FILE_PATHS.key()));
     }
 
@@ -170,7 +185,7 @@ class MoveClassToolMultiFileTest {
         Path outOfScopeFile = Files.writeString(outsideDir.resolve("B.java"), "package b; class B {}");
 
         McpServerRegistry.getServer().registerSession(SESSION_ID, AiTypeEnum.CLAUDE,
-                List.of(allowedDir.toFile()), true);
+                                                      List.of(allowedDir.toFile()), true);
 
         JsonObject o = new JsonObject();
         var arr = new com.google.gson.JsonArray();
@@ -182,9 +197,9 @@ class MoveClassToolMultiFileTest {
         String result = new MoveClassTool().handle(new ToolRequestArguments(o), new FakeSession(SESSION_ID, null));
 
         assertTrue(result.contains(outOfScopeFile.toString()),
-                "must name the out-of-scope path that was actually denied: " + result);
+                   "must name the out-of-scope path that was actually denied: " + result);
         assertFalse(result.contains("Refactoring blocked") || result.contains("File not found"),
-                "must stop at the access check, never reaching RefactoringProvider: " + result);
+                    "must stop at the access check, never reaching RefactoringProvider: " + result);
     }
 
     private static final class NoopRegistrar extends AiMcpRegistrar {

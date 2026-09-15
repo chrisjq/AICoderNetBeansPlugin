@@ -48,9 +48,30 @@ public final class McpServerRegistry {
      */
     private static volatile McpHookServer sharedServer = null;
 
+    /**
+     * Every session's file/project access scope, owned HERE rather than by {@link McpHookServer} so a health-tick
+     * replacement (see {@link #reconcile}) can never wipe it. One instance for the life of the plugin; each fresh
+     * {@link McpHookServer} the supervisor creates is handed this same registry (#15/#21 — a server swap used to start
+     * every session's scope from empty, since the registry lived on the server instance itself).
+     */
+    private static final SessionFileScopeRegistry FILE_SCOPE = new SessionFileScopeRegistry();
+
     private static final Object SUPERVISOR_LOCK = new Object();
     private static Thread supervisor = null;          // guarded by SUPERVISOR_LOCK
     private static volatile boolean shutdown = false; // supervisor stop signal
+
+    /**
+     * Consecutive failed health probes for the current server, supervisor-thread-only like {@code registrations}. Reset
+     * to zero on a successful probe and whenever the server is (re)created — see {@link #reconcile}.
+     */
+    private static int consecutiveHealthFailures = 0;
+
+    /**
+     * Health probes must fail this many times IN A ROW before a live-looking server is replaced. Guards against a
+     * single slow accept (a CPU-saturated machine, not a dead server) triggering a swap that wipes every session's file
+     * scope — see {@link #isResponsive} and {@link #reconcile}.
+     */
+    private static final int HEALTH_PROBE_FAILURE_THRESHOLD = 3;
 
     /**
      * Test seam: when non-null, overrides the configured hook-server port. Tests set this to 0 to bind an ephemeral
@@ -64,6 +85,21 @@ public final class McpServerRegistry {
      * behaviour quickly. Production keeps the 60-second default.
      */
     static volatile long pollIntervalMillis = TimeoutEnum.MCP_REGISTRY_POLL_INTERVAL_MILLIS.millis();
+
+    /**
+     * Test seam: when non-null, overrides {@link #isResponsive}'s result instead of probing a real socket, so tests can
+     * force N consecutive "unresponsive" ticks deterministically. Never set in production.
+     */
+    static volatile Boolean isResponsiveOverride = null;
+
+    /**
+     * Test/diagnostic seam: the single {@link SessionFileScopeRegistry} shared by every {@link McpHookServer} this
+     * registry creates. Package-private — production code reaches scope through the server instance
+     * ({@code McpHookServer.isFileAllowed} etc.), never through this directly.
+     */
+    static SessionFileScopeRegistry fileScope() {
+        return FILE_SCOPE;
+    }
 
     // ---- Public API (thin — callers only fire events) ----
     /**
@@ -141,6 +177,7 @@ public final class McpServerRegistry {
                 // Safe only when no supervisor thread is touching this state.
                 stopServerQuietly();
                 registrations.clear();
+                consecutiveHealthFailures = 0;
             }
             // else: a zombie is still alive after the join timeout — leave the
             // reference and shared state to it; it will exit on the shutdown flag
@@ -232,6 +269,7 @@ public final class McpServerRegistry {
             teardownRemainingTypes();
             stopServerQuietly();
             registrations.clear();
+            consecutiveHealthFailures = 0;
         }
     }
 
@@ -369,26 +407,49 @@ public final class McpServerRegistry {
     private static void reconcile(boolean healthTick) {
         McpHookServer s = sharedServer;
         boolean needServer = !registrations.isEmpty();
-        if (needServer) {
-            boolean dead = s == null || s.isStopped() || (healthTick && !isResponsive(s));
-            if (dead) {
-                if (s != null) {
-                    stopServerQuietly();
-                }
-                try {
-                    int port = portOverride != null ? portOverride : PluginSettings.getHookServerPort();
-                    McpHookServer fresh = createServerWithRetry(port);
-                    fresh.start();
-                    sharedServer = fresh;
-                }
-                catch (Exception e) {
-                    LOG.log(Level.WARNING, "MCP supervisor could not start hook server; will retry on next tick", e);
-                    sharedServer = null;
-                }
+        if (!needServer) {
+            if (s != null) {
+                stopServerQuietly();
+            }
+            return;
+        }
+        // A null reference or a server that has already stopped itself (see McpHookServer#stop) is definitely dead —
+        // replace it immediately, with no probe and no consecutive-failure count to wait out. Only the responsiveness
+        // probe below is subject to the 3-strikes rule, because it is the one signal a busy machine can fake.
+        boolean definitelyDead = s == null || s.isStopped();
+        boolean unresponsive = !definitelyDead && healthTick && !isResponsive(s);
+        if (unresponsive) {
+            consecutiveHealthFailures++;
+            if (PluginSettings.isDebugJson()) {
+                LOG.log(Level.INFO, "MCP health probe failed ({0}/{1} consecutive)",
+                        new Object[]{consecutiveHealthFailures, HEALTH_PROBE_FAILURE_THRESHOLD});
             }
         }
-        else if (s != null) {
+        else if (healthTick) {
+            consecutiveHealthFailures = 0;
+        }
+        boolean replace = definitelyDead || (unresponsive && consecutiveHealthFailures >= HEALTH_PROBE_FAILURE_THRESHOLD);
+        if (!replace) {
+            return;
+        }
+        String replacementReason = s == null ? "missing" : (s.isStopped() ? "stopped" : "unresponsive");
+        if (s != null) {
             stopServerQuietly();
+        }
+        consecutiveHealthFailures = 0;
+        try {
+            int port = portOverride != null ? portOverride : PluginSettings.getHookServerPort();
+            McpHookServer fresh = createServerWithRetry(port);
+            fresh.start();
+            sharedServer = fresh;
+            if (PluginSettings.isDebugJson()) {
+                LOG.log(Level.INFO, "Replaced MCP hook server (reason={0}, consecutiveFailures={1})",
+                        new Object[]{replacementReason, consecutiveHealthFailures});
+            }
+        }
+        catch (Exception e) {
+            LOG.log(Level.WARNING, "MCP supervisor could not start hook server; will retry on next tick", e);
+            sharedServer = null;
         }
     }
 
@@ -410,8 +471,13 @@ public final class McpServerRegistry {
      * referenced-but-dead listener.
      */
     private static boolean isResponsive(McpHookServer server) {
+        Boolean override = isResponsiveOverride;
+        if (override != null) {
+            return override;
+        }
         try (Socket sock = new Socket()) {
-            sock.connect(new InetSocketAddress(InetAddress.getLoopbackAddress(), server.getPort()), 500);
+            sock.connect(new InetSocketAddress(InetAddress.getLoopbackAddress(), server.getPort()),
+                         (int) TimeoutEnum.MCP_HEALTH_PROBE_TIMEOUT_MILLIS.millis());
             return true;
         }
         catch (Exception e) {
@@ -427,7 +493,7 @@ public final class McpServerRegistry {
         IOException last = null;
         for (int attempt = 0; attempt < 10; attempt++) {
             try {
-                McpHookServer s = new McpHookServer(port);
+                McpHookServer s = new McpHookServer(port, FILE_SCOPE);
                 s.init();
                 return s;
             }

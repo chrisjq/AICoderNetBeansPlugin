@@ -1,7 +1,14 @@
 package kiwi.ingenuity.netbeans.plugin.aicoder.process.server;
 
+import com.google.gson.JsonArray;
+import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 import java.io.File;
+import java.util.ArrayList;
+import java.util.LinkedHashSet;
+import java.util.List;
+import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.locks.ReentrantLock;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.McpArgumentException;
@@ -15,6 +22,7 @@ import kiwi.ingenuity.netbeans.plugin.aicoder.process.session.AbstractAiSession;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.TimeoutEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.McpToolInterface;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.ToolRequestArguments;
+import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.ToolSchemaKeyEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.git.GitAccessGuard;
 
 /**
@@ -26,7 +34,16 @@ public final class McpToolInvoker {
     private static final ReentrantLock MUTATION_LOCK = new ReentrantLock(true);
 
     public static String invoke(McpToolEnum tool, McpToolInterface handler,
-            JsonObject argsObj, AbstractAiSession session) throws McpArgumentException {
+                                JsonObject argsObj, AbstractAiSession session) throws McpArgumentException {
+        return invoke(tool, handler, argsObj, session, Map.of());
+    }
+
+    /**
+     * Invokes a tool after validating the materialised arguments and duplicate names found while its raw JSON was read.
+     */
+    public static String invoke(McpToolEnum tool, McpToolInterface handler,
+                                JsonObject argsObj, AbstractAiSession session, Map<String, Integer> duplicateCounts)
+            throws McpArgumentException {
         // Logged here rather than at the HTTP entry point so in-process callers
         // are covered too: Ollama reaches tools through OllamaMcpBridge, so its
         // calls never appeared in the log while this lived in McpHookServer.
@@ -34,6 +51,7 @@ public final class McpToolInvoker {
         // session, and logging must not make that path throw.
         McpHookServerUtil.logToolUse(
                 session == null ? null : session.getSessionName(), tool.toolName(), argsObj);
+        validateArguments(tool, handler, argsObj, duplicateCounts);
         // After logging (a refused attempt is still worth a log line) and before any lock
         // is taken, so a denial cannot make a caller wait on a lock it will not get to use.
         //
@@ -84,6 +102,58 @@ public final class McpToolInvoker {
             if (lockAcquired && requiredLock != null) {
                 lockManager.releaseLock(session.getId(), requiredLock);
             }
+        }
+    }
+
+    /**
+     * Rejects malformed argument lists before a tool can acquire a lock or execute. Schema options are deliberately
+     * empty: credentials are accepted unconditionally because bridges may inject them while omitting them from their
+     * model-facing schema.
+     */
+    private static void validateArguments(McpToolEnum tool, McpToolInterface handler,
+                                          JsonObject argsObj, Map<String, Integer> duplicateCounts) throws McpArgumentException {
+        JsonObject schema = handler.schema(Set.of());
+        JsonObject input = schema.getAsJsonObject(ToolSchemaKeyEnum.INPUT_SCHEMA.key());
+        JsonObject properties = input == null ? null
+                                : input.getAsJsonObject(ToolSchemaKeyEnum.PROPERTIES.key());
+        JsonArray required = input == null ? null
+                             : input.getAsJsonArray(ToolSchemaKeyEnum.REQUIRED.key());
+        Set<String> accepted = new LinkedHashSet<>();
+        if (properties != null) {
+            accepted.addAll(properties.keySet());
+        }
+        accepted.add(McpToolPropertyEnum.SESSION_ID.key());
+        accepted.add(McpToolPropertyEnum.SECRET_KEY.key());
+
+        List<String> errors = new ArrayList<>();
+        String duplicateMessage = duplicateParametersMessage(tool.toolName(), duplicateCounts);
+        if (!duplicateMessage.isEmpty()) {
+            errors.add(duplicateMessage);
+        }
+
+        List<String> unknown = argsObj == null ? List.of() : argsObj.keySet().stream()
+                .filter(key -> !accepted.contains(key)).toList();
+        if (!unknown.isEmpty()) {
+            errors.add("Unknown parameter" + (unknown.size() == 1 ? " '" + unknown.get(0) + "'" : "s "
+                    + String.join(", ", unknown)) + " for " + tool.toolName()
+                    + ". Accepted parameters: " + String.join(", ", accepted) + ".");
+        }
+
+        List<String> missing = new ArrayList<>();
+        if (required != null) {
+            for (JsonElement element : required) {
+                String key = element.getAsString();
+                if (argsObj == null || !argsObj.has(key) || argsObj.get(key).isJsonNull()) {
+                    missing.add(key);
+                }
+            }
+        }
+        if (!missing.isEmpty()) {
+            errors.add("Missing required parameters for " + tool.toolName() + ": "
+                    + String.join(", ", missing) + ".");
+        }
+        if (!errors.isEmpty()) {
+            throw new McpArgumentException(-32602, String.join("\n", errors));
         }
     }
 
@@ -143,8 +213,8 @@ public final class McpToolInvoker {
     static String lockedMessage(LockTypeEnum lockType, String holder, String toolName) {
         TimeoutEnum wait = lockType.getWaitTimeout();
         String waited = wait.millis() > 0
-                ? "already waited " + wait.millis() / 1000 + "s (" + wait.name() + ") for this lock and lost"
-                : "lost this lock immediately (no waiting is configured: " + wait.name() + " is 0)";
+                        ? "already waited " + wait.millis() / 1000 + "s (" + wait.name() + ") for this lock and lost"
+                        : "lost this lock immediately (no waiting is configured: " + wait.name() + " is 0)";
         return "Resource locked by session "
                 + (holder != null ? holder : "another operation")
                 + " performing " + lockType.getDescription()
@@ -170,6 +240,21 @@ public final class McpToolInvoker {
 
     private static String safe(String s) {
         return s == null ? "" : s;
+    }
+
+    public static String duplicateParametersMessage(String toolName, Map<String, Integer> duplicateCounts) {
+        if (duplicateCounts == null || duplicateCounts.isEmpty()) {
+            return "";
+        }
+        String duplicates = duplicateCounts.entrySet().stream()
+                .filter(entry -> entry.getValue() != null && entry.getValue() > 1)
+                .map(entry -> entry.getKey() + " (" + entry.getValue() + "×)")
+                .reduce((left, right) -> left + ", " + right).orElse("");
+        if (duplicates.isEmpty()) {
+            return "";
+        }
+        return "Duplicate parameters for " + toolName + ": " + duplicates
+                + ". Each parameter may be given once.";
     }
 
     private McpToolInvoker() {

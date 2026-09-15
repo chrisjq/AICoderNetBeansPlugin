@@ -1,5 +1,8 @@
 package kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.devops.build;
 
+import com.google.gson.JsonArray;
+import com.google.gson.JsonObject;
+import java.util.List;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.McpSectionEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.McpToolEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.locking.LockTypeEnum;
@@ -8,22 +11,34 @@ import kiwi.ingenuity.netbeans.plugin.aicoder.process.session.AbstractAiSession;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.AbstractBuildTool;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.ToolRequestArguments;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.providers.netbeans.BuildAndTestGradleProvider;
+import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.providers.netbeans.BuildAndTestGradleProvider.GradleBuildOptions;
 
 @RequiresLock(LockTypeEnum.BUILD_LOCK)
 public class BuildGradleProjectTool extends AbstractBuildTool {
 
     public BuildGradleProjectTool() {
         super(McpSectionEnum.DEVOPS_BUILD,
-                McpToolEnum.BUILD_GRADLE_PROJECT.toolName(),
-                "Builds the Gradle project at " + BuildGradleProjectParamEnum.PROJECT_PATH.key() + " (./gradlew build -x test). "
-                + "Gradle projects only - do not use for Maven or Ant projects. "
-                + "Returns a summary; the full log is written to a file.",
-                McpToolEnum.BUILD_GRADLE_PROJECT.toolName() + " -> INSTEAD OF Bash gradlew build - requires " + BuildGradleProjectParamEnum.PROJECT_PATH.key() + "; builds Gradle project and returns a result summary (complete log written to a file)",
-                McpToolEnum.BUILD_GRADLE_PROJECT.toolName() + " - requires " + BuildGradleProjectParamEnum.PROJECT_PATH.key() + "; builds Gradle project and returns a result summary (complete log written to a file)");
+              McpToolEnum.BUILD_GRADLE_PROJECT.toolName(),
+              "Builds the Gradle project at " + BuildGradleProjectParamEnum.PROJECT_PATH.key() + " (default: ./gradlew build -x test; "
+              + BuildGradleProjectParamEnum.TASKS.key() + " and the other options below override this). "
+              + "Gradle projects only - do not use for Maven or Ant projects. "
+              + "Returns a summary; the full log is written to a file.",
+              McpToolEnum.BUILD_GRADLE_PROJECT.toolName() + " -> INSTEAD OF Bash gradlew build - requires " + BuildGradleProjectParamEnum.PROJECT_PATH.key() + "; builds Gradle project (default: build, tests skipped, overridable) and returns a result summary (complete log written to a file)",
+              McpToolEnum.BUILD_GRADLE_PROJECT.toolName() + " - requires " + BuildGradleProjectParamEnum.PROJECT_PATH.key() + "; builds Gradle project (default: build, tests skipped, overridable) and returns a result summary (complete log written to a file)");
+    }
+
+    @Override
+    protected void addOptionProperties(JsonObject props, JsonArray required) {
+        GradleToolSchema.addProperties(props, "[\"build\"]", true);
     }
 
     @Override
     public String handle(ToolRequestArguments args, AbstractAiSession session) {
-        return BuildAndTestGradleProvider.buildProject(session.getId(), args.str(BuildGradleProjectParamEnum.PROJECT_PATH.key()));
+        List<String> tasks = GradleToolSchema.tasksOrDefault(args, BuildGradleProjectParamEnum.TASKS.key(), List.of("build"));
+        boolean skipTests = args.has(BuildGradleProjectParamEnum.SKIP_TESTS.key())
+                            ? args.bool(BuildGradleProjectParamEnum.SKIP_TESTS.key()) : true;
+        GradleBuildOptions opts = GradleToolSchema.optionsFrom(args, tasks, skipTests);
+        return BuildAndTestGradleProvider.buildProject(session.getId(),
+                                                       args.str(BuildGradleProjectParamEnum.PROJECT_PATH.key()), opts);
     }
 }

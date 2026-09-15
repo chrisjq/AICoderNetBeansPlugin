@@ -23,6 +23,10 @@ public enum McpToolPropertyEnum {
      */
     ALL("all"),
     /**
+     * Maven -am: build listed projects' dependencies too.
+     */
+    ALSO_MAKE("alsoMake"),
+    /**
      * HTTP request body.
      */
     BODY("body"),
@@ -60,6 +64,11 @@ public enum McpToolPropertyEnum {
      */
     CONTEXT_LINES("contextLines"),
     /**
+     * Gradle --continue / Maven -fae equivalent for Gradle: keep running other tasks after a failure instead of
+     * stopping at the first one.
+     */
+    CONTINUE_ON_FAILURE("continueOnFailure"),
+    /**
      * Whether a missing target may be created.
      */
     CREATE("create"),
@@ -87,6 +96,11 @@ public enum McpToolPropertyEnum {
      * Whether a message requires a reply.
      */
     EXPECTS_REPLY("expectsReply"),
+    /**
+     * Maven -fae: run every module before failing, reporting all failures at the end instead of stopping at the first
+     * one.
+     */
+    FAIL_AT_END("failAtEnd"),
     /**
      * File path used to scope an operation.
      */
@@ -124,6 +138,11 @@ public enum McpToolPropertyEnum {
      */
     FOCUS("focus"),
     /**
+     * Maven goals to run (e.g. {@code package}, {@code clean install}). Gradle's equivalent is {@link #TASKS}, Ant's is
+     * {@link #TARGETS} — each build system keeps its own vocabulary rather than sharing this key.
+     */
+    GOALS("goals"),
+    /**
      * Question heading shown to the user.
      */
     HEADER("header"),
@@ -155,6 +174,10 @@ public enum McpToolPropertyEnum {
      * Whether query text is a regular expression.
      */
     IS_REGEX("isRegex"),
+    /**
+     * Ant -k: keep running other independent targets after one fails, instead of stopping immediately.
+     */
+    KEEP_GOING("keepGoing"),
     /**
      * Search match kind.
      */
@@ -224,6 +247,10 @@ public enum McpToolPropertyEnum {
      */
     NEW_STRING("newString"),
     /**
+     * Maven -o / Gradle --offline: work from the local repository/cache only, without contacting remote repos.
+     */
+    OFFLINE("offline"),
+    /**
      * Exact text to replace.
      */
     OLD_STRING("oldString"),
@@ -244,6 +271,10 @@ public enum McpToolPropertyEnum {
      */
     OVERLOAD_METHOD("overloadMethod"),
     /**
+     * Gradle --parallel: run independent tasks (e.g. across subprojects) concurrently.
+     */
+    PARALLEL("parallel"),
+    /**
      * Desired method parameters.
      */
     PARAMETERS("parameters"),
@@ -252,9 +283,22 @@ public enum McpToolPropertyEnum {
      */
     PATTERN("pattern"),
     /**
+     * Maven -P: profiles to activate.
+     */
+    PROFILES("profiles"),
+    /**
+     * Maven -pl: comma/colon-delimited module subset (submitted as a list here, joined internally).
+     */
+    PROJECT_LIST("projectList"),
+    /**
      * Target project or repository path.
      */
     PROJECT_PATH("projectPath"),
+    /**
+     * Maven -Dk=v / Ant -Dk=v / Gradle -Pk=v: build properties as a key/value map, never a raw string — see
+     * {@link #SYSTEM_PROPERTIES} for Gradle's separate -D-style system properties.
+     */
+    PROPERTIES("properties"),
     /**
      * Search or SQL query text.
      */
@@ -268,6 +312,10 @@ public enum McpToolPropertyEnum {
      */
     QUESTIONS("questions"),
     /**
+     * Gradle --refresh-dependencies: bypass the dependency cache and re-resolve everything.
+     */
+    REFRESH_DEPENDENCIES("refreshDependencies"),
+    /**
      * Git remote name.
      */
     REMOTE("remote"),
@@ -279,6 +327,10 @@ public enum McpToolPropertyEnum {
      * Original message being answered.
      */
     REPLY_TO_MESSAGE_ID("replyToMessageId"),
+    /**
+     * Maven -rf: resume a reactor build from this module (e.g. {@code :my-module}).
+     */
+    RESUME_FROM("resumeFrom"),
     /**
      * Desired method return type.
      */
@@ -304,6 +356,11 @@ public enum McpToolPropertyEnum {
      */
     SESSION_ID("sessionId"),
     /**
+     * Maven -DskipTests / Gradle -x test: skip running tests as part of the build. Default differs by tool — see each
+     * tool's own description for what it preserves from before this option existed.
+     */
+    SKIP_TESTS("skipTests"),
+    /**
      * Source file path for a copy or move.
      */
     SOURCE_PATH("sourcePath"),
@@ -324,6 +381,11 @@ public enum McpToolPropertyEnum {
      */
     SUBJECT("subject"),
     /**
+     * Gradle -Dk=v: JVM system properties, distinct from Gradle's own -Pk=v project properties — see
+     * {@link #PROPERTIES}.
+     */
+    SYSTEM_PROPERTIES("systemProperties"),
+    /**
      * Database table name.
      */
     TABLE_NAME("tableName"),
@@ -336,13 +398,32 @@ public enum McpToolPropertyEnum {
      */
     TARGET_PACKAGE("targetPackage"),
     /**
+     * Optional destination project root — omitted keeps a move inside the source file's own project; given, moves
+     * across module boundaries into this project instead.
+     */
+    TARGET_PROJECT_PATH("targetProjectPath"),
+    /**
+     * Ant targets to run (e.g. {@code jar}, {@code dist}). Maven's equivalent is {@link #GOALS}, Gradle's is
+     * {@link #TASKS}.
+     */
+    TARGETS("targets"),
+    /**
      * Receiving AI session identifier.
      */
     TARGET_SESSION_ID("targetSessionId"),
     /**
+     * Gradle tasks to run (e.g. {@code build}, {@code assemble}, {@code :module:build}). Maven's equivalent is
+     * {@link #GOALS}, Ant's is {@link #TARGETS}.
+     */
+    TASKS("tasks"),
+    /**
      * Optional test class filter.
      */
     TEST_CLASS("testClass"),
+    /**
+     * Maven -T: number of threads/modules to build in parallel (e.g. {@code 4} or {@code 1C}).
+     */
+    THREADS("threads"),
     /**
      * HTTP request timeout in seconds.
      */
@@ -351,6 +432,10 @@ public enum McpToolPropertyEnum {
      * Requested resource type.
      */
     TYPE("type"),
+    /**
+     * Maven -U: force a check for updated releases/snapshots on remote repositories.
+     */
+    UPDATE_SNAPSHOTS("updateSnapshots"),
     /**
      * Git rebase upstream.
      */

@@ -7,7 +7,9 @@ import com.google.gson.JsonParser;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
+import kiwi.ingenuity.netbeans.plugin.aicoder.process.server.RawJsonArgumentScanner;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.ToolSchemaKeyEnum;
 
 /**
@@ -43,7 +45,7 @@ public final class SchemaToolCalls {
     public static JsonObject responseFormat(Collection<String> knownToolNames) {
         JsonObject props = new JsonObject();
         props.add(OpenAiJsonKeyEnum.MESSAGE.key(), stringField(
-                "Your reply to the user. Use this whenever no tool is needed."));
+                  "Your reply to the user. Use this whenever no tool is needed."));
         JsonObject toolName = stringField(
                 "Exact name of one tool to call, or \"\" when answering directly.");
         if (knownToolNames != null && !knownToolNames.isEmpty()) {
@@ -56,7 +58,7 @@ public final class SchemaToolCalls {
         JsonObject args = new JsonObject();
         args.addProperty(OpenAiJsonKeyEnum.TYPE.key(), "object");
         args.addProperty(OpenAiJsonKeyEnum.DESCRIPTION.key(),
-                "Arguments for " + OpenAiJsonKeyEnum.TOOL_NAME.key() + ", or {} when not calling a tool.");
+                         "Arguments for " + OpenAiJsonKeyEnum.TOOL_NAME.key() + ", or {} when not calling a tool.");
         props.add(OpenAiJsonKeyEnum.TOOL_ARGUMENTS.key(), args);
 
         JsonObject schema = new JsonObject();
@@ -68,9 +70,9 @@ public final class SchemaToolCalls {
         // after a rename — the schema would just quietly stop requiring the
         // field it no longer names.
         schema.add(OpenAiJsonKeyEnum.REQUIRED.key(), GSON.toJsonTree(List.of(
-                OpenAiJsonKeyEnum.MESSAGE.key(),
-                OpenAiJsonKeyEnum.TOOL_NAME.key(),
-                OpenAiJsonKeyEnum.TOOL_ARGUMENTS.key())));
+                   OpenAiJsonKeyEnum.MESSAGE.key(),
+                   OpenAiJsonKeyEnum.TOOL_NAME.key(),
+                   OpenAiJsonKeyEnum.TOOL_ARGUMENTS.key())));
 
         JsonObject jsonSchema = new JsonObject();
         jsonSchema.addProperty(OpenAiJsonKeyEnum.NAME.key(), "tool_or_answer");
@@ -173,7 +175,7 @@ public final class SchemaToolCalls {
         }
         if (result.toolCalls() != null && !result.toolCalls().isEmpty()) {
             return new Reply(result.assistantText(),
-                    ToolCallExtractor.extract(result, knownToolNames));
+                             ToolCallExtractor.extract(result, knownToolNames));
         }
         String text = result.assistantText();
         if (text == null || text.isBlank()) {
@@ -184,7 +186,9 @@ public final class SchemaToolCalls {
             if (parsed.isJsonObject()) {
                 JsonObject obj = parsed.getAsJsonObject();
                 if (obj.has(OpenAiJsonKeyEnum.TOOL_NAME.key()) || obj.has(OpenAiJsonKeyEnum.MESSAGE.key())) {
-                    return fromSchemaObject(obj, knownToolNames);
+                    return fromSchemaObject(obj, knownToolNames,
+                                            RawJsonArgumentScanner.duplicateKeys(
+                                                    text.strip(), OpenAiJsonKeyEnum.TOOL_ARGUMENTS.key()));
                 }
             }
         }
@@ -215,14 +219,15 @@ public final class SchemaToolCalls {
         return !element.getAsString().isBlank();
     }
 
-    private static Reply fromSchemaObject(JsonObject obj, Set<String> knownToolNames) {
+    private static Reply fromSchemaObject(JsonObject obj, Set<String> knownToolNames,
+                                          Map<String, Integer> duplicateCounts) {
         String message = obj.has(OpenAiJsonKeyEnum.MESSAGE.key()) && obj.get(OpenAiJsonKeyEnum.MESSAGE.key()).isJsonPrimitive()
-                ? obj.get(OpenAiJsonKeyEnum.MESSAGE.key()).getAsString() : null;
+                         ? obj.get(OpenAiJsonKeyEnum.MESSAGE.key()).getAsString() : null;
         String name = obj.has(OpenAiJsonKeyEnum.TOOL_NAME.key()) && obj.get(OpenAiJsonKeyEnum.TOOL_NAME.key()).isJsonPrimitive()
-                ? obj.get(OpenAiJsonKeyEnum.TOOL_NAME.key()).getAsString() : null;
+                      ? obj.get(OpenAiJsonKeyEnum.TOOL_NAME.key()).getAsString() : null;
         JsonElement rawArgumentsElement = obj.get(OpenAiJsonKeyEnum.TOOL_ARGUMENTS.key());
         JsonObject rawArguments = rawArgumentsElement != null && rawArgumentsElement.isJsonObject()
-                ? rawArgumentsElement.getAsJsonObject() : new JsonObject();
+                                  ? rawArgumentsElement.getAsJsonObject() : new JsonObject();
         if (name == null || name.isBlank()) {
             // Arguments with no tool name is unambiguously a mistake - there is
             // nothing else the model could have meant by them. Before this the
@@ -251,11 +256,11 @@ public final class SchemaToolCalls {
         }
         if (!knownToolNames.contains(name)) {
             return new Reply(message, List.of(),
-                    "Error: there is no tool named \"" + name + "\", so nothing was called. "
-                    + "Use one of the tool names exactly as listed, or reply in plain text if no tool is needed.");
+                             "Error: there is no tool named \"" + name + "\", so nothing was called. "
+                             + "Use one of the tool names exactly as listed, or reply in plain text if no tool is needed.");
         }
         JsonObject arguments = cleanArgumentNames(rawArguments);
-        return new Reply(message, List.of(new ExtractedToolCall(name, GSON.toJson(arguments))));
+        return new Reply(message, List.of(new ExtractedToolCall(name, GSON.toJson(arguments), duplicateCounts)));
     }
 
     /**

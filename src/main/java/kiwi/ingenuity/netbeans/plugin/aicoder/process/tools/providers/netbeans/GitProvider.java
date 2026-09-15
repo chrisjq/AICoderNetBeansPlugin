@@ -86,6 +86,52 @@ public class GitProvider {
     private static final List<String> PROTECTED_BRANCHES
             = List.of("main", "master", "production", "release");
 
+    /**
+     * Logs a failed git operation whose message has already been returned to the caller. A revision that does not exist
+     * or a branch that is not merged is the caller's mistake, not an IDE fault, so its stack trace is logged only with
+     * debug JSON on; every other failure stays a WARNING.
+     */
+    static void logGitError(String operation, Exception e) {
+        if (isCallerMistake(e)) {
+            if (PluginSettings.isDebugJson()) {
+                LOG.log(Level.INFO, operation + " refused: " + e.getMessage(), e);
+            }
+            return;
+        }
+        LOG.log(Level.WARNING, operation + " error", e);
+    }
+
+    static boolean isCallerMistake(Exception e) {
+        return e instanceof GitException.MissingObjectException || e instanceof GitException.NotMergedException;
+    }
+
+    /**
+     * Refusal for a push/pull/fetch to a remote name that is not configured, or null when it is configured or is a URL
+     * or path (which git accepts in place of a name). Checked up front because the transport otherwise fails with a
+     * plain {@link GitException} ("origin: not found.") that cannot be told apart from a real network failure.
+     */
+    /**
+     * The remote-tracking branches of {@code remote}, e.g. {@code origin/main}, sorted. A local branch whose name
+     * merely starts with the remote's name is not one, so the remote flag is required as well as the prefix.
+     */
+    static List<String> trackingBranchesOf(String remote, Map<String, Boolean> remoteFlagByBranch) {
+        return remoteFlagByBranch.entrySet().stream()
+                .filter(e -> Boolean.TRUE.equals(e.getValue()) && e.getKey().startsWith(remote + "/"))
+                .map(Map.Entry::getKey)
+                .sorted()
+                .toList();
+    }
+
+    static String unknownRemoteMessage(String remoteName, Map<String, ?> remotes) {
+        if (remotes.containsKey(remoteName) || remoteName.contains(":") || remoteName.startsWith("/")
+                || remoteName.startsWith(".")) {
+            return null;
+        }
+        return remotes.isEmpty()
+               ? "No remote named '" + remoteName + "': this repository has no remotes. Add one with GitRemote first."
+               : "No remote named '" + remoteName + "'. Configured remotes: " + String.join(", ", remotes.keySet());
+    }
+
     public static String getGitStatus(String projectPath) {
         File root = resolveRoot(projectPath);
         if (root == null) {
@@ -93,7 +139,7 @@ public class GitProvider {
         }
         File gitRoot = findGitRoot(root);
         if (gitRoot == null) {
-            return "Not a git repository: " + root;
+            return "Not a git repository: " + FileUtils.toIdePath(root);
         }
         try (GitClient client = GitRepository.getInstance(gitRoot).createClient()) {
             StringBuilder sb = new StringBuilder();
@@ -107,6 +153,16 @@ public class GitProvider {
             Map<File, GitStatus> statuses = client.getStatus(new File[]{root}, NULL_PM);
             for (Map.Entry<File, GitStatus> e : statuses.entrySet()) {
                 GitStatus s = e.getValue();
+                // Ignored paths (e.g. target/ under .gitignore) are hidden, as plain `git status` does; untracked but
+                // not-yet-added files still show as ??.
+                if (s.getStatusIndexWC() == GitStatus.Status.STATUS_IGNORED) {
+                    continue;
+                }
+                // A conflicted file can report no index or working-tree change, so it would otherwise be skipped below.
+                if (s.isConflict()) {
+                    sb.append("UU ").append(s.getRelativePath()).append('\n');
+                    continue;
+                }
                 if (!s.isTracked()) {
                     sb.append("?? ").append(s.getRelativePath()).append('\n');
                     continue;
@@ -121,7 +177,7 @@ public class GitProvider {
             return sb.length() == 0 ? "nothing to commit, working tree clean" : sb.toString();
         }
         catch (GitException e) {
-            LOG.log(Level.WARNING, "getGitStatus error", e);
+            logGitError("getGitStatus", e);
             return "Git error: " + e.getMessage();
         }
     }
@@ -138,14 +194,14 @@ public class GitProvider {
         try (GitClient client = GitRepository.getInstance(gitRoot).createClient()) {
             ByteArrayOutputStream baos = new ByteArrayOutputStream();
             GitClient.DiffMode mode = staged
-                    ? GitClient.DiffMode.HEAD_VS_INDEX
-                    : GitClient.DiffMode.INDEX_VS_WORKINGTREE;
+                                      ? GitClient.DiffMode.HEAD_VS_INDEX
+                                      : GitClient.DiffMode.INDEX_VS_WORKINGTREE;
             client.exportDiff(new File[]{root}, mode, baos, NULL_PM);
             String result = baos.toString(StandardCharsets.UTF_8);
             return result.isBlank() ? "(no changes)" : result;
         }
         catch (Exception e) {
-            LOG.log(Level.WARNING, "getGitDiff error", e);
+            logGitError("getGitDiff", e);
             return "Git error: " + e.getMessage();
         }
     }
@@ -161,16 +217,19 @@ public class GitProvider {
         }
         try (GitClient client = GitRepository.getInstance(gitRoot).createClient()) {
             File[] toAdd = resolveFiles(root, files);
-            client.add(toAdd, NULL_PM);
+            stageChanges(client, toAdd);
             FileUtil.refreshFor(root);
-            return "Added " + toAdd.length + " path(s)";
+            int staged = countStagedAmong(client, toAdd);
+            return staged == 0
+                   ? "Nothing to stage for the requested path(s)"
+                   : "Staged " + staged + " file(s) for " + toAdd.length + " requested path(s)";
         }
         catch (IOException e) {
-            LOG.log(Level.WARNING, "gitAdd error", e);
+            logGitError("gitAdd", e);
             return "Invalid path: " + e.getMessage();
         }
         catch (GitException e) {
-            LOG.log(Level.WARNING, "gitAdd error", e);
+            logGitError("gitAdd", e);
             return "Git error: " + e.getMessage();
         }
     }
@@ -190,7 +249,17 @@ public class GitProvider {
                 return "Error: commit paths are not within the allowed project directories";
             }
             if (files != null && !files.isEmpty()) {
-                client.add(commitTargets, NULL_PM);
+                List<String> outside = stagedPathsOutside(commitTargets, stagedPaths(client, root), root);
+                if (!outside.isEmpty()) {
+                    return "Error: other changes are already staged and would be left out: "
+                            + String.join(", ", outside);
+                }
+                stageChanges(client, commitTargets);
+            }
+            List<String> staged = stagedPaths(client, root);
+            if (staged.isEmpty()) {
+                String requested = files == null || files.isEmpty() ? "the index" : String.join(", ", files);
+                return "Error: nothing to commit; requested paths produced no staged changes: " + requested;
             }
             GitUser user;
             try {
@@ -205,11 +274,11 @@ public class GitProvider {
             return "Committed: " + rev.substring(0, Math.min(7, rev.length())) + " " + info.getShortMessage();
         }
         catch (IOException e) {
-            LOG.log(Level.WARNING, "gitCommit error", e);
+            logGitError("gitCommit", e);
             return "Invalid path: " + e.getMessage();
         }
         catch (GitException e) {
-            LOG.log(Level.WARNING, "gitCommit error", e);
+            logGitError("gitCommit", e);
             return "Git error: " + e.getMessage();
         }
     }
@@ -236,6 +305,9 @@ public class GitProvider {
         }
         try (GitClient client = GitRepository.getInstance(gitRoot).createClient()) {
             SearchCriteria criteria = new SearchCriteria();
+            // Start at HEAD, as `git log` does. Without a start revision libs.git walks every local branch newest first,
+            // so a newer commit on another branch was listed as if it were on the checked-out one.
+            criteria.setRevisionTo("HEAD");
             criteria.setLimit(limit > 0 ? limit : 20);
             if (target != null) {
                 criteria.setFiles(new File[]{target});
@@ -253,8 +325,12 @@ public class GitProvider {
             }
             return sb.toString().strip();
         }
+        catch (GitException.MissingObjectException e) {
+            // A repository with no commits yet has no HEAD commit to start from.
+            return "No commits found";
+        }
         catch (GitException e) {
-            LOG.log(Level.WARNING, "gitLog error", e);
+            logGitError("gitLog", e);
             return "Git error: " + e.getMessage();
         }
     }
@@ -270,6 +346,10 @@ public class GitProvider {
         }
         String remoteName = (remote != null && !remote.isBlank()) ? remote : "origin";
         try (GitClient client = GitRepository.getInstance(gitRoot).createClient()) {
+            String unknownRemote = unknownRemoteMessage(remoteName, client.getRemotes(NULL_PM));
+            if (unknownRemote != null) {
+                return unknownRemote;
+            }
             String branchName = branch;
             if (branchName == null || branchName.isBlank()) {
                 Map<String, GitBranch> branches = client.getBranches(false, NULL_PM);
@@ -291,7 +371,7 @@ public class GitProvider {
             return formatTransportUpdates("Push", result.getRemoteRepositoryUpdates());
         }
         catch (GitException e) {
-            LOG.log(Level.WARNING, "gitPush error", e);
+            logGitError("gitPush", e);
             return "Git error: " + e.getMessage();
         }
     }
@@ -307,6 +387,10 @@ public class GitProvider {
         }
         String remoteName = (remote != null && !remote.isBlank()) ? remote : "origin";
         try (GitClient client = GitRepository.getInstance(gitRoot).createClient()) {
+            String unknownRemote = unknownRemoteMessage(remoteName, client.getRemotes(NULL_PM));
+            if (unknownRemote != null) {
+                return unknownRemote;
+            }
             String branchName = null;
             Map<String, GitBranch> branches = client.getBranches(false, NULL_PM);
             for (Map.Entry<String, GitBranch> e : branches.entrySet()) {
@@ -336,7 +420,7 @@ public class GitProvider {
             return "Pull failed: " + status;
         }
         catch (GitException e) {
-            LOG.log(Level.WARNING, "gitPull error", e);
+            logGitError("gitPull", e);
             return "Git error: " + e.getMessage();
         }
     }
@@ -362,7 +446,7 @@ public class GitProvider {
             return "Switched to " + (createNew ? "new branch " : "") + branchOrRevision;
         }
         catch (GitException e) {
-            LOG.log(Level.WARNING, "gitCheckout error", e);
+            logGitError("gitCheckout", e);
             return "Git error: " + e.getMessage();
         }
     }
@@ -396,7 +480,7 @@ public class GitProvider {
             return sb.toString().strip();
         }
         catch (GitException e) {
-            LOG.log(Level.WARNING, "gitBranch error", e);
+            logGitError("gitBranch", e);
             return "Git error: " + e.getMessage();
         }
     }
@@ -508,8 +592,8 @@ public class GitProvider {
 
     private static String noRepoError(String projectPath) {
         return (projectPath != null && !projectPath.isBlank())
-                ? "Repository not found: " + projectPath
-                : GitCommonParamEnum.PROJECT_PATH.key() + " is required";
+               ? "Repository not found: " + FileUtils.toIdePath(projectPath)
+               : GitCommonParamEnum.PROJECT_PATH.key() + " is required";
     }
 
     /**
@@ -595,6 +679,78 @@ public class GitProvider {
             }
         }
         return result.toArray(File[]::new);
+    }
+
+    /**
+     * Stages normal changes and removes tracked files which disappeared from the working tree. GitClient.add alone does
+     * not stage those removals.
+     */
+    private static void stageChanges(GitClient client, File[] targets) throws GitException {
+        client.add(targets, NULL_PM);
+        List<File> removals = new ArrayList<>();
+        Map<File, GitStatus> statuses = client.getStatus(targets, NULL_PM);
+        for (Map.Entry<File, GitStatus> entry : statuses.entrySet()) {
+            GitStatus status = entry.getValue();
+            if (status.isTracked() && status.getStatusIndexWC() == GitStatus.Status.STATUS_REMOVED) {
+                removals.add(entry.getKey());
+            }
+        }
+        if (!removals.isEmpty()) {
+            client.remove(removals.toArray(File[]::new), true, NULL_PM);
+        }
+    }
+
+    /**
+     * Whether {@code status} represents a staged change: a tracked, non-ignored file whose HEAD-vs-INDEX entry is not
+     * NORMAL. The single notion of "staged" shared by {@link #stagedPaths} and {@link #countStagedAmong}.
+     */
+    private static boolean isStaged(GitStatus status) {
+        return status.isTracked()
+                && status.getStatusIndexWC() != GitStatus.Status.STATUS_IGNORED
+                && status.getStatusHeadIndex() != GitStatus.Status.STATUS_NORMAL;
+    }
+
+    private static List<String> stagedPaths(GitClient client, File root) throws GitException {
+        List<String> paths = new ArrayList<>();
+        for (GitStatus status : client.getStatus(new File[]{root}, NULL_PM).values()) {
+            if (isStaged(status)) {
+                paths.add(status.getRelativePath());
+            }
+        }
+        return paths;
+    }
+
+    /**
+     * How many of {@code targets} have staged changes — the number of files a GitAdd call targeting {@code targets}
+     * actually staged, as opposed to the number of paths the caller requested: a "." request names one path but can
+     * stage a whole tree.
+     */
+    private static int countStagedAmong(GitClient client, File[] targets) throws GitException {
+        int count = 0;
+        for (GitStatus status : client.getStatus(targets, NULL_PM).values()) {
+            if (isStaged(status)) {
+                count++;
+            }
+        }
+        return count;
+    }
+
+    private static List<String> stagedPathsOutside(File[] targets, List<String> stagedPaths, File root) {
+        List<String> outside = new ArrayList<>();
+        for (String path : stagedPaths) {
+            File stagedFile = new File(root, path);
+            boolean withinTarget = false;
+            for (File target : targets) {
+                if (isWithinRepository(target, stagedFile)) {
+                    withinTarget = true;
+                    break;
+                }
+            }
+            if (!withinTarget) {
+                outside.add(path);
+            }
+        }
+        return outside;
     }
 
     static boolean areCommitTargetsAllowed(File[] targets, McpHookServer server, String sessionId) {
@@ -714,7 +870,7 @@ public class GitProvider {
             return "Branch not merged. Use force=true to delete anyway.";
         }
         catch (GitException e) {
-            LOG.log(Level.WARNING, "gitDeleteBranch error", e);
+            logGitError("gitDeleteBranch", e);
             return "Git error: " + e.getMessage();
         }
     }
@@ -762,13 +918,19 @@ public class GitProvider {
                 }
                 case PUSH -> {
                     String msg = (message != null && !message.isBlank()) ? message : STASH_DEFAULT_MESSAGE;
-                    GitRevisionInfo info = client.stashSave(msg, includeUntracked, NULL_PM);
-                    yield info == null ? "Nothing to stash" : "Stashed: " + info.getShortMessage();
+                    // JGit treats this input as a MessageFormat pattern; quote it to preserve user text verbatim.
+                    String quotedMessage = "'" + msg.replace("'", "''") + "'";
+                    int stashesBefore = client.stashList(NULL_PM).length;
+                    GitRevisionInfo info = client.stashSave(quotedMessage, includeUntracked, NULL_PM);
+                    // With nothing to stash JGit returns no commit, but libs.git still wraps it: info is never null and
+                    // reading its message throws a NullPointerException. An unchanged stash list is the reliable signal.
+                    yield client.stashList(NULL_PM).length == stashesBefore
+                          ? "No local changes to save" : "Stashed: " + info.getShortMessage();
                 }
             };
         }
-        catch (GitException e) {
-            LOG.log(Level.WARNING, "gitStash error", e);
+        catch (GitException | IllegalArgumentException e) {
+            logGitError("gitStash", e);
             return "Git error: " + e.getMessage();
         }
     }
@@ -784,10 +946,14 @@ public class GitProvider {
         }
         String remoteName = (remote != null && !remote.isBlank()) ? remote : "origin";
         try (GitClient client = GitRepository.getInstance(gitRoot).createClient()) {
+            String unknownRemote = unknownRemoteMessage(remoteName, client.getRemotes(NULL_PM));
+            if (unknownRemote != null) {
+                return unknownRemote;
+            }
             return formatTransportUpdates("Fetch", client.fetch(remoteName, NULL_PM));
         }
         catch (GitException e) {
-            LOG.log(Level.WARNING, "gitFetch error", e);
+            logGitError("gitFetch", e);
             return "Git error: " + e.getMessage();
         }
     }
@@ -828,11 +994,11 @@ public class GitProvider {
             }
         }
         catch (IOException e) {
-            LOG.log(Level.WARNING, "gitReset error", e);
+            logGitError("gitReset", e);
             return "Invalid path: " + e.getMessage();
         }
         catch (GitException e) {
-            LOG.log(Level.WARNING, "gitReset error", e);
+            logGitError("gitReset", e);
             return "Git error: " + e.getMessage();
         }
     }
@@ -864,7 +1030,7 @@ public class GitProvider {
             return "Merge " + status;
         }
         catch (GitException e) {
-            LOG.log(Level.WARNING, "gitMerge error", e);
+            logGitError("gitMerge", e);
             return "Git error: " + e.getMessage();
         }
     }
@@ -898,7 +1064,7 @@ public class GitProvider {
             return sb.toString().strip();
         }
         catch (GitException e) {
-            LOG.log(Level.WARNING, "gitShow error", e);
+            logGitError("gitShow", e);
             return "Git error: " + e.getMessage();
         }
     }
@@ -956,13 +1122,13 @@ public class GitProvider {
                     authorName = authorName.substring(0, 20);
                 }
                 sb.append(String.format("%-7s %-20s %4d %s%n",
-                        hash.substring(0, Math.min(7, hash.length())),
-                        authorName, i + 1, d.getContent()));
+                                        hash.substring(0, Math.min(7, hash.length())),
+                                        authorName, i + 1, d.getContent()));
             }
             return sb.toString().stripTrailing();
         }
         catch (GitException e) {
-            LOG.log(Level.WARNING, "gitBlame error", e);
+            logGitError("gitBlame", e);
             return "Git error: " + e.getMessage();
         }
     }
@@ -1006,7 +1172,7 @@ public class GitProvider {
             return "Rebase " + status;
         }
         catch (GitException e) {
-            LOG.log(Level.WARNING, "gitRebase error", e);
+            logGitError("gitRebase", e);
             return "Git error: " + e.getMessage();
         }
     }
@@ -1046,7 +1212,7 @@ public class GitProvider {
             return "Cherry-pick " + status;
         }
         catch (GitException e) {
-            LOG.log(Level.WARNING, "gitCherryPick error", e);
+            logGitError("gitCherryPick", e);
             return "Git error: " + e.getMessage();
         }
     }
@@ -1091,7 +1257,7 @@ public class GitProvider {
             };
         }
         catch (GitException e) {
-            LOG.log(Level.WARNING, "gitTag error", e);
+            logGitError("gitTag", e);
             return "Git error: " + e.getMessage();
         }
     }
@@ -1124,8 +1290,18 @@ public class GitProvider {
                     if (name == null || name.isBlank()) {
                         yield "name is required";
                     }
+                    Map<String, Boolean> remoteFlagByBranch = new LinkedHashMap<>();
+                    client.getBranches(true, NULL_PM).forEach((branchName, b) -> remoteFlagByBranch.put(branchName, b.isRemote()));
                     client.removeRemote(name, NULL_PM);
-                    yield "Removed remote: " + name;
+                    // Like `git remote remove`, drop the remote's tracking branches too; they otherwise linger as stale
+                    // refs (live v1.4.15: origin/sweep-rb stayed until deleted by hand).
+                    List<String> trackingBranches = trackingBranchesOf(name, remoteFlagByBranch);
+                    for (String trackingBranch : trackingBranches) {
+                        client.deleteBranch(trackingBranch, true, NULL_PM);
+                    }
+                    yield trackingBranches.isEmpty()
+                          ? "Removed remote: " + name
+                          : "Removed remote: " + name + " and its " + trackingBranches.size() + " remote-tracking branch(es)";
                 }
                 case LIST -> {
                     Map<String, GitRemoteConfig> remotes = client.getRemotes(NULL_PM);
@@ -1143,7 +1319,7 @@ public class GitProvider {
             };
         }
         catch (GitException e) {
-            LOG.log(Level.WARNING, "gitRemote error", e);
+            logGitError("gitRemote", e);
             return "Git error: " + e.getMessage();
         }
     }
@@ -1178,7 +1354,7 @@ public class GitProvider {
             return "Revert " + status;
         }
         catch (GitException e) {
-            LOG.log(Level.WARNING, "gitRevert error", e);
+            logGitError("gitRevert", e);
             return "Git error: " + e.getMessage();
         }
     }

@@ -66,13 +66,50 @@ class MoveFileToolTest {
     }
 
     @Test
+    void schemaExposesTargetProjectPathAndCommitWithWarningAsOptional() {
+        // #17b/#18: both new parameters must be advertised, and neither may be unconditionally required — omitting
+        // either preserves today's existing behaviour (same-project move; refuse on any non-fatal warning).
+        JsonObject schema = new MoveFileTool(unrestrictedServer()).schema(java.util.Set.of())
+                .getAsJsonObject(ToolSchemaKeyEnum.INPUT_SCHEMA.key());
+        JsonObject props = schema.getAsJsonObject(ToolSchemaKeyEnum.PROPERTIES.key());
+        assertTrue(props.has(MoveFileParamEnum.TARGET_PROJECT_PATH.key()));
+        assertEquals("string", props.getAsJsonObject(MoveFileParamEnum.TARGET_PROJECT_PATH.key())
+                     .get(ToolSchemaKeyEnum.TYPE.key()).getAsString());
+        assertTrue(props.has(MoveFileParamEnum.COMMIT_WITH_WARNING.key()));
+        assertEquals("boolean", props.getAsJsonObject(MoveFileParamEnum.COMMIT_WITH_WARNING.key())
+                     .get(ToolSchemaKeyEnum.TYPE.key()).getAsString());
+        JsonArray required = schema.getAsJsonArray(ToolSchemaKeyEnum.REQUIRED.key());
+        assertEquals(2, required.size(), "the two new parameters must not join the required set: " + required);
+    }
+
+    @Test
+    void relativeTargetDirectoryUnderTargetProjectPathIsCombinedBeforeTheMove(@TempDir Path dir) throws Exception {
+        // #17b end-to-end: a relative targetDirectory + targetProjectPath must resolve to the SAME directory the
+        // move actually uses — proves MoveFileTool wires resolveMoveTargetDirectory in ahead of the access check
+        // and the move itself, not just that the pure helper computes the right string in isolation.
+        Path source = Files.writeString(dir.resolve("moved.txt"), "payload");
+        Path targetDir = Files.createDirectory(dir.resolve("dest"));
+        MoveFileTool tool = new MoveFileTool(unrestrictedServer());
+        JsonObject o = new JsonObject();
+        o.addProperty(MoveFileParamEnum.SOURCE_PATH.key(), source.toString());
+        o.addProperty(MoveFileParamEnum.TARGET_DIRECTORY.key(), "dest");
+        o.addProperty(MoveFileParamEnum.TARGET_PROJECT_PATH.key(), dir.toString());
+
+        String result = tool.handle(new ToolRequestArguments(o), new StubSession(SESSION_ID, PermissionDecision.allowed()));
+
+        assertEquals("File moved", result);
+        assertFalse(Files.exists(source), "source must be gone after a move");
+        assertTrue(Files.exists(targetDir.resolve("moved.txt")), "file must land in the resolved (relative) target");
+    }
+
+    @Test
     void movesFileIntoTargetDirectory(@TempDir Path dir) throws Exception {
         Path source = Files.writeString(dir.resolve("moved.txt"), "payload");
         Path targetDir = Files.createDirectory(dir.resolve("dest"));
         MoveFileTool tool = new MoveFileTool(unrestrictedServer());
 
         String result = tool.handle(args(source.toString(), targetDir.toString()),
-                new StubSession(SESSION_ID, PermissionDecision.allowed()));
+                                    new StubSession(SESSION_ID, PermissionDecision.allowed()));
 
         assertEquals("File moved", result);
         assertFalse(Files.exists(source), "source must be gone after a move");
@@ -98,7 +135,7 @@ class MoveFileToolTest {
         MoveFileTool tool = new MoveFileTool(unrestrictedServer());
 
         String result = tool.handle(args(source.toString(), dir.resolve("no-such-dir").toString()),
-                new StubSession(SESSION_ID, PermissionDecision.allowed()));
+                                    new StubSession(SESSION_ID, PermissionDecision.allowed()));
 
         assertTrue(result.contains("Target directory not found"), result);
         assertTrue(Files.exists(source), "source must survive a failed move");
@@ -125,7 +162,7 @@ class MoveFileToolTest {
         MoveFileTool tool = new MoveFileTool(unrestrictedServer());
 
         assertThrows(McpArgumentException.class,
-                () -> tool.handle(args(null, "/tmp"), new StubSession(SESSION_ID, PermissionDecision.allowed())));
+                     () -> tool.handle(args(null, "/tmp"), new StubSession(SESSION_ID, PermissionDecision.allowed())));
     }
 
     private static final class StubSession extends AbstractAiSession {
@@ -136,7 +173,7 @@ class MoveFileToolTest {
 
         StubSession(String id, PermissionDecision autoDecision) {
             super(new AiSession(id, "Test", null, null, null, null,
-                    Instant.EPOCH, Instant.EPOCH));
+                                Instant.EPOCH, Instant.EPOCH));
             this.id = id;
             this.autoDecision = autoDecision;
         }

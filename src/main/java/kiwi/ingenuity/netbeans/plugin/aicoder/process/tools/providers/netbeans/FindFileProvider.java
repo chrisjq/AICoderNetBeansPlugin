@@ -89,25 +89,25 @@ public final class FindFileProvider {
     }
 
     public static String findFiles(List<Path> directories, String pattern, boolean isRegex,
-            boolean caseSensitive, int maxMatches) {
+                                   boolean caseSensitive, int maxMatches) {
         return findFiles(directories, pattern, isRegex, caseSensitive, maxMatches, true, -1, path -> true);
     }
 
     public static String findFiles(List<Path> directories, String pattern, boolean isRegex,
-            boolean caseSensitive, int maxMatches, Predicate<Path> isAccessible) {
+                                   boolean caseSensitive, int maxMatches, Predicate<Path> isAccessible) {
         return findFiles(directories, pattern, isRegex, caseSensitive, maxMatches, true, -1, isAccessible);
     }
 
     public static String findFiles(List<Path> directories, String pattern, boolean isRegex,
-            boolean caseSensitive, int maxMatches, boolean ignoreHidden, int maxDepth,
-            Predicate<Path> isAccessible) {
+                                   boolean caseSensitive, int maxMatches, boolean ignoreHidden, int maxDepth,
+                                   Predicate<Path> isAccessible) {
         return findFiles(directories, pattern, isRegex, caseSensitive, maxMatches, ignoreHidden, maxDepth,
-                FindFileTypeEnum.DEFAULT, isAccessible);
+                         FindFileTypeEnum.DEFAULT, isAccessible);
     }
 
     public static String findFiles(List<Path> directories, String pattern, boolean isRegex,
-            boolean caseSensitive, int maxMatches, boolean ignoreHidden, int maxDepth,
-            FindFileTypeEnum type, Predicate<Path> isAccessible) {
+                                   boolean caseSensitive, int maxMatches, boolean ignoreHidden, int maxDepth,
+                                   FindFileTypeEnum type, Predicate<Path> isAccessible) {
         if (directories == null || directories.isEmpty()) {
             return "No projects open";
         }
@@ -143,7 +143,7 @@ public final class FindFileProvider {
         for (Path directory : directories) {
             Path root = directory.toAbsolutePath().normalize();
             if (!Files.isDirectory(root)) {
-                return "Not a directory: " + root;
+                return "Not a directory: " + FileUtils.toIdePath(root.toFile());
             }
             // A candidate that survives pruning: count it, and keep it if the listing is not yet full.
             Consumer<Path> consider = candidate -> {
@@ -163,7 +163,7 @@ public final class FindFileProvider {
                 }
                 catch (LineMatcher.RegexTimeoutException e) {
                     failure.compareAndSet(null, "Regex timed out after " + e.timeoutMillis()
-                            + " ms — the pattern backtracks catastrophically; simplify it.");
+                                          + " ms — the pattern backtracks catastrophically; simplify it.");
                 }
             };
             try {
@@ -175,46 +175,46 @@ public final class FindFileProvider {
                 // Pruning also makes the hidden test O(1) per directory instead of O(depth) per candidate: once an
                 // ancestor is skipped nothing beneath it is offered, so each entry only has to answer for itself.
                 Files.walkFileTree(root, EnumSet.noneOf(FileVisitOption.class), depth, new SimpleFileVisitor<Path>() {
-                    @Override
-                    public FileVisitResult preVisitDirectory(Path dir, BasicFileAttributes attrs) {
-                        if (dir.equals(root)) {
-                            // A root the caller named explicitly is searched even when hidden — naming it is a request.
-                            return FileVisitResult.CONTINUE;
-                        }
-                        if (ignoreHidden && isHiddenPath(dir)) {
-                            return FileVisitResult.SKIP_SUBTREE;
-                        }
-                        consider.accept(dir);
-                        return failure.get() == null ? FileVisitResult.CONTINUE : FileVisitResult.TERMINATE;
-                    }
+                               @Override
+                               public FileVisitResult preVisitDirectory(Path dir, BasicFileAttributes attrs) {
+                                   if (dir.equals(root)) {
+                                       // A root the caller named explicitly is searched even when hidden — naming it is a request.
+                                       return FileVisitResult.CONTINUE;
+                                   }
+                                   if (ignoreHidden && isHiddenPath(dir)) {
+                                       return FileVisitResult.SKIP_SUBTREE;
+                                   }
+                                   consider.accept(dir);
+                                   return failure.get() == null ? FileVisitResult.CONTINUE : FileVisitResult.TERMINATE;
+                               }
 
-                    @Override
-                    public FileVisitResult visitFile(Path file, BasicFileAttributes attrs) {
-                        if (!ignoreHidden || !isHiddenPath(file)) {
-                            consider.accept(file);
-                        }
-                        return failure.get() == null ? FileVisitResult.CONTINUE : FileVisitResult.TERMINATE;
-                    }
+                               @Override
+                               public FileVisitResult visitFile(Path file, BasicFileAttributes attrs) {
+                                   if (!ignoreHidden || !isHiddenPath(file)) {
+                                       consider.accept(file);
+                                   }
+                                   return failure.get() == null ? FileVisitResult.CONTINUE : FileVisitResult.TERMINATE;
+                               }
 
-                    @Override
-                    public FileVisitResult visitFileFailed(Path file, IOException exc) {
-                        // One unreadable entry must not abort the whole search: returning what IS readable beats
-                        // failing the call outright. But skipping SILENTLY is the defect this project keeps meeting —
-                        // an unreadable directory takes its whole subtree with it, and a caller reading "Found N" has
-                        // no way to know the answer is incomplete. So the skip is counted and disclosed in the header,
-                        // the same honesty as the existing "(showing first N)".
-                        skipped[0]++;
-                        // Diagnostic only — the caller already learns from the header that entries were skipped, so
-                        // this is behind the debug flag rather than written on every ordinary search.
-                        if (PluginSettings.isDebugJson()) {
-                            LOG.log(Level.FINE, "Skipping unreadable entry: {0}", file);
-                        }
-                        return FileVisitResult.CONTINUE;
-                    }
-                });
+                               @Override
+                               public FileVisitResult visitFileFailed(Path file, IOException exc) {
+                                   // One unreadable entry must not abort the whole search: returning what IS readable beats
+                                   // failing the call outright. But skipping SILENTLY is the defect this project keeps meeting —
+                                   // an unreadable directory takes its whole subtree with it, and a caller reading "Found N" has
+                                   // no way to know the answer is incomplete. So the skip is counted and disclosed in the header,
+                                   // the same honesty as the existing "(showing first N)".
+                                   skipped[0]++;
+                                   // Diagnostic only — the caller already learns from the header that entries were skipped, so
+                                   // this is behind the debug flag rather than written on every ordinary search.
+                                   if (PluginSettings.isDebugJson()) {
+                                       LOG.log(Level.FINE, "Skipping unreadable entry: {0}", file);
+                                   }
+                                   return FileVisitResult.CONTINUE;
+                               }
+                           });
             }
             catch (IOException e) {
-                return "Error reading directory: " + directory + " — " + e.getMessage();
+                return "Error reading directory: " + FileUtils.toIdePath(directory.toFile()) + " — " + e.getMessage();
             }
         }
         if (failure.get() != null) {
@@ -224,8 +224,8 @@ public final class FindFileProvider {
             // Without a pattern the tool lists everything, so there is nothing to quote back — saying
             // "matching: null" reported the absence of a filter as though it were the filter that failed.
             String none = query.isBlank()
-                    ? "No " + type.pluralNoun() + " found"
-                    : "No " + type.pluralNoun() + " found matching: " + query;
+                          ? "No " + type.pluralNoun() + " found"
+                          : "No " + type.pluralNoun() + " found matching: " + query;
             // "Found nothing" and "found nothing, but could not read part of the tree" are different answers and the
             // caller has to be able to tell them apart before concluding the thing does not exist.
             return skipped[0] > 0 ? none + skippedNote(skipped[0]) : none;
@@ -239,7 +239,23 @@ public final class FindFileProvider {
             result.append(skippedNote(skipped[0]));
         }
         result.append(":\n\n");
-        matches.forEach(path -> result.append(path).append("\n"));
+        // Resolve each search root once; rewrite all emitted children by string prefix, avoiding per-hit filesystem calls.
+        List<String[]> ideRoots = new ArrayList<>();
+        for (Path directory : directories) {
+            Path root = directory.toAbsolutePath().normalize();
+            ideRoots.add(new String[]{root.toString(), FileUtils.toIdePath(root.toFile()).getPath()});
+        }
+        matches.forEach(path -> {
+            String raw = path.toString();
+            String emitted = raw;
+            for (String[] mapping : ideRoots) {
+                if (raw.equals(mapping[0]) || raw.startsWith(mapping[0] + java.io.File.separator)) {
+                    emitted = mapping[1] + raw.substring(mapping[0].length());
+                    break;
+                }
+            }
+            result.append(emitted).append("\n");
+        });
         return result.toString();
     }
 

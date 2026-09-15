@@ -38,8 +38,11 @@ public class GetJavadocTool implements McpToolInterface {
         JsonObject tool = new JsonObject();
         tool.addProperty(ToolSchemaKeyEnum.NAME.key(), McpToolEnum.GET_JAVADOC.toolName());
         tool.addProperty(ToolSchemaKeyEnum.DESCRIPTION.key(),
-                "Returns Javadoc and method signatures for a class, resolved against the classpath of the required " + GitCommonParamEnum.PROJECT_PATH.key() + ". "
-                + "Run " + McpToolEnum.DOWNLOAD_MAVEN_JAVADOC.toolName() + " first if doc comments are missing for library classes.");
+                         "Lists a class's public and protected member signatures, resolved against the classpath of the required " + GitCommonParamEnum.PROJECT_PATH.key() + ". "
+                         + "A class lookup includes the class's own Javadoc; member Javadoc is returned only for members named with "
+                         + GetJavadocParamEnum.MEMBER_NAME.key() + ". Javadoc is read the same way the editor shows it. "
+                         + "For a library class with no Javadoc, run " + McpToolEnum.DOWNLOAD_MAVEN_SOURCES.toolName() + " or "
+                         + McpToolEnum.DOWNLOAD_MAVEN_JAVADOC.toolName() + " first.");
         JsonObject schema = new JsonObject();
         schema.addProperty(ToolSchemaKeyEnum.TYPE.key(), "object");
         JsonObject props = new JsonObject();
@@ -53,7 +56,7 @@ public class GetJavadocTool implements McpToolInterface {
         props.add(GetJavadocParamEnum.CLASS_NAME.key(), cn);
         JsonObject mn = new JsonObject();
         mn.addProperty(ToolSchemaKeyEnum.TYPE.key(), "string");
-        mn.addProperty(ToolSchemaKeyEnum.DESCRIPTION.key(), "Optional method or field name to filter results to. Omit to return all public and protected members.");
+        mn.addProperty(ToolSchemaKeyEnum.DESCRIPTION.key(), "Optional method, constructor or field name (substring match), searched across inherited members too. Javadoc text is included only for members matched this way. Omit to get the class's own Javadoc plus its own public and protected member signatures, without member Javadoc.");
         props.add(GetJavadocParamEnum.MEMBER_NAME.key(), mn);
         schema.add(ToolSchemaKeyEnum.PROPERTIES.key(), props);
         JsonArray required = new JsonArray();

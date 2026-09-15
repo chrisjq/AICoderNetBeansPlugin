@@ -1,10 +1,12 @@
 package kiwi.ingenuity.netbeans.plugin.aicoder.process;
 
-import kiwi.ingenuity.netbeans.plugin.aicoder.process.McpToolEnum;
+import com.google.gson.JsonObject;
 import java.util.Map;
+import java.util.Set;
 import kiwi.ingenuity.netbeans.plugin.aicoder.StringConst;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.claude.ClaudeToolHandlerFactory;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.McpToolInterface;
+import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.ToolSchemaKeyEnum;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -31,6 +33,24 @@ class McpToolTest {
         Map<McpToolEnum, McpToolInterface> handlers = ClaudeToolHandlerFactory.build(() -> null, null);
         for (McpToolEnum t : McpToolEnum.values()) {
             assertTrue(handlers.containsKey(t), "No handler registered for McpToolEnum." + t.name());
+        }
+    }
+
+    @Test
+    void everyRegisteredSchemaDeclaresPropertiesForItsRequiredKeys() {
+        Map<McpToolEnum, McpToolInterface> handlers = ClaudeToolHandlerFactory.build(() -> null, null);
+        for (McpToolEnum tool : McpToolEnum.values()) {
+            JsonObject input = handlers.get(tool).schema(Set.of())
+                    .getAsJsonObject(ToolSchemaKeyEnum.INPUT_SCHEMA.key());
+            assertTrue(input != null, tool.name() + " has no inputSchema");
+            JsonObject properties = input.getAsJsonObject(ToolSchemaKeyEnum.PROPERTIES.key());
+            assertTrue(properties != null, tool.name() + " has no properties");
+            if (input.has(ToolSchemaKeyEnum.REQUIRED.key())) {
+                for (var required : input.getAsJsonArray(ToolSchemaKeyEnum.REQUIRED.key())) {
+                    assertTrue(properties.has(required.getAsString()),
+                               tool.name() + " requires undeclared " + required.getAsString());
+                }
+            }
         }
     }
 

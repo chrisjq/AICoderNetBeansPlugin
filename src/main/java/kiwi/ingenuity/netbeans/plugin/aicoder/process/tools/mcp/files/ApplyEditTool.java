@@ -37,9 +37,9 @@ public class ApplyEditTool extends AbstractActionTool {
 
     public ApplyEditTool() {
         super(McpSectionEnum.UI_FILES,
-                McpToolEnum.APPLY_EDIT.toolName(),
-                "Replace an exact string in a file. " + McpToolPropertyEnum.OLD_STRING.key() + " must match the source byte-for-byte including indentation; strip the line-number gutter if text was copied from " + McpToolEnum.GET_FILE_CONTENT.toolName() + ". The user approves the change in the NetBeans Accept/Reject diff panel.",
-                McpToolEnum.APPLY_EDIT.toolName() + " -> replace " + McpToolPropertyEnum.OLD_STRING.key() + " with " + McpToolPropertyEnum.NEW_STRING.key() + " in a file; " + McpToolPropertyEnum.OLD_STRING.key() + " must be byte-for-byte exact (strip " + McpToolEnum.GET_FILE_CONTENT.toolName() + " gutter if copying from there); user approves via the NetBeans diff panel");
+              McpToolEnum.APPLY_EDIT.toolName(),
+              "Replace an exact string in a file. " + McpToolPropertyEnum.OLD_STRING.key() + " must match the source byte-for-byte including indentation; strip the line-number gutter if text was copied from " + McpToolEnum.GET_FILE_CONTENT.toolName() + ". The user approves the change in the NetBeans Accept/Reject diff panel.",
+              McpToolEnum.APPLY_EDIT.toolName() + " -> replace " + McpToolPropertyEnum.OLD_STRING.key() + " with " + McpToolPropertyEnum.NEW_STRING.key() + " in a file; " + McpToolPropertyEnum.OLD_STRING.key() + " must be byte-for-byte exact (strip " + McpToolEnum.GET_FILE_CONTENT.toolName() + " gutter if copying from there); user approves via the NetBeans diff panel");
     }
 
     @Override
@@ -119,6 +119,7 @@ public class ApplyEditTool extends AbstractActionTool {
             listener.onAiProcessEvent(new PermissionEvent("Edit", filePath, oldString, newString, null, future));
             PermissionDecision decision;
             try {
+                // The tool-call wait and shared user-approval deadline race; whichever completes first decides.
                 decision = future.get(TimeoutEnum.USER_APPROVAL_WAIT_MILLIS.millis(), TimeUnit.MILLISECONDS);
             }
             catch (TimeoutException e) {
@@ -133,8 +134,8 @@ public class ApplyEditTool extends AbstractActionTool {
             }
             if (decision == null || !decision.allow()) {
                 return decision != null && decision.message() != null && !decision.message().isBlank()
-                        ? "User rejected the edit: " + decision.message().trim() + " — do not retry this change"
-                        : "User rejected the edit — do not retry this change";
+                       ? "User rejected the edit: " + decision.message().trim() + " — do not retry this change"
+                       : "User rejected the edit — do not retry this change";
             }
             return RefactoringProvider.applyEdit(filePath, oldString, newString);
         }

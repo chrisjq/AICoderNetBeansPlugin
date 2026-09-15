@@ -7,6 +7,7 @@ import kiwi.ingenuity.netbeans.plugin.aicoder.ai.mail.AiSessionInboxBroker;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.McpInstructionOptionEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.McpSectionEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.McpToolEnum;
+import kiwi.ingenuity.netbeans.plugin.aicoder.process.SessionRegistry;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.session.AbstractAiSession;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.AbstractActionTool;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.McpToolSchemas;
@@ -17,16 +18,16 @@ public class IsAiSessionActiveTool extends AbstractActionTool {
 
     public IsAiSessionActiveTool() {
         super(McpSectionEnum.PLUGIN,
-                McpToolEnum.IS_AI_SESSION_ACTIVE.toolName(),
-                "Check whether a target AI session is open and whether it is idle or busy. Open sessions can receive messages regardless of state.",
-                McpToolEnum.IS_AI_SESSION_ACTIVE.toolName() + " -> check before " + McpToolEnum.SEND_AI_MESSAGE.toolName() + " if you need the session to respond promptly; active=false means idle (can still receive), active=true means busy");
+              McpToolEnum.IS_AI_SESSION_ACTIVE.toolName(),
+              "Check whether a target AI session is open and whether it is idle, busy, or awaiting approval. Open sessions can receive messages regardless of state; awaiting approval is reported separately from active.",
+              McpToolEnum.IS_AI_SESSION_ACTIVE.toolName() + " -> check before " + McpToolEnum.SEND_AI_MESSAGE.toolName() + " if you need the session to respond promptly; active=false means idle (can still receive), active=true means busy");
     }
 
     @Override
     public JsonObject schema(Set<McpInstructionOptionEnum> options) {
         JsonObject tool = new JsonObject();
         tool.addProperty(ToolSchemaKeyEnum.NAME.key(), McpToolEnum.IS_AI_SESSION_ACTIVE.toolName());
-        tool.addProperty(ToolSchemaKeyEnum.DESCRIPTION.key(), "Check whether a target AI session is open and whether it is idle or busy. Open sessions can receive messages regardless of state.");
+        tool.addProperty(ToolSchemaKeyEnum.DESCRIPTION.key(), "Check whether a target AI session is open and whether it is idle, busy, or awaiting approval. Open sessions can receive messages regardless of state; awaiting approval is reported separately from active.");
         JsonObject schema = new JsonObject();
         schema.addProperty(ToolSchemaKeyEnum.TYPE.key(), "object");
         JsonObject props = new JsonObject();
@@ -59,8 +60,12 @@ public class IsAiSessionActiveTool extends AbstractActionTool {
             return "Session " + targetSessionId + " is not open (session window closed or not registered).";
         }
         boolean processing = broker.isSessionRunning(targetSessionId);
-        return processing
-                ? "Session " + targetSessionId + " is open and currently processing a turn (busy — message will queue until turn completes)."
-                : "Session " + targetSessionId + " is open and idle (ready to receive messages).";
+        AbstractAiSession target = SessionRegistry.get(targetSessionId);
+        boolean awaitingApproval = target != null && target.getAiSession().isAwaitingApproval();
+        String state = processing
+                       ? "currently processing a turn (busy — message will queue until turn completes)"
+                       : "idle (ready to receive messages)";
+        return "Session " + targetSessionId + " is open and " + state
+                + (awaitingApproval ? "; awaiting approval from its user." : ".");
     }
 }

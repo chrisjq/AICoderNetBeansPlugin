@@ -160,15 +160,31 @@ public class McpHookServer {
     private final Map<String, ReentrantLock> hookLocks = new ConcurrentHashMap<>();
     // All file/project access-scope state and policy: see SessionFileScopeRegistry's
     // class javadoc for the two directory trees it distinguishes.
-    private final SessionFileScopeRegistry fileScope = new SessionFileScopeRegistry();
+    private final SessionFileScopeRegistry fileScope;
     private boolean started = false;
     private volatile boolean stopped = false;
     private String name = "";
     // Captured at init() so getBaseUrl()/getPort() stay valid after stop() nulls httpServer.
     private volatile String baseUrl = null;
 
+    /**
+     * Standalone constructor: this instance owns a fresh, private {@link SessionFileScopeRegistry}. Used only by tests
+     * that construct a server directly and don't need to share scope with anything else — production always goes
+     * through {@link #McpHookServer(int, SessionFileScopeRegistry)} via {@link McpServerRegistry}, so a health-tick
+     * replacement never starts a session's scope from empty (#15/#21).
+     */
     public McpHookServer(int port) {
+        this(port, new SessionFileScopeRegistry());
+    }
+
+    /**
+     * @param fileScope the scope registry this server delegates every access check to. {@link McpServerRegistry} passes
+     * its own single, long-lived instance so a server replacement (see {@code reconcile}) carries every session's scope
+     * forward instead of starting empty.
+     */
+    public McpHookServer(int port, SessionFileScopeRegistry fileScope) {
         this.port = port;
+        this.fileScope = fileScope != null ? fileScope : new SessionFileScopeRegistry();
     }
 
     public void init() throws IOException {
@@ -239,7 +255,7 @@ public class McpHookServer {
      * @param aiTypeKey AI type key from {@code AiTypeEnum.key()}, e.g. {@code "claude"}
      */
     public void registerSession(String sessionId, AiTypeEnum aiType,
-            List<File> projectDirs, boolean restrictToProjectFiles) {
+                                List<File> projectDirs, boolean restrictToProjectFiles) {
         if (sessionId == null) {
             return;
         }
@@ -261,7 +277,7 @@ public class McpHookServer {
      * unregisterSession, so this cannot resurrect a closed session.
      */
     public void updateSessionScope(String sessionId, AiTypeEnum aiType,
-            List<File> projectDirs, boolean restrictToProjectFiles) {
+                                   List<File> projectDirs, boolean restrictToProjectFiles) {
         if (sessionId == null) {
             return;
         }
@@ -502,7 +518,7 @@ public class McpHookServer {
             // hook, so telling it "missing filePath" would name a field it never
             // sends. This is why the two vocabularies have separate enums.
             McpHookServerUtil.sendJson(ex, 200, McpHookServerUtil.hookDeny(
-                    "Access denied: missing " + ClaudeHookKeyEnum.FILE_PATH.key()));
+                                       "Access denied: missing " + ClaudeHookKeyEnum.FILE_PATH.key()));
             return;
         }
         String oldString = McpHookServerUtil.str(input, ClaudeHookKeyEnum.OLD_STRING.key());
@@ -552,8 +568,8 @@ public class McpHookServer {
         //    write it directly. Files inside a project fall through to the diff panel below.
         if (!isWithinProjectDirs(sessionId, filePath) && !isUnderAnyOpenProject(filePath)) {
             McpHookServerUtil.sendJson(ex, 200, isUnrestrictedFileAccess(sessionId)
-                    ? McpHookServerUtil.hookAllow()
-                    : McpHookServerUtil.hookDeny(fileAccessDeniedMessage(sessionId, filePath)));
+                                                ? McpHookServerUtil.hookAllow()
+                                                : McpHookServerUtil.hookDeny(fileAccessDeniedMessage(sessionId, filePath)));
             return;
         }
 
@@ -582,7 +598,7 @@ public class McpHookServer {
         LockManager lockManager = LockManager.getInstance();
         if (!lockManager.acquireFileLock(sessionId, filePath)) {
             McpHookServerUtil.sendJson(ex, 200, McpHookServerUtil.hookDeny(
-                    LockManager.fileLockedMessage(lockManager.getFileLockHolder(filePath))));
+                                       LockManager.fileLockedMessage(lockManager.getFileLockHolder(filePath))));
             return;
         }
         sessionHookLock.lock();
@@ -614,8 +630,8 @@ public class McpHookServer {
             }
             if (decision != null && decision.allow()) {
                 String applyResult = "Write".equals(toolName)
-                        ? RefactoringProvider.writeFileContent(filePath, writeContent)
-                        : RefactoringProvider.applyEdit(filePath, oldString, newString, replaceAll);
+                                     ? RefactoringProvider.writeFileContent(filePath, writeContent)
+                                     : RefactoringProvider.applyEdit(filePath, oldString, newString, replaceAll);
                 String allowedResponse = McpHookServerUtil.hookDeny("Applied by NetBeans plugin: " + applyResult);
                 if (PluginSettings.isDebugJson()) {
                     LOG.log(Level.INFO, "Hook response (applied): {0}", allowedResponse);
@@ -625,8 +641,8 @@ public class McpHookServer {
             else {
                 String deniedResponse = McpHookServerUtil.hookDeny(
                         decision != null
-                                ? decision.effectiveDenyMessage("User rejected - do not retry this change")
-                                : "User rejected - do not retry this change");
+                        ? decision.effectiveDenyMessage("User rejected - do not retry this change")
+                        : "User rejected - do not retry this change");
                 if (PluginSettings.isDebugJson()) {
                     LOG.log(Level.INFO, "Hook response (denied): {0}", deniedResponse);
                 }
@@ -708,11 +724,11 @@ public class McpHookServer {
             JsonElement id = req.get(idKey);
             JsonElement methodEl = req.has(methodKey) ? req.get(methodKey) : null;
             String rpcMethod = (methodEl != null && !methodEl.isJsonNull() && methodEl.isJsonPrimitive())
-                    ? methodEl.getAsString() : "";
+                               ? methodEl.getAsString() : "";
 
             String path = ex.getRequestURI().getPath();
             String aiTypeKey = path != null && path.startsWith("/mcp/")
-                    ? path.substring("/mcp/".length()) : null;
+                               ? path.substring("/mcp/".length()) : null;
             AiTypeEnum aiType = aiTypeKey != null ? AiTypeEnum.fromKey(aiTypeKey) : null;
 
             JsonObject params = McpHookServerUtil.obj(req, McpProtocolKeyEnum.PARAMS.key());
@@ -724,7 +740,7 @@ public class McpHookServer {
                     JsonObject result = new JsonObject();
                     String clientProto = McpHookServerUtil.str(params, McpProtocolKeyEnum.PROTOCOL_VERSION.key());
                     result.addProperty(McpProtocolKeyEnum.PROTOCOL_VERSION.key(),
-                            clientProto != null && !clientProto.isBlank() ? clientProto : "2024-11-05");
+                                       clientProto != null && !clientProto.isBlank() ? clientProto : "2024-11-05");
                     JsonObject caps = new JsonObject();
                     caps.add(McpProtocolKeyEnum.TOOLS.key(), new JsonObject());
                     result.add(McpProtocolKeyEnum.CAPABILITIES.key(), caps);
@@ -763,19 +779,19 @@ public class McpHookServer {
                     // instead of retrying the same broken arguments.
                     if (sessionId == null || secretKey == null) {
                         McpHookServerUtil.sendJson(ex, 200, McpHookServerUtil.mcpError(id, -32600,
-                                "Authentication failed: "
-                                + McpToolPropertyEnum.SESSION_ID.key() + " and "
-                                + McpToolPropertyEnum.SECRET_KEY.key()
-                                + " are both required on every tool call. Copy them verbatim from your session identity block."));
+                                                                                       "Authentication failed: "
+                                                                                       + McpToolPropertyEnum.SESSION_ID.key() + " and "
+                                                                                       + McpToolPropertyEnum.SECRET_KEY.key()
+                                                                                       + " are both required on every tool call. Copy them verbatim from your session identity block."));
                         return;
                     }
 
                     if (!AiSessionInboxBroker.getInstance().validateSecret(sessionId, secretKey)) {
                         McpHookServerUtil.sendJson(ex, 200, McpHookServerUtil.mcpError(id, -32600,
-                                "Authentication failed: no session matches that "
-                                + McpToolPropertyEnum.SESSION_ID.key() + "/"
-                                + McpToolPropertyEnum.SECRET_KEY.key()
-                                + " pair. Re-read your session identity block and copy both values exactly, character for character."));
+                                                                                       "Authentication failed: no session matches that "
+                                                                                       + McpToolPropertyEnum.SESSION_ID.key() + "/"
+                                                                                       + McpToolPropertyEnum.SECRET_KEY.key()
+                                                                                       + " pair. Re-read your session identity block and copy both values exactly, character for character."));
                         return;
                     }
 
@@ -783,7 +799,7 @@ public class McpHookServer {
 
                     if (session == null) {
                         McpHookServerUtil.sendJson(ex, 200,
-                                McpHookServerUtil.mcpError(id, -32600, "Unknown session"));
+                                                   McpHookServerUtil.mcpError(id, -32600, "Unknown session"));
                         return;
                     }
 
@@ -791,18 +807,20 @@ public class McpHookServer {
                     McpToolEnum requestedTool = McpToolEnum.of(requestedName);
                     if (isToolGated(session.getAiSession().isInstructionsLoaded(), requestedTool)) {
                         McpHookServerUtil.sendJson(ex, 200, McpHookServerUtil.mcpTextResult(id,
-                                "BLOCKED: call GetInstructions before using "
-                                + (requestedName != null ? requestedName : "this tool")
-                                + ". It returns the plugin usage guide and unlocks the other tools. "
-                                + "Call GetInstructions now, then retry."));
+                                                                                            "BLOCKED: call GetInstructions before using "
+                                                                                            + (requestedName != null ? requestedName : "this tool")
+                                                                                            + ". It returns the plugin usage guide and unlocks the other tools. "
+                                                                                            + "Call GetInstructions now, then retry."));
                         return;
                     }
 
-                    handleMcpToolCall(ex, req, id, session);
+                    handleMcpToolCall(ex, req, id, session,
+                                      RawJsonArgumentScanner.duplicateKeys(body, McpProtocolKeyEnum.PARAMS.key(),
+                                                                           McpProtocolKeyEnum.ARGUMENTS.key()));
                 }
                 default ->
                     McpHookServerUtil.sendJson(ex, 200,
-                            McpHookServerUtil.mcpError(id, -32601, "Method not found: " + rpcMethod));
+                                               McpHookServerUtil.mcpError(id, -32601, "Method not found: " + rpcMethod));
             }
         }
         finally {
@@ -815,7 +833,7 @@ public class McpHookServer {
     }
 
     private void handleMcpToolCall(HttpExchange ex, JsonObject req, JsonElement id,
-            AbstractAiSession session) throws IOException {
+                                   AbstractAiSession session, Map<String, Integer> duplicateCounts) throws IOException {
         JsonObject params = McpHookServerUtil.obj(req, McpProtocolKeyEnum.PARAMS.key());
         String toolName = McpHookServerUtil.str(params, McpProtocolKeyEnum.NAME.key());
         JsonObject argsObj = McpHookServerUtil.obj(params, McpProtocolKeyEnum.ARGUMENTS.key());
@@ -823,23 +841,23 @@ public class McpHookServer {
         McpToolEnum tool = McpToolEnum.of(toolName);
         if (tool == null) {
             McpHookServerUtil.sendJson(ex, 200,
-                    McpHookServerUtil.mcpError(id, -32601, "Unknown tool: " + toolName));
+                                       McpHookServerUtil.mcpError(id, -32601, "Unknown tool: " + toolName));
             return;
         }
         McpToolInterface handler = session.getMcpToolHandlers().get(tool);
         if (handler == null) {
             McpHookServerUtil.sendJson(ex, 200,
-                    McpHookServerUtil.mcpError(id, -32601, "Unhandled tool: " + toolName));
+                                       McpHookServerUtil.mcpError(id, -32601, "Unhandled tool: " + toolName));
             return;
         }
         try {
             // McpToolInvoker logs the call — see the note there on why it moved.
-            String result = McpToolInvoker.invoke(tool, handler, argsObj, session);
+            String result = McpToolInvoker.invoke(tool, handler, argsObj, session, duplicateCounts);
             McpHookServerUtil.sendJson(ex, 200, McpHookServerUtil.mcpTextResult(id, result));
         }
         catch (McpArgumentException e) {
             McpHookServerUtil.sendJson(ex, 200,
-                    McpHookServerUtil.mcpError(id, e.getCode(), e.getMessage()));
+                                       McpHookServerUtil.mcpError(id, e.getCode(), e.getMessage()));
         }
         catch (IOException e) {
             throw e;
@@ -852,7 +870,7 @@ public class McpHookServer {
                 LOG.log(Level.FINE, "Tool failure: " + toolName, e);
             }
             McpHookServerUtil.sendJson(ex, 200,
-                    McpHookServerUtil.mcpError(id, -32603, "Internal error: " + e.getMessage()));
+                                       McpHookServerUtil.mcpError(id, -32603, "Internal error: " + e.getMessage()));
         }
     }
 }

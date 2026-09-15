@@ -29,8 +29,10 @@ public class ListAiSessionsTool extends AbstractActionTool {
      */
     private static final String TOOL_DESCRIPTION
             = "List all active AI sessions (excluding caller). Each entry includes active=true if"
-            + " the session is busy processing a turn, active=false if idle. Both idle and busy"
-            + " sessions can receive " + McpToolEnum.SEND_AI_MESSAGE.toolName() + "."
+            + " the session is busy processing a turn, active=false if idle. awaitingApproval=true"
+            + " means an interactive approval prompt is awaiting that session's user; active keeps"
+            + " its independent busy/idle meaning. Both idle and busy sessions can receive "
+            + McpToolEnum.SEND_AI_MESSAGE.toolName() + "."
             + " Each entry also reports mailDelivery: when that peer will actually read your"
             + " message, and whether " + SendAiMessageParamEnum.IMPORTANT.key() + "=true changes"
             + " it. Where mailDelivery says the peer reads at end of turn, it cannot be reached"
@@ -41,9 +43,9 @@ public class ListAiSessionsTool extends AbstractActionTool {
 
     public ListAiSessionsTool() {
         super(McpSectionEnum.PLUGIN,
-                McpToolEnum.LIST_AI_SESSIONS.toolName(),
-                TOOL_DESCRIPTION,
-                McpToolEnum.LIST_AI_SESSIONS.toolName() + " -> discover peer AI sessions; call before " + McpToolEnum.SEND_AI_MESSAGE.toolName() + " to find session IDs and to see when each peer will read your message");
+              McpToolEnum.LIST_AI_SESSIONS.toolName(),
+              TOOL_DESCRIPTION,
+              McpToolEnum.LIST_AI_SESSIONS.toolName() + " -> discover peer AI sessions; call before " + McpToolEnum.SEND_AI_MESSAGE.toolName() + " to find session IDs and to see when each peer will read your message");
     }
 
     @Override
@@ -117,17 +119,17 @@ public class ListAiSessionsTool extends AbstractActionTool {
                 // on the build actually spawned. Falls back to the type's declared timing when the session is not
                 // registered (not yet started, or already gone).
                 MailDeliveryTimingEnum timing = abstractSession != null
-                        ? abstractSession.getMailDeliveryTiming()
-                        : aiType.mailDeliveryTiming();
+                                                ? abstractSession.getMailDeliveryTiming()
+                                                : aiType.mailDeliveryTiming();
                 if (s.allowsImportantMessages() && timing != AFTER_TURN) {
                     obj.addProperty(ToolResponseKeyEnum.MAIL_DELIVERY.key(),
-                            "Read " + timing.description() + " when "
-                            + SendAiMessageParamEnum.IMPORTANT.key() + "=true, otherwise at "
-                            + AFTER_TURN.description() + ".");
+                                    "Read " + timing.description() + " when "
+                                    + SendAiMessageParamEnum.IMPORTANT.key() + "=true, otherwise at "
+                                    + AFTER_TURN.description() + ".");
                 }
                 else {
                     obj.addProperty(ToolResponseKeyEnum.MAIL_DELIVERY.key(),
-                            "Read at " + AFTER_TURN.description() + ".");
+                                    "Read at " + AFTER_TURN.description() + ".");
                 }
             }
             if (abstractSession != null) {
@@ -135,6 +137,8 @@ public class ListAiSessionsTool extends AbstractActionTool {
                     obj.addProperty(e.getKey(), e.getValue());
                 }
             }
+            obj.addProperty(ToolResponseKeyEnum.AWAITING_APPROVAL.key(), abstractSession != null
+                            && abstractSession.getAiSession().isAwaitingApproval());
             obj.addProperty(ToolResponseKeyEnum.ACTIVE.key(), s.isRunning());
             arr.add(obj);
         }

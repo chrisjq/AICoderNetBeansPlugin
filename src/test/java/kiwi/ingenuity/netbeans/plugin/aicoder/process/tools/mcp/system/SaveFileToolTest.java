@@ -55,7 +55,7 @@ class SaveFileToolTest {
         tool.handle(args("/tmp/test.txt", "hello"), session);
 
         assertEquals(1, session.captured.size(),
-                "content path must fire exactly one PermissionEvent");
+                     "content path must fire exactly one PermissionEvent");
         PermissionEvent pe = assertInstanceOf(PermissionEvent.class, session.captured.get(0));
         assertEquals("Write", pe.toolName());
         assertEquals("/tmp/test.txt", pe.filePath());
@@ -69,9 +69,9 @@ class SaveFileToolTest {
         String result = tool.handle(args("/tmp/test.txt", "hello"), session);
 
         assertFalse(result.contains("Auto-Accept is disabled"),
-                "effectiveAutoAccept gate must be removed: " + result);
+                    "effectiveAutoAccept gate must be removed: " + result);
         assertTrue(result.contains("do not retry"),
-                "denial must be reported as a proper rejection: " + result);
+                   "denial must be reported as a proper rejection: " + result);
     }
 
     @Test
@@ -110,7 +110,7 @@ class SaveFileToolTest {
         tool.handle(args("/tmp/nonexistent-aicoder-test.txt", null), session);
 
         assertTrue(session.captured.isEmpty(),
-                "no-content flush path must not fire PermissionEvent");
+                   "no-content flush path must not fire PermissionEvent");
     }
 
     @Test
@@ -132,9 +132,9 @@ class SaveFileToolTest {
             String result = tool.handle(args(memoryFile.toString(), "remembered fact"), session);
 
             assertTrue(result.toLowerCase().contains("saved"),
-                    "own config dir write must succeed even though the stub session auto-denies: " + result);
+                       "own config dir write must succeed even though the stub session auto-denies: " + result);
             assertTrue(session.captured.isEmpty(),
-                    "own config dir write must bypass the diff panel — no PermissionEvent may be fired");
+                       "own config dir write must bypass the diff panel — no PermissionEvent may be fired");
             assertEquals("remembered fact", Files.readString(memoryFile));
         }
         finally {
@@ -161,7 +161,7 @@ class SaveFileToolTest {
 
             assertFalse(result.startsWith("Access denied"), "own config dir flush must not be denied: " + result);
             assertTrue(session.captured.isEmpty(),
-                    "own config dir flush must not surface a SystemNotificationEvent either");
+                       "own config dir flush must not surface a SystemNotificationEvent either");
         }
         finally {
             server.stop();
@@ -183,6 +183,62 @@ class SaveFileToolTest {
         assertEquals(SaveFileParamEnum.FILE_PATH.key(), required.get(0).getAsString());
     }
 
+    @Test
+    void saveFileWithContent_existingFile_refuses() throws Exception {
+        Path existing = Files.createTempFile("savefile-test-", ".txt");
+        try {
+            Files.writeString(existing, "original content");
+            StubSession session = new StubSession(PermissionDecision.allowed());
+            SaveFileTool tool = new SaveFileTool(allowAllServer());
+
+            String result = tool.handle(args(existing.toString(), "new content"), session);
+
+            assertEquals("File already exists: " + existing + ". Use ApplyEdit to update it.", result);
+            assertEquals("original content", Files.readString(existing));
+        }
+        finally {
+            Files.deleteIfExists(existing);
+        }
+    }
+
+    @Test
+    void saveFileWithContent_newFile_creates() throws Exception {
+        Path newFile = java.nio.file.Paths.get(System.getProperty("java.io.tmpdir"),
+                                               "savefile-test-" + UUID.randomUUID() + ".txt");
+        try {
+            assertFalse(Files.exists(newFile), "file must not exist before test");
+            StubSession session = new StubSession(PermissionDecision.allowed());
+            SaveFileTool tool = new SaveFileTool(allowAllServer());
+
+            String result = tool.handle(args(newFile.toString(), "new file content"), session);
+
+            assertFalse(result.contains("File already exists"), result);
+            assertTrue(Files.exists(newFile), "file must be created");
+            assertEquals("new file content", Files.readString(newFile));
+        }
+        finally {
+            Files.deleteIfExists(newFile);
+        }
+    }
+
+    @Test
+    void saveFileWithContent_existingFile_noListener_overwrites() throws Exception {
+        Path existing = Files.createTempFile("savefile-test-", ".txt");
+        try {
+            Files.writeString(existing, "original content");
+            NoListenerSession session = new NoListenerSession();
+            SaveFileTool tool = new SaveFileTool(allowAllServer());
+
+            String result = tool.handle(args(existing.toString(), "new content"), session);
+
+            assertTrue(result.toLowerCase().contains("saved"), "listener-null sessions should overwrite: " + result);
+            assertEquals("new content", Files.readString(existing));
+        }
+        finally {
+            Files.deleteIfExists(existing);
+        }
+    }
+
     private static class StubSession extends AbstractAiSession {
 
         final List<AiProcessEvent> captured = new ArrayList<>();
@@ -195,7 +251,7 @@ class SaveFileToolTest {
 
         StubSession(String id, PermissionDecision autoDecision) {
             super(new AiSession(id, "Test", null, null, null, null,
-                    Instant.EPOCH, Instant.EPOCH));
+                                Instant.EPOCH, Instant.EPOCH));
             this.id = id;
             this.autoDecision = autoDecision;
         }
@@ -213,6 +269,28 @@ class SaveFileToolTest {
                     pe.response().complete(autoDecision);
                 }
             };
+        }
+
+        @Override
+        public Map<McpToolEnum, McpToolInterface> getMcpToolHandlers() {
+            return Map.of();
+        }
+    }
+
+    private static class NoListenerSession extends AbstractAiSession {
+
+        NoListenerSession() {
+            super(new AiSession(SESSION_ID, "Test", null, null, null, null, Instant.EPOCH, Instant.EPOCH));
+        }
+
+        @Override
+        public String getId() {
+            return SESSION_ID;
+        }
+
+        @Override
+        public AiProcessEventListener getAiProcessEventListener() {
+            return null;
         }
 
         @Override

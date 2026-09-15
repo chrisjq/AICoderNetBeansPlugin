@@ -30,9 +30,10 @@ import org.openide.util.lookup.Lookups;
 public class FindUsagesProvider {
 
     private static final Logger LOG = Logger.getLogger(FindUsagesProvider.class.getName());
+    private static final int MAX_USAGE_LINES = 200;
 
     public static String findUsages(String className, String memberName,
-            boolean findSubclasses, boolean directSubclassesOnly, boolean searchInComments) {
+                                    boolean findSubclasses, boolean directSubclassesOnly, boolean searchInComments) {
         if (className == null || className.isBlank()) {
             return McpToolPropertyEnum.CLASS_NAME.key() + " is required";
         }
@@ -84,7 +85,7 @@ public class FindUsagesProvider {
         TreePathHandle handle = handleRef.get();
         if (handle == null) {
             String target = memberName != null && !memberName.isBlank()
-                    ? normalizedName + "." + memberName : normalizedName;
+                            ? normalizedName + "." + memberName : normalizedName;
             return "Element not found: " + target;
         }
 
@@ -113,7 +114,7 @@ public class FindUsagesProvider {
 
                 Collection<RefactoringElement> elements = session.getRefactoringElements();
                 String target = memberName != null && !memberName.isBlank()
-                        ? normalizedName + "." + memberName : normalizedName;
+                                ? normalizedName + "." + memberName : normalizedName;
                 if (elements == null || elements.isEmpty()) {
                     return "No usages found for " + target;
                 }
@@ -133,15 +134,9 @@ public class FindUsagesProvider {
                     raw.add(new RawUsage(path, offset, line, text));
                 }
                 List<String> lines = dedupe(raw, memberName != null && !memberName.isBlank()
-                        ? memberName : normalizedName);
+                                                 ? memberName : normalizedName);
 
-                StringBuilder sb = new StringBuilder();
-                sb.append("Found ").append(lines.size()).append(" usage(s) of ")
-                        .append(target).append(":\n\n");
-                for (String line : lines) {
-                    sb.append(line).append("\n");
-                }
-                return sb.toString();
+                return formatUsages(target, lines, MAX_USAGE_LINES);
             }
             finally {
                 session.finished();
@@ -151,6 +146,22 @@ public class FindUsagesProvider {
             String msg = e.getMessage();
             return "FindUsages error: " + (msg != null ? msg : e.getClass().getName());
         }
+    }
+
+    /**
+     * The usage listing, capped at {@code maxLines} like SearchInFiles, with the true total in the header. Live
+     * v1.4.15: FindUsages on McpToolEnum returned all 921 usages (~199 KB), which the caller's own client truncated.
+     */
+    static String formatUsages(String target, List<String> lines, int maxLines) {
+        StringBuilder sb = new StringBuilder("Found ").append(lines.size()).append(" usage(s) of ").append(target);
+        if (lines.size() > maxLines) {
+            sb.append(" (showing first ").append(maxLines).append(")");
+        }
+        sb.append(":\n\n");
+        for (String line : lines.subList(0, Math.min(maxLines, lines.size()))) {
+            sb.append(line).append("\n");
+        }
+        return sb.toString();
     }
 
     /**

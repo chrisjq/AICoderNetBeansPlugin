@@ -5,6 +5,7 @@ import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -57,6 +58,14 @@ class SchemaToolCallsTest {
      * marker into the argument name, and the tool reported the argument as missing.
      */
     @Test
+    void schemaObjectArgumentsRetainRawDuplicateCounts() {
+        ChatResult result = text("{\"message\":\"\",\"tool_name\":\"get_current_weather\","
+                + "\"tool_arguments\":{\"city\":\"Toronto\",\"city\":\"Oslo\"}}");
+        SchemaToolCalls.Reply reply = SchemaToolCalls.parse(result, Set.of("get_current_weather"));
+        assertEquals(Map.of("city", 2), reply.calls().get(0).duplicateCounts());
+    }
+
+    @Test
     void decoratedArgumentNamesAreCleaned() {
         ChatResult leading = text("{\"message\":\"\",\"tool_name\":\"GetFileContent\","
                 + "\"tool_arguments\":{\"!filePath\":\"/p/pom.xml\"}}");
@@ -66,11 +75,11 @@ class SchemaToolCallsTest {
                 + "\"tool_arguments\":{\"[startLine]\":\"1\"}}");
 
         assertEquals("{\"filePath\":\"/p/pom.xml\"}",
-                SchemaToolCalls.parse(leading, Set.of("GetFileContent")).calls().get(0).argumentsJson());
+                     SchemaToolCalls.parse(leading, Set.of("GetFileContent")).calls().get(0).argumentsJson());
         assertEquals("{\"filePath\":\"/p/pom.xml\"}",
-                SchemaToolCalls.parse(trailing, Set.of("GetFileContent")).calls().get(0).argumentsJson());
+                     SchemaToolCalls.parse(trailing, Set.of("GetFileContent")).calls().get(0).argumentsJson());
         assertEquals("{\"startLine\":\"1\"}",
-                SchemaToolCalls.parse(bracketed, Set.of("GetFileContent")).calls().get(0).argumentsJson());
+                     SchemaToolCalls.parse(bracketed, Set.of("GetFileContent")).calls().get(0).argumentsJson());
     }
 
     @Test
@@ -78,7 +87,7 @@ class SchemaToolCallsTest {
         ChatResult result = text("{\"message\":\"\",\"tool_name\":\"rm_rf\",\"tool_arguments\":{}}");
 
         assertTrue(SchemaToolCalls.parse(result, Set.of("get_current_weather")).calls().isEmpty(),
-                "only advertised tools may be invoked");
+                   "only advertised tools may be invoked");
     }
 
     /**
@@ -98,8 +107,8 @@ class SchemaToolCallsTest {
     @Test
     void structuredToolCallsStillWin() {
         ChatResult result = new ChatResult("",
-                List.of(new ChatToolCall("c1", "get_current_weather", "{\"city\":\"Oslo\"}")),
-                "tool_calls");
+                                           List.of(new ChatToolCall("c1", "get_current_weather", "{\"city\":\"Oslo\"}")),
+                                           "tool_calls");
 
         SchemaToolCalls.Reply reply = SchemaToolCalls.parse(result, Set.of("get_current_weather"));
 
@@ -109,8 +118,8 @@ class SchemaToolCallsTest {
 
     /**
      * Constructed, not observed - see the class comment. Arguments for a real tool with the name left empty is the
-     * shape the parser used to drop in silence, so the model believed the call had run. It has to be told, or it
-     * cannot correct itself.
+     * shape the parser used to drop in silence, so the model believed the call had run. It has to be told, or it cannot
+     * correct itself.
      */
     @Test
     void argumentsWithNoToolNameProduceAnErrorForTheModel() {
@@ -241,11 +250,11 @@ class SchemaToolCallsTest {
 
         assertTrue(rendered.contains("GitLog("), rendered);
         assertTrue(rendered.contains("GitLog(projectPath,"),
-                "required names must be undecorated so they can be copied verbatim: " + rendered);
+                   "required names must be undecorated so they can be copied verbatim: " + rendered);
         assertTrue(rendered.contains("[limit]"), "optional params are bracketed: " + rendered);
         assertTrue(rendered.contains("Returns recent commit history"), rendered);
         assertFalse(rendered.contains("Equivalent to git log"),
-                "only the first sentence is kept, to bound prompt size");
+                    "only the first sentence is kept, to bound prompt size");
     }
 
     /**

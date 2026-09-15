@@ -1,15 +1,21 @@
 package kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.system;
 
 import com.google.gson.JsonObject;
-import java.io.ByteArrayInputStream;
+import java.io.ByteArrayOutputStream;
 import java.io.IOException;
+import java.io.OutputStream;
 import java.net.InetAddress;
 import java.net.ServerSocket;
 import java.net.Socket;
 import java.net.URI;
+import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.Path;
+import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.Flow;
 import kiwi.ingenuity.netbeans.plugin.aicoder.WebRequestAccessOptionEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.AiTypeEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.session.AiSession;
@@ -57,7 +63,7 @@ class WebRequestToolTest {
         args.addProperty(WebRequestParamEnum.URL.key(), "file:///tmp/test.txt");
 
         Exception ex = assertThrows(Exception.class,
-                () -> tool.handle(args(args), new FakeSession(sessionAllowingWebRequests(true))));
+                                    () -> tool.handle(args(args), new FakeSession(sessionAllowingWebRequests(true))));
         assertTrue(ex.getMessage().contains("Only http:// and https:// URLs are supported"));
     }
 
@@ -68,7 +74,7 @@ class WebRequestToolTest {
         args.addProperty(WebRequestParamEnum.URL.key(), SAMPLE_PUBLIC_URL);
 
         Exception ex = assertThrows(Exception.class,
-                () -> tool.handle(args(args), new FakeSession(sessionAllowingWebRequests(false))));
+                                    () -> tool.handle(args(args), new FakeSession(sessionAllowingWebRequests(false))));
         assertTrue(ex.getMessage().contains("Web requests are disabled for this session"));
     }
 
@@ -81,10 +87,10 @@ class WebRequestToolTest {
 
         AiSession session = sessionAllowingWebRequests(true);
         session.settings().setAllowWebRequestAccess(WebRequestAccessOptionEnum.POST,
-                false);
+                                                    false);
 
         Exception ex = assertThrows(Exception.class,
-                () -> tool.handle(args(args), new FakeSession(session)));
+                                    () -> tool.handle(args(args), new FakeSession(session)));
         assertTrue(ex.getMessage().contains("Allow POST"));
     }
 
@@ -102,7 +108,7 @@ class WebRequestToolTest {
                 WebRequestAccessOptionEnum.HEADERS, false);
 
         Exception ex = assertThrows(Exception.class,
-                () -> tool.handle(args(args), new FakeSession(session)));
+                                    () -> tool.handle(args(args), new FakeSession(session)));
         assertTrue(ex.getMessage().contains("Allow custom headers"));
     }
 
@@ -116,10 +122,10 @@ class WebRequestToolTest {
 
         AiSession session = sessionAllowingWebRequests(true);
         session.settings().setAllowWebRequestAccess(WebRequestAccessOptionEnum.BODY,
-                false);
+                                                    false);
 
         Exception ex = assertThrows(Exception.class,
-                () -> tool.handle(args(args), new FakeSession(session)));
+                                    () -> tool.handle(args(args), new FakeSession(session)));
         assertTrue(ex.getMessage().contains("Allow request bodies"));
     }
 
@@ -130,30 +136,30 @@ class WebRequestToolTest {
         WebRequestTool tool = new WebRequestTool();
         AiSession session = sessionAllowingWebRequests(true);
         session.settings().setAllowWebRequestAccess(WebRequestAccessOptionEnum.HEADERS,
-                false);
+                                                    false);
         session.settings().setAllowWebRequestAccess(WebRequestAccessOptionEnum.BODY,
-                false);
+                                                    false);
 
         JsonObject args = new JsonObject();
         args.addProperty(WebRequestParamEnum.URL.key(), "http://127.0.0.1/");
         args.addProperty(WebRequestParamEnum.METHOD.key(), "GET");
 
         Exception ex = assertThrows(Exception.class,
-                () -> tool.handle(args(args), new FakeSession(session)));
+                                    () -> tool.handle(args(args), new FakeSession(session)));
         assertTrue(ex.getMessage().contains("loopback"), ex.getMessage());
     }
 
     @Test
     void rejectsLoopbackDestination() {
         McpArgumentException ex = assertThrows(McpArgumentException.class,
-                () -> WebRequestTool.validateDestination(URI.create("http://127.0.0.1:8080/mcp")));
+                                               () -> WebRequestTool.validateDestination(URI.create("http://127.0.0.1:8080/mcp")));
         assertTrue(ex.getMessage().contains("loopback"), ex.getMessage());
     }
 
     @Test
     void rejectsLocalhostByName() {
         McpArgumentException ex = assertThrows(McpArgumentException.class,
-                () -> WebRequestTool.validateDestination(URI.create("http://localhost/")));
+                                               () -> WebRequestTool.validateDestination(URI.create("http://localhost/")));
         assertTrue(ex.getMessage().contains("loopback"), ex.getMessage());
     }
 
@@ -179,15 +185,15 @@ class WebRequestToolTest {
         // not just say "non-public" — otherwise the AI can't tell a policy refusal
         // from a network failure, and can't explain the refusal to the user.
         McpArgumentException loopback = assertThrows(McpArgumentException.class,
-                () -> WebRequestTool.validateDestination(URI.create("http://127.0.0.1/")));
+                                                     () -> WebRequestTool.validateDestination(URI.create("http://127.0.0.1/")));
         assertTrue(loopback.getMessage().contains("loopback address refused"), loopback.getMessage());
 
         McpArgumentException siteLocal = assertThrows(McpArgumentException.class,
-                () -> WebRequestTool.validateDestination(URI.create("http://10.0.0.1/")));
+                                                      () -> WebRequestTool.validateDestination(URI.create("http://10.0.0.1/")));
         assertTrue(siteLocal.getMessage().contains("private (site-local) address refused"), siteLocal.getMessage());
 
         McpArgumentException linkLocal = assertThrows(McpArgumentException.class,
-                () -> WebRequestTool.validateDestination(URI.create("http://169.254.169.254/")));
+                                                      () -> WebRequestTool.validateDestination(URI.create("http://169.254.169.254/")));
         assertTrue(linkLocal.getMessage().contains("link-local address refused"), linkLocal.getMessage());
     }
 
@@ -198,7 +204,7 @@ class WebRequestToolTest {
         args.addProperty(WebRequestParamEnum.URL.key(), "http://127.0.0.1/");
 
         Exception ex = assertThrows(Exception.class,
-                () -> tool.handle(args(args), new FakeSession(sessionAllowingWebRequests(true))));
+                                    () -> tool.handle(args(args), new FakeSession(sessionAllowingWebRequests(true))));
         assertTrue(ex.getMessage().contains("loopback"), ex.getMessage());
     }
 
@@ -226,7 +232,7 @@ class WebRequestToolTest {
 
             AiSession session = sessionAllowingWebRequests(true);
             session.settings().setAllowWebRequestAccess(WebRequestAccessOptionEnum.LOCALHOST,
-                    true);
+                                                        true);
             WebRequestTool tool = new WebRequestTool();
             JsonObject args = new JsonObject();
             args.addProperty(WebRequestParamEnum.URL.key(), "http://127.0.0.1:" + port + "/");
@@ -261,17 +267,17 @@ class WebRequestToolTest {
 
             AiSession session = sessionAllowingWebRequests(true);
             session.settings().setAllowWebRequestAccess(WebRequestAccessOptionEnum.LOCALHOST,
-                    true);
+                                                        true);
             WebRequestTool tool = new WebRequestTool();
             JsonObject args = new JsonObject();
             args.addProperty(WebRequestParamEnum.URL.key(), "http://127.0.0.1:" + port + "/");
 
             Exception ex = assertThrows(Exception.class,
-                    () -> tool.handle(args(args), new FakeSession(session)));
+                                        () -> tool.handle(args(args), new FakeSession(session)));
             assertTrue(ex.getMessage().contains("private (site-local) address refused"),
-                    ex.getMessage());
+                       ex.getMessage());
             assertTrue(ex.getMessage().contains("Allow private network destinations"),
-                    ex.getMessage());
+                       ex.getMessage());
         }
     }
 
@@ -287,7 +293,7 @@ class WebRequestToolTest {
         try (ServerSocket server = new ServerSocket(0, 1, InetAddress.getByName("127.0.0.1"))) {
             int port = server.getLocalPort();
             respondOnce(server, "HTTP/1.1 302 Found\r\n"
-                    + "Location: http://[bad\r\nContent-Length: 0\r\nConnection: close\r\n\r\n");
+                        + "Location: http://[bad\r\nContent-Length: 0\r\nConnection: close\r\n\r\n");
 
             AiSession session = sessionAllowingWebRequests(true);
             session.settings().setAllowWebRequestAccess(WebRequestAccessOptionEnum.LOCALHOST, true);
@@ -309,7 +315,7 @@ class WebRequestToolTest {
         try (ServerSocket server = new ServerSocket(0, 1, InetAddress.getByName("127.0.0.1"))) {
             int port = server.getLocalPort();
             respondOnce(server, "HTTP/1.1 304 Not Modified\r\n"
-                    + "Location: http://10.0.0.1/secret\r\nConnection: close\r\n\r\n");
+                        + "Location: http://10.0.0.1/secret\r\nConnection: close\r\n\r\n");
 
             AiSession session = sessionAllowingWebRequests(true);
             session.settings().setAllowWebRequestAccess(WebRequestAccessOptionEnum.LOCALHOST, true);
@@ -381,34 +387,232 @@ class WebRequestToolTest {
 
         session.settings().setAllowWebRequestAccess(option, Boolean.TRUE);
         assertTrue(session.settings().effectiveAllowWebRequestAccess(option),
-                "an explicit session TRUE must win regardless of the plugin default");
+                   "an explicit session TRUE must win regardless of the plugin default");
 
         session.settings().setAllowWebRequestAccess(option, Boolean.FALSE);
         assertFalse(session.settings().effectiveAllowWebRequestAccess(option),
-                "an explicit session FALSE must win regardless of the plugin default");
+                    "an explicit session FALSE must win regardless of the plugin default");
 
         session.settings().setAllowWebRequestAccess(option, null);
         assertFalse(session.settings().effectiveAllowWebRequestAccess(option),
-                "null must inherit the shipped plugin default, which is off");
+                    "null must inherit the shipped plugin default, which is off");
     }
 
     @Test
-    void readBoundedBodyStopsBeforeReadingTheWholeStream() throws IOException {
-        byte[] payload = "abcdefghijklmnopqrstuvwxyz".getBytes(StandardCharsets.UTF_8);
-        WebRequestTool.BoundedBody bounded = WebRequestTool.readBoundedBody(
-                new ByteArrayInputStream(payload), 10);
-        assertTrue(bounded.truncatedByBytes());
-        assertEquals(10, bounded.bytes().length);
+    void boundedSubscriberCompletesTruncatedBodyBeforeCancelling() {
+        RecordingSubscription subscription = new RecordingSubscription();
+        WebRequestTool.BoundedBodySubscriber subscriber = new WebRequestTool.BoundedBodySubscriber(10);
+        subscriber.onSubscribe(subscription);
+        subscriber.onNext(List.of(bytes("abcdef"), bytes("ghijklmnop")));
+
+        assertTrue(subscription.cancelled);
+        WebRequestTool.BoundedBody bounded = subscriber.getBody().toCompletableFuture().getNow(null);
+        assertTrue(bounded != null && bounded.truncatedByBytes(),
+                   "the body must already be complete when cancel() runs, or send() fails with 'Stream N cancelled'");
         assertEquals("abcdefghij", new String(bounded.bytes(), StandardCharsets.UTF_8));
+
+        subscriber.onNext(List.of(bytes("late")));
+        subscriber.onError(new IOException("Stream 1 cancelled"));
+        assertEquals(bounded, subscriber.getBody().toCompletableFuture().getNow(null),
+                     "the cancel-induced error must not replace the truncated body");
     }
 
     @Test
-    void readBoundedBodyKeepsShortBodiesIntact() throws IOException {
-        byte[] payload = "short".getBytes(StandardCharsets.UTF_8);
-        WebRequestTool.BoundedBody bounded = WebRequestTool.readBoundedBody(
-                new ByteArrayInputStream(payload), 100);
+    void boundedSubscriberKeepsShortBodiesIntact() {
+        RecordingSubscription subscription = new RecordingSubscription();
+        WebRequestTool.BoundedBodySubscriber subscriber = new WebRequestTool.BoundedBodySubscriber(100);
+        subscriber.onSubscribe(subscription);
+        subscriber.onNext(List.of(bytes("sh"), bytes("ort")));
+        subscriber.onComplete();
+
+        assertFalse(subscription.cancelled);
+        assertEquals(Long.MAX_VALUE, subscription.requested);
+        WebRequestTool.BoundedBody bounded = subscriber.getBody().toCompletableFuture().getNow(null);
         assertFalse(bounded.truncatedByBytes());
         assertEquals("short", new String(bounded.bytes(), StandardCharsets.UTF_8));
+    }
+
+    @Test
+    void boundedSubscriberBodyOfExactlyTheLimitIsNotTruncated() {
+        RecordingSubscription subscription = new RecordingSubscription();
+        WebRequestTool.BoundedBodySubscriber subscriber = new WebRequestTool.BoundedBodySubscriber(5);
+        subscriber.onSubscribe(subscription);
+        subscriber.onNext(List.of(bytes("abc"), bytes("de"), ByteBuffer.allocate(0)));
+        subscriber.onComplete();
+
+        assertFalse(subscription.cancelled);
+        WebRequestTool.BoundedBody bounded = subscriber.getBody().toCompletableFuture().getNow(null);
+        assertFalse(bounded.truncatedByBytes());
+        assertEquals("abcde", new String(bounded.bytes(), StandardCharsets.UTF_8));
+    }
+
+    @Test
+    void boundedSubscriberPropagatesTransportErrors() {
+        WebRequestTool.BoundedBodySubscriber subscriber = new WebRequestTool.BoundedBodySubscriber(10);
+        subscriber.onSubscribe(new RecordingSubscription());
+        subscriber.onNext(List.of(bytes("abc")));
+        subscriber.onError(new IOException("connection reset"));
+
+        ExecutionException e = assertThrows(ExecutionException.class,
+                                            () -> subscriber.getBody().toCompletableFuture().get());
+        assertEquals("connection reset", e.getCause().getMessage());
+    }
+
+    private static ByteBuffer bytes(String text) {
+        return ByteBuffer.wrap(text.getBytes(StandardCharsets.UTF_8));
+    }
+
+    private static final class RecordingSubscription implements Flow.Subscription {
+
+        private long requested;
+        private boolean cancelled;
+
+        @Override
+        public void request(long n) {
+            requested = n;
+        }
+
+        @Override
+        public void cancel() {
+            cancelled = true;
+        }
+    }
+
+    @Test
+    void truncatedBodyIsSpooledCompletelyWhileOnlyTheHeadIsKeptInMemory() {
+        RecordingSubscription subscription = new RecordingSubscription();
+        FakeSpool spool = new FakeSpool("GET https://example.com/\nHTTP 200\n\n", false);
+        WebRequestTool.BoundedBodySubscriber subscriber = new WebRequestTool.BoundedBodySubscriber(4, 1000, spool);
+        subscriber.onSubscribe(subscription);
+        subscriber.onNext(List.of(bytes("abcdef"), bytes("ghij")));
+        subscriber.onComplete();
+
+        assertFalse(subscription.cancelled, "the rest of the body must still be downloaded into the spool");
+        WebRequestTool.BoundedBody bounded = subscriber.getBody().toCompletableFuture().getNow(null);
+        assertTrue(bounded.truncatedByBytes());
+        assertEquals("abcd", new String(bounded.bytes(), StandardCharsets.UTF_8));
+        assertEquals(FakeSpool.PATH, bounded.fullResponseFile());
+        assertEquals("GET https://example.com/\nHTTP 200\n\nabcdefghij", spool.content());
+        assertFalse(bounded.spoolTruncated());
+        assertFalse(spool.discarded);
+    }
+
+    @Test
+    void spoolStopsAtItsCapAndSaysSo() {
+        RecordingSubscription subscription = new RecordingSubscription();
+        FakeSpool spool = new FakeSpool("", false);
+        WebRequestTool.BoundedBodySubscriber subscriber = new WebRequestTool.BoundedBodySubscriber(4, 6, spool);
+        subscriber.onSubscribe(subscription);
+        subscriber.onNext(List.of(bytes("abcdef"), bytes("ghij")));
+
+        assertTrue(subscription.cancelled);
+        WebRequestTool.BoundedBody bounded = subscriber.getBody().toCompletableFuture().getNow(null);
+        assertTrue(bounded.spoolTruncated());
+        assertEquals("abcdef", spool.content());
+        assertEquals(FakeSpool.PATH, bounded.fullResponseFile());
+    }
+
+    @Test
+    void aBodyThatFitsNeverOpensTheSpool() {
+        FakeSpool spool = new FakeSpool("preamble\n\n", false);
+        WebRequestTool.BoundedBodySubscriber subscriber = new WebRequestTool.BoundedBodySubscriber(10, 1000, spool);
+        subscriber.onSubscribe(new RecordingSubscription());
+        subscriber.onNext(List.of(bytes("short")));
+        subscriber.onComplete();
+
+        WebRequestTool.BoundedBody bounded = subscriber.getBody().toCompletableFuture().getNow(null);
+        assertFalse(bounded.truncatedByBytes());
+        assertFalse(spool.opened(), "no file may be created for a response that is not truncated");
+
+        // A body cut only by the character cap is complete in memory and is written out on demand.
+        assertEquals(FakeSpool.PATH, bounded.fullResponseFile());
+        assertEquals("preamble\n\nshort", spool.content());
+    }
+
+    @Test
+    void aTransportErrorWhileSpoolingDiscardsTheFile() {
+        FakeSpool spool = new FakeSpool("", false);
+        WebRequestTool.BoundedBodySubscriber subscriber = new WebRequestTool.BoundedBodySubscriber(2, 1000, spool);
+        subscriber.onSubscribe(new RecordingSubscription());
+        subscriber.onNext(List.of(bytes("abcd")));
+        subscriber.onError(new IOException("connection reset"));
+
+        assertTrue(spool.discarded);
+        assertThrows(ExecutionException.class, () -> subscriber.getBody().toCompletableFuture().get());
+    }
+
+    @Test
+    void aSpoolThatCannotBeOpenedFallsBackToTheTruncatedHead() {
+        RecordingSubscription subscription = new RecordingSubscription();
+        FakeSpool spool = new FakeSpool("", true);
+        WebRequestTool.BoundedBodySubscriber subscriber = new WebRequestTool.BoundedBodySubscriber(3, 1000, spool);
+        subscriber.onSubscribe(subscription);
+        subscriber.onNext(List.of(bytes("abcdef")));
+
+        assertTrue(subscription.cancelled);
+        WebRequestTool.BoundedBody bounded = subscriber.getBody().toCompletableFuture().getNow(null);
+        assertEquals("abc", new String(bounded.bytes(), StandardCharsets.UTF_8));
+        assertEquals(null, bounded.fullResponseFile());
+    }
+
+    @Test
+    void responsePreambleListsRequestStatusAndEveryHeaderValue() {
+        Map<String, List<String>> headers = new java.util.LinkedHashMap<>();
+        headers.put("content-type", List.of("text/html"));
+        headers.put("set-cookie", List.of("a=1", "b=2"));
+
+        assertEquals("GET https://example.com/a\nHTTP 200\ncontent-type: text/html\nset-cookie: a=1\nset-cookie: b=2\n\n",
+                     WebRequestTool.responsePreamble("GET", URI.create("https://example.com/a"), 200, headers));
+    }
+
+    @Test
+    void descriptionNamesTheFullResponseFile() {
+        String description = new WebRequestTool().schema(Set.of()).get(ToolSchemaKeyEnum.DESCRIPTION.key()).getAsString();
+        assertTrue(description.contains("fullResponseFile"), description);
+        assertTrue(description.contains("50 MB"), description);
+    }
+
+    private static final class FakeSpool implements WebRequestTool.ResponseSpool {
+
+        static final Path PATH = Path.of("/tmp/web-request-test.txt");
+        private final String preamble;
+        private final boolean failOpen;
+        private ByteArrayOutputStream written;
+        private boolean discarded;
+
+        FakeSpool(String preamble, boolean failOpen) {
+            this.preamble = preamble;
+            this.failOpen = failOpen;
+        }
+
+        @Override
+        public OutputStream open() throws IOException {
+            if (failOpen) {
+                throw new IOException("no temp file support");
+            }
+            written = new ByteArrayOutputStream();
+            written.write(preamble.getBytes(StandardCharsets.UTF_8));
+            return written;
+        }
+
+        @Override
+        public Path path() {
+            return written != null ? PATH : null;
+        }
+
+        @Override
+        public void discard() {
+            discarded = true;
+            written = null;
+        }
+
+        boolean opened() {
+            return written != null;
+        }
+
+        String content() {
+            return written.toString(StandardCharsets.UTF_8);
+        }
     }
 
     @Test

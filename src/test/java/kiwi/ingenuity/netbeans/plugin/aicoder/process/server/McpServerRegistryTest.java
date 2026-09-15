@@ -8,13 +8,16 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
+import kiwi.ingenuity.netbeans.plugin.aicoder.PluginSettings;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.AiTypeEnum;
 import org.junit.jupiter.api.AfterEach;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNotSame;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
@@ -79,6 +82,11 @@ class McpServerRegistryTest {
         }
     }
 
+    @BeforeAll
+    static void warmPluginPreferences() {
+        PluginSettings.isDebugJson();
+    }
+
     @BeforeEach
     void setUp() {
         McpServerRegistry.stopAll();
@@ -88,6 +96,7 @@ class McpServerRegistryTest {
 
     @AfterEach
     void tearDown() {
+        McpServerRegistry.isResponsiveOverride = null;
         McpServerRegistry.stopAll();
         McpServerRegistry.portOverride = null;
         McpServerRegistry.pollIntervalMillis = 60000;
@@ -274,6 +283,64 @@ class McpServerRegistryTest {
     }
 
     @Test
+    void serverNotReplacedBeforeThreeConsecutiveUnresponsiveProbes() throws Exception {
+        // #15/#21: a single slow/flaky probe on a busy machine must not swap the server — only 3 in a row may.
+        McpServerRegistry.pollIntervalMillis = 80;
+        FakeRegistrar r1 = new FakeRegistrar("c1", AiTypeEnum.CLAUDE);
+        assertTrue(register(r1));
+        McpHookServer original = McpServerRegistry.getServer();
+        assertNotNull(original);
+
+        McpServerRegistry.isResponsiveOverride = false;
+        long start = System.currentTimeMillis();
+        assertTrue(awaitServerReplaced(original, 5000), "an unresponsive server must eventually be replaced");
+        long elapsed = System.currentTimeMillis() - start;
+
+        // The earliest a replacement can happen is on the 3rd consecutive failed tick, i.e. after at least 2 full
+        // poll intervals have already elapsed (tick 1 -> count=1, tick 2 -> count=2, tick 3 -> count=3, replace).
+        assertTrue(elapsed >= 2 * McpServerRegistry.pollIntervalMillis,
+                   "must survive at least 2 consecutive failed probes before replacement, took " + elapsed + "ms");
+    }
+
+    @Test
+    void scopeRegistrySurvivesServerReplacement() throws Exception {
+        // #15/#21: SessionFileScopeRegistry must be owned by the registry, not the server instance, so a
+        // health-tick replacement (or any other swap) never starts a session's scope from empty.
+        FakeRegistrar r1 = new FakeRegistrar("c1", AiTypeEnum.CLAUDE);
+        assertTrue(register(r1));
+        McpHookServer original = McpServerRegistry.getServer();
+        assertNotNull(original);
+
+        String sessionId = "scope-survives-" + System.nanoTime();
+        McpServerRegistry.fileScope().registerScope(sessionId, AiTypeEnum.CLAUDE, List.of(), false);
+        assertTrue(McpServerRegistry.fileScope().isUnrestrictedFileAccess(sessionId));
+
+        // Force a replacement behind the registry's back, exactly like the resurrection test above.
+        original.stop();
+        assertTrue(awaitServerRunning(3000), "health tick should resurrect the server");
+        McpHookServer replaced = McpServerRegistry.getServer();
+        assertNotNull(replaced);
+        assertNotSame(original, replaced, "fixture sanity: the server instance must actually have changed");
+
+        // The scope must still be visible through the NEW server instance, proving it shares the one registry
+        // rather than each McpHookServer owning its own.
+        assertTrue(replaced.isFileAllowed(sessionId, "/anything"),
+                   "an unrestricted session's scope must survive a server replacement");
+    }
+
+    private static boolean awaitServerReplaced(McpHookServer original, long timeoutMs) throws InterruptedException {
+        long deadline = System.currentTimeMillis() + timeoutMs;
+        while (System.currentTimeMillis() < deadline) {
+            McpHookServer current = McpServerRegistry.getServer();
+            if (current != null && current != original) {
+                return true;
+            }
+            Thread.sleep(20);
+        }
+        return false;
+    }
+
+    @Test
     void stopAllStopsServerAndSupervisorThenRecovers() {
         FakeRegistrar r1 = new FakeRegistrar("c1", AiTypeEnum.CLAUDE);
         assertTrue(register(r1));
@@ -323,9 +390,9 @@ class McpServerRegistryTest {
         McpServerRegistry.stopAll();
 
         assertEquals(1, c1.count("unregisterHooks") + c2.count("unregisterHooks"),
-                "exactly one hook teardown for the Claude type");
+                     "exactly one hook teardown for the Claude type");
         assertEquals(1, c1.count("remove") + c2.count("remove"),
-                "exactly one endpoint removal for the Claude type");
+                     "exactly one endpoint removal for the Claude type");
         assertEquals(1, copilot.count("unregisterHooks"));
         assertEquals(1, copilot.count("remove"));
         assertNull(McpServerRegistry.getServer());

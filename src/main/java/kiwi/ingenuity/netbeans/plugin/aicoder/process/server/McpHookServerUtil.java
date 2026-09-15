@@ -202,7 +202,7 @@ public final class McpHookServerUtil {
         sb.append(" ").append(McpToolEnum.GET_INSTRUCTIONS.toolName()).append(" returns the full usage guide and unlocks the remaining tools — the other plugin tools are rejected until you call it. Call ").append(McpToolEnum.GET_INSTRUCTIONS.toolName()).append(" now.");
         if (!mcpOnly) {
             sb.append("\n\nOnce you have, for everything inside the open project use the plugin tools INSTEAD OF the built-in Read/Edit/Write/Bash/Grep tools — never shell out to mvn, git, grep, sed, or cat for project files:\n");
-            sb.append("- Build/test: ").append(McpToolEnum.BUILD_MAVEN_PROJECT.toolName()).append(" / ").append(McpToolEnum.RUN_MAVEN_TESTS.toolName()).append(" (or ").append(McpToolEnum.BUILD_PROJECT.toolName()).append(") — NOT Bash mvn\n");
+            sb.append("- Build/test: ").append(McpToolEnum.BUILD_MAVEN_PROJECT.toolName()).append(" (default: mvn package -DskipTests, options override this) / ").append(McpToolEnum.RUN_MAVEN_TESTS.toolName()).append(" (default: mvn test) — or the Gradle/Ant equivalents, or ").append(McpToolEnum.BUILD_PROJECT.toolName()).append(" (fire-and-forget, no options) — NOT Bash mvn\n");
             sb.append("- Read/search: ").append(McpToolEnum.GET_FILE_CONTENT.toolName()).append(" / ").append(McpToolEnum.SEARCH_IN_FILES.toolName()).append(" / ").append(McpToolEnum.SEARCH_SYMBOLS.toolName()).append(" — NOT the Read tool or Bash grep/rg\n");
             sb.append("- Edit: ").append(McpToolEnum.APPLY_EDIT.toolName()).append(" / ").append(McpToolEnum.WRITE_FILE.toolName()).append(" (or Edit/Write) — these route through the Accept/Reject diff panel; NEVER edit project files with Bash\n");
             sb.append("- Git: ").append(McpToolEnum.GET_GIT_STATUS.toolName()).append(" / ").append(McpToolEnum.GET_GIT_DIFF.toolName()).append(" / ").append(McpToolEnum.GIT_ADD.toolName()).append(" / ").append(McpToolEnum.GIT_COMMIT.toolName()).append(" — NOT Bash git\n");
@@ -217,10 +217,10 @@ public final class McpHookServerUtil {
      * handler.section(); instruction text comes from overrides map if present, else handler.instruction().
      */
     public static String buildInstructions(AiTypeEnum type, String overrideInstructionsHeader, Map<McpToolEnum, McpToolInterface> handlers,
-            Map<McpToolEnum, String> overrides) {
+                                           Map<McpToolEnum, String> overrides) {
         Set<McpInstructionOptionEnum> opts = type.getMcpOptions();
         StringBuilder sb = new StringBuilder(overrideInstructionsHeader == null || overrideInstructionsHeader.trim().isEmpty()
-                ? getGlobalInstructionsHeader(opts) : overrideInstructionsHeader);
+                                             ? getGlobalInstructionsHeader(opts) : overrideInstructionsHeader);
         Map<McpSectionEnum, List<String>> grouped = new LinkedHashMap<>();
         for (McpSectionEnum s : McpSectionEnum.values()) {
             grouped.put(s, new ArrayList<>());
@@ -232,8 +232,8 @@ public final class McpHookServerUtil {
                 continue;
             }
             String instr = overrides.containsKey(entry.getKey())
-                    ? overrides.get(entry.getKey())
-                    : h.instruction(opts);
+                           ? overrides.get(entry.getKey())
+                           : h.instruction(opts);
             if (instr != null) {
                 grouped.get(sec).add("- " + instr);
             }
@@ -442,8 +442,8 @@ public final class McpHookServerUtil {
                 }
                 JsonElement elem = entry.getValue();
                 String value = elem.isJsonNull() ? ""
-                        : elem.isJsonPrimitive() ? elem.getAsString()
-                        : elem.toString();
+                               : elem.isJsonPrimitive() ? elem.getAsString()
+                                 : elem.toString();
                 value = value.replace("\r\n", " ").replace("\n", " ").replace("\r", " ");
                 if (value.length() > 256) {
                     value = value.length() + " character string";

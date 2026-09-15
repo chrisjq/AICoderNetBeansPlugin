@@ -2,18 +2,20 @@ package kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.providers.netbeans;
 
 import java.util.List;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.McpToolPropertyEnum;
-import org.netbeans.modules.refactoring.api.Problem;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import org.junit.jupiter.api.Test;
+import org.netbeans.modules.refactoring.api.AbstractRefactoring;
+import org.netbeans.modules.refactoring.api.Problem;
+import org.openide.util.Lookup;
 
 /**
- * Unit coverage for the {@code commitWithWarning} problem-handling logic added to {@code RefactoringProvider}:
- * walking the full {@link Problem} chain, classifying fatal vs. warning, and deciding whether to block. This logic is
- * pure — it only ever constructs and reads real {@link Problem} objects, which have a public constructor, so none of
- * it needs a live NetBeans project. The engine-driving half ({@code runRefactoringInternal} actually calling
+ * Unit coverage for the {@code commitWithWarning} problem-handling logic added to {@code RefactoringProvider}: walking
+ * the full {@link Problem} chain, classifying fatal vs. warning, and deciding whether to block. This logic is pure — it
+ * only ever constructs and reads real {@link Problem} objects, which have a public constructor, so none of it needs a
+ * live NetBeans project. The engine-driving half ({@code runRefactoringInternal} actually calling
  * preCheck/prepare/doRefactoring) still does, and has the same test gap the single-file success path already has.
  * <p>
  * {@code flattenProblems}, {@code blockedMessageOrNull}, {@code buildProblemSuffix} and {@code RefactoringRunResult}
@@ -29,8 +31,20 @@ class RefactoringProviderProblemHandlingTest {
         return problems[0];
     }
 
-    // ---- flattenProblems: the whole chain, not just the head ----
+    @Test
+    void aRefactoringThatPreparesNoChangeIsNotReportedAsSuccess() {
+        // No refactoring plugins answer for an empty lookup, so preCheck and prepare report no problem and the session
+        // stays empty: the same shape as InlineVariable on a reassigned variable, which used to say "Inlined variable".
+        AbstractRefactoring changesNothing = new AbstractRefactoring(Lookup.EMPTY) {
+        };
 
+        RefactoringProvider.RefactoringRunResult result = RefactoringProvider.runRefactoringInternal(changesNothing, true);
+
+        assertFalse(result.committed);
+        assertEquals(RefactoringProvider.NOTHING_TO_CHANGE, result.blockedMessage);
+    }
+
+    // ---- flattenProblems: the whole chain, not just the head ----
     @Test
     void flattenProblemsWalksTheWholeChainNotJustTheHead() {
         Problem head = chain(
@@ -52,7 +66,6 @@ class RefactoringProviderProblemHandlingTest {
     }
 
     // ---- blockedMessageOrNull: fatal always blocks, regardless of the flag ----
-
     @Test
     void fatalProblemBlocksEvenWithCommitWithWarningTrue() {
         List<Problem> problems = RefactoringProvider.flattenProblems(new Problem(true, "cannot be fixed"));
@@ -72,11 +85,10 @@ class RefactoringProviderProblemHandlingTest {
         String blocked = RefactoringProvider.blockedMessageOrNull(problems, false);
 
         assertFalse(blocked.contains(McpToolPropertyEnum.COMMIT_WITH_WARNING.key()),
-                "a fatal refusal must not mention the flag: " + blocked);
+                    "a fatal refusal must not mention the flag: " + blocked);
     }
 
     // ---- blockedMessageOrNull: non-fatal problems are the flag's whole reason to exist ----
-
     @Test
     void nonFatalProblemBlocksWhenCommitWithWarningIsFalse() {
         List<Problem> problems = RefactoringProvider.flattenProblems(new Problem(false, "just advice"));
@@ -109,13 +121,12 @@ class RefactoringProviderProblemHandlingTest {
         String blocked = RefactoringProvider.blockedMessageOrNull(problems, false);
 
         assertTrue(blocked.contains(McpToolPropertyEnum.COMMIT_WITH_WARNING.key()),
-                "a warnings-only refusal must name the flag by its enum key: " + blocked);
+                   "a warnings-only refusal must name the flag by its enum key: " + blocked);
         assertTrue(blocked.toLowerCase().contains("true"),
-                "it must say the flag can be set to true to proceed: " + blocked);
+                   "it must say the flag can be set to true to proceed: " + blocked);
     }
 
     // ---- mixed fatal + non-fatal: still ALL reported, and the fatal framing wins ----
-
     @Test
     void mixedFatalAndNonFatalReportsBothAndDoesNotMentionTheFlag() {
         List<Problem> problems = RefactoringProvider.flattenProblems(
@@ -127,7 +138,7 @@ class RefactoringProviderProblemHandlingTest {
         assertTrue(blocked.contains("minor warning"), "the non-fatal problem must still be reported: " + blocked);
         assertTrue(blocked.contains("major fault"), "the fatal problem must be reported: " + blocked);
         assertFalse(blocked.contains(McpToolPropertyEnum.COMMIT_WITH_WARNING.key()),
-                "a batch containing any fatal problem is not a warnings-only refusal: " + blocked);
+                    "a batch containing any fatal problem is not a warnings-only refusal: " + blocked);
     }
 
     @Test
@@ -142,7 +153,6 @@ class RefactoringProviderProblemHandlingTest {
     }
 
     // ---- buildProblemSuffix: warnings survive on a successful commit, never silently swallowed ----
-
     @Test
     void toleratedWarningsAreReportedInTheCommitSuffix() {
         List<Problem> tolerated = RefactoringProvider.flattenProblems(new Problem(false, "tolerated advice"));
@@ -152,7 +162,7 @@ class RefactoringProviderProblemHandlingTest {
         assertTrue(suffix != null, "a tolerated warning must produce a suffix, never silently disappear");
         assertTrue(suffix.contains("tolerated advice"));
         assertTrue(suffix.contains(McpToolPropertyEnum.COMMIT_WITH_WARNING.key()),
-                "the suffix should say these were tolerated BY the flag, for context: " + suffix);
+                   "the suffix should say these were tolerated BY the flag, for context: " + suffix);
     }
 
     @Test
@@ -164,7 +174,7 @@ class RefactoringProviderProblemHandlingTest {
         assertTrue(suffix != null);
         assertTrue(suffix.contains("engine complained after writing"));
         assertTrue(suffix.toLowerCase().contains("already"),
-                "a post-commit problem must read as already applied, never as nothing having happened: " + suffix);
+                   "a post-commit problem must read as already applied, never as nothing having happened: " + suffix);
     }
 
     @Test
@@ -173,12 +183,11 @@ class RefactoringProviderProblemHandlingTest {
     }
 
     // ---- the flag's own default ----
-
     @Test
     void commitWithWarningDefaultsToFalseWhenArgumentIsAbsent() {
         var args = new kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.ToolRequestArguments(new com.google.gson.JsonObject());
 
         assertFalse(args.bool(McpToolPropertyEnum.COMMIT_WITH_WARNING.key()),
-                "an absent commitWithWarning must read as false, matching every other boolean flag in this codebase");
+                    "an absent commitWithWarning must read as false, matching every other boolean flag in this codebase");
     }
 }

@@ -11,6 +11,7 @@ public enum MoveClassParamEnum {
     FILE_PATHS(McpToolPropertyEnum.FILE_PATHS),
     LINE(McpToolPropertyEnum.LINE),
     TARGET_PACKAGE(McpToolPropertyEnum.TARGET_PACKAGE),
+    TARGET_PROJECT_PATH(McpToolPropertyEnum.TARGET_PROJECT_PATH),
     COMMIT_WITH_WARNING(McpToolPropertyEnum.COMMIT_WITH_WARNING);
 
     private final McpToolPropertyEnum property;

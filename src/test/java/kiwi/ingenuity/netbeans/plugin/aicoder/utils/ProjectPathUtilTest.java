@@ -6,6 +6,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import org.junit.jupiter.api.Assumptions;
@@ -16,9 +17,8 @@ import org.junit.jupiter.api.io.TempDir;
  * Covers the path shortening shown in confirm prompts and system notifications.
  *
  * <p>
- * These exercise the package-private overload that takes the open-project
- * directories directly — the public method reads them from a running IDE, which
- * is not available here. The shortening rules are all in the overload.
+ * These exercise the package-private overload that takes the open-project directories directly — the public method
+ * reads them from a running IDE, which is not available here. The shortening rules are all in the overload.
  */
 class ProjectPathUtilTest {
 
@@ -44,8 +44,8 @@ class ProjectPathUtilTest {
         String file = new File(project, sep("docs", "notes.md")).getAbsolutePath();
 
         assertEquals(sep("MyProject", "docs", "notes.md"),
-                ProjectPathUtil.shortPath(file, List.of(project)),
-                "the project directory name must survive so the prompt says which project");
+                     ProjectPathUtil.shortPath(file, List.of(project)),
+                     "the project directory name must survive so the prompt says which project");
     }
 
     @Test
@@ -53,8 +53,8 @@ class ProjectPathUtilTest {
         File project = tmp.resolve("MyProject").toFile();
 
         assertEquals("MyProject",
-                ProjectPathUtil.shortPath(project.getAbsolutePath(), List.of(project)),
-                "no trailing separator when the path IS the project directory");
+                     ProjectPathUtil.shortPath(project.getAbsolutePath(), List.of(project)),
+                     "no trailing separator when the path IS the project directory");
     }
 
     @Test
@@ -64,7 +64,7 @@ class ProjectPathUtilTest {
         String file = new File(project, "pom.xml").getAbsolutePath();
 
         assertEquals(sep("MyProject", "pom.xml"),
-                ProjectPathUtil.shortPath(file, List.of(other, project)));
+                     ProjectPathUtil.shortPath(file, List.of(other, project)));
     }
 
     // ---- paths that must NOT be shortened ----
@@ -73,7 +73,7 @@ class ProjectPathUtilTest {
         File project = tmp.resolve("MyProject").toFile();
 
         assertEquals("/etc/hosts", ProjectPathUtil.shortPath("/etc/hosts", List.of(project)),
-                "a delete prompt must not hide that the file sits outside the project");
+                     "a delete prompt must not hide that the file sits outside the project");
     }
 
     @Test
@@ -90,7 +90,7 @@ class ProjectPathUtilTest {
         String result = ProjectPathUtil.shortPath(file, List.of(project));
 
         assertEquals(file, result,
-                "a plain startsWith would report MyProject/-old/notes.md — a path that does not exist");
+                     "a plain startsWith would report MyProject/-old/notes.md — a path that does not exist");
     }
 
     // ---- null / blank passthrough ----
@@ -131,7 +131,7 @@ class ProjectPathUtilTest {
                 .toFile().getAbsolutePath();
 
         assertEquals(sep("MyProject", "docs", "notes.md"),
-                ProjectPathUtil.shortPath(viaAlias, List.of(real.toFile())));
+                     ProjectPathUtil.shortPath(viaAlias, List.of(real.toFile())));
     }
 
     @Test
@@ -147,7 +147,7 @@ class ProjectPathUtilTest {
         String viaReal = real.resolve("docs").resolve("notes.md").toFile().getAbsolutePath();
 
         assertEquals(sep("MyProject", "docs", "notes.md"),
-                ProjectPathUtil.shortPath(viaReal, List.of(projectViaAlias)));
+                     ProjectPathUtil.shortPath(viaReal, List.of(projectViaAlias)));
     }
 
     @Test
@@ -161,7 +161,31 @@ class ProjectPathUtilTest {
                 .resolve("generated.txt").toFile().getAbsolutePath();
 
         assertEquals(sep("MyProject", "target", "generated.txt"),
-                ProjectPathUtil.shortPath(notYetCreated, List.of(real.toFile())));
+                     ProjectPathUtil.shortPath(notYetCreated, List.of(real.toFile())));
+    }
+
+    @Test
+    void openProjectPathMatchesItsSymlinkedAlias(@TempDir Path tmp) throws IOException {
+        Path real = Files.createDirectories(tmp.resolve("real").resolve("MyProject"));
+        Path alias = linkOrSkip(tmp.resolve("alias"), tmp.resolve("real"));
+
+        assertTrue(ProjectPathUtil.isOpenProjectPath(alias.resolve("MyProject").toString(), List.of(real.toFile())),
+                   "a session saved through an alias must match the same open project");
+        assertTrue(ProjectPathUtil.isOpenProjectPath(real.toString(), List.of(alias.resolve("MyProject").toFile())),
+                   "the reverse alias direction must also match");
+        assertFalse(ProjectPathUtil.isOpenProjectPath(tmp.resolve("other").toString(), List.of(real.toFile())));
+    }
+
+    @Test
+    void duplicatePathAliasesKeepOnlyTheShortestSpelling(@TempDir Path tmp) throws IOException {
+        Path longRoot = Files.createDirectories(tmp.resolve("a-long-real-project-root"));
+        Path realProject = Files.createDirectories(longRoot.resolve("MyProject"));
+        Path alias = linkOrSkip(tmp.resolve("p"), longRoot);
+        String shortAlias = alias.resolve("MyProject").toString();
+        String otherProject = tmp.resolve("OtherProject").toString();
+
+        assertEquals(List.of(shortAlias, otherProject),
+                     ProjectPathUtil.distinctShortestPaths(List.of(realProject.toString(), shortAlias, otherProject)));
     }
 
     // ---- truncation ----

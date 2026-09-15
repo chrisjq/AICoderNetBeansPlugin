@@ -20,6 +20,8 @@ import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.database.ListTab
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.devops.build.BuildAntProjectTool;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.devops.build.BuildGradleProjectTool;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.devops.build.BuildMavenProjectTool;
+import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.devops.build.CleanAndBuildAntProjectTool;
+import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.devops.build.CleanAndBuildGradleProjectTool;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.devops.build.CleanAndBuildMavenProjectTool;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.devops.build.DownloadMavenJavadocTool;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.devops.build.DownloadMavenSourcesTool;
@@ -169,8 +171,10 @@ public final class ToolHandlerFactory {
         map.put(McpToolEnum.DOWNLOAD_MAVEN_SOURCES, new DownloadMavenSourcesTool());
         map.put(McpToolEnum.DOWNLOAD_MAVEN_JAVADOC, new DownloadMavenJavadocTool());
         map.put(McpToolEnum.BUILD_GRADLE_PROJECT, new BuildGradleProjectTool());
+        map.put(McpToolEnum.CLEAN_AND_BUILD_GRADLE_PROJECT, new CleanAndBuildGradleProjectTool());
         map.put(McpToolEnum.RUN_GRADLE_TESTS, new RunGradleTestsTool());
         map.put(McpToolEnum.BUILD_ANT_PROJECT, new BuildAntProjectTool());
+        map.put(McpToolEnum.CLEAN_AND_BUILD_ANT_PROJECT, new CleanAndBuildAntProjectTool());
         map.put(McpToolEnum.RUN_ANT_TESTS, new RunAntTestsTool());
         map.put(McpToolEnum.GET_JAVADOC, new GetJavadocTool());
         map.put(McpToolEnum.LIST_AI_SESSIONS, new ListAiSessionsTool());

@@ -27,7 +27,7 @@ class EditorContextProviderTest {
     private static void assertCreatedTimeFollowsPlatformRule(String out) {
         if (OperatingSystemEnum.current().providesFileCreationTime()) {
             assertTrue(out.contains(", created "),
-                    "a platform with real birth times must report one: " + out);
+                       "a platform with real birth times must report one: " + out);
         }
         else {
             // Absent, not explained. An unsupported field is the normal state on this platform, so a per-call notice
@@ -38,7 +38,7 @@ class EditorContextProviderTest {
             // "...getfileinfo-created<random>.txt" makes the loose form match the FILE NAME and fail a correct
             // implementation, which is exactly how an over-broad assertion invents a defect.
             assertFalse(out.contains(", created "),
-                    "created time must be omitted entirely, with no placeholder: " + out);
+                        "created time must be omitted entirely, with no placeholder: " + out);
         }
     }
 
@@ -56,7 +56,7 @@ class EditorContextProviderTest {
             String out = EditorContextProvider.getFileContent(file.toString(), 0, 0);
 
             assertTrue(out.contains(content.length + " bytes"),
-                    "header must state the exact byte count (" + content.length + "): " + out);
+                       "header must state the exact byte count (" + content.length + "): " + out);
             assertTrue(out.contains("of 3, "), "header must still report the line count: " + out);
         }
         finally {
@@ -79,13 +79,13 @@ class EditorContextProviderTest {
             String out = EditorContextProvider.getFileInfo(file.toString());
 
             assertTrue(out.contains(content.length + " bytes"),
-                    "must state the exact byte count (" + content.length + "): " + out);
+                       "must state the exact byte count (" + content.length + "): " + out);
             assertTrue(out.contains("3 lines"), "must report the line count: " + out);
             assertTrue(out.contains("encoding "), "must report an encoding: " + out);
             assertTrue(out.contains("modified ") && out.contains("s ago)"),
-                    "must report the last-modified time and age in seconds: " + out);
+                       "must report the last-modified time and age in seconds: " + out);
             assertTrue(out.contains("writable") || out.contains("read-only"),
-                    "must report the writable flag: " + out);
+                       "must report the writable flag: " + out);
             assertTrue(out.contains("not a symbolic link"), "must state the link status: " + out);
         }
         finally {
@@ -123,7 +123,7 @@ class EditorContextProviderTest {
             String out = EditorContextProvider.getFileInfo(file.toString());
             assertTrue(out.contains("created "), "a real created time must be reported: " + out);
             assertFalse(out.contains("created time not provided"),
-                    "Windows and macOS must not degrade the created time: " + out);
+                        "Windows and macOS must not degrade the created time: " + out);
         }
         finally {
             Files.deleteIfExists(file);
@@ -150,7 +150,7 @@ class EditorContextProviderTest {
         assertTrue(out.contains("1 hidden, 1 visible"), "file hidden split is wrong: " + out);
         assertTrue(out.contains("2 directories"), "must count both directories: " + out);
         assertTrue(out.contains("immediate entries only (not recursive)"),
-                "must state the count is immediate, not recursive: " + out);
+                   "must state the count is immediate, not recursive: " + out);
         assertCreatedTimeFollowsPlatformRule(out);
     }
 
@@ -214,7 +214,7 @@ class EditorContextProviderTest {
 
         assertTrue(out.contains("symbolic link"), "must identify the path as a link: " + out);
         assertTrue(out.contains("broken") || out.contains("cyclic"),
-                "must say the link is broken rather than throwing: " + out);
+                   "must say the link is broken rather than throwing: " + out);
     }
 
     // ---- Bug fix: GetFileContent miss self-correction ----
@@ -231,7 +231,7 @@ class EditorContextProviderTest {
                     List.of(tempRoot.toFile()));
 
             assertTrue(result.startsWith("File not found: /wrong/process/broker/PinSlotEnum.java"),
-                    "first line must be unchanged: " + result);
+                       "first line must be unchanged: " + result);
             assertTrue(result.contains("Did you mean:"), "must contain Did you mean section: " + result);
             assertTrue(result.contains(realFile.toString()), "must list the real path: " + result);
             assertFalse(result.contains("GetProjectStructure"), "must not show fallback hint when match found: " + result);
@@ -260,7 +260,7 @@ class EditorContextProviderTest {
                     List.of(tempRoot.toFile()));
 
             assertTrue(result.startsWith("File not found: /wrong/NoSuchClass.java"),
-                    "first line must be unchanged: " + result);
+                       "first line must be unchanged: " + result);
             assertFalse(result.contains("Did you mean:"), "must not show match list when none found: " + result);
             assertTrue(result.contains("GetProjectStructure"), "must show GetProjectStructure hint: " + result);
         }
@@ -296,7 +296,24 @@ class EditorContextProviderTest {
     void getFileContent_missingFile_firstLineUnchanged() {
         String result = EditorContextProvider.getFileContent("/no/such/aicoder/Missing.java", 0, 0);
         assertTrue(result.startsWith("File not found: /no/such/aicoder/Missing.java"),
-                "not-found first line must be preserved: " + result);
+                   "not-found first line must be preserved: " + result);
+    }
+
+    @Test
+    void getFileContentRefusesARangePastTheEndOrReversed(@TempDir Path tempDir) throws IOException {
+        Path file = Files.writeString(tempDir.resolve("thirteen.txt"), "1\n2\n3\n4\n5\n6\n7\n8\n9\n10\n11\n12\n13\n");
+
+        String pastEnd = EditorContextProvider.getFileContent(file.toString(), 999, 0);
+        assertTrue(pastEnd.startsWith("startLine 999 is past the end of "), pastEnd);
+        assertTrue(pastEnd.endsWith("(13 lines)."), pastEnd);
+
+        assertEquals("endLine (5) must not be before startLine (10).",
+                     EditorContextProvider.getFileContent(file.toString(), 10, 5));
+
+        String lastLine = EditorContextProvider.getFileContent(file.toString(), 13, 0);
+        assertTrue(lastLine.contains("(lines 13–13 of 13"), lastLine);
+        String clampedEnd = EditorContextProvider.getFileContent(file.toString(), 12, 999);
+        assertTrue(clampedEnd.contains("(lines 12–13 of 13"), clampedEnd);
     }
 
     // ---- FilterFileContent ----

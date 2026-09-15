@@ -11,6 +11,7 @@ import java.awt.GridBagLayout;
 import java.awt.Insets;
 import java.awt.event.MouseAdapter;
 import java.awt.event.MouseEvent;
+import java.beans.PropertyChangeListener;
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -18,6 +19,7 @@ import java.util.List;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 import javax.swing.BorderFactory;
+import javax.swing.DefaultListCellRenderer;
 import javax.swing.JButton;
 import javax.swing.JCheckBox;
 import javax.swing.JComboBox;
@@ -51,6 +53,7 @@ import kiwi.ingenuity.netbeans.plugin.aicoder.process.server.McpToolsDocumentati
 import kiwi.ingenuity.netbeans.plugin.aicoder.serialization.SessionPersistenceManager;
 import kiwi.ingenuity.netbeans.plugin.aicoder.serialization.TemplatePersistenceManager;
 import kiwi.ingenuity.netbeans.plugin.aicoder.utils.BrowserUtil;
+import kiwi.ingenuity.netbeans.plugin.aicoder.utils.ProjectPathUtil;
 import org.netbeans.api.project.Project;
 import org.netbeans.api.project.ui.OpenProjects;
 import org.openide.windows.Mode;
@@ -73,7 +76,16 @@ public class SessionPickerDialog extends JDialog {
     }
 
     private static boolean isProjectOpen(String path) {
-        return path != null && Arrays.stream(OpenProjects.getDefault().getOpenProjects()).anyMatch(p -> p.getProjectDirectory().getPath().equals(path));
+        return ProjectPathUtil.isOpenProjectPath(path);
+    }
+
+    static String projectDisplayLabel(String path, List<String> openProjectPaths) {
+        String name = java.nio.file.Path.of(path).getFileName().toString();
+        long matchingNames = openProjectPaths.stream()
+                .map(p -> java.nio.file.Path.of(p).getFileName().toString())
+                .filter(name::equals)
+                .count();
+        return matchingNames > 1 ? path : name;
     }
 
     private static GridBagConstraints constraints() {
@@ -99,6 +111,12 @@ public class SessionPickerDialog extends JDialog {
     private final TemplatePersistenceManager templates = new TemplatePersistenceManager();
     private final SessionTableModel sessions = new SessionTableModel();
     private final JTable sessionTable = new JTable(sessions);
+    private final List<String> openProjectPaths = new ArrayList<>();
+    private final PropertyChangeListener openProjectsListener = evt -> {
+        if (OpenProjects.PROPERTY_OPEN_PROJECTS.equals(evt.getPropertyName())) {
+            refreshOpenProjects();
+        }
+    };
     private final JTextField nameField = new JTextField(20);
     private final JSpinner countSpinner = new JSpinner(new SpinnerNumberModel(1, 1, MAX_CREATE_COUNT, 1));
     private final JComboBox<String> projectCombo = new JComboBox<>();
@@ -116,6 +134,18 @@ public class SessionPickerDialog extends JDialog {
         super(WindowManager.getDefault().getMainWindow(), "AI Manager", true);
         this.spm = spm;
         setLayout(new BorderLayout());
+        OpenProjects.getDefault().addPropertyChangeListener(openProjectsListener);
+        projectCombo.setRenderer(new DefaultListCellRenderer() {
+            @Override
+            public Component getListCellRendererComponent(javax.swing.JList<?> list, Object value, int index,
+                                                          boolean isSelected, boolean cellHasFocus) {
+                Component component = super.getListCellRendererComponent(list, value, index, isSelected, cellHasFocus);
+                if (value instanceof String path) {
+                    setText(projectDisplayLabel(path, openProjectPaths));
+                }
+                return component;
+            }
+        });
         setDefaultCloseOperation(DISPOSE_ON_CLOSE);
         getRootPane().setBorder(BorderFactory.createEmptyBorder(12, 12, 12, 12));
         aiTypeCombo.setRenderer(new AiTypeRenderer());
@@ -290,13 +320,30 @@ public class SessionPickerDialog extends JDialog {
     }
 
     private void populateProjects() {
+        List<String> paths = new ArrayList<>();
         for (Project project : OpenProjects.getDefault().getOpenProjects()) {
-            projectCombo.addItem(project.getProjectDirectory().getPath());
+            paths.add(project.getProjectDirectory().getPath());
         }
+        openProjectPaths.clear();
+        openProjectPaths.addAll(ProjectPathUtil.distinctShortestPaths(paths));
+        openProjectPaths.sort((left, right) -> projectDisplayLabel(left, openProjectPaths)
+                .compareToIgnoreCase(projectDisplayLabel(right, openProjectPaths)));
+        projectCombo.removeAllItems();
+        openProjectPaths.forEach(projectCombo::addItem);
         Project main = OpenProjects.getDefault().getMainProject();
         if (main != null) {
-            projectCombo.setSelectedItem(main.getProjectDirectory().getPath());
+            String mainPath = main.getProjectDirectory().getPath();
+            openProjectPaths.stream()
+                    .filter(path -> ProjectPathUtil.samePath(path, mainPath))
+                    .findFirst()
+                    .ifPresent(projectCombo::setSelectedItem);
         }
+        sessions.setOpenProjectDirs(ProjectPathUtil.openProjectDirs());
+    }
+
+    private void refreshOpenProjects() {
+        populateProjects();
+        sessionTable.repaint();
     }
 
     private void loadSessions() {
@@ -476,6 +523,7 @@ public class SessionPickerDialog extends JDialog {
 
     @Override
     public void dispose() {
+        OpenProjects.getDefault().removePropertyChangeListener(openProjectsListener);
         if (typeSettingsPanel != null) {
             typeSettingsPanel.dispose();
             typeSettingsPanel = null;

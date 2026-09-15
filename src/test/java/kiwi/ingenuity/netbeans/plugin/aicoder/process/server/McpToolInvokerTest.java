@@ -1,14 +1,19 @@
 package kiwi.ingenuity.netbeans.plugin.aicoder.process.server;
 
 import com.google.gson.JsonObject;
+import java.util.Map;
+import kiwi.ingenuity.netbeans.plugin.aicoder.process.McpArgumentException;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.McpToolEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.locking.LockTypeEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.TimeoutEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.McpToolInterface;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.ToolRequestArguments;
+import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.ai.SendAiMessageTool;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.plugin.GetPluginVersionTool;
+import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.search.FindFileTool;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import org.junit.jupiter.api.Test;
 
@@ -32,10 +37,54 @@ class McpToolInvokerTest {
     }
 
     @Test
+    void rejectsUnknownAndMissingParametersTogether() {
+        JsonObject args = new JsonObject();
+        args.addProperty("unknown", "value");
+
+        McpArgumentException error = assertThrows(McpArgumentException.class,
+                                                  () -> McpToolInvoker.invoke(McpToolEnum.SEND_AI_MESSAGE, new SendAiMessageTool(), args, null));
+
+        assertEquals(-32602, error.getCode());
+        assertTrue(error.getMessage().contains("Unknown parameter 'unknown' for SendAiMessage"));
+        assertTrue(error.getMessage().contains(
+                "Missing required parameters for SendAiMessage: targetSessionId, subject, message."));
+    }
+
+    @Test
+    void rejectsDuplicateArgumentsAlongsideOtherArgumentProblems() {
+        JsonObject args = new JsonObject();
+        args.addProperty("unknown", "value");
+
+        McpArgumentException error = assertThrows(McpArgumentException.class,
+                                                  () -> McpToolInvoker.invoke(McpToolEnum.SEND_AI_MESSAGE, new SendAiMessageTool(), args, null,
+                                                                              Map.of("sessionId", 2, "subject", 2)));
+
+        assertTrue(error.getMessage().contains("Duplicate parameters for SendAiMessage:"));
+        assertTrue(error.getMessage().contains("sessionId (2×)"));
+        assertTrue(error.getMessage().contains("subject (2×)"));
+        assertTrue(error.getMessage().contains("Unknown parameter 'unknown'"));
+        assertTrue(error.getMessage().contains("Missing required parameters for SendAiMessage"));
+    }
+
+    @Test
+    void rawToolsCallArgumentsProduceTheCentralDuplicateError() {
+        String body = "{\"params\":{\"arguments\":{\"pattern\":\"one\",\"pattern\":\"two\"}}}";
+        JsonObject args = com.google.gson.JsonParser.parseString(body).getAsJsonObject()
+                .getAsJsonObject("params").getAsJsonObject("arguments");
+
+        McpArgumentException error = assertThrows(McpArgumentException.class,
+                                                  () -> McpToolInvoker.invoke(McpToolEnum.FIND_FILE, new FindFileTool(null), args, null,
+                                                                              RawJsonArgumentScanner.duplicateKeys(body, "params", "arguments")));
+
+        assertEquals(-32602, error.getCode());
+        assertTrue(error.getMessage().contains("Duplicate parameters for FindFile: pattern (2×)."));
+    }
+
+    @Test
     void everyLockTypeDerivesItsWaitFromATimeoutEnumConstant() {
         for (LockTypeEnum lockType : LockTypeEnum.values()) {
             assertEquals(lockType.getWaitTimeoutMillis(),
-                    lockType.getWaitTimeout().millis(), lockType.name());
+                         lockType.getWaitTimeout().millis(), lockType.name());
             assertTrue(lockType.getWaitTimeoutMillis() >= 0, lockType.name());
         }
     }
@@ -47,9 +96,9 @@ class McpToolInvokerTest {
         assertTrue(message.contains("Tool: BuildMavenProject "));
         long expectedSeconds = TimeoutEnum.BUILD_LOCK_WAIT_MILLIS.millis() / 1000;
         assertTrue(message.contains("already waited " + expectedSeconds + "s"),
-                "must state it already waited the configured duration: " + message);
+                   "must state it already waited the configured duration: " + message);
         assertTrue(message.contains(TimeoutEnum.BUILD_LOCK_WAIT_MILLIS.name()),
-                "must name the TimeoutEnum constant so the derivation is visible: " + message);
+                   "must name the TimeoutEnum constant so the derivation is visible: " + message);
     }
 
     @Test
@@ -64,7 +113,7 @@ class McpToolInvokerTest {
     void globalLockMessagesSteerAwayFromSleepAndRetryLoops() {
         assertFalse(lowercase(McpToolInvoker.lockedMessage(LockTypeEnum.BUILD_LOCK, "s", "T"))
                 .contains("try again shortly"),
-                "the old 'try again shortly' wording must not come back");
+                    "the old 'try again shortly' wording must not come back");
         assertTrue(McpToolInvoker.lockedMessage(LockTypeEnum.BUILD_LOCK, "s", "T")
                 .contains("Do not sleep and retry in a loop"));
     }
@@ -77,7 +126,7 @@ class McpToolInvokerTest {
             if (lockType.getWaitTimeoutMillis() > 0) {
                 assertTrue(message.contains("already waited "
                         + lockType.getWaitTimeoutMillis() / 1000 + "s"),
-                        lockType.name() + ": " + message);
+                           lockType.name() + ": " + message);
             }
             else {
                 // A zero-wait lock (FILE_WRITE_LOCK today) fails immediately; the
@@ -86,7 +135,7 @@ class McpToolInvokerTest {
             }
             assertTrue(message.contains("holder-session"), lockType.name() + ": " + message);
             assertTrue(message.contains("report the contention to the user"),
-                    lockType.name() + ": " + message);
+                       lockType.name() + ": " + message);
         }
     }
 
@@ -95,14 +144,14 @@ class McpToolInvokerTest {
         String message = McpToolInvoker.mutationLockTimeoutMessage();
         assertTrue(message.startsWith("Error: mutation lock timeout"), message);
         assertTrue(message.contains("already held") || message.contains("held the mutation lock through the full"),
-                message);
+                   message);
         assertTrue(message.contains(TimeoutEnum.MUTATION_LOCK_WAIT_MILLIS / 1000 + "s wait"),
-                "must state the full waited duration: " + message);
+                   "must state the full waited duration: " + message);
         assertTrue(message.contains("MUTATION_LOCK_WAIT_MILLIS"), message);
         assertTrue(message.endsWith("Please try again."),
-                "the mutation lock is brief by design; plain retry advice is correct: " + message);
+                   "the mutation lock is brief by design; plain retry advice is correct: " + message);
         assertFalse(lowercase(message).contains("do not sleep")
                 || lowercase(message).contains("do other work"),
-                "no anti-loop steer on the short-lived mutation lock: " + message);
+                    "no anti-loop steer on the short-lived mutation lock: " + message);
     }
 }

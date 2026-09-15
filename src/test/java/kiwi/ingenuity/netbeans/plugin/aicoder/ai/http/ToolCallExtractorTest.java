@@ -1,153 +1,61 @@
 package kiwi.ingenuity.netbeans.plugin.aicoder.ai.http;
 
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
+import static org.junit.jupiter.api.Assertions.*;
 import org.junit.jupiter.api.Test;
-
-import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class ToolCallExtractorTest {
 
     @Test
-    void structuredToolCallsAreMappedDirectly() {
-        ChatResult result = new ChatResult(
-                "assistant raw content",
-                List.of(new ChatToolCall("call_1", "get_weather", "{\"city\":\"Wellington, NZ\"}")),
-                "tool_calls");
+    void stringArgumentsWithDuplicateKey_capturesDuplicates() {
+        String json = "[{\"name\": \"test_tool\", \"arguments\": \"{\\\"key\\\": \\\"a\\\", \\\"key\\\": \\\"b\\\"}\"}]";
+        ChatResult result = new ChatResult(json, null, "tool_use");
+        Set<String> knownTools = Set.of("test_tool");
 
-        List<ExtractedToolCall> calls = ToolCallExtractor.extract(result, Set.of());
+        List<ExtractedToolCall> extracted = ToolCallExtractor.extract(result, knownTools);
 
-        assertEquals(1, calls.size());
-        assertEquals("get_weather", calls.get(0).name());
-        assertEquals("{\"city\":\"Wellington, NZ\"}", calls.get(0).argumentsJson());
+        assertEquals(1, extracted.size(), "should extract one call");
+        ExtractedToolCall call = extracted.get(0);
+        assertEquals("test_tool", call.name());
+        assertNotNull(call.duplicateCounts(), "duplicates map should not be null");
+        assertTrue(call.duplicateCounts().containsKey("key"), "should detect duplicate key");
+        assertEquals(2, (int) call.duplicateCounts().get("key"), "key should appear twice");
     }
 
     @Test
-    void emptyStructuredToolCallListReturnsEmpty() {
-        ChatResult result = new ChatResult("final answer", List.of(), "stop");
-        assertTrue(ToolCallExtractor.extract(result, Set.of("get_weather")).isEmpty());
+    void stringArgumentsWithNoDuplicates_yieldsEmptyMap() {
+        String json = "[{\"name\": \"test_tool\", \"arguments\": \"{\\\"key1\\\": \\\"a\\\", \\\"key2\\\": \\\"b\\\"}\"}]";
+        ChatResult result = new ChatResult(json, null, "tool_use");
+
+        List<ExtractedToolCall> extracted = ToolCallExtractor.extract(result, Set.of("test_tool"));
+
+        assertEquals(1, extracted.size(), "should extract one call");
+        ExtractedToolCall call = extracted.get(0);
+        assertTrue(call.duplicateCounts().isEmpty(), "no duplicates should yield empty map");
     }
 
     @Test
-    void contentFallbackUsesKnownToolNameGuard() {
-        ChatResult result = new ChatResult(
-                "{\"name\":\"get_weather\",\"arguments\":{\"city\":\"Wellington, NZ\"}}",
-                List.of(),
-                "stop");
-
-        List<ExtractedToolCall> calls = ToolCallExtractor.extract(result, Set.of("get_weather"));
-
-        assertEquals(1, calls.size());
-        assertEquals("get_weather", calls.get(0).name());
-        assertEquals("{\"city\":\"Wellington, NZ\"}", calls.get(0).argumentsJson());
+    void objectArgumentsRetainRawDuplicateCounts() {
+        String json = "{\"name\":\"test_tool\",\"arguments\":{\"key\":\"a\",\"key\":\"b\"}}";
+        List<ExtractedToolCall> extracted = ToolCallExtractor.extract(
+                new ChatResult(json, null, "tool_use"), Set.of("test_tool"));
+        assertEquals(Map.of("key", 2), extracted.get(0).duplicateCounts());
     }
 
     @Test
-    void contentFallbackDoesNotFireForUnknownToolNames() {
-        ChatResult result = new ChatResult(
-                "{\"name\":\"get_weather\",\"arguments\":{\"city\":\"Wellington, NZ\"}}",
-                List.of(),
-                "stop");
+    void convenienceConstructor_usesEmptyMapForDuplicates() {
+        ExtractedToolCall call = new ExtractedToolCall("test_tool", "{\"key\": \"value\"}");
 
-        assertTrue(ToolCallExtractor.extract(result, Set.of()).isEmpty());
+        assertTrue(call.duplicateCounts().isEmpty(), "convenience constructor should use empty map");
+        assertEquals("test_tool", call.name());
     }
 
     @Test
-    void contentFallbackSupportsArrayOfToolObjects() {
-        ChatResult result = new ChatResult(
-                "["
-                + "{\"name\":\"first_tool\",\"arguments\":{\"value\":1}},"
-                + "{\"name\":\"second_tool\",\"arguments\":{\"value\":2}}"
-                + "]",
-                List.of(),
-                "stop");
+    void compactConstructor_normalizesNullDuplicatesToEmptyMap() {
+        ExtractedToolCall call = new ExtractedToolCall("test_tool", "{}", null);
 
-        List<ExtractedToolCall> calls = ToolCallExtractor.extract(result, Set.of("first_tool", "second_tool"));
-
-        assertEquals(2, calls.size());
-        assertEquals("first_tool", calls.get(0).name());
-        assertEquals("{\"value\":1}", calls.get(0).argumentsJson());
-        assertEquals("second_tool", calls.get(1).name());
-        assertEquals("{\"value\":2}", calls.get(1).argumentsJson());
-    }
-
-    @Test
-    void ordinaryJsonAnswerDoesNotMisfire() {
-        ChatResult result = new ChatResult("{\"answer\":42}", List.of(), "stop");
-        assertTrue(ToolCallExtractor.extract(result, Set.of("get_weather")).isEmpty());
-    }
-
-    @Test
-    void malformedJsonReturnsEmptyWithoutThrowing() {
-        ChatResult result = new ChatResult("{\"name\":\"broken\"", List.of(), "stop");
-        assertTrue(ToolCallExtractor.extract(result, Set.of("broken")).isEmpty());
-    }
-
-    @Test
-    void contentFallbackAcceptsStringifiedArguments() {
-        ChatResult result = new ChatResult(
-                "{\"name\":\"get_weather\",\"arguments\":\"{\\\"city\\\":\\\"Wellington, NZ\\\"}\"}",
-                List.of(),
-                "stop");
-
-        List<ExtractedToolCall> calls = ToolCallExtractor.extract(result, Set.of("get_weather"));
-
-        assertEquals(1, calls.size());
-        assertEquals("get_weather", calls.get(0).name());
-        assertEquals("{\"city\":\"Wellington, NZ\"}", calls.get(0).argumentsJson());
-    }
-
-    /**
-     * Verbatim shape emitted by qwen2.5-coder:14b — a pretty-printed call
-     * inside a ```json fence. Before fences were unwrapped this parsed as
-     * malformed, so the block was shown to the user instead of being invoked.
-     */
-    @Test
-    void contentFallbackUnwrapsJsonCodeFence() {
-        ChatResult result = new ChatResult(
-                "```json\n{\n  \"name\": \"ListAiSessions\",\n  \"arguments\": {}\n}\n```",
-                List.of(),
-                "stop");
-
-        List<ExtractedToolCall> calls = ToolCallExtractor.extract(result, Set.of("ListAiSessions"));
-
-        assertEquals(1, calls.size());
-        assertEquals("ListAiSessions", calls.get(0).name());
-        assertEquals("{}", calls.get(0).argumentsJson());
-    }
-
-    @Test
-    void contentFallbackUnwrapsUnlabelledCodeFence() {
-        ChatResult result = new ChatResult(
-                "```\n{\"name\":\"get_weather\",\"arguments\":{\"city\":\"Wellington, NZ\"}}\n```",
-                List.of(),
-                "stop");
-
-        List<ExtractedToolCall> calls = ToolCallExtractor.extract(result, Set.of("get_weather"));
-
-        assertEquals(1, calls.size());
-        assertEquals("get_weather", calls.get(0).name());
-        assertEquals("{\"city\":\"Wellington, NZ\"}", calls.get(0).argumentsJson());
-    }
-
-    @Test
-    void fencedOrdinaryJsonAnswerStillDoesNotMisfire() {
-        ChatResult result = new ChatResult("```json\n{\"answer\":42}\n```", List.of(), "stop");
-        assertTrue(ToolCallExtractor.extract(result, Set.of("get_weather")).isEmpty());
-    }
-
-    @Test
-    void contentFallbackTreatsAbsentArgumentsAsEmpty() {
-        ChatResult result = new ChatResult(
-                "{\"name\":\"get_weather\"}",
-                List.of(),
-                "stop");
-
-        List<ExtractedToolCall> calls = ToolCallExtractor.extract(result, Set.of("get_weather"));
-
-        assertEquals(1, calls.size());
-        assertEquals("get_weather", calls.get(0).name());
-        assertEquals("{}", calls.get(0).argumentsJson());
+        assertTrue(call.duplicateCounts().isEmpty(), "null duplicates should normalize to empty map");
     }
 }

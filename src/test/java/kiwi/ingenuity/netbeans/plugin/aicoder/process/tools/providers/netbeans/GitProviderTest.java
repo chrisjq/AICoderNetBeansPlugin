@@ -12,7 +12,9 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
+import org.netbeans.libs.git.GitException;
 import org.netbeans.libs.git.GitMergeResult;
+import org.netbeans.libs.git.GitObjectType;
 import org.netbeans.libs.git.GitRefUpdateResult;
 
 class GitProviderTest {
@@ -66,6 +68,46 @@ class GitProviderTest {
         assertTrue(GitProvider.isSuccessfulMergeStatus(GitMergeResult.MergeStatus.ALREADY_UP_TO_DATE));
         assertFalse(GitProvider.isSuccessfulMergeStatus(GitMergeResult.MergeStatus.CONFLICTING));
         assertFalse(GitProvider.isSuccessfulMergeStatus(GitMergeResult.MergeStatus.FAILED));
+    }
+
+    @Test
+    void callerMistakesAreNotLoggedAsWarnings() {
+        // Live v1.4.15: GitShow revision "deadbeef-not-a-ref" logged a full WARNING stack trace for a caller typo.
+        assertTrue(GitProvider.isCallerMistake(
+                new GitException.MissingObjectException("deadbeef-not-a-ref", GitObjectType.COMMIT)));
+        assertTrue(GitProvider.isCallerMistake(new GitException.NotMergedException("feature")));
+        assertFalse(GitProvider.isCallerMistake(new GitException("repository is locked")));
+        assertFalse(GitProvider.isCallerMistake(new java.io.IOException("disk full")));
+    }
+
+    @Test
+    void removingARemoteSelectsOnlyItsOwnTrackingBranches() {
+        // Live v1.4.15: GitRemote remove left origin/sweep-rb behind.
+        Map<String, Boolean> remoteFlagByBranch = Map.of(
+                "origin/sweep-rb", true,
+                "origin/main", true,
+                "originals/main", true,
+                "upstream/main", true,
+                "origin/looks-remote-but-is-local", false,
+                "master", false);
+
+        assertEquals(List.of("origin/main", "origin/sweep-rb"),
+                     GitProvider.trackingBranchesOf("origin", remoteFlagByBranch));
+        assertEquals(List.of(), GitProvider.trackingBranchesOf("gone", remoteFlagByBranch));
+    }
+
+    @Test
+    void unknownRemoteIsRefusedBeforeTheTransportRuns() {
+        // Live v1.4.15: GitPush with no remotes logged a WARNING "origin: not found." stack trace.
+        assertEquals("No remote named 'origin': this repository has no remotes. Add one with GitRemote first.",
+                     GitProvider.unknownRemoteMessage("origin", Map.of()));
+        assertEquals("No remote named 'origin'. Configured remotes: upstream",
+                     GitProvider.unknownRemoteMessage("origin", Map.of("upstream", "x")));
+        assertEquals(null, GitProvider.unknownRemoteMessage("upstream", Map.of("upstream", "x")));
+        // A URL or path is accepted in place of a name, including one that needs credentials.
+        assertEquals(null, GitProvider.unknownRemoteMessage("https://git.example.com/repo.git", Map.of()));
+        assertEquals(null, GitProvider.unknownRemoteMessage("git@github.com:chris/repo.git", Map.of()));
+        assertEquals(null, GitProvider.unknownRemoteMessage("/tmp/sweep-remote.git", Map.of()));
     }
 
     /**

@@ -44,7 +44,7 @@ public class SearchProvider {
     private static final int MAX_TYPE_HITS = 100;
 
     public static String searchInFiles(String filePath, String query, String filePattern,
-            boolean caseSensitive, boolean isRegex) {
+                                       boolean caseSensitive, boolean isRegex) {
         if (query == null || query.isBlank()) {
             return "query is required";
         }
@@ -107,6 +107,7 @@ public class SearchProvider {
         // sees hits that survived truncation — it would report "in 3 file(s)"
         // for matches actually spread across 40.
         Set<String> matchedFiles = new LinkedHashSet<>();
+        Set<Path> searchedFiles = new LinkedHashSet<>();
         int totalHits = 0;
         for (FileObject root : roots) {
             File rootDir = FileUtil.toFile(root);
@@ -120,7 +121,7 @@ public class SearchProvider {
                             .sorted()
                             .toList();
                 }
-                for (Path p : files) {
+                for (Path p : unsearchedFiles(files, searchedFiles)) {
                     try {
                         List<String> lines = Files.readAllLines(p);
                         for (int i = 0; i < lines.size(); i++) {
@@ -158,6 +159,16 @@ public class SearchProvider {
         return SearchResultFormatter.groupByFile(hits, totalHits, matchedFiles.size(), MAX_FILE_HITS);
     }
 
+    /**
+     * The files not already searched under an earlier root, recording them as searched. Roots can nest: a project with
+     * no Java source groups (an aggregator pom) is walked from its project directory, which contains its child modules'
+     * source roots, and those are walked again as roots of their own. Live v1.4.15: every match under app-platform was
+     * reported twice, and under bm-flow-ui three times, inflating both the match and file counts.
+     */
+    static List<Path> unsearchedFiles(List<Path> files, Set<Path> searched) {
+        return files.stream().filter(p -> searched.add(p.toAbsolutePath().normalize())).toList();
+    }
+
     public static String searchTypes(String filePath, String name, String kind, boolean includeDeps) {
         if (name == null || name.isBlank()) {
             return "name is required";
@@ -172,8 +183,8 @@ public class SearchProvider {
         }
 
         Set<ClassIndex.SearchScope> scopes = includeDeps
-                ? EnumSet.of(ClassIndex.SearchScope.SOURCE, ClassIndex.SearchScope.DEPENDENCIES)
-                : EnumSet.of(ClassIndex.SearchScope.SOURCE);
+                                             ? EnumSet.of(ClassIndex.SearchScope.SOURCE, ClassIndex.SearchScope.DEPENDENCIES)
+                                             : EnumSet.of(ClassIndex.SearchScope.SOURCE);
 
         // Keyed by qualified name so a type reachable from more than one root is counted and printed ONCE. Every root
         // resolves the same dependency jars, so without this every dependency hit appeared once per root: a five-type
@@ -238,8 +249,8 @@ public class SearchProvider {
         }
 
         Set<ClassIndex.SearchScope> scopes = includeDeps
-                ? EnumSet.of(ClassIndex.SearchScope.SOURCE, ClassIndex.SearchScope.DEPENDENCIES)
-                : EnumSet.of(ClassIndex.SearchScope.SOURCE);
+                                             ? EnumSet.of(ClassIndex.SearchScope.SOURCE, ClassIndex.SearchScope.DEPENDENCIES)
+                                             : EnumSet.of(ClassIndex.SearchScope.SOURCE);
 
         // De-duplicated by enclosing type for the same reason as searchTypes: dependencies resolve from every root, so
         // the identical block was previously emitted once per root under its own "Found N" header.
@@ -258,7 +269,7 @@ public class SearchProvider {
             for (ClassIndex.Symbols symbols : found) {
                 ElementHandle<TypeElement> enclosing = symbols.getEnclosingType();
                 hits.putIfAbsent(enclosing.getQualifiedName(),
-                        new SymbolHit(enclosing, List.copyOf(symbols.getSymbols()), classpath));
+                                 new SymbolHit(enclosing, List.copyOf(symbols.getSymbols()), classpath));
             }
         }
         if (hits.isEmpty()) {
@@ -291,7 +302,7 @@ public class SearchProvider {
         FileObject fo = resolveFileObject(filePath);
         if (fo == null) {
             return filePath != null && !filePath.isBlank()
-                    ? "File not found: " + filePath : "No projects open";
+                   ? "File not found: " + filePath : "No projects open";
         }
         JavaSource js = JavaSource.forFileObject(fo);
         if (js == null) {
@@ -309,8 +320,8 @@ public class SearchProvider {
                 // An explicit column is honoured exactly; column <= 1 means the caller did not specify one (the tool
                 // defaults it to 1), so find the line's first resolvable identifier rather than its first token.
                 int offset = column > 1
-                        ? JavaSourceUtils.lineOffset(ci, line, column)
-                        : JavaSourceUtils.firstElementOffsetOnLine(ci, line);
+                             ? JavaSourceUtils.lineOffset(ci, line, column)
+                             : JavaSourceUtils.firstElementOffsetOnLine(ci, line);
                 if (offset < 0) {
                     result.set("No Java element at line " + line);
                     return;
@@ -376,7 +387,7 @@ public class SearchProvider {
                 }
                 File f = FileUtil.toFile(srcFile);
                 result.set(inner.get() != null ? inner.get()
-                        : (f != null ? f.getPath() : srcFile.getPath()) + ":1");
+                           : (f != null ? f.getPath() : srcFile.getPath()) + ":1");
             }, true);
         }
         catch (IOException e) {
@@ -393,7 +404,7 @@ public class SearchProvider {
         FileObject fo = resolveFileObject(filePath);
         if (fo == null) {
             return filePath != null && !filePath.isBlank()
-                    ? "File not found: " + filePath : "No projects open";
+                   ? "File not found: " + filePath : "No projects open";
         }
         JavaSource js = JavaSource.forFileObject(fo);
         if (js == null) {
@@ -478,8 +489,8 @@ public class SearchProvider {
         if (filePath == null || filePath.isBlank()) {
             List<FileObject> anchors = javaAnchors(openProjectSourceRoots());
             return anchors.isEmpty()
-                    ? new SearchAnchors("No projects open", List.of())
-                    : new SearchAnchors(null, anchors);
+                   ? new SearchAnchors("No projects open", List.of())
+                   : new SearchAnchors(null, anchors);
         }
         FileObject fo = FileUtils.resolveByPath(filePath);
         if (fo == null) {
@@ -631,10 +642,10 @@ public class SearchProvider {
      */
     private static String requireFilePathForLineLookup(String filePath) {
         return filePath == null || filePath.isBlank()
-                ? McpToolPropertyEnum.FILE_PATH.key() + " is required — a line number can only be resolved against a "
+               ? McpToolPropertyEnum.FILE_PATH.key() + " is required — a line number can only be resolved against a "
                 + "specific file. Call " + McpToolEnum.GET_CURRENT_FILE.toolName()
                 + " if you want the file the user is looking at."
-                : null;
+               : null;
     }
 
     private static FileObject resolveFileObject(String filePath) {

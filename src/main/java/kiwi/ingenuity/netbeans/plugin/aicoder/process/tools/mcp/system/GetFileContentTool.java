@@ -48,7 +48,7 @@ public class GetFileContentTool implements McpToolInterface {
         }
         return McpToolEnum.GET_FILE_CONTENT.toolName() + " -> INSTEAD OF Read tool for project source files; saves any "
                 + "unsaved editor changes first so you read what the user has on screen; output carries a line-number gutter — strip it before using in " + McpToolEnum.APPLY_EDIT.toolName() + " " + McpToolPropertyEnum.OLD_STRING.key() + ". "
-                + "Full rewrite: " + McpToolEnum.GET_FILE_CONTENT.toolName() + " → " + McpToolEnum.SAVE_FILE.toolName() + " (" + McpToolPropertyEnum.CONTENT.key() + "). "
+                + "Full rewrite: " + McpToolEnum.GET_FILE_CONTENT.toolName() + " → " + McpToolEnum.WRITE_FILE.toolName() + " (shows full diff). "
                 + "Partial edit: " + McpToolEnum.GET_FILE_CONTENT.toolName() + " → Read (built-in) → Edit (built-in). "
                 + "Do not guess paths — use " + McpToolEnum.GET_PROJECT_STRUCTURE.toolName() + " for package layout or " + McpToolEnum.SEARCH_SYMBOLS.toolName() + "/" + McpToolEnum.SEARCH_IN_FILES.toolName() + " to locate a file first";
     }

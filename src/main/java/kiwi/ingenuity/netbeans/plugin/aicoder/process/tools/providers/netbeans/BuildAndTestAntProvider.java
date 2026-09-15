@@ -1,15 +1,18 @@
 package kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.providers.netbeans;
 
+import com.google.gson.JsonObject;
 import java.io.ByteArrayOutputStream;
 import java.io.File;
 import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.logging.Level;
 import java.util.logging.Logger;
+import kiwi.ingenuity.netbeans.plugin.aicoder.process.McpToolPropertyEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.server.McpServerRegistry;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.TimeoutEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.git.GitCommonParamEnum;
@@ -20,25 +23,71 @@ public class BuildAndTestAntProvider {
     private static final Logger LOG = Logger.getLogger(BuildAndTestAntProvider.class.getName());
     private static final int MAX_OUTPUT_BYTES = 2 * 1024 * 1024;
 
-    public static String buildProject(String sessionId, String projectPath) {
-        RootResult resolved = resolveRoot(sessionId, projectPath);
-        if (resolved.error() != null) {
-            return resolved.error();
-        }
-        File root = resolved.root();
-        return runAnt(sessionId, root, "jar");
+    /**
+     * Options shared by BuildAntProject, CleanAndBuildAntProject and RunAntTests (#5 / F2). {@code targets} carries the
+     * calling tool's own default ({@code jar}, {@code clean jar}, or {@code test}) when the caller omitted it — see
+     * {@link BuildAndTestMavenProvider.MavenBuildOptions} for why defaulting lives in the tool, not here.
+     */
+    public record AntBuildOptions(List<String> targets, JsonObject properties, boolean keepGoing) {
+
     }
 
-    public static String runTests(String sessionId, String testClass, String projectPath) {
+    public static String buildProject(String sessionId, String projectPath, AntBuildOptions opts) {
+        return runBuild(sessionId, projectPath, opts, null);
+    }
+
+    public static String cleanAndBuildProject(String sessionId, String projectPath, AntBuildOptions opts) {
+        return runBuild(sessionId, projectPath, opts, null);
+    }
+
+    public static String runTests(String sessionId, String testClass, String projectPath, AntBuildOptions opts) {
+        return runBuild(sessionId, projectPath, opts, testClass);
+    }
+
+    private static String runBuild(String sessionId, String projectPath, AntBuildOptions opts, String testClass) {
+        String error = validate(opts);
+        if (error != null) {
+            return "Error: " + error;
+        }
+        if (testClass != null && !testClass.isBlank()) {
+            error = BuildOptionValidator.validateTestSelector(McpToolPropertyEnum.TEST_CLASS.key(), testClass);
+            if (error != null) {
+                return "Error: " + error;
+            }
+        }
         RootResult resolved = resolveRoot(sessionId, projectPath);
         if (resolved.error() != null) {
             return resolved.error();
         }
-        File root = resolved.root();
-        if (testClass != null && !testClass.isBlank()) {
-            return runAnt(sessionId, root, "test", "-Dtest.includes=" + testClass);
+        return runAnt(sessionId, resolved.root(), argsFor(opts, testClass));
+    }
+
+    private static String validate(AntBuildOptions opts) {
+        if (opts.targets() == null || opts.targets().isEmpty()) {
+            return McpToolPropertyEnum.TARGETS.key() + " must not be empty";
         }
-        return runAnt(sessionId, root, "test");
+        String error = BuildOptionValidator.validateTokens(McpToolPropertyEnum.TARGETS.key(), opts.targets());
+        if (error != null) {
+            return error;
+        }
+        String[] errorOut = new String[1];
+        BuildOptionValidator.validateProperties(McpToolPropertyEnum.PROPERTIES.key(), opts.properties(), errorOut);
+        return errorOut[0];
+    }
+
+    private static String[] argsFor(AntBuildOptions opts, String testClass) {
+        List<String> args = new ArrayList<>(opts.targets());
+        String[] errorOut = new String[1];
+        Map<String, String> props = BuildOptionValidator.validateProperties(
+                McpToolPropertyEnum.PROPERTIES.key(), opts.properties(), errorOut);
+        args.addAll(BuildOptionValidator.toDefineArgs(props));
+        if (opts.keepGoing()) {
+            args.add("-k");
+        }
+        if (testClass != null && !testClass.isBlank()) {
+            args.add("-Dtest.includes=" + testClass);
+        }
+        return args.toArray(new String[0]);
     }
 
     private static RootResult resolveRoot(String sessionId, String projectPath) {
@@ -49,11 +98,15 @@ public class BuildAndTestAntProvider {
         if (!dir.isDirectory()) {
             return new RootResult(null, "Not a project directory: " + projectPath);
         }
+        // #3's fix, applied here: resolve to the real/canonical path before the scope check and before it becomes
+        // the process's working directory, so a symlink spelling of an open project is treated identically to the
+        // canonical one throughout.
+        File real = FileUtils.toRealPath(dir);
         var server = McpServerRegistry.getServer();
-        if (server == null || !server.isFileAllowed(sessionId, dir.getAbsolutePath())) {
+        if (server == null || !server.isFileAllowed(sessionId, real.getAbsolutePath())) {
             return new RootResult(null, "Access denied: " + projectPath);
         }
-        return new RootResult(dir, null);
+        return new RootResult(real, null);
     }
 
     private static String resolveAnt() {
@@ -114,16 +167,16 @@ public class BuildAndTestAntProvider {
             Exception outputError = readerFailure.get();
             if (outputError != null) {
                 return BuildOutputFormatter.attachLog(sessionId, BuildOutputFormatter.Backend.ANT,
-                        "Error reading Ant output: " + outputError.getMessage(), output);
+                                                      "Error reading Ant output: " + outputError.getMessage(), output);
             }
             if (!finished) {
                 return BuildOutputFormatter.attachLog(sessionId, BuildOutputFormatter.Backend.ANT,
-                        "Timed out after " + TimeUnit.MILLISECONDS.toSeconds(TimeoutEnum.BUILD_PROCESS_MILLIS.millis()) + "s",
-                        output);
+                                                      "Timed out after " + TimeUnit.MILLISECONDS.toSeconds(TimeoutEnum.BUILD_PROCESS_MILLIS.millis()) + "s",
+                                                      output);
             }
             int exit = p.exitValue();
             return BuildOutputFormatter.formatResult(sessionId, BuildOutputFormatter.Backend.ANT,
-                    exit == 0, exit, output);
+                                                     exit == 0, exit, output);
         }
         catch (InterruptedException ie) {
             Thread.currentThread().interrupt();

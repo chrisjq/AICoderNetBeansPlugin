@@ -27,17 +27,14 @@ import java.util.concurrent.locks.ReentrantLock;
  * <ol>
  * <li>method + id → inbound request from agent → dispatch executor + reply
  * <li>method only → notification → notify executor (FIFO, single-thread)
- * <li>id only → response to our request → complete pending future via dispatch
- * executor
+ * <li>id only → response to our request → complete pending future via dispatch executor
  * </ol>
  *
  * <p>
- * Notifications (session/update) and the disconnection callback are delivered
- * via a single-thread executor («acp-notify») to guarantee FIFO order. Inbound
- * requests (particularly session/request_permission, which can block up to 120
- * s waiting for user input) and response-future completions run on a
- * cached-thread-pool executor («acp-dispatch») so the reader thread is never
- * blocked.
+ * Notifications (session/update) and the disconnection callback are delivered via a single-thread executor
+ * («acp-notify») to guarantee FIFO order. Inbound requests (particularly session/request_permission, whose approval
+ * response expires after 120 s) and response-future completions run on a cached-thread-pool executor («acp-dispatch»)
+ * so the reader thread is never blocked.
  */
 public class AcpConnection {
 

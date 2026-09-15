@@ -13,14 +13,12 @@ import kiwi.ingenuity.netbeans.plugin.aicoder.ai.settings.AiModelSessionSettings
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.settings.AiSessionSettings;
 
 /**
- * Mutable session state shared by reference across AiTopComponent,
- * ContextProvider, and the MCP session layer. All holders share the same
- * instance so mutations — rename, settings change — propagate immediately
- * without manual coordination.
+ * Mutable session state shared by reference across AiTopComponent, ContextProvider, and the MCP session layer. All
+ * holders share the same instance so mutations — rename, settings change — propagate immediately without manual
+ * coordination.
  *
- * Immutable fields: id, aiType, projectPath, createdAt. Mutable fields: name,
- * description, settings, lastUsedAt (volatile). Extra data: arbitrary String
- * key-value pairs for future extensibility.
+ * Immutable fields: id, aiType, projectPath, createdAt. Mutable fields: name, description, settings, lastUsedAt
+ * (volatile). Extra data: arbitrary String key-value pairs for future extensibility.
  */
 public class AiSession {
     // ---- Factory ----
@@ -28,8 +26,8 @@ public class AiSession {
     public static AiSession create(String projectPath, AiTypeEnum aiType) {
         Path pp = projectPath != null ? Path.of(projectPath) : null;
         String folder = pp != null && pp.getFileName() != null
-                ? pp.getFileName().toString()
-                : aiType.displayName();
+                        ? pp.getFileName().toString()
+                        : aiType.displayName();
         Instant now = Instant.now();
         AiSessionSettings settings = aiType.createDefaultSettings();
         settings.applyDefaultSettingsFromGlobal();
@@ -59,15 +57,18 @@ public class AiSession {
     private volatile SessionInstructionsDeliveryEnum sessionInstructionsDelivery = SessionInstructionsDeliveryEnum.ON_FIRST_REQUEST;
     private volatile boolean startupInstructionsInjected = false;
     /**
-     * The session-instruction text most recently delivered to the backend, or
-     * null if none ever was. Persisted, unlike {@code ContextProvider}'s
-     * in-memory copy, which is recreated whenever the session is opened — so
-     * without this an ON_FIRST_REQUEST session re-sent its instructions on the
-     * first message after every IDE restart.
+     * True while this session has an interactive approval prompt awaiting a user response. This is live state only: it
+     * is deliberately not persisted across IDE restarts.
+     */
+    private volatile boolean awaitingApproval = false;
+    /**
+     * The session-instruction text most recently delivered to the backend, or null if none ever was. Persisted, unlike
+     * {@code ContextProvider}'s in-memory copy, which is recreated whenever the session is opened — so without this an
+     * ON_FIRST_REQUEST session re-sent its instructions on the first message after every IDE restart.
      *
      * <p>
-     * The text is stored rather than a boolean so that editing the instructions
-     * still re-delivers them: "already sent" is only true for the same text.
+     * The text is stored rather than a boolean so that editing the instructions still re-delivers them: "already sent"
+     * is only true for the same text.
      */
     private volatile String lastInjectedInstructions = null;
 
@@ -75,8 +76,8 @@ public class AiSession {
     private volatile AiSessionCallback callback;
 
     public AiSession(String id, String name, String description, AiTypeEnum aiType,
-            String projectPath, AiSessionSettings settings,
-            Instant createdAt, Instant lastUsedAt) {
+                     String projectPath, AiSessionSettings settings,
+                     Instant createdAt, Instant lastUsedAt) {
         this.id = id;
         this.name = name;
         this.description = description;
@@ -138,9 +139,8 @@ public class AiSession {
     }
 
     /**
-     * True if this conversation's AI has fetched the full instruction guide via
-     * the GetInstructions tool at least once. Tracked here (shared object) so
-     * the MCP tool handler and the history save/load path see the same value.
+     * True if this conversation's AI has fetched the full instruction guide via the GetInstructions tool at least once.
+     * Tracked here (shared object) so the MCP tool handler and the history save/load path see the same value.
      */
     public boolean isInstructionsLoaded() {
         return instructionsLoaded;
@@ -164,6 +164,14 @@ public class AiSession {
 
     public void setStartupInstructionsInjected(boolean injected) {
         this.startupInstructionsInjected = injected;
+    }
+
+    public boolean isAwaitingApproval() {
+        return awaitingApproval;
+    }
+
+    public void setAwaitingApproval(boolean awaitingApproval) {
+        this.awaitingApproval = awaitingApproval;
     }
 
     public String lastInjectedInstructions() {
@@ -190,8 +198,8 @@ public class AiSession {
 
     // ---- Convenience ----
     /**
-     * Snapshot for ListAiSessions info: name + model (if set) + any extra data.
-     * The MCP layer reads this directly via AbstractAiSession.getInfo().
+     * Snapshot for ListAiSessions info: name + model (if set) + any extra data. The MCP layer reads this directly via
+     * AbstractAiSession.getInfo().
      */
     public Map<String, String> getSessionInfoMap() {
         Map<String, String> map = new LinkedHashMap<>(extraData);
@@ -240,8 +248,7 @@ public class AiSession {
     }
 
     /**
-     * Derived from settings — reads PluginSettings default when not overridden
-     * per-session.
+     * Derived from settings — reads PluginSettings default when not overridden per-session.
      */
     public boolean allowsInterAiComms() {
         AiSessionSettings s = settings;

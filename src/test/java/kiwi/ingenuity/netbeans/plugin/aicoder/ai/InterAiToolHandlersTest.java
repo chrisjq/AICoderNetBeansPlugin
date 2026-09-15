@@ -89,7 +89,7 @@ class InterAiToolHandlersTest {
     }
 
     private static ToolRequestArguments sendArgs(AiSession sender, String target, String subject, String body,
-            String replyTo, boolean important, boolean expectsReply, boolean replyImportant) {
+                                                 String replyTo, boolean important, boolean expectsReply, boolean replyImportant) {
         JsonObject object = new JsonObject();
         object.addProperty(SendAiMessageParamEnum.SESSION_ID.key(), sender.id());
         object.addProperty(SendAiMessageParamEnum.SECRET_KEY.key(), sender.secret());
@@ -120,7 +120,7 @@ class InterAiToolHandlersTest {
         SendAiMessageTool tool = new SendAiMessageTool();
 
         String accepted = tool.handle(sendArgs(sender, target.id(), "s".repeat(100), "b".repeat(200_000),
-                null, false, true, true), null);
+                                               null, false, true, true), null);
         assertTrue(accepted.startsWith("Message sent"), accepted);
         assertTrue(tool.handle(sendArgs(sender, target.id(), "s".repeat(101), "body", null, false, false, false), null)
                 .contains("subject exceeds maximum length"));
@@ -201,6 +201,14 @@ class InterAiToolHandlersTest {
         assertFalse(result.contains(caller.id()), result);
         assertFalse(result.contains(disabled.id()), result);
         assertTrue(result.contains(visible.id()), result);
+        assertTrue(result.contains("\"awaitingApproval\":false"), result);
+
+        visible.setAwaitingApproval(true);
+        result = new ListAiSessionsTool().handle(new ToolRequestArguments(object), null);
+        assertTrue(result.contains("\"awaitingApproval\":true"), result);
+        visible.setAwaitingApproval(false);
+        result = new ListAiSessionsTool().handle(new ToolRequestArguments(object), null);
+        assertTrue(result.contains("\"awaitingApproval\":false"), result);
     }
 
     @Test
@@ -231,6 +239,12 @@ class InterAiToolHandlersTest {
         assertTrue(tool.handle(args(IsAiSessionActiveParamEnum.TARGET_SESSION_ID.key(), "missing"), null).contains("not open"));
         assertTrue(tool.handle(args(IsAiSessionActiveParamEnum.TARGET_SESSION_ID.key(), idle.id()), null).contains("idle"));
         assertTrue(tool.handle(args(IsAiSessionActiveParamEnum.TARGET_SESSION_ID.key(), busy.id()), null).contains("busy"));
+        busy.setAwaitingApproval(true);
+        assertTrue(tool.handle(args(IsAiSessionActiveParamEnum.TARGET_SESSION_ID.key(), busy.id()), null)
+                .contains("awaiting approval"));
+        busy.setAwaitingApproval(false);
+        assertFalse(tool.handle(args(IsAiSessionActiveParamEnum.TARGET_SESSION_ID.key(), busy.id()), null)
+                .contains("awaiting approval"));
     }
 
     @Test

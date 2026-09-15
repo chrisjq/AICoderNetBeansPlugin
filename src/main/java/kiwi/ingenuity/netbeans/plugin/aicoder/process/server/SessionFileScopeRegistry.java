@@ -4,12 +4,19 @@ import java.io.File;
 import java.io.IOException;
 import java.nio.file.InvalidPathException;
 import java.nio.file.Path;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.logging.Level;
+import java.util.logging.Logger;
+import kiwi.ingenuity.netbeans.plugin.aicoder.PluginSettings;
 import kiwi.ingenuity.netbeans.plugin.aicoder.PluginUtil;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.AiTypeEnum;
+import kiwi.ingenuity.netbeans.plugin.aicoder.ai.settings.AiSessionSettings;
+import kiwi.ingenuity.netbeans.plugin.aicoder.process.SessionRegistry;
+import kiwi.ingenuity.netbeans.plugin.aicoder.process.session.AbstractAiSession;
 import kiwi.ingenuity.netbeans.plugin.aicoder.serialization.SessionPersistenceManager;
 import org.netbeans.api.project.Project;
 import org.netbeans.api.project.ui.OpenProjects;
@@ -38,6 +45,8 @@ import org.netbeans.api.project.ui.OpenProjects;
  * audit data) is precisely the premise error this class exists to make impossible to repeat silently.
  */
 class SessionFileScopeRegistry {
+
+    private static final Logger LOG = Logger.getLogger(SessionFileScopeRegistry.class.getName());
 
     /**
      * Filenames that legitimately live directly at {@code
@@ -104,18 +113,19 @@ class SessionFileScopeRegistry {
         }
     }
 
-    private final Map<String, List<File>> sessionProjectDirs = new ConcurrentHashMap<>();
-    private final Map<String, Boolean> sessionRestrictToProject = new ConcurrentHashMap<>();
-    private final Map<String, AiTypeEnum> sessionAiType = new ConcurrentHashMap<>();
+    private record SessionScope(AiTypeEnum aiType, List<File> projectDirs, boolean restrictToProjectFiles) {
+
+    }
+
+    private final Map<String, SessionScope> sessionScopes = new ConcurrentHashMap<>();
 
     /**
      * Sets a session's scope unconditionally — used at first registration, where aiType is always supplied. Pure
-     * bookkeeping: the maps are all concurrent, so no synchronization is required.
+     * bookkeeping: the single scope entry is replaced atomically, so readers never observe a half-updated scope.
      */
     void registerScope(String sessionId, AiTypeEnum aiType, List<File> projectDirs, boolean restrictToProjectFiles) {
-        sessionAiType.put(sessionId, aiType);
-        sessionProjectDirs.put(sessionId, projectDirs);
-        sessionRestrictToProject.put(sessionId, restrictToProjectFiles);
+        sessionScopes.put(sessionId, new SessionScope(aiType, projectDirs, restrictToProjectFiles));
+        logScopeChange("register", sessionId, aiType, projectDirs, restrictToProjectFiles);
     }
 
     /**
@@ -123,11 +133,34 @@ class SessionFileScopeRegistry {
      * refreshing project dirs/restrict flag alone without knowing or needing to touch the AI type.
      */
     void updateScope(String sessionId, AiTypeEnum aiType, List<File> projectDirs, boolean restrictToProjectFiles) {
-        if (aiType != null) {
-            sessionAiType.put(sessionId, aiType);
+        SessionScope previous = sessionScopes.get(sessionId);
+        AiTypeEnum effectiveAiType = aiType != null ? aiType : previous == null ? null : previous.aiType();
+        sessionScopes.put(sessionId, new SessionScope(effectiveAiType, projectDirs, restrictToProjectFiles));
+        logScopeChange("update", sessionId, effectiveAiType, projectDirs, restrictToProjectFiles);
+    }
+
+    /**
+     * Diagnostic trail for scope changes — session id, AI type, and project dirs both as the caller supplied them and
+     * as they resolve on disk (symlinks/relative paths can make those differ, and a mismatch there is exactly the kind
+     * of thing worth being able to see after the fact). Behind {@link PluginSettings#isDebugJson()} like every other
+     * diagnostic log in this class of problem — see #15/#21.
+     */
+    private static void logScopeChange(String action, String sessionId, AiTypeEnum aiType, List<File> projectDirs,
+                                       boolean restrictToProjectFiles) {
+        if (!PluginSettings.isDebugJson()) {
+            return;
         }
-        sessionProjectDirs.put(sessionId, projectDirs);
-        sessionRestrictToProject.put(sessionId, restrictToProjectFiles);
+        List<String> asGiven = new ArrayList<>();
+        List<String> asReal = new ArrayList<>();
+        if (projectDirs != null) {
+            for (File dir : projectDirs) {
+                asGiven.add(dir.getPath());
+                asReal.add(resolveRealPath(dir.toPath()).toString());
+            }
+        }
+        LOG.log(Level.INFO,
+                "Session scope {0}: session={1}, aiType={2}, restrictToProjectFiles={3}, projectDirs(given)={4}, projectDirs(real)={5}",
+                new Object[]{action, sessionId, aiType, restrictToProjectFiles, asGiven, asReal});
     }
 
     /**
@@ -137,7 +170,7 @@ class SessionFileScopeRegistry {
      * with.
      */
     boolean hasScope(String sessionId) {
-        return sessionRestrictToProject.containsKey(sessionId);
+        return sessionScopes.containsKey(sessionId);
     }
 
     boolean isFileAllowed(String sessionId, String filePath) {
@@ -161,6 +194,14 @@ class SessionFileScopeRegistry {
         if (isMalformedPath(filePath)) {
             return false;
         }
+        // Self-heal BEFORE consulting the maps below: a session with no scope entry at
+        // all is either a genuinely unknown id (selfHealScope no-ops) or one that lost
+        // its scope to a health-tick server replacement (#15/#21) — in the latter case
+        // this recovers it in time to answer this same call correctly, rather than
+        // denying it and waiting for the session's next submit.
+        if (!hasScope(sessionId)) {
+            selfHealScope(sessionId);
+        }
         if (isUnrestrictedFileAccess(sessionId)) {
             return true;
         }
@@ -168,6 +209,48 @@ class SessionFileScopeRegistry {
         // project roots. An empty dir list fails closed (never fail-open, which would
         // open the whole FS if scope was never populated).
         return isWithinProjectDirs(sessionId, filePath);
+    }
+
+    /**
+     * Recovers a session's scope from the currently open projects when the registry has no entry for it at all — the
+     * specific failure mode behind #15/#21: a health-tick server replacement used to start with an empty
+     * {@link SessionFileScopeRegistry}, so every session was denied until its own next submit or a project open/close
+     * called {@code updateSessionScope} again. Now that this registry survives a server replacement (see
+     * {@link McpServerRegistry#fileScope()}), the only sessions this can still apply to are ones whose FIRST
+     * registration has not happened yet or was otherwise lost — this closes that gap immediately, on the very call that
+     * would otherwise be refused, instead of leaving it to an arbitrary later trigger.
+     * <p>
+     * Deliberately does not invent a scope for an unknown id: it only succeeds for a {@code sessionId} with a live
+     * {@link AbstractAiSession} in {@link SessionRegistry} — that registry is populated only by real session creation,
+     * so its presence IS the authentication this relies on, not a guess. The recovered scope is exactly what the
+     * legitimate refresh path ({@code AiTopComponent.refreshMcpSessionScope}) would compute: every currently open
+     * project (the same set {@link #isUnderAnyOpenProject} already iterates) and the session's own live
+     * {@link AiSessionSettings#effectiveRestrictToProjectFiles()} — so a healed session ends up with the identical
+     * scope its own next submit would have set anyway.
+     *
+     * @return true if a scope was registered (the caller should re-check its predicate once more against the
+     * now-populated maps), false if {@code sessionId} has no live session to recover from
+     */
+    boolean selfHealScope(String sessionId) {
+        if (sessionId == null || hasScope(sessionId)) {
+            return false;
+        }
+        AbstractAiSession session = SessionRegistry.get(sessionId);
+        if (session == null) {
+            return false;
+        }
+        AiSessionSettings settings = session.getSettings();
+        boolean restrict = settings != null && settings.effectiveRestrictToProjectFiles();
+        List<File> dirs = new ArrayList<>();
+        for (Project p : OpenProjects.getDefault().getOpenProjects()) {
+            dirs.add(new File(p.getProjectDirectory().getPath()));
+        }
+        registerScope(sessionId, session.getType(), dirs, restrict);
+        if (PluginSettings.isDebugJson()) {
+            LOG.log(Level.INFO, "Self-healed file scope for session {0} (aiType={1}, restrict={2})",
+                    new Object[]{sessionId, session.getType(), restrict});
+        }
+        return true;
     }
 
     /**
@@ -268,7 +351,8 @@ class SessionFileScopeRegistry {
     }
 
     boolean isUnrestrictedFileAccess(String sessionId) {
-        return Boolean.FALSE.equals(sessionRestrictToProject.get(sessionId));
+        SessionScope scope = sessionScopes.get(sessionId);
+        return scope != null && !scope.restrictToProjectFiles();
     }
 
     /**
@@ -297,8 +381,15 @@ class SessionFileScopeRegistry {
                     + "filename will not change this result.";
         }
         if (!hasScope(sessionId)) {
-            return "Access denied: file access scope is not yet registered for this session. "
-                    + "Retry after MCP session setup completes.";
+            // By the time this message is built, every caller has already run the gate (isFileAllowed /
+            // isWithinProjectDirs) that attempts selfHealScope — so reaching here means that attempt already failed:
+            // no live AbstractAiSession exists for this id. Recovery has to come from outside this call, hence the
+            // two concrete actions named below rather than "retry" (which implies this call alone could succeed
+            // again unaided).
+            return "Access denied: file access scope is not yet registered for this session, and it could not be "
+                    + "recovered automatically because no active session was found for this id. Send another "
+                    + "message in this session to re-register its scope, or ask the user to open or close a "
+                    + "project to trigger a refresh.";
         }
         return "Access denied: " + filePath + " is outside the allowed project scope for this session.";
     }
@@ -307,12 +398,20 @@ class SessionFileScopeRegistry {
      * True if {@code filePath} resolves to a location inside one of the session's registered project roots. Independent
      * of the restrict-to-project flag, so a caller can ask "is this a project file?" directly. Fails closed when the
      * session has no registered roots.
+     * <p>
+     * Attempts {@link #selfHealScope} first when the session has no scope at all — this is the predicate the native
+     * Claude Edit/Write hook dispatch calls directly (see {@code McpHookServer}'s hook handling), which does not go
+     * through {@link #isFileAllowed}, so it needs its own self-heal attempt rather than inheriting one.
      */
     boolean isWithinProjectDirs(String sessionId, String filePath) {
         if (filePath == null || filePath.isBlank()) {
             return false;
         }
-        List<File> dirs = sessionProjectDirs.get(sessionId);
+        if (!hasScope(sessionId)) {
+            selfHealScope(sessionId);
+        }
+        SessionScope scope = sessionScopes.get(sessionId);
+        List<File> dirs = scope == null ? null : scope.projectDirs();
         if (dirs == null || dirs.isEmpty()) {
             return false;
         }
@@ -355,7 +454,8 @@ class SessionFileScopeRegistry {
         if (sessionId == null || filePath == null || filePath.isBlank()) {
             return false;
         }
-        AiTypeEnum aiType = sessionAiType.get(sessionId);
+        SessionScope scope = sessionScopes.get(sessionId);
+        AiTypeEnum aiType = scope == null ? null : scope.aiType();
         if (aiType == null) {
             return false;
         }
@@ -391,7 +491,8 @@ class SessionFileScopeRegistry {
      * back via {@link #isOwnSessionConfigFile} even under restrict-to-project.
      */
     Path sessionConfigDirOrNull(String sessionId) {
-        AiTypeEnum aiType = sessionId == null ? null : sessionAiType.get(sessionId);
+        SessionScope scope = sessionId == null ? null : sessionScopes.get(sessionId);
+        AiTypeEnum aiType = scope == null ? null : scope.aiType();
         if (aiType == null) {
             return null;
         }

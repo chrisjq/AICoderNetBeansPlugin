@@ -98,7 +98,7 @@ class OpenCodeAcpClientHandler implements AcpClientHandler {
         }
         JsonObject rawInput = toolCall.getAsJsonObject(AcpJsonKeyEnum.RAW_INPUT.key());
         return rawInput.has(AcpJsonKeyEnum.COMMAND.key()) && !rawInput.get(AcpJsonKeyEnum.COMMAND.key()).isJsonNull()
-                ? rawInput.get(AcpJsonKeyEnum.COMMAND.key()).getAsString() : null;
+               ? rawInput.get(AcpJsonKeyEnum.COMMAND.key()).getAsString() : null;
     }
 
     /**
@@ -196,11 +196,11 @@ class OpenCodeAcpClientHandler implements AcpClientHandler {
     @Override
     public CompletableFuture<JsonObject> onRequestPermission(JsonObject params) {
         JsonObject toolCall = params.has(AcpJsonKeyEnum.TOOL_CALL.key()) && params.get(AcpJsonKeyEnum.TOOL_CALL.key()).isJsonObject()
-                ? params.getAsJsonObject(AcpJsonKeyEnum.TOOL_CALL.key()) : null;
+                              ? params.getAsJsonObject(AcpJsonKeyEnum.TOOL_CALL.key()) : null;
         String kind = toolCall != null && toolCall.has(AcpJsonKeyEnum.KIND.key()) && !toolCall.get(AcpJsonKeyEnum.KIND.key()).isJsonNull()
-                ? toolCall.get(AcpJsonKeyEnum.KIND.key()).getAsString() : null;
+                      ? toolCall.get(AcpJsonKeyEnum.KIND.key()).getAsString() : null;
         String title = toolCall != null && toolCall.has(AcpJsonKeyEnum.TITLE.key()) && !toolCall.get(AcpJsonKeyEnum.TITLE.key()).isJsonNull()
-                ? toolCall.get(AcpJsonKeyEnum.TITLE.key()).getAsString() : null;
+                       ? toolCall.get(AcpJsonKeyEnum.TITLE.key()).getAsString() : null;
         String filePath = extractPermissionFilePath(toolCall);
 
         if ("execute".equals(kind)) {
@@ -248,7 +248,7 @@ class OpenCodeAcpClientHandler implements AcpClientHandler {
         }
         String toolName = kind != null && !kind.isBlank() ? kind : "Unknown";
         String displayText = title != null && !title.isBlank()
-                ? title : "(unidentified OpenCode action, kind=" + toolName + ")";
+                             ? title : "(unidentified OpenCode action, kind=" + toolName + ")";
         // Never auto-accept this one. It is the fallback for a request whose kind
         // and subject could not be worked out, so auto-accept would approve an
         // action of unknown type against an unknown target and log it as
@@ -268,7 +268,7 @@ class OpenCodeAcpClientHandler implements AcpClientHandler {
         CompletableFuture<PermissionDecision> decisionFuture = new CompletableFuture<>();
         pendingPermission = decisionFuture;
         listener.onAiProcessEvent(new ConfirmEvent(toolName, displayText, filePath, targetPath,
-                decisionFuture, requireExplicitApproval));
+                                                   decisionFuture, requireExplicitApproval));
         return decisionFuture.handle(this::mapDecisionToAcpResult);
     }
 

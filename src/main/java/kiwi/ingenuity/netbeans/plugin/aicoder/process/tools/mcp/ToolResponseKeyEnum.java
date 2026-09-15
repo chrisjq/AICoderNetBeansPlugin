@@ -44,6 +44,15 @@ public enum ToolResponseKeyEnum {
      * Response body, possibly truncated.
      */
     BODY("body"),
+    /**
+     * Session temp file holding the complete response (request line, status, headers, then the raw body). Present only
+     * when the body was truncated; readable with GetFileContent or FilterFileContent.
+     */
+    FULL_RESPONSE_FILE("fullResponseFile"),
+    /**
+     * Present and true when the full response file itself stopped at its size cap.
+     */
+    FULL_RESPONSE_TRUNCATED("fullResponseTruncated"),
     // ListAiSessions response
     /**
      * Peer session identifier, passed back as targetSessionId when messaging it.
@@ -57,6 +66,10 @@ public enum ToolResponseKeyEnum {
      * True while the peer is mid-turn; both states can still receive mail.
      */
     ACTIVE("active"),
+    /**
+     * True while an interactive approval prompt is awaiting the session's user.
+     */
+    AWAITING_APPROVAL("awaitingApproval"),
     MAIL_DELIVERY("mailDelivery");
 
     private final String key;

@@ -52,18 +52,28 @@ public abstract class AbstractTestsTool implements McpToolInterface {
         JsonObject tc = new JsonObject();
         tc.addProperty(ToolSchemaKeyEnum.TYPE.key(), "string");
         tc.addProperty(ToolSchemaKeyEnum.DESCRIPTION.key(),
-                "Optional test class name (e.g. MyServiceTest or com.example.MyServiceTest). "
-                + "Omit to run all tests.");
+                       "Optional test class name (e.g. MyServiceTest or com.example.MyServiceTest). "
+                       + "Omit to run all tests.");
         props.add(McpToolPropertyEnum.TEST_CLASS.key(), tc);
         JsonObject pp = new JsonObject();
         pp.addProperty(ToolSchemaKeyEnum.TYPE.key(), "string");
         pp.addProperty(ToolSchemaKeyEnum.DESCRIPTION.key(), "Required absolute path to the open project root.");
         props.add(GitCommonParamEnum.PROJECT_PATH.key(), pp);
-        schema.add(ToolSchemaKeyEnum.PROPERTIES.key(), props);
         JsonArray required = new JsonArray();
         required.add(GitCommonParamEnum.PROJECT_PATH.key());
+        addOptionProperties(props, required);
+        schema.add(ToolSchemaKeyEnum.PROPERTIES.key(), props);
         schema.add(ToolSchemaKeyEnum.REQUIRED.key(), required);
         tool.add(ToolSchemaKeyEnum.INPUT_SCHEMA.key(), schema);
         return McpToolSchemas.applyCredentialsIfRequested(tool, options);
+    }
+
+    /**
+     * Hook for a build-system-specific test tool (RunMavenTests/RunGradleTests/RunAntTests) to add its own build
+     * options beyond the shared {@code projectPath}/{@code testClass} (#5 / F2) — see
+     * {@link AbstractBuildTool#addOptionProperties} for why there is no shared option list to centralise here. Default
+     * no-op.
+     */
+    protected void addOptionProperties(JsonObject props, JsonArray required) {
     }
 }

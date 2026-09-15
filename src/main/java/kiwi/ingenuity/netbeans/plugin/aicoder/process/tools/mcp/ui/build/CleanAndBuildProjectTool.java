@@ -20,13 +20,17 @@ public class CleanAndBuildProjectTool extends AbstractActionTool {
 
     public CleanAndBuildProjectTool() {
         super(McpSectionEnum.UI_BUILD,
-                McpToolEnum.CLEAN_AND_BUILD_PROJECT.toolName(),
-                "Triggers the user's IDE Clean and Build action for the required " + GitCommonParamEnum.PROJECT_PATH.key()
-                + " and shows results in the Output window. Fire-and-forget; use devops build/test tools for an AI-readable result summary and log.",
-                McpToolEnum.CLEAN_AND_BUILD_PROJECT.toolName() + " -> INSTEAD OF Bash clean then build - requires "
-                + GitCommonParamEnum.PROJECT_PATH.key() + "; triggers the user's IDE Clean and Build action",
-                McpToolEnum.CLEAN_AND_BUILD_PROJECT.toolName() + " - requires " + GitCommonParamEnum.PROJECT_PATH.key()
-                + "; triggers the user's IDE Clean and Build action");
+              McpToolEnum.CLEAN_AND_BUILD_PROJECT.toolName(),
+              "Triggers the user's IDE Clean and Build action for the required " + GitCommonParamEnum.PROJECT_PATH.key()
+              + " and shows results in the Output window. Fire-and-forget, and takes NO options — it runs the "
+              + "project's generic IDE action, which has no argument channel. Use "
+              + McpToolEnum.CLEAN_AND_BUILD_MAVEN_PROJECT.toolName() + " / " + McpToolEnum.CLEAN_AND_BUILD_GRADLE_PROJECT.toolName()
+              + " / " + McpToolEnum.CLEAN_AND_BUILD_ANT_PROJECT.toolName()
+              + " instead for options and an AI-readable result summary and log.",
+              McpToolEnum.CLEAN_AND_BUILD_PROJECT.toolName() + " -> INSTEAD OF Bash clean then build - requires "
+              + GitCommonParamEnum.PROJECT_PATH.key() + "; triggers the user's IDE Clean and Build action",
+              McpToolEnum.CLEAN_AND_BUILD_PROJECT.toolName() + " - requires " + GitCommonParamEnum.PROJECT_PATH.key()
+              + "; triggers the user's IDE Clean and Build action");
     }
 
     @Override
@@ -37,7 +41,7 @@ public class CleanAndBuildProjectTool extends AbstractActionTool {
         JsonObject projectPath = new JsonObject();
         projectPath.addProperty(ToolSchemaKeyEnum.TYPE.key(), "string");
         projectPath.addProperty(ToolSchemaKeyEnum.DESCRIPTION.key(),
-                "Required absolute path to the open project root.");
+                                "Required absolute path to the open project root.");
         props.add(GitCommonParamEnum.PROJECT_PATH.key(), projectPath);
         JsonArray required = new JsonArray();
         required.add(GitCommonParamEnum.PROJECT_PATH.key());
