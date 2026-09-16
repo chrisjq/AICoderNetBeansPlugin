@@ -5,6 +5,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.function.Predicate;
 import java.util.regex.Pattern;
+import kiwi.ingenuity.netbeans.plugin.aicoder.process.tempfile.SpooledLogCopier;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tempfile.TempFileDirEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tempfile.TempFileSpooler;
 
@@ -17,9 +18,10 @@ import kiwi.ingenuity.netbeans.plugin.aicoder.process.tempfile.TempFileSpooler;
  * <li>Success — the results/summary block plus the build result line only.</li>
  * <li>Failure — the COMPLETE failure detail verbatim (every [ERROR] line for Maven, the whole failure block for Gradle,
  * javac diagnostics plus the trailer for Ant), never truncated.</li>
- * <li>The full unabridged output is ALWAYS spooled via {@link kiwi.ingenuity.netbeans.plugin.aicoder.process.tempfile.TempFileSpooler}
- * into the session's registry-owned temp tree ({@code ~/.ai-coder/{type}/{sessionId}/tmp/tool_results/}, whose lifetime — age sweep plus wholesale removal on
- * session close, IDE shutdown and plugin uninstall — is owned by
+ * <li>The full unabridged output is ALWAYS spooled via
+ * {@link kiwi.ingenuity.netbeans.plugin.aicoder.process.tempfile.TempFileSpooler} into the session's registry-owned
+ * temp tree ({@code ~/.ai-coder/{type}/{sessionId}/tmp/tool_results/}, whose lifetime — age sweep plus wholesale
+ * removal on session close, IDE shutdown and plugin uninstall — is owned by
  * {@link kiwi.ingenuity.netbeans.plugin.aicoder.process.tempfile.TempFileRegistry}), and its path is appended to the
  * response. That tree is exempt from restrict-to-project via
  * {@link kiwi.ingenuity.netbeans.plugin.aicoder.process.server.McpHookServer#isOwnSessionConfigFile}, so GetFileContent
@@ -58,19 +60,21 @@ public final class BuildOutputFormatter {
      * @param backend which build tool produced the output
      * @param success true when the process exited zero
      * @param exitCode the process exit code (surfaced on failure)
+     * @param command the exact command that was run (argv list)
      * @param output the complete captured process output
      */
     public static String formatResult(String sessionId, Backend backend, boolean success,
-            int exitCode, String output) {
+                                      int exitCode, List<String> command, String output) {
         Path logFile = TempFileSpooler.spool(sessionId, TempFileDirEnum.TOOL_RESULTS, backend.logTag(), ".log", output);
+        String commandLine = formatCommandLine(command);
         if (logFile == null) {
             // No readable copy of the full log exists anywhere, so the only safe
             // response is everything — byte-for-byte what these tools did before.
-            return header(backend, success, exitCode) + "\n\n" + output;
+            return header(backend, success, exitCode) + "\n" + commandLine + "\n\n" + output;
         }
         String summary = summarize(backend, success, output);
         String body = summary != null ? summary : output;
-        return header(backend, success, exitCode) + "\n\n" + body + "\n\nComplete log written to: " + logFile;
+        return header(backend, success, exitCode) + "\n" + commandLine + "\n\n" + body + "\n\n" + SpooledLogCopier.LOG_PATH_PREFIX + logFile;
     }
 
     /**
@@ -79,11 +83,33 @@ public final class BuildOutputFormatter {
      * attached.
      *
      * @param message the leading explanation line, verbatim as before
+     * @param command the exact command that was run (argv list)
      */
-    public static String attachLog(String sessionId, Backend backend, String message, String output) {
+    public static String attachLog(String sessionId, Backend backend, String message, List<String> command, String output) {
         Path logFile = TempFileSpooler.spool(sessionId, TempFileDirEnum.TOOL_RESULTS, backend.logTag(), ".log", output);
-        String base = message + "\n\n" + output;
-        return logFile != null ? base + "\n\nComplete log written to: " + logFile : base;
+        String commandLine = formatCommandLine(command);
+        String base = message + "\n" + commandLine + "\n\n" + output;
+        return logFile != null ? base + "\n\n" + SpooledLogCopier.LOG_PATH_PREFIX + logFile : base;
+    }
+
+    private static String formatCommandLine(List<String> command) {
+        if (command == null || command.isEmpty()) {
+            return "Command: (unknown)";
+        }
+        StringBuilder sb = new StringBuilder("Command: ");
+        for (int i = 0; i < command.size(); i++) {
+            if (i > 0) {
+                sb.append(" ");
+            }
+            String arg = command.get(i);
+            if (arg.contains(" ")) {
+                sb.append("\"").append(arg).append("\"");
+            }
+            else {
+                sb.append(arg);
+            }
+        }
+        return sb.toString();
     }
 
     private static String header(Backend backend, boolean success, int exitCode) {
@@ -199,7 +225,7 @@ public final class BuildOutputFormatter {
     }
 
     private static void appendSelected(StringBuilder sb, String[] lines, int from, int to,
-            Predicate<String> wanted) {
+                                       Predicate<String> wanted) {
         List<String> picked = new ArrayList<>();
         for (int i = from; i < to; i++) {
             if (wanted.test(lines[i])) {

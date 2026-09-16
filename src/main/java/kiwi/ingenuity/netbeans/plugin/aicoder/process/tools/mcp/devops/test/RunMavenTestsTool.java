@@ -5,17 +5,15 @@ import com.google.gson.JsonObject;
 import java.util.List;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.McpSectionEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.McpToolEnum;
-import kiwi.ingenuity.netbeans.plugin.aicoder.process.locking.LockTypeEnum;
-import kiwi.ingenuity.netbeans.plugin.aicoder.process.locking.RequiresLock;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.session.AbstractAiSession;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.AbstractTestsTool;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.ToolRequestArguments;
+import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.devops.BuildSubmitter;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.devops.build.MavenToolSchema;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.providers.netbeans.BuildAndTestMavenProvider;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.providers.netbeans.BuildAndTestMavenProvider.MavenBuildOptions;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.providers.netbeans.BuildOptionValidator;
 
-@RequiresLock(LockTypeEnum.BUILD_LOCK)
 public class RunMavenTestsTool extends AbstractTestsTool {
 
     public RunMavenTestsTool() {
@@ -25,8 +23,8 @@ public class RunMavenTestsTool extends AbstractTestsTool {
               + RunMavenTestsParamEnum.GOALS.key() + " and the other options below override the default goal). "
               + "Maven projects only - do not use for Ant or Gradle projects. "
               + "Returns a summary; the full log is written to a file.",
-              McpToolEnum.RUN_MAVEN_TESTS.toolName() + " -> INSTEAD OF Bash mvn test - requires " + RunMavenTestsParamEnum.PROJECT_PATH.key() + "; runs Maven tests (default goal: test, overridable) with optional class filter",
-              McpToolEnum.RUN_MAVEN_TESTS.toolName() + " - requires " + RunMavenTestsParamEnum.PROJECT_PATH.key() + "; runs Maven tests (default goal: test, overridable) with optional class filter");
+              McpToolEnum.RUN_MAVEN_TESTS.toolName() + " -> INSTEAD OF Bash mvn test - requires " + RunMavenTestsParamEnum.PROJECT_PATH.key() + "; runs Maven tests (default goal: test, overridable) with optional class filter" + BuildSubmitter.QUEUE_INSTRUCTION,
+              McpToolEnum.RUN_MAVEN_TESTS.toolName() + " - requires " + RunMavenTestsParamEnum.PROJECT_PATH.key() + "; runs Maven tests (default goal: test, overridable) with optional class filter" + BuildSubmitter.QUEUE_INSTRUCTION);
     }
 
     @Override
@@ -43,7 +41,10 @@ public class RunMavenTestsTool extends AbstractTestsTool {
         // confusing default, and today's "mvn test" has never passed -DskipTests.
         boolean skipTests = args.bool(RunMavenTestsParamEnum.SKIP_TESTS.key());
         MavenBuildOptions opts = MavenToolSchema.optionsFrom(args, goals, skipTests);
-        return BuildAndTestMavenProvider.runTests(session.getId(),
-                                                  args.str(RunMavenTestsParamEnum.TEST_CLASS.key()), args.str(RunMavenTestsParamEnum.PROJECT_PATH.key()), opts);
+        String projectPath = args.str(RunMavenTestsParamEnum.PROJECT_PATH.key());
+        return BuildSubmitter.submit(McpToolEnum.RUN_MAVEN_TESTS.toolName(), args, projectPath,
+                                     BuildAndTestMavenProvider.prepareRunTests(session.getId(),
+                                                                               args.str(RunMavenTestsParamEnum.TEST_CLASS.key()), projectPath, opts),
+                                     session);
     }
 }

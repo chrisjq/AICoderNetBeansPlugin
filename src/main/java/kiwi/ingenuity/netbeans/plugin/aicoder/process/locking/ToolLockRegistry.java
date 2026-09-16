@@ -7,9 +7,8 @@ import kiwi.ingenuity.netbeans.plugin.aicoder.process.McpToolEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.McpToolInterface;
 
 /**
- * Registry mapping tools to their required locks. Primary source: @RequiresLock
- * annotation on tool class. Fallback: Hard-coded mappings for tools without
- * annotation.
+ * Registry mapping tools to their required locks. Primary source: @RequiresLock annotation on tool class. Fallback:
+ * Hard-coded mappings for tools without annotation.
  */
 public class ToolLockRegistry implements Registry {
 
@@ -32,18 +31,10 @@ public class ToolLockRegistry implements Registry {
         FALLBACK_LOCKS.put(McpToolEnum.GIT_ADD, LockTypeEnum.GIT_LOCK);
         FALLBACK_LOCKS.put(McpToolEnum.GIT_TAG, LockTypeEnum.GIT_LOCK);
 
-        // Build operations - BUILD_LOCK
-        FALLBACK_LOCKS.put(McpToolEnum.BUILD_MAVEN_PROJECT, LockTypeEnum.BUILD_LOCK);
-        FALLBACK_LOCKS.put(McpToolEnum.CLEAN_AND_BUILD_MAVEN_PROJECT, LockTypeEnum.BUILD_LOCK);
-        FALLBACK_LOCKS.put(McpToolEnum.BUILD_GRADLE_PROJECT, LockTypeEnum.BUILD_LOCK);
-        FALLBACK_LOCKS.put(McpToolEnum.BUILD_ANT_PROJECT, LockTypeEnum.BUILD_LOCK);
-        FALLBACK_LOCKS.put(McpToolEnum.BUILD_PROJECT, LockTypeEnum.BUILD_LOCK);
-        FALLBACK_LOCKS.put(McpToolEnum.CLEAN_PROJECT, LockTypeEnum.BUILD_LOCK);
-        FALLBACK_LOCKS.put(McpToolEnum.CLEAN_AND_BUILD_PROJECT, LockTypeEnum.BUILD_LOCK);
-        FALLBACK_LOCKS.put(McpToolEnum.RUN_MAVEN_TESTS, LockTypeEnum.BUILD_LOCK);
-        FALLBACK_LOCKS.put(McpToolEnum.RUN_GRADLE_TESTS, LockTypeEnum.BUILD_LOCK);
-        FALLBACK_LOCKS.put(McpToolEnum.RUN_ANT_TESTS, LockTypeEnum.BUILD_LOCK);
-
+        // No build tool takes BUILD_LOCK any more: every one of them, the IDE build actions included, is serialised by
+        // BuildQueue instead. Leaving the IDE actions mapped here would have held the lock across their queue wait and
+        // their whole run, refusing a second IDE action outright instead of letting it take its turn, and letting the
+        // lock cleanup thread force-release it mid-build once past BUILD_LOCK's lifetime.
         // Refactoring operations - REFACTOR_LOCK
         FALLBACK_LOCKS.put(McpToolEnum.RENAME_SYMBOL, LockTypeEnum.REFACTOR_LOCK);
         FALLBACK_LOCKS.put(McpToolEnum.MOVE_CLASS, LockTypeEnum.REFACTOR_LOCK);
@@ -62,8 +53,7 @@ public class ToolLockRegistry implements Registry {
     }
 
     /**
-     * Get the lock type required by a tool. First checks @RequiresLock
-     * annotation, then fallback registry.
+     * Get the lock type required by a tool. First checks @RequiresLock annotation, then fallback registry.
      *
      * @return LockType if tool requires a lock, null if no lock required
      */

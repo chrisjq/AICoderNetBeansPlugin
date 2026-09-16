@@ -5,6 +5,7 @@ import com.google.gson.JsonObject;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
+import kiwi.ingenuity.netbeans.plugin.aicoder.process.McpToolPropertyEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.McpToolInterface;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.ToolSchemaKeyEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.git.GitCommonParamEnum;
@@ -70,7 +71,10 @@ class UiToolsParamContractTest {
                 new CleanAndBuildProjectTool(),
                 new CleanProjectTool());
         for (McpToolInterface tool : tools) {
-            assertEquals(Set.of(GitCommonParamEnum.PROJECT_PATH.key()), propertyKeys(tool));
+            // They go through the build queue like every other build, so they offer async too — optional, never
+            // required: an IDE action with no async is an ordinary inline build that waits its turn.
+            assertEquals(Set.of(GitCommonParamEnum.PROJECT_PATH.key(), McpToolPropertyEnum.ASYNC.key()),
+                         propertyKeys(tool));
             assertEquals(Set.of(GitCommonParamEnum.PROJECT_PATH.key()), requiredKeys(tool));
         }
         assertNoParameters(List.of(new RunInspectTool()));

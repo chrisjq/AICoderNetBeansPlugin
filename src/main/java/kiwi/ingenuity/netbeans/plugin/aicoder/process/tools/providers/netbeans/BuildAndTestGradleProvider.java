@@ -1,20 +1,15 @@
 package kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.providers.netbeans;
 
 import com.google.gson.JsonObject;
-import java.io.ByteArrayOutputStream;
 import java.io.File;
-import java.io.InputStream;
-import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
-import java.util.concurrent.TimeUnit;
-import java.util.concurrent.atomic.AtomicReference;
-import java.util.logging.Level;
 import java.util.logging.Logger;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.McpToolPropertyEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.server.McpServerRegistry;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.TimeoutEnum;
+import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.build.BuildControl;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.git.GitCommonParamEnum;
 
 public class BuildAndTestGradleProvider {
@@ -35,33 +30,54 @@ public class BuildAndTestGradleProvider {
     }
 
     public static String buildProject(String sessionId, String projectPath, GradleBuildOptions opts) {
-        return runBuild(sessionId, projectPath, opts, null);
+        return BuildProcessRunner.run(prepareBuildProject(sessionId, projectPath, opts),
+                                      new BuildControl(TimeoutEnum.BUILD_PROCESS_MILLIS.millis())).result();
     }
 
     public static String cleanAndBuildProject(String sessionId, String projectPath, GradleBuildOptions opts) {
-        return runBuild(sessionId, projectPath, opts, null);
+        return BuildProcessRunner.run(prepareCleanAndBuildProject(sessionId, projectPath, opts),
+                                      new kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.build.BuildControl(TimeoutEnum.BUILD_PROCESS_MILLIS.millis())).result();
     }
 
     public static String runTests(String sessionId, String testClass, String projectPath, GradleBuildOptions opts) {
-        return runBuild(sessionId, projectPath, opts, testClass);
+        return BuildProcessRunner.run(prepareRunTests(sessionId, testClass, projectPath, opts),
+                                      new kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.build.BuildControl(TimeoutEnum.BUILD_PROCESS_MILLIS.millis())).result();
     }
 
-    private static String runBuild(String sessionId, String projectPath, GradleBuildOptions opts, String testClass) {
+    public static PreparedBuild prepareBuildProject(String sessionId, String projectPath, GradleBuildOptions opts) {
+        return prepareBuild(sessionId, projectPath, opts, null);
+    }
+
+    public static PreparedBuild prepareCleanAndBuildProject(String sessionId, String projectPath, GradleBuildOptions opts) {
+        return prepareBuild(sessionId, projectPath, opts, null);
+    }
+
+    public static PreparedBuild prepareRunTests(String sessionId, String testClass, String projectPath, GradleBuildOptions opts) {
+        return prepareBuild(sessionId, projectPath, opts, testClass);
+    }
+
+    private static PreparedBuild prepareBuild(String sessionId, String projectPath, GradleBuildOptions opts, String testClass) {
         String error = validate(opts);
         if (error != null) {
-            return "Error: " + error;
+            return PreparedBuild.error("Error: " + error);
         }
         if (testClass != null && !testClass.isBlank()) {
             error = BuildOptionValidator.validateTestSelector(McpToolPropertyEnum.TEST_CLASS.key(), testClass);
             if (error != null) {
-                return "Error: " + error;
+                return PreparedBuild.error("Error: " + error);
             }
         }
         RootResult resolved = resolveRoot(sessionId, projectPath);
         if (resolved.error() != null) {
-            return resolved.error();
+            return PreparedBuild.error(resolved.error());
         }
-        return runGradle(sessionId, resolved.root(), argsFor(opts, testClass));
+        boolean windows = System.getProperty("os.name", "").toLowerCase().contains("win");
+        File wrapper = new File(resolved.root(), windows ? "gradlew.bat" : "gradlew");
+        List<String> command = new ArrayList<>();
+        command.add(wrapper.exists() ? wrapper.getAbsolutePath() : "gradle");
+        command.addAll(List.of(argsFor(opts, testClass)));
+        command.add("--no-daemon");
+        return new PreparedBuild(null, sessionId, resolved.root(), command, BuildOutputFormatter.Backend.GRADLE);
     }
 
     private static String validate(GradleBuildOptions opts) {
@@ -130,92 +146,6 @@ public class BuildAndTestGradleProvider {
             return new RootResult(null, "Access denied: " + projectPath);
         }
         return new RootResult(real, null);
-    }
-
-    private static String runGradle(String sessionId, File dir, String... tasks) {
-        boolean windows = System.getProperty("os.name", "").toLowerCase().contains("win");
-        File wrapper = new File(dir, windows ? "gradlew.bat" : "gradlew");
-        List<String> cmd = new ArrayList<>();
-        if (wrapper.exists()) {
-            cmd.add(wrapper.getAbsolutePath());
-        }
-        else {
-            cmd.add("gradle");
-        }
-        cmd.addAll(List.of(tasks));
-        cmd.add("--no-daemon");
-        Process p = null;
-        Thread reader = null;
-        AtomicReference<String> outputRef = new AtomicReference<>("");
-        AtomicReference<Exception> readerFailure = new AtomicReference<>();
-        try {
-            ProcessBuilder pb = new ProcessBuilder(cmd);
-            pb.directory(dir);
-            pb.redirectErrorStream(true);
-            p = pb.start();
-            final Process proc = p;
-            reader = new Thread(() -> {
-                try {
-                    byte[] buf = new byte[8192];
-                    ByteArrayOutputStream baos = new ByteArrayOutputStream();
-                    int n;
-                    InputStream is = proc.getInputStream();
-                    while ((n = is.read(buf)) != -1) {
-                        if (baos.size() < MAX_OUTPUT_BYTES) {
-                            baos.write(buf, 0, Math.min(n, MAX_OUTPUT_BYTES - baos.size()));
-                        }
-                    }
-                    outputRef.set(baos.toString(StandardCharsets.UTF_8));
-                }
-                catch (Exception e) {
-                    readerFailure.set(e);
-                }
-            }, "gradle-output-reader");
-            reader.setDaemon(true);
-            reader.start();
-            boolean finished = p.waitFor(TimeoutEnum.BUILD_PROCESS_MILLIS.millis(), TimeUnit.MILLISECONDS);
-            if (!finished) {
-                p.destroyForcibly();
-            }
-            try {
-                reader.join(5_000);
-            }
-            catch (InterruptedException e) {
-                Thread.currentThread().interrupt();
-            }
-            String output = outputRef.get();
-            Exception outputError = readerFailure.get();
-            if (outputError != null) {
-                return BuildOutputFormatter.attachLog(sessionId, BuildOutputFormatter.Backend.GRADLE,
-                                                      "Error reading Gradle output: " + outputError.getMessage(), output);
-            }
-            if (!finished) {
-                return BuildOutputFormatter.attachLog(sessionId, BuildOutputFormatter.Backend.GRADLE,
-                                                      "Timed out after " + TimeUnit.MILLISECONDS.toSeconds(TimeoutEnum.BUILD_PROCESS_MILLIS.millis()) + "s",
-                                                      output);
-            }
-            int exit = p.exitValue();
-            return BuildOutputFormatter.formatResult(sessionId, BuildOutputFormatter.Backend.GRADLE,
-                                                     exit == 0, exit, output);
-        }
-        catch (InterruptedException ie) {
-            Thread.currentThread().interrupt();
-            if (p != null) {
-                p.destroyForcibly();
-            }
-            if (reader != null) {
-                try {
-                    reader.join(2_000);
-                }
-                catch (InterruptedException ignored) {
-                }
-            }
-            return "Interrupted waiting for build";
-        }
-        catch (Exception e) {
-            LOG.log(Level.WARNING, "runGradle error", e);
-            return "Error running Gradle: " + e.getMessage();
-        }
     }
 
     private BuildAndTestGradleProvider() {

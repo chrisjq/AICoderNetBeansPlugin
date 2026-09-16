@@ -21,6 +21,14 @@ import java.util.Arrays;
  */
 public enum TimeoutEnum {
     BUILD_PROCESS_MILLIS(600_000L, Kind.OPERATION_OR_WAIT),
+    /**
+     * Time limit for an async build once it starts running (async build and test decision 6, raised to two hours by
+     * decision 28). Separate from the queue wait: this clock starts only when the build itself does.
+     * {@link Kind#EXTERNAL_IO}, not {@link Kind#OPERATION_OR_WAIT}: it bounds an external build process that no tool
+     * call waits on, and as an operation-or-wait value it would silently raise {@link #MUTATION_LOCK_WAIT_MILLIS} to
+     * more than two hours.
+     */
+    ASYNC_BUILD_PROCESS_MILLIS(7_200_000L, Kind.EXTERNAL_IO),
     WEB_REQUEST_DEFAULT_MILLIS(30_000L, Kind.OPERATION_OR_WAIT),
     WEB_REQUEST_MAX_MILLIS(300_000L, Kind.OPERATION_OR_WAIT),
     USER_APPROVAL_WAIT_MILLIS(120_000L, Kind.OPERATION_OR_WAIT),
@@ -28,13 +36,26 @@ public enum TimeoutEnum {
     CLAUDE_CREDENTIAL_POLL_MILLIS(30_000L, Kind.BACKGROUND_INTERVAL),
     LOCK_CLEANUP_INTERVAL_MILLIS(30_000L, Kind.BACKGROUND_INTERVAL),
     GIT_LOCK_LIFETIME_MILLIS(300_000L, Kind.LOCK_LIFETIME),
-    BUILD_LOCK_LIFETIME_MILLIS(600_000L, Kind.LOCK_LIFETIME),
+    /**
+     * The FLOOR for an inline build's run limit, not a fixed ceiling (decision 29). No tool takes BUILD_LOCK any more,
+     * so this and its wait define the queue's inline build instead: 120 s to reach the front, then at least this long
+     * to run. A project that has completed a longer build successfully gets that observed time plus a margin instead —
+     * see {@code BuildQueue.inlineTimeoutMillisFor}.
+     */
+    BUILD_LOCK_LIFETIME_MILLIS(300_000L, Kind.LOCK_LIFETIME),
     REFACTOR_LOCK_LIFETIME_MILLIS(180_000L, Kind.LOCK_LIFETIME),
     FILE_WRITE_LOCK_LIFETIME_MILLIS(120_000L, Kind.LOCK_LIFETIME),
     SESSION_LOCK_LIFETIME_MILLIS(60_000L, Kind.LOCK_LIFETIME),
     PROJECT_STRUCTURE_LOCK_LIFETIME_MILLIS(300_000L, Kind.LOCK_LIFETIME),
     GIT_LOCK_WAIT_MILLIS(5_000L, Kind.OPERATION_OR_WAIT),
     BUILD_LOCK_WAIT_MILLIS(120_000L, Kind.OPERATION_OR_WAIT),
+    /**
+     * Grace period {@code ProjectActionProvider} waits, after an IDE build action returns, for the action's own
+     * {@code ActionProvider} to call {@code ActionProgress.started()}. A provider that does not support
+     * {@code ActionProgress} never calls back at all, so this timing out is how that absence is detected — short,
+     * because a supporting provider calls back before {@code invokeAction} even returns.
+     */
+    IDE_ACTION_START_GRACE_MILLIS(2_000L, Kind.OPERATION_OR_WAIT),
     REFACTOR_LOCK_WAIT_MILLIS(5_000L, Kind.OPERATION_OR_WAIT),
     FILE_WRITE_LOCK_WAIT_MILLIS(0L, Kind.OPERATION_OR_WAIT),
     SESSION_LOCK_WAIT_MILLIS(5_000L, Kind.OPERATION_OR_WAIT),

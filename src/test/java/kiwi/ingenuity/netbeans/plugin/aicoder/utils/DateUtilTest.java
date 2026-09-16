@@ -1,5 +1,6 @@
 package kiwi.ingenuity.netbeans.plugin.aicoder.utils;
 
+import java.time.Duration;
 import java.time.Instant;
 import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
@@ -53,5 +54,30 @@ class DateUtilTest {
     void formatsEpochMillisThroughSameDisplayFormatter() {
         long epochMillis = 0L;
         assertEquals(DateUtil.format(Instant.ofEpochMilli(epochMillis)), DateUtil.format(epochMillis));
+    }
+
+    @Test
+    void formatDurationListsNonZeroPartsLargestFirstWithSingularAndPluralLabels() {
+        assertEquals("2 days, 1 hour, 5 mins, 1 sec, 45 ms",
+                     DateUtil.formatDuration(Duration.ofDays(2).plusHours(1).plusMinutes(5).plusSeconds(1).plusMillis(45)));
+        assertEquals("1 hour, 2 secs", DateUtil.formatDuration(Duration.ofHours(1).plusSeconds(2)));
+        assertEquals("1 ms", DateUtil.formatDuration(Duration.ofMillis(1)));
+    }
+
+    @Test
+    void formatDurationDropsUnitsLeftOutOfTheSet() {
+        Duration duration = Duration.ofHours(1).plusMinutes(2).plusSeconds(3).plusMillis(4);
+
+        assertEquals("1 hour, 2 mins, 3 secs", DateUtil.formatDuration(DateUtil.DURATION_TO_SECONDS, duration));
+        assertEquals("1 hour, 2 mins", DateUtil.formatDuration(DateUtil.DURATION_TO_MINUTES, duration));
+    }
+
+    @Test
+    void formatDurationRendersZeroNegativeAndNullAsZeroOfTheSmallestUnit() {
+        assertEquals("0 ms", DateUtil.formatDuration(Duration.ZERO));
+        assertEquals("0 ms", DateUtil.formatDuration(Duration.ofSeconds(-5)));
+        assertEquals("0 ms", DateUtil.formatDuration(null));
+        assertEquals("0 secs", DateUtil.formatDuration(DateUtil.DURATION_TO_SECONDS, Duration.ofMillis(999)));
+        assertEquals("0 mins", DateUtil.formatDuration(DateUtil.DURATION_TO_MINUTES, Duration.ZERO));
     }
 }

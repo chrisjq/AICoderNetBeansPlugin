@@ -154,11 +154,16 @@ The local MCP server exposes the following NetBeans-aware capabilities to compat
 
 | Tool | Description |
 |---|---|
-| [`BuildProject`](REFERENCE.md#buildproject), [`CleanProject`](REFERENCE.md#cleanproject), [`CleanAndBuildProject`](REFERENCE.md#cleanandbuildproject) | Invoke NetBeans build actions for the active project type |
+| [`BuildProject`](REFERENCE.md#buildproject), [`CleanProject`](REFERENCE.md#cleanproject), [`CleanAndBuildProject`](REFERENCE.md#cleanandbuildproject) | Invoke NetBeans build actions for the active project type; queued like every other build |
 | [`BuildMavenProject`](REFERENCE.md#buildmavenproject), [`CleanAndBuildMavenProject`](REFERENCE.md#cleanandbuildmavenproject), [`RunMavenTests`](REFERENCE.md#runmaventests) | Maven package/clean/test operations |
-| [`BuildGradleProject`](REFERENCE.md#buildgradleproject), [`RunGradleTests`](REFERENCE.md#rungradletests) | Gradle build and test operations |
-| [`BuildAntProject`](REFERENCE.md#buildantproject), [`RunAntTests`](REFERENCE.md#runanttests) | Ant build and test operations |
-| [`DownloadMavenSources`](REFERENCE.md#downloadmavensources), [`DownloadMavenJavadoc`](REFERENCE.md#downloadmavenjavadoc) | Download dependency sources or Javadoc |
+| [`BuildGradleProject`](REFERENCE.md#buildgradleproject), [`CleanAndBuildGradleProject`](REFERENCE.md#cleanandbuildgradleproject), [`RunGradleTests`](REFERENCE.md#rungradletests) | Gradle build, clean-and-build, and test operations |
+| [`BuildAntProject`](REFERENCE.md#buildantproject), [`CleanAndBuildAntProject`](REFERENCE.md#cleanandbuildantproject), [`RunAntTests`](REFERENCE.md#runanttests) | Ant build, clean-and-build, and test operations |
+| [`DownloadMavenSources`](REFERENCE.md#downloadmavensources), [`DownloadMavenJavadoc`](REFERENCE.md#downloadmavenjavadoc) | Download dependency sources or Javadoc; queued like every other build |
+| [`ListBuilds`](REFERENCE.md#listbuilds), [`StopAsyncBuild`](REFERENCE.md#stopasyncbuild) | Inspect the shared build queue and cancel one of your own async builds |
+
+**Every** build tool runs through a single plugin-wide build queue — the Maven, Gradle and Ant build, clean-and-build and test tools, the two Maven download tools, and the three IDE actions alike: first come first served, one build running at a time, and at most one build per project queued or running. Each accepts `async` (default `false`). With `async: true` the call returns the build's id immediately and the full result is delivered as a message when it finishes (up to 2 hours once started); without it the call waits up to 120 seconds for its turn to begin and then returns the result. The two are separate clocks: the 120 seconds is only the wait for a free slot, and never counts against the build's own time. An inline build's own limit adapts to the project — 5 minutes, or the longest it has previously taken to build *successfully* plus 20% — so a slow project stops being cut off once it has proved how long it needs. `ListBuilds` shows that figure per project. IDE actions report COMPLETED (result unknown) when NetBeans says the action ran; the API flag does not confirm the build result. Use Maven, Gradle or Ant tools for an authoritative build result. Present build options with wrong types are refused before queueing; full results include the exact command run, and Maven downloads do not count toward Longest OK run.
+
+Asking for a build that is already queued or running with the same options — in any order — does not start it twice. The caller is told it already exists and is added as a listener, receiving the same result when it finishes, with the log copied where it can read it. Only the AI that requested a build may stop it, and a build outlives its requester as long as someone is still waiting on it. `ListBuilds` shows the queue and recent results; `StopAsyncBuild` cancels one of your own async builds, except a *running* IDE action, which NetBeans gives us no way to cancel.
 
 ### Search, code intelligence, and refactoring
 
@@ -234,3 +239,7 @@ Tests are under `src/test/java` and cover protocol handling, tool registration, 
 Copyright (c) 2026 Chris Quin.
 
 This project is licensed under the [MIT License](LICENSE) — see [LICENSE](LICENSE) for details.
+
+
+
+

@@ -14,140 +14,140 @@ import org.junit.jupiter.api.Test;
 class BuildOutputFormatterTest {
 
     private static final String MAVEN_SUCCESS_WITH_TESTS = String.join("\n",
-            "[INFO] Scanning for projects...",
-            "[INFO] --- maven-compiler-plugin:3.11.0:compile (default-compile) @ app ---",
-            "[INFO] Nothing to compile - all classes are up to date",
-            "[INFO] --- maven-surefire-plugin:3.1.2:test (default-test) @ app ---",
-            "[INFO] Running com.example.AppTest",
-            "[INFO] Tests run: 4, Failures: 0, Errors: 0, Skipped: 0 -- in com.example.AppTest",
-            "[INFO]",
-            "[INFO] Results:",
-            "[INFO]",
-            "[INFO] Tests run: 4, Failures: 0, Errors: 0, Skipped: 0",
-            "[INFO]",
-            "[INFO] ------------------------------------------------------------------------",
-            "[INFO] BUILD SUCCESS",
-            "[INFO] ------------------------------------------------------------------------",
-            "[INFO] Total time:  01:01 min",
-            "[INFO] Finished at: 2026-08-23T21:53:57+12:00",
-            "[INFO] ------------------------------------------------------------------------");
+                                                                       "[INFO] Scanning for projects...",
+                                                                       "[INFO] --- maven-compiler-plugin:3.11.0:compile (default-compile) @ app ---",
+                                                                       "[INFO] Nothing to compile - all classes are up to date",
+                                                                       "[INFO] --- maven-surefire-plugin:3.1.2:test (default-test) @ app ---",
+                                                                       "[INFO] Running com.example.AppTest",
+                                                                       "[INFO] Tests run: 4, Failures: 0, Errors: 0, Skipped: 0 -- in com.example.AppTest",
+                                                                       "[INFO]",
+                                                                       "[INFO] Results:",
+                                                                       "[INFO]",
+                                                                       "[INFO] Tests run: 4, Failures: 0, Errors: 0, Skipped: 0",
+                                                                       "[INFO]",
+                                                                       "[INFO] ------------------------------------------------------------------------",
+                                                                       "[INFO] BUILD SUCCESS",
+                                                                       "[INFO] ------------------------------------------------------------------------",
+                                                                       "[INFO] Total time:  01:01 min",
+                                                                       "[INFO] Finished at: 2026-08-23T21:53:57+12:00",
+                                                                       "[INFO] ------------------------------------------------------------------------");
 
     private static final String MAVEN_SUCCESS_NO_TESTS = String.join("\n",
-            "[INFO] Scanning for projects...",
-            "[INFO] --- maven-resources-plugin:3.3.1:resources (default-resources) @ app ---",
-            "[INFO] Copying 3 resources",
-            "[INFO] --- maven-jar-plugin:3.3.0:jar (default-jar) @ app ---",
-            "[INFO] Building jar: target/app-1.3.22.jar",
-            "[INFO] ------------------------------------------------------------------------",
-            "[INFO] BUILD SUCCESS",
-            "[INFO] ------------------------------------------------------------------------",
-            "[INFO] Total time:  15.655 s",
-            "[INFO] Finished at: 2026-08-23T21:40:12+12:00",
-            "[INFO] ------------------------------------------------------------------------");
+                                                                     "[INFO] Scanning for projects...",
+                                                                     "[INFO] --- maven-resources-plugin:3.3.1:resources (default-resources) @ app ---",
+                                                                     "[INFO] Copying 3 resources",
+                                                                     "[INFO] --- maven-jar-plugin:3.3.0:jar (default-jar) @ app ---",
+                                                                     "[INFO] Building jar: target/app-1.3.22.jar",
+                                                                     "[INFO] ------------------------------------------------------------------------",
+                                                                     "[INFO] BUILD SUCCESS",
+                                                                     "[INFO] ------------------------------------------------------------------------",
+                                                                     "[INFO] Total time:  15.655 s",
+                                                                     "[INFO] Finished at: 2026-08-23T21:40:12+12:00",
+                                                                     "[INFO] ------------------------------------------------------------------------");
 
     private static final String MAVEN_FAILURE_COMPILE = String.join("\n",
-            "[INFO] Scanning for projects...",
-            "[INFO] --- maven-compiler-plugin:3.11.0:compile (default-compile) @ app ---",
-            "[INFO] Changes detected - recompiling the module!",
-            "[ERROR] COMPILATION ERROR :",
-            "[ERROR] /src/main/java/com/example/App.java:[12,30] ';' expected",
-            "[ERROR] /src/main/java/com/example/App.java:[14,9] cannot find symbol",
-            "[INFO] 2 errors",
-            "[INFO] ------------------------------------------------------------------------",
-            "[INFO] BUILD FAILURE",
-            "[INFO] ------------------------------------------------------------------------",
-            "[INFO] Total time:  4.102 s",
-            "[INFO] Finished at: 2026-08-23T22:00:00+12:00",
-            "[INFO] ------------------------------------------------------------------------",
-            "[ERROR] Failed to execute goal org.apache.maven.plugins:maven-compiler-plugin:3.11.0:compile"
-            + " (default-compile) on project app: Compilation failure -> [Help 1]",
-            "[ERROR]",
-            "[ERROR] Re-run Maven using the -X switch to enable full debug logging.");
+                                                                    "[INFO] Scanning for projects...",
+                                                                    "[INFO] --- maven-compiler-plugin:3.11.0:compile (default-compile) @ app ---",
+                                                                    "[INFO] Changes detected - recompiling the module!",
+                                                                    "[ERROR] COMPILATION ERROR :",
+                                                                    "[ERROR] /src/main/java/com/example/App.java:[12,30] ';' expected",
+                                                                    "[ERROR] /src/main/java/com/example/App.java:[14,9] cannot find symbol",
+                                                                    "[INFO] 2 errors",
+                                                                    "[INFO] ------------------------------------------------------------------------",
+                                                                    "[INFO] BUILD FAILURE",
+                                                                    "[INFO] ------------------------------------------------------------------------",
+                                                                    "[INFO] Total time:  4.102 s",
+                                                                    "[INFO] Finished at: 2026-08-23T22:00:00+12:00",
+                                                                    "[INFO] ------------------------------------------------------------------------",
+                                                                    "[ERROR] Failed to execute goal org.apache.maven.plugins:maven-compiler-plugin:3.11.0:compile"
+                                                                    + " (default-compile) on project app: Compilation failure -> [Help 1]",
+                                                                    "[ERROR]",
+                                                                    "[ERROR] Re-run Maven using the -X switch to enable full debug logging.");
 
     private static final String MAVEN_FAILURE_TESTS = String.join("\n",
-            "[INFO] Running com.example.CalculatorTest",
-            "[INFO] Tests run: 10, Failures: 0, Errors: 0, Skipped: 0 -- in com.example.CalculatorTest",
-            "[INFO] Running com.example.BrokenTest",
-            "[INFO]",
-            "[INFO] Results:",
-            "[INFO]",
-            "[ERROR] Failures:",
-            "[ERROR]   BrokenTest.testAdd:23 expected:<1> but was:<2>",
-            "[ERROR]   BrokenTest.testSub:31 Arrays first differed at element [0]; expected:<5> but was:<6>",
-            "[INFO]",
-            "[ERROR] Errors:",
-            "[ERROR]   BrokenTest.testBoom:40 NullPointer",
-            "[INFO]",
-            "[ERROR] Tests run: 12, Failures: 2, Errors: 1, Skipped: 0",
-            "[INFO]",
-            "[INFO] ------------------------------------------------------------------------",
-            "[INFO] BUILD FAILURE",
-            "[INFO] ------------------------------------------------------------------------",
-            "[INFO] Total time:  8.500 s",
-            "[ERROR] Failed to execute goal org.apache.maven.plugins:maven-surefire-plugin:3.1.2:test"
-            + " (default-test) on project app: There are test failures.");
+                                                                  "[INFO] Running com.example.CalculatorTest",
+                                                                  "[INFO] Tests run: 10, Failures: 0, Errors: 0, Skipped: 0 -- in com.example.CalculatorTest",
+                                                                  "[INFO] Running com.example.BrokenTest",
+                                                                  "[INFO]",
+                                                                  "[INFO] Results:",
+                                                                  "[INFO]",
+                                                                  "[ERROR] Failures:",
+                                                                  "[ERROR]   BrokenTest.testAdd:23 expected:<1> but was:<2>",
+                                                                  "[ERROR]   BrokenTest.testSub:31 Arrays first differed at element [0]; expected:<5> but was:<6>",
+                                                                  "[INFO]",
+                                                                  "[ERROR] Errors:",
+                                                                  "[ERROR]   BrokenTest.testBoom:40 NullPointer",
+                                                                  "[INFO]",
+                                                                  "[ERROR] Tests run: 12, Failures: 2, Errors: 1, Skipped: 0",
+                                                                  "[INFO]",
+                                                                  "[INFO] ------------------------------------------------------------------------",
+                                                                  "[INFO] BUILD FAILURE",
+                                                                  "[INFO] ------------------------------------------------------------------------",
+                                                                  "[INFO] Total time:  8.500 s",
+                                                                  "[ERROR] Failed to execute goal org.apache.maven.plugins:maven-surefire-plugin:3.1.2:test"
+                                                                  + " (default-test) on project app: There are test failures.");
 
     private static final String GRADLE_SUCCESS = String.join("\n",
-            "> Task :compileJava UP-TO-DATE",
-            "> Task :processResources UP-TO-DATE",
-            "> Task :classes UP-TO-DATE",
-            "> Task :jar",
-            "> Task :assemble",
-            "> Task :check",
-            "> Task :build",
-            "Deprecated Gradle features were used in this build.",
-            "BUILD SUCCESSFUL in 12s",
-            "5 actionable tasks: 1 executed, 4 up-to-date");
+                                                             "> Task :compileJava UP-TO-DATE",
+                                                             "> Task :processResources UP-TO-DATE",
+                                                             "> Task :classes UP-TO-DATE",
+                                                             "> Task :jar",
+                                                             "> Task :assemble",
+                                                             "> Task :check",
+                                                             "> Task :build",
+                                                             "Deprecated Gradle features were used in this build.",
+                                                             "BUILD SUCCESSFUL in 12s",
+                                                             "5 actionable tasks: 1 executed, 4 up-to-date");
 
     private static final String GRADLE_FAILURE = String.join("\n",
-            "> Task :compileJava UP-TO-DATE",
-            "> Task :test FAILED",
-            "",
-            "FAILURE: Build failed with an exception.",
-            "",
-            "* What went wrong:",
-            "Execution failed for task ':test'.",
-            "> There were failing tests. See the report at: file:///proj/build/reports/tests/test/index.html",
-            "",
-            "* Try:",
-            "> Run with --stacktrace option to get the stack trace.",
-            "> Run with --info or --debug option to get more log output.",
-            "",
-            "* Exception is:",
-            "org.gradle.api.tasks.TaskExecutionException: Execution failed for task ':test'.",
-            "        at org.gradle.api.internal.tasks.execution.ExecuteActionsTaskExecuter.lambda$executeIfValid$1(ExecuteActionsTaskExecuter.java:130)",
-            "",
-            "BUILD FAILED in 9s",
-            "4 actionable tasks: 3 executed, 1 up-to-date");
+                                                             "> Task :compileJava UP-TO-DATE",
+                                                             "> Task :test FAILED",
+                                                             "",
+                                                             "FAILURE: Build failed with an exception.",
+                                                             "",
+                                                             "* What went wrong:",
+                                                             "Execution failed for task ':test'.",
+                                                             "> There were failing tests. See the report at: file:///proj/build/reports/tests/test/index.html",
+                                                             "",
+                                                             "* Try:",
+                                                             "> Run with --stacktrace option to get the stack trace.",
+                                                             "> Run with --info or --debug option to get more log output.",
+                                                             "",
+                                                             "* Exception is:",
+                                                             "org.gradle.api.tasks.TaskExecutionException: Execution failed for task ':test'.",
+                                                             "        at org.gradle.api.internal.tasks.execution.ExecuteActionsTaskExecuter.lambda$executeIfValid$1(ExecuteActionsTaskExecuter.java:130)",
+                                                             "",
+                                                             "BUILD FAILED in 9s",
+                                                             "4 actionable tasks: 3 executed, 1 up-to-date");
 
     private static final String ANT_SUCCESS = String.join("\n",
-            "init:",
-            "compile:",
-            "jar:",
-            "Building jar: dist/plugin.jar",
-            "BUILD SUCCESSFUL",
-            "Total time: 3 seconds");
+                                                          "init:",
+                                                          "compile:",
+                                                          "jar:",
+                                                          "Building jar: dist/plugin.jar",
+                                                          "BUILD SUCCESSFUL",
+                                                          "Total time: 3 seconds");
 
     private static final String ANT_FAILURE = String.join("\n",
-            "init:",
-            "deps-clean:",
-            "compile:",
-            "    [javac] Compiling 42 source files to /proj/build/classes",
-            "    [javac] /proj/src/com/example/App.java:12: error: ';' expected",
-            "    [javac] /proj/src/com/example/Util.java:88: error: cannot find symbol",
-            "    [javac]   symbol:   variable missing",
-            "/proj/build.xml:77: The following error occurred while executing this line:",
-            "BUILD FAILED",
-            "/proj/build.xml:77: Compile failed; see the compiler error output for details.",
-            "	at org.apache.tools.ant.ProjectHelper.addLocationToBuildException(ProjectHelper.java:586)",
-            "	at org.apache.tools.ant.taskdefs.Javac.compile(Javac.java:1424)",
-            "Total time: 2 seconds");
+                                                          "init:",
+                                                          "deps-clean:",
+                                                          "compile:",
+                                                          "    [javac] Compiling 42 source files to /proj/build/classes",
+                                                          "    [javac] /proj/src/com/example/App.java:12: error: ';' expected",
+                                                          "    [javac] /proj/src/com/example/Util.java:88: error: cannot find symbol",
+                                                          "    [javac]   symbol:   variable missing",
+                                                          "/proj/build.xml:77: The following error occurred while executing this line:",
+                                                          "BUILD FAILED",
+                                                          "/proj/build.xml:77: Compile failed; see the compiler error output for details.",
+                                                          "	at org.apache.tools.ant.ProjectHelper.addLocationToBuildException(ProjectHelper.java:586)",
+                                                          "	at org.apache.tools.ant.taskdefs.Javac.compile(Javac.java:1424)",
+                                                          "Total time: 2 seconds");
 
     // ---- Maven ----
     @Test
     void summarizeMaven_successWithTests_tailFromResultsMarker() {
         String s = BuildOutputFormatter.summarize(BuildOutputFormatter.Backend.MAVEN, true,
-                MAVEN_SUCCESS_WITH_TESTS);
+                                                  MAVEN_SUCCESS_WITH_TESTS);
         assertTrue(s.startsWith("[INFO] Results:"));
         assertTrue(s.contains("[INFO] Tests run: 4, Failures: 0"));
         assertTrue(s.contains("[INFO] BUILD SUCCESS"));
@@ -159,7 +159,7 @@ class BuildOutputFormatterTest {
     @Test
     void summarizeMaven_successNoTests_resultBannerThroughEnd() {
         String s = BuildOutputFormatter.summarize(BuildOutputFormatter.Backend.MAVEN, true,
-                MAVEN_SUCCESS_NO_TESTS);
+                                                  MAVEN_SUCCESS_NO_TESTS);
         assertTrue(s.startsWith("[INFO] BUILD SUCCESS"));
         assertTrue(s.contains("[INFO] Total time:  15.655 s"));
         assertFalse(s.contains("Copying 3 resources"));
@@ -169,10 +169,10 @@ class BuildOutputFormatterTest {
     @Test
     void summarizeMaven_failureCompile_allErrorLinesPlusTail_verbatim() {
         String s = BuildOutputFormatter.summarize(BuildOutputFormatter.Backend.MAVEN, false,
-                MAVEN_FAILURE_COMPILE);
+                                                  MAVEN_FAILURE_COMPILE);
         assertTrue(s.startsWith("[ERROR] COMPILATION ERROR :"));
         assertTrue(s.contains("[ERROR] /src/main/java/com/example/App.java:[12,30] ';' expected"),
-                "every [ERROR] line must be present verbatim");
+                   "every [ERROR] line must be present verbatim");
         assertTrue(s.contains("[ERROR] /src/main/java/com/example/App.java:[14,9] cannot find symbol"));
         assertTrue(s.contains("[INFO] BUILD FAILURE"));
         assertTrue(s.endsWith("Re-run Maven using the -X switch to enable full debug logging."));
@@ -182,7 +182,7 @@ class BuildOutputFormatterTest {
     @Test
     void summarizeMaven_failureTests_completeFailuresSectionNeverTruncated() {
         String s = BuildOutputFormatter.summarize(BuildOutputFormatter.Backend.MAVEN, false,
-                MAVEN_FAILURE_TESTS);
+                                                  MAVEN_FAILURE_TESTS);
         assertTrue(s.startsWith("[INFO] Results:"));
         assertTrue(s.contains("BrokenTest.testAdd:23 expected:<1> but was:<2>"));
         assertTrue(s.contains("BrokenTest.testSub:31 Arrays first differed at element [0]; expected:<5> but was:<6>"));
@@ -219,7 +219,7 @@ class BuildOutputFormatterTest {
     @Test
     void summarizeGradle_failureNoHeading_startsAtBuildFailedBanner() {
         String s = BuildOutputFormatter.summarize(BuildOutputFormatter.Backend.GRADLE, false,
-                "some noise\nBUILD FAILED in 2s");
+                                                  "some noise\nBUILD FAILED in 2s");
         assertEquals("BUILD FAILED in 2s", s);
     }
 
@@ -258,17 +258,34 @@ class BuildOutputFormatterTest {
     @Test
     void formatResult_withoutServer_returnsHeaderPlusFullOutput_noPathLine() {
         String out = BuildOutputFormatter.formatResult("ses_x", BuildOutputFormatter.Backend.MAVEN,
-                true, 0, MAVEN_SUCCESS_WITH_TESTS);
-        assertTrue(out.startsWith("BUILD SUCCESS\n\n"));
+                                                       true, 0, java.util.List.of("mvn", "clean", "package"), MAVEN_SUCCESS_WITH_TESTS);
+        assertTrue(out.startsWith("BUILD SUCCESS\nCommand: mvn clean package\n\n"));
         assertTrue(out.contains(MAVEN_SUCCESS_WITH_TESTS));
         assertFalse(out.contains("Complete log written to:"));
     }
 
     @Test
+    void formatResult_commandLineInOutput() {
+        String out = BuildOutputFormatter.formatResult("ses_x", BuildOutputFormatter.Backend.MAVEN,
+                                                       true, 0, java.util.List.of("mvn", "clean", "package"), MAVEN_SUCCESS_WITH_TESTS);
+        assertTrue(out.contains("Command: mvn clean package"), "Command line must appear in output");
+        String[] lines = out.split("\n");
+        assertEquals("BUILD SUCCESS", lines[0]);
+        assertEquals("Command: mvn clean package", lines[1], "Command must come directly after header");
+    }
+
+    @Test
+    void formatResult_commandQuotesArgumentsWithSpaces() {
+        String out = BuildOutputFormatter.formatResult("ses_x", BuildOutputFormatter.Backend.MAVEN,
+                                                       true, 0, java.util.List.of("mvn", "clean", "package with space"), MAVEN_SUCCESS_WITH_TESTS);
+        assertTrue(out.contains("Command: mvn clean \"package with space\""), "Arguments with spaces must be quoted");
+    }
+
+    @Test
     void formatResult_failureWithoutServer_keepsExitCodeAndFullOutput() {
         String out = BuildOutputFormatter.formatResult("ses_x", BuildOutputFormatter.Backend.GRADLE,
-                false, 1, GRADLE_FAILURE);
-        assertTrue(out.startsWith("BUILD FAILED (exit 1)\n\n"));
+                                                       false, 1, java.util.List.of("gradle", "build"), GRADLE_FAILURE);
+        assertTrue(out.startsWith("BUILD FAILED (exit 1)\nCommand: gradle build\n\n"));
         assertTrue(out.endsWith(GRADLE_FAILURE));
         assertFalse(out.contains("Complete log written to:"));
     }
@@ -276,9 +293,16 @@ class BuildOutputFormatterTest {
     @Test
     void attachLog_withoutServer_keepsMessageAndFullOutput() {
         String out = BuildOutputFormatter.attachLog("ses_x", BuildOutputFormatter.Backend.ANT,
-                "Timed out after 600s", ANT_SUCCESS);
-        assertTrue(out.startsWith("Timed out after 600s\n\n"));
+                                                    "Timed out after 600s", java.util.List.of("ant", "build"), ANT_SUCCESS);
+        assertTrue(out.startsWith("Timed out after 600s\nCommand: ant build\n\n"));
         assertTrue(out.endsWith(ANT_SUCCESS));
         assertFalse(out.contains("Complete log written to:"));
+    }
+
+    @Test
+    void attachLog_commandLineInOutput() {
+        String out = BuildOutputFormatter.attachLog("ses_x", BuildOutputFormatter.Backend.ANT,
+                                                    "Timed out after 600s", java.util.List.of("ant", "build"), ANT_SUCCESS);
+        assertTrue(out.contains("Command: ant build"), "Command line must appear in attachLog output");
     }
 }

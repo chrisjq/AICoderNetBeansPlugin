@@ -20,6 +20,8 @@ public enum McpToolEnum {
     CLEAN_AND_BUILD_GRADLE_PROJECT("CleanAndBuildGradleProject"),
     BUILD_ANT_PROJECT("BuildAntProject"),
     CLEAN_AND_BUILD_ANT_PROJECT("CleanAndBuildAntProject"),
+    LIST_BUILDS("ListBuilds"),
+    STOP_ASYNC_BUILD("StopAsyncBuild"),
     DOWNLOAD_MAVEN_SOURCES("DownloadMavenSources"),
     DOWNLOAD_MAVEN_JAVADOC("DownloadMavenJavadoc"),
     // DEVOPS_TEST

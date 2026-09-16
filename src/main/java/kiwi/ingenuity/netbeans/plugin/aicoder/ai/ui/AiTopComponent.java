@@ -13,12 +13,16 @@ import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Locale;
+import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.CancellationException;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.ThreadLocalRandom;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.logging.Level;
@@ -82,6 +86,7 @@ import kiwi.ingenuity.netbeans.plugin.aicoder.process.server.McpHookServer;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tempfile.TempFileRegistry;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tempfile.TmpMarkerExpander;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.TimeoutEnum;
+import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.build.BuildQueue;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.providers.netbeans.FileUtils;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.providers.netbeans.RefactoringProvider;
 import kiwi.ingenuity.netbeans.plugin.aicoder.serialization.HistoryPersistenceManager;
@@ -167,7 +172,7 @@ public final class AiTopComponent extends TopComponent implements AiProcessEvent
      * have.</p>
      */
     private static final String INBOX_INTERRUPT_EXPLANATION
-            = "Your turn was interrupted so an inbox message could reach you. That interrupt is what aborted any tool "
+            = "Your turn was interrupted so an inbox message or build result could reach you. That interrupt is what aborted any tool "
             + "call or task that was in flight — NOT a rejection, cancellation, or refusal by the user. Do not tell the user "
             + "they declined or rejected anything.\n\n"
             + "IMPORTANT: a tool call reported to you as rejected or cancelled MAY HAVE ALREADY RUN. Check its result. Read your inbox and resume your work.";
@@ -202,8 +207,13 @@ public final class AiTopComponent extends TopComponent implements AiProcessEvent
      * by removing a block from a combined string, so there is no parse to go wrong. This fails toward showing by
      * construction rather than by a rule someone has to remember.</p>
      */
-    static final String SYSTEM_BLOCK_OPEN = "<SYSTEM>";
-    static final String SYSTEM_BLOCK_CLOSE = "</SYSTEM>";
+    /**
+     * The delimiter PREFIXES. Each is completed at composition time with {@code ":" + nonce + ">"}, so the tags a turn
+     * actually carries are {@code <SYSTEM:a93f7c2e>} and {@code </SYSTEM:a93f7c2e>} with a value the payload provably
+     * does not contain. Kept as prefixes rather than whole tags because the nonce differs per block.
+     */
+    static final String SYSTEM_BLOCK_OPEN = "<SYSTEM";
+    static final String SYSTEM_BLOCK_CLOSE = "</SYSTEM";
 
     private static ExecutorService newPersistExecutor() {
         return Executors.newFixedThreadPool(4, r -> {
@@ -380,6 +390,17 @@ public final class AiTopComponent extends TopComponent implements AiProcessEvent
      * Queued text to send once AI finishes starting up after an auto-restart.
      */
     private String pendingSubmitText = null;
+
+    /**
+     * The AGENT-ONLY half of a submit that arrived while the backend was down, held until it restarts.
+     * <p>
+     * Stashing only the visible half used to be harmless, because everything a notification had to say was visible. It
+     * is not any more: a build result and an arriving message now render as system entries and carry ALL of their
+     * content — the build report, the message ids, the instruction to call ReadAiMessage — in the agent-only half. A
+     * build finishing while the backend was stopped therefore composed an empty visible string and a full agent-only
+     * payload, and the restart path kept the empty one and dropped the payload entirely.
+     */
+    private String pendingSubmitAgentOnlyText = null;
 
     /**
      * False until the first startup attempt resolves to READY or a fatal startup error. While false, the visible chat
@@ -584,7 +605,10 @@ public final class AiTopComponent extends TopComponent implements AiProcessEvent
             public void deliverIncomingMessage(String fromSessionId, AbstractNotification notification) {
                 synchronized (AiTopComponent.this) {
                     boolean autoNotify = session.settings() != null && session.settings().effectiveAutoNotifyInbox();
-                    if (autoNotify) {
+                    // A build result the AI is specifically waiting on must not be silently parked until whatever
+                    // unrelated turn happens to come next — unlike ordinary inbox mail, which the auto-notify
+                    // setting is allowed to defer.
+                    if (autoNotify || notification.skipAutoNotifyDeferral()) {
                         pendingNotifications.add(notification);
                         SwingUtilities.invokeLater(() -> flushPendingNotifications());
                     }
@@ -675,13 +699,28 @@ public final class AiTopComponent extends TopComponent implements AiProcessEvent
             }
             pendingNotifications.clear();
         }
-        List<String> texts = all.stream()
+        List<AbstractNotification> deliverable = all.stream()
                 .filter(AbstractNotification::shouldDeliver)
-                .map(AbstractNotification::text)
                 .collect(java.util.stream.Collectors.toList());
-        if (texts.isEmpty()) {
+        // Build results are events, not something the user said, so they go into the conversation as SYSTEM messages
+        // instead of riding in the prompt. Safe to touch the panel here: the isProcessing() guard above already
+        // returned if a turn were in flight, so no assistant message can be mid-stream — which is addSystemMessage's
+        // one precondition.
+        String systemText = systemMessageText(deliverable);
+        if (!systemText.isEmpty()) {
+            conversationPanel.addSystemMessage(systemText);
+        }
+        String text = groupedVisibleText(deliverable);
+        // Tested WITHOUT the interrupt explanation, because asking for it consumes it. A batch that submits nothing
+        // must leave the explanation for the empty-queue path, exactly as the old text-only guard did.
+        boolean hasAgentText = combinedAgentOnlyText(deliverable, null) != null;
+        if (text.isEmpty() && !hasAgentText) {
             return false;
         }
+        // A build-only batch reaches here with NO prompt text and only its agent-only report. That must still submit:
+        // the report is how the calling AI learns its async build finished, and returning early here would deliver the
+        // user a system line while silently never telling the assistant anything at all.
+        //
         // If a mail interrupt aborted the turn, say so IN THIS TURN rather than leaving it to the arriving mail to
         // imply. The message explains why new mail exists; it says nothing about the tool call that just died, and a
         // session read that silence as a user rejection while the mail sat in front of it. Passed as AGENT-ONLY text so
@@ -691,8 +730,177 @@ public final class AiTopComponent extends TopComponent implements AiProcessEvent
         // Combine into a SINGLE turn — handleSubmit/sendPrompt runs one turn at a
         // time, so submitting in a loop would drop all but the first.
         submitNotificationTurn(NotificationTypeEnum.NEW_INBOX_MESSAGE,
-                               String.join("\n\n", texts), interrupt);
+                               text, combinedAgentOnlyText(deliverable, interrupt));
         return true;
+    }
+
+    /**
+     * The visible chat text for an already-{@link AbstractNotification#shouldDeliver}-filtered batch — the part that
+     * rides in the PROMPT, as though the user had typed it. Entries are grouped by {@link NotificationTypeEnum} so a
+     * type's prefix is applied once per GROUP rather than once per entry, groups in first-seen order, entries within a
+     * group in arrival order.
+     * <p>
+     * IN PRACTICE THIS NOW ALWAYS RETURNS "". Every type that carries visible text renders as a system message instead
+     * ({@link NotificationTypeEnum#rendersAsSystemMessage}), and the one type that does not —
+     * {@link NotificationTypeEnum#INBOX_INTERRUPT_NOTICE} — is only ever submitted with null visible text. The grouping
+     * and prefixing below are therefore unreachable today, and kept only so that a future notification type meant for
+     * the prompt has somewhere to land. Nothing should be added here without deciding, deliberately, that it belongs in
+     * the user's own message.
+     *
+     * @return "" when every notification's text is blank or renders as a system message
+     */
+    static String groupedVisibleText(List<AbstractNotification> notifications) {
+        Map<NotificationTypeEnum, List<String>> byType = new LinkedHashMap<>();
+        for (AbstractNotification n : notifications) {
+            String text = n.text();
+            // A type that renders as a system message is not part of the prompt at all — see systemMessageText.
+            if (text == null || text.isBlank() || n.type().rendersAsSystemMessage()) {
+                continue;
+            }
+            byType.computeIfAbsent(n.type(), t -> new ArrayList<>()).add(text);
+        }
+        List<String> groups = new ArrayList<>();
+        for (Map.Entry<NotificationTypeEnum, List<String>> entry : byType.entrySet()) {
+            String joined = String.join("\n\n", entry.getValue());
+            String prefix = entry.getKey().prefix();
+            groups.add(prefix == null || prefix.isBlank() ? joined : prefix + " " + joined);
+        }
+        return String.join("\n\n", groups);
+    }
+
+    /**
+     * The visible text of the entries that render as SYSTEM messages rather than as part of the prompt
+     * ({@link NotificationTypeEnum#rendersAsSystemMessage}) AND are not already on screen. Entries keep their arrival
+     * order and are joined the same way groups are, so two builds finishing while the session was busy read as two
+     * lines.
+     * <p>
+     * No prefix is applied: each line is already complete and self-identifying — a build summary, or "New message from
+     * [X]: Subject" — which is why {@link NotificationTypeEnum#BUILD_COMPLETE}'s prefix is blank and why
+     * {@link NotificationTypeEnum#NEW_INBOX_MESSAGE}'s is no longer used.
+     * <p>
+     * ARRIVING MAIL IS SKIPPED, because {@code handleGlobalProperty} has already drawn its line at the moment it landed
+     * — see {@link NotificationTypeEnum#announcedOnArrival}. Composing it here too gave every message a second,
+     * identical entry. That never showed on default settings, where mail is deferred and never reaches this batch, but
+     * the session templates enable {@code autoNotifyInbox} and would have shown it on every arrival.
+     * <p>
+     * Only the VISIBLE line comes from here. Everything such a notification has to tell the assistant travels in its
+     * {@code agentOnlyText()} instead, since nothing that renders as a system message reaches the prompt at all — and
+     * skipping a line here therefore costs the assistant NOTHING: the mail's agent-only block is still submitted with
+     * the turn, it is only the duplicate drawing that stops.
+     *
+     * @return "" when the batch has nothing left to render as a system message
+     */
+    static String systemMessageText(List<AbstractNotification> notifications) {
+        List<String> lines = new ArrayList<>();
+        for (AbstractNotification n : notifications) {
+            String text = n.text();
+            if (text == null || text.isBlank() || !n.type().rendersAsSystemMessage()
+                    || n.type().announcedOnArrival()) {
+                continue;
+            }
+            lines.add(text);
+        }
+        return String.join("\n\n", lines);
+    }
+
+    /**
+     * The agent-only SYSTEM-block text for the same batch: the inbox-interrupt explanation first, if the turn was cut
+     * short to deliver it, then every notification's own {@link AbstractNotification#agentOnlyText}, in arrival order.
+     * <p>
+     * FALLS BACK to {@link AbstractNotification#text} for a notification that has no agent-only text of its own. Once a
+     * type renders as a system message its visible text no longer reaches the prompt, so without this fallback such a
+     * notification reached the user and never the assistant at all — which is how the delivery-failure notices stopped
+     * telling a sender that its message had not arrived. The deferred-mail drain in {@code handleSubmit} has always had
+     * this fallback; the two paths disagreeing is what hid the hole, since whichever one worked masked the other.
+     *
+     * @return null when there is nothing to tell the agent
+     */
+    static String combinedAgentOnlyText(List<AbstractNotification> notifications, String interruptExplanation) {
+        List<String> parts = new ArrayList<>();
+        if (interruptExplanation != null && !interruptExplanation.isBlank()) {
+            parts.add(interruptExplanation);
+        }
+        for (AbstractNotification n : notifications) {
+            // Blank counts as absent, not as content. A producer returning "  " leaves the assistant exactly as
+            // uninformed as one returning null, so both fall back to the visible text.
+            String agentOnly = n.agentOnlyText() == null || n.agentOnlyText().isBlank() ? n.text() : n.agentOnlyText();
+            if (agentOnly != null && !agentOnly.isBlank()) {
+                parts.add(agentOnly);
+            }
+        }
+        return parts.isEmpty() ? null : String.join("\n\n", parts);
+    }
+
+    /**
+     * Defuses a block delimiter appearing INSIDE a payload, so content cannot forge the wrapper that surrounds it.
+     * <p>
+     * A delimiter the payload PROVABLY does not contain, rather than one merely unlikely to. The same answer MIME
+     * multipart boundaries and heredocs use, and for the same reason: payload text genuinely does contain the literal
+     * tag — a build log quoting it, or a peer message discussing this very mechanism, one of which arrived during the
+     * review that produced this method.
+     * <p>
+     * Chosen over escaping the payload, which would alter content the assistant is asked to read closely, and over
+     * invisible control-character delimiters, which three reviewers independently rejected: they carry almost no
+     * training signal as a boundary, gateways are known to strip the C0 range, and a stripped delimiter would leave an
+     * UNDELIMITED block with no visible residue — a silent failure on every turn in place of a rare one.
+     * <p>
+     * Nothing is stripped, replaced or searched for in the composed prompt, so the payload reaches the model
+     * byte-for-byte and a message containing the tags cannot be mangled on its way to the user.
+     */
+    private static String systemBlockNonce(String... payloads) {
+        String nonce = randomNonce();
+        while (containedInAny(payloads, nonce)) {
+            nonce = randomNonce();
+        }
+        return nonce;
+    }
+
+    /**
+     * A FIXED-WIDTH 16 lowercase hex digits, zero-padded, rather than {@code Long.toHexString}'s variable width.
+     * <p>
+     * That produced a nonce as short as one character for a small random value — {@code <SYSTEM:5>} — which a payload
+     * can contain by sheer chance, forcing regeneration, and which reads as a typo rather than as a boundary. Padding
+     * keeps every delimiter the same shape, so the full 64 bits of unpredictability is actually spent.
+     */
+    private static String randomNonce() {
+        return String.format(Locale.ROOT, "%016x", ThreadLocalRandom.current().nextLong());
+    }
+
+    /**
+     * Whether any payload that will share the composed prompt already contains {@code nonce}.
+     * <p>
+     * EVERY payload, not just the agent-only one. The visible text is concatenated into the same string, so a nonce
+     * absent from the block's own body but present in the user's text still produces a delimiter that appears twice —
+     * and the visible half is the one an outsider can actually choose the contents of.
+     */
+    private static boolean containedInAny(String[] payloads, String nonce) {
+        for (String payload : payloads) {
+            if (payload != null && payload.contains(nonce)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /**
+     * The exact string the agent receives: the visible text, then the agent-only text wrapped in a nonce-carrying
+     * SYSTEM block. Returns the visible text alone when there is nothing hidden to send.
+     * <p>
+     * EXTRACTED SO THE NONCE GUARANTEE IS TESTABLE ON REAL OUTPUT. While this was inline in {@code handleSubmit} —
+     * which cannot be instantiated in a unit test — every assertion about the nonce had to be made against the SOURCE
+     * TEXT of the composition. Those assertions could not tell a working nonce from a broken one: passing the wrong
+     * argument to {@code systemBlockNonce} would leave the collision check dead while every one of them still passed. A
+     * test can now compose a block whose payload contains the tags and check the property itself.
+     */
+    static String composeAgentBlock(String visibleForAgent, String agentOnlyText) {
+        String visible = visibleForAgent == null ? "" : visibleForAgent;
+        if (agentOnlyText == null || agentOnlyText.isBlank()) {
+            return visible;
+        }
+        String nonce = systemBlockNonce(visible, agentOnlyText);
+        return (visible.isBlank() ? "" : visible + "\n\n")
+                + SYSTEM_BLOCK_OPEN + ":" + nonce + ">" + "\n" + agentOnlyText + "\n"
+                + SYSTEM_BLOCK_CLOSE + ":" + nonce + ">";
     }
 
     /**
@@ -759,15 +967,20 @@ public final class AiTopComponent extends TopComponent implements AiProcessEvent
     }
 
     /**
-     * @param notificationText what the user sees, prefixed with the type marker; blank submits nothing visible
+     * @param notificationText what the user sees, already fully composed by the caller — {@link #groupedVisibleText}
+     * for the flush path, which applies each entry's own type prefix itself, so this no longer prefixes again; blank
+     * submits nothing visible
      * @param agentOnlyText what only the assistant sees
      */
     private void submitNotificationTurn(NotificationTypeEnum type, String notificationText, String agentOnlyText) {
         // userInitiated=false: this fires from flushPendingNotifications at turn end because
         // mail is waiting, not because anyone clicked Send. It renders as a user message, but
         // the user did not ask for it, so it must respect the auto-scroll setting.
-        String visible = notificationText == null || notificationText.isBlank()
-                         ? "" : type.prefix() + " " + notificationText;
+        String visible = notificationText == null || notificationText.isBlank() ? "" : notificationText;
+        if (PluginSettings.isDebugJson()) {
+            LOG.log(Level.INFO, "Submitting {0} notification turn (visible={1} chars, agentOnly={2} chars)",
+                    new Object[]{type, visible.length(), agentOnlyText != null ? agentOnlyText.length() : 0});
+        }
         handleSubmit(visible, false, agentOnlyText);
     }
 
@@ -1186,6 +1399,12 @@ public final class AiTopComponent extends TopComponent implements AiProcessEvent
     @Override
     public void componentClosed() {
         drainPendingInteractions();
+        try {
+            BuildQueue.getInstance().cancelForSession(session.id());
+        }
+        catch (Exception e) {
+            LOG.log(Level.WARNING, "Error cancelling queued/running builds during session close", e);
+        }
         AiSessionInboxBroker.getInstance().unregister(session.id());
         // Remove the open-projects listener BEFORE unregistering the session, so it can
         // never re-register (resurrect) the session via updateSessionScope. Once removed,
@@ -1633,10 +1852,15 @@ public final class AiTopComponent extends TopComponent implements AiProcessEvent
                     refreshInputEnabled();
                     // Process is up and idle — clear any red/fatal state to green.
                     setTabStatus(TabStatus.READY);
-                    if (pendingSubmitText != null) {
-                        String queued = pendingSubmitText;
+                    // Replay BOTH halves. Calling the one-argument form here would pass null agent-only text and
+                    // discard a stashed build report or inbox block outright — the payload would have survived the
+                    // restart only to be dropped on the way back in.
+                    if (pendingSubmitText != null || pendingSubmitAgentOnlyText != null) {
+                        String queued = pendingSubmitText != null ? pendingSubmitText : "";
+                        String queuedAgentOnly = pendingSubmitAgentOnlyText;
                         pendingSubmitText = null;
-                        handleSubmit(queued);
+                        pendingSubmitAgentOnlyText = null;
+                        handleSubmit(queued, false, queuedAgentOnly);
                     }
                 }
                 case STOPPED -> {
@@ -1652,8 +1876,16 @@ public final class AiTopComponent extends TopComponent implements AiProcessEvent
                 }
                 case EXITED, FAILED -> {
                     pendingSubmitText = null;
+                    // Cleared with it: a payload stashed for a process that then died must not ride out on some later,
+                    // unrelated turn.
+                    pendingSubmitAgentOnlyText = null;
                     startupResolved = true;
                     infoBar.setProcessing(false);
+                    // Close the streaming bubble first, exactly as INTERRUPTED does below. A backend dying mid-response
+                    // leaves one open, and nothing else here clears it: the notice then renders after the text it cut
+                    // off, and every later addSystemMessage lands on top of an orphaned bubble — including the deferred
+                    // mail notice on the next restart.
+                    finaliseActiveAssistantIfNeeded();
                     conversationPanel.addSystemMessage(se.text());
                     infoBar.setStatusMessage("Ready...");
                     if (aiBackend != null) {
@@ -1708,9 +1940,13 @@ public final class AiTopComponent extends TopComponent implements AiProcessEvent
      * ORDER IS LOAD-BEARING, not incidental: the prompt is composed as the visible text, then
      * {@link #SYSTEM_CUT_MARKER}, then the agent-only block. Everything the user should see comes before the cut and
      * everything hidden after it. Putting the agent-only block FIRST — as an earlier iteration did — moves the marker
-     * ahead of the inbox notification lines and hides the very thing the user asked to keep. It also keeps deferred
-     * notifications safe: they are appended to the visible text at the top of this method, so they land before the cut
-     * and stay visible without needing a special case.
+     * ahead of anything visible and hides the very thing the user asked to keep.
+     * <p>
+     * Deferred inbox mail is folded into the AGENT-ONLY text near the top of this method, not into the visible text as
+     * it once was: its identifying block is an instruction addressed to the model, and pasting it into the transcript
+     * showed the user a wall of {@code id=..., from=...} as though they had typed it. The user gets one system line
+     * instead. It remains impossible to lose because the agent-only half is always part of what the model receives and
+     * is on its own enough to submit a turn.
      * <p>
      * Same split the {@code TmpMarkerExpander} block below already uses in the other direction: what the agent receives
      * and what the user sees are deliberately not the same string. Used for the mail-interrupt explanation, which is
@@ -1729,29 +1965,63 @@ public final class AiTopComponent extends TopComponent implements AiProcessEvent
         if (text == null) {
             text = "";
         }
-        synchronized (this) {
-            if (!deferredNotifications.isEmpty()) {
-                String deferred = deferredNotifications.stream()
-                        .filter(AbstractNotification::shouldDeliver)
-                        .map(AbstractNotification::text)
-                        .collect(java.util.stream.Collectors.joining("\n"));
-                deferredNotifications.clear();
-                if (!deferred.isEmpty()) {
-                    // No leading blank line when there was nothing before it — a notice-only turn that picks up
-                    // deferred mail should read as the mail, not as a gap followed by it.
-                    text = text.isBlank() ? "[Pending inbox messages]\n" + deferred
-                           : text + "\n\n[Pending inbox messages]\n" + deferred;
-                }
-            }
-        }
         if (aiBackend != null && !aiBackend.isRunning()) {
-            boolean alreadyStarting = pendingSubmitText != null;
-            pendingSubmitText = alreadyStarting ? pendingSubmitText + "\n\n" + text : text;
+            // BOTH halves are stashed. Keeping only the visible one used to be harmless, because everything a
+            // notification had to say was visible; it is not any more. A build result finishing while the backend is
+            // stopped composes an EMPTY visible string and a full agent-only report, so stashing only `text` threw the
+            // entire payload away and the AI was never told its build had finished.
+            boolean alreadyStarting = pendingSubmitText != null || pendingSubmitAgentOnlyText != null;
+            pendingSubmitText = pendingSubmitText == null || pendingSubmitText.isBlank() ? text
+                                : text.isBlank() ? pendingSubmitText : pendingSubmitText + "\n\n" + text;
+            if (hasHidden) {
+                pendingSubmitAgentOnlyText = pendingSubmitAgentOnlyText == null || pendingSubmitAgentOnlyText.isBlank()
+                                             ? agentOnlyText : pendingSubmitAgentOnlyText + "\n\n" + agentOnlyText;
+            }
             if (!alreadyStarting) {
                 infoBar.setStatusMessage("Starting " + session.aiType().displayName() + "...");
                 startAiProcess();
             }
             return;
+        }
+        // Deferred mail rides out with this turn. The identifying block goes to the ASSISTANT, appended to the
+        // agent-only text; the user gets one system line saying it happened. Putting it in the visible text instead
+        // printed a wall of "id=..., replyToId=..., from=..." into the transcript as though the user had typed it.
+        //
+        // Still impossible to lose, which is what the visible append was protecting: the agent-only block is always
+        // part of what the model receives, and handleSubmit submits whenever EITHER half is non-blank.
+        //
+        // DRAINED BELOW THE EARLY RETURN, deliberately. That branch keeps only pendingSubmitText and discards the
+        // agent-only text entirely, so draining above it emptied the queue into a value that was then thrown away —
+        // mail gone from the transcript AND from the model, which is the exact failure the old visible-append
+        // assertion existed to prevent. Left queued, it is picked up when StatusEvent READY re-enters this method
+        // with the stashed text, and survives an EXITED/FAILED restart rather than being consumed by it.
+        String deferredForAgent = null;
+        synchronized (this) {
+            if (!deferredNotifications.isEmpty()) {
+                String deferred = deferredNotifications.stream()
+                        .filter(AbstractNotification::shouldDeliver)
+                        // Same rule as combinedAgentOnlyText, deliberately identical: blank counts as absent. The two
+                        // paths disagreeing is what hid the dropped-notification hole — one of them worked, so the
+                        // other's gap never showed.
+                        .map(n -> n.agentOnlyText() == null || n.agentOnlyText().isBlank() ? n.text() : n.agentOnlyText())
+                        .filter(t -> t != null && !t.isBlank())
+                        // Blank line between entries, matching combinedAgentOnlyText. These two paths compose the same
+                        // kind of text for the same reader and had drifted to different separators, so two deferred
+                        // messages ran together here while the same pair arriving through the flush were spaced. The
+                        // rule for this pair is that they agree — it is their disagreeing that hid the dropped
+                        // notification hole once already.
+                        .collect(java.util.stream.Collectors.joining("\n\n"));
+                deferredNotifications.clear();
+                if (!deferred.isEmpty()) {
+                    deferredForAgent = deferred;
+                }
+            }
+        }
+        if (deferredForAgent != null) {
+            conversationPanel.addSystemMessage("Delivered pending inbox messages");
+            agentOnlyText = agentOnlyText == null || agentOnlyText.isBlank() ? deferredForAgent
+                            : agentOnlyText + "\n\n" + deferredForAgent;
+            hasHidden = true;
         }
         File workDir = chosenSessionDir != null ? chosenSessionDir
                        : contextProvider != null ? contextProvider.resolveWorkingDirectory()
@@ -1771,13 +2041,25 @@ public final class AiTopComponent extends TopComponent implements AiProcessEvent
         TmpMarkerExpander.Result tmpExpansion = TmpMarkerExpander.expand(text, session);
         // The visible text ALWAYS goes to the agent, and the agent-only block is WRAPPED and appended after it.
         //
-        // Recomputed from the current text rather than from the flag taken on entry: `text` has grown since then if
-        // deferred inbox notifications were appended above. Branching on the stale flag dropped that mail from the
-        // prompt entirely, because the no-visible-text branch never used expandedText() at all.
+        // Recomputed from the current text rather than from the flag taken on entry. Branching on the stale flag once
+        // dropped deferred mail from the prompt entirely, because the no-visible-text branch never used expandedText()
+        // at all. Deferred mail no longer grows `text` — it is folded into agentOnlyText above, and `hasHidden` is
+        // updated with it — but the recomputation stays: it is correct by construction rather than by coincidence, and
+        // the next thing to append to the visible text must not resurrect that bug.
         String visibleForAgent = tmpExpansion.expandedText();
-        String agentText = !hasHidden ? visibleForAgent
-                           : (visibleForAgent.isBlank() ? "" : visibleForAgent + "\n\n")
-                + SYSTEM_BLOCK_OPEN + "\n" + agentOnlyText + "\n" + SYSTEM_BLOCK_CLOSE;
+        // Composed by composeAgentBlock, which picks a per-block nonce that NEITHER half contains, so content cannot
+        // forge the delimiters and nothing is stripped or escaped — the payload reaches the model byte-for-byte.
+        // Payload text really does contain the literal tag: a build log quoting it, or a peer message about this
+        // mechanism. This is the heredoc/MIME answer, choosing a delimiter the payload provably lacks rather than one
+        // merely unlikely to appear.
+        //
+        // EXTRACTED rather than left inline so that property can be tested on real output. handleSubmit cannot be
+        // instantiated in a unit test, so while the composition lived here every nonce assertion was made against the
+        // SOURCE TEXT of these lines — and none of them could tell a working nonce from a dead one.
+        //
+        // Still gated on hasHidden, not on agentOnlyText alone: that flag is what the deferred-mail fold above sets,
+        // and keeping the composition dependent on it is what pins fold, flag and composition into one ordered chain.
+        String agentText = composeAgentBlock(visibleForAgent, hasHidden ? agentOnlyText : null);
         String fullPrompt = contextProvider != null
                             ? contextProvider.buildPreamble(agentText, sessionInstructions)
                             : agentText;

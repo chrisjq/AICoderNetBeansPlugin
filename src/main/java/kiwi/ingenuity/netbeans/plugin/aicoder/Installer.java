@@ -13,6 +13,8 @@ import kiwi.ingenuity.netbeans.plugin.aicoder.ai.ui.AiTopComponent;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.locking.LockManager;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.server.McpServerRegistry;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tempfile.TempFileRegistry;
+import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.build.BuildQueue;
+import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.build.SessionBuildNotifier;
 import org.openide.modules.ModuleInstall;
 import org.openide.util.NbBundle;
 import org.openide.windows.TopComponent;
@@ -82,6 +84,7 @@ public class Installer extends ModuleInstall {
     @Override
     public void restored() {
         LOG.log(Level.INFO, StringConst.PLUGIN_NAME + " plugin v{0} activated. Use Tools > AI Coder to open the panel.", VERSION);
+        BuildQueue.getInstance().setCompletionListener(new SessionBuildNotifier());
     }
 
     @Override

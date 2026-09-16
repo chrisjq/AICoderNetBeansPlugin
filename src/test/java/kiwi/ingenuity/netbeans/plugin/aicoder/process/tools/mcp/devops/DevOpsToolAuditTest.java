@@ -11,6 +11,7 @@ import java.util.concurrent.TimeUnit;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.AiTypeEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.session.AiSession;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.McpToolEnum;
+import kiwi.ingenuity.netbeans.plugin.aicoder.process.McpToolPropertyEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.events.AiProcessEventListener;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.server.AiMcpRegistrar;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.server.McpServerRegistry;
@@ -41,6 +42,9 @@ import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.devops.test.RunG
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.devops.test.RunMavenTestsParamEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.devops.test.RunMavenTestsTool;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.git.GitCommonParamEnum;
+import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.providers.netbeans.BuildAndTestMavenProvider;
+import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.providers.netbeans.BuildOutputFormatter;
+import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.providers.netbeans.PreparedBuild;
 import org.junit.jupiter.api.AfterEach;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -102,7 +106,7 @@ class DevOpsToolAuditTest {
         String result = new BuildMavenProjectTool().handle(
                 args(BuildMavenProjectParamEnum.PROJECT_PATH.key(), mavenRoot.toString()), session);
 
-        assertTrue(result.startsWith("BUILD"), result);
+        assertQueuedBuildResult(result);
         assertEquals("package -DskipTests --no-transfer-progress", recordedArgs(mavenRoot),
                      "BuildMavenProject must run the wrapper in the supplied project dir with the package goal");
     }
@@ -149,7 +153,7 @@ class DevOpsToolAuditTest {
         String result = new CleanAndBuildMavenProjectTool().handle(
                 args(CleanAndBuildMavenProjectParamEnum.PROJECT_PATH.key(), mavenRoot.toString()), session);
 
-        assertTrue(result.startsWith("BUILD"), result);
+        assertQueuedBuildResult(result);
         assertEquals("clean package -DskipTests --no-transfer-progress", recordedArgs(mavenRoot),
                      "CleanAndBuildMavenProject must differ from BuildMavenProject by the leading clean goal");
     }
@@ -160,7 +164,7 @@ class DevOpsToolAuditTest {
         String result = new DownloadMavenSourcesTool().handle(
                 args(DownloadMavenSourcesParamEnum.PROJECT_PATH.key(), mavenRoot.toString()), session);
 
-        assertTrue(result.startsWith("BUILD"), result);
+        assertQueuedBuildResult(result);
         assertEquals("dependency:sources --no-transfer-progress", recordedArgs(mavenRoot),
                      "DownloadMavenSources must run the dependency:sources goal");
     }
@@ -170,9 +174,20 @@ class DevOpsToolAuditTest {
         String result = new DownloadMavenJavadocTool().handle(
                 args(DownloadMavenJavadocParamEnum.PROJECT_PATH.key(), mavenRoot.toString()), session);
 
-        assertTrue(result.startsWith("BUILD"), result);
+        assertQueuedBuildResult(result);
         assertEquals("dependency:resolve -Dclassifier=javadoc --no-transfer-progress", recordedArgs(mavenRoot),
                      "DownloadMavenJavadoc must run the dependency:resolve goal with the javadoc classifier");
+    }
+
+    @Test
+    void downloadProvidersPrepareBuildsThatDoNotCountTowardLongestSuccess() {
+        PreparedBuild sources = BuildAndTestMavenProvider.prepareDownloadSources(SESSION_ID, mavenRoot.toString());
+        PreparedBuild javadoc = BuildAndTestMavenProvider.prepareDownloadJavadoc(SESSION_ID, mavenRoot.toString());
+
+        assertFalse(sources.isError(), sources.error());
+        assertFalse(sources.countsTowardLongestSuccess(), "a dependency download must not feed Longest OK run");
+        assertFalse(javadoc.isError(), javadoc.error());
+        assertFalse(javadoc.countsTowardLongestSuccess(), "a dependency download must not feed Longest OK run");
     }
 
     // ---- RunMavenTests (projectPath + testClass -> "test" / "test -Dtest=<class>") ----
@@ -181,7 +196,7 @@ class DevOpsToolAuditTest {
         String result = new RunMavenTestsTool().handle(
                 args(RunMavenTestsParamEnum.PROJECT_PATH.key(), mavenRoot.toString()), session);
 
-        assertTrue(result.startsWith("BUILD"), result);
+        assertQueuedBuildResult(result);
         assertEquals("test --no-transfer-progress", recordedArgs(mavenRoot),
                      "RunMavenTests without testClass must run the plain test goal");
     }
@@ -192,7 +207,7 @@ class DevOpsToolAuditTest {
                 RunMavenTestsParamEnum.PROJECT_PATH.key(), mavenRoot.toString(),
                 RunMavenTestsParamEnum.TEST_CLASS.key(), ""), session);
 
-        assertTrue(result.startsWith("BUILD"), result);
+        assertQueuedBuildResult(result);
         assertEquals("test --no-transfer-progress", recordedArgs(mavenRoot),
                      "a blank testClass means no filter, not a refused selector");
     }
@@ -203,7 +218,7 @@ class DevOpsToolAuditTest {
                 RunMavenTestsParamEnum.PROJECT_PATH.key(), mavenRoot.toString(),
                 RunMavenTestsParamEnum.TEST_CLASS.key(), "com.example.MyServiceTest"), session);
 
-        assertTrue(result.startsWith("BUILD"), result);
+        assertQueuedBuildResult(result);
         assertEquals("test -Dtest=com.example.MyServiceTest --no-transfer-progress", recordedArgs(mavenRoot),
                      "testClass must be forwarded as -Dtest=<class>");
     }
@@ -214,7 +229,7 @@ class DevOpsToolAuditTest {
         String result = new BuildGradleProjectTool().handle(
                 args(BuildGradleProjectParamEnum.PROJECT_PATH.key(), gradleRoot.toString()), session);
 
-        assertTrue(result.startsWith("BUILD"), result);
+        assertQueuedBuildResult(result);
         assertEquals("build -x test --no-daemon", recordedArgs(gradleRoot),
                      "BuildGradleProject must run the gradle wrapper with the build task excluding tests");
     }
@@ -233,7 +248,7 @@ class DevOpsToolAuditTest {
         String result = new RunGradleTestsTool().handle(
                 args(RunGradleTestsParamEnum.PROJECT_PATH.key(), gradleRoot.toString()), session);
 
-        assertTrue(result.startsWith("BUILD"), result);
+        assertQueuedBuildResult(result);
         assertEquals("test --no-daemon", recordedArgs(gradleRoot),
                      "RunGradleTests without testClass must run the plain test task");
     }
@@ -244,7 +259,7 @@ class DevOpsToolAuditTest {
                 RunGradleTestsParamEnum.PROJECT_PATH.key(), gradleRoot.toString(),
                 RunGradleTestsParamEnum.TEST_CLASS.key(), "com.example.MyServiceTest"), session);
 
-        assertTrue(result.startsWith("BUILD"), result);
+        assertQueuedBuildResult(result);
         assertEquals("test --tests com.example.MyServiceTest --no-daemon", recordedArgs(gradleRoot),
                      "testClass must be forwarded as --tests <class>");
     }
@@ -278,12 +293,12 @@ class DevOpsToolAuditTest {
         String maven = new RunMavenTestsTool().handle(args(
                 RunMavenTestsParamEnum.PROJECT_PATH.key(), mavenRoot.toString(),
                 RunMavenTestsParamEnum.TEST_CLASS.key(), "A,B"), session);
-        assertTrue(maven.startsWith("BUILD"), maven);
+        assertQueuedBuildResult(maven);
         assertEquals("test -Dtest=A,B --no-transfer-progress", recordedArgs(mavenRoot));
         String gradle = new RunGradleTestsTool().handle(args(
                 RunGradleTestsParamEnum.PROJECT_PATH.key(), gradleRoot.toString(),
                 RunGradleTestsParamEnum.TEST_CLASS.key(), "Outer$Inner"), session);
-        assertTrue(gradle.startsWith("BUILD"), gradle);
+        assertQueuedBuildResult(gradle);
         assertEquals("test --tests Outer$Inner --no-daemon", recordedArgs(gradleRoot));
     }
 
@@ -358,6 +373,247 @@ class DevOpsToolAuditTest {
         }
     }
 
+    @Test
+    void wrongOptionShapesAreRefusedBeforeMavenGradleOrAntCanQueue() throws Exception {
+        JsonObject maven = new JsonObject();
+        maven.addProperty(BuildMavenProjectParamEnum.PROJECT_PATH.key(), mavenRoot.toString());
+        maven.addProperty(BuildMavenProjectParamEnum.PROPERTIES.key(), "skipTests=true");
+        String mavenResult = new BuildMavenProjectTool().handle(new ToolRequestArguments(maven), session);
+        assertEquals("Error: properties must be a key/value map, not a string", mavenResult);
+        assertNoWrapperRan(mavenRoot);
+
+        JsonObject gradle = new JsonObject();
+        gradle.addProperty(BuildGradleProjectParamEnum.PROJECT_PATH.key(), gradleRoot.toString());
+        gradle.addProperty(BuildGradleProjectParamEnum.SYSTEM_PROPERTIES.key(), "file.encoding=UTF-8");
+        String gradleResult = new BuildGradleProjectTool().handle(new ToolRequestArguments(gradle), session);
+        assertEquals("Error: systemProperties must be a key/value map, not a string", gradleResult);
+        assertNoWrapperRan(gradleRoot);
+
+        JsonObject ant = new JsonObject();
+        ant.addProperty(BuildAntProjectParamEnum.PROJECT_PATH.key(), antRoot.toString());
+        ant.addProperty(BuildAntProjectParamEnum.PROPERTIES.key(), "build.dir=target");
+        String antResult = new BuildAntProjectTool().handle(new ToolRequestArguments(ant), session);
+        assertEquals("Error: properties must be a key/value map, not a string", antResult);
+    }
+
+    @Test
+    void wrongStringArrayElementsAndBooleanAreRefusedBeforeMavenCanQueue() throws Exception {
+        JsonObject goals = new JsonObject();
+        goals.addProperty(BuildMavenProjectParamEnum.PROJECT_PATH.key(), mavenRoot.toString());
+        JsonArray mixedGoals = new JsonArray();
+        mixedGoals.add("package");
+        mixedGoals.add(7);
+        goals.add(BuildMavenProjectParamEnum.GOALS.key(), mixedGoals);
+        String goalsResult = new BuildMavenProjectTool().handle(new ToolRequestArguments(goals), session);
+        assertTrue(goalsResult.startsWith("Error: goals must be an array of strings"), goalsResult);
+        assertNoWrapperRan(mavenRoot);
+
+        JsonObject skipTests = new JsonObject();
+        skipTests.addProperty(BuildMavenProjectParamEnum.PROJECT_PATH.key(), mavenRoot.toString());
+        skipTests.addProperty(BuildMavenProjectParamEnum.SKIP_TESTS.key(), "true");
+        String booleanResult = new BuildMavenProjectTool().handle(new ToolRequestArguments(skipTests), session);
+        assertEquals("Error: skipTests must be a boolean, not a string", booleanResult);
+        assertNoWrapperRan(mavenRoot);
+    }
+
+    /**
+     * Regression: a string {@code goals}/{@code tasks}/{@code targets} reads as no array at all, so the array is empty
+     * and the Maven/Gradle/Ant provider's OWN validation then refuses with a misleading "must not be empty" — masking
+     * the real, correct shape error. The shape check must catch this before the provider ever runs.
+     */
+    @Test
+    void goalsTasksTargetsSentAsAPlainStringAreRefusedWithTheArrayTypeErrorNotMustNotBeEmpty() throws Exception {
+        JsonObject maven = new JsonObject();
+        maven.addProperty(BuildMavenProjectParamEnum.PROJECT_PATH.key(), mavenRoot.toString());
+        maven.addProperty(BuildMavenProjectParamEnum.GOALS.key(), "package");
+        String mavenResult = new BuildMavenProjectTool().handle(new ToolRequestArguments(maven), session);
+        assertEquals("Error: goals must be an array of strings, not a string", mavenResult);
+        assertNoWrapperRan(mavenRoot);
+
+        JsonObject gradle = new JsonObject();
+        gradle.addProperty(BuildGradleProjectParamEnum.PROJECT_PATH.key(), gradleRoot.toString());
+        gradle.addProperty(BuildGradleProjectParamEnum.TASKS.key(), "build");
+        String gradleResult = new BuildGradleProjectTool().handle(new ToolRequestArguments(gradle), session);
+        assertEquals("Error: tasks must be an array of strings, not a string", gradleResult);
+        assertNoWrapperRan(gradleRoot);
+
+        JsonObject ant = new JsonObject();
+        ant.addProperty(BuildAntProjectParamEnum.PROJECT_PATH.key(), antRoot.toString());
+        ant.addProperty(BuildAntProjectParamEnum.TARGETS.key(), "jar");
+        String antResult = new BuildAntProjectTool().handle(new ToolRequestArguments(ant), session);
+        assertEquals("Error: targets must be an array of strings, not a string", antResult);
+    }
+
+    @Test
+    void aCorrectlyShapedRequestWithABadProjectPathStillGetsTheProvidersOwnError() throws Exception {
+        JsonObject o = new JsonObject();
+        o.addProperty(BuildMavenProjectParamEnum.PROJECT_PATH.key(), tempDir.resolve("missing").toString());
+        o.add(BuildMavenProjectParamEnum.GOALS.key(), stringArray("clean", "package"));
+
+        String result = new BuildMavenProjectTool().handle(new ToolRequestArguments(o), session);
+
+        assertEquals("Not a project directory: " + tempDir.resolve("missing"), result,
+                     "correctly shaped options must not be shadowed by a shape error when the backend can't be"
+                     + " determined");
+    }
+
+    @Test
+    void shapeValidatorAcceptsOmittedOptionsAndRefusesWrongStringTypes() {
+        assertEquals(null, BuildOptionShapeValidator.validate(BuildOutputFormatter.Backend.MAVEN, args()));
+
+        JsonObject resumeFrom = new JsonObject();
+        resumeFrom.addProperty(BuildMavenProjectParamEnum.RESUME_FROM.key(), 7);
+        assertEquals("resumeFrom must be a string, not a number",
+                     BuildOptionShapeValidator.validate(BuildOutputFormatter.Backend.MAVEN,
+                                                        new ToolRequestArguments(resumeFrom)));
+
+        JsonObject testClass = new JsonObject();
+        testClass.addProperty(RunGradleTestsParamEnum.TEST_CLASS.key(), true);
+        assertEquals("testClass must be a string, not a boolean",
+                     BuildOptionShapeValidator.validate(BuildOutputFormatter.Backend.GRADLE,
+                                                        new ToolRequestArguments(testClass)));
+
+        JsonObject antTestClass = new JsonObject();
+        antTestClass.addProperty(RunAntTestsParamEnum.TEST_CLASS.key(), 3);
+        assertEquals("testClass must be a string, not a number",
+                     BuildOptionShapeValidator.validate(BuildOutputFormatter.Backend.ANT,
+                                                        new ToolRequestArguments(antTestClass)));
+    }
+
+    /**
+     * Item 8 (2026-09-17): the validator used to check testClass's shape only for a tool name starting with "Run". Now
+     * it is checked for every backend regardless of which tool is calling — a non-test tool being refused for a wrongly
+     * shaped testClass it will never use is fine, and this is the case that would have silently passed under the old
+     * toolName.startsWith("Run") check.
+     */
+    @Test
+    void shapeValidatorChecksTestClassEvenForANonTestTool() {
+        JsonObject o = new JsonObject();
+        o.addProperty(McpToolPropertyEnum.TEST_CLASS.key(), 5);
+        assertEquals("testClass must be a string, not a number",
+                     BuildOptionShapeValidator.validate(BuildOutputFormatter.Backend.MAVEN, new ToolRequestArguments(o)));
+    }
+
+    /**
+     * Regression: with no prepared build (or an already-failed one) the backend is unknown, so validate(null, ...) must
+     * still run every backend's checks rather than skipping option validation entirely.
+     */
+    @Test
+    void shapeValidatorWithNullBackendChecksAllThreeBuildSystemsTogether() {
+        JsonObject goals = new JsonObject();
+        goals.addProperty(BuildMavenProjectParamEnum.GOALS.key(), "package");
+        assertEquals("goals must be an array of strings, not a string",
+                     BuildOptionShapeValidator.validate(null, new ToolRequestArguments(goals)));
+
+        JsonObject tasks = new JsonObject();
+        tasks.addProperty(BuildGradleProjectParamEnum.TASKS.key(), "build");
+        assertEquals("tasks must be an array of strings, not a string",
+                     BuildOptionShapeValidator.validate(null, new ToolRequestArguments(tasks)));
+
+        JsonObject targets = new JsonObject();
+        targets.addProperty(BuildAntProjectParamEnum.TARGETS.key(), "jar");
+        assertEquals("targets must be an array of strings, not a string",
+                     BuildOptionShapeValidator.validate(null, new ToolRequestArguments(targets)));
+    }
+
+    /**
+     * G1: the null-backend fallback can only safely run every build system's checks together because no option name is
+     * shared between two of them with a DIFFERENT JSON type today. Walks the real schemas — rather than hand-listing
+     * option names, which would drift silently — so a future option that broke that (an Ant {@code threads} added as a
+     * number, say) fails this test instead of the combined check wrongly refusing a validly typed call from whichever
+     * build system disagrees.
+     */
+    @Test
+    void sharedOptionNamesHaveTheSameTypeAcrossEveryBuildSystem() {
+        List<McpToolInterface> tools = List.of(
+                new BuildMavenProjectTool(), new RunMavenTestsTool(),
+                new BuildGradleProjectTool(), new RunGradleTestsTool(),
+                new BuildAntProjectTool(), new RunAntTestsTool());
+        java.util.Set<String> credentialKeys = java.util.Set.of(McpToolPropertyEnum.SESSION_ID.key(),
+                                                                McpToolPropertyEnum.SECRET_KEY.key());
+        Map<String, String> typeByProperty = new java.util.HashMap<>();
+        for (McpToolInterface tool : tools) {
+            JsonObject props = tool.schema(java.util.Set.of())
+                    .getAsJsonObject(ToolSchemaKeyEnum.INPUT_SCHEMA.key())
+                    .getAsJsonObject(ToolSchemaKeyEnum.PROPERTIES.key());
+            for (String name : props.keySet()) {
+                if (credentialKeys.contains(name)) {
+                    continue;
+                }
+                String type = props.getAsJsonObject(name).get(ToolSchemaKeyEnum.TYPE.key()).getAsString();
+                String previous = typeByProperty.putIfAbsent(name, type);
+                assertTrue(previous == null || previous.equals(type),
+                           "property \"" + name + "\" is \"" + previous + "\" in one build system's schema but \""
+                           + type + "\" in another's — the combined null-backend shape check in"
+                           + " BuildOptionShapeValidator would wrongly refuse a validly typed call from whichever"
+                           + " build system disagrees");
+            }
+        }
+    }
+
+    /**
+     * G2: correctly typed Ant options must not be shadowed by the Maven/Gradle checks that now also run when the
+     * backend is unknown.
+     */
+    @Test
+    void validlyTypedAntArgumentsWithABadProjectPathStillGetTheProvidersOwnError() {
+        JsonObject o = new JsonObject();
+        o.addProperty(BuildAntProjectParamEnum.PROJECT_PATH.key(), tempDir.resolve("missing").toString());
+        o.add(BuildAntProjectParamEnum.TARGETS.key(), stringArray("jar"));
+        JsonObject props = new JsonObject();
+        props.addProperty("build.dir", "target");
+        o.add(BuildAntProjectParamEnum.PROPERTIES.key(), props);
+        o.addProperty(BuildAntProjectParamEnum.KEEP_GOING.key(), true);
+
+        String result = new BuildAntProjectTool().handle(new ToolRequestArguments(o), session);
+
+        assertEquals("Not a project directory: " + tempDir.resolve("missing"), result,
+                     "validly typed options must not be shadowed by a false shape error from another build system's"
+                     + " checks");
+    }
+
+    /**
+     * G2: correctly typed Gradle options must not be shadowed by the Maven/Ant checks that now also run when the
+     * backend is unknown.
+     */
+    @Test
+    void validlyTypedGradleArgumentsWithABadProjectPathStillGetTheProvidersOwnError() {
+        JsonObject o = new JsonObject();
+        o.addProperty(BuildGradleProjectParamEnum.PROJECT_PATH.key(), tempDir.resolve("missing").toString());
+        o.add(BuildGradleProjectParamEnum.TASKS.key(), stringArray("build"));
+        JsonObject sysProps = new JsonObject();
+        sysProps.addProperty("file.encoding", "UTF-8");
+        o.add(BuildGradleProjectParamEnum.SYSTEM_PROPERTIES.key(), sysProps);
+        o.addProperty(BuildGradleProjectParamEnum.PARALLEL.key(), true);
+
+        String result = new BuildGradleProjectTool().handle(new ToolRequestArguments(o), session);
+
+        assertEquals("Not a project directory: " + tempDir.resolve("missing"), result,
+                     "validly typed options must not be shadowed by a false shape error from another build system's"
+                     + " checks");
+    }
+
+    @Test
+    void mavenThreadsAcceptMavenSyntaxAndRefuseInvalidValues() throws Exception {
+        for (String valid : List.of("4", "1C", "1.5C")) {
+            JsonObject request = new JsonObject();
+            request.addProperty(BuildMavenProjectParamEnum.PROJECT_PATH.key(), mavenRoot.toString());
+            request.addProperty(BuildMavenProjectParamEnum.THREADS.key(), valid);
+            String result = new BuildMavenProjectTool().handle(new ToolRequestArguments(request), session);
+            assertQueuedBuildResult(result);
+            assertEquals("package -DskipTests -T " + valid + " --no-transfer-progress", recordedArgs(mavenRoot));
+            Files.deleteIfExists(mavenRoot.resolve("wrapper-args.txt"));
+        }
+        for (String invalid : List.of("abc", "0", "C", "1.5", "-2", "0C")) {
+            JsonObject request = new JsonObject();
+            request.addProperty(BuildMavenProjectParamEnum.PROJECT_PATH.key(), mavenRoot.toString());
+            request.addProperty(BuildMavenProjectParamEnum.THREADS.key(), invalid);
+            String result = new BuildMavenProjectTool().handle(new ToolRequestArguments(request), session);
+            assertTrue(result.startsWith("Error:"), result);
+            assertNoWrapperRan(mavenRoot);
+        }
+    }
+
     // ---- #5 / F2: option coverage ----
     @Test
     void mavenBuild_customGoalsReplaceDefaultEntirely() throws Exception {
@@ -366,7 +622,7 @@ class DevOpsToolAuditTest {
         o.add(BuildMavenProjectParamEnum.GOALS.key(), stringArray("verify"));
         String result = new BuildMavenProjectTool().handle(new ToolRequestArguments(o), session);
 
-        assertTrue(result.startsWith("BUILD"), result);
+        assertQueuedBuildResult(result);
         assertEquals("verify -DskipTests --no-transfer-progress", recordedArgs(mavenRoot),
                      "custom goals must replace \"package\", not merge with it, while skipTests keeps its own default");
     }
@@ -378,7 +634,7 @@ class DevOpsToolAuditTest {
         o.addProperty(BuildMavenProjectParamEnum.SKIP_TESTS.key(), false);
         String result = new BuildMavenProjectTool().handle(new ToolRequestArguments(o), session);
 
-        assertTrue(result.startsWith("BUILD"), result);
+        assertQueuedBuildResult(result);
         assertEquals("package --no-transfer-progress", recordedArgs(mavenRoot),
                      "skipTests=false must omit -DskipTests entirely, not pass it as false");
     }
@@ -401,7 +657,7 @@ class DevOpsToolAuditTest {
 
         String result = new BuildMavenProjectTool().handle(new ToolRequestArguments(o), session);
 
-        assertTrue(result.startsWith("BUILD"), result);
+        assertQueuedBuildResult(result);
         assertEquals("package -pl module-a,module-b -am -rf :module-b -DskipTests -o -U -P ci -Dmy.prop=hello -T 4 -fae --no-transfer-progress",
                      recordedArgs(mavenRoot), "every Maven option must translate to its documented flag, in order");
     }
@@ -462,7 +718,7 @@ class DevOpsToolAuditTest {
 
         String result = new BuildGradleProjectTool().handle(new ToolRequestArguments(o), session);
 
-        assertTrue(result.startsWith("BUILD"), result);
+        assertQueuedBuildResult(result);
         assertEquals("build -x test --offline --refresh-dependencies -Penv=ci -Dfile.encoding=UTF-8 --parallel --continue --no-daemon",
                      recordedArgs(gradleRoot), "every Gradle option must translate to its documented flag, in order");
     }
@@ -507,7 +763,7 @@ class DevOpsToolAuditTest {
         String result = new CleanAndBuildGradleProjectTool().handle(
                 args(CleanAndBuildGradleProjectParamEnum.PROJECT_PATH.key(), gradleRoot.toString()), session);
 
-        assertTrue(result.startsWith("BUILD"), result);
+        assertQueuedBuildResult(result);
         assertEquals("clean build -x test --no-daemon", recordedArgs(gradleRoot),
                      "CleanAndBuildGradleProject must differ from BuildGradleProject by the leading clean task");
     }
@@ -556,6 +812,16 @@ class DevOpsToolAuditTest {
 
     private static String recordedArgs(Path dir) throws Exception {
         return Files.readString(dir.resolve("wrapper-args.txt")).strip();
+    }
+
+    /**
+     * Builds go through the build queue, so an inline result opens with the queue's header (build id, status, times),
+     * then the build tool's own result, then the options footer.
+     */
+    private static void assertQueuedBuildResult(String result) {
+        assertTrue(result.startsWith("Build build-"), result);
+        assertTrue(result.contains("\n\nBUILD"), result);
+        assertTrue(result.endsWith(BuildSubmitter.OPTIONS_FOOTER), result);
     }
 
     private static void assertNoWrapperRan(Path dir) {

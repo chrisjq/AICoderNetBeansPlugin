@@ -52,6 +52,7 @@ public final class BuildOptionValidator {
      */
     private static final Pattern FORBIDDEN_VALUE_CHARS = Pattern.compile("[\\x00-\\x1F\\x7F]");
     private static final Pattern TEST_SELECTOR = Pattern.compile("[A-Za-z0-9_.$#*?,!+/]+");
+    private static final Pattern MAVEN_THREADS = Pattern.compile("(?:[1-9]\\d*|(?:[1-9]\\d*(?:\\.\\d+)?|0\\.\\d+)C)");
 
     /**
      * Validates one goal/task/target/module/profile/resume-from/threads token.
@@ -72,6 +73,15 @@ public final class BuildOptionValidator {
                     + "'.', ':', '_', '-', '/' only, no whitespace)";
         }
         return null;
+    }
+
+    /**
+     * Validates Maven's -T syntax: a positive integer, or a positive decimal factor followed by C.
+     */
+    static String validateMavenThreads(String value) {
+        return MAVEN_THREADS.matcher(value).matches()
+               ? null : McpToolPropertyEnum.THREADS.key()
+                + " must be a positive integer or a positive number followed by C";
     }
 
     static String validateTestSelector(String paramKey, String value) {
@@ -163,10 +173,9 @@ public final class BuildOptionValidator {
 
     /**
      * Reads a JSON array of strings into a plain list, for a tool passing {@code goals}/{@code tasks}/
-     * {@code targets}/{@code projectList}/{@code profiles} on to a provider's options record. Non-string elements are
-     * dropped rather than rejected here — {@link #validateTokens} is what rejects a bad VALUE; this only handles the
-     * JSON shape. Null input (parameter omitted) yields an empty list, never null, so callers never need a separate
-     * null check before iterating.
+     * {@code targets}/{@code projectList}/{@code profiles} on to a provider's options record. The common build-option
+     * shape validator rejects non-string elements before this conversion is reached. Null input (parameter omitted)
+     * yields an empty list, never null, so callers never need a separate null check before iterating.
      */
     public static List<String> toStringList(JsonArray array) {
         List<String> result = new ArrayList<>();

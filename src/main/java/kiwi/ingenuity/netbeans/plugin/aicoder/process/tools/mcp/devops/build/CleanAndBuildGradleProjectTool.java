@@ -5,11 +5,10 @@ import com.google.gson.JsonObject;
 import java.util.List;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.McpSectionEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.McpToolEnum;
-import kiwi.ingenuity.netbeans.plugin.aicoder.process.locking.LockTypeEnum;
-import kiwi.ingenuity.netbeans.plugin.aicoder.process.locking.RequiresLock;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.session.AbstractAiSession;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.AbstractBuildTool;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.ToolRequestArguments;
+import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.devops.BuildSubmitter;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.providers.netbeans.BuildAndTestGradleProvider;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.providers.netbeans.BuildAndTestGradleProvider.GradleBuildOptions;
 
@@ -17,7 +16,6 @@ import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.providers.netbeans.B
  * New in #5 / F2: Gradle previously had no clean-then-build tool, unlike Maven (CleanAndBuildMavenProject) and Ant
  * (CleanAndBuildAntProject below).
  */
-@RequiresLock(LockTypeEnum.BUILD_LOCK)
 public class CleanAndBuildGradleProjectTool extends AbstractBuildTool {
 
     public CleanAndBuildGradleProjectTool() {
@@ -28,8 +26,8 @@ public class CleanAndBuildGradleProjectTool extends AbstractBuildTool {
               + CleanAndBuildGradleProjectParamEnum.TASKS.key() + " REPLACES the default entirely, so include \"clean\" yourself if you still want it with custom tasks). "
               + "Gradle projects only - do not use for Maven or Ant projects. "
               + "Returns a summary; the full log is written to a file.",
-              McpToolEnum.CLEAN_AND_BUILD_GRADLE_PROJECT.toolName() + " -> INSTEAD OF Bash gradlew clean build - requires " + CleanAndBuildGradleProjectParamEnum.PROJECT_PATH.key() + "; cleans and builds Gradle project (default: clean build, tests skipped, overridable) and returns a result summary (complete log written to a file)",
-              McpToolEnum.CLEAN_AND_BUILD_GRADLE_PROJECT.toolName() + " - requires " + CleanAndBuildGradleProjectParamEnum.PROJECT_PATH.key() + "; cleans and builds Gradle project (default: clean build, tests skipped, overridable) and returns a result summary (complete log written to a file)");
+              McpToolEnum.CLEAN_AND_BUILD_GRADLE_PROJECT.toolName() + " -> INSTEAD OF Bash gradlew clean build - requires " + CleanAndBuildGradleProjectParamEnum.PROJECT_PATH.key() + "; cleans and builds Gradle project (default: clean build, tests skipped, overridable) and returns a result summary (complete log written to a file)" + BuildSubmitter.QUEUE_INSTRUCTION,
+              McpToolEnum.CLEAN_AND_BUILD_GRADLE_PROJECT.toolName() + " - requires " + CleanAndBuildGradleProjectParamEnum.PROJECT_PATH.key() + "; cleans and builds Gradle project (default: clean build, tests skipped, overridable) and returns a result summary (complete log written to a file)" + BuildSubmitter.QUEUE_INSTRUCTION);
     }
 
     @Override
@@ -44,7 +42,9 @@ public class CleanAndBuildGradleProjectTool extends AbstractBuildTool {
         boolean skipTests = args.has(CleanAndBuildGradleProjectParamEnum.SKIP_TESTS.key())
                             ? args.bool(CleanAndBuildGradleProjectParamEnum.SKIP_TESTS.key()) : true;
         GradleBuildOptions opts = GradleToolSchema.optionsFrom(args, tasks, skipTests);
-        return BuildAndTestGradleProvider.cleanAndBuildProject(session.getId(),
-                                                               args.str(CleanAndBuildGradleProjectParamEnum.PROJECT_PATH.key()), opts);
+        String projectPath = args.str(CleanAndBuildGradleProjectParamEnum.PROJECT_PATH.key());
+        return BuildSubmitter.submit(McpToolEnum.CLEAN_AND_BUILD_GRADLE_PROJECT.toolName(), args, projectPath,
+                                     BuildAndTestGradleProvider.prepareCleanAndBuildProject(session.getId(), projectPath, opts),
+                                     session);
     }
 }

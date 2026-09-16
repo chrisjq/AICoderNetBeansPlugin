@@ -23,6 +23,10 @@ public enum McpToolPropertyEnum {
      */
     ALL("all"),
     /**
+     * Whether the build is queued and returns immediately.
+     */
+    ASYNC("async"),
+    /**
      * Maven -am: build listed projects' dependencies too.
      */
     ALSO_MAKE("alsoMake"),
@@ -30,6 +34,10 @@ public enum McpToolPropertyEnum {
      * HTTP request body.
      */
     BODY("body"),
+    /**
+     * Identifier of an asynchronous build.
+     */
+    BUILD_ID("buildId"),
     /**
      * Git branch name.
      */

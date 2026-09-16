@@ -1,9 +1,16 @@
 package kiwi.ingenuity.netbeans.plugin.aicoder.utils;
 
+import java.time.Duration;
 import java.time.Instant;
 import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.Comparator;
+import java.util.EnumSet;
+import java.util.List;
 import java.util.Locale;
+import java.util.Set;
 
 /**
  * Formats a moment for DISPLAY TO AN AI, in the machine's local timezone.
@@ -49,6 +56,51 @@ public final class DateUtil {
      */
     public static String now() {
         return format(Instant.now());
+    }
+
+    /**
+     * Every unit, days down to milliseconds, e.g. {@code 1 hour, 2 mins, 3 secs, 45 ms}.
+     */
+    public static final Set<DurationStringOptionEnum> DURATION_ALL_UNITS
+            = Collections.unmodifiableSet(EnumSet.allOf(DurationStringOptionEnum.class));
+    /**
+     * Days down to seconds.
+     */
+    public static final Set<DurationStringOptionEnum> DURATION_TO_SECONDS = Collections.unmodifiableSet(
+            EnumSet.range(DurationStringOptionEnum.SECONDS, DurationStringOptionEnum.DAYS));
+    /**
+     * Days down to minutes.
+     */
+    public static final Set<DurationStringOptionEnum> DURATION_TO_MINUTES = Collections.unmodifiableSet(
+            EnumSet.range(DurationStringOptionEnum.MINUTES, DurationStringOptionEnum.DAYS));
+
+    /**
+     * Formats a duration for display using every unit, e.g. {@code 2 mins, 3 secs, 45 ms}.
+     */
+    public static String formatDuration(Duration duration) {
+        return formatDuration(DURATION_ALL_UNITS, duration);
+    }
+
+    /**
+     * Formats a duration for display as its non-zero parts in {@code units}, largest first and joined by commas, e.g.
+     * {@code 2 days, 1 hour, 5 mins}. A unit left out of {@code units} is dropped, not carried into another unit. A
+     * zero, negative or null duration renders as zero of the smallest unit requested, e.g. {@code 0 secs}.
+     */
+    public static String formatDuration(Set<DurationStringOptionEnum> units, Duration duration) {
+        Duration d = duration == null || duration.isNegative() ? Duration.ZERO : duration;
+        List<String> parts = new ArrayList<>();
+        DurationStringOptionEnum[] smallestFirst = DurationStringOptionEnum.values();
+        for (int i = smallestFirst.length - 1; i >= 0; i--) {
+            DurationStringOptionEnum unit = smallestFirst[i];
+            long value = unit.partOf(d);
+            if (units.contains(unit) && value > 0) {
+                parts.add(unit.label(value));
+            }
+        }
+        if (parts.isEmpty()) {
+            return units.stream().min(Comparator.naturalOrder()).map(unit -> unit.label(0)).orElse("");
+        }
+        return String.join(", ", parts);
     }
 
     private DateUtil() {

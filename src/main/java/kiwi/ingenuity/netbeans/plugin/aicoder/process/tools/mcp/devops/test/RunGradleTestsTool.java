@@ -5,16 +5,14 @@ import com.google.gson.JsonObject;
 import java.util.List;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.McpSectionEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.McpToolEnum;
-import kiwi.ingenuity.netbeans.plugin.aicoder.process.locking.LockTypeEnum;
-import kiwi.ingenuity.netbeans.plugin.aicoder.process.locking.RequiresLock;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.session.AbstractAiSession;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.AbstractTestsTool;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.ToolRequestArguments;
+import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.devops.BuildSubmitter;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.devops.build.GradleToolSchema;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.providers.netbeans.BuildAndTestGradleProvider;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.providers.netbeans.BuildAndTestGradleProvider.GradleBuildOptions;
 
-@RequiresLock(LockTypeEnum.BUILD_LOCK)
 public class RunGradleTestsTool extends AbstractTestsTool {
 
     public RunGradleTestsTool() {
@@ -24,8 +22,8 @@ public class RunGradleTestsTool extends AbstractTestsTool {
               + RunGradleTestsParamEnum.TASKS.key() + " and the other options below override the default task). "
               + "Gradle projects only - do not use for Maven or Ant projects. "
               + "Returns a summary; the full log is written to a file.",
-              McpToolEnum.RUN_GRADLE_TESTS.toolName() + " -> INSTEAD OF Bash gradlew test - requires " + RunGradleTestsParamEnum.PROJECT_PATH.key() + "; runs Gradle tests (default task: test, overridable) with optional class filter",
-              McpToolEnum.RUN_GRADLE_TESTS.toolName() + " - requires " + RunGradleTestsParamEnum.PROJECT_PATH.key() + "; runs Gradle tests (default task: test, overridable) with optional class filter");
+              McpToolEnum.RUN_GRADLE_TESTS.toolName() + " -> INSTEAD OF Bash gradlew test - requires " + RunGradleTestsParamEnum.PROJECT_PATH.key() + "; runs Gradle tests (default task: test, overridable) with optional class filter" + BuildSubmitter.QUEUE_INSTRUCTION,
+              McpToolEnum.RUN_GRADLE_TESTS.toolName() + " - requires " + RunGradleTestsParamEnum.PROJECT_PATH.key() + "; runs Gradle tests (default task: test, overridable) with optional class filter" + BuildSubmitter.QUEUE_INSTRUCTION);
     }
 
     @Override
@@ -40,7 +38,10 @@ public class RunGradleTestsTool extends AbstractTestsTool {
         // confusing default, and today's "gradlew test" has never passed -x test.
         boolean skipTests = args.bool(RunGradleTestsParamEnum.SKIP_TESTS.key());
         GradleBuildOptions opts = GradleToolSchema.optionsFrom(args, tasks, skipTests);
-        return BuildAndTestGradleProvider.runTests(session.getId(),
-                                                   args.str(RunGradleTestsParamEnum.TEST_CLASS.key()), args.str(RunGradleTestsParamEnum.PROJECT_PATH.key()), opts);
+        String projectPath = args.str(RunGradleTestsParamEnum.PROJECT_PATH.key());
+        return BuildSubmitter.submit(McpToolEnum.RUN_GRADLE_TESTS.toolName(), args, projectPath,
+                                     BuildAndTestGradleProvider.prepareRunTests(session.getId(),
+                                                                                args.str(RunGradleTestsParamEnum.TEST_CLASS.key()), projectPath, opts),
+                                     session);
     }
 }

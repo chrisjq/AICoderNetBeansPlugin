@@ -5,16 +5,14 @@ import com.google.gson.JsonObject;
 import java.util.List;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.McpSectionEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.McpToolEnum;
-import kiwi.ingenuity.netbeans.plugin.aicoder.process.locking.LockTypeEnum;
-import kiwi.ingenuity.netbeans.plugin.aicoder.process.locking.RequiresLock;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.session.AbstractAiSession;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.AbstractBuildTool;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.ToolRequestArguments;
+import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.devops.BuildSubmitter;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.providers.netbeans.BuildAndTestMavenProvider;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.providers.netbeans.BuildAndTestMavenProvider.MavenBuildOptions;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.providers.netbeans.BuildOptionValidator;
 
-@RequiresLock(LockTypeEnum.BUILD_LOCK)
 public class BuildMavenProjectTool extends AbstractBuildTool {
 
     public BuildMavenProjectTool() {
@@ -24,8 +22,8 @@ public class BuildMavenProjectTool extends AbstractBuildTool {
               + BuildMavenProjectParamEnum.GOALS.key() + " and the other options below override this). "
               + "Maven projects only - do not use for Ant or Gradle projects. "
               + "Returns a summary; the full log is written to a file.",
-              McpToolEnum.BUILD_MAVEN_PROJECT.toolName() + " -> INSTEAD OF Bash mvn package - requires " + BuildMavenProjectParamEnum.PROJECT_PATH.key() + "; builds Maven project (default: package -DskipTests, overridable) and returns a result summary (complete log written to a file)",
-              McpToolEnum.BUILD_MAVEN_PROJECT.toolName() + " - requires " + BuildMavenProjectParamEnum.PROJECT_PATH.key() + "; builds Maven project (default: package -DskipTests, overridable) and returns a result summary (complete log written to a file)");
+              McpToolEnum.BUILD_MAVEN_PROJECT.toolName() + " -> INSTEAD OF Bash mvn package - requires " + BuildMavenProjectParamEnum.PROJECT_PATH.key() + "; builds Maven project (default: package -DskipTests, overridable) and returns a result summary (complete log written to a file)" + BuildSubmitter.QUEUE_INSTRUCTION,
+              McpToolEnum.BUILD_MAVEN_PROJECT.toolName() + " - requires " + BuildMavenProjectParamEnum.PROJECT_PATH.key() + "; builds Maven project (default: package -DskipTests, overridable) and returns a result summary (complete log written to a file)" + BuildSubmitter.QUEUE_INSTRUCTION);
     }
 
     @Override
@@ -41,7 +39,8 @@ public class BuildMavenProjectTool extends AbstractBuildTool {
         boolean skipTests = args.has(BuildMavenProjectParamEnum.SKIP_TESTS.key())
                             ? args.bool(BuildMavenProjectParamEnum.SKIP_TESTS.key()) : true;
         MavenBuildOptions opts = MavenToolSchema.optionsFrom(args, goals, skipTests);
-        return BuildAndTestMavenProvider.buildProject(session.getId(),
-                                                      args.str(BuildMavenProjectParamEnum.PROJECT_PATH.key()), opts);
+        String projectPath = args.str(BuildMavenProjectParamEnum.PROJECT_PATH.key());
+        return BuildSubmitter.submit(McpToolEnum.BUILD_MAVEN_PROJECT.toolName(), args, projectPath,
+                                     BuildAndTestMavenProvider.prepareBuildProject(session.getId(), projectPath, opts), session);
     }
 }

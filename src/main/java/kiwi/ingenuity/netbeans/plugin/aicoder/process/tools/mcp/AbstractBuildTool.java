@@ -5,6 +5,8 @@ import com.google.gson.JsonObject;
 import java.util.Set;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.McpInstructionOptionEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.McpSectionEnum;
+import kiwi.ingenuity.netbeans.plugin.aicoder.process.McpToolPropertyEnum;
+import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.devops.BuildSubmitter;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.git.GitCommonParamEnum;
 
 public abstract class AbstractBuildTool implements McpToolInterface {
@@ -54,6 +56,13 @@ public abstract class AbstractBuildTool implements McpToolInterface {
         props.add(GitCommonParamEnum.PROJECT_PATH.key(), pp);
         JsonArray required = new JsonArray();
         required.add(GitCommonParamEnum.PROJECT_PATH.key());
+        JsonObject async = new JsonObject();
+        async.addProperty(ToolSchemaKeyEnum.TYPE.key(), "boolean");
+        async.addProperty(ToolSchemaKeyEnum.DESCRIPTION.key(),
+                          "Queues the build and returns its id immediately; its result arrives later as a message (up to "
+                          + BuildSubmitter.ASYNC_LIMIT_TEXT
+                          + "). Otherwise this call waits for its turn and returns the result, as today. Default: false.");
+        props.add(McpToolPropertyEnum.ASYNC.key(), async);
         addOptionProperties(props, required);
         schema.add(ToolSchemaKeyEnum.PROPERTIES.key(), props);
         schema.add(ToolSchemaKeyEnum.REQUIRED.key(), required);

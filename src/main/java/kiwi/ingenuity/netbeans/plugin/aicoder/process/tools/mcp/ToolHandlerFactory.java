@@ -17,6 +17,8 @@ import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.database.GetTabl
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.database.GetTableSchemaTool;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.database.ListDatabaseConnectionsTool;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.database.ListTablesTool;
+import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.devops.ListBuildsTool;
+import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.devops.StopAsyncBuildTool;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.devops.build.BuildAntProjectTool;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.devops.build.BuildGradleProjectTool;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.devops.build.BuildMavenProjectTool;
@@ -112,6 +114,8 @@ public final class ToolHandlerFactory {
         map.put(McpToolEnum.GET_PROJECT_STRUCTURE, new GetProjectStructureTool());
         map.put(McpToolEnum.BUILD_MAVEN_PROJECT, new BuildMavenProjectTool());
         map.put(McpToolEnum.CLEAN_AND_BUILD_MAVEN_PROJECT, new CleanAndBuildMavenProjectTool());
+        map.put(McpToolEnum.LIST_BUILDS, new ListBuildsTool());
+        map.put(McpToolEnum.STOP_ASYNC_BUILD, new StopAsyncBuildTool());
         map.put(McpToolEnum.CLEAN_PROJECT, new CleanProjectTool());
         map.put(McpToolEnum.BUILD_PROJECT, new BuildProjectTool());
         map.put(McpToolEnum.CLEAN_AND_BUILD_PROJECT, new CleanAndBuildProjectTool());
