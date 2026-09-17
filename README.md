@@ -194,7 +194,7 @@ Asking for a build that is already queued or running with the same options — i
 | Tool | Description |
 |---|---|
 | [`ListDatabaseConnections`](REFERENCE.md#listdatabaseconnections), [`ListTables`](REFERENCE.md#listtables), [`GetTableSchema`](REFERENCE.md#gettableschema), [`GetTableData`](REFERENCE.md#gettabledata), [`ExecuteSqlQuery`](REFERENCE.md#executesqlquery) | Read-only Database Explorer access |
-| [`ListAiSessions`](REFERENCE.md#listaisessions), [`SendAiMessage`](REFERENCE.md#sendaimessage), [`GetAiMessages`](REFERENCE.md#getaimessages), [`ReadAiMessage`](REFERENCE.md#readaimessage), [`DeleteAiMessage`](REFERENCE.md#deleteaimessage), [`IsAiSessionActive`](REFERENCE.md#isaisessionactive), [`UpdateSessionDescription`](REFERENCE.md#updatesessiondescription) | Inter-AI session discovery and messaging |
+| [`ListAiSessions`](REFERENCE.md#listaisessions), [`SendAiMessage`](REFERENCE.md#sendaimessage), [`GetAiMessages`](REFERENCE.md#getaimessages), [`ReadAiMessage`](REFERENCE.md#readaimessage), [`DeleteAiMessage`](REFERENCE.md#deleteaimessage), [`MarkAiMessageReplied`](REFERENCE.md#markaimessagereplied), [`IsAiSessionActive`](REFERENCE.md#isaisessionactive), [`UpdateSessionDescription`](REFERENCE.md#updatesessiondescription) | Inter-AI session discovery and messaging |
 | [`CreateIdleWatcher`](REFERENCE.md#createidlewatcher), [`CancelIdleWatcher`](REFERENCE.md#cancelidlewatcher), [`ListIdleWatchers`](REFERENCE.md#listidlewatchers) | Notifies a session when a peer has gone idle |
 | [`GetPluginVersion`](REFERENCE.md#getpluginversion), [`GetInstructions`](REFERENCE.md#getinstructions), [`AskUserQuestion`](REFERENCE.md#askuserquestion), [`RunInspect`](REFERENCE.md#runinspect) | Plugin guidance, user input, and static-analysis entry points |
 

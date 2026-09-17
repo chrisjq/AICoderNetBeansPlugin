@@ -22,9 +22,9 @@ public final class AiInboxMessage {
     private volatile Instant respondedAt;
 
     public AiInboxMessage(String id, String fromSessionId, String toSessionId,
-            String subject, String body,
-            String replyToId, boolean important, boolean expectsReply, boolean replyImportant,
-            Instant sentAt, Instant readAt, Instant respondedAt) {
+                          String subject, String body,
+                          String replyToId, boolean important, boolean expectsReply, boolean replyImportant,
+                          Instant sentAt, Instant readAt, Instant respondedAt) {
         this.id = id;
         this.fromSessionId = fromSessionId;
         this.toSessionId = toSessionId;
@@ -111,7 +111,7 @@ public final class AiInboxMessage {
             sb.append("\nReply-To: ").append(replyToId);
         }
         if (expectsReply) {
-            sb.append("\n[Expects reply]");
+            sb.append("\n").append(respondedAt != null ? "[Replied]" : "[Awaiting reply]");
         }
         return sb.toString();
     }

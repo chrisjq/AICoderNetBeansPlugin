@@ -2,18 +2,24 @@ package kiwi.ingenuity.netbeans.plugin.aicoder.ai;
 
 import java.beans.PropertyChangeListener;
 import java.io.File;
+import java.time.ZoneId;
+import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map.Entry;
 import java.util.Objects;
 import java.util.function.Consumer;
 import java.util.logging.Logger;
 import javax.swing.SwingUtilities;
+import kiwi.ingenuity.netbeans.plugin.aicoder.ai.mail.AiInboxMessage;
+import kiwi.ingenuity.netbeans.plugin.aicoder.ai.mail.AiSessionInboxBroker;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.session.AiSession;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.session.SessionInstructionsDeliveryEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.McpInstructionOptionEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.McpToolPropertyEnum;
+import kiwi.ingenuity.netbeans.plugin.aicoder.process.SessionRegistry;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.providers.netbeans.EditorContextProvider;
 import org.netbeans.api.project.Project;
 import org.netbeans.api.project.ui.OpenProjects;
@@ -25,6 +31,16 @@ import org.openide.windows.WindowManager;
 public class ContextProvider {
 
     private static final Logger LOG = Logger.getLogger(ContextProvider.class.getName());
+
+    /**
+     * Cap on how many owed-reply lines {@link #buildIdentityBlock()} lists individually before collapsing the rest into
+     * a single "…and N more" line. Sent every turn (see {@link #buildIdentityBlock()}'s own doc), so an inbox with
+     * dozens of outstanding replies must not turn into dozens of lines on every single turn.
+     */
+    private static final int OWED_REPLIES_DISPLAY_CAP = 10;
+
+    private static final DateTimeFormatter OWED_REPLY_TIME_FORMATTER
+            = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm", Locale.ROOT).withZone(ZoneId.systemDefault());
 
     /**
      * Caret position as {@code " (cursor at line:col)"}, or an empty string when there is no readable caret.
@@ -151,6 +167,9 @@ public class ContextProvider {
             identity.append(e.getKey()).append(": ").append(e.getValue()).append("\n");
         }
         identity.append("\n\n");
+        if (s.allowsInterAiComms()) {
+            appendOwedReplies(identity, s);
+        }
         if (s.aiType().getMcpOptions().contains(McpInstructionOptionEnum.CREDENTIALS)) {
             identity.append("IMPORTANT: When a tool takes sessionId/secretKey, pass the sessionId and secretKey shown above verbatim — they are YOUR credentials for this session and are required for every tool that lists them as parameters. Always use the latest values shown above.\n\n");
             identity.append("IMPORTANT: You HAVE permission and FULL ACCESS to Netbeans Plugins MCP tools with your sessionId and secretKey, you HAVE TO use sessionId and secretKey to call the MCP tools\n\n");
@@ -171,6 +190,45 @@ public class ContextProvider {
             }
         }
         return identity.toString();
+    }
+
+    /**
+     * Lists every message owed a reply by this session as its own "## Messages awaiting your reply" section — one line
+     * per message, never the body, so a stale reply obligation stays visible without the recipient re-reading anything.
+     * Gated on {@code allowsInterAiComms()} the same way the inter-AI capability blurb is, since a session that cannot
+     * use the inter-AI tools has nothing to reply with. Silently does nothing when there is nothing owed, so the
+     * section never appears empty.
+     */
+    private void appendOwedReplies(StringBuilder identity, AiSession s) {
+        List<AiInboxMessage> owed = AiSessionInboxBroker.getInstance().listOwedReplies(s.id());
+        if (owed.isEmpty()) {
+            return;
+        }
+        identity.append("## Messages awaiting your reply\n");
+        int shown = Math.min(owed.size(), OWED_REPLIES_DISPLAY_CAP);
+        for (int i = 0; i < shown; i++) {
+            AiInboxMessage m = owed.get(i);
+            String subject = m.subject() != null && !m.subject().isBlank() ? m.subject() : "(no subject)";
+            identity.append("- id=").append(m.id())
+                    .append(" from ").append(senderName(m.fromSessionId()))
+                    .append(" (").append(OWED_REPLY_TIME_FORMATTER.format(m.sentAt())).append(")")
+                    .append(" — \"").append(subject).append("\"")
+                    .append(" — reply with SendAiMessage replyToMessageId=").append(m.id())
+                    .append(", or MarkAiMessageReplied if you answered another way\n");
+        }
+        if (owed.size() > shown) {
+            identity.append("- …and ").append(owed.size() - shown).append(" more (GetAiMessages)\n");
+        }
+        identity.append("\n");
+    }
+
+    /**
+     * The sender's display name, falling back to its session id when that session has since closed — same fallback
+     * DeliverIncomingMessageNotification uses for the equivalent case.
+     */
+    private static String senderName(String sessionId) {
+        var abs = SessionRegistry.get(sessionId);
+        return abs != null ? abs.getAiSession().name() : sessionId;
     }
 
     /**

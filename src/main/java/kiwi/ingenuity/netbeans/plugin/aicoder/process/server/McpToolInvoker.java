@@ -77,7 +77,7 @@ public final class McpToolInvoker {
                 }
                 lockAcquired = true;
             }
-            if (!handler.isMutating() || handler.usesOwnFileLocking()) {
+            if (!handler.requiresGlobalMutationLock()) {
                 return safe(handler.handle(new ToolRequestArguments(argsObj), session));
             }
             boolean mutLockAcquired;

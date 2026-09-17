@@ -70,6 +70,12 @@ public abstract class AbstractBuildTool implements McpToolInterface {
         return McpToolSchemas.applyCredentialsIfRequested(tool, options);
     }
 
+    @Override
+    public boolean requiresGlobalMutationLock() {
+        // BuildQueue serialises builds, so they must not hold the global mutation lock while waiting or running.
+        return false;
+    }
+
     /**
      * Hook for a build-system-specific tool (Maven/Gradle/Ant) to add its own build options beyond the shared
      * {@code projectPath} (#5 / F2) — each build system's option set is different (Maven has profiles and threads,

@@ -117,6 +117,7 @@ public enum McpToolEnum {
     SEND_AI_MESSAGE("SendAiMessage"),
     GET_AI_MESSAGES("GetAiMessages"),
     READ_AI_MESSAGE("ReadAiMessage"),
+    MARK_AI_MESSAGE_REPLIED("MarkAiMessageReplied"),
     DELETE_AI_MESSAGE("DeleteAiMessage"),
     IS_AI_SESSION_ACTIVE("IsAiSessionActive"),
     UPDATE_SESSION_DESCRIPTION("UpdateSessionDescription"),

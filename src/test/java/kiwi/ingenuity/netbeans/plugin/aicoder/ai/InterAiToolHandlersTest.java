@@ -225,8 +225,8 @@ class InterAiToolHandlersTest {
         ReadAiMessageTool tool = new ReadAiMessageTool();
         String first = tool.handle(request, null);
         String second = tool.handle(request, null);
-        assertTrue(first.contains(NotificationUtil.formatReplyExpectedInstruction()), first);
-        assertFalse(second.contains(NotificationUtil.formatReplyExpectedInstruction()), second);
+        assertTrue(first.contains(NotificationUtil.formatReplyExpectedInstruction(id)), first);
+        assertFalse(second.contains(NotificationUtil.formatReplyExpectedInstruction(id)), second);
     }
 
     @Test

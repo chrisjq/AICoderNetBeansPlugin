@@ -4,6 +4,7 @@ import com.google.gson.JsonArray;
 import com.google.gson.JsonObject;
 import java.util.concurrent.CancellationException;
 import java.util.concurrent.CompletableFuture;
+import java.util.function.BiConsumer;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 import kiwi.ingenuity.netbeans.plugin.aicoder.PluginSettings;
@@ -122,11 +123,24 @@ class OpenCodeAcpClientHandler implements AcpClientHandler {
 
     private final AiProcessEventListener listener;
     private final Runnable disconnectCallback;
+    private final BiConsumer<String, String> toolCallTracker;
     private volatile CompletableFuture<PermissionDecision> pendingPermission = null;
 
     OpenCodeAcpClientHandler(AiProcessEventListener listener, Runnable disconnectCallback) {
+        this(listener, disconnectCallback, null);
+    }
+
+    /**
+     * @param toolCallTracker receives {@code (toolCallId, status)} for every {@code tool_call} and
+     * {@code tool_call_update} session/update so the process manager can track in-flight tool calls (F5) without
+     * reaching into the handler's internals. May be null when the caller is not a manager (e.g. tests wiring a handler
+     * to a bare connection).
+     */
+    OpenCodeAcpClientHandler(AiProcessEventListener listener, Runnable disconnectCallback,
+                             BiConsumer<String, String> toolCallTracker) {
         this.listener = listener;
         this.disconnectCallback = disconnectCallback;
+        this.toolCallTracker = toolCallTracker;
     }
 
     @Override
@@ -179,6 +193,18 @@ class OpenCodeAcpClientHandler implements AcpClientHandler {
         String kind = update.has(AcpJsonKeyEnum.KIND.key()) ? update.get(AcpJsonKeyEnum.KIND.key()).getAsString() : "";
         String filePath = extractFirstLocationPath(update);
         listener.onAiProcessEvent(new ToolUseEvent(toolName, filePath, null, null, mapToolKind(kind)));
+        // F5: forward the lifecycle signal so the manager can hold a Mail interrupt while a call
+        // is in flight. The status is null only when the field is absent, in which case the
+        // manager treats the update as not changing the count.
+        if (toolCallTracker != null) {
+            String toolCallId = update.has(AcpJsonKeyEnum.TOOL_CALL_ID.key())
+                                ? update.get(AcpJsonKeyEnum.TOOL_CALL_ID.key()).getAsString() : null;
+            String status = update.has(AcpJsonKeyEnum.STATUS.key())
+                            ? update.get(AcpJsonKeyEnum.STATUS.key()).getAsString() : null;
+            if (toolCallId != null) {
+                toolCallTracker.accept(toolCallId, status);
+            }
+        }
     }
 
     /**

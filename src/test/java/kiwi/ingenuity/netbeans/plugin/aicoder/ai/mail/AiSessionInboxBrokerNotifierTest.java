@@ -232,7 +232,7 @@ class AiSessionInboxBrokerNotifierTest {
     }
 
     @Test
-    void replyFromNonOwnerConsumesNothingAndInheritsNothing() {
+    void replyFromNonOwnerIsRefusedAndInheritsNothing() {
         AiSession owner = stubSession("hijack-owner", "OwnerAI", null);
         AiSession impostor = stubSession("hijack-impostor", "ImpostorAI", null);
         AiSession originalSender = stubSession("hijack-sender", "SenderAI", null);
@@ -243,12 +243,12 @@ class AiSessionInboxBrokerNotifierTest {
         String origId = broker.sendMessage("hijack-sender", "hijack-owner", "Q", "question", null,
                                            false, true, true);
 
-        // The impostor quotes someone else's message id.
+        // The impostor quotes someone else's message id: the send is now refused outright (F4), so
+        // nothing is delivered and the impostor inherits nothing — no priority upgrade, no stamp.
         String hijackId = broker.sendMessage("hijack-impostor", "hijack-sender", "Re: Q", "spoofed", origId);
-
-        AiInboxMessage hijacked = broker.listInbox("hijack-sender", originalSender.secret()).stream()
-                .filter(m -> m.id().equals(hijackId)).findFirst().orElseThrow();
-        assertFalse(hijacked.important(), "impostor must not inherit replyImportant priority");
+        assertNull(hijackId, "an impostor's replyToMessageId is refused");
+        assertTrue(broker.listInbox("hijack-sender", originalSender.secret()).isEmpty(),
+                   "refused reply is not delivered to the sender");
 
         AiInboxMessage original = broker.listInbox("hijack-owner", owner.secret()).stream()
                 .filter(m -> m.id().equals(origId)).findFirst().orElseThrow();

@@ -6,6 +6,7 @@ import java.time.Instant;
 import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.Comparator;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Iterator;
@@ -200,8 +201,8 @@ public final class AiSessionInboxBroker {
                     + subjects.size() + " unread message(s) from you. Subjects: "
                     + subjects.stream().map(s -> "\"" + s + "\"").collect(Collectors.joining(", "));
             AiInboxMessage notification = new AiInboxMessage(notifId, sessionId, senderId,
-                    notifSubject, notifBody, null, wasImportant, false, false,
-                    Instant.now(), null, null);
+                                                             notifSubject, notifBody, null, wasImportant, false, false,
+                                                             Instant.now(), null, null);
             String deliveryNote = "Session " + sessionId + " exited — your message(s) were not delivered: "
                     + subjects.stream().map(s -> "\"" + s + "\"").collect(Collectors.joining(", "));
             List<AiInboxMessage> stored;
@@ -210,7 +211,7 @@ public final class AiSessionInboxBroker {
                 // System notice: never displaces an unread message; wasImportant keeps the
                 // unconditional interrupt the old path gave the sender.
                 inserts.add(new PendingInsert(notification, wasImportant, true,
-                        new SimpleNotification(deliveryNote)));
+                                              new SimpleNotification(deliveryNote)));
                 stored = insertAllLocked(inserts);
             }
             announceStored(stored);
@@ -231,8 +232,8 @@ public final class AiSessionInboxBroker {
             String notifBody = "Session '" + sessionId + "' exited without responding to your message."
                     + " Subject: \"" + pendingEntry.subject() + "\"";
             AiInboxMessage notification = new AiInboxMessage(notifId, sessionId, senderId,
-                    notifSubject, notifBody, pendingEntry.messageId(), pendingEntry.replyImportant(), false, false,
-                    Instant.now(), null, null);
+                                                             notifSubject, notifBody, pendingEntry.messageId(), pendingEntry.replyImportant(), false, false,
+                                                             Instant.now(), null, null);
             String deliveryNote = "Session " + sessionId + " exited without responding to your message."
                     + " Subject: \"" + pendingEntry.subject() + "\"";
             List<AiInboxMessage> stored;
@@ -240,7 +241,7 @@ public final class AiSessionInboxBroker {
                 ArrayDeque<PendingInsert> inserts = new ArrayDeque<>();
                 // System notice; replyImportant keeps the unconditional interrupt.
                 inserts.add(new PendingInsert(notification, pendingEntry.replyImportant(), true,
-                        new SimpleNotification(deliveryNote)));
+                                              new SimpleNotification(deliveryNote)));
                 stored = insertAllLocked(inserts);
             }
             announceStored(stored);
@@ -300,12 +301,12 @@ public final class AiSessionInboxBroker {
     }
 
     public String sendMessage(String callerSessionId, String targetSessionId,
-            String subject, String body, String replyToId) {
+                              String subject, String body, String replyToId) {
         return sendMessage(callerSessionId, targetSessionId, subject, body, replyToId, false, false, false);
     }
 
     public String sendMessage(String callerSessionId, String targetSessionId,
-            String subject, String body, String replyToId, boolean important) {
+                              String subject, String body, String replyToId, boolean important) {
         return sendMessage(callerSessionId, targetSessionId, subject, body, replyToId, important, false, false);
     }
 
@@ -323,53 +324,155 @@ public final class AiSessionInboxBroker {
      * interrupted regardless of their allowImportantMessages setting.
      */
     public String sendMessage(String callerSessionId, String targetSessionId,
-            String subject, String body, String replyToId,
-            boolean important, boolean expectsReply, boolean replyImportant) {
+                              String subject, String body, String replyToId,
+                              boolean important, boolean expectsReply, boolean replyImportant) {
         String id = UUID.randomUUID().toString();
         String truncatedSubject = subject != null && subject.length() > AiInboxMessage.MAX_SUBJECT_LENGTH
-                ? subject.substring(0, AiInboxMessage.MAX_SUBJECT_LENGTH)
-                : subject;
+                                  ? subject.substring(0, AiInboxMessage.MAX_SUBJECT_LENGTH)
+                                  : subject;
         boolean effectiveImportant = important;
         List<AiInboxMessage> stored;
         synchronized (lock) {
             if (!inbox.containsKey(targetSessionId)) {
                 return null;
             }
-            // Reply bookkeeping applies only when the caller was the intended recipient of the
-            // original message, and ownership is decided BEFORE anything is consumed. The previous
-            // order removed pendingReplies.remove(replyToId) first: an impostor quoting someone
-            // else's message id suppressed the expected no-reply notification, and then inherited
-            // replyImportant into effectiveImportant to escalate its own message. Now a non-owner's
-            // replyToId is recorded verbatim on the new message but consumes no expectation,
-            // stamps no respondedAt and upgrades nothing.
+            // An unknown or mis-addressed replyToMessageId is refused outright (F4, Chris's decision): nothing is sent
+            // and validateReplyTo gives the caller the reason. Ownership is confirmed under this same lock, so the
+            // original below is guaranteed present and addressed to the caller. consumeReplyLocked stamps respondedAt
+            // and removes the pending expectation exactly once, sharing that step with markReplied so the two cannot
+            // drift.
+            if (validateReplyTo(callerSessionId, replyToId) != null) {
+                return null;
+            }
             if (replyToId != null) {
                 AiInboxMessage original = inboxMessageById.get(replyToId);
-                if (original != null && callerSessionId.equals(original.toSessionId())) {
-                    PendingReplyEntry pending = pendingReplies.remove(replyToId);
+                if (original != null) {
+                    PendingReplyEntry pending = consumeReplyLocked(original);
                     if (pending != null && pending.replyImportant()) {
                         effectiveImportant = true;
                     }
-                    original.setRespondedAt(Instant.now());
                 }
             }
             AiInboxMessage msg = new AiInboxMessage(id, callerSessionId, targetSessionId,
-                    truncatedSubject, body, replyToId, effectiveImportant, expectsReply, replyImportant,
-                    Instant.now(), null, null);
+                                                    truncatedSubject, body, replyToId, effectiveImportant, expectsReply, replyImportant,
+                                                    Instant.now(), null, null);
             ArrayDeque<PendingInsert> inserts = new ArrayDeque<>();
             // Not a system notice: it always makes room for itself under the capacity policy.
             inserts.add(new PendingInsert(msg, false, false, new DeliverIncomingMessageNotification(msg)));
             stored = insertAllLocked(inserts);
             if (expectsReply) {
                 pendingReplies.put(id, new PendingReplyEntry(
-                        id,
-                        truncatedSubject != null ? truncatedSubject : "",
-                        callerSessionId,
-                        targetSessionId,
-                        replyImportant));
+                                   id,
+                                   truncatedSubject != null ? truncatedSubject : "",
+                                   callerSessionId,
+                                   targetSessionId,
+                                   replyImportant));
             }
         }
         announceStored(stored);
         return id;
+    }
+
+    /**
+     * Validates a replyToMessageId before a reply is sent. Returns null when the id is absent or blank, or names a
+     * message that is still in this session's inbox and was addressed to this session; otherwise returns a
+     * user-readable reason for refusing the send. Enforced inside {@link #sendMessage}, which returns null for a
+     * refused reply, and exposed so the SendAiMessage tool can show the caller the reason.
+     */
+    public String validateReplyTo(String callerSessionId, String replyToId) {
+        if (replyToId == null || replyToId.isBlank()) {
+            return null;
+        }
+        AiInboxMessage original;
+        synchronized (lock) {
+            original = inboxMessageById.get(replyToId);
+        }
+        if (original == null) {
+            return "replyToMessageId " + replyToId
+                    + " does not match any message in your inbox, so nothing was sent. Use the id= value of the message"
+                    + " you are answering (a UUID shown by GetAiMessages/ReadAiMessage), not the tag of a <SYSTEM:…>"
+                    + " block. If the original has expired or been deleted, send again without replyToMessageId.";
+        }
+        if (!callerSessionId.equals(original.toSessionId())) {
+            return "replyToMessageId " + replyToId + " is not a message sent to you, so nothing was sent.";
+        }
+        return null;
+    }
+
+    /**
+     * Stamps a message as answered and consumes its pending-reply expectation, sharing the single source of truth with
+     * genuine replies in {@link #sendMessage} so the two cannot drift. The caller must hold {@code lock} and the
+     * message must be present and addressed to the acting session. Returns the consumed expectation, if any.
+     */
+    private PendingReplyEntry consumeReplyLocked(AiInboxMessage original) {
+        PendingReplyEntry pending = pendingReplies.remove(original.id());
+        original.setRespondedAt(Instant.now());
+        return pending;
+    }
+
+    /**
+     * Outcomes of {@link #markReplied}.
+     */
+    public enum MarkRepliedResultEnum {
+        /**
+         * The message was stamped replied and its pending-reply expectation was consumed.
+         */
+        MARKED,
+        /**
+         * The message had already been replied to or marked replied.
+         */
+        ALREADY_REPLIED,
+        /**
+         * The message never asked for a reply, so there is nothing to mark.
+         */
+        NOT_EXPECTING_REPLY,
+        /**
+         * No message with this id is in the inbox, or it was not addressed to this session.
+         */
+        NOT_FOUND
+    }
+
+    /**
+     * Marks a message this session received as replied, for replies sent without replyToMessageId or answered outside
+     * the mail system. Stamps respondedAt and consumes the pending-reply expectation exactly as a genuine reply with
+     * replyToMessageId does.
+     */
+    public MarkRepliedResultEnum markReplied(String sessionId, String messageId) {
+        synchronized (lock) {
+            AiInboxMessage m = inboxMessageById.get(messageId);
+            if (m == null || !sessionId.equals(m.toSessionId())) {
+                return MarkRepliedResultEnum.NOT_FOUND;
+            }
+            if (!m.expectsReply()) {
+                return MarkRepliedResultEnum.NOT_EXPECTING_REPLY;
+            }
+            if (m.respondedAt() != null) {
+                return MarkRepliedResultEnum.ALREADY_REPLIED;
+            }
+            consumeReplyLocked(m);
+            return MarkRepliedResultEnum.MARKED;
+        }
+    }
+
+    /**
+     * Messages this session received that still owe a reply: addressed to this session with expectsReply set and
+     * respondedAt still unset, oldest first, read or unread. Note the direction: replies this session owes, not the
+     * replies it is waiting for (those live in the sender-side pendingReplies bookkeeping).
+     */
+    public List<AiInboxMessage> listOwedReplies(String sessionId) {
+        synchronized (lock) {
+            List<AiInboxMessage> owed = new ArrayList<>();
+            List<AiInboxMessage> theirs = inbox.get(sessionId);
+            if (theirs != null) {
+                for (AiInboxMessage m : theirs) {
+                    if (m.expectsReply() && m.respondedAt() == null) {
+                        owed.add(m);
+                    }
+                }
+                owed.sort(Comparator.comparing(AiInboxMessage::sentAt));
+            }
+            return Collections.unmodifiableList(owed);
+        }
     }
 
     /**
@@ -424,6 +527,11 @@ public final class AiSessionInboxBroker {
     /**
      * Deletes inbox messages by id for the authenticated session. Returns the count actually removed (unknown ids are
      * ignored). Returns 0 on auth failure.
+     *
+     * <p>
+     * Deleting a message that still expected a reply drops that pending-reply expectation silently: the sender is never
+     * notified at deletion time, and a later exit of this session can no longer fabricate a "no reply" notice for a
+     * deliberately deleted message.
      */
     public int deleteMessages(String sessionId, String secret, List<String> ids) {
         if (!validateSecret(sessionId, secret) || ids == null || ids.isEmpty()) {
@@ -439,6 +547,10 @@ public final class AiSessionInboxBroker {
             messages.removeIf(m -> {
                 if (idSet.contains(m.id())) {
                     inboxMessageById.remove(m.id());
+                    // Drop any outstanding reply expectation with the message. Deleting is a deliberate
+                    // resolution, so the sender is not told, and no stale entry may outlive the message
+                    // to trigger a false "no reply" notice when the deleter's session exits.
+                    pendingReplies.remove(m.id());
                     // A deleted message must never be announced later.
                     removeUnannouncedLocked(m);
                     return true;
@@ -501,7 +613,7 @@ public final class AiSessionInboxBroker {
                 PendingReplyEntry orphanedReply = pendingReplies.remove(m.id());
                 if (orphanedReply != null) {
                     notices.add(new PendingInsert(expiredNoReplyNotice(orphanedReply),
-                            orphanedReply.replyImportant(), true, null));
+                                                  orphanedReply.replyImportant(), true, null));
                 }
             }
             storedNotices = insertAllLocked(notices);
@@ -515,11 +627,13 @@ public final class AiSessionInboxBroker {
     private AiInboxMessage expiredNoReplyNotice(PendingReplyEntry orphanedReply) {
         String notifId = UUID.randomUUID().toString();
         String subject = "No reply — message expired";
+        AiSession recipient = sessionFromRegistry(orphanedReply.toSessionId());
+        String recipientName = recipient != null ? recipient.name() : orphanedReply.toSessionId();
         String body = "Your message \"" + orphanedReply.subject()
-                + "\" expired without a reply from session " + orphanedReply.toSessionId() + ".";
+                + "\" expired unanswered and was never marked replied by session " + recipientName + ".";
         return new AiInboxMessage(notifId, orphanedReply.toSessionId(), orphanedReply.fromSessionId(),
-                subject, body, orphanedReply.messageId(), orphanedReply.replyImportant(), false, false,
-                Instant.now(), null, null);
+                                  subject, body, orphanedReply.messageId(), orphanedReply.replyImportant(), false, false,
+                                  Instant.now(), null, null);
     }
 
     /**
@@ -774,8 +888,8 @@ public final class AiSessionInboxBroker {
                     String failBody = "Your message \"" + orphanedReply.subject()
                             + "\" was dropped because the recipient's inbox is full.";
                     AiInboxMessage failNotif = new AiInboxMessage(UUID.randomUUID().toString(),
-                            recipientId, orphanedReply.fromSessionId(), failSubject, failBody,
-                            evicted.id(), false, false, false, Instant.now(), null, null);
+                                                                  recipientId, orphanedReply.fromSessionId(), failSubject, failBody,
+                                                                  evicted.id(), false, false, false, Instant.now(), null, null);
                     SimpleNotification failDelivery = new SimpleNotification(
                             "Your message \"" + orphanedReply.subject()
                             + "\" was dropped because session " + recipientId + "'s inbox is full.");
@@ -791,7 +905,7 @@ public final class AiSessionInboxBroker {
             inboxMessageById.put(insert.message().id(), insert.message());
             unannouncedBySession.computeIfAbsent(recipientId, k -> new LinkedHashMap<>())
                     .put(insert.message().id(), new UnannouncedEntry(insert.message(), insert.notification(),
-                            insert.unconditionalInterrupt()));
+                                                                     insert.unconditionalInterrupt()));
             stored.add(insert.message());
         }
         return stored;
@@ -843,7 +957,7 @@ public final class AiSessionInboxBroker {
         private final boolean unconditionalInterrupt;
 
         UnannouncedEntry(AiInboxMessage message, AbstractNotification notification,
-                boolean unconditionalInterrupt) {
+                         boolean unconditionalInterrupt) {
             this.message = message;
             this.notification = notification;
             this.unconditionalInterrupt = unconditionalInterrupt;
@@ -871,7 +985,7 @@ public final class AiSessionInboxBroker {
         private final AbstractNotification notification;
 
         PendingInsert(AiInboxMessage message, boolean unconditionalInterrupt,
-                boolean systemNotice, AbstractNotification notification) {
+                      boolean systemNotice, AbstractNotification notification) {
             this.message = message;
             this.unconditionalInterrupt = unconditionalInterrupt;
             this.systemNotice = systemNotice;

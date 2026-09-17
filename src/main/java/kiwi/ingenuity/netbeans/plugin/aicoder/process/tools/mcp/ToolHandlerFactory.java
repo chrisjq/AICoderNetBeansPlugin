@@ -12,6 +12,7 @@ import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.ai.GetAiMessages
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.ai.IsAiSessionActiveTool;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.ai.ListAiSessionsTool;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.ai.ListIdleWatchersTool;
+import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.ai.MarkAiMessageRepliedTool;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.ai.ReadAiMessageTool;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.ai.SendAiMessageTool;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.ai.UpdateSessionDescriptionTool;
@@ -188,6 +189,7 @@ public final class ToolHandlerFactory {
         map.put(McpToolEnum.SEND_AI_MESSAGE, new SendAiMessageTool());
         map.put(McpToolEnum.GET_AI_MESSAGES, new GetAiMessagesTool());
         map.put(McpToolEnum.READ_AI_MESSAGE, new ReadAiMessageTool());
+        map.put(McpToolEnum.MARK_AI_MESSAGE_REPLIED, new MarkAiMessageRepliedTool());
         map.put(McpToolEnum.DELETE_AI_MESSAGE, new DeleteAiMessageTool());
         map.put(McpToolEnum.IS_AI_SESSION_ACTIVE, new IsAiSessionActiveTool());
         map.put(McpToolEnum.UPDATE_SESSION_DESCRIPTION, new UpdateSessionDescriptionTool());

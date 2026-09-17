@@ -53,6 +53,12 @@ public class BuildProjectTool extends AbstractActionTool {
     }
 
     @Override
+    public boolean requiresGlobalMutationLock() {
+        // BuildQueue serialises builds, so they must not hold the global mutation lock while waiting or running.
+        return false;
+    }
+
+    @Override
     public String handle(ToolRequestArguments args, AbstractAiSession session) {
         String projectPath = args.str(GitCommonParamEnum.PROJECT_PATH.key());
         return BuildSubmitter.submitIdeAction(

@@ -6,10 +6,13 @@ import com.google.gson.JsonObject;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Set;
+import java.util.stream.Collectors;
+import kiwi.ingenuity.netbeans.plugin.aicoder.ai.mail.AiInboxMessage;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.mail.AiSessionInboxBroker;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.McpInstructionOptionEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.McpSectionEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.McpToolEnum;
+import kiwi.ingenuity.netbeans.plugin.aicoder.process.SessionRegistry;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.session.AbstractAiSession;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.AbstractActionTool;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.McpToolSchemas;
@@ -78,6 +81,12 @@ public class DeleteAiMessageTool extends AbstractActionTool {
     }
 
     @Override
+    public boolean requiresGlobalMutationLock() {
+        // In-memory broker state has its own synchronisation.
+        return false;
+    }
+
+    @Override
     public String handle(ToolRequestArguments args, AbstractAiSession session) {
         String sessionId = args.str(DeleteAiMessageParamEnum.SESSION_ID.key());
         if (sessionId == null) {
@@ -107,8 +116,42 @@ public class DeleteAiMessageTool extends AbstractActionTool {
             return "Error: authentication failed — check that " + DeleteAiMessageParamEnum.SESSION_ID.key() + " and " + DeleteAiMessageParamEnum.SECRET_KEY.key() + " match your session identity";
         }
         List<String> distinctIds = ids.stream().distinct().toList();
+        // Snapshotted BEFORE deleting: once a message is gone, listOwedReplies can no longer see it to report on it,
+        // and a message owed by this session is necessarily already in its own inbox, so anything found here is
+        // exactly what deleteMessages is about to remove.
+        List<AiInboxMessage> owedAmongRequested = AiSessionInboxBroker.getInstance().listOwedReplies(sessionId)
+                .stream()
+                .filter(m -> distinctIds.contains(m.id()))
+                .toList();
         int deleted = AiSessionInboxBroker.getInstance().deleteMessages(sessionId, secretKey, distinctIds);
-        return deleteResultMessage(deleted, distinctIds.size());
+        return deleteResultMessage(deleted, distinctIds.size()) + owedDeletionWarning(owedAmongRequested);
+    }
+
+    /**
+     * Warns when a delete silently discarded an unanswered reply obligation: deleting a message does not mark it
+     * replied or notify its sender, so without this the sender is left waiting on a message that no longer exists to
+     * answer.
+     */
+    private static String owedDeletionWarning(List<AiInboxMessage> owed) {
+        if (owed.isEmpty()) {
+            return "";
+        }
+        String entries = owed.stream()
+                .map(m -> "id=" + m.id() + " from " + senderName(m.fromSessionId()) + " \""
+                        + (m.subject() != null && !m.subject().isBlank() ? m.subject() : "(no subject)") + "\"")
+                .collect(Collectors.joining("; "));
+        return "\nWarning: you deleted " + owed.size()
+                + " message(s) that asked for a reply and were never answered — they are not marked replied and "
+                + "their sender(s) will not be told: " + entries;
+    }
+
+    /**
+     * The sender's display name, falling back to its session id when that session has since closed — same resolution
+     * and fallback ContextProvider.senderName() uses for the equivalent case.
+     */
+    private static String senderName(String sessionId) {
+        var abs = SessionRegistry.get(sessionId);
+        return abs != null ? abs.getAiSession().name() : sessionId;
     }
 
     /**

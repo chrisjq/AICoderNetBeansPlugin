@@ -20,9 +20,9 @@ public class ReadAiMessageTool extends AbstractActionTool {
 
     public ReadAiMessageTool() {
         super(McpSectionEnum.PLUGIN,
-                McpToolEnum.READ_AI_MESSAGE.toolName(),
-                "Read and mark an inbox message by ID. It remains until " + McpToolEnum.DELETE_AI_MESSAGE.toolName() + " or expiry.",
-                McpToolEnum.READ_AI_MESSAGE.toolName() + " -> read full body of an inbox message by ID (message stays in inbox until deleted)");
+              McpToolEnum.READ_AI_MESSAGE.toolName(),
+              "Read and mark an inbox message by ID. It remains until " + McpToolEnum.DELETE_AI_MESSAGE.toolName() + " or expiry.",
+              McpToolEnum.READ_AI_MESSAGE.toolName() + " -> read full body of an inbox message by ID (message stays in inbox until deleted)");
     }
 
     @Override
@@ -67,6 +67,12 @@ public class ReadAiMessageTool extends AbstractActionTool {
     }
 
     @Override
+    public boolean requiresGlobalMutationLock() {
+        // Broker/session state has its own synchronization and needs no process-wide mutation lock.
+        return false;
+    }
+
+    @Override
     public String handle(ToolRequestArguments args, AbstractAiSession session) {
         String sessionId = args.str(ReadAiMessageParamEnum.SESSION_ID.key());
         if (sessionId == null) {
@@ -91,7 +97,7 @@ public class ReadAiMessageTool extends AbstractActionTool {
         sb.append("Server time: ").append(DateUtil.now()).append("\n");
         sb.append(msg.formatSummary()).append("\n\n").append(msg.body());
         if (readResult.firstRead() && msg.expectsReply()) {
-            sb.append("\n\n").append(NotificationUtil.formatReplyExpectedInstruction());
+            sb.append("\n\n").append(NotificationUtil.formatReplyExpectedInstruction(msg.id()));
         }
         return sb.toString();
     }

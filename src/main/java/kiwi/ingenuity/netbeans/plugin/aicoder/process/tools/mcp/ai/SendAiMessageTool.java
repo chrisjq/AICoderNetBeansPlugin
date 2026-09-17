@@ -2,12 +2,14 @@ package kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.ai;
 
 import com.google.gson.JsonArray;
 import com.google.gson.JsonObject;
+import java.util.List;
 import java.util.Set;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.mail.AiInboxMessage;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.mail.AiSessionInboxBroker;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.McpInstructionOptionEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.McpSectionEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.McpToolEnum;
+import kiwi.ingenuity.netbeans.plugin.aicoder.process.SessionRegistry;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.session.AbstractAiSession;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.AbstractActionTool;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.McpToolSchemas;
@@ -18,9 +20,9 @@ public class SendAiMessageTool extends AbstractActionTool {
 
     public SendAiMessageTool() {
         super(McpSectionEnum.PLUGIN,
-                McpToolEnum.SEND_AI_MESSAGE.toolName(),
-                "Send a message to another AI session's inbox. Use " + McpToolEnum.LIST_AI_SESSIONS.toolName() + " to find peer sessionIds.",
-                McpToolEnum.SEND_AI_MESSAGE.toolName() + " -> send to a peer AI session's inbox; use " + SendAiMessageParamEnum.EXPECTS_REPLY.key() + "+" + SendAiMessageParamEnum.REPLY_IMPORTANT.key() + " to be interrupted when they reply");
+              McpToolEnum.SEND_AI_MESSAGE.toolName(),
+              "Send a message to another AI session's inbox. Use " + McpToolEnum.LIST_AI_SESSIONS.toolName() + " to find peer sessionIds.",
+              McpToolEnum.SEND_AI_MESSAGE.toolName() + " -> send to a peer AI session's inbox; use " + SendAiMessageParamEnum.EXPECTS_REPLY.key() + "+" + SendAiMessageParamEnum.REPLY_IMPORTANT.key() + " to be interrupted when they reply");
     }
 
     @Override
@@ -40,8 +42,8 @@ public class SendAiMessageTool extends AbstractActionTool {
         JsonObject subj = new JsonObject();
         subj.addProperty(ToolSchemaKeyEnum.TYPE.key(), "string");
         subj.addProperty(ToolSchemaKeyEnum.DESCRIPTION.key(), "Short subject line (max "
-                + AiInboxMessage.MAX_SUBJECT_LENGTH + " chars). The recipient sees only this, not the body, "
-                + "when the message is delivered — make it state what you want done.");
+                         + AiInboxMessage.MAX_SUBJECT_LENGTH + " chars). The recipient sees only this, not the body, "
+                         + "when the message is delivered — make it state what you want done.");
         props.add(SendAiMessageParamEnum.SUBJECT.key(), subj);
 
         JsonObject msg = new JsonObject();
@@ -51,7 +53,7 @@ public class SendAiMessageTool extends AbstractActionTool {
 
         JsonObject replyTo = new JsonObject();
         replyTo.addProperty(ToolSchemaKeyEnum.TYPE.key(), "string");
-        replyTo.addProperty(ToolSchemaKeyEnum.DESCRIPTION.key(), "Optional ID of a message this is replying to.");
+        replyTo.addProperty(ToolSchemaKeyEnum.DESCRIPTION.key(), "ID of the message you are answering (the id= UUID from GetAiMessages/ReadAiMessage — not a <SYSTEM:…> block tag). Setting it marks that message replied; leaving it out when answering a message that expects a reply means its sender eventually gets a false no-reply notice. An ID that matches no message in your inbox is refused and nothing is sent.");
         props.add(SendAiMessageParamEnum.REPLY_TO_MESSAGE_ID.key(), replyTo);
 
         JsonObject important = new JsonObject();
@@ -102,6 +104,12 @@ public class SendAiMessageTool extends AbstractActionTool {
     @Override
     public boolean isMutating() {
         return true;
+    }
+
+    @Override
+    public boolean requiresGlobalMutationLock() {
+        // In-memory broker state has its own synchronisation.
+        return false;
     }
 
     @Override
@@ -157,6 +165,12 @@ public class SendAiMessageTool extends AbstractActionTool {
             return "Error: inter-AI communication is disabled for session '" + targetSessionId + "'";
         }
         String replyToMessageId = args.str(SendAiMessageParamEnum.REPLY_TO_MESSAGE_ID.key());
+        if (replyToMessageId != null && !replyToMessageId.isBlank()) {
+            String refusal = broker.validateReplyTo(senderId, replyToMessageId);
+            if (refusal != null) {
+                return "Error: " + refusal;
+            }
+        }
         boolean important = args.bool(SendAiMessageParamEnum.IMPORTANT.key());
         boolean expectsReply = args.bool(SendAiMessageParamEnum.EXPECTS_REPLY.key());
         // Dropped unless expectsReply is set, matching the schema's "Only meaningful when expectsReply=true".
@@ -167,7 +181,7 @@ public class SendAiMessageTool extends AbstractActionTool {
         boolean targetRunning = broker.isSessionRunning(targetSessionId);
         boolean targetAllowsImportant = broker.isImportantMessagesAllowed(targetSessionId);
         String messageId = broker.sendMessage(senderId, targetSessionId, subject, message,
-                replyToMessageId, important, expectsReply, replyImportant);
+                                              replyToMessageId, important, expectsReply, replyImportant);
         if (messageId == null) {
             return "Error: session '" + targetSessionId + "' is not active";
         }
@@ -187,6 +201,44 @@ public class SendAiMessageTool extends AbstractActionTool {
                 result += " Note: Target currently has mail interruptions disabled.";
             }
         }
+        result += owedRepliesBlock(senderId, replyToMessageId);
         return result;
+    }
+
+    /**
+     * "You still owe replies to:" reminder appended after every successful send, so the reply obligation stays visible
+     * right when the sender is already in the mail tool rather than only on the next turn's preamble (see
+     * ContextProvider.appendOwedReplies, the equivalent per-turn section). Only messages already read are listed — an
+     * unread one has not been seen yet, so surfacing it here would be the same premature-reply nudge
+     * NotificationUtilInboxTest guards the auto-delivered notification against. The message just answered by this very
+     * call is excluded, though listOwedReplies would already drop it once its respondedAt is set.
+     */
+    private static String owedRepliesBlock(String senderId, String justAnsweredId) {
+        List<AiInboxMessage> owed = AiSessionInboxBroker.getInstance().listOwedReplies(senderId).stream()
+                .filter(m -> m.readAt() != null)
+                .filter(m -> !m.id().equals(justAnsweredId))
+                .toList();
+        if (owed.isEmpty()) {
+            return "";
+        }
+        StringBuilder sb = new StringBuilder("\nYou still owe replies to:\n");
+        for (AiInboxMessage m : owed) {
+            String subject = m.subject() != null && !m.subject().isBlank() ? m.subject() : "(no subject)";
+            sb.append("- id=").append(m.id())
+                    .append(" from ").append(senderName(m.fromSessionId()))
+                    .append(" \"").append(subject).append("\"")
+                    .append(" — reply with replyToMessageId=").append(m.id())
+                    .append(", or MarkAiMessageReplied if you answered another way\n");
+        }
+        return sb.toString();
+    }
+
+    /**
+     * The sender's display name, falling back to its session id when that session has since closed — same resolution
+     * and fallback ContextProvider.senderName() uses for the equivalent case.
+     */
+    private static String senderName(String sessionId) {
+        var abs = SessionRegistry.get(sessionId);
+        return abs != null ? abs.getAiSession().name() : sessionId;
     }
 }

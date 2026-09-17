@@ -39,9 +39,15 @@ public class NotificationUtil {
         return notifBuilder.toString();
     }
 
-    public static String formatReplyExpectedInstruction() {
+    /**
+     * States the message id literally rather than telling the reader to go find "this message's id" — the only
+     * hex-shaped thing nearby in a delivered turn may be the unrelated {@code <SYSTEM:nonce>} wrapper
+     * AiTopComponent.composeAgentBlock opens around this very text, not the id itself, and the two are easy to confuse.
+     */
+    public static String formatReplyExpectedInstruction(String messageId) {
         return "A response must be sent to this message with "
-                + McpToolEnum.SEND_AI_MESSAGE.toolName() + "with the " + SendAiMessageParamEnum.REPLY_TO_MESSAGE_ID.key() + " parameter set to this message's id.";
+                + McpToolEnum.SEND_AI_MESSAGE.toolName() + " with the " + SendAiMessageParamEnum.REPLY_TO_MESSAGE_ID.key()
+                + " parameter set to \"" + messageId + "\".";
     }
 
     // Chat system messages
@@ -96,8 +102,8 @@ public class NotificationUtil {
 
     private static String formatFileRejected(String shortPath, String message) {
         return message != null && !message.isBlank()
-                ? shortPath + " — rejected: " + message.trim()
-                : shortPath + " — rejected";
+               ? shortPath + " — rejected: " + message.trim()
+               : shortPath + " — rejected";
     }
 
     public static String formatAutoAccepted(String toolName, String shortPath) {

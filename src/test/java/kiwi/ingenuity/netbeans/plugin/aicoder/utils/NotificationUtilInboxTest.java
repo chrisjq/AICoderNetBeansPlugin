@@ -25,9 +25,9 @@ class NotificationUtilInboxTest {
 
     private static AiInboxMessage message(String subject, boolean expectsReply, String replyToId) {
         return new AiInboxMessage("msg-1", "from-session", "to-session",
-                subject, "the body, which the recipient cannot see until ReadAiMessage",
-                replyToId, false, expectsReply, false,
-                Instant.now(), null, null);
+                                  subject, "the body, which the recipient cannot see until ReadAiMessage",
+                                  replyToId, false, expectsReply, false,
+                                  Instant.now(), null, null);
     }
 
     // ---- the instruction that makes a recipient fetch the body ----
@@ -35,7 +35,7 @@ class NotificationUtilInboxTest {
     void namesReadAiMessageSoTheRecipientKnowsHowToGetTheBody() {
         String text = NotificationUtil.formatInboxNotification(message("Follow-up", false, null), "Planner");
         assertTrue(text.contains("ReadAiMessage"),
-                "the body is unreachable without this tool, so the notification must name it: " + text);
+                   "the body is unreachable without this tool, so the notification must name it: " + text);
     }
 
     @Test
@@ -53,14 +53,14 @@ class NotificationUtilInboxTest {
      * Naming the tool here invited a reply to the notification itself: sessions answered "I am reviewing it" without
      * ever fetching the body, which is an acknowledgement rather than the answer that was asked for. The obligation
      * belongs with the content, so it is appended on first read instead - see
-     * {@link NotificationUtil#formatReplyExpectedInstruction()}, asserted below.
+     * {@link NotificationUtil#formatReplyExpectedInstruction(String)}, asserted below.
      */
     @Test
     void statesWhetherAReplyIsExpectedWithoutInvitingOneBeforeTheBodyIsRead() {
         String expecting = NotificationUtil.formatInboxNotification(message("Q", true, null), "Planner");
         assertTrue(expecting.contains("replyExpected=Yes"), expecting);
         assertFalse(expecting.contains("SendAiMessage"),
-                "the reply instruction belongs on first read, not on the notification: " + expecting);
+                    "the reply instruction belongs on first read, not on the notification: " + expecting);
 
         String notExpecting = NotificationUtil.formatInboxNotification(message("FYI", false, null), "Planner");
         assertFalse(notExpecting.contains("SendAiMessage"), notExpecting);
@@ -72,8 +72,28 @@ class NotificationUtilInboxTest {
      */
     @Test
     void theReplyInstructionNamesSendAiMessageForTheReadPath() {
-        assertTrue(NotificationUtil.formatReplyExpectedInstruction().contains("SendAiMessage"),
-                NotificationUtil.formatReplyExpectedInstruction());
+        assertTrue(NotificationUtil.formatReplyExpectedInstruction("msg-1").contains("SendAiMessage"),
+                   NotificationUtil.formatReplyExpectedInstruction("msg-1"));
+    }
+
+    /**
+     * Live-test-caught gap: the instruction used to say only "set to this message's id", leaving the reader to find the
+     * id elsewhere — the one hex-shaped token immediately above it in a delivered turn is the unrelated SYSTEM-block
+     * nonce, not the id, and the two are easy to confuse. The id-bearing overload states it literally.
+     */
+    @Test
+    void theReplyInstructionWithAnIdStatesItLiterally() {
+        String instruction = NotificationUtil.formatReplyExpectedInstruction("msg-42");
+
+        assertTrue(instruction.contains("SendAiMessage"), instruction);
+        assertTrue(instruction.contains("\"msg-42\""), instruction);
+        assertFalse(instruction.contains("this message's id"), instruction);
+    }
+
+    @Test
+    void theMissingSpaceBeforeWithTheIsFixed() {
+        assertTrue(NotificationUtil.formatReplyExpectedInstruction("msg-42").contains("SendAiMessage with the"),
+                   NotificationUtil.formatReplyExpectedInstruction("msg-42"));
     }
 
     // ---- the identifying fields the recipient needs ----

@@ -1,8 +1,8 @@
 package kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.opencode.acp;
 
 /**
- * JSON object field names used by OpenCode's Agent Client Protocol wire
- * messages. Values are the exact ACP field names and must not be changed.
+ * JSON object field names used by OpenCode's Agent Client Protocol wire messages. Values are the exact ACP field names
+ * and must not be changed.
  */
 public enum AcpJsonKeyEnum {
     JSONRPC("jsonrpc", "JSON-RPC protocol version field"),
@@ -30,6 +30,8 @@ public enum AcpJsonKeyEnum {
     TEXT("text", "Text content"),
     TITLE("title", "Tool-call title"),
     KIND("kind", "Tool-call kind"),
+    TOOL_CALL_ID("toolCallId", "Tool-call identifier"),
+    STATUS("status", "Tool-call lifecycle status"),
     TOOL_CALL("toolCall", "Permission request tool call"),
     OUTCOME("outcome", "Permission outcome object or selection"),
     OPTION_ID("optionId", "Selected permission option"),

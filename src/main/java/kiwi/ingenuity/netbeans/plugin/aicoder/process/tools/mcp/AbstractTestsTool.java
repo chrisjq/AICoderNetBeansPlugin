@@ -76,6 +76,12 @@ public abstract class AbstractTestsTool implements McpToolInterface {
         return McpToolSchemas.applyCredentialsIfRequested(tool, options);
     }
 
+    @Override
+    public boolean requiresGlobalMutationLock() {
+        // BuildQueue serialises builds, so they must not hold the global mutation lock while waiting or running.
+        return false;
+    }
+
     /**
      * Hook for a build-system-specific test tool (RunMavenTests/RunGradleTests/RunAntTests) to add its own build
      * options beyond the shared {@code projectPath}/{@code testClass} (#5 / F2) — see

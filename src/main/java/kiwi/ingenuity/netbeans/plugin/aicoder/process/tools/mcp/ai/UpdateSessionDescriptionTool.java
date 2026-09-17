@@ -17,9 +17,9 @@ public class UpdateSessionDescriptionTool extends AbstractActionTool {
 
     public UpdateSessionDescriptionTool() {
         super(McpSectionEnum.PLUGIN,
-                McpToolEnum.UPDATE_SESSION_DESCRIPTION.toolName(),
-                "Update the session description visible to peer sessions.",
-                McpToolEnum.UPDATE_SESSION_DESCRIPTION.toolName() + " -> call at session start to identify your role to peer sessions (visible in " + McpToolEnum.LIST_AI_SESSIONS.toolName() + ")");
+              McpToolEnum.UPDATE_SESSION_DESCRIPTION.toolName(),
+              "Update the session description visible to peer sessions.",
+              McpToolEnum.UPDATE_SESSION_DESCRIPTION.toolName() + " -> call at session start to identify your role to peer sessions (visible in " + McpToolEnum.LIST_AI_SESSIONS.toolName() + ")");
     }
 
     @Override
@@ -38,9 +38,9 @@ public class UpdateSessionDescriptionTool extends AbstractActionTool {
         JsonObject tool = new JsonObject();
         tool.addProperty(ToolSchemaKeyEnum.NAME.key(), McpToolEnum.UPDATE_SESSION_DESCRIPTION.toolName());
         tool.addProperty(ToolSchemaKeyEnum.DESCRIPTION.key(),
-                options.contains(McpInstructionOptionEnum.CREDENTIALS)
-                ? "Update the session description visible to peer sessions."
-                : "Update your session's description visible to peer sessions.");
+                         options.contains(McpInstructionOptionEnum.CREDENTIALS)
+                         ? "Update the session description visible to peer sessions."
+                         : "Update your session's description visible to peer sessions.");
         JsonObject schema = new JsonObject();
         schema.addProperty(ToolSchemaKeyEnum.TYPE.key(), "object");
         JsonObject props = new JsonObject();
@@ -75,6 +75,12 @@ public class UpdateSessionDescriptionTool extends AbstractActionTool {
     @Override
     public boolean isMutating() {
         return true;
+    }
+
+    @Override
+    public boolean requiresGlobalMutationLock() {
+        // Broker/session state has its own synchronization and needs no process-wide mutation lock.
+        return false;
     }
 
     @Override
