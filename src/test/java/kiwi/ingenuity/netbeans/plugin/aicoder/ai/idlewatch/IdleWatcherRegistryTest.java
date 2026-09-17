@@ -11,6 +11,7 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import org.junit.jupiter.api.AfterEach;
 import static org.junit.jupiter.api.Assertions.*;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -36,6 +37,11 @@ class IdleWatcherRegistryTest {
         probe = new FakeProbe();
         delivery = new RecordingDelivery();
         registry = new IdleWatcherRegistry(clock, delivery, probe, false);
+    }
+
+    @AfterEach
+    void tearDown() {
+        registry.shutdown();
     }
 
     private static IdleWatcherStatus onlyStatus(IdleWatcherRegistry registry, String watcherSessionId) {
@@ -367,6 +373,87 @@ class IdleWatcherRegistryTest {
         registry.checkNow();
 
         assertEquals(due, registry.nextCheckAt(), "due 2 minutes out is farther than the 10s floor, so due wins");
+    }
+
+    @Test
+    void shutdownClearsWatchersAndStopsTheScheduler() {
+        probe.open.add("target");
+        IdleWatcherRegistry live = new IdleWatcherRegistry(clock, delivery, probe, true);
+        try {
+            live.create("watcher", "target", MIN, false, false, null);
+            assertEquals(1, live.list("watcher").size());
+            assertTrue(live.hasScheduler(), "arming an idle-target watcher must start the scheduler");
+
+            live.shutdown();
+
+            assertTrue(live.list("watcher").isEmpty(), "shutdown must clear every watcher");
+            assertFalse(live.hasScheduler(), "shutdown must tear the scheduler down");
+            assertNull(live.nextCheckAt());
+            assertTrue(delivery.calls.isEmpty(), "shutdown itself must deliver nothing");
+        }
+        finally {
+            live.shutdown();
+        }
+    }
+
+    @Test
+    void onSessionIdleAfterShutdownDoesNotRecreateTheScheduler() {
+        probe.open.add("target");
+        IdleWatcherRegistry live = new IdleWatcherRegistry(clock, delivery, probe, true);
+        try {
+            live.create("watcher", "target", MIN, false, false, null);
+            assertTrue(live.hasScheduler());
+
+            live.shutdown();
+            assertFalse(live.hasScheduler());
+
+            live.onSessionIdle("target");
+
+            assertFalse(live.hasScheduler(), "a late idle notice must never recreate the scheduler");
+            assertTrue(live.list("watcher").isEmpty(), "a late idle notice must not resurrect state");
+            assertTrue(delivery.calls.isEmpty());
+        }
+        finally {
+            live.shutdown();
+        }
+    }
+
+    @Test
+    void shutdownIsIdempotent() {
+        probe.open.add("target");
+        registry.create("watcher", "target", MIN, false, false, null);
+
+        registry.shutdown();
+        registry.shutdown();
+
+        assertTrue(registry.list("watcher").isEmpty());
+        assertNull(registry.nextCheckAt());
+        assertTrue(delivery.calls.isEmpty());
+    }
+
+    @Test
+    void createAfterShutdownThrows() {
+        probe.open.add("target");
+
+        registry.shutdown();
+
+        IllegalStateException ex = assertThrows(IllegalStateException.class,
+                                                () -> registry.create("watcher", "target", MIN, false, false, null));
+        assertTrue(ex.getMessage().toLowerCase().contains("shut down"));
+        assertTrue(registry.list("watcher").isEmpty(), "the refused create must leave no watcher behind");
+    }
+
+    @Test
+    void shutdownDeliversNoNoticesEvenForDueWatchers() {
+        probe.open.add("target");
+        registry.create("watcher", "target", MIN, false, false, null);
+        clock.advance(MIN);
+
+        registry.shutdown();
+
+        assertTrue(delivery.calls.isEmpty(), "shutdown must drop a due watcher without delivering");
+        registry.checkNow();
+        assertTrue(delivery.calls.isEmpty(), "a post-shutdown check has nothing left to deliver");
     }
 
     private static final class MutableClock extends Clock {

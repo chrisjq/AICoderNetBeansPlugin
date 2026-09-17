@@ -166,17 +166,26 @@ public final class AiTopComponent extends TopComponent implements AiProcessEvent
      * has to be true in both.</p>
      *
      * <p>
-     * The second paragraph is the harder half. An aborted call MAY ALREADY HAVE TAKEN EFFECT — the interrupt can land
-     * after the call did its work, so "rejected" describes the interrupt, not the outcome. Observed twice in one day: a
+     * F5: Claude and OpenCode now HOLD a Mail interrupt while a tool call is in flight and deliver it once the call
+     * returns — a 180 s safety valve backstops a call that never reports a terminal status — live-verified for both. A
+     * completed call with a real result is therefore the NORMAL case, not the exception, and the notice leads with
+     * that. An abort can still happen (the safety valve, or the host's own cancellation), so the second paragraph keeps
+     * the outcome as UNKNOWN for that residual case rather than dropping it.</p>
+     *
+     * <p>
+     * "May already have taken effect" is deliberate, not hedging for its own sake: observed twice in one day, a
      * SendAiMessage reported as rejected WAS delivered, and the session told the user it had never been sent, which
      * cost a round trip to undo. "Rejected" reads as "it did not happen", so the notice has to say outright that it may
      * have.</p>
      */
     private static final String INBOX_INTERRUPT_EXPLANATION
-            = "Your turn was interrupted so an inbox message or build result could reach you. That interrupt is what aborted any tool "
-            + "call or task that was in flight — NOT a rejection, cancellation, or refusal by the user. Do not tell the user "
-            + "they declined or rejected anything.\n\n"
-            + "IMPORTANT: a tool call reported to you as rejected or cancelled MAY HAVE ALREADY RUN. Check its result. Read your inbox and resume your work.";
+            = "Your turn was interrupted by the plugin so an inbox message or build result could reach you — NOT by the "
+            + "user. Do not tell the user they declined, rejected or cancelled anything.\n\n"
+            + "A tool call that was running when the message arrived is normally allowed to finish first, so a result "
+            + "you received is real. If a tool call is instead reported to you as rejected, cancelled or \"the user "
+            + "doesn't want to proceed\", it was aborted by this incoming message and its outcome is UNKNOWN: it may "
+            + "already have taken effect. Check its effect (re-read the file, ListBuilds, GetAiMessages, GetGitStatus…) "
+            + "before repeating it. Then read your inbox and resume your work.";
     /**
      * @param userInitiated false when the plugin submits a turn on the user's behalf — currently the
      * queued-inbox-notification flush at turn end. Only the auto-scroll decision depends on it: a turn the user did not

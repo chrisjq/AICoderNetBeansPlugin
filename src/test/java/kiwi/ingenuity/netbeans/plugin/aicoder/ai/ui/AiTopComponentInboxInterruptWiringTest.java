@@ -488,11 +488,13 @@ class AiTopComponentInboxInterruptWiringTest {
     void theWordingWarnsThatAnAbortedCallMayHaveAlreadyRun() throws IOException {
         String wording = explanationText();
 
-        assertTrue(wording.contains("MAY HAVE ALREADY RUN"),
-                   "the notice must say an aborted call may have taken effect: " + wording);
-        assertTrue(wording.contains("Check its result."),
-                   "it must direct the session to check the interrupted call's result: " + wording);
-        assertTrue(wording.contains("Read your inbox and resume your work."),
+        assertTrue(wording.contains("outcome is UNKNOWN"),
+                   "the notice must say an aborted call's outcome is unknown: " + wording);
+        assertTrue(wording.contains("may already have taken effect"),
+                   "it must say a rejected/cancelled call may already have taken effect: " + wording);
+        assertTrue(wording.contains("Check its effect"),
+                   "it must direct the session to check the interrupted call's effect: " + wording);
+        assertTrue(wording.contains("Then read your inbox and resume your work."),
                    "it must direct the session to process mail before resuming: " + wording);
     }
 
@@ -504,7 +506,20 @@ class AiTopComponentInboxInterruptWiringTest {
     void theWordingStillDeniesAUserRejection() throws IOException {
         String wording = explanationText();
 
-        assertTrue(wording.contains("NOT a rejection, cancellation, or refusal by the user"), wording);
-        assertTrue(wording.contains("Do not tell the user they declined or rejected anything"), wording);
+        assertTrue(wording.contains("NOT by the user"), wording);
+        assertTrue(wording.contains("Do not tell the user they declined, rejected or cancelled anything"), wording);
+    }
+
+    /**
+     * F5: the hold makes a completed call the NORMAL case now, not the exception — Claude and OpenCode both wait for an
+     * in-flight tool call before delivering the interrupt (safety-valve backstopped), so the wording must lead with
+     * that rather than opening on the residual abort case.
+     */
+    @Test
+    void theWordingLeadsWithTheCompletedCallBeingTheNormalCase() throws IOException {
+        String wording = explanationText();
+
+        assertTrue(wording.contains("normally allowed to finish first"), wording);
+        assertTrue(wording.contains("a result you received is real"), wording);
     }
 }

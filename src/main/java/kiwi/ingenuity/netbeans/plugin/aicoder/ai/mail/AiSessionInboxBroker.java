@@ -132,9 +132,10 @@ public final class AiSessionInboxBroker {
     }
 
     /**
-     * Unregisters a session. Senders of unread messages are notified of non-delivery. Senders whose messages were read
-     * but not yet replied to (expectsReply=true) receive a "no reply" notification; if replyImportant was set, the
-     * sender is interrupted regardless of their own setting.
+     * Unregisters a session. Senders of messages the exiting session never opened (never read with ReadAiMessage and
+     * never answered) are told it exited without reading them — the messages WERE delivered to its inbox, just not
+     * read. Senders whose messages were read but not yet replied to (expectsReply=true) receive a separate "no reply"
+     * notification; if replyImportant was set, the sender is interrupted regardless of their own setting.
      */
     public void unregister(String sessionId) {
         List<AiInboxMessage> unread;
@@ -151,9 +152,12 @@ public final class AiSessionInboxBroker {
             // are still queued in other recipients' backlogs stay queued, since those inbox copies
             // remain readable there.
             unannouncedBySession.remove(sessionId);
-            // Read messages remain in the inbox, but only unread ones are undelivered.
-            // A replied-to message is no longer pending, so the pending check below cannot exclude it.
-            unread = removedMessages.stream().filter(m -> m.readAt() == null).toList();
+            // Only messages never explicitly read (ReadAiMessage) are "not opened". A message that was
+            // answered proves it was handled even if never read, so it is excluded here too; the
+            // pending-reply check below excludes whatever still expects a reply.
+            unread = removedMessages.stream()
+                    .filter(m -> m.readAt() == null && m.respondedAt() == null)
+                    .toList();
             // Collect pending entries where the exiting session was the recipient
             pendingAsRecipient = pendingReplies.values().stream()
                     .filter(e -> e.toSessionId().equals(sessionId))
@@ -167,12 +171,12 @@ public final class AiSessionInboxBroker {
             return;
         }
         // Messages covered by pending entries get a "no reply" notification below,
-        // not the generic "undelivered" one, to avoid notifying the sender twice.
+        // not the generic "not read" one, to avoid notifying the sender twice.
         Set<String> pendingMessageIds = pendingAsRecipient.stream()
                 .map(PendingReplyEntry::messageId)
                 .collect(Collectors.toSet());
 
-        // "Undelivered" notifications for unread messages without an expectsReply entry
+        // "Not read" notifications for unopened messages without an expectsReply entry
         Map<String, Boolean> senderImportant = new LinkedHashMap<>();
         Map<String, List<String>> senderSubjects = new LinkedHashMap<>();
         for (AiInboxMessage msg : unread) {
@@ -196,14 +200,15 @@ public final class AiSessionInboxBroker {
             }
             List<String> subjects = senderSubjects.get(senderId);
             String notifId = UUID.randomUUID().toString();
-            String notifSubject = "Undelivered — session " + sessionId + " exited";
-            String notifBody = "Session '" + sessionId + "' exited with "
-                    + subjects.size() + " unread message(s) from you. Subjects: "
-                    + subjects.stream().map(s -> "\"" + s + "\"").collect(Collectors.joining(", "));
+            String notifSubject = "Not read — session " + exitingName + " exited";
+            String notifBody = "Session " + exitingName
+                    + " exited with message(s) from you it never opened: "
+                    + subjects.stream().map(s -> "\"" + s + "\"").collect(Collectors.joining(", "))
+                    + ". They were delivered to its inbox but not read.";
             AiInboxMessage notification = new AiInboxMessage(notifId, sessionId, senderId,
                                                              notifSubject, notifBody, null, wasImportant, false, false,
                                                              Instant.now(), null, null);
-            String deliveryNote = "Session " + sessionId + " exited — your message(s) were not delivered: "
+            String deliveryNote = "Session " + exitingName + " exited — it never opened your message(s): "
                     + subjects.stream().map(s -> "\"" + s + "\"").collect(Collectors.joining(", "));
             List<AiInboxMessage> stored;
             synchronized (lock) {

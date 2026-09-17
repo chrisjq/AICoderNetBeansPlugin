@@ -8,6 +8,7 @@ import java.util.logging.Level;
 import java.util.logging.Logger;
 import javax.swing.SwingUtilities;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.AiTypeRegistry;
+import kiwi.ingenuity.netbeans.plugin.aicoder.ai.idlewatch.IdleWatcherRegistry;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.mail.AiSessionInboxBroker;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.ui.AiTopComponent;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.locking.LockManager;
@@ -127,6 +128,14 @@ public class Installer extends ModuleInstall {
             AiSessionInboxBroker.getInstance().shutdownNotifier();
             AiSessionInboxBroker.getInstance().shutdownSweeper();
             LockManager.getInstance().shutdown();
+            // The AI tabs were closed above, so every TARGET_CLOSED notice has already gone out; now the idle-watcher
+            // scheduler can be torn down explicitly so a disabled module's classloader is not pinned by its thread.
+            try {
+                IdleWatcherRegistry.getInstance().shutdown();
+            }
+            catch (RuntimeException e) {
+                LOG.log(Level.WARNING, "Error shutting down the idle watcher registry", e);
+            }
             AiTypeRegistry.shutdownLifecycles();
             TempFileRegistry.cleanupAll();
         }

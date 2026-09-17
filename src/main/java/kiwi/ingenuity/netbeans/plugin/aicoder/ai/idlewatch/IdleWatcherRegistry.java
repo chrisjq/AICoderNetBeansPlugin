@@ -33,6 +33,10 @@ import kiwi.ingenuity.netbeans.plugin.aicoder.process.session.AbstractAiSession;
  * Test seams: the constructor is package-private and takes a {@link Clock}, the delivery, the probe, and whether a real
  * scheduler thread may be used. With {@code useSchedulerThread == false} no thread is ever created and
  * {@link #checkNow} must be driven by the test directly.
+ * <p>
+ * Shutdown is explicit and final: {@link #shutdown()} cancels the pending check, stops the scheduler thread, clears
+ * every watcher and delivers nothing; afterwards {@link #create} throws {@link IllegalStateException} and the scheduler
+ * is never recreated — a safeguard for a disabled module's classloader.
  */
 public final class IdleWatcherRegistry {
 
@@ -65,9 +69,40 @@ public final class IdleWatcherRegistry {
     private Instant lastCheckAt;
     private ScheduledExecutorService scheduler;
     private ScheduledFuture<?> pendingCheck;
+    /**
+     * Set by {@link #shutdown()}: the registry is permanently closed. Guarded by {@code lock}.
+     */
+    private boolean shutdown;
 
     public static IdleWatcherRegistry getInstance() {
         return INSTANCE;
+    }
+
+    /**
+     * Permanently closes the registry. Under the lock: cancels the pending check, shuts the scheduler down
+     * ({@code shutdownNow}) and nulls it, clears every watcher and the recorded idle-since map, and sets the shutdown
+     * flag. Delivers NO notices — callers must have already resolved watchers (e.g. delivered a TARGET_CLOSED for each
+     * open tab) before invoking this.
+     * <p>
+     * After {@code shutdown()}: {@link #create} throws {@link IllegalStateException}, the remaining public APIs are
+     * no-ops, and the scheduler is never recreated even if a late {@code onSessionIdle}/{@code create} arrives — a
+     * safeguard so a disabled module's classloader is not pinned by a lingering thread. Idempotent.
+     */
+    public void shutdown() {
+        synchronized (lock) {
+            if (shutdown) {
+                return;
+            }
+            shutdown = true;
+            cancelPendingCheck();
+            shutdownScheduler();
+            watchers.clear();
+            idleSinceByTarget.clear();
+            lastCheckAt = null;
+            if (PluginSettings.isDebugJson()) {
+                LOG.log(Level.INFO, "Idle watcher registry shut down");
+            }
+        }
     }
 
     IdleWatcherRegistry(Clock clock, IdleWatchDelivery delivery, IdleSessionProbe probe, boolean useSchedulerThread) {
@@ -116,6 +151,7 @@ public final class IdleWatcherRegistry {
      *
      * @throws IllegalArgumentException for a null or blank id, watcher == target, a null or too-short timeout, or a
      * target that is not open
+     * @throws IllegalStateException if the registry has been {@link #shutdown()}
      */
     public IdleWatcher create(String watcherSessionId, String targetSessionId, Duration timeout, boolean recurring,
                               boolean interrupt, String note) {
@@ -140,6 +176,9 @@ public final class IdleWatcherRegistry {
         IdleWatcher watcher = new IdleWatcher("idle-watch-" + NEXT_ID.getAndIncrement(), watcherSessionId,
                                               targetSessionId, timeout, recurring, interrupt, note, clock.instant());
         synchronized (lock) {
+            if (shutdown) {
+                throw new IllegalStateException("Idle watcher registry is shut down");
+            }
             WatchStatus status = new WatchStatus(watcher, probe.displayName(targetSessionId));
             if (!probe.isRunning(targetSessionId)) {
                 Instant idleSince = idleSinceByTarget.get(targetSessionId);
@@ -205,6 +244,9 @@ public final class IdleWatcherRegistry {
      */
     public void onSessionBusy(String sessionId) {
         synchronized (lock) {
+            if (shutdown) {
+                return;
+            }
             idleSinceByTarget.remove(sessionId);
             for (WatchStatus status : watchers.values()) {
                 if (status.watcher.targetSessionId().equals(sessionId)) {
@@ -222,6 +264,9 @@ public final class IdleWatcherRegistry {
      */
     public void onSessionIdle(String sessionId) {
         synchronized (lock) {
+            if (shutdown) {
+                return;
+            }
             Instant idleSince = idleSinceByTarget.get(sessionId);
             if (idleSince == null) {
                 idleSince = clock.instant();
@@ -246,6 +291,9 @@ public final class IdleWatcherRegistry {
     public void onSessionClosed(String sessionId) {
         List<WatchStatus> targetClosed = new ArrayList<>();
         synchronized (lock) {
+            if (shutdown) {
+                return;
+            }
             watchers.values().removeIf(status -> {
                 if (status.watcher.watcherSessionId().equals(sessionId)) {
                     return true;
@@ -361,10 +409,22 @@ public final class IdleWatcherRegistry {
     }
 
     /**
+     * Package-private test seam: whether the scheduler executor currently exists. False after {@link #shutdown()}.
+     */
+    boolean hasScheduler() {
+        synchronized (lock) {
+            return scheduler != null;
+        }
+    }
+
+    /**
      * Reschedules the next check after any state change: cancels the pending wake-up, computes the next check time, and
      * either re-arms the scheduler or shuts it down when no clock is running. Caller holds the lock.
      */
     private void reschedule() {
+        if (shutdown) {
+            return;
+        }
         if (!useSchedulerThread) {
             return;
         }

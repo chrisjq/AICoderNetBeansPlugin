@@ -299,4 +299,63 @@ class AiSessionInboxBrokerReplyTrackingTest {
         f.setAccessible(true);
         return (Map<String, Object>) f.get(broker);
     }
+
+    @Test
+    void answeredButUnreadMessageIsNotListedOnExit() {
+        AiSession sender = stubSession("ug-a", "SenderAI");
+        AiSession target = stubSession("ug-b", "TargetAI");
+        broker.register(sender);
+        broker.register(target);
+
+        String id = broker.sendMessage("ug-a", "ug-b", "answer me", "body", null, false, true, false);
+        // Answered with a genuine replyToMessageId but never read with ReadAiMessage: the answer proves it
+        // was handled, so the exit must not claim it was "never opened".
+        broker.sendMessage("ug-b", "ug-a", "Re: answer me", "here it is", id);
+
+        broker.unregister("ug-b");
+
+        List<String> subjects = broker.listInbox("ug-a", sender.secret()).stream()
+                .map(AiInboxMessage::subject)
+                .collect(Collectors.toList());
+        assertEquals(List.of("Re: answer me"), subjects,
+                     "answered-but-unread message must not appear in an exit notice: " + subjects);
+    }
+
+    @Test
+    void unreadUnansweredMessageIsListedWithNotReadWording() {
+        AiSession sender = stubSession("ug2-a", "SenderAI");
+        AiSession target = stubSession("ug2-b", "TargetAI");
+        broker.register(sender);
+        broker.register(target);
+
+        broker.sendMessage("ug2-a", "ug2-b", "open me", "body", null);
+        broker.unregister("ug2-b");
+
+        AiInboxMessage notice = broker.listInbox("ug2-a", sender.secret()).stream()
+                .filter(m -> m.subject().startsWith("Not read"))
+                .findFirst().orElseThrow();
+        assertTrue(notice.subject().contains("TargetAI"), notice.subject());
+        assertTrue(notice.body().contains("exited with message(s) from you it never opened: \"open me\""),
+                   notice.body());
+        assertTrue(notice.body().contains("They were delivered to its inbox but not read."), notice.body());
+    }
+
+    @Test
+    void noReplyPathStillFiresForUnansweredExpectsReplyOnExit() {
+        AiSession sender = stubSession("ug3-a", "SenderAI");
+        AiSession target = stubSession("ug3-b", "TargetAI");
+        broker.register(sender);
+        broker.register(target);
+
+        broker.sendMessage("ug3-a", "ug3-b", "answer me", "body", null, false, true, false);
+        broker.unregister("ug3-b");
+
+        List<String> subjects = broker.listInbox("ug3-a", sender.secret()).stream()
+                .map(AiInboxMessage::subject)
+                .collect(Collectors.toList());
+        assertTrue(subjects.stream().anyMatch(s -> s.startsWith("No reply")),
+                   "unanswered expects-reply message still fires the no-reply notice: " + subjects);
+        assertTrue(subjects.stream().noneMatch(s -> s.startsWith("Not read")),
+                   "must not also be listed in the generic not-read notice: " + subjects);
+    }
 }
