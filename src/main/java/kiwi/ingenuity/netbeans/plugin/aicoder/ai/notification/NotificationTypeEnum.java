@@ -23,7 +23,14 @@ public enum NotificationTypeEnum {
      * complete, self-identifying line ("BUILD: ..."), so gluing another marker in front of it would duplicate what the
      * line already says.
      */
-    BUILD_COMPLETE("", true, false);
+    BUILD_COMPLETE("", true, false),
+    /**
+     * An idle watcher firing: the target AI has now been continuously idle for the watcher's timeout, or the target
+     * session closed (which is never an idle event). The prefix is deliberately blank: {@link
+     * IdleWatcherNotification#text} already produces one complete, self-identifying line ("IDLE WATCH: ..."), so gluing
+     * another marker in front of it would duplicate what the line already says.
+     */
+    IDLE_WATCHER("", true, false);
 
     private final String prefix;
     private final boolean rendersAsSystemMessage;

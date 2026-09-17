@@ -17,6 +17,7 @@ public class AiSessionSettings {
     private volatile Boolean allowInterAiComms;
     private volatile Boolean autoNotifyInbox;
     private volatile Boolean allowImportantMessages;
+    private volatile Boolean allowIdleWatcherTimer;
     private volatile String sessionInstructions;
     private volatile Boolean autoAccept;
     private volatile Boolean allowWebRequests;
@@ -47,24 +48,24 @@ public class AiSessionSettings {
     }
 
     public AiSessionSettings(Integer maxHistory, Boolean restrictToProjectFiles,
-            Boolean allowInterAiComms, Boolean autoNotifyInbox,
-            Boolean allowImportantMessages, String sessionInstructions,
-            Boolean autoAccept, Boolean allowWebRequests) {
+                             Boolean allowInterAiComms, Boolean autoNotifyInbox,
+                             Boolean allowImportantMessages, String sessionInstructions,
+                             Boolean autoAccept, Boolean allowWebRequests) {
         this(maxHistory, restrictToProjectFiles, allowInterAiComms, autoNotifyInbox,
-                allowImportantMessages, sessionInstructions, autoAccept,
-                allowWebRequests, null, null, null, null, null, null, null, null,
-                null);
+             allowImportantMessages, sessionInstructions, autoAccept,
+             allowWebRequests, null, null, null, null, null, null, null, null,
+             null);
     }
 
     public AiSessionSettings(Integer maxHistory, Boolean restrictToProjectFiles,
-            Boolean allowInterAiComms, Boolean autoNotifyInbox,
-            Boolean allowImportantMessages, String sessionInstructions,
-            Boolean autoAccept, Boolean allowWebRequests,
-            Boolean allowWebRequestGet, Boolean allowWebRequestPost,
-            Boolean allowWebRequestPut, Boolean allowWebRequestPatch,
-            Boolean allowWebRequestDelete, Boolean allowWebRequestHead,
-            Boolean allowWebRequestOptions, Boolean allowWebRequestHeaders,
-            Boolean allowWebRequestBody) {
+                             Boolean allowInterAiComms, Boolean autoNotifyInbox,
+                             Boolean allowImportantMessages, String sessionInstructions,
+                             Boolean autoAccept, Boolean allowWebRequests,
+                             Boolean allowWebRequestGet, Boolean allowWebRequestPost,
+                             Boolean allowWebRequestPut, Boolean allowWebRequestPatch,
+                             Boolean allowWebRequestDelete, Boolean allowWebRequestHead,
+                             Boolean allowWebRequestOptions, Boolean allowWebRequestHeaders,
+                             Boolean allowWebRequestBody) {
         this.maxHistory = maxHistory;
         this.restrictToProjectFiles = restrictToProjectFiles;
         this.allowInterAiComms = allowInterAiComms;
@@ -110,6 +111,10 @@ public class AiSessionSettings {
 
     public Boolean allowImportantMessages() {
         return allowImportantMessages;
+    }
+
+    public Boolean allowIdleWatcherTimer() {
+        return allowIdleWatcherTimer;
     }
 
     public String sessionInstructions() {
@@ -169,6 +174,10 @@ public class AiSessionSettings {
 
     public boolean effectiveAllowImportantMessages() {
         return allowImportantMessages != null ? allowImportantMessages : PluginSettings.isAllowImportantMessages();
+    }
+
+    public boolean effectiveAllowIdleWatcherTimer() {
+        return allowIdleWatcherTimer != null ? allowIdleWatcherTimer : PluginSettings.isAllowIdleWatcherTimer();
     }
 
     public boolean effectiveAutoAccept() {
@@ -278,6 +287,10 @@ public class AiSessionSettings {
         this.allowImportantMessages = newAllowImportantMessages;
     }
 
+    public void setAllowIdleWatcherTimer(Boolean newAllowIdleWatcherTimer) {
+        this.allowIdleWatcherTimer = newAllowIdleWatcherTimer;
+    }
+
     public void setSessionInstructions(String newSessionInstructions) {
         this.sessionInstructions = newSessionInstructions;
     }
@@ -372,6 +385,9 @@ public class AiSessionSettings {
         if (allowImportantMessages == null) {
             allowImportantMessages = PluginSettings.isAllowImportantMessages();
         }
+        if (allowIdleWatcherTimer == null) {
+            allowIdleWatcherTimer = PluginSettings.isAllowIdleWatcherTimer();
+        }
         if (autoAccept == null) {
             autoAccept = PluginSettings.isAutoAccept();
         }
@@ -433,6 +449,9 @@ public class AiSessionSettings {
         }
         if (allowImportantMessages != null) {
             cfgObj.addProperty(AiSessionSettingsKeyEnum.ALLOW_IMPORTANT_MESSAGES.key(), allowImportantMessages);
+        }
+        if (allowIdleWatcherTimer != null) {
+            cfgObj.addProperty(AiSessionSettingsKeyEnum.ALLOW_IDLE_WATCHER_TIMER.key(), allowIdleWatcherTimer);
         }
         if (sessionInstructions != null) {
             cfgObj.addProperty(AiSessionSettingsKeyEnum.SESSION_INSTRUCTIONS.key(), sessionInstructions);

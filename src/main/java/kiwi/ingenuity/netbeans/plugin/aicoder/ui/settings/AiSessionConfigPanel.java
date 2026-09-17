@@ -43,6 +43,7 @@ public final class AiSessionConfigPanel extends JPanel {
         target.setAllowInterAiComms(source.allowInterAiComms());
         target.setAutoNotifyInbox(source.autoNotifyInbox());
         target.setAllowImportantMessages(source.allowImportantMessages());
+        target.setAllowIdleWatcherTimer(source.allowIdleWatcherTimer());
         target.setAllowWebRequests(source.allowWebRequests());
         for (WebRequestAccessOptionEnum option : WebRequestAccessOptionEnum.values()) {
             target.setAllowWebRequestAccess(option, source.allowWebRequestAccess(option));
@@ -122,7 +123,7 @@ public final class AiSessionConfigPanel extends JPanel {
         database = new DatabaseAccessSettingsPanel(sessionLabels);
         git = new GitAccessSettingsPanel(sessionLabels);
         restrict.setText(sessionLabels ? AccessControlLabelEnum.RESTRICT_TO_PROJECT_FILES.displayLabel()
-                : AccessControlLabelEnum.RESTRICT_TO_PROJECT_FILES.globalLabel());
+                         : AccessControlLabelEnum.RESTRICT_TO_PROJECT_FILES.globalLabel());
         setLayout(new GridBagLayout());
         GridBagConstraints c = new GridBagConstraints();
         c.insets = new Insets(4, 4, 4, 4);
@@ -218,6 +219,7 @@ public final class AiSessionConfigPanel extends JPanel {
         PluginSettings.setAllowInterAiComms(values.allowInterAiComms());
         PluginSettings.setAutoNotifyInbox(values.autoNotifyInbox());
         PluginSettings.setAllowImportantMessages(values.allowImportantMessages());
+        PluginSettings.setAllowIdleWatcherTimer(values.allowIdleWatcherTimer());
         PluginSettings.setAutoAccept(values.autoAccept());
         PluginSettings.setAllowWebRequests(values.allowWebRequests());
         for (WebRequestAccessOptionEnum option : WebRequestAccessOptionEnum.values()) {
@@ -302,6 +304,7 @@ public final class AiSessionConfigPanel extends JPanel {
         result.setAllowInterAiComms(messaging.isAllowInterAiSelected());
         result.setAutoNotifyInbox(messaging.isAutoNotifySelected());
         result.setAllowImportantMessages(messaging.isAllowImportantSelected());
+        result.setAllowIdleWatcherTimer(messaging.isAllowIdleWatcherSelected());
         result.setAllowWebRequests(web.isAllowWebRequestsSelected());
         for (WebRequestAccessOptionEnum option : WebRequestAccessOptionEnum.values()) {
             result.setAllowWebRequestAccess(option, web.isOptionSelected(option));
@@ -365,6 +368,7 @@ public final class AiSessionConfigPanel extends JPanel {
         messaging.setAllowInterAiSelected(settings.effectiveAllowInterAiComms());
         messaging.setAutoNotifySelected(settings.effectiveAutoNotifyInbox());
         messaging.setAllowImportantSelected(settings.effectiveAllowImportantMessages());
+        messaging.setAllowIdleWatcherSelected(settings.effectiveAllowIdleWatcherTimer());
         web.setAllowWebRequestsSelected(settings.effectiveAllowWebRequests());
         for (WebRequestAccessOptionEnum option : WebRequestAccessOptionEnum.values()) {
             web.setOptionSelected(option, settings.effectiveAllowWebRequestAccess(option));

@@ -52,6 +52,7 @@ public final class ConfigTemplate {
         target.setAllowInterAiComms(source.effectiveAllowInterAiComms());
         target.setAutoNotifyInbox(source.effectiveAutoNotifyInbox());
         target.setAllowImportantMessages(source.effectiveAllowImportantMessages());
+        target.setAllowIdleWatcherTimer(source.effectiveAllowIdleWatcherTimer());
         target.setAutoAccept(source.effectiveAutoAccept());
         target.setAllowWebRequests(source.effectiveAllowWebRequests());
         for (WebRequestAccessOptionEnum option : WebRequestAccessOptionEnum.values()) {

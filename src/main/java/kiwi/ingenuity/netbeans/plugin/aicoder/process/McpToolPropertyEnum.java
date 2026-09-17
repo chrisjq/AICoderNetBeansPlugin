@@ -179,6 +179,10 @@ public enum McpToolPropertyEnum {
      */
     INDEX("index"),
     /**
+     * Whether an idle watcher should interrupt the watching session's turn when it fires.
+     */
+    INTERRUPT("interrupt"),
+    /**
      * Whether query text is a regular expression.
      */
     IS_REGEX("isRegex"),
@@ -255,6 +259,10 @@ public enum McpToolPropertyEnum {
      */
     NEW_STRING("newString"),
     /**
+     * Optional human-readable note attached to an idle watcher.
+     */
+    NOTE("note"),
+    /**
      * Maven -o / Gradle --offline: work from the local repository/cache only, without contacting remote repos.
      */
     OFFLINE("offline"),
@@ -319,6 +327,10 @@ public enum McpToolPropertyEnum {
      * Questions to present to the user.
      */
     QUESTIONS("questions"),
+    /**
+     * Whether an idle watcher re-arms after the target's next turn.
+     */
+    RECURRING("recurring"),
     /**
      * Gradle --refresh-dependencies: bypass the dependency cache and re-resolve everything.
      */
@@ -433,6 +445,10 @@ public enum McpToolPropertyEnum {
      */
     THREADS("threads"),
     /**
+     * Idle watcher timeout in minutes.
+     */
+    TIMEOUT_MINUTES("timeoutMinutes"),
+    /**
      * HTTP request timeout in seconds.
      */
     TIMEOUT_SECONDS("timeoutSeconds"),
@@ -451,7 +467,11 @@ public enum McpToolPropertyEnum {
     /**
      * HTTP request URL.
      */
-    URL("url");
+    URL("url"),
+    /**
+     * Idle watcher identifier.
+     */
+    WATCHER_ID("watcherId");
 
     private final String key;
 

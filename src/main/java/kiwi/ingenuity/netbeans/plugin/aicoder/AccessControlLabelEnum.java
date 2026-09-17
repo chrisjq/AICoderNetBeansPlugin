@@ -17,6 +17,7 @@ public enum AccessControlLabelEnum {
     ALLOW_INTER_AI_COMMS("Allow inter-AI communication by default", "Allow inter-AI communication"),
     AUTO_NOTIFY_INBOX("Auto-notify AI sessions on inbox messages", "Auto-notify on incoming messages"),
     ALLOW_IMPORTANT_MESSAGES("Allow important messages (interrupt receiving session)", "Allow important messages, interrupt this session"),
+    ALLOW_IDLE_WATCHER_TIMER("Allow Idle AI Watcher Timer? (default for sessions)", "Allow Idle AI Watcher Timer?"),
     ALLOW_DATABASE_ACCESS("Allow AI database access by default", "Allow database access"),
     ALLOW_DATABASE_READ_ONLY("Read-only (no write support implemented)", "Read-only (no write support implemented)"),
     ALLOW_DATABASE_LIST_TABLES("Allow table listing by default", "Allow table listing"),

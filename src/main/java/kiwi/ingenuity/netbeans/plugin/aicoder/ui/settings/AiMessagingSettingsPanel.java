@@ -19,6 +19,7 @@ public final class AiMessagingSettingsPanel extends JPanel {
     private final JCheckBox allowInterAiCheckBox = new JCheckBox();
     private final JCheckBox autoNotifyInboxCheckBox = new JCheckBox();
     private final JCheckBox allowImportantMessagesCheckBox = new JCheckBox();
+    private final JCheckBox allowIdleWatcherCheckBox = new JCheckBox();
 
     public AiMessagingSettingsPanel(boolean sessionMode) {
         setBorder(BorderFactory.createTitledBorder("AI Messaging"));
@@ -27,10 +28,12 @@ public final class AiMessagingSettingsPanel extends JPanel {
         allowInterAiCheckBox.setText(label(AccessControlLabelEnum.ALLOW_INTER_AI_COMMS, sessionMode));
         autoNotifyInboxCheckBox.setText(label(AccessControlLabelEnum.AUTO_NOTIFY_INBOX, sessionMode));
         allowImportantMessagesCheckBox.setText(label(AccessControlLabelEnum.ALLOW_IMPORTANT_MESSAGES, sessionMode));
+        allowIdleWatcherCheckBox.setText(label(AccessControlLabelEnum.ALLOW_IDLE_WATCHER_TIMER, sessionMode));
 
         addRow(allowInterAiCheckBox, 0, 0);
         addRow(autoNotifyInboxCheckBox, 1, 20);
         addRow(allowImportantMessagesCheckBox, 2, 20);
+        addRow(allowIdleWatcherCheckBox, 3, 20);
 
         allowInterAiCheckBox.addActionListener(e -> updateDependentState());
         updateDependentState();
@@ -40,6 +43,7 @@ public final class AiMessagingSettingsPanel extends JPanel {
         allowInterAiCheckBox.addActionListener(listener);
         autoNotifyInboxCheckBox.addActionListener(listener);
         allowImportantMessagesCheckBox.addActionListener(listener);
+        allowIdleWatcherCheckBox.addActionListener(listener);
     }
 
     public boolean isAllowInterAiSelected() {
@@ -65,6 +69,14 @@ public final class AiMessagingSettingsPanel extends JPanel {
 
     public void setAllowImportantSelected(boolean selected) {
         allowImportantMessagesCheckBox.setSelected(selected);
+    }
+
+    public boolean isAllowIdleWatcherSelected() {
+        return allowIdleWatcherCheckBox.isSelected();
+    }
+
+    public void setAllowIdleWatcherSelected(boolean selected) {
+        allowIdleWatcherCheckBox.setSelected(selected);
     }
 
     private void updateDependentState() {

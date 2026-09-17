@@ -27,7 +27,7 @@ Each session has its own backend, model, settings, working project, chat history
 - IDE context delivery: open projects, active file, session identity, and later project/file changes are supplied to the assistant. OpenAI-compatible sessions also support managed conversation context.
 - Persistent sessions, conversation history, and context recovery across IDE restarts when enabled.
 - Shared account usage gauges where a backend reports them: Claude rolling limits, GitHub Copilot quota, and Codex account rate limits. Context gauges show the active context against the backend-reported window where available.
-- Inter-AI messaging between opted-in sessions, including inbox notifications and important-message interruption controls.
+- Inter-AI messaging between opted-in sessions, including inbox notifications, important-message interruption controls, and an idle AI watcher timer that notifies a session when a peer has gone continuously idle.
 - NetBeans-aware search, navigation, diagnostics, formatting, build, test, refactoring, VCS, file, database, and web-request tools.
 - Diff review for AI-proposed content writes, and explicit confirmation for destructive or location-changing file actions.
 
@@ -98,14 +98,14 @@ The General options tab establishes defaults. Sessions can override the followin
 | Project scope | Restrict file access to session project directories |
 | Change review | Auto-accept policy and diff presentation |
 | Session instructions | Session instructions and startup/first-request delivery behavior |
-| Inter-AI | Enable inter-AI messaging, automatic inbox notices, and important-message interruption |
+| Inter-AI | Enable inter-AI messaging, automatic inbox notices, important-message interruption, and the idle AI watcher timer |
 | Web requests | Master switch plus independent permissions for GET, POST, PUT, PATCH, DELETE, HEAD, OPTIONS, request headers, and request bodies, and for reaching localhost or private-network destinations |
 | Database | Master switch, read-only sub-permissions, and database row limit |
 | Git | Master switch plus separate Read and Write permissions for the Git tools |
 | Clipboard | Explicit opt-in for clipboard reads |
 | Infrastructure | MCP loopback port, save-session-on-close prompt behavior, inbox retention/size, debug JSON, debug context, and tool-use logging |
 
-The default posture restricts file tools to project directories, disables auto-accept and clipboard access, and disables inter-AI messaging and automatic inbox notices. Important-message interruption is enabled when messaging is enabled. Database access is disabled by default with a row limit of 25; inbox entries are retained for 60 minutes with a maximum of 1,000 entries.
+The default posture restricts file tools to project directories, disables auto-accept and clipboard access, and disables inter-AI messaging and automatic inbox notices. Important-message interruption is enabled when messaging is enabled. The idle AI watcher timer is on by default (a session can still turn it off). Database access is disabled by default with a row limit of 25; inbox entries are retained for 60 minutes with a maximum of 1,000 entries.
 
 Web requests allow GET by default when web access is enabled. Methods that can change remote state, custom headers, and request bodies are disabled by default and must be enabled globally or for the session.
 
@@ -195,6 +195,7 @@ Asking for a build that is already queued or running with the same options — i
 |---|---|
 | [`ListDatabaseConnections`](REFERENCE.md#listdatabaseconnections), [`ListTables`](REFERENCE.md#listtables), [`GetTableSchema`](REFERENCE.md#gettableschema), [`GetTableData`](REFERENCE.md#gettabledata), [`ExecuteSqlQuery`](REFERENCE.md#executesqlquery) | Read-only Database Explorer access |
 | [`ListAiSessions`](REFERENCE.md#listaisessions), [`SendAiMessage`](REFERENCE.md#sendaimessage), [`GetAiMessages`](REFERENCE.md#getaimessages), [`ReadAiMessage`](REFERENCE.md#readaimessage), [`DeleteAiMessage`](REFERENCE.md#deleteaimessage), [`IsAiSessionActive`](REFERENCE.md#isaisessionactive), [`UpdateSessionDescription`](REFERENCE.md#updatesessiondescription) | Inter-AI session discovery and messaging |
+| [`CreateIdleWatcher`](REFERENCE.md#createidlewatcher), [`CancelIdleWatcher`](REFERENCE.md#cancelidlewatcher), [`ListIdleWatchers`](REFERENCE.md#listidlewatchers) | Notifies a session when a peer has gone idle |
 | [`GetPluginVersion`](REFERENCE.md#getpluginversion), [`GetInstructions`](REFERENCE.md#getinstructions), [`AskUserQuestion`](REFERENCE.md#askuserquestion), [`RunInspect`](REFERENCE.md#runinspect) | Plugin guidance, user input, and static-analysis entry points |
 
 ## Change review and safety

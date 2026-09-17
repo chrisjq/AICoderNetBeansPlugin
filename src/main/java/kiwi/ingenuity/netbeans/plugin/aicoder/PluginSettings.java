@@ -201,6 +201,14 @@ public final class PluginSettings {
         prefs().putBoolean(PluginSettingsKeyEnum.ALLOW_IMPORTANT_MESSAGES.key(), v);
     }
 
+    public static boolean isAllowIdleWatcherTimer() {
+        return getBoolean(PluginSettingsKeyEnum.ALLOW_IDLE_WATCHER_TIMER);
+    }
+
+    public static void setAllowIdleWatcherTimer(boolean v) {
+        prefs().putBoolean(PluginSettingsKeyEnum.ALLOW_IDLE_WATCHER_TIMER.key(), v);
+    }
+
     public static int getMaxHistory() {
         return getInt(PluginSettingsKeyEnum.MAX_HISTORY);
     }

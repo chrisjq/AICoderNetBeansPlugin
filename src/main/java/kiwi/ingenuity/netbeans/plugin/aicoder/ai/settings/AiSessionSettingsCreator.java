@@ -67,6 +67,10 @@ public abstract class AiSessionSettingsCreator<E extends AiSessionSettings> {
         if (cfgObj.has(key) && cfgObj.get(key).isJsonPrimitive()) {
             settings.setAllowImportantMessages(cfgObj.get(key).getAsBoolean());
         }
+        key = AiSessionSettingsKeyEnum.ALLOW_IDLE_WATCHER_TIMER.key();
+        if (cfgObj.has(key) && cfgObj.get(key).isJsonPrimitive()) {
+            settings.setAllowIdleWatcherTimer(cfgObj.get(key).getAsBoolean());
+        }
         key = AiSessionSettingsKeyEnum.SESSION_INSTRUCTIONS.key();
         if (cfgObj.has(key) && cfgObj.get(key).isJsonPrimitive()) {
             settings.setSessionInstructions(cfgObj.get(key).getAsString());

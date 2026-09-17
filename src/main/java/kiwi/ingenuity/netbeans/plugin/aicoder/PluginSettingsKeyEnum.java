@@ -29,6 +29,7 @@ public enum PluginSettingsKeyEnum {
     ALLOW_WEB_REQUEST_PRIVATE_NETWORKS("ai.session.allowWebRequests.privateNetworks", false),
     AUTO_NOTIFY_INBOX("ai.session.autoNotifyInbox", false),
     ALLOW_IMPORTANT_MESSAGES("ai.session.allowImportantMessages", true),
+    ALLOW_IDLE_WATCHER_TIMER("ai.session.allowIdleWatcherTimer", true),
     INBOX_RETENTION_MINUTES("ai.inbox.retentionMinutes", 60),
     INBOX_MAX_SIZE("ai.inbox.maxSize", 1000),
     LAST_SESSION_AI_TYPE("ai.session.lastAiType", null),

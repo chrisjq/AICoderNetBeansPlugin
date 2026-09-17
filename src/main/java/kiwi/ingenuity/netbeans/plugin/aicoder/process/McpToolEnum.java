@@ -119,7 +119,10 @@ public enum McpToolEnum {
     READ_AI_MESSAGE("ReadAiMessage"),
     DELETE_AI_MESSAGE("DeleteAiMessage"),
     IS_AI_SESSION_ACTIVE("IsAiSessionActive"),
-    UPDATE_SESSION_DESCRIPTION("UpdateSessionDescription");
+    UPDATE_SESSION_DESCRIPTION("UpdateSessionDescription"),
+    CREATE_IDLE_WATCHER("CreateIdleWatcher"),
+    CANCEL_IDLE_WATCHER("CancelIdleWatcher"),
+    LIST_IDLE_WATCHERS("ListIdleWatchers");
 
     /**
      * Comma-separated list of all plugin MCP tool names for --allowedTools, qualified with the shared MCP server name.

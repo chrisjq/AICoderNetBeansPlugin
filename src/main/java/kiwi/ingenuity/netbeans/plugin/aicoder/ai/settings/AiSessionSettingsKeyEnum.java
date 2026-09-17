@@ -32,6 +32,10 @@ public enum AiSessionSettingsKeyEnum {
      */
     ALLOW_IMPORTANT_MESSAGES("allowImportantMessages"),
     /**
+     * Whether to allow idle AI watcher timers
+     */
+    ALLOW_IDLE_WATCHER_TIMER("allowIdleWatcherTimer"),
+    /**
      * Custom instructions for the session
      */
     SESSION_INSTRUCTIONS("sessionInstructions"),

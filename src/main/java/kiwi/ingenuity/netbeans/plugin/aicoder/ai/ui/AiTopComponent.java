@@ -63,6 +63,7 @@ import kiwi.ingenuity.netbeans.plugin.aicoder.ai.events.SystemNotificationEvent;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.events.TextDeltaEvent;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.events.ToolUseEvent;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.events.TurnCompleteEvent;
+import kiwi.ingenuity.netbeans.plugin.aicoder.ai.idlewatch.IdleWatcherRegistry;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.mail.AiSessionInboxBroker;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.notification.AbstractNotification;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.notification.NotificationTypeEnum;
@@ -1405,6 +1406,12 @@ public final class AiTopComponent extends TopComponent implements AiProcessEvent
         catch (Exception e) {
             LOG.log(Level.WARNING, "Error cancelling queued/running builds during session close", e);
         }
+        try {
+            IdleWatcherRegistry.getInstance().onSessionClosed(session.id());
+        }
+        catch (Exception e) {
+            LOG.log(Level.WARNING, "Error notifying idle watcher registry during session close", e);
+        }
         AiSessionInboxBroker.getInstance().unregister(session.id());
         // Remove the open-projects listener BEFORE unregistering the session, so it can
         // never re-register (resurrect) the session via updateSessionScope. Once removed,
@@ -1564,6 +1571,19 @@ public final class AiTopComponent extends TopComponent implements AiProcessEvent
             }
         }
         updateTabHtmlName();
+        // Idle-watcher hooks live here because setTabStatus is the single source of truth for busy/idle: the turn
+        // lifecycle, connect/disconnect and error paths all converge on it, so watching it — not each of its call sites — is
+        // what guarantees the idle clock starts and stops exactly when a turn does.
+        IdleWatcherRegistry registry = IdleWatcherRegistry.getInstance();
+        switch (status) {
+            case THINKING ->
+                registry.onSessionBusy(session.id());
+            case READY, FATAL ->
+                registry.onSessionIdle(session.id());
+            case AWAITING_USER -> {
+                // Mid-turn approval is not idle: the target is still inside its turn, waiting on the user.
+            }
+        }
     }
 
     /**

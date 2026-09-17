@@ -260,6 +260,11 @@ public class AiSession {
         return s != null && s.effectiveAllowImportantMessages();
     }
 
+    public boolean allowsIdleWatcherTimer() {
+        AiSessionSettings s = settings;
+        return s != null && s.effectiveAllowIdleWatcherTimer();
+    }
+
     // ---- Legacy with*() API — mutate in place, return this ----
     // Callers that do  session = session.withName(x)  still compile unchanged.
     public AiSession withName(String newName) {
