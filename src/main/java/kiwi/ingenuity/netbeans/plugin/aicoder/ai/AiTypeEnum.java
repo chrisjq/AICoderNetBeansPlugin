@@ -7,6 +7,7 @@ import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.githubcopilot.settings.Git
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.grok.settings.GrokSettingsCreator;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.ollama.settings.OllamaSettingsCreator;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.opencode.settings.OpenCodeSettingsCreator;
+import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.pi.settings.PiSettingsCreator;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.settings.AiSessionSettings;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.settings.AiSessionSettingsCreator;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.McpInstructionOptionEnum;
@@ -65,7 +66,10 @@ public enum AiTypeEnum {
     // it only after an OBSERVED bypass. Add it to Codex if one is ever seen here.
     // CodexAiProcessManager interjects via turn/steer and its javadoc states it "never escalates
     // to Cancel", so the turn survives.
-    CODEX("Codex", "codex", true, true, false, MailDeliveryTimingEnum.DURING_TURN, new CodexSettingsCreator(), Set.of(HEADER, TOOL_INSTRUCTION, CREDENTIALS), null, null);
+    CODEX("Codex", "codex", true, true, false, MailDeliveryTimingEnum.DURING_TURN, new CodexSettingsCreator(), Set.of(HEADER, TOOL_INSTRUCTION, CREDENTIALS), null, null),
+    // PiAiProcessManager#interrupt(Mail) sends `steer` while a turn is running — pi queues it and delivers it once
+    // the running tool call finishes, never aborting it (spec, verified live against pi 0.85.1).
+    PI("Pi", "pi", true, true, false, MailDeliveryTimingEnum.DURING_TURN, new PiSettingsCreator(), Set.of(HEADER, TOOL_INSTRUCTION, CREDENTIALS), null, null);
 
     public static AiTypeEnum fromKey(String key) {
         if (key == null) {

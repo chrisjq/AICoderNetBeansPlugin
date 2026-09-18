@@ -441,6 +441,13 @@ public final class McpServerRegistry {
             int port = portOverride != null ? portOverride : PluginSettings.getHookServerPort();
             McpHookServer fresh = createServerWithRetry(port);
             fresh.start();
+            // The fresh instance's hookLocks/activeSessions start empty even though every still-registered session's
+            // file scope survives (fileScope is the one shared instance handed to every server this method creates —
+            // see FILE_SCOPE's javadoc). Without this, the next gated Edit/Write for any of these sessions finds no
+            // hook lock and is answered "defer" forever (round-3 review, BigP_2).
+            for (String sessionId : registrations.keySet()) {
+                fresh.rehydrateSession(sessionId);
+            }
             sharedServer = fresh;
             if (PluginSettings.isDebugJson()) {
                 LOG.log(Level.INFO, "Replaced MCP hook server (reason={0}, consecutiveFailures={1})",

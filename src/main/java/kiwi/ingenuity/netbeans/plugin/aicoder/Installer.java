@@ -9,6 +9,7 @@ import java.util.logging.Logger;
 import javax.swing.SwingUtilities;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.AiTypeRegistry;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.idlewatch.IdleWatcherRegistry;
+import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.pi.extension.PiExtensionFiles;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.mail.AiSessionInboxBroker;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.ui.AiTopComponent;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.locking.LockManager;
@@ -86,6 +87,14 @@ public class Installer extends ModuleInstall {
     public void restored() {
         LOG.log(Level.INFO, StringConst.PLUGIN_NAME + " plugin v{0} activated. Use Tools > AI Coder to open the panel.", VERSION);
         BuildQueue.getInstance().setCompletionListener(new SessionBuildNotifier());
+        // No pi session can be running yet at plugin startup, so any file here was left behind by a
+        // crash or kill — see PiExtensionFiles' class javadoc.
+        try {
+            PiExtensionFiles.sweepAtStartup();
+        }
+        catch (RuntimeException e) {
+            LOG.log(Level.WARNING, "Error sweeping leftover pi extension files at startup", e);
+        }
     }
 
     @Override
@@ -135,6 +144,14 @@ public class Installer extends ModuleInstall {
             }
             catch (RuntimeException e) {
                 LOG.log(Level.WARNING, "Error shutting down the idle watcher registry", e);
+            }
+            // Same reasoning as the idle-watcher shutdown above: every AI tab is closed by now, so no pi
+            // session can still be using its extension file.
+            try {
+                PiExtensionFiles.deleteAll();
+            }
+            catch (RuntimeException e) {
+                LOG.log(Level.WARNING, "Error deleting pi extension files at shutdown", e);
             }
             AiTypeRegistry.shutdownLifecycles();
             TempFileRegistry.cleanupAll();

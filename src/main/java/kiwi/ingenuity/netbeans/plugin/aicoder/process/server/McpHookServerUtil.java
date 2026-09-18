@@ -353,6 +353,21 @@ public final class McpHookServerUtil {
     }
 
     // ---- Decision helpers ----
+    /**
+     * Prefix marking a "deny" response as the IDE having already applied the write itself, not a genuine rejection —
+     * pi's own extension template ({@code aicoder-pi-extension.ts.template}) matches this exact literal to rewrite the
+     * response into a non-retryable success instead of a real block (round-3 review, BigP_2: nothing previously tied
+     * the two together, so wording drift here would silently double-apply every accepted pi write). Keep both in sync
+     * if this prefix ever changes; {@code PiHookIntegrationTest} asserts against this constant, not a literal.
+     *
+     * <p>
+     * <b>Cross-language coupling (round-4 review, BigP_2 residual):</b> no automated check spans the two languages —
+     * the template still hardcodes its own copy of this literal (see its matching comment pointing back here). If you
+     * change this constant, you MUST also update the {@code reason.startsWith(...)} check in
+     * {@code aicoder-pi-extension.ts.template}'s {@code reviewGatedCall}, or accepted pi writes will double-apply.
+     */
+    public static final String APPLIED_BY_PLUGIN_PREFIX = "Applied by NetBeans plugin";
+
     public static String hookAllow() {
         return "{\"hookSpecificOutput\":{\"hookEventName\":\"PreToolUse\",\"permissionDecision\":\"allow\"}}";
     }

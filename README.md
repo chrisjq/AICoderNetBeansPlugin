@@ -13,6 +13,7 @@ AI Coder is a NetBeans IDE plugin that provides dockable, multi-session AI codin
 | [**Grok**](https://docs.x.ai/build/overview) | Headless `grok` CLI prompt sessions | Executable and model | Enabled |
 | [**OpenCode**](https://opencode.ai/docs) | Long-lived `opencode acp` session | Executable, editable/discovered model, and Build or Plan agent mode | Enabled |
 | [**Codex**](https://developers.openai.com/codex/cli/) | Long-lived Codex app-server session | Executable, editable model, reasoning effort, and sandbox/approval options | Enabled |
+| [**pi**](https://pi.dev/docs/latest) | Long-lived `pi --mode rpc` session | Executable, live model and thinking-level pickers, and version-verification status | Enabled |
 | [**Ollama (Local)**](https://docs.ollama.com/cli) | OpenAI-compatible HTTP API | Base URL, editable/discovered model, and context-management options | Implemented; enable in Options. Note: Not as live tested as the other implementations, feel free to send me some hardware I can thrash :)  |
 
 Each session has its own backend, model, settings, working project, chat history, session instructions, and optional persisted backend session/thread state. Multiple sessions and backends can run at the same time, though their file-, build- and Git-changing work is serialised across the whole plugin — see [Concurrency and limits](REFERENCE.md#concurrency-and-limits).
@@ -42,6 +43,7 @@ Each session has its own backend, model, settings, working project, chat history
   - **Grok:** the `grok` CLI, authenticated with `grok login`.
   - **OpenCode:** the `opencode` CLI. Raise OpenCode's MCP execution timeout before using long-running tools — see the note below.
   - **Codex:** the `codex` CLI/app-server, authenticated with `codex login`.
+  - **pi:** the `pi` CLI, logged in to a provider with pi's own `/login` command (tested with pi 0.85.x).
   - **Ollama (Local):** a reachable OpenAI-compatible Ollama endpoint; no CLI is required by the plugin.
 
 > NetBeans must be able to launch configured CLIs and use loopback networking. Sandboxed installations that block process creation, the host `PATH`, or local HTTP connections can prevent CLI/ACP/app-server backends and the MCP tool server from working.
@@ -126,9 +128,12 @@ Backend tabs supply executable locations and default backend settings. Session s
 | Grok | CLI executable and discovered/fallback model list |
 | OpenCode | CLI executable, model, and ACP-provided agent/mode configuration |
 | Codex | CLI executable, model, reasoning effort, and app-server session options |
+| pi | CLI executable, live-discovered model and thinking-level pickers, and a version-verification status |
 | Ollama (Local) | OpenAI-compatible base URL (default `http://localhost:11434`), model, context window, and context-management settings |
 
-OpenCode’s mode is **Build** for normal agent work or **Plan** for read-only planning. Codex provides known model choices including `gpt-5.6-terra`, `gpt-5.6-luna`, `gpt-5.5`, and `gpt-5.4-mini`, while keeping the model field editable. Ollama needs no API key; its model and base URL can be changed for an individual session.
+OpenCode’s mode is **Build** for normal agent work or **Plan** for read-only planning. Codex provides known model choices including `gpt-5.6-terra`, `gpt-5.6-luna`, `gpt-5.5`, and `gpt-5.4-mini`, while keeping the model field editable. pi's model and thinking-level lists are discovered live from the running session, or from `pi --list-models` before one exists; an untested pi version shows a warning button in the tab and in Options until you verify it. Ollama needs no API key; its model and base URL can be changed for an individual session.
+
+pi's own `edit` and `write` tools go through the same NetBeans diff-panel review as the plugin's file tools; `bash` is not gated. The plugin's MCP tools reach a pi session through a per-session extension file it generates at launch and deletes when the session ends — it is never written where pi auto-discovers extensions, so a `pi` process started outside NetBeans never sees it. Mail sent to a busy pi session is delivered as a `steer` once its current tool calls finish, rather than interrupting mid-tool.
 
 For OpenAI-compatible sessions, context management can trim by message count, estimated tokens, or reported tokens. Available strategies are no trimming, dropping older messages, dropping marked messages, or summarising; configure the trigger threshold, post-trim target, message limit, and context persistence in the Ollama/OpenAI context settings.
 
@@ -219,6 +224,7 @@ NetBeans IDE
         ├── GitHub Copilot SDK session
         ├── OpenCode ACP session
         ├── Codex app-server session
+        ├── pi CLI session
         ├── Ollama OpenAI-compatible HTTP client
         └── Local MCP/IDE tool server and review bridge
 ```

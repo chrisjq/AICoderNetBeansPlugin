@@ -287,6 +287,31 @@ public class McpHookServer {
         }
     }
 
+    /**
+     * Re-establishes this session's per-instance bookkeeping ({@code hookLocks}/{@code activeSessions}) after a
+     * health-tick server swap ({@link McpServerRegistry#reconcile}) replaces the shared server with a fresh instance.
+     * The fresh instance's {@code fileScope} already carries this session's file-access scope forward — it is the SAME
+     * shared {@link SessionFileScopeRegistry} instance, see the {@link #McpHookServer(int,
+     * SessionFileScopeRegistry)} javadoc — but {@code hookLocks}/{@code activeSessions} are per-instance fields that
+     * start empty on the fresh server. Without this, the next gated Edit/Write for a session that survived the swap
+     * finds no hook lock and is answered "defer" forever (round-3 review, BigP_2): the session becomes permanently
+     * edit-incapable until it is reopened or an unrelated open-projects change happens to re-drive
+     * {@link #updateSessionScope}.
+     * <p>
+     * Deliberately does NOT call {@link #registerSession}/{@link #updateSessionScope}: those also write to
+     * {@code fileScope}, which is already correct here and must not be touched — {@link McpServerRegistry}'s
+     * {@code registrations} map (a session id keyed by its {@link AiMcpRegistrar}) carries no project-dirs/restrict
+     * data to pass them anyway. This restores only the bookkeeping the swap actually lost.
+     */
+    void rehydrateSession(String sessionId) {
+        if (sessionId == null) {
+            return;
+        }
+        if (activeSessions.add(sessionId)) {
+            hookLocks.put(sessionId, new ReentrantLock(true));
+        }
+    }
+
     public void unregisterSession(String sessionId) {
         if (sessionId == null) {
             return;
@@ -632,7 +657,8 @@ public class McpHookServer {
                 String applyResult = "Write".equals(toolName)
                                      ? RefactoringProvider.writeFileContent(filePath, writeContent)
                                      : RefactoringProvider.applyEdit(filePath, oldString, newString, replaceAll);
-                String allowedResponse = McpHookServerUtil.hookDeny("Applied by NetBeans plugin: " + applyResult);
+                String allowedResponse = McpHookServerUtil.hookDeny(
+                        McpHookServerUtil.APPLIED_BY_PLUGIN_PREFIX + ": " + applyResult);
                 if (PluginSettings.isDebugJson()) {
                     LOG.log(Level.INFO, "Hook response (applied): {0}", allowedResponse);
                 }
