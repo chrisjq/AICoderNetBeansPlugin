@@ -64,14 +64,18 @@ class FindFileProviderTest {
 
     @Test
     void supportsRegexAndCaseSensitiveMatching() throws Exception {
+        // The decoy differs from the match by more than case on purpose. Two names differing ONLY in case cannot
+        // coexist on a case-insensitive filesystem — the default on macOS (APFS) and Windows — so creating them both
+        // threw FileAlreadyExistsException there while passing on Linux. "findOtherTool.java" still proves the flag:
+        // the regex misses it under caseSensitive=true and would catch it under false.
         Files.createFile(directory.resolve("FindFileTool.java"));
-        Files.createFile(directory.resolve("findfiletool.java"));
+        Files.createFile(directory.resolve("findOtherTool.java"));
 
         String result = FindFileProvider.findFiles(List.of(directory), "Find.*\\.java", true, true, 0);
 
         assertTrue(result.startsWith("Found 1 file(s):"), result);
         assertTrue(result.contains("FindFileTool.java"), result);
-        assertTrue(!result.contains("findfiletool.java"), result);
+        assertTrue(!result.contains("findOtherTool.java"), result);
     }
 
     @Test

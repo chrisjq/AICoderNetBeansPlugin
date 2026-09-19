@@ -15,13 +15,16 @@ import org.junit.jupiter.api.condition.OS;
 import org.junit.jupiter.api.io.TempDir;
 
 /**
- * Tests for four new FindFileProvider behaviours: {@code ignoreHidden} (default true — dot-names and DOS-hidden files
- * excluded, hidden directories pruned, but a hidden root still searched when named), {@code maxDepth} (caller depth 0 =
- * starting directory only, 1 = one level below, 2 = two; negative = as deep as the MAX_DEPTH_CEILING allows), the
- * {@code toRealPath()} guard that collapses the same file reached through overlapping or aliased roots, and
- * {@code type} (default file; {@code dir} finds empty and populated directories, the starting directory is never
- * returned, and the result wording follows the type). The depth translation is pinned hard because it is the most
- * likely place for an off-by-one.
+ * Tests for four new FindFileProvider behaviours: {@code ignoreHidden} (default
+ * true — dot-names and DOS-hidden files excluded, hidden directories pruned,
+ * but a hidden root still searched when named), {@code maxDepth} (caller depth
+ * 0 = starting directory only, 1 = one level below, 2 = two; negative = as deep
+ * as the MAX_DEPTH_CEILING allows), the {@code toRealPath()} guard that
+ * collapses the same file reached through overlapping or aliased roots, and
+ * {@code type} (default file; {@code dir} finds empty and populated
+ * directories, the starting directory is never returned, and the result wording
+ * follows the type). The depth translation is pinned hard because it is the
+ * most likely place for an off-by-one.
  */
 class FindFileProviderNewBehaviourTest {
 
@@ -44,6 +47,20 @@ class FindFileProviderNewBehaviourTest {
     private static void assertNoLineEquals(String result, String path) {
         boolean listed = result.lines().anyMatch(line -> line.equals(path));
         assertFalse(listed, "the starting directory must not be listed as a row exactly: " + result);
+    }
+
+    /**
+     * The bare names of the listed rows, in listing order. Asserting on these
+     * instead of {@code result.contains("b")} matters because every row carries
+     * the absolute temp path, and that path is not neutral: on Linux it is
+     * {@code /tmp/junit-<digits>}, but on macOS it is
+     * {@code /var/folders/32/kz4vc1ts4455sbk5g6w2bxfw0000gn/T/...}, whose
+     * random segment happily supplies whatever single letter the assertion was
+     * hoping to rule out.
+     */
+    private static List<String> rowNames(String result) {
+        return result.lines().skip(1).filter(line -> !line.isBlank())
+                .map(line -> Path.of(line).getFileName().toString()).toList();
     }
     @TempDir
     Path directory;
@@ -153,8 +170,7 @@ class FindFileProviderNewBehaviourTest {
         Path alias = directory.resolve("alias-to-deep");
         try {
             Files.createSymbolicLink(alias, directory.resolve("deep"));
-        }
-        catch (IOException | UnsupportedOperationException e) {
+        } catch (IOException | UnsupportedOperationException e) {
             return;
         }
         String result = FindFileProvider.findFiles(List.of(directory, alias),
@@ -281,8 +297,9 @@ class FindFileProviderNewBehaviourTest {
         Files.createDirectories(directory.resolve("c"));
         String result = findTyped(directory, FindFileTypeEnum.DIR, null, true, 0);
         assertTrue(result.startsWith("Found 2 directory(ies):"), result);
-        assertTrue(result.contains("a"), result);
-        assertTrue(result.contains("c"), result);
-        assertFalse(result.contains("b"), result);
+        // Matches are sorted by path, so this exact list pins both halves of the claim at once: "a" and "c" are
+        // listed, and the grandchild "b" is not. The earlier per-letter contains() checks could not — they read the
+        // absolute temp path as well as the rows, which made all three of them answer about the wrong string.
+        assertEquals(List.of("a", "c"), rowNames(result), result);
     }
 }
