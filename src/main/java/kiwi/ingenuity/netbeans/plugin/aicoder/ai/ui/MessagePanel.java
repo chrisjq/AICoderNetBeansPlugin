@@ -125,55 +125,6 @@ public class MessagePanel extends JPanel {
     /**
      * ---- Content building ----
      */
-    private static int linesInNode(Node node) {
-        if (node instanceof FencedCodeBlock fcb) {
-            return fcb.getLiteral().split("\n", -1).length + 1;
-        }
-        else if (node instanceof IndentedCodeBlock icb) {
-            return icb.getLiteral().split("\n", -1).length;
-        }
-        else if (node instanceof HtmlBlock hb) {
-            return hb.getLiteral().split("\n", -1).length;
-        }
-        else if (node instanceof Heading || node instanceof ThematicBreak) {
-            return 1;
-        }
-        else if (node instanceof BulletList || node instanceof OrderedList
-                || node instanceof BlockQuote) {
-            int n = 0;
-            for (Node c = node.getFirstChild(); c != null; c = c.getNext()) {
-                n += linesInNode(c);
-            }
-            return Math.max(1, n);
-        }
-        else if (node instanceof ListItem) {
-            int n = 0;
-            for (Node c = node.getFirstChild(); c != null; c = c.getNext()) {
-                n += linesInNode(c);
-            }
-            return Math.max(1, n);
-        }
-        else if (node instanceof TableBlock) {
-            int rows = 0;
-            for (Node s = node.getFirstChild(); s != null; s = s.getNext()) {
-                for (Node r = s.getFirstChild(); r != null; r = r.getNext()) {
-                    rows++;
-                }
-            }
-            return rows + 1;
-        }
-        else {
-            // Paragraph and other inline containers
-            int breaks = 0;
-            for (Node c = node.getFirstChild(); c != null; c = c.getNext()) {
-                if (c instanceof SoftLineBreak || c instanceof HardLineBreak) {
-                    breaks++;
-                }
-            }
-            return breaks + 1;
-        }
-    }
-
     /**
      * CommonMark's TablesExtension requires a preceding blank line to recognise a table block when it immediately
      * follows a paragraph or list. This adds blank lines where they're missing, skipping fenced code block interiors.
@@ -333,8 +284,8 @@ public class MessagePanel extends JPanel {
                     String cellTag = tc.isHeader() ? "th" : "td";
                     TableCell.Alignment alignment = tc.getAlignment();
                     String alignAttr = alignment == TableCell.Alignment.CENTER ? " align=\"center\""
-                            : alignment == TableCell.Alignment.RIGHT ? " align=\"right\""
-                                    : "";
+                                       : alignment == TableCell.Alignment.RIGHT ? " align=\"right\""
+                                         : "";
                     sb.append("<").append(cellTag).append(alignAttr).append(">")
                             .append(inlineToHtml(tc))
                             .append("</").append(cellTag).append(">");
@@ -533,6 +484,7 @@ public class MessagePanel extends JPanel {
      * @param nowMillis current wall-clock time in millis
      * @param lastRebuildMillis millis of the most recent rebuild
      * @param rebuildPending true if a rebuild is already scheduled (timer armed)
+     *
      * @return true to render immediately
      */
     static boolean shouldRebuildNow(long nowMillis, long lastRebuildMillis, boolean rebuildPending) {
@@ -636,6 +588,14 @@ public class MessagePanel extends JPanel {
         return accumulatedText.toString();
     }
 
+    /**
+     * Package-private so a test can walk the actually-rendered component tree (the collapse toggle button, the
+     * {@code JEditorPane}) without a public API surface existing only for that purpose.
+     */
+    JPanel contentPanelForTest() {
+        return contentPanel;
+    }
+
     public void appendDelta(String delta) {
         if (finalised) {
             return;
@@ -664,9 +624,9 @@ public class MessagePanel extends JPanel {
         long now = System.currentTimeMillis();
         if (rebuildTimer == null) {
             rebuildTimer = new Timer((int) TimeoutEnum.MESSAGE_REBUILD_THROTTLE_MILLIS.millis(), e -> {
-                lastRebuildMillis = System.currentTimeMillis();
-                rebuildContent();
-            });
+                                 lastRebuildMillis = System.currentTimeMillis();
+                                 rebuildContent();
+                             });
             rebuildTimer.setRepeats(false);
         }
         boolean pending = rebuildTimer.isRunning();
@@ -714,54 +674,130 @@ public class MessagePanel extends JPanel {
         contentPanel.removeAll();
         String fullText = accumulatedText.toString();
 
-        // Parse the full text once so markdown is always interpreted in complete context.
-        Node fullDoc = MD_PARSER.parse(ensureTableBlankLines(fullText));
-
-        // Collapse large user messages — only after finalise, not during streaming
-        if (finalised && role == AiMessage.Role.USER) {
-            String[] lines = fullText.split("\n", -1);
-            if (lines.length > COLLAPSE_LINE_THRESHOLD) {
-                if (!textExpanded) {
-                    // Keep nodes while cumulative line count stays within the threshold;
-                    // drop any node that would push it over.
-                    int totalLines = 0;
-                    Node c = fullDoc.getFirstChild();
-                    while (c != null) {
-                        Node next = c.getNext();
-                        int nodeLines = linesInNode(c);
-                        if (totalLines + nodeLines > COLLAPSE_LINE_THRESHOLD) {
-                            c.unlink();
-                        }
-                        else {
-                            totalLines += nodeLines;
-                        }
-                        c = next;
-                    }
-                }
-                renderNodes(fullDoc);
-                String btnLabel = textExpanded
-                        ? "Collapse"
-                        : "Show all (" + lines.length + " lines)";
-                JButton toggleBtn = new JButton(btnLabel);
-                toggleBtn.setFont(toggleBtn.getFont().deriveFont(10f));
-                toggleBtn.setMargin(new Insets(1, 6, 1, 6));
-                toggleBtn.addActionListener(e -> {
-                    textExpanded = !textExpanded;
-                    rebuildContent();
-                });
-                JPanel btnRow = new JPanel(new java.awt.FlowLayout(java.awt.FlowLayout.LEFT, 0, 2));
-                btnRow.setOpaque(false);
-                btnRow.add(toggleBtn);
-                contentPanel.add(btnRow);
-                contentPanel.revalidate();
-                contentPanel.repaint();
-                return;
-            }
+        if (role == AiMessage.Role.USER) {
+            // The user's own typed text must never be interpreted as Markdown — only the assistant's (and
+            // system's) output goes through MD_PARSER below.
+            rebuildLiteralUserContent(fullText);
+            contentPanel.revalidate();
+            contentPanel.repaint();
+            return;
         }
 
+        // Parse the full text once so markdown is always interpreted in complete context.
+        Node fullDoc = MD_PARSER.parse(ensureTableBlankLines(fullText));
         renderNodes(fullDoc);
         contentPanel.revalidate();
         contentPanel.repaint();
+    }
+
+    /**
+     * Renders a USER message literally: escaped so nothing is interpreted as HTML either, newlines become explicit line
+     * breaks, and runs of spaces/tabs survive so pasted code/log indentation is not collapsed away. Collapse works on a
+     * straight line count of the raw text — there is no parsed document to walk, unlike the Markdown path's
+     * {@link #renderNodes}.
+     */
+    private void rebuildLiteralUserContent(String fullText) {
+        String[] lines = fullText.split("\n", -1);
+        boolean collapsible = finalised && lines.length > COLLAPSE_LINE_THRESHOLD;
+        String toRender = (collapsible && !textExpanded) ? joinLines(lines, COLLAPSE_LINE_THRESHOLD) : fullText;
+        contentPanel.add(makeHtmlPane("<p>" + literalToHtml(toRender) + "</p>"));
+        if (collapsible) {
+            addCollapseToggleButton(lines.length);
+        }
+    }
+
+    private static String joinLines(String[] lines, int count) {
+        StringBuilder sb = new StringBuilder();
+        for (int i = 0; i < count; i++) {
+            if (i > 0) {
+                sb.append('\n');
+            }
+            sb.append(lines[i]);
+        }
+        return sb.toString();
+    }
+
+    /**
+     * Escapes {@code &}, {@code <} and {@code >} so nothing is interpreted as HTML, then converts the result into the
+     * same visual shape a plain-text viewer would show: each {@code \n} becomes an explicit {@code <br>}, each tab
+     * becomes four non-breaking spaces, and repeated spaces become non-breaking too — HTML collapses whitespace runs
+     * (including leading whitespace at the start of a line) by default, so without this, indentation in pasted code or
+     * logs would vanish. Two different rules apply depending on position:
+     * <ul>
+     * <li>Leading indentation — the start of the text, or right after a {@code \n}/{@code <br>}, including a space that
+     * directly follows a tab — is ALL non-breaking, first space included. HTML strips leading whitespace on a line
+     * entirely, so a plain space there (even just one) would be dropped rather than merely collapsed.</li>
+     * <li>Mid-line spacing — once a real character has been emitted on the current line, the FIRST space of a run stays
+     * a normal breakable one so long lines still wrap; only the spaces after it in that run are pinned.</li>
+     * </ul>
+     * Package-private for direct unit testing, mirroring {@link #shouldRebuildNow}'s identical reason.
+     */
+    static String literalToHtml(String text) {
+        StringBuilder sb = new StringBuilder(text.length());
+        boolean atLineStart = true;
+        boolean inSpaceRun = false;
+        for (int i = 0; i < text.length(); i++) {
+            char c = text.charAt(i);
+            switch (c) {
+                case '&' -> {
+                    sb.append("&amp;");
+                    atLineStart = false;
+                    inSpaceRun = false;
+                }
+                case '<' -> {
+                    sb.append("&lt;");
+                    atLineStart = false;
+                    inSpaceRun = false;
+                }
+                case '>' -> {
+                    sb.append("&gt;");
+                    atLineStart = false;
+                    inSpaceRun = false;
+                }
+                case '\n' -> {
+                    sb.append("<br>");
+                    atLineStart = true;
+                    inSpaceRun = false;
+                }
+                case '\t' -> {
+                    // Part of the indentation run, not the end of it — a leading "\t " must keep the space
+                    // that follows non-breaking too, so atLineStart is left untouched here.
+                    sb.append("&nbsp;&nbsp;&nbsp;&nbsp;");
+                    inSpaceRun = false;
+                }
+                case ' ' -> {
+                    sb.append((atLineStart || inSpaceRun) ? "&nbsp;" : " ");
+                    inSpaceRun = true;
+                }
+                default -> {
+                    sb.append(c);
+                    atLineStart = false;
+                    inSpaceRun = false;
+                }
+            }
+        }
+        return sb.toString();
+    }
+
+    /**
+     * The "Show all (N lines)" / "Collapse" toggle for a long USER message — only the literal path
+     * ({@link #rebuildLiteralUserContent}) ever collapses; Markdown (assistant/system) messages render in full.
+     */
+    private void addCollapseToggleButton(int totalLines) {
+        String btnLabel = textExpanded
+                          ? "Collapse"
+                          : "Show all (" + totalLines + " lines)";
+        JButton toggleBtn = new JButton(btnLabel);
+        toggleBtn.setFont(toggleBtn.getFont().deriveFont(10f));
+        toggleBtn.setMargin(new Insets(1, 6, 1, 6));
+        toggleBtn.addActionListener(e -> {
+            textExpanded = !textExpanded;
+            rebuildContent();
+        });
+        JPanel btnRow = new JPanel(new java.awt.FlowLayout(java.awt.FlowLayout.LEFT, 0, 2));
+        btnRow.setOpaque(false);
+        btnRow.add(toggleBtn);
+        contentPanel.add(btnRow);
     }
 
     private void renderNodes(Node doc) {
@@ -770,7 +806,7 @@ public class MessagePanel extends JPanel {
             if (child instanceof FencedCodeBlock || child instanceof IndentedCodeBlock) {
                 flushHtmlBatch(htmlBatch);
                 String code = child instanceof FencedCodeBlock fcb
-                        ? fcb.getLiteral() : ((IndentedCodeBlock) child).getLiteral();
+                              ? fcb.getLiteral() : ((IndentedCodeBlock) child).getLiteral();
                 String lang = child instanceof FencedCodeBlock fcb ? fcb.getInfo() : "";
                 contentPanel.add(makeCodeBlock(code, lang));
             }
@@ -801,15 +837,15 @@ public class MessagePanel extends JPanel {
     private JComponent makeHtmlPane(String bodyHtml) {
         boolean dark = isDarkTheme();
         Color fg = restored ? RESTORED_FG
-                : uiColorOrFallback("TextArea.foreground",
-                        dark ? new Color(0xcd, 0xd6, 0xf4) : new Color(0x31, 0x32, 0x44));
+                   : uiColorOrFallback("TextArea.foreground",
+                                       dark ? new Color(0xcd, 0xd6, 0xf4) : new Color(0x31, 0x32, 0x44));
         String fgHex = toHex(fg);
         // Inline code: cyan-ish in dark, blue in light
         String codeFgHex = dark ? "#89dceb" : "#1e66f5";
         // Blockquote: fade the main text colour toward background
         Color bqFg = dark
-                ? new Color(Math.max(0, fg.getRed() - 55), Math.max(0, fg.getGreen() - 55), Math.max(0, fg.getBlue() - 55))
-                : new Color(Math.min(255, fg.getRed() + 55), Math.min(255, fg.getGreen() + 55), Math.min(255, fg.getBlue() + 55));
+                     ? new Color(Math.max(0, fg.getRed() - 55), Math.max(0, fg.getGreen() - 55), Math.max(0, fg.getBlue() - 55))
+                     : new Color(Math.min(255, fg.getRed() + 55), Math.min(255, fg.getGreen() + 55), Math.min(255, fg.getBlue() + 55));
 
         String borderHex = dark ? "#45475a" : "#cccccc";
         int fs = kiwi.ingenuity.netbeans.plugin.aicoder.PluginSettings.getChatFontSize();
@@ -907,17 +943,17 @@ public class MessagePanel extends JPanel {
         pane.getInputMap(JComponent.WHEN_FOCUSED).put(
                 KeyStroke.getKeyStroke(KeyEvent.VK_A, copyMask), "select-all");
         pane.getActionMap().put("nb-copy", new AbstractAction() {
-            @Override
-            public void actionPerformed(ActionEvent e) {
-                pane.copy();
-            }
-        });
+                            @Override
+                            public void actionPerformed(ActionEvent e) {
+                                pane.copy();
+                            }
+                        });
         pane.getActionMap().put("select-all", new AbstractAction() {
-            @Override
-            public void actionPerformed(ActionEvent e) {
-                pane.selectAll();
-            }
-        });
+                            @Override
+                            public void actionPerformed(ActionEvent e) {
+                                pane.selectAll();
+                            }
+                        });
 
         pane.addHierarchyListener(e -> {
             if ((e.getChangeFlags() & java.awt.event.HierarchyEvent.SHOWING_CHANGED) != 0
@@ -951,7 +987,7 @@ public class MessagePanel extends JPanel {
             // the exact destination the markdown used.
             String desc = e.getDescription();
             String url = (desc != null && !desc.isBlank()) ? desc
-                    : (e.getURL() != null ? e.getURL().toString() : null);
+                         : (e.getURL() != null ? e.getURL().toString() : null);
             if (PluginSettings.isDebugJson()) {
                 LOG.log(Level.INFO, "link click: desc={0} url={1}",
                         new Object[]{desc, e.getURL()});
@@ -1067,7 +1103,7 @@ public class MessagePanel extends JPanel {
                     .setContents(new StringSelection(codeText), null);
             copyBtn.setText("✓");
             Timer t = new Timer((int) TimeoutEnum.COPY_FEEDBACK_RESET_MILLIS.millis(),
-                    ev -> copyBtn.setText("⎘"));
+                                ev -> copyBtn.setText("⎘"));
             t.setRepeats(false);
             t.start();
         });
