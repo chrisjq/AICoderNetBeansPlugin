@@ -21,7 +21,9 @@ import javax.swing.event.DocumentListener;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.AiTypeEnum;
 import static kiwi.ingenuity.netbeans.plugin.aicoder.ai.AiTypeEnum.CODEX;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.codex.CodexExecutableLocator;
+import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.codex.CodexReasoningEffortCatalog;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.codex.settings.CodexPluginSettings;
+import kiwi.ingenuity.netbeans.plugin.aicoder.ai.ui.BlankSafeComboRenderer;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ui.SettingsTab;
 import org.openide.util.lookup.ServiceProvider;
 
@@ -36,6 +38,7 @@ public final class CodexAiSettingsTab implements SettingsTab {
     private final JButton testButton;
     private final JLabel testResultLabel;
     private final JComboBox<String> modelCombo;
+    private final JComboBox<String> effortCombo;
 
     public CodexAiSettingsTab() {
         panel = new JPanel(new GridBagLayout());
@@ -88,6 +91,19 @@ public final class CodexAiSettingsTab implements SettingsTab {
 
         c.gridx = 0;
         c.gridy = 3;
+        c.weightx = 0;
+        panel.add(new JLabel("Default effort:"), c);
+
+        effortCombo = new JComboBox<>(new String[]{BlankSafeComboRenderer.DEFAULT_OPTION});
+        effortCombo.setEditable(true);
+        effortCombo.setToolTipText("Default reasoning effort for new sessions — \"" + BlankSafeComboRenderer.DEFAULT_OPTION
+                + "\" omits the field, letting the model apply its own default (options from the model/list probe; editable)");
+        c.gridx = 1;
+        c.weightx = 1;
+        panel.add(effortCombo, c);
+
+        c.gridx = 0;
+        c.gridy = 4;
         c.weighty = 1;
         c.gridwidth = 5;
         panel.add(Box.createVerticalGlue(), c);
@@ -111,6 +127,7 @@ public final class CodexAiSettingsTab implements SettingsTab {
             }
         });
         modelCombo.addActionListener(e -> fireChange());
+        effortCombo.addActionListener(e -> fireChange());
         browseButton.addActionListener(e -> handleBrowse());
         detectButton.addActionListener(e -> handleDetect());
         testButton.addActionListener(e -> handleTest());
@@ -134,6 +151,8 @@ public final class CodexAiSettingsTab implements SettingsTab {
     public void load() {
         executableField.setText(CodexPluginSettings.getExecutable());
         modelCombo.setSelectedItem(CodexPluginSettings.getModel());
+        refreshEffortOptions();
+        setSelectedOrDefault(effortCombo, CodexPluginSettings.getEffort());
         testResultLabel.setText(" ");
     }
 
@@ -142,6 +161,7 @@ public final class CodexAiSettingsTab implements SettingsTab {
         CodexPluginSettings.setExecutable(executableField.getText().strip());
         Object sel = modelCombo.getSelectedItem();
         CodexPluginSettings.setModel(sel != null ? sel.toString() : CodexPluginSettings.DEFAULT_MODEL);
+        CodexPluginSettings.setEffort(valueOrDefault(effortCombo));
     }
 
     @Override
@@ -152,6 +172,33 @@ public final class CodexAiSettingsTab implements SettingsTab {
         }
         File f = new File(exe);
         return !f.isAbsolute() || f.isFile();
+    }
+
+    /**
+     * Rebuilds the effort combo's entries from {@link CodexReasoningEffortCatalog} for the currently selected model —
+     * {@code (model default)} first, then any supported efforts past sessions discovered. No-op-able on a model with no
+     * cached capability data (combo keeps {@code (model default)}).
+     */
+    private void refreshEffortOptions() {
+        Object sel = modelCombo.getSelectedItem();
+        String model = sel != null ? sel.toString().trim() : CodexPluginSettings.DEFAULT_MODEL;
+        java.util.List<String> supported = CodexReasoningEffortCatalog.supportedEffortsFor(model);
+        String[] items = new String[1 + supported.size()];
+        items[0] = BlankSafeComboRenderer.DEFAULT_OPTION;
+        for (int i = 0; i < supported.size(); i++) {
+            items[i + 1] = supported.get(i);
+        }
+        effortCombo.setModel(new javax.swing.DefaultComboBoxModel<>(items));
+    }
+
+    private void setSelectedOrDefault(JComboBox<String> combo, String storedValue) {
+        combo.setSelectedItem((storedValue == null || storedValue.isBlank()) ? BlankSafeComboRenderer.DEFAULT_OPTION : storedValue);
+    }
+
+    private String valueOrDefault(JComboBox<String> combo) {
+        Object sel = combo.isEditable() && combo.getEditor() != null ? combo.getEditor().getItem() : combo.getSelectedItem();
+        String s = sel != null ? sel.toString().trim() : "";
+        return BlankSafeComboRenderer.DEFAULT_OPTION.equals(s) ? "" : s;
     }
 
     @Override

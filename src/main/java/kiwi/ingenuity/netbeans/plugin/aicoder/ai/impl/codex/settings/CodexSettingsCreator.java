@@ -7,8 +7,8 @@ import kiwi.ingenuity.netbeans.plugin.aicoder.ai.settings.AiSessionCreateSetting
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.settings.AiSessionSettings;
 
 /**
- * Creates and updates Codex-specific AI session settings. Handles instantiation
- * and configuration updates for the Codex AI implementation.
+ * Creates and updates Codex-specific AI session settings. Handles instantiation and configuration updates for the Codex
+ * AI implementation.
  */
 public class CodexSettingsCreator extends AiModelSessionSettingsCreator<CodexSessionSettings> {
 
@@ -29,9 +29,17 @@ public class CodexSettingsCreator extends AiModelSessionSettingsCreator<CodexSes
         if (cfgObj.has(threadIdKey) && !cfgObj.get(threadIdKey).isJsonNull()) {
             settings.setThreadId(cfgObj.get(threadIdKey).getAsString());
         }
+        String effortKey = CodexSessionSettingsKeyEnum.EFFORT.key();
+        if (cfgObj.has(effortKey) && !cfgObj.get(effortKey).isJsonNull()) {
+            settings.setEffort(cfgObj.get(effortKey).getAsString());
+        }
     }
 
     @Override
     public void applyDefaultSettingsFromGlobal(AiSessionSettings settings) {
+        if (settings instanceof CodexSessionSettings cs) {
+            String effort = CodexPluginSettings.getEffort();
+            cs.setEffort((effort == null || effort.isBlank()) ? null : effort);
+        }
     }
 }

@@ -1,13 +1,20 @@
 package kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.claude;
 
+import java.util.ArrayList;
+import java.util.List;
+import kiwi.ingenuity.netbeans.plugin.aicoder.ai.events.StatusEvent;
+import kiwi.ingenuity.netbeans.plugin.aicoder.ai.events.StatusEventTypeEnum;
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import org.junit.jupiter.api.Test;
 
 /**
- * Pins {@link ClaudeAiProcessManager#isInputJsonDeltaFragment}, the predicate that excludes tool-input stream fragments
- * from the "ai json" debug log. Confirmed shapes are taken from live-captured {@code messages.log} lines (see the
- * predicate's javadoc), not guessed.
+ * Pins {@link ClaudeAiProcessManager#isInputJsonDeltaFragment} (the predicate that excludes tool-input stream fragments
+ * from the "ai json" debug log — confirmed shapes are taken from live-captured {@code messages.log} lines, not guessed)
+ * and {@link ClaudeAiProcessManager#configureEffort} (the gate that keeps a corrupted or hand-edited stored effort
+ * level like "banana" from ever reaching {@code --effort}, which would hard-fail the CLI at spawn).
  */
 class ClaudeAiProcessManagerTest {
 
@@ -74,5 +81,58 @@ class ClaudeAiProcessManagerTest {
         assertFalse(ClaudeAiProcessManager.isInputJsonDeltaFragment("{\"type\":\"stream_event\"}"));
         assertFalse(ClaudeAiProcessManager.isInputJsonDeltaFragment(
                 "{\"type\":\"stream_event\",\"event\":{\"type\":\"content_block_delta\"}}"));
+    }
+
+    @Test
+    void configureEffort_unknownLevelIsDroppedWithOneInfoEvent() {
+        List<StatusEvent> events = new ArrayList<>();
+        ClaudeAiProcessManager mgr = new ClaudeAiProcessManager(e -> {
+            if (e instanceof StatusEvent se) {
+                events.add(se);
+            }
+        });
+
+        mgr.configureEffort("banana");
+
+        assertNull(mgr.getConfiguredEffort(), "a hand-edited/corrupted value like \"banana\" must never reach --effort");
+        assertEquals(1, events.size());
+        assertEquals(StatusEventTypeEnum.INFO, events.get(0).type(),
+                     "the drop must be surfaced to the user via exactly one INFO event");
+    }
+
+    @Test
+    void configureEffort_anythingNotInTheKnownFiveLevelsIsDropped() {
+        ClaudeAiProcessManager mgr = new ClaudeAiProcessManager(e -> {
+        });
+
+        mgr.configureEffort("banana");
+        assertNull(mgr.getConfiguredEffort());
+        mgr.configureEffort("MEDIUM"); // wrong casing is still not a known level
+        assertNull(mgr.getConfiguredEffort());
+        mgr.configureEffort("very-high");
+        assertNull(mgr.getConfiguredEffort());
+    }
+
+    @Test
+    void configureEffort_acceptsOnlyTheFiveKnownLevels() {
+        for (String known : List.of("low", "medium", "high", "xhigh", "max")) {
+            ClaudeAiProcessManager mgr = new ClaudeAiProcessManager(e -> {
+            });
+            mgr.configureEffort(known);
+            assertEquals(known, mgr.getConfiguredEffort(), "\"" + known + "\" is a valid Claude effort level");
+        }
+    }
+
+    @Test
+    void configureEffort_nullOrBlankMeansOmitEffortFlag() {
+        ClaudeAiProcessManager mgr = new ClaudeAiProcessManager(e -> {
+        });
+
+        mgr.configureEffort(null);
+        assertNull(mgr.getConfiguredEffort());
+        mgr.configureEffort("");
+        assertNull(mgr.getConfiguredEffort());
+        mgr.configureEffort("   ");
+        assertNull(mgr.getConfiguredEffort());
     }
 }

@@ -17,10 +17,12 @@ import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.githubcopilot.events.Githu
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.githubcopilot.events.GithubCopilotQuotaEvent;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.githubcopilot.events.GithubCopilotTokenUsageEvent;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.githubcopilot.settings.GithubCopilotPluginSettings;
+import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.githubcopilot.settings.GithubCopilotSessionSettings;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.session.AiSession;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.settings.AiModelSessionSettings;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.settings.AiSessionSettings;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.ui.AiInfoBarExtension;
+import kiwi.ingenuity.netbeans.plugin.aicoder.ai.ui.BlankSafeComboRenderer;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ui.UIConstants;
 
 /**
@@ -58,8 +60,10 @@ public class GithubCopilotAiInfoBarExtension implements AiInfoBarExtension {
     private final javax.swing.JProgressBar contextBar;
     private final JButton compactBtn;
     private final JComboBox<String> modelCombo;
+    private final JComboBox<String> reasoningEffortCombo;
     private final javax.swing.JProgressBar quotaBar;
     private final List<GithubCopilotInfoBarListener> listeners = new ArrayList<>();
+    private boolean programmaticReasoningEffortSelection = false;
     private volatile int maxTokens = 0;
     private volatile int currentTokens = 0;
     private volatile boolean hasUsageData = false;
@@ -92,12 +96,24 @@ public class GithubCopilotAiInfoBarExtension implements AiInfoBarExtension {
         // Copilot never reports a context-window size, so it always comes from
         // the selected model — recompute it on every model change (not just
         // before the first usage event) so the bar's denominator stays correct.
+        reasoningEffortCombo = new JComboBox<>();
+        reasoningEffortCombo.setToolTipText("Reasoning effort — options depend on the selected model");
+        reasoningEffortCombo.setRenderer(new BlankSafeComboRenderer());
+        refreshReasoningEffortOptions(initialModel, null);
+        reasoningEffortCombo.addActionListener(e -> {
+            if (programmaticReasoningEffortSelection) {
+                return;
+            }
+            String effort = getSelectedReasoningEffort();
+            listeners.forEach(l -> l.onReasoningEffortChanged(effort));
+        });
         modelCombo.addActionListener(e -> {
             String sel = (String) modelCombo.getSelectedItem();
             maxTokens = defaultMaxTokensForModel(sel);
             if (hasUsageData) {
                 updateContextBar();
             }
+            refreshReasoningEffortOptions(sel, null);
         });
         compactBtn = new JButton("⇒ Compact");
         compactBtn.setFont(compactBtn.getFont().deriveFont(11f));
@@ -167,18 +183,15 @@ public class GithubCopilotAiInfoBarExtension implements AiInfoBarExtension {
     }
 
     /**
-     * Replaces the dropdown's items with a discovered model list, preserving
-     * the current selection. The combo stays editable so any model can still be
-     * typed. EDT-safe.
+     * Replaces the dropdown's items with a discovered model list, preserving the current selection. The combo stays
+     * editable so any model can still be typed. EDT-safe.
      *
      * <p>
-     * Repopulating must be guarded like {@link #setSelectedModel}: model
-     * discovery is broadcast to <em>every</em> open Copilot session's info bar,
-     * and {@code removeAllItems()}/{@code addItem()} fire combo action events.
-     * Unguarded, those reach the model-change listener as if the user had
-     * picked a model — which calls setModel(), rewrites the global default,
-     * recycles the live Copilot session and writes session settings to disk on
-     * the EDT, all off the back of another session's discovery finishing.
+     * Repopulating must be guarded like {@link #setSelectedModel}: model discovery is broadcast to <em>every</em> open
+     * Copilot session's info bar, and {@code removeAllItems()}/{@code addItem()} fire combo action events. Unguarded,
+     * those reach the model-change listener as if the user had picked a model — which calls setModel(), rewrites the
+     * global default, recycles the live Copilot session and writes session settings to disk on the EDT, all off the
+     * back of another session's discovery finishing.
      */
     public void setAvailableModels(String[] models) {
         if (models == null || models.length == 0) {
@@ -225,7 +238,7 @@ public class GithubCopilotAiInfoBarExtension implements AiInfoBarExtension {
 
     @Override
     public List<javax.swing.JComponent> createComponents() {
-        return List.of(modelCombo, compactBtn, contextBar, quotaBar, errorLabel);
+        return List.of(modelCombo, reasoningEffortCombo, compactBtn, contextBar, quotaBar, errorLabel);
     }
 
     @Override
@@ -235,6 +248,10 @@ public class GithubCopilotAiInfoBarExtension implements AiInfoBarExtension {
             // discovered (or replayed from cache for a newly opened session).
             // Delivered on the EDT; setAvailableModels also self-marshals.
             setAvailableModels(me.models().toArray(String[]::new));
+            // The same discovery cycle that populated the model list also populated the per-model reasoning-effort
+            // cache (GithubCopilotModelDiscovery's SDK tier) — refresh the effort combo for whichever model is
+            // currently selected, keeping its current selection if still valid for that model.
+            refreshReasoningEffortOptions(getSelectedModel(), getSelectedReasoningEffort());
         }
         else if (event instanceof GithubCopilotQuotaEvent quota) {
             updateQuota(quota);
@@ -242,10 +259,81 @@ public class GithubCopilotAiInfoBarExtension implements AiInfoBarExtension {
     }
 
     @Override
+    public void onProcessingChanged(boolean processing) {
+        if (!SwingUtilities.isEventDispatchThread()) {
+            SwingUtilities.invokeLater(() -> onProcessingChanged(processing));
+            return;
+        }
+        // A reasoning-effort change requires rebuilding the CopilotSession (same as a model change) — Copilot cannot
+        // accept it mid-turn, so the picker is disabled while a turn is running, per the design spec.
+        reasoningEffortCombo.setEnabled(!processing);
+    }
+
+    /**
+     * Rebuilds {@link #reasoningEffortCombo}'s options from {@code model}'s live-discovered supported list (empty/
+     * absent means "no support": only the "(model default)" entry is offered, matching the design spec's must-not-
+     * error requirement), selecting {@code preferredEffort} if it is still valid for this model, else the combo's own
+     * current selection if that is still valid, else "(model default)". EDT-safe: self-marshals like
+     * {@link #setAvailableModels}.
+     */
+    private void refreshReasoningEffortOptions(String model, String preferredEffort) {
+        if (!SwingUtilities.isEventDispatchThread()) {
+            SwingUtilities.invokeLater(() -> refreshReasoningEffortOptions(model, preferredEffort));
+            return;
+        }
+        List<String> supported = GithubCopilotPluginSettings.getSupportedReasoningEfforts(model);
+        String currentSelection = getSelectedReasoningEffort();
+        String toSelect = (preferredEffort != null && supported.contains(preferredEffort)) ? preferredEffort
+                          : (currentSelection != null && supported.contains(currentSelection) ? currentSelection : null);
+        programmaticReasoningEffortSelection = true;
+        try {
+            reasoningEffortCombo.removeAllItems();
+            reasoningEffortCombo.addItem(BlankSafeComboRenderer.DEFAULT_OPTION);
+            for (String effort : supported) {
+                reasoningEffortCombo.addItem(effort);
+            }
+            reasoningEffortCombo.setSelectedItem(toSelect != null ? toSelect : BlankSafeComboRenderer.DEFAULT_OPTION);
+        }
+        finally {
+            programmaticReasoningEffortSelection = false;
+        }
+    }
+
+    /**
+     * The user's current reasoning-effort pick, or {@code null} for "(model default)" — mirrors {@link
+     * #getSelectedModel()}'s null-means-unset convention.
+     */
+    public String getSelectedReasoningEffort() {
+        Object sel = reasoningEffortCombo.getSelectedItem();
+        return (sel == null || BlankSafeComboRenderer.DEFAULT_OPTION.equals(sel)) ? null : sel.toString();
+    }
+
+    /**
+     * Programmatically selects {@code effort} (e.g. restoring a stored session value) if it is valid for the currently
+     * selected model; otherwise falls back to "(model default)" — never sends an invalid combination to the combo
+     * itself. EDT-safe via {@link #refreshReasoningEffortOptions}.
+     */
+    public void setSelectedReasoningEffort(String effort) {
+        refreshReasoningEffortOptions(getSelectedModel(), effort);
+    }
+
+    @Override
     public void onSessionSettingsChanged(AiSessionSettings settings) {
         if (settings instanceof AiModelSessionSettings modelSettings
                 && modelSettings.model() != null && !modelSettings.model().isBlank()) {
             setSelectedModel(modelSettings.model());
+        }
+        if (settings instanceof GithubCopilotSessionSettings ghSettings) {
+            // Display only, mirroring GithubCopilotAiImplementation.createInfoBarExtension's initial seed: falls
+            // back to the global default so the combo shows what will actually be used, without writing that
+            // fallback back into the session's own (still-unset) settings. setSelectedReasoningEffort already
+            // guards against notifying listeners for this programmatic update.
+            String effort = ghSettings.reasoningEffort();
+            if (effort == null || effort.isBlank()) {
+                String globalDefault = GithubCopilotPluginSettings.getReasoningEffort();
+                effort = (globalDefault == null || globalDefault.isBlank()) ? null : globalDefault;
+            }
+            setSelectedReasoningEffort(effort);
         }
     }
 
@@ -299,7 +387,7 @@ public class GithubCopilotAiInfoBarExtension implements AiInfoBarExtension {
             quotaBar.setValue(Math.min(100, Math.max(0, pct)));
             quotaBar.setString(pct + "%");
             String reset = showQuotaResetDate && quotaResetDate != null
-                    ? "; resets " + formatResetDate(quotaResetDate) : "";
+                           ? "; resets " + formatResetDate(quotaResetDate) : "";
             quotaBar.setToolTipText(String.format(
                     "Premium requests: %,d / %,d used (%d%%)%s",
                     quotaUsedRequests, quotaEntitlementRequests, pct, reset));

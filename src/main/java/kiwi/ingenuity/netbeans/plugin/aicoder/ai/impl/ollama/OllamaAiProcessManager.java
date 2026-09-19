@@ -30,6 +30,8 @@ import kiwi.ingenuity.netbeans.plugin.aicoder.ai.http.ChatToolCall;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.http.ExtractedToolCall;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.http.HttpAiClient;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.http.OpenAiCompatibleClient;
+import kiwi.ingenuity.netbeans.plugin.aicoder.ai.http.OpenAiHttpStatusException;
+import kiwi.ingenuity.netbeans.plugin.aicoder.ai.http.OpenAiJsonKeyEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.http.SchemaToolCalls;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.http.ToolCallExtractor;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.http.context.AbstractChatContextBroker;
@@ -168,9 +170,33 @@ public class OllamaAiProcessManager extends AiProcessManager {
     volatile Thread activeTurnThread;
     private volatile ContextBrokerSettings lastResolvedSettings;
     private volatile boolean pinnedOverBudgetWarned;
+    /**
+     * Set once a live 4xx tells us this server rejects {@code reasoning_effort} on the OpenAI-compatible endpoint — see
+     * the spec's Ollama section. Sticky for the life of the session: never retried, never re-sent, after the first
+     * rejection.
+     */
+    private volatile boolean reasoningEffortDisabledForSession;
+    /**
+     * Notified (no argument — the caller already knows it only fires for the session-sourced case, per spec §1 rule 3a)
+     * when {@link #applyThinkingCapabilityValidation} clears an unsupported SESSION-sourced value, so the owning
+     * {@code OllamaAiImplementation} can also clear the PERSISTED session setting — otherwise only the live settings
+     * read is affected for this turn, and the next turn (or session restart) re-reads the same stale value and fires
+     * the INFO again. Never invoked for a global-sourced value — rule 3a leaves that alone entirely. Deliberately a
+     * plain callback rather than plumbing an {@code AiSessionHost} reference into this process-manager layer, which has
+     * no business knowing about session-settings persistence otherwise — mirrors
+     * {@code GrokAiProcessManager}/{@code GithubCopilotProcessManager}'s identical callback.
+     */
+    private volatile Runnable onReasoningEffortCleared;
 
     public OllamaAiProcessManager(AiProcessEventListener listener) {
         super(listener);
+    }
+
+    /**
+     * See {@link #onReasoningEffortCleared}'s javadoc.
+     */
+    public void setOnReasoningEffortCleared(Runnable callback) {
+        this.onReasoningEffortCleared = callback;
     }
 
     @Override
@@ -275,6 +301,111 @@ public class OllamaAiProcessManager extends AiProcessManager {
                : defaultBaseUrl();
     }
 
+    /**
+     * The resolved reasoning-effort value together with whether it came from the session's own setting (true) or was
+     * inherited from the global default (false) — spec §1 rule 3a is built on this distinction: only a session-pinned
+     * value may ever be cleared, persisted-cleared and reported with an INFO event; a global-sourced value is only ever
+     * silently omitted, never cleared, never reported.
+     */
+    record EffectiveReasoningEffort(String value, boolean fromSession) {
+
+    }
+
+    /**
+     * Session value wins over the global default; value is null once the local server has rejected the field for this
+     * session (see {@link #reasoningEffortDisabledForSession}), so a later iteration or turn never resends it.
+     * Package-private for direct unit testing, mirroring {@code buildReasoningEffortArgs}'s equivalent on Grok.
+     */
+    EffectiveReasoningEffort resolveEffectiveReasoningEffort(OllamaSessionSettings settings) {
+        if (reasoningEffortDisabledForSession) {
+            return new EffectiveReasoningEffort(null, false);
+        }
+        String sessionEffort = settings.reasoningEffort();
+        if (sessionEffort != null && !sessionEffort.isBlank()) {
+            return new EffectiveReasoningEffort(sessionEffort, true);
+        }
+        String global = OllamaPluginSettings.getReasoningEffort();
+        return new EffectiveReasoningEffort((global != null && !global.isBlank()) ? global : null, false);
+    }
+
+    /**
+     * Applies spec §1 rule 3a using live capability discovery ({@link OllamaModelDiscovery#modelSupportsThinking},
+     * populated from {@code GET /api/tags}). Returns the value to actually send for this request (may be null).
+     * <p>
+     * Three cases:
+     * <ul>
+     * <li>discovery has positively confirmed {@code model} supports thinking (or {@code effective} is already null) —
+     * return the value unchanged;</li>
+     * <li>discovery has positively confirmed {@code model} does NOT support thinking — apply rule 3a: a SESSION-sourced
+     * value is cleared (via {@link #onReasoningEffortCleared}) and reported with exactly one INFO event; a
+     * GLOBAL-sourced value is silently omitted for this request only (FINE log, global untouched, nothing written into
+     * the session) — return null either way;</li>
+     * <li>discovery has not reported on {@code model} at all yet ({@link OllamaModelDiscovery#isModelKnown} is false) —
+     * send the value optimistically rather than clearing a user's stored value on incomplete information; the 4xx retry
+     * in {@link #chatWithReasoningEffortRetry} is the backstop if the model turns out unable to think after all.</li>
+     * </ul>
+     * Package-private for direct unit testing, mirroring {@code buildReasoningEffortArgs}'s equivalent on Grok.
+     */
+    String applyThinkingCapabilityValidation(EffectiveReasoningEffort effective, String baseUrl, String model) {
+        if (effective.value() == null) {
+            return null;
+        }
+        if (!OllamaModelDiscovery.isModelKnown(baseUrl, model)
+                || OllamaModelDiscovery.modelSupportsThinking(baseUrl, model)) {
+            return effective.value();
+        }
+        if (effective.fromSession()) {
+            listener.onAiProcessEvent(new StatusEvent(StatusEventTypeEnum.INFO,
+                                                      "Thinking \"" + effective.value() + "\" is not supported by model \"" + model + "\"; clearing it"));
+            Runnable cb = onReasoningEffortCleared;
+            if (cb != null) {
+                cb.run();
+            }
+        }
+        else {
+            // spec §1 rule 3a: the global default belongs to the user and to every other session/backend — one
+            // session's model not supporting it says nothing about the rest, so it is never cleared or written
+            // anywhere. The combo already shows the "not set" entry for a model that can't take it, so the UI
+            // communicates this without a warning the user can't dismiss.
+            LOG.log(Level.FINE, "Thinking \"{0}\" (global default) is not supported by model \"{1}\"; omitting it for "
+                    + "this request without touching the global default", new Object[]{effective.value(), model});
+        }
+        return null;
+    }
+
+    /**
+     * Wraps a chat call with the defensive retry from the reasoning-effort design spec: if the request carried
+     * {@code reasoning_effort} and the server answered with a 4xx, retry once without the field, tell the user once,
+     * and remember not to send it again for the rest of this session. Any other failure (non-4xx status, no
+     * reasoning_effort in the request, network/stream error) propagates unchanged.
+     */
+    private ChatResult chatWithReasoningEffortRetry(HttpAiClient client, ChatRequest request,
+                                                    java.util.function.Consumer<String> onTextDelta) throws IOException {
+        if (reasoningEffortDisabledForSession && request.reasoningEffort() != null) {
+            // Belt and braces: a caller-side mistake (e.g. a stale resolveEffectiveReasoningEffort snapshot taken
+            // before an earlier retry in the same turn set the flag) must not put the field back on the wire once
+            // the session has already been told the server rejects it — strip it here rather than relying on a
+            // second 4xx to catch it, which would also mean a second INFO event.
+            request = new ChatRequest(request.baseUrl(), request.apiKey(), request.model(),
+                                      request.messages(), request.toolSchemas(), request.responseFormat(), null);
+        }
+        try {
+            return client.chat(request, onTextDelta);
+        }
+        catch (OpenAiHttpStatusException ex) {
+            if (request.reasoningEffort() == null || ex.statusCode() < 400 || ex.statusCode() >= 500) {
+                throw ex;
+            }
+            reasoningEffortDisabledForSession = true;
+            listener.onAiProcessEvent(new StatusEvent(StatusEventTypeEnum.INFO,
+                                                      "The local server rejected " + OpenAiJsonKeyEnum.REASONING_EFFORT.key()
+                                                      + "; retrying without it"));
+            ChatRequest retryRequest = new ChatRequest(request.baseUrl(), request.apiKey(), request.model(),
+                                                       request.messages(), request.toolSchemas(), request.responseFormat(), null);
+            return client.chat(retryRequest, onTextDelta);
+        }
+    }
+
     private void runTurn(String text) {
         try {
             OllamaSessionSettings settings = effectiveSessionSettings();
@@ -361,6 +492,8 @@ public class OllamaAiProcessManager extends AiProcessManager {
             int barrenRounds = 0;
             for (int iteration = 0; iteration < MAX_TOOL_ITERATIONS && !cancelledByUser; iteration++) {
                 String apiKey = resolveApiKey(settings);
+                String iterationReasoningEffort = applyThinkingCapabilityValidation(
+                        resolveEffectiveReasoningEffort(settings), effectiveBaseUrl, effectiveModel);
                 localBroker.trimIfNeeded();
                 if (!pinnedOverBudgetWarned && localBroker.isPinnedOverBudget()) {
                     pinnedOverBudgetWarned = true;
@@ -369,38 +502,39 @@ public class OllamaAiProcessManager extends AiProcessManager {
                 }
                 int estimatedForRequest = localBroker.estimatedTokenTotal();
                 ChatRequest request = new ChatRequest(effectiveBaseUrl, apiKey, effectiveModel,
-                                                      localBroker.snapshot(), List.copyOf(requestTools), responseFormat);
+                                                      localBroker.snapshot(), List.copyOf(requestTools), responseFormat,
+                                                      iterationReasoningEffort);
                 StringBuilder buf = new StringBuilder();
                 boolean[] decided = {false};
                 boolean[] streaming = {false};
-                ChatResult result = client.chat(request, delta -> {
-                                            if (cancelledByUser) {
-                                                return;
-                                            }
-                                            buf.append(delta);
-                                            if (schemaMode) {
-                                                // Every reply is a JSON envelope; the message field is
-                                                // emitted once the turn resolves.
-                                                return;
-                                            }
-                                            if (!decided[0]) {
-                                                String lead = buf.toString().stripLeading();
-                                                if (lead.isEmpty()) {
-                                                    return;
-                                                }
-                                                char c = lead.charAt(0);
-                                                boolean looksJson = (c == '{' || c == '[' || lead.startsWith("```"));
-                                                decided[0] = true;
-                                                streaming[0] = !looksJson;
-                                                if (streaming[0]) {
-                                                    listener.onAiProcessEvent(new TextDeltaEvent(buf.toString(), null));
-                                                }
-                                                return;
-                                            }
-                                            if (streaming[0]) {
-                                                listener.onAiProcessEvent(new TextDeltaEvent(delta, null));
-                                            }
-                                        });
+                ChatResult result = chatWithReasoningEffortRetry(client, request, delta -> {
+                                                             if (cancelledByUser) {
+                                                                 return;
+                                                             }
+                                                             buf.append(delta);
+                                                             if (schemaMode) {
+                                                                 // Every reply is a JSON envelope; the message field is
+                                                                 // emitted once the turn resolves.
+                                                                 return;
+                                                             }
+                                                             if (!decided[0]) {
+                                                                 String lead = buf.toString().stripLeading();
+                                                                 if (lead.isEmpty()) {
+                                                                     return;
+                                                                 }
+                                                                 char c = lead.charAt(0);
+                                                                 boolean looksJson = (c == '{' || c == '[' || lead.startsWith("```"));
+                                                                 decided[0] = true;
+                                                                 streaming[0] = !looksJson;
+                                                                 if (streaming[0]) {
+                                                                     listener.onAiProcessEvent(new TextDeltaEvent(buf.toString(), null));
+                                                                 }
+                                                                 return;
+                                                             }
+                                                             if (streaming[0]) {
+                                                                 listener.onAiProcessEvent(new TextDeltaEvent(delta, null));
+                                                             }
+                                                         });
                 localBroker.recordUsage(estimatedForRequest, result.promptTokens());
                 listener.onAiProcessEvent(new OllamaTokenUsageEvent(
                         localBroker.estimatedTokenTotal(), lastResolvedSettings.tokenThreshold()));
@@ -518,6 +652,8 @@ public class OllamaAiProcessManager extends AiProcessManager {
                     // ask once more with no tools offered — the model can only
                     // answer in prose.
                     if (!answerWithoutTools(client, effectiveBaseUrl, apiKey, effectiveModel,
+                                            applyThinkingCapabilityValidation(resolveEffectiveReasoningEffort(settings),
+                                                                              effectiveBaseUrl, effectiveModel),
                                             localBroker)) {
                         listener.onAiProcessEvent(new StatusEvent(StatusEventTypeEnum.INFO,
                                                                   "Stopped: the model kept repeating the same tool call without making progress"));
@@ -533,7 +669,9 @@ public class OllamaAiProcessManager extends AiProcessManager {
                 listener.onAiProcessEvent(new StatusEvent(StatusEventTypeEnum.INFO,
                                                           "Stopped after " + MAX_TOOL_ITERATIONS + " tool iterations"));
                 if (answerWithoutTools(client, effectiveBaseUrl, resolveApiKey(settings),
-                                       effectiveModel, localBroker)) {
+                                       effectiveModel, applyThinkingCapabilityValidation(resolveEffectiveReasoningEffort(settings),
+                                                                                         effectiveBaseUrl, effectiveModel),
+                                       localBroker)) {
                     localBroker.commitTurn();
                 }
                 listener.onAiProcessEvent(new TurnCompleteEvent());
@@ -570,19 +708,19 @@ public class OllamaAiProcessManager extends AiProcessManager {
      * @return true if a non-empty answer was produced and emitted
      */
     private boolean answerWithoutTools(HttpAiClient client, String baseUrl, String apiKey,
-                                       String model, AbstractChatContextBroker localBroker) throws IOException {
+                                       String model, String reasoningEffort, AbstractChatContextBroker localBroker) throws IOException {
         List<ChatMessage> prompt = new ArrayList<>(localBroker.snapshot());
         prompt.add(new ChatMessage(ChatRole.USER,
                                    "Stop calling tools. Answer my original message directly, in plain text.",
                                    List.of(), null));
         StringBuilder buf = new StringBuilder();
-        ChatResult result = client.chat(
-                new ChatRequest(baseUrl, apiKey, model, List.copyOf(prompt), List.of()),
-                delta -> {
-                    if (!cancelledByUser) {
-                        buf.append(delta);
-                    }
-                });
+        ChatResult result = chatWithReasoningEffortRetry(client,
+                                                         new ChatRequest(baseUrl, apiKey, model, List.copyOf(prompt), List.of(), null, reasoningEffort),
+                                                         delta -> {
+                                                             if (!cancelledByUser) {
+                                                                 buf.append(delta);
+                                                             }
+                                                         });
         String text = buf.length() > 0 ? buf.toString() : result.assistantText();
         if (cancelledByUser || text == null || text.isBlank() || isEmptyJson(text)) {
             return false;
@@ -725,6 +863,7 @@ public class OllamaAiProcessManager extends AiProcessManager {
         running = false;
         processing = false;
         pinnedOverBudgetWarned = false;
+        reasoningEffortDisabledForSession = false;
         Thread turnThread = activeTurnThread;
         activeTurnThread = null;
         if (turnThread != null) {

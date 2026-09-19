@@ -2,7 +2,8 @@ package kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.githubcopilot.settings;
 
 public enum GithubCopilotPluginSettingsKeyEnum {
     EXECUTABLE("ai.githubcopilot.executable"),
-    MODEL("ai.githubcopilot.model");
+    MODEL("ai.githubcopilot.model"),
+    REASONING_EFFORT("ai.githubcopilot.reasoningEffort");
 
     private final String key;
 

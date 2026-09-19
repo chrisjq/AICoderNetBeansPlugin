@@ -27,6 +27,7 @@ import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.pi.PiExecutableLocator;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.pi.PiModelDiscovery;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.pi.PiVersionCheck;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.pi.settings.PiPluginSettings;
+import kiwi.ingenuity.netbeans.plugin.aicoder.ai.ui.BlankSafeComboRenderer;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ui.SettingsTab;
 import org.openide.util.lookup.ServiceProvider;
 
@@ -34,11 +35,13 @@ import org.openide.util.lookup.ServiceProvider;
 public class PiAiSettingsTab implements SettingsTab {
 
     /**
-     * Maps to an empty stored value ("use pi's own default") for both the model and thinking-level combos.
+     * "Not set" entry for the MODEL combo only — a separate concept from the thinking-level combo's shared
+     * {@link BlankSafeComboRenderer#DEFAULT_OPTION}; the model picker's own wording is out of scope for that
+     * unification.
      */
-    private static final String DEFAULT_LABEL = "(pi default)";
+    private static final String MODEL_DEFAULT_LABEL = "(pi default)";
     private static final String[] THINKING_LEVEL_OPTIONS = {
-        DEFAULT_LABEL, "off", "minimal", "low", "medium", "high", "xhigh", "max"
+        BlankSafeComboRenderer.DEFAULT_OPTION, "off", "minimal", "low", "medium", "high", "xhigh", "max"
     };
 
     private final PropertyChangeSupport pcs = new PropertyChangeSupport(this);
@@ -190,8 +193,8 @@ public class PiAiSettingsTab implements SettingsTab {
         try {
             executableField.setText(PiPluginSettings.getExecutable());
             applyDiscoveredModels(Arrays.asList(PiPluginSettings.getKnownModels()));
-            setSelectedOrDefault(modelCombo, PiPluginSettings.getModel());
-            setSelectedOrDefault(thinkingLevelCombo, PiPluginSettings.getThinkingLevel());
+            setSelectedOrDefault(modelCombo, PiPluginSettings.getModel(), MODEL_DEFAULT_LABEL);
+            setSelectedOrDefault(thinkingLevelCombo, PiPluginSettings.getThinkingLevel(), BlankSafeComboRenderer.DEFAULT_OPTION);
             testResultLabel.setText(" ");
             currentVersionCheck = null;
             versionStatusLabel.setText(" ");
@@ -242,8 +245,8 @@ public class PiAiSettingsTab implements SettingsTab {
     @Override
     public void store() {
         PiPluginSettings.setExecutable(executableField.getText().strip());
-        PiPluginSettings.setModel(valueOrDefault(modelCombo));
-        PiPluginSettings.setThinkingLevel(valueOrDefault(thinkingLevelCombo));
+        PiPluginSettings.setModel(valueOrDefault(modelCombo, MODEL_DEFAULT_LABEL));
+        PiPluginSettings.setThinkingLevel(valueOrDefault(thinkingLevelCombo, BlankSafeComboRenderer.DEFAULT_OPTION));
     }
 
     @Override
@@ -273,14 +276,14 @@ public class PiAiSettingsTab implements SettingsTab {
         pcs.firePropertyChange(PI.key(), null, null);
     }
 
-    private void setSelectedOrDefault(JComboBox<String> combo, String storedValue) {
-        combo.setSelectedItem((storedValue == null || storedValue.isBlank()) ? DEFAULT_LABEL : storedValue);
+    private void setSelectedOrDefault(JComboBox<String> combo, String storedValue, String defaultLabel) {
+        combo.setSelectedItem((storedValue == null || storedValue.isBlank()) ? defaultLabel : storedValue);
     }
 
-    private String valueOrDefault(JComboBox<String> combo) {
+    private String valueOrDefault(JComboBox<String> combo, String defaultLabel) {
         Object sel = combo.isEditable() && combo.getEditor() != null ? combo.getEditor().getItem() : combo.getSelectedItem();
         String s = sel != null ? sel.toString().trim() : "";
-        return DEFAULT_LABEL.equals(s) ? "" : s;
+        return defaultLabel.equals(s) ? "" : s;
     }
 
     private void handleBrowse() {
@@ -386,11 +389,11 @@ public class PiAiSettingsTab implements SettingsTab {
         try {
             Object selected = modelCombo.getSelectedItem();
             modelCombo.removeAllItems();
-            modelCombo.addItem(DEFAULT_LABEL);
+            modelCombo.addItem(MODEL_DEFAULT_LABEL);
             for (String m : models) {
                 modelCombo.addItem(m);
             }
-            modelCombo.setSelectedItem(selected != null ? selected : DEFAULT_LABEL);
+            modelCombo.setSelectedItem(selected != null ? selected : MODEL_DEFAULT_LABEL);
         }
         finally {
             programmatic = wasProgrammatic;

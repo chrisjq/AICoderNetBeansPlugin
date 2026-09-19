@@ -73,6 +73,36 @@ public enum CodexJsonKeyEnum {
      */
     MODEL("model"),
     /**
+     * Reasoning-effort override sent per turn (TurnStartParams.effort, codex-cli 0.155.0).
+     */
+    EFFORT("effort"),
+    /**
+     * Reasoning effort currently in effect, echoed by {@code thread/start}, {@code thread/resume} and
+     * {@code thread/fork} responses.
+     */
+    REASONING_EFFORT("reasoningEffort"),
+    /**
+     * List of reasoning efforts a model supports (entry objects each carrying {@link #REASONING_EFFORT} and
+     * {@link #DESCRIPTION}).
+     */
+    SUPPORTED_REASONING_EFFORTS("supportedReasoningEfforts"),
+    /**
+     * Default reasoning effort a model applies when none is requested.
+     */
+    DEFAULT_REASONING_EFFORT("defaultReasoningEffort"),
+    /**
+     * Human-readable description of a supported reasoning effort.
+     */
+    DESCRIPTION("description"),
+    /**
+     * model/list result array of model objects.
+     */
+    DATA("data"),
+    /**
+     * model/list pagination cursor.
+     */
+    NEXT_CURSOR("nextCursor"),
+    /**
      * Codex thread identifier.
      */
     THREAD_ID("threadId"),

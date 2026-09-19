@@ -72,6 +72,61 @@ class CodexSettingsTest {
         assertEquals("gpt-5.6-luna", s.model());
     }
 
+    // ---- reasoning effort (spec §4) ----
+    @Test
+    void effortIsNullBeforeSet() {
+        assertNull(new CodexSessionSettings().effort());
+    }
+
+    @Test
+    void effortSetAndGetRoundTrips() {
+        CodexSessionSettings s = new CodexSessionSettings();
+        s.setEffort("high");
+        assertEquals("high", s.effort());
+    }
+
+    @Test
+    void populateJsonObjectIncludesEffortWhenSet() {
+        CodexSessionSettings s = new CodexSessionSettings();
+        s.setEffort("high");
+        JsonObject cfg = new JsonObject();
+        s.populateJsonObject(cfg);
+        assertEquals("high", cfg.get("effort").getAsString());
+    }
+
+    @Test
+    void populateJsonObjectOmitsEffortKeyWhenNull() {
+        CodexSessionSettings s = new CodexSessionSettings();
+        JsonObject cfg = new JsonObject();
+        s.populateJsonObject(cfg);
+        assertFalse(cfg.has("effort"), "unset effort must not be persisted");
+    }
+
+    @Test
+    void settingsCreatorUpdateDeserializesEffortFromJson() {
+        CodexSettingsCreator creator = new CodexSettingsCreator();
+        CodexSessionSettings s = creator.create();
+        JsonObject cfg = new JsonObject();
+        cfg.addProperty("effort", "medium");
+        creator.update(s, cfg);
+        assertEquals("medium", s.effort());
+    }
+
+    @Test
+    void settingsCreatorApplyDefaultSettingsFromGlobalCopiesEffort() {
+        String before = CodexPluginSettings.getEffort();
+        try {
+            CodexPluginSettings.setEffort("high");
+            CodexSessionSettings s = new CodexSessionSettings();
+            s.setEffort("low");
+            new CodexSettingsCreator().applyDefaultSettingsFromGlobal(s);
+            assertEquals("high", s.effort(), "the global default must seed a fresh session");
+        }
+        finally {
+            CodexPluginSettings.setEffort(before);
+        }
+    }
+
     @Test
     void createSettingsPanelReturnsCodexCreateSettingsPanel() {
         CodexSettingsCreator creator = new CodexSettingsCreator();

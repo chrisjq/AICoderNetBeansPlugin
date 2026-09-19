@@ -2,7 +2,8 @@ package kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.claude.settings;
 
 public enum ClaudePluginSettingsKeyEnum {
     EXECUTABLE("ai.claude.executable"),
-    MODEL("ai.claude.model");
+    MODEL("ai.claude.model"),
+    EFFORT("ai.claude.effort");
 
     private final String key;
 

@@ -2,16 +2,20 @@ package kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.codex;
 
 import java.io.File;
 import java.time.Instant;
+import java.util.List;
 import java.util.concurrent.atomic.AtomicReference;
 import javax.swing.JComboBox;
+import javax.swing.SwingUtilities;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.AiSessionHost;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.AiTypeEnum;
+import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.codex.events.CodexReasoningEffortEvent;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.codex.settings.CodexPluginSettings;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.codex.settings.CodexSessionSettings;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.codex.ui.CodexAiInfoBarExtension;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.session.AiSession;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.settings.AiSessionSettings;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.ui.AiInfoBarExtension;
+import kiwi.ingenuity.netbeans.plugin.aicoder.ai.ui.BlankSafeComboRenderer;
 import static org.junit.jupiter.api.Assertions.*;
 import org.junit.jupiter.api.Test;
 
@@ -110,8 +114,8 @@ class CodexAiImplementationTest {
         };
 
         assertEquals("gpt-5.6-luna", impl.resolveStartupModel(null),
-                "startWithDiscovery(null) must fall back to the session's chosen model, "
-                + "not CodexPluginSettings.getModel() — this is the per-session-model bug");
+                     "startWithDiscovery(null) must fall back to the session's chosen model, "
+                     + "not CodexPluginSettings.getModel() — this is the per-session-model bug");
     }
 
     @Test
@@ -128,7 +132,7 @@ class CodexAiImplementationTest {
         };
 
         assertEquals("gpt-5.5", impl.resolveStartupModel("gpt-5.5"),
-                "an explicit model argument must still win over the session setting");
+                     "an explicit model argument must still win over the session setting");
     }
 
     @Test
@@ -145,7 +149,7 @@ class CodexAiImplementationTest {
         };
 
         assertEquals(CodexPluginSettings.getModel(), impl.resolveStartupModel(null),
-                "with no session model and no explicit argument, the global default is still correct");
+                     "with no session model and no explicit argument, the global default is still correct");
     }
 
     @Test
@@ -162,7 +166,7 @@ class CodexAiImplementationTest {
         };
 
         assertEquals(CodexPluginSettings.getModel(), impl.resolveStartupModel(null),
-                "a blank (not null) session model must not be treated as a real choice");
+                     "a blank (not null) session model must not be treated as a real choice");
     }
 
     // ---- resumeSession: must use the stored Codex thread id, never the plugin's own UUID ----
@@ -189,7 +193,7 @@ class CodexAiImplementationTest {
         impl.resumeSession(pluginUuid);
 
         assertEquals(threadId, impl.exposedDelegate().pendingResumeThreadId,
-                "resumeSession(pluginUUID) must use the stored thread id, not the plugin UUID");
+                     "resumeSession(pluginUUID) must use the stored thread id, not the plugin UUID");
     }
 
     @Test
@@ -213,7 +217,7 @@ class CodexAiImplementationTest {
         impl.resumeSession(pluginUuid);
 
         assertNull(impl.exposedDelegate().pendingResumeThreadId,
-                "resumeSession must not set pendingResumeThreadId when no thread id is stored");
+                   "resumeSession must not set pendingResumeThreadId when no thread id is stored");
     }
 
     @Test
@@ -243,13 +247,13 @@ class CodexAiImplementationTest {
         // Simulate startAiProcess() -> afterStart() setting the stored thread id.
         impl.start("non-existent-codex-executable", "model");
         assertEquals(threadId, impl.exposedDelegate().pendingResumeThreadId,
-                "after afterStart(), pendingResumeThreadId must be the stored thread id");
+                     "after afterStart(), pendingResumeThreadId must be the stored thread id");
 
         // Simulate AiTopComponent.loadHistory() calling resumeSession with the plugin UUID.
         impl.resumeSession(pluginUuid);
 
         assertEquals(threadId, impl.exposedDelegate().pendingResumeThreadId,
-                "resumeSession(pluginUUID) must NOT overwrite the thread id set by afterStart()");
+                     "resumeSession(pluginUUID) must NOT overwrite the thread id set by afterStart()");
     }
 
     @Test
@@ -268,7 +272,7 @@ class CodexAiImplementationTest {
 
         assertTrue(ext instanceof CodexAiInfoBarExtension);
         assertEquals("gpt-5.6-luna", ((CodexAiInfoBarExtension) ext).getSelectedModel(),
-                "must seed from the session's own model, not CodexPluginSettings.getModel()");
+                     "must seed from the session's own model, not CodexPluginSettings.getModel()");
     }
 
     @Test
@@ -293,7 +297,7 @@ class CodexAiImplementationTest {
         combo.setSelectedItem("gpt-5.5");
 
         assertEquals("gpt-5.5", settings.model(),
-                "a user-initiated selection must persist to the session settings via setModel()");
+                     "a user-initiated selection must persist to the session settings via setModel()");
         assertSame(settings, updated.get(), "host.updateSessionSettings() must be called so the change is saved");
     }
 
@@ -308,5 +312,81 @@ class CodexAiImplementationTest {
 
         JComboBox<?> combo = (JComboBox<?>) codexExt.createComponents().get(0);
         assertDoesNotThrow(() -> combo.setSelectedItem("gpt-5.5"));
+    }
+
+    // ---- createInfoBarExtension: effort combo driven by CodexReasoningEffortEvent
+    // (spec §4 model/list probe, only "(model default)" when no capability info) ----
+    @Test
+    void createInfoBarExtension_effortComboPopulatedFromReasoningEffortEvent() throws Exception {
+        CodexSessionSettings settings = new CodexSessionSettings();
+        settings.setModel("gpt-5.6-terra");
+        AiSession session = newSession("s-infobar-3", settings);
+        CodexAiImplementation impl = new CodexAiImplementation(e -> {
+        }, null) {
+            {
+                currentSession = session;
+            }
+        };
+
+        AiInfoBarExtension ext = impl.createInfoBarExtension(session, stubHost(settings, new AtomicReference<>()));
+        CodexAiInfoBarExtension codexExt = (CodexAiInfoBarExtension) ext;
+        JComboBox<?> effortCombo = (JComboBox<?>) codexExt.createComponents().get(1);
+
+        SwingUtilities.invokeAndWait(() -> codexExt.onAiProcessImplEvent(
+                new CodexReasoningEffortEvent("gpt-5.6-terra", List.of("high", "low"), "medium", "low")));
+
+        assertEquals(3, effortCombo.getItemCount(), "default then each supported effort");
+        assertEquals(BlankSafeComboRenderer.DEFAULT_OPTION, effortCombo.getItemAt(0));
+        assertEquals("high", effortCombo.getItemAt(1));
+        assertEquals("low", effortCombo.getItemAt(2));
+        assertEquals("low", effortCombo.getSelectedItem(), "thread/start read-back seeds the selection");
+        assertEquals("low", codexExt.getSelectedEffort());
+    }
+
+    @Test
+    void createInfoBarExtension_effortComboOffersOnlyModelDefaultWithoutCapabilityInfo() throws Exception {
+        CodexSessionSettings settings = new CodexSessionSettings();
+        AiSession session = newSession("s-infobar-4", settings);
+        CodexAiImplementation impl = new CodexAiImplementation(e -> {
+        }, null) {
+            {
+                currentSession = session;
+            }
+        };
+
+        AiInfoBarExtension ext = impl.createInfoBarExtension(session, stubHost(settings, new AtomicReference<>()));
+        CodexAiInfoBarExtension codexExt = (CodexAiInfoBarExtension) ext;
+        JComboBox<?> effortCombo = (JComboBox<?>) codexExt.createComponents().get(1);
+
+        SwingUtilities.invokeAndWait(() -> codexExt.onAiProcessImplEvent(
+                new CodexReasoningEffortEvent("gpt-5.6-terra", List.of(), null, null)));
+
+        assertEquals(1, effortCombo.getItemCount());
+        assertEquals(BlankSafeComboRenderer.DEFAULT_OPTION, effortCombo.getItemAt(0));
+        assertNull(codexExt.getSelectedEffort(), "no supported efforts means only the model default is offered");
+    }
+
+    @Test
+    void createInfoBarExtension_effortComboSeedsFromStoredSessionEffortWhenSupported() throws Exception {
+        CodexSessionSettings settings = new CodexSessionSettings();
+        settings.setEffort("high");
+        AiSession session = newSession("s-infobar-5", settings);
+        CodexAiImplementation impl = new CodexAiImplementation(e -> {
+        }, null) {
+            {
+                currentSession = session;
+            }
+        };
+
+        AiInfoBarExtension ext = impl.createInfoBarExtension(session, stubHost(settings, new AtomicReference<>()));
+        CodexAiInfoBarExtension codexExt = (CodexAiInfoBarExtension) ext;
+        codexExt.onSessionSettingsChanged(settings); // primes lastStoredEffort
+        JComboBox<?> effortCombo = (JComboBox<?>) codexExt.createComponents().get(1);
+
+        SwingUtilities.invokeAndWait(() -> codexExt.onAiProcessImplEvent(
+                new CodexReasoningEffortEvent("gpt-5.6-terra", List.of("high", "low"), "high", null)));
+
+        assertEquals("high", effortCombo.getSelectedItem(), "a stored supported effort wins over the read-back");
+        assertEquals("high", codexExt.getSelectedEffort());
     }
 }

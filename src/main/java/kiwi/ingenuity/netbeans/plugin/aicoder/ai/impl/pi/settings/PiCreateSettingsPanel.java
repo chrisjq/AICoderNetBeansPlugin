@@ -10,6 +10,7 @@ import kiwi.ingenuity.netbeans.plugin.aicoder.ai.AiTypeEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.pi.PiExecutableLocator;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.pi.PiModelDiscovery;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.settings.ModelCreateSettingsPanel;
+import kiwi.ingenuity.netbeans.plugin.aicoder.ai.ui.BlankSafeComboRenderer;
 
 /**
  * Session-create panel for pi: model, plus the thinking level (last selection remembered for the next dialog, as
@@ -21,9 +22,8 @@ public final class PiCreateSettingsPanel extends ModelCreateSettingsPanel<PiSess
     /**
      * Maps to a {@code null} stored thinking level, meaning "use pi's own default", per the spec.
      */
-    private static final String DEFAULT_LABEL = "(pi default)";
     private static final String[] THINKING_LEVEL_OPTIONS = {
-        DEFAULT_LABEL, "off", "minimal", "low", "medium", "high", "xhigh", "max"
+        BlankSafeComboRenderer.DEFAULT_OPTION, "off", "minimal", "low", "medium", "high", "xhigh", "max"
     };
     static volatile String lastSelectedThinkingLevel = null;
 
@@ -61,7 +61,7 @@ public final class PiCreateSettingsPanel extends ModelCreateSettingsPanel<PiSess
         boolean wasProgrammatic = programmatic;
         programmatic = true;
         try {
-            thinkingLevelCombo.setSelectedItem((level == null || level.isBlank()) ? DEFAULT_LABEL : level);
+            thinkingLevelCombo.setSelectedItem((level == null || level.isBlank()) ? BlankSafeComboRenderer.DEFAULT_OPTION : level);
         }
         finally {
             programmatic = wasProgrammatic;
@@ -72,7 +72,7 @@ public final class PiCreateSettingsPanel extends ModelCreateSettingsPanel<PiSess
     public void applyTo(PiSessionSettings settings) {
         super.applyTo(settings);
         Object sel = thinkingLevelCombo.getSelectedItem();
-        settings.setThinkingLevel((sel != null && !DEFAULT_LABEL.equals(sel.toString())) ? sel.toString() : null);
+        settings.setThinkingLevel((sel != null && !BlankSafeComboRenderer.DEFAULT_OPTION.equals(sel.toString())) ? sel.toString() : null);
     }
 
     @Override
@@ -98,6 +98,6 @@ public final class PiCreateSettingsPanel extends ModelCreateSettingsPanel<PiSess
             return;
         }
         Object sel = thinkingLevelCombo.getSelectedItem();
-        lastSelectedThinkingLevel = (sel != null && !DEFAULT_LABEL.equals(sel.toString())) ? sel.toString() : null;
+        lastSelectedThinkingLevel = (sel != null && !BlankSafeComboRenderer.DEFAULT_OPTION.equals(sel.toString())) ? sel.toString() : null;
     }
 }

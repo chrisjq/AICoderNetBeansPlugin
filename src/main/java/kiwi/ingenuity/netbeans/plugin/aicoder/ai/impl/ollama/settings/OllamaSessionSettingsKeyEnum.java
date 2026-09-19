@@ -1,7 +1,8 @@
 package kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.ollama.settings;
 
 public enum OllamaSessionSettingsKeyEnum {
-    BASE_URL("baseUrl");
+    BASE_URL("baseUrl"),
+    REASONING_EFFORT("reasoningEffort");
 
     private final String key;
 

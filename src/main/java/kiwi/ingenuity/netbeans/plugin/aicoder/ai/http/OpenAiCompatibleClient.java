@@ -110,7 +110,7 @@ public class OpenAiCompatibleClient implements HttpAiClient {
                 .map(PartialToolCall::toChatToolCall)
                 .toList();
         return new ChatResult(assistantText.toString(), finalToolCalls, finishReason,
-                promptTokens, completionTokens);
+                              promptTokens, completionTokens);
     }
 
     private static List<String> readSseDataLines(InputStream body, Consumer<String> onTextDelta) throws IOException {
@@ -191,7 +191,7 @@ public class OpenAiCompatibleClient implements HttpAiClient {
             }
             JsonObject toolCall = element.getAsJsonObject();
             int index = toolCall.has(OpenAiJsonKeyEnum.INDEX.key())
-                    ? toolCall.get(OpenAiJsonKeyEnum.INDEX.key()).getAsInt() : toolCalls.size();
+                        ? toolCall.get(OpenAiJsonKeyEnum.INDEX.key()).getAsInt() : toolCalls.size();
             PartialToolCall partial = toolCalls.computeIfAbsent(index, i -> new PartialToolCall());
             JsonElement idEl = toolCall.get(OpenAiJsonKeyEnum.ID.key());
             if (idEl != null && !idEl.isJsonNull()) {
@@ -242,8 +242,8 @@ public class OpenAiCompatibleClient implements HttpAiClient {
                 }
                 // A schema already in OpenAI shape carries "parameters" instead.
                 JsonElement parameters = toolSchema.has(ToolSchemaKeyEnum.INPUT_SCHEMA.key())
-                        ? toolSchema.get(ToolSchemaKeyEnum.INPUT_SCHEMA.key())
-                        : toolSchema.has(OpenAiJsonKeyEnum.PARAMETERS.key()) ? toolSchema.get(OpenAiJsonKeyEnum.PARAMETERS.key()) : null;
+                                         ? toolSchema.get(ToolSchemaKeyEnum.INPUT_SCHEMA.key())
+                                         : toolSchema.has(OpenAiJsonKeyEnum.PARAMETERS.key()) ? toolSchema.get(OpenAiJsonKeyEnum.PARAMETERS.key()) : null;
                 if (parameters != null && parameters.isJsonObject()) {
                     function.add(OpenAiJsonKeyEnum.PARAMETERS.key(), deepCopy(parameters.getAsJsonObject()));
                 }
@@ -256,6 +256,9 @@ public class OpenAiCompatibleClient implements HttpAiClient {
         payload.add(OpenAiJsonKeyEnum.TOOLS.key(), tools);
         if (request.responseFormat() != null) {
             payload.add(OpenAiJsonKeyEnum.RESPONSE_FORMAT.key(), request.responseFormat());
+        }
+        if (request.reasoningEffort() != null && !request.reasoningEffort().isBlank()) {
+            payload.addProperty(OpenAiJsonKeyEnum.REASONING_EFFORT.key(), request.reasoningEffort());
         }
         return payload;
     }
@@ -350,8 +353,9 @@ public class OpenAiCompatibleClient implements HttpAiClient {
                     String errorBody = new String(body.readAllBytes(), StandardCharsets.UTF_8);
                     // Server error bodies can echo request content (and occasionally auth
                     // material) — never surface them unredacted through exception messages.
-                    throw new IOException("HTTP " + response.statusCode() + " from " + endpoint
-                            + ": " + McpHookServerUtil.redactAllSecrets(errorBody));
+                    throw new OpenAiHttpStatusException(response.statusCode(),
+                                                        "HTTP " + response.statusCode() + " from " + endpoint
+                                                        + ": " + McpHookServerUtil.redactAllSecrets(errorBody));
                 }
                 List<String> sseDataLines = readSseDataLines(body, onTextDelta);
                 return assembleSse(sseDataLines);

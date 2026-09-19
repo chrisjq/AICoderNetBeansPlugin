@@ -16,6 +16,7 @@ import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.pi.settings.PiSessionSetti
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.settings.AiModelSessionSettings;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.settings.AiSessionSettings;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.ui.AiInfoBarExtension;
+import kiwi.ingenuity.netbeans.plugin.aicoder.ai.ui.BlankSafeComboRenderer;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.events.AiProcessImplEvent;
 
 /**
@@ -79,6 +80,7 @@ public class PiAiInfoBarExtension implements AiInfoBarExtension {
 
         thinkingLevelCombo = new JComboBox<>();
         thinkingLevelCombo.setToolTipText("pi thinking level");
+        thinkingLevelCombo.setRenderer(new BlankSafeComboRenderer());
         thinkingLevelCombo.addActionListener(e -> {
             if (programmatic) {
                 return;

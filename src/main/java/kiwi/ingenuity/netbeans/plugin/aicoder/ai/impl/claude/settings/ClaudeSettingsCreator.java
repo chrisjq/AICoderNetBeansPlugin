@@ -7,8 +7,8 @@ import kiwi.ingenuity.netbeans.plugin.aicoder.ai.settings.AiSessionCreateSetting
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.settings.AiSessionSettings;
 
 /**
- * Creates and updates Claude-specific AI session settings. Handles
- * instantiation and configuration updates for Claude AI implementation.
+ * Creates and updates Claude-specific AI session settings. Handles instantiation and configuration updates for Claude
+ * AI implementation.
  */
 public class ClaudeSettingsCreator extends AiModelSessionSettingsCreator<ClaudeSessionSettings> {
 
@@ -25,7 +25,10 @@ public class ClaudeSettingsCreator extends AiModelSessionSettingsCreator<ClaudeS
     @Override
     public void update(ClaudeSessionSettings settings, JsonObject cfgObj) {
         super.update(settings, cfgObj);
-        //Specific settings
+        String key = ClaudeSessionSettingsKeyEnum.EFFORT.key();
+        if (cfgObj.has(key) && cfgObj.get(key).isJsonPrimitive()) {
+            settings.setEffort(cfgObj.get(key).getAsString());
+        }
     }
 
     @Override

@@ -27,14 +27,13 @@ import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.opencode.events.OpenCodeMo
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.opencode.settings.OpenCodePluginSettings;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.opencode.settings.OpenCodeSessionSettings;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.ui.AiInfoBarExtension;
+import kiwi.ingenuity.netbeans.plugin.aicoder.ai.ui.BlankSafeComboRenderer;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.events.AiProcessImplEvent;
 
 /**
- * Info bar for OpenCode sessions. Builds combo boxes dynamically from the
- * {@code configOptions} array returned by the ACP {@code session/new}
- * handshake. Each user selection calls {@code session/set_config_option} and
- * repopulates all combos from the response (options are interdependent —
- * changing the model can change the available effort options).
+ * Info bar for OpenCode sessions. Builds combo boxes dynamically from the {@code configOptions} array returned by the
+ * ACP {@code session/new} handshake. Each user selection calls {@code session/set_config_option} and repopulates all
+ * combos from the response (options are interdependent — changing the model can change the available effort options).
  *
  * <p>
  * Layout: {@code [Model ▾] [Mode ▾] [Effort ▾]  [=== context gauge ===]}
@@ -44,9 +43,8 @@ public class OpenCodeAiInfoBarExtension implements AiInfoBarExtension {
     private static final Logger LOG = Logger.getLogger(OpenCodeAiInfoBarExtension.class.getName());
 
     /**
-     * Parses a {@code configOptions} JSON array, retaining only
-     * {@code type=select} entries. Intended for use from the info bar and from
-     * tests.
+     * Parses a {@code configOptions} JSON array, retaining only {@code type=select} entries. Intended for use from the
+     * info bar and from tests.
      */
     public static List<OptionSpec> parseConfigOptions(JsonArray configOptions) {
         List<OptionSpec> result = new ArrayList<>();
@@ -71,8 +69,14 @@ public class OpenCodeAiInfoBarExtension implements AiInfoBarExtension {
                         JsonObject vo = v.getAsJsonObject();
                         if (vo.has(AcpJsonKeyEnum.VALUE.key())) {
                             String value = vo.get(AcpJsonKeyEnum.VALUE.key()).getAsString();
-                            String name = vo.has(AcpJsonKeyEnum.NAME.key()) && !vo.get(AcpJsonKeyEnum.NAME.key()).isJsonNull()
-                                    ? vo.get(AcpJsonKeyEnum.NAME.key()).getAsString() : value;
+                            // Falls back to value not just when NAME is absent/null, but also when it is present and
+                            // blank (e.g. {"value": "high", "name": ""}) — an ACP option whose name is a real but
+                            // empty string is otherwise a blank combo row with a perfectly real backing value, which
+                            // is a different case from "no value at all" (that one is what BlankSafeComboRenderer's
+                            // placeholder is for, applied in buildCombo below).
+                            String rawName = vo.has(AcpJsonKeyEnum.NAME.key()) && !vo.get(AcpJsonKeyEnum.NAME.key()).isJsonNull()
+                                             ? vo.get(AcpJsonKeyEnum.NAME.key()).getAsString() : null;
+                            String name = (rawName != null && !rawName.isBlank()) ? rawName : value;
                             values.add(new OptionValue(value, name));
                         }
                     }
@@ -84,16 +88,15 @@ public class OpenCodeAiInfoBarExtension implements AiInfoBarExtension {
     }
 
     /**
-     * Builds a fallback configOptions-shaped array for pre-seeding the combos
-     * before the ACP session/new handshake completes. Produces Model and Mode
-     * entries only — Effort is model-dependent and genuinely unknowable without
-     * a live session.
+     * Builds a fallback configOptions-shaped array for pre-seeding the combos before the ACP session/new handshake
+     * completes. Produces Model and Mode entries only — Effort is model-dependent and genuinely unknowable without a
+     * live session.
      */
     static JsonArray buildFallbackConfigOptions(OpenCodeSessionSettings s) {
         String currentModel = (s != null && s.model() != null && !s.model().isBlank())
-                ? s.model() : OpenCodePluginSettings.getModel();
+                              ? s.model() : OpenCodePluginSettings.getModel();
         String currentMode = (s != null && s.mode() != null && !s.mode().isBlank())
-                ? s.mode() : OpenCodePluginSettings.getMode();
+                             ? s.mode() : OpenCodePluginSettings.getMode();
         JsonArray arr = new JsonArray();
         arr.add(buildSelectOption("model", currentModel, OpenCodePluginSettings.getKnownModels()));
         arr.add(buildSelectOption("mode", currentMode, new String[]{"build", "plan"}));
@@ -164,17 +167,14 @@ public class OpenCodeAiInfoBarExtension implements AiInfoBarExtension {
     }
 
     /**
-     * Refreshes a configOptions-shaped array's option lists from
-     * {@code refreshed} while keeping each entry's {@code currentValue} exactly
-     * as it was in {@code displayed} — the state already on screen.
+     * Refreshes a configOptions-shaped array's option lists from {@code refreshed} while keeping each entry's
+     * {@code currentValue} exactly as it was in {@code displayed} — the state already on screen.
      *
      * <p>
-     * A model-discovery broadcast is keyed by AiType, not by session (see class
-     * javadoc), so every idle session's info bar receives it regardless of
-     * which session actually did the discovering. Re-deriving currentValue from
-     * settings/global here — instead of keeping what is already displayed — is
-     * what silently resets an unrelated idle session's model combo to the
-     * global default the moment any other session finishes discovery.
+     * A model-discovery broadcast is keyed by AiType, not by session (see class javadoc), so every idle session's info
+     * bar receives it regardless of which session actually did the discovering. Re-deriving currentValue from
+     * settings/global here — instead of keeping what is already displayed — is what silently resets an unrelated idle
+     * session's model combo to the global default the moment any other session finishes discovery.
      */
     static JsonArray preserveSelections(JsonArray displayed, JsonArray refreshed) {
         if (refreshed == null) {
@@ -198,9 +198,8 @@ public class OpenCodeAiInfoBarExtension implements AiInfoBarExtension {
     }
 
     /**
-     * Returns a copy of {@code configOptions} with the {@code id} entry's
-     * {@code currentValue} replaced by {@code value}. Copies rather than
-     * mutates in place — the array may be shared with the process manager's own
+     * Returns a copy of {@code configOptions} with the {@code id} entry's {@code currentValue} replaced by
+     * {@code value}. Copies rather than mutates in place — the array may be shared with the process manager's own
      * cached configOptions.
      */
     private static JsonArray withCurrentValue(JsonArray configOptions, String id, String value) {
@@ -325,6 +324,11 @@ public class OpenCodeAiInfoBarExtension implements AiInfoBarExtension {
 
     private JComboBox<String> buildCombo(OptionSpec spec) {
         JComboBox<String> combo = new JComboBox<>();
+        if ("effort".equals(spec.id())) {
+            // Model/mode always have a real, chosen display name — only effort can carry the ACP "no
+            // effort set" sentinel (a blank value; see parseConfigOptions) that needs the placeholder.
+            combo.setRenderer(new BlankSafeComboRenderer());
+        }
         boolean[] programmatic = {true};
         for (String name : spec.displayNames()) {
             combo.addItem(name);
@@ -372,18 +376,16 @@ public class OpenCodeAiInfoBarExtension implements AiInfoBarExtension {
             }
             programmatic[0] = true;
             handleConfigChange(spec, spec.valueForDisplay(sel.toString()),
-                    () -> programmatic[0] = false);
+                               () -> programmatic[0] = false);
         });
         return combo;
     }
 
     /**
-     * Handles a user-initiated combo selection change. When a live ACP session
-     * exists the change is sent via {@code session/set_config_option} and the
-     * combos are repopulated from the authoritative response. When no session
-     * is active the change is written directly to the session settings and
-     * persisted via the host so the choice is honoured by the next
-     * {@code session/new}.
+     * Handles a user-initiated combo selection change. When a live ACP session exists the change is sent via
+     * {@code session/set_config_option} and the combos are repopulated from the authoritative response. When no session
+     * is active the change is written directly to the session settings and persisted via the host so the choice is
+     * honoured by the next {@code session/new}.
      */
     void handleConfigChange(OptionSpec spec, String value, Runnable onComplete) {
         if (value != null && value.equals(spec.currentValue())) {
@@ -476,9 +478,8 @@ public class OpenCodeAiInfoBarExtension implements AiInfoBarExtension {
     }
 
     /**
-     * A parsed representation of one {@code configOptions} entry. Retains both
-     * the underlying {@code value} sent to {@code session/set_config_option}
-     * and the human-friendly {@code name} shown in the combo.
+     * A parsed representation of one {@code configOptions} entry. Retains both the underlying {@code value} sent to
+     * {@code session/set_config_option} and the human-friendly {@code name} shown in the combo.
      */
     public static final class OptionSpec {
 
@@ -516,9 +517,8 @@ public class OpenCodeAiInfoBarExtension implements AiInfoBarExtension {
         }
 
         /**
-         * The underlying value to send for a chosen display name. Falls back to
-         * the display name itself when it matches no known option (e.g. an
-         * editable/custom entry).
+         * The underlying value to send for a chosen display name. Falls back to the display name itself when it matches
+         * no known option (e.g. an editable/custom entry).
          */
         public String valueForDisplay(String displayName) {
             for (OptionValue o : options) {
@@ -530,8 +530,7 @@ public class OpenCodeAiInfoBarExtension implements AiInfoBarExtension {
         }
 
         /**
-         * The display name for an underlying value. Falls back to the value
-         * itself when it matches no known option.
+         * The display name for an underlying value. Falls back to the value itself when it matches no known option.
          */
         public String displayForValue(String value) {
             for (OptionValue o : options) {
@@ -544,8 +543,7 @@ public class OpenCodeAiInfoBarExtension implements AiInfoBarExtension {
     }
 
     /**
-     * One selectable option: the {@code value} sent to the agent and the
-     * {@code name} displayed to the user.
+     * One selectable option: the {@code value} sent to the agent and the {@code name} displayed to the user.
      */
     public static final class OptionValue {
 

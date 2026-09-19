@@ -22,6 +22,7 @@ import kiwi.ingenuity.netbeans.plugin.aicoder.ai.AiTypeEnum;
 import static kiwi.ingenuity.netbeans.plugin.aicoder.ai.AiTypeEnum.CLAUDE;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.claude.ClaudeExecutableLocator;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.claude.settings.ClaudePluginSettings;
+import kiwi.ingenuity.netbeans.plugin.aicoder.ai.ui.BlankSafeComboRenderer;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ui.SettingsTab;
 import org.openide.util.lookup.ServiceProvider;
 
@@ -33,10 +34,18 @@ public class ClaudeAiSettingsTab implements SettingsTab {
     private final JPanel panel;
     private final JTextField executableField;
     private final JComboBox<String> modelCombo;
+    private final JComboBox<String> effortCombo;
     private final JButton browseButton;
     private final JButton detectButton;
     private final JButton testButton;
     private final JLabel testResultLabel;
+
+    /**
+     * Maps to an empty stored value ("use Claude's own default") for the effort combo.
+     */
+    private static final String[] EFFORT_OPTIONS = {
+        BlankSafeComboRenderer.DEFAULT_OPTION, "low", "medium", "high", "xhigh", "max"
+    };
 
     public ClaudeAiSettingsTab() {
         panel = new JPanel(new GridBagLayout());
@@ -94,6 +103,15 @@ public class ClaudeAiSettingsTab implements SettingsTab {
 
         c.gridx = 0;
         c.gridy = 4;
+        c.weightx = 0;
+        panel.add(new JLabel("Default effort:"), c);
+        effortCombo = new JComboBox<>(EFFORT_OPTIONS);
+        c.gridx = 1;
+        c.weightx = 1;
+        panel.add(effortCombo, c);
+
+        c.gridx = 0;
+        c.gridy = 5;
         c.weighty = 1;
         c.gridwidth = 5;
         panel.add(Box.createVerticalGlue(), c);
@@ -117,6 +135,7 @@ public class ClaudeAiSettingsTab implements SettingsTab {
             }
         });
         modelCombo.addActionListener(e -> fireChanged());
+        effortCombo.addActionListener(e -> fireChanged());
         browseButton.addActionListener(e -> handleBrowse());
         detectButton.addActionListener(e -> handleDetect());
         testButton.addActionListener(e -> handleTest());
@@ -137,6 +156,7 @@ public class ClaudeAiSettingsTab implements SettingsTab {
         executableField.setText(ClaudePluginSettings.getExecutable());
         String saved = ClaudePluginSettings.getModel();
         modelCombo.setSelectedItem(saved);
+        setSelectedOrDefault(effortCombo, ClaudePluginSettings.getEffort());
         testResultLabel.setText(" ");
     }
 
@@ -144,6 +164,7 @@ public class ClaudeAiSettingsTab implements SettingsTab {
     public void store() {
         ClaudePluginSettings.setExecutable(executableField.getText().strip());
         ClaudePluginSettings.setModel((String) modelCombo.getSelectedItem());
+        ClaudePluginSettings.setEffort(valueOrDefault(effortCombo));
     }
 
     @Override
@@ -246,6 +267,16 @@ public class ClaudeAiSettingsTab implements SettingsTab {
                 }
             }
         }.execute();
+    }
+
+    private void setSelectedOrDefault(JComboBox<String> combo, String storedValue) {
+        combo.setSelectedItem((storedValue == null || storedValue.isBlank()) ? BlankSafeComboRenderer.DEFAULT_OPTION : storedValue);
+    }
+
+    private String valueOrDefault(JComboBox<String> combo) {
+        Object sel = combo.isEditable() && combo.getEditor() != null ? combo.getEditor().getItem() : combo.getSelectedItem();
+        String s = sel != null ? sel.toString().trim() : "";
+        return BlankSafeComboRenderer.DEFAULT_OPTION.equals(s) ? "" : s;
     }
 
     @Override

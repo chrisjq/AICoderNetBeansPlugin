@@ -70,31 +70,28 @@ public class CodexAiImplementation extends AiImplementation {
         }
         else {
             listener.onAiProcessEvent(new StatusEvent(StatusEventTypeEnum.FAILED,
-                    StatusMessageUtil.formatExecutableNotFound(null)));
+                                                      StatusMessageUtil.formatExecutableNotFound(null)));
         }
     }
 
     /**
-     * Resolves the model to start a session with: an explicit argument first,
-     * then the session's own choice, then the global default. Mirrors
-     * OpenCodeAiImplementation.resolveStartupModel — that method exists because
-     * an earlier version fell straight to the global default here, silently
-     * running every session on it regardless of what the user picked per
-     * session. AiTopComponent always calls {@code startWithDiscovery(null)}, so
-     * session settings must be checked before the global default from the
-     * start, not discovered as a bug later.
+     * Resolves the model to start a session with: an explicit argument first, then the session's own choice, then the
+     * global default. Mirrors OpenCodeAiImplementation.resolveStartupModel — that method exists because an earlier
+     * version fell straight to the global default here, silently running every session on it regardless of what the
+     * user picked per session. AiTopComponent always calls {@code startWithDiscovery(null)}, so session settings must
+     * be checked before the global default from the start, not discovered as a bug later.
      */
     String resolveStartupModel(String model) {
         String sessionModel = currentSession != null
                 && currentSession.settings() instanceof CodexSessionSettings s
                 && s.model() != null && !s.model().isBlank()
-                ? s.model() : null;
+                              ? s.model() : null;
         String effectiveModel = (model != null && !model.isBlank())
-                ? model
-                : sessionModel != null ? sessionModel : CodexPluginSettings.getModel();
+                                ? model
+                                : sessionModel != null ? sessionModel : CodexPluginSettings.getModel();
         if (PluginSettings.isDebugJson()) {
             String source = (model != null && !model.isBlank()) ? "explicit argument"
-                    : sessionModel != null ? "session setting" : "global default";
+                            : sessionModel != null ? "session setting" : "global default";
             LOG.log(Level.INFO, "Codex requested model=\"{0}\" at session start (source: {1})",
                     new Object[]{effectiveModel, source});
         }
@@ -113,8 +110,8 @@ public class CodexAiImplementation extends AiImplementation {
         // into an already-running thread — Codex's model is only settable at
         // thread/start or thread/resume time (design doc: ThreadStartParams.model).
         // A model change while a thread is already live takes effect on the next
-        // spawn, matching effort/reasoning-level, which are also turn/thread
-        // scoped, not settable mid-thread via any RPC this slice found.
+        // spawn. (Reasoning effort is different: it is a per-turn
+        // TurnStartParams.effort override, sent with the next turn — spec §4.)
     }
 
     @Override
@@ -125,8 +122,8 @@ public class CodexAiImplementation extends AiImplementation {
         // from the stored thread id (or not at all).
         String stored = currentSession != null
                 && currentSession.settings() instanceof CodexSessionSettings
-                ? ((CodexSessionSettings) currentSession.settings()).threadId()
-                : null;
+                        ? ((CodexSessionSettings) currentSession.settings()).threadId()
+                        : null;
         if (stored != null && !stored.isBlank()) {
             delegate().resumeSession(stored);
         }
@@ -155,24 +152,29 @@ public class CodexAiImplementation extends AiImplementation {
     }
 
     /**
-     * Seeds the combo from the SESSION's own model (not
-     * {@code CodexPluginSettings.getModel()}'s global default) — the trap this
-     * project already hit once for OpenCode's info bar. Model changes flow back
-     * through {@code setModel()} (session-scoped, per its own doc) and
-     * {@code host.updateSessionSettings()}, never {@code AiTypePropertyBus},
-     * which is keyed by AI type and would reset every other Codex session's
-     * dropdown (see {@link CodexAiInfoBarExtension}'s own javadoc on this).
+     * Seeds the combo from the SESSION's own model (not {@code CodexPluginSettings.getModel()}'s global default) — the
+     * trap this project already hit once for OpenCode's info bar. Model changes flow back through {@code setModel()}
+     * (session-scoped, per its own doc) and {@code host.updateSessionSettings()}, never {@code AiTypePropertyBus},
+     * which is keyed by AI type and would reset every other Codex session's dropdown (see
+     * {@link CodexAiInfoBarExtension}'s own javadoc on this).
      */
     @Override
     public AiInfoBarExtension createInfoBarExtension(AiSession session, AiSessionHost host) {
         String initialModel = session != null && session.settings() instanceof CodexSessionSettings s
-                ? s.model() : null;
+                              ? s.model() : null;
         CodexAiInfoBarExtension ext = new CodexAiInfoBarExtension(initialModel);
         ext.addModelChangeListener(e -> {
             String selected = ext.getSelectedModel();
             setModel(selected);
             if (host != null && currentSession != null) {
                 host.updateSessionSettings(currentSession.settings());
+            }
+        });
+        ext.addEffortChangeListener(e -> {
+            if (host != null && currentSession != null
+                    && currentSession.settings() instanceof CodexSessionSettings s) {
+                s.setEffort(ext.getSelectedEffort());
+                host.updateSessionSettings(s);
             }
         });
         CodexRateLimitEvent cached = cachedRateLimitEvent;

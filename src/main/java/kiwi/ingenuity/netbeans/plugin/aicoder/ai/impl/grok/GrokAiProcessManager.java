@@ -113,9 +113,87 @@ public class GrokAiProcessManager extends AiProcessManager {
     private volatile boolean firstMessage = true;
     private volatile GrokAiMcpRegistrar registrar = null;
     private GrokAiSession grokAiSession = null;
+    private volatile String reasoningEffort;
+    /**
+     * Whether {@link #reasoningEffort} came from the session's own setting ({@code true}) or the global default
+     * ({@code false}) — set together with {@link #reasoningEffort} by every {@link #configureReasoningEffort} caller.
+     * Spec §1 rule 3a treats the two very differently on an unsupported value: only a session-sourced value is ever
+     * cleared; the global default is never modified automatically, since one session's model rejecting it says nothing
+     * about the other sessions (and other backends' sessions not yet created) that also use it.
+     */
+    private volatile boolean reasoningEffortFromSession;
+    /**
+     * Notified (no argument — the caller already knows it only fires for the session-sourced case, per rule 3a) when
+     * {@link #buildReasoningEffortArgs} clears an unsupported SESSION-sourced value, so the owning
+     * {@code GrokAiImplementation} can also clear the PERSISTED session setting — otherwise only this in-memory field
+     * is cleared, and the next session start (tab reopen, IDE restart) re-reads the same stale persisted value and
+     * fires the INFO again, forever. Never invoked for a global-sourced value — that case is never cleared anywhere,
+     * persisted or in-memory-only-until-corrected. Deliberately a plain callback rather than plumbing an
+     * {@code AiSessionHost} reference into this process-manager layer, which has no business knowing about
+     * session-settings persistence otherwise.
+     */
+    private volatile Runnable onReasoningEffortCleared;
 
     public GrokAiProcessManager(AiProcessEventListener listener) {
         super(listener);
+    }
+
+    /**
+     * Sets the reasoning-effort level to pass on the next {@code runTurn}, or clears it. {@code null}/blank means "pass
+     * nothing" — mirrors {@code PiAiProcessManager.configureThinkingLevel}. Since grok spawns a fresh process per turn
+     * (unlike pi's persistent one), this is also the live-update path: a later call — e.g. from the info bar's combo —
+     * simply changes what the NEXT turn launches with, no restart needed.
+     *
+     * @param fromSession whether {@code level} came from the session's own setting rather than the global default — see
+     * {@link #reasoningEffortFromSession}'s javadoc for why this matters
+     */
+    public void configureReasoningEffort(String level, boolean fromSession) {
+        this.reasoningEffort = (level == null || level.isBlank()) ? null : level;
+        this.reasoningEffortFromSession = fromSession;
+    }
+
+    /**
+     * See {@link #onReasoningEffortCleared}'s javadoc.
+     */
+    public void setOnReasoningEffortCleared(Runnable callback) {
+        this.onReasoningEffortCleared = callback;
+    }
+
+    /**
+     * Package-private for direct unit testing (spec §8: unset/set-supported/set-unsupported), without spawning a
+     * process — mirrors {@code PiAiProcessManager.buildLaunchCommand} being split out for the same reason. Returns
+     * {@code ["--reasoning-effort", level]} when {@code reasoningEffort} is set and {@code model} supports it, or an
+     * empty list otherwise. A configured level unsupported by {@code model} is handled per spec §1 rule 3a: a
+     * SESSION-sourced value is cleared (self-correcting: the next call for the same mismatch finds nothing to clear)
+     * and fires exactly one INFO status event; a GLOBAL-sourced value is left completely alone — not cleared, not
+     * written anywhere, no INFO — the level is simply omitted for this turn and the mismatch is logged at FINE only.
+     */
+    List<String> buildReasoningEffortArgs(String model) {
+        String effort = reasoningEffort;
+        if (effort == null || effort.isBlank()) {
+            return List.of();
+        }
+        if (GrokReasoningEffortSupport.supportedFor(model).contains(effort)) {
+            return List.of("--reasoning-effort", effort);
+        }
+        reasoningEffort = null;
+        if (reasoningEffortFromSession) {
+            listener.onAiProcessEvent(new StatusEvent(StatusEventTypeEnum.INFO,
+                                                      "Reasoning effort \"" + effort + "\" is not supported by model \"" + model + "\"; clearing it"));
+            Runnable cb = onReasoningEffortCleared;
+            if (cb != null) {
+                cb.run();
+            }
+        }
+        else {
+            // spec §1 rule 3a: the global default belongs to the user and to every other session/backend — one
+            // session's model not supporting it says nothing about the rest, so it is never cleared or written
+            // anywhere. The combo already shows "(model default)" for a model that can't take it, so the UI
+            // communicates this without a warning the user can't dismiss.
+            LOG.log(Level.FINE, "Reasoning effort \"{0}\" (global default) is not supported by model \"{1}\"; omitting "
+                    + "it for this turn without touching the global default", new Object[]{effort, model});
+        }
+        return List.of();
     }
 
     @Override
@@ -127,12 +205,12 @@ public class GrokAiProcessManager extends AiProcessManager {
         if (!GrokExecutableLocator.isExecutableFile(executablePath)) {
             running = false;
             listener.onAiProcessEvent(new StatusEvent(StatusEventTypeEnum.FAILED,
-                    StatusMessageUtil.formatStartFailed("grok executable not found at " + executablePath)));
+                                                      StatusMessageUtil.formatStartFailed("grok executable not found at " + executablePath)));
             return;
         }
         if (currentSession == null) {
             listener.onAiProcessEvent(new StatusEvent(StatusEventTypeEnum.FAILED,
-                    StatusMessageUtil.formatSessionNotConfigured()));
+                                                      StatusMessageUtil.formatSessionNotConfigured()));
             return;
         }
         sessionId = currentSession.id();
@@ -159,7 +237,7 @@ public class GrokAiProcessManager extends AiProcessManager {
         }
         if (!mcpReady) {
             listener.onAiProcessEvent(new StatusEvent(StatusEventTypeEnum.FAILED,
-                    StatusMessageUtil.formatMcpSetupFailed()));
+                                                      StatusMessageUtil.formatMcpSetupFailed()));
             return;
         }
         registrar = reg;
@@ -203,6 +281,7 @@ public class GrokAiProcessManager extends AiProcessManager {
         args.add(sid);
         args.add("--model");
         args.add(model);
+        args.addAll(buildReasoningEffortArgs(model));
         args.add("--output-format");
         args.add("json");
         args.add("--always-approve");
@@ -319,7 +398,7 @@ public class GrokAiProcessManager extends AiProcessManager {
                         processing = false;
                     }
                     listener.onAiProcessEvent(new StatusEvent(StatusEventTypeEnum.EXITED,
-                            StatusMessageUtil.formatExited("Grok", code, stderrLines)));
+                                                              StatusMessageUtil.formatExited("Grok", code, stderrLines)));
                 }
             }
             else {
@@ -348,7 +427,7 @@ public class GrokAiProcessManager extends AiProcessManager {
             if (!wasUserCancel) {
                 LOG.log(Level.WARNING, "Grok turn failed", e);
                 listener.onAiProcessEvent(new StatusEvent(StatusEventTypeEnum.FAILED,
-                        StatusMessageUtil.formatSendFailed(e.getMessage())));
+                                                          StatusMessageUtil.formatSendFailed(e.getMessage())));
             }
         }
     }

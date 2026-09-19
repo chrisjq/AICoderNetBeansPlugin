@@ -18,16 +18,23 @@ import javax.swing.event.DocumentListener;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.AiTypeEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.ollama.OllamaModelDiscovery;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.ollama.settings.OllamaPluginSettings;
+import kiwi.ingenuity.netbeans.plugin.aicoder.ai.ui.BlankSafeComboRenderer;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ui.SettingsTab;
 import org.openide.util.lookup.ServiceProvider;
 
 @ServiceProvider(service = SettingsTab.class)
 public final class OllamaAiSettingsTab implements SettingsTab {
 
+    /**
+     * Maps to an empty stored reasoning effort ("use the model's own default").
+     */
+    private static final String[] REASONING_EFFORT_OPTIONS = {BlankSafeComboRenderer.DEFAULT_OPTION, "low", "medium", "high"};
+
     private final PropertyChangeSupport pcs = new PropertyChangeSupport(this);
     private final JPanel panel;
     private final JTextField baseUrlField;
     private final JComboBox<String> modelCombo;
+    private final JComboBox<String> reasoningEffortCombo;
     private final JButton testButton;
     private final JLabel testResultLabel;
 
@@ -82,6 +89,17 @@ public final class OllamaAiSettingsTab implements SettingsTab {
 
         c.gridx = 0;
         c.gridy = 4;
+        c.weightx = 0;
+        panel.add(new JLabel("Default thinking:"), c);
+        reasoningEffortCombo = new JComboBox<>(REASONING_EFFORT_OPTIONS);
+        c.gridx = 1;
+        c.gridwidth = 2;
+        c.weightx = 1;
+        panel.add(reasoningEffortCombo, c);
+        c.gridwidth = 1;
+
+        c.gridx = 0;
+        c.gridy = 5;
         c.weighty = 1;
         c.gridwidth = 3;
         panel.add(Box.createVerticalGlue(), c);
@@ -105,6 +123,7 @@ public final class OllamaAiSettingsTab implements SettingsTab {
             }
         });
         modelCombo.addActionListener(e -> fireChanged());
+        reasoningEffortCombo.addActionListener(e -> fireChanged());
         testButton.addActionListener(e -> handleTest());
     }
 
@@ -122,6 +141,8 @@ public final class OllamaAiSettingsTab implements SettingsTab {
     public void load() {
         baseUrlField.setText(OllamaPluginSettings.getBaseUrl());
         modelCombo.setSelectedItem(OllamaPluginSettings.getModel());
+        String effort = OllamaPluginSettings.getReasoningEffort();
+        reasoningEffortCombo.setSelectedItem((effort == null || effort.isBlank()) ? BlankSafeComboRenderer.DEFAULT_OPTION : effort);
         testResultLabel.setText(" ");
     }
 
@@ -131,6 +152,9 @@ public final class OllamaAiSettingsTab implements SettingsTab {
         Object sel = modelCombo.getSelectedItem();
         OllamaPluginSettings.setModel(
                 sel != null ? sel.toString() : OllamaPluginSettings.DEFAULT_MODEL);
+        Object effortSel = reasoningEffortCombo.getSelectedItem();
+        OllamaPluginSettings.setReasoningEffort(
+                (effortSel != null && !BlankSafeComboRenderer.DEFAULT_OPTION.equals(effortSel.toString())) ? effortSel.toString() : "");
     }
 
     @Override
@@ -166,29 +190,29 @@ public final class OllamaAiSettingsTab implements SettingsTab {
         testButton.setEnabled(false);
         testResultLabel.setText("Testing…");
         OllamaModelDiscovery.discoverAsync(url,
-                models -> SwingUtilities.invokeLater(() -> {
-                    testButton.setEnabled(true);
-                    if (models != null && models.length > 0) {
-                        testResultLabel.setText("Connected — " + models.length + " model(s) found");
-                        OllamaPluginSettings.setDiscoveredModels(models);
-                        String current = modelCombo.getEditor().getItem() != null
-                                ? modelCombo.getEditor().getItem().toString() : null;
-                        modelCombo.removeAllItems();
-                        for (String m : models) {
-                            modelCombo.addItem(m);
-                        }
-                        if (current != null) {
-                            modelCombo.setSelectedItem(current);
-                        }
-                    }
-                    else {
-                        testResultLabel.setText("Connected — no models returned");
-                    }
-                }),
-                hint -> {
-                    if (hint != null) {
-                        SwingUtilities.invokeLater(() -> testResultLabel.setText("Error: " + hint));
-                    }
-                });
+                                           models -> SwingUtilities.invokeLater(() -> {
+                                               testButton.setEnabled(true);
+                                               if (models != null && models.length > 0) {
+                                                   testResultLabel.setText("Connected — " + models.length + " model(s) found");
+                                                   OllamaPluginSettings.setDiscoveredModels(models);
+                                                   String current = modelCombo.getEditor().getItem() != null
+                                                                    ? modelCombo.getEditor().getItem().toString() : null;
+                                                   modelCombo.removeAllItems();
+                                                   for (String m : models) {
+                                                       modelCombo.addItem(m);
+                                                   }
+                                                   if (current != null) {
+                                                       modelCombo.setSelectedItem(current);
+                                                   }
+                                               }
+                                               else {
+                                                   testResultLabel.setText("Connected — no models returned");
+                                               }
+                                           }),
+                                           hint -> {
+                                               if (hint != null) {
+                                                   SwingUtilities.invokeLater(() -> testResultLabel.setText("Error: " + hint));
+                                               }
+                                           });
     }
 }

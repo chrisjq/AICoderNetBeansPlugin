@@ -8,13 +8,13 @@ AI Coder is a NetBeans IDE plugin that provides dockable, multi-session AI codin
 
 | Backend | Connection | Configuration | Default status |
 |---|---|---|---|
-| [**Claude**](https://code.claude.com/docs/en/overview) | Long-lived `claude` CLI stream session | Executable and model | Enabled |
-| [**GitHub Copilot**](https://docs.github.com/en/copilot/how-tos/copilot-cli/cli-getting-started) | Copilot SDK session | Executable and model | Enabled |
-| [**Grok**](https://docs.x.ai/build/overview) | Headless `grok` CLI prompt sessions | Executable and model | Enabled |
-| [**OpenCode**](https://opencode.ai/docs) | Long-lived `opencode acp` session | Executable, editable/discovered model, and Build or Plan agent mode | Enabled |
-| [**Codex**](https://developers.openai.com/codex/cli/) | Long-lived Codex app-server session | Executable, editable model, reasoning effort, and sandbox/approval options | Enabled |
+| [**Claude**](https://code.claude.com/docs/en/overview) | Long-lived `claude` CLI stream session | Executable, model, and effort level | Enabled |
+| [**GitHub Copilot**](https://docs.github.com/en/copilot/how-tos/copilot-cli/cli-getting-started) | Copilot SDK session | Executable, model, and per-model reasoning effort | Enabled |
+| [**Grok**](https://docs.x.ai/build/overview) | Headless `grok` CLI prompt sessions | Executable, model, and per-model reasoning effort | Enabled |
+| [**OpenCode**](https://opencode.ai/docs) | Long-lived `opencode acp` session | Executable, editable/discovered model, effort, and Build or Plan agent mode | Enabled |
+| [**Codex**](https://developers.openai.com/codex/cli/) | Long-lived Codex app-server session | Executable, editable model, per-turn reasoning effort, and sandbox/approval options | Enabled |
 | [**pi**](https://pi.dev/docs/latest) | Long-lived `pi --mode rpc` session | Executable, live model and thinking-level pickers, and version-verification status | Enabled |
-| [**Ollama (Local)**](https://docs.ollama.com/cli) | OpenAI-compatible HTTP API | Base URL, editable/discovered model, and context-management options | Implemented; enable in Options. Note: Not as live tested as the other implementations, feel free to send me some hardware I can thrash :)  |
+| [**Ollama (Local)**](https://docs.ollama.com/cli) | OpenAI-compatible HTTP API | Base URL, editable/discovered model, thinking, and context-management options | Implemented; enable in Options. Note: Not as live tested as the other implementations, feel free to send me some hardware I can thrash :)  |
 
 Each session has its own backend, model, settings, working project, chat history, session instructions, and optional persisted backend session/thread state. Multiple sessions and backends can run at the same time, though their file-, build- and Git-changing work is serialised across the whole plugin — see [Concurrency and limits](REFERENCE.md#concurrency-and-limits).
 
@@ -123,13 +123,24 @@ Backend tabs supply executable locations and default backend settings. Session s
 
 | Backend | Notable options |
 |---|---|
-| Claude | CLI executable and model; models are discovered and cached when available |
-| GitHub Copilot | CLI executable and SDK-discovered model list with fallback choices |
-| Grok | CLI executable and discovered/fallback model list |
-| OpenCode | CLI executable, model, and ACP-provided agent/mode configuration |
-| Codex | CLI executable, model, reasoning effort, and app-server session options |
+| Claude | CLI executable, model, and effort level (`low`–`max`); models are discovered and cached when available |
+| GitHub Copilot | CLI executable, SDK-discovered model list with fallback choices, and the reasoning efforts each model advertises |
+| Grok | CLI executable, discovered/fallback model list, and per-model reasoning effort |
+| OpenCode | CLI executable, model, effort, and ACP-provided agent/mode configuration |
+| Codex | CLI executable, model, per-turn reasoning effort discovered from the running app-server, and app-server session options |
 | pi | CLI executable, live-discovered model and thinking-level pickers, and a version-verification status |
-| Ollama (Local) | OpenAI-compatible base URL (default `http://localhost:11434`), model, context window, and context-management settings |
+| Ollama (Local) | OpenAI-compatible base URL (default `http://localhost:11434`), model, thinking level, context window, and context-management settings |
+
+### Thinking and reasoning effort
+
+Every backend that supports it exposes a thinking/reasoning-effort picker in its info bar, its session-create dialog, and its Options tab, using that backend's own terminology — Claude calls it *effort*, Codex, Grok and Copilot *reasoning effort*, pi and Ollama *thinking*. Two rules are common to all of them:
+
+- **The first entry means "don't set it".** It is never a level name, and choosing it omits the setting entirely so the model or CLI applies its own default. For pi this is distinct from its `off` level, which actively tells the provider not to reason.
+- **A level is never sent to a model that doesn't support it.** Codex, Copilot and Ollama read the supported list live from the backend (Codex from `model/list`, Copilot from the SDK's model info, Ollama from each model's `capabilities` in `/api/tags`), Grok uses a per-model table, and Claude relies on the CLI's own silent clamping. A stored level that the selected model doesn't advertise is cleared, reported once as an INFO message, and not sent — so switching to a model with fewer levels can never turn into an error.
+- **A level you pinned to a session is only cleared once discovery has actually said the model can't take it** — never merely because the answer hasn't arrived yet. Where the list is fetched asynchronously, the level is sent optimistically until the backend says otherwise, so a session's pinned choice survives a slow or unavailable discovery instead of being silently wiped at startup.
+- **The global default is never modified automatically.** If the selected model can't take the level you set as the global default, that session quietly runs without it; the default itself stays put for every other session, and no warning repeats on each start.
+
+Where the level is fixed at launch (Claude, Copilot), changing it reuses the same session restart a model change already performs. Codex applies it per turn, Grok on the next prompt, and Ollama on the next request, so those take effect without a restart.
 
 OpenCode’s mode is **Build** for normal agent work or **Plan** for read-only planning. Codex provides known model choices including `gpt-5.6-terra`, `gpt-5.6-luna`, `gpt-5.5`, and `gpt-5.4-mini`, while keeping the model field editable. pi's model and thinking-level lists are discovered live from the running session, or from `pi --list-models` before one exists; an untested pi version shows a warning button in the tab and in Options until you verify it. Ollama needs no API key; its model and base URL can be changed for an individual session.
 

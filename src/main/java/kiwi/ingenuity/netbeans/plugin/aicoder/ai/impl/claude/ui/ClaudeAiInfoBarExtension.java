@@ -16,9 +16,11 @@ import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.claude.events.ClaudeModels
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.claude.events.ClaudeSessionInfoEvent;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.claude.events.ClaudeUsageEvent;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.claude.settings.ClaudePluginSettings;
+import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.claude.settings.ClaudeSessionSettings;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.settings.AiModelSessionSettings;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.settings.AiSessionSettings;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.ui.AiInfoBarExtension;
+import kiwi.ingenuity.netbeans.plugin.aicoder.ai.ui.BlankSafeComboRenderer;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.events.AiProcessImplEvent;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ui.UIConstants;
 
@@ -38,7 +40,15 @@ public class ClaudeAiInfoBarExtension implements AiInfoBarExtension {
         }
     }
 
+    /**
+     * Maps to an empty stored effort ("use Claude's own default"), per the spec's "not set" entry rule.
+     */
+    private static final String[] EFFORT_OPTIONS = {
+        BlankSafeComboRenderer.DEFAULT_OPTION, "low", "medium", "high", "xhigh", "max"
+    };
+
     private final JComboBox<String> modelCombo;
+    private final JComboBox<String> effortCombo;
     private final JButton compactBtn;
     private final JProgressBar sessionBar;
     private final JProgressBar fiveHourBar;
@@ -53,6 +63,11 @@ public class ClaudeAiInfoBarExtension implements AiInfoBarExtension {
         modelCombo.setEditable(true);
         modelCombo.setSelectedItem(ClaudePluginSettings.getModel());
         modelCombo.setToolTipText("Claude model — pick from list or type any model ID");
+
+        effortCombo = new JComboBox<>(EFFORT_OPTIONS);
+        effortCombo.setToolTipText("Claude effort level — a change relaunches the session");
+        effortCombo.setRenderer(new BlankSafeComboRenderer());
+        effortCombo.setSelectedItem(ClaudePluginSettings.getEffort().isBlank() ? BlankSafeComboRenderer.DEFAULT_OPTION : ClaudePluginSettings.getEffort());
 
         compactBtn = new JButton("⇒ Compact");
         compactBtn.setFont(compactBtn.getFont().deriveFont(11f));
@@ -101,7 +116,7 @@ public class ClaudeAiInfoBarExtension implements AiInfoBarExtension {
 
     @Override
     public List<JComponent> createComponents() {
-        return List.of(modelCombo, compactBtn, sessionBar, fiveHourBar, sevenDayBar);
+        return List.of(modelCombo, effortCombo, compactBtn, sessionBar, fiveHourBar, sevenDayBar);
     }
 
     @Override
@@ -123,6 +138,10 @@ public class ClaudeAiInfoBarExtension implements AiInfoBarExtension {
                 && modelSettings.model() != null && !modelSettings.model().isBlank()) {
             setSelectedModel(modelSettings.model());
         }
+        if (settings instanceof ClaudeSessionSettings claudeSettings
+                && claudeSettings.effort() != null && !claudeSettings.effort().isBlank()) {
+            setSelectedEffort(claudeSettings.effort());
+        }
     }
 
     public void addModelChangeListener(ActionListener l) {
@@ -131,6 +150,38 @@ public class ClaudeAiInfoBarExtension implements AiInfoBarExtension {
                 l.actionPerformed(e);
             }
         });
+    }
+
+    public void addEffortChangeListener(ActionListener l) {
+        effortCombo.addActionListener(e -> {
+            if (!programmatic) {
+                l.actionPerformed(e);
+            }
+        });
+    }
+
+    public String getSelectedEffort() {
+        Object sel = effortCombo.getSelectedItem();
+        String s = sel != null ? sel.toString().trim() : "";
+        return BlankSafeComboRenderer.DEFAULT_OPTION.equals(s) ? "" : s;
+    }
+
+    public void setSelectedEffort(String effort) {
+        if (!SwingUtilities.isEventDispatchThread()) {
+            SwingUtilities.invokeLater(() -> setSelectedEffort(effort));
+            return;
+        }
+        programmatic = true;
+        try {
+            Component focused = KeyboardFocusManager.getCurrentKeyboardFocusManager().getFocusOwner();
+            effortCombo.setSelectedItem((effort == null || effort.isBlank()) ? BlankSafeComboRenderer.DEFAULT_OPTION : effort);
+            if (focused != null) {
+                focused.requestFocusInWindow();
+            }
+        }
+        finally {
+            programmatic = false;
+        }
     }
 
     public String getSelectedModel() {

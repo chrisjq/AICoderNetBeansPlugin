@@ -15,6 +15,11 @@ public final class OllamaPluginSettings {
     };
     public static final String DEFAULT_MODEL = KNOWN_MODELS[0];
     public static final String DEFAULT_BASE_URL = "http://localhost:11434";
+    /**
+     * Empty means "not set" — no {@code reasoning_effort} field is sent, per the reasoning-effort design spec. Unlike
+     * model/base URL there is no non-blank fallback value.
+     */
+    public static final String DEFAULT_REASONING_EFFORT = "";
 
     private static volatile String[] discoveredModels = null;
 
@@ -28,7 +33,7 @@ public final class OllamaPluginSettings {
 
     public static void setModel(String value) {
         prefs().put(OllamaPluginSettingsKeyEnum.MODEL.key(),
-                value != null ? value : DEFAULT_MODEL);
+                    value != null ? value : DEFAULT_MODEL);
     }
 
     public static String getBaseUrl() {
@@ -37,7 +42,16 @@ public final class OllamaPluginSettings {
 
     public static void setBaseUrl(String value) {
         prefs().put(OllamaPluginSettingsKeyEnum.BASE_URL.key(),
-                value != null ? value : DEFAULT_BASE_URL);
+                    value != null ? value : DEFAULT_BASE_URL);
+    }
+
+    public static String getReasoningEffort() {
+        return prefs().get(OllamaPluginSettingsKeyEnum.REASONING_EFFORT.key(), DEFAULT_REASONING_EFFORT);
+    }
+
+    public static void setReasoningEffort(String value) {
+        prefs().put(OllamaPluginSettingsKeyEnum.REASONING_EFFORT.key(),
+                    value != null ? value : DEFAULT_REASONING_EFFORT);
     }
 
     public static String[] getKnownModels() {

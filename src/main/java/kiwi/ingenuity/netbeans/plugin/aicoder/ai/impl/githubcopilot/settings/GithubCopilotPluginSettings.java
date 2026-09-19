@@ -1,5 +1,7 @@
 package kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.githubcopilot.settings;
 
+import java.util.List;
+import java.util.Map;
 import java.util.prefs.Preferences;
 import kiwi.ingenuity.netbeans.plugin.aicoder.PluginSettings;
 import org.openide.util.NbPreferences;
@@ -52,6 +54,53 @@ public final class GithubCopilotPluginSettings {
 
     public static void setModel(String v) {
         prefs().put(GithubCopilotPluginSettingsKeyEnum.MODEL.key(), v != null ? v : DEFAULT_MODEL);
+    }
+
+    /**
+     * Global default reasoning effort. An empty string (the persisted sentinel — {@code Preferences} cannot store
+     * {@code null}) means "not set": {@code GithubCopilotProcessManager} omits {@code SessionConfig}/
+     * {@code ResumeSessionConfig}'s {@code setReasoningEffort} entirely rather than sending a value.
+     */
+    public static final String DEFAULT_REASONING_EFFORT = "";
+
+    public static String getReasoningEffort() {
+        return prefs().get(GithubCopilotPluginSettingsKeyEnum.REASONING_EFFORT.key(), DEFAULT_REASONING_EFFORT);
+    }
+
+    public static void setReasoningEffort(String v) {
+        prefs().put(GithubCopilotPluginSettingsKeyEnum.REASONING_EFFORT.key(), v != null ? v : DEFAULT_REASONING_EFFORT);
+    }
+
+    /**
+     * Live per-model reasoning-effort support, populated by {@code GithubCopilotModelDiscovery} as a side effect of
+     * its SDK-tier discovery ({@code ModelInfo.getSupportedReasoningEfforts()}/{@code getDefaultReasoningEffort()}).
+     * In-memory only, not persisted (like the model list, this is fresh per IDE run) — empty until discovery has
+     * actually completed at least once, and empty for any model discovery never reported data for (e.g. the direct
+     * JSON-RPC fallback tier, which does not carry this). Nothing about effort levels is ever hardcoded: a model with
+     * no entry here is treated as "no support", per the design spec's must-not-error requirement.
+     */
+    private static volatile Map<String, List<String>> supportedReasoningEffortsByModel = Map.of();
+    private static volatile Map<String, String> defaultReasoningEffortByModel = Map.of();
+
+    /**
+     * The reasoning-effort levels {@code modelId} supports, or an empty list if the model is unknown or reported none
+     * — both cases mean "no support" to every caller (there is no live/static-table distinction to make here, unlike
+     * the design spec's Grok/Claude cases).
+     */
+    public static List<String> getSupportedReasoningEfforts(String modelId) {
+        if (modelId == null) {
+            return List.of();
+        }
+        return supportedReasoningEffortsByModel.getOrDefault(modelId, List.of());
+    }
+
+    public static String getDefaultReasoningEffort(String modelId) {
+        return modelId == null ? null : defaultReasoningEffortByModel.get(modelId);
+    }
+
+    public static void setModelReasoningEffortInfo(Map<String, List<String>> supportedByModel, Map<String, String> defaultByModel) {
+        supportedReasoningEffortsByModel = supportedByModel != null ? Map.copyOf(supportedByModel) : Map.of();
+        defaultReasoningEffortByModel = defaultByModel != null ? Map.copyOf(defaultByModel) : Map.of();
     }
 
     private GithubCopilotPluginSettings() {

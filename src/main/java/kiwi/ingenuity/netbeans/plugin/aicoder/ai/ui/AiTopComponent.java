@@ -2260,6 +2260,14 @@ public final class AiTopComponent extends TopComponent implements AiProcessEvent
         return session.settings();
     }
 
+    /**
+     * Called from any thread — several {@code AiSessionHost.updateSessionSettings} callers reach this off the EDT (a
+     * backend's clear-invalid-effort callback firing from its own turn thread, an ACP/handshake thread signalling
+     * session establishment). {@code infoBar.setAutoAccept}/{@code setSaveHistory} are themselves EDT-safe (see
+     * {@link AiInfoBar#setAutoAccept}), so no marshalling is needed here; the disk I/O below deliberately stays on the
+     * calling thread rather than being pushed onto the EDT, and {@link #refreshSessionIdentity()} only touches a plain
+     * (non-Swing) field, so it is safe on any thread too.
+     */
     @Override
     public void updateSessionSettings(AiSessionSettings newConfig) {
         infoBar.setAutoAccept(newConfig.effectiveAutoAccept());

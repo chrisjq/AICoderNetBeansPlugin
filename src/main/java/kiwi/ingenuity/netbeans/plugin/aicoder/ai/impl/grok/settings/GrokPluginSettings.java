@@ -18,6 +18,7 @@ public final class GrokPluginSettings {
         "grok-4.5"
     };
     public static final String DEFAULT_MODEL = KNOWN_MODELS[0];
+    public static final String DEFAULT_REASONING_EFFORT = "";
 
     private static volatile String[] discoveredModels = null;
 
@@ -48,6 +49,18 @@ public final class GrokPluginSettings {
 
     public static void setExecutable(String v) {
         prefs().put(GrokPluginSettingsKeyEnum.EXECUTABLE.key(), v != null ? v : "");
+    }
+
+    /**
+     * Empty means "pass nothing" (use the model's own default), not "unset" — mirrors
+     * {@code PiPluginSettings.getThinkingLevel()}.
+     */
+    public static String getReasoningEffort() {
+        return prefs().get(GrokPluginSettingsKeyEnum.REASONING_EFFORT.key(), DEFAULT_REASONING_EFFORT);
+    }
+
+    public static void setReasoningEffort(String v) {
+        prefs().put(GrokPluginSettingsKeyEnum.REASONING_EFFORT.key(), v != null ? v : DEFAULT_REASONING_EFFORT);
     }
 
     private GrokPluginSettings() {

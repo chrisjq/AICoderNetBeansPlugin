@@ -6,21 +6,21 @@ import kiwi.ingenuity.netbeans.plugin.aicoder.ai.settings.AiModelSessionSettings
 public class CodexSessionSettings extends AiModelSessionSettings {
 
     private volatile String threadId;
+    private volatile String effort;
 
     public CodexSessionSettings() {
         super();
     }
 
     public CodexSessionSettings(Integer maxHistory, Boolean restrictToProjectFiles, Boolean allowInterAiComms,
-            Boolean autoNotifyInbox, Boolean allowImportantMessages, String sessionInstructions, String model,
-            Boolean autoAccept, Boolean allowWebRequests) {
+                                Boolean autoNotifyInbox, Boolean allowImportantMessages, String sessionInstructions, String model,
+                                Boolean autoAccept, Boolean allowWebRequests) {
         super(maxHistory, restrictToProjectFiles, allowInterAiComms, autoNotifyInbox,
-                allowImportantMessages, sessionInstructions, model, autoAccept, allowWebRequests);
+              allowImportantMessages, sessionInstructions, model, autoAccept, allowWebRequests);
     }
 
     /**
-     * Codex-generated {@code app-server} thread id, captured from
-     * thread/start's response.
+     * Codex-generated {@code app-server} thread id, captured from thread/start's response.
      */
     public String threadId() {
         return threadId;
@@ -30,11 +30,26 @@ public class CodexSessionSettings extends AiModelSessionSettings {
         this.threadId = threadId;
     }
 
+    /**
+     * Reasoning-effort override sent with every {@code turn/start}, or {@code null} to omit the field and let the model
+     * apply its own default.
+     */
+    public String effort() {
+        return effort;
+    }
+
+    public void setEffort(String effort) {
+        this.effort = effort;
+    }
+
     @Override
     public void populateJsonObject(JsonObject cfgObj) {
         super.populateJsonObject(cfgObj);
         if (threadId != null) {
             cfgObj.addProperty(CodexSessionSettingsKeyEnum.THREAD_ID.key(), threadId);
+        }
+        if (effort != null) {
+            cfgObj.addProperty(CodexSessionSettingsKeyEnum.EFFORT.key(), effort);
         }
     }
 }

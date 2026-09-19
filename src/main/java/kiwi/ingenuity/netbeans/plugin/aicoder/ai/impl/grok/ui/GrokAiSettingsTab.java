@@ -7,6 +7,7 @@ import java.awt.Insets;
 import java.beans.PropertyChangeListener;
 import java.beans.PropertyChangeSupport;
 import java.io.File;
+import java.util.List;
 import java.util.concurrent.ExecutionException;
 import javax.swing.Box;
 import javax.swing.JButton;
@@ -21,7 +22,9 @@ import javax.swing.event.DocumentListener;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.AiTypeEnum;
 import static kiwi.ingenuity.netbeans.plugin.aicoder.ai.AiTypeEnum.GROK;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.grok.GrokExecutableLocator;
+import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.grok.GrokReasoningEffortSupport;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.grok.settings.GrokPluginSettings;
+import kiwi.ingenuity.netbeans.plugin.aicoder.ai.ui.BlankSafeComboRenderer;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ui.SettingsTab;
 import org.openide.util.lookup.ServiceProvider;
 
@@ -36,6 +39,14 @@ public final class GrokAiSettingsTab implements SettingsTab {
     private final JButton testButton;
     private final JLabel testResultLabel;
     private final JComboBox<String> modelCombo;
+    private final JComboBox<String> reasoningEffortCombo;
+
+    /**
+     * True while {@link #load()} or {@link #applyReasoningEffortOptions} is mutating a combo, so the model combo's
+     * listener can tell a programmatic restore from a real user pick — mirrors {@code PiAiSettingsTab}'s
+     * {@code programmatic} flag.
+     */
+    private boolean programmatic = false;
 
     public GrokAiSettingsTab() {
         panel = new JPanel(new GridBagLayout());
@@ -94,6 +105,15 @@ public final class GrokAiSettingsTab implements SettingsTab {
 
         c.gridx = 0;
         c.gridy = 4;
+        c.weightx = 0;
+        panel.add(new JLabel("Default reasoning effort:"), c);
+        reasoningEffortCombo = new JComboBox<>();
+        c.gridx = 1;
+        c.weightx = 1;
+        panel.add(reasoningEffortCombo, c);
+
+        c.gridx = 0;
+        c.gridy = 5;
         c.weighty = 1;
         c.gridwidth = 5;
         panel.add(Box.createVerticalGlue(), c);
@@ -116,10 +136,55 @@ public final class GrokAiSettingsTab implements SettingsTab {
                 fireChange();
             }
         });
-        modelCombo.addActionListener(e -> fireChange());
+        modelCombo.addActionListener(e -> {
+            if (!programmatic) {
+                applyReasoningEffortOptions(selectedModel(), null);
+            }
+            fireChange();
+        });
+        reasoningEffortCombo.addActionListener(e -> fireChange());
         browseButton.addActionListener(e -> handleBrowse());
         detectButton.addActionListener(e -> handleDetect());
         testButton.addActionListener(e -> handleTest());
+    }
+
+    private String selectedModel() {
+        Object item = modelCombo.getEditor() != null ? modelCombo.getEditor().getItem() : modelCombo.getSelectedItem();
+        return item != null ? item.toString().trim() : null;
+    }
+
+    /**
+     * Repopulates {@link #reasoningEffortCombo} with the levels {@code model} supports (plus
+     * {@link BlankSafeComboRenderer#DEFAULT_OPTION}), selecting {@code preferredEffort} if given and still valid for
+     * {@code model}, else the combo's own current selection if that is still valid, else
+     * {@link BlankSafeComboRenderer#DEFAULT_OPTION}. {@code preferredEffort} lets callers like {@link #load()} seed a
+     * stored value THROUGH this validation instead of calling {@code reasoningEffortCombo.setSelectedItem} directly
+     * afterwards — a non-editable {@code JComboBox} silently no-ops {@code setSelectedItem} for a value that isn't one
+     * of its current items (confirmed live; the same trap {@code PiAiInfoBarExtension} hit), which previously left an
+     * unsupported stored value as the combo's {@code selectedItemReminder} even though the default option was what got
+     * displayed — and {@link #store()} would read that phantom value back out and re-persist it (review finding). This
+     * method is the only place that mutates the combo's selection now — a UI courtesy either way; the authoritative
+     * "never send an unsupported value" enforcement is {@code GrokAiProcessManager}'s at launch time, and
+     * {@link #store()} independently re-validates before persisting as a second line of defence.
+     */
+    private void applyReasoningEffortOptions(String model, String preferredEffort) {
+        boolean wasProgrammatic = programmatic;
+        programmatic = true;
+        try {
+            Object current = reasoningEffortCombo.getSelectedItem();
+            reasoningEffortCombo.removeAllItems();
+            reasoningEffortCombo.addItem(BlankSafeComboRenderer.DEFAULT_OPTION);
+            List<String> supported = GrokReasoningEffortSupport.supportedFor(model);
+            for (String level : supported) {
+                reasoningEffortCombo.addItem(level);
+            }
+            String toSelect = (preferredEffort != null && supported.contains(preferredEffort)) ? preferredEffort
+                              : (current != null && supported.contains(current.toString()) ? current.toString() : null);
+            reasoningEffortCombo.setSelectedItem(toSelect != null ? toSelect : BlankSafeComboRenderer.DEFAULT_OPTION);
+        }
+        finally {
+            programmatic = wasProgrammatic;
+        }
     }
 
     private void fireChange() {
@@ -138,16 +203,37 @@ public final class GrokAiSettingsTab implements SettingsTab {
 
     @Override
     public void load() {
-        executableField.setText(GrokPluginSettings.getExecutable());
-        modelCombo.setSelectedItem(GrokPluginSettings.getModel());
-        testResultLabel.setText(" ");
+        boolean wasProgrammatic = programmatic;
+        programmatic = true;
+        try {
+            executableField.setText(GrokPluginSettings.getExecutable());
+            modelCombo.setSelectedItem(GrokPluginSettings.getModel());
+            String storedEffort = GrokPluginSettings.getReasoningEffort();
+            applyReasoningEffortOptions(selectedModel(), (storedEffort == null || storedEffort.isBlank()) ? null : storedEffort);
+            testResultLabel.setText(" ");
+        }
+        finally {
+            programmatic = wasProgrammatic;
+        }
     }
 
     @Override
     public void store() {
         GrokPluginSettings.setExecutable(executableField.getText().strip());
         Object sel = modelCombo.getSelectedItem();
-        GrokPluginSettings.setModel(sel != null ? sel.toString() : GrokPluginSettings.DEFAULT_MODEL);
+        String model = sel != null ? sel.toString() : GrokPluginSettings.DEFAULT_MODEL;
+        GrokPluginSettings.setModel(model);
+        Object effort = reasoningEffortCombo.getSelectedItem();
+        String effortStr = (effort != null && !BlankSafeComboRenderer.DEFAULT_OPTION.equals(effort.toString())) ? effort.toString() : null;
+        // Re-validated here, not just trusted from the combo's own selection: a non-editable JComboBox can retain an
+        // unsupported value as its selectedItemReminder even after a repopulation that displays the default option
+        // instead (see applyReasoningEffortOptions's javadoc) — this is the second, independent line of defence the
+        // review finding asked for, so an unsupported value can never reach persisted storage even if some future UI
+        // path sets the combo's selection without going through applyReasoningEffortOptions.
+        if (effortStr != null && !GrokReasoningEffortSupport.supportedFor(model).contains(effortStr)) {
+            effortStr = null;
+        }
+        GrokPluginSettings.setReasoningEffort(effortStr != null ? effortStr : "");
     }
 
     @Override

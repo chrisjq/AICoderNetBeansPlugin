@@ -2,7 +2,8 @@ package kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.grok.settings;
 
 public enum GrokPluginSettingsKeyEnum {
     MODEL("ai.grok.model"),
-    EXECUTABLE("ai.grok.executable");
+    EXECUTABLE("ai.grok.executable"),
+    REASONING_EFFORT("ai.grok.reasoningEffort");
 
     private final String key;
 

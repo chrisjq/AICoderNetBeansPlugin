@@ -196,6 +196,21 @@ public class ClaudeAiProcessManager extends AiProcessManager {
     // recycleForModelChange() would strand the new model — --resume makes the CLI keep the session's original
     // model, so the command-line --model on a resumed session is ignored and the switch never takes effect.
     private String launchedModel;
+    /**
+     * Launch-time effort level for the next spawn, from {@code ClaudeSessionSettings.effort()} (session) or
+     * {@code ClaudePluginSettings.getEffort()} (global default) — set by {@code ClaudeAiImplementation} before the
+     * first turn. Compared in {@link #ensureSession} and deferred by {@link #recycleForModelChange} exactly like
+     * {@link #launchedModel}.
+     */
+    private volatile String configuredEffort;
+    /**
+     * The only effort levels the Claude CLI accepts (design spec §3; also the info bar's {@code EFFORT_OPTIONS}). No
+     * live discovery exists for these — unlike Copilot, which validates against the model's supported list, Claude has
+     * a fixed five-level set. Anything outside this set is treated as a corrupted or hand-edited value and dropped by
+     * {@link #configureEffort} rather than passed to {@code --effort}, which would hard-fail the CLI at spawn.
+     */
+    private static final Set<String> KNOWN_EFFORT_LEVELS = Set.of("low", "medium", "high", "xhigh", "max");
+    private String launchedEffort;
     private int launchCount = 0;
 
     int cancelWatchdogMillis = 5000;
@@ -247,8 +262,38 @@ public class ClaudeAiProcessManager extends AiProcessManager {
         return pendingMailInterrupt;
     }
 
+    /**
+     * Configures the effort level for the next spawn (and only the next spawn — the level is fixed at launch time and a
+     * change after that goes through {@link #recycleForModelChange}, which drops the process so {@link #ensureSession}
+     * relaunches on the next turn). An empty or null level means "omit {@code --effort}" (Claude's own default). A
+     * value that is not one of the five known levels is dropped the same way, with exactly one INFO event — so a
+     * corrupted or hand-edited stored value can never break the session at spawn.
+     */
+    public void configureEffort(String level) {
+        if (level == null || level.isBlank()) {
+            this.configuredEffort = null;
+            return;
+        }
+        if (!KNOWN_EFFORT_LEVELS.contains(level)) {
+            this.configuredEffort = null;
+            listener.onAiProcessEvent(new StatusEvent(StatusEventTypeEnum.INFO,
+                                                      "Effort level \"" + level + "\" is not a known Claude effort level; using Claude's default"));
+            return;
+        }
+        this.configuredEffort = level;
+    }
+
     int getLaunchCount() {
         return launchCount;
+    }
+
+    /**
+     * Package-visible test seam (mirrors {@link #getLaunchCount}). The launch itself is untestable in unit tests (the
+     * CLI spawn is environment-dependent), but {@link #configureEffort}'s drop-and-INFO behavior for an unknown level
+     * is. Sentinel {@code null} means "omit {@code --effort}" — which is exactly what an invalid level must resolve to.
+     */
+    String getConfiguredEffort() {
+        return configuredEffort;
     }
 
     ClaudePersistentSession getPersistentSession() {
@@ -324,6 +369,15 @@ public class ClaudeAiProcessManager extends AiProcessManager {
         }
         args.add("--model");
         args.add(model);
+        if (configuredEffort != null && !configuredEffort.isBlank()) {
+            // --effort IS honoured on a resumed launch, the opposite of --model (see the --model note above): effort
+            // is taken from the current invocation, not the session (claude-code issue #66005). It also preserves the
+            // cached prompt prefix — that issue is about sessions silently LOSING their effort on resume, which
+            // invalidates the cache (~29% reuse in the reporter's repro). Omitting the flag on resumes would regress
+            // both; never "optimise" this line away. Full rationale in the design spec §3.
+            args.add("--effort");
+            args.add(configuredEffort);
+        }
         args.add("--allowedTools");
         args.add("Read,Edit,Write,Bash,Glob,Grep," + McpToolEnum.allMcpNames());
         for (File d : projDirs) {
@@ -392,7 +446,7 @@ public class ClaudeAiProcessManager extends AiProcessManager {
                 .map(File::getPath)
                 .toList());
         if (persistentSession != null && persistentSession.isAlive()) {
-            if (launchedProjectDirs.containsAll(currentDirs) && Objects.equals(launchedModel, model)) {
+            if (launchedProjectDirs.containsAll(currentDirs) && Objects.equals(launchedModel, model) && Objects.equals(launchedEffort, configuredEffort)) {
                 return persistentSession;
             }
             persistentSession.close();
@@ -444,6 +498,7 @@ public class ClaudeAiProcessManager extends AiProcessManager {
         persistentSession = launched;
         launchedProjectDirs = currentDirs;
         launchedModel = model;
+        launchedEffort = configuredEffort;
         launchCount++;
         launched.process().onExit().thenRun(() -> handleProcessExit(launched));
         firstMessage = false;
@@ -776,6 +831,7 @@ public class ClaudeAiProcessManager extends AiProcessManager {
         recentStderr.clear();
         launchedProjectDirs = Set.of();
         launchedModel = null;
+        launchedEffort = null;
         launchCount = 0;
     }
 

@@ -29,36 +29,71 @@ public class OllamaAiImplementation extends AiImplementation implements OllamaIn
 
     public static void triggerModelDiscovery(String customBaseUrl) {
         String baseUrl = (customBaseUrl != null && !customBaseUrl.isBlank())
-                ? customBaseUrl
-                : OllamaPluginSettings.getBaseUrl();
+                         ? customBaseUrl
+                         : OllamaPluginSettings.getBaseUrl();
         if (!MODEL_CATALOG.beginRefresh()) {
             return;
         }
         OllamaModelDiscovery.discoverAsync(baseUrl,
-                models -> {
-                    List<String> list = Arrays.asList(models);
-                    OllamaPluginSettings.setDiscoveredModels(models);
-                    if (MODEL_CATALOG.publish(list)) {
-                        AiTypePropertyBus.getInstance().fire(AiTypeEnum.OLLAMA_LOCAL, new OllamaModelsEvent(list));
-                    }
-                },
-                hint -> {
-                    if (hint != null) {
-                        AiTypePropertyBus.getInstance().fire(AiTypeEnum.OLLAMA_LOCAL,
-                                new OllamaCapabilityHintEvent(hint));
-                    }
-                });
+                                           models -> {
+                                               List<String> list = Arrays.asList(models);
+                                               OllamaPluginSettings.setDiscoveredModels(models);
+                                               if (MODEL_CATALOG.publish(list)) {
+                                                   AiTypePropertyBus.getInstance().fire(AiTypeEnum.OLLAMA_LOCAL, new OllamaModelsEvent(list));
+                                               }
+                                           },
+                                           hint -> {
+                                               if (hint != null) {
+                                                   AiTypePropertyBus.getInstance().fire(AiTypeEnum.OLLAMA_LOCAL,
+                                                                                        new OllamaCapabilityHintEvent(hint));
+                                               }
+                                           });
     }
     private final OllamaAiProcessManager processManager;
+    /**
+     * Retained so {@link #clearInvalidPersistedReasoningEffort} can persist a clear even when it fires from deep in the
+     * process manager's send path (a background turn thread, well after {@link #createInfoBarExtension} or
+     * {@link #onStarted} last ran) — mirrors {@code GrokAiImplementation}/{@code GithubCopilotAiImplementation}'s
+     * identical {@code sessionHost} field, kept for the same reason.
+     */
+    private volatile AiSessionHost sessionHost;
 
     public OllamaAiImplementation(AiProcessEventListener listener, ExecutablePrompter prompter) {
         this(AiTypeEnum.OLLAMA_LOCAL, listener, prompter);
     }
 
     protected OllamaAiImplementation(AiTypeEnum type, AiProcessEventListener listener,
-            ExecutablePrompter prompter) {
+                                     ExecutablePrompter prompter) {
         super(type, listener, prompter);
         this.processManager = createProcessManager(listener);
+        this.processManager.setOnReasoningEffortCleared(this::clearInvalidPersistedReasoningEffort);
+    }
+
+    /**
+     * Wired to {@link OllamaAiProcessManager#setOnReasoningEffortCleared}: fires only for a SESSION-sourced value (spec
+     * §1 rule 3a — {@link OllamaAiProcessManager#applyThinkingCapabilityValidation} never invokes this for a
+     * global-sourced one), so no scope resolution is needed here — just clear whatever the session currently has
+     * pinned. Package-private for direct unit testing, mirroring {@code GrokAiImplementation}'s identical method.
+     */
+    void clearInvalidPersistedReasoningEffort() {
+        if (currentSession != null && currentSession.settings() instanceof OllamaSessionSettings gs) {
+            gs.setReasoningEffort(null);
+            AiSessionHost host = sessionHost;
+            if (host != null) {
+                host.updateSessionSettings(gs);
+            }
+        }
+    }
+
+    /**
+     * Base URL for the current session (its own override, if set) or the global default — shared by discovery triggers
+     * and the info bar's live capability lookups, so there is exactly one place this precedence lives.
+     */
+    private String resolveBaseUrl() {
+        return currentSession != null && currentSession.settings() instanceof OllamaSessionSettings settings
+                && settings.baseUrl() != null && !settings.baseUrl().isBlank()
+               ? settings.baseUrl()
+               : defaultBaseUrl();
     }
 
     protected OllamaAiProcessManager createProcessManager(AiProcessEventListener listener) {
@@ -85,11 +120,11 @@ public class OllamaAiImplementation extends AiImplementation implements OllamaIn
     @Override
     public void startWithDiscovery(String model) {
         String effectiveModel = model != null && !model.isBlank()
-                ? model
-                : currentSession != null && currentSession.settings() instanceof OllamaSessionSettings os
+                                ? model
+                                : currentSession != null && currentSession.settings() instanceof OllamaSessionSettings os
                 && os.model() != null
-                ? os.model()
-                : defaultModel();
+                                  ? os.model()
+                                  : defaultModel();
         start(null, effectiveModel);
     }
 
@@ -105,7 +140,12 @@ public class OllamaAiImplementation extends AiImplementation implements OllamaIn
 
     @Override
     public OllamaAiInfoBarExtension createInfoBarExtension(AiSession session, AiSessionHost host) {
+        this.sessionHost = host;
         OllamaAiInfoBarExtension ext = new OllamaAiInfoBarExtension();
+        ext.setBaseUrl(session.settings() instanceof OllamaSessionSettings baseUrlSettings
+                && baseUrlSettings.baseUrl() != null && !baseUrlSettings.baseUrl().isBlank()
+                       ? baseUrlSettings.baseUrl()
+                       : defaultBaseUrl());
         ext.setProcessingSupplier(delegate()::isProcessing);
         ext.setSummarisingSupplier(delegate()::isSummarising);
         ext.addListener(this);
@@ -114,8 +154,8 @@ public class OllamaAiImplementation extends AiImplementation implements OllamaIn
         ext.setDisposeAction(() -> MODEL_CATALOG.removeListener(catalogListener));
         String initialModel = session.settings() instanceof OllamaSessionSettings settings
                 && settings.model() != null
-                ? settings.model()
-                : defaultModel();
+                              ? settings.model()
+                              : defaultModel();
         ext.setSelectedModel(initialModel);
         ext.addModelChangeListener(e -> {
             String selected = ext.getSelectedModel();
@@ -130,31 +170,45 @@ public class OllamaAiImplementation extends AiImplementation implements OllamaIn
             }
             triggerCapabilityDiscovery(selected);
         });
+        // Display only, like Grok's and Copilot's info bars: falls back to the global default so the combo shows
+        // what will actually be used, but the fallback is never written back into the session's own settings —
+        // "inherits the global" and "pinned to this session" must stay distinguishable.
+        String sessionReasoningEffort = session.settings() instanceof OllamaSessionSettings ollamaSettings
+                                        ? ollamaSettings.reasoningEffort()
+                                        : null;
+        String initialReasoningEffort = sessionReasoningEffort != null && !sessionReasoningEffort.isBlank()
+                                        ? sessionReasoningEffort
+                                        : OllamaPluginSettings.getReasoningEffort();
+        ext.setSelectedReasoningEffort(initialReasoningEffort);
+        ext.addReasoningEffortChangeListener(e -> {
+            String selected = ext.getSelectedReasoningEffort();
+            AiSessionSettings cfg = host.getSessionSettings();
+            if (cfg instanceof OllamaSessionSettings ollama) {
+                ollama.setReasoningEffort(selected);
+                host.updateSessionSettings(ollama);
+            }
+        });
         triggerModelDiscovery();
         triggerCapabilityDiscovery(initialModel);
         return ext;
     }
 
     private void triggerModelDiscovery() {
-        String baseUrl = currentSession != null && currentSession.settings() instanceof OllamaSessionSettings settings
-                && settings.baseUrl() != null && !settings.baseUrl().isBlank()
-                ? settings.baseUrl()
-                : defaultBaseUrl();
-        triggerModelDiscovery(baseUrl);
+        triggerModelDiscovery(resolveBaseUrl());
     }
 
     private void triggerCapabilityDiscovery(String model) {
-        String baseUrl = currentSession != null && currentSession.settings() instanceof OllamaSessionSettings settings
-                && settings.baseUrl() != null && !settings.baseUrl().isBlank()
-                ? settings.baseUrl()
-                : defaultBaseUrl();
-        OllamaModelDiscovery.probeCapabilityAsync(baseUrl, model,
-                hint -> AiTypePropertyBus.getInstance().fire(type,
-                        new OllamaCapabilityHintEvent(hint)));
+        OllamaModelDiscovery.probeCapabilityAsync(resolveBaseUrl(), model,
+                                                  hint -> AiTypePropertyBus.getInstance().fire(type,
+                                                                                               new OllamaCapabilityHintEvent(hint)));
     }
 
     @Override
     public void onStarted(AiSessionHost session) {
+        // Retained even though createInfoBarExtension already sets this: onStarted always runs, so this covers a
+        // session started without an info bar ever having been built for it — mirrors
+        // GithubCopilotAiImplementation.onStarted's identical fallback assignment.
+        this.sessionHost = session;
     }
 
     @Override

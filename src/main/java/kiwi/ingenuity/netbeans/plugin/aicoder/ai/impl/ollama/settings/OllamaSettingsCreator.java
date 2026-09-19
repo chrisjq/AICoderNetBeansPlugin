@@ -25,12 +25,18 @@ public class OllamaSettingsCreator extends OpenAiClientSettingsCreator<OllamaSes
         if (cfgObj.has(key) && cfgObj.get(key).isJsonPrimitive()) {
             settings.setBaseUrl(cfgObj.get(key).getAsString());
         }
+        key = OllamaSessionSettingsKeyEnum.REASONING_EFFORT.key();
+        if (cfgObj.has(key) && cfgObj.get(key).isJsonPrimitive()) {
+            settings.setReasoningEffort(cfgObj.get(key).getAsString());
+        }
     }
 
     @Override
     public void applyDefaultSettingsFromGlobal(AiSessionSettings settings) {
         if (settings instanceof OllamaSessionSettings ollama) {
             ollama.setBaseUrl(OllamaPluginSettings.getBaseUrl());
+            String effort = OllamaPluginSettings.getReasoningEffort();
+            ollama.setReasoningEffort(effort == null || effort.isBlank() ? null : effort);
         }
     }
 }

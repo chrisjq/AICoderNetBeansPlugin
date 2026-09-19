@@ -21,6 +21,7 @@ import kiwi.ingenuity.netbeans.plugin.aicoder.ai.events.StatusEventTypeEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.claude.events.ClaudeModelsEvent;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.claude.events.ClaudeUsageEvent;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.claude.settings.ClaudePluginSettings;
+import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.claude.settings.ClaudeSessionSettings;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.claude.ui.ClaudeAiInfoBarExtension;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.claude.ui.ClaudeInfoBarListener;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.session.AiSession;
@@ -155,18 +156,20 @@ public class ClaudeAiImplementation extends AiImplementation {
             return;
         }
         lastUsageFetchAttemptMs = now;
-        AnthropicApiClient.rateLimitManager().submitWhenClear("usage", () -> {
-            try {
-                AnthropicApiClient.UsageData data = new AnthropicApiClient().fetchUsage();
-                ClaudeUsageEvent event = new ClaudeUsageEvent(data.fiveHourPct(), data.sevenDayPct());
-                cachedUsageEvent = event;
-                AiTypePropertyBus.getInstance().fire(AiTypeEnum.CLAUDE, event);
-            }
-            catch (Exception e) {
-                recordUsageFetch429IfApplicable();
-                LOG.log(Level.WARNING, "Usage fetch failed: {0}", e.getMessage());
-            }
-        });
+        AnthropicApiClient
+                .rateLimitManager()
+                .submitWhenClear("usage", () -> {
+                             try {
+                                 AnthropicApiClient.UsageData data = new AnthropicApiClient().fetchUsage();
+                                 ClaudeUsageEvent event = new ClaudeUsageEvent(data.fiveHourPct(), data.sevenDayPct());
+                                 cachedUsageEvent = event;
+                                 AiTypePropertyBus.getInstance().fire(AiTypeEnum.CLAUDE, event);
+                             }
+                             catch (Exception e) {
+                                 recordUsageFetch429IfApplicable();
+                                 LOG.log(Level.WARNING, "Usage fetch failed: {0}", e.getMessage());
+                             }
+                         });
     }
 
     /**
@@ -217,6 +220,20 @@ public class ClaudeAiImplementation extends AiImplementation {
             return mc.model();
         }
         return ClaudePluginSettings.getModel();
+    }
+
+    /**
+     * Effort to launch the session with: the per-session value wins over the global default; {@code null} when neither
+     * is set, meaning the {@code --effort} flag is omitted entirely (Claude's own default). Mirrors
+     * {@code PiAiImplementation.effectiveThinkingLevel}. Package-visible (not private) purely so it's unit-testable.
+     */
+    String effectiveEffort() {
+        if (currentSession != null && currentSession.settings() instanceof ClaudeSessionSettings cs
+                && cs.effort() != null && !cs.effort().isBlank()) {
+            return cs.effort();
+        }
+        String global = ClaudePluginSettings.getEffort();
+        return (global != null && !global.isBlank()) ? global : null;
     }
 
     @Override
@@ -270,6 +287,7 @@ public class ClaudeAiImplementation extends AiImplementation {
         if (currentSession != null && isStoredSessionValid(currentSession.id())) {
             delegate.resumeSession(currentSession.id());
         }
+        delegate.configureEffort(effectiveEffort());
     }
 
     @Override
@@ -280,6 +298,20 @@ public class ClaudeAiImplementation extends AiImplementation {
             mc.setModel(model);
         }
         delegate.setModel(model);
+        delegate.recycleForModelChange();
+    }
+
+    /**
+     * Session-scoped effort change — deliberately does not write the global default; the global default (Tools →
+     * Options) is owned solely by the settings panel. The effort only takes effect at spawn, so the session is recycled
+     * via the same path a model change uses ({@link #delegate}'s {@code recycleForModelChange}); a turn in flight
+     * defers the relaunch to the start of the next turn.
+     */
+    public void setEffort(String effort) {
+        if (currentSession != null && currentSession.settings() instanceof ClaudeSessionSettings cs) {
+            cs.setEffort(effort == null || effort.isBlank() ? null : effort);
+        }
+        delegate.configureEffort(effort);
         delegate.recycleForModelChange();
     }
 
@@ -318,7 +350,16 @@ public class ClaudeAiImplementation extends AiImplementation {
             @Override
             public void onModelChanged(String model) {
             }
+
+            @Override
+            public void onEffortChanged(String effort) {
+            }
         });
+        // The check-and-persist here was dead code: setModel()/setEffort() above already mutate the live session
+        // settings object that host.getSessionSettings() returns (AiTopComponent's getSessionSettings() is
+        // `return session.settings();`), so comparing afterwards never saw a difference and updateSessionSettings was
+        // never reached — effort/model changes survived only via unrelated later saves. Persist unconditionally on
+        // every combo change instead, same as the Ollama info bar does for reasoning effort.
         provider.addModelChangeListener(e -> {
             String model = provider.getSelectedModel();
             if (model == null) {
@@ -326,29 +367,44 @@ public class ClaudeAiImplementation extends AiImplementation {
             }
             setModel(model);
             AiSessionSettings cfg = host.getSessionSettings();
-            String currentModel = cfg instanceof AiModelSessionSettings mc ? mc.model() : null;
-            if (!model.equals(currentModel)) {
-                if (cfg instanceof AiModelSessionSettings modelCfg) {
-                    modelCfg.setModel(model);
-                }
+            if (cfg instanceof AiModelSessionSettings modelCfg) {
+                modelCfg.setModel(model);
                 delegate.setCurrentSession(currentSession);
-                host.updateSessionSettings(cfg);
+                host.updateSessionSettings(modelCfg);
+            }
+        });
+        provider.addEffortChangeListener(e -> {
+            String effort = provider.getSelectedEffort();
+            setEffort(effort);
+            AiSessionSettings cfg = host.getSessionSettings();
+            if (cfg instanceof ClaudeSessionSettings claudeCfg) {
+                claudeCfg.setEffort(effort.isBlank() ? null : effort);
+                delegate.setCurrentSession(currentSession);
+                host.updateSessionSettings(claudeCfg);
             }
         });
         String initialModel = session.settings() instanceof AiModelSessionSettings modelCfg && modelCfg.model() != null
-                ? modelCfg.model() : ClaudePluginSettings.getModel();
+                              ? modelCfg.model() : ClaudePluginSettings.getModel();
         provider.setSelectedModel(initialModel);
         if (initialModel != null && session.settings() instanceof AiModelSessionSettings modelSettings && modelSettings.model() == null) {
             modelSettings.setModel(initialModel);
             host.updateSessionSettings(modelSettings);
         }
+        // Display-only fallback, like the Ollama info bar's reasoning-effort seeding: the combo shows
+        // session-or-global so the user sees what will actually be used, but the GLOBAL default is never written back
+        // into this session's settings. Writing it back destroys the inherits-vs-pinned distinction — changing the
+        // global later would then have no effect on this session, which would look pinned even though the user never
+        // pinned it.
+        String initialEffort = session.settings() instanceof ClaudeSessionSettings claudeCfg && claudeCfg.effort() != null
+                               ? claudeCfg.effort() : ClaudePluginSettings.getEffort();
+        provider.setSelectedEffort(initialEffort);
         return provider;
     }
 
     private void compact(AiSessionHost host) {
         if (!isRunning() || isProcessing()) {
             listener.onAiProcessEvent(new StatusEvent(StatusEventTypeEnum.INFO,
-                    "Wait for Claude to finish before compacting"));
+                                                      "Wait for Claude to finish before compacting"));
             return;
         }
         sendPrompt("/compact", host.resolveWorkDir(), List.of());

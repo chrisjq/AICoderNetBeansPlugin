@@ -25,7 +25,10 @@ public class GithubCopilotSettingsCreator extends AiModelSessionSettingsCreator<
     @Override
     public void update(GithubCopilotSessionSettings settings, JsonObject cfgObj) {
         super.update(settings, cfgObj);
-        //specific settings
+        String key = GithubCopilotSessionSettingsKeyEnum.REASONING_EFFORT.key();
+        if (cfgObj.has(key) && cfgObj.get(key).isJsonPrimitive()) {
+            settings.setReasoningEffort(cfgObj.get(key).getAsString());
+        }
     }
 
     @Override

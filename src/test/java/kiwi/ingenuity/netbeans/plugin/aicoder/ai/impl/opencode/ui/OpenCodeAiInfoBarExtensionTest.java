@@ -126,9 +126,9 @@ class OpenCodeAiInfoBarExtensionTest {
 
         OptionSpec modelSpec = specs.stream().filter(s -> "model".equals(s.id())).findFirst().orElseThrow();
         assertEquals("opencode/big-pickle", modelSpec.currentValue(),
-                "model currentValue must match session settings");
+                     "model currentValue must match session settings");
         assertTrue(modelSpec.displayNames().containsAll(Arrays.asList("opencode/big-pickle", "opencode/other-model")),
-                "fallback model combo must include all known models");
+                   "fallback model combo must include all known models");
     }
 
     @Test
@@ -198,16 +198,16 @@ class OpenCodeAiInfoBarExtensionTest {
         };
 
         OptionSpec modeSpec = new OptionSpec("mode", "build",
-                List.of(new OptionValue("build", "build"), new OptionValue("plan", "plan")));
+                                             List.of(new OptionValue("build", "build"), new OptionValue("plan", "plan")));
 
         ext.handleConfigChange(modeSpec, "plan", null);
 
         assertTrue(setConfigOptionCalls.isEmpty(),
-                "setConfigOption must NOT be called when no live session");
+                   "setConfigOption must NOT be called when no live session");
         assertEquals("plan", settings.mode(),
-                "settings.setMode must be updated with the new value");
+                     "settings.setMode must be updated with the new value");
         assertEquals(List.of("plan"), persistedModes,
-                "host.updateSessionSettings must be called to persist the change");
+                     "host.updateSessionSettings must be called to persist the change");
     }
 
     // ---- Fix B: real OpenCodeConfigOptionsEvent replaces seeded values ----
@@ -300,9 +300,9 @@ class OpenCodeAiInfoBarExtensionTest {
         OptionSpec model = byId(specs, "model");
         assertNotNull(model);
         assertTrue(model.displayNames().contains("OpenCode Zen/Big Pickle"),
-                "combo must present the friendly display name");
+                   "combo must present the friendly display name");
         assertFalse(model.displayNames().contains("opencode/big-pickle"),
-                "combo must NOT present the raw underlying value");
+                    "combo must NOT present the raw underlying value");
         assertEquals("opencode/big-pickle", model.valueForDisplay("OpenCode Zen/Big Pickle"));
         assertEquals("opencode/deepseek-v4-flash-free", model.valueForDisplay("DeepSeek V4 Flash (free)"));
         assertEquals("OpenCode Zen/Big Pickle", model.displayForValue("opencode/big-pickle"));
@@ -327,6 +327,48 @@ class OpenCodeAiInfoBarExtensionTest {
         assertTrue(model.displayNames().contains("Model Two"));
         assertEquals("m1", model.valueForDisplay("m1"));
         assertEquals("m2", model.valueForDisplay("Model Two"));
+    }
+
+    // ---- UI task (2026-09-19): a NAME field that is present but blank ("") is a different case from an
+    // absent/null one — an ACP option with a real value but no label must still show that value, not a blank row ----
+    @Test
+    void optionWithBlankNameFallsBackToValueAsDisplay() {
+        String json = "[{\"id\":\"effort\",\"type\":\"select\",\"currentValue\":\"high\","
+                + "\"options\":[{\"value\":\"high\",\"name\":\"\"},{\"value\":\"low\",\"name\":\"Low\"}]}]";
+        List<OptionSpec> specs = OpenCodeAiInfoBarExtension.parseConfigOptions(configArray(json));
+        OptionSpec effort = byId(specs, "effort");
+        assertNotNull(effort);
+        assertTrue(effort.displayNames().contains("high"), "a blank name must fall back to the value, not stay blank");
+        assertFalse(effort.displayNames().contains(""), "no display name may be blank when a non-blank value exists");
+        assertEquals("high", effort.valueForDisplay("high"));
+        assertEquals("high", effort.displayForValue("high"));
+    }
+
+    @Test
+    void optionWithWhitespaceOnlyNameFallsBackToValueAsDisplay() {
+        String json = "[{\"id\":\"effort\",\"type\":\"select\",\"currentValue\":\"high\","
+                + "\"options\":[{\"value\":\"high\",\"name\":\"   \"}]}]";
+        List<OptionSpec> specs = OpenCodeAiInfoBarExtension.parseConfigOptions(configArray(json));
+        OptionSpec effort = byId(specs, "effort");
+        assertNotNull(effort);
+        assertEquals(List.of("high"), effort.displayNames());
+    }
+
+    /**
+     * The residual case neither parseConfigOptions nor buildCombo can fix — value itself is blank, so there is nothing
+     * to fall back to. This is exactly what {@link BlankSafeComboRenderer} (applied in buildCombo) exists for: rendered
+     * at display time as "default" instead of an empty row, without changing the stored display name.
+     */
+    @Test
+    void optionWithBlankNameAndBlankValueStaysBlankForTheRendererToHandle() {
+        String json = "[{\"id\":\"effort\",\"type\":\"select\",\"currentValue\":\"\","
+                + "\"options\":[{\"value\":\"\",\"name\":\"\"}]}]";
+        List<OptionSpec> specs = OpenCodeAiInfoBarExtension.parseConfigOptions(configArray(json));
+        OptionSpec effort = byId(specs, "effort");
+        assertNotNull(effort);
+        assertEquals(List.of(""), effort.displayNames(),
+                     "with no value to fall back to either, the entry genuinely stays blank — the renderer, not the "
+                     + "parser, is responsible for that residual case");
     }
 
     @Test
@@ -396,7 +438,7 @@ class OpenCodeAiInfoBarExtensionTest {
             @SuppressWarnings("unchecked")
             JComboBox<String> modelCombo = (JComboBox<String>) comboPanel.getComponent(0);
             assertEquals("OpenCode Zen/Big Pickle", modelCombo.getSelectedItem(),
-                    "model combo must pre-select the current value's display name");
+                         "model combo must pre-select the current value's display name");
             modelCombo.setSelectedItem("DeepSeek V4 Flash (free)");
         });
 
@@ -407,7 +449,7 @@ class OpenCodeAiInfoBarExtensionTest {
         assertEquals(1, calls.size(), "exactly one user selection must fire setConfigOption");
         assertEquals("model", calls.get(0)[0], "configId must be the option id");
         assertEquals("opencode/deepseek-v4-flash-free", calls.get(0)[1],
-                "must send the underlying value, not the display name");
+                     "must send the underlying value, not the display name");
     }
 
     // ---- Addendum 1: model catalog + property bus + NbPreferences persistence ----
@@ -424,7 +466,7 @@ class OpenCodeAiInfoBarExtensionTest {
         try {
             List<String> cached = OpenCodeAiImplementation.modelCatalog().getCachedModels();
             assertTrue(cached.contains("opencode/big-pickle"),
-                    "modelCatalog must contain the model discovered from configOptions");
+                       "modelCatalog must contain the model discovered from configOptions");
         }
         finally {
             OpenCodePluginSettings.setDiscoveredModels(null);
@@ -452,7 +494,7 @@ class OpenCodeAiInfoBarExtensionTest {
             };
             ext.onAiProcessImplEvent(new OpenCodeConfigOptionsEvent(configArray(TWO_OPTIONS_NO_EFFORT)));
             assertTrue(latch.await(5, TimeUnit.SECONDS),
-                    "AiTypePropertyBus must receive OpenCodeModelsEvent within 5 s");
+                       "AiTypePropertyBus must receive OpenCodeModelsEvent within 5 s");
             OpenCodeModelsEvent me = (OpenCodeModelsEvent) busEvents.get(0);
             assertEquals(List.of("opencode/big-pickle"), me.models());
         }
@@ -510,7 +552,7 @@ class OpenCodeAiInfoBarExtensionTest {
         List<OptionSpec> specs = OpenCodeAiInfoBarExtension.parseConfigOptions(applied.get(applied.size() - 1));
         OptionSpec modelSpec = specs.stream().filter(s -> "model".equals(s.id())).findFirst().orElseThrow();
         assertTrue(modelSpec.displayNames().containsAll(List.of("alpha", "beta", "gamma")),
-                "rebuilt fallback must include all three newly-discovered models");
+                   "rebuilt fallback must include all three newly-discovered models");
     }
 
     // ---- Regression: OpenCodeModelsEvent for an idle session must not reset the model ----
@@ -571,11 +613,11 @@ class OpenCodeAiInfoBarExtensionTest {
         List<OptionSpec> specs = OpenCodeAiInfoBarExtension.parseConfigOptions(applied.get(0));
         OptionSpec modelSpec = specs.stream().filter(s -> "model".equals(s.id())).findFirst().orElseThrow();
         assertEquals("opencode/deepseek-v4-flash-free", modelSpec.currentValue(),
-                "the model actually displayed before the broadcast must survive it — it must "
-                + "NOT reset to the global default (opencode/big-pickle)");
+                     "the model actually displayed before the broadcast must survive it — it must "
+                     + "NOT reset to the global default (opencode/big-pickle)");
         assertTrue(modelSpec.displayNames().containsAll(
                 List.of("opencode/hy3-free", "opencode/nemotron-3-ultra-free")),
-                "the option list itself must still refresh to the newly-discovered models");
+                   "the option list itself must still refresh to the newly-discovered models");
     }
 
     // ---- Full end-to-end reproduction: does a REAL handshake broadcast from one
@@ -607,7 +649,7 @@ class OpenCodeAiInfoBarExtensionTest {
         OptionSpec initialModelSpec = OpenCodeAiInfoBarExtension.parseConfigOptions(applied2.get(0))
                 .stream().filter(s -> "model".equals(s.id())).findFirst().orElseThrow();
         assertEquals("opencode/nemotron-3-ultra-free", initialModelSpec.currentValue(),
-                "sanity check: _2 must start out showing its own model, unaffected");
+                     "sanity check: _2 must start out showing its own model, unaffected");
 
         // ---- "_1": gets messaged; its handshake reports the agent's pre-correction
         // model, exactly like the live bug (the agent always starts on big-pickle) ----
@@ -648,7 +690,7 @@ class OpenCodeAiInfoBarExtensionTest {
             ext1.onAiProcessImplEvent(new OpenCodeConfigOptionsEvent(agentConfigOptions));
 
             assertTrue(busDelivered.await(5, TimeUnit.SECONDS),
-                    "the type-wide OpenCodeModelsEvent broadcast must actually fire");
+                       "the type-wide OpenCodeModelsEvent broadcast must actually fire");
             SwingUtilities.invokeAndWait(() -> {
             });
         }
@@ -661,8 +703,8 @@ class OpenCodeAiInfoBarExtensionTest {
         OptionSpec finalModelSpec = OpenCodeAiInfoBarExtension.parseConfigOptions(applied2.get(applied2.size() - 1))
                 .stream().filter(s -> "model".equals(s.id())).findFirst().orElseThrow();
         assertEquals("opencode/nemotron-3-ultra-free", finalModelSpec.currentValue(),
-                "_2's own model must survive _1's unrelated handshake broadcast, going through the "
-                + "REAL AiTypePropertyBus/cacheDiscoveredModels path, not a simulated event");
+                     "_2's own model must survive _1's unrelated handshake broadcast, going through the "
+                     + "REAL AiTypePropertyBus/cacheDiscoveredModels path, not a simulated event");
     }
 
     // ---- Namespace mismatch: does the REAL combo (buildCombo/displayForValue,
@@ -691,7 +733,7 @@ class OpenCodeAiInfoBarExtensionTest {
             @SuppressWarnings("unchecked")
             JComboBox<String> modelCombo = (JComboBox<String>) comboPanel.getComponent(0);
             assertEquals("opencode/nemotron-3-ultra-free", modelCombo.getSelectedItem(),
-                    "sanity check: _2 must start out correctly selected");
+                         "sanity check: _2 must start out correctly selected");
         });
 
         // ---- "_1": a real handshake discovers models WITHOUT the "opencode/"
@@ -730,7 +772,7 @@ class OpenCodeAiInfoBarExtensionTest {
             ext1.onAiProcessImplEvent(new OpenCodeConfigOptionsEvent(agentConfigOptions));
 
             assertTrue(busDelivered.await(5, TimeUnit.SECONDS),
-                    "the type-wide OpenCodeModelsEvent broadcast must actually fire");
+                       "the type-wide OpenCodeModelsEvent broadcast must actually fire");
             SwingUtilities.invokeAndWait(() -> {
             });
         }
@@ -744,10 +786,10 @@ class OpenCodeAiInfoBarExtensionTest {
             @SuppressWarnings("unchecked")
             JComboBox<String> modelCombo = (JComboBox<String>) ext2.comboPanel.getComponent(0);
             assertEquals("opencode/nemotron-3-ultra-free", modelCombo.getSelectedItem(),
-                    "_2's combo must still visibly show the model that will actually run, even "
-                    + "though the freshly-discovered option list uses a different value namespace "
-                    + "than the persisted settings — it must never silently fall back to whatever "
-                    + "the combo defaults to (e.g. the first discovered entry)");
+                         "_2's combo must still visibly show the model that will actually run, even "
+                         + "though the freshly-discovered option list uses a different value namespace "
+                         + "than the persisted settings — it must never silently fall back to whatever "
+                         + "the combo defaults to (e.g. the first discovered entry)");
         });
     }
 
@@ -785,7 +827,7 @@ class OpenCodeAiInfoBarExtensionTest {
                 -> ext.handleConfigChange(modelSpec, "opencode/nemotron-3-ultra-free", null));
 
         assertEquals("opencode/nemotron-3-ultra-free", settings.model(),
-                "sanity check: the idle-session pick must write straight through to settings");
+                     "sanity check: the idle-session pick must write straight through to settings");
 
         // ---- Some other session's discovery later broadcasts a fresh model
         // list — must not undo the pick just made on this idle session. ----
@@ -805,9 +847,9 @@ class OpenCodeAiInfoBarExtensionTest {
             @SuppressWarnings("unchecked")
             JComboBox<String> modelCombo = (JComboBox<String>) ext.comboPanel.getComponent(0);
             assertEquals("opencode/nemotron-3-ultra-free", modelCombo.getSelectedItem(),
-                    "the model picked on this idle session must still be shown after a later "
-                    + "OpenCodeModelsEvent broadcast — it must not revert to whatever was "
-                    + "displayed before the pick (e.g. the global default)");
+                         "the model picked on this idle session must still be shown after a later "
+                         + "OpenCodeModelsEvent broadcast — it must not revert to whatever was "
+                         + "displayed before the pick (e.g. the global default)");
         });
     }
 
@@ -826,9 +868,9 @@ class OpenCodeAiInfoBarExtensionTest {
         List<OptionSpec> specs = OpenCodeAiInfoBarExtension.parseConfigOptions(merged);
         OptionSpec model = byId(specs, "model");
         assertEquals("old-selected", model.currentValue(),
-                "currentValue must come from what was already displayed, not the refreshed default");
+                     "currentValue must come from what was already displayed, not the refreshed default");
         assertTrue(model.displayNames().containsAll(List.of("new-a", "new-b")),
-                "the option list must come from refreshed, not displayed");
+                   "the option list must come from refreshed, not displayed");
     }
 
     @Test
@@ -843,18 +885,18 @@ class OpenCodeAiInfoBarExtensionTest {
 
         OptionSpec model = byId(OpenCodeAiInfoBarExtension.parseConfigOptions(merged), "model");
         assertEquals("global-default", model.currentValue(),
-                "with no prior selection for this id, the refreshed value must stand");
+                     "with no prior selection for this id, the refreshed value must stand");
     }
 
     @Test
     void preserveSelectionsHandlesNullDisplayedOrRefreshed() {
         JsonArray refreshed = configArray("[{\"id\":\"model\",\"type\":\"select\",\"options\":[]}]");
         assertSame(refreshed, OpenCodeAiInfoBarExtension.preserveSelections(null, refreshed),
-                "null displayed (nothing shown yet) must fall through to refreshed as-is");
+                   "null displayed (nothing shown yet) must fall through to refreshed as-is");
 
         JsonArray displayed = configArray("[{\"id\":\"model\",\"type\":\"select\",\"options\":[]}]");
         assertSame(displayed, OpenCodeAiInfoBarExtension.preserveSelections(displayed, null),
-                "null refreshed must fall back to whatever was displayed");
+                   "null refreshed must fall back to whatever was displayed");
     }
 
     // ---- Addendum 3: mode persistence from live-session combo changes ----
@@ -889,14 +931,14 @@ class OpenCodeAiInfoBarExtensionTest {
         };
 
         OptionSpec modeSpec = new OptionSpec("mode", "build",
-                List.of(new OptionValue("build", "build"), new OptionValue("plan", "plan")));
+                                             List.of(new OptionValue("build", "build"), new OptionValue("plan", "plan")));
         ext.handleConfigChange(modeSpec, "plan", null);
 
         // applyToSettings is called from thenAccept — give the future time to settle
         Thread.sleep(50);
 
         assertEquals("plan", settings.mode(),
-                "settings.mode must be updated with the applied value from the snapshot");
+                     "settings.mode must be updated with the applied value from the snapshot");
     }
 
     @Test
@@ -932,12 +974,12 @@ class OpenCodeAiInfoBarExtensionTest {
         };
 
         OptionSpec modeSpec = new OptionSpec("mode", "build",
-                List.of(new OptionValue("build", "build"), new OptionValue("plan", "plan")));
+                                             List.of(new OptionValue("build", "build"), new OptionValue("plan", "plan")));
         ext.handleConfigChange(modeSpec, "plan", null);
         Thread.sleep(50);
 
         assertEquals(globalBefore, OpenCodePluginSettings.getMode(),
-                "global plugin settings mode must NOT be changed by a session-scoped combo change");
+                     "global plugin settings mode must NOT be changed by a session-scoped combo change");
     }
 
     @Test
@@ -965,7 +1007,7 @@ class OpenCodeAiInfoBarExtensionTest {
 
         // currentValue == value: equality guard must prevent the call
         OptionSpec modeSpec = new OptionSpec("mode", "build",
-                List.of(new OptionValue("build", "build"), new OptionValue("plan", "plan")));
+                                             List.of(new OptionValue("build", "build"), new OptionValue("plan", "plan")));
         ext.handleConfigChange(modeSpec, "build", null);
 
         assertTrue(calls.isEmpty(), "setConfigOption must NOT be called when value equals currentValue");
@@ -1003,12 +1045,12 @@ class OpenCodeAiInfoBarExtensionTest {
         };
 
         OptionSpec modeSpec = new OptionSpec("mode", "build",
-                List.of(new OptionValue("build", "build"), new OptionValue("invalid", "invalid")));
+                                             List.of(new OptionValue("build", "build"), new OptionValue("invalid", "invalid")));
         ext.handleConfigChange(modeSpec, "invalid", null);
         Thread.sleep(50);
 
         assertEquals("build", settings.mode(),
-                "settings must record the agent-applied value from the snapshot, not the requested value");
+                     "settings must record the agent-applied value from the snapshot, not the requested value");
     }
 
     // ---- Addendum 4: effort in info bar ----
@@ -1050,9 +1092,9 @@ class OpenCodeAiInfoBarExtensionTest {
         ext.applyToSettings("effort", "high");
 
         assertEquals("high", settings.effort(),
-                "applyToSettings(effort) must update session settings");
+                     "applyToSettings(effort) must update session settings");
         assertEquals(List.of("high"), persisted,
-                "applyToSettings(effort) must persist via host.updateSessionSettings");
+                     "applyToSettings(effort) must persist via host.updateSessionSettings");
     }
 
 }

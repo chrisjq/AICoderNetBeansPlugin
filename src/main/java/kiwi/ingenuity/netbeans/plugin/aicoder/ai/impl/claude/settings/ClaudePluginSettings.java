@@ -12,6 +12,11 @@ public final class ClaudePluginSettings {
         "claude-haiku-4-5"
     };
     public static final String DEFAULT_MODEL = KNOWN_MODELS[1];
+    /**
+     * An empty effort means "use Claude's own default", not "unset" — the launch command omits {@code --effort} in that
+     * case.
+     */
+    public static final String DEFAULT_EFFORT = "";
 
     private static volatile String[] discoveredModels = null;
 
@@ -42,6 +47,14 @@ public final class ClaudePluginSettings {
 
     public static void setModel(String v) {
         prefs().put(ClaudePluginSettingsKeyEnum.MODEL.key(), v);
+    }
+
+    public static String getEffort() {
+        return prefs().get(ClaudePluginSettingsKeyEnum.EFFORT.key(), DEFAULT_EFFORT);
+    }
+
+    public static void setEffort(String v) {
+        prefs().put(ClaudePluginSettingsKeyEnum.EFFORT.key(), v != null ? v : DEFAULT_EFFORT);
     }
 
     private ClaudePluginSettings() {

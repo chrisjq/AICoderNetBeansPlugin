@@ -11,9 +11,11 @@ import java.io.InputStream;
 import java.io.OutputStream;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.function.Consumer;
@@ -127,7 +129,12 @@ public final class GithubCopilotModelDiscovery {
     }
 
     /**
-     * Tier 1: official Copilot SDK ({@code CopilotClient.listModels()}).
+     * Tier 1: official Copilot SDK ({@code CopilotClient.listModels()}). Also populates
+     * {@code GithubCopilotPluginSettings}'s per-model reasoning-effort cache from each {@code ModelInfo}'s
+     * {@code getSupportedReasoningEfforts()}/{@code getDefaultReasoningEffort()} — the live discovery the design spec
+     * requires so nothing about effort levels is hardcoded. The direct-RPC fallback tier does not carry this (its
+     * response shape is not verified to include these fields), so a model discovered only via that tier is treated as
+     * "no support" until SDK-tier discovery succeeds — consistent with the spec's fail-safe default.
      */
     private static String[] discoverViaSdk(String cliPath) throws Exception {
         CopilotClientOptions opts = new CopilotClientOptions();
@@ -138,13 +145,25 @@ public final class GithubCopilotModelDiscovery {
             client.start().get(GithubCopilotTimeoutEnum.COPILOT_MODEL_DISCOVERY_MILLIS.millis(), TimeUnit.MILLISECONDS);
             List<ModelInfo> models = client.listModels().get(GithubCopilotTimeoutEnum.COPILOT_MODEL_DISCOVERY_MILLIS.millis(), TimeUnit.MILLISECONDS);
             List<String> ids = new ArrayList<>();
+            Map<String, List<String>> supportedByModel = new LinkedHashMap<>();
+            Map<String, String> defaultByModel = new LinkedHashMap<>();
             if (models != null) {
                 for (ModelInfo m : models) {
-                    if (m != null && m.getId() != null) {
-                        ids.add(m.getId());
+                    if (m == null || m.getId() == null) {
+                        continue;
+                    }
+                    ids.add(m.getId());
+                    List<String> supported = m.getSupportedReasoningEfforts();
+                    if (supported != null && !supported.isEmpty()) {
+                        supportedByModel.put(m.getId(), List.copyOf(supported));
+                    }
+                    String defaultEffort = m.getDefaultReasoningEffort();
+                    if (defaultEffort != null && !defaultEffort.isBlank()) {
+                        defaultByModel.put(m.getId(), defaultEffort);
                     }
                 }
             }
+            GithubCopilotPluginSettings.setModelReasoningEffortInfo(supportedByModel, defaultByModel);
             return assembleModelList(ids);
         }
     }

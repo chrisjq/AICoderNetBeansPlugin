@@ -34,9 +34,10 @@ Each session has an independent backend, model, selected project, history, sessi
 
 Choose a descriptive name, an open project, and a backend. The new session inherits global defaults unless you override settings in its configuration.
 
-- Select **Claude**, **GitHub CoPilot**, **Grok**, **OpenCode**, **Codex**, or enabled **Ollama (Local)**.
+- Select **Claude**, **GitHub CoPilot**, **Grok**, **OpenCode**, **Codex**, **pi**, or enabled **Ollama (Local)**.
 - Choose or enter a model where the backend permits it.
 - For OpenCode, set **Mode** to `build` for normal work or `plan` for a read-only proposal.
+- Set the thinking or reasoning-effort level where the backend supports one — Claude calls it *Effort*, Codex, Grok and GitHub Copilot *Reasoning effort*, pi and Ollama *Thinking*. Leaving it on `default` sends nothing and lets the model or CLI use its own setting. Only levels the selected model actually supports are offered, so switching to a model with fewer levels can never produce an error.
 - Add session instructions when the session needs project-specific rules.
 - Use project-file restriction and the permission controls to set the session's access boundary.
 
@@ -97,4 +98,4 @@ Info bars may display backend-reported context and account usage:
 
 If inter-AI messaging is enabled, the inbox can show notices for peer messages. Automatic notices and interruption for important messages are separately configurable. When a message that expects a reply is read for the first time, its contents also instruct the assistant to reply with `SendAiMessage`; that instruction is not repeated on later reads.
 
-Enabling important-message interruption does not guarantee it happens: the backend must also have a way to reach a session mid-turn. Claude, Codex and GitHub Copilot do; Grok, Ollama and OpenCode do not, so their messages always wait for the current turn to finish. `ListAiSessions` reports the effective behaviour per session as `mailDelivery`, combining the setting and the backend, so an assistant can see whether marking a message important will achieve anything before it does so.
+Enabling important-message interruption does not guarantee it happens: the backend must also have a way to reach a session mid-turn. Claude, Codex, GitHub Copilot and pi do — though pi delivers at the next step boundary, once its running tool calls finish, rather than interrupting them. Grok, Ollama and OpenCode do not, so their messages always wait for the current turn to finish. `ListAiSessions` reports the effective behaviour per session as `mailDelivery`, combining the setting and the backend, so an assistant can see whether marking a message important will achieve anything before it does so.

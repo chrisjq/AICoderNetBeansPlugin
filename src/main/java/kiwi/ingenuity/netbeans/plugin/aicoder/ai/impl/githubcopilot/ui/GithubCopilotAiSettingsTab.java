@@ -22,6 +22,7 @@ import kiwi.ingenuity.netbeans.plugin.aicoder.ai.AiTypeEnum;
 import static kiwi.ingenuity.netbeans.plugin.aicoder.ai.AiTypeEnum.GitHubCoPilot;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.githubcopilot.GithubCopilotExecutableLocator;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.githubcopilot.settings.GithubCopilotPluginSettings;
+import kiwi.ingenuity.netbeans.plugin.aicoder.ai.ui.BlankSafeComboRenderer;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ui.SettingsTab;
 import org.openide.util.lookup.ServiceProvider;
 
@@ -32,6 +33,7 @@ public final class GithubCopilotAiSettingsTab implements SettingsTab {
     private final JPanel panel;
     private final JTextField executableField;
     private final JComboBox<String> modelCombo;
+    private final JComboBox<String> reasoningEffortCombo;
     private final JButton browseButton;
     private final JButton detectButton;
     private final JButton testButton;
@@ -94,6 +96,17 @@ public final class GithubCopilotAiSettingsTab implements SettingsTab {
 
         c.gridx = 0;
         c.gridy = 4;
+        c.weightx = 0;
+        panel.add(new JLabel("Default reasoning effort:"), c);
+
+        reasoningEffortCombo = new JComboBox<>();
+        reasoningEffortCombo.setToolTipText("Default reasoning effort for new sessions — options depend on the selected model");
+        c.gridx = 1;
+        c.weightx = 1;
+        panel.add(reasoningEffortCombo, c);
+
+        c.gridx = 0;
+        c.gridy = 5;
         c.weighty = 1;
         c.gridwidth = 5;
         panel.add(Box.createVerticalGlue(), c);
@@ -116,7 +129,11 @@ public final class GithubCopilotAiSettingsTab implements SettingsTab {
                 fireChanged();
             }
         });
-        modelCombo.addActionListener(e -> fireChanged());
+        modelCombo.addActionListener(e -> {
+            fireChanged();
+            refreshReasoningEffortOptions(currentModelText(), null);
+        });
+        reasoningEffortCombo.addActionListener(e -> fireChanged());
         browseButton.addActionListener(e -> handleBrowse());
         detectButton.addActionListener(e -> handleDetect());
         testButton.addActionListener(e -> handleTest());
@@ -136,6 +153,8 @@ public final class GithubCopilotAiSettingsTab implements SettingsTab {
     public void load() {
         executableField.setText(GithubCopilotPluginSettings.getExecutable());
         modelCombo.setSelectedItem(GithubCopilotPluginSettings.getModel());
+        String storedEffort = GithubCopilotPluginSettings.getReasoningEffort();
+        refreshReasoningEffortOptions(currentModelText(), (storedEffort == null || storedEffort.isBlank()) ? null : storedEffort);
         testResultLabel.setText(" ");
     }
 
@@ -143,7 +162,20 @@ public final class GithubCopilotAiSettingsTab implements SettingsTab {
     public void store() {
         GithubCopilotPluginSettings.setExecutable(executableField.getText().strip());
         Object sel = modelCombo.getSelectedItem();
-        GithubCopilotPluginSettings.setModel(sel != null ? sel.toString() : GithubCopilotPluginSettings.DEFAULT_MODEL);
+        String model = sel != null ? sel.toString() : GithubCopilotPluginSettings.DEFAULT_MODEL;
+        GithubCopilotPluginSettings.setModel(model);
+        Object effortSel = reasoningEffortCombo.getSelectedItem();
+        String effort = (effortSel == null || BlankSafeComboRenderer.DEFAULT_OPTION.equals(effortSel)) ? null : effortSel.toString();
+        // Defensive re-validation against the live per-model list, not just trust in the combo's own selected item:
+        // reasoningEffortCombo is non-editable, and JComboBox.setSelectedItem on a non-editable combo can leave
+        // getSelectedItem() returning a value that is no longer one of the combo's own items (e.g. a stale
+        // selection retained across a refresh that dropped it) — silently persisting an unsupported value the user
+        // has no way to clear from the UI. Hit exactly this on pi; never persist a value the current model doesn't
+        // support.
+        if (effort != null && !GithubCopilotPluginSettings.getSupportedReasoningEfforts(model).contains(effort)) {
+            effort = null;
+        }
+        GithubCopilotPluginSettings.setReasoningEffort(effort != null ? effort : "");
     }
 
     @Override
@@ -168,6 +200,39 @@ public final class GithubCopilotAiSettingsTab implements SettingsTab {
 
     private void fireChanged() {
         pcs.firePropertyChange(PROP_CHANGED, null, null);
+    }
+
+    private String currentModelText() {
+        Object sel = modelCombo.getSelectedItem();
+        if (sel != null && !sel.toString().isBlank()) {
+            return sel.toString().trim();
+        }
+        if (modelCombo.isEditable() && modelCombo.getEditor() != null) {
+            Object item = modelCombo.getEditor().getItem();
+            if (item != null && !item.toString().isBlank()) {
+                return item.toString().trim();
+            }
+        }
+        return null;
+    }
+
+    /**
+     * Rebuilds {@link #reasoningEffortCombo}'s options from {@code model}'s live-discovered supported list — empty/
+     * absent means "no support": only {@link BlankSafeComboRenderer#DEFAULT_OPTION} is offered. Nothing about effort
+     * levels is hardcoded here, per the design spec.
+     */
+    private void refreshReasoningEffortOptions(String model, String preferredEffort) {
+        java.util.List<String> supported = GithubCopilotPluginSettings.getSupportedReasoningEfforts(model);
+        Object currentSel = reasoningEffortCombo.getSelectedItem();
+        String current = (currentSel == null || BlankSafeComboRenderer.DEFAULT_OPTION.equals(currentSel)) ? null : currentSel.toString();
+        String toSelect = (preferredEffort != null && supported.contains(preferredEffort)) ? preferredEffort
+                          : (current != null && supported.contains(current) ? current : null);
+        reasoningEffortCombo.removeAllItems();
+        reasoningEffortCombo.addItem(BlankSafeComboRenderer.DEFAULT_OPTION);
+        for (String effort : supported) {
+            reasoningEffortCombo.addItem(effort);
+        }
+        reasoningEffortCombo.setSelectedItem(toSelect != null ? toSelect : BlankSafeComboRenderer.DEFAULT_OPTION);
     }
 
     private void handleBrowse() {

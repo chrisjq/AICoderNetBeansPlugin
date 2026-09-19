@@ -17,6 +17,7 @@ import javax.swing.JLabel;
 import javax.swing.JPanel;
 import javax.swing.JSeparator;
 import javax.swing.SwingConstants;
+import javax.swing.SwingUtilities;
 import javax.swing.Timer;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.ui.events.AiInfoBarListener;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.TimeoutEnum;
@@ -148,11 +149,20 @@ public class AiInfoBar extends JPanel {
         long m = d.toMinutesPart();
         long s = d.toSecondsPart();
         timeLabel.setText(h > 0
-                ? String.format("time: %d:%02d:%02d", h, m, s)
-                : String.format("time: %d:%02d", m, s));
+                          ? String.format("time: %d:%02d:%02d", h, m, s)
+                          : String.format("time: %d:%02d", m, s));
     }
 
+    /**
+     * Safe to call from any thread — same reason as {@link #setAutoAccept(boolean)}: {@code AiTopComponent.
+     * suppressNextTurn} (another {@code AiSessionHost} method that reaches this) is called off the EDT by at least one
+     * backend's compact-request handling. Self-dispatches rather than relying on every caller to remember to.
+     */
     public void setStatusMessage(String text) {
+        if (!SwingUtilities.isEventDispatchThread()) {
+            SwingUtilities.invokeLater(() -> setStatusMessage(text));
+            return;
+        }
         String raw = (text == null || text.isBlank()) ? " " : text;
         statusLabel.setText(fitToLabel(raw));
         statusLabel.setToolTipText(raw.isBlank() ? null : raw);
@@ -163,8 +173,8 @@ public class AiInfoBar extends JPanel {
             return text;
         }
         int maxW = statusLabel.getWidth() > 0
-                ? statusLabel.getWidth()
-                : statusLabel.getPreferredSize().width;
+                   ? statusLabel.getWidth()
+                   : statusLabel.getPreferredSize().width;
         FontMetrics fm = statusLabel.getFontMetrics(statusLabel.getFont());
         if (fm.stringWidth(text) <= maxW) {
             return text;
@@ -179,8 +189,7 @@ public class AiInfoBar extends JPanel {
     }
 
     /**
-     * Attach backend-specific info bar components. Call on EDT before the
-     * component is shown.
+     * Attach backend-specific info bar components. Call on EDT before the component is shown.
      */
     public void setExtension(AiInfoBarExtension extension) {
         this.extension = extension;
@@ -195,14 +204,28 @@ public class AiInfoBar extends JPanel {
     }
 
     /**
-     * Set the auto-accept checkbox state without firing the listener (used to
-     * initialise or sync the UI from session settings).
+     * Set the auto-accept checkbox state without firing the listener (used to initialise or sync the UI from session
+     * settings). Safe to call from any thread: several {@code AiSessionHost.updateSessionSettings} callers reach this
+     * from a background thread (e.g. a backend's clear-invalid-effort callback, an ACP handshake thread) —
+     * self-dispatches to the EDT rather than requiring every caller to remember to, which is what let this go unguarded
+     * until now.
      */
     public void setAutoAccept(boolean value) {
+        if (!SwingUtilities.isEventDispatchThread()) {
+            SwingUtilities.invokeLater(() -> setAutoAccept(value));
+            return;
+        }
         autoAcceptCheck.setSelected(value);
     }
 
+    /**
+     * Same thread-safety contract as {@link #setAutoAccept(boolean)}, for the same reason.
+     */
     public void setSaveHistory(boolean value) {
+        if (!SwingUtilities.isEventDispatchThread()) {
+            SwingUtilities.invokeLater(() -> setSaveHistory(value));
+            return;
+        }
         saveHistoryCheck.setSelected(value);
     }
 
@@ -211,9 +234,14 @@ public class AiInfoBar extends JPanel {
     }
 
     /**
-     * Show or hide the stop button (call on EDT).
+     * Show or hide the stop button and notify the extension. Same thread-safety contract as
+     * {@link #setAutoAccept(boolean)}.
      */
     public void setProcessing(boolean processing) {
+        if (!SwingUtilities.isEventDispatchThread()) {
+            SwingUtilities.invokeLater(() -> setProcessing(processing));
+            return;
+        }
         stopButton.setVisible(processing);
         if (extension != null) {
             extension.onProcessingChanged(processing);

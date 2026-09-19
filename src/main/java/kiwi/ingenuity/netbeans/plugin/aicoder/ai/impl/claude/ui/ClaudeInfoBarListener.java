@@ -5,4 +5,6 @@ public interface ClaudeInfoBarListener {
     void onCompactRequested();
 
     void onModelChanged(String model);
+
+    void onEffortChanged(String effort);
 }

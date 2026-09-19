@@ -20,6 +20,7 @@ public enum OpenAiJsonKeyEnum {
     MESSAGES("messages"),
     TOOLS("tools"),
     RESPONSE_FORMAT("response_format"),
+    REASONING_EFFORT("reasoning_effort"),
     // Chat message fields
     ROLE("role"),
     CONTENT("content"),

@@ -21,6 +21,7 @@ import kiwi.ingenuity.netbeans.plugin.aicoder.ai.AiProcessManager;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.AiTypeEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.events.StatusEvent;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.events.StatusEventTypeEnum;
+import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.codex.events.CodexReasoningEffortEvent;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.codex.settings.CodexSessionSettings;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.session.InterruptTypeEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.events.AiProcessEventListener;
@@ -112,7 +113,13 @@ public class CodexAiProcessManager extends AiProcessManager {
         return params;
     }
 
-    static JsonObject buildTurnStartParams(String threadId, String promptText) {
+    /**
+     * {@code TurnStartParams}, codex-cli 0.155.0: {@code threadId} and the {@code input} array as usual, plus an
+     * optional {@code effort} override — "Override the reasoning effort for this turn and subsequent turns." A null or
+     * blank {@code effort} omits the field, letting the model apply its own default (the "not set" entry
+     * {@code (model default)}).
+     */
+    static JsonObject buildTurnStartParams(String threadId, String promptText, String effort) {
         JsonObject textInput = new JsonObject();
         textInput.addProperty(CodexJsonKeyEnum.TYPE.key(), "text");
         textInput.addProperty(CodexJsonKeyEnum.TEXT.key(), promptText);
@@ -121,6 +128,9 @@ public class CodexAiProcessManager extends AiProcessManager {
         JsonObject params = new JsonObject();
         params.addProperty(CodexJsonKeyEnum.THREAD_ID.key(), threadId);
         params.add(CodexJsonKeyEnum.INPUT.key(), input);
+        if (effort != null && !effort.isBlank()) {
+            params.addProperty(CodexJsonKeyEnum.EFFORT.key(), effort);
+        }
         return params;
     }
 
@@ -211,6 +221,174 @@ public class CodexAiProcessManager extends AiProcessManager {
     }
 
     /**
+     * {@code thread/start}/{@code thread/resume}/{@code thread/fork} carry the live {@code reasoningEffort} (read as a
+     * top-level sibling of {@code result.model}, falling back to {@code result.thread.reasoningEffort}) — spec §4 uses
+     * it to seed the info-bar combo's current selection. Returns null when absent, matching the "unknown" convention of
+     * the other extractors.
+     */
+    static String extractReasoningEffort(JsonObject result) {
+        if (result == null) {
+            return null;
+        }
+        JsonElement top = result.get(CodexJsonKeyEnum.REASONING_EFFORT.key());
+        String v = (top != null && !top.isJsonNull() && top.isJsonPrimitive()) ? top.getAsString() : null;
+        if (v != null && !v.isBlank()) {
+            return v;
+        }
+        JsonElement threadEl = result.get(CodexJsonKeyEnum.THREAD.key());
+        if (threadEl != null && threadEl.isJsonObject()) {
+            JsonElement te = threadEl.getAsJsonObject().get(CodexJsonKeyEnum.REASONING_EFFORT.key());
+            v = (te != null && !te.isJsonNull() && te.isJsonPrimitive()) ? te.getAsString() : null;
+        }
+        return (v != null && !v.isBlank()) ? v : null;
+    }
+
+    /**
+     * Finds a model's entry in a {@code model/list} response ({@code data} array of Model objects) by id, falling back
+     * to the deprecated {@code model} key. Returns null when absent.
+     */
+    static JsonObject findModelObject(JsonObject result, String model) {
+        if (result == null || model == null || model.isBlank() || !result.has(CodexJsonKeyEnum.DATA.key())) {
+            return null;
+        }
+        JsonElement dataEl = result.get(CodexJsonKeyEnum.DATA.key());
+        if (!dataEl.isJsonArray()) {
+            return null;
+        }
+        for (JsonElement e : dataEl.getAsJsonArray()) {
+            if (!e.isJsonObject()) {
+                continue;
+            }
+            JsonObject o = e.getAsJsonObject();
+            for (CodexJsonKeyEnum key : new CodexJsonKeyEnum[]{CodexJsonKeyEnum.ID, CodexJsonKeyEnum.MODEL}) {
+                if (o.has(key.key()) && !o.get(key.key()).isJsonNull() && o.get(key.key()).isJsonPrimitive()
+                        && model.equals(o.get(key.key()).getAsString())) {
+                    return o;
+                }
+            }
+        }
+        return null;
+    }
+
+    /**
+     * Reads a Model object's {@code supportedReasoningEfforts} array, taking each entry's {@code reasoningEffort} value
+     * (deduped, in order). Empty when the model exposes none.
+     */
+    static List<String> extractSupportedReasoningEfforts(JsonObject modelObj) {
+        if (modelObj == null || !modelObj.has(CodexJsonKeyEnum.SUPPORTED_REASONING_EFFORTS.key())) {
+            return List.of();
+        }
+        JsonElement arrEl = modelObj.get(CodexJsonKeyEnum.SUPPORTED_REASONING_EFFORTS.key());
+        if (!arrEl.isJsonArray()) {
+            return List.of();
+        }
+        List<String> out = new ArrayList<>();
+        for (JsonElement e : arrEl.getAsJsonArray()) {
+            if (!e.isJsonObject()) {
+                continue;
+            }
+            JsonElement re = e.getAsJsonObject().get(CodexJsonKeyEnum.REASONING_EFFORT.key());
+            if (re != null && !re.isJsonNull() && re.isJsonPrimitive()) {
+                String s = re.getAsString();
+                if (!s.isBlank() && !out.contains(s)) {
+                    out.add(s);
+                }
+            }
+        }
+        return out;
+    }
+
+    /**
+     * Reads a Model object's {@code defaultReasoningEffort}; null when absent.
+     */
+    static String extractDefaultReasoningEffort(JsonObject modelObj) {
+        if (modelObj == null || !modelObj.has(CodexJsonKeyEnum.DEFAULT_REASONING_EFFORT.key())) {
+            return null;
+        }
+        JsonElement e = modelObj.get(CodexJsonKeyEnum.DEFAULT_REASONING_EFFORT.key());
+        return (e != null && !e.isJsonNull() && e.isJsonPrimitive()) ? e.getAsString() : null;
+    }
+
+    /**
+     * Probes {@code model/list} on the established client, caches the capability list for subsequent dialogs, and fires
+     * a per-session {@link CodexReasoningEffortEvent} (combo data for the info bar). Runs in the handshake thread; any
+     * probe failure degrades silently to "no capability info", per spec §4 — the backend then never sends an
+     * {@code effort} field. Also applies {@link #applyInitialEffortOption} so a stored-but-unsupported effort is
+     * cleared up front rather than sent and ignored.
+     */
+    private void fireReasoningEffortEvent(CodexJsonRpcClient c, String activeModel, String echoEffort) {
+        List<String> supported = List.of();
+        String defaultEffort = null;
+        try {
+            JsonObject result = c.sendRequest("model/list", new JsonObject()).get(30, TimeUnit.SECONDS);
+            JsonObject modelObj = findModelObject(result, activeModel);
+            if (modelObj != null) {
+                supported = extractSupportedReasoningEfforts(modelObj);
+                defaultEffort = extractDefaultReasoningEffort(modelObj);
+            }
+            else {
+                LOG.log(Level.FINE, "model/list did not include \"{0}\"; treating as no reasoning-effort support",
+                        activeModel);
+            }
+        }
+        catch (Exception e) {
+            LOG.log(Level.FINE, "model/list unavailable; reasoning effort stays (model default): {0}",
+                    e.getMessage() != null ? e.getMessage() : e.toString());
+        }
+        if (supported.isEmpty()) {
+            defaultEffort = null;
+        }
+        CodexReasoningEffortCatalog.cache(activeModel, supported);
+        listener.onAiProcessEvent(new CodexReasoningEffortEvent(activeModel, supported, defaultEffort, echoEffort));
+        applyInitialEffortOption(activeModel, supported);
+    }
+
+    /**
+     * Reasoning-effort validation at session establishment, mirroring
+     * {@code OpenCodeAiProcessManager.applyInitialEffortOption}: when the stored per-session effort is not in the
+     * model's supported list, clear it and fire exactly one INFO status event naming the model. Nothing is cleared (and
+     * no event fires) when the effort is unset or supported.
+     */
+    void applyInitialEffortOption(String activeModel, List<String> supported) {
+        String storedEffort;
+        synchronized (this) {
+            if (currentSession == null || !(currentSession.settings() instanceof CodexSessionSettings cs)) {
+                return;
+            }
+            storedEffort = cs.effort();
+        }
+        if (storedEffort == null || storedEffort.isBlank()) {
+            return;
+        }
+        if (!supported.isEmpty() && supported.contains(storedEffort)) {
+            return;
+        }
+        String reason = supported.isEmpty()
+                        ? "but " + activeModel + " exposes no supported reasoning efforts from the server"
+                        : "it is not one of the supported efforts for " + activeModel + "; using the model default";
+        synchronized (this) {
+            if (currentSession != null && currentSession.settings() instanceof CodexSessionSettings cs) {
+                cs.setEffort(null);
+            }
+        }
+        listener.onAiProcessEvent(new StatusEvent(StatusEventTypeEnum.INFO,
+                                                  "Reasoning effort \"" + storedEffort + "\" cleared — " + reason));
+    }
+
+    /**
+     * The per-session reasoning-effort override to send with this turn, read from the live
+     * {@code CodexSessionSettings}; null means "omit the field" (model default).
+     */
+    private String currentEffortOverride() {
+        synchronized (this) {
+            if (currentSession != null && currentSession.settings() instanceof CodexSessionSettings cs) {
+                return cs.effort();
+            }
+        }
+        return null;
+    }
+
+    /**
      * Per-invocation {@code -c} overrides that register the plugin's MCP endpoint with Codex for this one process —
      * never written to {@code ~/.codex/config.toml} (design doc §0a: {@code -c} is TOML-parsed and per-spawn, which is
      * what avoids the cross-session credential collision a shared config file would create).
@@ -293,12 +471,12 @@ public class CodexAiProcessManager extends AiProcessManager {
         if (!CodexExecutableLocator.isExecutableFile(executablePath)) {
             running = false;
             listener.onAiProcessEvent(new StatusEvent(StatusEventTypeEnum.FAILED,
-                    StatusMessageUtil.formatStartFailed("executable not found at " + executablePath)));
+                                                      StatusMessageUtil.formatStartFailed("executable not found at " + executablePath)));
             return;
         }
         if (currentSession == null) {
             listener.onAiProcessEvent(new StatusEvent(StatusEventTypeEnum.FAILED,
-                    StatusMessageUtil.formatSessionNotConfigured()));
+                                                      StatusMessageUtil.formatSessionNotConfigured()));
             return;
         }
         sessionId = currentSession.id();
@@ -313,13 +491,13 @@ public class CodexAiProcessManager extends AiProcessManager {
             }
             else {
                 listener.onAiProcessEvent(new StatusEvent(StatusEventTypeEnum.INFO,
-                        "MCP server registration returned false — running without MCP tools"));
+                                                          "MCP server registration returned false — running without MCP tools"));
             }
         }
         catch (Exception e) {
             LOG.log(Level.WARNING, "MCP server registration failed; running without MCP tools", e);
             listener.onAiProcessEvent(new StatusEvent(StatusEventTypeEnum.INFO,
-                    "MCP server unavailable — running without MCP tools"));
+                                                      "MCP server unavailable — running without MCP tools"));
         }
 
         codexAiSession = new CodexAiSession(currentSession, listener);
@@ -354,12 +532,33 @@ public class CodexAiProcessManager extends AiProcessManager {
         recentStderr.clear();
         Process p = pb.start();
 
+        // Superseding an already-live client/process pair must shut that pair
+        // down deterministically HERE. Once currentProcess/client are overwritten,
+        // both of the predecessor's only closers are disabled by the supersede
+        // itself: handleProcessExit dead-ends at its stale-exit guard
+        // (currentProcess != dead), and onHandlerDisconnected fired from the
+        // predecessor reader's stream-EOF closes whatever the client field points
+        // at NOW — the new client, not the one whose process really died. Orphaned
+        // that way, the superseded client leaks its codex-notify / codex-dispatch
+        // thread pools forever (CodexJsonRpcClientTest.closeShutsBothExecutors).
+        CodexJsonRpcClient superseded;
+        Process supersededProcess;
         synchronized (this) {
             if (!running) {
                 p.destroyForcibly();
                 throw new IOException("stop() called before handshake began");
             }
+            superseded = client;
+            supersededProcess = currentProcess;
+            client = null;
+            appServerHandler = null;
             currentProcess = p;
+        }
+        if (superseded != null) {
+            superseded.close();
+        }
+        if (supersededProcess != null && supersededProcess.isAlive()) {
+            supersededProcess.destroy();
         }
 
         startStderrDrainer(p);
@@ -367,7 +566,7 @@ public class CodexAiProcessManager extends AiProcessManager {
 
         CodexAppServerHandler handler = new CodexAppServerHandler(listener, this::onHandlerDisconnected);
         CodexJsonRpcClient c = new CodexJsonRpcClient(p.getOutputStream(), p.getInputStream(),
-                this::onNotification, handler::onServerRequest, handler::onDisconnected);
+                                                      this::onNotification, handler::onServerRequest, handler::onDisconnected);
 
         String resumeId = pendingResumeThreadId;
         JsonObject threadResult;
@@ -379,21 +578,21 @@ public class CodexAiProcessManager extends AiProcessManager {
             if (resumeId != null) {
                 try {
                     threadResult = c.sendRequest("thread/resume",
-                            buildThreadResumeParams(resumeId, workDir.getAbsolutePath(), model))
+                                                 buildThreadResumeParams(resumeId, workDir.getAbsolutePath(), model))
                             .get(30, TimeUnit.SECONDS);
                 }
                 catch (Exception e) {
                     LOG.log(Level.INFO, "thread/resume failed; falling back to thread/start: {0}", e.getMessage());
                     listener.onAiProcessEvent(new StatusEvent(StatusEventTypeEnum.INFO,
-                            "Previous Codex session could not be resumed; starting fresh"));
+                                                              "Previous Codex session could not be resumed; starting fresh"));
                     threadResult = c.sendRequest("thread/start",
-                            buildThreadStartParams(workDir.getAbsolutePath(), model))
+                                                 buildThreadStartParams(workDir.getAbsolutePath(), model))
                             .get(30, TimeUnit.SECONDS);
                 }
             }
             else {
                 threadResult = c.sendRequest("thread/start",
-                        buildThreadStartParams(workDir.getAbsolutePath(), model))
+                                             buildThreadStartParams(workDir.getAbsolutePath(), model))
                         .get(30, TimeUnit.SECONDS);
             }
         }
@@ -446,6 +645,18 @@ public class CodexAiProcessManager extends AiProcessManager {
             LOG.log(Level.INFO, "Codex app-server handshake complete, threadId={0} requestedModel={1} actualModel={2}",
                     new Object[]{threadId, model, actualModel});
         }
+        // Reasoning-effort capability probe (spec §4): model/list carries each
+        // model's supportedReasoningEfforts + defaultReasoningEffort; thread/start
+        // echoed the live reasoningEffort for seeding the info bar.
+        //
+        // ORDERING INVARIANT: fireReasoningEffortEvent applies the clear (via
+        // applyInitialEffortOption) BEFORE cb.run() below, which calls
+        // host.updateSessionSettings and persists whatever the settings object
+        // holds at that moment. If this ordering is ever reversed the cleared
+        // value is lost on restart — the Grok Finding 1 class of bug (see
+        // OpenCodeAiProcessManager.applyInitialModeIfNeeded, lines 536-541).
+        String echoEffort = extractReasoningEffort(threadResult);
+        fireReasoningEffortEvent(c, actualModel != null && !actualModel.isBlank() ? actualModel : model, echoEffort);
         Runnable cb = onSessionEstablished;
         if (cb != null) {
             cb.run();
@@ -491,7 +702,7 @@ public class CodexAiProcessManager extends AiProcessManager {
                 processing = false;
             }
             listener.onAiProcessEvent(new StatusEvent(StatusEventTypeEnum.FAILED,
-                    StatusMessageUtil.formatSendFailed(e.getMessage())));
+                                                      StatusMessageUtil.formatSendFailed(e.getMessage())));
             return;
         }
         deliverAfterHandshake(text);
@@ -531,7 +742,7 @@ public class CodexAiProcessManager extends AiProcessManager {
         if (PluginSettings.isDebugJson()) {
             LOG.log(Level.INFO, "codex turn/start [{0}]: {1}", new Object[]{tid, text});
         }
-        c.sendRequest("turn/start", buildTurnStartParams(tid, text))
+        c.sendRequest("turn/start", buildTurnStartParams(tid, text, currentEffortOverride()))
                 .thenAccept(result -> {
                     String newTurnId = extractTurnId(result);
                     boolean fireDeferredInterrupt;
@@ -559,7 +770,7 @@ public class CodexAiProcessManager extends AiProcessManager {
                         interruptRequested = false;
                     }
                     listener.onAiProcessEvent(new StatusEvent(StatusEventTypeEnum.FAILED,
-                            "turn/start failed: " + (ex.getMessage() != null ? ex.getMessage() : ex.toString())));
+                                                              "turn/start failed: " + (ex.getMessage() != null ? ex.getMessage() : ex.toString())));
                     return null;
                 });
     }
@@ -859,7 +1070,7 @@ public class CodexAiProcessManager extends AiProcessManager {
         int code = dead.exitValue();
         if (!suppress && code != 0) {
             listener.onAiProcessEvent(new StatusEvent(StatusEventTypeEnum.EXITED,
-                    StatusMessageUtil.formatExited("Codex", code, new ArrayList<>(recentStderr))));
+                                                      StatusMessageUtil.formatExited("Codex", code, new ArrayList<>(recentStderr))));
         }
     }
 
