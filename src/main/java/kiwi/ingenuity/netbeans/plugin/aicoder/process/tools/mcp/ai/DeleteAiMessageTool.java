@@ -33,10 +33,8 @@ public class DeleteAiMessageTool extends AbstractActionTool {
         JsonObject tool = new JsonObject();
         tool.addProperty(ToolSchemaKeyEnum.NAME.key(), McpToolEnum.DELETE_AI_MESSAGE.toolName());
         tool.addProperty(ToolSchemaKeyEnum.DESCRIPTION.key(),
-                         // "Exactly one" was wrong: handle() below merges both into a single
-                         // id list, so a caller obeying the schema avoided a call the tool
-                         // supports. The schema is the only description a model sees, so it
-                         // has to describe what the handler actually accepts.
+                         // The schema is the only description a model sees, so it has to describe what the
+                         // handler actually accepts: handle() merges messageId and messageIds into a single id list.
                          "Delete inbox messages by ID. Provide " + DeleteAiMessageParamEnum.MESSAGE_ID.key() + ", " + DeleteAiMessageParamEnum.MESSAGE_IDS.key() + ", or both; both are combined.");
         JsonObject schema = new JsonObject();
         schema.addProperty(ToolSchemaKeyEnum.TYPE.key(), "object");
@@ -155,8 +153,8 @@ public class DeleteAiMessageTool extends AbstractActionTool {
     }
 
     /**
-     * Says when requested IDs matched nothing. Live v1.4.15: a wrong ID returned "Deleted 0 message(s)." as a success,
-     * while ReadAiMessage reports the same ID as an error.
+     * Says when requested IDs matched nothing, so a wrong or expired ID is reported as an error rather than a success
+     * delete.
      */
     static String deleteResultMessage(int deleted, int requested) {
         if (deleted >= requested) {

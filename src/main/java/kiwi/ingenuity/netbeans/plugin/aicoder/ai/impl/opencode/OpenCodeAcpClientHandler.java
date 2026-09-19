@@ -159,7 +159,7 @@ class OpenCodeAcpClientHandler implements AcpClientHandler {
                 break;
             case TOOL_CALL:
             case TOOL_CALL_UPDATE:
-                // locations and rawInput may be empty on the initial tool_call (§12)
+                // locations and rawInput may be empty on the initial tool_call
                 handleToolEvent(update);
                 break;
             case USAGE_UPDATE:
@@ -209,7 +209,7 @@ class OpenCodeAcpClientHandler implements AcpClientHandler {
 
     /**
      * Routes {@code session/request_permission} by {@code toolCall.kind}, not by whether a file path happened to
-     * resolve (design doc / live probe, "Write: null" defect):
+     * resolve (live probe, "Write: null" defect):
      * <ul>
      * <li>{@code execute} — a shell command. There is no diff to render, so this raises {@link ConfirmEvent} (yes/no),
      * not {@link PermissionEvent}.</li>

@@ -22,7 +22,7 @@ import kiwi.ingenuity.netbeans.plugin.aicoder.process.events.AiProcessImplEvent;
 /**
  * Info bar for pi sessions: a model combo and a thinking-level combo live from the running process (via
  * {@link PiSessionControl}), a context gauge fed from {@code get_session_stats.contextUsage}, and a version-warning
- * button. See the spec's *Tab info bar* and *Version warning* sections.
+ * button.
  */
 public class PiAiInfoBarExtension implements AiInfoBarExtension {
 
@@ -312,7 +312,7 @@ public class PiAiInfoBarExtension implements AiInfoBarExtension {
                 // on this non-editable combo when current isn't one of the just-added items (same hazard as
                 // setSelectedThinkingLevel), so read back what's ACTUALLY selected afterwards — levels.get(0) via
                 // addItem's own auto-select if current didn't take — rather than assuming current stuck, or the
-                // combo and lastNotifiedThinkingLevel disagree (Review round 4, ClaudeExtra_1).
+                // combo and lastNotifiedThinkingLevel disagree.
                 thinkingLevelCombo.setSelectedItem(current);
                 Object actual = thinkingLevelCombo.getSelectedItem();
                 lastNotifiedThinkingLevel = actual != null ? actual.toString() : null;

@@ -24,11 +24,10 @@ import org.junit.jupiter.api.Test;
 
 /**
  * Pins {@link OllamaAiProcessManager#applyThinkingCapabilityValidation} and
- * {@link OllamaAiProcessManager#resolveEffectiveReasoningEffort} against the reasoning-effort design spec's §1 rule 3a,
- * now that Ollama has live capability discovery ({@code GET /api/tags}): only a SESSION-sourced value may ever be
- * cleared/reported; a GLOBAL-sourced one is only ever silently omitted. Mirrors
- * {@code GrokAiProcessManagerReasoningEffortTest}'s directly-testable-method approach — no process is spawned, no turn
- * is run.
+ * {@link OllamaAiProcessManager#resolveEffectiveReasoningEffort}, now that Ollama has live capability discovery
+ * ({@code GET /api/tags}): only a SESSION-sourced value may ever be cleared/reported; a GLOBAL-sourced one is only ever
+ * silently omitted. Mirrors {@code GrokAiProcessManagerReasoningEffortTest}'s directly-testable-method approach — no
+ * process is spawned, no turn is run.
  */
 class OllamaAiProcessManagerThinkingCapabilityTest {
 

@@ -72,20 +72,19 @@ public final class GithubCopilotPluginSettings {
     }
 
     /**
-     * Live per-model reasoning-effort support, populated by {@code GithubCopilotModelDiscovery} as a side effect of
-     * its SDK-tier discovery ({@code ModelInfo.getSupportedReasoningEfforts()}/{@code getDefaultReasoningEffort()}).
+     * Live per-model reasoning-effort support, populated by {@code GithubCopilotModelDiscovery} as a side effect of its
+     * SDK-tier discovery ({@code ModelInfo.getSupportedReasoningEfforts()}/{@code getDefaultReasoningEffort()}).
      * In-memory only, not persisted (like the model list, this is fresh per IDE run) — empty until discovery has
      * actually completed at least once, and empty for any model discovery never reported data for (e.g. the direct
      * JSON-RPC fallback tier, which does not carry this). Nothing about effort levels is ever hardcoded: a model with
-     * no entry here is treated as "no support", per the design spec's must-not-error requirement.
+     * no entry here is treated as "no support".
      */
     private static volatile Map<String, List<String>> supportedReasoningEffortsByModel = Map.of();
     private static volatile Map<String, String> defaultReasoningEffortByModel = Map.of();
 
     /**
-     * The reasoning-effort levels {@code modelId} supports, or an empty list if the model is unknown or reported none
-     * — both cases mean "no support" to every caller (there is no live/static-table distinction to make here, unlike
-     * the design spec's Grok/Claude cases).
+     * The reasoning-effort levels {@code modelId} supports, or an empty list if the model is unknown or reported none —
+     * both cases mean "no support" to every caller (there is no live/static-table distinction to make here).
      */
     public static List<String> getSupportedReasoningEfforts(String modelId) {
         if (modelId == null) {

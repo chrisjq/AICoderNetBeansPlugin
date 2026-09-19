@@ -31,12 +31,12 @@ import kiwi.ingenuity.netbeans.plugin.aicoder.ui.UIConstants;
  *
  * <p>
  * The effort combo is fed per-session by {@link CodexReasoningEffortEvent} (the {@code model/list} probe done during
- * thread establishment, spec §4): the selectable entries are the model's {@code supportedReasoningEfforts} and the
- * first entry is always {@code (model default)}, which maps to a {@code null} stored effort meaning "omit the
- * {@code turn/start} effort field". The combo's current selection is seeded from the session's stored effort, or from
- * the {@code reasoningEffort} threaded back by {@code thread/start}. Because Codex applies an {@code effort} override
- * per turn (no restart), the combo stays enabled while a turn is running — the spec's "disabled while a turn runs" rule
- * applies only to backends that cannot accept the change mid-turn (spec §1.6).
+ * thread establishment): the selectable entries are the model's {@code supportedReasoningEfforts} and the first entry
+ * is always {@code (model default)}, which maps to a {@code null} stored effort meaning "omit the {@code turn/start}
+ * effort field". The combo's current selection is seeded from the session's stored effort, or from the
+ * {@code reasoningEffort} threaded back by {@code thread/start}. Because Codex applies an {@code effort} override per
+ * turn (no restart), the combo stays enabled while a turn is running — a "disabled while a turn runs" rule applies only
+ * to backends that cannot accept the change mid-turn.
  *
  * <p>
  * Two traps this design deliberately avoids:

@@ -10,8 +10,8 @@ import org.openide.util.NbPreferences;
  *
  * <p>
  * An empty {@link #getModel()} / {@link #getThinkingLevel()} means "use pi's own default", not "unset" — the launch
- * command simply omits {@code --model}/{@code --thinking} in that case, per the spec's *Model and thinking-level
- * pickers* section.
+ * command simply omits {@code --model}/{@code --thinking} in that case. The Settings panel's model and thinking-level
+ * pickers map to that empty value.
  */
 public final class PiPluginSettings {
 

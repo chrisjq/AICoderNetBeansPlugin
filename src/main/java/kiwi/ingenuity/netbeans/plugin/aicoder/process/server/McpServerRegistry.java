@@ -51,8 +51,8 @@ public final class McpServerRegistry {
     /**
      * Every session's file/project access scope, owned HERE rather than by {@link McpHookServer} so a health-tick
      * replacement (see {@link #reconcile}) can never wipe it. One instance for the life of the plugin; each fresh
-     * {@link McpHookServer} the supervisor creates is handed this same registry (#15/#21 — a server swap used to start
-     * every session's scope from empty, since the registry lived on the server instance itself).
+     * {@link McpHookServer} the supervisor creates is handed this same registry — a server swap used to start every
+     * session's scope from empty, since the registry lived on the server instance itself).
      */
     private static final SessionFileScopeRegistry FILE_SCOPE = new SessionFileScopeRegistry();
 
@@ -125,7 +125,7 @@ public final class McpServerRegistry {
                 spawnSupervisor();
             }
             // Spawn + enqueue are atomic under the lock, so a REGISTER can never
-            // land in a queue whose supervisor has already exited (finding 1).
+            // land in a queue whose supervisor has already exited.
             if (!enqueue(McpRegistryEvent.register(registrar, future))) {
                 future.complete(false);
             }
@@ -169,7 +169,7 @@ public final class McpServerRegistry {
                 }
             }
             // Complete any events the supervisor did not drain, so callers waiting
-            // on a REGISTER future never hang (finding 1).
+            // on a REGISTER future never hang.
             drainQueueCompletingFutures();
             if (t == null || !t.isAlive()) {
                 supervisor = null;
@@ -182,7 +182,7 @@ public final class McpServerRegistry {
             // else: a zombie is still alive after the join timeout — leave the
             // reference and shared state to it; it will exit on the shutdown flag
             // and clean up in its finally block. ensureSupervisor won't spawn a
-            // second thread while this one is alive (finding 2).
+            // second thread while this one is alive.
         }
     }
 
@@ -211,7 +211,7 @@ public final class McpServerRegistry {
         return s.getBaseUrl() + "/mcp/" + type.key();
     }
 
-    // ---- Enqueue helper (finding 4: never a silent drop) ----
+    // ---- Enqueue helper (never a silent drop) ----
     private static boolean enqueue(McpRegistryEvent event) {
         if (!QUEUE.offer(event)) {
             LOG.log(Level.WARNING, "MCP registry queue full; dropping {0} event", event.type());
@@ -300,8 +300,8 @@ public final class McpServerRegistry {
     }
 
     /**
-     * Handle one event. Wrapped in catch(Throwable) so a poisoned event can never kill the supervisor (finding 3): the
-     * in-flight REGISTER future is completed false, the error logged SEVERE, and the loop continues.
+     * Handle one event. Wrapped in catch(Throwable) so a poisoned event can never kill the supervisor: the in-flight
+     * REGISTER future is completed false, the error logged SEVERE, and the loop continues.
      */
     private static void handleEvent(McpRegistryEvent event) {
         try {
@@ -444,7 +444,7 @@ public final class McpServerRegistry {
             // The fresh instance's hookLocks/activeSessions start empty even though every still-registered session's
             // file scope survives (fileScope is the one shared instance handed to every server this method creates —
             // see FILE_SCOPE's javadoc). Without this, the next gated Edit/Write for any of these sessions finds no
-            // hook lock and is answered "defer" forever (round-3 review, BigP_2).
+            // hook lock and is answered "defer" forever.
             for (String sessionId : registrations.keySet()) {
                 fresh.rehydrateSession(sessionId);
             }

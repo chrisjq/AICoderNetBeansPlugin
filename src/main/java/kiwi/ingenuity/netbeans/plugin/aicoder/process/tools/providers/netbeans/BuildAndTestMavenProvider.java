@@ -18,8 +18,8 @@ public class BuildAndTestMavenProvider {
     private static final int MAX_OUTPUT_BYTES = 2 * 1024 * 1024;
 
     /**
-     * Options shared by BuildMavenProject, CleanAndBuildMavenProject and RunMavenTests (#5 / F2). Every field arrives
-     * already resolved by the calling tool — {@code goals} carries that tool's own default ({@code package},
+     * Options shared by BuildMavenProject, CleanAndBuildMavenProject and RunMavenTests. Every field arrives already
+     * resolved by the calling tool — {@code goals} carries that tool's own default ({@code package},
      * {@code clean package}, or {@code test}) when the caller omitted it, and {@code skipTests} carries that tool's own
      * default (true for the two build tools, preserving today's {@code -DskipTests}; false for RunMavenTests, which has
      * never passed it — skipping tests on the tool whose entire purpose is running them would be a confusing default).
@@ -97,8 +97,8 @@ public class BuildAndTestMavenProvider {
     }
 
     /**
-     * Validates every option BEFORE any file resolution or process launch — same principle as #17's targetProjectPath
-     * fix: a malformed argument must not be masked by a later, unrelated failure.
+     * Validates every option BEFORE any file resolution or process launch — a malformed argument must not be masked by
+     * a later, unrelated failure.
      */
     private static String validate(MavenBuildOptions opts) {
         if (opts.goals() == null || opts.goals().isEmpty()) {
@@ -187,7 +187,7 @@ public class BuildAndTestMavenProvider {
         command.add(wrapper.exists() ? wrapper.getAbsolutePath() : "mvn");
         command.addAll(goals);
         command.add("--no-transfer-progress");
-        // A download is not a build: it must not raise the project's inline time limit (item 3, 2026-09-17).
+        // A download is not a build: it must not raise the project's inline time limit.
         return new PreparedBuild(null, sessionId, root, command, BuildOutputFormatter.Backend.MAVEN, false);
     }
 

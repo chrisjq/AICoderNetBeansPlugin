@@ -24,8 +24,7 @@ import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.ToolSchemaKeyEnu
 public class ListAiSessionsTool extends AbstractActionTool {
 
     /**
-     * Shared by the constructor and {@link #schema}, which both publish it. Kept as one constant because the two copies
-     * previously drifted — a clause added to one was missed on the other.
+     * Shared by the constructor and {@link #schema}, which both publish it, so the two copies cannot drift apart.
      */
     private static final String TOOL_DESCRIPTION
             = "List all active AI sessions (excluding caller). Each entry includes active=true if"

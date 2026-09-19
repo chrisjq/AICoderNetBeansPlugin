@@ -9,8 +9,8 @@ import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.providers.netbeans.B
 
 /**
  * Shared schema-building and argument-extraction for the three Gradle devops tools (BuildGradleProjectTool,
- * CleanAndBuildGradleProjectTool, RunGradleTestsTool — #5 / F2) — see {@link MavenToolSchema}'s javadoc for why this is
- * shared rather than duplicated three times.
+ * CleanAndBuildGradleProjectTool, RunGradleTestsTool) — see {@link MavenToolSchema}'s javadoc for why this is shared
+ * rather than duplicated three times.
  */
 public final class GradleToolSchema {
 

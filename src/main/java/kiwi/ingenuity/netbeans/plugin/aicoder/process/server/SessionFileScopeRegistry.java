@@ -143,7 +143,7 @@ class SessionFileScopeRegistry {
      * Diagnostic trail for scope changes — session id, AI type, and project dirs both as the caller supplied them and
      * as they resolve on disk (symlinks/relative paths can make those differ, and a mismatch there is exactly the kind
      * of thing worth being able to see after the fact). Behind {@link PluginSettings#isDebugJson()} like every other
-     * diagnostic log in this class of problem — see #15/#21.
+     * diagnostic log in this class of problem.
      */
     private static void logScopeChange(String action, String sessionId, AiTypeEnum aiType, List<File> projectDirs,
                                        boolean restrictToProjectFiles) {
@@ -196,7 +196,7 @@ class SessionFileScopeRegistry {
         }
         // Self-heal BEFORE consulting the maps below: a session with no scope entry at
         // all is either a genuinely unknown id (selfHealScope no-ops) or one that lost
-        // its scope to a health-tick server replacement (#15/#21) — in the latter case
+        // its scope to a health-tick server replacement — in the latter case
         // this recovers it in time to answer this same call correctly, rather than
         // denying it and waiting for the session's next submit.
         if (!hasScope(sessionId)) {
@@ -213,7 +213,7 @@ class SessionFileScopeRegistry {
 
     /**
      * Recovers a session's scope from the currently open projects when the registry has no entry for it at all — the
-     * specific failure mode behind #15/#21: a health-tick server replacement used to start with an empty
+     * specific failure mode behind a prior health-tick server replacement: a server swap used to start with an empty
      * {@link SessionFileScopeRegistry}, so every session was denied until its own next submit or a project open/close
      * called {@code updateSessionScope} again. Now that this registry survives a server replacement (see
      * {@link McpServerRegistry#fileScope()}), the only sessions this can still apply to are ones whose FIRST

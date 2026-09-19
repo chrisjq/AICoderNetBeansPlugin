@@ -7,8 +7,7 @@ import static org.junit.jupiter.api.Assertions.assertNull;
 import org.junit.jupiter.api.Test;
 
 /**
- * Coverage for review findings 2 and 3 (WP-C follow-up), neither previously proven by a test: this class was
- * constructed/driven by nothing in the Grok test suite until now. {@link GrokAiInfoBarExtension#setSelectedModel},
+ * This class was not previously constructed or driven by anything in the Grok test suite. null {@link GrokAiInfoBarExtension#setSelectedModel},
  * {@link GrokAiInfoBarExtension#setSelectedReasoningEffort} and {@link GrokAiInfoBarExtension#onSessionSettingsChanged}
  * all defer their work via {@code SwingUtilities.invokeLater} when called off the EDT (as every test method here is,
  * running on the JUnit thread) — every assertion sits behind an {@code invokeAndWait(() -> {})} flush afterward, or it

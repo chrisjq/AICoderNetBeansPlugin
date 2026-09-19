@@ -168,8 +168,8 @@ class GrokAiImplementationTest {
         }
     }
 
-    // ---- review finding 1: the manager clearing an unsupported value must also clear the PERSISTED source, not
-    // just its own in-memory field, or the same INFO event recurs forever across restarts ----
+    // ---- the manager clearing an unsupported value must also clear the PERSISTED source, not just its own
+    // in-memory field, or the same INFO event recurs forever across restarts ----
     @Test
     void unsupportedReasoningEffortClearedAtSendTimeAlsoClearsThePersistedSessionSetting() {
         GrokSessionSettings settings = new GrokSessionSettings();
@@ -202,9 +202,9 @@ class GrokAiImplementationTest {
         assertEquals(settings, updated.get());
     }
 
-    // ---- spec §1 rule 3a (added after review found Grok and Copilot disagreeing here): only a SESSION-pinned
-    // value is ever cleared automatically. The global default belongs to the user and to every other
-    // session/backend, so one session's model rejecting it must never touch the global default. ----
+    // ---- only a SESSION-pinned value is ever cleared automatically. The global default belongs to the user
+    // and to every other session/backend, so one session's model rejecting it must never touch the global
+    // default. ----
     @Test
     void clearInvalidPersistedReasoningEffort_neverTouchesTheGlobalDefaultWhenSessionHasNoOverride() {
         String globalBefore = GrokPluginSettings.getReasoningEffort();
@@ -224,8 +224,8 @@ class GrokAiImplementationTest {
         }
     }
 
-    // ---- coverage gap the reviewer found: no test previously set session AND global to DIFFERENT non-blank
-    // values at once, which is exactly what would have caught the wrong-scope bug rule 3a fixes ----
+    // ---- session AND global set to DIFFERENT non-blank values at once — the case that would catch a
+    // wrong-scope clearing bug ----
     @Test
     void sessionValueClearedButGlobalDefaultWithADifferentValueIsLeftUntouched() {
         String globalBefore = GrokPluginSettings.getReasoningEffort();
@@ -245,8 +245,7 @@ class GrokAiImplementationTest {
 
             assertNull(settings.reasoningEffort(), "the session's own unsupported value must be cleared");
             assertEquals("medium", GrokPluginSettings.getReasoningEffort(),
-                         "the global default must be left completely untouched, even though it is also set — "
-                         + "spec §1 rule 3a");
+                         "the global default must be left completely untouched, even though it is also set");
         }
         finally {
             GrokPluginSettings.setReasoningEffort(globalBefore);

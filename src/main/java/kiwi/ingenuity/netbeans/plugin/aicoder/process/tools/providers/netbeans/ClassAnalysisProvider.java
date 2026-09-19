@@ -175,9 +175,9 @@ public class ClassAnalysisProvider {
     }
 
     /**
-     * GetTypeHierarchy's refusal for a type with no source in an open project. Live v1.4.15:
-     * {@code java.lang.Exception} got only "Source file not found for java.lang.Exception", which did not say that JDK
-     * and library types are out of scope or where to look instead.
+     * GetTypeHierarchy's refusal for a type with no source in an open project: {@code java.lang.Exception} got only
+     * "Source file not found for java.lang.Exception", which did not say that JDK and library types are out of scope or
+     * where to look instead.
      */
     static String noSourceMessage(String typeName) {
         return "No source for " + typeName + " " + IN_AN_OPEN_PROJECT + ". " + McpToolEnum.GET_TYPE_HIERARCHY.toolName()

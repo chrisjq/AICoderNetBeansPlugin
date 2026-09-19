@@ -72,7 +72,7 @@ class CodexSettingsTest {
         assertEquals("gpt-5.6-luna", s.model());
     }
 
-    // ---- reasoning effort (spec §4) ----
+    // ---- reasoning effort ----
     @Test
     void effortIsNullBeforeSet() {
         assertNull(new CodexSessionSettings().effort());

@@ -26,10 +26,10 @@ public class DeleteFileTool extends AbstractFileTool {
 
     public DeleteFileTool(McpHookServer server) {
         super(McpSectionEnum.SYSTEM,
-                McpToolEnum.DELETE_FILE.toolName(),
-                "Permanently delete a file. Closes any open editor tab, removes the file from disk, "
-                + "and refreshes the project tree and VCS status.",
-                McpToolEnum.DELETE_FILE.toolName() + " -> permanently removes a file; closes open tab and refreshes VCS automatically");
+              McpToolEnum.DELETE_FILE.toolName(),
+              "Permanently delete a file. Closes any open editor tab, removes the file from disk, "
+              + "and refreshes the project tree and VCS status.",
+              McpToolEnum.DELETE_FILE.toolName() + " -> permanently removes a file; closes open tab and refreshes VCS automatically");
         this.server = server;
     }
 
@@ -38,7 +38,7 @@ public class DeleteFileTool extends AbstractFileTool {
         String fp = args.str(DeleteFileParamEnum.FILE_PATH.key());
         if (fp == null || fp.isBlank()) {
             // No fallback to the focused editor. This tool deletes: omitting the
-            // path used to destroy whatever file the user happened to have open,
+            // path would destroy whatever file the user happened to have open,
             // chosen by where they last clicked rather than by anything the
             // caller decided. Nothing about that is recoverable from the caller's
             // side, so it must name its target.
@@ -63,8 +63,8 @@ public class DeleteFileTool extends AbstractFileTool {
         }
         CompletableFuture<PermissionDecision> future = new CompletableFuture<>();
         listener.onAiProcessEvent(new ConfirmEvent("Delete",
-                "Permanently delete " + ProjectPathUtil.shortPath(effectivePath) + "?",
-                effectivePath, null, future));
+                                                   "Permanently delete " + ProjectPathUtil.shortPath(effectivePath) + "?",
+                                                   effectivePath, null, future));
         PermissionDecision decision;
         try {
             decision = future.get(confirmTimeoutMillis, TimeUnit.MILLISECONDS);

@@ -38,12 +38,12 @@ import kiwi.ingenuity.netbeans.plugin.aicoder.process.server.McpHookServerUtil;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.providers.netbeans.RefactoringProvider;
 
 /**
- * Maps inbound {@code app-server} traffic to plugin events (design doc §8) and bridges its two approval-request kinds
- * to the plugin's existing {@link ConfirmEvent} confirm flow (§0a "Working flow for the permission bridge"). Combined
- * in one class, like {@code OpenCodeAcpClientHandler}, rather than split into the design doc §6 sketch of separate
- * {@code CodexStreamParser}/{@code CodexPermissionBridge} classes: the fileChange approval request carries no diff of
- * its own and depends on the {@code changes[]} cached from an earlier {@code item/started} notification for the same
- * item id, so the two concerns share state and splitting them would only mean passing that cache between two objects.
+ * Maps inbound {@code app-server} traffic to plugin events and bridges its two approval-request kinds to the plugin's
+ * existing {@link ConfirmEvent} confirm flow. Combined in one class, like {@code OpenCodeAcpClientHandler}, rather than
+ * split into separate {@code CodexStreamParser}/{@code CodexPermissionBridge} classes: the fileChange approval request
+ * carries no diff of its own and depends on the {@code changes[]} cached from an earlier {@code item/started}
+ * notification for the same item id, so the two concerns share state and splitting them would only mean passing that
+ * cache between two objects.
  *
  * <p>
  * {@link #onNotification} and {@link #onServerRequest} are invoked on {@link CodexJsonRpcClient}'s notify/dispatch
@@ -94,7 +94,7 @@ class CodexAppServerHandler implements CodexNotificationListener, CodexServerReq
     }
 
     /**
-     * {@code turn/started}/{@code turn/completed} both carry {@code turn.status} (design doc:
+     * {@code turn/started}/{@code turn/completed} both carry {@code turn.status} (the
      * {@code TurnStartedNotification}/{@code TurnCompletedNotification} schemas). Returns null on any unexpected shape.
      */
     static String extractTurnStatus(JsonObject params) {
@@ -223,7 +223,7 @@ class CodexAppServerHandler implements CodexNotificationListener, CodexServerReq
      * CONTEXT LINE expecting an empty line, the file has real text there, and the patch fails with
      * CONTENT_DOES_NOT_MATCH_TARGET. Every Codex hunk ends with a newline, so this failed for every single-file edit
      * for as long as this method has existed — silently, because the caller fell back to a blind confirm. Confirmed
-     * against a hunk captured from a live run on 2026-08-29.</p>
+     * against a hunk captured from a live run.</p>
      *
      * <p>
      * A genuinely blank context line is " " (a space) in unified-diff format, never "", so stripping exactly one
@@ -442,7 +442,7 @@ class CodexAppServerHandler implements CodexNotificationListener, CodexServerReq
         // prefixes, no diff syntax at all. The field name lies for this kind; the non-v2 schema is honest about it and
         // calls the same data AddFileChange.content. Feeding a whole Java source file to a unified-diff parser is what
         // produced POSITION_OUT_OF_TARGET for every new file in the first live run. Verbatim from a capture on
-        // 2026-08-29. So: use it directly, parse nothing, apply it to nothing.
+        // a live run. So: use it directly, parse nothing, apply it to nothing.
         if (KIND_ADD.equals(kind)) {
             return diffHunk;
         }
@@ -609,7 +609,7 @@ class CodexAppServerHandler implements CodexNotificationListener, CodexServerReq
      *
      * <p>
      * Field names taken from a live notification, not guessed: null null null null null null null null null null null
-     * null null null null null null null null     {@code {"item":{"type":"mcpToolCall","tool":"ListAiSessions",
+     * null null null null null null null null null null null null     {@code {"item":{"type":"mcpToolCall","tool":"ListAiSessions",
      * "server":"aicoder-nb-ki-plugin",...}}}. Kind.OTHER with a null path deliberately — {@code isFileModification()}
      * stays false so no diff panel is raised; file changes keep their own path below.
      */
@@ -731,10 +731,10 @@ class CodexAppServerHandler implements CodexNotificationListener, CodexServerReq
      * Waits — without blocking the dispatch thread — for this item's {@code item/started} to be drained, then answers.
      *
      * <p>
-     * The approval carries no diff of its own (design doc §0a); the content arrives separately under the same item id.
-     * Those two are handled on different executors and nothing orders them, so this COMPOSES on a future rather than
-     * reading a map that may not be populated yet. Returning a chained future keeps the dispatch thread free: sleeping
-     * or polling here would stall every other inbound message, which would be worse than the bug.</p>
+     * The approval carries no diff of its own; the content arrives separately under the same item id. Those two are
+     * handled on different executors and nothing orders them, so this COMPOSES on a future rather than reading a map
+     * that may not be populated yet. Returning a chained future keeps the dispatch thread free: sleeping or polling
+     * here would stall every other inbound message, which would be worse than the bug.</p>
      *
      * <p>
      * Bounded by {@link CodexTimeoutEnum#FILE_CHANGE_CACHE_WAIT_MILLIS}; on expiry the changes are treated as absent

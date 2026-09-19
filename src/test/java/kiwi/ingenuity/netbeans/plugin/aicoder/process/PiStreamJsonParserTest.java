@@ -146,7 +146,7 @@ class PiStreamJsonParserTest {
     @Test
     void messageEnd_stopReasonError_surfacesFailedButNoTurnComplete() {
         // stopReason/errorMessage live under message_end.message (pi's AssistantMessage), not top-level — verified
-        // live against a real pi 0.85.1 process (Round-5 wire-shape scan).
+        // live against a real pi 0.85.1 process.
         List<AiProcessEvent> events = parse(
                 "{\"type\":\"message_end\",\"message\":{\"role\":\"assistant\",\"stopReason\":\"error\","
                 + "\"errorMessage\":\"cannot help\"}}");
@@ -189,9 +189,9 @@ class PiStreamJsonParserTest {
     /**
      * get_state/get_available_models/get_session_stats/set_model/get_available_thinking_levels/set_thinking_level are
      * background/housekeeping commands PiAiProcessManager already treats as best-effort and silently swallows on
-     * failure — surfacing FAILED for one of these would show an error unrelated to anything the user did (Review round
-     * 3). set_model is deliberately used here (not get_session_stats) to also prove this isn't merely "some background
-     * commands", now that a DIFFERENT background command moved out of this test's spot above.
+     * failure — surfacing FAILED for one of these would show an error unrelated to anything the user did. set_model is
+     * deliberately used here (not get_session_stats) to also prove this isn't merely "some background commands", now
+     * that a DIFFERENT background command moved out of this test's spot above.
      */
     @Test
     void responseFailure_backgroundCommand_producesNoEvent() {
@@ -204,7 +204,7 @@ class PiStreamJsonParserTest {
      * compact IS user-facing but is deliberately excluded from USER_FACING_COMMANDS: PiAiImplementation.compact()'s own
      * whenComplete already emits "Compact failed: …" for a rejected response and must stay the single owner of that
      * error surface (it also reports no-session/failed-send cases this parser never sees) — including compact here too
-     * double-reported a rejected compact (Review round 4, BigP_2).
+     * double-reported a rejected compact.
      */
     @Test
     void responseFailure_compact_producesNoEvent() {
@@ -224,8 +224,8 @@ class PiStreamJsonParserTest {
     /**
      * A successful {@code get_state}/{@code get_available_models}/{@code get_session_stats} response is read directly
      * by {@code PiAiProcessManager} off the id-correlated future instead — the parser itself must produce no event for
-     * any of them. This is exactly the behaviour round 1 changed (previously these commands each fired their own
-     * event); only the failure branch was covered before this test existed.
+     * any of them. This is exactly the behaviour that changed (previously these commands each fired their own event);
+     * only the failure branch was covered before this test existed.
      */
     @Test
     void responseSuccess_getState_producesNoEvents() {
@@ -425,9 +425,9 @@ class PiStreamJsonParserTest {
     /**
      * Real pi can answer a send (here a rejected compact) as {@code {"type":"response","success":false,
      * "error":"cannot compact now","id":…}} with no {@code command} field — and test fakes often omit it too.
-     * {@code PiRpcCommandEnum.of(null)} returns null, and the old {@code USER_FACING_COMMANDS.contains(...)} check
-     * NPEs on a {@code null} argument on Java 21, landing in the parseLine catch as a bogus "Skipping unparseable pi
-     * line" WARNING. The null/unknown command must be treated as the background/ignored case: no event, no WARNING.
+     * {@code PiRpcCommandEnum.of(null)} returns null, and the old {@code USER_FACING_COMMANDS.contains(...)} check NPEs
+     * on a {@code null} argument on Java 21, landing in the parseLine catch as a bogus "Skipping unparseable pi line"
+     * WARNING. The null/unknown command must be treated as the background/ignored case: no event, no WARNING.
      */
     @Test
     void responseFailure_noCommandField_producesNoEventNoWarning() {

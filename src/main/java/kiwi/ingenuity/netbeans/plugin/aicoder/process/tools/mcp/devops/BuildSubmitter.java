@@ -36,7 +36,7 @@ public final class BuildSubmitter {
     /**
      * How long an async build may run, in words, for every message and tool description that mentions it. Derived from
      * the limit itself so raising {@link LockTypeEnum#ASYNC_BUILD_LOCK} cannot leave the tools telling the calling AI a
-     * number the queue no longer enforces — this text used to be written out by hand in seven places.
+     * number the queue no longer enforces.
      */
     public static final String ASYNC_LIMIT_TEXT
             = TimeUnit.MILLISECONDS.toHours(LockTypeEnum.ASYNC_BUILD_LOCK.getLifetimeMillis()) + " hours";
@@ -61,7 +61,7 @@ public final class BuildSubmitter {
         // ALWAYS run the shape check, even when preparation already failed: a wrong-type option can itself be WHY
         // preparation failed — a string goals value reads as no array at all, so the Maven provider sees an empty
         // goals list and refuses with "goals must not be empty", a misleading message that would otherwise outrun the
-        // real, correct shape error. The shape error takes precedence, as it did before item 8. Only the backend is
+        // real, correct shape error. The shape error takes precedence. Only the backend is
         // unavailable when there is no prepared build or it is already an error; validate(null, ...) still runs the
         // common checks plus every backend's option checks together.
         BuildOutputFormatter.Backend backend = prepared != null && !prepared.isError() ? prepared.backend() : null;
@@ -72,9 +72,6 @@ public final class BuildSubmitter {
                       control -> BuildProcessRunner.run(validated, control));
     }
 
-    /**
-     * Submits a build to {@code queue}. A prepared error is returned unchanged and nothing is queued.
-     */
     /**
      * Puts an IDE build action (BuildProject, CleanProject, CleanAndBuildProject) through the same queue as every other
      * build. It is marked not stoppable once running: NetBeans gives the caller of {@code ActionProvider.invokeAction}
@@ -197,8 +194,8 @@ public final class BuildSubmitter {
     /**
      * Someone had already asked for exactly this build, so the caller was added as a listener instead of the build
      * being run twice. The build's own requester gets a short confirmation instead of being told about themselves in
-     * the third person (item 7, 2026-09-17); every other session gets the same completion message the requester gets,
-     * but only the requester can stop it.
+     * the third person; every other session gets the same completion message the requester gets, but only the requester
+     * can stop it.
      */
     private static String joinedReply(BuildJob job, String callerSessionId) {
         if (job.request().sessionId().equals(callerSessionId)) {

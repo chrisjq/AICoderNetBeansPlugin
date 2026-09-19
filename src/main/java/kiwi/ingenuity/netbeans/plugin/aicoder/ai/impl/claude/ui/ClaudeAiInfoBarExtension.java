@@ -41,7 +41,7 @@ public class ClaudeAiInfoBarExtension implements AiInfoBarExtension {
     }
 
     /**
-     * Maps to an empty stored effort ("use Claude's own default"), per the spec's "not set" entry rule.
+     * Maps to an empty stored effort ("use Claude's own default").
      */
     private static final String[] EFFORT_OPTIONS = {
         BlankSafeComboRenderer.DEFAULT_OPTION, "low", "medium", "high", "xhigh", "max"

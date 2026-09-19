@@ -152,10 +152,9 @@ class ClaudeAiImplementationTest {
     }
 
     // ---- createInfoBarExtension: the effort wiring [3] ----
-    // These pin the two defects the review round found: (1) the model/effort
-    // change listeners' persist block was dead code, so a change survived only
-    // via an unrelated later save, and (2) a null-effort session had the GLOBAL
-    // default written back into its own settings, destroying inherits-vs-pinned.
+    // These pin two defects: (1) the model/effort change listeners' persist block was dead code, so a change
+    // survived only via an unrelated later save, and (2) a null-effort session had the GLOBAL default written
+    // back into its own settings, destroying inherits-vs-pinned.
     // The Codex effort tests seed and read combos through SwingUtilities to keep
     // assertions deterministic (the extension marshals component mutations onto
     // the EDT), which these tests replicate.

@@ -31,8 +31,8 @@ class PiPersistentSessionTest {
     @Test
     void frameRequest_usesCommandNameAsTypeAndOmitsCommandField() {
         // pi has no generic "command" command — the command name IS the frame's own "type" (verified live against a
-        // real pi process, Round-5). "command" is an internal-only marker on the caller-built object; it must never
-        // reach the wire.
+        // real pi process). "command" is an internal-only marker on the caller-built object; it must never reach
+        // the wire.
         JsonObject cmd = new JsonObject();
         cmd.addProperty("command", "steer");
         cmd.addProperty("message", "hello \"world\"");

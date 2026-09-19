@@ -26,8 +26,9 @@ import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.providers.netbeans.R
 
 /**
  * Writes full file content (creating or overwriting), routed through the NetBeans Accept/Reject diff panel
- * (PermissionEvent) before applying. Used so GitHub Copilot file creation goes through the review UX (Copilot's native
- * `create` tool is denied).
+ * (PermissionEvent) before applying. Used so GitHub Copilot file creation goes through the review UX — Copilot's native
+ * {@code create} tool is excluded via {@code GithubCopilotProcessManager.EXCLUDED_NATIVE_TOOLS}, so this is the only
+ * route its file creation can take.
  *
  * <p>
  * Locks the target file (not a global lock — see usesOwnFileLocking()) from before the diff is shown through the user's
@@ -38,9 +39,9 @@ public class WriteFileTool extends AbstractActionTool {
 
     public WriteFileTool() {
         super(McpSectionEnum.UI_FILES,
-                McpToolEnum.WRITE_FILE.toolName(),
-                "Create or overwrite a file with the given content. The user approves the change in the NetBeans Accept/Reject diff panel before it is applied.",
-                McpToolEnum.WRITE_FILE.toolName() + " -> create/overwrite a file with content; user approves via the NetBeans diff panel");
+              McpToolEnum.WRITE_FILE.toolName(),
+              "Create or overwrite a file with the given content. The user approves the change in the NetBeans Accept/Reject diff panel before it is applied.",
+              McpToolEnum.WRITE_FILE.toolName() + " -> create/overwrite a file with content; user approves via the NetBeans diff panel");
     }
 
     @Override
@@ -128,8 +129,8 @@ public class WriteFileTool extends AbstractActionTool {
             }
             if (decision == null || !decision.allow()) {
                 return decision != null && decision.message() != null && !decision.message().isBlank()
-                        ? "User rejected the write: " + decision.message().trim() + " — do not retry this change"
-                        : "User rejected the write — do not retry this change";
+                       ? "User rejected the write: " + decision.message().trim() + " — do not retry this change"
+                       : "User rejected the write — do not retry this change";
             }
             return RefactoringProvider.writeFileContent(filePath, content);
         }

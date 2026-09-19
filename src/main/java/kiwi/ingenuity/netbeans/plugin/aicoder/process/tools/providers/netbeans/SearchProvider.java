@@ -162,8 +162,9 @@ public class SearchProvider {
     /**
      * The files not already searched under an earlier root, recording them as searched. Roots can nest: a project with
      * no Java source groups (an aggregator pom) is walked from its project directory, which contains its child modules'
-     * source roots, and those are walked again as roots of their own. Live v1.4.15: every match under app-platform was
-     * reported twice, and under bm-flow-ui three times, inflating both the match and file counts.
+     * source roots, and those are walked again as roots of their own. A file under more than one of these roots used to
+     * be reported again for each root: every match under app-platform twice, and under bm-flow-ui three times,
+     * inflating both the match and file counts.
      */
     static List<Path> unsearchedFiles(List<Path> files, Set<Path> searched) {
         return files.stream().filter(p -> searched.add(p.toAbsolutePath().normalize())).toList();

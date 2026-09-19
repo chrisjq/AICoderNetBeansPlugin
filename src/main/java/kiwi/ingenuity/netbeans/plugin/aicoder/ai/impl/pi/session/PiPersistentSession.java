@@ -62,7 +62,7 @@ public final class PiPersistentSession {
 
     /**
      * Frames an RPC command for the wire. pi has no generic {@code "command"} command — the command NAME is the frame's
-     * own {@code type} (verified live 2026-09-18 against a real pi process: requests are
+     * own {@code type} (verified live against a real pi process: requests are
      * {@code {"id":"1","type":"get_state"}} / {@code {"id":"p1","type":"prompt","message":"…"}}; {@code "command"}
      * appears only in pi's own {@code response} frames, never in a request). The caller-built command object (produced
      * by {@code PiAiProcessManager.command(PiRpcCommandEnum)}) still carries the command name under

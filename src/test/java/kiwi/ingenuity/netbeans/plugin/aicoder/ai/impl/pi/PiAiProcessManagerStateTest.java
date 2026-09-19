@@ -277,7 +277,7 @@ class PiAiProcessManagerStateTest {
         assertFalse(events.hasEvent(StatusEvent.class, e -> ((StatusEvent) e).type() == StatusEventTypeEnum.EXITED));
     }
 
-    // ---- Round-3 fixes (Codex_1): compact() must fail rather than silently succeed ----
+    // ---- compact() must fail rather than silently succeed ----
     @Test
     void compactFailsWhenNoSessionIsRunning() {
         CompletableFuture<Void> result = manager.compact();
@@ -306,7 +306,7 @@ class PiAiProcessManagerStateTest {
         assertTrue(result.isCompletedExceptionally(), "success:false from pi must fail the future, not silently resolve");
     }
 
-    // ---- Round-3 fix (Codex_1): a code-0 exit DURING a turn must still report EXITED ----
+    // ---- a code-0 exit DURING a turn must still report EXITED ----
     @Test
     void codeZeroExitDuringATurnStillReportsExited() throws Exception {
         // Must actually ACK the prompt (unlike the discard-only sink other tests use): with that sink the prompt's
@@ -332,7 +332,7 @@ class PiAiProcessManagerStateTest {
         awaitTrue(() -> !manager.isProcessing(), "processing cleared");
     }
 
-    // ---- Round-5 fix (Sonet's wire-shape scan): thinking_level_changed must update the info bar's picker ----
+    // ---- thinking_level_changed must update the info bar's picker ----
     @Test
     void thinkingLevelChangedEventUpdatesThePickerSelection() throws Exception {
         List<String[]> selectionChanges = Collections.synchronizedList(new ArrayList<>());
@@ -372,7 +372,7 @@ class PiAiProcessManagerStateTest {
                   "onCurrentSelectionChanged to fire with the level pi reported");
     }
 
-    // ---- Round-3 fix (Codex_1): a late setModel response for a replaced session must not overwrite state ----
+    // ---- a late setModel response for a replaced session must not overwrite state ----
     @Test
     void setModelLateSuccessResponseAfterSessionReplacedIsDiscarded() throws Exception {
         List<String> notifications = Collections.synchronizedList(new ArrayList<>());
@@ -453,8 +453,7 @@ class PiAiProcessManagerStateTest {
         /**
          * Answers every command immediately with {@code success:false} — for compact()'s failure-path tests. The sed
          * pattern matches ANY lowercase/underscore {@code type} value, not a literal {@code "command"} — pi has no
-         * generic "command" command, the command name IS the request's own {@code type} (e.g. {@code "compact"},
-         * Round-5 live-test finding).
+         * generic "command" command, the command name IS the request's own {@code type} (e.g. {@code "compact"}).
          */
         static final String ECHO_FAILURE_SCRIPT = """
                 while IFS= read -r line; do

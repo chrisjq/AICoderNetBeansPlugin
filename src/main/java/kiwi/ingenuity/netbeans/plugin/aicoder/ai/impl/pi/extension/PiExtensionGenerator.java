@@ -21,9 +21,9 @@ import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.pi.PiTimeoutEnum;
 
 /**
  * Renders {@code aicoder-pi-extension.ts.template} into one session's extension file, replacing a single placeholder
- * with a generated {@code const AICODER_CONFIG = <json>;} block written with Gson so every value is safely escaped. See
- * the spec's *Extension file generation and lifetime*. No {@code secretKey} is ever written here; credentials travel as
- * MCP tool arguments from the per-turn identity block, exactly as for the other backends.
+ * with a generated {@code const AICODER_CONFIG = <json>;} block written with Gson so every value is safely escaped. No
+ * {@code secretKey} is ever written here; credentials travel as MCP tool arguments from the per-turn identity block,
+ * exactly as for the other backends.
  */
 public final class PiExtensionGenerator {
 

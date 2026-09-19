@@ -7,9 +7,8 @@ import java.util.List;
  * Immutable, fully validated build invocation ready to run.
  *
  * @param countsTowardLongestSuccess whether a SUCCESSful run of this build may raise {@code
- * BuildQueue.longestSuccessFor}. True for every build and test tool. False for the Maven dependency downloads (item 3,
- * 2026-09-17): a download is not a build, so how long one happened to take must not inflate another build's inline time
- * limit.
+ * BuildQueue.longestSuccessFor}. True for every build and test tool. False for the Maven dependency downloads: a
+ * download is not a build, so how long one happened to take must not inflate another build's inline time limit.
  */
 public record PreparedBuild(String error, String sessionId, File root, List<String> command,
                             BuildOutputFormatter.Backend backend, boolean countsTowardLongestSuccess) {

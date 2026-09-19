@@ -7,7 +7,7 @@ import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.pi.settings.PiPluginSettin
 
 /**
  * Compares an installed pi version against the version this plugin was tested with, and against any version the user
- * has explicitly verified. See the spec's *Version warning* section.
+ * has explicitly verified.
  */
 public final class PiVersionCheck {
 

@@ -108,10 +108,10 @@ public class CodexAiImplementation extends AiImplementation {
         }
         // Unlike OpenCode, there is no live config-option call to also push this
         // into an already-running thread — Codex's model is only settable at
-        // thread/start or thread/resume time (design doc: ThreadStartParams.model).
+        // thread/start or thread/resume time (ThreadStartParams.model).
         // A model change while a thread is already live takes effect on the next
         // spawn. (Reasoning effort is different: it is a per-turn
-        // TurnStartParams.effort override, sent with the next turn — spec §4.)
+        // TurnStartParams.effort override, sent with the next turn.)
     }
 
     @Override

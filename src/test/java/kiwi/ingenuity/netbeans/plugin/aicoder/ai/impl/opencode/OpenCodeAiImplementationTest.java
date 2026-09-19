@@ -13,7 +13,7 @@ import kiwi.ingenuity.netbeans.plugin.aicoder.ai.session.AiSession;
 import static org.junit.jupiter.api.Assertions.*;
 import org.junit.jupiter.api.Test;
 
-// Addendum 2 + Correction: setModel must be session-scoped, not global.
+// setModel must be session-scoped, not global.
 class OpenCodeAiImplementationTest {
 
     private static JsonArray configOptionsWithModel(String modelValue) {
@@ -30,7 +30,7 @@ class OpenCodeAiImplementationTest {
     void setModel_updatesSessionSettings() {
         OpenCodeSessionSettings settings = new OpenCodeSessionSettings();
         AiSession session = new AiSession("s-setmodel-1", "Test", null,
-                AiTypeEnum.OPENCODE, null, settings, Instant.now(), Instant.now());
+                                          AiTypeEnum.OPENCODE, null, settings, Instant.now(), Instant.now());
 
         OpenCodeAiProcessManager fakeManager = new OpenCodeAiProcessManager(e -> {
         }) {
@@ -60,7 +60,7 @@ class OpenCodeAiImplementationTest {
         impl.setModel("opencode/other-model");
 
         assertEquals("opencode/other-model", settings.model(),
-                "setModel must update the session settings");
+                     "setModel must update the session settings");
     }
 
     @Test
@@ -69,7 +69,7 @@ class OpenCodeAiImplementationTest {
 
         OpenCodeSessionSettings settings = new OpenCodeSessionSettings();
         AiSession session = new AiSession("s-setmodel-2", "Test", null,
-                AiTypeEnum.OPENCODE, null, settings, Instant.now(), Instant.now());
+                                          AiTypeEnum.OPENCODE, null, settings, Instant.now(), Instant.now());
 
         OpenCodeAiProcessManager fakeManager = new OpenCodeAiProcessManager(e -> {
         }) {
@@ -99,7 +99,7 @@ class OpenCodeAiImplementationTest {
         impl.setModel("opencode/new-model");
 
         assertEquals(globalBefore, OpenCodePluginSettings.getModel(),
-                "setModel must NOT write the global plugin default");
+                     "setModel must NOT write the global plugin default");
     }
 
     @Test
@@ -129,7 +129,7 @@ class OpenCodeAiImplementationTest {
 
         OpenCodeSessionSettings settings = new OpenCodeSessionSettings();
         AiSession session = new AiSession("s-setmodel-3", "Test", null,
-                AiTypeEnum.OPENCODE, null, settings, Instant.now(), Instant.now());
+                                          AiTypeEnum.OPENCODE, null, settings, Instant.now(), Instant.now());
 
         OpenCodeAiImplementation impl = new OpenCodeAiImplementation(e -> {
         }, null) {
@@ -177,7 +177,7 @@ class OpenCodeAiImplementationTest {
 
         OpenCodeSessionSettings settings = new OpenCodeSessionSettings();
         AiSession session = new AiSession("s-setmodel-4", "Test", null,
-                AiTypeEnum.OPENCODE, null, settings, Instant.now(), Instant.now());
+                                          AiTypeEnum.OPENCODE, null, settings, Instant.now(), Instant.now());
 
         OpenCodeAiImplementation impl = new OpenCodeAiImplementation(e -> {
         }, null) {
@@ -200,7 +200,7 @@ class OpenCodeAiImplementationTest {
     void setModel_withNoLiveSession_updatesSettingsAndDoesNotThrow() {
         OpenCodeSessionSettings settings = new OpenCodeSessionSettings();
         AiSession session = new AiSession("s-setmodel-5", "Test", null,
-                AiTypeEnum.OPENCODE, null, settings, Instant.now(), Instant.now());
+                                          AiTypeEnum.OPENCODE, null, settings, Instant.now(), Instant.now());
 
         OpenCodeAiProcessManager fakeManager = new OpenCodeAiProcessManager(e -> {
         }) {
@@ -228,9 +228,9 @@ class OpenCodeAiImplementationTest {
         };
 
         assertDoesNotThrow(() -> impl.setModel("opencode/any-model"),
-                "setModel with no live session must not throw");
+                           "setModel with no live session must not throw");
         assertEquals("opencode/any-model", settings.model(),
-                "settings must still be updated even with no live session");
+                     "settings must still be updated even with no live session");
     }
 
     // ---- resolveStartupModel must use the session's chosen model, not the global default ----
@@ -242,7 +242,7 @@ class OpenCodeAiImplementationTest {
         OpenCodeSessionSettings settings = new OpenCodeSessionSettings();
         settings.setModel("opencode/deepseek-v4-flash-free");
         AiSession session = new AiSession("s-swd-1", "Test", null,
-                AiTypeEnum.OPENCODE, null, settings, Instant.now(), Instant.now());
+                                          AiTypeEnum.OPENCODE, null, settings, Instant.now(), Instant.now());
 
         OpenCodeAiImplementation impl = new OpenCodeAiImplementation(e -> {
         }, null) {
@@ -252,8 +252,8 @@ class OpenCodeAiImplementationTest {
         };
 
         assertEquals("opencode/deepseek-v4-flash-free", impl.resolveStartupModel(null),
-                "startWithDiscovery(null) must fall back to the session's chosen model, "
-                + "not OpenCodePluginSettings.getModel() — this is the per-session-model bug");
+                     "startWithDiscovery(null) must fall back to the session's chosen model, "
+                     + "not OpenCodePluginSettings.getModel() — this is the per-session-model bug");
     }
 
     @Test
@@ -261,7 +261,7 @@ class OpenCodeAiImplementationTest {
         OpenCodeSessionSettings settings = new OpenCodeSessionSettings();
         settings.setModel("opencode/deepseek-v4-flash-free");
         AiSession session = new AiSession("s-swd-2", "Test", null,
-                AiTypeEnum.OPENCODE, null, settings, Instant.now(), Instant.now());
+                                          AiTypeEnum.OPENCODE, null, settings, Instant.now(), Instant.now());
 
         OpenCodeAiImplementation impl = new OpenCodeAiImplementation(e -> {
         }, null) {
@@ -271,7 +271,7 @@ class OpenCodeAiImplementationTest {
         };
 
         assertEquals("opencode/explicit-override", impl.resolveStartupModel("opencode/explicit-override"),
-                "an explicit model argument must still win over the session setting");
+                     "an explicit model argument must still win over the session setting");
     }
 
     @Test
@@ -279,7 +279,7 @@ class OpenCodeAiImplementationTest {
         OpenCodeSessionSettings settings = new OpenCodeSessionSettings();
         // settings.setModel(...) never called.
         AiSession session = new AiSession("s-swd-3", "Test", null,
-                AiTypeEnum.OPENCODE, null, settings, Instant.now(), Instant.now());
+                                          AiTypeEnum.OPENCODE, null, settings, Instant.now(), Instant.now());
 
         OpenCodeAiImplementation impl = new OpenCodeAiImplementation(e -> {
         }, null) {
@@ -289,7 +289,7 @@ class OpenCodeAiImplementationTest {
         };
 
         assertEquals(OpenCodePluginSettings.getModel(), impl.resolveStartupModel(null),
-                "with no session model and no explicit argument, the global default is still correct");
+                     "with no session model and no explicit argument, the global default is still correct");
     }
 
     @Test
@@ -300,7 +300,7 @@ class OpenCodeAiImplementationTest {
         OpenCodeSessionSettings settings = new OpenCodeSessionSettings();
         settings.setAcpSessionId(acpId);
         AiSession session = new AiSession("s-resume-1", "Test", null,
-                AiTypeEnum.OPENCODE, null, settings, Instant.now(), Instant.now());
+                                          AiTypeEnum.OPENCODE, null, settings, Instant.now(), Instant.now());
 
         var impl = new OpenCodeAiImplementation(e -> {
         }, null) {
@@ -316,7 +316,7 @@ class OpenCodeAiImplementationTest {
         impl.resumeSession(pluginUuid);
 
         assertEquals(acpId, impl.exposedDelegate().pendingAcpResumeId,
-                "resumeSession(pluginUUID) must use the stored ACP id, not the plugin UUID");
+                     "resumeSession(pluginUUID) must use the stored ACP id, not the plugin UUID");
     }
 
     @Test
@@ -325,7 +325,7 @@ class OpenCodeAiImplementationTest {
 
         OpenCodeSessionSettings settings = new OpenCodeSessionSettings();
         AiSession session = new AiSession("s-resume-2", "Test", null,
-                AiTypeEnum.OPENCODE, null, settings, Instant.now(), Instant.now());
+                                          AiTypeEnum.OPENCODE, null, settings, Instant.now(), Instant.now());
 
         var impl = new OpenCodeAiImplementation(e -> {
         }, null) {
@@ -341,7 +341,7 @@ class OpenCodeAiImplementationTest {
         impl.resumeSession(pluginUuid);
 
         assertNull(impl.exposedDelegate().pendingAcpResumeId,
-                "resumeSession must not set pendingAcpResumeId when no ACP id is stored");
+                   "resumeSession must not set pendingAcpResumeId when no ACP id is stored");
     }
 
     @Test
@@ -354,7 +354,7 @@ class OpenCodeAiImplementationTest {
         OpenCodeSessionSettings settings = new OpenCodeSessionSettings();
         settings.setAcpSessionId(acpId);
         AiSession session = new AiSession("s-resume-3", "Test", null,
-                AiTypeEnum.OPENCODE, null, settings, Instant.now(), Instant.now());
+                                          AiTypeEnum.OPENCODE, null, settings, Instant.now(), Instant.now());
 
         var impl = new OpenCodeAiImplementation(e -> {
         }, null) {
@@ -370,13 +370,13 @@ class OpenCodeAiImplementationTest {
         // Simulate startAiProcess() -> afterStart() setting the ACP id
         impl.start("non-existent-opencode-executable", "model");
         assertEquals(acpId, impl.exposedDelegate().pendingAcpResumeId,
-                "after afterStart(), pendingAcpResumeId must be the stored ACP id");
+                     "after afterStart(), pendingAcpResumeId must be the stored ACP id");
 
         // Simulate AiTopComponent.loadHistory() calling resumeSession with the plugin UUID —
         // this is the bug path. Before the fix, this line overwrites pendingAcpResumeId.
         impl.resumeSession(pluginUuid);
 
         assertEquals(acpId, impl.exposedDelegate().pendingAcpResumeId,
-                "resumeSession(pluginUUID) must NOT overwrite the ACP id set by afterStart()");
+                     "resumeSession(pluginUUID) must NOT overwrite the ACP id set by afterStart()");
     }
 }

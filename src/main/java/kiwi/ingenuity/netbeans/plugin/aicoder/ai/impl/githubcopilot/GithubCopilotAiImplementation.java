@@ -150,9 +150,9 @@ public class GithubCopilotAiImplementation extends AiImplementation {
 
     /**
      * Resolves the reasoning effort to apply at session construction: the session's own stored value wins over the
-     * global default, per the design spec's three-scope rule. {@code null} means "omit the setting entirely" at every
-     * stage — mirrors {@link #resolveStartupModel} and {@code PiAiImplementation.effectiveThinkingLevel()}.
-     * Package-private for direct unit testing.
+     * global default. {@code null} means "omit the setting entirely" at every stage — mirrors
+     * {@link #resolveStartupModel} and {@code PiAiImplementation.effectiveThinkingLevel()}. Package-private for direct
+     * unit testing.
      */
     String resolveEffectiveReasoningEffort() {
         String sessionEffort = resolveEffectiveReasoningEffortFromSession();

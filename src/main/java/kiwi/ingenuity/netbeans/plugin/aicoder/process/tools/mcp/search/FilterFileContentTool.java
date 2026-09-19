@@ -18,8 +18,8 @@ import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.providers.netbeans.E
 /**
  * Pattern-matches lines within a single named file. Fills a gap {@link SearchInFilesTool} cannot: that tool searches a
  * project's source classpath roots and cannot target one specific file, and it never sees anything outside those roots
- * at all — a README, a build script, or (the motivating case) this session's own {@code tool_results} logs under its
- * config directory, none of which sit on a source classpath.
+ * at all — a README, a build script, or this session's own {@code tool_results} logs under its config directory, none
+ * of which sit on a source classpath.
  */
 public class FilterFileContentTool implements McpToolInterface {
 
@@ -75,12 +75,12 @@ public class FilterFileContentTool implements McpToolInterface {
         JsonObject cl = new JsonObject();
         cl.addProperty(ToolSchemaKeyEnum.TYPE.key(), "integer");
         cl.addProperty(ToolSchemaKeyEnum.DESCRIPTION.key(),
-                "Lines of surrounding context per match (like grep -C). Default: 0.");
+                       "Lines of surrounding context per match (like grep -C). Default: 0.");
         props.add(FilterFileContentParamEnum.CONTEXT_LINES.key(), cl);
         JsonObject mm = new JsonObject();
         mm.addProperty(ToolSchemaKeyEnum.TYPE.key(), "integer");
         mm.addProperty(ToolSchemaKeyEnum.DESCRIPTION.key(), "Maximum matches to show. Default: 200. The header "
-                + "reports the true total even when the result is capped.");
+                       + "reports the true total even when the result is capped.");
         props.add(FilterFileContentParamEnum.MAX_MATCHES.key(), mm);
         schema.add(ToolSchemaKeyEnum.PROPERTIES.key(), props);
         JsonArray required = new JsonArray();

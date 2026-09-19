@@ -19,9 +19,9 @@ import kiwi.ingenuity.netbeans.plugin.aicoder.ai.ui.BlankSafeComboRenderer;
 import static org.junit.jupiter.api.Assertions.*;
 import org.junit.jupiter.api.Test;
 
-// Mirrors OpenCodeAiImplementationTest — same bug class the design doc explicitly
-// warns Slice 4 to avoid: a session's chosen model must reach settings.model()
-// and be used at startup, not silently fall back to the global default.
+// Mirrors OpenCodeAiImplementationTest — same bug class: a session's chosen model
+// must reach settings.model() and be used at startup, not silently fall back to
+// the global default.
 class CodexAiImplementationTest {
 
     private static AiSession newSession(String id, CodexSessionSettings settings) {
@@ -96,7 +96,7 @@ class CodexAiImplementationTest {
         assertDoesNotThrow(() -> impl.setModel("gpt-5.6-terra"));
     }
 
-    // ---- resolveStartupModel: the exact bug design doc §9 warns against repeating ----
+    // ---- resolveStartupModel: must use the session's own model, not silently fall back to the global default ----
     // (Tests the extracted helper directly rather than startWithDiscovery() itself, since
     // that method's other branch depends on CodexExecutableLocator.locate() finding a real
     // executable on disk — environment-dependent and not something a unit test should assume.)
@@ -315,7 +315,7 @@ class CodexAiImplementationTest {
     }
 
     // ---- createInfoBarExtension: effort combo driven by CodexReasoningEffortEvent
-    // (spec §4 model/list probe, only "(model default)" when no capability info) ----
+    // (populated from the model/list probe; only "(model default)" when no capability info) ----
     @Test
     void createInfoBarExtension_effortComboPopulatedFromReasoningEffortEvent() throws Exception {
         CodexSessionSettings settings = new CodexSessionSettings();

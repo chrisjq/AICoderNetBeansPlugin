@@ -26,7 +26,8 @@ import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.providers.netbeans.R
 
 /**
  * Replaces an exact string in a file, routed through the NetBeans Accept/Reject diff panel (PermissionEvent) before
- * applying. Used so GitHub Copilot edits go through the same review UX.
+ * applying. Used so GitHub Copilot edits go through the same review UX — Copilot's native {@code edit} tool is excluded
+ * via {@code GithubCopilotProcessManager.EXCLUDED_NATIVE_TOOLS}, so this is the only route its edits can take.
  *
  * <p>
  * Locks the target file (not a global lock — see usesOwnFileLocking()) from before the diff is shown through the user's

@@ -1294,7 +1294,7 @@ public class GitProvider {
                     client.getBranches(true, NULL_PM).forEach((branchName, b) -> remoteFlagByBranch.put(branchName, b.isRemote()));
                     client.removeRemote(name, NULL_PM);
                     // Like `git remote remove`, drop the remote's tracking branches too; they otherwise linger as stale
-                    // refs (live v1.4.15: origin/sweep-rb stayed until deleted by hand).
+                    // refs until deleted by hand.
                     List<String> trackingBranches = trackingBranchesOf(name, remoteFlagByBranch);
                     for (String trackingBranch : trackingBranches) {
                         client.deleteBranch(trackingBranch, true, NULL_PM);

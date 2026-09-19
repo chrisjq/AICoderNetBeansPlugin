@@ -143,8 +143,8 @@ class IdleWatcherToolsTest {
     }
 
     /**
-     * BigP_2 is adding explicit JSON-type validation for timeoutMinutes (a non-integer number, a string, a boolean, and
-     * overflow must all be refused cleanly rather than silently coerced or thrown as an uncaught exception).
+     * Explicit JSON-type validation for timeoutMinutes: a non-integer number, a string, a boolean, and overflow must
+     * all be refused cleanly rather than silently coerced or thrown as an uncaught exception.
      */
     @Test
     void timeoutMinutesWithTheWrongJsonShapeIsRefused() {
@@ -207,8 +207,8 @@ class IdleWatcherToolsTest {
     }
 
     /**
-     * BigP_2 is changing the not-found reply from an "Error:"-prefixed message to a non-error one, matching
-     * StopAsyncBuild's "No queued or running async build ... belongs to you" pattern.
+     * The not-found reply is a non-error message (not an "Error:"-prefixed one), matching StopAsyncBuild's "No queued
+     * or running async build ... belongs to you" pattern.
      */
     @Test
     void cancellingTwiceTheSecondTimeIsTheNonErrorNotFoundReply() {

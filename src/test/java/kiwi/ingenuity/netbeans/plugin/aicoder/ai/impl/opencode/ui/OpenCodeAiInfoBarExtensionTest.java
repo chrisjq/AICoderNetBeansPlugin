@@ -35,7 +35,7 @@ import org.junit.jupiter.api.Test;
 
 class OpenCodeAiInfoBarExtensionTest {
 
-    // The §13 verbatim shape: model + mode + effort, each type=select, each
+    // The verbatim shape: model + mode + effort, each type=select, each
     // option carrying a distinct value and a friendly display name.
     private static final String THREE_OPTIONS
             = "["
@@ -452,7 +452,7 @@ class OpenCodeAiInfoBarExtensionTest {
                      "must send the underlying value, not the display name");
     }
 
-    // ---- Addendum 1: model catalog + property bus + NbPreferences persistence ----
+    // ---- model catalog + property bus + NbPreferences persistence ----
     @Test
     void catalogIsPopulatedFromConfigOptionsEvent() {
         OpenCodeAiProcessManager manager = new OpenCodeAiProcessManager(e -> {
@@ -899,7 +899,7 @@ class OpenCodeAiInfoBarExtensionTest {
                    "null refreshed must fall back to whatever was displayed");
     }
 
-    // ---- Addendum 3: mode persistence from live-session combo changes ----
+    // ---- mode persistence from live-session combo changes ----
     @Test
     void handleConfigChangeLivePath_writesAppliedModeToSettings() throws Exception {
         OpenCodeSessionSettings settings = new OpenCodeSessionSettings();
@@ -1053,7 +1053,7 @@ class OpenCodeAiInfoBarExtensionTest {
                      "settings must record the agent-applied value from the snapshot, not the requested value");
     }
 
-    // ---- Addendum 4: effort in info bar ----
+    // ---- effort in info bar ----
     @Test
     void applyToSettings_effortCase_writesToSessionSettings() {
         OpenCodeSessionSettings settings = new OpenCodeSessionSettings();

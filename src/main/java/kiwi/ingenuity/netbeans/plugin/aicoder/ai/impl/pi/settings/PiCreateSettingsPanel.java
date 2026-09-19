@@ -20,7 +20,7 @@ import kiwi.ingenuity.netbeans.plugin.aicoder.ai.ui.BlankSafeComboRenderer;
 public final class PiCreateSettingsPanel extends ModelCreateSettingsPanel<PiSessionSettings> {
 
     /**
-     * Maps to a {@code null} stored thinking level, meaning "use pi's own default", per the spec.
+     * Maps to a {@code null} stored thinking level, meaning "use pi's own default".
      */
     private static final String[] THINKING_LEVEL_OPTIONS = {
         BlankSafeComboRenderer.DEFAULT_OPTION, "off", "minimal", "low", "medium", "high", "xhigh", "max"

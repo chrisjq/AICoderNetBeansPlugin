@@ -88,8 +88,8 @@ class OllamaAiInfoBarExtensionTest {
     }
 
     /**
-     * Spec §1 rule 3/§7: once live discovery has POSITIVELY confirmed a model cannot think, the combo must collapse to
-     * only the "not set" entry — even if a level was previously requested/pinned for it.
+     * Once live discovery has POSITIVELY confirmed a model cannot think, the combo must collapse to only the "not set"
+     * entry — even if a level was previously requested/pinned for it.
      */
     @Test
     void comboCollapsesToNotSetForAModelDiscoveryConfirmsCannotThink() throws Exception {

@@ -1,9 +1,9 @@
 package kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.opencode.acp;
 
 /**
- * Lifecycle status of a tool call announced by a {@code tool_call} or {@code tool_call_update} session/update (design
- * doc §12). Only these four values appear in the wire vocabulary: {@code pending}/{@code in_progress} mean the call is
- * still running, {@code completed}/{@code failed} mean it has finished.
+ * Lifecycle status of a tool call announced by a {@code tool_call} or {@code tool_call_update} session/update. Only
+ * these four values appear in the wire vocabulary: {@code pending}/{@code in_progress} mean the call is still running,
+ * {@code completed}/{@code failed} mean it has finished.
  *
  * <p>
  * Any other wire string (including statuses this plugin has never seen, such as {@code cancelled}) resolves to null via

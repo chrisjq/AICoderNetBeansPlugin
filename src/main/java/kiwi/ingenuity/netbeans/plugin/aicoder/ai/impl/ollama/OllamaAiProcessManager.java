@@ -177,8 +177,8 @@ public class OllamaAiProcessManager extends AiProcessManager {
      */
     private volatile boolean reasoningEffortDisabledForSession;
     /**
-     * Notified (no argument — the caller already knows it only fires for the session-sourced case, per spec §1 rule 3a)
-     * when {@link #applyThinkingCapabilityValidation} clears an unsupported SESSION-sourced value, so the owning
+     * Notified (no argument — the caller already knows it only fires for the session-sourced case) when
+     * {@link #applyThinkingCapabilityValidation} clears an unsupported SESSION-sourced value, so the owning
      * {@code OllamaAiImplementation} can also clear the PERSISTED session setting — otherwise only the live settings
      * read is affected for this turn, and the next turn (or session restart) re-reads the same stale value and fires
      * the INFO again. Never invoked for a global-sourced value — rule 3a leaves that alone entirely. Deliberately a
@@ -303,9 +303,9 @@ public class OllamaAiProcessManager extends AiProcessManager {
 
     /**
      * The resolved reasoning-effort value together with whether it came from the session's own setting (true) or was
-     * inherited from the global default (false) — spec §1 rule 3a is built on this distinction: only a session-pinned
-     * value may ever be cleared, persisted-cleared and reported with an INFO event; a global-sourced value is only ever
-     * silently omitted, never cleared, never reported.
+     * inherited from the global default (false) — the distinction matters: only a session-pinned value may ever be
+     * cleared, persisted-cleared and reported with an INFO event; a global-sourced value is only ever silently omitted,
+     * never cleared, never reported.
      */
     record EffectiveReasoningEffort(String value, boolean fromSession) {
 
@@ -329,8 +329,9 @@ public class OllamaAiProcessManager extends AiProcessManager {
     }
 
     /**
-     * Applies spec §1 rule 3a using live capability discovery ({@link OllamaModelDiscovery#modelSupportsThinking},
-     * populated from {@code GET /api/tags}). Returns the value to actually send for this request (may be null).
+     * Applies the session-vs-global rule using live capability discovery
+     * ({@link OllamaModelDiscovery#modelSupportsThinking}, populated from {@code GET /api/tags}). Returns the value to
+     * actually send for this request (may be null).
      * <p>
      * Three cases:
      * <ul>
@@ -363,7 +364,7 @@ public class OllamaAiProcessManager extends AiProcessManager {
             }
         }
         else {
-            // spec §1 rule 3a: the global default belongs to the user and to every other session/backend — one
+            // the global default belongs to the user and to every other session/backend — one
             // session's model not supporting it says nothing about the rest, so it is never cleared or written
             // anywhere. The combo already shows the "not set" entry for a model that can't take it, so the UI
             // communicates this without a warning the user can't dismiss.
@@ -374,10 +375,10 @@ public class OllamaAiProcessManager extends AiProcessManager {
     }
 
     /**
-     * Wraps a chat call with the defensive retry from the reasoning-effort design spec: if the request carried
-     * {@code reasoning_effort} and the server answered with a 4xx, retry once without the field, tell the user once,
-     * and remember not to send it again for the rest of this session. Any other failure (non-4xx status, no
-     * reasoning_effort in the request, network/stream error) propagates unchanged.
+     * Wraps a chat call with defensive retry logic: if the request carried {@code reasoning_effort} and the server
+     * answered with a 4xx, retry once without the field, tell the user once, and remember not to send it again for the
+     * rest of this session. Any other failure (non-4xx status, no reasoning_effort in the request, network/stream
+     * error) propagates unchanged.
      */
     private ChatResult chatWithReasoningEffortRetry(HttpAiClient client, ChatRequest request,
                                                     java.util.function.Consumer<String> onTextDelta) throws IOException {

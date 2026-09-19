@@ -94,9 +94,8 @@ class PiAiProcessManagerTest {
         assertEquals("some-pi-session-uuid", cmd.get(idx + 1));
     }
 
-    // ---- resolvePiSessionId (Review round 2, BigP_2: pins start()'s id-selection so a regression to
-    // "always mint" — the exact bug Review A's fix corrected — cannot slip back in silently through
-    // PiAiImplementation.afterStart()'s later resumeSession() call quietly papering over it). ----
+    // ---- resolvePiSessionId: pins start()'s id-selection so a regression to "always mint" cannot slip back in
+    // silently through PiAiImplementation.afterStart()'s later resumeSession() call quietly papering over it. ----
     @Test
     void resolvePiSessionId_prefersStoredOverCurrentAndMinted() {
         assertEquals("stored-id", PiAiProcessManager.resolvePiSessionId("stored-id", "current-id"));

@@ -10,11 +10,11 @@ import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.providers.netbeans.B
 
 /**
  * Shared schema-building and argument-extraction for the three Maven devops tools (BuildMavenProjectTool,
- * CleanAndBuildMavenProjectTool, RunMavenTestsTool — #5 / F2). All three expose the identical option set under the
- * identical {@link McpToolPropertyEnum} wire keys (each tool's own {@code *ParamEnum} just curates that same set for
- * its schema), so the property-building and arg-extraction logic is genuinely shared rather than duplicated three times
- * with drift risk. Only each tool's OWN default for {@code goals}/{@code skipTests} differs, which is why those two are
- * still parameters here rather than baked in.
+ * CleanAndBuildMavenProjectTool, RunMavenTestsTool). All three expose the identical option set under the identical
+ * {@link McpToolPropertyEnum} wire keys (each tool's own {@code *ParamEnum} just curates that same set for its schema),
+ * so the property-building and arg-extraction logic is genuinely shared rather than duplicated three times with drift
+ * risk. Only each tool's OWN default for {@code goals}/{@code skipTests} differs, which is why those two are still
+ * parameters here rather than baked in.
  */
 public final class MavenToolSchema {
 

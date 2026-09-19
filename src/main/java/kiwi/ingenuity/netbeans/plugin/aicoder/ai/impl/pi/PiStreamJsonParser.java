@@ -42,10 +42,10 @@ import kiwi.ingenuity.netbeans.plugin.aicoder.utils.StatusMessageUtil;
  * are not supported yet and are answered {@code cancelled:true} immediately. {@code notify} requests surface as INFO.
  *
  * <p>
- * Any field path not pinned by the design spec's live verification is read best-effort with the camelCase spelling from
- * pi's TypeScript types. Successful command responses ({@code get_state}, {@code get_available_models},
- * {@code get_session_stats}, ...) are read directly by {@code PiAiProcessManager} via the id-correlated future in
- * {@code PiPersistentSession} — this class does not act on them itself.
+ * Any field path not pinned by live verification is read best-effort with the camelCase spelling from pi's TypeScript
+ * types. Successful command responses ({@code get_state}, {@code get_available_models}, {@code get_session_stats}, ...)
+ * are read directly by {@code PiAiProcessManager} via the id-correlated future in {@code PiPersistentSession} — this
+ * class does not act on them itself.
  */
 public final class PiStreamJsonParser {
 
@@ -88,7 +88,7 @@ public final class PiStreamJsonParser {
             LOG.log(Level.WARNING, "Skipping unparseable pi line: {0}", line);
             // Textual fallback ONLY for message_end, not agent_settled or any other frame — a corrupted
             // agent_settled line has no recovery here and THINKING would stay up with no FAILED backstop.
-            // Accepted as a documented residual gap (Review round 3): pipes do not tear lines apart in normal
+            // Accepted as a documented residual gap: pipes do not tear lines apart in normal
             // operation (each pi stdout write is one complete JSONL line), so byte-level corruption of a
             // WELL-FORMED frame is not a realistic failure mode to design around; the case this really guards is
             // pi dying mid-write and leaving a truncated final line, and message_end is specifically where that
@@ -243,7 +243,7 @@ public final class PiStreamJsonParser {
 
     /**
      * {@code stopReason}/{@code errorMessage} live on {@code message_end.message} (pi's {@code AssistantMessage}), NOT
-     * top-level on the event itself — confirmed live against a real pi 0.85.1 process (Round-5 wire-shape scan):
+     * top-level on the event itself — confirmed live against a real pi 0.85.1 process:
      * {@code {"type":"message_end","message":{"role":"assistant",...,"stopReason":"stop",...}}}. A {@code message_end}
      * fires for BOTH the user's own echoed message and the assistant's — the user one has no {@code stopReason} field
      * at all (not an {@code AssistantMessage}), so this is naturally a no-op for it.
@@ -266,8 +266,8 @@ public final class PiStreamJsonParser {
     /**
      * {@code compaction_start} — fires for BOTH the plugin's own explicit {@code compact} command
      * ({@code reason:"manual"}) and pi's own automatic compaction ({@code reason:"threshold"|"overflow"}, never
-     * requested by the plugin) — verified against the shipped {@code agent-session.d.ts} (Round-5 wire-shape scan).
-     * Surfaced as INFO regardless of reason so an automatic compaction is never a silent context-gauge jump.
+     * requested by the plugin) — verified against the shipped {@code agent-session.d.ts}. Surfaced as INFO regardless
+     * of reason so an automatic compaction is never a silent context-gauge jump.
      */
     private void parseCompactionStart(JsonObject obj) {
         emit(new StatusEvent(StatusEventTypeEnum.INFO, "Compacting conversation…"));
@@ -293,8 +293,8 @@ public final class PiStreamJsonParser {
     }
 
     /**
-     * {@code thinking_level_changed} — {@code {type, level}} per {@code agent-session.d.ts} (Round-5 wire-shape scan).
-     * Fires when the level changes by any means OTHER than the plugin's own {@code set_thinking_level} RPC. Produces
+     * {@code thinking_level_changed} — {@code {type, level}} per {@code agent-session.d.ts}. Fires when the level
+     * changes by any means OTHER than the plugin's own {@code set_thinking_level} RPC. Produces
      * {@link PiThinkingLevelChangedEvent} rather than acting on it directly — see that class's own doc comment for why
      * (the info-bar-facing {@code PiSessionControl.Listener} hop lives in {@code
      * PiAiProcessManager}, a different class than this parser).
@@ -310,9 +310,9 @@ public final class PiStreamJsonParser {
      * user-facing: {@code PiAiImplementation.compact()}'s own {@code whenComplete} already emits "Compact failed: …"
      * for a rejected response, and it must stay the single owner of that error surface because it also has to report
      * the no-session and failed-send cases this parser never sees at all — including COMPACT here too double-reported a
-     * rejected compact (Review round 4, BigP_2). Every other command (get_state, get_available_models,
-     * get_session_stats, set_model, get_available_thinking_levels, set_thinking_level) is background/housekeeping that
-     * {@code PiAiProcessManager} already treats as best-effort and silently swallows on failure (see e.g. its
+     * rejected compact. Every other command (get_state, get_available_models, get_session_stats, set_model,
+     * get_available_thinking_levels, set_thinking_level) is background/housekeeping that {@code PiAiProcessManager}
+     * already treats as best-effort and silently swallows on failure (see e.g. its
      * refreshThinkingLevels/refreshContextUsage, which just return on a failed response) — showing the user a FAILED
      * banner for one of THOSE, e.g. a transient get_session_stats hiccup right after a perfectly good turn, would
      * report an error that has nothing to do with anything the user did. Log-only for every command in this second

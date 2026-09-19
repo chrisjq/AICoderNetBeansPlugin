@@ -14,11 +14,11 @@ public enum ClaudeTimeoutEnum {
      */
     MCP_TOOL_TIMEOUT_MILLIS(TimeoutEnum.MUTATION_LOCK_WAIT_MILLIS, Kind.OPERATION),
     /**
-     * Safety valve for a Mail interrupt HELD because a tool call was in flight when it arrived (#9 / F5): if the
-     * in-flight count never returns to zero — a lost/malformed tool_result line, or the CLI itself hanging — the
-     * interrupt would otherwise wait forever. After this many milliseconds it is delivered anyway, on the reasoning
-     * that a stuck session the user cannot even interrupt is worse than the rare case where this fires against a call
-     * that was always going to finish a moment later.
+     * Safety valve for a Mail interrupt HELD because a tool call was in flight when it arrived: if the in-flight count
+     * never returns to zero — a lost/malformed tool_result line, or the CLI itself hanging — the interrupt would
+     * otherwise wait forever. After this many milliseconds it is delivered anyway, on the reasoning that a stuck
+     * session the user cannot even interrupt is worse than the rare case where this fires against a call that was
+     * always going to finish a moment later.
      */
     MAIL_INTERRUPT_HOLD_MILLIS(180_000L, Kind.OPERATION);
 

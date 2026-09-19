@@ -3,15 +3,15 @@ package kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.userinput;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.McpToolPropertyEnum;
 
 /**
- * Parameter-name keys for the AskUserQuestionTool MCP tool, shared between its
- * schema() definition and handle() argument extraction so the two cannot drift.
+ * Parameter-name keys for the AskUserQuestionTool MCP tool, shared between its schema() definition and handle()
+ * argument extraction so the two cannot drift.
  */
 public enum AskUserQuestionParamEnum {
     QUESTIONS(McpToolPropertyEnum.QUESTIONS),
     // Fields of the nested question / option objects. AskUserQuestionTool
     // declares them and QuestionPanel and NotificationUtil read them straight
-    // back out, so they were three separate copies of the same spelling with
-    // nothing tying them together.
+    // back out, so keeping the spellings in this one enum stops the three
+    // copies from drifting apart.
     QUESTION(McpToolPropertyEnum.QUESTION),
     HEADER(McpToolPropertyEnum.HEADER),
     OPTIONS(McpToolPropertyEnum.OPTIONS),

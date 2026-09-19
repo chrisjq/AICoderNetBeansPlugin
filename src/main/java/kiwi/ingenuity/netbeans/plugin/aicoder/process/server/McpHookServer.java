@@ -171,7 +171,7 @@ public class McpHookServer {
      * Standalone constructor: this instance owns a fresh, private {@link SessionFileScopeRegistry}. Used only by tests
      * that construct a server directly and don't need to share scope with anything else — production always goes
      * through {@link #McpHookServer(int, SessionFileScopeRegistry)} via {@link McpServerRegistry}, so a health-tick
-     * replacement never starts a session's scope from empty (#15/#21).
+     * replacement never starts a session's scope from empty.
      */
     public McpHookServer(int port) {
         this(port, new SessionFileScopeRegistry());
@@ -294,9 +294,8 @@ public class McpHookServer {
      * shared {@link SessionFileScopeRegistry} instance, see the {@link #McpHookServer(int,
      * SessionFileScopeRegistry)} javadoc — but {@code hookLocks}/{@code activeSessions} are per-instance fields that
      * start empty on the fresh server. Without this, the next gated Edit/Write for a session that survived the swap
-     * finds no hook lock and is answered "defer" forever (round-3 review, BigP_2): the session becomes permanently
-     * edit-incapable until it is reopened or an unrelated open-projects change happens to re-drive
-     * {@link #updateSessionScope}.
+     * finds no hook lock and is answered "defer" forever: the session becomes permanently edit-incapable until it is
+     * reopened or an unrelated open-projects change happens to re-drive {@link #updateSessionScope}.
      * <p>
      * Deliberately does NOT call {@link #registerSession}/{@link #updateSessionScope}: those also write to
      * {@code fileScope}, which is already correct here and must not be touched — {@link McpServerRegistry}'s
@@ -420,7 +419,7 @@ public class McpHookServer {
 
     /**
      * The server's base URL (e.g. {@code http://127.0.0.1:PORT}). Captured at {@link #init()} so it remains valid after
-     * {@link #stop()} nulls the underlying httpServer (finding 5). Null only if init() never ran.
+     * {@link #stop()} nulls the underlying httpServer. Null only if init() never ran.
      */
     public String getBaseUrl() {
         return baseUrl;

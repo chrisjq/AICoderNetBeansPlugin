@@ -125,9 +125,9 @@ public class GrokAiImplementation extends AiImplementation {
     }
 
     /**
-     * The effective reasoning effort (session wins over global default) plus which scope it came from — spec §1 rule 3a
-     * treats the two differently when the value turns out to be unsupported by the model: only a session-sourced value
-     * is ever cleared, never the global default. {@code value()} is {@code null} when neither scope has one set.
+     * The effective reasoning effort (session wins over global default) plus which scope it came from — the two are
+     * treated differently when the value turns out to be unsupported by the model: only a session-sourced value is ever
+     * cleared, never the global default. {@code value()} is {@code null} when neither scope has one set.
      */
     private record EffectiveReasoningEffort(String value, boolean fromSession) {
 
@@ -144,10 +144,10 @@ public class GrokAiImplementation extends AiImplementation {
 
     /**
      * Called back by {@link GrokAiProcessManager#buildReasoningEffortArgs} only when it clears an unsupported
-     * SESSION-sourced value from its own in-memory field (never for a global-sourced one — spec §1 rule 3a: the global
-     * default is never modified automatically), so the PERSISTED session setting is also cleared — otherwise the next
-     * session start re-reads the same stale value from disk and re-triggers the same INFO event forever (review
-     * finding). Package-private for direct unit testing.
+     * SESSION-sourced value from its own in-memory field (never for a global-sourced one — the global default is never
+     * modified automatically), so the PERSISTED session setting is also cleared — otherwise the next session start
+     * re-reads the same stale value from disk and re-triggers the same INFO event forever. Package-private for direct
+     * unit testing.
      */
     void clearInvalidPersistedReasoningEffort() {
         if (currentSession != null && currentSession.settings() instanceof GrokSessionSettings gs) {

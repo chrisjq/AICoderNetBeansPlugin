@@ -80,8 +80,8 @@ class ClaudeAiProcessManagerEffortTest {
     }
 
     /**
-     * Spec §8 test 4: a mid-turn effort change must take the model-change recycle path. The relaunch itself must be
-     * deferred (recycle refuses while a turn is in flight) but picked up by {@code ensureSession}'s
+     * A mid-turn effort change must take the model-change recycle path. The relaunch itself must be deferred (recycle
+     * refuses while a turn is in flight) but picked up by {@code ensureSession}'s
      * {@code launchedEffort}/{@code configuredEffort} comparison at the start of the next turn.
      */
     @Test

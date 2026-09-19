@@ -17,7 +17,7 @@ import kiwi.ingenuity.netbeans.plugin.aicoder.ai.ui.BlankSafeComboRenderer;
  * Session-create panel for GitHub Copilot: model, plus reasoning effort. Unlike Claude/pi's static effort lists,
  * Copilot's supported efforts are live per-model data discovered by {@code GithubCopilotModelDiscovery} and cached in
  * {@link GithubCopilotPluginSettings} — this panel drives its combo from that cache for whichever model is currently
- * selected, never a hardcoded list, per the design spec.
+ * selected, never a hardcoded list.
  *
  * <p>
  * {@link ModelCreateSettingsPanel} keeps its own model combo private with no change hook, so the model combo is located

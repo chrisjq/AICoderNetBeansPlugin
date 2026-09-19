@@ -13,8 +13,8 @@ import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.userinput.AskUse
 
 /**
  * Mirrors {@code ClaudeToolHandlerFactory} exactly. pi reaches these handlers indirectly, through the generated
- * extension's MCP bridge (see the spec's *MCP bridge* section) rather than a native MCP client, but the plugin-side
- * handler map is identical for every backend.
+ * extension's MCP bridge rather than a native MCP client, but the plugin-side handler map is identical for every
+ * backend.
  */
 public final class PiToolHandlerFactory {
 

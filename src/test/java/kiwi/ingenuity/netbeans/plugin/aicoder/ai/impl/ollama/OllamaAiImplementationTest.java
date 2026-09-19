@@ -133,9 +133,9 @@ class OllamaAiImplementationTest {
     }
 
     /**
-     * Wired to {@code OllamaAiProcessManager.setOnReasoningEffortCleared}: fires only for a SESSION-sourced value (spec
-     * §1 rule 3a), so this method itself needs no scope resolution — it must simply clear whatever the session
-     * currently has pinned and persist that through the host.
+     * Wired to {@code OllamaAiProcessManager.setOnReasoningEffortCleared}: fires only for a SESSION-sourced value, so
+     * this method itself needs no scope resolution — it must simply clear whatever the session currently has pinned and
+     * persist that through the host.
      */
     @Test
     void clearInvalidPersistedReasoningEffort_clearsSessionScopedValueAndPersistsThroughTheHost() {

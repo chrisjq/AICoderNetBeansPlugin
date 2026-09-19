@@ -116,9 +116,9 @@ public class ClaudeAiProcessManager extends AiProcessManager {
     /**
      * Number of {@code tool_use} content blocks in an {@code assistant} stream-json line — usually 0 or 1, but Claude
      * can request more than one tool in the same turn (parallel tool calls), so this counts rather than flags. Used by
-     * {@link #trackToolCallLifecycle} to hold a Mail interrupt while a call is in flight (#9 / F5). Parses defensively:
-     * 0 for anything unparseable, the wrong event type, or with no content array — the failure mode is "an interrupt is
-     * held a little longer than strictly necessary", never a crash on a malformed line.
+     * {@link #trackToolCallLifecycle} to hold a Mail interrupt while a call is in flight. Parses defensively: 0 for
+     * anything unparseable, the wrong event type, or with no content array — the failure mode is "an interrupt is held
+     * a little longer than strictly necessary", never a crash on a malformed line.
      */
     static int countToolUseStarts(String line) {
         return countContentBlocksOfType(line, "assistant", "tool_use");
@@ -204,9 +204,9 @@ public class ClaudeAiProcessManager extends AiProcessManager {
      */
     private volatile String configuredEffort;
     /**
-     * The only effort levels the Claude CLI accepts (design spec §3; also the info bar's {@code EFFORT_OPTIONS}). No
-     * live discovery exists for these — unlike Copilot, which validates against the model's supported list, Claude has
-     * a fixed five-level set. Anything outside this set is treated as a corrupted or hand-edited value and dropped by
+     * The only effort levels the Claude CLI accepts (also the info bar's {@code EFFORT_OPTIONS}). No live discovery
+     * exists for these — unlike Copilot, which validates against the model's supported list, Claude has a fixed
+     * five-level set. Anything outside this set is treated as a corrupted or hand-edited value and dropped by
      * {@link #configureEffort} rather than passed to {@code --effort}, which would hard-fail the CLI at spawn.
      */
     private static final Set<String> KNOWN_EFFORT_LEVELS = Set.of("low", "medium", "high", "xhigh", "max");
@@ -219,8 +219,8 @@ public class ClaudeAiProcessManager extends AiProcessManager {
      * Count of tool_use blocks seen (stream-json {@code assistant} events) not yet matched by a tool_result
      * ({@code user} event) or turn end ({@code result} event) — see {@link #trackToolCallLifecycle}. Tracked so a Mail
      * interrupt can be HELD while a tool call this plugin is itself servicing over the MCP HTTP endpoint is still in
-     * flight, rather than the CLI's {@code control_request(interrupt)} aborting it mid-flight (#9 / F5). Guarded by
-     * {@code this}, same as {@link #processing}/{@link #turnInterrupted}.
+     * flight, rather than the CLI's {@code control_request(interrupt)} aborting it mid-flight. Guarded by {@code this},
+     * same as {@link #processing}/{@link #turnInterrupted}.
      */
     private int inFlightToolCalls = 0;
 
@@ -374,7 +374,7 @@ public class ClaudeAiProcessManager extends AiProcessManager {
             // is taken from the current invocation, not the session (claude-code issue #66005). It also preserves the
             // cached prompt prefix — that issue is about sessions silently LOSING their effort on resume, which
             // invalidates the cache (~29% reuse in the reporter's repro). Omitting the flag on resumes would regress
-            // both; never "optimise" this line away. Full rationale in the design spec §3.
+            // both; never "optimise" this line away.
             args.add("--effort");
             args.add(configuredEffort);
         }
@@ -533,9 +533,8 @@ public class ClaudeAiProcessManager extends AiProcessManager {
     /**
      * Updates {@link #inFlightToolCalls} from one raw stream-json line and flushes a HELD Mail interrupt
      * ({@link #pendingMailInterrupt}) as soon as the count returns to zero — before whatever line comes next, which is
-     * what keeps the interrupt from landing mid-tool-call (#9 / F5). Called for every line, so the common case (none of
-     * the three predicates match) must stay cheap; each predicate parses defensively and returns 0/false rather than
-     * throwing.
+     * what keeps the interrupt from landing mid-tool-call. Called for every line, so the common case (none of the three
+     * predicates match) must stay cheap; each predicate parses defensively and returns 0/false rather than throwing.
      */
     private void trackToolCallLifecycle(String line) {
         int starts = countToolUseStarts(line);
@@ -555,7 +554,7 @@ public class ClaudeAiProcessManager extends AiProcessManager {
                 // only affect the next turn — no different from leaving it in context for that turn to pick up
                 // naturally. Whether the SENDER gets any signal that their message landed mid-turn vs. merely
                 // in-inbox is a real gap, but a pre-existing one shared by every Mail interrupt, not something this
-                // branch creates — that belongs to #6 / F4 (reply/delivery tracking), not here.
+                // branch creates — reply/delivery tracking is a separate concern, not this one.
                 inFlightToolCalls = 0;
                 pendingMailInterrupt = false;
                 return;
@@ -578,12 +577,12 @@ public class ClaudeAiProcessManager extends AiProcessManager {
     }
 
     /**
-     * Backstop for a HELD Mail interrupt (#9 / F5): if {@link #inFlightToolCalls} never returns to zero — a
-     * lost/malformed tool_result line, or the CLI itself hanging — {@link #trackToolCallLifecycle} would otherwise
-     * never flush it, and the interrupt would wait forever. Delivers it anyway after
-     * {@link #mailInterruptSafetyValveMillis}, exactly like {@link #startCancelWatchdog}'s identical pattern for
-     * Cancel. Guards on {@code persistentSession == s} (the session captured when the hold began) so a watchdog from an
-     * earlier, already-resolved hold can never fire against a later, unrelated one.
+     * Backstop for a HELD Mail interrupt: if {@link #inFlightToolCalls} never returns to zero — a lost/malformed
+     * tool_result line, or the CLI itself hanging — {@link #trackToolCallLifecycle} would otherwise never flush it, and
+     * the interrupt would wait forever. Delivers it anyway after {@link #mailInterruptSafetyValveMillis}, exactly like
+     * {@link #startCancelWatchdog}'s identical pattern for Cancel. Guards on {@code persistentSession == s} (the
+     * session captured when the hold began) so a watchdog from an earlier, already-resolved hold can never fire against
+     * a later, unrelated one.
      */
     private void startMailInterruptSafetyValve(ClaudePersistentSession s) {
         Thread watchdog = new Thread(() -> {
@@ -689,7 +688,7 @@ public class ClaudeAiProcessManager extends AiProcessManager {
                         }
                         return;
                     }
-                    // #9 / F5: sending control_request(interrupt) while a tool call is in flight cancels the call
+                    // sending control_request(interrupt) while a tool call is in flight cancels the call
                     // itself — the CLI treats an interrupt as "the user doesn't want to proceed" and aborts
                     // whatever it's waiting on, including a tool call this plugin is servicing over its own MCP
                     // HTTP endpoint. Hold it instead; trackToolCallLifecycle flushes it as soon as the in-flight

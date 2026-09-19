@@ -12,10 +12,6 @@ import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.devops.BuildSubm
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.providers.netbeans.BuildAndTestGradleProvider;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.providers.netbeans.BuildAndTestGradleProvider.GradleBuildOptions;
 
-/**
- * New in #5 / F2: Gradle previously had no clean-then-build tool, unlike Maven (CleanAndBuildMavenProject) and Ant
- * (CleanAndBuildAntProject below).
- */
 public class CleanAndBuildGradleProjectTool extends AbstractBuildTool {
 
     public CleanAndBuildGradleProjectTool() {

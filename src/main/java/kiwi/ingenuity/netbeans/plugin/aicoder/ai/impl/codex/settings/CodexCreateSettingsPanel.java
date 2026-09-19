@@ -13,7 +13,7 @@ import kiwi.ingenuity.netbeans.plugin.aicoder.ai.ui.BlankSafeComboRenderer;
 
 /**
  * Session-create panel for Codex: model, plus the reasoning effort for new sessions (the only other create-time control
- * Codex exposes — there is no build/plan mode). Unlike pi/Claude there is no fixed level list to hardcode (spec §4:
+ * Codex exposes — there is no build/plan mode). Unlike pi/Claude there is no fixed level list to hardcode (
  * ReasoningEffort is a free-form string): the combo offers {@code (model default)} plus any supported efforts past
  * sessions discovered via the {@code model/list} probe ({@link CodexReasoningEffortCatalog}), and is editable so
  * arbitrary effort strings still work. The effort control goes in the base panel's {@link #content()} area, so this

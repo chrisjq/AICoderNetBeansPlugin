@@ -265,16 +265,15 @@ public class GithubCopilotAiInfoBarExtension implements AiInfoBarExtension {
             return;
         }
         // A reasoning-effort change requires rebuilding the CopilotSession (same as a model change) — Copilot cannot
-        // accept it mid-turn, so the picker is disabled while a turn is running, per the design spec.
+        // accept it mid-turn, so the picker is disabled while a turn is running.
         reasoningEffortCombo.setEnabled(!processing);
     }
 
     /**
      * Rebuilds {@link #reasoningEffortCombo}'s options from {@code model}'s live-discovered supported list (empty/
-     * absent means "no support": only the "(model default)" entry is offered, matching the design spec's must-not-
-     * error requirement), selecting {@code preferredEffort} if it is still valid for this model, else the combo's own
-     * current selection if that is still valid, else "(model default)". EDT-safe: self-marshals like
-     * {@link #setAvailableModels}.
+     * absent means "no support": only the "(model default)" entry is offered), selecting {@code preferredEffort} if it
+     * is still valid for this model, else the combo's own current selection if that is still valid, else "(model
+     * default)". EDT-safe: self-marshals like {@link #setAvailableModels}.
      */
     private void refreshReasoningEffortOptions(String model, String preferredEffort) {
         if (!SwingUtilities.isEventDispatchThread()) {

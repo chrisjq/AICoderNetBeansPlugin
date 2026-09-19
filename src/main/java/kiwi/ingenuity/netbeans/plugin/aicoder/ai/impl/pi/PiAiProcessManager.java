@@ -36,12 +36,11 @@ import kiwi.ingenuity.netbeans.plugin.aicoder.utils.StatusMessageUtil;
 
 /*
  * ============================================================================================================
- * CROSS-PACKAGE CONTRACT (Task 7 / WP-5). WP-1's classes (PiPersistentSession, PiStreamJsonParser, PiJsonKeyEnum,
- * PiRpcCommandEnum, PiEventTypeEnum, PiTimeoutEnum, events/*) landed while this file was being written and it was
- * reconciled against their real, delivered shapes below — no more guessing for those. WP-2's PiAiMcpRegistrar
- * (extension/* package) has NOT landed yet; this file still references it as a forward reference (same package, so no
- * import statement is at risk of being stripped by OrganiseImports — see the boss's note that stripping only bites
- * cross-package imports of not-yet-existing classes).
+ * CROSS-PACKAGE CONTRACT — these classes (PiPersistentSession, PiStreamJsonParser, PiJsonKeyEnum, PiRpcCommandEnum,
+ * PiEventTypeEnum, PiTimeoutEnum, events/*) landed while this file was being written and it was reconciled against
+ * their real, delivered shapes below — no more guessing for those. (PiAiMcpRegistrar (extension/* package) has NOT
+ * landed yet; this file still references it as a forward reference (same package, so no import statement is at risk of
+ * being stripped by OrganiseImports — stripping only bites cross-package imports of not-yet-existing classes).
  *
  * PiPersistentSession.send(JsonObject command) — ONE argument: the command object must already carry
  * PiJsonKeyEnum.COMMAND (e.g. PiRpcCommandEnum.PROMPT.command()) plus any parameters as top-level properties; the
@@ -57,25 +56,25 @@ import kiwi.ingenuity.netbeans.plugin.aicoder.utils.StatusMessageUtil;
  * reads every one of those response frames directly off the matching send() future for ITS OWN session instead — see
  * fetchInitialPickers/refreshThinkingLevels/refreshContextUsage/setModel/setThinkingLevel below.
  *
- * Field names confirmed live (Codex_1, relayed by the Boss 2026-09-18): get_state -> data.thinkingLevel (string),
- * data.model {id, provider, ...}; get_session_stats -> data.contextUsage {tokens, contextWindow, percent};
- * get_available_thinking_levels -> data.levels; get_available_models -> data.models[{id, provider, ...}]. All now
- * PiJsonKeyEnum constants (THINKING_LEVEL, ID, TOKENS, CONTEXT_WINDOW) — read via those below, not literals.
+ * Field names confirmed live: get_state -> data.thinkingLevel (string), data.model {id, provider, ...};
+ * get_session_stats -> data.contextUsage {tokens, contextWindow, percent}; get_available_thinking_levels ->
+ * data.levels; get_available_models -> data.models[{id, provider, ...}]. All now PiJsonKeyEnum constants
+ * (THINKING_LEVEL, ID, TOKENS, CONTEXT_WINDOW) — read via those below, not literals.
  * ============================================================================================================
  */
 /**
  * Manages pi via ONE long-lived {@code pi --mode rpc} process per plugin session (see the persistent-session contract
  * above). Mirrors {@code ClaudeAiProcessManager}'s shape and threading, adapted for pi's id-correlated request/response
  * RPC instead of Claude's fire-and-forget stream-json, and implements {@link PiSessionControl} so
- * {@code PiAiInfoBarExtension} (WP-3) can drive the model/thinking-level pickers without knowing pi's wire format.
+ * {@code PiAiInfoBarExtension} can drive the model/thinking-level pickers without knowing pi's wire format.
  *
  * <p>
  * <b>Like Claude, the process is spawned LAZILY</b> — on the first {@link #sendPrompt}, not in {@link #start}. The
- * Boss's decision (2026-09-18): correct cwd matters more than eager READY; {@link AiProcessManager#start} carries no
- * working-directory parameter, and the real project root is only known once {@link #sendPrompt} is called with one
- * (same as Claude — see {@code ClaudeAiProcessManager#ensureSession}, which spawns from {@code sendPrompt}'s
- * {@code workingDir} too). {@link #start} fires READY immediately after MCP registration succeeds, exactly like Claude;
- * until the first prompt actually spawns pi and {@link #fetchInitialPickers} runs, the info bar shows
+ * decision: correct cwd matters more than eager READY; {@link AiProcessManager#start} carries no working-directory
+ * parameter, and the real project root is only known once {@link #sendPrompt} is called with one (same as Claude — see
+ * {@code ClaudeAiProcessManager#ensureSession}, which spawns from {@code sendPrompt}'s {@code workingDir} too).
+ * {@link #start} fires READY immediately after MCP registration succeeds, exactly like Claude; until the first prompt
+ * actually spawns pi and {@link #fetchInitialPickers} runs, the info bar shows
  * {@code PiPluginSettings.getKnownModels()} and the session's stored model/level (already handled by
  * {@code PiAiInfoBarExtension}'s constructor seeding from {@code PiSessionSettings} — no change needed there).
  *
@@ -107,11 +106,11 @@ public class PiAiProcessManager extends AiProcessManager implements PiSessionCon
     /**
      * Set by {@code interrupt(Cancel)} when the user stops a turn; consumed exactly once by the next {@link
      * #sendPrompt} — never anywhere else, so it cannot be lost by a stray sendPrompt() guard failure or burned by a
-     * launch that never actually reaches pi (live finding, Boss 2026-09-19). pi's own {@code abort} produces plain
-     * tool-result text ("Command aborted") with no signal distinguishing "the user cancelled this" from "this tool
-     * genuinely failed" — verified live: a real pi session read that text as an error and said it would have retried
-     * the command without the notice. A boolean, not a counter/queue: two cancels before either is ever consumed
-     * collapse into one notice, matching every other cancel-related flag on this class.
+     * launch that never actually reaches pi (live finding). pi's own {@code abort} produces plain tool-result text
+     * ("Command aborted") with no signal distinguishing "the user cancelled this" from "this tool genuinely failed" —
+     * verified live: a real pi session read that text as an error and said it would have retried the command without
+     * the notice. A boolean, not a counter/queue: two cancels before either is ever consumed collapse into one notice,
+     * matching every other cancel-related flag on this class.
      */
     private volatile boolean pendingCancelNotice = false;
 
@@ -127,18 +126,18 @@ public class PiAiProcessManager extends AiProcessManager implements PiSessionCon
      * Gates the FIRST {@link #sendPrompt} after a spawn until the extension's {@code session_start} tool-registration
      * handler finishes — pi does not await that handler before accepting a prompt, so a prompt arriving during the
      * registration window (a real HTTP handshake: initialize / notifications/initialized / tools/list) sees zero plugin
-     * tools (live finding, Boss 2026-09-19, reproduced deterministically: ~150ms after spawn loses every tool, ~3s
-     * after spawn is clean). Created in {@link #ensureSession} BEFORE the process (and its reader thread) exists, on
-     * every NEW spawn — the extension can notify within microseconds of starting, so creating this any later loses the
-     * signal to that race. {@link #sendPrompt} captures it but leaves the field itself alone until its wait actually
-     * finishes, since {@link #buildParserListener}'s release check reads this same field: nulling it out before the
-     * wait starts would leave a signal arriving mid-wait with nothing to count down. Released early by that notify-text
-     * match — success or failure, either way no MORE tools are coming, so there is nothing left to wait for.
+     * tools (live finding, reproduced deterministically: ~150ms after spawn loses every tool, ~3s after spawn is
+     * clean). Created in {@link #ensureSession} BEFORE the process (and its reader thread) exists, on every NEW spawn —
+     * the extension can notify within microseconds of starting, so creating this any later loses the signal to that
+     * race. {@link #sendPrompt} captures it but leaves the field itself alone until its wait actually finishes, since
+     * {@link #buildParserListener}'s release check reads this same field: nulling it out before the wait starts would
+     * leave a signal arriving mid-wait with nothing to count down. Released early by that notify-text match — success
+     * or failure, either way no MORE tools are coming, so there is nothing left to wait for.
      */
     private volatile CountDownLatch toolsRegisteredLatch;
 
     /**
-     * Whole-attempt bound on {@link #toolsRegisteredLatch}'s wait. Comfortably above the ~3s mark Boss's live repro
+     * Whole-attempt bound on {@link #toolsRegisteredLatch}'s wait. Comfortably above the ~3s of clean registration seen
      * confirmed clean, while still bounded — a hung or never-registering extension must never wedge the session; the
      * prompt is sent regardless once this elapses (logged at FINE). Package-private and mutable, like {@link
      * #cancelWatchdogMillis}, so tests can shrink it instead of waiting out the real bound.
@@ -164,9 +163,9 @@ public class PiAiProcessManager extends AiProcessManager implements PiSessionCon
 
     /**
      * Test seam: every internal {@code reg.deleteExtensionFile()} call (stop, failed start, unexpected process exit,
-     * file-generation failure — see the spec's *Extension file generation and lifetime* and {@code PiAiMcpRegistrar}'s
-     * "Known limitation on deletion" javadoc) routes through this, so tests can assert it ran on every path without a
-     * live {@code McpServerRegistry}/on-disk extension file. Defaults to the real method in production.
+     * file-generation failure — see {@code PiAiMcpRegistrar}'s "Known limitation on deletion" javadoc) routes through
+     * this, so tests can assert it ran on every path without a live {@code McpServerRegistry}/on-disk extension file.
+     * Defaults to the real method in production.
      */
     Consumer<PiAiMcpRegistrar> deleteExtensionFile = PiAiMcpRegistrar::deleteExtensionFile;
 
@@ -331,11 +330,11 @@ public class PiAiProcessManager extends AiProcessManager implements PiSessionCon
     }
 
     /**
-     * Pure selection logic pinned by a dedicated test (Review round 2, BigP_2): prefers a stored pi session id over
-     * minting a fresh one, rather than minting unconditionally in {@link #start} and relying on
-     * {@code PiAiImplementation.afterStart()}'s later {@link #resumeSession} call to silently overwrite it. Falls back
-     * to the given in-memory id (already minted from an earlier {@link #start} on this same instance) before minting a
-     * brand new one, so a restart never mints twice for no reason.
+     * Pure selection logic pinned by a dedicated test: prefers a stored pi session id over minting a fresh one, rather
+     * than minting unconditionally in {@link #start} and relying on {@code PiAiImplementation.afterStart()}'s later
+     * {@link #resumeSession} call to silently overwrite it. Falls back to the given in-memory id (already minted from
+     * an earlier {@link #start} on this same instance) before minting a brand new one, so a restart never mints twice
+     * for no reason.
      */
     static String resolvePiSessionId(String storedPiSessionId, String currentPiSessionId) {
         if (storedPiSessionId != null && !storedPiSessionId.isBlank()) {
@@ -378,11 +377,10 @@ public class PiAiProcessManager extends AiProcessManager implements PiSessionCon
      * {@link PiSessionControl.Listener#onTurnRunningChanged}, mirroring
      * {@code ClaudeAiProcessManager#buildParserListener}. {@code TurnCompleteEvent} and a READY {@code StatusEvent}
      * both arrive on {@code agent_settled} per {@link PiStreamJsonParser}'s own handling (it emits both together),
-     * matching the spec's verified turn order. Also catches {@link PiThinkingLevelChangedEvent} (Sonet's Round-5
-     * wire-shape scan: {@code thinking_level_changed} fires when pi changes the level by any means other than our own
-     * {@code set_thinking_level} RPC, e.g. normalising an unsupported level) and pushes it into the info bar's picker
-     * the same way {@link #fetchInitialPickers} seeds it from {@code get_state} at session start — see that event
-     * class's own javadoc for why the hop lives here rather than in the parser.
+     * matching the verified turn order. Also catches {@link PiThinkingLevelChangedEvent} (fires when pi changes the
+     * level by any means other than our own {@code set_thinking_level} RPC, e.g. normalising an unsupported level) and
+     * pushes it into the info bar's picker the same way {@link #fetchInitialPickers} seeds it from {@code get_state} at
+     * session start — see that event class's own javadoc for why the hop lives here rather than in the parser.
      */
     private AiProcessEventListener buildParserListener() {
         return event -> {
@@ -450,13 +448,13 @@ public class PiAiProcessManager extends AiProcessManager implements PiSessionCon
      * True for a FAILED status or a failed tool result that is really just the tail end of a turn the user aborted via
      * Stop — pi reports an aborted turn as {@code message_end stopReason:"error" errorMessage:"This operation was
      * aborted"} (and the in-flight tool's own {@code tool_execution_end} as {@code isError:true}), NOT
-     * {@code stopReason:"aborted"}, when the abort lands DURING a tool call (live finding, Boss 2026-09-18 — a plain
-     * mid-thinking abort does use {@code "aborted"}, which {@link PiStreamJsonParser#parseMessageEnd} already renders
-     * nothing for). {@link #interrupt(InterruptTypeEnum)}'s {@code Cancel} case already shows the STOPPED status
-     * synchronously; without this, the aborted turn's own tail repaints that clean stop as a red failure a moment
-     * later. Keyed on {@link #cancelledByUser}, not the error text — text-matching would also swallow a genuine failure
-     * that happens to mention "aborted". A non-error tool result in this same window is left alone: only the
-     * FAILED/error shapes that are artifacts of the abort itself are suppressed.
+     * {@code stopReason:"aborted"}, when the abort lands DURING a tool call (live finding — a plain mid-thinking abort
+     * does use {@code "aborted"}, which {@link PiStreamJsonParser#parseMessageEnd} already renders nothing for).
+     * {@link #interrupt(InterruptTypeEnum)}'s {@code Cancel} case already shows the STOPPED status synchronously;
+     * without this, the aborted turn's own tail repaints that clean stop as a red failure a moment later. Keyed on
+     * {@link #cancelledByUser}, not the error text — text-matching would also swallow a genuine failure that happens to
+     * mention "aborted". A non-error tool result in this same window is left alone: only the FAILED/error shapes that
+     * are artifacts of the abort itself are suppressed.
      */
     private boolean isSuppressedByUserCancel(AiProcessEvent event) {
         boolean cancelled;
@@ -499,7 +497,7 @@ public class PiAiProcessManager extends AiProcessManager implements PiSessionCon
         // Armed BEFORE the process (and its reader thread) exists, not after launchPersistentSession returns: the
         // extension can emit its readiness notify within microseconds of starting, and buildParserListener's release
         // check reads this same field — creating the latch afterward lost the signal to that race every time (live
-        // finding, Boss 2026-09-19, build-1: all three signal-dependent tests always ran the full timeout).
+        // finding: all three signal-dependent tests always ran the full timeout).
         toolsRegisteredLatch = new CountDownLatch(1);
         PiPersistentSession launched;
         try {
@@ -583,9 +581,8 @@ public class PiAiProcessManager extends AiProcessManager implements PiSessionCon
 
     /**
      * {@code get_state}'s {@code data.model} (and each entry of {@code get_available_models}'s {@code data.models}) is
-     * an object {@code {id, provider, ...}} — confirmed live (Codex_1, relayed by the Boss 2026-09-18), not the plain
-     * "provider/id" string originally assumed. Combines into the "provider/id" display form the info bar and
-     * {@code PiSessionSettings} use everywhere else.
+     * an object {@code {id, provider, ...}} — confirmed live, not the plain "provider/id" string originally assumed.
+     * Combines into the "provider/id" display form the info bar and {@code PiSessionSettings} use everywhere else.
      */
     private static String combinedModel(JsonObject parent, String key) {
         if (!parent.has(key) || !parent.get(key).isJsonObject()) {
@@ -678,7 +675,7 @@ public class PiAiProcessManager extends AiProcessManager implements PiSessionCon
 
     /**
      * {@code get_available_models}'s {@code data.models} is an array of {@code {id, provider, ...}} objects — confirmed
-     * live (Codex_1, relayed by the Boss 2026-09-18); see {@link #combinedModel}.
+     * live; see {@link #combinedModel}.
      */
     private static List<String> extractModelList(JsonObject response) {
         JsonObject data = dataOf(response);
@@ -744,7 +741,7 @@ public class PiAiProcessManager extends AiProcessManager implements PiSessionCon
             int code = dead.process().exitValue();
             // A turn in flight when the process dies leaves a pending assistant response with no terminal status even
             // on a clean exit(0) — e.g. pi killed externally mid-turn — so that case must still report EXITED rather
-            // than only the code != 0 case (Codex_1's round-3 finding). An idle or user-cancelled exit stays quiet.
+            // than only the code != 0 case. An idle or user-cancelled exit stays quiet.
             if (!suppress && (code != 0 || wasProcessing)) {
                 listener.onAiProcessEvent(new StatusEvent(StatusEventTypeEnum.EXITED,
                                                           StatusMessageUtil.formatExited("Pi", code, new ArrayList<>(recentStderr))));
@@ -763,7 +760,7 @@ public class PiAiProcessManager extends AiProcessManager implements PiSessionCon
      * #toolsRegisteredLatch}'s wait below can run for up to {@link #TOOLS_REGISTERED_WAIT_MILLIS}, and blocking that
      * long while holding this instance's monitor would freeze out every OTHER synchronized method on it for the same
      * stretch, including {@link #interrupt}'s Stop path (its {@code Cancel} case takes this same lock) — turning a
-     * bounded wait into an apparent hang of the Stop button (live finding, Boss 2026-09-19). The guard check, {@link
+     * bounded wait into an apparent hang of the Stop button (live finding). The guard check, {@link
      * #ensureSession}, and the {@code processing}/latch bookkeeping still run as one atomic {@code synchronized(this)}
      * block, exactly as before; only the wait itself, and the final send, happen outside it.
      */
@@ -820,7 +817,7 @@ public class PiAiProcessManager extends AiProcessManager implements PiSessionCon
             }
         }
         // Consumed here, not before ensureSession(): a launch failure above returns without ever reaching pi, so the
-        // notice must not be burned on an attempt that was never actually sent (live finding, Boss 2026-09-19).
+        // notice must not be burned on an attempt that was never actually sent (live finding).
         String effectiveText = text;
         synchronized (this) {
             if (pendingCancelNotice) {
@@ -864,7 +861,7 @@ public class PiAiProcessManager extends AiProcessManager implements PiSessionCon
                 // holding the lock across it costs nothing. Releasing the lock between the "processing" check and
                 // s.send(cmd) let the turn settle in the gap — the steer then landed on an idle session (pi queues
                 // it as a new user message) while the generic idle-delivery path sent the same notice too, so the
-                // notice could appear twice (Review round 2, BigP_2).
+                // notice could appear twice.
                 synchronized (this) {
                     s = persistentSession;
                     if (s == null || !processing) {
@@ -962,8 +959,8 @@ public class PiAiProcessManager extends AiProcessManager implements PiSessionCon
         processing = false;
         cancelledByUser = true;
         awaitingCancelResult = false;
-        // Incidental fix while touching this reset block (Boss 2026-09-19's tools-registered task, not itself part
-        // of it): stop() is also start()'s own reset-before-restart step, and a pendingCancelNotice left over from a
+        // Incidental fix while touching this reset block: stop() is also start()'s own reset-before-restart step, and
+        // a pendingCancelNotice left over from a
         // Stop that was never followed by another sendPrompt() would otherwise leak onto the FIRST prompt of a brand
         // new, never-interrupted session after a restart.
         pendingCancelNotice = false;
@@ -1045,7 +1042,7 @@ public class PiAiProcessManager extends AiProcessManager implements PiSessionCon
         String combined = (provider != null && !provider.isBlank()) ? provider + "/" + modelId : modelId;
         return withTimeout(s.send(cmd)).thenAccept(resp -> {
             // A response for a session that has since been stopped/replaced must not overwrite state or trigger a
-            // refresh on whatever session is now current (Codex_1's round-3 finding) — discard rather than a
+            // refresh on whatever session is now current — discard rather than a
             // generation token, since the sent-to session reference is already captured above.
             if (!isSuccess(resp) || persistentSession != s) {
                 return;
@@ -1087,11 +1084,11 @@ public class PiAiProcessManager extends AiProcessManager implements PiSessionCon
      * Sends {@code compact}; the caller (mirroring {@code ClaudeAiImplementation.compact}) is responsible for refusing
      * this while a turn is running with the shared message wording — see spec *Process lifecycle*, Compact. Completes
      * exceptionally when there is no session, the send itself fails, or pi answers with {@code success:false} — the
-     * caller must only suppress the next turn's echo once acceptance is confirmed (Codex_1's round-3 finding: acting on
-     * dispatch alone left a suppressed turn stranded whenever pi rejected or lost the compact, or exited first). Uses
+     * caller must only suppress the next turn's echo once acceptance is confirmed (acting on dispatch alone left a
+     * suppressed turn stranded whenever pi rejected or lost the compact, or exited first). Uses
      * {@link PiTimeoutEnum#COMPACT_RESPONSE_TIMEOUT_MILLIS}, not the generic {@link #withTimeout(CompletableFuture)} —
      * a very long transcript could plausibly take pi longer than the generic 30s bound to ack, and a timeout here
-     * surfaces as "Compact failed" even when pi actually finished the compaction (round-4 review, BigP_2 F3).
+     * surfaces as "Compact failed" even when pi actually finished the compaction.
      */
     public CompletableFuture<Void> compact() {
         PiPersistentSession s = persistentSession;

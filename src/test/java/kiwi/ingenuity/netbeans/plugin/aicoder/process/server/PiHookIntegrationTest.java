@@ -35,9 +35,8 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
 /**
- * Pi backend round-2 review, finding 3 (spec *Testing*, Task 8 Step 7 — never written): proves end-to-end that a
- * Claude-shaped {@code PreToolUse} hook POST carrying a pi session's OWN PLUGIN UUID — exactly what
- * {@code aicoder-pi-extension.ts.template}'s {@code AICODER_CONFIG.sessionId} bakes in at generation time, per
+ * Proves end-to-end that a Claude-shaped {@code PreToolUse} hook POST carrying a pi session's OWN PLUGIN UUID — exactly
+ * what {@code aicoder-pi-extension.ts.template}'s {@code AICODER_CONFIG.sessionId} bakes in at generation time, per
  * {@code PiExtensionGenerator} — resolves that session in {@link McpHookServer} and reaches a {@link PermissionEvent},
  * without any {@link SessionRegistry#registerAlias} step. Unlike Claude (whose own CLI-internal session id is
  * discovered from its stream and mapped onto the plugin session as a SEPARATE alias — see
@@ -116,12 +115,11 @@ class PiHookIntegrationTest {
 
         assertEquals(1, listener.events.size(), "exactly one PermissionEvent must have fired");
         JsonObject output = response.getAsJsonObject(ClaudeHookKeyEnum.HOOK_SPECIFIC_OUTPUT.key());
-        // Verified quirk (spec *Review gate*): an ALLOWED decision is applied server-side and still comes back as
+        // Verified quirk: an ALLOWED decision is applied server-side and still comes back as
         // permissionDecision:"deny" with a reason starting McpHookServerUtil.APPLIED_BY_PLUGIN_PREFIX — the extension
         // template matches that exact literal to rewrite it into "SUCCESS — the user accepted..." so pi's own
-        // edit/write tool does not run a second time. Asserted against the constant (round-3 review, BigP_2, finding
-        // F2), not a hardcoded literal, so wording drift here fails this test instead of silently double-applying
-        // every accepted pi write.
+        // edit/write tool does not run a second time. Asserted against the constant, not a hardcoded literal, so
+        // wording drift here fails this test instead of silently double-applying every accepted pi write.
         assertEquals("deny", output.get(ClaudeHookKeyEnum.PERMISSION_DECISION.key()).getAsString());
         String reason = output.get(ClaudeHookKeyEnum.PERMISSION_DECISION_REASON.key()).getAsString();
         assertTrue(reason.startsWith(McpHookServerUtil.APPLIED_BY_PLUGIN_PREFIX), reason);
@@ -182,7 +180,7 @@ class PiHookIntegrationTest {
 
     @Test
     void hookLockSurvivesAServerSwap_stillReachesPermissionEventInsteadOfDeferringForever(@TempDir Path projectDir) throws Exception {
-        // Round-3 review, BigP_2 finding F1: McpServerRegistry#reconcile replaces an unresponsive/dead McpHookServer
+        // McpServerRegistry#reconcile replaces an unresponsive/dead McpHookServer
         // with a fresh instance whose hookLocks/activeSessions start empty — fileScope survives (it's the one shared
         // registry, see scopeRegistrySurvivesServerReplacement in McpServerRegistryTest), but until McpHookServer's
         // new rehydrateSession() re-populates them, the next gated Edit/Write for a session that survived the swap

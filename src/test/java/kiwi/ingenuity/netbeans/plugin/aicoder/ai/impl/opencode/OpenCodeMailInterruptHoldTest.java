@@ -231,7 +231,7 @@ class OpenCodeMailInterruptHoldTest {
         manager.trackToolCallLifecycle("call_1", "pending");
         manager.interrupt(InterruptTypeEnum.Mail);
 
-        // "cancelled" is NOT part of the documented ACP vocabulary (design doc §12); it must not
+        // "cancelled" is NOT part of the documented ACP vocabulary; it must not
         // be guessed terminal — the count stays, the hold stays, and the safety valve delivers.
         manager.trackToolCallLifecycle("call_1", "cancelled");
         assertEquals(1, manager.getInFlightToolCalls());

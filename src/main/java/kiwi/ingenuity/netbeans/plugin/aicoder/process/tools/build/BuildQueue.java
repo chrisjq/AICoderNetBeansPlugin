@@ -129,9 +129,9 @@ public final class BuildQueue {
      * cancellation that did not happen.
      * <p>
      * Only the build's own requester may stop it. A caller naming an id that belongs to someone else's queued or
-     * running async build (item 6, 2026-09-17) is told who requested it and that only that AI can stop it — and, if the
-     * caller is one of its listeners, that it will still receive the result — rather than the generic "belongs to you"
-     * refusal, which is kept verbatim for an id that matches nothing or a non-async build.
+     * running async build is told who requested it and that only that AI can stop it — and, if the caller is one of its
+     * listeners, that it will still receive the result — rather than the generic "belongs to you" refusal, which is
+     * kept verbatim for an id that matches nothing or a non-async build.
      *
      * @return what happened, for the calling AI
      */

@@ -4,7 +4,7 @@ import java.util.Set;
 
 /**
  * Decides which plugin MCP tools a pi session's generated extension may see. Today excludes none; this is the single
- * place to exclude tools later, per the spec's *Architecture* unit table.
+ * place to exclude tools later.
  */
 public final class PiToolExposurePolicy {
 

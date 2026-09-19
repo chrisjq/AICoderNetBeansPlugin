@@ -50,7 +50,7 @@ import kiwi.ingenuity.netbeans.plugin.aicoder.utils.StatusMessageUtil;
  * <b>Safety invariant:</b> The child process is always launched with {@code OPENCODE_CONFIG_CONTENT} set to force
  * {@code ask} permission for all file edits, bash commands and external-directory access. Without this, OpenCode's
  * defaults allow silent file mutations even when the client advertises {@code fs.writeTextFile} capability — confirmed
- * by live probe (design doc §4).
+ * by live probe.
  */
 public class OpenCodeAiProcessManager extends AiProcessManager {
 
@@ -112,8 +112,8 @@ public class OpenCodeAiProcessManager extends AiProcessManager {
     /**
      * Builds the value for the OPENCODE_CONFIG_CONTENT environment variable. Forces "ask" permission for all edit, bash
      * and external-directory operations, and denies sub-agent spawning outright. This MERGES with the user's existing
-     * config — it does not replace it (verified by live probe, design doc §4) — so it constrains only the sessions this
-     * plugin launches and leaves the user's own {@code opencode} CLI usage alone.
+     * config — it does not replace it (verified by live probe) — so it constrains only the sessions this plugin
+     * launches and leaves the user's own {@code opencode} CLI usage alone.
      */
     static String buildPermissionConfigJson() {
         JsonObject permission = new JsonObject();
@@ -775,7 +775,7 @@ public class OpenCodeAiProcessManager extends AiProcessManager {
         OpenCodeSessionSettings s = (OpenCodeSessionSettings) currentSession.settings();
         boolean settingsChanged = false;
         // Model first: effort's available values depend on which model is active
-        // (design doc §13), so applyInitialEffortOption must see configOptions
+        // so applyInitialEffortOption must see configOptions
         // AFTER a model switch, not before.
         settingsChanged |= applyInitialModelOption(s);
         settingsChanged |= applyInitialModeOption(s);
@@ -1326,8 +1326,7 @@ public class OpenCodeAiProcessManager extends AiProcessManager {
     }
 
     /**
-     * The configOptions array captured from the session/new response (design doc §13). Null before the ACP handshake
-     * completes.
+     * The configOptions array captured from the session/new response. Null before the ACP handshake completes.
      */
     public JsonArray configOptions() {
         return sessionConfigOptions;
@@ -1337,8 +1336,8 @@ public class OpenCodeAiProcessManager extends AiProcessManager {
      * Changes one session config option (model, effort, or mode — the only three ids OpenCode accepts; anything else
      * fails server-side with InvalidConfigOptionError). Completes with the COMPLETE configOptions snapshot from the
      * response, not just the changed entry — options are interdependent (e.g. effort depends on the selected model),
-     * and no config_option_update notification is sent for this change, so the response is the only source of truth
-     * (design doc §13).
+     * and no config_option_update notification is sent for this change, so the response is the only source of truth.
+     * This is the only reliable snapshot of the changed state.
      */
     public CompletableFuture<JsonArray> setConfigOption(String configId, String value) {
         AcpConnection conn = connection;

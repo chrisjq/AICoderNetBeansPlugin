@@ -218,7 +218,7 @@ public class EditorContextProvider {
         }
         try {
             List<String> lines = Files.readAllLines(f.toPath(), RefactoringProvider.resolveCharset(f));
-            // Live v1.4.15: startLine 999 on a 13-line file returned the header "lines 999–13 of 13" and no content.
+            // startLine 999 on a 13-line file returned the header "lines 999–13 of 13" and no content.
             if (startLine > 0 && startLine > lines.size()) {
                 return GetFileContentParamEnum.START_LINE.key() + " " + startLine + " is past the end of "
                         + FileUtils.toIdePath(f) + " (" + lines.size() + " lines).";

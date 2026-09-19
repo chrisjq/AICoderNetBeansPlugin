@@ -78,9 +78,9 @@ public abstract class AbstractBuildTool implements McpToolInterface {
 
     /**
      * Hook for a build-system-specific tool (Maven/Gradle/Ant) to add its own build options beyond the shared
-     * {@code projectPath} (#5 / F2) — each build system's option set is different (Maven has profiles and threads,
-     * Gradle has parallel, Ant has neither), so there is no single shared list to centralise here. Default no-op: tools
-     * with nothing extra to configure (DownloadMavenSourcesTool, DownloadMavenJavadocTool) don't override this and keep
+     * {@code projectPath} — each build system's option set is different (Maven has profiles and threads, Gradle has
+     * parallel, Ant has neither), so there is no single shared list to centralise here. Default no-op: tools with
+     * nothing extra to configure (DownloadMavenSourcesTool, DownloadMavenJavadocTool) don't override this and keep
      * exactly today's {@code projectPath}-only schema.
      */
     protected void addOptionProperties(JsonObject props, JsonArray required) {

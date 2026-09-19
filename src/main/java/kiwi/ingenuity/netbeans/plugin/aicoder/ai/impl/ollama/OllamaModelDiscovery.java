@@ -24,8 +24,8 @@ public final class OllamaModelDiscovery {
             .build();
     private static final Map<String, List<String>> MODEL_CACHE = new ConcurrentHashMap<>();
     /**
-     * Per-server, per-model {@code capabilities} arrays from the native {@code GET /api/tags} (verified live
-     * 2026-09-19: a thinking-capable model's entry includes {@code "thinking"}; {@code qwen2.5-coder:14b} reported
+     * Per-server, per-model {@code capabilities} arrays from the native {@code GET /api/tags} (verified live : a
+     * thinking-capable model's entry includes {@code "thinking"}; {@code qwen2.5-coder:14b} reported
      * {@code ["completion","tools","insert"]} — no thinking support). Keyed the same way as {@link #MODEL_CACHE}
      * (normalized base URL), since different sessions can point at different Ollama servers.
      */
@@ -109,7 +109,7 @@ public final class OllamaModelDiscovery {
      * Whether discovery has POSITIVELY confirmed {@code model} supports thinking (its {@code /api/tags} entry's
      * {@code capabilities} includes {@code "thinking"}). False both when the model genuinely cannot think and when
      * discovery has not reported on it yet — see {@link #isModelKnown} to tell those two apart, which matters because
-     * only the former is safe grounds to clear a user's stored value (spec §1 rule 3a).
+     * only the former is safe grounds to clear a user's stored value.
      */
     public static boolean modelSupportsThinking(String baseUrl, String model) {
         return capabilitiesFor(baseUrl, model).contains("thinking");

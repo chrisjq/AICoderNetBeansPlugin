@@ -84,7 +84,7 @@ public abstract class AbstractTestsTool implements McpToolInterface {
 
     /**
      * Hook for a build-system-specific test tool (RunMavenTests/RunGradleTests/RunAntTests) to add its own build
-     * options beyond the shared {@code projectPath}/{@code testClass} (#5 / F2) — see
+     * options beyond the shared {@code projectPath}/{@code testClass} — see
      * {@link AbstractBuildTool#addOptionProperties} for why there is no shared option list to centralise here. Default
      * no-op.
      */

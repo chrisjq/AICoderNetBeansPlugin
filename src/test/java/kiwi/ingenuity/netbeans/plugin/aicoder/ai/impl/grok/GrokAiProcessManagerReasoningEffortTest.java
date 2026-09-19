@@ -12,12 +12,11 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
 /**
- * Pins {@link GrokAiProcessManager#buildReasoningEffortArgs} — the {@code --reasoning-effort} launch-arg logic —
- * against the reasoning-effort design spec's §8 required tests: unset omits the flag, set+supported passes the exact
- * value, set+unsupported clears the stored value and fires exactly one INFO event without passing anything. No process
- * is spawned; mirrors {@code PiAiProcessManagerTest}'s pure-logic launch-arg tests. Test categories 4
- * (restart-to-apply) and 5 (live-list-populated combo) do not apply to Grok: it spawns a fresh process per turn (no
- * restart concept, per the spec's §5 Grok section) and has no live-discovered effort list (a static table instead).
+ * Pins {@link GrokAiProcessManager#buildReasoningEffortArgs} — the {@code --reasoning-effort} launch-arg logic: unset
+ * omits the flag, set+supported passes the exact value, set+unsupported clears the stored value and fires exactly one
+ * INFO event without passing anything. No process is spawned; mirrors {@code PiAiProcessManagerTest}'s pure-logic
+ * launch-arg tests. Restart-to-apply and live-list-populated-combo behaviour do not apply to Grok: it spawns a fresh
+ * process per turn (no restart concept) and has no live-discovered effort list (a static table instead).
  */
 class GrokAiProcessManagerReasoningEffortTest {
 
@@ -57,7 +56,7 @@ class GrokAiProcessManagerReasoningEffortTest {
         assertEquals(List.of("--reasoning-effort", "high"), manager.buildReasoningEffortArgs("grok-4.5"));
     }
 
-    // ---- session-sourced value, unsupported by the model: spec §1 rule 3a — clear + exactly one INFO ----
+    // ---- session-sourced value, unsupported by the model: clear + exactly one INFO ----
     @Test
     void sessionSourcedLevelUnsupportedByModelIsClearedAndFiresExactlyOneInfoEvent() {
         // xhigh is grok-4.6-only; grok-4.5 does not support it.
@@ -83,8 +82,8 @@ class GrokAiProcessManagerReasoningEffortTest {
         assertTrue(events.get(0) instanceof StatusEvent se && se.type() == StatusEventTypeEnum.INFO);
     }
 
-    // ---- global-sourced value, unsupported by the model: spec §1 rule 3a — send nothing, but never clear the
-    // global default, never touch the session, never fire an INFO the user can't dismiss ----
+    // ---- global-sourced value, unsupported by the model: send nothing, but never clear the global default,
+    // never touch the session, never fire an INFO the user can't dismiss ----
     @Test
     void globalSourcedLevelUnsupportedByModelIsOmittedWithoutInfoOrClearCallback() {
         AtomicInteger clearedCount = new AtomicInteger();
@@ -93,7 +92,7 @@ class GrokAiProcessManagerReasoningEffortTest {
 
         assertTrue(manager.buildReasoningEffortArgs("grok-4.5").isEmpty(),
                    "an unsupported global default must not be sent either");
-        assertTrue(events.isEmpty(), "the global-default case must never fire an INFO event — spec §1 rule 3a");
+        assertTrue(events.isEmpty(), "the global-default case must never fire an INFO event");
         assertEquals(0, clearedCount.get(),
                      "the global-default case must never invoke the persisted-clear callback — nothing is cleared");
     }

@@ -66,8 +66,8 @@ public enum TimeoutEnum {
      * Bound on the bare TCP connect {@code McpServerRegistry.isResponsive} uses to decide whether the shared hook
      * server is still alive. Was a 500 ms literal — fine for an idle machine, but a CPU-saturated one can delay the
      * server's own accept loop past that, making a live server look dead and triggering a replacement that silently
-     * dropped every session's {@code SessionFileScopeRegistry} scope (#15/#21). {@link Kind#EXTERNAL_IO}: it waits on
-     * this JVM's own listener thread accepting a connection, not a mutation-lock handler, so it must not raise
+     * dropped every session's {@code SessionFileScopeRegistry} scope. {@link Kind#EXTERNAL_IO}: it waits on this JVM's
+     * own listener thread accepting a connection, not a mutation-lock handler, so it must not raise
      * {@link #MUTATION_LOCK_WAIT_MILLIS}.
      */
     MCP_HEALTH_PROBE_TIMEOUT_MILLIS(3_000L, Kind.EXTERNAL_IO),

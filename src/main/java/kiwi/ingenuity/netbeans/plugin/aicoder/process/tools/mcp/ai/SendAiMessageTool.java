@@ -175,7 +175,7 @@ public class SendAiMessageTool extends AbstractActionTool {
         boolean expectsReply = args.bool(SendAiMessageParamEnum.EXPECTS_REPLY.key());
         // Dropped unless expectsReply is set, matching the schema's "Only meaningful when expectsReply=true".
         // The broker only creates the pending-reply bookkeeping this flag rides on when a reply is expected, so
-        // carrying it alone left a flag set on the message that nothing could ever act on — accepted, stored, inert.
+        // carrying it alone would set a flag that nothing could ever act on.
         boolean replyImportant = expectsReply
                 && args.bool(SendAiMessageParamEnum.REPLY_IMPORTANT.key());
         boolean targetRunning = broker.isSessionRunning(targetSessionId);

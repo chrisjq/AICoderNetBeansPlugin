@@ -84,7 +84,7 @@ class OllamaModelDiscoveryTest {
 
     /**
      * Realistic payload shape, matching what was verified live against a real Ollama server on 2026-09-19
-     * (qwen2.5-coder:14b, no "thinking" entry) — see the design spec's Ollama section.
+     * (qwen2.5-coder:14b, no "thinking" entry).
      */
     @Test
     void parseModelCapabilitiesExtractsPerModelCapabilities() {

@@ -13,7 +13,7 @@ import kiwi.ingenuity.netbeans.plugin.aicoder.process.tempfile.TempFileSpooler;
  * Turns raw build/test process output into a response worth reading, and parks the complete log where the calling AI
  * session can always get it back.
  * <p>
- * Contract (review 2026-08-23, "build/test tools return a useful result"):
+ * Contract: build/test tools return a useful result:
  * <ul>
  * <li>Success — the results/summary block plus the build result line only.</li>
  * <li>Failure — the COMPLETE failure detail verbatim (every [ERROR] line for Maven, the whole failure block for Gradle,

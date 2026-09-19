@@ -1,6 +1,6 @@
 # AI Coder for NetBeans
 
-> **Version compatibility:** Version 1.2.21 supports Claude, GitHub Copilot, and Grok only. If you are running a released version review the documentation at that git tag.
+> **Version compatibility:** Version 1.2.21 supports Claude, GitHub Copilot, and Grok only. Version 1.4.0 added support for Ollama (Local), Codex and OpenCode. Version 1.4.32 added the pi backend. If you are running a released version review the documentation at that git tag for its capabilities.
 
 AI Coder is a NetBeans IDE plugin that provides dockable, multi-session AI coding chats with IDE-aware context, project-scoped tools, configurable permissions, and reviewable file changes. It can work with local, CLI-based, SDK-based, ACP, app-server, and OpenAI-compatible backends through one shared chat and tool experience.
 
@@ -14,7 +14,7 @@ AI Coder is a NetBeans IDE plugin that provides dockable, multi-session AI codin
 | [**OpenCode**](https://opencode.ai/docs) | Long-lived `opencode acp` session | Executable, editable/discovered model, effort, and Build or Plan agent mode | Enabled |
 | [**Codex**](https://developers.openai.com/codex/cli/) | Long-lived Codex app-server session | Executable, editable model, per-turn reasoning effort, and sandbox/approval options | Enabled |
 | [**pi**](https://pi.dev/docs/latest) | Long-lived `pi --mode rpc` session | Executable, live model and thinking-level pickers, and version-verification status | Enabled |
-| [**Ollama (Local)**](https://docs.ollama.com/cli) | OpenAI-compatible HTTP API | Base URL, editable/discovered model, thinking, and context-management options | Implemented; enable in Options. Note: Not as live tested as the other implementations, feel free to send me some hardware I can thrash :)  |
+| [**Ollama (Local)**](https://docs.ollama.com/cli) | OpenAI-compatible HTTP API | Base URL, editable/discovered model, thinking, and context-management options | Implemented; enable in Options. Note: Not as live tested as the other implementations, feel free to send me some hardware I can use to live test it well :) |
 
 Each session has its own backend, model, settings, working project, chat history, session instructions, and optional persisted backend session/thread state. Multiple sessions and backends can run at the same time, though their file-, build- and Git-changing work is serialised across the whole plugin — see [Concurrency and limits](REFERENCE.md#concurrency-and-limits).
 
@@ -52,7 +52,7 @@ Each session has its own backend, model, settings, working project, chat history
 
 OpenCode applies its own timeout to MCP tool calls and ends longer ones with `MCP error -32001: Request timed out`. Tools that legitimately run for minutes — full test runs, clean builds (the plugin allows a build up to 10 minutes), or any prompt that waits on your approval — will fail against the default.
 
-The plugin cannot set this for you: it supplies its MCP server to OpenCode over ACP, whose transport definition has no timeout field. Add it to your own OpenCode config (`~/.config/opencode/opencode.json` or a project `opencode.json`):
+The plugin cannot set this for you. Add it to your own OpenCode config (`~/.config/opencode/opencode.json` or a project `opencode.json`):
 
 ```json
 {
@@ -113,7 +113,7 @@ Web requests allow GET by default when web access is enabled. Methods that can c
 
 Where a request may go is controlled separately from what it may do. Destinations that resolve to loopback, link-local, private or site-local, carrier-grade NAT, IPv6 unique-local, multicast, or any-local addresses are refused — on the entered URL and on every redirect hop, so a public address cannot redirect into your network. Two options relax this, both off by default: **Allow localhost destinations** covers loopback and any-local (wildcard) addresses, for a local model server or dev server on your own machine, and **Allow private network destinations** covers the rest — private and site-local ranges, link-local, carrier-grade NAT, and IPv6 unique-local. Multicast is never permitted. A refusal names the setting that would allow it, so the assistant can tell you which one to turn on. Note that enabling localhost also makes this plugin's own tool server reachable over HTTP, though a request still cannot authenticate to it, and that `169.254.169.254` — the cloud metadata endpoint — falls under private networks, which matters if you run the IDE on a cloud VM.
 
-Git access is enabled by default, with both Read and Write on, so existing behaviour is unchanged. Turning Write off leaves a session able to inspect the repository — `GetGitStatus`, `GetGitDiff`, `GitLog`, `GitShow`, `GitBlame` — while refusing the sixteen tools that alter it. The split follows each tool's own mutating flag rather than a separate list, so `GitBranch`, `GitTag`, `GitRemote` and `GitStash` need Write even when only listing, and `GitFetch` needs it despite not touching the working tree. A refusal names the setting that would allow it.
+Git access is enabled by default, with both Read and Write on. Turning Write off leaves a session able to inspect the repository — `GetGitStatus`, `GetGitDiff`, `GitLog`, `GitShow`, `GitBlame` — while refusing the sixteen tools that alter it. The split follows each tool's own mutating flag rather than a separate list, so `GitBranch`, `GitTag`, `GitRemote` and `GitStash` need Write even when only listing, and `GitFetch` needs it despite not touching the working tree. A refusal names the setting that would allow it.
 
 Database access is opt-in and read-only. A query must be a single SELECT — anything chained after a `;` is refused — and the JDBC connection is set read-only while it runs, which some drivers treat only as a hint. The configured row limit is enforced. Queries share the IDE's own connection, so they run one at a time and are cut off after five minutes rather than holding it indefinitely.
 
@@ -136,7 +136,7 @@ Backend tabs supply executable locations and default backend settings. Session s
 Every backend that supports it exposes a thinking/reasoning-effort picker in its info bar, its session-create dialog, and its Options tab, using that backend's own terminology — Claude calls it *effort*, Codex, Grok and Copilot *reasoning effort*, pi and Ollama *thinking*. Two rules are common to all of them:
 
 - **The first entry means "don't set it".** It is never a level name, and choosing it omits the setting entirely so the model or CLI applies its own default. For pi this is distinct from its `off` level, which actively tells the provider not to reason.
-- **A level is never sent to a model that doesn't support it.** Codex, Copilot and Ollama read the supported list live from the backend (Codex from `model/list`, Copilot from the SDK's model info, Ollama from each model's `capabilities` in `/api/tags`), Grok uses a per-model table, and Claude relies on the CLI's own silent clamping. A stored level that the selected model doesn't advertise is cleared, reported once as an INFO message, and not sent — so switching to a model with fewer levels can never turn into an error.
+- **A level is never sent to a model that doesn't support it.** Codex, Copilot and Ollama read the supported list live from the backend, Grok uses a per-model table, and Claude relies on the CLI's own silent clamping. A stored level that the selected model doesn't advertise is cleared, reported once as an INFO message, and not sent — so switching to a model with fewer levels can never turn into an error.
 - **A level you pinned to a session is only cleared once discovery has actually said the model can't take it** — never merely because the answer hasn't arrived yet. Where the list is fetched asynchronously, the level is sent optimistically until the backend says otherwise, so a session's pinned choice survives a slow or unavailable discovery instead of being silently wiped at startup.
 - **The global default is never modified automatically.** If the selected model can't take the level you set as the global default, that session quietly runs without it; the default itself stays put for every other session, and no warning repeats on each start.
 
@@ -144,13 +144,13 @@ Where the level is fixed at launch (Claude, Copilot), changing it reuses the sam
 
 OpenCode’s mode is **Build** for normal agent work or **Plan** for read-only planning. Codex provides known model choices including `gpt-5.6-terra`, `gpt-5.6-luna`, `gpt-5.5`, and `gpt-5.4-mini`, while keeping the model field editable. pi's model and thinking-level lists are discovered live from the running session, or from `pi --list-models` before one exists; an untested pi version shows a warning button in the tab and in Options until you verify it. Ollama needs no API key; its model and base URL can be changed for an individual session.
 
-pi's own `edit` and `write` tools go through the same NetBeans diff-panel review as the plugin's file tools; `bash` is not gated. The plugin's MCP tools reach a pi session through a per-session extension file it generates at launch and deletes when the session ends — it is never written where pi auto-discovers extensions, so a `pi` process started outside NetBeans never sees it. Mail sent to a busy pi session is delivered as a `steer` once its current tool calls finish, rather than interrupting mid-tool.
+pi's own `edit` and `write` tools go through the same NetBeans diff-panel review as the plugin's file tools; `bash` is not gated. A `pi` process started outside NetBeans does not see the plugin's MCP tools. Mail sent to a busy pi session is delivered as a `steer` once its current tool calls finish, rather than interrupting mid-tool.
 
 For OpenAI-compatible sessions, context management can trim by message count, estimated tokens, or reported tokens. Available strategies are no trimming, dropping older messages, dropping marked messages, or summarising; configure the trigger threshold, post-trim target, message limit, and context persistence in the Ollama/OpenAI context settings.
 
 ## Sessions, history, and context
 
-Session definitions are saved in the NetBeans user area and include their name, description, backend-specific settings, associated project, timestamps, and instruction-delivery state. Opening a saved session restores its recorded history and working directory where valid. Persisted timestamps remain machine-readable and unchanged. Dates displayed to an AI — including inbox server, sent, and read times, file metadata, and Git commit dates — use the machine's local timezone, for example `2026-08-22 21:28:48 +12:00 (Pacific/Auckland)`. Corrupt history/context data is ignored and rebuilt rather than blocking a session.
+Session definitions are saved in the NetBeans user area and include their name, description, backend-specific settings, associated project, timestamps, and instruction-delivery state. Opening a saved session restores its recorded history and working directory where valid. Persisted timestamps are machine-readable; dates shown to an AI — including inbox server, sent, and read times, file metadata, and Git commit dates — use the machine's local timezone, for example `2026-08-22 21:28:48 +12:00 (Pacific/Auckland)`. Corrupt history/context data is ignored and rebuilt rather than blocking a session.
 
 On initial delivery, the assistant receives session identity, open project locations, and active-editor context. Later requests generally contain only changes to the active file/project state; stateless backends receive the required baseline again. Saved history and model-facing context are independent, allowing the chat transcript and backend context to recover safely.
 
@@ -240,7 +240,7 @@ NetBeans IDE
         └── Local MCP/IDE tool server and review bridge
 ```
 
-The plugin keeps backend integration behind a common session/UI model. Backend-specific process managers and settings creators handle protocol details while shared components provide message rendering, persistence, IDE context, permissions, tools, and change review.
+The plugin keeps backend integration behind a common session/UI model; shared components provide message rendering, persistence, IDE context, permissions, tools, and change review.
 
 ## Development
 

@@ -31,7 +31,7 @@ public enum PiEventTypeEnum {
     TOOL_EXECUTION_END("tool_execution_end"),
     // Fires when pi compacts the conversation — both on our own explicit `compact` command (reason:"manual") and
     // on pi's own automatic compaction (reason:"threshold"|"overflow", never requested by the plugin at all).
-    // Verified against the shipped agent-session.d.ts (Round-5 wire-shape scan).
+    // Verified against the shipped agent-session.d.ts.
     COMPACTION_START("compaction_start"),
     COMPACTION_END("compaction_end"),
     // Fires when the thinking level changes by any means OTHER than our own set_thinking_level RPC (e.g. pi's own

@@ -10,12 +10,12 @@ import java.util.regex.Pattern;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.McpToolPropertyEnum;
 
 /**
- * Shared validation for the Maven/Gradle/Ant build-option parameters (#5 / F2), so a crafted value cannot smuggle an
- * extra CLI argument into a build the tool didn't ask for. Every option ends up as one element of a
- * {@link ProcessBuilder} argv list, never through a shell, so classic shell-metacharacter injection ({@code ; | & `})
- * is not itself exploitable here — the real risk this guards against is ARGUMENT injection: a value that starts with
- * {@code -} becomes an unintended extra FLAG (not the goal/property the caller thought they were naming) the moment it
- * lands in the argv list next to the real ones.
+ * Shared validation for the Maven/Gradle/Ant build-option parameters, so a crafted value cannot smuggle an extra CLI
+ * argument into a build the tool didn't ask for. Every option ends up as one element of a {@link ProcessBuilder} argv
+ * list, never through a shell, so classic shell-metacharacter injection ({@code ; | & `}) is not itself exploitable
+ * here — the real risk this guards against is ARGUMENT injection: a value that starts with {@code -} becomes an
+ * unintended extra FLAG (not the goal/property the caller thought they were naming) the moment it lands in the argv
+ * list next to the real ones.
  * <p>
  * Rules, applied uniformly across Maven goals, Gradle tasks, Ant targets, module/profile names and property keys:
  * <ul>

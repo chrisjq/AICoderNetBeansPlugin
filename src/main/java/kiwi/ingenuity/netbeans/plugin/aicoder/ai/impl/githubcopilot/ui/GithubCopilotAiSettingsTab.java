@@ -219,7 +219,7 @@ public final class GithubCopilotAiSettingsTab implements SettingsTab {
     /**
      * Rebuilds {@link #reasoningEffortCombo}'s options from {@code model}'s live-discovered supported list — empty/
      * absent means "no support": only {@link BlankSafeComboRenderer#DEFAULT_OPTION} is offered. Nothing about effort
-     * levels is hardcoded here, per the design spec.
+     * levels is hardcoded here.
      */
     private void refreshReasoningEffortOptions(String model, String preferredEffort) {
         java.util.List<String> supported = GithubCopilotPluginSettings.getSupportedReasoningEfforts(model);

@@ -4,12 +4,12 @@ import java.util.List;
 import java.util.concurrent.CompletableFuture;
 
 /**
- * Minimal contract {@link PiAiInfoBarExtension} needs from a running pi session, implemented by WP-2's
- * {@code PiAiProcessManager}. Deliberately narrow: rather than have the info bar parse WP-1's raw pi RPC events itself,
+ * Minimal contract {@link PiAiInfoBarExtension} needs from a running pi session, implemented by
+ * {@code PiAiProcessManager}. Deliberately narrow: rather than have the info bar parse the raw pi RPC events itself,
  * the process manager translates whatever it receives internally (get_state, get_available_models,
  * get_available_thinking_levels, get_session_stats, set_model/set_thinking_level responses) into calls on
  * {@link Listener}, and the info bar only ever talks to this interface. That keeps this UI-owned file decoupled from
- * WP-1's exact RPC event class shapes.
+ * the exact RPC event class shapes.
  *
  * <p>
  * Every method that talks to the pi process is asynchronous and must not block the caller (typically the EDT).
@@ -35,7 +35,7 @@ public interface PiSessionControl {
     CompletableFuture<Void> setThinkingLevel(String level);
 
     /**
-     * True while a turn is running — both combos are disabled while this is true, per the spec.
+     * True while a turn is running — both combos are disabled while this is true.
      */
     boolean isTurnRunning();
 

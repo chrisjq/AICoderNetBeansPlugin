@@ -98,7 +98,7 @@ class OpenCodeSettingsTest {
         assertNull(settings.acpSessionId(), "absent acpSessionId in JSON must deserialise to null");
     }
 
-    // ---- Addendum 4: effort persistence ----
+    // ---- effort persistence ----
     @Test
     void effortIsNullBeforeSet() {
         assertNull(new OpenCodeSessionSettings().effort());

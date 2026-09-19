@@ -7,10 +7,10 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import org.junit.jupiter.api.Test;
 
 /**
- * Review finding 2: a non-editable {@code JComboBox} can retain a stale, no-longer-listed value as its selection even
- * though the visible display already shows "(model default)" — {@code store()} previously trusted that selection
- * without re-validating it, so an unsupported global reasoning effort could be silently re-persisted forever, with no
- * way for the user to clear it from the UI. Locks in the fix: {@code store()} now validates against
+ * A non-editable {@code JComboBox} can retain a stale, no-longer-listed value as its selection even though the visible
+ * display already shows "(model default)" — {@code store()} previously trusted that selection without re-validating it,
+ * so an unsupported global reasoning effort could be silently re-persisted forever, with no way for the user to clear
+ * it from the UI. Locks in the fix: {@code store()} now validates against
  * {@code GrokReasoningEffortSupport.supportedFor(model)} before persisting.
  */
 class GrokAiSettingsTabTest {

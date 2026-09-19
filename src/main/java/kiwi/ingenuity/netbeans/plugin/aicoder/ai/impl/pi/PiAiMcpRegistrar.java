@@ -14,7 +14,7 @@ import kiwi.ingenuity.netbeans.plugin.aicoder.process.server.McpServerRegistry;
 /**
  * Pi's MCP registration strategy. Unlike Claude/Grok, pi writes no shared per-type CLI config: instead, this registrar
  * has {@link PiExtensionGenerator} write ONE per-session extension file carrying the MCP URL, hook URL and gated-tool
- * list, and deletes it when the session stops — see the spec's *Extension file generation and lifetime*.
+ * list, and deletes it when the session stops.
  *
  * <p>
  * <b>Why generation is NOT done in {@link #addMcpEndpoint}/{@link #registerHooks}.</b> Those two methods (see
@@ -29,9 +29,9 @@ import kiwi.ingenuity.netbeans.plugin.aicoder.process.server.McpServerRegistry;
  * <p>
  * <b>Deletion is NOT left to {@link #removeMcpEndpoint}/{@link #unregisterHooks} either</b> — symmetrically, those are
  * only invoked by the supervisor when this session is the LAST of {@link AiTypeEnum#PI} still registered, so with
- * several pi sessions open, closing one that is neither first nor last would never run them at all. Per the Boss's
- * decision, {@link #deleteExtensionFile()} is public and idempotent specifically so {@code PiAiProcessManager} can call
- * it directly from every one of its own stop paths (normal stop, failed start, unexpected process exit) in a
+ * several pi sessions open, closing one that is neither first nor last would never run them at all. Per that decision,
+ * {@link #deleteExtensionFile()} is public and idempotent specifically so {@code PiAiProcessManager} can call it
+ * directly from every one of its own stop paths (normal stop, failed start, unexpected process exit) in a
  * {@code finally}, guaranteeing this instance's file disappears exactly when that session stops, regardless of how many
  * other pi sessions remain open. {@link #removeMcpEndpoint}/{@link #unregisterHooks} still call it too, purely as a
  * harmless safety net for the first/last-of-type cases the framework does reach.
@@ -56,8 +56,8 @@ public final class PiAiMcpRegistrar extends AiMcpRegistrar {
     /**
      * This session's generated extension file path, generating it on first call if needed. Returns {@code null} before
      * generation has been attempted, or if it failed (e.g. the shared MCP server is not running, or the write itself
-     * failed) — {@code PiAiProcessManager.ensureSession()} treats a null path as a FATAL start error, per the spec ("a
-     * failure to write it is a FATAL start error").
+     * failed) — {@code PiAiProcessManager.ensureSession()} treats a null path as a FATAL start error (a failure to
+     * write it is a FATAL start error").
      */
     public String getExtensionFilePath() {
         String path = extensionFilePath;

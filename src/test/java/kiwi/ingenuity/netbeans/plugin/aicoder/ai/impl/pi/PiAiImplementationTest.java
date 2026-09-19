@@ -27,10 +27,10 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import org.junit.jupiter.api.Test;
 
 /**
- * Round-2 review, BigP_2 finding 2: PiAiImplementation had zero test coverage. Mirrors ClaudeAiImplementationTest's
- * shape (a currentSession-seeded anonymous subclass, no real start()/MCP registration) and covers what that review
- * called out by name: afterStart()'s resumeSession + effective-thinking-level wiring, onStarted()'s persistence of a
- * freshly minted pi session id, isStoredSessionValid(), and compact()'s running guard.
+ * PiAiImplementation had zero test coverage. Mirrors ClaudeAiImplementationTest's shape (a currentSession-seeded
+ * anonymous subclass, no real start()/MCP registration) and covers: afterStart()'s resumeSession +
+ * effective-thinking-level wiring, onStarted()'s persistence of a freshly minted pi session id, isStoredSessionValid(),
+ * and compact()'s running guard.
  */
 class PiAiImplementationTest {
 
@@ -166,7 +166,7 @@ class PiAiImplementationTest {
         assertEquals(0, host.updateCalls, "no update needed when the stored id already matches the live one");
     }
 
-    // ---- onStarted(): pushes the version check into the info bar (round-3 review, Sonet's integration read) ----
+    // ---- onStarted(): pushes the version check into the info bar ----
     @Test
     void onStarted_pushesTheVersionCheckIntoTheInfoBarAndShowsTheWarningButtonForAnUntestedVersion() throws Exception {
         AiSession session = newSession("pi-version-1", new PiSessionSettings());
@@ -209,8 +209,8 @@ class PiAiImplementationTest {
         assertEquals(0, host.suppressCalls, "the guard must refuse before ever suppressing the turn");
     }
 
-    // ---- compact()'s accept/reject paths, once past the running guard (round-4 review, BigP_2 F2: the fix's own
-    // precise behaviour — suppress on confirmed acceptance, never on failure — had no test driving a real accept). ----
+    // ---- compact()'s accept/reject paths, once past the running guard: the fix's own precise behaviour —
+    // suppress on confirmed acceptance, never on failure — had no test driving a real accept. ----
     @Test
     void compact_acceptedPathSuppressesExactlyOnce() throws Exception {
         List<AiProcessEvent> events = new ArrayList<>();
@@ -265,8 +265,8 @@ class PiAiImplementationTest {
     }
 
     // pi has no generic "command" command — the command name IS the request's own "type" (e.g. "compact"), so the
-    // echo must match that variable name, not a literal "command" (Round-5 live-test finding: the plugin was
-    // sending {type:"command", command:"prompt", ...} when it must send {type:"prompt", ...}).
+    // echo must match that variable name, not a literal "command" (the plugin was sending
+    // {type:"command", command:"prompt", ...} when it must send {type:"prompt", ...}).
     private static final String SUCCESS_ECHO_SCRIPT = """
             while IFS= read -r line; do
                 printf '%s\\n' "$line" | sed 's/"type":"[a-z_]*"/"type":"response","success":true/'

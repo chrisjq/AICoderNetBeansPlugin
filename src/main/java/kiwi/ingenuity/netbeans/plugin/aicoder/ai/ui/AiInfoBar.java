@@ -207,8 +207,8 @@ public class AiInfoBar extends JPanel {
      * Set the auto-accept checkbox state without firing the listener (used to initialise or sync the UI from session
      * settings). Safe to call from any thread: several {@code AiSessionHost.updateSessionSettings} callers reach this
      * from a background thread (e.g. a backend's clear-invalid-effort callback, an ACP handshake thread) —
-     * self-dispatches to the EDT rather than requiring every caller to remember to, which is what let this go unguarded
-     * until now.
+     * self-dispatches to the EDT rather than demanding every caller remember to — demanding it is what let this go
+     * unguarded before.
      */
     public void setAutoAccept(boolean value) {
         if (!SwingUtilities.isEventDispatchThread()) {

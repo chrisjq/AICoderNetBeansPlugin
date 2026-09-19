@@ -143,17 +143,17 @@ public class GithubCopilotProcessManager extends AiProcessManager {
     private volatile GithubCopilotPermissionHandler permissionHandler = null;
     private volatile Consumer<String> onModelFallback;
     /**
-     * {@code null} means "omit the setting — use the model's own default", per the design spec's terminology table for
-     * GitHub Copilot. Applied where the session is constructed (eagerly, inside {@link #start}, unlike pi's
-     * lazily-spawned session) — see {@link #resolveValidatedReasoningEffort}.
+     * {@code null} means "omit the setting — use the model's own default". Applied where the session is constructed
+     * (eagerly, inside {@link #start}, unlike pi's lazily-spawned session) — see
+     * {@link #resolveValidatedReasoningEffort}.
      */
     private volatile String reasoningEffort = null;
     /**
      * Whether {@link #reasoningEffort} is a value pinned in the session's own settings (true) or one inherited from the
-     * global default at session start (false) — the distinction the design spec's rule 3a is built on: only a
-     * session-pinned value may be cleared, persisted as cleared, and reported with an INFO event when the model does
-     * not support it; a global-sourced value must be silently omitted for this session (global untouched, nothing
-     * written into the session, no INFO), and kept in place so a later model that does support it still receives it.
+     * global default at session start (false). Only a session-pinned value may be cleared, persisted as cleared, and
+     * reported with an INFO event when the model does not support it; a global-sourced value must be silently omitted
+     * for this session (global untouched, nothing written into the session, no INFO), and kept in place so a later
+     * model that does support it still receives it.
      */
     private volatile boolean reasoningEffortFromSession = true;
     /**

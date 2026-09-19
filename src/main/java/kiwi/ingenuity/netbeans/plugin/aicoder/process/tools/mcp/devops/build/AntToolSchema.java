@@ -9,8 +9,8 @@ import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.providers.netbeans.B
 
 /**
  * Shared schema-building and argument-extraction for the three Ant devops tools (BuildAntProjectTool,
- * CleanAndBuildAntProjectTool, RunAntTestsTool — #5 / F2) — see {@link MavenToolSchema}'s javadoc for why this is
- * shared rather than duplicated three times.
+ * CleanAndBuildAntProjectTool, RunAntTestsTool) — see {@link MavenToolSchema}'s javadoc for why this is shared rather
+ * than duplicated three times.
  */
 public final class AntToolSchema {
 

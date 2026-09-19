@@ -205,13 +205,12 @@ public class OllamaAiInfoBarExtension implements AiInfoBarExtension {
     /**
      * Repopulates {@link #reasoningEffortCombo} with {@link #THINKING_LEVELS} unless discovery has POSITIVELY confirmed
      * {@code model} cannot think ({@link OllamaModelDiscovery#isModelKnown} true and
-     * {@link OllamaModelDiscovery#modelSupportsThinking} false) — spec §1 rule 3b: "clear only on positive
-     * confirmation, never on absence of data". While discovery has not yet reported on {@code model} at all, the combo
-     * offers the levels optimistically, matching {@code OllamaAiProcessManager.applyThinkingCapabilityValidation}'s
-     * identical send-side rule — the combo must not claim "not set" is the only option while the process manager would
-     * in fact still send a pinned/inherited value for that same model. This is a UI courtesy either way; the
-     * authoritative "never send an unsupported value" enforcement is that same method's at request-build time, with the
-     * 4xx retry as its backstop.
+     * {@link OllamaModelDiscovery#modelSupportsThinking} false) — "clear only on positive confirmation, never on
+     * absence of data". While discovery has not yet reported on {@code model} at all, the combo offers the levels
+     * optimistically, matching {@code OllamaAiProcessManager.applyThinkingCapabilityValidation}'s identical send-side
+     * rule — the combo must not claim "not set" is the only option while the process manager would in fact still send a
+     * pinned/inherited value for that same model. This is a UI courtesy either way; the authoritative "never send an
+     * unsupported value" enforcement is that same method's at request-build time, with the 4xx retry as its backstop.
      */
     private void applyReasoningEffortOptions(String model, String preferredEffort) {
         boolean wasProgrammatic = programmaticReasoningEffortSelection;
@@ -325,7 +324,7 @@ public class OllamaAiInfoBarExtension implements AiInfoBarExtension {
         compactBtn.setEnabled(!busy && !summarising && hasContent);
         // A turn already in flight snapshots the session's settings once at its start (see
         // OllamaAiProcessManager.runTurn), so a change here would not reach that turn anyway — disabled to avoid
-        // implying otherwise, per the reasoning-effort design spec's info-bar rule.
+        // implying otherwise.
         reasoningEffortCombo.setEnabled(!busy);
     }
 }

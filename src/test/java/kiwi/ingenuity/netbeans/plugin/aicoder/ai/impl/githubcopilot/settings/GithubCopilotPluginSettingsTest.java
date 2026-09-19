@@ -10,9 +10,8 @@ import org.junit.jupiter.api.Test;
 
 /**
  * Covers the live per-model reasoning-effort cache that {@code GithubCopilotModelDiscovery}'s SDK tier populates and
- * every reasoning-effort combo (info bar, create dialog, Options tab) reads from — never a hardcoded list, per the
- * design spec. Reset in {@link #resetCache()} since the cache is a static, in-memory, non-persisted field shared across
- * the whole test JVM.
+ * every reasoning-effort combo (info bar, create dialog, Options tab) reads from — never a hardcoded list. Reset in
+ * {@link #resetCache()} since the cache is a static, in-memory, non-persisted field shared across the whole test JVM.
  */
 class GithubCopilotPluginSettingsTest {
 

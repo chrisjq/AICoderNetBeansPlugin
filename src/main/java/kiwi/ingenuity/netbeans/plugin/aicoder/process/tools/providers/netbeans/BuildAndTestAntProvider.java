@@ -19,8 +19,8 @@ public class BuildAndTestAntProvider {
     private static final int MAX_OUTPUT_BYTES = 2 * 1024 * 1024;
 
     /**
-     * Options shared by BuildAntProject, CleanAndBuildAntProject and RunAntTests (#5 / F2). {@code targets} carries the
-     * calling tool's own default ({@code jar}, {@code clean jar}, or {@code test}) when the caller omitted it — see
+     * Options shared by BuildAntProject, CleanAndBuildAntProject and RunAntTests. {@code targets} carries the calling
+     * tool's own default ({@code jar}, {@code clean jar}, or {@code test}) when the caller omitted it — see
      * {@link BuildAndTestMavenProvider.MavenBuildOptions} for why defaulting lives in the tool, not here.
      */
     public record AntBuildOptions(List<String> targets, JsonObject properties, boolean keepGoing) {

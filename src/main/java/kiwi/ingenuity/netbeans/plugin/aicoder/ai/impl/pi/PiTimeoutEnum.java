@@ -14,8 +14,8 @@ public enum PiTimeoutEnum {
      * Response timeout for {@code compact} specifically — deliberately longer than
      * {@link #RPC_RESPONSE_TIMEOUT_MILLIS}. Unlike the other non-prompt commands that constant covers, compacting a
      * very long transcript could plausibly take pi longer than 30s to ack, and a timeout here is user-visible as
-     * "Compact failed" even when pi actually completed the compaction with no suppression run for it (round-4 review,
-     * BigP_2 F3) — worth a wider margin than the generic housekeeping bound.
+     * "Compact failed" even when pi actually completed the compaction with no suppression run for it — worth a wider
+     * margin than the generic housekeeping bound.
      */
     COMPACT_RESPONSE_TIMEOUT_MILLIS(120_000L, Kind.OPERATION),
     /**

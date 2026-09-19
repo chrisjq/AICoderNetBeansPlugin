@@ -17,9 +17,8 @@ package kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.build;
  * fact running to completion. Queued builds are stoppable either way, since removing one from the queue needs nothing
  * from the build system.
  * @param countsTowardLongestSuccess whether a SUCCESSful run of this request may raise {@link
- * BuildQueue#longestSuccessFor}. True for every build and test tool. False for the Maven dependency downloads (item 3,
- * 2026-09-17): a download is not a build, so how long one happened to take must not inflate another build's inline time
- * limit.
+ * BuildQueue#longestSuccessFor}. True for every build and test tool. False for the Maven dependency downloads: a
+ * download is not a build, so how long one happened to take must not inflate another build's inline time limit.
  * @param work what runs when the build's turn comes
  */
 public record BuildRequest(String toolCall, String projectKey, String projectPath, String sessionId, String callerName,

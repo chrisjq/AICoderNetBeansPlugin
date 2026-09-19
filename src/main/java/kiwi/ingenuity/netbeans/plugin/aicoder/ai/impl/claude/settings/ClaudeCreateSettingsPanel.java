@@ -19,7 +19,7 @@ import kiwi.ingenuity.netbeans.plugin.aicoder.ai.ui.BlankSafeComboRenderer;
 public final class ClaudeCreateSettingsPanel extends ModelCreateSettingsPanel<ClaudeSessionSettings> {
 
     /**
-     * Maps to a {@code null} stored effort level, meaning "use Claude's own default", per the spec.
+     * Maps to a {@code null} stored effort level, meaning "use Claude's own default".
      */
     private static final String[] EFFORT_OPTIONS = {
         BlankSafeComboRenderer.DEFAULT_OPTION, "low", "medium", "high", "xhigh", "max"

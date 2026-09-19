@@ -16,8 +16,8 @@ public final class OllamaPluginSettings {
     public static final String DEFAULT_MODEL = KNOWN_MODELS[0];
     public static final String DEFAULT_BASE_URL = "http://localhost:11434";
     /**
-     * Empty means "not set" — no {@code reasoning_effort} field is sent, per the reasoning-effort design spec. Unlike
-     * model/base URL there is no non-blank fallback value.
+     * Empty means "not set" — no {@code reasoning_effort} field is sent. Unlike model/base URL there is no non-blank
+     * fallback value.
      */
     public static final String DEFAULT_REASONING_EFFORT = "";
 

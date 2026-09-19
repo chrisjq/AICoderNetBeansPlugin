@@ -149,8 +149,8 @@ public class FindUsagesProvider {
     }
 
     /**
-     * The usage listing, capped at {@code maxLines} like SearchInFiles, with the true total in the header. Live
-     * v1.4.15: FindUsages on McpToolEnum returned all 921 usages (~199 KB), which the caller's own client truncated.
+     * The usage listing, capped at {@code maxLines} like SearchInFiles, with the true total in the header. FindUsages
+     * on McpToolEnum returned all 921 usages (~199 KB), which the caller's own client truncated.
      */
     static String formatUsages(String target, List<String> lines, int maxLines) {
         StringBuilder sb = new StringBuilder("Found ").append(lines.size()).append(" usage(s) of ").append(target);

@@ -93,8 +93,9 @@ class GithubCopilotAiInfoBarExtensionTest {
 
     @Test
     void onSessionSettingsChangedShowsModelDefaultNotGlobalDefaultWhenModelSupportsNoEfforts() throws Exception {
-        // Negative control for the test above: proves the §1.3 rule is genuinely enforced, not just coincidentally
-        // satisfied. With no live discovery data for the current model, the combo must show "(model default)" —
+        // Negative control for the test above: proves the "never show an effort the model doesn't support" rule is
+        // genuinely enforced, not just coincidentally satisfied. With no live discovery data for the current
+        // model, the combo must show "(model default)" —
         // i.e. null — even though a global default IS configured, never the global default itself. Flushed through
         // the same EDT wait as the positive case above: without it, this would pass even if the rule were NOT
         // enforced, since the queued-but-not-yet-run update also reads back as null.

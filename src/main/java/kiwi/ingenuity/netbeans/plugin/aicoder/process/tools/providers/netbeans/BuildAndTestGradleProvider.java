@@ -18,10 +18,10 @@ public class BuildAndTestGradleProvider {
     private static final int MAX_OUTPUT_BYTES = 2 * 1024 * 1024;
 
     /**
-     * Options shared by BuildGradleProject, CleanAndBuildGradleProject and RunGradleTests (#5 / F2). {@code tasks}
-     * carries the calling tool's own default ({@code build -x test}, {@code clean build -x test}, or {@code test}) when
-     * the caller omitted it — see {@link BuildAndTestMavenProvider.MavenBuildOptions} for why defaulting lives in the
-     * tool, not here.
+     * Options shared by BuildGradleProject, CleanAndBuildGradleProject and RunGradleTests. {@code tasks} carries the
+     * calling tool's own default ({@code build -x test}, {@code clean build -x test}, or {@code test}) when the caller
+     * omitted it — see {@link BuildAndTestMavenProvider.MavenBuildOptions} for why defaulting lives in the tool, not
+     * here.
      */
     public record GradleBuildOptions(
             List<String> tasks, boolean skipTests, boolean offline, boolean refreshDependencies,

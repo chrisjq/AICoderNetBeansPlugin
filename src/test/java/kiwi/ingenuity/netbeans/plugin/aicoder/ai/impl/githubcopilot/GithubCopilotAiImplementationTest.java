@@ -354,7 +354,7 @@ class GithubCopilotAiImplementationTest {
             GithubCopilotAiImplementation impl = implFor(session);
             AtomicReference<AiSessionSettings> updated = new AtomicReference<>();
             GithubCopilotAiInfoBarExtension ext = impl.createInfoBarExtension(session, stubHost(settings, updated));
-            // §1.3: "medium" must never be shown unless the current model actually advertises it — seed the live
+            // "medium" must never be shown unless the current model actually advertises it — seed the live
             // per-model cache for whatever model the combo is ACTUALLY showing (queried via getSelectedModel(),
             // not assumed to equal GithubCopilotPluginSettings.getModel() — a fresh-vs-editable JComboBox's
             // getSelectedItem() and its editor's displayed text are not guaranteed to agree, the same divergence
@@ -381,8 +381,9 @@ class GithubCopilotAiImplementationTest {
 
     @Test
     void handleReasoningEffortCleared_showsModelDefaultNotGlobalDefaultWhenModelSupportsNoEfforts() throws Exception {
-        // Negative control for the test above: proves the §1.3 rule is genuinely enforced, not just coincidentally
-        // satisfied. With no live discovery data for the current model, the combo must show "(model default)" —
+        // Negative control for the test above: proves the "never show an effort the model doesn't support" rule is
+        // genuinely enforced, not just coincidentally satisfied. With no live discovery data for the current
+        // model, the combo must show "(model default)" —
         // i.e. null — even though a global default IS configured, never the global default itself. Flushed through
         // the same EDT wait as the positive case above: without it, this would pass even if the rule were NOT
         // enforced, since the queued-but-not-yet-run update also reads back as null.

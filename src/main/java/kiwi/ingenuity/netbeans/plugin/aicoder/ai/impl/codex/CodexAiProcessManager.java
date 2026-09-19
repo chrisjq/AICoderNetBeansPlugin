@@ -33,7 +33,7 @@ import kiwi.ingenuity.netbeans.plugin.aicoder.utils.StatusMessageUtil;
  * Owns one {@code codex app-server} subprocess per plugin session, frames newline-delimited JSON-RPC 2.0 on its
  * stdin/stdout via {@link CodexJsonRpcClient}, and drives the turn lifecycle. Streaming text and the permission bridge
  * live in {@link CodexAppServerHandler}. MCP registration is handled here via {@link CodexAiMcpRegistrar} and a
- * per-spawn {@code -c mcp_servers.<name>.url=...} override (design doc §0a); the info bar is still a later slice.
+ * per-spawn {@code -c mcp_servers.<name>.url=...} override; the info bar is still a later slice.
  *
  * <p>
  * The process is spawned lazily on the first {@link #sendPrompt} call, same as {@code OpenCodeAiProcessManager} —
@@ -41,15 +41,13 @@ import kiwi.ingenuity.netbeans.plugin.aicoder.utils.StatusMessageUtil;
  * user might never use.
  *
  * <p>
- * Handshake order (design doc §8): {@code initialize} -> {@code initialized} -> {@code thread/start} (or
- * {@code thread/resume} with a saved thread id), capturing the thread id from the response — paired to that exact
- * request by id, so it cannot race or be missed the way the {@code thread/started} notification could (design doc §3's
- * warning about OpenCode's resume bug).
+ * Handshake order: {@code initialize} -> {@code initialized} -> {@code thread/start} (or {@code thread/resume} with a
+ * saved thread id), capturing the thread id from the response — paired to that exact request by id, so it cannot race
+ * or be missed the way the {@code thread/started} notification could (the warning about OpenCode's resume bug).
  *
  * <p>
  * {@code thread/start}/{@code thread/resume} send {@code sandbox:
- * "workspace-write"} and {@code approvalPolicy: "untrusted"} (design doc §0a "Approval routing and sandbox") and the
- * resolved model — {@code
+ * "workspace-write"} and {@code approvalPolicy: "untrusted"} and the resolved model — {@code
  * ThreadStartParams.model} is honored directly (confirmed by live probe: a non-default model requested in the params
  * came back unchanged in the response), unlike OpenCode, which has no model parameter on {@code
  * session/new} and needs a post-hoc {@code session/set_config_option} dance.
@@ -146,10 +144,10 @@ public class CodexAiProcessManager extends AiProcessManager {
 
     /**
      * {@code TurnSteerParams} (confirmed by generating the schema live against {@code codex-cli 0.148.0} with {@code codex app-server
-     * generate-json-schema} — the design doc's §0a method — since no persisted copy of the Slice 5 schemas remained on
-     * disk): {@code threadId} and {@code input} are the same shape as {@code turn/start}'s, but steering additionally
-     * requires {@code expectedTurnId} — "Required active turn id precondition. The request fails when it does not match
-     * the currently active turn." {@code TurnSteerResponse} on success is just {@code
+     * generate-json-schema} — since no persisted copy of the schemas remained on disk): {@code threadId} and
+     * {@code input} are the same shape as {@code turn/start}'s, but steering additionally requires
+     * {@code expectedTurnId} — "Required active turn id precondition. The request fails when it does not match the
+     * currently active turn." {@code TurnSteerResponse} on success is just {@code
      * {turnId}}; there is no in-band error field on either params or response, so a refusal (e.g.
      * {@code ActiveTurnNotSteerable}, returned per the schema when the active turn cannot accept same-turn steering — a
      * {@code /review} or manual {@code /compact} in progress) can only surface as a genuine JSON-RPC error response,
@@ -177,7 +175,7 @@ public class CodexAiProcessManager extends AiProcessManager {
     /**
      * Extracts the thread id from a {@code thread/start} or {@code
      * thread/resume} response — both nest it at {@code result.thread.id} (camelCase, confirmed by live probe), not a
-     * top-level {@code thread_id} as the design doc's unverified §2 example (sourced from {@code codex exec
+     * top-level {@code thread_id} as an earlier unverified example (sourced from {@code codex exec
      * --json}'s unrelated JSONL format) suggested. Returns null on any unexpected shape rather than throwing — callers
      * must treat null as "handshake did not produce a usable id".
      */
@@ -222,9 +220,9 @@ public class CodexAiProcessManager extends AiProcessManager {
 
     /**
      * {@code thread/start}/{@code thread/resume}/{@code thread/fork} carry the live {@code reasoningEffort} (read as a
-     * top-level sibling of {@code result.model}, falling back to {@code result.thread.reasoningEffort}) — spec §4 uses
-     * it to seed the info-bar combo's current selection. Returns null when absent, matching the "unknown" convention of
-     * the other extractors.
+     * top-level sibling of {@code result.model}, falling back to {@code result.thread.reasoningEffort}) and seeds the
+     * info-bar combo's current selection. Returns null when absent, matching the "unknown" convention of the other
+     * extractors.
      */
     static String extractReasoningEffort(JsonObject result) {
         if (result == null) {
@@ -312,9 +310,9 @@ public class CodexAiProcessManager extends AiProcessManager {
     /**
      * Probes {@code model/list} on the established client, caches the capability list for subsequent dialogs, and fires
      * a per-session {@link CodexReasoningEffortEvent} (combo data for the info bar). Runs in the handshake thread; any
-     * probe failure degrades silently to "no capability info", per spec §4 — the backend then never sends an
-     * {@code effort} field. Also applies {@link #applyInitialEffortOption} so a stored-but-unsupported effort is
-     * cleared up front rather than sent and ignored.
+     * probe failure degrades silently to "no capability info" — the backend then never sends an {@code effort} field.
+     * Also applies {@link #applyInitialEffortOption} so a stored-but-unsupported effort is cleared up front rather than
+     * sent and ignored.
      */
     private void fireReasoningEffortEvent(CodexJsonRpcClient c, String activeModel, String echoEffort) {
         List<String> supported = List.of();
@@ -390,8 +388,8 @@ public class CodexAiProcessManager extends AiProcessManager {
 
     /**
      * Per-invocation {@code -c} overrides that register the plugin's MCP endpoint with Codex for this one process —
-     * never written to {@code ~/.codex/config.toml} (design doc §0a: {@code -c} is TOML-parsed and per-spawn, which is
-     * what avoids the cross-session credential collision a shared config file would create).
+     * never written to {@code ~/.codex/config.toml} ({@code -c} is TOML-parsed and per-spawn, which is what avoids the
+     * cross-session credential collision a shared config file would create).
      *
      * <p>
      * {@code default_tools_approval_mode} avoids double-gating: this plugin already gates every mutating tool itself — {@code ApplyEdit}/{@code
@@ -417,10 +415,10 @@ public class CodexAiProcessManager extends AiProcessManager {
      * change this value again.
      *
      * <p>
-     * No header-based credentials are added here (unlike the design doc's original
-     * {@code http_headers}/{@code env_http_headers} sketch) — {@code McpHookServer}'s {@code tools/call} handler
-     * authenticates from {@code arguments.sessionId}/{@code arguments.secretKey} only, never from HTTP headers, and
-     * those travel to Codex the same way they do for every other AI type: prepended to the prompt text by
+     * No header-based credentials are added here (unlike an earlier {@code http_headers}/{@code env_http_headers}
+     * sketch) — {@code McpHookServer}'s {@code tools/call} handler authenticates from
+     * {@code arguments.sessionId}/{@code arguments.secretKey} only, never from HTTP headers, and those travel to Codex
+     * the same way they do for every other AI type: prepended to the prompt text by
      * {@code ContextProvider.buildIdentityBlock()}, gated on {@code AiTypeEnum.CODEX}'s {@code CREDENTIALS} mcpOption
      * (already set).
      */
@@ -645,16 +643,18 @@ public class CodexAiProcessManager extends AiProcessManager {
             LOG.log(Level.INFO, "Codex app-server handshake complete, threadId={0} requestedModel={1} actualModel={2}",
                     new Object[]{threadId, model, actualModel});
         }
-        // Reasoning-effort capability probe (spec §4): model/list carries each
+        // Reasoning-effort capability probe: model/list carries each
         // model's supportedReasoningEfforts + defaultReasoningEffort; thread/start
         // echoed the live reasoningEffort for seeding the info bar.
         //
         // ORDERING INVARIANT: fireReasoningEffortEvent applies the clear (via
         // applyInitialEffortOption) BEFORE cb.run() below, which calls
         // host.updateSessionSettings and persists whatever the settings object
-        // holds at that moment. If this ordering is ever reversed the cleared
-        // value is lost on restart — the Grok Finding 1 class of bug (see
-        // OpenCodeAiProcessManager.applyInitialModeIfNeeded, lines 536-541).
+        // holds at that moment. If this ordering is ever reversed, the clear only
+        // ever updates the in-memory field, never reaches persisted settings, and
+        // the same stale value re-fires the same event on every future session
+        // start (see OpenCodeAiProcessManager.applyInitialModeIfNeeded, lines
+        // 536-541).
         String echoEffort = extractReasoningEffort(threadResult);
         fireReasoningEffortEvent(c, actualModel != null && !actualModel.isBlank() ? actualModel : model, echoEffort);
         Runnable cb = onSessionEstablished;

@@ -22,9 +22,9 @@ import kiwi.ingenuity.netbeans.plugin.aicoder.utils.StatusMessageUtil;
 /**
  * Thin adapter so the generic multi-AI system (AiSession, AiTopComponent, etc.) can use the pi implementation, mirrors
  * {@code ClaudeAiImplementation}'s role. Unlike Claude, pi needs no credential monitor or its own model/usage-fetch
- * machinery — {@link PiModelDiscovery} (WP-3) already discovers models via {@code pi --list-models} and publishes
- * straight into {@link #modelCatalog()} on its own; this class only wires the process manager, session paths, the pi
- * session id used for {@code --session-id}, and the info bar.
+ * machinery — {@link PiModelDiscovery} already discovers models via {@code pi --list-models} and publishes straight
+ * into {@link #modelCatalog()} on its own; this class only wires the process manager, session paths, the pi session id
+ * used for {@code --session-id}, and the info bar.
  */
 public class PiAiImplementation extends AiImplementation {
 
@@ -173,21 +173,21 @@ public class PiAiImplementation extends AiImplementation {
      * Mirrors {@code ClaudeAiImplementation.compact}: refuses while a turn is running (same wording as Claude, backend
      * name substituted), otherwise sends the {@code compact} RPC command and only suppresses the next turn's echo in
      * the transcript once pi has confirmed acceptance — suppressing on dispatch alone left a suppressed turn stranded
-     * whenever pi rejected or lost the compact, or exited first (Codex_1's round-3 finding).
+     * whenever pi rejected or lost the compact, or exited first.
      *
      * <p>
      * {@code host.suppressNextTurn(...)} must run on the EDT — {@code AiTopComponent}'s implementation touches Swing
      * components directly with no dispatch of its own, unlike {@link #listener}'s {@code onAiProcessEvent}, which
      * self-dispatches. Every other caller of {@code suppressNextTurn} (Claude, Copilot) calls it synchronously from the
      * button-click handler, i.e. already on the EDT; this is the one call site that only fires after an async RPC round
-     * trip completes on the pi-reader thread, so it needs an explicit hop (Sonet's round-5 note, caught while
-     * double-checking the new {@code compaction_start}/{@code compaction_end} status-line ordering).
+     * trip completes on the pi-reader thread, so it needs an explicit hop (caught while double-checking the new
+     * {@code compaction_start}/{@code compaction_end} status-line ordering).
      *
      * <p>
      * Passes {@code null} for the status message rather than "Compacting conversation...": pi's own
-     * {@code compaction_start}/{@code compaction_end} frames (Sonet's round-5 wire-shape scan) now surface that same
-     * text from a single source — including for an AUTOMATIC threshold compaction our own literal never covered — so
-     * duplicating it here would only differ from the parser's line by punctuation. {@code
+     * {@code compaction_start}/{@code compaction_end} frames now surface that same text from a single source —
+     * including for an AUTOMATIC threshold compaction our own literal never covered — so duplicating it here would only
+     * differ from the parser's line by punctuation. {@code
      * AiTopComponent.suppressNextTurn} already treats a null status message as "leave it alone" (skips
      * {@code infoBar.setStatusMessage}), so this is the quietest thing the shared {@link AiSessionHost} API accepts.
      */
@@ -213,7 +213,7 @@ public class PiAiImplementation extends AiImplementation {
      * itself — it has no {@link AiSessionHost} to call {@code updateSessionSettings} on.
      *
      * <p>
-     * Also pushes the version check into the info bar (round-3 review, Sonet's integration read): {@code
+     * Also pushes the version check into the info bar: {@code
      * AiTopComponent} calls {@link #createInfoBarExtension} SYNCHRONOUSLY, before {@code start()} — which runs on the
      * async executor and is the only place {@code PiAiProcessManager.versionCheck} is ever set — has had a chance to
      * run. Without this hand-off {@link PiAiInfoBarExtension#setVersionCheck} is never called by anything and the ⚠

@@ -3,8 +3,8 @@ package kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.pi;
 /**
  * JSON field-name constants for the {@code pi --mode rpc} wire protocol. Covers the RPC request/response envelope
  * ({@code {type:"command", command, id, ...}} vs {@code {type:"response", command, success, data?, error?}}), the
- * per-event payloads verified live against pi 0.85.1 (see the design spec's *Implementation-time verifications*), and
- * the {@code extension_ui_request}/{@code extension_ui_response} pair.
+ * per-event payloads verified live against pi 0.85.1, and the
+ * {@code extension_ui_request}/{@code extension_ui_response} pair.
  *
  * <p>
  * Field names follow pi's own serializer (the {@code dist/modes/json-event.js} output verified against 0.85.1). The

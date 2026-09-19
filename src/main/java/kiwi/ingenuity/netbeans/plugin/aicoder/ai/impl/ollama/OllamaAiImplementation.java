@@ -70,10 +70,10 @@ public class OllamaAiImplementation extends AiImplementation implements OllamaIn
     }
 
     /**
-     * Wired to {@link OllamaAiProcessManager#setOnReasoningEffortCleared}: fires only for a SESSION-sourced value (spec
-     * §1 rule 3a — {@link OllamaAiProcessManager#applyThinkingCapabilityValidation} never invokes this for a
-     * global-sourced one), so no scope resolution is needed here — just clear whatever the session currently has
-     * pinned. Package-private for direct unit testing, mirroring {@code GrokAiImplementation}'s identical method.
+     * Wired to {@link OllamaAiProcessManager#setOnReasoningEffortCleared}: fires only for a SESSION-sourced value —
+     * {@link OllamaAiProcessManager#applyThinkingCapabilityValidation} never invokes this for a global-sourced one), so
+     * no scope resolution is needed here — just clear whatever the session currently has pinned. Package-private for
+     * direct unit testing, mirroring {@code GrokAiImplementation}'s identical method.
      */
     void clearInvalidPersistedReasoningEffort() {
         if (currentSession != null && currentSession.settings() instanceof OllamaSessionSettings gs) {

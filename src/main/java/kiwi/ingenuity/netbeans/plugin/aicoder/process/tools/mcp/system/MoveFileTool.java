@@ -96,7 +96,7 @@ public class MoveFileTool implements McpToolInterface {
         String rawTargetDir = args.require(MoveFileParamEnum.TARGET_DIRECTORY.key());
         String targetProjectPath = args.str(MoveFileParamEnum.TARGET_PROJECT_PATH.key());
         boolean commitWithWarning = args.bool(MoveFileParamEnum.COMMIT_WITH_WARNING.key());
-        // #17b: combined BEFORE any access check, so the check below and the eventual move agree on the same
+        // Combined BEFORE any access check, so the check below and the eventual move agree on the same
         // absolute path — see resolveMoveTargetDirectory's own javadoc.
         RefactoringProvider.TargetDirectoryResolution resolution
                 = RefactoringProvider.resolveMoveTargetDirectory(rawTargetDir, targetProjectPath);

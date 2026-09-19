@@ -21,33 +21,27 @@ import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.locks.ReentrantLock;
 
 /**
- * Bidirectional newline-delimited JSON-RPC 2.0 transport for Codex's
- * {@code app-server} protocol (design doc §0a, §6).
+ * Bidirectional newline-delimited JSON-RPC 2.0 transport for Codex's {@code app-server} protocol.
  *
  * <p>
  * A single daemon reader thread reads lines and routes them in three ways:
  * <ol>
- * <li>method + id → inbound request from the server → dispatch executor,
- * answered via {@link CodexServerRequestHandler}
- * <li>method only → notification → notify executor (FIFO, single thread),
- * delivered via {@link CodexNotificationListener}
- * <li>id only → response to our own request → complete the pending future via
- * the dispatch executor
+ * <li>method + id → inbound request from the server → dispatch executor, answered via {@link CodexServerRequestHandler}
+ * <li>method only → notification → notify executor (FIFO, single thread), delivered via
+ * {@link CodexNotificationListener}
+ * <li>id only → response to our own request → complete the pending future via the dispatch executor
  * </ol>
  *
  * <p>
- * Notifications and the disconnect callback run on a single-thread executor
- * ({@code codex-notify}) to guarantee FIFO delivery order — deltas dispatched
- * out of order garble streamed text (design doc §8, commit {@code d363682}
- * fixed the same class of bug for OpenCode). Inbound requests (which may block
- * for a while awaiting a user decision in a later slice) and response-future
- * completions run on a cached-thread-pool executor ({@code codex-dispatch}) so
- * the reader thread is never blocked.
+ * Notifications and the disconnect callback run on a single-thread executor ({@code codex-notify}) to guarantee FIFO
+ * delivery order — deltas dispatched out of order garble streamed text (commit {@code d363682} fixed the same class of
+ * bug for OpenCode). Inbound requests (which may block for a while awaiting a user decision in a later slice) and
+ * response-future completions run on a cached-thread-pool executor ({@code codex-dispatch}) so the reader thread is
+ * never blocked.
  *
  * <p>
- * Unlike ACP's {@code AcpConnection}, method names here are raw strings, not a
- * closed enum — {@code app-server} exposes on the order of a hundred RPC
- * methods (design doc §7) and this slice only needs three of them.
+ * Unlike ACP's {@code AcpConnection}, method names here are raw strings, not a closed enum — {@code app-server} exposes
+ * on the order of a hundred RPC methods and this slice only needs three of them.
  */
 public class CodexJsonRpcClient {
 
@@ -67,9 +61,9 @@ public class CodexJsonRpcClient {
     private final AtomicBoolean closed = new AtomicBoolean(false);
 
     public CodexJsonRpcClient(OutputStream out, InputStream in,
-            CodexNotificationListener notificationListener,
-            CodexServerRequestHandler requestHandler,
-            CodexConnectionListener connectionListener) {
+                              CodexNotificationListener notificationListener,
+                              CodexServerRequestHandler requestHandler,
+                              CodexConnectionListener connectionListener) {
         this.writer = new PrintWriter(new OutputStreamWriter(out, StandardCharsets.UTF_8), false);
         this.inputStream = in;
         this.notificationListener = notificationListener;
@@ -146,14 +140,12 @@ public class CodexJsonRpcClient {
     }
 
     /**
-     * {@link PrintWriter} swallows every {@link IOException} by design — a
-     * write to a dead process's stdin (broken pipe) never throws, it just sets
-     * an internal error flag. Without checking {@link PrintWriter#checkError()}
-     * here, {@link #sendRequest} could never detect a dead connection: its
-     * catch block exists but nothing ever reaches it, so the returned future
-     * hangs forever and whatever flag the caller uses to track "a turn is in
-     * flight" (e.g. {@code CodexAiProcessManager.processing}) never clears —
-     * the exact busy-forever failure mode this project has hit before.
+     * {@link PrintWriter} swallows every {@link IOException} by design — a write to a dead process's stdin (broken
+     * pipe) never throws, it just sets an internal error flag. Without checking {@link PrintWriter#checkError()} here,
+     * {@link #sendRequest} could never detect a dead connection: its catch block exists but nothing ever reaches it, so
+     * the returned future hangs forever and whatever flag the caller uses to track "a turn is in flight" (e.g.
+     * {@code CodexAiProcessManager.processing}) never clears — the exact busy-forever failure mode this project has hit
+     * before.
      */
     private void writeMessage(JsonObject message) {
         String line = GSON.toJson(message);
@@ -238,9 +230,10 @@ public class CodexJsonRpcClient {
      * approval responses themselves have a decision field and nothing else — so the handler's message must arrive
      * intact and readable.
      *
-     * <p>The cause is unwrapped for exactly that reason. This is a dependent stage, so a handler's exception reaches
-     * here inside a {@link CompletionException}, whose {@code getMessage()} is the cause's {@code toString()} — the
-     * wire message would read "java.lang.UnsupportedOperationException: only add and update are supported" and the
+     * <p>
+     * The cause is unwrapped for exactly that reason. This is a dependent stage, so a handler's exception reaches here
+     * inside a {@link CompletionException}, whose {@code getMessage()} is the cause's {@code toString()} — the wire
+     * message would read "java.lang.UnsupportedOperationException: only add and update are supported" and the
      * explanation would be buried behind a Java class name that means nothing to the model reading it.</p>
      */
     private void handleInboundRequest(long id, String method, JsonObject params) {

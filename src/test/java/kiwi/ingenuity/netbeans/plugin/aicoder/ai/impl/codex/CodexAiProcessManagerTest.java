@@ -145,7 +145,7 @@ class CodexAiProcessManagerTest {
         assertTrue(params.has("capabilities"), "capabilities object must be present even when empty");
     }
 
-    // ---- buildThreadStartParams: cwd + the sandbox/approval combo §0a says routes
+    // ---- buildThreadStartParams: cwd + the sandbox/approval combo that routes
     // approvals to the plugin, + the model (honored directly per live probe, unlike
     // OpenCode which needs a post-hoc config-option call) ----
     @Test
@@ -188,7 +188,7 @@ class CodexAiProcessManagerTest {
         assertEquals("hello codex", textInput.get("text").getAsString());
     }
 
-    // ---- buildTurnStartParams + effort (spec §4) ----
+    // ---- buildTurnStartParams + effort ----
     @Test
     void buildTurnStartParamsOmitsEffortWhenNull() {
         JsonObject params = CodexAiProcessManager.buildTurnStartParams("th_123", "hello codex", null);
@@ -215,7 +215,7 @@ class CodexAiProcessManagerTest {
         assertEquals("tu_456", params.get("turnId").getAsString());
     }
 
-    // ---- extractThreadId: the exact bug the design doc warns against repeating ----
+    // ---- extractThreadId: must read the nested camelCase thread.id, not a flat thread_id ----
     @Test
     void extractThreadIdReadsNestedThreadDotId() {
         // Real (trimmed) shape of a thread/start response, captured live against
@@ -282,7 +282,7 @@ class CodexAiProcessManagerTest {
         assertNull(CodexAiProcessManager.extractTurnId(null));
     }
 
-    // ---- extractReasoningEffort (spec §4 read-back) ----
+    // ---- extractReasoningEffort (read-back from thread/start and thread/resume) ----
     @Test
     void extractReasoningEffortReadsTopLevelFromThreadStart() {
         JsonObject result = json(
@@ -560,8 +560,8 @@ class CodexAiProcessManagerTest {
         assertEquals("th_stored", manager.pendingResumeThreadId);
     }
 
-    // ---- applyInitialEffortOption (spec §4 validation): clears an unsupported
-    // stored effort and fires exactly one INFO event naming the model ----
+    // ---- applyInitialEffortOption: clears an unsupported stored effort and fires
+    // exactly one INFO event naming the model ----
     @Test
     void applyInitialEffortOptionClearsUnsupportedStoredEffortWithSingleInfoNamingTheModel() {
         List<AiProcessEvent> events = new ArrayList<>();
@@ -621,7 +621,7 @@ class CodexAiProcessManagerTest {
         assertTrue(events.isEmpty(), "unset effort must never fire a validation event");
     }
 
-    // ---- model/list probe during thread establishment (spec §4): fires a
+    // ---- model/list probe during thread establishment: fires a
     // CodexReasoningEffortEvent carrying the capability data and caches it ----
     @Test
     void handshakeProbesModelListAndFiresReasoningEffortEvent() throws Exception {
@@ -666,10 +666,9 @@ class CodexAiProcessManagerTest {
         }
     }
 
-    // ---- regression guard (Boss review 2026-09-19, codex point 1): the clear
-    // in applyInitialEffortOption must be observed by the onSessionEstablished
-    // callback (host.updateSessionSettings) or the cleared value is lost on
-    // restart and the INFO repeats every session — the Grok Finding 1 class ----
+    // ---- regression guard: the clear in applyInitialEffortOption must be
+    // observed by the onSessionEstablished callback (host.updateSessionSettings)
+    // or the cleared value is lost on restart and the INFO repeats every session ----
     @Test
     void clearedEffortIsPersistedStateTheSessionEstablishedCallbackObserves() throws Exception {
         File script = File.createTempFile("fake-codex-clear-persist-", ".sh");
@@ -755,7 +754,7 @@ class CodexAiProcessManagerTest {
         }
     }
 
-    // ---- stored effort must reach the real turn/start request (spec §4) ----
+    // ---- stored effort must reach the real turn/start request ----
     @Test
     void storedEffortFlowsIntoTheActualTurnStartRequest() throws Exception {
         File marker = File.createTempFile("codex-effort-delivery-", ".txt");
@@ -807,8 +806,8 @@ class CodexAiProcessManagerTest {
     }
 
     // ---- buildMcpConfigArgs: per-invocation -c overrides, never written to config.toml
-    // (design doc §0a) — no header-based credentials, since McpHookServer authenticates
-    // tools/call from JSON-RPC arguments, not HTTP headers (confirmed by reading it) ----
+    // — no header-based credentials, since McpHookServer authenticates tools/call from
+    // JSON-RPC arguments, not HTTP headers (confirmed by reading it) ----
     @Test
     void buildMcpConfigArgsReturnsEmptyForNullOrBlankUrl() {
         assertTrue(CodexAiProcessManager.buildMcpConfigArgs(null).isEmpty());
@@ -853,8 +852,7 @@ class CodexAiProcessManagerTest {
     }
 
     // ---- Crash handling: a Codex death must be visible (EXITED) and must not
-    // leave the session permanently "busy" for the next prompt (finding 2 from
-    // the two-reviewer gap analysis) ----
+    // leave the session permanently "busy" for the next prompt ----
     @Test
     void processCrashAfterHandshakeReportsExitedAndClearsConnectionState() throws Exception {
         File script = fakeCodexThatExitsAfterHandshake(7);
@@ -875,9 +873,9 @@ class CodexAiProcessManagerTest {
         assertTrue(exited.text().contains("Codex"), "EXITED message should name Codex: " + exited.text());
         assertTrue(exited.text().contains("7"), "EXITED message should carry the exit code: " + exited.text());
 
-        // The core of finding 2: connection state must not be left dangling so a
-        // second sendPrompt would take the dead sendTurn path instead of
-        // re-handshaking, and processing must not be stuck true forever.
+        // Connection state must not be left dangling so a second sendPrompt would
+        // take the dead sendTurn path instead of re-handshaking, and processing
+        // must not be stuck true forever.
         awaitTrue(() -> manager.client() == null, "client cleared after crash");
         assertNull(manager.appServerHandler(), "appServerHandler cleared after crash");
         assertNull(manager.threadId(), "threadId cleared after crash");

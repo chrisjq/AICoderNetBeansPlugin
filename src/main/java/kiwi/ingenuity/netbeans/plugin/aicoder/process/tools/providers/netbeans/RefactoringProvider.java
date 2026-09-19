@@ -177,7 +177,7 @@ public class RefactoringProvider {
         if (!isUsableRefactoringFile(fo)) {
             return "Source file is no longer valid: " + filePath + ". Re-resolve the path and retry.";
         }
-        // #17: targetProjectPath omitted used to mean "search/create targetPackage under the source file's own
+        // targetProjectPath omitted used to mean "search/create targetPackage under the source file's own
         // project, no matter what" — which silently created the package inside the WRONG module whenever the caller
         // actually meant a package that already exists in a different open project. Refuse instead of guessing.
         if (!targetProjectGiven) {
@@ -325,7 +325,7 @@ public class RefactoringProvider {
                         + " to pick one, so every file in the batch must declare exactly one top-level type — move "
                         + "this file on its own with " + McpToolPropertyEnum.LINE.key() + " instead.";
             }
-            // #17: same silent-misplacement guard as the single-file path, applied per file — a batch can draw its
+            // Same silent-misplacement guard as the single-file path, applied per file — a batch can draw its
             // files from more than one source project even though they all share one target.
             if (!targetProjectGiven) {
                 String misplacement = packageBelongsToOtherOpenProjectMessage(fo, targetPackage);
@@ -793,13 +793,13 @@ public class RefactoringProvider {
         // the read comes back TRUNCATED, and a read-modify-write then persists the truncation — silently destroying
         // everything past the boundary. This has now happened twice, measured both times:
         //
-        //   2026-08-27: a 282-line/10828-byte file written by a peer session was seen as 120 lines/4334 bytes.
-        //               Anchors past line 120 were "not found"; one before it applied, and the write cut the file
-        //               to 119 lines.
-        //   2026-08-29: this file's sibling AiDiffTopComponent.java, 969 lines/36240 bytes on disk and untouched
-        //               since 2026-07-11, was seen as 114 lines/4097 bytes. Every anchor past line 114 was rejected
-        //               across a whole session while java.nio reads of the same path returned all 969 lines. A
-        //               top-of-file edit then reported SUCCESS and left 114 lines/4097 bytes on disk.
+        //   A peer-written 282-line/10828-byte file was seen as 120 lines/4334 bytes: anchors past line 120
+        //   were "not found"; one before it applied, and the write cut the file to 119 lines.
+        //
+        //   A sibling 969-line/36240-byte file, untouched on disk for months, was seen as 114 lines/4097 bytes:
+        //   every anchor past line 114 was rejected across a whole session while java.nio reads of the same path
+        //   returned all 969 lines, and a top-of-file edit then reported SUCCESS leaving 114 lines/4097 bytes on disk.
+        //
         //
         // fo.refresh() did not save us either time: it re-stats from last-modified, and a file whose mtime has not
         // changed keeps its stale cached length indefinitely. That is why the read below no longer goes through the
@@ -1065,9 +1065,9 @@ public class RefactoringProvider {
      * {@code targetProjectPath} with a possibly-relative {@code targetDirectory} via
      * {@link #resolveMoveTargetDirectory} BEFORE calling this, so the access check the tool runs beforehand and the
      * move performed here agree on the exact same path (see {@code MoveFileTool}).
-     * @param commitWithWarning #18: now honoured instead of hardcoded {@code false} — MoveFile is exactly the tool a
-     * cross-module move (#17b) hits the "non-fatal warning" refusal on, and until now it had no way to proceed past it
-     * short of hand-editing.
+     * @param commitWithWarning now honoured instead of hardcoded {@code false} — MoveFile is exactly the tool a
+     * cross-module move hits the "non-fatal warning" refusal on, and previously it had no way to proceed past it short
+     * of hand-editing.
      */
     public static String moveFile(String sourcePath, String targetDirectory, boolean commitWithWarning) {
         if (sourcePath == null || sourcePath.isBlank()) {
@@ -1125,11 +1125,11 @@ public class RefactoringProvider {
     }
 
     /**
-     * Combines {@code targetDirectory} with an optional {@code targetProjectPath} (#17b) into the single absolute
-     * directory a move should use. Pure path arithmetic — no filesystem or NetBeans API calls — so both sides of the
-     * access-check boundary can agree on the identical resolved path without duplicating the combination rules:
-     * {@code MoveFileTool} calls this BEFORE its {@code isFileWritable} scope check, and passes the resulting path, not
-     * the raw arguments, on to {@link #moveFile}.
+     * Combines {@code targetDirectory} with an optional {@code targetProjectPath} into the single absolute directory a
+     * move should use. Pure path arithmetic — no filesystem or NetBeans API calls — so both sides of the access-check
+     * boundary can agree on the identical resolved path without duplicating the combination rules: {@code MoveFileTool}
+     * calls this BEFORE its {@code isFileWritable} scope check, and passes the resulting path, not the raw arguments,
+     * on to {@link #moveFile}.
      * <ul>
      * <li>{@code targetProjectPath} omitted (null/blank): {@code targetDirectory} is used exactly as given — today's
      * behaviour, now explicit.</li>
@@ -1682,9 +1682,10 @@ public class RefactoringProvider {
                 if (blocked != null) {
                     return RefactoringRunResult.blocked(blocked);
                 }
-                // The engine accepted the request but prepared no change, e.g. InlineVariable on a reassigned variable
-                // (live v1.4.15, AiCoderCodex_2). Committing an empty session and returning the success message claimed a
-                // change that never happened.
+                // The engine accepted the request but prepared no change (e.g. InlineVariable on a reassigned variable); committing
+                // an empty session and returning the success message would claim a change that never happened.
+                //
+                //
                 if (session.getRefactoringElements().isEmpty()) {
                     return RefactoringRunResult.blocked(NOTHING_TO_CHANGE);
                 }
@@ -1986,7 +1987,7 @@ public class RefactoringProvider {
      * @param sourceFile the file being moved. Its own project supplies the default root set, and anchors the "already
      * under one of these roots" check below, exactly as before {@code targetProjectPath} existed.
      * @param packageName dot-separated target package.
-     * @param targetProjectPath optional (#17). Omitted: behaviour is unchanged — search, then create if needed, under
+     * @param targetProjectPath optional. Omitted: behaviour is unchanged — search, then create if needed, under
      * {@code sourceFile}'s own project roots only. Given: search/create under THAT project's own Java source roots
      * instead, regardless of which project {@code sourceFile} belongs to — this is what makes a cross-module move land
      * in the right place instead of silently inside {@code sourceFile}'s own module.
@@ -2062,10 +2063,10 @@ public class RefactoringProvider {
     }
 
     /**
-     * The #17 silent-misplacement guard for the {@code targetProjectPath}-omitted case: when {@code packageName} does
-     * not already exist under {@code sourceFile}'s own project but DOES exist under a different open project's Java
-     * source roots, creating it in the source project would almost certainly be wrong — the caller very likely meant
-     * the package that already exists elsewhere. Refuses by naming both projects rather than guessing.
+     * The silent-misplacement guard for the {@code targetProjectPath}-omitted case: when {@code packageName} does not
+     * already exist under {@code sourceFile}'s own project but DOES exist under a different open project's Java source
+     * roots, creating it in the source project would almost certainly be wrong — the caller very likely meant the
+     * package that already exists elsewhere. Refuses by naming both projects rather than guessing.
      *
      * @return the ready-to-return refusal message, or null when the omitted-{@code targetProjectPath} default
      * (search/create under {@code sourceFile}'s own project) may proceed normally — either because the package already

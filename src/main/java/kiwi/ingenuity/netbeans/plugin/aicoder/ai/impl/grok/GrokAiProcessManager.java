@@ -117,9 +117,9 @@ public class GrokAiProcessManager extends AiProcessManager {
     /**
      * Whether {@link #reasoningEffort} came from the session's own setting ({@code true}) or the global default
      * ({@code false}) — set together with {@link #reasoningEffort} by every {@link #configureReasoningEffort} caller.
-     * Spec §1 rule 3a treats the two very differently on an unsupported value: only a session-sourced value is ever
-     * cleared; the global default is never modified automatically, since one session's model rejecting it says nothing
-     * about the other sessions (and other backends' sessions not yet created) that also use it.
+     * The two are treated very differently on an unsupported value: only a session-sourced value is ever cleared; the
+     * global default is never modified automatically, since one session's model rejecting it says nothing about the
+     * other sessions (and other backends' sessions not yet created) that also use it.
      */
     private volatile boolean reasoningEffortFromSession;
     /**
@@ -160,13 +160,13 @@ public class GrokAiProcessManager extends AiProcessManager {
     }
 
     /**
-     * Package-private for direct unit testing (spec §8: unset/set-supported/set-unsupported), without spawning a
-     * process — mirrors {@code PiAiProcessManager.buildLaunchCommand} being split out for the same reason. Returns
+     * Package-private for direct unit testing (unset/set-supported/set-unsupported), without spawning a process —
+     * mirrors {@code PiAiProcessManager.buildLaunchCommand} being split out for the same reason. Returns
      * {@code ["--reasoning-effort", level]} when {@code reasoningEffort} is set and {@code model} supports it, or an
-     * empty list otherwise. A configured level unsupported by {@code model} is handled per spec §1 rule 3a: a
-     * SESSION-sourced value is cleared (self-correcting: the next call for the same mismatch finds nothing to clear)
-     * and fires exactly one INFO status event; a GLOBAL-sourced value is left completely alone — not cleared, not
-     * written anywhere, no INFO — the level is simply omitted for this turn and the mismatch is logged at FINE only.
+     * empty list otherwise. A configured level unsupported by {@code model} is handled so: a SESSION-sourced value is
+     * cleared (self-correcting: the next call for the same mismatch finds nothing to clear) and fires exactly one INFO
+     * status event; a GLOBAL-sourced value is left completely alone — not cleared, not written anywhere, no INFO — the
+     * level is simply omitted for this turn and the mismatch is logged at FINE only.
      */
     List<String> buildReasoningEffortArgs(String model) {
         String effort = reasoningEffort;
@@ -186,7 +186,7 @@ public class GrokAiProcessManager extends AiProcessManager {
             }
         }
         else {
-            // spec §1 rule 3a: the global default belongs to the user and to every other session/backend — one
+            // the global default belongs to the user and to every other session/backend — one
             // session's model not supporting it says nothing about the rest, so it is never cleared or written
             // anywhere. The combo already shows "(model default)" for a model that can't take it, so the UI
             // communicates this without a warning the user can't dismiss.

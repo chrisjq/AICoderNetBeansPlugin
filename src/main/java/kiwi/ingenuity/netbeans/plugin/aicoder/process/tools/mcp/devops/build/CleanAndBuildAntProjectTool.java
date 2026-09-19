@@ -12,9 +12,6 @@ import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.devops.BuildSubm
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.providers.netbeans.BuildAndTestAntProvider;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.providers.netbeans.BuildAndTestAntProvider.AntBuildOptions;
 
-/**
- * New in #5 / F2: Ant previously had no clean-then-build tool, unlike Maven (CleanAndBuildMavenProject).
- */
 public class CleanAndBuildAntProjectTool extends AbstractBuildTool {
 
     public CleanAndBuildAntProjectTool() {
