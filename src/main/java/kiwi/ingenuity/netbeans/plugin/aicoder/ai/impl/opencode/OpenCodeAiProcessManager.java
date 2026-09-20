@@ -10,6 +10,7 @@ import java.io.File;
 import java.io.IOException;
 import java.io.InputStreamReader;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
@@ -25,6 +26,7 @@ import kiwi.ingenuity.netbeans.plugin.aicoder.PluginSettings;
 import kiwi.ingenuity.netbeans.plugin.aicoder.StringConst;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.AiProcessManager;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.AiTypeEnum;
+import kiwi.ingenuity.netbeans.plugin.aicoder.ai.events.PolicyRefusalEvent;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.events.StatusEvent;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.events.StatusEventTypeEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.events.TurnCompleteEvent;
@@ -33,6 +35,7 @@ import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.opencode.acp.AcpErrorCodeE
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.opencode.acp.AcpException;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.opencode.acp.AcpJsonKeyEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.opencode.acp.AcpMethodEnum;
+import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.opencode.acp.AcpStopReasonEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.opencode.acp.AcpToolCallStatusEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.opencode.settings.OpenCodePluginSettings;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.opencode.settings.OpenCodeSessionSettings;
@@ -136,6 +139,37 @@ public class OpenCodeAiProcessManager extends AiProcessManager {
         return GSON.toJson(config);
     }
 
+    protected Path sharedOpenCodeDatabase() {
+        return Path.of(System.getProperty("user.home"), ".local", "share", "opencode", "opencode.db");
+    }
+
+    protected String probeOpenCodeVersion() throws IOException, InterruptedException {
+        return OpenCodeExecutableLocator.testExecutable(executablePath);
+    }
+
+    private OpenCodeStartupCoordinator coordinateOpenCodeStartup() {
+        try {
+            return OpenCodeStartupCoordinator.acquire(sharedOpenCodeDatabase(), probeOpenCodeVersion());
+        }
+        catch (Exception e) {
+            LOG.log(Level.WARNING, "Could not probe OpenCode version; starting without migration coordination", e);
+            return OpenCodeStartupCoordinator.acquire(null, null);
+        }
+    }
+
+    /**
+     * Builds the per-plugin-session path exemption used by the ACP permission handler.
+     */
+    java.util.function.Predicate<String> ownSessionConfigFileCheck() {
+        return OpenCodeAcpClientHandler.ownSessionConfigFileCheck(sessionId);
+    }
+
+    static List<String> buildAcpCommand(String executablePath, int port) {
+        return port > 0
+               ? OpenCodeExecutableLocator.buildHostCommand(executablePath, "acp", "--port", Integer.toString(port))
+               : OpenCodeExecutableLocator.buildHostCommand(executablePath, "acp");
+    }
+
     static JsonObject buildInitializeParams(String pluginVersion) {
         JsonObject fs = new JsonObject();
         fs.addProperty(AcpJsonKeyEnum.READ_TEXT_FILE.key(), true);
@@ -206,7 +240,8 @@ public class OpenCodeAiProcessManager extends AiProcessManager {
     volatile String acpSessionId = null;
     volatile String pendingAcpResumeId = null;
     volatile JsonArray sessionConfigOptions = null;
-    private volatile OpenCodeAcpClientHandler activeHandler = null;
+    // Package-private so tests can hand the manager a handler that has recorded refusals.
+    volatile OpenCodeAcpClientHandler activeHandler = null;
     private final List<String> recentStderr = new CopyOnWriteArrayList<>();
 
     /**
@@ -368,111 +403,59 @@ public class OpenCodeAiProcessManager extends AiProcessManager {
         // server about, and passing --port would add a failure mode for no benefit: if the chosen port is taken
         // between our picking it and the agent binding it, opencode exits with ServeError and the session fails to
         // start at all. Verified — it does not fall back to another port.
-        int port = EXPERIMENTAL_STEERING ? OpenCodeSteerClient.pickFreePort() : 0;
-        List<String> cmd = port > 0
-                           ? OpenCodeExecutableLocator.buildHostCommand(
-                        executablePath, "acp", "--cwd", workDir.getAbsolutePath(),
-                        "--port", Integer.toString(port))
-                           : OpenCodeExecutableLocator.buildHostCommand(
-                        executablePath, "acp", "--cwd", workDir.getAbsolutePath());
-
-        // Locks the agent's HTTP server to this plugin. Verified against opencode 1.18.23: with this set, /doc and
-        // POST /api/session/{id}/prompt both answer 401 unauthenticated and 200 with the credentials, while the ACP
-        // stdio channel is unaffected. Two things depend on it. First, opencode keeps sessions in a shared SQLite
-        // store, so any agent's server resolves any session id — a steer that reached the wrong server would be
-        // honoured, not refused, and inter-AI mail would land in another agent's turn. Second, without it the agent
-        // API is unauthenticated on loopback, so any local process could prompt, steer or abort the user's sessions.
-        // The documented default username is used; only the password varies per process.
-        String openCodeMCPPassword = EXPERIMENTAL_STEERING ? OpenCodeSteerClient.generateServerPassword() : null;
-        ProcessBuilder pb = new ProcessBuilder(cmd);
-        pb.directory(workDir);
-        pb.environment().put("OPENCODE_CONFIG_CONTENT", buildPermissionConfigJson());
-        if (openCodeMCPPassword != null) {
-            pb.environment().put("OPENCODE_SERVER_PASSWORD", openCodeMCPPassword);
-        }
-
-        recentStderr.clear();
-        Process process = pb.start();
-
-        // Register the process under the lock so stop() can destroy it if it races us here.
-        synchronized (this) {
-            if (!running) {
-                process.destroyForcibly();
-                throw new IOException("stop() called before handshake began");
-            }
-            currentProcess = process;
-            httpPort = port;
-            this.openCodeMCPPassword = openCodeMCPPassword;
-            // Reset per-spawn: a recycled process may be a different opencode build, and carrying the previous
-            // answer over would have us POST steers at a port nothing is listening on.
-            steerCapable = false;
-        }
-
-        startStderrDrainer(process);
-
-        OpenCodeAcpClientHandler handler = new OpenCodeAcpClientHandler(listener, this::onHandlerDisconnected,
-                                                                        this::trackToolCallLifecycle);
-        AcpConnection conn = new AcpConnection(process.getOutputStream(), process.getInputStream(), handler);
-
-        process.onExit().thenRun(() -> handleProcessExit(process));
-
-        // ---- Blocking wait 1: initialize (outside the monitor) ----
-        JsonObject initResult;
+        OpenCodeStartupCoordinator startupCoordinator = coordinateOpenCodeStartup();
+        int port = EXPERIMENTAL_STEERING && startupCoordinator.supportsAcpPortFlag()
+                   ? OpenCodeSteerClient.pickFreePort() : 0;
         try {
-            initResult = conn.sendRequest(AcpMethodEnum.INITIALIZE, buildInitializeParams(Installer.VERSION))
-                    .get(30, TimeUnit.SECONDS);
-        }
-        catch (Exception e) {
-            conn.close();
+            // OpenCode v2's acp command accepts no flags. The process directory and
+            // session/new or session/resume cwd parameter carry the working directory.
+            List<String> cmd = buildAcpCommand(executablePath, port);
+
+            // Locks the agent's HTTP server to this plugin. Verified against opencode 1.18.23: with this set, /doc and
+            // POST /api/session/{id}/prompt both answer 401 unauthenticated and 200 with the credentials, while the ACP
+            // stdio channel is unaffected. Two things depend on it. First, opencode keeps sessions in a shared SQLite
+            // store, so any agent's server resolves any session id — a steer that reached the wrong server would be
+            // honoured, not refused, and inter-AI mail would land in another agent's turn. Second, without it the agent
+            // API is unauthenticated on loopback, so any local process could prompt, steer or abort the user's sessions.
+            // The documented default username is used; only the password varies per process.
+            String openCodeMCPPassword = EXPERIMENTAL_STEERING ? OpenCodeSteerClient.generateServerPassword() : null;
+            ProcessBuilder pb = new ProcessBuilder(cmd);
+            pb.directory(workDir);
+            pb.environment().put("OPENCODE_CONFIG_CONTENT", buildPermissionConfigJson());
+            if (openCodeMCPPassword != null) {
+                pb.environment().put("OPENCODE_SERVER_PASSWORD", openCodeMCPPassword);
+            }
+
+            recentStderr.clear();
+            Process process = pb.start();
+
+            // Register the process under the lock so stop() can destroy it if it races us here.
             synchronized (this) {
-                if (currentProcess == process) {
-                    currentProcess = null;
+                if (!running) {
+                    process.destroyForcibly();
+                    throw new IOException("stop() called before handshake began");
                 }
+                currentProcess = process;
+                httpPort = port;
+                this.openCodeMCPPassword = openCodeMCPPassword;
+                // Reset per-spawn: a recycled process may be a different opencode build, and carrying the previous
+                // answer over would have us POST steers at a port nothing is listening on.
+                steerCapable = false;
             }
-            process.destroyForcibly();
-            throw new IOException("ACP initialize failed: " + e.getMessage(), e);
-        }
-        int proto = initResult.has(AcpJsonKeyEnum.PROTOCOL_VERSION.key()) ? initResult.get(AcpJsonKeyEnum.PROTOCOL_VERSION.key()).getAsInt() : -1;
-        if (proto != 1) {
-            conn.close();
-            synchronized (this) {
-                if (currentProcess == process) {
-                    currentProcess = null;
-                }
-            }
-            process.destroyForcibly();
-            throw new IOException("Unsupported ACP protocol version: " + proto + " (expected 1)");
-        }
 
-        // ---- Blocking wait 2: session/resume (if stored) or session/new ----
-        // Use the registry's single source of truth for the endpoint URL — correct for all sessions,
-        // not just the first (the registrar only receives addMcpEndpoint on the first of its type).
-        String mcpBaseUrl = McpServerRegistry.endpointUrlFor(AiTypeEnum.OPENCODE);
-        String resumeId = pendingAcpResumeId;
-        JsonObject sessionResult = null;
-        boolean resumed = false;
+            startStderrDrainer(process);
 
-        if (resumeId != null) {
+            OpenCodeAcpClientHandler handler = new OpenCodeAcpClientHandler(listener, this::onHandlerDisconnected,
+                                                                            this::trackToolCallLifecycle,
+                                                                            ownSessionConfigFileCheck());
+            AcpConnection conn = new AcpConnection(process.getOutputStream(), process.getInputStream(), handler);
+
+            process.onExit().thenRun(() -> handleProcessExit(process));
+
+            // ---- Blocking wait 1: initialize (outside the monitor) ----
+            JsonObject initResult;
             try {
-                JsonObject resumeResult = conn.sendRequest(AcpMethodEnum.SESSION_RESUME,
-                                                           buildSessionResumeParams(resumeId, workDir.getAbsolutePath(), mcpBaseUrl))
-                        .get(30, TimeUnit.SECONDS);
-                // session/resume returns only configOptions (no sessionId) — the client
-                // supplied the id in the request; a non-exception return means resume succeeded.
-                sessionResult = resumeResult;
-                resumed = true;
-            }
-            catch (Exception e) {
-                LOG.log(Level.INFO, "session/resume failed; falling back to session/new: {0}", e.getMessage());
-                listener.onAiProcessEvent(new StatusEvent(StatusEventTypeEnum.INFO,
-                                                          "Previous OpenCode session could not be resumed; starting fresh"));
-            }
-        }
-
-        if (!resumed) {
-            try {
-                sessionResult = conn.sendRequest(AcpMethodEnum.SESSION_NEW,
-                                                 buildSessionNewParams(workDir.getAbsolutePath(), mcpBaseUrl))
+                initResult = conn.sendRequest(AcpMethodEnum.INITIALIZE, buildInitializeParams(Installer.VERSION))
                         .get(30, TimeUnit.SECONDS);
             }
             catch (Exception e) {
@@ -483,69 +466,127 @@ public class OpenCodeAiProcessManager extends AiProcessManager {
                     }
                 }
                 process.destroyForcibly();
-                throw new IOException("ACP session/new failed: " + e.getMessage(), e);
+                throw new IOException("ACP initialize failed: " + e.getMessage(), e);
             }
-        }
-
-        String sid = resolveSessionId(resumed, resumeId, sessionResult);
-        if (sid == null || sid.isBlank()) {
-            conn.close();
-            synchronized (this) {
-                if (currentProcess == process) {
-                    currentProcess = null;
-                }
-            }
-            process.destroyForcibly();
-            throw new IOException("session/new returned no " + AcpJsonKeyEnum.SESSION_ID.key());
-        }
-
-        // ---- Publish results under the lock; bail if stop() ran during the waits ----
-        synchronized (this) {
-            if (!running) {
+            int proto = initResult.has(AcpJsonKeyEnum.PROTOCOL_VERSION.key()) ? initResult.get(AcpJsonKeyEnum.PROTOCOL_VERSION.key()).getAsInt() : -1;
+            if (proto != 1) {
                 conn.close();
+                synchronized (this) {
+                    if (currentProcess == process) {
+                        currentProcess = null;
+                    }
+                }
                 process.destroyForcibly();
-                if (currentProcess == process) {
-                    currentProcess = null;
+                throw new IOException("Unsupported ACP protocol version: " + proto + " (expected 1)");
+            }
+
+            // ---- Blocking wait 2: session/resume (if stored) or session/new ----
+            // Use the registry's single source of truth for the endpoint URL — correct for all sessions,
+            // not just the first (the registrar only receives addMcpEndpoint on the first of its type).
+            String mcpBaseUrl = McpServerRegistry.endpointUrlFor(AiTypeEnum.OPENCODE);
+            String resumeId = pendingAcpResumeId;
+            JsonObject sessionResult = null;
+            boolean resumed = false;
+
+            if (resumeId != null) {
+                try {
+                    JsonObject resumeResult = conn.sendRequest(AcpMethodEnum.SESSION_RESUME,
+                                                               buildSessionResumeParams(resumeId, workDir.getAbsolutePath(), mcpBaseUrl))
+                            .get(30, TimeUnit.SECONDS);
+                    // session/resume returns only configOptions (no sessionId) — the client
+                    // supplied the id in the request; a non-exception return means resume succeeded.
+                    sessionResult = resumeResult;
+                    resumed = true;
                 }
-                throw new IOException("stop() called during handshake");
-            }
-            acpSessionId = sid;
-            pendingAcpResumeId = null;
-            if (currentSession != null) {
-                if (currentSession.settings() instanceof OpenCodeSessionSettings) {
-                    ((OpenCodeSessionSettings) currentSession.settings()).setAcpSessionId(sid);
+                catch (Exception e) {
+                    LOG.log(Level.INFO, "session/resume failed; falling back to session/new: {0}", e.getMessage());
+                    listener.onAiProcessEvent(new StatusEvent(StatusEventTypeEnum.INFO,
+                                                              "Previous OpenCode session could not be resumed; starting fresh"));
                 }
-                currentSession.putExtra("opencode_acp_session_id", sid);
             }
-            if (sessionResult.has(AcpJsonKeyEnum.CONFIG_OPTIONS.key()) && sessionResult.get(AcpJsonKeyEnum.CONFIG_OPTIONS.key()).isJsonArray()) {
-                sessionConfigOptions = sessionResult.getAsJsonArray(AcpJsonKeyEnum.CONFIG_OPTIONS.key());
+
+            if (!resumed) {
+                try {
+                    sessionResult = conn.sendRequest(AcpMethodEnum.SESSION_NEW,
+                                                     buildSessionNewParams(workDir.getAbsolutePath(), mcpBaseUrl))
+                            .get(30, TimeUnit.SECONDS);
+                }
+                catch (Exception e) {
+                    conn.close();
+                    synchronized (this) {
+                        if (currentProcess == process) {
+                            currentProcess = null;
+                        }
+                    }
+                    process.destroyForcibly();
+                    throw new IOException("ACP session/new failed: " + e.getMessage(), e);
+                }
             }
-            activeHandler = handler;
-            this.connection = conn;
+
+            String sid = resolveSessionId(resumed, resumeId, sessionResult);
+            if (sid == null || sid.isBlank()) {
+                conn.close();
+                synchronized (this) {
+                    if (currentProcess == process) {
+                        currentProcess = null;
+                    }
+                }
+                process.destroyForcibly();
+                throw new IOException("session/new returned no " + AcpJsonKeyEnum.SESSION_ID.key());
+            }
+
+            // ---- Publish results under the lock; bail if stop() ran during the waits ----
+            synchronized (this) {
+                if (!running) {
+                    conn.close();
+                    process.destroyForcibly();
+                    if (currentProcess == process) {
+                        currentProcess = null;
+                    }
+                    throw new IOException("stop() called during handshake");
+                }
+                acpSessionId = sid;
+                pendingAcpResumeId = null;
+                if (currentSession != null) {
+                    if (currentSession.settings() instanceof OpenCodeSessionSettings) {
+                        ((OpenCodeSessionSettings) currentSession.settings()).setAcpSessionId(sid);
+                    }
+                    currentSession.putExtra("opencode_acp_session_id", sid);
+                }
+                if (sessionResult.has(AcpJsonKeyEnum.CONFIG_OPTIONS.key()) && sessionResult.get(AcpJsonKeyEnum.CONFIG_OPTIONS.key()).isJsonArray()) {
+                    sessionConfigOptions = sessionResult.getAsJsonArray(AcpJsonKeyEnum.CONFIG_OPTIONS.key());
+                }
+                activeHandler = handler;
+                this.connection = conn;
+            }
+            startupCoordinator.recordSuccessfulStart();
+            if (resumed) {
+                LOG.log(Level.INFO, "Resumed OpenCode ACP session: {0}", acpSessionId);
+            }
+            else {
+                LOG.log(Level.INFO, "Started new OpenCode ACP session: {0}", acpSessionId);
+            }
+            Runnable cb = onSessionEstablished;
+            if (cb != null) {
+                cb.run();
+            }
+            boolean settingsChanged = applyInitialModeIfNeeded();
+            if (settingsChanged && cb != null) {
+                // Validation replaced or cleared a stored value — re-persist so the
+                // corrected settings survive the next IDE restart.
+                cb.run();
+            }
+            // Notify info bar that config options are now available (fired outside
+            // the monitor to avoid deadlock; the info bar guards with invokeLater).
+            if (sessionConfigOptions != null) {
+                listener.onAiProcessEvent(new OpenCodeConfigOptionsEvent(sessionConfigOptions));
+            }
+            if (EXPERIMENTAL_STEERING) {
+                probeSteerCapabilityAsync(process, port, openCodeMCPPassword);
+            }
         }
-        if (resumed) {
-            LOG.log(Level.INFO, "Resumed OpenCode ACP session: {0}", acpSessionId);
-        }
-        else {
-            LOG.log(Level.INFO, "Started new OpenCode ACP session: {0}", acpSessionId);
-        }
-        Runnable cb = onSessionEstablished;
-        if (cb != null) {
-            cb.run();
-        }
-        boolean settingsChanged = applyInitialModeIfNeeded();
-        if (settingsChanged && cb != null) {
-            // Validation replaced or cleared a stored value — re-persist so the
-            // corrected settings survive the next IDE restart.
-            cb.run();
-        }
-        // Notify info bar that config options are now available (fired outside
-        // the monitor to avoid deadlock; the info bar guards with invokeLater).
-        if (sessionConfigOptions != null) {
-            listener.onAiProcessEvent(new OpenCodeConfigOptionsEvent(sessionConfigOptions));
-        }
-        if (EXPERIMENTAL_STEERING) {
-            probeSteerCapabilityAsync(process, port, openCodeMCPPassword);
+        finally {
+            startupCoordinator.close();
         }
     }
 
@@ -1091,6 +1132,12 @@ public class OpenCodeAiProcessManager extends AiProcessManager {
         inFlightToolCalls = 0;
         inFlightToolCallIds.clear();
         pendingMailInterrupt = false;
+        // Same reasoning for refusals: none can belong to this turn yet, and one left over must never be reported as
+        // this turn's.
+        OpenCodeAcpClientHandler handler = activeHandler;
+        if (handler != null) {
+            handler.clearTurnRefusals();
+        }
         processing = true;
         CompletableFuture<JsonObject> promptFuture = connection.sendRequest(AcpMethodEnum.SESSION_PROMPT, params);
         promptFuture
@@ -1103,6 +1150,7 @@ public class OpenCodeAiProcessManager extends AiProcessManager {
 
     void handleTurnComplete(JsonObject result) {
         boolean wasRunning;
+        boolean stoppedByUser;
         synchronized (this) {
             processing = false;
             // Turn over: nothing left mid-turn to interrupt, so clear any HELD mail interrupt
@@ -1112,15 +1160,91 @@ public class OpenCodeAiProcessManager extends AiProcessManager {
             inFlightToolCallIds.clear();
             pendingMailInterrupt = false;
             wasRunning = running;
+            // Read BEFORE it is cleared: it is the only thing that tells a turn the user stopped from one a refusal
+            // ended, and both come back as stopReason "cancelled".
+            stoppedByUser = cancelledByUser;
             cancelledByUser = false;
         }
         if (wasRunning) {
+            // BEFORE the turn-complete event, never after: the UI handles that event by deciding whether the session
+            // carries straight on or goes idle, and it can only take the refusal into account if it has already been
+            // told of it. Events reach the UI in the order they are posted here.
+            reportPolicyRefusals(endedByCancellation(result), stoppedByUser);
             listener.onAiProcessEvent(new TurnCompleteEvent());
+        }
+        else {
+            discardTurnRefusals();
+        }
+    }
+
+    /**
+     * True when the {@code session/prompt} response says the turn ended as {@code cancelled}. OpenCode v2 ends a turn
+     * that way when the plugin's read policy refuses a tool call, as well as when the user presses Stop or a mail
+     * interrupt cancels it; the caller tells those apart.
+     */
+    private static boolean endedByCancellation(JsonObject result) {
+        if (result == null || !result.has(AcpJsonKeyEnum.STOP_REASON.key())) {
+            return false;
+        }
+        JsonElement reason = result.get(AcpJsonKeyEnum.STOP_REASON.key());
+        return reason.isJsonPrimitive()
+                && AcpStopReasonEnum.fromWire(reason.getAsString()) == AcpStopReasonEnum.CANCELLED;
+    }
+
+    /**
+     * Tells the UI, invisibly, when a refusal by the read policy is what ended the turn that is about to be reported
+     * complete: posts a {@link PolicyRefusalEvent}, which the UI answers with an agent-only turn.
+     *
+     * <p>
+     * OpenCode v2 answers a refused tool call by ending the WHOLE turn and reporting it as "The user declined this tool
+     * call", although the user was never asked. The agent then believes, and tells the user, that they declined
+     * something.
+     *
+     * <p>
+     * Posted only when ALL of these hold, so nothing is said to a session that did not need it:
+     * <ul>
+     * <li>the handler refused at least one read this turn (otherwise the whole method is one emptiness check);</li>
+     * <li>the turn ended {@code cancelled} — v1 finishes normally and carries on after a refusal, so a follow-up there
+     * would restart a session that never stopped;</li>
+     * <li>the user did not press Stop — that turn ended because they asked.</li>
+     * </ul>
+     * The refusals are taken whether or not they are reported, so none is ever carried into a later turn. How often the
+     * agent may be woken is the UI's business, not this method's: it is what refills that budget, when the user sends a
+     * message.
+     *
+     * <p>
+     * Never calls {@code requestGracefulInterrupt}: the turn is already over, and interrupting would only send another
+     * cancel.
+     */
+    private void reportPolicyRefusals(boolean endedCancelled, boolean stoppedByUser) {
+        OpenCodeAcpClientHandler handler = activeHandler;
+        if (handler == null) {
+            return;
+        }
+        List<PolicyRefusalEvent.Refusal> refusals = handler.consumeTurnRefusals();
+        if (refusals.isEmpty() || stoppedByUser || !endedCancelled) {
+            return;
+        }
+        if (PluginSettings.isDebugJson()) {
+            LOG.log(Level.INFO, "OpenCode policy refusal ended the turn: telling the UI so the agent can be resumed "
+                    + "(session={0}, refusals={1})", new Object[]{sessionId, refusals.size()});
+        }
+        listener.onAiProcessEvent(new PolicyRefusalEvent(refusals));
+    }
+
+    /**
+     * Forgets the turn's refusals without reporting them, for a turn that did not end the way a refusal ends one.
+     */
+    private void discardTurnRefusals() {
+        OpenCodeAcpClientHandler handler = activeHandler;
+        if (handler != null) {
+            handler.clearTurnRefusals();
         }
     }
 
     void handleTurnError(Throwable ex) {
         Throwable cause = ex instanceof CompletionException ? ex.getCause() : ex;
+        boolean stoppedByUser;
         synchronized (this) {
             processing = false;
             // Same turn-end clearing as handleTurnComplete — a cancelled/errored turn has no
@@ -1128,12 +1252,25 @@ public class OpenCodeAiProcessManager extends AiProcessManager {
             inFlightToolCalls = 0;
             inFlightToolCallIds.clear();
             pendingMailInterrupt = false;
+            stoppedByUser = cancelledByUser;
             cancelledByUser = false;
+        }
+        boolean cancelledReply = cause instanceof AcpException cancelEx
+                && cancelEx.code() == AcpErrorCodeEnum.REQUEST_CANCELLED.code();
+        if (!cancelledReply) {
+            // A turn that failed for any other reason is not one a refusal ended, and its refusals must not be carried
+            // into a later turn.
+            discardTurnRefusals();
         }
         if (cause instanceof AcpException) {
             AcpException ae = (AcpException) cause;
             if (ae.code() == AcpErrorCodeEnum.REQUEST_CANCELLED.code()) {
                 // -32800: session/cancel was acknowledged; treat as normal cancel completion
+                //
+                // A cancellation the ERROR channel reports is the same cancelled turn handleTurnComplete sees, so the
+                // same refusal report applies, before the turn-complete event for the same reason. There is no
+                // stopReason here; -32800 itself says "cancelled".
+                reportPolicyRefusals(true, stoppedByUser);
                 listener.onAiProcessEvent(new TurnCompleteEvent());
                 return;
             }

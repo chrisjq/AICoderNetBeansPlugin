@@ -57,6 +57,7 @@ import kiwi.ingenuity.netbeans.plugin.aicoder.ai.events.MultiPermissionEvent;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.events.MultiPermissionItem;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.events.PermissionDecision;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.events.PermissionEvent;
+import kiwi.ingenuity.netbeans.plugin.aicoder.ai.events.PolicyRefusalEvent;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.events.StatusEvent;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.events.StatusEventTypeEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.events.SystemNotificationEvent;
@@ -71,6 +72,7 @@ import kiwi.ingenuity.netbeans.plugin.aicoder.ai.permission.MultiPermissionRevie
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.session.AiSession;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.session.AiSessionCallback;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.session.InterruptTypeEnum;
+import kiwi.ingenuity.netbeans.plugin.aicoder.ai.session.PolicyRefusalBudget;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.session.SessionInstructionsDeliveryEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.settings.AiSessionSettings;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.ui.events.AiInfoBarListener;
@@ -351,6 +353,18 @@ public final class AiTopComponent extends TopComponent implements AiProcessEvent
      * {@code explainInboxInterruptIfNeeded}.
      */
     private volatile boolean mailArrivedDuringTurn;
+    /**
+     * Reads the backend's read policy refused during the turn that just ended, reported by a {@link PolicyRefusalEvent}
+     * posted just before that turn's completion event. Consumed once, when the completion is handled, into the
+     * agent-only notice that resumes the agent. Touched only on the EDT, like every event handler.
+     */
+    private final List<PolicyRefusalEvent.Refusal> pendingPolicyRefusals = new ArrayList<>();
+    /**
+     * How many more times the plugin may resume the agent by itself after a policy refusal. The bound on the loop the
+     * agent could otherwise cause by being refused, resumed and refused again; refilled only by a message from the
+     * user, in {@code handleSubmit}.
+     */
+    private final PolicyRefusalBudget policyRefusalBudget = new PolicyRefusalBudget();
     private final AiInfoBar infoBar;
     private final AiInputField inputField;
     private final JButton sendButton;
@@ -737,6 +751,8 @@ public final class AiTopComponent extends TopComponent implements AiProcessEvent
         // the assistant gets it and the user's transcript keeps only the inbox lines. Consumed here so the empty-queue
         // path cannot repeat it.
         String interrupt = consumeInboxInterruptExplanation();
+        // A policy refusal that ended the turn rides the same agent-only text, in front of the mail explanation.
+        interrupt = joinAgentNotices(consumePolicyRefusalNotice(), interrupt);
         // Combine into a SINGLE turn — handleSubmit/sendPrompt runs one turn at a
         // time, so submitting in a loop would drop all but the first.
         submitNotificationTurn(NotificationTypeEnum.NEW_INBOX_MESSAGE,
@@ -963,6 +979,9 @@ public final class AiTopComponent extends TopComponent implements AiProcessEvent
      */
     private boolean explainInboxInterruptIfNeeded() {
         String explanation = consumeInboxInterruptExplanation();
+        // The other reason a turn can end with nothing else to say: a policy refusal ended it. Same turn, same
+        // agent-only channel, in front of the mail explanation when both apply.
+        explanation = joinAgentNotices(consumePolicyRefusalNotice(), explanation);
         if (explanation == null) {
             return false;
         }
@@ -970,6 +989,58 @@ public final class AiTopComponent extends TopComponent implements AiProcessEvent
         // the whole content. With no visible text handleSubmit renders nothing at all rather than an empty bubble.
         submitNotificationTurn(NotificationTypeEnum.INBOX_INTERRUPT_NOTICE, null, explanation);
         return true;
+    }
+
+    /**
+     * The agent-only notice for the reads the policy refused during the turn that just ended, or null when there is
+     * nothing to say — no refusal ended it, or the agent has already been resumed as often as it may be without the
+     * user saying anything.
+     *
+     * <p>
+     * ONE-SHOT, like the mail flag: the pending refusals are read and cleared together and BEFORE the budget is asked,
+     * so a refusal is never reported on a later turn, spent budget or not.
+     *
+     * <p>
+     * Unlike that flag it also needs a budget. The mail flag is armed by a peer's message and the cancel notice by the
+     * user pressing Stop, so nothing the model does can re-arm them. A refusal is armed by the agent itself, and the
+     * turn this notice starts is what runs the agent again: told to carry on, it can read another path it may not, be
+     * refused, be resumed, and so on with no person in the loop. Each notice therefore spends one unit of
+     * {@link #policyRefusalBudget}, refilled only by the user's own message in {@code handleSubmit}, so the number of
+     * automatic turns per message is bounded whatever the agent does.
+     *
+     * <p>
+     * When the budget is spent nothing is sent and NOTHING IS SHOWN, at the user's request; the only trace is a log
+     * line, gated by the JSON-debug setting like the diagnostics elsewhere.
+     */
+    private String consumePolicyRefusalNotice() {
+        if (pendingPolicyRefusals.isEmpty()) {
+            return null;
+        }
+        List<PolicyRefusalEvent.Refusal> refusals = new ArrayList<>(pendingPolicyRefusals);
+        pendingPolicyRefusals.clear();
+        if (!policyRefusalBudget.tryAcquire()) {
+            if (PluginSettings.isDebugJson()) {
+                LOG.log(Level.INFO, "Policy refusal ended the turn: wake-up budget spent, NOT resuming the agent until "
+                        + "the user sends a message (session={0}, refusals={1})",
+                        new Object[]{session.id(), refusals.size()});
+            }
+            return null;
+        }
+        return PolicyRefusalEvent.compose(refusals);
+    }
+
+    /**
+     * Joins two agent-only notices, {@code first} ahead of {@code second}, skipping one that is null or blank.
+     *
+     * @return null when neither has anything to say
+     */
+    static String joinAgentNotices(String first, String second) {
+        boolean hasFirst = first != null && !first.isBlank();
+        boolean hasSecond = second != null && !second.isBlank();
+        if (hasFirst && hasSecond) {
+            return first + "\n\n" + second;
+        }
+        return hasFirst ? first : hasSecond ? second : null;
     }
 
     private void submitNotificationTurn(NotificationTypeEnum type, String notificationText) {
@@ -1791,6 +1862,12 @@ public final class AiTopComponent extends TopComponent implements AiProcessEvent
                 refreshInputEnabled();
             }
         }
+        else if (event instanceof PolicyRefusalEvent refusalEvent) {
+            // RECORDED, NEVER SHOWN: nothing is drawn, no status is set, nothing is added to history. It is consumed a
+            // moment later, when this turn's completion event arrives, into an agent-only notice — see
+            // consumePolicyRefusalNotice.
+            pendingPolicyRefusals.addAll(refusalEvent.refusals());
+        }
         else if (event instanceof AskUserQuestionEvent aqe) {
             if (assistantTurnActive) {
                 assistantTurnActive = false;
@@ -2103,6 +2180,10 @@ public final class AiTopComponent extends TopComponent implements AiProcessEvent
         // an interruption that did not happen.
         if (userInitiated) {
             mailArrivedDuringTurn = false;
+            // The ONLY place the budget for plugin-started wake-ups after a policy refusal is refilled: a person sent a
+            // message. The wake-up turn itself arrives here with userInitiated=false, so it can never refill its own
+            // budget, and that is what bounds the automatic turns whatever the agent does.
+            policyRefusalBudget.reset();
         }
         // The single call that feeds BOTH the transcript and saved history, so skipping it for a hidden-only submit
         // keeps the text out of the panel and out of any reload.

@@ -2,6 +2,7 @@ package kiwi.ingenuity.netbeans.plugin.aicoder.ai;
 
 import com.google.gson.JsonArray;
 import com.google.gson.JsonObject;
+import java.lang.reflect.Field;
 import java.time.Instant;
 import java.util.Map;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.mail.AiInboxMessage;
@@ -154,6 +155,48 @@ class InterAiToolHandlersTest {
         assertNull(fyi.replyToId());
         assertFalse(fyi.expectsReply());
         assertFalse(fyi.replyImportant());
+    }
+
+    @Test
+    void sendToolRefusesASessionMessagingItselfAndWritesNothing() throws Exception {
+        AiSession self = session("handler-self-sender", "Self", true, true, false);
+        AiSessionInboxBroker broker = AiSessionInboxBroker.getInstance();
+        register(broker, self);
+        SendAiMessageTool tool = new SendAiMessageTool();
+
+        // expectsReply=true is the worst case: it is the flag that would create a pending-reply entry.
+        String result = tool.handle(sendArgs(self, self.id(), "Ping", "to myself", null, false, true, true), null);
+
+        assertTrue(result.startsWith("Error:"), result);
+        assertTrue(result.contains("cannot send a message to your own session"), result);
+        assertTrue(result.contains(self.id()), "the refusal must name the offending id: " + result);
+        assertTrue(result.contains("ListAiSessions"), "the refusal must point at the fix: " + result);
+        assertTrue(broker.listInbox(self.id(), self.secret()).isEmpty(), "a refused self-send must not write an inbox entry");
+        assertTrue(broker.listOwedReplies(self.id()).isEmpty());
+        assertTrue(pendingRepliesOf(broker).values().stream().noneMatch(e -> e.toString().contains(self.id())),
+                   "a refused self-send must not create pending-reply tracking");
+    }
+
+    @Test
+    void sendToolStillDeliversToADifferentSessionAfterTheSelfSendGuard() {
+        AiSession sender = session("handler-self-guard-sender", "Sender", true, true, false);
+        AiSession target = session("handler-self-guard-target", "Target", true, true, false);
+        AiSessionInboxBroker broker = AiSessionInboxBroker.getInstance();
+        register(broker, sender, target);
+        SendAiMessageTool tool = new SendAiMessageTool();
+
+        String result = tool.handle(sendArgs(sender, target.id(), "Hello", "body", null, false, false, false), null);
+
+        assertTrue(result.startsWith("Message sent"), result);
+        assertEquals(1, broker.listInbox(target.id(), target.secret()).size());
+        assertTrue(broker.listInbox(sender.id(), sender.secret()).isEmpty());
+    }
+
+    @SuppressWarnings("unchecked")
+    private static Map<String, Object> pendingRepliesOf(AiSessionInboxBroker broker) throws Exception {
+        Field f = AiSessionInboxBroker.class.getDeclaredField("pendingReplies");
+        f.setAccessible(true);
+        return (Map<String, Object>) f.get(broker);
     }
 
     @Test

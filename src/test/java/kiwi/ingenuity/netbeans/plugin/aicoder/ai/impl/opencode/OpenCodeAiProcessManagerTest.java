@@ -38,6 +38,35 @@ import org.junit.jupiter.api.Test;
 
 class OpenCodeAiProcessManagerTest {
 
+    @Test
+    void ownSessionConfigFileCheckIsAlwaysPassedAsANonNullHandlerPredicate() {
+        OpenCodeAiProcessManager manager = new OpenCodeAiProcessManager(e -> {
+        }) {
+            {
+                sessionId = "opencode-handler-session";
+            }
+        };
+
+        assertNotNull(manager.ownSessionConfigFileCheck(),
+                      "the manager must provide the ACP handler a predicate for its own session configuration files");
+    }
+
+    @Test
+    void acpCommandUsesNoCwdFlagAndKeepsWorkingDirectoryInProcessAndParams() {
+        File workDir = new File(System.getProperty("java.io.tmpdir"));
+        List<String> command = OpenCodeAiProcessManager.buildAcpCommand("opencode", 0);
+        ProcessBuilder builder = new ProcessBuilder(command);
+        builder.directory(workDir);
+
+        assertFalse(command.contains("--cwd"));
+        assertEquals(workDir, builder.directory());
+        assertEquals(workDir.getAbsolutePath(),
+                     OpenCodeAiProcessManager.buildSessionNewParams(workDir.getAbsolutePath()).get("cwd").getAsString());
+        assertEquals(workDir.getAbsolutePath(),
+                     OpenCodeAiProcessManager.buildSessionResumeParams("ses_test", workDir.getAbsolutePath(), null)
+                             .get("cwd").getAsString());
+    }
+
     // ---- Permission routing tests (Part B / Slice 4) ----
     // Carries a resolvable path (via locations[0].path) so this represents a genuine
     // "edit with a known target" request and stays on the PermissionEvent branch —

@@ -10,6 +10,11 @@ import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.TimeoutEnum;
 public enum OpenCodeTimeoutEnum {
     OPENCODE_EXECUTABLE_TEST_MILLIS(10_000L, Kind.OPERATION),
     /**
+     * Bound for each legacy-session export/import subprocess. Migration is a best effort only and must never delay
+     * session startup indefinitely.
+     */
+    LEGACY_DATABASE_MIGRATION_MILLIS(30_000L, Kind.OPERATION),
+    /**
      * Bound for one {@code session/close} round trip during {@code stop()} — a graceful-shutdown courtesy, not a
      * precondition: the wait runs on a background thread (never the caller), and {@code conn.close()}/
      * {@code proc.destroy()} run unconditionally once it returns or this expires.

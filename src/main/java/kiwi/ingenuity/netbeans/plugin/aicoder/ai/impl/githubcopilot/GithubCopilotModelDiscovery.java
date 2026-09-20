@@ -132,7 +132,7 @@ public final class GithubCopilotModelDiscovery {
      * Tier 1: official Copilot SDK ({@code CopilotClient.listModels()}). Also populates
      * {@code GithubCopilotPluginSettings}'s per-model reasoning-effort cache from each {@code ModelInfo}'s
      * {@code getSupportedReasoningEfforts()}/{@code getDefaultReasoningEffort()} — the live discovery, so nothing about
-     * requires so nothing about effort levels is hardcoded. The direct-RPC fallback tier does not carry this (its
+     * effort levels is hardcoded. The direct-RPC fallback tier does not carry this (its
      * response shape is not verified to include these fields), so a model discovered only via that tier is treated as
      * "no support" until SDK-tier discovery succeeds — the fail-safe default.
      */

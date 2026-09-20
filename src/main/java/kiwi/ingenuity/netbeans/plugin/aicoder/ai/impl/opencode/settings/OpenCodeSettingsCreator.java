@@ -7,8 +7,8 @@ import kiwi.ingenuity.netbeans.plugin.aicoder.ai.settings.AiSessionCreateSetting
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.settings.AiSessionSettings;
 
 /**
- * Creates and updates OpenCode-specific AI session settings. Handles
- * instantiation and configuration updates for OpenCode AI implementation.
+ * Creates and updates OpenCode-specific AI session settings. Handles instantiation and configuration updates for
+ * OpenCode AI implementation.
  */
 public class OpenCodeSettingsCreator extends AiModelSessionSettingsCreator<OpenCodeSessionSettings> {
 

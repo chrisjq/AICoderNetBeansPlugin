@@ -52,6 +52,7 @@ public enum AcpJsonKeyEnum {
     CWD("cwd", "Session working directory"),
     MCP_SERVERS("mcpServers", "MCP server configurations"),
     PROMPT("prompt", "Session prompt content"),
+    STOP_REASON("stopReason", "Why a session/prompt turn ended"),
     URL("url", "MCP server endpoint"),
     HEADERS("headers", "MCP server HTTP headers"),
     CONFIG_OPTIONS("configOptions", "ACP configuration options"),

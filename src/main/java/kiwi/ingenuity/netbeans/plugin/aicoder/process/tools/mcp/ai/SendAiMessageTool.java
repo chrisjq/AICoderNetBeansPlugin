@@ -36,7 +36,7 @@ public class SendAiMessageTool extends AbstractActionTool {
 
         JsonObject tid = new JsonObject();
         tid.addProperty(ToolSchemaKeyEnum.TYPE.key(), "string");
-        tid.addProperty(ToolSchemaKeyEnum.DESCRIPTION.key(), "Required target session ID from " + McpToolEnum.LIST_AI_SESSIONS.toolName() + ".");
+        tid.addProperty(ToolSchemaKeyEnum.DESCRIPTION.key(), "Required target session ID from " + McpToolEnum.LIST_AI_SESSIONS.toolName() + " (not your own).");
         props.add(SendAiMessageParamEnum.TARGET_SESSION_ID.key(), tid);
 
         JsonObject subj = new JsonObject();
@@ -131,6 +131,13 @@ public class SendAiMessageTool extends AbstractActionTool {
         String message = args.str(SendAiMessageParamEnum.MESSAGE.key());
         if (targetSessionId == null || targetSessionId.isBlank()) {
             return "Error: " + SendAiMessageParamEnum.TARGET_SESSION_ID.key() + " is required";
+        }
+        // A self-message is never intentional — it is an AI picking its own id off the session list. Refused before
+        // anything is written so it cannot leave an inbox entry or a pending-reply expectation against itself.
+        if (senderId.equals(targetSessionId)) {
+            return "Error: cannot send a message to your own session '" + senderId + "'. Call "
+                    + McpToolEnum.LIST_AI_SESSIONS.toolName() + " and pick a different "
+                    + SendAiMessageParamEnum.TARGET_SESSION_ID.key() + ".";
         }
         if (subject == null || subject.isBlank()) {
             return "Error: " + SendAiMessageParamEnum.SUBJECT.key() + " is required";

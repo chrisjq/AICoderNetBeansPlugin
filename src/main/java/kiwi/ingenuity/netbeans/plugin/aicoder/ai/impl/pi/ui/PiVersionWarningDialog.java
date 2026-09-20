@@ -18,8 +18,7 @@ import kiwi.ingenuity.netbeans.plugin.aicoder.utils.BrowserUtil;
 
 /**
  * "Is pi &lt;version&gt; working correctly with the AI Coder plugin?" dialog, opened from the info bar's
- * version-warning button and the Options → Pi tab's Verify… button, with the exact Yes / Unsure / No behaviour. exact
- * Yes / Unsure / No behaviour.
+ * version-warning button and the Options → Pi tab's Verify… button, with the exact Yes / Unsure / No behaviour.
  */
 public final class PiVersionWarningDialog {
 
