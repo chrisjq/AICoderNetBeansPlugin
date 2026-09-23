@@ -18,10 +18,12 @@ public class BuildAndTestGradleProvider {
     private static final int MAX_OUTPUT_BYTES = 2 * 1024 * 1024;
 
     /**
-     * Options shared by BuildGradleProject, CleanAndBuildGradleProject and RunGradleTests. {@code tasks} carries the
-     * calling tool's own default ({@code build -x test}, {@code clean build -x test}, or {@code test}) when the caller
-     * omitted it — see {@link BuildAndTestMavenProvider.MavenBuildOptions} for why defaulting lives in the tool, not
-     * here.
+     * Options shared by BuildGradleProject, CleanAndBuildGradleProject and
+     * RunGradleTests. {@code tasks} carries the calling tool's own default
+     * ({@code build -x test}, {@code clean build -x test}, or {@code test})
+     * when the caller omitted it — see
+     * {@link BuildAndTestMavenProvider.MavenBuildOptions} for why defaulting
+     * lives in the tool, not here.
      */
     public record GradleBuildOptions(
             List<String> tasks, boolean skipTests, boolean offline, boolean refreshDependencies,
@@ -31,17 +33,17 @@ public class BuildAndTestGradleProvider {
 
     public static String buildProject(String sessionId, String projectPath, GradleBuildOptions opts) {
         return BuildProcessRunner.run(prepareBuildProject(sessionId, projectPath, opts),
-                                      new BuildControl(TimeoutEnum.BUILD_PROCESS_MILLIS.millis())).result();
+                new BuildControl(TimeoutEnum.BUILD_PROCESS_MILLIS.millis())).result();
     }
 
     public static String cleanAndBuildProject(String sessionId, String projectPath, GradleBuildOptions opts) {
         return BuildProcessRunner.run(prepareCleanAndBuildProject(sessionId, projectPath, opts),
-                                      new kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.build.BuildControl(TimeoutEnum.BUILD_PROCESS_MILLIS.millis())).result();
+                new kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.build.BuildControl(TimeoutEnum.BUILD_PROCESS_MILLIS.millis())).result();
     }
 
     public static String runTests(String sessionId, String testClass, String projectPath, GradleBuildOptions opts) {
         return BuildProcessRunner.run(prepareRunTests(sessionId, testClass, projectPath, opts),
-                                      new kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.build.BuildControl(TimeoutEnum.BUILD_PROCESS_MILLIS.millis())).result();
+                new kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.build.BuildControl(TimeoutEnum.BUILD_PROCESS_MILLIS.millis())).result();
     }
 
     public static PreparedBuild prepareBuildProject(String sessionId, String projectPath, GradleBuildOptions opts) {
@@ -71,10 +73,8 @@ public class BuildAndTestGradleProvider {
         if (resolved.error() != null) {
             return PreparedBuild.error(resolved.error());
         }
-        boolean windows = System.getProperty("os.name", "").toLowerCase().contains("win");
-        File wrapper = new File(resolved.root(), windows ? "gradlew.bat" : "gradlew");
         List<String> command = new ArrayList<>();
-        command.add(wrapper.exists() ? wrapper.getAbsolutePath() : "gradle");
+        command.add(BuildToolLocator.forProject(resolved.root(), BuildToolLocator.Tool.GRADLE));
         command.addAll(List.of(argsFor(opts, testClass)));
         command.add("--no-daemon");
         return new PreparedBuild(null, sessionId, resolved.root(), command, BuildOutputFormatter.Backend.GRADLE);
