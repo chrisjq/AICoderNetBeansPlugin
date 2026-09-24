@@ -29,8 +29,7 @@ public final class PluginSettings {
             if (cachedPrefs == null) {
                 try {
                     cachedPrefs = NbPreferences.forModule(PluginSettings.class);
-                }
-                catch (Throwable t) {
+                } catch (Throwable t) {
                     // NetBeans preference storage genuinely unavailable — fall
                     // back to a plain JDK node so callers get defaults instead of
                     // an exception. Logged once.
@@ -207,6 +206,14 @@ public final class PluginSettings {
 
     public static void setAllowIdleWatcherTimer(boolean v) {
         prefs().putBoolean(PluginSettingsKeyEnum.ALLOW_IDLE_WATCHER_TIMER.key(), v);
+    }
+
+    public static boolean isMcpSteering() {
+        return getBoolean(PluginSettingsKeyEnum.MCP_STEERING);
+    }
+
+    public static void setMcpSteering(boolean v) {
+        prefs().putBoolean(PluginSettingsKeyEnum.MCP_STEERING.key(), v);
     }
 
     public static int getMaxHistory() {

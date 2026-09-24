@@ -44,6 +44,8 @@ public final class AiSessionConfigPanel extends JPanel {
         target.setAutoNotifyInbox(source.autoNotifyInbox());
         target.setAllowImportantMessages(source.allowImportantMessages());
         target.setAllowIdleWatcherTimer(source.allowIdleWatcherTimer());
+        target.setMcpSteering(source.mcpSteering());
+
         target.setAllowWebRequests(source.allowWebRequests());
         for (WebRequestAccessOptionEnum option : WebRequestAccessOptionEnum.values()) {
             target.setAllowWebRequestAccess(option, source.allowWebRequestAccess(option));
@@ -103,6 +105,7 @@ public final class AiSessionConfigPanel extends JPanel {
     private final WebRequestAccessSettingsPanel web;
     private final DatabaseAccessSettingsPanel database;
     private final GitAccessSettingsPanel git;
+    private final McpSteeringSettingsPanel mcpSteering;
     private final OpenAiContextSettingsPanel contextPanel;
     private final JPanel typePanelHolder = new JPanel(new BorderLayout());
     @SuppressWarnings("rawtypes")
@@ -122,8 +125,11 @@ public final class AiSessionConfigPanel extends JPanel {
         web = new WebRequestAccessSettingsPanel(sessionLabels);
         database = new DatabaseAccessSettingsPanel(sessionLabels);
         git = new GitAccessSettingsPanel(sessionLabels);
+        mcpSteering = new McpSteeringSettingsPanel(sessionLabels);
+        // Templates are type-agnostic and must expose all editable settings.
+        mcpSteering.setVisible(mode == AiSessionConfigPanelMode.TEMPLATE || !sessionLabels);
         restrict.setText(sessionLabels ? AccessControlLabelEnum.RESTRICT_TO_PROJECT_FILES.displayLabel()
-                         : AccessControlLabelEnum.RESTRICT_TO_PROJECT_FILES.globalLabel());
+                : AccessControlLabelEnum.RESTRICT_TO_PROJECT_FILES.globalLabel());
         setLayout(new GridBagLayout());
         GridBagConstraints c = new GridBagConstraints();
         c.insets = new Insets(4, 4, 4, 4);
@@ -143,14 +149,14 @@ public final class AiSessionConfigPanel extends JPanel {
             addFullTo(generalGroup, gc, 5, git);
             addFullTo(generalGroup, gc, 6, clipboard);
             addFullTo(generalGroup, gc, 7, messaging);
+            addFullTo(generalGroup, gc, 8, mcpSteering);
             addFull(c, 0, generalGroup);
 
             JPanel openAiGroup = buildGroupPanel("OpenAI Compatible Settings");
             GridBagConstraints oc = groupConstraints();
             addFullTo(openAiGroup, oc, 0, contextPanel);
             addFull(c, 1, openAiGroup);
-        }
-        else {
+        } else {
             // General Settings group — visible always
             JPanel generalGroup = buildGroupPanel("General Settings");
             GridBagConstraints gc = groupConstraints();
@@ -163,6 +169,7 @@ public final class AiSessionConfigPanel extends JPanel {
             addFullTo(generalGroup, gc, 6, git);
             addFullTo(generalGroup, gc, 7, clipboard);
             addFullTo(generalGroup, gc, 8, messaging);
+            addFullTo(generalGroup, gc, 9, mcpSteering);
             addFull(c, 0, generalGroup);
 
             // OpenAI Compatible Settings group — hidden until an OpenAI-compatible session is loaded
@@ -198,6 +205,7 @@ public final class AiSessionConfigPanel extends JPanel {
         web.addChangeListener(listener);
         database.addChangeListener(listener);
         git.addChangeListener(listener);
+        mcpSteering.addChangeListener(listener);
         database.addRowLimitChangeListener(e -> listener.actionPerformed(null));
         contextPanel.addChangeListener(listener);
         if (currentTypePanel != null) {
@@ -235,6 +243,8 @@ public final class AiSessionConfigPanel extends JPanel {
         }
         PluginSettings.setDatabaseRowLimit(values.databaseRowLimit());
         PluginSettings.setEnableClipboardAccess(values.enableClipboardAccess());
+        PluginSettings.setMcpSteering(values.mcpSteering());
+
         OpenAiClientSessionSettings ctx = new OpenAiClientSessionSettings();
         contextPanel.applyTo(ctx);
         PluginSettings.setContextTrimTrigger(ctx.contextTrimTrigger().name());
@@ -248,6 +258,11 @@ public final class AiSessionConfigPanel extends JPanel {
     public void loadSession(AiSessionSettings settings) {
         requireNotGlobal();
         loadValues(settings);
+        // Templates are type-agnostic and must keep exposing this control; per-type gating
+        // happens at runtime via session.getType().mcpSteeringSupport().supported().
+        boolean templateMode = mode == AiSessionConfigPanelMode.TEMPLATE;
+        mcpSteering.setVisible(templateMode);
+        mcpSteering.setEnabled(templateMode);
         boolean isOpenAi = settings instanceof OpenAiClientSessionSettings;
         contextPanel.setVisible(isOpenAi);
         if (sessionContextGroup != null) {
@@ -262,6 +277,9 @@ public final class AiSessionConfigPanel extends JPanel {
     public void loadSession(AiSessionSettings settings, AiTypeEnum aiType) {
         requireNotGlobal();
         loadValues(settings);
+        boolean mcpSteeringSupported = aiType != null && aiType.mcpSteeringSupport().supported();
+        mcpSteering.setVisible(mcpSteeringSupported);
+        mcpSteering.setEnabled(mcpSteeringSupported);
         boolean isOpenAi = aiType != null && aiType.isOpenAiCompatible();
         contextPanel.setVisible(isOpenAi);
         if (sessionContextGroup != null) {
@@ -301,6 +319,8 @@ public final class AiSessionConfigPanel extends JPanel {
         result.setRestrictToProjectFiles(restrict.isSelected());
         result.setAutoAccept(autoAccept.isSelected());
         result.setEnableClipboardAccess(clipboard.isSelected());
+        result.setMcpSteering(mcpSteering.isMcpSteeringSelected());
+
         result.setAllowInterAiComms(messaging.isAllowInterAiSelected());
         result.setAutoNotifyInbox(messaging.isAutoNotifySelected());
         result.setAllowImportantMessages(messaging.isAllowImportantSelected());
@@ -365,6 +385,8 @@ public final class AiSessionConfigPanel extends JPanel {
         restrict.setSelected(settings.effectiveRestrictToProjectFiles());
         autoAccept.setSelected(settings.effectiveAutoAccept());
         clipboard.setSelected(settings.effectiveEnableClipboardAccess());
+        mcpSteering.setMcpSteeringSelected(settings.effectiveMcpSteering());
+
         messaging.setAllowInterAiSelected(settings.effectiveAllowInterAiComms());
         messaging.setAutoNotifySelected(settings.effectiveAutoNotifyInbox());
         messaging.setAllowImportantSelected(settings.effectiveAllowImportantMessages());

@@ -46,14 +46,14 @@ import kiwi.ingenuity.netbeans.plugin.aicoder.process.server.McpServerRegistry;
 import kiwi.ingenuity.netbeans.plugin.aicoder.utils.StatusMessageUtil;
 
 /**
- * Manages an OpenCode agent via one long-lived {@code opencode acp} process per plugin session. The process is spawned
- * lazily on the first {@link #sendPrompt} call. MCP wiring is deferred to a later slice.
+ * Manages an OpenCode agent via one long-lived {@code opencode acp} process per plugin session. The process
+ * is spawned lazily on the first {@link #sendPrompt} call. MCP wiring is deferred to a later slice.
  *
  * <p>
- * <b>Safety invariant:</b> The child process is always launched with {@code OPENCODE_CONFIG_CONTENT} set to force
- * {@code ask} permission for all file edits, bash commands and external-directory access. Without this, OpenCode's
- * defaults allow silent file mutations even when the client advertises {@code fs.writeTextFile} capability — confirmed
- * by live probe.
+ * <b>Safety invariant:</b> The child process is always launched with {@code OPENCODE_CONFIG_CONTENT} set to
+ * force {@code ask} permission for all file edits, bash commands and external-directory access. Without this,
+ * OpenCode's defaults allow silent file mutations even when the client advertises {@code fs.writeTextFile}
+ * capability — confirmed by live probe.
  */
 public class OpenCodeAiProcessManager extends AiProcessManager {
 
@@ -61,62 +61,65 @@ public class OpenCodeAiProcessManager extends AiProcessManager {
     private static final Gson GSON = new GsonBuilder().disableHtmlEscaping().create();
     private static final int MAX_STDERR_LINES = 100;
     /**
-     * Developer switch for mid-turn mail steering. NOT a user setting and deliberately not surfaced in the UI — flip it
-     * here in source if you are working on it.
+     * Developer switch for mid-turn mail steering. NOT a user setting and deliberately not surfaced in the UI
+     * — flip it here in source if you are working on it.
      *
      * <p>
-     * <b>OFF because it does not work.</b> The mechanism is implemented and every part of it verified against a real
-     * agent: the plugin passes {@code --port}, locks the agent's HTTP server with a per-process password, confirms
-     * {@code /api/session/…/prompt} is declared in the agent's own OpenAPI document, and POSTs
-     * {@code {"prompt":{"text":…},"delivery":"steer"}} to it — {@code delivery} being a real enum in that schema,
-     * {@code ["steer","queue"]}. The request is accepted. The agent simply never acts on it until the running turn
-     * ends, which is the one thing that would have made it worth doing.
+     * <b>OFF because it does not work.</b> The mechanism is implemented and every part of it verified against
+     * a real agent: the plugin passes {@code --port}, locks the agent's HTTP server with a per-process
+     * password, confirms {@code /api/session/…/prompt} is declared in the agent's own OpenAPI document, and
+     * POSTs {@code {"prompt":{"text":…},"delivery":"steer"}} to it — {@code delivery} being a real enum in
+     * that schema, {@code ["steer","queue"]}. The request is accepted. The agent simply never acts on it
+     * until the running turn ends, which is the one thing that would have made it worth doing.
      *
      * <p>
-     * Tested on opencode 1.18.23 four ways: a blocking POST with a 5 s bound (timed out, our own timeout closing the
-     * connection), the same with a long bound, asynchronous fire-and-forget, and finally a three-phase task with
-     * checkpoints after each phase to rule out "the turn was too short to cross a promotion boundary". In every case
-     * the peer reported the message arriving only after the whole turn finished. {@code POST …/prompt} waits on the
-     * running turn regardless of {@code delivery}; the sibling {@code /session/…/prompt_async} returns immediately but
-     * its schema has no {@code delivery} field at all, so it cannot steer.
+     * Tested on opencode 1.18.23 four ways: a blocking POST with a 5 s bound (timed out, our own timeout
+     * closing the connection), the same with a long bound, asynchronous fire-and-forget, and finally a
+     * three-phase task with checkpoints after each phase to rule out "the turn was too short to cross a
+     * promotion boundary". In every case the peer reported the message arriving only after the whole turn
+     * finished. {@code POST …/prompt} waits on the running turn regardless of {@code delivery}; the sibling
+     * {@code /session/…/prompt_async} returns immediately but its schema has no {@code delivery} field at
+     * all, so it cannot steer.
      *
      * <p>
-     * Left in rather than deleted so it can be re-tested cheaply against a future opencode: set this true, rebuild, and
-     * send a peer important-flagged mail mid-turn. If their transcript shows it before the turn ends, the upstream
-     * behaviour has changed and this can become the default.
+     * Left in rather than deleted so it can be re-tested cheaply against a future opencode: set this true,
+     * rebuild, and send a peer important-flagged mail mid-turn. If their transcript shows it before the turn
+     * ends, the upstream behaviour has changed and this can become the default.
      *
      * <p>
-     * While off, OpenCode spawns exactly as it always did — no {@code --port}, no probe, no HTTP calls — and reports
-     * {@code AFTER_TURN} honestly, because reporting mid-turn capability we cannot deliver would make ListAiSessions
-     * lie to every peer that reads it.
+     * While off, OpenCode spawns exactly as it always did — no {@code --port}, no probe, no HTTP calls — and
+     * reports {@code AFTER_TURN} honestly, because reporting mid-turn capability we cannot deliver would make
+     * ListAiSessions lie to every peer that reads it.
      */
     static final boolean EXPERIMENTAL_STEERING = false;
     /**
-     * Standing guidance prepended to every turn's prompt text, verbatim from the user. Lives HERE — in the one backend
-     * that needs it — rather than in shared AiTypeEnum/ContextProvider code, because it is BEHAVIOUR of this backend's
-     * own send path, not configuration a shared component has to read: OpenCode keeps its own bash/grep/read/edit tools
-     * and reached for them first, and the FORCE_MCP_TOOL_USE handshake line that told it otherwise is seen exactly once
-     * at connect. Prepending inside {@link #sendTurn} means the reminder rides EVERY turn by construction — there is no
-     * delta logic or first-send gate on this path to drop it. Contrast the plugin header at
-     * ContextProvider.buildPreamble, which is gated on {@code lastSentProjects == null} and fires once per session:
-     * that gate is precisely why the existing guidance does not stick, and this text must not share its fate.
+     * Standing guidance prepended to every turn's prompt text, verbatim from the user. Lives HERE — in the
+     * one backend that needs it — rather than in shared AiTypeEnum/ContextProvider code, because it is
+     * BEHAVIOUR of this backend's own send path, not configuration a shared component has to read: OpenCode
+     * keeps its own bash/grep/read/edit tools and reached for them first, and the FORCE_MCP_TOOL_USE
+     * handshake line that told it otherwise is seen exactly once at connect. Prepending inside
+     * {@link #sendTurn} means the reminder rides EVERY turn by construction — there is no delta logic or
+     * first-send gate on this path to drop it. Contrast the plugin header at ContextProvider.buildPreamble,
+     * which is gated on {@code lastSentProjects == null} and fires once per session: that gate is precisely
+     * why the existing guidance does not stick, and this text must not share its fate.
      */
     private static final String MCP_TOOL_PREFERENCE = "Use the plugin's MCP tools over internal tools.";
 
     /**
-     * Backstop wait for a HELD Mail interrupt (F5), mirroring {@code ClaudeTimeoutEnum.MAIL_INTERRUPT_HOLD_MILLIS} (180
-     * s): if an in-flight tool call never reports a terminal status, the safety valve delivers {@code session/cancel}
-     * anyway after this long. Kept as a private constant rather than sourced from {@link OpenCodeTimeoutEnum} — that
-     * enum has no mail-interrupt constant and is out of scope for this change; a constant next to the one place that
-     * owns the hold keeps the backstop and its default together.
+     * Backstop wait for a HELD Mail interrupt (F5), mirroring
+     * {@code ClaudeTimeoutEnum.MAIL_INTERRUPT_HOLD_MILLIS} (180 s): if an in-flight tool call never reports a
+     * terminal status, the safety valve delivers {@code session/cancel} anyway after this long. Kept as a
+     * private constant rather than sourced from {@link OpenCodeTimeoutEnum} — that enum has no mail-interrupt
+     * constant and is out of scope for this change; a constant next to the one place that owns the hold keeps
+     * the backstop and its default together.
      */
     private static final long MAIL_INTERRUPT_HOLD_MILLIS = 180_000L;
 
     /**
-     * Builds the value for the OPENCODE_CONFIG_CONTENT environment variable. Forces "ask" permission for all edit, bash
-     * and external-directory operations, and denies sub-agent spawning outright. This MERGES with the user's existing
-     * config — it does not replace it (verified by live probe) — so it constrains only the sessions this plugin
-     * launches and leaves the user's own {@code opencode} CLI usage alone.
+     * Builds the value for the OPENCODE_CONFIG_CONTENT environment variable. Forces "ask" permission for all
+     * edit, bash and external-directory operations, and denies sub-agent spawning outright. This MERGES with
+     * the user's existing config — it does not replace it (verified by live probe) — so it constrains only
+     * the sessions this plugin launches and leaves the user's own {@code opencode} CLI usage alone.
      */
     static String buildPermissionConfigJson() {
         JsonObject permission = new JsonObject();
@@ -150,8 +153,7 @@ public class OpenCodeAiProcessManager extends AiProcessManager {
     private OpenCodeStartupCoordinator coordinateOpenCodeStartup() {
         try {
             return OpenCodeStartupCoordinator.acquire(sharedOpenCodeDatabase(), probeOpenCodeVersion());
-        }
-        catch (Exception e) {
+        } catch (Exception e) {
             LOG.log(Level.WARNING, "Could not probe OpenCode version; starting without migration coordination", e);
             return OpenCodeStartupCoordinator.acquire(null, null);
         }
@@ -166,8 +168,8 @@ public class OpenCodeAiProcessManager extends AiProcessManager {
 
     static List<String> buildAcpCommand(String executablePath, int port) {
         return port > 0
-               ? OpenCodeExecutableLocator.buildHostCommand(executablePath, "acp", "--port", Integer.toString(port))
-               : OpenCodeExecutableLocator.buildHostCommand(executablePath, "acp");
+                ? OpenCodeExecutableLocator.buildHostCommand(executablePath, "acp", "--port", Integer.toString(port))
+                : OpenCodeExecutableLocator.buildHostCommand(executablePath, "acp");
     }
 
     static JsonObject buildInitializeParams(String pluginVersion) {
@@ -231,7 +233,7 @@ public class OpenCodeAiProcessManager extends AiProcessManager {
             return resumeId;
         }
         return sessionResult != null && sessionResult.has(AcpJsonKeyEnum.SESSION_ID.key())
-               ? sessionResult.get(AcpJsonKeyEnum.SESSION_ID.key()).getAsString() : null;
+                ? sessionResult.get(AcpJsonKeyEnum.SESSION_ID.key()).getAsString() : null;
     }
 
     // Package-private like pendingAcpResumeId/sessionConfigOptions below, so tests
@@ -246,64 +248,66 @@ public class OpenCodeAiProcessManager extends AiProcessManager {
 
     /**
      * Count of ACP tool calls in flight (a {@code tool_call}/{@code tool_call_update} with status pending or
-     * in_progress) not yet released by a completed/failed status — see {@link #trackToolCallLifecycle}. Tracked so a
-     * Mail interrupt can be HELD while a tool call this plugin is itself servicing is still running, instead of
-     * {@code session/cancel} cutting it mid-flight (F5). Guarded by {@code this}, same as {@link #processing}.
+     * in_progress) not yet released by a completed/failed status — see {@link #trackToolCallLifecycle}.
+     * Tracked so a Mail interrupt can be HELD while a tool call this plugin is itself servicing is still
+     * running, instead of {@code session/cancel} cutting it mid-flight (F5). Guarded by {@code this}, same as
+     * {@link #processing}.
      */
     private int inFlightToolCalls = 0;
 
     /**
-     * toolCallIds currently holding {@link #inFlightToolCalls} open. Keys the count by call id so repeated in_progress
-     * (or re-sent pending) updates for the same call never double-count — the id is removed exactly once, on a
-     * completed/failed status. Guarded by {@code this}.
+     * toolCallIds currently holding {@link #inFlightToolCalls} open. Keys the count by call id so repeated
+     * in_progress (or re-sent pending) updates for the same call never double-count — the id is removed
+     * exactly once, on a completed/failed status. Guarded by {@code this}.
      */
     private final Set<String> inFlightToolCallIds = new HashSet<>();
 
     /**
-     * True when a Mail interrupt was requested while {@link #inFlightToolCalls} was &gt; 0 and is waiting to be sent —
-     * either by {@link #trackToolCallLifecycle} as soon as the count returns to zero, or by
+     * True when a Mail interrupt was requested while {@link #inFlightToolCalls} was &gt; 0 and is waiting to
+     * be sent — either by {@link #trackToolCallLifecycle} as soon as the count returns to zero, or by
      * {@link #startMailInterruptSafetyValve} if it never does. Guarded by {@code this}.
      */
     private boolean pendingMailInterrupt = false;
 
     /**
-     * Test seam for {@link #startMailInterruptSafetyValve}'s wait, mirroring {@code ClaudeAiProcessManager}'s identical
-     * seam. Production default is {@link #MAIL_INTERRUPT_HOLD_MILLIS}.
+     * Test seam for {@link #startMailInterruptSafetyValve}'s wait, mirroring {@code ClaudeAiProcessManager}'s
+     * identical seam. Production default is {@link #MAIL_INTERRUPT_HOLD_MILLIS}.
      */
     int mailInterruptSafetyValveMillis = (int) MAIL_INTERRUPT_HOLD_MILLIS;
 
     /**
-     * Test seam: how many watchdogs {@link #startMailInterruptSafetyValve} has started. A second Mail interrupt
-     * arriving while one is already held must be a no-op — one pending flag and one watchdog cover any number of queued
-     * messages — so asserts pin this at 1 across the second-interrupt case. Guarded by {@code this}.
+     * Test seam: how many watchdogs {@link #startMailInterruptSafetyValve} has started. A second Mail
+     * interrupt arriving while one is already held must be a no-op — one pending flag and one watchdog cover
+     * any number of queued messages — so asserts pin this at 1 across the second-interrupt case. Guarded by
+     * {@code this}.
      */
     int mailInterruptSafetyValveStarts = 0;
 
     private volatile OpenCodeAiMcpRegistrar registrar = null;
     /**
-     * Port handed to {@code opencode acp --port}. The agent starts an HTTP server alongside the stdio ACP channel, and
-     * that server is the only way to deliver mail mid-turn (ACP itself has no injection method — its sole mid-turn
-     * control is session/cancel). Nothing announces the port, so the plugin picks a free one and tells the agent,
-     * rather than trying to discover it afterwards. Zero until a process is spawned.
+     * Port handed to {@code opencode acp --port}. The agent starts an HTTP server alongside the stdio ACP
+     * channel, and that server is the only way to deliver mail mid-turn (ACP itself has no injection method —
+     * its sole mid-turn control is session/cancel). Nothing announces the port, so the plugin picks a free
+     * one and tells the agent, rather than trying to discover it afterwards. Zero until a process is spawned.
      */
     private volatile int httpPort = 0;
     /**
-     * Whether this agent's HTTP server advertises the steer route. Resolved once after the handshake by asking the
-     * server for its own OpenAPI document, so an opencode too old to support steering simply degrades to today's
-     * behaviour instead of erroring. False until proven otherwise.
+     * Whether this agent's HTTP server advertises the steer route. Resolved once after the handshake by
+     * asking the server for its own OpenAPI document, so an opencode too old to support steering simply
+     * degrades to today's behaviour instead of erroring. False until proven otherwise.
      */
     private volatile boolean steerCapable = false;
     /**
-     * Per-process secret handed to the spawned agent as {@code OPENCODE_SERVER_PASSWORD}, and presented back on every
-     * request we make to it. Distinct per process on purpose — opencode's session store is shared across agents, so
-     * without it a request that reached the wrong agent's server would be honoured rather than refused. Null until a
-     * process is spawned.
+     * Per-process secret handed to the spawned agent as {@code OPENCODE_SERVER_PASSWORD}, and presented back
+     * on every request we make to it. Distinct per process on purpose — opencode's session store is shared
+     * across agents, so without it a request that reached the wrong agent's server would be honoured rather
+     * than refused. Null until a process is spawned.
      */
     private volatile String openCodeMCPPassword = null;
     /**
-     * Null unless {@link #EXPERIMENTAL_STEERING} is on. Because that flag is a compile-time constant, the branch is
-     * dead code when it is false and {@link OpenCodeSteerClient} is never initialised — so its static HttpClient and
-     * the threads behind it are never created for a build that does not use them.
+     * Null unless {@link #EXPERIMENTAL_STEERING} is on. Because that flag is a compile-time constant, the
+     * branch is dead code when it is false and {@link OpenCodeSteerClient} is never initialised — so its
+     * static HttpClient and the threads behind it are never created for a build that does not use them.
      */
     private final OpenCodeSteerClient steerClient = EXPERIMENTAL_STEERING ? new OpenCodeSteerClient() : null;
     private OpenCodeAiSession openCodeAiSession = null;
@@ -334,12 +338,12 @@ public class OpenCodeAiProcessManager extends AiProcessManager {
         if (!OpenCodeExecutableLocator.isExecutableFile(executablePath)) {
             running = false;
             listener.onAiProcessEvent(new StatusEvent(StatusEventTypeEnum.FAILED,
-                                                      StatusMessageUtil.formatStartFailed("executable not found at " + executablePath)));
+                    StatusMessageUtil.formatStartFailed("executable not found at " + executablePath)));
             return;
         }
         if (currentSession == null) {
             listener.onAiProcessEvent(new StatusEvent(StatusEventTypeEnum.FAILED,
-                                                      StatusMessageUtil.formatSessionNotConfigured()));
+                    StatusMessageUtil.formatSessionNotConfigured()));
             return;
         }
         sessionId = currentSession.id();
@@ -359,16 +363,14 @@ public class OpenCodeAiProcessManager extends AiProcessManager {
             boolean ok = McpServerRegistry.register(reg).get(30, TimeUnit.SECONDS);
             if (ok) {
                 registrar = reg;
-            }
-            else {
+            } else {
                 listener.onAiProcessEvent(new StatusEvent(StatusEventTypeEnum.INFO,
-                                                          "MCP server registration returned false — running without MCP tools"));
+                        "MCP server registration returned false — running without MCP tools"));
             }
-        }
-        catch (Exception e) {
+        } catch (Exception e) {
             LOG.log(Level.WARNING, "MCP server registration failed; running without MCP tools", e);
             listener.onAiProcessEvent(new StatusEvent(StatusEventTypeEnum.INFO,
-                                                      "MCP server unavailable — running without MCP tools"));
+                    "MCP server unavailable — running without MCP tools"));
         }
 
         if (PluginSettings.isDebugJson()) {
@@ -387,10 +389,10 @@ public class OpenCodeAiProcessManager extends AiProcessManager {
     }
 
     /**
-     * Spawns the opencode process and performs the ACP handshake. Always called on a background thread — this method
-     * blocks up to 30 s on {@code initialize} and again on {@code session/new}. The instance monitor is held only for
-     * brief state writes, never across the blocking waits, so other synchronized methods (stop(), cancel via
-     * interrupt()) can run concurrently.
+     * Spawns the opencode process and performs the ACP handshake. Always called on a background thread — this
+     * method blocks up to 30 s on {@code initialize} and again on {@code session/new}. The instance monitor
+     * is held only for brief state writes, never across the blocking waits, so other synchronized methods
+     * (stop(), cancel via interrupt()) can run concurrently.
      */
     protected void spawnAndHandshake(File workDir) throws Exception {
         // --port is what makes the agent's embedded HTTP server reachable, and that server is the only channel for
@@ -405,7 +407,7 @@ public class OpenCodeAiProcessManager extends AiProcessManager {
         // start at all. Verified — it does not fall back to another port.
         OpenCodeStartupCoordinator startupCoordinator = coordinateOpenCodeStartup();
         int port = EXPERIMENTAL_STEERING && startupCoordinator.supportsAcpPortFlag()
-                   ? OpenCodeSteerClient.pickFreePort() : 0;
+                ? OpenCodeSteerClient.pickFreePort() : 0;
         try {
             // OpenCode v2's acp command accepts no flags. The process directory and
             // session/new or session/resume cwd parameter carry the working directory.
@@ -446,8 +448,8 @@ public class OpenCodeAiProcessManager extends AiProcessManager {
             startStderrDrainer(process);
 
             OpenCodeAcpClientHandler handler = new OpenCodeAcpClientHandler(listener, this::onHandlerDisconnected,
-                                                                            this::trackToolCallLifecycle,
-                                                                            ownSessionConfigFileCheck());
+                    this::trackToolCallLifecycle,
+                    ownSessionConfigFileCheck(), null, sessionId);
             AcpConnection conn = new AcpConnection(process.getOutputStream(), process.getInputStream(), handler);
 
             process.onExit().thenRun(() -> handleProcessExit(process));
@@ -457,8 +459,7 @@ public class OpenCodeAiProcessManager extends AiProcessManager {
             try {
                 initResult = conn.sendRequest(AcpMethodEnum.INITIALIZE, buildInitializeParams(Installer.VERSION))
                         .get(30, TimeUnit.SECONDS);
-            }
-            catch (Exception e) {
+            } catch (Exception e) {
                 conn.close();
                 synchronized (this) {
                     if (currentProcess == process) {
@@ -491,27 +492,25 @@ public class OpenCodeAiProcessManager extends AiProcessManager {
             if (resumeId != null) {
                 try {
                     JsonObject resumeResult = conn.sendRequest(AcpMethodEnum.SESSION_RESUME,
-                                                               buildSessionResumeParams(resumeId, workDir.getAbsolutePath(), mcpBaseUrl))
+                            buildSessionResumeParams(resumeId, workDir.getAbsolutePath(), mcpBaseUrl))
                             .get(30, TimeUnit.SECONDS);
                     // session/resume returns only configOptions (no sessionId) — the client
                     // supplied the id in the request; a non-exception return means resume succeeded.
                     sessionResult = resumeResult;
                     resumed = true;
-                }
-                catch (Exception e) {
+                } catch (Exception e) {
                     LOG.log(Level.INFO, "session/resume failed; falling back to session/new: {0}", e.getMessage());
                     listener.onAiProcessEvent(new StatusEvent(StatusEventTypeEnum.INFO,
-                                                              "Previous OpenCode session could not be resumed; starting fresh"));
+                            "Previous OpenCode session could not be resumed; starting fresh"));
                 }
             }
 
             if (!resumed) {
                 try {
                     sessionResult = conn.sendRequest(AcpMethodEnum.SESSION_NEW,
-                                                     buildSessionNewParams(workDir.getAbsolutePath(), mcpBaseUrl))
+                            buildSessionNewParams(workDir.getAbsolutePath(), mcpBaseUrl))
                             .get(30, TimeUnit.SECONDS);
-                }
-                catch (Exception e) {
+                } catch (Exception e) {
                     conn.close();
                     synchronized (this) {
                         if (currentProcess == process) {
@@ -562,8 +561,7 @@ public class OpenCodeAiProcessManager extends AiProcessManager {
             startupCoordinator.recordSuccessfulStart();
             if (resumed) {
                 LOG.log(Level.INFO, "Resumed OpenCode ACP session: {0}", acpSessionId);
-            }
-            else {
+            } else {
                 LOG.log(Level.INFO, "Started new OpenCode ACP session: {0}", acpSessionId);
             }
             Runnable cb = onSessionEstablished;
@@ -584,36 +582,36 @@ public class OpenCodeAiProcessManager extends AiProcessManager {
             if (EXPERIMENTAL_STEERING) {
                 probeSteerCapabilityAsync(process, port, openCodeMCPPassword);
             }
-        }
-        finally {
+        } finally {
             startupCoordinator.close();
         }
     }
 
     /**
-     * Delivers an inbox notification by cancelling the running turn, so the agent reads its mail on the next turn.
+     * Delivers an inbox notification by cancelling the running turn, so the agent reads its mail on the next
+     * turn.
      *
      * <p>
-     * ACP has no separate mail-injection method; {@code session/cancel} ends the turn and cuts any in-flight tool call
-     * with it. The queued inbox message is delivered on the next turn through the normal inbox flush. The agent then
-     * reads it through the inbox tools.
+     * ACP has no separate mail-injection method; {@code session/cancel} ends the turn and cuts any in-flight
+     * tool call with it. The queued inbox message is delivered on the next turn through the normal inbox
+     * flush. The agent then reads it through the inbox tools.
      *
      * <p>
      * <b>F5:</b> while a tool call is in flight the cancel is always HELD, never sent — OpenCode treats
-     * {@code session/cancel} as "the user doesn't want to proceed" and aborts whatever it is waiting on, including a
-     * tool call this plugin is itself servicing over the MCP HTTP endpoint. Cutting that call loses work for a message
-     * that is already queued in the inbox anyway. The hold flushes the moment the last in-flight call reports a
-     * terminal status ({@link #trackToolCallLifecycle}), with {@link #startMailInterruptSafetyValve} as the backstop if
-     * no terminal status ever arrives.
+     * {@code session/cancel} as "the user doesn't want to proceed" and aborts whatever it is waiting on,
+     * including a tool call this plugin is itself servicing over the MCP HTTP endpoint. Cutting that call
+     * loses work for a message that is already queued in the inbox anyway. The hold flushes the moment the
+     * last in-flight call reports a terminal status ({@link #trackToolCallLifecycle}), with
+     * {@link #startMailInterruptSafetyValve} as the backstop if no terminal status ever arrives.
      *
      * <p>
-     * Sends a notification, not the message body, matching Codex: the agent is told mail exists and fetches it with the
-     * inbox tools. That keeps one copy of the message (the inbox) rather than pasting a second into the conversation,
-     * and avoids putting arbitrary text into a turn the user did not author.
+     * Sends a notification, not the message body, matching Codex: the agent is told mail exists and fetches
+     * it with the inbox tools. That keeps one copy of the message (the inbox) rather than pasting a second
+     * into the conversation, and avoids putting arbitrary text into a turn the user did not author.
      *
      * <p>
-     * Every failure path is a silent no-op by design. The message is already queued in the inbox and will be delivered
-     * by the normal inbox flush, so a missing connection costs promptness, never the message.
+     * Every failure path is a silent no-op by design. The message is already queued in the inbox and will be
+     * delivered by the normal inbox flush, so a missing connection costs promptness, never the message.
      */
     private void interruptMail() {
         AcpConnection conn;
@@ -664,16 +662,17 @@ public class OpenCodeAiProcessManager extends AiProcessManager {
     }
 
     /**
-     * Updates {@link #inFlightToolCalls} from one tool-call lifecycle signal ({@code (toolCallId, status)}, forwarded
-     * by {@link OpenCodeAcpClientHandler} for every {@code tool_call}/{@code tool_call_update}) and flushes a HELD Mail
-     * interrupt ({@link #pendingMailInterrupt}) as soon as the count returns to zero — before whatever update comes
-     * next, which is what keeps the interrupt from landing mid-tool-call (F5).
+     * Updates {@link #inFlightToolCalls} from one tool-call lifecycle signal ({@code (toolCallId, status)},
+     * forwarded by {@link OpenCodeAcpClientHandler} for every {@code tool_call}/{@code tool_call_update}) and
+     * flushes a HELD Mail interrupt ({@link #pendingMailInterrupt}) as soon as the count returns to zero —
+     * before whatever update comes next, which is what keeps the interrupt from landing mid-tool-call (F5).
      *
      * <p>
-     * Counted per toolCallId ({@link #inFlightToolCallIds}) so repeated in_progress updates for the same call never
-     * double-count; released exactly once by a completed/failed status. Unknown statuses (anything outside the
-     * documented pending/in_progress/completed/failed vocabulary) are ignored — the count stays where it was and the
-     * safety valve is the backstop, rather than guessing whether the update ends the call.
+     * Counted per toolCallId ({@link #inFlightToolCallIds}) so repeated in_progress updates for the same call
+     * never double-count; released exactly once by a completed/failed status. Unknown statuses (anything
+     * outside the documented pending/in_progress/completed/failed vocabulary) are ignored — the count stays
+     * where it was and the safety valve is the backstop, rather than guessing whether the update ends the
+     * call.
      */
     void trackToolCallLifecycle(String toolCallId, String status) {
         if (toolCallId == null || toolCallId.isBlank() || status == null || status.isBlank()) {
@@ -692,8 +691,7 @@ public class OpenCodeAiProcessManager extends AiProcessManager {
                 if (inFlightToolCallIds.remove(toolCallId)) {
                     inFlightToolCalls = Math.max(0, inFlightToolCalls - 1);
                 }
-            }
-            else if (s.isInFlight()) {
+            } else if (s.isInFlight()) {
                 if (inFlightToolCallIds.add(toolCallId)) {
                     inFlightToolCalls++;
                 }
@@ -721,11 +719,12 @@ public class OpenCodeAiProcessManager extends AiProcessManager {
     }
 
     /**
-     * Backstop for a HELD Mail interrupt (F5): if {@link #inFlightToolCalls} never returns to zero — a lost update, an
-     * unknown status, or the agent itself hanging — {@link #trackToolCallLifecycle} would otherwise never flush it and
-     * the interrupt would wait forever. Delivers the cancel anyway after {@link #mailInterruptSafetyValveMillis},
-     * exactly like {@code ClaudeAiProcessManager.startMailInterruptSafetyValve}'s identical pattern for the same
-     * defect. Guards on {@code connection == connAtHold} (the connection captured when the hold began) so a watchdog
+     * Backstop for a HELD Mail interrupt (F5): if {@link #inFlightToolCalls} never returns to zero — a lost
+     * update, an unknown status, or the agent itself hanging — {@link #trackToolCallLifecycle} would
+     * otherwise never flush it and the interrupt would wait forever. Delivers the cancel anyway after
+     * {@link #mailInterruptSafetyValveMillis}, exactly like
+     * {@code ClaudeAiProcessManager.startMailInterruptSafetyValve}'s identical pattern for the same defect.
+     * Guards on {@code connection == connAtHold} (the connection captured when the hold began) so a watchdog
      * from an earlier, already-resolved hold can never fire against a later, unrelated session.
      */
     private void startMailInterruptSafetyValve(AcpConnection connAtHold) {
@@ -733,8 +732,7 @@ public class OpenCodeAiProcessManager extends AiProcessManager {
         Thread watchdog = new Thread(() -> {
             try {
                 Thread.sleep(mailInterruptSafetyValveMillis);
-            }
-            catch (InterruptedException e) {
+            } catch (InterruptedException e) {
                 Thread.currentThread().interrupt();
                 return;
             }
@@ -751,8 +749,7 @@ public class OpenCodeAiProcessManager extends AiProcessManager {
                     conn = connection;
                     sid = acpSessionId;
                     h = activeHandler;
-                }
-                else {
+                } else {
                     return;
                 }
             }
@@ -777,13 +774,13 @@ public class OpenCodeAiProcessManager extends AiProcessManager {
      * Asks the agent's own HTTP server whether it advertises the steer route, and records the answer.
      *
      * <p>
-     * Off-thread deliberately: the probe is only needed by the time mail arrives, and doing it inline would add its
-     * timeout to session startup on any build that turns out not to support steering — the one case where the user
-     * gains nothing by waiting.
+     * Off-thread deliberately: the probe is only needed by the time mail arrives, and doing it inline would
+     * add its timeout to session startup on any build that turns out not to support steering — the one case
+     * where the user gains nothing by waiting.
      *
      * <p>
-     * The result is pinned to the process that was just spawned. A slow probe answering after that process has been
-     * replaced must not enable steering against a port belonging to a session that no longer exists.
+     * The result is pinned to the process that was just spawned. A slow probe answering after that process
+     * has been replaced must not enable steering against a port belonging to a session that no longer exists.
      */
     private void probeSteerCapabilityAsync(Process spawned, int port, String password) {
         Thread probe = new Thread(() -> {
@@ -825,12 +822,12 @@ public class OpenCodeAiProcessManager extends AiProcessManager {
     }
 
     /**
-     * Reconciles the session's chosen model against what the agent actually started with. {@code session/new} carries
-     * no model parameter — OpenCode always picks its own model when a session is created — so without this, every
-     * session silently ran whatever OpenCode defaulted to (typically {@code opencode/big-pickle}) regardless of what
-     * the user chose per session. Unlike mode/effort, an unavailable choice is never silently substituted here: it is
-     * surfaced (status message + log) instead, because running a different model than the user asked for without
-     * telling them is the entire bug this method exists to fix.
+     * Reconciles the session's chosen model against what the agent actually started with. {@code session/new}
+     * carries no model parameter — OpenCode always picks its own model when a session is created — so without
+     * this, every session silently ran whatever OpenCode defaulted to (typically {@code opencode/big-pickle})
+     * regardless of what the user chose per session. Unlike mode/effort, an unavailable choice is never
+     * silently substituted here: it is surfaced (status message + log) instead, because running a different
+     * model than the user asked for without telling them is the entire bug this method exists to fix.
      */
     private boolean applyInitialModelOption(OpenCodeSessionSettings s) {
         String agentCurrentModel = null;
@@ -872,20 +869,19 @@ public class OpenCodeAiProcessManager extends AiProcessManager {
                     "OpenCode session requested model \"{0}\" but the agent does not offer it (available: {1}); "
                     + "running \"{2}\" instead", new Object[]{requestedModel, availableModels, agentCurrentModel});
             listener.onAiProcessEvent(new StatusEvent(StatusEventTypeEnum.INFO,
-                                                      "Model \"" + requestedModel + "\" is not available; running \"" + agentCurrentModel
-                                                      + "\" instead"));
+                    "Model \"" + requestedModel + "\" is not available; running \"" + agentCurrentModel
+                    + "\" instead"));
             return false;
         }
         try {
             JsonArray updated = setConfigOption("model", requestedModel).get(30, TimeUnit.SECONDS);
             sessionConfigOptions = updated;
-        }
-        catch (Exception e) {
+        } catch (Exception e) {
             LOG.log(Level.WARNING, "OpenCode rejected model \"{0}\": {1}",
                     new Object[]{requestedModel, e.getMessage()});
             listener.onAiProcessEvent(new StatusEvent(StatusEventTypeEnum.INFO,
-                                                      "Model \"" + requestedModel + "\" was rejected by OpenCode; running \"" + agentCurrentModel
-                                                      + "\" instead"));
+                    "Model \"" + requestedModel + "\" was rejected by OpenCode; running \"" + agentCurrentModel
+                    + "\" instead"));
         }
         return false;
     }
@@ -919,7 +915,7 @@ public class OpenCodeAiProcessManager extends AiProcessManager {
         boolean settingsChanged = false;
         if (!availableModes.isEmpty() && !availableModes.contains(effectiveMode)) {
             listener.onAiProcessEvent(new StatusEvent(StatusEventTypeEnum.INFO,
-                                                      "Mode \"" + effectiveMode + "\" is not available; using agent default"));
+                    "Mode \"" + effectiveMode + "\" is not available; using agent default"));
             effectiveMode = agentCurrentMode;
             s.setMode(effectiveMode);
             settingsChanged = true;
@@ -928,10 +924,9 @@ public class OpenCodeAiProcessManager extends AiProcessManager {
             try {
                 JsonArray updated = setConfigOption("mode", effectiveMode).get(30, TimeUnit.SECONDS);
                 sessionConfigOptions = updated;
-            }
-            catch (Exception e) {
+            } catch (Exception e) {
                 listener.onAiProcessEvent(new StatusEvent(StatusEventTypeEnum.INFO,
-                                                          "Mode \"" + effectiveMode + "\" rejected by OpenCode; using default"));
+                        "Mode \"" + effectiveMode + "\" rejected by OpenCode; using default"));
             }
         }
         return settingsChanged;
@@ -965,7 +960,7 @@ public class OpenCodeAiProcessManager extends AiProcessManager {
         if (!effortOptionExists) {
             if (storedEffort != null) {
                 listener.onAiProcessEvent(new StatusEvent(StatusEventTypeEnum.INFO,
-                                                          "Effort setting \"" + storedEffort + "\" ignored: model does not support effort"));
+                        "Effort setting \"" + storedEffort + "\" ignored: model does not support effort"));
                 s.setEffort(null);
                 return true;
             }
@@ -976,7 +971,7 @@ public class OpenCodeAiProcessManager extends AiProcessManager {
         }
         if (!availableEfforts.contains(storedEffort)) {
             listener.onAiProcessEvent(new StatusEvent(StatusEventTypeEnum.INFO,
-                                                      "Effort \"" + storedEffort + "\" is not available; clearing stored effort"));
+                    "Effort \"" + storedEffort + "\" is not available; clearing stored effort"));
             s.setEffort(null);
             return true;
         }
@@ -984,10 +979,9 @@ public class OpenCodeAiProcessManager extends AiProcessManager {
             try {
                 JsonArray updated = setConfigOption("effort", storedEffort).get(30, TimeUnit.SECONDS);
                 sessionConfigOptions = updated;
-            }
-            catch (Exception e) {
+            } catch (Exception e) {
                 listener.onAiProcessEvent(new StatusEvent(StatusEventTypeEnum.INFO,
-                                                          "Effort \"" + storedEffort + "\" rejected by OpenCode"));
+                        "Effort \"" + storedEffort + "\" rejected by OpenCode"));
             }
         }
         return false;
@@ -1007,8 +1001,7 @@ public class OpenCodeAiProcessManager extends AiProcessManager {
                         recentStderr.remove(0);
                     }
                 }
-            }
-            catch (IOException e) {
+            } catch (IOException e) {
                 LOG.log(Level.FINE, "opencode stderr drainer ended", e);
             }
         }, "opencode-stderr");
@@ -1032,7 +1025,7 @@ public class OpenCodeAiProcessManager extends AiProcessManager {
         int code = dead.exitValue();
         if (!suppress && code != 0) {
             listener.onAiProcessEvent(new StatusEvent(StatusEventTypeEnum.EXITED,
-                                                      StatusMessageUtil.formatExited("OpenCode", code, new ArrayList<>(recentStderr))));
+                    StatusMessageUtil.formatExited("OpenCode", code, new ArrayList<>(recentStderr))));
         }
     }
 
@@ -1072,32 +1065,32 @@ public class OpenCodeAiProcessManager extends AiProcessManager {
     }
 
     /**
-     * Background-thread entry point when no ACP connection exists yet. Calls {@link #spawnAndHandshake} (which blocks
-     * up to 60 s), then hands the prompt to {@link #sendTurn} once the connection is live — holding {@code processing}
-     * true across the hand-off so an EDT {@link #sendPrompt} landing in between cannot slip past its guard and start a
-     * duplicate turn/handshake. Runs entirely outside the instance monitor during the blocking wait.
+     * Background-thread entry point when no ACP connection exists yet. Calls {@link #spawnAndHandshake}
+     * (which blocks up to 60 s), then hands the prompt to {@link #sendTurn} once the connection is live —
+     * holding {@code processing} true across the hand-off so an EDT {@link #sendPrompt} landing in between
+     * cannot slip past its guard and start a duplicate turn/handshake. Runs entirely outside the instance
+     * monitor during the blocking wait.
      */
     private void handshakeAndSend(String text, File workDir, List<File> projectDirs) {
         try {
             spawnAndHandshake(workDir);
-        }
-        catch (Exception e) {
+        } catch (Exception e) {
             synchronized (this) {
                 processing = false;
             }
             listener.onAiProcessEvent(new StatusEvent(StatusEventTypeEnum.FAILED,
-                                                      StatusMessageUtil.formatSendFailed(e.getMessage())));
+                    StatusMessageUtil.formatSendFailed(e.getMessage())));
             return;
         }
         deliverAfterHandshake(text);
     }
 
     /**
-     * Post-handshake delivery of the prompt queued by {@link #sendPrompt}, extracted from {@link #handshakeAndSend} so
-     * tests can drive the hand-off without spawning a real CLI. Keep {@code processing} true through the hand-off
-     * below: sendTurn rearms it, so only paths that never reach sendTurn clear it — exactly once, under the monitor.
-     * Clearing it unconditionally here reopened a window in which an EDT sendPrompt saw !processing and raced this
-     * thread with a second submit.
+     * Post-handshake delivery of the prompt queued by {@link #sendPrompt}, extracted from
+     * {@link #handshakeAndSend} so tests can drive the hand-off without spawning a real CLI. Keep
+     * {@code processing} true through the hand-off below: sendTurn rearms it, so only paths that never reach
+     * sendTurn clear it — exactly once, under the monitor. Clearing it unconditionally here reopened a window
+     * in which an EDT sendPrompt saw !processing and raced this thread with a second submit.
      */
     void deliverAfterHandshake(String text) {
         synchronized (this) {
@@ -1171,16 +1164,15 @@ public class OpenCodeAiProcessManager extends AiProcessManager {
             // told of it. Events reach the UI in the order they are posted here.
             reportPolicyRefusals(endedByCancellation(result), stoppedByUser);
             listener.onAiProcessEvent(new TurnCompleteEvent());
-        }
-        else {
+        } else {
             discardTurnRefusals();
         }
     }
 
     /**
-     * True when the {@code session/prompt} response says the turn ended as {@code cancelled}. OpenCode v2 ends a turn
-     * that way when the plugin's read policy refuses a tool call, as well as when the user presses Stop or a mail
-     * interrupt cancels it; the caller tells those apart.
+     * True when the {@code session/prompt} response says the turn ended as {@code cancelled}. OpenCode v2
+     * ends a turn that way when the plugin's read policy refuses a tool call, as well as when the user
+     * presses Stop or a mail interrupt cancels it; the caller tells those apart.
      */
     private static boolean endedByCancellation(JsonObject result) {
         if (result == null || !result.has(AcpJsonKeyEnum.STOP_REASON.key())) {
@@ -1192,29 +1184,30 @@ public class OpenCodeAiProcessManager extends AiProcessManager {
     }
 
     /**
-     * Tells the UI, invisibly, when a refusal by the read policy is what ended the turn that is about to be reported
-     * complete: posts a {@link PolicyRefusalEvent}, which the UI answers with an agent-only turn.
+     * Tells the UI, invisibly, when a refusal by the read policy is what ended the turn that is about to be
+     * reported complete: posts a {@link PolicyRefusalEvent}, which the UI answers with an agent-only turn.
      *
      * <p>
-     * OpenCode v2 answers a refused tool call by ending the WHOLE turn and reporting it as "The user declined this tool
-     * call", although the user was never asked. The agent then believes, and tells the user, that they declined
-     * something.
+     * OpenCode v2 answers a refused tool call by ending the WHOLE turn and reporting it as "The user declined
+     * this tool call", although the user was never asked. The agent then believes, and tells the user, that
+     * they declined something.
      *
      * <p>
      * Posted only when ALL of these hold, so nothing is said to a session that did not need it:
      * <ul>
-     * <li>the handler refused at least one read this turn (otherwise the whole method is one emptiness check);</li>
-     * <li>the turn ended {@code cancelled} — v1 finishes normally and carries on after a refusal, so a follow-up there
-     * would restart a session that never stopped;</li>
+     * <li>the handler refused at least one read this turn (otherwise the whole method is one emptiness
+     * check);</li>
+     * <li>the turn ended {@code cancelled} — v1 finishes normally and carries on after a refusal, so a
+     * follow-up there would restart a session that never stopped;</li>
      * <li>the user did not press Stop — that turn ended because they asked.</li>
      * </ul>
-     * The refusals are taken whether or not they are reported, so none is ever carried into a later turn. How often the
-     * agent may be woken is the UI's business, not this method's: it is what refills that budget, when the user sends a
-     * message.
+     * The refusals are taken whether or not they are reported, so none is ever carried into a later turn. How
+     * often the agent may be woken is the UI's business, not this method's: it is what refills that budget,
+     * when the user sends a message.
      *
      * <p>
-     * Never calls {@code requestGracefulInterrupt}: the turn is already over, and interrupting would only send another
-     * cancel.
+     * Never calls {@code requestGracefulInterrupt}: the turn is already over, and interrupting would only
+     * send another cancel.
      */
     private void reportPolicyRefusals(boolean endedCancelled, boolean stoppedByUser) {
         OpenCodeAcpClientHandler handler = activeHandler;
@@ -1233,7 +1226,8 @@ public class OpenCodeAiProcessManager extends AiProcessManager {
     }
 
     /**
-     * Forgets the turn's refusals without reporting them, for a turn that did not end the way a refusal ends one.
+     * Forgets the turn's refusals without reporting them, for a turn that did not end the way a refusal ends
+     * one.
      */
     private void discardTurnRefusals() {
         OpenCodeAcpClientHandler handler = activeHandler;
@@ -1276,12 +1270,12 @@ public class OpenCodeAiProcessManager extends AiProcessManager {
             }
             if (ae.code() == AcpErrorCodeEnum.AUTH_REQUIRED.code()) {
                 listener.onAiProcessEvent(new StatusEvent(StatusEventTypeEnum.FAILED,
-                                                          "Run `opencode auth login` in the terminal"));
+                        "Run `opencode auth login` in the terminal"));
                 return;
             }
         }
         listener.onAiProcessEvent(new StatusEvent(StatusEventTypeEnum.FAILED,
-                                                  StatusMessageUtil.formatSendFailed(cause != null ? cause.getMessage() : ex.getMessage())));
+                StatusMessageUtil.formatSendFailed(cause != null ? cause.getMessage() : ex.getMessage())));
     }
 
     @Override
@@ -1334,11 +1328,11 @@ public class OpenCodeAiProcessManager extends AiProcessManager {
     }
 
     /**
-     * Sends {@code session/cancel} as a fire-and-forget notification over the given connection. The one shared
-     * mechanism for every cancel — mid-turn interrupts and teardown alike — so the two paths cannot drift apart again
-     * (stop() historically forgot the cancel entirely; review finding I2). Harmless when no turn is in flight: a
-     * JSON-RPC notification expects no response, so no error can come back, and an agent with nothing to cancel simply
-     * ignores it.
+     * Sends {@code session/cancel} as a fire-and-forget notification over the given connection. The one
+     * shared mechanism for every cancel — mid-turn interrupts and teardown alike — so the two paths cannot
+     * drift apart again (stop() historically forgot the cancel entirely; review finding I2). Harmless when no
+     * turn is in flight: a JSON-RPC notification expects no response, so no error can come back, and an agent
+     * with nothing to cancel simply ignores it.
      */
     private void sendCancelNotification(AcpConnection conn, String sid) {
         JsonObject params = new JsonObject();
@@ -1399,11 +1393,9 @@ public class OpenCodeAiProcessManager extends AiProcessManager {
             Thread reaper = new Thread(() -> {
                 try {
                     closeFuture.get(OpenCodeTimeoutEnum.SESSION_CLOSE_WAIT_MILLIS.millis(), TimeUnit.MILLISECONDS);
-                }
-                catch (InterruptedException e) {
+                } catch (InterruptedException e) {
                     Thread.currentThread().interrupt();
-                }
-                catch (Exception e) {
+                } catch (Exception e) {
                     LOG.log(Level.FINE, "session/close timed out or failed during stop", e);
                 }
                 conn.close();
@@ -1413,8 +1405,7 @@ public class OpenCodeAiProcessManager extends AiProcessManager {
             }, "opencode-stop-reaper");
             reaper.setDaemon(true);
             reaper.start();
-        }
-        else if (proc != null) {
+        } else if (proc != null) {
             proc.destroy();
         }
 
@@ -1463,18 +1454,20 @@ public class OpenCodeAiProcessManager extends AiProcessManager {
     }
 
     /**
-     * The configOptions array captured from the session/new response. Null before the ACP handshake completes.
+     * The configOptions array captured from the session/new response. Null before the ACP handshake
+     * completes.
      */
     public JsonArray configOptions() {
         return sessionConfigOptions;
     }
 
     /**
-     * Changes one session config option (model, effort, or mode — the only three ids OpenCode accepts; anything else
-     * fails server-side with InvalidConfigOptionError). Completes with the COMPLETE configOptions snapshot from the
-     * response, not just the changed entry — options are interdependent (e.g. effort depends on the selected model),
-     * and no config_option_update notification is sent for this change, so the response is the only source of truth.
-     * This is the only reliable snapshot of the changed state.
+     * Changes one session config option (model, effort, or mode — the only three ids OpenCode accepts;
+     * anything else fails server-side with InvalidConfigOptionError). Completes with the COMPLETE
+     * configOptions snapshot from the response, not just the changed entry — options are interdependent (e.g.
+     * effort depends on the selected model), and no config_option_update notification is sent for this
+     * change, so the response is the only source of truth. This is the only reliable snapshot of the changed
+     * state.
      */
     public CompletableFuture<JsonArray> setConfigOption(String configId, String value) {
         AcpConnection conn = connection;
@@ -1491,8 +1484,8 @@ public class OpenCodeAiProcessManager extends AiProcessManager {
                 .thenApply(result -> {
                     JsonArray options = result != null && result.has(AcpJsonKeyEnum.CONFIG_OPTIONS.key())
                             && result.get(AcpJsonKeyEnum.CONFIG_OPTIONS.key()).isJsonArray()
-                                        ? result.getAsJsonArray(AcpJsonKeyEnum.CONFIG_OPTIONS.key())
-                                        : new JsonArray();
+                            ? result.getAsJsonArray(AcpJsonKeyEnum.CONFIG_OPTIONS.key())
+                            : new JsonArray();
                     sessionConfigOptions = options;
                     return options;
                 });

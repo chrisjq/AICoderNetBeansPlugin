@@ -12,7 +12,9 @@ import java.util.List;
 import java.util.concurrent.atomic.AtomicReference;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import org.junit.jupiter.api.Test;
 
@@ -21,37 +23,37 @@ class OpenAiCompatibleClientTest {
     /**
      * The follow-up request sent after a malformed schema-mode tool call has been answered with an error.
      * <p>
-     * Under TOOL_CALLS_VIA_SCHEMA the tools array is deliberately empty, so this history carries a tool call for a
-     * function the request never declares. That is not new — every successful schema-mode call does the same thing with
-     * a real tool name — but the recovery path is the case where the name is not a real tool at all, and two reviewers
-     * independently expected a backend to reject it. What we can pin locally is that we emit a well-formed pair: the
-     * result must carry the id of the call it answers, or the backend cannot match them and the model never sees the
-     * correction it is meant to act on.
+     * Under TOOL_CALLS_VIA_SCHEMA the tools array is deliberately empty, so this history carries a tool call
+     * for a function the request never declares. That is not new — every successful schema-mode call does the
+     * same thing with a real tool name — but the recovery path is the case where the name is not a real tool
+     * at all, and two reviewers independently expected a backend to reject it. What we can pin locally is
+     * that we emit a well-formed pair: the result must carry the id of the call it answers, or the backend
+     * cannot match them and the model never sees the correction it is meant to act on.
      */
     @Test
     void malformedCallRecoveryPairSerialisesWithAMatchingToolCallId() throws Exception {
         AtomicReference<String> requestBody = new AtomicReference<>();
         HttpServer server = HttpServer.create(new InetSocketAddress(InetAddress.getLoopbackAddress(), 0), 0);
         server.createContext("/v1/chat/completions", exchange -> {
-                         requestBody.set(new String(exchange.getRequestBody().readAllBytes(), StandardCharsets.UTF_8));
-                         byte[] bytes = "data: {\"choices\":[{\"finish_reason\":\"stop\"}]}\n\ndata: [DONE]\n\n"
-                                 .getBytes(StandardCharsets.UTF_8);
-                         exchange.getResponseHeaders().add("Content-Type", "text/event-stream");
-                         exchange.sendResponseHeaders(200, bytes.length);
-                         try (OutputStream os = exchange.getResponseBody()) {
-                             os.write(bytes);
-                         }
-                     });
+            requestBody.set(new String(exchange.getRequestBody().readAllBytes(), StandardCharsets.UTF_8));
+            byte[] bytes = "data: {\"choices\":[{\"finish_reason\":\"stop\"}]}\n\ndata: [DONE]\n\n"
+                    .getBytes(StandardCharsets.UTF_8);
+            exchange.getResponseHeaders().add("Content-Type", "text/event-stream");
+            exchange.sendResponseHeaders(200, bytes.length);
+            try (OutputStream os = exchange.getResponseBody()) {
+                os.write(bytes);
+            }
+        });
         server.start();
         try {
             String callId = "call_malformed_1";
             List<ChatMessage> history = List.of(
                     new ChatMessage(ChatRole.USER, "Message the other session.", List.of(), null),
                     new ChatMessage(ChatRole.ASSISTANT, null,
-                                    List.of(new ChatToolCall(callId, "unknown_tool", "{}")), null),
+                            List.of(new ChatToolCall(callId, "unknown_tool", "{}")), null),
                     new ChatMessage(ChatRole.TOOL,
-                                    "Error: you supplied tool_arguments but left tool_name empty, so no tool was called.",
-                                    List.of(), callId));
+                            "Error: you supplied tool_arguments but left tool_name empty, so no tool was called.",
+                            List.of(), callId));
 
             ChatRequest request = new ChatRequest(
                     "http://" + server.getAddress().getHostString() + ":" + server.getAddress().getPort() + "/",
@@ -61,7 +63,7 @@ class OpenAiCompatibleClientTest {
                     List.of());
 
             new OpenAiCompatibleClient().chat(request, delta -> {
-                                      });
+            });
 
             JsonObject payload = JsonParser.parseString(requestBody.get()).getAsJsonObject();
             JsonObject assistant = payload.getAsJsonArray("messages").get(1).getAsJsonObject();
@@ -76,8 +78,7 @@ class OpenAiCompatibleClientTest {
             // orphan and the model is never told why nothing happened.
             assertEquals(callId, toolResult.get("tool_call_id").getAsString());
             assertTrue(toolResult.get("content").getAsString().contains("tool_name"));
-        }
-        finally {
+        } finally {
             server.stop(0);
         }
     }
@@ -124,21 +125,21 @@ class OpenAiCompatibleClientTest {
         AtomicReference<String> requestBody = new AtomicReference<>();
         HttpServer server = HttpServer.create(new InetSocketAddress(InetAddress.getLoopbackAddress(), 0), 0);
         server.createContext("/v1/chat/completions", exchange -> {
-                         requestPath.set(exchange.getRequestURI().getPath());
-                         authorization.set(exchange.getRequestHeaders().getFirst("Authorization"));
-                         requestBody.set(new String(exchange.getRequestBody().readAllBytes(), StandardCharsets.UTF_8));
-                         String response = ""
-                                 + "data: {\"choices\":[{\"delta\":{\"content\":\"Hel\"}}]}\n\n"
-                                 + "data: {\"choices\":[{\"delta\":{\"content\":\"lo\"}}]}\n\n"
-                                 + "data: {\"choices\":[{\"finish_reason\":\"stop\"}]}\n\n"
-                                 + "data: [DONE]\n\n";
-                         byte[] bytes = response.getBytes(StandardCharsets.UTF_8);
-                         exchange.getResponseHeaders().add("Content-Type", "text/event-stream");
-                         exchange.sendResponseHeaders(200, bytes.length);
-                         try (OutputStream os = exchange.getResponseBody()) {
-                             os.write(bytes);
-                         }
-                     });
+            requestPath.set(exchange.getRequestURI().getPath());
+            authorization.set(exchange.getRequestHeaders().getFirst("Authorization"));
+            requestBody.set(new String(exchange.getRequestBody().readAllBytes(), StandardCharsets.UTF_8));
+            String response = ""
+                    + "data: {\"choices\":[{\"delta\":{\"content\":\"Hel\"}}]}\n\n"
+                    + "data: {\"choices\":[{\"delta\":{\"content\":\"lo\"}}]}\n\n"
+                    + "data: {\"choices\":[{\"finish_reason\":\"stop\"}]}\n\n"
+                    + "data: [DONE]\n\n";
+            byte[] bytes = response.getBytes(StandardCharsets.UTF_8);
+            exchange.getResponseHeaders().add("Content-Type", "text/event-stream");
+            exchange.sendResponseHeaders(200, bytes.length);
+            try (OutputStream os = exchange.getResponseBody()) {
+                os.write(bytes);
+            }
+        });
         server.start();
         try {
             JsonObject toolSchema = new JsonObject();
@@ -178,7 +179,7 @@ class OpenAiCompatibleClientTest {
             assertTrue(payload.get("stream").getAsBoolean());
             assertEquals("qwen2.5-coder:7b", payload.get("model").getAsString());
             assertEquals("user", payload.getAsJsonArray("messages")
-                         .get(0).getAsJsonObject().get("role").getAsString());
+                    .get(0).getAsJsonObject().get("role").getAsString());
             JsonObject tool = payload.getAsJsonArray("tools").get(0).getAsJsonObject();
             assertEquals("function", tool.get("type").getAsString());
             JsonObject function = tool.getAsJsonObject("function");
@@ -187,12 +188,11 @@ class OpenAiCompatibleClientTest {
             JsonObject parameters = function.getAsJsonObject("parameters");
             assertEquals("object", parameters.get("type").getAsString());
             assertEquals("string", parameters.getAsJsonObject("properties")
-                         .getAsJsonObject("city").get("type").getAsString());
+                    .getAsJsonObject("city").get("type").getAsString());
             assertEquals("city", parameters.getAsJsonArray("required").get(0).getAsString());
             assertTrue(originalInputSchema == toolSchema.getAsJsonObject("inputSchema"));
             assertTrue(originalProperties == originalInputSchema.getAsJsonObject("properties"));
-        }
-        finally {
+        } finally {
             server.stop(0);
         }
     }
@@ -202,16 +202,16 @@ class OpenAiCompatibleClientTest {
         AtomicReference<String> authorization = new AtomicReference<>("<unset>");
         HttpServer server = HttpServer.create(new InetSocketAddress(InetAddress.getLoopbackAddress(), 0), 0);
         server.createContext("/v1/chat/completions", exchange -> {
-                         authorization.set(exchange.getRequestHeaders().getFirst("Authorization"));
-                         String response = "data: {\"choices\":[{\"finish_reason\":\"stop\"}]}\n\n"
-                                 + "data: [DONE]\n\n";
-                         byte[] bytes = response.getBytes(StandardCharsets.UTF_8);
-                         exchange.getResponseHeaders().add("Content-Type", "text/event-stream");
-                         exchange.sendResponseHeaders(200, bytes.length);
-                         try (OutputStream os = exchange.getResponseBody()) {
-                             os.write(bytes);
-                         }
-                     });
+            authorization.set(exchange.getRequestHeaders().getFirst("Authorization"));
+            String response = "data: {\"choices\":[{\"finish_reason\":\"stop\"}]}\n\n"
+                    + "data: [DONE]\n\n";
+            byte[] bytes = response.getBytes(StandardCharsets.UTF_8);
+            exchange.getResponseHeaders().add("Content-Type", "text/event-stream");
+            exchange.sendResponseHeaders(200, bytes.length);
+            try (OutputStream os = exchange.getResponseBody()) {
+                os.write(bytes);
+            }
+        });
         server.start();
         try {
             OpenAiCompatibleClient client = new OpenAiCompatibleClient();
@@ -223,11 +223,10 @@ class OpenAiCompatibleClientTest {
                     List.of());
 
             client.chat(request, text -> {
-                });
+            });
 
             assertEquals(null, authorization.get());
-        }
-        finally {
+        } finally {
             server.stop(0);
         }
     }
@@ -248,19 +247,19 @@ class OpenAiCompatibleClientTest {
     @Test
     void payloadRequestsUsageAlongsideStreaming() {
         ChatRequest request = new ChatRequest("http://localhost:11434", null, "m",
-                                              List.of(new ChatMessage(ChatRole.USER, "hi", List.of(), null)), List.of());
+                List.of(new ChatMessage(ChatRole.USER, "hi", List.of(), null)), List.of());
 
         JsonObject payload = OpenAiCompatibleClient.buildPayloadForTest(request);
 
         assertTrue(payload.has("stream_options"));
         assertTrue(payload.getAsJsonObject("stream_options").get("include_usage").getAsBoolean(),
-                   "without this the endpoint never reports prompt_tokens");
+                "without this the endpoint never reports prompt_tokens");
     }
 
     @Test
     void reasoningEffortIsAbsentFromPayloadWhenNotSet() {
         ChatRequest request = new ChatRequest("http://localhost:11434", null, "m",
-                                              List.of(new ChatMessage(ChatRole.USER, "hi", List.of(), null)), List.of());
+                List.of(new ChatMessage(ChatRole.USER, "hi", List.of(), null)), List.of());
 
         JsonObject payload = OpenAiCompatibleClient.buildPayloadForTest(request);
 
@@ -270,7 +269,7 @@ class OpenAiCompatibleClientTest {
     @Test
     void reasoningEffortIsSentWithTheExactValueWhenSet() {
         ChatRequest request = new ChatRequest("http://localhost:11434", null, "m",
-                                              List.of(new ChatMessage(ChatRole.USER, "hi", List.of(), null)), List.of(), null, "high");
+                List.of(new ChatMessage(ChatRole.USER, "hi", List.of(), null)), List.of(), null, "high");
 
         JsonObject payload = OpenAiCompatibleClient.buildPayloadForTest(request);
 
@@ -307,10 +306,10 @@ class OpenAiCompatibleClientTest {
     // see McpHookServerUtilTest for that coverage. Nothing left to test here:
     // this class just calls the shared redactor before logging.
     /**
-     * A tool_calls delta is excluded from the "ollama sse" debug log entirely (see readSseDataLines) rather than
-     * redacted, because a single chunk's arguments fragment is frequently not complete JSON on its own and a secret's
-     * characters can straddle two chunks — no per-line mechanism can safely redact that. isToolCallDelta is the
-     * predicate deciding what gets excluded; this pins its behaviour directly.
+     * A tool_calls delta is excluded from the "ollama sse" debug log entirely (see readSseDataLines) rather
+     * than redacted, because a single chunk's arguments fragment is frequently not complete JSON on its own
+     * and a secret's characters can straddle two chunks — no per-line mechanism can safely redact that.
+     * isToolCallDelta is the predicate deciding what gets excluded; this pins its behaviour directly.
      */
     @Test
     void isToolCallDeltaRecognisesAToolCallsDeltaChunk() {
@@ -329,5 +328,114 @@ class OpenAiCompatibleClientTest {
         assertFalse(OpenAiCompatibleClient.isToolCallDelta("not json at all"));
         assertFalse(OpenAiCompatibleClient.isToolCallDelta(""));
         assertFalse(OpenAiCompatibleClient.isToolCallDelta(null));
+    }
+
+    /**
+     * The recoverable shape: Ollama rejected the whole request with HTTP 500 because the model's tool call
+     * was not valid JSON. The client must surface this as {@link OpenAiToolCallParseException} with the parse
+     * error carried separately, so Ollama's process manager can tell it apart from a genuine 500 and feed the
+     * mistake back to the model.
+     */
+    @Test
+    void http500WithToolCallParseErrorThrowsStructuredParseException() throws Exception {
+        HttpServer server = HttpServer.create(new InetSocketAddress(InetAddress.getLoopbackAddress(), 0), 0);
+        byte[] body = ("{\"error\":{\"message\":\"error parsing tool call: raw='hello ? world', "
+                + "err=invalid character '?' after object key:value pair\",\"type\":\"api_error\"}}")
+                .getBytes(StandardCharsets.UTF_8);
+        server.createContext("/v1/chat/completions", exchange -> {
+            exchange.getResponseHeaders().set("Content-Type", "application/json");
+            exchange.sendResponseHeaders(500, body.length);
+            try (OutputStream out = exchange.getResponseBody()) {
+                out.write(body);
+            }
+        });
+        server.start();
+        try {
+            String baseUrl = "http://" + InetAddress.getLoopbackAddress().getHostAddress()
+                    + ":" + server.getAddress().getPort();
+            OpenAiCompatibleClient client = new OpenAiCompatibleClient();
+            ChatRequest request = new ChatRequest(baseUrl, null, "qwen2.5-coder:14b",
+                    List.of(new ChatMessage(ChatRole.USER, "hi", null, null)), null);
+
+            OpenAiToolCallParseException failure = assertThrows(
+                    OpenAiToolCallParseException.class, () -> client.chat(request, s -> {
+                    }));
+
+            assertEquals(500, failure.statusCode());
+            assertTrue(failure.getMessage().contains("HTTP 500"),
+                    "the status line context must survive: " + failure.getMessage());
+            assertEquals("invalid character '?' after object key:value pair", failure.parseError(),
+                    "the err= clause must be carried for the model to correct itself against");
+        } finally {
+            server.stop(0);
+        }
+    }
+
+    /**
+     * The non-recoverable shape: an ordinary 500 must keep failing as a plain
+     * {@link OpenAiHttpStatusException}, never being mistaken for a recoverable tool-call parse failure.
+     */
+    @Test
+    void http500WithoutToolCallParseErrorRemainsAPlainStatusException() throws Exception {
+        HttpServer server = HttpServer.create(new InetSocketAddress(InetAddress.getLoopbackAddress(), 0), 0);
+        byte[] body = "{\"error\":\"upstream exploded\"}".getBytes(StandardCharsets.UTF_8);
+        server.createContext("/v1/chat/completions", exchange -> {
+            exchange.getResponseHeaders().set("Content-Type", "application/json");
+            exchange.sendResponseHeaders(500, body.length);
+            try (OutputStream out = exchange.getResponseBody()) {
+                out.write(body);
+            }
+        });
+        server.start();
+        try {
+            String baseUrl = "http://" + server.getAddress().getHostString() + ":" + server.getAddress().getPort();
+            OpenAiCompatibleClient client = new OpenAiCompatibleClient();
+            ChatRequest request = new ChatRequest(baseUrl, null, "qwen2.5-coder:7b",
+                    List.of(new ChatMessage(ChatRole.USER, "hi", null, null)), null);
+
+            OpenAiHttpStatusException failure = assertThrows(OpenAiHttpStatusException.class,
+                    () -> client.chat(request, s -> {
+                    }));
+
+            assertInstanceOf(OpenAiHttpStatusException.class, failure);
+            assertFalse(failure instanceof OpenAiToolCallParseException,
+                    "an unrelated 500 must not be treated as a recoverable parse failure");
+            assertTrue(failure.getMessage().contains("HTTP 500"));
+        } finally {
+            server.stop(0);
+        }
+    }
+
+    @Test
+    void extractToolCallParseErrorRecognisesTheOllamaObjectShapedBody() {
+        String body = "{\"error\":{\"message\":\"error parsing tool call: raw='x', "
+                + "err=invalid character '?' after object key:value pair\",\"type\":\"api_error\"}}";
+        assertEquals("invalid character '?' after object key:value pair",
+                OpenAiCompatibleClient.extractToolCallParseError(body));
+    }
+
+    @Test
+    void extractToolCallParseErrorRecognisesAStringShapedErrorBody() {
+        assertEquals("boom", OpenAiCompatibleClient.extractToolCallParseError(
+                "{\"error\":\"error parsing tool call: raw='x', err=boom\"}"));
+    }
+
+    @Test
+    void extractToolCallParseErrorReturnsNullForAnythingElse() {
+        assertNull(OpenAiCompatibleClient.extractToolCallParseError("{\"error\":\"rate limited\"}"));
+        assertNull(OpenAiCompatibleClient.extractToolCallParseError(
+                "{\"error\":{\"message\":\"service busy\",\"type\":\"api_error\"}}"));
+        assertNull(OpenAiCompatibleClient.extractToolCallParseError("not json at all"));
+        assertNull(OpenAiCompatibleClient.extractToolCallParseError(""));
+        assertNull(OpenAiCompatibleClient.extractToolCallParseError(null));
+    }
+
+    @Test
+    void extractToolCallParseErrorBoundsTheErrTail() {
+        String big = "x".repeat(500);
+        String err = OpenAiCompatibleClient.extractToolCallParseError(
+                "{\"error\":\"error parsing tool call: err=" + big + "\"}");
+        assertTrue(err.length() <= OpenAiCompatibleClient.MAX_TOOL_CALL_PARSE_ERROR_LENGTH + 3,
+                "a huge raw echo must never be copied into the conversation, got " + err.length());
     }
 }

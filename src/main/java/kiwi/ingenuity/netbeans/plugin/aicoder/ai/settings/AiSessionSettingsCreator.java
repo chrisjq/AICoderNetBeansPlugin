@@ -8,9 +8,9 @@ import kiwi.ingenuity.netbeans.plugin.aicoder.GitAccessOptionEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.WebRequestAccessOptionEnum;
 
 /**
- * Base class for creating and updating AI session settings. Implements a chain of responsibility pattern where
- * subclasses handle specific setting types. Handles deserialization of JSON configuration into mutable settings
- * objects.
+ * Base class for creating and updating AI session settings. Implements a chain of responsibility pattern
+ * where subclasses handle specific setting types. Handles deserialization of JSON configuration into mutable
+ * settings objects.
  */
 public abstract class AiSessionSettingsCreator<E extends AiSessionSettings> {
 
@@ -70,6 +70,10 @@ public abstract class AiSessionSettingsCreator<E extends AiSessionSettings> {
         key = AiSessionSettingsKeyEnum.ALLOW_IDLE_WATCHER_TIMER.key();
         if (cfgObj.has(key) && cfgObj.get(key).isJsonPrimitive()) {
             settings.setAllowIdleWatcherTimer(cfgObj.get(key).getAsBoolean());
+        }
+        key = AiSessionSettingsKeyEnum.MCP_STEERING.key();
+        if (cfgObj.has(key) && cfgObj.get(key).isJsonPrimitive()) {
+            settings.setMcpSteering(cfgObj.get(key).getAsBoolean());
         }
         key = AiSessionSettingsKeyEnum.SESSION_INSTRUCTIONS.key();
         if (cfgObj.has(key) && cfgObj.get(key).isJsonPrimitive()) {

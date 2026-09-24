@@ -20,7 +20,10 @@ import java.util.concurrent.TimeUnit;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 import kiwi.ingenuity.netbeans.plugin.aicoder.PluginSettings;
+import kiwi.ingenuity.netbeans.plugin.aicoder.StringConst;
+import kiwi.ingenuity.netbeans.plugin.aicoder.ai.McpSteeringPolicy;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.events.ConfirmEvent;
+import kiwi.ingenuity.netbeans.plugin.aicoder.ai.events.McpSteeringRefusalEvent;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.events.MultiPermissionEvent;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.events.MultiPermissionItem;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.events.PermissionDecision;
@@ -33,21 +36,25 @@ import kiwi.ingenuity.netbeans.plugin.aicoder.ai.events.ToolUseEvent;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.events.TurnCompleteEvent;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.codex.events.CodexRateLimitEvent;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.codex.events.CodexTokenUsageEvent;
+import kiwi.ingenuity.netbeans.plugin.aicoder.ai.settings.AiSessionSettings;
+import kiwi.ingenuity.netbeans.plugin.aicoder.process.SessionRegistry;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.events.AiProcessEventListener;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.server.McpHookServerUtil;
+import kiwi.ingenuity.netbeans.plugin.aicoder.process.session.AbstractAiSession;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.providers.netbeans.RefactoringProvider;
 
 /**
- * Maps inbound {@code app-server} traffic to plugin events and bridges its two approval-request kinds to the plugin's
- * existing {@link ConfirmEvent} confirm flow. Combined in one class, like {@code OpenCodeAcpClientHandler}, rather than
- * split into separate {@code CodexStreamParser}/{@code CodexPermissionBridge} classes: the fileChange approval request
- * carries no diff of its own and depends on the {@code changes[]} cached from an earlier {@code item/started}
- * notification for the same item id, so the two concerns share state and splitting them would only mean passing that
- * cache between two objects.
+ * Maps inbound {@code app-server} traffic to plugin events and bridges its two approval-request kinds to the
+ * plugin's existing {@link ConfirmEvent} confirm flow. Combined in one class, like
+ * {@code OpenCodeAcpClientHandler}, rather than split into separate
+ * {@code CodexStreamParser}/{@code CodexPermissionBridge} classes: the fileChange approval request carries no
+ * diff of its own and depends on the {@code changes[]} cached from an earlier {@code item/started}
+ * notification for the same item id, so the two concerns share state and splitting them would only mean
+ * passing that cache between two objects.
  *
  * <p>
- * {@link #onNotification} and {@link #onServerRequest} are invoked on {@link CodexJsonRpcClient}'s notify/dispatch
- * executors — never the reader thread, never the EDT.
+ * {@link #onNotification} and {@link #onServerRequest} are invoked on {@link CodexJsonRpcClient}'s
+ * notify/dispatch executors — never the reader thread, never the EDT.
  */
 class CodexAppServerHandler implements CodexNotificationListener, CodexServerRequestHandler, CodexConnectionListener {
 
@@ -63,15 +70,16 @@ class CodexAppServerHandler implements CodexNotificationListener, CodexServerReq
     static final String METHOD_THREAD_TOKEN_USAGE = "thread/tokenUsage/updated";
     static final String METHOD_ACCOUNT_RATE_LIMITS_UPDATED = "account/rateLimits/updated";
     /**
-     * Placeholder path for a change entry Codex sent without a usable one. Such an entry is kept rather than dropped —
-     * the user must be told the set contains something we could not identify, and the count in the log must match the
-     * count Codex asked about. It carries null proposed content, so the review declines the whole set and names it.
+     * Placeholder path for a change entry Codex sent without a usable one. Such an entry is kept rather than
+     * dropped — the user must be told the set contains something we could not identify, and the count in the
+     * log must match the count Codex asked about. It carries null proposed content, so the review declines
+     * the whole set and names it.
      */
     static final String UNNAMED_CHANGE_PATH = "(no path supplied)";
 
     /**
-     * Extracts {@code item.changes} from an {@code item/started} notification when the item is a fileChange, for
-     * caching by item id. Returns null for any other item type or malformed payload.
+     * Extracts {@code item.changes} from an {@code item/started} notification when the item is a fileChange,
+     * for caching by item id. Returns null for any other item type or malformed payload.
      */
     static JsonArray extractFileChangeChanges(JsonObject params) {
         if (params == null || !params.has(CodexJsonKeyEnum.ITEM.key()) || !params.get(CodexJsonKeyEnum.ITEM.key()).isJsonObject()) {
@@ -95,7 +103,8 @@ class CodexAppServerHandler implements CodexNotificationListener, CodexServerReq
 
     /**
      * {@code turn/started}/{@code turn/completed} both carry {@code turn.status} (the
-     * {@code TurnStartedNotification}/{@code TurnCompletedNotification} schemas). Returns null on any unexpected shape.
+     * {@code TurnStartedNotification}/{@code TurnCompletedNotification} schemas). Returns null on any
+     * unexpected shape.
      */
     static String extractTurnStatus(JsonObject params) {
         if (params == null || !params.has(CodexJsonKeyEnum.TURN.key()) || !params.get(CodexJsonKeyEnum.TURN.key()).isJsonObject()) {
@@ -119,8 +128,8 @@ class CodexAppServerHandler implements CodexNotificationListener, CodexServerReq
 
     /**
      * Extracts the {@code codexErrorInfo} discriminant from a turn error, if present and a plain string (e.g.
-     * {@code "unauthorized"}, {@code "contextWindowExceeded"}). Returns null when absent, null in JSON, or a structured
-     * variant (object shape).
+     * {@code "unauthorized"}, {@code "contextWindowExceeded"}). Returns null when absent, null in JSON, or a
+     * structured variant (object shape).
      */
     static String extractTurnCodexErrorInfo(JsonObject params) {
         if (params == null || !params.has(CodexJsonKeyEnum.TURN.key()) || !params.get(CodexJsonKeyEnum.TURN.key()).isJsonObject()) {
@@ -139,15 +148,16 @@ class CodexAppServerHandler implements CodexNotificationListener, CodexServerReq
 
     /**
      * Builds a short, single-line summary of a cached fileChange's {@code
-     * changes[]} for {@link ConfirmEvent#displayText()} — not the raw unified diff. {@code ConfirmPanel} renders
-     * {@code displayText} as one bold HTML line, so a multi-line diff dump would collapse unreadably rather than
-     * display as intended.
+     * changes[]} for {@link ConfirmEvent#displayText()} — not the raw unified diff. {@code ConfirmPanel}
+     * renders {@code displayText} as one bold HTML line, so a multi-line diff dump would collapse unreadably
+     * rather than display as intended.
      *
      * <p>
-     * Describes ONE file, never a count. It used to end with "Codex wants to modify N files" for a larger set, which
-     * was the blind bulk approval the multi-file review replaced; every array larger than one now goes to that review
-     * and cannot reach here. Deliberately no plural form remains — text offering to approve N unseen files is the thing
-     * this feature exists to remove, and leaving it would let a nearby edit revive it by accident.</p>
+     * Describes ONE file, never a count. It used to end with "Codex wants to modify N files" for a larger
+     * set, which was the blind bulk approval the multi-file review replaced; every array larger than one now
+     * goes to that review and cannot reach here. Deliberately no plural form remains — text offering to
+     * approve N unseen files is the thing this feature exists to remove, and leaving it would let a nearby
+     * edit revive it by accident.</p>
      */
     static String summarizeFileChanges(JsonArray changes) {
         if (changes != null && changes.size() == 1 && changes.get(0).isJsonObject()) {
@@ -167,12 +177,13 @@ class CodexAppServerHandler implements CodexNotificationListener, CodexServerReq
     }
 
     /**
-     * {@code codexErrorInfo == "unauthorized"} is the schema-documented plain-string variant, but a live probe against
-     * a real 401 (missing bearer token on the Responses websocket) showed {@code codexErrorInfo} collapse to the
-     * generic string {@code "other"} by the time {@code turn/completed} fires — the only reliable signal left at that
-     * point is the {@code error.message} text itself ("unexpected status 401 Unauthorized: ..."). Check both: the
-     * schema path in case some other auth failure genuinely reports it, and the message-text path for the one this
-     * project has actually observed.
+     * {@code codexErrorInfo == "unauthorized"} is the schema-documented plain-string variant, but a live
+     * probe against a real 401 (missing bearer token on the Responses websocket) showed
+     * {@code codexErrorInfo} collapse to the generic string {@code "other"} by the time
+     * {@code turn/completed} fires — the only reliable signal left at that point is the {@code error.message}
+     * text itself ("unexpected status 401 Unauthorized: ..."). Check both: the schema path in case some other
+     * auth failure genuinely reports it, and the message-text path for the one this project has actually
+     * observed.
      */
     private static String buildFailedMessage(JsonObject params) {
         String codexErrorInfo = extractTurnCodexErrorInfo(params);
@@ -191,14 +202,14 @@ class CodexAppServerHandler implements CodexNotificationListener, CodexServerReq
 
     /**
      * Maps a completed {@link PermissionDecision} future to a Codex approval string. Used by both the
-     * {@code decision}-field methods (file-change, command) and the {@code action}-field method (MCP elicitation); the
-     * string value is identical.
+     * {@code decision}-field methods (file-change, command) and the {@code action}-field method (MCP
+     * elicitation); the string value is identical.
      *
      * <ul>
      * <li>{@code "accept"} — user approved
      * <li>{@code "decline"} — user deliberately rejected; agent continues the turn
-     * <li>{@code "cancel"} — exceptional completion (panel closed, process interrupted); agent interrupts the turn
-     * immediately
+     * <li>{@code "cancel"} — exceptional completion (panel closed, process interrupted); agent interrupts the
+     * turn immediately
      * </ul>
      */
     private static String approvalDecision(PermissionDecision decision, Throwable ex) {
@@ -209,30 +220,31 @@ class CodexAppServerHandler implements CodexNotificationListener, CodexServerReq
     }
 
     /**
-     * Applies a Codex unified-diff hunk (the {@code diff} field of an {@code update} change) to {@code original} file
-     * content. The hunk uses standard unified-diff format but carries no {@code ---}/{@code +++} header lines — those
-     * are prepended here so that {@link UnifiedDiffUtils#parseUnifiedDiff} can locate hunk boundaries.
+     * Applies a Codex unified-diff hunk (the {@code diff} field of an {@code update} change) to
+     * {@code original} file content. The hunk uses standard unified-diff format but carries no
+     * {@code ---}/{@code +++} header lines — those are prepended here so that
+     * {@link UnifiedDiffUtils#parseUnifiedDiff} can locate hunk boundaries.
      *
      * <p>
      * ONLY for {@code update}. An {@code add} change's {@code diff} field is not a diff at all — see
      * {@link #proposedContentFor}.</p>
      *
      * <p>
-     * THE TRAILING NEWLINE IS STRIPPED FROM THE HUNK, and that is load-bearing. {@code split("\n", -1)} keeps trailing
-     * empty strings, so a hunk ending in a newline yields one final "" element; the parser reads that as an extra
-     * CONTEXT LINE expecting an empty line, the file has real text there, and the patch fails with
-     * CONTENT_DOES_NOT_MATCH_TARGET. Every Codex hunk ends with a newline, so this failed for every single-file edit
-     * for as long as this method has existed — silently, because the caller fell back to a blind confirm. Confirmed
-     * against a hunk captured from a live run.</p>
+     * THE TRAILING NEWLINE IS STRIPPED FROM THE HUNK, and that is load-bearing. {@code split("\n", -1)} keeps
+     * trailing empty strings, so a hunk ending in a newline yields one final "" element; the parser reads
+     * that as an extra CONTEXT LINE expecting an empty line, the file has real text there, and the patch
+     * fails with CONTENT_DOES_NOT_MATCH_TARGET. Every Codex hunk ends with a newline, so this failed for
+     * every single-file edit for as long as this method has existed — silently, because the caller fell back
+     * to a blind confirm. Confirmed against a hunk captured from a live run.</p>
      *
      * <p>
-     * A genuinely blank context line is " " (a space) in unified-diff format, never "", so stripping exactly one
-     * trailing newline cannot discard real content. The ORIGINAL keeps {@code split("\n", -1)} untouched: there the
-     * trailing empty element represents the file's final newline, and dropping it would strip that newline on every
-     * write.</p>
+     * A genuinely blank context line is " " (a space) in unified-diff format, never "", so stripping exactly
+     * one trailing newline cannot discard real content. The ORIGINAL keeps {@code split("\n", -1)} untouched:
+     * there the trailing empty element represents the file's final newline, and dropping it would strip that
+     * newline on every write.</p>
      *
-     * @throws PatchFailedException if the hunk does not match the file content (stale read, CRLF vs LF, whitespace
-     * mismatch)
+     * @throws PatchFailedException if the hunk does not match the file content (stale read, CRLF vs LF,
+     * whitespace mismatch)
      */
     static String applyUnifiedDiff(String original, String diffHunk) throws PatchFailedException {
         String hunk = diffHunk.endsWith("\n") ? diffHunk.substring(0, diffHunk.length() - 1) : diffHunk;
@@ -248,15 +260,15 @@ class CodexAppServerHandler implements CodexNotificationListener, CodexServerReq
      * Turns Codex's {@code changes[]} into the neutral, ordered change set the review consumes.
      *
      * <p>
-     * Order is Codex's, never sorted: it reflects how the model sequenced its own work, which is the order that reads
-     * coherently when reviewing.</p>
+     * Order is Codex's, never sorted: it reflects how the model sequenced its own work, which is the order
+     * that reads coherently when reviewing.</p>
      *
      * <p>
-     * Every entry becomes an item, including ones we cannot render. A change whose proposed content cannot be produced
-     * — no path, no diff, unreadable file, or a hunk that will not apply — becomes an item with null proposed content
-     * rather than being dropped or answered separately. The review turns that into a whole-set decline that names the
-     * file. Dropping it instead would let the user approve a set smaller than the one Codex is about to write, which is
-     * the worst available outcome.</p>
+     * Every entry becomes an item, including ones we cannot render. A change whose proposed content cannot be
+     * produced — no path, no diff, unreadable file, or a hunk that will not apply — becomes an item with null
+     * proposed content rather than being dropped or answered separately. The review turns that into a
+     * whole-set decline that names the file. Dropping it instead would let the user approve a set smaller
+     * than the one Codex is about to write, which is the worst available outcome.</p>
      */
     private static List<MultiPermissionItem> buildChangeSet(JsonArray changes) {
         List<MultiPermissionItem> items = new ArrayList<>(changes.size());
@@ -267,9 +279,9 @@ class CodexAppServerHandler implements CodexNotificationListener, CodexServerReq
             }
             JsonObject change = element.getAsJsonObject();
             String filePath = change.has(CodexJsonKeyEnum.PATH.key()) && change.get(CodexJsonKeyEnum.PATH.key()).isJsonPrimitive()
-                              ? change.get(CodexJsonKeyEnum.PATH.key()).getAsString() : null;
+                    ? change.get(CodexJsonKeyEnum.PATH.key()).getAsString() : null;
             String diffHunk = change.has(CodexJsonKeyEnum.DIFF.key()) && change.get(CodexJsonKeyEnum.DIFF.key()).isJsonPrimitive()
-                              ? change.get(CodexJsonKeyEnum.DIFF.key()).getAsString() : null;
+                    ? change.get(CodexJsonKeyEnum.DIFF.key()).getAsString() : null;
             items.add(new MultiPermissionItem(
                     filePath != null && !filePath.isBlank() ? filePath : UNNAMED_CHANGE_PATH,
                     proposedContentFor(filePath, diffHunk, changeKind(change), changeMovePath(change))));
@@ -281,10 +293,11 @@ class CodexAppServerHandler implements CodexNotificationListener, CodexServerReq
      * Why an approval request was refused outright, or null when every change in it can be reviewed.
      *
      * <p>
-     * Returned to Codex as the message of a JSON-RPC error rather than as a decline, because a decline cannot carry
-     * one: FileChangeRequestApprovalResponse has a {@code decision} field and nothing else. A silent decline tells the
-     * model only that the answer was no, so its rational next move is to retry the same unsupported patch. The error
-     * channel is the only way to say why, and naming the path and the kind lets it act on this one specifically.</p>
+     * Returned to Codex as the message of a JSON-RPC error rather than as a decline, because a decline cannot
+     * carry one: FileChangeRequestApprovalResponse has a {@code decision} field and nothing else. A silent
+     * decline tells the model only that the answer was no, so its rational next move is to retry the same
+     * unsupported patch. The error channel is the only way to say why, and naming the path and the kind lets
+     * it act on this one specifically.</p>
      */
     static String unsupportedChangeReason(JsonArray changes) {
         if (changes == null) {
@@ -298,7 +311,7 @@ class CodexAppServerHandler implements CodexNotificationListener, CodexServerReq
             }
             JsonObject change = element.getAsJsonObject();
             String path = change.has(CodexJsonKeyEnum.PATH.key()) && change.get(CodexJsonKeyEnum.PATH.key()).isJsonPrimitive()
-                          ? change.get(CodexJsonKeyEnum.PATH.key()).getAsString() : UNNAMED_CHANGE_PATH;
+                    ? change.get(CodexJsonKeyEnum.PATH.key()).getAsString() : UNNAMED_CHANGE_PATH;
             String kind = changeKind(change);
             if (KIND_ADD.equals(kind)) {
                 continue;
@@ -331,8 +344,9 @@ class CodexAppServerHandler implements CodexNotificationListener, CodexServerReq
     }
 
     /**
-     * The change's {@code kind} exactly as it arrived, for an error message a human can act on: the raw JSON when the
-     * field is present, or "absent" when it is missing. The schema makes it required, so "absent" is itself a finding.
+     * The change's {@code kind} exactly as it arrived, for an error message a human can act on: the raw JSON
+     * when the field is present, or "absent" when it is missing. The schema makes it required, so "absent" is
+     * itself a finding.
      */
     private static String describeKind(JsonObject change) {
         if (change == null || !change.has(CodexJsonKeyEnum.KIND.key())) {
@@ -358,9 +372,10 @@ class CodexAppServerHandler implements CodexNotificationListener, CodexServerReq
      * The {@code type} out of a change's {@code kind}, or null when absent or malformed.
      *
      * <p>
-     * The schema makes {@code kind} an OBJECT — {@code {"type":"add"}} — not a bare string, so that is what is read
-     * first. A plain string is accepted as well: it costs one branch and means a variant that flattens the field does
-     * not silently read as "kind unknown", which would send every change down the update path.</p>
+     * The schema makes {@code kind} an OBJECT — {@code {"type":"add"}} — not a bare string, so that is what
+     * is read first. A plain string is accepted as well: it costs one branch and means a variant that
+     * flattens the field does not silently read as "kind unknown", which would send every change down the
+     * update path.</p>
      */
     static String changeKind(JsonObject change) {
         if (change == null || !change.has(CodexJsonKeyEnum.KIND.key())) {
@@ -370,7 +385,7 @@ class CodexAppServerHandler implements CodexNotificationListener, CodexServerReq
         if (kind.isJsonObject()) {
             JsonObject asObject = kind.getAsJsonObject();
             return asObject.has(CodexJsonKeyEnum.TYPE.key()) && asObject.get(CodexJsonKeyEnum.TYPE.key()).isJsonPrimitive()
-                   ? asObject.get(CodexJsonKeyEnum.TYPE.key()).getAsString() : null;
+                    ? asObject.get(CodexJsonKeyEnum.TYPE.key()).getAsString() : null;
         }
         return kind.isJsonPrimitive() ? kind.getAsString() : null;
     }
@@ -385,30 +400,31 @@ class CodexAppServerHandler implements CodexNotificationListener, CodexServerReq
         }
         JsonObject kind = change.get(CodexJsonKeyEnum.KIND.key()).getAsJsonObject();
         return kind.has(CodexJsonKeyEnum.MOVE_PATH.key()) && kind.get(CodexJsonKeyEnum.MOVE_PATH.key()).isJsonPrimitive()
-               ? kind.get(CodexJsonKeyEnum.MOVE_PATH.key()).getAsString() : null;
+                ? kind.get(CodexJsonKeyEnum.MOVE_PATH.key()).getAsString() : null;
     }
 
     /**
-     * Applies one change's hunk to produce the content the user will review, or null when we cannot honestly show what
-     * the change does. Null is a normal result here, not an error to propagate: the review turns it into a decline the
-     * user can read, which keeps one code path instead of two.
+     * Applies one change's hunk to produce the content the user will review, or null when we cannot honestly
+     * show what the change does. Null is a normal result here, not an error to propagate: the review turns it
+     * into a decline the user can read, which keeps one code path instead of two.
      *
      * <p>
-     * Driven by the change's {@code kind}, not by whether a file read happens to succeed. The protocol states what each
-     * change is; inferring it from a failed read conflates cases that must stay apart:</p>
+     * Driven by the change's {@code kind}, not by whether a file read happens to succeed. The protocol states
+     * what each change is; inferring it from a failed read conflates cases that must stay apart:</p>
      *
      * <ul>
-     * <li><b>add</b> — the file does not exist yet, so the original is EMPTY and the all-additions hunk applies to
-     * that. Renderable: the diff panel shows it as a new file. Reading first and treating the failure as unrenderable
-     * declined whole batches for the ordinary act of creating a file.</li>
-     * <li><b>update</b> — read the file and apply the hunk, as before. A file that exists but cannot be READ stays
-     * unrenderable: an unreadable file must never render as a full-file addition, or the user approves replacing
-     * content they could not see. An update whose file is MISSING is equally unrenderable — the protocol said it was
-     * there, so something is wrong and guessing is not the answer.</li>
-     * <li><b>delete</b>, <b>update with move_path</b>, and <b>any kind not on the allowlist</b> — returns null
-     * deliberately. In normal operation these never reach here: {@link #unsupportedChangeReason} refuses the whole
-     * request with a JSON-RPC error before anything is raised. The checks stay as the second layer, so a future caller
-     * that builds a change set directly cannot render one of them as an ordinary edit.</li>
+     * <li><b>add</b> — the file does not exist yet, so the original is EMPTY and the all-additions hunk
+     * applies to that. Renderable: the diff panel shows it as a new file. Reading first and treating the
+     * failure as unrenderable declined whole batches for the ordinary act of creating a file.</li>
+     * <li><b>update</b> — read the file and apply the hunk, as before. A file that exists but cannot be READ
+     * stays unrenderable: an unreadable file must never render as a full-file addition, or the user approves
+     * replacing content they could not see. An update whose file is MISSING is equally unrenderable — the
+     * protocol said it was there, so something is wrong and guessing is not the answer.</li>
+     * <li><b>delete</b>, <b>update with move_path</b>, and <b>any kind not on the allowlist</b> — returns
+     * null deliberately. In normal operation these never reach here: {@link #unsupportedChangeReason} refuses
+     * the whole request with a JSON-RPC error before anything is raised. The checks stay as the second layer,
+     * so a future caller that builds a change set directly cannot render one of them as an ordinary
+     * edit.</li>
      * </ul>
      */
     private static String proposedContentFor(String filePath, String diffHunk, String kind, String movePath) {
@@ -454,8 +470,7 @@ class CodexAppServerHandler implements CodexNotificationListener, CodexServerReq
             }
             String original = Files.readString(path, RefactoringProvider.resolveCharset(filePath));
             return applyUnifiedDiff(original, diffHunk);
-        }
-        // RuntimeException covers InvalidPathException from Path.of — a malformed path must decline the set, not
+        } // RuntimeException covers InvalidPathException from Path.of — a malformed path must decline the set, not
         // escape into the JSON-RPC dispatch as an internal error.
         catch (IOException | PatchFailedException | RuntimeException e) {
             LOG.log(Level.WARNING, "Could not render Codex diff for {0}: {1}",
@@ -470,26 +485,34 @@ class CodexAppServerHandler implements CodexNotificationListener, CodexServerReq
      * item id -> changes[] from item/started, consumed by the matching approval request.
      *
      * <p>
-     * A FUTURE per item, not the array itself, because the two sides arrive on DIFFERENT executors and nothing orders
-     * them: notifications are drained by the single {@code codex-notify} thread while approvals run on the
-     * {@code codex-dispatch} pool. The old map held the array and the approval did a plain {@code remove}, so an
-     * approval that won the race read null and fell through to the blind confirm — observed live in one run out of
-     * three. The notify thread also carries every streaming text delta, so item/started can queue behind a burst while
-     * the approval starts immediately on a fresh dispatch thread.</p>
+     * A FUTURE per item, not the array itself, because the two sides arrive on DIFFERENT executors and
+     * nothing orders them: notifications are drained by the single {@code codex-notify} thread while
+     * approvals run on the {@code codex-dispatch} pool. The old map held the array and the approval did a
+     * plain {@code remove}, so an approval that won the race read null and fell through to the blind confirm
+     * — observed live in one run out of three. The notify thread also carries every streaming text delta, so
+     * item/started can queue behind a burst while the approval starts immediately on a fresh dispatch
+     * thread.</p>
      *
      * <p>
-     * Either side may create the entry. Whichever arrives first installs the future; the notification completes it and
-     * the approval composes on it, so the ordering assumption is removed rather than merely narrowed.</p>
+     * Either side may create the entry. Whichever arrives first installs the future; the notification
+     * completes it and the approval composes on it, so the ordering assumption is removed rather than merely
+     * narrowed.</p>
      */
     private final ConcurrentHashMap<String, CompletableFuture<JsonArray>> fileChangeCache = new ConcurrentHashMap<>();
     /**
-     * Outstanding approval decision future — at most one per turn (Codex approvals are sequential: each blocks the turn
-     * until answered). Written by the three raise* methods; read by {@link #cancelPendingPermissions()} on
-     * stop/interrupt.
+     * Outstanding approval decision future — at most one per turn (Codex approvals are sequential: each
+     * blocks the turn until answered). Written by the three raise* methods; read by
+     * {@link #cancelPendingPermissions()} on stop/interrupt.
      */
     private volatile CompletableFuture<PermissionDecision> pendingPermission;
+    /**
+     * Session ID for accessing the session's MCP steering settings. Needed to check if steering is enabled
+     * and to access the session's settings.
+     */
+    private final String sessionId;
 
-    CodexAppServerHandler(AiProcessEventListener listener, Runnable disconnectCallback) {
+    CodexAppServerHandler(String sessionId, AiProcessEventListener listener, Runnable disconnectCallback) {
+        this.sessionId = sessionId;
         this.listener = listener;
         this.disconnectCallback = disconnectCallback;
     }
@@ -502,8 +525,8 @@ class CodexAppServerHandler implements CodexNotificationListener, CodexServerReq
     }
 
     /**
-     * Test seam: whether every item's entry has been released. A consumed entry must not linger and a timed-out one
-     * must not leak, or a long turn accumulates one per file change it ever made.
+     * Test seam: whether every item's entry has been released. A consumed entry must not linger and a
+     * timed-out one must not leak, or a long turn accumulates one per file change it ever made.
      */
     boolean fileChangeCacheIsEmpty() {
         return fileChangeCache.isEmpty();
@@ -511,8 +534,9 @@ class CodexAppServerHandler implements CodexNotificationListener, CodexServerReq
 
     /**
      * Test seam: how long an approval waits for its {@code item/started}. Production uses
-     * {@link CodexTimeoutEnum#FILE_CHANGE_CACHE_WAIT_MILLIS}; a test shortens it so the timeout path can be exercised
-     * without a real ten-second pause. Mirrors the seam {@code GrokModelDiscovery} uses for its own bound.
+     * {@link CodexTimeoutEnum#FILE_CHANGE_CACHE_WAIT_MILLIS}; a test shortens it so the timeout path can be
+     * exercised without a real ten-second pause. Mirrors the seam {@code GrokModelDiscovery} uses for its own
+     * bound.
      */
     private volatile long fileChangeWaitMillis = CodexTimeoutEnum.FILE_CHANGE_CACHE_WAIT_MILLIS.millis();
 
@@ -521,10 +545,10 @@ class CodexAppServerHandler implements CodexNotificationListener, CodexServerReq
     }
 
     /**
-     * Cancels any outstanding approval dialog when the turn is stopped or interrupted. Completes the pending future
-     * exceptionally, which routes through the existing {@link #approvalDecision} path and replies {@code "cancel"} to
-     * Codex — immediately interrupting the turn rather than leaving the dialog up and the turn wedged. Safe to call
-     * when no approval is in flight.
+     * Cancels any outstanding approval dialog when the turn is stopped or interrupted. Completes the pending
+     * future exceptionally, which routes through the existing {@link #approvalDecision} path and replies
+     * {@code "cancel"} to Codex — immediately interrupting the turn rather than leaving the dialog up and the
+     * turn wedged. Safe to call when no approval is in flight.
      */
     void cancelPendingPermissions() {
         CompletableFuture<PermissionDecision> pf = pendingPermission;
@@ -532,6 +556,25 @@ class CodexAppServerHandler implements CodexNotificationListener, CodexServerReq
             pendingPermission = null;
             pf.completeExceptionally(new CancellationException("turn cancelled"));
         }
+    }
+
+    /**
+     * Returns true if MCP steering is enabled for this session. Steering is ON when BOTH conditions hold: -
+     * the session's settings effectiveMcpSteering() is true, AND - the session's
+     * aiType().mcpSteeringSupport().supported() is true
+     */
+    private boolean isMcpSteeringEnabled() {
+        AbstractAiSession session = SessionRegistry.get(sessionId);
+        if (session == null) {
+            return false;
+        }
+        AiSessionSettings settings = session.getSettings();
+        if (settings == null) {
+            return false;
+        }
+        boolean steeringEnabled = settings.effectiveMcpSteering();
+        boolean steeringSupported = session.getType().mcpSteeringSupport().supported();
+        return steeringEnabled && steeringSupported;
     }
 
     @Override
@@ -566,8 +609,7 @@ class CodexAppServerHandler implements CodexNotificationListener, CodexServerReq
                 default:
                     break; // Unrecognised notification — ignore silently, never throw.
             }
-        }
-        catch (Throwable t) {
+        } catch (Throwable t) {
             // This executor drains every inbound notification FIFO, so a throw
             // escaping one malformed payload would silently kill the worker and
             // drop all later traffic until the next connection. Log and keep
@@ -597,21 +639,22 @@ class CodexAppServerHandler implements CodexNotificationListener, CodexServerReq
     }
 
     /**
-     * Raises a ToolUseEvent for an {@code item/started} notification describing an MCP tool call, so the UI knows a
-     * tool ran between two runs of agent text.
+     * Raises a ToolUseEvent for an {@code item/started} notification describing an MCP tool call, so the UI
+     * knows a tool ran between two runs of agent text.
      *
      * <p>
-     * That event is what sets AiTopComponent's {@code pendingNewlineBeforeText}, the only thing that separates the
-     * model's narration either side of a tool call. Codex raised no such event, so the two blocks were appended to one
-     * bubble verbatim and collided — a live transcript reads "...instruction now.At 00:17 the weather station...". The
-     * blocks carry no trailing whitespace of their own, so the break has to be synthesised at the only point that knows
-     * a tool ran.
+     * That event is what sets AiTopComponent's {@code pendingNewlineBeforeText}, the only thing that
+     * separates the model's narration either side of a tool call. Codex raised no such event, so the two
+     * blocks were appended to one bubble verbatim and collided — a live transcript reads "...instruction
+     * now.At 00:17 the weather station...". The blocks carry no trailing whitespace of their own, so the
+     * break has to be synthesised at the only point that knows a tool ran.
      *
      * <p>
-     * Field names taken from a live notification, not guessed: null null null null null null null null null null null
-     * null null null null null null null null null null null null     {@code {"item":{"type":"mcpToolCall","tool":"ListAiSessions",
-     * "server":"aicoder-nb-ki-plugin",...}}}. Kind.OTHER with a null path deliberately — {@code isFileModification()}
-     * stays false so no diff panel is raised; file changes keep their own path below.
+     * Field names taken from a live notification, not guessed: null null null null null null null null null
+     * null null null null null null null null null null null null null null null null null null null     {@code {"item":{"type":"mcpToolCall","tool":"ListAiSessions",
+     * "server":"aicoder-nb-ki-plugin",...}}}. Kind.OTHER with a null path deliberately —
+     * {@code isFileModification()} stays false so no diff panel is raised; file changes keep their own path
+     * below.
      */
     private void announceToolCall(JsonObject params) {
         if (params == null || !params.has(CodexJsonKeyEnum.ITEM.key()) || !params.get(CodexJsonKeyEnum.ITEM.key()).isJsonObject()) {
@@ -619,12 +662,12 @@ class CodexAppServerHandler implements CodexNotificationListener, CodexServerReq
         }
         JsonObject item = params.getAsJsonObject(CodexJsonKeyEnum.ITEM.key());
         String type = item.has(CodexJsonKeyEnum.TYPE.key()) && item.get(CodexJsonKeyEnum.TYPE.key()).isJsonPrimitive()
-                      ? item.get(CodexJsonKeyEnum.TYPE.key()).getAsString() : null;
+                ? item.get(CodexJsonKeyEnum.TYPE.key()).getAsString() : null;
         if (!"mcpToolCall".equals(type)) {
             return;
         }
         String tool = item.has(CodexJsonKeyEnum.TOOL.key()) && item.get(CodexJsonKeyEnum.TOOL.key()).isJsonPrimitive()
-                      ? item.get(CodexJsonKeyEnum.TOOL.key()).getAsString() : "tool";
+                ? item.get(CodexJsonKeyEnum.TOOL.key()).getAsString() : "tool";
         listener.onAiProcessEvent(new ToolUseEvent(tool, null, null, null, ToolUseEvent.Kind.OTHER));
     }
 
@@ -645,7 +688,7 @@ class CodexAppServerHandler implements CodexNotificationListener, CodexServerReq
         // context usage and is therefore comparable with modelContextWindow.
         JsonObject last = tokenUsage.getAsJsonObject(CodexJsonKeyEnum.LAST.key());
         long usedTokens = last.has(CodexJsonKeyEnum.TOTAL_TOKENS.key()) && last.get(CodexJsonKeyEnum.TOTAL_TOKENS.key()).isJsonPrimitive()
-                          ? last.get(CodexJsonKeyEnum.TOTAL_TOKENS.key()).getAsLong() : 0L;
+                ? last.get(CodexJsonKeyEnum.TOTAL_TOKENS.key()).getAsLong() : 0L;
         if (PluginSettings.isDebugJson()) {
             LOG.log(Level.INFO, "codex tokenUsage: used={0} contextWindow={1}",
                     new Object[]{usedTokens, contextWindow});
@@ -667,9 +710,9 @@ class CodexAppServerHandler implements CodexNotificationListener, CodexServerReq
         }
         double usedPercent = primary.get(CodexJsonKeyEnum.USED_PERCENT.key()).getAsDouble();
         long windowDurationMins = primary.has(CodexJsonKeyEnum.WINDOW_DURATION_MINS.key()) && primary.get(CodexJsonKeyEnum.WINDOW_DURATION_MINS.key()).isJsonPrimitive()
-                                  ? primary.get(CodexJsonKeyEnum.WINDOW_DURATION_MINS.key()).getAsLong() : 0L;
+                ? primary.get(CodexJsonKeyEnum.WINDOW_DURATION_MINS.key()).getAsLong() : 0L;
         long resetsAt = primary.has(CodexJsonKeyEnum.RESETS_AT.key()) && primary.get(CodexJsonKeyEnum.RESETS_AT.key()).isJsonPrimitive()
-                        ? primary.get(CodexJsonKeyEnum.RESETS_AT.key()).getAsLong() : 0L;
+                ? primary.get(CodexJsonKeyEnum.RESETS_AT.key()).getAsLong() : 0L;
         CodexRateLimitEvent event = new CodexRateLimitEvent(usedPercent, windowDurationMins, resetsAt);
         listener.onAiProcessEvent(event);
         CodexAiImplementation.publishRateLimit(event);
@@ -702,8 +745,7 @@ class CodexAppServerHandler implements CodexNotificationListener, CodexServerReq
                     return CompletableFuture.failedFuture(
                             new UnsupportedOperationException("Unhandled Codex server request: " + method));
             }
-        }
-        catch (Throwable t) {
+        } catch (Throwable t) {
             // A handler throwing synchronously must still yield an answer: this
             // failed future routes through CodexJsonRpcClient's exceptionally
             // path as a JSON-RPC INTERNAL_ERROR response, so Codex's approval
@@ -718,32 +760,43 @@ class CodexAppServerHandler implements CodexNotificationListener, CodexServerReq
 
     private CompletableFuture<JsonObject> handleCommandExecutionApproval(JsonObject params) {
         String reason = params.has(CodexJsonKeyEnum.REASON.key()) && params.get(CodexJsonKeyEnum.REASON.key()).isJsonPrimitive()
-                        ? params.get(CodexJsonKeyEnum.REASON.key()).getAsString() : null;
+                ? params.get(CodexJsonKeyEnum.REASON.key()).getAsString() : null;
         String command = params.has(CodexJsonKeyEnum.COMMAND.key()) && params.get(CodexJsonKeyEnum.COMMAND.key()).isJsonPrimitive()
-                         ? params.get(CodexJsonKeyEnum.COMMAND.key()).getAsString() : null;
+                ? params.get(CodexJsonKeyEnum.COMMAND.key()).getAsString() : null;
         String displayText = reason != null ? reason
-                             : command != null ? "Codex wants to run: " + command
-                               : "Codex wants to run a command";
+                : command != null ? "Codex wants to run: " + command
+                        : "Codex wants to run a command";
+        if (isMcpSteeringEnabled()) {
+            listener.onAiProcessEvent(new SystemNotificationEvent("Command execution auto-denied by MCP steering policy"));
+            String steeringText = McpSteeringPolicy.steeringFeedbackFor(McpSteeringPolicy.Category.SHELL);
+            listener.onAiProcessEvent(new McpSteeringRefusalEvent(List.of(
+                    new McpSteeringRefusalEvent.Refusal("Command", steeringText))));
+            JsonObject result = new JsonObject();
+            result.addProperty(CodexJsonKeyEnum.DECISION.key(), "decline");
+            return CompletableFuture.completedFuture(result);
+        }
         return raiseConfirmAndReply("Command", displayText, null);
     }
 
     /**
-     * Waits — without blocking the dispatch thread — for this item's {@code item/started} to be drained, then answers.
+     * Waits — without blocking the dispatch thread — for this item's {@code item/started} to be drained, then
+     * answers.
      *
      * <p>
-     * The approval carries no diff of its own; the content arrives separately under the same item id. Those two are
-     * handled on different executors and nothing orders them, so this COMPOSES on a future rather than reading a map
-     * that may not be populated yet. Returning a chained future keeps the dispatch thread free: sleeping or polling
-     * here would stall every other inbound message, which would be worse than the bug.</p>
+     * The approval carries no diff of its own; the content arrives separately under the same item id. Those
+     * two are handled on different executors and nothing orders them, so this COMPOSES on a future rather
+     * than reading a map that may not be populated yet. Returning a chained future keeps the dispatch thread
+     * free: sleeping or polling here would stall every other inbound message, which would be worse than the
+     * bug.</p>
      *
      * <p>
-     * Bounded by {@link CodexTimeoutEnum#FILE_CHANGE_CACHE_WAIT_MILLIS}; on expiry the changes are treated as absent
-     * and the existing blind-confirm fallback runs, logged distinctly so "raced and lost" is never confused with
-     * "genuinely no changes".</p>
+     * Bounded by {@link CodexTimeoutEnum#FILE_CHANGE_CACHE_WAIT_MILLIS}; on expiry the changes are treated as
+     * absent and the existing blind-confirm fallback runs, logged distinctly so "raced and lost" is never
+     * confused with "genuinely no changes".</p>
      */
     private CompletableFuture<JsonObject> handleFileChangeApproval(JsonObject params) {
         String itemId = params.has(CodexJsonKeyEnum.ITEM_ID.key()) && params.get(CodexJsonKeyEnum.ITEM_ID.key()).isJsonPrimitive()
-                        ? params.get(CodexJsonKeyEnum.ITEM_ID.key()).getAsString() : null;
+                ? params.get(CodexJsonKeyEnum.ITEM_ID.key()).getAsString() : null;
         if (itemId == null) {
             return respondToFileChange(null, null);
         }
@@ -783,6 +836,17 @@ class CodexAppServerHandler implements CodexNotificationListener, CodexServerReq
                     "Codex requested a file change this review cannot display, so nothing was applied. "
                     + unsupported));
             return CompletableFuture.failedFuture(new UnsupportedOperationException(unsupported));
+        }
+
+        // MCP steering: auto-deny file changes when steering is enabled
+        if (isMcpSteeringEnabled()) {
+            listener.onAiProcessEvent(new SystemNotificationEvent("File change auto-denied by MCP steering policy"));
+            String steeringText = McpSteeringPolicy.steeringFeedbackFor(McpSteeringPolicy.Category.WRITE);
+            listener.onAiProcessEvent(new McpSteeringRefusalEvent(List.of(
+                    new McpSteeringRefusalEvent.Refusal("FileChange", steeringText))));
+            JsonObject result = new JsonObject();
+            result.addProperty(CodexJsonKeyEnum.DECISION.key(), "decline");
+            return CompletableFuture.completedFuture(result);
         }
 
         // Multi-file change: one review over the whole ordered set. Before this existed, every multi-file edit fell
@@ -838,9 +902,9 @@ class CodexAppServerHandler implements CodexNotificationListener, CodexServerReq
     }
 
     /**
-     * Like {@link #raisePermissionAndReply} but for a whole ordered change set: ONE event, ONE future, ONE aggregate
-     * reply. Same {@code decision} shape and the same decline-vs-cancel semantics — the review already carries that
-     * distinction, so nothing about the mapping changes for a batch.
+     * Like {@link #raisePermissionAndReply} but for a whole ordered change set: ONE event, ONE future, ONE
+     * aggregate reply. Same {@code decision} shape and the same decline-vs-cancel semantics — the review
+     * already carries that distinction, so nothing about the mapping changes for a batch.
      */
     private CompletableFuture<JsonObject> raiseMultiPermissionAndReply(List<MultiPermissionItem> items) {
         CompletableFuture<PermissionDecision> decisionFuture = new CompletableFuture<>();
@@ -854,14 +918,14 @@ class CodexAppServerHandler implements CodexNotificationListener, CodexServerReq
     }
 
     /**
-     * Raises a {@link ConfirmEvent} and maps the eventual {@link PermissionDecision} to Codex's {@code decision} reply
-     * shape (schema: FileChangeRequestApprovalResponse / CommandExecutionRequestApprovalResponse). Three distinct
-     * values:
+     * Raises a {@link ConfirmEvent} and maps the eventual {@link PermissionDecision} to Codex's
+     * {@code decision} reply shape (schema: FileChangeRequestApprovalResponse /
+     * CommandExecutionRequestApprovalResponse). Three distinct values:
      * <ul>
      * <li>{@code "accept"} — user approved
      * <li>{@code "decline"} — user deliberately rejected; agent continues the turn
-     * <li>{@code "cancel"} — future completed exceptionally (panel closed, process stopped); agent interrupts the turn
-     * immediately
+     * <li>{@code "cancel"} — future completed exceptionally (panel closed, process stopped); agent interrupts
+     * the turn immediately
      * </ul>
      * Does not block the calling dispatch-thread — chain completes when the user answers.
      */
@@ -877,9 +941,9 @@ class CodexAppServerHandler implements CodexNotificationListener, CodexServerReq
     }
 
     /**
-     * Like {@link #raiseConfirmAndReply} but raises a {@link PermissionEvent} so the user sees the full Accept/Reject
-     * diff panel, identical to the plugin's own {@code ApplyEdit}/{@code WriteFile} review. Same {@code decision} reply
-     * shape and decline-vs-cancel semantics.
+     * Like {@link #raiseConfirmAndReply} but raises a {@link PermissionEvent} so the user sees the full
+     * Accept/Reject diff panel, identical to the plugin's own {@code ApplyEdit}/{@code WriteFile} review.
+     * Same {@code decision} reply shape and decline-vs-cancel semantics.
      */
     private CompletableFuture<JsonObject> raisePermissionAndReply(String filePath, String proposed) {
         CompletableFuture<PermissionDecision> decisionFuture = new CompletableFuture<>();
@@ -893,25 +957,39 @@ class CodexAppServerHandler implements CodexNotificationListener, CodexServerReq
     }
 
     /**
-     * Handles {@code mcpServer/elicitation/request} — gating IDE MCP tool calls that Codex routes through this approval
-     * channel. Unlike file-change/command approvals, the response field is {@code "action"} (not {@code "decision"}),
-     * and the vocabulary has no {@code acceptForSession} — only {@code accept | decline | cancel} (schema:
-     * McpServerElicitationRequestResponse).
+     * Handles {@code mcpServer/elicitation/request} — gating IDE MCP tool calls that Codex routes through
+     * this approval channel. Unlike file-change/command approvals, the response field is {@code "action"}
+     * (not {@code "decision"}), and the vocabulary has no {@code acceptForSession} — only
+     * {@code accept | decline | cancel} (schema: McpServerElicitationRequestResponse).
      *
      * <p>
-     * NOTE: {@code persist:["session","always"]} in {@code _meta} signals auto-accept intent. This is NOT wired here —
-     * the decision to expose auto-accept to the user must be made deliberately (flagged for a future slice).
+     * NOTE: {@code persist:["session","always"]} in {@code _meta} signals auto-accept intent. This is NOT
+     * wired here — the decision to expose auto-accept to the user must be made deliberately (flagged for a
+     * future slice).
      */
     private CompletableFuture<JsonObject> handleMcpElicitationRequest(JsonObject params) {
         String message = params.has(CodexJsonKeyEnum.MESSAGE.key()) && params.get(CodexJsonKeyEnum.MESSAGE.key()).isJsonPrimitive()
-                         ? params.get(CodexJsonKeyEnum.MESSAGE.key()).getAsString() : null;
+                ? params.get(CodexJsonKeyEnum.MESSAGE.key()).getAsString() : null;
         String serverName = params.has(CodexJsonKeyEnum.SERVER_NAME.key()) && params.get(CodexJsonKeyEnum.SERVER_NAME.key()).isJsonPrimitive()
-                            ? params.get(CodexJsonKeyEnum.SERVER_NAME.key()).getAsString() : null;
+                ? params.get(CodexJsonKeyEnum.SERVER_NAME.key()).getAsString() : null;
         String displayText = message != null ? message
-                             : serverName != null ? "MCP server \'" + serverName + "\' requests approval"
-                               : "MCP server requests approval";
+                : serverName != null ? "MCP server \'" + serverName + "\' requests approval"
+                        : "MCP server requests approval";
         if (PluginSettings.isDebugJson()) {
             LOG.log(Level.INFO, "codex mcpServer/elicitation/request: serverName={0}", serverName);
+        }
+        // Exempt our own MCP server from steering: if Codex routes requests from our own tools through
+        // this elicitation channel, we must not deny them, or the plugin denies the very tools it is
+        // telling the agent to use.
+        boolean isOurServer = StringConst.PLUGIN_ID.equals(serverName);
+        if (isMcpSteeringEnabled() && !isOurServer) {
+            listener.onAiProcessEvent(new SystemNotificationEvent("MCP elicitation auto-denied by MCP steering policy"));
+            String steeringText = McpSteeringPolicy.steeringFeedbackFor(McpSteeringPolicy.Category.UNKNOWN);
+            listener.onAiProcessEvent(new McpSteeringRefusalEvent(List.of(
+                    new McpSteeringRefusalEvent.Refusal("McpElicitation", steeringText))));
+            JsonObject result = new JsonObject();
+            result.addProperty(CodexJsonKeyEnum.ACTION.key(), "decline");
+            return CompletableFuture.completedFuture(result);
         }
         CompletableFuture<PermissionDecision> decisionFuture = new CompletableFuture<>();
         pendingPermission = decisionFuture;
@@ -921,7 +999,7 @@ class CodexAppServerHandler implements CodexNotificationListener, CodexServerReq
         // to show. Auto-accepting would answer, on the user's behalf, a question
         // neither they nor this code has seen.
         listener.onAiProcessEvent(new ConfirmEvent("McpElicitation", displayText, null, null,
-                                                   decisionFuture, true));
+                decisionFuture, true));
         return decisionFuture.handle((decision, ex) -> {
             JsonObject result = new JsonObject();
             result.addProperty(CodexJsonKeyEnum.ACTION.key(), approvalDecision(decision, ex));

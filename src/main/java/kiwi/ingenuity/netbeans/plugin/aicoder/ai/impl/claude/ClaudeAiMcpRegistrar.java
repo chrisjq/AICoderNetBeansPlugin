@@ -19,10 +19,9 @@ import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.McpConfigKeyEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.server.AiMcpRegistrar;
 
 /**
- * Claude-specific MCP registration strategy. Uses {@code claude mcp add/remove}
- * to manage per-session endpoints, and writes the
- * {@link McpConfigKeyEnum#PRE_TOOL_USE} HTTP hook to ~/.claude/settings.json
- * for the diff-intercept feature.
+ * Claude-specific MCP registration strategy. Uses {@code claude mcp add/remove} to manage per-session
+ * endpoints, and writes the {@link McpConfigKeyEnum#PRE_TOOL_USE} HTTP hook to ~/.claude/settings.json for
+ * the diff-intercept feature.
  */
 public class ClaudeAiMcpRegistrar extends AiMcpRegistrar {
 
@@ -48,7 +47,7 @@ public class ClaudeAiMcpRegistrar extends AiMcpRegistrar {
                 }
             }
             JsonObject entry = new JsonObject();
-            entry.addProperty(McpConfigKeyEnum.MATCHER.key(), "Edit|Write");
+            entry.addProperty(McpConfigKeyEnum.MATCHER.key(), "*");
             JsonArray innerHooks = new JsonArray();
             JsonObject httpHook = new JsonObject();
             httpHook.addProperty(McpConfigKeyEnum.TYPE.key(), "http");
@@ -60,8 +59,7 @@ public class ClaudeAiMcpRegistrar extends AiMcpRegistrar {
             writeSettings(settingsPath, settings);
             LOG.log(Level.INFO, "PreToolUse hook registered in {0}", settingsPath);
             return true;
-        }
-        catch (Exception e) {
+        } catch (Exception e) {
             LOG.log(Level.WARNING, "Failed to register PreToolUse hook in settings.json", e);
             return false;
         }
@@ -90,8 +88,7 @@ public class ClaudeAiMcpRegistrar extends AiMcpRegistrar {
             hooks.add(McpConfigKeyEnum.PRE_TOOL_USE.key(), filtered);
             writeSettings(settingsPath, settings);
             LOG.log(Level.INFO, "PreToolUse hook unregistered from {0}", settingsPath);
-        }
-        catch (Exception e) {
+        } catch (Exception e) {
             LOG.log(Level.FINE, "Could not unregister PreToolUse hook", e);
         }
     }
@@ -119,8 +116,7 @@ public class ClaudeAiMcpRegistrar extends AiMcpRegistrar {
                     }
                 }
             }
-        }
-        catch (Exception ignored) {
+        } catch (Exception ignored) {
         }
         return false;
     }
@@ -136,8 +132,7 @@ public class ClaudeAiMcpRegistrar extends AiMcpRegistrar {
         try {
             JsonObject obj = GSON.fromJson(content, JsonObject.class);
             return obj != null ? obj : new JsonObject();
-        }
-        catch (com.google.gson.JsonSyntaxException e) {
+        } catch (com.google.gson.JsonSyntaxException e) {
             LOG.log(Level.WARNING, "settings.json is not valid JSON — starting fresh", e);
             return new JsonObject();
         }
@@ -151,8 +146,7 @@ public class ClaudeAiMcpRegistrar extends AiMcpRegistrar {
             Files.move(tmp, path,
                     java.nio.file.StandardCopyOption.REPLACE_EXISTING,
                     java.nio.file.StandardCopyOption.ATOMIC_MOVE);
-        }
-        catch (java.nio.file.AtomicMoveNotSupportedException e) {
+        } catch (java.nio.file.AtomicMoveNotSupportedException e) {
             Files.move(tmp, path, java.nio.file.StandardCopyOption.REPLACE_EXISTING);
         }
     }
@@ -202,8 +196,7 @@ public class ClaudeAiMcpRegistrar extends AiMcpRegistrar {
                 return -1;
             }
             return p.exitValue();
-        }
-        catch (Exception e) {
+        } catch (Exception e) {
             LOG.log(Level.FINE, "MCP command error", e);
             return -1;
         }

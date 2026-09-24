@@ -18,6 +18,8 @@ public class AiSessionSettings {
     private volatile Boolean autoNotifyInbox;
     private volatile Boolean allowImportantMessages;
     private volatile Boolean allowIdleWatcherTimer;
+    private volatile Boolean mcpSteering;
+
     private volatile String sessionInstructions;
     private volatile Boolean autoAccept;
     private volatile Boolean allowWebRequests;
@@ -48,24 +50,24 @@ public class AiSessionSettings {
     }
 
     public AiSessionSettings(Integer maxHistory, Boolean restrictToProjectFiles,
-                             Boolean allowInterAiComms, Boolean autoNotifyInbox,
-                             Boolean allowImportantMessages, String sessionInstructions,
-                             Boolean autoAccept, Boolean allowWebRequests) {
+            Boolean allowInterAiComms, Boolean autoNotifyInbox,
+            Boolean allowImportantMessages, String sessionInstructions,
+            Boolean autoAccept, Boolean allowWebRequests) {
         this(maxHistory, restrictToProjectFiles, allowInterAiComms, autoNotifyInbox,
-             allowImportantMessages, sessionInstructions, autoAccept,
-             allowWebRequests, null, null, null, null, null, null, null, null,
-             null);
+                allowImportantMessages, sessionInstructions, autoAccept,
+                allowWebRequests, null, null, null, null, null, null, null, null,
+                null);
     }
 
     public AiSessionSettings(Integer maxHistory, Boolean restrictToProjectFiles,
-                             Boolean allowInterAiComms, Boolean autoNotifyInbox,
-                             Boolean allowImportantMessages, String sessionInstructions,
-                             Boolean autoAccept, Boolean allowWebRequests,
-                             Boolean allowWebRequestGet, Boolean allowWebRequestPost,
-                             Boolean allowWebRequestPut, Boolean allowWebRequestPatch,
-                             Boolean allowWebRequestDelete, Boolean allowWebRequestHead,
-                             Boolean allowWebRequestOptions, Boolean allowWebRequestHeaders,
-                             Boolean allowWebRequestBody) {
+            Boolean allowInterAiComms, Boolean autoNotifyInbox,
+            Boolean allowImportantMessages, String sessionInstructions,
+            Boolean autoAccept, Boolean allowWebRequests,
+            Boolean allowWebRequestGet, Boolean allowWebRequestPost,
+            Boolean allowWebRequestPut, Boolean allowWebRequestPatch,
+            Boolean allowWebRequestDelete, Boolean allowWebRequestHead,
+            Boolean allowWebRequestOptions, Boolean allowWebRequestHeaders,
+            Boolean allowWebRequestBody) {
         this.maxHistory = maxHistory;
         this.restrictToProjectFiles = restrictToProjectFiles;
         this.allowInterAiComms = allowInterAiComms;
@@ -115,6 +117,10 @@ public class AiSessionSettings {
 
     public Boolean allowIdleWatcherTimer() {
         return allowIdleWatcherTimer;
+    }
+
+    public Boolean mcpSteering() {
+        return mcpSteering;
     }
 
     public String sessionInstructions() {
@@ -178,6 +184,10 @@ public class AiSessionSettings {
 
     public boolean effectiveAllowIdleWatcherTimer() {
         return allowIdleWatcherTimer != null ? allowIdleWatcherTimer : PluginSettings.isAllowIdleWatcherTimer();
+    }
+
+    public boolean effectiveMcpSteering() {
+        return mcpSteering != null ? mcpSteering : PluginSettings.isMcpSteering();
     }
 
     public boolean effectiveAutoAccept() {
@@ -291,6 +301,10 @@ public class AiSessionSettings {
         this.allowIdleWatcherTimer = newAllowIdleWatcherTimer;
     }
 
+    public void setMcpSteering(Boolean newMcpSteering) {
+        this.mcpSteering = newMcpSteering;
+    }
+
     public void setSessionInstructions(String newSessionInstructions) {
         this.sessionInstructions = newSessionInstructions;
     }
@@ -388,6 +402,9 @@ public class AiSessionSettings {
         if (allowIdleWatcherTimer == null) {
             allowIdleWatcherTimer = PluginSettings.isAllowIdleWatcherTimer();
         }
+        if (mcpSteering == null) {
+            mcpSteering = PluginSettings.isMcpSteering();
+        }
         if (autoAccept == null) {
             autoAccept = PluginSettings.isAutoAccept();
         }
@@ -429,7 +446,8 @@ public class AiSessionSettings {
     }
 
     /**
-     * Populates a JSON object with this settings' configuration. Only non-null values are added to the JSON object.
+     * Populates a JSON object with this settings' configuration. Only non-null values are added to the JSON
+     * object.
      */
     public void populateJsonObject(JsonObject cfgObj) {
         if (maxHistory != null) {
@@ -452,6 +470,9 @@ public class AiSessionSettings {
         }
         if (allowIdleWatcherTimer != null) {
             cfgObj.addProperty(AiSessionSettingsKeyEnum.ALLOW_IDLE_WATCHER_TIMER.key(), allowIdleWatcherTimer);
+        }
+        if (mcpSteering != null) {
+            cfgObj.addProperty(AiSessionSettingsKeyEnum.MCP_STEERING.key(), mcpSteering);
         }
         if (sessionInstructions != null) {
             cfgObj.addProperty(AiSessionSettingsKeyEnum.SESSION_INSTRUCTIONS.key(), sessionInstructions);

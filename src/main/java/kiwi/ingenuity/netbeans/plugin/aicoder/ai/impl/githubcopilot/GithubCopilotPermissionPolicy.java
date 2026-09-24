@@ -4,22 +4,19 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
-import kiwi.ingenuity.netbeans.plugin.aicoder.process.McpToolEnum;
+import kiwi.ingenuity.netbeans.plugin.aicoder.ai.McpSteeringPolicy;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.McpToolPropertyEnum;
 
 /**
- * Pure classification/formatting rules for
- * {@link GithubCopilotPermissionHandler}, kept free of the SDK's
- * CompletableFuture plumbing so the routing decision can be unit tested
- * directly — mirrors how {@code PermissionDiffPolicy} is kept free of Swing.
+ * Pure classification/formatting rules for {@link GithubCopilotPermissionHandler}, kept free of the SDK's
+ * CompletableFuture plumbing so the routing decision can be unit tested directly — mirrors how
+ * {@code PermissionDiffPolicy} is kept free of Swing.
  *
  * <p>
- * <b>Confirmed live.</b> {@code getKind()} returns the bare kind, and for an
- * MCP tool that kind is the literal string {@code "mcp"} — not the server name,
- * and not the {@code <mcp-server-name>(tool-name?)} pattern that
- * {@code copilot help permissions} documents for the CLI's own rule syntax. The
- * server name arrives separately, as
- * {@link GithubCopilotJsonKeyEnum#SERVER_NAME} in {@code extensionData}:
+ * <b>Confirmed live.</b> {@code getKind()} returns the bare kind, and for an MCP tool that kind is the
+ * literal string {@code "mcp"} — not the server name, and not the {@code <mcp-server-name>(tool-name?)}
+ * pattern that {@code copilot help permissions} documents for the CLI's own rule syntax. The server name
+ * arrives separately, as {@link GithubCopilotJsonKeyEnum#SERVER_NAME} in {@code extensionData}:
  *
  * <pre>
  * kind=mcp
@@ -28,20 +25,19 @@ import kiwi.ingenuity.netbeans.plugin.aicoder.process.McpToolPropertyEnum;
  *                toolTitle=GetFileContent, args={...}, readOnly=false}
  * </pre>
  *
- * The first version matched the server name against the kind string, which
- * could never hit, so every one of this plugin's own tool calls fell through to
- * {@link Category#UNKNOWN} and prompted. That was the intended failure
- * direction — fail closed, not fail silent — and the logged {@code kind}
- * identified the real shape in a single run.
+ * The first version matched the server name against the kind string, which could never hit, so every one of
+ * this plugin's own tool calls fell through to {@link Category#UNKNOWN} and prompted. That was the intended
+ * failure direction — fail closed, not fail silent — and the logged {@code kind} identified the real shape in
+ * a single run.
  *
  * <p>
- * A tool from some <em>other</em> MCP server still prompts: this plugin only
- * gates its own tools, so it can only vouch for its own.
+ * A tool from some <em>other</em> MCP server still prompts: this plugin only gates its own tools, so it can
+ * only vouch for its own.
  *
  * <p>
- * Substring matching is kept for the remaining categories so they work whether
- * a build returns {@code "shell"} or {@code "shell(echo)"}. Anything
- * unrecognised falls through to {@link Category#UNKNOWN} and prompts.
+ * Substring matching is kept for the remaining categories so they work whether a build returns
+ * {@code "shell"} or {@code "shell(echo)"}. Anything unrecognised falls through to {@link Category#UNKNOWN}
+ * and prompts.
  */
 final class GithubCopilotPermissionPolicy {
 
@@ -81,12 +77,10 @@ final class GithubCopilotPermissionPolicy {
     }
 
     /**
-     * Label for the confirm panel's tool-name slot. The category alone reads
-     * badly — an MCP call showed up as literally "Unknown" even though its
-     * {@link GithubCopilotJsonKeyEnum#TOOL_TITLE} was right there in
-     * {@code extensionData}. Prefer the most specific thing actually known: the
-     * tool's title, then the raw kind, and only "Unknown" when there is
-     * genuinely nothing to show.
+     * Label for the confirm panel's tool-name slot. The category alone reads badly — an MCP call showed up as
+     * literally "Unknown" even though its {@link GithubCopilotJsonKeyEnum#TOOL_TITLE} was right there in
+     * {@code extensionData}. Prefer the most specific thing actually known: the tool's title, then the raw
+     * kind, and only "Unknown" when there is genuinely nothing to show.
      */
     static String describeToolName(Category category, String rawKind, Map<String, Object> extensionData) {
         Object title = extensionData == null ? null
@@ -107,18 +101,16 @@ final class GithubCopilotPermissionPolicy {
     }
 
     /**
-     * Builds the confirm-panel display text. The key names Copilot uses inside
-     * {@code extensionData} for the human-relevant detail (e.g. the shell
-     * command text) are only partly known, so rather than guess a key and risk
-     * silently dropping the one piece of information the user needs, every
-     * entry is rendered — generous, not exact.
+     * Builds the confirm-panel display text. The key names Copilot uses inside {@code extensionData} for the
+     * human-relevant detail (e.g. the shell command text) are only partly known, so rather than guess a key
+     * and risk silently dropping the one piece of information the user needs, every entry is rendered —
+     * generous, not exact.
      *
      * <p>
-     * Two exceptions. Anything whose key looks like a credential is masked: the
-     * inter-AI tools pass a session {@link McpToolPropertyEnum#SECRET_KEY} as a
-     * normal argument, and a live run rendered one in full into both the
-     * confirm panel and the log. Long values are truncated so one large
-     * argument cannot push the rest of the request off the panel.
+     * Two exceptions. Anything whose key looks like a credential is masked: the inter-AI tools pass a session
+     * {@link McpToolPropertyEnum#SECRET_KEY} as a normal argument, and a live run rendered one in full into
+     * both the confirm panel and the log. Long values are truncated so one large argument cannot push the
+     * rest of the request off the panel.
      */
     static String describeRequest(String rawKind, Map<String, Object> extensionData) {
         StringBuilder sb = new StringBuilder("GitHub Copilot requests permission: ")
@@ -139,23 +131,23 @@ final class GithubCopilotPermissionPolicy {
 
     static String rejectFeedbackFor(Category category, String rawKind) {
         String kind = rawKind == null ? "" : rawKind.toLowerCase(Locale.ROOT);
-        if (category == Category.INTERNAL && kind.contains("read")) {
-            return "declined — use the IDE's own tools instead: " + McpToolEnum.GET_FILE_CONTENT.toolName()
-                    + " to read a file, or " + McpToolEnum.SEARCH_IN_FILES.toolName() + " / "
-                    + McpToolEnum.SEARCH_TYPES.toolName() + " / "
-                    + McpToolEnum.GET_PROJECT_STRUCTURE.toolName() + " to locate one.";
+        McpSteeringPolicy.Category sharedCategory;
+        if (category == Category.INTERNAL) {
+            if (kind.contains("read")) {
+                sharedCategory = McpSteeringPolicy.Category.READ;
+            } else if (kind.contains("path")) {
+                sharedCategory = McpSteeringPolicy.Category.PATH;
+            } else if (kind.contains("url")) {
+                sharedCategory = McpSteeringPolicy.Category.URL;
+            } else {
+                sharedCategory = McpSteeringPolicy.Category.UNKNOWN;
+            }
+        } else if (category == Category.SHELL) {
+            sharedCategory = McpSteeringPolicy.Category.SHELL;
+        } else {
+            sharedCategory = McpSteeringPolicy.Category.UNKNOWN;
         }
-        if (category == Category.INTERNAL && kind.contains("path")) {
-            return "declined — use " + McpToolEnum.GET_PROJECT_STRUCTURE.toolName()
-                    + " to inspect the project tree; read files with "
-                    + McpToolEnum.GET_FILE_CONTENT.toolName() + ".";
-        }
-        if (category == Category.INTERNAL && kind.contains("url")) {
-            return "declined — use the " + McpToolEnum.WEB_REQUEST.toolName()
-                    + " tool instead; it also honours this session's web-access settings.";
-        }
-        return "declined — call " + McpToolEnum.GET_INSTRUCTIONS.toolName()
-                + " for the list of tools this IDE provides, and use those instead.";
+        return McpSteeringPolicy.steeringFeedbackFor(sharedCategory);
     }
 
     private static String redact(String key, Object value) {

@@ -17,6 +17,8 @@ import * as path from "node:path";
 import * as os from "node:os";
 
 const HANDSHAKE_TIMEOUT_MS = AICODER_CONFIG.handshakeTimeoutMs;
+// Steering is guidance and must not add a noticeable delay to every native tool call.
+const STEERING_QUERY_TIMEOUT_MS = 1000;
 const TOOL_CALL_TIMEOUT_MS = AICODER_CONFIG.toolCallTimeoutMs;
 
 let mcpSessionId = null;
@@ -328,14 +330,18 @@ async function loadTypeBox() {
  *   - failure: "AI Coder MCP tools unavailable: " + <reason> (unchanged from before this fix; the manager treats
  *     this the same as success for "stop waiting" purposes — it means no MORE tools are coming, not that some are)
  */
-async function registerMcpTools(pi, ctx) {
+async function registerMcpTools(pi, ctx, registeredMcpTools, markMcpToolsReady) {
     let tools;
     try {
         await mcpInitialize();
         tools = await mcpListTools();
     }
     catch (e) {
-        if (ctx && ctx.ui && typeof ctx.ui.notify === "function") {
+        // MCP registration failed; leave the readiness flag false so steering remains fail-open.
+      // Steering is guidance, not a security boundary, so a failed registration must not block native tools.
+      // would contradict the guidance we are trying to deliver.
+      
+      if (ctx && ctx.ui && typeof ctx.ui.notify === "function") {
             ctx.ui.notify("AI Coder MCP tools unavailable: " + e.message);
         }
         return;
@@ -358,8 +364,10 @@ async function registerMcpTools(pi, ctx) {
             // NOT (args, ctx). params is the actual tool arguments; signal is the plain AbortSignal.
             execute: async (toolCallId, params, signal, onUpdate, ctx) => mcpCallTool(tool.name, params, signal)
         });
+        registeredMcpTools.add(tool.name);
         registeredCount++;
     }
+    markMcpToolsReady();
     if (ctx && ctx.ui && typeof ctx.ui.notify === "function") {
         ctx.ui.notify("AI Coder MCP tools registered: " + registeredCount);
     }
@@ -521,14 +529,86 @@ async function reviewGatedCall(call, ctx) {
 
 // ---- Extension entry point -------------------------------------------------------------------
 
+function nativeToolNameForSteering(toolName) {
+    const lower = (toolName || "").toLowerCase();
+    if (/^read|^cat|^view/.test(lower)) return "Read";
+    if (/grep|search/.test(lower)) return "Grep";
+    if (/glob|find/.test(lower)) return "Glob";
+    if (/fetch|http|url|web/.test(lower)) return "WebFetch";
+    if (/write|edit|create|patch/.test(lower)) return lower === "write" ? "Write" : "Edit";
+    if (/bash|sh|shell|exec|run|command/.test(lower)) return "Bash";
+    return null;
+}
+
+function steeringInputFor(call, nativeToolName) {
+    const input = call.input || {};
+    if (nativeToolName === "Edit") {
+        return {
+            file_path: input.path,
+            old_string: input.oldText || input.old_string || "",
+            new_string: input.newText || input.new_string || "",
+            replace_all: Boolean(input.replaceAll || input.replace_all)
+        };
+    }
+    if (nativeToolName === "Write") {
+        return { file_path: input.path, content: input.content || "" };
+    }
+    return input;
+}
+
+async function queryCurrentSteering(call, signal) {
+    const nativeToolName = nativeToolNameForSteering(call.toolName);
+    if (!nativeToolName) {
+        return undefined;
+    }
+    try {
+        const resp = await postJsonNoFetch(AICODER_CONFIG.hookUrl, {
+            hook_event_name: "PreToolUse",
+            session_id: AICODER_CONFIG.sessionId,
+            tool_name: nativeToolName,
+            tool_input: steeringInputFor(call, nativeToolName)
+        }, {}, STEERING_QUERY_TIMEOUT_MS, signal);
+        const output = resp.body && resp.body.hookSpecificOutput;
+        if (output && output.permissionDecision === "deny") {
+            return {
+                block: true,
+                reason: output.permissionDecisionReason || "Use the IDE's MCP tools instead."
+            };
+        }
+    }
+    catch (e) {
+        // Steering is guidance, not a security boundary. If the live hook cannot be reached,
+        // fail open and preserve pi's native-tool behavior.
+    }
+    return undefined;
+}
+
 export default function (pi) {
     const gated = new Set(AICODER_CONFIG.gatedTools);
+    const registeredMcpTools = new Set();
+      let mcpToolsReady = false;
     // session_start can fire more than once in the same process (e.g. session switch); the MCP handshake and tool
     // registration only need to happen once — guard against registering every tool a second time.
     let mcpToolsRegistrationStarted = false;
 
     pi.on("tool_call", async (call, ctx) => {
-        if (!call || !gated.has(call.toolName)) {
+        if (!call) {
+            return undefined;
+        }
+
+        if (mcpToolsReady && !registeredMcpTools.has(call.toolName) && !gated.has(call.toolName)) {
+            // Resolve steering through the live hook on every native call so an existing pi process
+            // observes global/session setting changes immediately. If the hook is unavailable, the
+            // query fails open; steering is guidance, not a security boundary.
+            const steeringDecision = await queryCurrentSteering(call, ctx && ctx.signal);
+            if (steeringDecision) {
+                return steeringDecision;
+            }
+        }
+
+        // When steering is OFF (or tool is an MCP tool): use old behavior
+        // edit/write go through reviewGatedCall for user review; others pass through
+        if (!gated.has(call.toolName)) {
             return undefined;
         }
         return reviewGatedCall(call, ctx);
@@ -545,7 +625,9 @@ export default function (pi) {
         // safety net for an error OUTSIDE registerMcpTools's own try/catch (e.g. pi.registerTool itself throwing);
         // it emits the same "unavailable" readiness string registerMcpTools's own failure path does, so the Java
         // side still gets its stop-waiting signal even from this unexpected-error path.
-        registerMcpTools(pi, ctx).catch((e) => {
+        registerMcpTools(pi, ctx, registeredMcpTools, () => {
+              mcpToolsReady = true;
+          }).catch((e) => {
             if (ctx && ctx.ui && typeof ctx.ui.notify === "function") {
                 ctx.ui.notify("AI Coder MCP tools unavailable: " + e.message);
             }

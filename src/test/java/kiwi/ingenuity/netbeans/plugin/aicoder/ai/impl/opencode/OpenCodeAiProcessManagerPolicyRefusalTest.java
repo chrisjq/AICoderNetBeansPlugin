@@ -11,6 +11,7 @@ import java.util.logging.LogRecord;
 import java.util.logging.Logger;
 import java.util.logging.SimpleFormatter;
 import kiwi.ingenuity.netbeans.plugin.aicoder.PluginSettings;
+import kiwi.ingenuity.netbeans.plugin.aicoder.ai.events.McpSteeringRefusalEvent;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.events.PolicyRefusalEvent;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.events.PolicyRefusalEvent.Refusal;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.events.StatusEvent;
@@ -23,9 +24,9 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import org.junit.jupiter.api.Test;
 
 /**
- * When the read policy's refusal is what ended the agent's turn, the manager tells the UI so, just before it reports
- * the turn complete. The whole decision is made here, from three facts at the end of the turn: a refusal was recorded,
- * the turn ended {@code cancelled}, and the user did not press Stop.
+ * When the read policy's refusal is what ended the agent's turn, the manager tells the UI so, just before it
+ * reports the turn complete. The whole decision is made here, from three facts at the end of the turn: a
+ * refusal was recorded, the turn ended {@code cancelled}, and the user did not press Stop.
  *
  * <p>
  * How often the agent may then be resumed is the UI's business and is pinned in
@@ -37,8 +38,8 @@ class OpenCodeAiProcessManagerPolicyRefusalTest {
     private static final String OTHER = "/etc/passwd";
 
     /**
-     * A manager and a handler that can be made to refuse a read, with everything the manager tells the UI recorded on
-     * one timeline, so ORDER can be asserted.
+     * A manager and a handler that can be made to refuse a read, with everything the manager tells the UI
+     * recorded on one timeline, so ORDER can be asserted.
      */
     private static final class Rig {
 
@@ -46,9 +47,9 @@ class OpenCodeAiProcessManagerPolicyRefusalTest {
         final List<AiProcessEvent> events = new CopyOnWriteArrayList<>();
         final OpenCodeAcpClientHandler handler = new OpenCodeAcpClientHandler(e -> {
         }, () -> {
-                                                                      }, null,
-                                                                              new OpenCodeAcpClientHandler.SessionFileScope(
-                                                                                      p -> false, p -> false, p -> "refused: " + p));
+        }, null,
+                new OpenCodeAcpClientHandler.SessionFileScope(
+                        p -> false, p -> false, p -> "refused: " + p));
         final OpenCodeAiProcessManager manager;
 
         // Not named like the manager's own fields: inside the anonymous subclass below a simple name resolves to the
@@ -57,8 +58,9 @@ class OpenCodeAiProcessManagerPolicyRefusalTest {
             manager = new OpenCodeAiProcessManager(e -> {
                 events.add(e);
                 timeline.add(e instanceof TurnCompleteEvent ? "turn-complete"
-                             : e instanceof PolicyRefusalEvent ? "policy-refusal"
-                               : e instanceof StatusEvent ? "status" : e.getClass().getSimpleName());
+                        : e instanceof McpSteeringRefusalEvent ? "mcp-steering-refusal"
+                                : e instanceof PolicyRefusalEvent ? "policy-refusal"
+                                        : e instanceof StatusEvent ? "status" : e.getClass().getSimpleName());
             }) {
                 {
                     this.running = startRunning;
@@ -74,8 +76,8 @@ class OpenCodeAiProcessManagerPolicyRefusalTest {
         }
 
         /**
-         * The agent reads a file the policy refuses, exactly as OpenCode's ACP agent asks: an external_directory ask
-         * traced back to an earlier read tool call.
+         * The agent reads a file the policy refuses, exactly as OpenCode's ACP agent asks: an
+         * external_directory ask traced back to an earlier read tool call.
          */
         void refuse(String path) throws Exception {
             JsonObject update = new JsonObject();
@@ -105,7 +107,7 @@ class OpenCodeAiProcessManagerPolicyRefusalTest {
             params.add("toolCall", toolCall);
 
             assertEquals("reject", handler.onRequestPermission(params).get().getAsJsonObject("outcome")
-                         .get("optionId").getAsString(), "the harness must produce a real refusal");
+                    .get("optionId").getAsString(), "the harness must produce a real refusal");
         }
 
         void complete(String stopReason) {
@@ -131,9 +133,9 @@ class OpenCodeAiProcessManagerPolicyRefusalTest {
         rig.complete("cancelled");
 
         assertEquals(List.of("policy-refusal", "turn-complete"), rig.timeline,
-                     "the UI decides at turn-complete whether to carry on, so it must already know");
+                "the UI decides at turn-complete whether to carry on, so it must already know");
         assertEquals(List.of(new Refusal(FILE, "refused: " + FILE)), rig.reported(),
-                     "the path and the shared refusal text, verbatim");
+                "the path and the shared refusal text, verbatim");
     }
 
     /**
@@ -149,7 +151,7 @@ class OpenCodeAiProcessManagerPolicyRefusalTest {
 
         assertEquals(List.of("policy-refusal", "turn-complete"), rig.timeline, "one event for the turn, not one per path");
         assertEquals(List.of(new Refusal(FILE, "refused: " + FILE), new Refusal(OTHER, "refused: " + OTHER)),
-                     rig.reported(), "in the order refused, path and reason together");
+                rig.reported(), "in the order refused, path and reason together");
     }
 
     @Test
@@ -238,12 +240,12 @@ class OpenCodeAiProcessManagerPolicyRefusalTest {
         rig.complete("cancelled");
 
         assertEquals(List.of("turn-complete"), rig.timeline,
-                     "the second turn refused nothing; the first turn's refusal must not be reported against it");
+                "the second turn refused nothing; the first turn's refusal must not be reported against it");
     }
 
     /**
-     * The manager applies no cap: the guard against a loop is the UI's budget, refilled by the user. Pinned so the
-     * responsibility does not quietly drift to two places that then disagree.
+     * The manager applies no cap: the guard against a loop is the UI's budget, refilled by the user. Pinned
+     * so the responsibility does not quietly drift to two places that then disagree.
      */
     @Test
     void theManagerNeverCapsAndReportsEveryRefusalKilledTurn() throws Exception {
@@ -264,7 +266,7 @@ class OpenCodeAiProcessManagerPolicyRefusalTest {
         reported.refuse(FILE);
         reported.manager.handleTurnError(new AcpException(-32800, "cancelled"));
         assertEquals(List.of("policy-refusal", "turn-complete"), reported.timeline,
-                     "-32800 is the same cancelled turn, so a refusal on record is reported, before turn-complete");
+                "-32800 is the same cancelled turn, so a refusal on record is reported, before turn-complete");
         assertEquals(List.of(new Refusal(FILE, "refused: " + FILE)), reported.reported());
 
         Rig stopped = new Rig(true, true);
@@ -336,8 +338,7 @@ class OpenCodeAiProcessManagerPolicyRefusalTest {
         PluginSettings.setDebugJson(debugJson);
         try {
             action.run();
-        }
-        finally {
+        } finally {
             PluginSettings.setDebugJson(previousDebug);
             logger.setLevel(previousLevel);
             logger.removeHandler(capture);

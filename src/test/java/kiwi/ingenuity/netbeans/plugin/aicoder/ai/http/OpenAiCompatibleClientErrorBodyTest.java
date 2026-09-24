@@ -24,11 +24,12 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
 /**
- * Pins the error-body redaction in {@link OpenAiCompatibleClient#chat}: a non-2xx reply body can echo request content
- * (and occasionally auth material), so it must pass through {@code McpHookServerUtil.redactAllSecrets} before landing
- * in the {@link IOException} message. The fake upstream embeds the LIVE session secret of a session registered in
- * {@link SessionRegistry} — exactly what the value-based matcher looks for. Reverting the wrapper at the throw site
- * leaks the secret into the exception and turns this test red.
+ * Pins the error-body redaction in {@link OpenAiCompatibleClient#chat}: a non-2xx reply body can echo request
+ * content (and occasionally auth material), so it must pass through
+ * {@code McpHookServerUtil.redactAllSecrets} before landing in the {@link IOException} message. The fake
+ * upstream embeds the LIVE session secret of a session registered in {@link SessionRegistry} — exactly what
+ * the value-based matcher looks for. Reverting the wrapper at the throw site leaks the secret into the
+ * exception and turns this test red.
  */
 class OpenAiCompatibleClientErrorBodyTest {
 
@@ -99,8 +100,55 @@ class OpenAiCompatibleClientErrorBodyTest {
                     "the status line context must survive: " + failure.getMessage());
             assertFalse(failure.getMessage().contains(secret),
                     "the error body must be redacted before it reaches the exception");
+        } finally {
+            server.stop(0);
         }
-        finally {
+    }
+
+    /**
+     * The tool-call-parse-failure recovery in {@link OllamaAiProcessManager} carries the parse error back to
+     * the model as a tool result, so that string gets its own redaction at the throw site in
+     * {@link OpenAiCompatibleClient}. An upstream body that echoes a session secret into the err= clause must
+     * never leak it into the exception message OR the parse error that later becomes part of the
+     * conversation.
+     */
+    @Test
+    void toolCallParseError_echoingSessionSecret_isRedactedInTheParseException() throws Exception {
+        assertTrue(secret != null && !secret.isBlank(), "probe session must have a real secret");
+
+        HttpServer server = HttpServer.create(
+                new InetSocketAddress(InetAddress.getLoopbackAddress(), 0), 0);
+        byte[] body = ("{\"error\":{\"message\":\"error parsing tool call: raw='hello ? world', "
+                + "err=invalid character '?' after object key:value pair " + secret + "\",\"type\":\"api_error\"}}")
+                .getBytes(StandardCharsets.UTF_8);
+        server.createContext("/v1/chat/completions", exchange -> {
+            exchange.getResponseHeaders().set("Content-Type", "application/json");
+            exchange.sendResponseHeaders(500, body.length);
+            try (OutputStream out = exchange.getResponseBody()) {
+                out.write(body);
+            }
+        });
+        server.start();
+        try {
+            String baseUrl = "http://" + InetAddress.getLoopbackAddress().getHostAddress()
+                    + ":" + server.getAddress().getPort();
+            OpenAiCompatibleClient client = new OpenAiCompatibleClient(HttpClient.newHttpClient());
+            ChatRequest request = new ChatRequest(baseUrl, null, "test-model",
+                    List.of(new ChatMessage(ChatRole.USER, "hi", null, null)), null);
+
+            OpenAiToolCallParseException failure = assertThrows(
+                    OpenAiToolCallParseException.class, () -> client.chat(request, s -> {
+                    }));
+
+            assertTrue(failure.getMessage().contains("HTTP 500"),
+                    "the status line context must survive: " + failure.getMessage());
+            assertFalse(failure.getMessage().contains(secret),
+                    "the error body must be redacted before it reaches the exception");
+            assertTrue(failure.parseError().contains("invalid character"),
+                    "the err= clause must survive extraction: " + failure.parseError());
+            assertFalse(failure.parseError().contains(secret),
+                    "the parse error fed back to the model must be redacted too");
+        } finally {
             server.stop(0);
         }
     }

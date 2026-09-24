@@ -39,16 +39,16 @@ public class OpenAiCompatibleClient implements HttpAiClient {
      * Master switch for logging tool_calls SSE deltas to "ollama sse". Default OFF.
      *
      * <p>
-     * Why off: a single chunk is frequently not a complete JSON object on its own (arguments stream in fragments — see
-     * {@link PartialToolCall}), and even when it is, a secret's own characters can straddle two separate chunks — no
-     * per-line redaction can catch that. Individually these fragments are near-unreadable anyway, and the ASSEMBLED
-     * call is already logged in the next turn's "ollama request" log, which replays the complete history — the version
-     * anyone would actually want to read.
+     * Why off: a single chunk is frequently not a complete JSON object on its own (arguments stream in
+     * fragments — see {@link PartialToolCall}), and even when it is, a secret's own characters can straddle
+     * two separate chunks — no per-line redaction can catch that. Individually these fragments are
+     * near-unreadable anyway, and the ASSEMBLED call is already logged in the next turn's "ollama request"
+     * log, which replays the complete history — the version anyone would actually want to read.
      *
      * <p>
      * Flip to {@code true} only when debugging a tool call whose arguments never assemble correctly and the
-     * request-history replay isn't enough to diagnose it. Ordinary content deltas keep logging regardless of this flag
-     * — see {@link #isToolCallDelta}, which this flag gates.
+     * request-history replay isn't enough to diagnose it. Ordinary content deltas keep logging regardless of
+     * this flag — see {@link #isToolCallDelta}, which this flag gates.
      */
     static final boolean LOG_TOOL_CALL_SSE_DELTAS = false;
 
@@ -66,8 +66,7 @@ public class OpenAiCompatibleClient implements HttpAiClient {
             JsonObject root;
             try {
                 root = JsonParser.parseString(dataLine).getAsJsonObject();
-            }
-            catch (RuntimeException ex) {
+            } catch (RuntimeException ex) {
                 continue;
             }
             JsonObject usage = root.getAsJsonObject(OpenAiJsonKeyEnum.USAGE.key());
@@ -110,7 +109,7 @@ public class OpenAiCompatibleClient implements HttpAiClient {
                 .map(PartialToolCall::toChatToolCall)
                 .toList();
         return new ChatResult(assistantText.toString(), finalToolCalls, finishReason,
-                              promptTokens, completionTokens);
+                promptTokens, completionTokens);
     }
 
     private static List<String> readSseDataLines(InputStream body, Consumer<String> onTextDelta) throws IOException {
@@ -151,8 +150,7 @@ public class OpenAiCompatibleClient implements HttpAiClient {
             JsonObject choice = choices.get(0).getAsJsonObject();
             JsonObject delta = choice.getAsJsonObject(OpenAiJsonKeyEnum.DELTA.key());
             return delta != null && delta.has(OpenAiJsonKeyEnum.TOOL_CALLS.key());
-        }
-        catch (RuntimeException e) {
+        } catch (RuntimeException e) {
             // Unparseable — cannot confirm it's a tool-call fragment, so it is not
             // excluded on a hunch; ordinary content keeps streaming to the log as before.
             return false;
@@ -178,8 +176,7 @@ public class OpenAiCompatibleClient implements HttpAiClient {
             if (contentEl != null && !contentEl.isJsonNull()) {
                 onTextDelta.accept(contentEl.getAsString());
             }
-        }
-        catch (RuntimeException ex) {
+        } catch (RuntimeException ex) {
             // skip malformed delta
         }
     }
@@ -191,7 +188,7 @@ public class OpenAiCompatibleClient implements HttpAiClient {
             }
             JsonObject toolCall = element.getAsJsonObject();
             int index = toolCall.has(OpenAiJsonKeyEnum.INDEX.key())
-                        ? toolCall.get(OpenAiJsonKeyEnum.INDEX.key()).getAsInt() : toolCalls.size();
+                    ? toolCall.get(OpenAiJsonKeyEnum.INDEX.key()).getAsInt() : toolCalls.size();
             PartialToolCall partial = toolCalls.computeIfAbsent(index, i -> new PartialToolCall());
             JsonElement idEl = toolCall.get(OpenAiJsonKeyEnum.ID.key());
             if (idEl != null && !idEl.isJsonNull()) {
@@ -242,8 +239,8 @@ public class OpenAiCompatibleClient implements HttpAiClient {
                 }
                 // A schema already in OpenAI shape carries "parameters" instead.
                 JsonElement parameters = toolSchema.has(ToolSchemaKeyEnum.INPUT_SCHEMA.key())
-                                         ? toolSchema.get(ToolSchemaKeyEnum.INPUT_SCHEMA.key())
-                                         : toolSchema.has(OpenAiJsonKeyEnum.PARAMETERS.key()) ? toolSchema.get(OpenAiJsonKeyEnum.PARAMETERS.key()) : null;
+                        ? toolSchema.get(ToolSchemaKeyEnum.INPUT_SCHEMA.key())
+                        : toolSchema.has(OpenAiJsonKeyEnum.PARAMETERS.key()) ? toolSchema.get(OpenAiJsonKeyEnum.PARAMETERS.key()) : null;
                 if (parameters != null && parameters.isJsonObject()) {
                     function.add(OpenAiJsonKeyEnum.PARAMETERS.key(), deepCopy(parameters.getAsJsonObject()));
                 }
@@ -272,8 +269,7 @@ public class OpenAiCompatibleClient implements HttpAiClient {
         out.addProperty(OpenAiJsonKeyEnum.ROLE.key(), message.role().name().toLowerCase(Locale.ROOT));
         if (message.content() == null) {
             out.add(OpenAiJsonKeyEnum.CONTENT.key(), null);
-        }
-        else {
+        } else {
             out.addProperty(OpenAiJsonKeyEnum.CONTENT.key(), message.content());
         }
         if (message.toolCallId() != null) {
@@ -309,6 +305,61 @@ public class OpenAiCompatibleClient implements HttpAiClient {
         }
         return trimmed;
     }
+
+    /**
+     * Upper bound on the parse error carried to the model. Ollama's message can echo the model's entire raw
+     * output in {@code raw='...'}, which is useless to the model and expensive in the transcript — the
+     * {@code err=} tail is the actionable part, and capping it means a huge raw echo can never be copied into
+     * the conversation.
+     */
+    static final int MAX_TOOL_CALL_PARSE_ERROR_LENGTH = 200;
+
+    /**
+     * Detects an HTTP 500 whose error body is a server-side tool-call PARSE failure — the exact shape Ollama
+     * local models produce when they hallucinate mid-string and emit tool arguments that are not valid JSON
+     * ({@code error parsing tool call: raw='...', err=...}). Returns the bounded parse error (the
+     * {@code err=} clause when present), or {@code null} for anything else. Only this shape is recoverable: a
+     * genuine server or transport failure must keep failing as it does today.
+     */
+    static String extractToolCallParseError(String errorBody) {
+        if (errorBody == null || errorBody.isBlank()) {
+            return null;
+        }
+        String message;
+        try {
+            JsonElement root = JsonParser.parseString(errorBody);
+            if (!root.isJsonObject()) {
+                return null;
+            }
+            JsonElement error = root.getAsJsonObject().get("error");
+            if (error == null) {
+                return null;
+            }
+            if (error.isJsonObject()) {
+                JsonElement msg = error.getAsJsonObject().get("message");
+                message = msg != null && msg.isJsonPrimitive() ? msg.getAsString() : null;
+            } else if (error.isJsonPrimitive()) {
+                message = error.getAsString();
+            } else {
+                return null;
+            }
+        } catch (RuntimeException ex) {
+            return null;
+        }
+        if (message == null || !message.contains("error parsing tool call")) {
+            return null;
+        }
+        String err = message;
+        int idx = message.lastIndexOf("err=");
+        if (idx >= 0) {
+            err = message.substring(idx + "err=".length()).strip();
+        }
+        if (err.length() > MAX_TOOL_CALL_PARSE_ERROR_LENGTH) {
+            err = err.substring(0, MAX_TOOL_CALL_PARSE_ERROR_LENGTH) + "...";
+        }
+        return err;
+    }
+
     private final HttpClient httpClient;
 
     public OpenAiCompatibleClient() {
@@ -353,19 +404,30 @@ public class OpenAiCompatibleClient implements HttpAiClient {
                     String errorBody = new String(body.readAllBytes(), StandardCharsets.UTF_8);
                     // Server error bodies can echo request content (and occasionally auth
                     // material) — never surface them unredacted through exception messages.
+                    String redactedBody = McpHookServerUtil.redactAllSecrets(errorBody);
+                    String toolCallParseError = extractToolCallParseError(errorBody);
+                    if (toolCallParseError != null) {
+                        // A server-side rejection of an unparseable tool call is a recoverable MODEL
+                        // mistake, not a transport failure: the parse error can be fed back to the
+                        // model as a tool result so it can correct itself on the next iteration.
+                        // Carried on a dedicated subtype so Ollama's process manager can tell this
+                        // apart from a genuine 500, which must keep failing as it does today.
+                        throw new OpenAiToolCallParseException(response.statusCode(),
+                                "HTTP " + response.statusCode() + " from " + endpoint
+                                + ": " + redactedBody,
+                                McpHookServerUtil.redactAllSecrets(toolCallParseError));
+                    }
                     throw new OpenAiHttpStatusException(response.statusCode(),
-                                                        "HTTP " + response.statusCode() + " from " + endpoint
-                                                        + ": " + McpHookServerUtil.redactAllSecrets(errorBody));
+                            "HTTP " + response.statusCode() + " from " + endpoint
+                            + ": " + redactedBody);
                 }
                 List<String> sseDataLines = readSseDataLines(body, onTextDelta);
                 return assembleSse(sseDataLines);
             }
-        }
-        catch (InterruptedException ex) {
+        } catch (InterruptedException ex) {
             Thread.currentThread().interrupt();
             throw new IOException("Interrupted while waiting for chat completion", ex);
-        }
-        catch (RuntimeException ex) {
+        } catch (RuntimeException ex) {
             throw new IOException("Invalid SSE payload: " + ex.getMessage(), ex);
         }
     }

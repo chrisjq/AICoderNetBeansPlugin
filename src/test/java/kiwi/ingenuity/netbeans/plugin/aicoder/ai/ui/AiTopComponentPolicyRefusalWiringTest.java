@@ -12,17 +12,17 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import org.junit.jupiter.api.Test;
 
 /**
- * How {@code AiTopComponent} answers a {@link PolicyRefusalEvent}: with an agent-only turn, that the user cannot see,
- * bounded so the agent cannot keep itself running.
+ * How {@code AiTopComponent} answers a {@link PolicyRefusalEvent}: with an agent-only turn, that the user
+ * cannot see, bounded so the agent cannot keep itself running.
  *
  * <p>
  * Source-level where it must be, because {@code AiTopComponent} eagerly builds a real backend and cannot be
- * instantiated in a unit test; built from occurrence counts and relative order, never from a marker's position, like
- * {@link AiTopComponentInboxInterruptWiringTest}. Everything that can run on real output does.
+ * instantiated in a unit test; built from occurrence counts and relative order, never from a marker's
+ * position, like {@link AiTopComponentInboxInterruptWiringTest}. Everything that can run on real output does.
  *
  * <p>
- * INVISIBILITY IS PINNED HERE, not left to a comment: "nothing reaches the user" is the kind of requirement that passes
- * review and then regresses quietly.
+ * INVISIBILITY IS PINNED HERE, not left to a comment: "nothing reaches the user" is the kind of requirement
+ * that passes review and then regresses quietly.
  */
 class AiTopComponentPolicyRefusalWiringTest {
 
@@ -30,9 +30,9 @@ class AiTopComponentPolicyRefusalWiringTest {
             = "src/main/java/kiwi/ingenuity/netbeans/plugin/aicoder/ai/ui/AiTopComponent.java";
 
     private static final List<String> USER_VISIBLE_CALLS = List.of("addSystemMessage", "addUserMessage",
-                                                                   "setStatusMessage", "showMessage", "NotifyDescriptor",
-                                                                   "conversationPanel", "infoBar", "setDisplayName",
-                                                                   "setToolTipText");
+            "setStatusMessage", "showMessage", "NotifyDescriptor",
+            "conversationPanel", "infoBar", "setDisplayName",
+            "setToolTipText");
 
     private static String readSource() throws IOException {
         return Files.readString(Path.of(SOURCE_PATH));
@@ -55,9 +55,9 @@ class AiTopComponentPolicyRefusalWiringTest {
 
     // ---- Invisibility ----
     /**
-     * The whole notice goes to the agent-only channel. On real output: a turn whose visible text is empty and whose
-     * hidden text is the notice is composed as the block alone, with no visible text ahead of it and none of the notice
-     * outside the block.
+     * The whole notice goes to the agent-only channel. On real output: a turn whose visible text is empty and
+     * whose hidden text is the notice is composed as the block alone, with no visible text ahead of it and
+     * none of the notice outside the block.
      */
     @Test
     void theNoticeReachesTheModelAsAHiddenOnlyTurnWithNoVisibleText() {
@@ -69,18 +69,19 @@ class AiTopComponentPolicyRefusalWiringTest {
         assertTrue(prompt.startsWith("<SYSTEM:"), "a hidden-only turn starts directly with the block: " + prompt);
         assertTrue(prompt.contains(notice), "and the agent still gets the whole notice: " + prompt);
         assertEquals("", AiTopComponent.groupedVisibleText(List.of()),
-                     "nothing joins the visible text of a batch: the notice is not a notification at all");
+                "nothing joins the visible text of a batch: the notice is not a notification at all");
         assertEquals("", AiTopComponent.systemMessageText(List.of()));
     }
 
     /**
-     * The event handler records and does nothing else: no transcript line, no status, no history, no tab change.
+     * The event handler records and does nothing else: no transcript line, no status, no history, no tab
+     * change.
      */
     @Test
     void theEventHandlerOnlyRecordsAndTouchesNothingTheUserSees() throws IOException {
         String source = readSource();
         String branch = bodyOf(source, "else if (event instanceof PolicyRefusalEvent refusalEvent) {",
-                               "else if (event instanceof AskUserQuestionEvent aqe) {");
+                "else if (event instanceof McpSteeringRefusalEvent steeringEvent) {");
 
         assertTrue(branch.contains("pendingPolicyRefusals.addAll(refusalEvent.refusals());"), branch);
         String code = withoutComments(branch);
@@ -97,7 +98,7 @@ class AiTopComponentPolicyRefusalWiringTest {
     void buildingTheNoticeTouchesNothingTheUserSees() throws IOException {
         String source = readSource();
         String body = withoutComments(bodyOf(source, "private String consumePolicyRefusalNotice() {",
-                                             "static String joinAgentNotices("));
+                "static String joinAgentNotices("));
 
         for (String forbidden : USER_VISIBLE_CALLS) {
             assertFalse(body.contains(forbidden), "must not touch what the user sees: " + forbidden);
@@ -105,9 +106,9 @@ class AiTopComponentPolicyRefusalWiringTest {
     }
 
     /**
-     * The notice is only ever handed on as the AGENT-ONLY text: assigned to the variables that become the third
-     * argument of {@code submitNotificationTurn} and the agent-only argument of {@code combinedAgentOnlyText}, never to
-     * the visible one.
+     * The notice is only ever handed on as the AGENT-ONLY text: assigned to the variables that become the
+     * third argument of {@code submitNotificationTurn} and the agent-only argument of
+     * {@code combinedAgentOnlyText}, never to the visible one.
      */
     @Test
     void theNoticeIsOnlyEverJoinedIntoTheAgentOnlyText() throws IOException {
@@ -115,23 +116,23 @@ class AiTopComponentPolicyRefusalWiringTest {
 
         assertEquals(1, countOf(source, "private String consumePolicyRefusalNotice()"), "declared once");
         assertEquals(2, countOf(source, "consumePolicyRefusalNotice()") - 1,
-                     "and reached from exactly two places: the flush and the empty-queue path");
+                "and reached from exactly two places: the flush and the empty-queue path");
         assertEquals(1, countOf(source, "interrupt = joinAgentNotices(consumePolicyRefusalNotice(), interrupt);"),
-                     "the flush folds it into the agent-only explanation");
+                "the flush folds it into the agent-only explanation");
         assertEquals(1, countOf(source, "explanation = joinAgentNotices(consumePolicyRefusalNotice(), explanation);"),
-                     "and so does the empty-queue path");
+                "and so does the empty-queue path");
         assertEquals(1, countOf(source, "combinedAgentOnlyText(deliverable, interrupt)"),
-                     "the flush's agent-only text is where that explanation goes, and nowhere else");
+                "the flush's agent-only text is where that explanation goes, and nowhere else");
         assertEquals(1, countOf(source,
-                                "submitNotificationTurn(NotificationTypeEnum.INBOX_INTERRUPT_NOTICE, null, explanation)"),
-                     "the empty-queue turn has NO visible text, only the explanation");
+                "submitNotificationTurn(NotificationTypeEnum.INBOX_INTERRUPT_NOTICE, null, explanation)"),
+                "the empty-queue turn has NO visible text, only the explanation");
         assertEquals(0, countOf(source, "submitNotificationTurn(NotificationTypeEnum.INBOX_INTERRUPT_NOTICE, explanation"),
-                     "the explanation is never the visible argument");
+                "the explanation is never the visible argument");
     }
 
     /**
-     * The visible half of the flush's turn is composed from the delivered notifications alone, before the explanation
-     * exists, so nothing folded into the explanation can become visible.
+     * The visible half of the flush's turn is composed from the delivered notifications alone, before the
+     * explanation exists, so nothing folded into the explanation can become visible.
      */
     @Test
     void theFlushsVisibleTextIsComposedFromTheNotificationsBeforeAnyExplanationExists() throws IOException {
@@ -141,7 +142,7 @@ class AiTopComponentPolicyRefusalWiringTest {
         int explanation = source.indexOf("String interrupt = consumeInboxInterruptExplanation()");
         int refusal = source.indexOf("interrupt = joinAgentNotices(consumePolicyRefusalNotice(), interrupt);");
         assertTrue(visible >= 0 && explanation > visible && refusal > explanation,
-                   "the visible text is fixed first; the explanation, with the notice, is built after it");
+                "the visible text is fixed first; the explanation, with the notice, is built after it");
     }
 
     // ---- Notices when both apply ----
@@ -158,8 +159,8 @@ class AiTopComponentPolicyRefusalWiringTest {
 
     // ---- The loop guard ----
     /**
-     * CONSUME BEFORE THE GATE, like the mail flag: the pending refusals are cleared before the budget is asked, so a
-     * refusal is never reported on a later turn whether or not the agent may be resumed now.
+     * CONSUME BEFORE THE GATE, like the mail flag: the pending refusals are cleared before the budget is
+     * asked, so a refusal is never reported on a later turn whether or not the agent may be resumed now.
      */
     @Test
     void thePendingRefusalsAreClearedBeforeTheBudgetIsAsked() throws IOException {
@@ -183,18 +184,18 @@ class AiTopComponentPolicyRefusalWiringTest {
         int guard = source.indexOf("if (userInitiated) {");
         int reset = source.indexOf("policyRefusalBudget.reset()");
         assertTrue(guard >= 0 && reset > guard && reset - guard < 900,
-                   "and that place is the user-initiated branch of handleSubmit");
+                "and that place is the user-initiated branch of handleSubmit");
         assertFalse(withoutComments(source.substring(guard, reset)).contains("else"),
-                    "no branch boundary between the guard and the reset");
+                "no branch boundary between the guard and the reset");
         assertEquals(1, countOf(source, "submitNotificationTurn(NotificationTypeEnum.NEW_INBOX_MESSAGE"),
-                     "the flush is a notification turn, submitted as not user-initiated");
+                "the flush is a notification turn, submitted as not user-initiated");
         assertTrue(source.contains("handleSubmit(visible, false, agentOnlyText)"),
-                   "notification turns, the resume turn among them, are submitted with userInitiated=false");
+                "notification turns, the resume turn among them, are submitted with userInitiated=false");
     }
 
     /**
-     * With the budget spent nothing is shown: the only trace is a log line under the JSON-debug setting, the codebase's
-     * convention for diagnostics.
+     * With the budget spent nothing is shown: the only trace is a log line under the JSON-debug setting, the
+     * codebase's convention for diagnostics.
      */
     @Test
     void aSpentBudgetIsALogLineGatedByTheDebugSettingAndNothingElse() throws IOException {

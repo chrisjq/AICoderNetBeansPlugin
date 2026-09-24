@@ -5,8 +5,8 @@ import kiwi.ingenuity.netbeans.plugin.aicoder.GitAccessOptionEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.WebRequestAccessOptionEnum;
 
 /**
- * Enumerates configuration keys for AiSessionSettings. Defines all JSON config keys used when persisting and loading
- * session settings.
+ * Enumerates configuration keys for AiSessionSettings. Defines all JSON config keys used when persisting and
+ * loading session settings.
  */
 public enum AiSessionSettingsKeyEnum {
     /**
@@ -15,8 +15,8 @@ public enum AiSessionSettingsKeyEnum {
     MAX_HISTORY("maxHistory"),
     SAVE_HISTORY("saveHistory"),
     /**
-     * Whether to restrict AI file access to files inside any project currently open in NetBeans. When off, the AI may
-     * work outside project folders — that is the point of the setting, not a misconfiguration.
+     * Whether to restrict AI file access to files inside any project currently open in NetBeans. When off,
+     * the AI may work outside project folders — that is the point of the setting, not a misconfiguration.
      */
     RESTRICT_TO_PROJECT_FILES("restrictToProjectFiles"),
     /**
@@ -35,6 +35,7 @@ public enum AiSessionSettingsKeyEnum {
      * Whether to allow idle AI watcher timers
      */
     ALLOW_IDLE_WATCHER_TIMER("allowIdleWatcherTimer"),
+    MCP_STEERING("mcpSteering"),
     /**
      * Custom instructions for the session
      */
@@ -96,8 +97,8 @@ public enum AiSessionSettingsKeyEnum {
      */
     ALLOW_DATABASE_ACCESS("allowDatabaseAccess"),
     /**
-     * Read-only flag (no write support implemented; kept as a real setting rather than hardcoded so enforcement stays
-     * honest)
+     * Read-only flag (no write support implemented; kept as a real setting rather than hardcoded so
+     * enforcement stays honest)
      */
     ALLOW_DATABASE_READ_ONLY("allowDatabaseReadOnly"),
     /**

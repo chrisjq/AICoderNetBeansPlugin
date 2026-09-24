@@ -32,6 +32,7 @@ import kiwi.ingenuity.netbeans.plugin.aicoder.ai.http.HttpAiClient;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.http.OpenAiCompatibleClient;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.http.OpenAiHttpStatusException;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.http.OpenAiJsonKeyEnum;
+import kiwi.ingenuity.netbeans.plugin.aicoder.ai.http.OpenAiToolCallParseException;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.http.SchemaToolCalls;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.http.ToolCallExtractor;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.http.context.AbstractChatContextBroker;
@@ -64,11 +65,11 @@ public class OllamaAiProcessManager extends AiProcessManager {
     private static final Logger LOG = Logger.getLogger(OllamaAiProcessManager.class.getName());
 
     /**
-     * Stand-in tool name for a call the model botched badly enough that we never learned which tool it meant. The error
-     * still has to reach the model as a tool result, and a tool result is only accepted alongside an assistant tool
-     * call carrying the same id, so we synthesise the pair. The name is deliberately not a real tool: nothing is
-     * executed, and it must never collide with one, or a later turn could read the transcript as evidence that tool
-     * actually ran.
+     * Stand-in tool name for a call the model botched badly enough that we never learned which tool it meant.
+     * The error still has to reach the model as a tool result, and a tool result is only accepted alongside
+     * an assistant tool call carrying the same id, so we synthesise the pair. The name is deliberately not a
+     * real tool: nothing is executed, and it must never collide with one, or a later turn could read the
+     * transcript as evidence that tool actually ran.
      */
     private static final String MALFORMED_TOOL_CALL_NAME = "unknown_tool";
 
@@ -80,8 +81,9 @@ public class OllamaAiProcessManager extends AiProcessManager {
     static final int MAX_TOOL_ITERATIONS = 25;
 
     /**
-     * True for text that is an empty JSON object or array — "{}" or "[]", with or without a code fence. Anything with
-     * actual content is left alone: a user can legitimately ask for JSON and must still receive it.
+     * True for text that is an empty JSON object or array — "{}" or "[]", with or without a code fence.
+     * Anything with actual content is left alone: a user can legitimately ask for JSON and must still receive
+     * it.
      */
     static boolean isEmptyJson(String text) {
         if (text == null || text.isBlank()) {
@@ -102,10 +104,23 @@ public class OllamaAiProcessManager extends AiProcessManager {
                 return parsed.getAsJsonObject().size() == 0;
             }
             return parsed.isJsonArray() && parsed.getAsJsonArray().isEmpty();
-        }
-        catch (RuntimeException ex) {
+        } catch (RuntimeException ex) {
             return false;
         }
+    }
+
+    /**
+     * Appends the synthetic assistant tool call + error result pair that reports a model mistake the server
+     * could not turn into a real tool call. The name is a stand-in that never collides with a real tool, so a
+     * later turn can never read the transcript as evidence the tool ran; {@code malformedToolCallCount} keeps
+     * the ids unique for the life of the session, because a repeated id would make the pairing ambiguous
+     * across committed turns and stricter endpoints reject duplicates outright.
+     */
+    private void appendMalformedToolCallRecovery(AbstractChatContextBroker localBroker, String toolCallError) {
+        String malformedCallId = MALFORMED_TOOL_CALL_ID_PREFIX + malformedToolCallCount.incrementAndGet();
+        localBroker.append(new ChatMessage(ChatRole.ASSISTANT, null,
+                List.of(new ChatToolCall(malformedCallId, MALFORMED_TOOL_CALL_NAME, "{}")), null));
+        localBroker.append(new ChatMessage(ChatRole.TOOL, toolCallError, List.of(), malformedCallId));
     }
 
     /**
@@ -114,8 +129,7 @@ public class OllamaAiProcessManager extends AiProcessManager {
     private static ContextTriggerEnum parseTrigger(String raw) {
         try {
             return ContextTriggerEnum.valueOf(raw);
-        }
-        catch (RuntimeException ex) {
+        } catch (RuntimeException ex) {
             return ContextTriggerEnum.ESTIMATED_TOKENS;
         }
     }
@@ -123,8 +137,7 @@ public class OllamaAiProcessManager extends AiProcessManager {
     private static ContextTrimStrategyEnum parseStrategy(String raw) {
         try {
             return ContextTrimStrategyEnum.valueOf(raw);
-        }
-        catch (RuntimeException ex) {
+        } catch (RuntimeException ex) {
             return ContextTrimStrategyEnum.DROP_MARKED;
         }
     }
@@ -135,11 +148,11 @@ public class OllamaAiProcessManager extends AiProcessManager {
     }
 
     /**
-     * ContextBrokerSettings has no equals(): it is a plain mutable settings bag, not a value type, so field-by-field
-     * comparison lives here instead. Two null-safety branches aside, this is the same six-field comparison
-     * AbstractChatContextBroker.updateSettings() uses to decide whether to log — duplicated rather than shared, since
-     * the two live in different packages for different purposes (one gates a debug log line, this one resets a
-     * user-facing warning).
+     * ContextBrokerSettings has no equals(): it is a plain mutable settings bag, not a value type, so
+     * field-by-field comparison lives here instead. Two null-safety branches aside, this is the same
+     * six-field comparison AbstractChatContextBroker.updateSettings() uses to decide whether to log —
+     * duplicated rather than shared, since the two live in different packages for different purposes (one
+     * gates a debug log line, this one resets a user-facing warning).
      */
     private static boolean settingsDiffer(ContextBrokerSettings a, ContextBrokerSettings b) {
         if (a == null || b == null) {
@@ -155,10 +168,11 @@ public class OllamaAiProcessManager extends AiProcessManager {
     /**
      * Makes each recovery id unique for the life of the session.
      * <p>
-     * A fixed id would repeat: once a turn recovers and commits, its synthetic pair stays in the transcript, so a
-     * second malformed call in a later turn would put two assistant calls and two results with the same id into the
-     * same request. Tool results are matched to calls by id, so duplicates make the pairing ambiguous and stricter
-     * endpoints reject them outright. The per-turn loop counter is no use here - it restarts every turn.
+     * A fixed id would repeat: once a turn recovers and commits, its synthetic pair stays in the transcript,
+     * so a second malformed call in a later turn would put two assistant calls and two results with the same
+     * id into the same request. Tool results are matched to calls by id, so duplicates make the pairing
+     * ambiguous and stricter endpoints reject them outright. The per-turn loop counter is no use here - it
+     * restarts every turn.
      */
     private final AtomicInteger malformedToolCallCount = new AtomicInteger();
 
@@ -171,20 +185,20 @@ public class OllamaAiProcessManager extends AiProcessManager {
     private volatile ContextBrokerSettings lastResolvedSettings;
     private volatile boolean pinnedOverBudgetWarned;
     /**
-     * Set once a live 4xx tells us this server rejects {@code reasoning_effort} on the OpenAI-compatible endpoint — see
-     * the spec's Ollama section. Sticky for the life of the session: never retried, never re-sent, after the first
-     * rejection.
+     * Set once a live 4xx tells us this server rejects {@code reasoning_effort} on the OpenAI-compatible
+     * endpoint — see the spec's Ollama section. Sticky for the life of the session: never retried, never
+     * re-sent, after the first rejection.
      */
     private volatile boolean reasoningEffortDisabledForSession;
     /**
      * Notified (no argument — the caller already knows it only fires for the session-sourced case) when
      * {@link #applyThinkingCapabilityValidation} clears an unsupported SESSION-sourced value, so the owning
-     * {@code OllamaAiImplementation} can also clear the PERSISTED session setting — otherwise only the live settings
-     * read is affected for this turn, and the next turn (or session restart) re-reads the same stale value and fires
-     * the INFO again. Never invoked for a global-sourced value — rule 3a leaves that alone entirely. Deliberately a
-     * plain callback rather than plumbing an {@code AiSessionHost} reference into this process-manager layer, which has
-     * no business knowing about session-settings persistence otherwise — mirrors
-     * {@code GrokAiProcessManager}/{@code GithubCopilotProcessManager}'s identical callback.
+     * {@code OllamaAiImplementation} can also clear the PERSISTED session setting — otherwise only the live
+     * settings read is affected for this turn, and the next turn (or session restart) re-reads the same stale
+     * value and fires the INFO again. Never invoked for a global-sourced value — rule 3a leaves that alone
+     * entirely. Deliberately a plain callback rather than plumbing an {@code AiSessionHost} reference into
+     * this process-manager layer, which has no business knowing about session-settings persistence otherwise
+     * — mirrors {@code GrokAiProcessManager}/{@code GithubCopilotProcessManager}'s identical callback.
      */
     private volatile Runnable onReasoningEffortCleared;
 
@@ -204,7 +218,7 @@ public class OllamaAiProcessManager extends AiProcessManager {
         stop();
         if (currentSession == null) {
             listener.onAiProcessEvent(new StatusEvent(StatusEventTypeEnum.FAILED,
-                                                      StatusMessageUtil.formatSessionNotConfigured()));
+                    StatusMessageUtil.formatSessionNotConfigured()));
             return;
         }
         if (!validateStart()) {
@@ -216,14 +230,13 @@ public class OllamaAiProcessManager extends AiProcessManager {
         boolean mcpReady;
         try {
             mcpReady = registerMcp(reg);
-        }
-        catch (Exception ex) {
+        } catch (Exception ex) {
             LOG.log(Level.WARNING, "MCP registration failed for Ollama session " + sessionId, ex);
             mcpReady = false;
         }
         if (!mcpReady) {
             listener.onAiProcessEvent(new StatusEvent(StatusEventTypeEnum.FAILED,
-                                                      StatusMessageUtil.formatMcpSetupFailed()));
+                    StatusMessageUtil.formatMcpSetupFailed()));
             return;
         }
         registrar = reg;
@@ -236,7 +249,7 @@ public class OllamaAiProcessManager extends AiProcessManager {
         if (broker != null
                 && settingsForBroker.trigger() == ContextTriggerEnum.REPORTED_TOKENS) {
             listener.onAiProcessEvent(new StatusEvent(StatusEventTypeEnum.INFO,
-                                                      "Context trigger falls back to estimated tokens until this endpoint reports usage"));
+                    "Context trigger falls back to estimated tokens until this endpoint reports usage"));
         }
         if (broker != null) {
             // Built unconditionally, not only under the SUMMARISE strategy: the
@@ -245,9 +258,9 @@ public class OllamaAiProcessManager extends AiProcessManager {
             // almost every user running the default DROP_MARKED strategy.
             OllamaSessionSettings settingsForSummariser = effectiveSessionSettings();
             broker.setSummariser(new OllamaContextSummariser(createHttpAiClient(),
-                                                             resolveEffectiveBaseUrl(settingsForSummariser),
-                                                             resolveApiKey(settingsForSummariser),
-                                                             resolveEffectiveModel(settingsForSummariser)));
+                    resolveEffectiveBaseUrl(settingsForSummariser),
+                    resolveApiKey(settingsForSummariser),
+                    resolveEffectiveModel(settingsForSummariser)));
         }
         if (broker != null && settingsForBroker.persistOnClose()) {
             JsonObject saved = createContextPersistenceManager().load(currentSession.id());
@@ -263,7 +276,7 @@ public class OllamaAiProcessManager extends AiProcessManager {
         currentSession.setInstructionsLoaded(true);
         running = true;
         listener.onAiProcessEvent(new StatusEvent(StatusEventTypeEnum.READY,
-                                                  StatusMessageUtil.formatReady(displayName())));
+                StatusMessageUtil.formatReady(displayName())));
     }
 
     @Override
@@ -284,37 +297,38 @@ public class OllamaAiProcessManager extends AiProcessManager {
 
     private OllamaSessionSettings effectiveSessionSettings() {
         return currentSession.settings() instanceof OllamaSessionSettings os
-               ? os : new OllamaSessionSettings();
+                ? os : new OllamaSessionSettings();
     }
 
     private String resolveEffectiveModel(OllamaSessionSettings settings) {
         return model != null && !model.isBlank()
-               ? model
-               : settings.model() != null && !settings.model().isBlank()
-                 ? settings.model()
-                 : defaultModel();
+                ? model
+                : settings.model() != null && !settings.model().isBlank()
+                ? settings.model()
+                : defaultModel();
     }
 
     private String resolveEffectiveBaseUrl(OllamaSessionSettings settings) {
         return settings.baseUrl() != null && !settings.baseUrl().isBlank()
-               ? settings.baseUrl()
-               : defaultBaseUrl();
+                ? settings.baseUrl()
+                : defaultBaseUrl();
     }
 
     /**
-     * The resolved reasoning-effort value together with whether it came from the session's own setting (true) or was
-     * inherited from the global default (false) — the distinction matters: only a session-pinned value may ever be
-     * cleared, persisted-cleared and reported with an INFO event; a global-sourced value is only ever silently omitted,
-     * never cleared, never reported.
+     * The resolved reasoning-effort value together with whether it came from the session's own setting (true)
+     * or was inherited from the global default (false) — the distinction matters: only a session-pinned value
+     * may ever be cleared, persisted-cleared and reported with an INFO event; a global-sourced value is only
+     * ever silently omitted, never cleared, never reported.
      */
     record EffectiveReasoningEffort(String value, boolean fromSession) {
 
     }
 
     /**
-     * Session value wins over the global default; value is null once the local server has rejected the field for this
-     * session (see {@link #reasoningEffortDisabledForSession}), so a later iteration or turn never resends it.
-     * Package-private for direct unit testing, mirroring {@code buildReasoningEffortArgs}'s equivalent on Grok.
+     * Session value wins over the global default; value is null once the local server has rejected the field
+     * for this session (see {@link #reasoningEffortDisabledForSession}), so a later iteration or turn never
+     * resends it. Package-private for direct unit testing, mirroring {@code buildReasoningEffortArgs}'s
+     * equivalent on Grok.
      */
     EffectiveReasoningEffort resolveEffectiveReasoningEffort(OllamaSessionSettings settings) {
         if (reasoningEffortDisabledForSession) {
@@ -330,22 +344,24 @@ public class OllamaAiProcessManager extends AiProcessManager {
 
     /**
      * Applies the session-vs-global rule using live capability discovery
-     * ({@link OllamaModelDiscovery#modelSupportsThinking}, populated from {@code GET /api/tags}). Returns the value to
-     * actually send for this request (may be null).
+     * ({@link OllamaModelDiscovery#modelSupportsThinking}, populated from {@code GET /api/tags}). Returns the
+     * value to actually send for this request (may be null).
      * <p>
      * Three cases:
      * <ul>
-     * <li>discovery has positively confirmed {@code model} supports thinking (or {@code effective} is already null) —
-     * return the value unchanged;</li>
-     * <li>discovery has positively confirmed {@code model} does NOT support thinking — apply rule 3a: a SESSION-sourced
-     * value is cleared (via {@link #onReasoningEffortCleared}) and reported with exactly one INFO event; a
-     * GLOBAL-sourced value is silently omitted for this request only (FINE log, global untouched, nothing written into
-     * the session) — return null either way;</li>
-     * <li>discovery has not reported on {@code model} at all yet ({@link OllamaModelDiscovery#isModelKnown} is false) —
-     * send the value optimistically rather than clearing a user's stored value on incomplete information; the 4xx retry
-     * in {@link #chatWithReasoningEffortRetry} is the backstop if the model turns out unable to think after all.</li>
+     * <li>discovery has positively confirmed {@code model} supports thinking (or {@code effective} is already
+     * null) — return the value unchanged;</li>
+     * <li>discovery has positively confirmed {@code model} does NOT support thinking — apply rule 3a: a
+     * SESSION-sourced value is cleared (via {@link #onReasoningEffortCleared}) and reported with exactly one
+     * INFO event; a GLOBAL-sourced value is silently omitted for this request only (FINE log, global
+     * untouched, nothing written into the session) — return null either way;</li>
+     * <li>discovery has not reported on {@code model} at all yet ({@link OllamaModelDiscovery#isModelKnown}
+     * is false) — send the value optimistically rather than clearing a user's stored value on incomplete
+     * information; the 4xx retry in {@link #chatWithReasoningEffortRetry} is the backstop if the model turns
+     * out unable to think after all.</li>
      * </ul>
-     * Package-private for direct unit testing, mirroring {@code buildReasoningEffortArgs}'s equivalent on Grok.
+     * Package-private for direct unit testing, mirroring {@code buildReasoningEffortArgs}'s equivalent on
+     * Grok.
      */
     String applyThinkingCapabilityValidation(EffectiveReasoningEffort effective, String baseUrl, String model) {
         if (effective.value() == null) {
@@ -357,13 +373,12 @@ public class OllamaAiProcessManager extends AiProcessManager {
         }
         if (effective.fromSession()) {
             listener.onAiProcessEvent(new StatusEvent(StatusEventTypeEnum.INFO,
-                                                      "Thinking \"" + effective.value() + "\" is not supported by model \"" + model + "\"; clearing it"));
+                    "Thinking \"" + effective.value() + "\" is not supported by model \"" + model + "\"; clearing it"));
             Runnable cb = onReasoningEffortCleared;
             if (cb != null) {
                 cb.run();
             }
-        }
-        else {
+        } else {
             // the global default belongs to the user and to every other session/backend — one
             // session's model not supporting it says nothing about the rest, so it is never cleared or written
             // anywhere. The combo already shows the "not set" entry for a model that can't take it, so the UI
@@ -375,34 +390,33 @@ public class OllamaAiProcessManager extends AiProcessManager {
     }
 
     /**
-     * Wraps a chat call with defensive retry logic: if the request carried {@code reasoning_effort} and the server
-     * answered with a 4xx, retry once without the field, tell the user once, and remember not to send it again for the
-     * rest of this session. Any other failure (non-4xx status, no reasoning_effort in the request, network/stream
-     * error) propagates unchanged.
+     * Wraps a chat call with defensive retry logic: if the request carried {@code reasoning_effort} and the
+     * server answered with a 4xx, retry once without the field, tell the user once, and remember not to send
+     * it again for the rest of this session. Any other failure (non-4xx status, no reasoning_effort in the
+     * request, network/stream error) propagates unchanged.
      */
     private ChatResult chatWithReasoningEffortRetry(HttpAiClient client, ChatRequest request,
-                                                    java.util.function.Consumer<String> onTextDelta) throws IOException {
+            java.util.function.Consumer<String> onTextDelta) throws IOException {
         if (reasoningEffortDisabledForSession && request.reasoningEffort() != null) {
             // Belt and braces: a caller-side mistake (e.g. a stale resolveEffectiveReasoningEffort snapshot taken
             // before an earlier retry in the same turn set the flag) must not put the field back on the wire once
             // the session has already been told the server rejects it — strip it here rather than relying on a
             // second 4xx to catch it, which would also mean a second INFO event.
             request = new ChatRequest(request.baseUrl(), request.apiKey(), request.model(),
-                                      request.messages(), request.toolSchemas(), request.responseFormat(), null);
+                    request.messages(), request.toolSchemas(), request.responseFormat(), null);
         }
         try {
             return client.chat(request, onTextDelta);
-        }
-        catch (OpenAiHttpStatusException ex) {
+        } catch (OpenAiHttpStatusException ex) {
             if (request.reasoningEffort() == null || ex.statusCode() < 400 || ex.statusCode() >= 500) {
                 throw ex;
             }
             reasoningEffortDisabledForSession = true;
             listener.onAiProcessEvent(new StatusEvent(StatusEventTypeEnum.INFO,
-                                                      "The local server rejected " + OpenAiJsonKeyEnum.REASONING_EFFORT.key()
-                                                      + "; retrying without it"));
+                    "The local server rejected " + OpenAiJsonKeyEnum.REASONING_EFFORT.key()
+                    + "; retrying without it"));
             ChatRequest retryRequest = new ChatRequest(request.baseUrl(), request.apiKey(), request.model(),
-                                                       request.messages(), request.toolSchemas(), request.responseFormat(), null);
+                    request.messages(), request.toolSchemas(), request.responseFormat(), null);
             return client.chat(retryRequest, onTextDelta);
         }
     }
@@ -499,43 +513,71 @@ public class OllamaAiProcessManager extends AiProcessManager {
                 if (!pinnedOverBudgetWarned && localBroker.isPinnedOverBudget()) {
                     pinnedOverBudgetWarned = true;
                     listener.onAiProcessEvent(new StatusEvent(StatusEventTypeEnum.INFO,
-                                                              "Context threshold is too low for the pinned instructions and tool list — history is not being trimmed. Raise the Token threshold in the session's Context History settings."));
+                            "Context threshold is too low for the pinned instructions and tool list — history is not being trimmed. Raise the Token threshold in the session's Context History settings."));
                 }
                 int estimatedForRequest = localBroker.estimatedTokenTotal();
                 ChatRequest request = new ChatRequest(effectiveBaseUrl, apiKey, effectiveModel,
-                                                      localBroker.snapshot(), List.copyOf(requestTools), responseFormat,
-                                                      iterationReasoningEffort);
+                        localBroker.snapshot(), List.copyOf(requestTools), responseFormat,
+                        iterationReasoningEffort);
                 StringBuilder buf = new StringBuilder();
                 boolean[] decided = {false};
                 boolean[] streaming = {false};
-                ChatResult result = chatWithReasoningEffortRetry(client, request, delta -> {
-                                                             if (cancelledByUser) {
-                                                                 return;
-                                                             }
-                                                             buf.append(delta);
-                                                             if (schemaMode) {
-                                                                 // Every reply is a JSON envelope; the message field is
-                                                                 // emitted once the turn resolves.
-                                                                 return;
-                                                             }
-                                                             if (!decided[0]) {
-                                                                 String lead = buf.toString().stripLeading();
-                                                                 if (lead.isEmpty()) {
-                                                                     return;
-                                                                 }
-                                                                 char c = lead.charAt(0);
-                                                                 boolean looksJson = (c == '{' || c == '[' || lead.startsWith("```"));
-                                                                 decided[0] = true;
-                                                                 streaming[0] = !looksJson;
-                                                                 if (streaming[0]) {
-                                                                     listener.onAiProcessEvent(new TextDeltaEvent(buf.toString(), null));
-                                                                 }
-                                                                 return;
-                                                             }
-                                                             if (streaming[0]) {
-                                                                 listener.onAiProcessEvent(new TextDeltaEvent(delta, null));
-                                                             }
-                                                         });
+                ChatResult result;
+                try {
+                    result = chatWithReasoningEffortRetry(client, request, delta -> {
+                        if (cancelledByUser) {
+                            return;
+                        }
+                        buf.append(delta);
+                        if (schemaMode) {
+                            // Every reply is a JSON envelope; the message field is
+                            // emitted once the turn resolves.
+                            return;
+                        }
+                        if (!decided[0]) {
+                            String lead = buf.toString().stripLeading();
+                            if (lead.isEmpty()) {
+                                return;
+                            }
+                            char c = lead.charAt(0);
+                            boolean looksJson = (c == '{' || c == '[' || lead.startsWith("```"));
+                            decided[0] = true;
+                            streaming[0] = !looksJson;
+                            if (streaming[0]) {
+                                listener.onAiProcessEvent(new TextDeltaEvent(buf.toString(), null));
+                            }
+                            return;
+                        }
+                        if (streaming[0]) {
+                            listener.onAiProcessEvent(new TextDeltaEvent(delta, null));
+                        }
+                    });
+                } catch (OpenAiToolCallParseException parseEx) {
+                    // The server rejected the WHOLE request because the model's tool call
+                    // was not valid JSON — a recoverable model mistake, not a transport
+                    // failure. No parseable response ever reached us, so the malformed call
+                    // exists only in the server's error body; feed the parse error back as a
+                    // tool result (exactly like the schema-mode recovery below) so the model
+                    // can repair the call on the next iteration instead of the turn dying
+                    // with nothing.
+                    String toolCallErrorHint = "Error: the server rejected your tool call before it could run"
+                            + " — its arguments were not valid JSON (" + parseEx.parseError() + ")."
+                            + " Fix the arguments and call the tool again, or reply in plain text.";
+                    appendMalformedToolCallRecovery(localBroker, toolCallErrorHint);
+                    if (PluginSettings.isDebugJson()) {
+                        LOG.log(Level.INFO, "Ollama server rejected a malformed tool call; the parse error was fed "
+                                + "back to the model as a tool result: {0}", toolCallErrorHint);
+                    }
+                    barrenRounds++;
+                    if (barrenRounds >= 2) {
+                        // A model that keeps emitting unparseable tool calls must not spin
+                        // forever. Bound the retries and fail exactly as a genuine transport
+                        // error would today — the same way this 500 failed before the
+                        // recovery existed.
+                        throw parseEx;
+                    }
+                    continue;
+                }
                 localBroker.recordUsage(estimatedForRequest, result.promptTokens());
                 listener.onAiProcessEvent(new OllamaTokenUsageEvent(
                         localBroker.estimatedTokenTotal(), lastResolvedSettings.tokenThreshold()));
@@ -549,8 +591,7 @@ public class OllamaAiProcessManager extends AiProcessManager {
                     calls = reply.calls();
                     assistantText = reply.message();
                     toolCallError = reply.toolCallError();
-                }
-                else {
+                } else {
                     calls = ToolCallExtractor.extract(result, knownToolNames);
                     assistantText = result.assistantText();
                 }
@@ -561,16 +602,11 @@ public class OllamaAiProcessManager extends AiProcessManager {
                     // The correction itself stays between us and the model - the
                     // user is only told if we give up on it below, because a turn
                     // that ends with no answer and no explanation looks like a bug.
-                    String malformedCallId = MALFORMED_TOOL_CALL_ID_PREFIX
-                            + malformedToolCallCount.incrementAndGet();
-                    localBroker.append(new ChatMessage(ChatRole.ASSISTANT, null,
-                                                       List.of(new ChatToolCall(malformedCallId, MALFORMED_TOOL_CALL_NAME, "{}")), null));
-                    localBroker.append(new ChatMessage(ChatRole.TOOL, toolCallError,
-                                                       List.of(), malformedCallId));
+                    appendMalformedToolCallRecovery(localBroker, toolCallError);
                     barrenRounds++;
                     if (barrenRounds >= 2) {
                         listener.onAiProcessEvent(new StatusEvent(StatusEventTypeEnum.INFO,
-                                                                  "The model kept sending malformed tool calls instead of an answer"));
+                                "The model kept sending malformed tool calls instead of an answer"));
                         listener.onAiProcessEvent(new TurnCompleteEvent());
                         return;
                     }
@@ -584,7 +620,7 @@ public class OllamaAiProcessManager extends AiProcessManager {
                         // like a tool call, and showing the user a bare "{}" as the
                         // reply is worse than telling them nothing came back.
                         listener.onAiProcessEvent(new StatusEvent(StatusEventTypeEnum.INFO,
-                                                                  "The model returned an empty response instead of an answer"));
+                                "The model returned an empty response instead of an answer"));
                         listener.onAiProcessEvent(new TurnCompleteEvent());
                         return;
                     }
@@ -593,7 +629,7 @@ public class OllamaAiProcessManager extends AiProcessManager {
                     }
                     if (finalText != null && !finalText.isBlank()) {
                         localBroker.append(new ChatMessage(ChatRole.ASSISTANT, finalText,
-                                                           List.of(), null));
+                                List.of(), null));
                     }
                     localBroker.commitTurn();
                     listener.onAiProcessEvent(new TurnCompleteEvent());
@@ -618,19 +654,17 @@ public class OllamaAiProcessManager extends AiProcessManager {
                         continue;
                     }
                     listener.onAiProcessEvent(new ToolUseEvent(call.name(), null, "", null,
-                                                               ToolUseEvent.Kind.OTHER));
+                            ToolUseEvent.Kind.OTHER));
                     Map<String, Integer> allDups = new java.util.HashMap<>(call.duplicateCounts() == null ? Map.of() : call.duplicateCounts());
                     allDups.putAll(RawJsonArgumentScanner.duplicateTopLevelKeys(call.argumentsJson()));
                     String toolResult;
                     if (!allDups.isEmpty()) {
                         toolResult = McpToolInvoker.duplicateParametersMessage(call.name(), allDups);
-                    }
-                    else {
+                    } else {
                         JsonObject args;
                         try {
                             args = JsonParser.parseString(call.argumentsJson()).getAsJsonObject();
-                        }
-                        catch (RuntimeException ex) {
+                        } catch (RuntimeException ex) {
                             args = new JsonObject();
                         }
                         toolResult = bridge.invokeTool(call.name(), args);
@@ -641,11 +675,11 @@ public class OllamaAiProcessManager extends AiProcessManager {
                     }
                 }
                 localBroker.append(new ChatMessage(ChatRole.ASSISTANT, null,
-                                                   List.copyOf(assistantToolCalls), null));
+                        List.copyOf(assistantToolCalls), null));
                 for (int callIndex = 0; callIndex < assistantToolCalls.size(); callIndex++) {
                     ChatToolCall toolCall = assistantToolCalls.get(callIndex);
                     localBroker.append(new ChatMessage(ChatRole.TOOL, toolResults.get(callIndex),
-                                                       List.of(), toolCall.id()));
+                            List.of(), toolCall.id()));
                 }
                 barrenRounds = madeProgress ? 0 : barrenRounds + 1;
                 if (barrenRounds >= 2 && !cancelledByUser) {
@@ -653,13 +687,12 @@ public class OllamaAiProcessManager extends AiProcessManager {
                     // ask once more with no tools offered — the model can only
                     // answer in prose.
                     if (!answerWithoutTools(client, effectiveBaseUrl, apiKey, effectiveModel,
-                                            applyThinkingCapabilityValidation(resolveEffectiveReasoningEffort(settings),
-                                                                              effectiveBaseUrl, effectiveModel),
-                                            localBroker)) {
+                            applyThinkingCapabilityValidation(resolveEffectiveReasoningEffort(settings),
+                                    effectiveBaseUrl, effectiveModel),
+                            localBroker)) {
                         listener.onAiProcessEvent(new StatusEvent(StatusEventTypeEnum.INFO,
-                                                                  "Stopped: the model kept repeating the same tool call without making progress"));
-                    }
-                    else {
+                                "Stopped: the model kept repeating the same tool call without making progress"));
+                    } else {
                         localBroker.commitTurn();
                     }
                     listener.onAiProcessEvent(new TurnCompleteEvent());
@@ -668,31 +701,28 @@ public class OllamaAiProcessManager extends AiProcessManager {
             }
             if (!cancelledByUser) {
                 listener.onAiProcessEvent(new StatusEvent(StatusEventTypeEnum.INFO,
-                                                          "Stopped after " + MAX_TOOL_ITERATIONS + " tool iterations"));
+                        "Stopped after " + MAX_TOOL_ITERATIONS + " tool iterations"));
                 if (answerWithoutTools(client, effectiveBaseUrl, resolveApiKey(settings),
-                                       effectiveModel, applyThinkingCapabilityValidation(resolveEffectiveReasoningEffort(settings),
-                                                                                         effectiveBaseUrl, effectiveModel),
-                                       localBroker)) {
+                        effectiveModel, applyThinkingCapabilityValidation(resolveEffectiveReasoningEffort(settings),
+                                effectiveBaseUrl, effectiveModel),
+                        localBroker)) {
                     localBroker.commitTurn();
                 }
                 listener.onAiProcessEvent(new TurnCompleteEvent());
             }
-        }
-        catch (IOException ex) {
+        } catch (IOException ex) {
             LOG.log(Level.WARNING, "Ollama send failed", ex);
             if (!cancelledByUser) {
                 listener.onAiProcessEvent(new StatusEvent(StatusEventTypeEnum.FAILED,
-                                                          StatusMessageUtil.formatSendFailed(describe(ex))));
+                        StatusMessageUtil.formatSendFailed(describe(ex))));
             }
-        }
-        catch (RuntimeException ex) {
+        } catch (RuntimeException ex) {
             LOG.log(Level.WARNING, "Ollama send failed", ex);
             if (!cancelledByUser) {
                 listener.onAiProcessEvent(new StatusEvent(StatusEventTypeEnum.FAILED,
-                                                          StatusMessageUtil.formatSendFailed(describe(ex))));
+                        StatusMessageUtil.formatSendFailed(describe(ex))));
             }
-        }
-        finally {
+        } finally {
             AbstractChatContextBroker brokerSnap = broker;
             if (brokerSnap != null) {
                 brokerSnap.rollbackTurn();
@@ -703,25 +733,26 @@ public class OllamaAiProcessManager extends AiProcessManager {
     }
 
     /**
-     * Last resort when the tool loop ends without an answer: ask once more with an empty tool list, so the model has
-     * nothing to call and must reply in prose. Without this the user is left with only a status line.
+     * Last resort when the tool loop ends without an answer: ask once more with an empty tool list, so the
+     * model has nothing to call and must reply in prose. Without this the user is left with only a status
+     * line.
      *
      * @return true if a non-empty answer was produced and emitted
      */
     private boolean answerWithoutTools(HttpAiClient client, String baseUrl, String apiKey,
-                                       String model, String reasoningEffort, AbstractChatContextBroker localBroker) throws IOException {
+            String model, String reasoningEffort, AbstractChatContextBroker localBroker) throws IOException {
         List<ChatMessage> prompt = new ArrayList<>(localBroker.snapshot());
         prompt.add(new ChatMessage(ChatRole.USER,
-                                   "Stop calling tools. Answer my original message directly, in plain text.",
-                                   List.of(), null));
+                "Stop calling tools. Answer my original message directly, in plain text.",
+                List.of(), null));
         StringBuilder buf = new StringBuilder();
         ChatResult result = chatWithReasoningEffortRetry(client,
-                                                         new ChatRequest(baseUrl, apiKey, model, List.copyOf(prompt), List.of(), null, reasoningEffort),
-                                                         delta -> {
-                                                             if (!cancelledByUser) {
-                                                                 buf.append(delta);
-                                                             }
-                                                         });
+                new ChatRequest(baseUrl, apiKey, model, List.copyOf(prompt), List.of(), null, reasoningEffort),
+                delta -> {
+                    if (!cancelledByUser) {
+                        buf.append(delta);
+                    }
+                });
         String text = buf.length() > 0 ? buf.toString() : result.assistantText();
         if (cancelledByUser || text == null || text.isBlank() || isEmptyJson(text)) {
             return false;
@@ -756,35 +787,35 @@ public class OllamaAiProcessManager extends AiProcessManager {
     }
 
     /**
-     * Three-level fallback per setting: session value if set, else the global default, else the hardcoded default baked
-     * into ContextBrokerSettings. Session values are nullable precisely so "unset" is distinguishable from "set to
-     * zero/false".
+     * Three-level fallback per setting: session value if set, else the global default, else the hardcoded
+     * default baked into ContextBrokerSettings. Session values are nullable precisely so "unset" is
+     * distinguishable from "set to zero/false".
      */
     ContextBrokerSettings resolveBrokerSettings() {
         ContextBrokerSettings s = ContextBrokerSettings.defaults();
         OpenAiClientSessionSettings cfg
                 = currentSession != null
                 && currentSession.settings() instanceof OpenAiClientSessionSettings o
-                  ? o : null;
+                ? o : null;
 
         s.setTrigger(cfg != null && cfg.contextTrimTrigger() != null
-                     ? cfg.contextTrimTrigger()
-                     : parseTrigger(PluginSettings.getContextTrimTrigger()));
+                ? cfg.contextTrimTrigger()
+                : parseTrigger(PluginSettings.getContextTrimTrigger()));
         s.setStrategy(cfg != null && cfg.contextTrimStrategy() != null
-                      ? cfg.contextTrimStrategy()
-                      : parseStrategy(PluginSettings.getContextTrimStrategy()));
+                ? cfg.contextTrimStrategy()
+                : parseStrategy(PluginSettings.getContextTrimStrategy()));
         s.setTokenThreshold(cfg != null && cfg.contextTokenThreshold() != null
-                            ? cfg.contextTokenThreshold()
-                            : PluginSettings.getContextTokenThreshold());
+                ? cfg.contextTokenThreshold()
+                : PluginSettings.getContextTokenThreshold());
         s.setTrimTargetPercent(cfg != null && cfg.contextTrimTargetPercent() != null
-                               ? cfg.contextTrimTargetPercent()
-                               : PluginSettings.getContextTrimTargetPercent());
+                ? cfg.contextTrimTargetPercent()
+                : PluginSettings.getContextTrimTargetPercent());
         s.setMaxMessages(cfg != null && cfg.contextMaxMessages() != null
-                         ? cfg.contextMaxMessages()
-                         : PluginSettings.getContextMaxMessages());
+                ? cfg.contextMaxMessages()
+                : PluginSettings.getContextMaxMessages());
         s.setPersistOnClose(cfg != null && cfg.contextPersistOnClose() != null
-                            ? cfg.contextPersistOnClose()
-                            : PluginSettings.isContextPersistOnClose());
+                ? cfg.contextPersistOnClose()
+                : PluginSettings.isContextPersistOnClose());
         return s;
     }
 
@@ -840,9 +871,8 @@ public class OllamaAiProcessManager extends AiProcessManager {
                 }
             }
             listener.onAiProcessEvent(new StatusEvent(StatusEventTypeEnum.STOPPED,
-                                                      StatusMessageUtil.formatStopped()));
-        }
-        else if (PluginSettings.isDebugJson()) {
+                    StatusMessageUtil.formatStopped()));
+        } else if (PluginSettings.isDebugJson()) {
             // Legitimate no-op, not a bug: a single blocking OpenAI-compatible HTTP
             // request has no channel to inject a mid-turn notice into. Logged anyway —
             // a silent no-op is what let Codex's equivalent Mail drop go unnoticed for
@@ -886,8 +916,7 @@ public class OllamaAiProcessManager extends AiProcessManager {
                     && sessionId != null) {
                 try {
                     createContextPersistenceManager().save(sessionId, brokerSnap.toJson());
-                }
-                catch (IOException ex) {
+                } catch (IOException ex) {
                     LOG.log(Level.WARNING, "Could not persist context", ex);
                 }
             }
@@ -923,9 +952,10 @@ public class OllamaAiProcessManager extends AiProcessManager {
     }
 
     /**
-     * Wipes the model's memory of the conversation. The chat panel keeps showing the full transcript, so without an
-     * inline notice a user who scrolls up and references an earlier exchange gets a baffled reply — before this feature
-     * the visible log and the model's memory always agreed, so this divergence needs calling out.
+     * Wipes the model's memory of the conversation. The chat panel keeps showing the full transcript, so
+     * without an inline notice a user who scrolls up and references an earlier exchange gets a baffled reply
+     * — before this feature the visible log and the model's memory always agreed, so this divergence needs
+     * calling out.
      */
     public void clearContext() {
         AbstractChatContextBroker b = broker;
@@ -934,7 +964,7 @@ public class OllamaAiProcessManager extends AiProcessManager {
         }
         b.clearHistory();
         listener.onAiProcessEvent(new StatusEvent(StatusEventTypeEnum.INFO,
-                                                  "Context cleared — the model no longer has the earlier conversation"));
+                "Context cleared — the model no longer has the earlier conversation"));
         ContextBrokerSettings resolved = lastResolvedSettings;
         if (resolved != null) {
             listener.onAiProcessEvent(new OllamaTokenUsageEvent(
@@ -943,14 +973,14 @@ public class OllamaAiProcessManager extends AiProcessManager {
     }
 
     /**
-     * Trims older context down to the low-water mark right now, ignoring the threshold. Summarises the evicted span
-     * when a summariser is available (it is, unconditionally, once start() has run), falling back to a drop marker
-     * otherwise.
+     * Trims older context down to the low-water mark right now, ignoring the threshold. Summarises the
+     * evicted span when a summariser is available (it is, unconditionally, once start() has run), falling
+     * back to a drop marker otherwise.
      *
-     * Runs on a background thread: summarising makes a network call that can take seconds, and this is invoked straight
-     * from the info bar's Compact button, on the EDT. Completion is reported the same way a turn reports usage — an
-     * OllamaTokenUsageEvent — so the info bar's existing handling of that event also clears the gauge's indeterminate
-     * state.
+     * Runs on a background thread: summarising makes a network call that can take seconds, and this is
+     * invoked straight from the info bar's Compact button, on the EDT. Completion is reported the same way a
+     * turn reports usage — an OllamaTokenUsageEvent — so the info bar's existing handling of that event also
+     * clears the gauge's indeterminate state.
      */
     public void compactContext() {
         AbstractChatContextBroker b = broker;
@@ -960,9 +990,9 @@ public class OllamaAiProcessManager extends AiProcessManager {
         Thread worker = new Thread(() -> {
             int evicted = b.compactNow();
             listener.onAiProcessEvent(new StatusEvent(StatusEventTypeEnum.INFO,
-                                                      evicted == 0
-                                                      ? "Nothing to compact"
-                                                      : "Compacted — " + evicted + " earlier exchange(s) summarised"));
+                    evicted == 0
+                            ? "Nothing to compact"
+                            : "Compacted — " + evicted + " earlier exchange(s) summarised"));
             ContextBrokerSettings resolved = lastResolvedSettings;
             if (resolved != null) {
                 listener.onAiProcessEvent(new OllamaTokenUsageEvent(

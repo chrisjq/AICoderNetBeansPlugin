@@ -20,27 +20,37 @@ import static kiwi.ingenuity.netbeans.plugin.aicoder.process.McpInstructionOptio
 import static kiwi.ingenuity.netbeans.plugin.aicoder.process.McpInstructionOptionEnum.TOOL_INSTRUCTION;
 
 /**
- * Enumerates available AI implementations and their configurations. Each type maintains a settings creator for
- * initializing and updating type-specific configurations.
+ * Enumerates available AI implementations and their configurations. Each type maintains a settings creator
+ * for initializing and updating type-specific configurations.
  */
 public enum AiTypeEnum {
     //                                                          implemented  enabledByDefault  openAiCompatible  mailDeliveryTiming
     // ClaudeAiProcessManager:444 sends control_request(interrupt) for Mail — byte-identical to
     // what Cancel sends, so the CLI cannot tell mail from the Stop button and ends the turn,
     // taking any in-flight tool call with it.
-    CLAUDE("Claude", "claude", true, true, false, MailDeliveryTimingEnum.ABORTS_TURN, new ClaudeSettingsCreator(), Set.of(HEADER, TOOL_INSTRUCTION, CREDENTIALS), null, null),
+    // DENY_WITH_MESSAGE: the PreToolUse hook answers "deny" with a permissionDecisionReason, and
+    // Claude Code documents that reason as shown to the model (it is withheld for "allow"/"ask").
+    // The call is blocked but the turn carries on, so no follow-up turn is owed.
+    CLAUDE("Claude", "claude", true, true, false, MailDeliveryTimingEnum.ABORTS_TURN, McpSteeringSupportEnum.DENY_WITH_MESSAGE, new ClaudeSettingsCreator(), Set.of(HEADER, TOOL_INSTRUCTION, CREDENTIALS), null, null),
     // GrokAiProcessManager:412 — "Mail IGNORED, no persistent session to inject into".
-    GROK("Grok", "grok", true, true, false, MailDeliveryTimingEnum.AFTER_TURN, new GrokSettingsCreator(), Set.of(HEADER, TOOL_INSTRUCTION, CREDENTIALS), null, null),
+    // NOT_INTERCEPTABLE, not NOT_APPLICABLE: Grok DOES write a Claude-shaped PreToolUse hook
+    // (GrokAiMcpRegistrar:80,87) so it is probably reachable — but it runs --always-approve and its
+    // deny-reason semantics have never been verified. Deferred, not impossible.
+    GROK("Grok", "grok", true, true, false, MailDeliveryTimingEnum.AFTER_TURN, McpSteeringSupportEnum.NOT_INTERCEPTABLE, new GrokSettingsCreator(), Set.of(HEADER, TOOL_INSTRUCTION, CREDENTIALS), null, null),
     // GithubCopilotProcessManager:562 injects via immediate-mode setPrompt, described in its own
     // javadoc as "instead of killing anything".
-    GitHubCoPilot("GitHub CoPilot", "github_copilot", true, true, false, MailDeliveryTimingEnum.DURING_TURN, new GithubCopilotSettingsCreator(), Set.of(HEADER, TOOL_INSTRUCTION, CREDENTIALS, FORCE_MCP_TOOL_USE), null, null),
+    // DENY_WITH_MESSAGE: PermissionRequestResult.reject(feedback) carries our text and the handler
+    // already forwards decision.message() verbatim — this backend is where the pattern came from.
+    GitHubCoPilot("GitHub CoPilot", "github_copilot", true, true, false, MailDeliveryTimingEnum.DURING_TURN, McpSteeringSupportEnum.DENY_WITH_MESSAGE, new GithubCopilotSettingsCreator(), Set.of(HEADER, TOOL_INSTRUCTION, CREDENTIALS, FORCE_MCP_TOOL_USE), null, null),
     // No TOOL_INSTRUCTION: under TOOL_CALLS_VIA_SCHEMA the tool list is rendered
     // into the prompt from the schemas, carrying names, parameters and
     // descriptions. The per-tool instruction lines describe the same tools
     // without the parameters, so enabling both only duplicated ~9k characters.
     //                                                          implemented  enabledByDefault  openAiCompatible  mailDeliveryTiming
     // OllamaAiProcessManager:701 — "Mail IGNORED, no channel to inject into".
-    OLLAMA_LOCAL("Ollama (Local)", "ollama_local", true, false, true, MailDeliveryTimingEnum.AFTER_TURN, new OllamaSettingsCreator(),
+    // NOT_APPLICABLE: ONLY_MCP_TOOL_ACCESS — this backend reaches the IDE through the in-process MCP
+    // bridge and has no native file/shell tools of its own, so there is no such call to refuse.
+    OLLAMA_LOCAL("Ollama (Local)", "ollama_local", true, false, true, MailDeliveryTimingEnum.AFTER_TURN, McpSteeringSupportEnum.NOT_APPLICABLE, new OllamaSettingsCreator(),
             Set.of(HEADER, ONLY_MCP_TOOL_ACCESS, SOFTEN_TOOL_DIRECTIVES, TOOL_CALLS_VIA_SCHEMA), null, null),
     // FORCE_MCP_TOOL_USE for the same reason as Copilot: OpenCode keeps its own
     // bash/grep/read/edit tools and reached for them first, shelling out to grep
@@ -48,7 +58,10 @@ public enum AiTypeEnum {
     // Read/Edit/Write/Bash/Grep" guidance is already sent, but it sits below the
     // GetInstructions preamble and was read past. The flag repeats it as the
     // first line instead.
-    OPENCODE("OpenCode", "opencode", true, true, false, MailDeliveryTimingEnum.ABORTS_TURN, new OpenCodeSettingsCreator(), Set.of(HEADER, TOOL_INSTRUCTION, CREDENTIALS, FORCE_MCP_TOOL_USE),
+    // DENY_NEEDS_FOLLOW_UP: the ACP reply to session/request_permission is an optionId and nothing
+    // else (OpenCodeAcpClientHandler:741), so steering text cannot ride the refusal and must arrive
+    // as an agent-only turn afterwards.
+    OPENCODE("OpenCode", "opencode", true, true, false, MailDeliveryTimingEnum.ABORTS_TURN, McpSteeringSupportEnum.DENY_NEEDS_FOLLOW_UP, new OpenCodeSettingsCreator(), Set.of(HEADER, TOOL_INSTRUCTION, CREDENTIALS, FORCE_MCP_TOOL_USE),
             "Accept", "Reject, you may need to remind it to use MCP tool manually."),
     // MCP IS registered now: CodexAiProcessManager.buildMcpConfigArgs passes
     // -c mcp_servers.<name>.url / .default_tools_approval_mode / .tool_timeout_sec at
@@ -66,10 +79,15 @@ public enum AiTypeEnum {
     // it only after an OBSERVED bypass. Add it to Codex if one is ever seen here.
     // CodexAiProcessManager interjects via turn/steer and its javadoc states it "never escalates
     // to Cancel", so the turn survives.
-    CODEX("Codex", "codex", true, true, false, MailDeliveryTimingEnum.DURING_TURN, new CodexSettingsCreator(), Set.of(HEADER, TOOL_INSTRUCTION, CREDENTIALS), null, null),
+    // DENY_NEEDS_FOLLOW_UP: approvalDecision maps a refusal to the bare string "decline"
+    // (CodexAppServerHandler:208) with no room for text, so steering must arrive as a later turn.
+    CODEX("Codex", "codex", true, true, false, MailDeliveryTimingEnum.DURING_TURN, McpSteeringSupportEnum.DENY_NEEDS_FOLLOW_UP, new CodexSettingsCreator(), Set.of(HEADER, TOOL_INSTRUCTION, CREDENTIALS), null, null),
     // PiAiProcessManager#interrupt(Mail) sends `steer` while a turn is running — pi queues it and delivers it once
     // the running tool call finishes, never aborting it (spec, verified live against pi 0.85.1).
-    PI("Pi", "pi", true, true, false, MailDeliveryTimingEnum.DURING_TURN, new PiSettingsCreator(), Set.of(HEADER, TOOL_INSTRUCTION, CREDENTIALS), null, null);
+    // DENY_WITH_MESSAGE: the generated per-session pi extension blocks a gated call with
+    // {block:true, reason}, and that reason reaches the model — see reviewGatedCall in
+    // aicoder-pi-extension.ts.template.
+    PI("Pi", "pi", true, true, false, MailDeliveryTimingEnum.DURING_TURN, McpSteeringSupportEnum.DENY_WITH_MESSAGE, new PiSettingsCreator(), Set.of(HEADER, TOOL_INSTRUCTION, CREDENTIALS), null, null);
 
     public static AiTypeEnum fromKey(String key) {
         if (key == null) {
@@ -100,8 +118,8 @@ public enum AiTypeEnum {
      */
     private final boolean implemented;
     /**
-     * Whether this AI type communicates via the OpenAI-compatible HTTP API. True only for types whose session settings
-     * extend OpenAiClientSessionSettings.
+     * Whether this AI type communicates via the OpenAI-compatible HTTP API. True only for types whose session
+     * settings extend OpenAiClientSessionSettings.
      */
     private final boolean openAiCompatible;
     /**
@@ -109,20 +127,28 @@ public enum AiTypeEnum {
      */
     private final AiSessionSettingsCreator settingCreator;
     /**
-     * Controls what this AI type receives in instruction text and tool schemas. Types that reach the plugin through a
-     * bridge which injects credentials server-side omit CREDENTIALS, so they are never shown sessionId/secretKey.
+     * Controls what this AI type receives in instruction text and tool schemas. Types that reach the plugin
+     * through a bridge which injects credentials server-side omit CREDENTIALS, so they are never shown
+     * sessionId/secretKey.
      */
     private final Set<McpInstructionOptionEnum> mcpOptions;
     /**
-     * When an inbox message reaches this backend if it is mid-turn, and at what cost. Decides both whether marking a
-     * message important can do anything and whether the recipient needs telling afterwards that an aborted tool call
-     * was not a user rejection.
+     * When an inbox message reaches this backend if it is mid-turn, and at what cost. Decides both whether
+     * marking a message important can do anything and whether the recipient needs telling afterwards that an
+     * aborted tool call was not a user rejection.
      */
     private final MailDeliveryTimingEnum mailDeliveryTiming;
     /**
-     * Tooltip for the confirm dialog's accept button, or {@code null} when this backend supplies none. A tooltip that
-     * says nothing useful teaches the user to ignore them all, so a backend gets text only when it has genuinely
-     * backend-specific advice for the moment of decision.
+     * Whether this backend can be steered away from its own native tools, and if so whether the steering text
+     * survives the refusal. Like {@link #mailDeliveryTiming} this is a property of the backend's wire
+     * protocol, not a setting: it decides both whether the option is offered at all for this type and whether
+     * a refusal must be followed by an agent-only turn to carry the text the refusal could not.
+     */
+    private final McpSteeringSupportEnum mcpSteeringSupport;
+    /**
+     * Tooltip for the confirm dialog's accept button, or {@code null} when this backend supplies none. A
+     * tooltip that says nothing useful teaches the user to ignore them all, so a backend gets text only when
+     * it has genuinely backend-specific advice for the moment of decision.
      */
     private final String confirmAcceptTooltip;
     /**
@@ -132,6 +158,7 @@ public enum AiTypeEnum {
 
     AiTypeEnum(String displayName, String key, boolean isImplemented, boolean enabledByDefault,
             boolean openAiCompatible, MailDeliveryTimingEnum mailDeliveryTiming,
+            McpSteeringSupportEnum mcpSteeringSupport,
             AiSessionSettingsCreator settingCreator, Set<McpInstructionOptionEnum> options,
             String confirmAcceptTooltip, String confirmRejectTooltip) {
         this.displayName = displayName;
@@ -140,6 +167,7 @@ public enum AiTypeEnum {
         this.enabledByDefault = enabledByDefault;
         this.openAiCompatible = openAiCompatible;
         this.mailDeliveryTiming = mailDeliveryTiming;
+        this.mcpSteeringSupport = mcpSteeringSupport;
         this.settingCreator = settingCreator;
         this.mcpOptions = options;
         this.confirmAcceptTooltip = confirmAcceptTooltip;
@@ -147,22 +175,31 @@ public enum AiTypeEnum {
     }
 
     /**
-     * When an inbox message reaches this backend if it is mid-turn. Senders use this to tell whether an important
-     * message can actually interrupt the target.
+     * When an inbox message reaches this backend if it is mid-turn. Senders use this to tell whether an
+     * important message can actually interrupt the target.
      */
     public MailDeliveryTimingEnum mailDeliveryTiming() {
         return mailDeliveryTiming;
     }
 
     /**
-     * Tooltip text for the confirm dialog's accept button for this backend, or {@code null} to show no tooltip.
+     * Exposes the backend's steering support status.
+     */
+    public McpSteeringSupportEnum mcpSteeringSupport() {
+        return mcpSteeringSupport;
+    }
+
+    /**
+     * Tooltip text for the confirm dialog's accept button for this backend, or {@code null} to show no
+     * tooltip.
      */
     public String confirmAcceptTooltip() {
         return confirmAcceptTooltip;
     }
 
     /**
-     * Tooltip text for the confirm dialog's reject button for this backend, or {@code null} to show no tooltip.
+     * Tooltip text for the confirm dialog's reject button for this backend, or {@code null} to show no
+     * tooltip.
      */
     public String confirmRejectTooltip() {
         return confirmRejectTooltip;
@@ -197,8 +234,8 @@ public enum AiTypeEnum {
     }
 
     /**
-     * Returns true if this AI type communicates via the OpenAI-compatible HTTP API. When true, the session settings
-     * will be an instance of OpenAiClientSessionSettings and context management controls apply.
+     * Returns true if this AI type communicates via the OpenAI-compatible HTTP API. When true, the session
+     * settings will be an instance of OpenAiClientSessionSettings and context management controls apply.
      */
     public boolean isOpenAiCompatible() {
         return openAiCompatible;

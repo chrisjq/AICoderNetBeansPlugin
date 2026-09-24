@@ -53,6 +53,7 @@ import kiwi.ingenuity.netbeans.plugin.aicoder.ai.events.AiPropertyEvent;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.events.AiPropertyListener;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.events.AskUserQuestionEvent;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.events.ConfirmEvent;
+import kiwi.ingenuity.netbeans.plugin.aicoder.ai.events.McpSteeringRefusalEvent;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.events.MultiPermissionEvent;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.events.MultiPermissionItem;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.events.PermissionDecision;
@@ -163,22 +164,23 @@ public final class AiTopComponent extends TopComponent implements AiProcessEvent
      * The one explanation of a mail interrupt, shared by both delivery paths so their wording cannot drift.
      *
      * <p>
-     * Deliberately says nothing about whether the assistant has already read the message: the empty-queue path runs
-     * because it read the mail itself, the flush path runs with the mail appended after this text, and this sentence
-     * has to be true in both.</p>
+     * Deliberately says nothing about whether the assistant has already read the message: the empty-queue
+     * path runs because it read the mail itself, the flush path runs with the mail appended after this text,
+     * and this sentence has to be true in both.</p>
      *
      * <p>
-     * F5: Claude and OpenCode now HOLD a Mail interrupt while a tool call is in flight and deliver it once the call
-     * returns — a 180 s safety valve backstops a call that never reports a terminal status — live-verified for both. A
-     * completed call with a real result is therefore the NORMAL case, not the exception, and the notice leads with
-     * that. An abort can still happen (the safety valve, or the host's own cancellation), so the second paragraph keeps
-     * the outcome as UNKNOWN for that residual case rather than dropping it.</p>
+     * F5: Claude and OpenCode now HOLD a Mail interrupt while a tool call is in flight and deliver it once
+     * the call returns — a 180 s safety valve backstops a call that never reports a terminal status —
+     * live-verified for both. A completed call with a real result is therefore the NORMAL case, not the
+     * exception, and the notice leads with that. An abort can still happen (the safety valve, or the host's
+     * own cancellation), so the second paragraph keeps the outcome as UNKNOWN for that residual case rather
+     * than dropping it.</p>
      *
      * <p>
-     * "May already have taken effect" is deliberate, not hedging for its own sake: observed twice in one day, a
-     * SendAiMessage reported as rejected WAS delivered, and the session told the user it had never been sent, which
-     * cost a round trip to undo. "Rejected" reads as "it did not happen", so the notice has to say outright that it may
-     * have.</p>
+     * "May already have taken effect" is deliberate, not hedging for its own sake: observed twice in one day,
+     * a SendAiMessage reported as rejected WAS delivered, and the session told the user it had never been
+     * sent, which cost a round trip to undo. "Rejected" reads as "it did not happen", so the notice has to
+     * say outright that it may have.</p>
      */
     private static final String INBOX_INTERRUPT_EXPLANATION
             = "Your turn was interrupted by the plugin so an inbox message or build result could reach you — NOT by the "
@@ -190,68 +192,70 @@ public final class AiTopComponent extends TopComponent implements AiProcessEvent
             + "before repeating it. Then read your inbox and resume your work.";
     /**
      * @param userInitiated false when the plugin submits a turn on the user's behalf — currently the
-     * queued-inbox-notification flush at turn end. Only the auto-scroll decision depends on it: a turn the user did not
-     * ask for must not drag their view to the bottom.
+     * queued-inbox-notification flush at turn end. Only the auto-scroll decision depends on it: a turn the
+     * user did not ask for must not drag their view to the bottom.
      */
     /**
-     * DELIMITS the agent-only block inside a prompt the PLUGIN composed, so what the assistant sees is marked by
-     * WRAPPING rather than by position.
+     * DELIMITS the agent-only block inside a prompt the PLUGIN composed, so what the assistant sees is marked
+     * by WRAPPING rather than by position.
      *
      * <p>
-     * A positional cut was the earlier design and it had a real bug: whether text was visible was decided before
-     * deferred inbox notifications were appended, so a notice-only turn that arrived with mail queued dropped that mail
-     * from the prompt AND from the transcript. Repairing that flag would have fixed the instance and left the shape
-     * fragile — anyone appending to the visible text afterwards would silently have to know the cut was positional. A
-     * delimited block cannot be broken by appending, wherever the appending happens.</p>
+     * A positional cut was the earlier design and it had a real bug: whether text was visible was decided
+     * before deferred inbox notifications were appended, so a notice-only turn that arrived with mail queued
+     * dropped that mail from the prompt AND from the transcript. Repairing that flag would have fixed the
+     * instance and left the shape fragile — anyone appending to the visible text afterwards would silently
+     * have to know the cut was positional. A delimited block cannot be broken by appending, wherever the
+     * appending happens.</p>
      *
      * <p>
-     * THE UI NEVER SEARCHES FOR THESE TAGS, and nothing is ever stripped. The split is by PROVENANCE: agent-only text
-     * arrives as a separate parameter to {@link #handleSubmit(String, boolean, String)}, the transcript is rendered
-     * from the visible variable, and the two are never the same string. The tags exist only in the AGENT-FACING prompt,
-     * to tell the model where its system block begins and ends.</p>
+     * THE UI NEVER SEARCHES FOR THESE TAGS, and nothing is ever stripped. The split is by PROVENANCE:
+     * agent-only text arrives as a separate parameter to {@link #handleSubmit(String, boolean, String)}, the
+     * transcript is rendered from the visible variable, and the two are never the same string. The tags exist
+     * only in the AGENT-FACING prompt, to tell the model where its system block begins and ends.</p>
      *
      * <p>
      * That is why a collision is harmless, and why MALFORMED IS NOT A CASE THAT CAN ARISE. A user who types
-     * "&lt;SYSTEM&gt;" has their message rendered in full — their text is never the {@code agentOnlyText} parameter. An
-     * assistant that writes it while discussing this feature — which this session has done repeatedly today — is
-     * rendered in full too, because assistant output travels a different path and is not subject to this at all. An
-     * unclosed or nested tag cannot hide anything either: the user's view is BUILT from the visible text, never DERIVED
-     * by removing a block from a combined string, so there is no parse to go wrong. This fails toward showing by
-     * construction rather than by a rule someone has to remember.</p>
+     * "&lt;SYSTEM&gt;" has their message rendered in full — their text is never the {@code agentOnlyText}
+     * parameter. An assistant that writes it while discussing this feature — which this session has done
+     * repeatedly today — is rendered in full too, because assistant output travels a different path and is
+     * not subject to this at all. An unclosed or nested tag cannot hide anything either: the user's view is
+     * BUILT from the visible text, never DERIVED by removing a block from a combined string, so there is no
+     * parse to go wrong. This fails toward showing by construction rather than by a rule someone has to
+     * remember.</p>
      */
     /**
-     * The delimiter PREFIXES. Each is completed at composition time with {@code ":" + nonce + ">"}, so the tags a turn
-     * actually carries are {@code <SYSTEM:a93f7c2e>} and {@code </SYSTEM:a93f7c2e>} with a value the payload provably
-     * does not contain. Kept as prefixes rather than whole tags because the nonce differs per block.
+     * The delimiter PREFIXES. Each is completed at composition time with {@code ":" + nonce + ">"}, so the
+     * tags a turn actually carries are {@code <SYSTEM:a93f7c2e>} and {@code </SYSTEM:a93f7c2e>} with a value
+     * the payload provably does not contain. Kept as prefixes rather than whole tags because the nonce
+     * differs per block.
      */
     static final String SYSTEM_BLOCK_OPEN = "<SYSTEM";
     static final String SYSTEM_BLOCK_CLOSE = "</SYSTEM";
 
     private static ExecutorService newPersistExecutor() {
         return Executors.newFixedThreadPool(4, r -> {
-                                        Thread t = new Thread(r, "ai-session-persist");
-                                        t.setDaemon(true);
-                                        return t;
-                                    });
+            Thread t = new Thread(r, "ai-session-persist");
+            t.setDaemon(true);
+            return t;
+        });
     }
 
     /**
-     * Retires the shared persist pool at plugin shutdown: lets already-queued history/session saves finish inside a
-     * bounded window ({@link TimeoutEnum#PERSIST_EXECUTOR_SHUTDOWN_WAIT_MILLIS}) rather than discarding them, then
-     * releases the worker threads. Without this the four core threads never terminate, and after a disable/uninstall
-     * without an IDE restart they pin the module's classloader for the rest of the IDE run. Called only by the module
-     * installer's shutdown path.
+     * Retires the shared persist pool at plugin shutdown: lets already-queued history/session saves finish
+     * inside a bounded window ({@link TimeoutEnum#PERSIST_EXECUTOR_SHUTDOWN_WAIT_MILLIS}) rather than
+     * discarding them, then releases the worker threads. Without this the four core threads never terminate,
+     * and after a disable/uninstall without an IDE restart they pin the module's classloader for the rest of
+     * the IDE run. Called only by the module installer's shutdown path.
      */
     public static void shutdownPersistExecutor() {
         ExecutorService pool = PERSIST_EXECUTOR;
         pool.shutdown();
         try {
             if (!pool.awaitTermination(TimeoutEnum.PERSIST_EXECUTOR_SHUTDOWN_WAIT_MILLIS.millis(),
-                                       TimeUnit.MILLISECONDS)) {
+                    TimeUnit.MILLISECONDS)) {
                 LOG.warning("Session-persist tasks still running at plugin shutdown; abandoning the bounded wait");
             }
-        }
-        catch (InterruptedException e) {
+        } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
         }
     }
@@ -264,8 +268,8 @@ public final class AiTopComponent extends TopComponent implements AiProcessEvent
     }
 
     /**
-     * Replaces a retired pool with a fresh one so later tests sharing this JVM still have a working executor (test aid
-     * — production shuts down exactly once, at plugin shutdown).
+     * Replaces a retired pool with a fresh one so later tests sharing this JVM still have a working executor
+     * (test aid — production shuts down exactly once, at plugin shutdown).
      */
     static void resetPersistExecutorForTests() {
         PERSIST_EXECUTOR = newPersistExecutor();
@@ -284,8 +288,8 @@ public final class AiTopComponent extends TopComponent implements AiProcessEvent
     }
 
     /**
-     * Pure form of {@link #confirmLabel(ConfirmEvent)}, with path shortening already applied, so the fallback rule can
-     * be tested without a running IDE.
+     * Pure form of {@link #confirmLabel(ConfirmEvent)}, with path shortening already applied, so the fallback
+     * rule can be tested without a running IDE.
      *
      * @param shortSrc shortened source path, or null for a non-file confirm
      * @param shortTgt shortened target path, or null when there is no target
@@ -302,11 +306,11 @@ public final class AiTopComponent extends TopComponent implements AiProcessEvent
      * Whether auto-accept may answer this confirmation on the user's behalf.
      *
      * <p>
-     * Auto-accept means "approve things I can see", never "approve things nobody could identify": a request that
-     * arrives without an identifiable subject, or one whose consequences warrant a human every time, sets
-     * {@link ConfirmEvent#requireExplicitApproval()} and is prompted regardless of the setting. Copilot's shell path
-     * sets it — the alternative was a command being run unseen, as happened when an unclassified kind was approved
-     * silently and wrote an arbitrary script to /tmp.
+     * Auto-accept means "approve things I can see", never "approve things nobody could identify": a request
+     * that arrives without an identifiable subject, or one whose consequences warrant a human every time,
+     * sets {@link ConfirmEvent#requireExplicitApproval()} and is prompted regardless of the setting.
+     * Copilot's shell path sets it — the alternative was a command being run unseen, as happened when an
+     * unclassified kind was approved silently and wrote an arbitrary script to /tmp.
      *
      * <p>
      * Pure so the rule can be tested without a running IDE.
@@ -316,8 +320,8 @@ public final class AiTopComponent extends TopComponent implements AiProcessEvent
     }
 
     /**
-     * Tooltip for the auto-scroll toggle, reporting the state it is currently IN rather than the one clicking would
-     * move it to. Both readings are common in toolbars, so the wording says which it means outright.
+     * Tooltip for the auto-scroll toggle, reporting the state it is currently IN rather than the one clicking
+     * would move it to. Both readings are common in toolbars, so the wording says which it means outright.
      */
     private static String autoScrollTooltip(boolean enabled) {
         return "Auto Scroll - " + (enabled ? "Enabled" : "Disabled");
@@ -325,13 +329,13 @@ public final class AiTopComponent extends TopComponent implements AiProcessEvent
 
     /**
      * Pure colour mapping for the tab status dot — the single source of truth, delegated to by
-     * {@link #tabStatusColor()}. Package-private and static so it can be unit-tested without the NetBeans window
-     * system.
+     * {@link #tabStatusColor()}. Package-private and static so it can be unit-tested without the NetBeans
+     * window system.
      *
      * <p>
-     * Takes the enum rather than its name so the switch stays exhaustive: adding a {@code TabStatus} without a colour
-     * is then a compile error rather than a runtime one. Do not add a {@code default} branch — it would defeat exactly
-     * that check.
+     * Takes the enum rather than its name so the switch stays exhaustive: adding a {@code TabStatus} without
+     * a colour is then a compile error rather than a runtime one. Do not add a {@code default} branch — it
+     * would defeat exactly that check.
      */
     static String resolvedTabStatusColor(TabStatus status, boolean flashActive) {
         return switch (status) {
@@ -348,23 +352,33 @@ public final class AiTopComponent extends TopComponent implements AiProcessEvent
 
     private final ConversationPanel conversationPanel;
     /**
-     * Set when an inbox message lands while a turn is in flight, so the interruption it causes can be explained
-     * afterwards even if the assistant reads the message itself and leaves the pending-notification queue empty. See
-     * {@code explainInboxInterruptIfNeeded}.
+     * Set when an inbox message lands while a turn is in flight, so the interruption it causes can be
+     * explained afterwards even if the assistant reads the message itself and leaves the pending-notification
+     * queue empty. See {@code explainInboxInterruptIfNeeded}.
      */
     private volatile boolean mailArrivedDuringTurn;
     /**
-     * Reads the backend's read policy refused during the turn that just ended, reported by a {@link PolicyRefusalEvent}
-     * posted just before that turn's completion event. Consumed once, when the completion is handled, into the
-     * agent-only notice that resumes the agent. Touched only on the EDT, like every event handler.
+     * Reads the backend's read policy refused during the turn that just ended, reported by a
+     * {@link PolicyRefusalEvent} posted just before that turn's completion event. Consumed once, when the
+     * completion is handled, into the agent-only notice that resumes the agent. Touched only on the EDT, like
+     * every event handler.
      */
     private final List<PolicyRefusalEvent.Refusal> pendingPolicyRefusals = new ArrayList<>();
     /**
-     * How many more times the plugin may resume the agent by itself after a policy refusal. The bound on the loop the
-     * agent could otherwise cause by being refused, resumed and refused again; refilled only by a message from the
-     * user, in {@code handleSubmit}.
+     * Native tool calls automatically denied by MCP steering during the current turn.
+     */
+    private final List<McpSteeringRefusalEvent.Refusal> pendingMcpSteerings = new ArrayList<>();
+    /**
+     * Wall-clock time of the most recent automatic MCP steering denial, used when a backend does not provide
+     * a structural turn-ended marker.
+     */
+    /**
+     * How many more times the plugin may resume the agent by itself after a policy refusal. The bound on the
+     * loop the agent could otherwise cause by being refused, resumed and refused again; refilled only by a
+     * message from the user, in {@code handleSubmit}.
      */
     private final PolicyRefusalBudget policyRefusalBudget = new PolicyRefusalBudget();
+    private final PolicyRefusalBudget mcpSteeringBudget = new PolicyRefusalBudget();
     private final AiInfoBar infoBar;
     private final AiInputField inputField;
     private final JButton sendButton;
@@ -383,23 +397,25 @@ public final class AiTopComponent extends TopComponent implements AiProcessEvent
     private boolean assistantTurnActive = false;
 
     /**
-     * Set when the user clicks Stop. Suppresses any buffered TextDeltaEvent or ToolUseEvent that arrive via invokeLater
-     * after cancellation. Cleared when the cancelled turn is officially done (STOPPED status or TurnCompleteEvent).
+     * Set when the user clicks Stop. Suppresses any buffered TextDeltaEvent or ToolUseEvent that arrive via
+     * invokeLater after cancellation. Cleared when the cancelled turn is officially done (STOPPED status or
+     * TurnCompleteEvent).
      */
     private boolean cancelledThisTurn = false;
+    private boolean cancelledTurnJustCompleted = false;
 
     /**
-     * Set when a non-text event (tool use, permission) interrupts a streaming turn, so the next text block gets a blank
-     * line separator before it.
+     * Set when a non-text event (tool use, permission) interrupts a streaming turn, so the next text block
+     * gets a blank line separator before it.
      */
     private boolean pendingNewlineBeforeText = false;
     private boolean turnOutputSuppressed = false;
     private String suppressedTurnCompletionMessage = null;
 
     /**
-     * Pre-prompt snapshot of the active file — used to show a diff after the AI edits it. The stream-json format does
-     * not emit tool_use events for internally-executed tools, so we detect edits by comparing disk content before/after
-     * each turn.
+     * Pre-prompt snapshot of the active file — used to show a diff after the AI edits it. The stream-json
+     * format does not emit tool_use events for internally-executed tools, so we detect edits by comparing
+     * disk content before/after each turn.
      */
     private String preEditFilePath = null;
     private String preEditFileContent = null;
@@ -418,24 +434,26 @@ public final class AiTopComponent extends TopComponent implements AiProcessEvent
     /**
      * The AGENT-ONLY half of a submit that arrived while the backend was down, held until it restarts.
      * <p>
-     * Stashing only the visible half used to be harmless, because everything a notification had to say was visible. It
-     * is not any more: a build result and an arriving message now render as system entries and carry ALL of their
-     * content — the build report, the message ids, the instruction to call ReadAiMessage — in the agent-only half. A
-     * build finishing while the backend was stopped therefore composed an empty visible string and a full agent-only
-     * payload, and the restart path kept the empty one and dropped the payload entirely.
+     * Stashing only the visible half used to be harmless, because everything a notification had to say was
+     * visible. It is not any more: a build result and an arriving message now render as system entries and
+     * carry ALL of their content — the build report, the message ids, the instruction to call ReadAiMessage —
+     * in the agent-only half. A build finishing while the backend was stopped therefore composed an empty
+     * visible string and a full agent-only payload, and the restart path kept the empty one and dropped the
+     * payload entirely.
      */
     private String pendingSubmitAgentOnlyText = null;
 
     /**
-     * False until the first startup attempt resolves to READY or a fatal startup error. While false, the visible chat
-     * input/send controls stay disabled so the user cannot submit a prompt against a still-loading backend.
+     * False until the first startup attempt resolves to READY or a fatal startup error. While false, the
+     * visible chat input/send controls stay disabled so the user cannot submit a prompt against a
+     * still-loading backend.
      */
     private boolean startupResolved = false;
 
     /**
-     * Outstanding AskUserQuestion/Permission cancellers and open diff windows. Multiple can be in flight at once (e.g.
-     * AskUserQuestion overlapping a Permission), so track all and complete/close every one on teardown. EDT-confined —
-     * all access is on the event dispatch thread.
+     * Outstanding AskUserQuestion/Permission cancellers and open diff windows. Multiple can be in flight at
+     * once (e.g. AskUserQuestion overlapping a Permission), so track all and complete/close every one on
+     * teardown. EDT-confined — all access is on the event dispatch thread.
      */
     private final Set<Runnable> pendingResponseCancellers
             = Collections.newSetFromMap(new java.util.IdentityHashMap<>());
@@ -467,8 +485,8 @@ public final class AiTopComponent extends TopComponent implements AiProcessEvent
 
     private volatile boolean skipClosePrompt = false;
     /**
-     * Last tab label actually pushed to the window system, so {@link #updateTabHtmlName()} can skip identical re-sets.
-     * EDT-only, like the tab state it mirrors — no synchronisation needed.
+     * Last tab label actually pushed to the window system, so {@link #updateTabHtmlName()} can skip identical
+     * re-sets. EDT-only, like the tab state it mirrors — no synchronisation needed.
      */
     private String lastTabHtml = null;
 
@@ -503,10 +521,10 @@ public final class AiTopComponent extends TopComponent implements AiProcessEvent
         inputField.setCanSend(false);
         sendButton.setEnabled(false);
         infoBar.setSaveHistory(session.settings() != null
-                               ? session.settings().effectiveSaveHistory() : PluginSettings.isSaveHistory());
+                ? session.settings().effectiveSaveHistory() : PluginSettings.isSaveHistory());
         infoBar.setAutoAccept(session.settings() != null
-                              ? session.settings().effectiveAutoAccept()
-                              : kiwi.ingenuity.netbeans.plugin.aicoder.PluginSettings.isAutoAccept());
+                ? session.settings().effectiveAutoAccept()
+                : kiwi.ingenuity.netbeans.plugin.aicoder.PluginSettings.isAutoAccept());
         infoBar.addListener(new AiInfoBarListener() {
             @Override
             public void onStopRequested() {
@@ -547,8 +565,8 @@ public final class AiTopComponent extends TopComponent implements AiProcessEvent
         // Minimum and initial height come from INPUT_AREA_HEIGHT (preferred ==
         // minimum), so the window always opens at the minimum size.
         JScrollPane inputScrollPane = new JScrollPane(inputField,
-                                                      JScrollPane.VERTICAL_SCROLLBAR_AS_NEEDED,
-                                                      JScrollPane.HORIZONTAL_SCROLLBAR_NEVER);
+                JScrollPane.VERTICAL_SCROLLBAR_AS_NEEDED,
+                JScrollPane.HORIZONTAL_SCROLLBAR_NEVER);
         inputScrollPane.setMinimumSize(new Dimension(0, INPUT_AREA_HEIGHT));
         inputScrollPane.setPreferredSize(new Dimension(0, INPUT_AREA_HEIGHT));
 
@@ -592,11 +610,11 @@ public final class AiTopComponent extends TopComponent implements AiProcessEvent
         // usable — dragging the divider down must not crush the buttons, so the
         // floor is the taller of one input row and the east button column.
         bottom.setMinimumSize(new Dimension(0,
-                                            infoBar.getPreferredSize().height
-                                            + Math.max(INPUT_AREA_HEIGHT, eastPanel.getPreferredSize().height)));
+                infoBar.getPreferredSize().height
+                + Math.max(INPUT_AREA_HEIGHT, eastPanel.getPreferredSize().height)));
 
         JSplitPane splitPane = new JSplitPane(JSplitPane.VERTICAL_SPLIT,
-                                              conversationPanel, bottom);
+                conversationPanel, bottom);
         splitPane.setResizeWeight(1.0);
         splitPane.setContinuousLayout(true);
         splitPane.setOneTouchExpandable(false);
@@ -635,8 +653,7 @@ public final class AiTopComponent extends TopComponent implements AiProcessEvent
                     if (autoNotify || notification.skipAutoNotifyDeferral()) {
                         pendingNotifications.add(notification);
                         SwingUtilities.invokeLater(() -> flushPendingNotifications());
-                    }
-                    else {
+                    } else {
                         deferredNotifications.add(notification);
                     }
                 }
@@ -648,8 +665,7 @@ public final class AiTopComponent extends TopComponent implements AiProcessEvent
                     session.setDescription(description);
                     try {
                         sessionPersistenceManager.save(session);
-                    }
-                    catch (IOException e) {
+                    } catch (IOException e) {
                         LOG.log(Level.WARNING, "Could not persist session description update", e);
                     }
                 });
@@ -658,24 +674,24 @@ public final class AiTopComponent extends TopComponent implements AiProcessEvent
     }
 
     /**
-     * Shortens a path for display in system messages. Delegates to the shared utility so notifications, confirm prompts
-     * and diff messages all render a path the same way — including the project directory name, which says which project
-     * a file belongs to when several are open.
+     * Shortens a path for display in system messages. Delegates to the shared utility so notifications,
+     * confirm prompts and diff messages all render a path the same way — including the project directory
+     * name, which says which project a file belongs to when several are open.
      */
     private String shortPath(String fp) {
         return ProjectPathUtil.shortPath(fp);
     }
 
     /**
-     * Label for a confirm notification. Not every confirm is about a file: a shell command has no path at all, and
-     * rendering the absent one printed the literal string "null" to the user ("Execute: null — auto-accepted"), which
-     * says nothing about what was approved. Those events carry the subject in their display text instead — the command
-     * itself — so fall back to it.
+     * Label for a confirm notification. Not every confirm is about a file: a shell command has no path at
+     * all, and rendering the absent one printed the literal string "null" to the user ("Execute: null —
+     * auto-accepted"), which says nothing about what was approved. Those events carry the subject in their
+     * display text instead — the command itself — so fall back to it.
      */
     private String confirmLabel(ConfirmEvent ce) {
         return buildConfirmLabel(shortPath(ce.filePath()),
-                                 ce.targetPath() != null ? shortPath(ce.targetPath()) : null,
-                                 ce.displayText());
+                ce.targetPath() != null ? shortPath(ce.targetPath()) : null,
+                ce.displayText());
     }
 
     @Override
@@ -683,8 +699,7 @@ public final class AiTopComponent extends TopComponent implements AiProcessEvent
         PERSIST_EXECUTOR.execute(() -> {
             try {
                 sessionPersistenceManager.save(session);
-            }
-            catch (IOException e) {
+            } catch (IOException e) {
                 LOG.log(Level.WARNING, "Could not update session last-used timestamp", e);
             }
         });
@@ -696,11 +711,11 @@ public final class AiTopComponent extends TopComponent implements AiProcessEvent
     /**
      * Drains queued notifications into a single new turn.
      *
-     * @return whether a turn was actually submitted. Callers finishing a turn use this to decide whether to show the
-     * session as idle: a queued notification means the session carries straight on, and announcing idle first is what
-     * let a green tab and a live input field appear mid-conversation. A non-empty queue is NOT the same answer - every
-     * entry can be filtered out below and nothing sent - so the decision has to come from here, after filtering, or the
-     * UI would be left permanently busy with no turn running.
+     * @return whether a turn was actually submitted. Callers finishing a turn use this to decide whether to
+     * show the session as idle: a queued notification means the session carries straight on, and announcing
+     * idle first is what let a green tab and a live input field appear mid-conversation. A non-empty queue is
+     * NOT the same answer - every entry can be filtered out below and nothing sent - so the decision has to
+     * come from here, after filtering, or the UI would be left permanently busy with no turn running.
      */
     private boolean flushPendingNotifications(AbstractNotification... extra) {
         assert SwingUtilities.isEventDispatchThread();
@@ -753,25 +768,26 @@ public final class AiTopComponent extends TopComponent implements AiProcessEvent
         String interrupt = consumeInboxInterruptExplanation();
         // A policy refusal that ended the turn rides the same agent-only text, in front of the mail explanation.
         interrupt = joinAgentNotices(consumePolicyRefusalNotice(), interrupt);
+        interrupt = joinAgentNotices(consumeMcpSteeringNotice(), interrupt);
         // Combine into a SINGLE turn — handleSubmit/sendPrompt runs one turn at a
         // time, so submitting in a loop would drop all but the first.
         submitNotificationTurn(NotificationTypeEnum.NEW_INBOX_MESSAGE,
-                               text, combinedAgentOnlyText(deliverable, interrupt));
+                text, combinedAgentOnlyText(deliverable, interrupt));
         return true;
     }
 
     /**
-     * The visible chat text for an already-{@link AbstractNotification#shouldDeliver}-filtered batch — the part that
-     * rides in the PROMPT, as though the user had typed it. Entries are grouped by {@link NotificationTypeEnum} so a
-     * type's prefix is applied once per GROUP rather than once per entry, groups in first-seen order, entries within a
-     * group in arrival order.
+     * The visible chat text for an already-{@link AbstractNotification#shouldDeliver}-filtered batch — the
+     * part that rides in the PROMPT, as though the user had typed it. Entries are grouped by
+     * {@link NotificationTypeEnum} so a type's prefix is applied once per GROUP rather than once per entry,
+     * groups in first-seen order, entries within a group in arrival order.
      * <p>
-     * IN PRACTICE THIS NOW ALWAYS RETURNS "". Every type that carries visible text renders as a system message instead
-     * ({@link NotificationTypeEnum#rendersAsSystemMessage}), and the one type that does not —
-     * {@link NotificationTypeEnum#INBOX_INTERRUPT_NOTICE} — is only ever submitted with null visible text. The grouping
-     * and prefixing below are therefore unreachable today, and kept only so that a future notification type meant for
-     * the prompt has somewhere to land. Nothing should be added here without deciding, deliberately, that it belongs in
-     * the user's own message.
+     * IN PRACTICE THIS NOW ALWAYS RETURNS "". Every type that carries visible text renders as a system
+     * message instead ({@link NotificationTypeEnum#rendersAsSystemMessage}), and the one type that does not —
+     * {@link NotificationTypeEnum#INBOX_INTERRUPT_NOTICE} — is only ever submitted with null visible text.
+     * The grouping and prefixing below are therefore unreachable today, and kept only so that a future
+     * notification type meant for the prompt has somewhere to land. Nothing should be added here without
+     * deciding, deliberately, that it belongs in the user's own message.
      *
      * @return "" when every notification's text is blank or renders as a system message
      */
@@ -796,23 +812,24 @@ public final class AiTopComponent extends TopComponent implements AiProcessEvent
 
     /**
      * The visible text of the entries that render as SYSTEM messages rather than as part of the prompt
-     * ({@link NotificationTypeEnum#rendersAsSystemMessage}) AND are not already on screen. Entries keep their arrival
-     * order and are joined the same way groups are, so two builds finishing while the session was busy read as two
-     * lines.
+     * ({@link NotificationTypeEnum#rendersAsSystemMessage}) AND are not already on screen. Entries keep their
+     * arrival order and are joined the same way groups are, so two builds finishing while the session was
+     * busy read as two lines.
      * <p>
-     * No prefix is applied: each line is already complete and self-identifying — a build summary, or "New message from
-     * [X]: Subject" — which is why {@link NotificationTypeEnum#BUILD_COMPLETE}'s prefix is blank and why
-     * {@link NotificationTypeEnum#NEW_INBOX_MESSAGE}'s is no longer used.
+     * No prefix is applied: each line is already complete and self-identifying — a build summary, or "New
+     * message from [X]: Subject" — which is why {@link NotificationTypeEnum#BUILD_COMPLETE}'s prefix is blank
+     * and why {@link NotificationTypeEnum#NEW_INBOX_MESSAGE}'s is no longer used.
      * <p>
-     * ARRIVING MAIL IS SKIPPED, because {@code handleGlobalProperty} has already drawn its line at the moment it landed
-     * — see {@link NotificationTypeEnum#announcedOnArrival}. Composing it here too gave every message a second,
-     * identical entry. That never showed on default settings, where mail is deferred and never reaches this batch, but
-     * the session templates enable {@code autoNotifyInbox} and would have shown it on every arrival.
+     * ARRIVING MAIL IS SKIPPED, because {@code handleGlobalProperty} has already drawn its line at the moment
+     * it landed — see {@link NotificationTypeEnum#announcedOnArrival}. Composing it here too gave every
+     * message a second, identical entry. That never showed on default settings, where mail is deferred and
+     * never reaches this batch, but the session templates enable {@code autoNotifyInbox} and would have shown
+     * it on every arrival.
      * <p>
-     * Only the VISIBLE line comes from here. Everything such a notification has to tell the assistant travels in its
-     * {@code agentOnlyText()} instead, since nothing that renders as a system message reaches the prompt at all — and
-     * skipping a line here therefore costs the assistant NOTHING: the mail's agent-only block is still submitted with
-     * the turn, it is only the duplicate drawing that stops.
+     * Only the VISIBLE line comes from here. Everything such a notification has to tell the assistant travels
+     * in its {@code agentOnlyText()} instead, since nothing that renders as a system message reaches the
+     * prompt at all — and skipping a line here therefore costs the assistant NOTHING: the mail's agent-only
+     * block is still submitted with the turn, it is only the duplicate drawing that stops.
      *
      * @return "" when the batch has nothing left to render as a system message
      */
@@ -830,14 +847,16 @@ public final class AiTopComponent extends TopComponent implements AiProcessEvent
     }
 
     /**
-     * The agent-only SYSTEM-block text for the same batch: the inbox-interrupt explanation first, if the turn was cut
-     * short to deliver it, then every notification's own {@link AbstractNotification#agentOnlyText}, in arrival order.
+     * The agent-only SYSTEM-block text for the same batch: the inbox-interrupt explanation first, if the turn
+     * was cut short to deliver it, then every notification's own {@link AbstractNotification#agentOnlyText},
+     * in arrival order.
      * <p>
-     * FALLS BACK to {@link AbstractNotification#text} for a notification that has no agent-only text of its own. Once a
-     * type renders as a system message its visible text no longer reaches the prompt, so without this fallback such a
-     * notification reached the user and never the assistant at all — which is how the delivery-failure notices stopped
-     * telling a sender that its message had not arrived. The deferred-mail drain in {@code handleSubmit} has always had
-     * this fallback; the two paths disagreeing is what hid the hole, since whichever one worked masked the other.
+     * FALLS BACK to {@link AbstractNotification#text} for a notification that has no agent-only text of its
+     * own. Once a type renders as a system message its visible text no longer reaches the prompt, so without
+     * this fallback such a notification reached the user and never the assistant at all — which is how the
+     * delivery-failure notices stopped telling a sender that its message had not arrived. The deferred-mail
+     * drain in {@code handleSubmit} has always had this fallback; the two paths disagreeing is what hid the
+     * hole, since whichever one worked masked the other.
      *
      * @return null when there is nothing to tell the agent
      */
@@ -858,17 +877,19 @@ public final class AiTopComponent extends TopComponent implements AiProcessEvent
     }
 
     /**
-     * Defuses a block delimiter appearing INSIDE a payload, so content cannot forge the wrapper that surrounds it.
+     * Defuses a block delimiter appearing INSIDE a payload, so content cannot forge the wrapper that
+     * surrounds it.
      * <p>
-     * A delimiter the payload PROVABLY does not contain, rather than one merely unlikely to. The same answer MIME
-     * multipart boundaries and heredocs use, and for the same reason: payload text genuinely does contain the literal
-     * tag — a build log quoting it, or a peer message discussing this very mechanism, one of which arrived during the
-     * review that produced this method.
+     * A delimiter the payload PROVABLY does not contain, rather than one merely unlikely to. The same answer
+     * MIME multipart boundaries and heredocs use, and for the same reason: payload text genuinely does
+     * contain the literal tag — a build log quoting it, or a peer message discussing this very mechanism, one
+     * of which arrived during the review that produced this method.
      * <p>
-     * Chosen over escaping the payload, which would alter content the assistant is asked to read closely, and over
-     * invisible control-character delimiters, which three reviewers independently rejected: they carry almost no
-     * training signal as a boundary, gateways are known to strip the C0 range, and a stripped delimiter would leave an
-     * UNDELIMITED block with no visible residue — a silent failure on every turn in place of a rare one.
+     * Chosen over escaping the payload, which would alter content the assistant is asked to read closely, and
+     * over invisible control-character delimiters, which three reviewers independently rejected: they carry
+     * almost no training signal as a boundary, gateways are known to strip the C0 range, and a stripped
+     * delimiter would leave an UNDELIMITED block with no visible residue — a silent failure on every turn in
+     * place of a rare one.
      * <p>
      * Nothing is stripped, replaced or searched for in the composed prompt, so the payload reaches the model
      * byte-for-byte and a message containing the tags cannot be mangled on its way to the user.
@@ -882,11 +903,13 @@ public final class AiTopComponent extends TopComponent implements AiProcessEvent
     }
 
     /**
-     * A FIXED-WIDTH 16 lowercase hex digits, zero-padded, rather than {@code Long.toHexString}'s variable width.
+     * A FIXED-WIDTH 16 lowercase hex digits, zero-padded, rather than {@code Long.toHexString}'s variable
+     * width.
      * <p>
-     * That produced a nonce as short as one character for a small random value — {@code <SYSTEM:5>} — which a payload
-     * can contain by sheer chance, forcing regeneration, and which reads as a typo rather than as a boundary. Padding
-     * keeps every delimiter the same shape, so the full 64 bits of unpredictability is actually spent.
+     * That produced a nonce as short as one character for a small random value — {@code <SYSTEM:5>} — which a
+     * payload can contain by sheer chance, forcing regeneration, and which reads as a typo rather than as a
+     * boundary. Padding keeps every delimiter the same shape, so the full 64 bits of unpredictability is
+     * actually spent.
      */
     private static String randomNonce() {
         return String.format(Locale.ROOT, "%016x", ThreadLocalRandom.current().nextLong());
@@ -895,9 +918,9 @@ public final class AiTopComponent extends TopComponent implements AiProcessEvent
     /**
      * Whether any payload that will share the composed prompt already contains {@code nonce}.
      * <p>
-     * EVERY payload, not just the agent-only one. The visible text is concatenated into the same string, so a nonce
-     * absent from the block's own body but present in the user's text still produces a delimiter that appears twice —
-     * and the visible half is the one an outsider can actually choose the contents of.
+     * EVERY payload, not just the agent-only one. The visible text is concatenated into the same string, so a
+     * nonce absent from the block's own body but present in the user's text still produces a delimiter that
+     * appears twice — and the visible half is the one an outsider can actually choose the contents of.
      */
     private static boolean containedInAny(String[] payloads, String nonce) {
         for (String payload : payloads) {
@@ -909,14 +932,15 @@ public final class AiTopComponent extends TopComponent implements AiProcessEvent
     }
 
     /**
-     * The exact string the agent receives: the visible text, then the agent-only text wrapped in a nonce-carrying
-     * SYSTEM block. Returns the visible text alone when there is nothing hidden to send.
+     * The exact string the agent receives: the visible text, then the agent-only text wrapped in a
+     * nonce-carrying SYSTEM block. Returns the visible text alone when there is nothing hidden to send.
      * <p>
-     * EXTRACTED SO THE NONCE GUARANTEE IS TESTABLE ON REAL OUTPUT. While this was inline in {@code handleSubmit} —
-     * which cannot be instantiated in a unit test — every assertion about the nonce had to be made against the SOURCE
-     * TEXT of the composition. Those assertions could not tell a working nonce from a broken one: passing the wrong
-     * argument to {@code systemBlockNonce} would leave the collision check dead while every one of them still passed. A
-     * test can now compose a block whose payload contains the tags and check the property itself.
+     * EXTRACTED SO THE NONCE GUARANTEE IS TESTABLE ON REAL OUTPUT. While this was inline in
+     * {@code handleSubmit} — which cannot be instantiated in a unit test — every assertion about the nonce
+     * had to be made against the SOURCE TEXT of the composition. Those assertions could not tell a working
+     * nonce from a broken one: passing the wrong argument to {@code systemBlockNonce} would leave the
+     * collision check dead while every one of them still passed. A test can now compose a block whose payload
+     * contains the tags and check the property itself.
      */
     static String composeAgentBlock(String visibleForAgent, String agentOnlyText) {
         String visible = visibleForAgent == null ? "" : visibleForAgent;
@@ -933,15 +957,17 @@ public final class AiTopComponent extends TopComponent implements AiProcessEvent
      * The explanation if a mail interrupt aborted this turn and the assistant should be told, or null if not.
      *
      * <p>
-     * CONSUMES the flag, which is what stops the notice being sent twice for one interrupt. Whichever delivery path
-     * asks first gets the text and clears the flag; the other then gets null and stays silent. A session told twice
-     * that it was interrupted starts narrating the interruption to the user, which is its own noise.</p>
+     * CONSUMES the flag, which is what stops the notice being sent twice for one interrupt. Whichever
+     * delivery path asks first gets the text and clears the flag; the other then gets null and stays silent.
+     * A session told twice that it was interrupted starts narrating the interruption to the user, which is
+     * its own noise.</p>
      *
      * <p>
-     * Only for backends whose mail delivery actually aborts the turn. Codex steers, Copilot injects, Grok and Ollama
-     * drop it — none of them abort anything, so telling those sessions their turn was interrupted would be a plain
-     * falsehood about their own history, which is precisely the failure this notice exists to prevent. The flag is
-     * cleared for them too: the interrupt they did not have must not be reported on some later turn either.</p>
+     * Only for backends whose mail delivery actually aborts the turn. Codex steers, Copilot injects, Grok and
+     * Ollama drop it — none of them abort anything, so telling those sessions their turn was interrupted
+     * would be a plain falsehood about their own history, which is precisely the failure this notice exists
+     * to prevent. The flag is cleared for them too: the interrupt they did not have must not be reported on
+     * some later turn either.</p>
      */
     private String consumeInboxInterruptExplanation() {
         if (!mailArrivedDuringTurn) {
@@ -956,32 +982,33 @@ public final class AiTopComponent extends TopComponent implements AiProcessEvent
     }
 
     /**
-     * Tells the assistant that its turn was cut short to deliver mail, when the inbox flush had nothing left to say.
-     * Returns true if a turn was submitted.
+     * Tells the assistant that its turn was cut short to deliver mail, when the inbox flush had nothing left
+     * to say. Returns true if a turn was submitted.
      * <p>
-     * This closes a gap that produces a FALSE BELIEF ABOUT THE USER. A mail interrupt aborts whatever tool call is in
-     * flight, and every backend reports a mid-turn abort as a user cancellation — Claude sends the same
-     * {@code control_request(interrupt)} for mail as for the Stop button, so the two are indistinguishable on the wire.
-     * The assistant therefore reads "the user rejected this call".
+     * This closes a gap that produces a FALSE BELIEF ABOUT THE USER. A mail interrupt aborts whatever tool
+     * call is in flight, and every backend reports a mid-turn abort as a user cancellation — Claude sends the
+     * same {@code control_request(interrupt)} for mail as for the Stop button, so the two are
+     * indistinguishable on the wire. The assistant therefore reads "the user rejected this call".
      * <p>
-     * This path covers the case where the assistant READ the message itself during the interrupted turn: the queue is
-     * empty, the flush has nothing to deliver, and the INTERRUPTED status has already been deliberately suppressed, so
-     * the assistant is left with an aborted tool call and no explanation at all.
+     * This path covers the case where the assistant READ the message itself during the interrupted turn: the
+     * queue is empty, the flush has nothing to deliver, and the INTERRUPTED status has already been
+     * deliberately suppressed, so the assistant is left with an aborted tool call and no explanation at all.
      * <p>
-     * The other case — mail IS waiting — is handled inside {@code flushPendingNotifications}, which carries the same
-     * explanation into the turn that delivers it. That used to be left implicit, on the reasoning that arriving mail
-     * explains the interruption by itself. It does not: the message says why new mail exists, not why the tool call
-     * died, and a session in this IDE read the abort as a user rejection while the mail was sitting right there in
-     * front of it.
+     * The other case — mail IS waiting — is handled inside {@code flushPendingNotifications}, which carries
+     * the same explanation into the turn that delivers it. That used to be left implicit, on the reasoning
+     * that arriving mail explains the interruption by itself. It does not: the message says why new mail
+     * exists, not why the tool call died, and a session in this IDE read the abort as a user rejection while
+     * the mail was sitting right there in front of it.
      * <p>
-     * Observed, not theoretical: a session in this IDE reported to the user that they had rejected a command they never
-     * saw, and separately reported a message as rejected that had in fact been delivered.
+     * Observed, not theoretical: a session in this IDE reported to the user that they had rejected a command
+     * they never saw, and separately reported a message as rejected that had in fact been delivered.
      */
     private boolean explainInboxInterruptIfNeeded() {
         String explanation = consumeInboxInterruptExplanation();
         // The other reason a turn can end with nothing else to say: a policy refusal ended it. Same turn, same
         // agent-only channel, in front of the mail explanation when both apply.
         explanation = joinAgentNotices(consumePolicyRefusalNotice(), explanation);
+        explanation = joinAgentNotices(consumeMcpSteeringNotice(), explanation);
         if (explanation == null) {
             return false;
         }
@@ -992,25 +1019,25 @@ public final class AiTopComponent extends TopComponent implements AiProcessEvent
     }
 
     /**
-     * The agent-only notice for the reads the policy refused during the turn that just ended, or null when there is
-     * nothing to say — no refusal ended it, or the agent has already been resumed as often as it may be without the
-     * user saying anything.
+     * The agent-only notice for the reads the policy refused during the turn that just ended, or null when
+     * there is nothing to say — no refusal ended it, or the agent has already been resumed as often as it may
+     * be without the user saying anything.
      *
      * <p>
-     * ONE-SHOT, like the mail flag: the pending refusals are read and cleared together and BEFORE the budget is asked,
-     * so a refusal is never reported on a later turn, spent budget or not.
+     * ONE-SHOT, like the mail flag: the pending refusals are read and cleared together and BEFORE the budget
+     * is asked, so a refusal is never reported on a later turn, spent budget or not.
      *
      * <p>
-     * Unlike that flag it also needs a budget. The mail flag is armed by a peer's message and the cancel notice by the
-     * user pressing Stop, so nothing the model does can re-arm them. A refusal is armed by the agent itself, and the
-     * turn this notice starts is what runs the agent again: told to carry on, it can read another path it may not, be
-     * refused, be resumed, and so on with no person in the loop. Each notice therefore spends one unit of
-     * {@link #policyRefusalBudget}, refilled only by the user's own message in {@code handleSubmit}, so the number of
-     * automatic turns per message is bounded whatever the agent does.
+     * Unlike that flag it also needs a budget. The mail flag is armed by a peer's message and the cancel
+     * notice by the user pressing Stop, so nothing the model does can re-arm them. A refusal is armed by the
+     * agent itself, and the turn this notice starts is what runs the agent again: told to carry on, it can
+     * read another path it may not, be refused, be resumed, and so on with no person in the loop. Each notice
+     * therefore spends one unit of {@link #policyRefusalBudget}, refilled only by the user's own message in
+     * {@code handleSubmit}, so the number of automatic turns per message is bounded whatever the agent does.
      *
      * <p>
-     * When the budget is spent nothing is sent and NOTHING IS SHOWN, at the user's request; the only trace is a log
-     * line, gated by the JSON-debug setting like the diagnostics elsewhere.
+     * When the budget is spent nothing is sent and NOTHING IS SHOWN, at the user's request; the only trace is
+     * a log line, gated by the JSON-debug setting like the diagnostics elsewhere.
      */
     private String consumePolicyRefusalNotice() {
         if (pendingPolicyRefusals.isEmpty()) {
@@ -1030,7 +1057,30 @@ public final class AiTopComponent extends TopComponent implements AiProcessEvent
     }
 
     /**
-     * Joins two agent-only notices, {@code first} ahead of {@code second}, skipping one that is null or blank.
+     * Consumes the steering refusals for the completed turn. The configured window is a staleness guard: a
+     * denial is delivered regardless of whether it ended the turn, but an old denial is discarded.
+     */
+    private String consumeMcpSteeringNotice() {
+        List<McpSteeringRefusalEvent.Refusal> refusals = new ArrayList<>(pendingMcpSteerings);
+        pendingMcpSteerings.clear();
+        boolean cancelled = cancelledTurnJustCompleted;
+        cancelledTurnJustCompleted = false;
+        if (cancelled || refusals.isEmpty()) {
+            return null;
+        }
+        if (!mcpSteeringBudget.tryAcquire()) {
+            if (PluginSettings.isDebugJson()) {
+                LOG.log(Level.INFO, "MCP steering follow-up budget spent; not resuming the agent until the user sends a message "
+                        + "(session={0})", session.id());
+            }
+            return null;
+        }
+        return McpSteeringRefusalEvent.compose(refusals);
+    }
+
+    /**
+     * Joins two agent-only notices, {@code first} ahead of {@code second}, skipping one that is null or
+     * blank.
      *
      * @return null when neither has anything to say
      */
@@ -1048,9 +1098,9 @@ public final class AiTopComponent extends TopComponent implements AiProcessEvent
     }
 
     /**
-     * @param notificationText what the user sees, already fully composed by the caller — {@link #groupedVisibleText}
-     * for the flush path, which applies each entry's own type prefix itself, so this no longer prefixes again; blank
-     * submits nothing visible
+     * @param notificationText what the user sees, already fully composed by the caller —
+     * {@link #groupedVisibleText} for the flush path, which applies each entry's own type prefix itself, so
+     * this no longer prefixes again; blank submits nothing visible
      * @param agentOnlyText what only the assistant sees
      */
     private void submitNotificationTurn(NotificationTypeEnum type, String notificationText, String agentOnlyText) {
@@ -1075,8 +1125,7 @@ public final class AiTopComponent extends TopComponent implements AiProcessEvent
         updateTabTooltip();
         try {
             sessionPersistenceManager.save(session);
-        }
-        catch (IOException e) {
+        } catch (IOException e) {
             LOG.log(Level.WARNING, "Could not persist session rename", e);
         }
         refreshSessionIdentity();
@@ -1111,8 +1160,7 @@ public final class AiTopComponent extends TopComponent implements AiProcessEvent
         }
         try {
             sessionPersistenceManager.save(session);
-        }
-        catch (IOException e) {
+        } catch (IOException e) {
             LOG.log(Level.WARNING, "Could not persist session config update", e);
         }
         // Update broker registration based on the inter-AI comms setting WITHOUT
@@ -1124,8 +1172,7 @@ public final class AiTopComponent extends TopComponent implements AiProcessEvent
         AiSessionInboxBroker broker = AiSessionInboxBroker.getInstance();
         if (interAiOn) {
             broker.register(session);
-        }
-        else {
+        } else {
             if (broker.isActive(session.id())) {
                 broker.unregister(session.id());
             }
@@ -1188,8 +1235,7 @@ public final class AiTopComponent extends TopComponent implements AiProcessEvent
         try {
             historyManager = null; // prevent componentHidden/componentClosed from recreating deleted dir
             sessionPersistenceManager.delete(session.id());
-        }
-        catch (IOException e) {
+        } catch (IOException e) {
             LOG.log(Level.WARNING, "Could not delete session " + session.id(), e);
         }
     }
@@ -1375,8 +1421,7 @@ public final class AiTopComponent extends TopComponent implements AiProcessEvent
             PERSIST_EXECUTOR.execute(() -> {
                 try {
                     backend.startWithDiscovery(null);
-                }
-                finally {
+                } finally {
                     // Must run even if startWithDiscovery() throws — otherwise `ret`
                     // never completes and loadHistoryInBackground()'s future.get()
                     // blocks its PERSIST_EXECUTOR thread forever (pool is bounded and
@@ -1396,8 +1441,8 @@ public final class AiTopComponent extends TopComponent implements AiProcessEvent
     }
 
     /**
-     * Resolve (or prompt the user to choose) the working directory for this session. No-op if already set. Must be
-     * called on the EDT.
+     * Resolve (or prompt the user to choose) the working directory for this session. No-op if already set.
+     * Must be called on the EDT.
      */
     private void resolveSessionDir() {
         if (chosenSessionDir != null) {
@@ -1482,14 +1527,12 @@ public final class AiTopComponent extends TopComponent implements AiProcessEvent
         drainPendingInteractions();
         try {
             BuildQueue.getInstance().cancelForSession(session.id());
-        }
-        catch (Exception e) {
+        } catch (Exception e) {
             LOG.log(Level.WARNING, "Error cancelling queued/running builds during session close", e);
         }
         try {
             IdleWatcherRegistry.getInstance().onSessionClosed(session.id());
-        }
-        catch (Exception e) {
+        } catch (Exception e) {
             LOG.log(Level.WARNING, "Error notifying idle watcher registry during session close", e);
         }
         AiSessionInboxBroker.getInstance().unregister(session.id());
@@ -1502,8 +1545,7 @@ public final class AiTopComponent extends TopComponent implements AiProcessEvent
                 OpenProjects.getDefault().removePropertyChangeListener(openProjectsListener);
                 openProjectsListener = null;
             }
-        }
-        catch (Exception e) {
+        } catch (Exception e) {
             LOG.log(Level.WARNING, "Error removing openProjectsListener during session close", e);
         }
         // Unregister session file scope from MCP server
@@ -1520,8 +1562,7 @@ public final class AiTopComponent extends TopComponent implements AiProcessEvent
         // removed everything, tmp/ included, moments before this runs).
         try {
             TempFileRegistry.cleanupSessionAsync(session.id());
-        }
-        catch (Exception e) {
+        } catch (Exception e) {
             LOG.log(Level.WARNING, "Error sweeping temp dir during session close", e);
         }
         turnOutputSuppressed = false;
@@ -1531,8 +1572,7 @@ public final class AiTopComponent extends TopComponent implements AiProcessEvent
                 AiTypePropertyBus.getInstance().removeListener(session.aiType(), aiTypePropertyListener);
                 aiTypePropertyListener = null;
             }
-        }
-        catch (Exception e) {
+        } catch (Exception e) {
             LOG.log(Level.WARNING, "Error removing aiTypePropertyListener during session close", e);
         }
         try {
@@ -1540,8 +1580,7 @@ public final class AiTopComponent extends TopComponent implements AiProcessEvent
                 GlobalPropertyBus.getInstance().removeListener(globalPropertyListener);
                 globalPropertyListener = null;
             }
-        }
-        catch (Exception e) {
+        } catch (Exception e) {
             LOG.log(Level.WARNING, "Error removing globalPropertyListener during session close", e);
         }
         saveHistory();
@@ -1551,8 +1590,7 @@ public final class AiTopComponent extends TopComponent implements AiProcessEvent
                 contextProvider.stop();
                 contextProvider = null;
             }
-        }
-        catch (Exception e) {
+        } catch (Exception e) {
             LOG.log(Level.WARNING, "Error stopping contextProvider during session close", e);
         }
         try {
@@ -1560,8 +1598,7 @@ public final class AiTopComponent extends TopComponent implements AiProcessEvent
                 infoBarExtension.dispose();
                 infoBarExtension = null;
             }
-        }
-        catch (Exception e) {
+        } catch (Exception e) {
             LOG.log(Level.WARNING, "Error disposing infoBarExtension during session close", e);
         }
         lifecycleListeners.clear();
@@ -1571,8 +1608,7 @@ public final class AiTopComponent extends TopComponent implements AiProcessEvent
                 aiBackend.stop();
                 aiBackend = null;
             }
-        }
-        catch (Exception e) {
+        } catch (Exception e) {
             LOG.log(Level.WARNING, "Error stopping aiBackend during session close", e);
         }
         assistantTurnActive = false;
@@ -1597,8 +1633,9 @@ public final class AiTopComponent extends TopComponent implements AiProcessEvent
     }
 
     /**
-     * The tab label: a status-coloured bullet followed by the escaped display name. One source of truth, so what
-     * {@link #getHtmlDisplayName()} returns and what {@link #updateTabHtmlName()} pushes cannot drift apart.
+     * The tab label: a status-coloured bullet followed by the escaped display name. One source of truth, so
+     * what {@link #getHtmlDisplayName()} returns and what {@link #updateTabHtmlName()} pushes cannot drift
+     * apart.
      */
     private String buildTabHtml() {
         String safeName = getDisplayName()
@@ -1610,11 +1647,11 @@ public final class AiTopComponent extends TopComponent implements AiProcessEvent
      * Pushes the tab label to the window system, but only when it actually changed.
      *
      * <p>
-     * setHtmlDisplayName fires a property change and NetBeans re-parses this HTML to repaint the tab strip, so a
-     * redundant call is real work for no visible difference — and most calls ARE redundant. setSendEnabled routes
-     * through setTabStatus on every refreshInputEnabled, and during a turn the status is already THINKING, so a
-     * streaming session repainted its tab continuously to render a byte-identical string. Genuine state changes still
-     * repaint; only the no-ops are dropped.
+     * setHtmlDisplayName fires a property change and NetBeans re-parses this HTML to repaint the tab strip,
+     * so a redundant call is real work for no visible difference — and most calls ARE redundant.
+     * setSendEnabled routes through setTabStatus on every refreshInputEnabled, and during a turn the status
+     * is already THINKING, so a streaming session repainted its tab continuously to render a byte-identical
+     * string. Genuine state changes still repaint; only the no-ops are dropped.
      */
     private void updateTabHtmlName() {
         String html = buildTabHtml();
@@ -1637,8 +1674,8 @@ public final class AiTopComponent extends TopComponent implements AiProcessEvent
     }
 
     /**
-     * Single source of truth for the tab status circle (the HTML dot in the tab name — NetBeans's tab strip doesn't
-     * reliably honour setIcon() here).
+     * Single source of truth for the tab status circle (the HTML dot in the tab name — NetBeans's tab strip
+     * doesn't reliably honour setIcon() here).
      */
     private void setTabStatus(TabStatus status) {
         tabStatus = status;
@@ -1667,13 +1704,13 @@ public final class AiTopComponent extends TopComponent implements AiProcessEvent
     }
 
     /**
-     * Enter the "blocked waiting on user" state: mark the diff as pending, disable input, and switch the tab dot to
-     * white ({@code AWAITING_USER}). Called from all four panels that block on user interaction (question, confirm,
-     * non-MCP diff, permission diff).
+     * Enter the "blocked waiting on user" state: mark the diff as pending, disable input, and switch the tab
+     * dot to white ({@code AWAITING_USER}). Called from all four panels that block on user interaction
+     * (question, confirm, non-MCP diff, permission diff).
      * <p>
-     * Do NOT collapse this into {@code refreshInputEnabled()} — when {@code aiBackend == null} that method takes the
-     * early-return branch and would ENABLE the input while a panel is on screen. The direct disables here are
-     * intentional.
+     * Do NOT collapse this into {@code refreshInputEnabled()} — when {@code aiBackend == null} that method
+     * takes the early-return branch and would ENABLE the input while a panel is on screen. The direct
+     * disables here are intentional.
      */
     private void enterAwaitingUserState() {
         if (aiBackend != null) {
@@ -1685,8 +1722,8 @@ public final class AiTopComponent extends TopComponent implements AiProcessEvent
     }
 
     /**
-     * Records a THINKING-flash request. Non-EDT callers coalesce to at most one pending invokeLater; repeated requests
-     * while that runnable or the timer is already active just push the deadline out.
+     * Records a THINKING-flash request. Non-EDT callers coalesce to at most one pending invokeLater; repeated
+     * requests while that runnable or the timer is already active just push the deadline out.
      */
     private void requestThinkingFlash() {
         thinkingFlashDeadlineNanos = System.nanoTime()
@@ -1705,9 +1742,9 @@ public final class AiTopComponent extends TopComponent implements AiProcessEvent
     }
 
     /**
-     * Briefly flashes the THINKING (orange) status dot yellow for {@link #THINKING_FLASH_MS} whenever AI output arrives
-     * while a turn is in flight, then reverts to plain orange. EDT-only: callers must use requestThinkingFlash()
-     * off-thread.
+     * Briefly flashes the THINKING (orange) status dot yellow for {@link #THINKING_FLASH_MS} whenever AI
+     * output arrives while a turn is in flight, then reverts to plain orange. EDT-only: callers must use
+     * requestThinkingFlash() off-thread.
      */
     private void flashThinking() {
         if (tabStatus != TabStatus.THINKING) {
@@ -1719,11 +1756,11 @@ public final class AiTopComponent extends TopComponent implements AiProcessEvent
         }
         if (thinkingFlashTimer == null) {
             thinkingFlashTimer = new Timer(THINKING_FLASH_MS, e -> {
-                                       thinkingFlashActive = false;
-                                       if (tabStatus == TabStatus.THINKING) {
-                                           updateTabHtmlName();
-                                       }
-                                   });
+                thinkingFlashActive = false;
+                if (tabStatus == TabStatus.THINKING) {
+                    updateTabHtmlName();
+                }
+            });
             thinkingFlashTimer.setRepeats(false);
         }
         long remainingNanos = Math.max(0L, thinkingFlashDeadlineNanos - System.nanoTime());
@@ -1738,8 +1775,8 @@ public final class AiTopComponent extends TopComponent implements AiProcessEvent
     }
 
     /**
-     * Called from the backend event thread — coalesce the flash pulse request, then dispatch full event handling to the
-     * EDT.
+     * Called from the backend event thread — coalesce the flash pulse request, then dispatch full event
+     * handling to the EDT.
      */
     @Override
     public void onAiProcessEvent(AiProcessEvent event) {
@@ -1750,12 +1787,13 @@ public final class AiTopComponent extends TopComponent implements AiProcessEvent
     }
 
     /**
-     * True for events that actually render new AI-generated content in the chat panel. Internal/plumbing events (status
-     * updates, impl events, turn boundaries) must not trigger the THINKING flash pulse — only output the user can
-     * actually see arriving should. Mirrors handleEvent()'s own rendering conditions: an empty TextDeltaEvent renders
-     * nothing, and a ToolUseEvent only renders a diff when it's a file modification AND MCP isn't active (MCP-active
-     * sessions render file edits via PermissionEvent instead) — otherwise every Read/Bash/Grep/MCP tool call would
-     * flash the tab despite adding nothing visible to the chat.
+     * True for events that actually render new AI-generated content in the chat panel. Internal/plumbing
+     * events (status updates, impl events, turn boundaries) must not trigger the THINKING flash pulse — only
+     * output the user can actually see arriving should. Mirrors handleEvent()'s own rendering conditions: an
+     * empty TextDeltaEvent renders nothing, and a ToolUseEvent only renders a diff when it's a file
+     * modification AND MCP isn't active (MCP-active sessions render file edits via PermissionEvent instead) —
+     * otherwise every Read/Bash/Grep/MCP tool call would flash the tab despite adding nothing visible to the
+     * chat.
      */
     private boolean isVisibleChatOutput(AiProcessEvent event) {
         if (event instanceof TextDeltaEvent td) {
@@ -1799,7 +1837,7 @@ public final class AiTopComponent extends TopComponent implements AiProcessEvent
                     infoBar.setProcessing(false);
                     setSendEnabled(true);
                     infoBar.setStatusMessage(suppressedTurnCompletionMessage != null
-                                             ? suppressedTurnCompletionMessage : "Ready...");
+                            ? suppressedTurnCompletionMessage : "Ready...");
                 }
                 suppressedTurnCompletionMessage = null;
                 return;
@@ -1821,14 +1859,13 @@ public final class AiTopComponent extends TopComponent implements AiProcessEvent
             if (!assistantTurnActive) {
                 assistantTurnActive = true;
                 conversationPanel.beginAssistantMessage();
-            }
-            else if (pendingNewlineBeforeText) {
+            } else if (pendingNewlineBeforeText) {
                 conversationPanel.appendDelta("\n\n");
             }
             pendingNewlineBeforeText = false;
             conversationPanel.appendDelta(td.text());
-        }
-        else if (event instanceof TurnCompleteEvent) {
+        } else if (event instanceof TurnCompleteEvent) {
+            cancelledTurnJustCompleted = cancelledThisTurn;
             cancelledThisTurn = false;
             assistantTurnActive = false;
             pendingNewlineBeforeText = false;
@@ -1861,14 +1898,16 @@ public final class AiTopComponent extends TopComponent implements AiProcessEvent
                 infoBar.setStatusMessage("Ready...");
                 refreshInputEnabled();
             }
-        }
-        else if (event instanceof PolicyRefusalEvent refusalEvent) {
+        } else if (event instanceof PolicyRefusalEvent refusalEvent) {
             // RECORDED, NEVER SHOWN: nothing is drawn, no status is set, nothing is added to history. It is consumed a
             // moment later, when this turn's completion event arrives, into an agent-only notice — see
             // consumePolicyRefusalNotice.
             pendingPolicyRefusals.addAll(refusalEvent.refusals());
-        }
-        else if (event instanceof AskUserQuestionEvent aqe) {
+        } else if (event instanceof McpSteeringRefusalEvent steeringEvent) {
+            // RECORDED, NEVER SHOWN: the steering text is delivered only in the agent-only follow-up turn.
+            pendingMcpSteerings.addAll(steeringEvent.refusals());
+
+        } else if (event instanceof AskUserQuestionEvent aqe) {
             if (assistantTurnActive) {
                 assistantTurnActive = false;
                 conversationPanel.finaliseAssistantMessage();
@@ -1884,8 +1923,7 @@ public final class AiTopComponent extends TopComponent implements AiProcessEvent
                 }
                 if (answer != null && !answer.isBlank()) {
                     conversationPanel.addSystemMessage(NotificationUtil.formatAnswer(answer));
-                }
-                else {
+                } else {
                     // No answer — timed out or the turn was cancelled. Record it in
                     // history so the conversation shows the question was asked and
                     // never submitted; the live QuestionPanel is transient and gone
@@ -1895,8 +1933,7 @@ public final class AiTopComponent extends TopComponent implements AiProcessEvent
                 }
                 refreshInputEnabled();
             }));
-        }
-        else if (event instanceof ConfirmEvent ce) {
+        } else if (event instanceof ConfirmEvent ce) {
             if (shouldAutoAccept(ce, infoBar.isAutoAccept())) {
                 finaliseActiveAssistantIfNeeded();
                 conversationPanel.addSystemMessage(
@@ -1913,7 +1950,7 @@ public final class AiTopComponent extends TopComponent implements AiProcessEvent
             Runnable canceller = () -> ce.response().complete(PermissionDecision.denied("cancelled"));
             pendingResponseCancellers.add(canceller);
             conversationPanel.showConfirm(ce, session.aiType().confirmAcceptTooltip(),
-                                          session.aiType().confirmRejectTooltip());
+                    session.aiType().confirmRejectTooltip());
             ce.response().whenComplete((decision, ex) -> SwingUtilities.invokeLater(() -> {
                 pendingResponseCancellers.remove(canceller);
                 if (aiBackend != null) {
@@ -1921,25 +1958,20 @@ public final class AiTopComponent extends TopComponent implements AiProcessEvent
                 }
                 if (decision != null && decision.allow()) {
                     conversationPanel.addSystemMessage(NotificationUtil.formatFileAcceptedTool(ce.toolName(), confirmLabel(ce)));
-                }
-                else if (decision != null && decision.message() == null) {
+                } else if (decision != null && decision.message() == null) {
                     conversationPanel.addSystemMessage(NotificationUtil.formatFileRejectedTool(ce.toolName(), confirmLabel(ce)));
-                }
-                else if (decision != null) {
+                } else if (decision != null) {
                     conversationPanel.addSystemMessage(NotificationUtil.formatFileRejectedTool(ce.toolName(), confirmLabel(ce), decision.message()));
                 }
                 refreshInputEnabled();
             }));
-        }
-        else if (event instanceof PermissionEvent pe) {
+        } else if (event instanceof PermissionEvent pe) {
             pendingNewlineBeforeText = true;
             showPermissionDiff(pe);
-        }
-        else if (event instanceof MultiPermissionEvent mpe) {
+        } else if (event instanceof MultiPermissionEvent mpe) {
             pendingNewlineBeforeText = true;
             showMultiPermissionReview(mpe);
-        }
-        else if (event instanceof ToolUseEvent tu) {
+        } else if (event instanceof ToolUseEvent tu) {
             if (cancelledThisTurn) {
                 return;
             }
@@ -1948,8 +1980,7 @@ public final class AiTopComponent extends TopComponent implements AiProcessEvent
                 diffShownForCurrentTurn = true;
                 showDiff(tu);
             }
-        }
-        else if (event instanceof StatusEvent se) {
+        } else if (event instanceof StatusEvent se) {
             switch (se.type()) {
                 case READY -> {
                     infoBar.setStatusMessage(se.text());
@@ -2018,14 +2049,12 @@ public final class AiTopComponent extends TopComponent implements AiProcessEvent
                 default ->
                     infoBar.setStatusMessage(se.text());
             }
-        }
-        else if (event instanceof SystemNotificationEvent sn) {
+        } else if (event instanceof SystemNotificationEvent sn) {
             // Backends raise these mid-turn (e.g. the Copilot permission handler
             // reporting a denied internal tool), so a stream may be open.
             finaliseActiveAssistantIfNeeded();
             conversationPanel.addSystemMessage(sn.text());
-        }
-        else if (infoBarExtension != null && event instanceof AiProcessImplEvent si) {
+        } else if (infoBarExtension != null && event instanceof AiProcessImplEvent si) {
             infoBarExtension.onAiProcessImplEvent(si);
         }
     }
@@ -2039,26 +2068,27 @@ public final class AiTopComponent extends TopComponent implements AiProcessEvent
     }
 
     /**
-     * @param agentOnlyText text the assistant must receive but the user must NOT see. APPENDED to the prompt and
-     * omitted from {@code conversationPanel.addUserMessage}, which is the single call that feeds both the transcript
-     * and saved history — so nothing hidden here can reappear on reload.
+     * @param agentOnlyText text the assistant must receive but the user must NOT see. APPENDED to the prompt
+     * and omitted from {@code conversationPanel.addUserMessage}, which is the single call that feeds both the
+     * transcript and saved history — so nothing hidden here can reappear on reload.
      * <p>
      * ORDER IS LOAD-BEARING, not incidental: the prompt is composed as the visible text, then
-     * {@link #SYSTEM_CUT_MARKER}, then the agent-only block. Everything the user should see comes before the cut and
-     * everything hidden after it. Putting the agent-only block FIRST — as an earlier iteration did — moves the marker
-     * ahead of anything visible and hides the very thing the user asked to keep.
+     * {@link #SYSTEM_CUT_MARKER}, then the agent-only block. Everything the user should see comes before the
+     * cut and everything hidden after it. Putting the agent-only block FIRST — as an earlier iteration did —
+     * moves the marker ahead of anything visible and hides the very thing the user asked to keep.
      * <p>
-     * Deferred inbox mail is folded into the AGENT-ONLY text near the top of this method, not into the visible text as
-     * it once was: its identifying block is an instruction addressed to the model, and pasting it into the transcript
-     * showed the user a wall of {@code id=..., from=...} as though they had typed it. The user gets one system line
-     * instead. It remains impossible to lose because the agent-only half is always part of what the model receives and
-     * is on its own enough to submit a turn.
+     * Deferred inbox mail is folded into the AGENT-ONLY text near the top of this method, not into the
+     * visible text as it once was: its identifying block is an instruction addressed to the model, and
+     * pasting it into the transcript showed the user a wall of {@code id=..., from=...} as though they had
+     * typed it. The user gets one system line instead. It remains impossible to lose because the agent-only
+     * half is always part of what the model receives and is on its own enough to submit a turn.
      * <p>
-     * Same split the {@code TmpMarkerExpander} block below already uses in the other direction: what the agent receives
-     * and what the user sees are deliberately not the same string. Used for the mail-interrupt explanation, which is
-     * written for the model — it is long, it is about protocol rather than about the user's work, and the user asked
-     * not to have it in their conversation. The wording itself is unchanged: it is a correctness mechanism that cost
-     * two false "the user rejected this" reports to earn, so it is hidden, never shortened.
+     * Same split the {@code TmpMarkerExpander} block below already uses in the other direction: what the
+     * agent receives and what the user sees are deliberately not the same string. Used for the mail-interrupt
+     * explanation, which is written for the model — it is long, it is about protocol rather than about the
+     * user's work, and the user asked not to have it in their conversation. The wording itself is unchanged:
+     * it is a correctness mechanism that cost two false "the user rejected this" reports to earn, so it is
+     * hidden, never shortened.
      * <p>
      * When {@code text} is blank and only hidden text exists, NOTHING is rendered — no empty bubble.
      */
@@ -2078,10 +2108,10 @@ public final class AiTopComponent extends TopComponent implements AiProcessEvent
             // entire payload away and the AI was never told its build had finished.
             boolean alreadyStarting = pendingSubmitText != null || pendingSubmitAgentOnlyText != null;
             pendingSubmitText = pendingSubmitText == null || pendingSubmitText.isBlank() ? text
-                                : text.isBlank() ? pendingSubmitText : pendingSubmitText + "\n\n" + text;
+                    : text.isBlank() ? pendingSubmitText : pendingSubmitText + "\n\n" + text;
             if (hasHidden) {
                 pendingSubmitAgentOnlyText = pendingSubmitAgentOnlyText == null || pendingSubmitAgentOnlyText.isBlank()
-                                             ? agentOnlyText : pendingSubmitAgentOnlyText + "\n\n" + agentOnlyText;
+                        ? agentOnlyText : pendingSubmitAgentOnlyText + "\n\n" + agentOnlyText;
             }
             if (!alreadyStarting) {
                 infoBar.setStatusMessage("Starting " + session.aiType().displayName() + "...");
@@ -2126,21 +2156,21 @@ public final class AiTopComponent extends TopComponent implements AiProcessEvent
         if (deferredForAgent != null) {
             conversationPanel.addSystemMessage("Delivered pending inbox messages");
             agentOnlyText = agentOnlyText == null || agentOnlyText.isBlank() ? deferredForAgent
-                            : agentOnlyText + "\n\n" + deferredForAgent;
+                    : agentOnlyText + "\n\n" + deferredForAgent;
             hasHidden = true;
         }
         File workDir = chosenSessionDir != null ? chosenSessionDir
-                       : contextProvider != null ? contextProvider.resolveWorkingDirectory()
-                         : new File(System.getProperty("user.home"));
+                : contextProvider != null ? contextProvider.resolveWorkingDirectory()
+                        : new File(System.getProperty("user.home"));
         if (workDir == null) {
             workDir = new File(System.getProperty("user.home"));
         }
         List<File> projectDirs = contextProvider != null
-                                 ? contextProvider.getAllOpenProjectDirs()
-                                 : List.of();
+                ? contextProvider.getAllOpenProjectDirs()
+                : List.of();
 
         String sessionInstructions = session.settings() != null
-                                     ? session.settings().sessionInstructions() : null;
+                ? session.settings().sessionInstructions() : null;
         // Expand @tmp.<filename> markers to the absolute path ONLY in what the agent
         // receives — `text` itself is left untouched below for display and history, so
         // the transcript keeps showing the short marker the user actually typed/pasted.
@@ -2167,8 +2197,8 @@ public final class AiTopComponent extends TopComponent implements AiProcessEvent
         // and keeping the composition dependent on it is what pins fold, flag and composition into one ordered chain.
         String agentText = composeAgentBlock(visibleForAgent, hasHidden ? agentOnlyText : null);
         String fullPrompt = contextProvider != null
-                            ? contextProvider.buildPreamble(agentText, sessionInstructions)
-                            : agentText;
+                ? contextProvider.buildPreamble(agentText, sessionInstructions)
+                : agentText;
         boolean instructionsIncluded = contextProvider != null
                 && contextProvider.consumeSessionInstructionsInjected();
         if (instructionsIncluded) {
@@ -2184,6 +2214,7 @@ public final class AiTopComponent extends TopComponent implements AiProcessEvent
             // message. The wake-up turn itself arrives here with userInitiated=false, so it can never refill its own
             // budget, and that is what bounds the automatic turns whatever the agent does.
             policyRefusalBudget.reset();
+            mcpSteeringBudget.reset();
         }
         // The single call that feeds BOTH the transcript and saved history, so skipping it for a hidden-only submit
         // keeps the text out of the panel and out of any reload.
@@ -2247,8 +2278,7 @@ public final class AiTopComponent extends TopComponent implements AiProcessEvent
             inputField.setCanSend(false);
             sendButton.setEnabled(false);
             setTabStatus(TabStatus.AWAITING_USER);
-        }
-        else {
+        } else {
             inputField.setEnabled(true);
             setSendEnabled(!aiBackend.isProcessing());
             if (wasDisabled) {
@@ -2292,17 +2322,17 @@ public final class AiTopComponent extends TopComponent implements AiProcessEvent
     }
 
     /**
-     * Arms the shared deadline for a prompt that blocks this session. The session flag is live state for peer tools;
-     * the future is still the sole decision authority, so an answer and timeout cannot both win.
+     * Arms the shared deadline for a prompt that blocks this session. The session flag is live state for peer
+     * tools; the future is still the sole decision authority, so an answer and timeout cannot both win.
      */
     private void awaitApproval(CompletableFuture<PermissionDecision> response) {
         session.setAwaitingApproval(true);
         ApprovalDeadline.arm(response, TimeoutEnum.USER_APPROVAL_WAIT_MILLIS.millis(),
-                             PermissionDecision.denied(ApprovalDeadline.TIMEOUT_REASON),
-                             () -> SwingUtilities.invokeLater(() -> {
-                                 session.setAwaitingApproval(false);
-                                 clearPendingDiffAndRefreshInput();
-                             }));
+                PermissionDecision.denied(ApprovalDeadline.TIMEOUT_REASON),
+                () -> SwingUtilities.invokeLater(() -> {
+                    session.setAwaitingApproval(false);
+                    clearPendingDiffAndRefreshInput();
+                }));
         // Keep UI state synchronized even when a backend completes the future directly; without this,
         // the panel/input can remain stuck in awaiting-approval after a non-UI decision.
         response.whenComplete((decision, error) -> SwingUtilities.invokeLater(() -> {
@@ -2312,8 +2342,9 @@ public final class AiTopComponent extends TopComponent implements AiProcessEvent
     }
 
     /**
-     * If a streaming assistant turn is in progress, finalise it immediately. Call this before inserting any system
-     * message that must appear after the assistant text that was streaming at the time of the interruption.
+     * If a streaming assistant turn is in progress, finalise it immediately. Call this before inserting any
+     * system message that must appear after the assistant text that was streaming at the time of the
+     * interruption.
      */
     private void finaliseActiveAssistantIfNeeded() {
         if (assistantTurnActive) {
@@ -2327,8 +2358,8 @@ public final class AiTopComponent extends TopComponent implements AiProcessEvent
     @Override
     public File resolveWorkDir() {
         File workDir = chosenSessionDir != null ? chosenSessionDir
-                       : contextProvider != null ? contextProvider.resolveWorkingDirectory()
-                         : new File(System.getProperty("user.home"));
+                : contextProvider != null ? contextProvider.resolveWorkingDirectory()
+                        : new File(System.getProperty("user.home"));
         return workDir != null ? workDir : new File(System.getProperty("user.home"));
     }
 
@@ -2342,12 +2373,13 @@ public final class AiTopComponent extends TopComponent implements AiProcessEvent
     }
 
     /**
-     * Called from any thread — several {@code AiSessionHost.updateSessionSettings} callers reach this off the EDT (a
-     * backend's clear-invalid-effort callback firing from its own turn thread, an ACP/handshake thread signalling
-     * session establishment). {@code infoBar.setAutoAccept}/{@code setSaveHistory} are themselves EDT-safe (see
-     * {@link AiInfoBar#setAutoAccept}), so no marshalling is needed here; the disk I/O below deliberately stays on the
-     * calling thread rather than being pushed onto the EDT, and {@link #refreshSessionIdentity()} only touches a plain
-     * (non-Swing) field, so it is safe on any thread too.
+     * Called from any thread — several {@code AiSessionHost.updateSessionSettings} callers reach this off the
+     * EDT (a backend's clear-invalid-effort callback firing from its own turn thread, an ACP/handshake thread
+     * signalling session establishment). {@code infoBar.setAutoAccept}/{@code setSaveHistory} are themselves
+     * EDT-safe (see {@link AiInfoBar#setAutoAccept}), so no marshalling is needed here; the disk I/O below
+     * deliberately stays on the calling thread rather than being pushed onto the EDT, and
+     * {@link #refreshSessionIdentity()} only touches a plain (non-Swing) field, so it is safe on any thread
+     * too.
      */
     @Override
     public void updateSessionSettings(AiSessionSettings newConfig) {
@@ -2355,8 +2387,7 @@ public final class AiTopComponent extends TopComponent implements AiProcessEvent
         infoBar.setSaveHistory(newConfig.effectiveSaveHistory());
         try {
             sessionPersistenceManager.save(session);
-        }
-        catch (IOException e) {
+        } catch (IOException e) {
             LOG.log(Level.WARNING, "Could not persist session config update", e);
         }
         refreshSessionIdentity();
@@ -2389,11 +2420,11 @@ public final class AiTopComponent extends TopComponent implements AiProcessEvent
         AiDiffTopComponent diff = new AiDiffTopComponent(fp, original, proposed, session.name());
         final AiImplementation backendSnap = aiBackend;
         File wdResolved = chosenSessionDir != null ? chosenSessionDir
-                          : contextProvider != null ? contextProvider.resolveWorkingDirectory()
-                            : new File(System.getProperty("user.home"));
+                : contextProvider != null ? contextProvider.resolveWorkingDirectory()
+                        : new File(System.getProperty("user.home"));
         final File wd = wdResolved != null ? wdResolved : new File(System.getProperty("user.home"));
         List<File> pd = contextProvider != null
-                        ? contextProvider.getAllOpenProjectDirs() : List.of();
+                ? contextProvider.getAllOpenProjectDirs() : List.of();
         diff.addDecisionListener(new DiffDecisionListener() {
             @Override
             public void onAccepted(String message) {
@@ -2416,8 +2447,7 @@ public final class AiTopComponent extends TopComponent implements AiProcessEvent
                     // ApplyEdit matches against that stale copy and writes it back — silently undoing the revert.
                     FileUtils.refreshAfterWrite(fp);
                     LOG.log(Level.INFO, "Reverted {0} after user rejected AI''s edit", fp);
-                }
-                catch (IOException e) {
+                } catch (IOException e) {
                     LOG.log(Level.WARNING, "Could not revert " + fp, e);
                 }
                 if (backendSnap != null) {
@@ -2454,8 +2484,7 @@ public final class AiTopComponent extends TopComponent implements AiProcessEvent
                         preEditFileContent = content;
                     });
                 }
-            }
-            catch (IOException e) {
+            } catch (IOException e) {
                 LOG.log(Level.FINE, "Could not snapshot active file", e);
             }
         });
@@ -2488,14 +2517,13 @@ public final class AiTopComponent extends TopComponent implements AiProcessEvent
                 if (Files.exists(p)) {
                     original = Files.readString(p, RefactoringProvider.resolveCharset(fp));
                 }
-            }
-            catch (IOException e) {
+            } catch (IOException e) {
                 LOG.log(Level.WARNING, "Could not read file for permission diff — denying: " + fp, e);
                 SwingUtilities.invokeLater(() -> {
                     clearPendingDiffAndRefreshInput();
                     conversationPanel.addSystemMessage(
                             NotificationUtil.formatPermissionDenied(pe.toolName(), shortPath(fp),
-                                                                    "could not read file for diff preview"));
+                                    "could not read file for diff preview"));
                     if (!pe.response().isDone()) {
                         pe.response().complete(PermissionDecision.denied("Could not read file for diff preview"));
                     }
@@ -2576,7 +2604,7 @@ public final class AiTopComponent extends TopComponent implements AiProcessEvent
                     clearPendingDiffAndRefreshInput();
                     conversationPanel.addSystemMessage(NotificationUtil.formatFileAcceptedTool(pe.toolName(), shortPath(fp)));
                     new Timer((int) TimeoutEnum.ACCEPTED_DIFF_REFRESH_DELAY_MILLIS.millis(),
-                              ev -> FileUtils.refreshAfterWrite(fp)) {
+                            ev -> FileUtils.refreshAfterWrite(fp)) {
                         {
                             setRepeats(false);
                             start();
@@ -2600,14 +2628,14 @@ public final class AiTopComponent extends TopComponent implements AiProcessEvent
     }
 
     /**
-     * Entry point for a multi-file change set. The review object owns the batch for its whole life — it walks the items
-     * in the AI-supplied order, accumulates the per-file decisions, produces the single aggregate reply and renders the
-     * record written here. This method only decides between the auto-accept path and the interactive one; the walking
-     * is {@link MultiReviewDriver}'s job.
+     * Entry point for a multi-file change set. The review object owns the batch for its whole life — it walks
+     * the items in the AI-supplied order, accumulates the per-file decisions, produces the single aggregate
+     * reply and renders the record written here. This method only decides between the auto-accept path and
+     * the interactive one; the walking is {@link MultiReviewDriver}'s job.
      *
      * <p>
-     * Auto-accept still constructs the review and still logs every file. Skipping it and losing the per-file record is
-     * exactly the defect this feature replaces — a blind "Codex wants to modify 3 files".</p>
+     * Auto-accept still constructs the review and still logs every file. Skipping it and losing the per-file
+     * record is exactly the defect this feature replaces — a blind "Codex wants to modify 3 files".</p>
      */
     private void showMultiPermissionReview(MultiPermissionEvent mpe) {
         MultiPermissionReview review = new MultiPermissionReview(mpe, ProjectPathUtil::shortPath);
@@ -2646,17 +2674,16 @@ public final class AiTopComponent extends TopComponent implements AiProcessEvent
                 ToolUseEvent tu = new ToolUseEvent("Edit", fp, current, original, ToolUseEvent.Kind.EDIT);
                 showDiff(tu);
             }
-        }
-        catch (IOException e) {
+        } catch (IOException e) {
             LOG.log(Level.FINE, "Could not check for file changes: {0}", fp);
         }
     }
 
     /**
      * Persists the instruction text just delivered, so it is not delivered again after an IDE restart.
-     * {@code ContextProvider}'s own record is in-memory and is recreated whenever the session is opened, which is why
-     * an ON_FIRST_REQUEST session used to re-send its instructions on the first message of every run while ON_START —
-     * whose guard was already persisted — did not.
+     * {@code ContextProvider}'s own record is in-memory and is recreated whenever the session is opened,
+     * which is why an ON_FIRST_REQUEST session used to re-send its instructions on the first message of every
+     * run while ON_START — whose guard was already persisted — did not.
      */
     private void recordInstructionsDelivered(String instructions) {
         if (session == null) {
@@ -2666,8 +2693,7 @@ public final class AiTopComponent extends TopComponent implements AiProcessEvent
         PERSIST_EXECUTOR.execute(() -> {
             try {
                 sessionPersistenceManager.save(session);
-            }
-            catch (IOException e) {
+            } catch (IOException e) {
                 LOG.log(Level.WARNING, "Could not persist delivered session instructions", e);
             }
         });
@@ -2688,10 +2714,10 @@ public final class AiTopComponent extends TopComponent implements AiProcessEvent
             return;
         }
         List<File> projectDirs = contextProvider != null
-                                 ? contextProvider.getAllOpenProjectDirs() : List.of();
+                ? contextProvider.getAllOpenProjectDirs() : List.of();
         String prompt = contextProvider != null
-                        ? contextProvider.buildPreamble("", instructions)
-                        : "## Session Instructions\n" + instructions;
+                ? contextProvider.buildPreamble("", instructions)
+                : "## Session Instructions\n" + instructions;
         infoBar.setProcessing(true);
         if (contextProvider != null) {
             aiBackend.updatePinnedContext(
@@ -2708,22 +2734,21 @@ public final class AiTopComponent extends TopComponent implements AiProcessEvent
         session.setStartupInstructionsInjected(true);
         try {
             sessionPersistenceManager.save(session);
-        }
-        catch (IOException e) {
+        } catch (IOException e) {
             LOG.log(Level.WARNING, "Could not persist startup-instruction delivery", e);
         }
     }
 
     /**
-     * Loads and applies saved history for this session. Disk I/O and JSON parsing (and the stored-session-validity disk
-     * scan) run off the EDT on {@link #PERSIST_EXECUTOR} so opening or creating a session never blocks the UI while its
-     * (possibly large) history file loads; only the final UI/state mutations in {@link #applyLoadedHistory} run on the
-     * EDT.
+     * Loads and applies saved history for this session. Disk I/O and JSON parsing (and the
+     * stored-session-validity disk scan) run off the EDT on {@link #PERSIST_EXECUTOR} so opening or creating
+     * a session never blocks the UI while its (possibly large) history file loads; only the final UI/state
+     * mutations in {@link #applyLoadedHistory} run on the EDT.
      */
     private void loadHistory(CompletableFuture<Void> future) {
         if (historyManager == null || !isSaveHistoryEnabled()) {
             future.whenCompleteAsync((ignored, ex) -> SwingUtilities.invokeLater(this::deliverStartupInstructions),
-                                     PERSIST_EXECUTOR);
+                    PERSIST_EXECUTOR);
             SwingUtilities.invokeLater(this::resolveSessionDir);
             return;
         }
@@ -2734,18 +2759,17 @@ public final class AiTopComponent extends TopComponent implements AiProcessEvent
     }
 
     /**
-     * Runs off the EDT (see {@link #PERSIST_EXECUTOR}). Reads and parses the history file and checks stored-session
-     * validity — both potentially slow disk operations — then hands the result to the EDT.
+     * Runs off the EDT (see {@link #PERSIST_EXECUTOR}). Reads and parses the history file and checks
+     * stored-session validity — both potentially slow disk operations — then hands the result to the EDT.
      */
     private void loadHistoryInBackground(HistoryPersistenceManager manager, CompletableFuture<Void> future) {
         LoadedHistory loaded;
         try {
             loaded = manager.load();
-        }
-        catch (IOException e) {
+        } catch (IOException e) {
             LOG.log(Level.WARNING, "Could not load history", e);
             future.whenCompleteAsync((ignored, ex) -> SwingUtilities.invokeLater(this::deliverStartupInstructions),
-                                     PERSIST_EXECUTOR);
+                    PERSIST_EXECUTOR);
             SwingUtilities.invokeLater(this::resolveSessionDir);
             return;
         }
@@ -2768,9 +2792,10 @@ public final class AiTopComponent extends TopComponent implements AiProcessEvent
     }
 
     /**
-     * EDT-only: applies a background-loaded history result to this tab's conversation panel and session state, then
-     * resolves the session working directory (which depends on {@code chosenSessionDir} possibly having just been set
-     * from the loaded history). No-ops safely if the tab was closed while the history was loading.
+     * EDT-only: applies a background-loaded history result to this tab's conversation panel and session
+     * state, then resolves the session working directory (which depends on {@code chosenSessionDir} possibly
+     * having just been set from the loaded history). No-ops safely if the tab was closed while the history
+     * was loading.
      */
     private void applyLoadedHistory(LoadedHistory loaded, boolean storedSessionValid) {
         if (aiBackend == null) {
@@ -2800,14 +2825,12 @@ public final class AiTopComponent extends TopComponent implements AiProcessEvent
                 if (contextProvider != null) {
                     contextProvider.resetSentContext();
                 }
-            }
-            else {
+            } else {
                 LOG.log(Level.INFO, "Saved session {0} not found in AI storage — history kept, session will not resume", loaded.sessionId());
                 if (historyManager != null) {
                     try {
                         historyManager.save(loaded.messages(), null, loaded.workingDir(), loaded.instructionsLoaded());
-                    }
-                    catch (IOException e) {
+                    } catch (IOException e) {
                         LOG.log(Level.WARNING, "Could not resave history after invalid stored session", e);
                     }
                 }
@@ -2818,7 +2841,7 @@ public final class AiTopComponent extends TopComponent implements AiProcessEvent
 
     private boolean isSaveHistoryEnabled() {
         return session != null && session.settings() != null
-               ? session.settings().effectiveSaveHistory() : PluginSettings.isSaveHistory();
+                ? session.settings().effectiveSaveHistory() : PluginSettings.isSaveHistory();
     }
 
     private void saveHistory() {
@@ -2832,45 +2855,48 @@ public final class AiTopComponent extends TopComponent implements AiProcessEvent
                 wd = chosenSessionDir;
             }
             historyManager.save(conversationPanel.getHistory(), sid, wd != null ? wd.getPath() : null,
-                                session != null && session.isInstructionsLoaded());
-        }
-        catch (IOException e) {
+                    session != null && session.isInstructionsLoaded());
+        } catch (IOException e) {
             LOG.log(Level.WARNING, "Could not save history", e);
         }
     }
 
     /**
-     * Drives one {@link MultiPermissionReview} through the UI: shows the main-panel affordance, opens each file's diff
-     * in turn, and tears the batch down on whichever exit path fires first.
+     * Drives one {@link MultiPermissionReview} through the UI: shows the main-panel affordance, opens each
+     * file's diff in turn, and tears the batch down on whichever exit path fires first.
      *
      * <p>
-     * Every exit route funnels through {@link #finish()}, which closes anything this batch opened and writes the log
-     * exactly once. That matters most on the paths the user did not choose: on a timeout or a turn cancellation a diff
-     * panel may still be on screen, and leaving it there would show a panel whose decision has already been made.</p>
+     * Every exit route funnels through {@link #finish()}, which closes anything this batch opened and writes
+     * the log exactly once. That matters most on the paths the user did not choose: on a timeout or a turn
+     * cancellation a diff panel may still be on screen, and leaving it there would show a panel whose
+     * decision has already been made.</p>
      *
      * <p>
-     * All methods run on the EDT, matching the rest of this class; the file reads are the only work pushed off it.</p>
+     * All methods run on the EDT, matching the rest of this class; the file reads are the only work pushed
+     * off it.</p>
      */
     private final class MultiReviewDriver {
 
         private final MultiPermissionReview review;
         private final List<MultiPermissionItem> items;
         /**
-         * Resolves the main-panel affordance. Held so teardown can complete it, which is what greys its buttons out —
-         * otherwise a live-looking Accept/Reject would sit under a batch that has already been answered.
+         * Resolves the main-panel affordance. Held so teardown can complete it, which is what greys its
+         * buttons out — otherwise a live-looking Accept/Reject would sit under a batch that has already been
+         * answered.
          */
         private final CompletableFuture<PermissionDecision> gate = new CompletableFuture<>();
         /**
-         * Registered in {@code pendingResponseCancellers} so a stop, a turn end or the panel closing routes through
-         * {@code review.cancelled(...)} rather than completing the response directly. The single-file canceller
-         * completes the future as denied, which for a batch would bypass the review entirely: the log would be wrong,
-         * and the backends would read a deliberate "no" where an interruption happened.
+         * Registered in {@code pendingResponseCancellers} so a stop, a turn end or the panel closing routes
+         * through {@code review.cancelled(...)} rather than completing the response directly. The single-file
+         * canceller completes the future as denied, which for a batch would bypass the review entirely: the
+         * log would be wrong, and the backends would read a deliberate "no" where an interruption happened.
          */
         private final Runnable canceller;
         /**
-         * ONE deadline for the whole batch, armed when the review starts and never re-armed per file. The set gets the
-         * same total human-attention budget a single diff gets, so each panel after the first inherits whatever is left
-         * of it — rather than N files silently buying N times the wait. Fires on the EDT, like everything else here.
+         * ONE deadline for the whole batch, armed when the review starts and never re-armed per file. The set
+         * gets the same total human-attention budget a single diff gets, so each panel after the first
+         * inherits whatever is left of it — rather than N files silently buying N times the wait. Fires on
+         * the EDT, like everything else here.
          */
         private final Timer deadline;
         private AiDiffTopComponent openDiff;
@@ -2907,11 +2933,9 @@ public final class AiTopComponent extends TopComponent implements AiProcessEvent
                 }
                 if (ex != null) {
                     cancel(ex);
-                }
-                else if (decision != null && decision.allow()) {
+                } else if (decision != null && decision.allow()) {
                     openNext();
-                }
-                else {
+                } else {
                     review.rejectAll();
                     finish();
                 }
@@ -2919,8 +2943,8 @@ public final class AiTopComponent extends TopComponent implements AiProcessEvent
         }
 
         /**
-         * The first item the producer could not render, or null if every file has proposed content. Checked once up
-         * front rather than on arrival at each file — see {@link #start()}.
+         * The first item the producer could not render, or null if every file has proposed content. Checked
+         * once up front rather than on arrival at each file — see {@link #start()}.
          */
         private MultiPermissionItem firstUnrenderable() {
             for (MultiPermissionItem item : items) {
@@ -2932,9 +2956,9 @@ public final class AiTopComponent extends TopComponent implements AiProcessEvent
         }
 
         /**
-         * Opens the diff for the item currently awaiting a decision. The file read is pushed off the EDT; a file that
-         * cannot be read is a file the user cannot review, so it declines the whole set rather than falling back to a
-         * blind yes/no.
+         * Opens the diff for the item currently awaiting a decision. The file read is pushed off the EDT; a
+         * file that cannot be read is a file the user cannot review, so it declines the whole set rather than
+         * falling back to a blind yes/no.
          */
         private void openNext() {
             MultiPermissionItem item = review.currentItem();
@@ -2956,8 +2980,7 @@ public final class AiTopComponent extends TopComponent implements AiProcessEvent
                     if (Files.exists(p)) {
                         original = Files.readString(p, RefactoringProvider.resolveCharset(fp));
                     }
-                }
-                catch (IOException | RuntimeException e) {
+                } catch (IOException | RuntimeException e) {
                     LOG.log(Level.WARNING, "Could not read file for multi-file review diff: " + fp, e);
                     readable = false;
                 }
@@ -3002,8 +3025,7 @@ public final class AiTopComponent extends TopComponent implements AiProcessEvent
                     review.accept();
                     if (review.isFinished()) {
                         finish();
-                    }
-                    else {
+                    } else {
                         openNext();
                     }
                 }
@@ -3034,8 +3056,9 @@ public final class AiTopComponent extends TopComponent implements AiProcessEvent
         }
 
         /**
-         * The turn was cancelled, the session stopped, or the component closed. Routes through the review so the
-         * response completes EXCEPTIONALLY — that is how the backends tell an interruption from a deliberate "no".
+         * The turn was cancelled, the session stopped, or the component closed. Routes through the review so
+         * the response completes EXCEPTIONALLY — that is how the backends tell an interruption from a
+         * deliberate "no".
          */
         private void cancel(Throwable cause) {
             review.cancelled(cause);
@@ -3043,9 +3066,9 @@ public final class AiTopComponent extends TopComponent implements AiProcessEvent
         }
 
         /**
-         * The whole-set deadline expired. Declines everything and tears down, so the user is not left looking at a
-         * panel whose decision has already been made. Recorded as a timeout rather than a rejection: the reply is the
-         * same either way, but the log must not attribute an expiry to the user.
+         * The whole-set deadline expired. Declines everything and tears down, so the user is not left looking
+         * at a panel whose decision has already been made. Recorded as a timeout rather than a rejection: the
+         * reply is the same either way, but the log must not attribute an expiry to the user.
          */
         private void expire() {
             if (review.isFinished()) {
@@ -3058,8 +3081,9 @@ public final class AiTopComponent extends TopComponent implements AiProcessEvent
         }
 
         /**
-         * Tears the batch down on whichever route got here first. Idempotent: the review resolves the response exactly
-         * once, and this guard makes the UI side match, so the log is written once and no closed panel is closed twice.
+         * Tears the batch down on whichever route got here first. Idempotent: the review resolves the
+         * response exactly once, and this guard makes the UI side match, so the log is written once and no
+         * closed panel is closed twice.
          */
         private void finish() {
             if (finished) {

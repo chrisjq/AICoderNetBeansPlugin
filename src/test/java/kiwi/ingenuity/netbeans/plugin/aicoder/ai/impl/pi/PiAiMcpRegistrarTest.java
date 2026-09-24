@@ -113,10 +113,11 @@ class PiAiMcpRegistrarTest {
     }
 
     /**
-     * The scenario {@code PiAiProcessManager} relies on: with several pi sessions open, calling THIS registrar's
-     * {@link PiAiMcpRegistrar#deleteExtensionFile()} directly (not via the type-gated
-     * {@code registerHooks}/{@code unregisterHooks} framework callbacks) removes only its own session's file, leaving a
-     * sibling session's file untouched — see the class javadoc's "closing one removes only its file" requirement.
+     * The scenario {@code PiAiProcessManager} relies on: with several pi sessions open, calling THIS
+     * registrar's {@link PiAiMcpRegistrar#deleteExtensionFile()} directly (not via the type-gated
+     * {@code registerHooks}/{@code unregisterHooks} framework callbacks) removes only its own session's file,
+     * leaving a sibling session's file untouched — see the class javadoc's "closing one removes only its
+     * file" requirement.
      */
     @Test
     void deleteExtensionFile_removesOnlyItsOwnSessionsFile() throws Exception {

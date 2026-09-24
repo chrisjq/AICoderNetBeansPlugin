@@ -1,6 +1,5 @@
 package kiwi.ingenuity.netbeans.plugin.aicoder.process.server;
 
-import kiwi.ingenuity.netbeans.plugin.aicoder.process.server.McpHookServer;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.McpToolEnum;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -27,5 +26,12 @@ class McpHookServerGateTest {
     void everythingAllowedWhenLoaded() {
         assertFalse(McpHookServer.isToolGated(true, McpToolEnum.GET_DIAGNOSTICS));
         assertFalse(McpHookServer.isToolGated(true, null));
+    }
+
+    @Test
+    void claudeSteeringSetExcludesReviewGatedWritesButKeepsNotebookEdit() {
+        assertFalse(McpHookServer.isSteeredClaudeNativeTool("Edit"));
+        assertFalse(McpHookServer.isSteeredClaudeNativeTool("Write"));
+        assertTrue(McpHookServer.isSteeredClaudeNativeTool("NotebookEdit"));
     }
 }

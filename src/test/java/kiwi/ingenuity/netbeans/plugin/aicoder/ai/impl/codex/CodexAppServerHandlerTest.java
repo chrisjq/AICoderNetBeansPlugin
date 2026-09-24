@@ -20,7 +20,11 @@ import java.util.logging.Handler;
 import java.util.logging.Level;
 import java.util.logging.LogRecord;
 import java.util.logging.Logger;
+import kiwi.ingenuity.netbeans.plugin.aicoder.StringConst;
+import kiwi.ingenuity.netbeans.plugin.aicoder.ai.AiTypeEnum;
+import kiwi.ingenuity.netbeans.plugin.aicoder.ai.McpSteeringPolicy;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.events.ConfirmEvent;
+import kiwi.ingenuity.netbeans.plugin.aicoder.ai.events.McpSteeringRefusalEvent;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.events.MultiPermissionEvent;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.events.MultiPermissionItem;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.events.PermissionDecision;
@@ -33,8 +37,11 @@ import kiwi.ingenuity.netbeans.plugin.aicoder.ai.events.ToolUseEvent;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.events.TurnCompleteEvent;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.codex.events.CodexRateLimitEvent;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.codex.events.CodexTokenUsageEvent;
+import kiwi.ingenuity.netbeans.plugin.aicoder.ai.session.AiSession;
+import kiwi.ingenuity.netbeans.plugin.aicoder.process.SessionRegistry;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.events.AiProcessEvent;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.events.AiProcessEventListener;
+import kiwi.ingenuity.netbeans.plugin.aicoder.process.session.AbstractAiSession;
 import org.junit.jupiter.api.AfterEach;
 import static org.junit.jupiter.api.Assertions.*;
 import org.junit.jupiter.api.BeforeEach;
@@ -137,11 +144,11 @@ class CodexAppServerHandlerTest {
     }
 
     /**
-     * Replaces summarizeFileChanges_multipleFiles_includesCount, which asserted the old "Codex wants to modify 3 files"
-     * text — the blind bulk approval the multi-file review removed. A larger set can no longer reach this formatter,
-     * and the guarantee worth pinning is the inverse of what that test asserted: whatever it is handed, it must never
-     * offer to approve a COUNT of unseen files. This is the regression guard for a nearby edit reviving the plural
-     * form, which is the actual risk in leaving that text around.
+     * Replaces summarizeFileChanges_multipleFiles_includesCount, which asserted the old "Codex wants to
+     * modify 3 files" text — the blind bulk approval the multi-file review removed. A larger set can no
+     * longer reach this formatter, and the guarantee worth pinning is the inverse of what that test asserted:
+     * whatever it is handed, it must never offer to approve a COUNT of unseen files. This is the regression
+     * guard for a nearby edit reviving the plural form, which is the actual risk in leaving that text around.
      */
     @Test
     void summarizeFileChanges_neverClaimsAFileCount() {
@@ -157,8 +164,8 @@ class CodexAppServerHandlerTest {
     }
 
     /**
-     * The remaining non-obvious branch: a single entry that is not a JSON object has no path to name, so it falls back
-     * to the generic wording rather than rendering something misleading.
+     * The remaining non-obvious branch: a single entry that is not a JSON object has no path to name, so it
+     * falls back to the generic wording rather than rendering something misleading.
      */
     @Test
     void summarizeFileChanges_singleNonObjectEntry_returnsGenericMessage() {
@@ -179,7 +186,7 @@ class CodexAppServerHandlerTest {
 
     // ---- Notification mappings ----
     private CodexAppServerHandler newHandler(List<AiProcessEvent> captured) {
-        return new CodexAppServerHandler(captured::add, () -> {
+        return new CodexAppServerHandler("test-session-id", captured::add, () -> {
         });
     }
 
@@ -201,7 +208,8 @@ class CodexAppServerHandlerTest {
     }
 
     /**
-     * Item shape copied from a live item/started notification, not invented: null null null     {@code {"item":{"type":"mcpToolCall","tool":"ListAiSessions",
+     * Item shape copied from a live item/started notification, not invented: null null null null null null
+     * null null     {@code {"item":{"type":"mcpToolCall","tool":"ListAiSessions",
      * "server":"aicoder-nb-ki-plugin","status":"inProgress",...}}}.
      */
     @Test
@@ -228,8 +236,8 @@ class CodexAppServerHandlerTest {
     }
 
     /**
-     * Only tool calls announce themselves. Reasoning and agentMessage items also arrive as item/started, and raising an
-     * event for those would insert a paragraph break where no tool ran.
+     * Only tool calls announce themselves. Reasoning and agentMessage items also arrive as item/started, and
+     * raising an event for those would insert a paragraph break where no tool ran.
      */
     @Test
     void nonToolCallItemStarted_firesNothing() {
@@ -416,9 +424,9 @@ class CodexAppServerHandlerTest {
 
     // ---- item/started caching ----
     /**
-     * A PatchChangeKind as the schema actually defines it: an OBJECT with a {@code type}, plus {@code move_path} on an
-     * update that is also a rename. The fixtures used to write {@code "kind": "update"} as a bare string, which no
-     * longer matches what Codex sends.
+     * A PatchChangeKind as the schema actually defines it: an OBJECT with a {@code type}, plus
+     * {@code move_path} on an update that is also a rename. The fixtures used to write
+     * {@code "kind": "update"} as a bare string, which no longer matches what Codex sends.
      */
     private static JsonObject kind(String type, String movePath) {
         JsonObject kind = new JsonObject();
@@ -458,8 +466,8 @@ class CodexAppServerHandlerTest {
     }
 
     /**
-     * item/started carrying SEVERAL changes, in the order given. Paths and diffs are paired by index; a null diff means
-     * that entry has no diff field at all.
+     * item/started carrying SEVERAL changes, in the order given. Paths and diffs are paired by index; a null
+     * diff means that entry has no diff field at all.
      */
     private JsonObject multiItemStartedParams(String itemId, List<String> paths, List<String> diffs) {
         return multiItemStartedParams(itemId, paths, diffs,
@@ -558,9 +566,10 @@ class CodexAppServerHandlerTest {
     }
 
     /**
-     * Waits for the bounded fallback to fire. Since the race fix, an approval whose item/started has not arrived does
-     * NOT fall through immediately — it waits, because "not yet" and "never" are indistinguishable at that moment. The
-     * tests shorten the bound rather than sleep for the real ten seconds.
+     * Waits for the bounded fallback to fire. Since the race fix, an approval whose item/started has not
+     * arrived does NOT fall through immediately — it waits, because "not yet" and "never" are
+     * indistinguishable at that moment. The tests shorten the bound rather than sleep for the real ten
+     * seconds.
      */
     private ConfirmEvent awaitConfirm(List<AiProcessEvent> events) throws InterruptedException {
         for (int i = 0; i < 100 && events.isEmpty(); i++) {
@@ -572,11 +581,11 @@ class CodexAppServerHandlerTest {
     }
 
     // ---- handleFileChangeApproval: cache-miss and PermissionEvent denied / exceptional ----
-
     /**
-     * THE DEFINED FALLBACK when the changes never arrive at all. It is bounded, and it is the same blind confirm as
-     * before — acceptable only because the bound is far longer than any real notification backlog. The distinct WARNING
-     * the handler logs is what separates "raced and lost" from "genuinely no changes"; those used to be the same line.
+     * THE DEFINED FALLBACK when the changes never arrive at all. It is bounded, and it is the same blind
+     * confirm as before — acceptable only because the bound is far longer than any real notification backlog.
+     * The distinct WARNING the handler logs is what separates "raced and lost" from "genuinely no changes";
+     * those used to be the same line.
      */
     @Test
     void handleFileChangeApproval_changesNeverArrive_fallsBackAfterTheBound() throws Exception {
@@ -703,7 +712,7 @@ class CodexAppServerHandlerTest {
     @Test
     void onDisconnected_callsDisconnectCallback() {
         AtomicBoolean called = new AtomicBoolean(false);
-        CodexAppServerHandler handler = new CodexAppServerHandler(e -> {
+        CodexAppServerHandler handler = new CodexAppServerHandler("test-session-id", e -> {
         }, () -> called.set(true));
 
         handler.onDisconnected(new Exception("test-disconnect"));
@@ -721,9 +730,9 @@ class CodexAppServerHandlerTest {
     }
 
     /**
-     * PROBE, not a specification. Reproduces what a hunk that ALREADY carries ---/+++ headers does today, when
-     * applyUnifiedDiff prepends a second pair. Captures the failure mode so it can be compared against the errors seen
-     * in the live run.
+     * PROBE, not a specification. Reproduces what a hunk that ALREADY carries ---/+++ headers does today,
+     * when applyUnifiedDiff prepends a second pair. Captures the failure mode so it can be compared against
+     * the errors seen in the live run.
      */
     private static final String REAL_ORIGINAL
             = "/*\n"
@@ -754,22 +763,25 @@ class CodexAppServerHandlerTest {
             + "+    }\n }\n";
 
     /**
-     * THE DIFFERENTIAL. Both hunks were captured from live Codex runs on 2026-08-29 against the same file; one failed
-     * with CONTENT_DOES_NOT_MATCH_TARGET and one rendered and applied. Pinning both together is what locks in the
-     * difference, because either alone is consistent with several wrong explanations.
+     * THE DIFFERENTIAL. Both hunks were captured from live Codex runs on 2026-08-29 against the same file;
+     * one failed with CONTENT_DOES_NOT_MATCH_TARGET and one rendered and applied. Pinning both together is
+     * what locks in the difference, because either alone is consistent with several wrong explanations.
      *
-     * <p>The cause is the trailing empty element {@code split("\n", -1)} leaves when a hunk ends with a newline: the
-     * parser reads it as one more CONTEXT line. Whether that is fatal depends on where the hunk's last line sits.</p>
+     * <p>
+     * The cause is the trailing empty element {@code split("\n", -1)} leaves when a hunk ends with a newline:
+     * the parser reads it as one more CONTEXT line. Whether that is fatal depends on where the hunk's last
+     * line sits.</p>
      *
      * <ul>
-     * <li>The FAILING hunk ends at original line 8 (" *"). The phantom context line expects line 9 to be empty; it is
-     * " * @author chris", so the patch is rejected.</li>
-     * <li>The WORKING hunk's last hunk ends at line 16 ("}"), the final line. {@code split("\n", -1)} on an original
-     * that ends with a newline leaves its OWN trailing empty element there, so the phantom context line matches it by
-     * coincidence and the patch applies.</li>
+     * <li>The FAILING hunk ends at original line 8 (" *"). The phantom context line expects line 9 to be
+     * empty; it is " * @author chris", so the patch is rejected.</li>
+     * <li>The WORKING hunk's last hunk ends at line 16 ("}"), the final line. {@code split("\n", -1)} on an
+     * original that ends with a newline leaves its OWN trailing empty element there, so the phantom context
+     * line matches it by coincidence and the patch applies.</li>
      * </ul>
      *
-     * <p>That coincidence is why a working hunk that also ends in a newline does not disprove the cause: a hunk
+     * <p>
+     * That coincidence is why a working hunk that also ends in a newline does not disprove the cause: a hunk
      * reaching end-of-file gets away with it, and every other hunk does not.</p>
      */
     @Test
@@ -793,14 +805,18 @@ class CodexAppServerHandlerTest {
 
     /**
      * THE THIRD LIVE CAPTURE, 2026-08-29: a 3-file batch, all kind=update, every one of which failed with
-     * CONTENT_DOES_NOT_MATCH_TARGET against files whose contents were then verified byte by byte to match the hunks.
+     * CONTENT_DOES_NOT_MATCH_TARGET against files whose contents were then verified byte by byte to match the
+     * hunks.
      *
-     * <p>All three end their last body line on a CONTEXT line that is not the file's last line, which is precisely the
-     * shape the phantom trailing element breaks — the same cause as {@link #capturedFailingHunkNowApplies()}. Kept as
-     * distinct cases rather than folded into one because they are the real payload, and a fixture we invent is what let
-     * this pass over 1700 tests while being wrong about the protocol.</p>
+     * <p>
+     * All three end their last body line on a CONTEXT line that is not the file's last line, which is
+     * precisely the shape the phantom trailing element breaks — the same cause as
+     * {@link #capturedFailingHunkNowApplies()}. Kept as distinct cases rather than folded into one because
+     * they are the real payload, and a fixture we invent is what let this pass over 1700 tests while being
+     * wrong about the protocol.</p>
      *
-     * <p>Do not tidy these strings.</p>
+     * <p>
+     * Do not tidy these strings.</p>
      */
     @Test
     void capturedThirdRunHunksAllApply() throws Exception {
@@ -845,10 +861,11 @@ class CodexAppServerHandlerTest {
     /**
      * PROVES THE CAUSE, rather than just that the captures now pass.
      *
-     * <p>A hunk with ONE trailing newline is what Codex sends and now applies. Give it TWO and the strip removes only
-     * one, leaving exactly the phantom trailing element the old code always had — and the failure comes back, with the
-     * same CONTENT_DOES_NOT_MATCH_TARGET seen in all three live runs. So the trailing element is the mechanism, and
-     * removing it is what fixed these, not any other change made alongside.</p>
+     * <p>
+     * A hunk with ONE trailing newline is what Codex sends and now applies. Give it TWO and the strip removes
+     * only one, leaving exactly the phantom trailing element the old code always had — and the failure comes
+     * back, with the same CONTENT_DOES_NOT_MATCH_TARGET seen in all three live runs. So the trailing element
+     * is the mechanism, and removing it is what fixed these, not any other change made alongside.</p>
      */
     @Test
     void aPhantomTrailingElementIsWhatBreaksAHunk() {
@@ -865,8 +882,8 @@ class CodexAppServerHandlerTest {
     }
 
     /**
-     * The fix must not merely shift the off-by-one: a hunk with no trailing newline has no phantom element to drop and
-     * must still apply.
+     * The fix must not merely shift the off-by-one: a hunk with no trailing newline has no phantom element to
+     * drop and must still apply.
      */
     @Test
     void aHunkWithoutATrailingNewlineStillApplies() throws Exception {
@@ -878,8 +895,8 @@ class CodexAppServerHandlerTest {
     }
 
     /**
-     * The ORIGINAL keeps its {@code split("\n", -1)} untouched — its trailing empty element represents the file's final
-     * newline, and dropping it there would silently strip that newline on every write.
+     * The ORIGINAL keeps its {@code split("\n", -1)} untouched — its trailing empty element represents the
+     * file's final newline, and dropping it there would silently strip that newline on every write.
      */
     @Test
     void theOriginalsTrailingNewlineSurvives() throws Exception {
@@ -974,9 +991,9 @@ class CodexAppServerHandlerTest {
 
     // ---- handleFileChangeApproval: multi-file ----
     /**
-     * The defect this feature removes. A multi-file edit used to fall through to a single-line ConfirmEvent — "Codex
-     * wants to modify 3 files", Yes/No, no diff — so the user approved it sight unseen. It must now raise ONE
-     * MultiPermissionEvent carrying the whole set.
+     * The defect this feature removes. A multi-file edit used to fall through to a single-line ConfirmEvent —
+     * "Codex wants to modify 3 files", Yes/No, no diff — so the user approved it sight unseen. It must now
+     * raise ONE MultiPermissionEvent carrying the whole set.
      */
     @Test
     void handleFileChangeApproval_multiFile_raisesMultiPermissionEventNotConfirm() throws Exception {
@@ -1006,8 +1023,8 @@ class CodexAppServerHandlerTest {
     }
 
     /**
-     * The order is Codex's — it reflects how the model sequenced its own work. The paths here are deliberately
-     * non-alphabetical so any sorting would show as a different list.
+     * The order is Codex's — it reflects how the model sequenced its own work. The paths here are
+     * deliberately non-alphabetical so any sorting would show as a different list.
      */
     @Test
     void handleFileChangeApproval_multiFile_keepsCodexOrder() throws Exception {
@@ -1030,9 +1047,10 @@ class CodexAppServerHandlerTest {
     }
 
     /**
-     * An unrenderable file must become an ITEM with null proposed content — not a dropped entry, and not an exception
-     * escaping into the JSON-RPC dispatch. The review is what turns it into a whole-set decline that names the file;
-     * dropping it would let the user approve a set smaller than the one Codex is about to write.
+     * An unrenderable file must become an ITEM with null proposed content — not a dropped entry, and not an
+     * exception escaping into the JSON-RPC dispatch. The review is what turns it into a whole-set decline
+     * that names the file; dropping it would let the user approve a set smaller than the one Codex is about
+     * to write.
      */
     @Test
     void handleFileChangeApproval_multiFile_unrenderableBecomesNullContentItem() throws Exception {
@@ -1061,7 +1079,8 @@ class CodexAppServerHandlerTest {
     }
 
     /**
-     * A missing file and a missing diff are the same class of problem as a failed patch, and take the same route.
+     * A missing file and a missing diff are the same class of problem as a failed patch, and take the same
+     * route.
      */
     @Test
     void handleFileChangeApproval_multiFile_missingFileOrDiffYieldsNullContent() throws Exception {
@@ -1085,8 +1104,8 @@ class CodexAppServerHandlerTest {
     }
 
     /**
-     * An exceptional completion is still a cancel for a batch — the review carries the interruption-versus-denial
-     * distinction, so nothing about the mapping changes.
+     * An exceptional completion is still a cancel for a batch — the review carries the
+     * interruption-versus-denial distinction, so nothing about the mapping changes.
      */
     @Test
     void handleFileChangeApproval_multiFile_exceptionalCompletionRepliesCancel() throws Exception {
@@ -1110,8 +1129,8 @@ class CodexAppServerHandlerTest {
     }
 
     /**
-     * cancelPendingPermissions must reach a batch's future too — the pending slot is written once for the whole set, so
-     * a stop while a review is open replies cancel rather than leaving Codex waiting.
+     * cancelPendingPermissions must reach a batch's future too — the pending slot is written once for the
+     * whole set, so a stop while a review is open replies cancel rather than leaving Codex waiting.
      */
     @Test
     void cancelPendingPermissions_cancelsAnOpenMultiFileReview() throws Exception {
@@ -1137,9 +1156,9 @@ class CodexAppServerHandlerTest {
      * acceptForSession suppresses future prompts for the same files, which defeats per-file review entirely.
      *
      * <p>
-     * Looks for the STRING LITERAL, not the bare word: a value only reaches Codex as a quoted literal, while the word
-     * itself legitimately appears in prose — the elicitation javadoc records that that channel's vocabulary has no
-     * acceptForSession, which is documentation of the absence, not a use of it.</p>
+     * Looks for the STRING LITERAL, not the bare word: a value only reaches Codex as a quoted literal, while
+     * the word itself legitimately appears in prose — the elicitation javadoc records that that channel's
+     * vocabulary has no acceptForSession, which is documentation of the absence, not a use of it.</p>
      */
     @Test
     void acceptForSessionIsNeverSent() throws IOException {
@@ -1151,14 +1170,15 @@ class CodexAppServerHandlerTest {
     }
 
     // ---- item/started vs approval ordering ----
-
     /**
-     * THE LIVE RACE, reproduced. item/started and the approval are handled on DIFFERENT executors — notifications on a
-     * single codex-notify thread, requests on the codex-dispatch pool — so nothing orders them. Observed once in three
-     * live runs: the approval won, read an empty cache, and the user got the blind one-line Yes/No instead of three
-     * diffs.
+     * THE LIVE RACE, reproduced. item/started and the approval are handled on DIFFERENT executors —
+     * notifications on a single codex-notify thread, requests on the codex-dispatch pool — so nothing orders
+     * them. Observed once in three live runs: the approval won, read an empty cache, and the user got the
+     * blind one-line Yes/No instead of three diffs.
      *
-     * <p>Here the approval arrives FIRST and must still reach the multi-file review once the notification lands.</p>
+     * <p>
+     * Here the approval arrives FIRST and must still reach the multi-file review once the notification
+     * lands.</p>
      */
     @Test
     void approvalArrivingBeforeItemStartedStillReachesTheReview() throws Exception {
@@ -1214,8 +1234,8 @@ class CodexAppServerHandlerTest {
     }
 
     /**
-     * A consumed entry must not linger and a timed-out one must not leak, or a long turn accumulates map entries for
-     * every file change it ever made.
+     * A consumed entry must not linger and a timed-out one must not leak, or a long turn accumulates map
+     * entries for every file change it ever made.
      */
     @Test
     void theCacheEntryIsReleasedOnceConsumed() throws Exception {
@@ -1233,10 +1253,9 @@ class CodexAppServerHandlerTest {
     }
 
     // ---- change kind ----
-
     /**
-     * kind is an OBJECT in the schema ({@code {"type":"add"}}), not a bare string. Reading it wrongly sends every
-     * change down the update path, which is how creating a file came to decline a whole batch.
+     * kind is an OBJECT in the schema ({@code {"type":"add"}}), not a bare string. Reading it wrongly sends
+     * every change down the update path, which is how creating a file came to decline a whole batch.
      */
     @Test
     void changeKind_readsTheSchemaObjectShape() {
@@ -1282,12 +1301,11 @@ class CodexAppServerHandlerTest {
     }
 
     // ---- handleFileChangeApproval: change kinds ----
-
     /**
-     * FOR AN add, THE "diff" FIELD IS NOT A DIFF — it is the complete raw file content, with no @@ header and no +
-     * prefixes. Captured verbatim from a live Codex run on 2026-08-29; do not tidy it. Feeding this to a unified-diff
-     * parser is what produced POSITION_OUT_OF_TARGET for every new file in the first live run, so the proposed content
-     * must be the field's value EXACTLY, byte for byte.
+     * FOR AN add, THE "diff" FIELD IS NOT A DIFF — it is the complete raw file content, with no @@ header and
+     * no + prefixes. Captured verbatim from a live Codex run on 2026-08-29; do not tidy it. Feeding this to a
+     * unified-diff parser is what produced POSITION_OUT_OF_TARGET for every new file in the first live run,
+     * so the proposed content must be the field's value EXACTLY, byte for byte.
      */
     private static final String CAPTURED_ADD_CONTENT
             = "package kiwi.ingenuity.cc.mavenproject1;\n"
@@ -1341,9 +1359,9 @@ class CodexAppServerHandlerTest {
     }
 
     /**
-     * A single new file gets a real diff panel instead of the blind Yes/No it used to fall through to. The content
-     * assertion lives in {@code handleFileChangeApproval_singleAdd_usesRawContentVerbatim}, which uses the captured
-     * payload; this one pins the routing.
+     * A single new file gets a real diff panel instead of the blind Yes/No it used to fall through to. The
+     * content assertion lives in {@code handleFileChangeApproval_singleAdd_usesRawContentVerbatim}, which
+     * uses the captured payload; this one pins the routing.
      */
     @Test
     void handleFileChangeApproval_singleAdd_raisesPermissionEvent() throws Exception {
@@ -1362,9 +1380,9 @@ class CodexAppServerHandlerTest {
     }
 
     /**
-     * THE DISTINCTION THAT MUST NOT COLLAPSE. A file that exists but cannot be read is genuinely unrenderable and must
-     * still decline. If "missing means empty" were applied to it, the user would be shown a full-file addition and
-     * would approve replacing content they never saw.
+     * THE DISTINCTION THAT MUST NOT COLLAPSE. A file that exists but cannot be read is genuinely unrenderable
+     * and must still decline. If "missing means empty" were applied to it, the user would be shown a
+     * full-file addition and would approve replacing content they never saw.
      */
     @Test
     void handleFileChangeApproval_updateOfAMissingFileStillDeclines() throws Exception {
@@ -1391,11 +1409,12 @@ class CodexAppServerHandlerTest {
     /**
      * Drives an approval whose changes contain an unsupported kind and returns the reason Codex receives.
      *
-     * <p>Asserts the shared contract for every unsupported kind: NO MultiPermissionEvent or PermissionEvent is raised
-     * (no panel, no review, no log line claiming a decision the user never made), the user is told what happened, and
-     * the reply is a failed future — which the transport turns into a JSON-RPC error. That error is the only channel
-     * that can carry a reason at all: the approval response has a decision field and nothing else, so a plain decline
-     * would leave the model to retry the same unsupported patch.</p>
+     * <p>
+     * Asserts the shared contract for every unsupported kind: NO MultiPermissionEvent or PermissionEvent is
+     * raised (no panel, no review, no log line claiming a decision the user never made), the user is told
+     * what happened, and the reply is a failed future — which the transport turns into a JSON-RPC error. That
+     * error is the only channel that can carry a reason at all: the approval response has a decision field
+     * and nothing else, so a plain decline would leave the model to retry the same unsupported patch.</p>
      */
     private String reasonForUnsupportedApproval(String itemId, JsonObject startedParams) throws Exception {
         List<AiProcessEvent> events = new ArrayList<>();
@@ -1418,9 +1437,9 @@ class CodexAppServerHandlerTest {
     }
 
     /**
-     * A deletion cannot be shown by an item shape that only says "here is the file's new content". Applying the hunk
-     * would show the file being EMPTIED, the user would approve that, and Codex would then delete it — a review of the
-     * wrong operation that silently succeeds.
+     * A deletion cannot be shown by an item shape that only says "here is the file's new content". Applying
+     * the hunk would show the file being EMPTIED, the user would approve that, and Codex would then delete it
+     * — a review of the wrong operation that silently succeeds.
      */
     @Test
     void handleFileChangeApproval_deleteRepliesWithAReasonNamingIt() throws Exception {
@@ -1437,8 +1456,8 @@ class CodexAppServerHandlerTest {
     }
 
     /**
-     * A rename's content diff is renderable, but nothing in the item shape can tell the user the file is also moving,
-     * and approving a diff that silently relocates a file is the same class of surprise.
+     * A rename's content diff is renderable, but nothing in the item shape can tell the user the file is also
+     * moving, and approving a diff that silently relocates a file is the same class of surprise.
      */
     @Test
     void handleFileChangeApproval_renameRepliesWithAReasonNamingBothPaths() throws Exception {
@@ -1455,10 +1474,10 @@ class CodexAppServerHandlerTest {
     }
 
     /**
-     * THE FUTURE-PROOFING CASE. A kind Codex has not shipped yet must error, not fall through to the update path — a
-     * blocklist is wrong by default, an allowlist is safe by default. Treating an unknown kind as an ordinary edit
-     * would show the user a content diff for an operation that is not one: the delete failure mode again, arriving
-     * unannounced in a future Codex release.
+     * THE FUTURE-PROOFING CASE. A kind Codex has not shipped yet must error, not fall through to the update
+     * path — a blocklist is wrong by default, an allowlist is safe by default. Treating an unknown kind as an
+     * ordinary edit would show the user a content diff for an operation that is not one: the delete failure
+     * mode again, arriving unannounced in a future Codex release.
      */
     @Test
     void handleFileChangeApproval_unrecognisedKindRepliesWithAReasonQuotingIt() throws Exception {
@@ -1476,8 +1495,8 @@ class CodexAppServerHandlerTest {
     }
 
     /**
-     * kind is REQUIRED by the schema, so an absent one is a protocol violation. It must error rather than default to
-     * update — this was a live latent defect: a null kind fell through to the update path.
+     * kind is REQUIRED by the schema, so an absent one is a protocol violation. It must error rather than
+     * default to update — this was a live latent defect: a null kind fell through to the update path.
      */
     @Test
     void handleFileChangeApproval_absentKindRepliesWithAReason() throws Exception {
@@ -1507,9 +1526,9 @@ class CodexAppServerHandlerTest {
     }
 
     /**
-     * The rule applies to a lone change too. A deletion that is unreviewable in a set of three is not made reviewable
-     * by arriving on its own, and the single-file path's ConfirmEvent fallback would otherwise be the one silently
-     * approvable route left.
+     * The rule applies to a lone change too. A deletion that is unreviewable in a set of three is not made
+     * reviewable by arriving on its own, and the single-file path's ConfirmEvent fallback would otherwise be
+     * the one silently approvable route left.
      */
     @Test
     void handleFileChangeApproval_singleDeleteAlsoErrorsInsteadOfBlindConfirm() throws Exception {
@@ -1711,6 +1730,304 @@ class CodexAppServerHandlerTest {
         assertEquals("cancel", reply.get(2, TimeUnit.SECONDS).get("action").getAsString());
     }
 
+    // ---- MCP Steering Tests ----
+    private CodexAppServerHandler handlerWithSteeringEnabled(String sessionId, List<AiProcessEvent> captured) {
+        registerSessionWithSteering(sessionId);
+        return new CodexAppServerHandler(sessionId, captured::add, () -> {
+        });
+    }
+
+    private AbstractAiSession registerSessionWithSteering(String sessionId) {
+        AiSession aiSession = AiSession.create(null, AiTypeEnum.CODEX);
+        aiSession.settings().setMcpSteering(true);
+        AbstractAiSession wrapper = new AbstractAiSession(aiSession) {
+            @Override
+            public String getId() {
+                return sessionId;
+            }
+
+            @Override
+            public AiProcessEventListener getAiProcessEventListener() {
+                return e -> {
+                };
+            }
+
+            @Override
+            public java.util.Map<kiwi.ingenuity.netbeans.plugin.aicoder.process.McpToolEnum, kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.McpToolInterface> getMcpToolHandlers() {
+                return java.util.Map.of();
+            }
+        };
+        SessionRegistry.register(wrapper);
+        return wrapper;
+    }
+
+    @Test
+    void mcpSteeringON_commandExecutionApproval_autoDeniesAndPostsRefusalEvent() throws Exception {
+        List<AiProcessEvent> events = new ArrayList<>();
+        String sessionId = "steering-test-session";
+        CodexAppServerHandler handler = handlerWithSteeringEnabled(sessionId, events);
+        try {
+            // Precondition: verify steering is actually ON before testing
+            AbstractAiSession session = SessionRegistry.get(sessionId);
+            assertTrue(session != null && session.getSettings() != null && session.getSettings().effectiveMcpSteering(),
+                    "Precondition: MCP steering must be ON for this test");
+
+            handler.onTurnStarting();
+
+            JsonObject params = new JsonObject();
+            params.addProperty("command", "rm -rf /");
+            params.addProperty("reason", "Dangerous command");
+
+            JsonObject reply = handler.onServerRequest(
+                    CodexAppServerHandler.METHOD_COMMAND_EXECUTION_APPROVAL, params)
+                    .get(2, TimeUnit.SECONDS);
+
+            assertEquals("decline", reply.get("decision").getAsString(),
+                    "Steering ON must auto-deny command execution");
+
+            SystemNotificationEvent sysEvent = events.stream()
+                    .filter(e -> e instanceof SystemNotificationEvent)
+                    .map(e -> (SystemNotificationEvent) e)
+                    .findFirst()
+                    .orElseThrow(() -> new AssertionError("No SystemNotificationEvent posted"));
+
+            assertTrue(sysEvent.text().contains("auto-denied"),
+                    "SystemNotificationEvent must indicate auto-denial");
+
+            McpSteeringRefusalEvent refusalEvent = events.stream()
+                    .filter(e -> e instanceof McpSteeringRefusalEvent)
+                    .map(e -> (McpSteeringRefusalEvent) e)
+                    .findFirst()
+                    .orElseThrow(() -> new AssertionError("No McpSteeringRefusalEvent posted"));
+
+            assertEquals(1, refusalEvent.refusals().size(), "Event must contain exactly one refusal");
+            McpSteeringRefusalEvent.Refusal refusal = refusalEvent.refusals().get(0);
+            assertEquals("Command", refusal.toolLabel());
+            assertEquals(McpSteeringPolicy.steeringFeedbackFor(McpSteeringPolicy.Category.SHELL),
+                    refusal.steeringText(),
+                    "Refusal text must match SHELL category steering feedback");
+
+            boolean hasConfirmEvent = events.stream()
+                    .anyMatch(e -> e instanceof ConfirmEvent);
+            assertFalse(hasConfirmEvent,
+                    "Steering ON must NOT raise ConfirmEvent");
+        } finally {
+            SessionRegistry.unregister(sessionId);
+        }
+    }
+
+    @Test
+    void mcpSteeringON_fileChangeApproval_autoDeniesAndPostsRefusalEvent() throws Exception {
+        List<AiProcessEvent> events = new ArrayList<>();
+        String sessionId = "steering-test-file-session";
+        CodexAppServerHandler handler = handlerWithSteeringEnabled(sessionId, events);
+        try {
+            // Precondition: verify steering is actually ON before testing
+            AbstractAiSession session = SessionRegistry.get(sessionId);
+            assertTrue(session != null && session.getSettings() != null && session.getSettings().effectiveMcpSteering(),
+                    "Precondition: MCP steering must be ON for this test");
+
+            handler.onTurnStarting();
+
+            JsonObject change = new JsonObject();
+            change.addProperty("path", "/tmp/test.txt");
+            change.addProperty("kind", "add");
+            change.addProperty("diff", "+ new file");
+
+            JsonArray changes = new JsonArray();
+            changes.add(change);
+
+            JsonObject params = new JsonObject();
+            params.add("changes", changes);
+
+            JsonObject reply = handler.onServerRequest(
+                    CodexAppServerHandler.METHOD_FILE_CHANGE_APPROVAL, params)
+                    .get(2, TimeUnit.SECONDS);
+
+            assertEquals("decline", reply.get("decision").getAsString(),
+                    "Steering ON must auto-deny file changes");
+
+            McpSteeringRefusalEvent refusalEvent = events.stream()
+                    .filter(e -> e instanceof McpSteeringRefusalEvent)
+                    .map(e -> (McpSteeringRefusalEvent) e)
+                    .findFirst()
+                    .orElseThrow(() -> new AssertionError("No McpSteeringRefusalEvent posted"));
+
+            assertEquals(1, refusalEvent.refusals().size());
+            McpSteeringRefusalEvent.Refusal refusal = refusalEvent.refusals().get(0);
+            assertEquals("FileChange", refusal.toolLabel());
+            assertEquals(McpSteeringPolicy.steeringFeedbackFor(McpSteeringPolicy.Category.WRITE),
+                    refusal.steeringText());
+
+            boolean hasPermissionEvent = events.stream()
+                    .anyMatch(e -> e instanceof PermissionEvent || e instanceof MultiPermissionEvent);
+            assertFalse(hasPermissionEvent,
+                    "Steering ON must NOT raise PermissionEvent or MultiPermissionEvent");
+        } finally {
+            SessionRegistry.unregister(sessionId);
+        }
+    }
+
+    @Test
+    void mcpSteeringON_postRefusalEventAtDenialTime() throws Exception {
+        List<AiProcessEvent> events = new ArrayList<>();
+        String sessionId = "steering-test-denial-time-session";
+        CodexAppServerHandler handler = handlerWithSteeringEnabled(sessionId, events);
+        try {
+            // Precondition: verify steering is actually ON before testing
+            AbstractAiSession session = SessionRegistry.get(sessionId);
+            assertTrue(session != null && session.getSettings() != null && session.getSettings().effectiveMcpSteering(),
+                    "Precondition: MCP steering must be ON for this test");
+
+            handler.onTurnStarting();
+
+            JsonObject params = new JsonObject();
+            params.addProperty("command", "test");
+            handler.onServerRequest(CodexAppServerHandler.METHOD_COMMAND_EXECUTION_APPROVAL, params)
+                    .get(2, TimeUnit.SECONDS);
+
+            // Verify McpSteeringRefusalEvent is posted immediately at denial time, not at turn end
+            McpSteeringRefusalEvent refusalEvent = events.stream()
+                    .filter(e -> e instanceof McpSteeringRefusalEvent)
+                    .map(e -> (McpSteeringRefusalEvent) e)
+                    .findFirst()
+                    .orElseThrow(() -> new AssertionError("No McpSteeringRefusalEvent posted at denial time"));
+
+            assertEquals(1, refusalEvent.refusals().size());
+            McpSteeringRefusalEvent.Refusal refusal = refusalEvent.refusals().get(0);
+            assertEquals("Command", refusal.toolLabel());
+            assertEquals(McpSteeringPolicy.steeringFeedbackFor(McpSteeringPolicy.Category.SHELL),
+                    refusal.steeringText(),
+                    "Refusal event must be posted immediately with correct steering text");
+        } finally {
+            SessionRegistry.unregister(sessionId);
+        }
+    }
+
+    @Test
+    void mcpSteeringOFF_commandExecutionApproval_raisesConfirmEvent() throws Exception {
+        List<AiProcessEvent> events = new ArrayList<>();
+        // Use a session NOT in registry, so steering is OFF
+        CodexAppServerHandler handler = new CodexAppServerHandler("not-registered", events::add, () -> {
+        });
+        handler.onTurnStarting();
+
+        JsonObject params = new JsonObject();
+        params.addProperty("command", "ls");
+
+        CompletableFuture<JsonObject> reply = handler.onServerRequest(
+                CodexAppServerHandler.METHOD_COMMAND_EXECUTION_APPROVAL, params);
+
+        ConfirmEvent confirmEvent = events.stream()
+                .filter(e -> e instanceof ConfirmEvent)
+                .map(e -> (ConfirmEvent) e)
+                .findFirst()
+                .orElseThrow(() -> new AssertionError("Steering OFF must raise ConfirmEvent"));
+
+        // Verify no McpSteeringRefusalEvent posted
+        boolean hasRefusalEvent = events.stream()
+                .anyMatch(e -> e instanceof McpSteeringRefusalEvent);
+        assertFalse(hasRefusalEvent,
+                "Steering OFF must not post McpSteeringRefusalEvent");
+
+        // Complete the decision future with a decline decision to allow reply to complete
+        confirmEvent.response().complete(new PermissionDecision(false, null));
+        JsonObject replyResult = reply.get(2, TimeUnit.SECONDS);
+        assertEquals("decline", replyResult.get("decision").getAsString(),
+                "Reply must map user's decline to approval decision");
+    }
+
+    @Test
+    void mcpSteeringON_elicitationFromOurServer_notSteered() throws Exception {
+        List<AiProcessEvent> events = new ArrayList<>();
+        String sessionId = "steering-test-elicitation-ours-session";
+        CodexAppServerHandler handler = handlerWithSteeringEnabled(sessionId, events);
+        try {
+            // Precondition: verify steering is actually ON before testing
+            AbstractAiSession session = SessionRegistry.get(sessionId);
+            assertTrue(session != null && session.getSettings() != null && session.getSettings().effectiveMcpSteering(),
+                    "Precondition: MCP steering must be ON for this test");
+
+            handler.onTurnStarting();
+
+            JsonObject params = new JsonObject();
+            params.addProperty("serverName", StringConst.PLUGIN_ID); // Our own server
+            params.addProperty("message", "Allow GetFileContent?");
+
+            CompletableFuture<JsonObject> reply = handler.onServerRequest(
+                    CodexAppServerHandler.METHOD_MCP_ELICITATION, params);
+
+            // Verify ConfirmEvent was raised (not declined by steering)
+            ConfirmEvent confirmEvent = events.stream()
+                    .filter(e -> e instanceof ConfirmEvent)
+                    .map(e -> (ConfirmEvent) e)
+                    .findFirst()
+                    .orElseThrow(() -> new AssertionError("Our server elicitation must raise ConfirmEvent, not be steered"));
+
+            // Verify no McpSteeringRefusalEvent posted (steering exempted our server)
+            boolean hasRefusalEvent = events.stream()
+                    .anyMatch(e -> e instanceof McpSteeringRefusalEvent);
+            assertFalse(hasRefusalEvent,
+                    "Steering must NOT deny elicitation from our own MCP server");
+
+            // Complete the decision and verify normal approval flow
+            confirmEvent.response().complete(new PermissionDecision(true, null));
+            JsonObject replyResult = reply.get(2, TimeUnit.SECONDS);
+            assertEquals("accept", replyResult.get("action").getAsString(),
+                    "Our server elicitation must follow normal approval flow");
+        } finally {
+            SessionRegistry.unregister(sessionId);
+        }
+    }
+
+    @Test
+    void mcpSteeringON_elicitationFromDifferentServer_steered() throws Exception {
+        List<AiProcessEvent> events = new ArrayList<>();
+        String sessionId = "steering-test-elicitation-other-session";
+        CodexAppServerHandler handler = handlerWithSteeringEnabled(sessionId, events);
+        try {
+            // Precondition: verify steering is actually ON before testing
+            AbstractAiSession session = SessionRegistry.get(sessionId);
+            assertTrue(session != null && session.getSettings() != null && session.getSettings().effectiveMcpSteering(),
+                    "Precondition: MCP steering must be ON for this test");
+
+            handler.onTurnStarting();
+
+            JsonObject params = new JsonObject();
+            params.addProperty("serverName", "some-other-mcp-server");
+            params.addProperty("message", "Allow custom action?");
+
+            JsonObject reply = handler.onServerRequest(
+                    CodexAppServerHandler.METHOD_MCP_ELICITATION, params)
+                    .get(2, TimeUnit.SECONDS);
+
+            assertEquals("decline", reply.get("action").getAsString(),
+                    "Steering ON must auto-deny elicitation from other servers");
+
+            // Verify McpSteeringRefusalEvent was posted
+            McpSteeringRefusalEvent refusalEvent = events.stream()
+                    .filter(e -> e instanceof McpSteeringRefusalEvent)
+                    .map(e -> (McpSteeringRefusalEvent) e)
+                    .findFirst()
+                    .orElseThrow(() -> new AssertionError("No McpSteeringRefusalEvent posted for other server elicitation"));
+
+            assertEquals(1, refusalEvent.refusals().size());
+            McpSteeringRefusalEvent.Refusal refusal = refusalEvent.refusals().get(0);
+            assertEquals("McpElicitation", refusal.toolLabel());
+            assertEquals(McpSteeringPolicy.steeringFeedbackFor(McpSteeringPolicy.Category.UNKNOWN),
+                    refusal.steeringText(),
+                    "Refusal text must match UNKNOWN category steering feedback");
+
+            // Verify no ConfirmEvent was raised (steering denied it)
+            boolean hasConfirmEvent = events.stream()
+                    .anyMatch(e -> e instanceof ConfirmEvent);
+            assertFalse(hasConfirmEvent,
+                    "Steering ON must NOT raise ConfirmEvent for other servers");
+        } finally {
+            SessionRegistry.unregister(sessionId);
+        }
+    }
+
     // ---- Malformed-payload hardening: reverting any single guard turns exactly the matching
     // assertion red (event lost behind the Throwable net, or a "handler threw" warning). ----
     private final List<AiProcessEvent> hardeningEvents = new ArrayList<>();
@@ -1720,7 +2037,7 @@ class CodexAppServerHandlerTest {
 
     @BeforeEach
     void setUp() {
-        hardenedHandler = new CodexAppServerHandler(hardeningListener, () -> {
+        hardenedHandler = new CodexAppServerHandler("test-session-id", hardeningListener, () -> {
         });
         warnings = new WarningCapture();
         Logger.getLogger(CodexAppServerHandler.class.getName()).addHandler(warnings);
@@ -1876,13 +2193,14 @@ class CodexAppServerHandlerTest {
     }
 
     /**
-     * A malformed change — non-primitive path, and no kind at all — must still yield a clean, prompt answer rather
-     * than hanging or throwing. That property is unchanged; the answer is not.
+     * A malformed change — non-primitive path, and no kind at all — must still yield a clean, prompt answer
+     * rather than hanging or throwing. That property is unchanged; the answer is not.
      *
-     * <p>This used to assert a blind ConfirmEvent ("Codex wants to modify a file", Yes/No). Under the allowlist an
-     * absent kind is a protocol violation — the schema makes it required — and is refused with a JSON-RPC error
-     * instead. Approving a change we cannot even identify was the weakest remaining path, and the old assertion was
-     * pinning it.</p>
+     * <p>
+     * This used to assert a blind ConfirmEvent ("Codex wants to modify a file", Yes/No). Under the allowlist
+     * an absent kind is a protocol violation — the schema makes it required — and is refused with a JSON-RPC
+     * error instead. Approving a change we cannot even identify was the weakest remaining path, and the old
+     * assertion was pinning it.</p>
      */
     @Test
     void fileChangeApproval_malformedChange_repliesWithAnErrorNotABlindConfirm() {

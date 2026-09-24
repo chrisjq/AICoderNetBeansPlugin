@@ -1,5 +1,7 @@
 package kiwi.ingenuity.netbeans.plugin.aicoder.ui;
 
+import java.awt.Component;
+import java.awt.Container;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -8,7 +10,10 @@ import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
 import java.util.List;
 import java.util.concurrent.atomic.AtomicReference;
+import javax.swing.JCheckBox;
+import javax.swing.JPanel;
 import javax.swing.SwingUtilities;
+import javax.swing.border.TitledBorder;
 import javax.swing.table.TableModel;
 import javax.swing.table.TableRowSorter;
 import kiwi.ingenuity.netbeans.plugin.aicoder.DatabaseAccessOptionEnum;
@@ -24,6 +29,7 @@ import kiwi.ingenuity.netbeans.plugin.aicoder.ui.settings.AiSessionConfigPanel;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ui.settings.AiSessionConfigPanelMode;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import org.junit.jupiter.api.Test;
@@ -35,7 +41,7 @@ class AiManagerModelTest {
 
     private static AiSession session(String id, String name, String projectPath, Instant created, Instant used) {
         return new AiSession(id, name, null, AiTypeEnum.CLAUDE, projectPath,
-                             new AiSessionSettings(), created, used);
+                new AiSessionSettings(), created, used);
     }
 
     private static AiSessionSettings configuredSettings() {
@@ -60,17 +66,16 @@ class AiManagerModelTest {
 
     private static TableModel newTemplateTableModel() {
         return new SimpleTableModel<ConfigTemplate>(new String[]{"Name", "Updated", "Created"},
-                                                    ConfigTemplate::name,
-                                                    ConfigTemplate::updatedAt,
-                                                    ConfigTemplate::createdAt);
+                ConfigTemplate::name,
+                ConfigTemplate::updatedAt,
+                ConfigTemplate::createdAt);
     }
 
     @SuppressWarnings({"unchecked", "rawtypes"})
     private static void setRows(TableModel model, List<?> rows) {
         if (model instanceof SessionTableModel sessionModel) {
             sessionModel.setRows((List<AiSession>) rows);
-        }
-        else if (model instanceof SimpleTableModel simpleModel) {
+        } else if (model instanceof SimpleTableModel simpleModel) {
             simpleModel.setRows(rows);
         }
     }
@@ -81,8 +86,7 @@ class AiManagerModelTest {
         SwingUtilities.invokeAndWait(() -> {
             try {
                 value.set(action.call());
-            }
-            catch (Exception e) {
+            } catch (Exception e) {
                 failure.set(e);
             }
         });
@@ -104,8 +108,8 @@ class AiManagerModelTest {
         assertEquals(2, model.getRowCount());
         assertEquals(5, model.getColumnCount());
         assertEquals(List.of("Name", "Type", "Project", "Last Use", "Created"),
-                     java.util.stream.IntStream.range(0, model.getColumnCount())
-                             .mapToObj(model::getColumnName).toList());
+                java.util.stream.IntStream.range(0, model.getColumnCount())
+                        .mapToObj(model::getColumnName).toList());
         assertEquals("Zulu", model.getValueAt(0, 0));
         assertEquals(AiTypeEnum.CLAUDE.displayName(), model.getValueAt(0, 1));
         assertEquals("zulu", model.getValueAt(0, 2));
@@ -122,9 +126,9 @@ class AiManagerModelTest {
     @Test
     void createSessionProjectLabelsUseTableNamesUnlessTheyAreAmbiguous() {
         assertEquals("app-platform", SessionPickerDialog.projectDisplayLabel(
-                     "/code/app-platform", List.of("/code/app-platform", "/code/utilities")));
+                "/code/app-platform", List.of("/code/app-platform", "/code/utilities")));
         assertEquals("/other/app-platform", SessionPickerDialog.projectDisplayLabel(
-                     "/other/app-platform", List.of("/code/app-platform", "/other/app-platform")));
+                "/other/app-platform", List.of("/code/app-platform", "/other/app-platform")));
     }
 
     @Test
@@ -178,8 +182,7 @@ class AiManagerModelTest {
         try {
             Files.createSymbolicLink(alias, real);
             return true;
-        }
-        catch (UnsupportedOperationException | IOException e) {
+        } catch (UnsupportedOperationException | IOException e) {
             return false;
         }
     }
@@ -194,8 +197,8 @@ class AiManagerModelTest {
         setRows(model, List.of(zulu, alpha));
 
         assertEquals(List.of("Name", "Updated", "Created"),
-                     java.util.stream.IntStream.range(0, model.getColumnCount())
-                             .mapToObj(model::getColumnName).toList());
+                java.util.stream.IntStream.range(0, model.getColumnCount())
+                        .mapToObj(model::getColumnName).toList());
         assertEquals("Zulu", model.getValueAt(0, 0));
         assertEquals(DATE_FORMAT.format(zulu.updatedAt()), model.getValueAt(0, 1));
         assertEquals(DATE_FORMAT.format(zulu.createdAt()), model.getValueAt(0, 2));
@@ -206,13 +209,13 @@ class AiManagerModelTest {
     }
 
     /**
-     * applyGlobal is the Tools &gt; Options "Apply" path — the only way the plugin-wide git defaults are ever written.
-     * It is NOT covered by the session/template test below, which deliberately asserts that global mode REJECTS
-     * loadSession/applySession.
+     * applyGlobal is the Tools &gt; Options "Apply" path — the only way the plugin-wide git defaults are ever
+     * written. It is NOT covered by the session/template test below, which deliberately asserts that global
+     * mode REJECTS loadSession/applySession.
      * <p>
-     * Note the shape: the stored values are moved AWAY from what the panel holds before applyGlobal is called. Loading
-     * and re-applying the same values would pass whether or not applyGlobal writes the git settings at all, because
-     * PluginSettings would already hold them.
+     * Note the shape: the stored values are moved AWAY from what the panel holds before applyGlobal is
+     * called. Loading and re-applying the same values would pass whether or not applyGlobal writes the git
+     * settings at all, because PluginSettings would already hold them.
      */
     @Test
     void applyGlobalWritesGitAccessBackToPluginSettings() throws Exception {
@@ -243,13 +246,12 @@ class AiManagerModelTest {
             });
 
             assertTrue(PluginSettings.isAllowGitAccess(),
-                       "master flag not written — its line is missing from applyGlobal");
+                    "master flag not written — its line is missing from applyGlobal");
             assertTrue(PluginSettings.isAllowGitAccessOption(GitAccessOptionEnum.READ),
-                       "READ not written by applyGlobal");
+                    "READ not written by applyGlobal");
             assertFalse(PluginSettings.isAllowGitAccessOption(GitAccessOptionEnum.WRITE),
-                        "WRITE not written by applyGlobal");
-        }
-        finally {
+                    "WRITE not written by applyGlobal");
+        } finally {
             PluginSettings.setAllowGitAccess(savedMaster);
             PluginSettings.setAllowGitAccessOption(GitAccessOptionEnum.READ, savedRead);
             PluginSettings.setAllowGitAccessOption(GitAccessOptionEnum.WRITE, savedWrite);
@@ -260,7 +262,7 @@ class AiManagerModelTest {
     void sessionAndTemplateModesBindGenericSettingsButGlobalModeRejectsThem() throws Exception {
         AiSessionSettings values = configuredSettings();
         for (AiSessionConfigPanelMode mode : List.of(AiSessionConfigPanelMode.SESSION,
-                                                     AiSessionConfigPanelMode.TEMPLATE)) {
+                AiSessionConfigPanelMode.TEMPLATE)) {
             AiSessionConfigPanel panel = onEdt(() -> new AiSessionConfigPanel(mode));
             onEdt(() -> {
                 panel.loadSession(values);
@@ -279,7 +281,7 @@ class AiManagerModelTest {
             assertEquals(values.allowGitAccess(), target.allowGitAccess(), "allowGitAccess");
             for (GitAccessOptionEnum option : GitAccessOptionEnum.values()) {
                 assertEquals(values.allowGitAccessOption(option),
-                             target.allowGitAccessOption(option), option.name());
+                        target.allowGitAccessOption(option), option.name());
             }
             assertEquals(values.effectiveEnableClipboardAccess(), target.enableClipboardAccess());
         }
@@ -290,6 +292,98 @@ class AiManagerModelTest {
             assertThrows(IllegalStateException.class, () -> global.applySession(new AiSessionSettings()));
             return null;
         });
+    }
+
+    @Test
+    void templateModeExposesEditableMcpSteering() throws Exception {
+        AiSessionConfigPanel panel = onEdt(() -> new AiSessionConfigPanel(AiSessionConfigPanelMode.TEMPLATE));
+        JCheckBox steering = onEdt(() -> findMcpSteeringCheckBox(panel));
+
+        assertNotNull(steering);
+        assertTrue(steering.isVisible());
+        assertTrue(steering.isEnabled());
+
+        onEdt(() -> {
+            steering.setSelected(false);
+            return null;
+        });
+        assertFalse(onEdt(() -> panel.snapshot().mcpSteering()));
+    }
+
+    /**
+     * Reproduces exactly what {@link kiwi.ingenuity.netbeans.plugin.aicoder.ui.ConfigTemplatesPanel} does
+     * when editing a template: it calls the single-argument {@code loadSession(AiSessionSettings)} both to
+     * populate the editor with an existing template ({@code loadEditor}) and to reset it to a blank template
+     * ({@code clearEditor}). Construction alone shows the MCP steering control in TEMPLATE mode, but a prior
+     * fix left {@code loadSession(AiSessionSettings)} unconditionally re-hiding it afterwards, so the control
+     * vanished the moment a template was selected or the editor cleared.
+     */
+    @Test
+    void templateModeKeepsMcpSteeringVisibleAfterLoadSession() throws Exception {
+        AiSessionConfigPanel panel = onEdt(() -> new AiSessionConfigPanel(AiSessionConfigPanelMode.TEMPLATE));
+
+        AiSessionSettings settings = new AiSessionSettings();
+        settings.setMcpSteering(true);
+        onEdt(() -> {
+            panel.loadSession(settings);
+            return null;
+        });
+
+        JCheckBox steering = onEdt(() -> findMcpSteeringCheckBox(panel));
+        assertNotNull(steering);
+        assertTrue(steering.isVisible(),
+                "MCP steering checkbox must stay visible in TEMPLATE mode after loadSession(settings)");
+        assertTrue(steering.isEnabled(),
+                "MCP steering checkbox must stay enabled in TEMPLATE mode after loadSession(settings)");
+
+        onEdt(() -> {
+            steering.setSelected(false);
+            return null;
+        });
+        AiSessionSettings snapshot = onEdt(panel::snapshot);
+        assertFalse(snapshot.mcpSteering(), "a value set in template mode must survive snapshot()");
+
+        // clearEditor() calls loadSession(new AiSessionSettings()) — must not re-hide the control either.
+        onEdt(() -> {
+            panel.loadSession(new AiSessionSettings());
+            return null;
+        });
+        assertTrue(steering.isVisible(),
+                "MCP steering checkbox must stay visible in TEMPLATE mode after loadSession(new AiSessionSettings())");
+        assertTrue(steering.isEnabled(),
+                "MCP steering checkbox must stay enabled in TEMPLATE mode after loadSession(new AiSessionSettings())");
+    }
+
+    private static JCheckBox findMcpSteeringCheckBox(Component root) {
+        if (root instanceof JPanel panel
+                && panel.getBorder() instanceof TitledBorder border
+                && "MCP steering".equals(border.getTitle())) {
+            return findCheckBox(panel);
+        }
+        if (root instanceof Container container) {
+            for (Component child : container.getComponents()) {
+                JCheckBox result = findMcpSteeringCheckBox(child);
+                if (result != null) {
+                    return result;
+                }
+            }
+        }
+        return null;
+    }
+
+    private static JCheckBox findCheckBox(Container container) {
+        for (Component child : container.getComponents()) {
+            if (child instanceof JCheckBox checkBox) {
+                return checkBox;
+            }
+            if (child instanceof Container nested) {
+                JCheckBox result = findCheckBox(nested);
+                if (result != null) {
+                    return result;
+                }
+            }
+        }
+        return null;
     }
 
     @Test

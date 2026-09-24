@@ -30,26 +30,28 @@ import kiwi.ingenuity.netbeans.plugin.aicoder.process.server.McpServerRegistry;
 import kiwi.ingenuity.netbeans.plugin.aicoder.utils.StatusMessageUtil;
 
 /**
- * Owns one {@code codex app-server} subprocess per plugin session, frames newline-delimited JSON-RPC 2.0 on its
- * stdin/stdout via {@link CodexJsonRpcClient}, and drives the turn lifecycle. Streaming text and the permission bridge
- * live in {@link CodexAppServerHandler}. MCP registration is handled here via {@link CodexAiMcpRegistrar} and a
- * per-spawn {@code -c mcp_servers.<name>.url=...} override; the info bar is still a later slice.
+ * Owns one {@code codex app-server} subprocess per plugin session, frames newline-delimited JSON-RPC 2.0 on
+ * its stdin/stdout via {@link CodexJsonRpcClient}, and drives the turn lifecycle. Streaming text and the
+ * permission bridge live in {@link CodexAppServerHandler}. MCP registration is handled here via
+ * {@link CodexAiMcpRegistrar} and a per-spawn {@code -c mcp_servers.<name>.url=...} override; the info bar is
+ * still a later slice.
  *
  * <p>
- * The process is spawned lazily on the first {@link #sendPrompt} call, same as {@code OpenCodeAiProcessManager} —
- * {@link #start} only validates preconditions and reports READY, so opening a session tab never spawns a process the
- * user might never use.
+ * The process is spawned lazily on the first {@link #sendPrompt} call, same as
+ * {@code OpenCodeAiProcessManager} — {@link #start} only validates preconditions and reports READY, so
+ * opening a session tab never spawns a process the user might never use.
  *
  * <p>
- * Handshake order: {@code initialize} -> {@code initialized} -> {@code thread/start} (or {@code thread/resume} with a
- * saved thread id), capturing the thread id from the response — paired to that exact request by id, so it cannot race
- * or be missed the way the {@code thread/started} notification could (the warning about OpenCode's resume bug).
+ * Handshake order: {@code initialize} -> {@code initialized} -> {@code thread/start} (or
+ * {@code thread/resume} with a saved thread id), capturing the thread id from the response — paired to that
+ * exact request by id, so it cannot race or be missed the way the {@code thread/started} notification could
+ * (the warning about OpenCode's resume bug).
  *
  * <p>
  * {@code thread/start}/{@code thread/resume} send {@code sandbox:
  * "workspace-write"} and {@code approvalPolicy: "untrusted"} and the resolved model — {@code
- * ThreadStartParams.model} is honored directly (confirmed by live probe: a non-default model requested in the params
- * came back unchanged in the response), unlike OpenCode, which has no model parameter on {@code
+ * ThreadStartParams.model} is honored directly (confirmed by live probe: a non-default model requested in the
+ * params came back unchanged in the response), unlike OpenCode, which has no model parameter on {@code
  * session/new} and needs a post-hoc {@code session/set_config_option} dance.
  */
 public class CodexAiProcessManager extends AiProcessManager {
@@ -65,8 +67,8 @@ public class CodexAiProcessManager extends AiProcessManager {
     static final String MCP_SERVER_NAME = StringConst.PLUGIN_ID;
     /**
      * Mail interrupt text — same spirit and wording as {@code
-     * GithubCopilotProcessManager}'s Mail notice, so the on-screen behaviour reads the same across backends that
-     * support mid-turn injection.
+     * GithubCopilotProcessManager}'s Mail notice, so the on-screen behaviour reads the same across backends
+     * that support mid-turn injection.
      */
     static final String MAIL_STEER_TEXT = InterruptTypeEnum.MAIL_NOTIFICATION_TEXT;
 
@@ -85,8 +87,9 @@ public class CodexAiProcessManager extends AiProcessManager {
      * {@code sandbox}/{@code approvalPolicy} are plain wire strings on {@code
      * ThreadStartParams}/{@code ThreadResumeParams} (kebab-case) — NOT the same shape as
      * {@code TurnStartParams.sandboxPolicy}, which is an object with a camelCase {@code type}
-     * (readOnly/workspaceWrite/dangerFullAccess). Confirmed by reading both generated schemas; easy to conflate since
-     * they cover the same concept. {@code model} is omitted (letting Codex use its own default) when null or blank.
+     * (readOnly/workspaceWrite/dangerFullAccess). Confirmed by reading both generated schemas; easy to
+     * conflate since they cover the same concept. {@code model} is omitted (letting Codex use its own
+     * default) when null or blank.
      */
     static JsonObject buildThreadStartParams(String cwd, String model) {
         JsonObject params = new JsonObject();
@@ -112,10 +115,10 @@ public class CodexAiProcessManager extends AiProcessManager {
     }
 
     /**
-     * {@code TurnStartParams}, codex-cli 0.155.0: {@code threadId} and the {@code input} array as usual, plus an
-     * optional {@code effort} override — "Override the reasoning effort for this turn and subsequent turns." A null or
-     * blank {@code effort} omits the field, letting the model apply its own default (the "not set" entry
-     * {@code (model default)}).
+     * {@code TurnStartParams}, codex-cli 0.155.0: {@code threadId} and the {@code input} array as usual, plus
+     * an optional {@code effort} override — "Override the reasoning effort for this turn and subsequent
+     * turns." A null or blank {@code effort} omits the field, letting the model apply its own default (the
+     * "not set" entry {@code (model default)}).
      */
     static JsonObject buildTurnStartParams(String threadId, String promptText, String effort) {
         JsonObject textInput = new JsonObject();
@@ -146,17 +149,17 @@ public class CodexAiProcessManager extends AiProcessManager {
      * {@code TurnSteerParams} (confirmed by generating the schema live against {@code codex-cli 0.148.0} with {@code codex app-server
      * generate-json-schema} — since no persisted copy of the schemas remained on disk): {@code threadId} and
      * {@code input} are the same shape as {@code turn/start}'s, but steering additionally requires
-     * {@code expectedTurnId} — "Required active turn id precondition. The request fails when it does not match the
-     * currently active turn." {@code TurnSteerResponse} on success is just {@code
+     * {@code expectedTurnId} — "Required active turn id precondition. The request fails when it does not
+     * match the currently active turn." {@code TurnSteerResponse} on success is just {@code
      * {turnId}}; there is no in-band error field on either params or response, so a refusal (e.g.
-     * {@code ActiveTurnNotSteerable}, returned per the schema when the active turn cannot accept same-turn steering — a
-     * {@code /review} or manual {@code /compact} in progress) can only surface as a genuine JSON-RPC error response,
-     * not a "successful" body. {@code
-     * CodexJsonRpcClient} does not parse the error's {@code data} field at all ({@link CodexJsonRpcException} carries
-     * only {@code code}/{@code
-     * message}), so there is no {@code codexErrorInfo} discriminant available to branch on here even if one wanted to —
-     * every {@code turn/steer} failure is handled identically (log and leave the message for the normal inbox flush),
-     * which is also exactly the required behaviour for {@code
+     * {@code ActiveTurnNotSteerable}, returned per the schema when the active turn cannot accept same-turn
+     * steering — a {@code /review} or manual {@code /compact} in progress) can only surface as a genuine
+     * JSON-RPC error response, not a "successful" body. {@code
+     * CodexJsonRpcClient} does not parse the error's {@code data} field at all ({@link CodexJsonRpcException}
+     * carries only {@code code}/{@code
+     * message}), so there is no {@code codexErrorInfo} discriminant available to branch on here even if one
+     * wanted to — every {@code turn/steer} failure is handled identically (log and leave the message for the
+     * normal inbox flush), which is also exactly the required behaviour for {@code
      * ActiveTurnNotSteerable} specifically.
      */
     static JsonObject buildTurnSteerParams(String threadId, String expectedTurnId, String promptText) {
@@ -174,10 +177,10 @@ public class CodexAiProcessManager extends AiProcessManager {
 
     /**
      * Extracts the thread id from a {@code thread/start} or {@code
-     * thread/resume} response — both nest it at {@code result.thread.id} (camelCase, confirmed by live probe), not a
-     * top-level {@code thread_id} as an earlier unverified example (sourced from {@code codex exec
-     * --json}'s unrelated JSONL format) suggested. Returns null on any unexpected shape rather than throwing — callers
-     * must treat null as "handshake did not produce a usable id".
+     * thread/resume} response — both nest it at {@code result.thread.id} (camelCase, confirmed by live
+     * probe), not a top-level {@code thread_id} as an earlier unverified example (sourced from {@code codex exec
+     * --json}'s unrelated JSONL format) suggested. Returns null on any unexpected shape rather than throwing
+     * — callers must treat null as "handshake did not produce a usable id".
      */
     static String extractThreadId(JsonObject result) {
         if (result == null || !result.has(CodexJsonKeyEnum.THREAD.key())) {
@@ -219,10 +222,10 @@ public class CodexAiProcessManager extends AiProcessManager {
     }
 
     /**
-     * {@code thread/start}/{@code thread/resume}/{@code thread/fork} carry the live {@code reasoningEffort} (read as a
-     * top-level sibling of {@code result.model}, falling back to {@code result.thread.reasoningEffort}) and seeds the
-     * info-bar combo's current selection. Returns null when absent, matching the "unknown" convention of the other
-     * extractors.
+     * {@code thread/start}/{@code thread/resume}/{@code thread/fork} carry the live {@code reasoningEffort}
+     * (read as a top-level sibling of {@code result.model}, falling back to
+     * {@code result.thread.reasoningEffort}) and seeds the info-bar combo's current selection. Returns null
+     * when absent, matching the "unknown" convention of the other extractors.
      */
     static String extractReasoningEffort(JsonObject result) {
         if (result == null) {
@@ -242,8 +245,8 @@ public class CodexAiProcessManager extends AiProcessManager {
     }
 
     /**
-     * Finds a model's entry in a {@code model/list} response ({@code data} array of Model objects) by id, falling back
-     * to the deprecated {@code model} key. Returns null when absent.
+     * Finds a model's entry in a {@code model/list} response ({@code data} array of Model objects) by id,
+     * falling back to the deprecated {@code model} key. Returns null when absent.
      */
     static JsonObject findModelObject(JsonObject result, String model) {
         if (result == null || model == null || model.isBlank() || !result.has(CodexJsonKeyEnum.DATA.key())) {
@@ -269,8 +272,8 @@ public class CodexAiProcessManager extends AiProcessManager {
     }
 
     /**
-     * Reads a Model object's {@code supportedReasoningEfforts} array, taking each entry's {@code reasoningEffort} value
-     * (deduped, in order). Empty when the model exposes none.
+     * Reads a Model object's {@code supportedReasoningEfforts} array, taking each entry's
+     * {@code reasoningEffort} value (deduped, in order). Empty when the model exposes none.
      */
     static List<String> extractSupportedReasoningEfforts(JsonObject modelObj) {
         if (modelObj == null || !modelObj.has(CodexJsonKeyEnum.SUPPORTED_REASONING_EFFORTS.key())) {
@@ -308,11 +311,11 @@ public class CodexAiProcessManager extends AiProcessManager {
     }
 
     /**
-     * Probes {@code model/list} on the established client, caches the capability list for subsequent dialogs, and fires
-     * a per-session {@link CodexReasoningEffortEvent} (combo data for the info bar). Runs in the handshake thread; any
-     * probe failure degrades silently to "no capability info" — the backend then never sends an {@code effort} field.
-     * Also applies {@link #applyInitialEffortOption} so a stored-but-unsupported effort is cleared up front rather than
-     * sent and ignored.
+     * Probes {@code model/list} on the established client, caches the capability list for subsequent dialogs,
+     * and fires a per-session {@link CodexReasoningEffortEvent} (combo data for the info bar). Runs in the
+     * handshake thread; any probe failure degrades silently to "no capability info" — the backend then never
+     * sends an {@code effort} field. Also applies {@link #applyInitialEffortOption} so a
+     * stored-but-unsupported effort is cleared up front rather than sent and ignored.
      */
     private void fireReasoningEffortEvent(CodexJsonRpcClient c, String activeModel, String echoEffort) {
         List<String> supported = List.of();
@@ -323,13 +326,11 @@ public class CodexAiProcessManager extends AiProcessManager {
             if (modelObj != null) {
                 supported = extractSupportedReasoningEfforts(modelObj);
                 defaultEffort = extractDefaultReasoningEffort(modelObj);
-            }
-            else {
+            } else {
                 LOG.log(Level.FINE, "model/list did not include \"{0}\"; treating as no reasoning-effort support",
                         activeModel);
             }
-        }
-        catch (Exception e) {
+        } catch (Exception e) {
             LOG.log(Level.FINE, "model/list unavailable; reasoning effort stays (model default): {0}",
                     e.getMessage() != null ? e.getMessage() : e.toString());
         }
@@ -343,9 +344,9 @@ public class CodexAiProcessManager extends AiProcessManager {
 
     /**
      * Reasoning-effort validation at session establishment, mirroring
-     * {@code OpenCodeAiProcessManager.applyInitialEffortOption}: when the stored per-session effort is not in the
-     * model's supported list, clear it and fire exactly one INFO status event naming the model. Nothing is cleared (and
-     * no event fires) when the effort is unset or supported.
+     * {@code OpenCodeAiProcessManager.applyInitialEffortOption}: when the stored per-session effort is not in
+     * the model's supported list, clear it and fire exactly one INFO status event naming the model. Nothing
+     * is cleared (and no event fires) when the effort is unset or supported.
      */
     void applyInitialEffortOption(String activeModel, List<String> supported) {
         String storedEffort;
@@ -362,15 +363,15 @@ public class CodexAiProcessManager extends AiProcessManager {
             return;
         }
         String reason = supported.isEmpty()
-                        ? "but " + activeModel + " exposes no supported reasoning efforts from the server"
-                        : "it is not one of the supported efforts for " + activeModel + "; using the model default";
+                ? "but " + activeModel + " exposes no supported reasoning efforts from the server"
+                : "it is not one of the supported efforts for " + activeModel + "; using the model default";
         synchronized (this) {
             if (currentSession != null && currentSession.settings() instanceof CodexSessionSettings cs) {
                 cs.setEffort(null);
             }
         }
         listener.onAiProcessEvent(new StatusEvent(StatusEventTypeEnum.INFO,
-                                                  "Reasoning effort \"" + storedEffort + "\" cleared — " + reason));
+                "Reasoning effort \"" + storedEffort + "\" cleared — " + reason));
     }
 
     /**
@@ -387,40 +388,42 @@ public class CodexAiProcessManager extends AiProcessManager {
     }
 
     /**
-     * Per-invocation {@code -c} overrides that register the plugin's MCP endpoint with Codex for this one process —
-     * never written to {@code ~/.codex/config.toml} ({@code -c} is TOML-parsed and per-spawn, which is what avoids the
-     * cross-session credential collision a shared config file would create).
+     * Per-invocation {@code -c} overrides that register the plugin's MCP endpoint with Codex for this one
+     * process — never written to {@code ~/.codex/config.toml} ({@code -c} is TOML-parsed and per-spawn, which
+     * is what avoids the cross-session credential collision a shared config file would create).
      *
      * <p>
-     * {@code default_tools_approval_mode} avoids double-gating: this plugin already gates every mutating tool itself — {@code ApplyEdit}/{@code
-     * WriteFile} through the diff panel, {@code DeleteFile}/{@code CopyFile}/ {@code MoveFile} through the confirm
-     * panel — so a Codex-side prompt on top asks the user twice for one action, and for a read-only tool like
-     * {@code GetInstructions} it asks about nothing at all.
+     * {@code default_tools_approval_mode} avoids double-gating: this plugin already gates every mutating tool
+     * itself — {@code ApplyEdit}/{@code
+     * WriteFile} through the diff panel, {@code DeleteFile}/{@code CopyFile}/ {@code MoveFile} through the
+     * confirm panel — so a Codex-side prompt on top asks the user twice for one action, and for a read-only
+     * tool like {@code GetInstructions} it asks about nothing at all.
      *
      * <p>
-     * The accepted values are {@code auto}, {@code prompt}, {@code writes} and {@code approve} (confirmed by feeding
-     * the binary a bad value and reading the variants back out of the deserialiser). This was {@code "auto"}, and a
-     * live run showed Codex still prompting for every single tool call, including read-only ones — {@code auto} appears
-     * to decide from per-tool metadata, and these tools carry no read-only annotations for it to go on. {@code approve}
-     * is the "already approved, do not ask" end of that axis.
+     * The accepted values are {@code auto}, {@code prompt}, {@code writes} and {@code approve} (confirmed by
+     * feeding the binary a bad value and reading the variants back out of the deserialiser). This was
+     * {@code "auto"}, and a live run showed Codex still prompting for every single tool call, including
+     * read-only ones — {@code auto} appears to decide from per-tool metadata, and these tools carry no
+     * read-only annotations for it to go on. {@code approve} is the "already approved, do not ask" end of
+     * that axis.
      *
      * <p>
-     * Safe because it does not widen what Codex may do: it only stops Codex asking a second time about actions this
-     * plugin already gates. Anything that mutates still stops at the diff or confirm panel.
+     * Safe because it does not widen what Codex may do: it only stops Codex asking a second time about
+     * actions this plugin already gates. Anything that mutates still stops at the diff or confirm panel.
      *
      * <p>
-     * NOT yet confirmed live — verify that tool calls stop prompting, and that a file edit still raises the diff panel.
-     * If prompts persist, the next thing to check is whether the server-side {@code mcpServer/elicitation/request} is
-     * raised independently of this setting, in which case the answer is to annotate the read-only tools rather than to
-     * change this value again.
+     * NOT yet confirmed live — verify that tool calls stop prompting, and that a file edit still raises the
+     * diff panel. If prompts persist, the next thing to check is whether the server-side
+     * {@code mcpServer/elicitation/request} is raised independently of this setting, in which case the answer
+     * is to annotate the read-only tools rather than to change this value again.
      *
      * <p>
-     * No header-based credentials are added here (unlike an earlier {@code http_headers}/{@code env_http_headers}
-     * sketch) — {@code McpHookServer}'s {@code tools/call} handler authenticates from
-     * {@code arguments.sessionId}/{@code arguments.secretKey} only, never from HTTP headers, and those travel to Codex
-     * the same way they do for every other AI type: prepended to the prompt text by
-     * {@code ContextProvider.buildIdentityBlock()}, gated on {@code AiTypeEnum.CODEX}'s {@code CREDENTIALS} mcpOption
-     * (already set).
+     * No header-based credentials are added here (unlike an earlier
+     * {@code http_headers}/{@code env_http_headers} sketch) — {@code McpHookServer}'s {@code tools/call}
+     * handler authenticates from {@code arguments.sessionId}/{@code arguments.secretKey} only, never from
+     * HTTP headers, and those travel to Codex the same way they do for every other AI type: prepended to the
+     * prompt text by {@code ContextProvider.buildIdentityBlock()}, gated on {@code AiTypeEnum.CODEX}'s
+     * {@code CREDENTIALS} mcpOption (already set).
      */
     static List<String> buildMcpConfigArgs(String mcpEndpointUrl) {
         if (mcpEndpointUrl == null || mcpEndpointUrl.isBlank()) {
@@ -444,9 +447,9 @@ public class CodexAiProcessManager extends AiProcessManager {
     private CodexAiSession codexAiSession;
     /**
      * Set when {@link #interrupt} runs before {@code turn/start}'s response has delivered
-     * {@link #currentTurnId} — {@code turn/interrupt} needs both ids (schema-confirmed) and cannot be sent yet.
-     * {@link #sendTurn}'s response continuation checks this and fires the deferred interrupt the instant the turn id
-     * becomes known, instead of the request silently going nowhere.
+     * {@link #currentTurnId} — {@code turn/interrupt} needs both ids (schema-confirmed) and cannot be sent
+     * yet. {@link #sendTurn}'s response continuation checks this and fires the deferred interrupt the instant
+     * the turn id becomes known, instead of the request silently going nowhere.
      */
     private volatile boolean interruptRequested;
     volatile String pendingResumeThreadId;
@@ -469,12 +472,12 @@ public class CodexAiProcessManager extends AiProcessManager {
         if (!CodexExecutableLocator.isExecutableFile(executablePath)) {
             running = false;
             listener.onAiProcessEvent(new StatusEvent(StatusEventTypeEnum.FAILED,
-                                                      StatusMessageUtil.formatStartFailed("executable not found at " + executablePath)));
+                    StatusMessageUtil.formatStartFailed("executable not found at " + executablePath)));
             return;
         }
         if (currentSession == null) {
             listener.onAiProcessEvent(new StatusEvent(StatusEventTypeEnum.FAILED,
-                                                      StatusMessageUtil.formatSessionNotConfigured()));
+                    StatusMessageUtil.formatSessionNotConfigured()));
             return;
         }
         sessionId = currentSession.id();
@@ -486,16 +489,14 @@ public class CodexAiProcessManager extends AiProcessManager {
             boolean ok = McpServerRegistry.register(reg).get(30, TimeUnit.SECONDS);
             if (ok) {
                 registrar = reg;
-            }
-            else {
+            } else {
                 listener.onAiProcessEvent(new StatusEvent(StatusEventTypeEnum.INFO,
-                                                          "MCP server registration returned false — running without MCP tools"));
+                        "MCP server registration returned false — running without MCP tools"));
             }
-        }
-        catch (Exception e) {
+        } catch (Exception e) {
             LOG.log(Level.WARNING, "MCP server registration failed; running without MCP tools", e);
             listener.onAiProcessEvent(new StatusEvent(StatusEventTypeEnum.INFO,
-                                                      "MCP server unavailable — running without MCP tools"));
+                    "MCP server unavailable — running without MCP tools"));
         }
 
         codexAiSession = new CodexAiSession(currentSession, listener);
@@ -510,9 +511,9 @@ public class CodexAiProcessManager extends AiProcessManager {
     }
 
     /**
-     * Spawns the codex process and performs the handshake. Always called on a background thread — blocks up to 30 s per
-     * request. The instance monitor is held only for brief state writes, never across the blocking waits, mirroring
-     * {@code OpenCodeAiProcessManager.spawnAndHandshake}.
+     * Spawns the codex process and performs the handshake. Always called on a background thread — blocks up
+     * to 30 s per request. The instance monitor is held only for brief state writes, never across the
+     * blocking waits, mirroring {@code OpenCodeAiProcessManager.spawnAndHandshake}.
      */
     protected void spawnAndHandshake(File workDir) throws Exception {
         String mcpEndpointUrl = registrar != null ? McpServerRegistry.endpointUrlFor(AiTypeEnum.CODEX) : null;
@@ -562,9 +563,9 @@ public class CodexAiProcessManager extends AiProcessManager {
         startStderrDrainer(p);
         p.onExit().thenRun(() -> handleProcessExit(p));
 
-        CodexAppServerHandler handler = new CodexAppServerHandler(listener, this::onHandlerDisconnected);
+        CodexAppServerHandler handler = new CodexAppServerHandler(sessionId, listener, this::onHandlerDisconnected);
         CodexJsonRpcClient c = new CodexJsonRpcClient(p.getOutputStream(), p.getInputStream(),
-                                                      this::onNotification, handler::onServerRequest, handler::onDisconnected);
+                this::onNotification, handler::onServerRequest, handler::onDisconnected);
 
         String resumeId = pendingResumeThreadId;
         JsonObject threadResult;
@@ -576,25 +577,22 @@ public class CodexAiProcessManager extends AiProcessManager {
             if (resumeId != null) {
                 try {
                     threadResult = c.sendRequest("thread/resume",
-                                                 buildThreadResumeParams(resumeId, workDir.getAbsolutePath(), model))
+                            buildThreadResumeParams(resumeId, workDir.getAbsolutePath(), model))
                             .get(30, TimeUnit.SECONDS);
-                }
-                catch (Exception e) {
+                } catch (Exception e) {
                     LOG.log(Level.INFO, "thread/resume failed; falling back to thread/start: {0}", e.getMessage());
                     listener.onAiProcessEvent(new StatusEvent(StatusEventTypeEnum.INFO,
-                                                              "Previous Codex session could not be resumed; starting fresh"));
+                            "Previous Codex session could not be resumed; starting fresh"));
                     threadResult = c.sendRequest("thread/start",
-                                                 buildThreadStartParams(workDir.getAbsolutePath(), model))
+                            buildThreadStartParams(workDir.getAbsolutePath(), model))
                             .get(30, TimeUnit.SECONDS);
                 }
-            }
-            else {
+            } else {
                 threadResult = c.sendRequest("thread/start",
-                                             buildThreadStartParams(workDir.getAbsolutePath(), model))
+                        buildThreadStartParams(workDir.getAbsolutePath(), model))
                         .get(30, TimeUnit.SECONDS);
             }
-        }
-        catch (Exception e) {
+        } catch (Exception e) {
             c.close();
             synchronized (this) {
                 if (currentProcess == p) {
@@ -688,32 +686,33 @@ public class CodexAiProcessManager extends AiProcessManager {
     }
 
     /**
-     * Background-thread entry point when no app-server connection exists yet. Calls {@link #spawnAndHandshake} (which
-     * blocks up to 90 s), then hands the prompt to {@link #sendTurn} once the client is live — holding {@code
-     * processing} true across the hand-off so an EDT {@link #sendPrompt} landing in between cannot slip past its guard
-     * and start a duplicate turn/handshake. Runs entirely outside the instance monitor during the blocking wait.
+     * Background-thread entry point when no app-server connection exists yet. Calls
+     * {@link #spawnAndHandshake} (which blocks up to 90 s), then hands the prompt to {@link #sendTurn} once
+     * the client is live — holding {@code
+     * processing} true across the hand-off so an EDT {@link #sendPrompt} landing in between cannot slip past
+     * its guard and start a duplicate turn/handshake. Runs entirely outside the instance monitor during the
+     * blocking wait.
      */
     private void handshakeAndSend(String text, File workDir, List<File> projectDirs) {
         try {
             spawnAndHandshake(workDir);
-        }
-        catch (Exception e) {
+        } catch (Exception e) {
             synchronized (this) {
                 processing = false;
             }
             listener.onAiProcessEvent(new StatusEvent(StatusEventTypeEnum.FAILED,
-                                                      StatusMessageUtil.formatSendFailed(e.getMessage())));
+                    StatusMessageUtil.formatSendFailed(e.getMessage())));
             return;
         }
         deliverAfterHandshake(text);
     }
 
     /**
-     * Post-handshake delivery of the prompt queued by {@link #sendPrompt}, extracted from {@link #handshakeAndSend} so
-     * tests can drive the hand-off without spawning a real CLI. Keep {@code processing} true through the hand-off
-     * below: sendTurn rearms it, so only paths that never reach sendTurn clear it — exactly once, under the monitor.
-     * Clearing it unconditionally here reopened a window in which an EDT sendPrompt saw !processing and raced this
-     * thread with a second submit.
+     * Post-handshake delivery of the prompt queued by {@link #sendPrompt}, extracted from
+     * {@link #handshakeAndSend} so tests can drive the hand-off without spawning a real CLI. Keep
+     * {@code processing} true through the hand-off below: sendTurn rearms it, so only paths that never reach
+     * sendTurn clear it — exactly once, under the monitor. Clearing it unconditionally here reopened a window
+     * in which an EDT sendPrompt saw !processing and raced this thread with a second submit.
      */
     void deliverAfterHandshake(String text) {
         synchronized (this) {
@@ -770,7 +769,7 @@ public class CodexAiProcessManager extends AiProcessManager {
                         interruptRequested = false;
                     }
                     listener.onAiProcessEvent(new StatusEvent(StatusEventTypeEnum.FAILED,
-                                                              "turn/start failed: " + (ex.getMessage() != null ? ex.getMessage() : ex.toString())));
+                            "turn/start failed: " + (ex.getMessage() != null ? ex.getMessage() : ex.toString())));
                     return null;
                 });
     }
@@ -832,8 +831,7 @@ public class CodexAiProcessManager extends AiProcessManager {
                 LOG.log(Level.INFO, "Codex interrupt: turn/interrupt sent (threadId={0}, turnId={1})",
                         new Object[]{tid, tuid});
             }
-        }
-        else if (PluginSettings.isDebugJson()) {
+        } else if (PluginSettings.isDebugJson()) {
             LOG.log(Level.INFO, "Codex interrupt: turn/interrupt deferred, turnId not yet known (threadId={0})", tid);
         }
         listener.onAiProcessEvent(new StatusEvent(StatusEventTypeEnum.STOPPED, StatusMessageUtil.formatStopped()));
@@ -842,12 +840,13 @@ public class CodexAiProcessManager extends AiProcessManager {
     /**
      * Mail interjects the inbox notice into a running turn via {@code
      * turn/steer} instead of interrupting it — mirrors {@code
-     * GithubCopilotProcessManager}'s {@code session.send(..., "immediate")} approach, not Claude's turn-interrupting
-     * one, because Codex's app-server exposes steering as its own method rather than a mode on an in-flight send. Only
-     * attempted while a turn is actually in flight and its turn id is known; both a genuinely idle session and a
-     * refused steer (e.g. {@code ActiveTurnNotSteerable}) fall back identically to doing nothing further — the message
-     * is not lost, it simply arrives later via the normal inbox flush. Never escalates to Cancel: interrupting the
-     * user's turn to deliver a notice would be worse than delivering it late.
+     * GithubCopilotProcessManager}'s {@code session.send(..., "immediate")} approach, not Claude's
+     * turn-interrupting one, because Codex's app-server exposes steering as its own method rather than a mode
+     * on an in-flight send. Only attempted while a turn is actually in flight and its turn id is known; both
+     * a genuinely idle session and a refused steer (e.g. {@code ActiveTurnNotSteerable}) fall back
+     * identically to doing nothing further — the message is not lost, it simply arrives later via the normal
+     * inbox flush. Never escalates to Cancel: interrupting the user's turn to deliver a notice would be worse
+     * than delivering it late.
      */
     private void interruptMail() {
         CodexJsonRpcClient c;
@@ -887,8 +886,7 @@ public class CodexAiProcessManager extends AiProcessManager {
                                     + "flush (threadId={0}, turnId={1}, reason={2})",
                                     new Object[]{tid, tuid, ex.getMessage()});
                         }
-                    }
-                    else if (PluginSettings.isDebugJson()) {
+                    } else if (PluginSettings.isDebugJson()) {
                         LOG.log(Level.INFO, "Codex interrupt: turn/steer delivered (threadId={0}, turnId={1})",
                                 new Object[]{tid, tuid});
                     }
@@ -1002,12 +1000,13 @@ public class CodexAiProcessManager extends AiProcessManager {
 
     /**
      * Fires on the reader thread's stream-EOF disconnect signal, which can arrive before or after
-     * {@link Process#onExit()} — {@link #handleProcessExit} is the authoritative source for the {@code EXITED} status
-     * event and exit code, but this must independently clear {@code client}/{@code appServerHandler} /{@code threadId}
-     * too. Without that, a crash detected here but not yet by {@code onExit} leaves {@code client} non-null, so the
-     * next {@code sendPrompt} takes the {@code sendTurn} path against a dead connection instead of re-handshaking — the
-     * busy-forever bug this fixes. Deliberately does NOT null {@code currentProcess}: that stays
-     * {@link #handleProcessExit}'s job so its own staleness guard (`currentProcess != dead`) keeps working.
+     * {@link Process#onExit()} — {@link #handleProcessExit} is the authoritative source for the
+     * {@code EXITED} status event and exit code, but this must independently clear
+     * {@code client}/{@code appServerHandler} /{@code threadId} too. Without that, a crash detected here but
+     * not yet by {@code onExit} leaves {@code client} non-null, so the next {@code sendPrompt} takes the
+     * {@code sendTurn} path against a dead connection instead of re-handshaking — the busy-forever bug this
+     * fixes. Deliberately does NOT null {@code currentProcess}: that stays {@link #handleProcessExit}'s job
+     * so its own staleness guard (`currentProcess != dead`) keeps working.
      */
     void onHandlerDisconnected() {
         boolean suppress;
@@ -1039,10 +1038,11 @@ public class CodexAiProcessManager extends AiProcessManager {
     }
 
     /**
-     * {@link Process#onExit()} callback — the only reliable signal that the subprocess itself died (as opposed to the
-     * reader thread merely losing its stream, which {@link #onHandlerDisconnected} handles). Mirrors
-     * {@code OpenCodeAiProcessManager.handleProcessExit}: reports {@code EXITED} with the exit code and recent stderr
-     * so a crash is visible instead of leaving the session looking READY with no message at all.
+     * {@link Process#onExit()} callback — the only reliable signal that the subprocess itself died (as
+     * opposed to the reader thread merely losing its stream, which {@link #onHandlerDisconnected} handles).
+     * Mirrors {@code OpenCodeAiProcessManager.handleProcessExit}: reports {@code EXITED} with the exit code
+     * and recent stderr so a crash is visible instead of leaving the session looking READY with no message at
+     * all.
      */
     void handleProcessExit(Process dead) {
         boolean suppress;
@@ -1070,7 +1070,7 @@ public class CodexAiProcessManager extends AiProcessManager {
         int code = dead.exitValue();
         if (!suppress && code != 0) {
             listener.onAiProcessEvent(new StatusEvent(StatusEventTypeEnum.EXITED,
-                                                      StatusMessageUtil.formatExited("Codex", code, new ArrayList<>(recentStderr))));
+                    StatusMessageUtil.formatExited("Codex", code, new ArrayList<>(recentStderr))));
         }
     }
 
@@ -1088,8 +1088,7 @@ public class CodexAiProcessManager extends AiProcessManager {
                         recentStderr.remove(0);
                     }
                 }
-            }
-            catch (IOException e) {
+            } catch (IOException e) {
                 LOG.log(Level.FINE, "codex stderr drainer ended", e);
             }
         }, "codex-stderr");
