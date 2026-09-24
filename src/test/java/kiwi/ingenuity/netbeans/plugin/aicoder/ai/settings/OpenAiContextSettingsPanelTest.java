@@ -7,8 +7,8 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import org.junit.jupiter.api.Test;
 
 /**
- * Proves the bug: opening the context panel on a fresh session (all-null fields)
- * and clicking OK must produce global defaults, not the first enum constant.
+ * Proves the bug: opening the context panel on a fresh session (all-null fields) and clicking OK must produce
+ * global defaults, not the first enum constant.
  */
 class OpenAiContextSettingsPanelTest {
 
@@ -45,8 +45,8 @@ class OpenAiContextSettingsPanelTest {
                 "trigger must default to ESTIMATED_TOKENS, not MESSAGE_COUNT");
         assertEquals(ContextTrimStrategyEnum.DROP_MARKED, result.contextTrimStrategy(),
                 "strategy must default to DROP_MARKED, not NONE");
-        assertEquals(12000, result.contextTokenThreshold(),
-                "threshold must match global default of 12000");
+        assertEquals(0, result.contextTokenThreshold(),
+                "threshold must default to derive mode");
         assertEquals(70, result.contextTrimTargetPercent(),
                 "trim target must match global default of 70");
         assertEquals(0, result.contextMaxMessages(),
@@ -72,6 +72,21 @@ class OpenAiContextSettingsPanelTest {
 
         assertTrue(panel.thresholdHintText().contains("20,000"),
                 "hint label must update when the spinner value changes");
+    }
+
+    @Test
+    void deriveModeIsVisibleAndSurvivesRoundTrip() {
+        OpenAiClientSessionSettings settings = new OpenAiClientSessionSettings();
+        settings.setContextTokenThreshold(0);
+
+        OpenAiContextSettingsPanel panel = new OpenAiContextSettingsPanel();
+        panel.load(settings);
+
+        assertTrue(panel.thresholdHintText().contains("80%"));
+
+        OpenAiClientSessionSettings result = new OpenAiClientSessionSettings();
+        panel.applyTo(result);
+        assertEquals(0, result.contextTokenThreshold());
     }
 
     @Test

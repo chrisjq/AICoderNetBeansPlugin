@@ -7,19 +7,23 @@ public class OllamaSessionSettings extends OpenAiClientSessionSettings {
 
     private volatile String baseUrl;
     private volatile String reasoningEffort;
+    /**
+     * Null means inherit the AiTypeEnum schema-workaround default for existing sessions.
+     */
+    private volatile Boolean useNativeToolCalling;
 
     public OllamaSessionSettings() {
         super();
     }
 
     public OllamaSessionSettings(Integer maxHistory, Boolean restrictToProjectFiles,
-                                 Boolean allowInterAiComms, Boolean autoNotifyInbox,
-                                 Boolean allowImportantMessages, String sessionInstructions,
-                                 String model, String baseUrl, Boolean autoAccept,
-                                 Boolean allowWebRequests) {
+            Boolean allowInterAiComms, Boolean autoNotifyInbox,
+            Boolean allowImportantMessages, String sessionInstructions,
+            String model, String baseUrl, Boolean autoAccept,
+            Boolean allowWebRequests) {
         super(maxHistory, restrictToProjectFiles, allowInterAiComms,
-              autoNotifyInbox, allowImportantMessages, sessionInstructions,
-              model, autoAccept, allowWebRequests);
+                autoNotifyInbox, allowImportantMessages, sessionInstructions,
+                model, autoAccept, allowWebRequests);
         this.baseUrl = baseUrl;
     }
 
@@ -39,6 +43,14 @@ public class OllamaSessionSettings extends OpenAiClientSessionSettings {
         return reasoningEffort;
     }
 
+    public void setUseNativeToolCalling(Boolean useNativeToolCalling) {
+        this.useNativeToolCalling = useNativeToolCalling;
+    }
+
+    public Boolean useNativeToolCalling() {
+        return useNativeToolCalling;
+    }
+
     @Override
     public String getAdditionalInfo() {
         String extra = super.getAdditionalInfo();
@@ -47,6 +59,9 @@ public class OllamaSessionSettings extends OpenAiClientSessionSettings {
         }
         if (reasoningEffort != null) {
             extra += ", reasoningEffort: " + reasoningEffort;
+        }
+        if (useNativeToolCalling != null) {
+            extra += ", useNativeToolCalling: " + useNativeToolCalling;
         }
         return extra;
     }
@@ -59,6 +74,9 @@ public class OllamaSessionSettings extends OpenAiClientSessionSettings {
         }
         if (reasoningEffort != null) {
             cfgObj.addProperty(OllamaSessionSettingsKeyEnum.REASONING_EFFORT.key(), reasoningEffort);
+        }
+        if (useNativeToolCalling != null) {
+            cfgObj.addProperty(OllamaSessionSettingsKeyEnum.USE_NATIVE_TOOL_CALLING.key(), useNativeToolCalling);
         }
     }
 }

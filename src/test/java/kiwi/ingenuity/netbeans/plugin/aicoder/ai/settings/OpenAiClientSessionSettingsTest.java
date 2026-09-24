@@ -52,7 +52,7 @@ class OpenAiClientSessionSettingsTest {
 
         assertEquals(ContextTriggerEnum.ESTIMATED_TOKENS, s.effectiveContextTrimTrigger());
         assertEquals(ContextTrimStrategyEnum.DROP_MARKED, s.effectiveContextTrimStrategy());
-        assertEquals(12000, s.effectiveContextTokenThreshold());
+        assertEquals(0, s.effectiveContextTokenThreshold());
         assertEquals(70, s.effectiveContextTrimTargetPercent());
         assertEquals(0, s.effectiveContextMaxMessages());
         assertEquals(false, s.effectiveContextPersistOnClose());

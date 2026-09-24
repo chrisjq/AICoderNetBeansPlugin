@@ -101,6 +101,30 @@ class ContextTrimTest {
     }
 
     @Test
+    void summaryAndMarkerEstimatesMatchExactlyWhatSnapshotSends() {
+        TestBroker summary = new TestBroker(settings(ContextTrimStrategyEnum.SUMMARISE,
+                ContextTriggerEnum.ESTIMATED_TOKENS, 400));
+        summary.setSummariser(messages -> "condensed history");
+        for (int i = 0; i < 20; i++) {
+            addTurn(summary, "message " + i + " " + "x".repeat(200));
+        }
+        summary.trimIfNeeded();
+        assertTrue(summary.snapshot().stream().anyMatch(m -> m.content() != null
+                && m.content().contains("Summary of earlier conversation")));
+        assertEquals(summary.snapshotEstimate(), summary.estimatedTokenTotal());
+
+        TestBroker marker = new TestBroker(settings(ContextTrimStrategyEnum.DROP_MARKED,
+                ContextTriggerEnum.ESTIMATED_TOKENS, 400));
+        for (int i = 0; i < 20; i++) {
+            addTurn(marker, "message " + i + " " + "x".repeat(200));
+        }
+        marker.trimIfNeeded();
+        assertTrue(marker.snapshot().stream().anyMatch(m -> m.content() != null
+                && m.content().contains("trimmed to fit")));
+        assertEquals(marker.snapshotEstimate(), marker.estimatedTokenTotal());
+    }
+
+    @Test
     void pinnedContentAloneOverBudgetDoesNotSpin() {
         TestBroker b = new TestBroker(settings(ContextTrimStrategyEnum.DROP,
                 ContextTriggerEnum.ESTIMATED_TOKENS, 10));
@@ -129,7 +153,7 @@ class ContextTrimTest {
     void theTrimMarkerCountMatchesTheNumberOfGroupsActuallyEvicted() {
         TestBroker b = new TestBroker(settings(ContextTrimStrategyEnum.DROP_MARKED,
                 ContextTriggerEnum.ESTIMATED_TOKENS, 400));
-        
+
         // First batch: add turns until trim fires
         int totalEvictedGroups = 0;
         for (int i = 0; i < 20; i++) {
@@ -140,7 +164,7 @@ class ContextTrimTest {
         int afterFirstTrim = b.entryCount();
         int firstBatchEvicted = (beforeFirstTrim - afterFirstTrim) / 2;
         totalEvictedGroups += firstBatchEvicted;
-        
+
         // Second batch: add more turns and trim again to accumulate count
         for (int i = 0; i < 20; i++) {
             addTurn(b, "more " + i + " " + "x".repeat(200));
@@ -150,20 +174,20 @@ class ContextTrimTest {
         int afterSecondTrim = b.entryCount();
         int secondBatchEvicted = (beforeSecondTrim - afterSecondTrim) / 2;
         totalEvictedGroups += secondBatchEvicted;
-        
+
         // Find the marker and extract the count using regex
         String markerContent = b.snapshot().stream()
                 .filter(m -> m.content() != null && m.content().contains("trimmed to fit"))
                 .map(ChatMessage::content)
                 .findFirst()
                 .orElse(null);
-        
+
         assertTrue(markerContent != null, "marker must be present in snapshot");
-        
+
         Matcher m = Pattern.compile("\\[(\\d+) ").matcher(markerContent);
         assertTrue(m.find(), "marker not found or not in the expected format: " + markerContent);
         int markerCount = Integer.parseInt(m.group(1));
-        
+
         assertEquals(totalEvictedGroups, markerCount,
                 "the trim marker must count the actual number of groups evicted across all trim calls");
     }
@@ -196,6 +220,14 @@ class ContextTrimTest {
 
         TestBroker(ContextBrokerSettings s) {
             super("trim-session", s);
+        }
+
+        int snapshotEstimate() {
+            return snapshot().stream().mapToInt(this::estimateForTest).sum();
+        }
+
+        int estimateForTest(ChatMessage message) {
+            return estimateTokens(message);
         }
 
         @Override

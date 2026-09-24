@@ -3,6 +3,7 @@ package kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.ollama.settings;
 import com.google.gson.JsonObject;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import org.junit.jupiter.api.Test;
 
@@ -54,5 +55,29 @@ class OllamaSessionSettingsTest {
 
         assertEquals("high", cfg.get("reasoningEffort").getAsString());
         assertTrue(settings.getAdditionalInfo().contains("reasoningEffort: high"));
+    }
+
+    @Test
+    void nativeToolCallingIsNullableAndPersistedWhenExplicit() {
+        OllamaSessionSettings settings = new OllamaSessionSettings();
+        assertNull(settings.useNativeToolCalling());
+        settings.setUseNativeToolCalling(Boolean.TRUE);
+        JsonObject cfg = new JsonObject();
+
+        settings.populateJsonObject(cfg);
+
+        assertTrue(cfg.get("useNativeToolCalling").getAsBoolean());
+        assertTrue(settings.getAdditionalInfo().contains("useNativeToolCalling: true"));
+    }
+
+    @Test
+    void nativeToolCallingCanExplicitlyPreserveSchemaMode() {
+        OllamaSessionSettings settings = new OllamaSessionSettings();
+        settings.setUseNativeToolCalling(Boolean.FALSE);
+        JsonObject cfg = new JsonObject();
+
+        settings.populateJsonObject(cfg);
+
+        assertFalse(cfg.get("useNativeToolCalling").getAsBoolean());
     }
 }

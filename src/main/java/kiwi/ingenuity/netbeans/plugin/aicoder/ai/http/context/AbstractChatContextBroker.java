@@ -19,10 +19,12 @@ import kiwi.ingenuity.netbeans.plugin.aicoder.ai.http.ChatToolCall;
 /**
  * Owns the model-facing message history for one session.
  *
- * Thread-safe: a single ReentrantLock guards all state, and the lock is never
- * held across I/O. Callers never need external locking.
+ * Thread-safe: a single ReentrantLock guards all state, and the lock is never held across I/O. Callers never
+ * need external locking.
  */
 public abstract class AbstractChatContextBroker {
+
+    private static final int UNKNOWN_CONTEXT_TRIM_THRESHOLD = 12000;
 
     // Bump whenever a ContextJsonKeyEnum value is renamed or removed, and give
     // the old spelling a migration path. The gate below only fires on THIS
@@ -32,9 +34,9 @@ public abstract class AbstractChatContextBroker {
     private static final int FORMAT_VERSION = 1;
 
     /**
-     * A file truncated by a crash mid-write can contain an assistant tool_calls
-     * message with no matching TOOL results, or the reverse. Either produces a
-     * payload the endpoint rejects with HTTP 400, so the whole group goes.
+     * A file truncated by a crash mid-write can contain an assistant tool_calls message with no matching TOOL
+     * results, or the reverse. Either produces a payload the endpoint rejects with HTTP 400, so the whole
+     * group goes.
      */
     private static List<ContextEntry> dropIncompleteGroups(List<ContextEntry> loaded) {
         Map<Long, List<ContextEntry>> byGroup = new LinkedHashMap<>();
@@ -105,6 +107,22 @@ public abstract class AbstractChatContextBroker {
     protected abstract int contextLimit();
 
     /**
+     * Effective high/low-water token threshold. Providers may replace the configured fallback with a
+     * discovered runtime window; zero means use the configured value.
+     */
+    protected int trimThreshold() {
+        return settings.tokenThreshold() > 0
+                ? settings.tokenThreshold() : UNKNOWN_CONTEXT_TRIM_THRESHOLD;
+    }
+
+    /**
+     * The known model window for gauges and diagnostics, or zero while unknown.
+     */
+    public final int contextLimitForDisplay() {
+        return Math.max(0, contextLimit());
+    }
+
+    /**
      * Per-provider hook. Overridable so a backend can supply a better estimate.
      */
     protected int estimateTokens(ChatMessage message) {
@@ -123,8 +141,7 @@ public abstract class AbstractChatContextBroker {
             generation++;
             debugLog.event(existing == null ? "PIN" : "REPIN",
                     slot + " " + ContextDebugLog.truncate(incoming));
-        }
-        finally {
+        } finally {
             lock.unlock();
         }
     }
@@ -141,8 +158,7 @@ public abstract class AbstractChatContextBroker {
             debugLog.event("APPEND", "seq=" + entry.sequence() + " group=" + group
                     + " role=" + message.role() + " tokens=" + entry.estimatedTokens()
                     + " content=" + ContextDebugLog.truncate(message.content()));
-        }
-        finally {
+        } finally {
             lock.unlock();
         }
     }
@@ -165,8 +181,7 @@ public abstract class AbstractChatContextBroker {
                 out.add(e.message().copy());
             }
             return List.copyOf(out);
-        }
-        finally {
+        } finally {
             lock.unlock();
         }
     }
@@ -190,8 +205,7 @@ public abstract class AbstractChatContextBroker {
         lock.lock();
         try {
             return entries.size();
-        }
-        finally {
+        } finally {
             lock.unlock();
         }
     }
@@ -203,13 +217,18 @@ public abstract class AbstractChatContextBroker {
             for (ContextEntry e : entries) {
                 total += e.estimatedTokens();
             }
+            if (summaryEntry != null) {
+                total += summaryEntry.estimatedTokens();
+            }
+            if (trimMarker != null) {
+                total += trimMarker.estimatedTokens();
+            }
             String pinned = renderPins();
             if (!pinned.isEmpty()) {
                 total += estimateTokens(new ChatMessage(ChatRole.SYSTEM, pinned, List.of(), null));
             }
             return total;
-        }
-        finally {
+        } finally {
             lock.unlock();
         }
     }
@@ -218,8 +237,7 @@ public abstract class AbstractChatContextBroker {
         lock.lock();
         try {
             return generation;
-        }
-        finally {
+        } finally {
             lock.unlock();
         }
     }
@@ -233,8 +251,7 @@ public abstract class AbstractChatContextBroker {
             }
             inTurn = true;
             currentGroupId = ++groupCounter;
-        }
-        finally {
+        } finally {
             lock.unlock();
         }
     }
@@ -244,8 +261,7 @@ public abstract class AbstractChatContextBroker {
         try {
             inTurn = false;
             currentGroupId = -1L;
-        }
-        finally {
+        } finally {
             lock.unlock();
         }
     }
@@ -264,8 +280,7 @@ public abstract class AbstractChatContextBroker {
             generation++;
             debugLog.event("ROLLBACK", "group=" + group + " discarded="
                     + (before - entries.size()));
-        }
-        finally {
+        } finally {
             lock.unlock();
         }
     }
@@ -280,8 +295,7 @@ public abstract class AbstractChatContextBroker {
             totalGroupsTrimmed = 0;
             bumpGeneration();
             debugLog.event("EVICT", "clearHistory dropped=" + dropped);
-        }
-        finally {
+        } finally {
             lock.unlock();
         }
     }
@@ -295,17 +309,14 @@ public abstract class AbstractChatContextBroker {
     }
 
     /**
-     * Swaps the resolved settings the broker acts on. Called once per turn so a
-     * preference change — the token threshold, most often — takes effect on the
-     * very next request instead of requiring a session restart.
+     * Swaps the resolved settings the broker acts on. Called once per turn so a preference change — the token
+     * threshold, most often — takes effect on the very next request instead of requiring a session restart.
      *
-     * A no-op replacement (nothing actually differs) is not logged, or the
-     * debug log would fill with an identical entry every single turn. When
-     * something did change, pinnedOverBudget is cleared too: it is otherwise
-     * one-way sticky (only ever set true, by trimIfNeeded()/compactNow()), so
-     * without this a threshold raised back to something workable would keep
-     * reporting the stale over-budget state until the next trim happened to
-     * re-derive it.
+     * A no-op replacement (nothing actually differs) is not logged, or the debug log would fill with an
+     * identical entry every single turn. When something did change, pinnedOverBudget is cleared too: it is
+     * otherwise one-way sticky (only ever set true, by trimIfNeeded()/compactNow()), so without this a
+     * threshold raised back to something workable would keep reporting the stale over-budget state until the
+     * next trim happened to re-derive it.
      */
     public final void updateSettings(ContextBrokerSettings replacement) {
         if (replacement == null) {
@@ -327,17 +338,15 @@ public abstract class AbstractChatContextBroker {
                         + " strategy=" + replacement.strategy()
                         + " trigger=" + replacement.trigger());
             }
-        }
-        finally {
+        } finally {
             lock.unlock();
         }
     }
 
     /**
-     * Removes the oldest committed group in full. The in-flight group is never
-     * a candidate: trimming runs immediately before a request is built, so
-     * evicting the turn's own messages would send a request with no user turn
-     * in it.
+     * Removes the oldest committed group in full. The in-flight group is never a candidate: trimming runs
+     * immediately before a request is built, so evicting the turn's own messages would send a request with no
+     * user turn in it.
      *
      * @return true if a group was evicted
      */
@@ -370,15 +379,14 @@ public abstract class AbstractChatContextBroker {
                     + " messages=" + (before - mutableEntries().size())
                     + " tokensReclaimed=" + tokens);
             return true;
-        }
-        finally {
+        } finally {
             lock.unlock();
         }
     }
 
     /**
-     * Feed the estimator the usage the backend reported for the request just
-     * sent. Null reported usage is ignored, leaving the raw estimate standing.
+     * Feed the estimator the usage the backend reported for the request just sent. Null reported usage is
+     * ignored, leaving the raw estimate standing.
      */
     public final void recordUsage(int estimated, Integer reported) {
         lock.lock();
@@ -392,8 +400,7 @@ public abstract class AbstractChatContextBroker {
                 debugLog.event("CALIBRATE", "estimated=" + estimated + " reported=" + reported
                         + " ratio " + before + " -> " + estimator.calibrationRatio());
             }
-        }
-        finally {
+        } finally {
             lock.unlock();
         }
     }
@@ -403,8 +410,7 @@ public abstract class AbstractChatContextBroker {
         try {
             estimator.reset();
             debugLog.event("CALIBRATE", "reset on model change");
-        }
-        finally {
+        } finally {
             lock.unlock();
         }
     }
@@ -413,8 +419,7 @@ public abstract class AbstractChatContextBroker {
         lock.lock();
         try {
             return estimator.calibrationRatio();
-        }
-        finally {
+        } finally {
             lock.unlock();
         }
     }
@@ -423,8 +428,7 @@ public abstract class AbstractChatContextBroker {
         lock.lock();
         try {
             return estimator.hasSeenReportedUsage();
-        }
-        finally {
+        } finally {
             lock.unlock();
         }
     }
@@ -439,7 +443,7 @@ public abstract class AbstractChatContextBroker {
                 return;
             }
             int pinnedCost = pinnedTokensUnlocked();
-            long lowWater = (long) settings.tokenThreshold() * settings.trimTargetPercent() / 100L;
+            long lowWater = (long) trimThreshold() * settings.trimTargetPercent() / 100L;
             if (lowWater > 0 && pinnedCost >= lowWater) {
                 pinnedOverBudget = true;
                 debugLog.event("TRIM_SUMMARY", "skipped: pinned content " + pinnedCost
@@ -461,8 +465,7 @@ public abstract class AbstractChatContextBroker {
                         + " tokensNow=" + estimatedTokenTotal()
                         + " strategy=" + settings.strategy());
                 summariseEvicted(evictedMessages);
-            }
-            else {
+            } else {
                 while (overLowWaterMark() && evictOldestCommittedGroup()) {
                     evicted++;
                 }
@@ -478,19 +481,17 @@ public abstract class AbstractChatContextBroker {
                     upsertTrimMarker();
                 }
             }
-        }
-        finally {
+        } finally {
             lock.unlock();
         }
     }
 
     /**
-     * Force a trim down to the low-water mark regardless of the high-water
-     * threshold. Backs the info bar's Compact button.
+     * Force a trim down to the low-water mark regardless of the high-water threshold. Backs the info bar's
+     * Compact button.
      *
-     * When a summariser is present it is used for any trim strategy — the
-     * Compact button is an explicit user request to condense, not gated on the
-     * automatic-trim strategy.
+     * When a summariser is present it is used for any trim strategy — the Compact button is an explicit user
+     * request to condense, not gated on the automatic-trim strategy.
      */
     public final int compactNow() {
         lock.lock();
@@ -518,8 +519,7 @@ public abstract class AbstractChatContextBroker {
                     debugLog.event("TRIM_SUMMARY", "compactNow groupsEvicted=" + evicted);
                     summariseEvicted(evictedMessages);
                 }
-            }
-            else {
+            } else {
                 while (overLowWaterMark() && evictOldestCommittedGroup()) {
                     evicted++;
                 }
@@ -532,8 +532,7 @@ public abstract class AbstractChatContextBroker {
                 }
             }
             return evicted;
-        }
-        finally {
+        } finally {
             lock.unlock();
         }
     }
@@ -542,7 +541,7 @@ public abstract class AbstractChatContextBroker {
         if (settings.maxMessages() > 0 && mutableEntries().size() > settings.maxMessages()) {
             return true;
         }
-        return currentUsage() > settings.tokenThreshold();
+        return currentUsage() > trimThreshold();
     }
 
     private boolean overLowWaterMark() {
@@ -554,10 +553,9 @@ public abstract class AbstractChatContextBroker {
     }
 
     /**
-     * REPORTED_TOKENS is only meaningful once the endpoint has actually
-     * returned a usage object. Until then — and permanently, if it never does —
-     * it behaves as ESTIMATED_TOKENS. Silently never trimming would be far
-     * worse than approximating.
+     * REPORTED_TOKENS is only meaningful once the endpoint has actually returned a usage object. Until then —
+     * and permanently, if it never does — it behaves as ESTIMATED_TOKENS. Silently never trimming would be
+     * far worse than approximating.
      */
     private int currentUsage() {
         if (settings.trigger() == ContextTriggerEnum.MESSAGE_COUNT) {
@@ -571,9 +569,8 @@ public abstract class AbstractChatContextBroker {
     }
 
     /**
-     * Evicts the oldest committed group without acquiring the lock (caller must
-     * hold it). Messages from the evicted group are appended to {@code collect}
-     * if non-null.
+     * Evicts the oldest committed group without acquiring the lock (caller must hold it). Messages from the
+     * evicted group are appended to {@code collect} if non-null.
      */
     private boolean evictOldestGroupUnlocked(List<ChatMessage> collect) {
         Long oldest = null;
@@ -608,11 +605,10 @@ public abstract class AbstractChatContextBroker {
     }
 
     /**
-     * Read-release-compute-reacquire. The summariser makes a network call that
-     * can take seconds, so the lock must not be held across it. A generation
-     * counter guards the write-back: if anything mutated the history while we
-     * were summarising, the summary describes a state that no longer exists and
-     * is discarded in favour of the drop marker.
+     * Read-release-compute-reacquire. The summariser makes a network call that can take seconds, so the lock
+     * must not be held across it. A generation counter guards the write-back: if anything mutated the history
+     * while we were summarising, the summary describes a state that no longer exists and is discarded in
+     * favour of the drop marker.
      */
     private void summariseEvicted(List<ChatMessage> span) {
         ContextSummariser s = summariser;
@@ -627,11 +623,9 @@ public abstract class AbstractChatContextBroker {
         lock.unlock();
         try {
             summary = s.summarise(span);
-        }
-        catch (IOException | RuntimeException ex) {
+        } catch (IOException | RuntimeException ex) {
             debugLog.event("SUMMARISE", "failed: " + ex.getMessage());
-        }
-        finally {
+        } finally {
             lock.lock();
             summarising = false;
         }
@@ -656,10 +650,11 @@ public abstract class AbstractChatContextBroker {
             summaryEntry = new ContextEntry(++sequenceForMarker, -2L,
                     System.currentTimeMillis(),
                     new ChatMessage(ChatRole.SYSTEM, content, List.of(), null),
-                    ContextRetentionEnum.PINNED, 0, null);
-        }
-        else {
+                    ContextRetentionEnum.PINNED,
+                    estimateTokens(new ChatMessage(ChatRole.SYSTEM, content, List.of(), null)), null);
+        } else {
             summaryEntry.message().setContent(content);
+            summaryEntry.setEstimatedTokens(estimateTokens(new ChatMessage(ChatRole.SYSTEM, content, List.of(), null)));
         }
     }
 
@@ -669,10 +664,11 @@ public abstract class AbstractChatContextBroker {
         if (trimMarker == null) {
             trimMarker = new ContextEntry(++sequenceForMarker, -1L, System.currentTimeMillis(),
                     new ChatMessage(ChatRole.SYSTEM, text, List.of(), null),
-                    ContextRetentionEnum.PINNED, 0, null);
-        }
-        else {
+                    ContextRetentionEnum.PINNED,
+                    estimateTokens(new ChatMessage(ChatRole.SYSTEM, text, List.of(), null)), null);
+        } else {
             trimMarker.message().setContent(text);
+            trimMarker.setEstimatedTokens(estimateTokens(new ChatMessage(ChatRole.SYSTEM, text, List.of(), null)));
         }
     }
 
@@ -703,18 +699,15 @@ public abstract class AbstractChatContextBroker {
             root.add(ContextJsonKeyEnum.ENTRIES.key(), arr);
             debugLog.event("PERSIST", "entries=" + mutableEntries().size());
             return root;
-        }
-        finally {
+        } finally {
             lock.unlock();
         }
     }
 
     /**
-     * Restoration is deliberately partial. Evictable entries come back verbatim
-     * so group-atomic eviction still holds; pinned slots are NOT restored,
-     * because instructions, identity and project state may all have changed
-     * between runs and a stale system prompt fails silently while looking
-     * correct.
+     * Restoration is deliberately partial. Evictable entries come back verbatim so group-atomic eviction
+     * still holds; pinned slots are NOT restored, because instructions, identity and project state may all
+     * have changed between runs and a stale system prompt fails silently while looking correct.
      */
     public final void restoreFromJson(JsonObject root) {
         lock.lock();
@@ -742,8 +735,7 @@ public abstract class AbstractChatContextBroker {
                 ContextEntry entry;
                 try {
                     entry = ContextEntry.fromJson(el.getAsJsonObject());
-                }
-                catch (RuntimeException ex) {
+                } catch (RuntimeException ex) {
                     continue;
                 }
                 if (entry.retention() == ContextRetentionEnum.PINNED) {
@@ -760,8 +752,7 @@ public abstract class AbstractChatContextBroker {
             groupCounter = maxGroup;
             bumpGeneration();
             debugLog.event("RESTORE", "entries=" + mutableEntries().size());
-        }
-        finally {
+        } finally {
             lock.unlock();
         }
     }
@@ -770,8 +761,7 @@ public abstract class AbstractChatContextBroker {
         lock.lock();
         try {
             return List.copyOf(entries);
-        }
-        finally {
+        } finally {
             lock.unlock();
         }
     }
@@ -780,8 +770,7 @@ public abstract class AbstractChatContextBroker {
         lock.lock();
         try {
             return inTurn;
-        }
-        finally {
+        } finally {
             lock.unlock();
         }
     }
@@ -790,8 +779,7 @@ public abstract class AbstractChatContextBroker {
         lock.lock();
         try {
             return currentGroupId;
-        }
-        finally {
+        } finally {
             lock.unlock();
         }
     }

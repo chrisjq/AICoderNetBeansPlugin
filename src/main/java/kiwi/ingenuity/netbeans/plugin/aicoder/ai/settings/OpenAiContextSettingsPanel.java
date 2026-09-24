@@ -15,9 +15,8 @@ import kiwi.ingenuity.netbeans.plugin.aicoder.ai.http.context.ContextTriggerEnum
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.http.context.ContextTrimStrategyEnum;
 
 /**
- * Settings panel for context-history behaviour. Binds to
- * OpenAiClientSessionSettings so any OpenAI-compatible backend can embed the
- * same instance — this class contains no reference to any specific backend.
+ * Settings panel for context-history behaviour. Binds to OpenAiClientSessionSettings so any OpenAI-compatible
+ * backend can embed the same instance — this class contains no reference to any specific backend.
  */
 public class OpenAiContextSettingsPanel extends JPanel {
 
@@ -26,7 +25,9 @@ public class OpenAiContextSettingsPanel extends JPanel {
     private final JComboBox<ContextTrimStrategyEnum> strategyCombo
             = new JComboBox<>(ContextTrimStrategyEnum.values());
     private final JSpinner thresholdSpinner
-            = new JSpinner(new SpinnerNumberModel(100000, 100, 1000000, 500));
+            = new JSpinner(new SpinnerNumberModel(100000, 0, 1000000, 500));
+    private final JCheckBox deriveThreshold
+            = new JCheckBox("Derive from the server context window");
     private final JSpinner trimTargetSpinner
             = new JSpinner(new SpinnerNumberModel(75, 10, 95, 5));
     private final JSpinner maxMessagesSpinner
@@ -60,22 +61,31 @@ public class OpenAiContextSettingsPanel extends JPanel {
 
         thresholdHintLabel.setFont(thresholdHintLabel.getFont().deriveFont(11f));
         thresholdHintLabel.setForeground(java.awt.Color.GRAY);
+        deriveThreshold.addActionListener(e -> {
+            thresholdSpinner.setEnabled(!deriveThreshold.isSelected());
+            updateThresholdHint();
+        });
         updateThresholdHint();
         thresholdSpinner.addChangeListener(e -> updateThresholdHint());
 
         addRow(c, 0, new JLabel("Trim trigger:"), triggerCombo);
         addRow(c, 1, new JLabel("When over budget:"), strategyCombo);
         addRow(c, 2, new JLabel("Token threshold:"), thresholdSpinner);
-        addFull(c, 3, thresholdHintLabel);
-        addRow(c, 4, new JLabel("Trim down to (% of threshold):"), trimTargetSpinner);
-        addRow(c, 5, new JLabel("Max messages (0 = off):"), maxMessagesSpinner);
-        addFull(c, 6, persistOnClose);
+        addFull(c, 3, deriveThreshold);
+        addFull(c, 4, thresholdHintLabel);
+        addRow(c, 5, new JLabel("Trim down to (% of threshold):"), trimTargetSpinner);
+        addRow(c, 6, new JLabel("Max messages (0 = off):"), maxMessagesSpinner);
+        addFull(c, 7, persistOnClose);
     }
 
     public void load(OpenAiClientSessionSettings settings) {
         triggerCombo.setSelectedItem(settings.effectiveContextTrimTrigger());
         strategyCombo.setSelectedItem(settings.effectiveContextTrimStrategy());
-        thresholdSpinner.setValue(settings.effectiveContextTokenThreshold());
+        int threshold = settings.effectiveContextTokenThreshold();
+        thresholdSpinner.setValue(threshold);
+        deriveThreshold.setSelected(threshold == 0);
+        thresholdSpinner.setEnabled(threshold != 0);
+        updateThresholdHint();
         trimTargetSpinner.setValue(settings.effectiveContextTrimTargetPercent());
         maxMessagesSpinner.setValue(settings.effectiveContextMaxMessages());
         persistOnClose.setSelected(settings.effectiveContextPersistOnClose());
@@ -84,7 +94,8 @@ public class OpenAiContextSettingsPanel extends JPanel {
     public void applyTo(OpenAiClientSessionSettings settings) {
         settings.setContextTrimTrigger((ContextTriggerEnum) triggerCombo.getSelectedItem());
         settings.setContextTrimStrategy((ContextTrimStrategyEnum) strategyCombo.getSelectedItem());
-        settings.setContextTokenThreshold((Integer) thresholdSpinner.getValue());
+        settings.setContextTokenThreshold(deriveThreshold.isSelected()
+                ? 0 : (Integer) thresholdSpinner.getValue());
         settings.setContextTrimTargetPercent((Integer) trimTargetSpinner.getValue());
         settings.setContextMaxMessages((Integer) maxMessagesSpinner.getValue());
         settings.setContextPersistOnClose(persistOnClose.isSelected());
@@ -97,6 +108,7 @@ public class OpenAiContextSettingsPanel extends JPanel {
         trimTargetSpinner.addChangeListener(e -> listener.actionPerformed(null));
         maxMessagesSpinner.addChangeListener(e -> listener.actionPerformed(null));
         persistOnClose.addActionListener(listener);
+        deriveThreshold.addActionListener(listener);
     }
 
     private void addRow(GridBagConstraints c, int row, JLabel label, java.awt.Component field) {
@@ -120,6 +132,10 @@ public class OpenAiContextSettingsPanel extends JPanel {
     }
 
     private void updateThresholdHint() {
+        if (deriveThreshold.isSelected()) {
+            thresholdHintLabel.setText("Uses 80% of the discovered server context window.");
+            return;
+        }
         int v = (Integer) thresholdSpinner.getValue();
         thresholdHintLabel.setText(String.format(
                 "Requires an AI server context window of at least %,d tokens.", v));

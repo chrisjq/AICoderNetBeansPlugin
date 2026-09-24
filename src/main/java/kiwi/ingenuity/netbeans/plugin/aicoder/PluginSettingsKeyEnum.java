@@ -47,7 +47,7 @@ public enum PluginSettingsKeyEnum {
     ENABLE_CLIPBOARD_ACCESS("ai.session.enableClipboardAccess", false),
     CONTEXT_TRIM_TRIGGER("ai.contextTrimTrigger", "ESTIMATED_TOKENS"),
     CONTEXT_TRIM_STRATEGY("ai.contextTrimStrategy", "DROP_MARKED"),
-    CONTEXT_TOKEN_THRESHOLD("ai.contextTokenThreshold", 12000),
+    CONTEXT_TOKEN_THRESHOLD("ai.contextTokenThreshold", 0),
     CONTEXT_TRIM_TARGET_PERCENT("ai.contextTrimTargetPercent", 70),
     CONTEXT_MAX_MESSAGES("ai.contextMaxMessages", 0),
     CONTEXT_PERSIST_ON_CLOSE("ai.contextPersistOnClose", false);

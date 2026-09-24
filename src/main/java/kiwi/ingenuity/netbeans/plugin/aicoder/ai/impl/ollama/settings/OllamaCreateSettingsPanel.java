@@ -6,6 +6,7 @@ import java.awt.GridBagLayout;
 import java.awt.Insets;
 import java.util.Arrays;
 import java.util.List;
+import javax.swing.JCheckBox;
 import javax.swing.JComboBox;
 import javax.swing.JLabel;
 import javax.swing.JPanel;
@@ -17,9 +18,9 @@ import kiwi.ingenuity.netbeans.plugin.aicoder.ai.settings.ModelCreateSettingsPan
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.ui.BlankSafeComboRenderer;
 
 /**
- * Local Ollama create settings include model, session base URL, and thinking (reasoning effort). Base URL and thinking
- * share the base panel's {@link #content()} area via a small two-row sub-panel, since {@code content()} itself only has
- * one {@code BorderLayout} slot.
+ * Local Ollama create settings include model, session base URL, and thinking (reasoning effort). Base URL and
+ * thinking share the base panel's {@link #content()} area via a small two-row sub-panel, since
+ * {@code content()} itself only has one {@code BorderLayout} slot.
  */
 public final class OllamaCreateSettingsPanel extends ModelCreateSettingsPanel<OllamaSessionSettings> {
 
@@ -31,11 +32,12 @@ public final class OllamaCreateSettingsPanel extends ModelCreateSettingsPanel<Ol
 
     private final JTextField baseUrl = new JTextField(28);
     private final JComboBox<String> reasoningEffortCombo;
+    private final JCheckBox nativeToolCalling = new JCheckBox("Use native tool calling");
 
     /**
      * True while {@link #load} is setting {@link #reasoningEffortCombo}'s selection, so
-     * {@link #rememberReasoningEffortSelection()} can tell that programmatic restore apart from a real user pick —
-     * mirrors {@code PiCreateSettingsPanel}'s {@code programmatic} flag.
+     * {@link #rememberReasoningEffortSelection()} can tell that programmatic restore apart from a real user
+     * pick — mirrors {@code PiCreateSettingsPanel}'s {@code programmatic} flag.
      */
     private boolean programmatic = false;
 
@@ -66,6 +68,11 @@ public final class OllamaCreateSettingsPanel extends ModelCreateSettingsPanel<Ol
         c.weightx = 1;
         extra.add(reasoningEffortCombo, c);
 
+        c.gridx = 1;
+        c.gridy = 2;
+        nativeToolCalling.setToolTipText("Use native tools; switch off for models such as qwen2.5-coder that may misbehave with native tool calling");
+        extra.add(nativeToolCalling, c);
+
         content().add(extra, BorderLayout.CENTER);
     }
 
@@ -74,6 +81,7 @@ public final class OllamaCreateSettingsPanel extends ModelCreateSettingsPanel<Ol
         super.load(settings);
         String url = settings.baseUrl() == null ? "" : settings.baseUrl();
         baseUrl.setText(url);
+        nativeToolCalling.setSelected(Boolean.TRUE.equals(settings.useNativeToolCalling()));
         String effort = settings.reasoningEffort();
         if (effort == null || effort.isBlank()) {
             effort = lastSelectedReasoningEffort;
@@ -85,8 +93,7 @@ public final class OllamaCreateSettingsPanel extends ModelCreateSettingsPanel<Ol
         programmatic = true;
         try {
             reasoningEffortCombo.setSelectedItem((effort == null || effort.isBlank()) ? BlankSafeComboRenderer.DEFAULT_OPTION : effort);
-        }
-        finally {
+        } finally {
             programmatic = wasProgrammatic;
         }
     }
@@ -113,6 +120,7 @@ public final class OllamaCreateSettingsPanel extends ModelCreateSettingsPanel<Ol
         settings.setBaseUrl(value.isEmpty() ? null : value);
         Object sel = reasoningEffortCombo.getSelectedItem();
         settings.setReasoningEffort((sel != null && !BlankSafeComboRenderer.DEFAULT_OPTION.equals(sel.toString())) ? sel.toString() : null);
+        settings.setUseNativeToolCalling(nativeToolCalling.isSelected());
     }
 
     private void rememberReasoningEffortSelection() {

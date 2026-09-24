@@ -10,7 +10,9 @@ public class OllamaSettingsCreator extends OpenAiClientSettingsCreator<OllamaSes
 
     @Override
     public OllamaSessionSettings create() {
-        return new OllamaSessionSettings();
+        OllamaSessionSettings settings = new OllamaSessionSettings();
+        settings.setUseNativeToolCalling(Boolean.FALSE);
+        return settings;
     }
 
     @Override
@@ -28,6 +30,12 @@ public class OllamaSettingsCreator extends OpenAiClientSettingsCreator<OllamaSes
         key = OllamaSessionSettingsKeyEnum.REASONING_EFFORT.key();
         if (cfgObj.has(key) && cfgObj.get(key).isJsonPrimitive()) {
             settings.setReasoningEffort(cfgObj.get(key).getAsString());
+        }
+        key = OllamaSessionSettingsKeyEnum.USE_NATIVE_TOOL_CALLING.key();
+        if (cfgObj.has(key) && cfgObj.get(key).isJsonPrimitive()) {
+            settings.setUseNativeToolCalling(cfgObj.get(key).getAsBoolean());
+        } else {
+            settings.setUseNativeToolCalling(null);
         }
     }
 

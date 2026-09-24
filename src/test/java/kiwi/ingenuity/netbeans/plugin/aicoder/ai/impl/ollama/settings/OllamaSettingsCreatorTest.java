@@ -28,5 +28,13 @@ class OllamaSettingsCreatorTest {
         creator.update(settings, new JsonObject());
 
         assertNull(settings.baseUrl());
+        assertNull(settings.useNativeToolCalling(), "absent persisted key must retain null inheritance");
+    }
+
+    @Test
+    void newlyCreatedSettingsDefaultToNativeToolCalling() {
+        OllamaSessionSettings settings = new OllamaSettingsCreator().create();
+
+        org.junit.jupiter.api.Assertions.assertEquals(Boolean.FALSE, settings.useNativeToolCalling());
     }
 }

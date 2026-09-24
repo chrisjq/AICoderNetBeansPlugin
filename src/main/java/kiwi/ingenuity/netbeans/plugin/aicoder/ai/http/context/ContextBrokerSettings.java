@@ -1,9 +1,8 @@
 package kiwi.ingenuity.netbeans.plugin.aicoder.ai.http.context;
 
 /**
- * Snapshot of the context configuration, read once when the broker is built.
- * The broker never re-reads preferences: changing a setting takes effect on the
- * next session start, not the next turn.
+ * Snapshot of the context configuration, read once when the broker is built. The broker never re-reads
+ * preferences: changing a setting takes effect on the next session start, not the next turn.
  */
 public class ContextBrokerSettings {
 
@@ -13,7 +12,11 @@ public class ContextBrokerSettings {
 
     private ContextTriggerEnum trigger = ContextTriggerEnum.ESTIMATED_TOKENS;
     private ContextTrimStrategyEnum strategy = ContextTrimStrategyEnum.DROP_MARKED;
-    private int tokenThreshold = 12000;
+    /**
+     * Zero means derive the trim threshold from the provider's discovered window. Positive values remain
+     * explicit user overrides.
+     */
+    private int tokenThreshold = 0;
     private int trimTargetPercent = 70;
     private int maxMessages = 0;
     private boolean persistOnClose = false;

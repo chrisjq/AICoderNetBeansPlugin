@@ -183,6 +183,7 @@ public class OllamaAiProcessManager extends AiProcessManager {
     volatile AbstractChatContextBroker broker;
     volatile Thread activeTurnThread;
     private volatile ContextBrokerSettings lastResolvedSettings;
+    private volatile boolean contextDiscoveryInitial;
     private volatile boolean pinnedOverBudgetWarned;
     /**
      * Set once a live 4xx tells us this server rejects {@code reasoning_effort} on the OpenAI-compatible
@@ -216,6 +217,7 @@ public class OllamaAiProcessManager extends AiProcessManager {
     @Override
     public synchronized void start(String ignored, String model) {
         stop();
+        contextDiscoveryInitial = true;
         if (currentSession == null) {
             listener.onAiProcessEvent(new StatusEvent(StatusEventTypeEnum.FAILED,
                     StatusMessageUtil.formatSessionNotConfigured()));
@@ -246,6 +248,18 @@ public class OllamaAiProcessManager extends AiProcessManager {
         ContextBrokerSettings settingsForBroker = resolveBrokerSettings();
         lastResolvedSettings = settingsForBroker;
         broker = createContextBroker(currentSession.id(), settingsForBroker);
+        if (broker instanceof OllamaChatContextBroker ollamaBroker) {
+            ollamaBroker.setContextLimitListener(limitValue -> {
+                if (!processing && contextDiscoveryInitial) {
+                    listener.onAiProcessEvent(new OllamaTokenUsageEvent(
+                            broker.estimatedTokenTotal(),
+                            contextWindowForEvent(broker, settingsForBroker.tokenThreshold())));
+                }
+            });
+            ollamaBroker.startContextDiscovery(
+                    resolveEffectiveBaseUrl(effectiveSessionSettings()),
+                    resolveEffectiveModel(effectiveSessionSettings()));
+        }
         if (broker != null
                 && settingsForBroker.trigger() == ContextTriggerEnum.REPORTED_TOKENS) {
             listener.onAiProcessEvent(new StatusEvent(StatusEventTypeEnum.INFO,
@@ -270,7 +284,7 @@ public class OllamaAiProcessManager extends AiProcessManager {
                 // first request after a restore must not go out over budget.
                 broker.trimIfNeeded();
                 listener.onAiProcessEvent(new OllamaTokenUsageEvent(
-                        broker.estimatedTokenTotal(), settingsForBroker.tokenThreshold()));
+                        broker.estimatedTokenTotal(), contextWindowForEvent(broker, settingsForBroker.tokenThreshold())));
             }
         }
         currentSession.setInstructionsLoaded(true);
@@ -285,6 +299,7 @@ public class OllamaAiProcessManager extends AiProcessManager {
             return;
         }
         cancelledByUser = false;
+        contextDiscoveryInitial = false;
         processing = true;
         if (sessionWorkingDir == null && workingDir != null && workingDir.isDirectory()) {
             sessionWorkingDir = workingDir;
@@ -293,6 +308,25 @@ public class OllamaAiProcessManager extends AiProcessManager {
         worker.setDaemon(true);
         activeTurnThread = worker;
         worker.start();
+    }
+
+    /**
+     * Builds the contents of the TOOLS pin. MCP instructions are retained in both modes; schema mode appends
+     * the rendered workaround protocol.
+     */
+    static String instructionsWithToolProtocol(String instructions, List<JsonObject> tools, boolean schemaMode) {
+        if (!schemaMode) {
+            return instructions;
+        }
+        return instructions
+                + "\\n\\n## Calling a tool\\n"
+                + "These are the tools you can call, with their parameters"
+                + " (those in [square brackets] are optional; use each name"
+                + " exactly as written):\\n"
+                + SchemaToolCalls.renderToolList(tools)
+                + "\\nReply as JSON. To call one tool, set tool_name and tool_arguments"
+                + " and leave message empty. To answer the user, put your reply in"
+                + " message and set tool_name to \\\"\\\". Never do both.";
     }
 
     private OllamaSessionSettings effectiveSessionSettings() {
@@ -451,21 +485,13 @@ public class OllamaAiProcessManager extends AiProcessManager {
             // every turn regardless of the request, so under TOOL_CALLS_VIA_SCHEMA
             // the tools are described in the prompt and the reply is constrained
             // by a schema instead. See SchemaToolCalls.
-            boolean schemaMode = currentSession.aiType().getMcpOptions()
-                    .contains(McpInstructionOptionEnum.TOOL_CALLS_VIA_SCHEMA);
+            boolean schemaMode = settings.useNativeToolCalling() != null
+                    ? !settings.useNativeToolCalling()
+                    : currentSession.aiType().getMcpOptions()
+                            .contains(McpInstructionOptionEnum.TOOL_CALLS_VIA_SCHEMA);
             JsonObject responseFormat = schemaMode ? SchemaToolCalls.responseFormat(knownToolNames) : null;
             List<JsonObject> requestTools = schemaMode ? List.of() : tools;
-            if (schemaMode) {
-                instructions = instructions
-                        + "\n\n## Calling a tool\n"
-                        + "These are the tools you can call, with their parameters"
-                        + " (those in [square brackets] are optional; use each name"
-                        + " exactly as written):\n"
-                        + SchemaToolCalls.renderToolList(tools)
-                        + "\nReply as JSON. To call one tool, set tool_name and tool_arguments"
-                        + " and leave message empty. To answer the user, put your reply in"
-                        + " message and set tool_name to \"\". Never do both.";
-            }
+            instructions = instructionsWithToolProtocol(instructions, tools, schemaMode);
 
             AbstractChatContextBroker localBroker = broker;
             if (localBroker == null) {
@@ -580,7 +606,7 @@ public class OllamaAiProcessManager extends AiProcessManager {
                 }
                 localBroker.recordUsage(estimatedForRequest, result.promptTokens());
                 listener.onAiProcessEvent(new OllamaTokenUsageEvent(
-                        localBroker.estimatedTokenTotal(), lastResolvedSettings.tokenThreshold()));
+                        localBroker.estimatedTokenTotal(), contextWindowForEvent(localBroker, lastResolvedSettings.tokenThreshold())));
                 List<ExtractedToolCall> calls;
                 String assistantText;
                 String toolCallError = null;
@@ -774,6 +800,11 @@ public class OllamaAiProcessManager extends AiProcessManager {
         return new OllamaMcpBridge(session);
     }
 
+    private static int contextWindowForEvent(AbstractChatContextBroker broker, int fallback) {
+        int discovered = broker == null ? 0 : broker.contextLimitForDisplay();
+        return discovered > 0 ? discovered : fallback;
+    }
+
     AbstractChatContextBroker createContextBroker(String sessionId, ContextBrokerSettings settings) {
         return new OllamaChatContextBroker(sessionId, settings);
     }
@@ -906,6 +937,9 @@ public class OllamaAiProcessManager extends AiProcessManager {
         ollamaSession = null;
         bridge = null;
         AbstractChatContextBroker brokerSnap = broker;
+        if (brokerSnap instanceof OllamaChatContextBroker ollamaBroker) {
+            ollamaBroker.close();
+        }
         if (brokerSnap != null) {
             // Rollback before save: saving first would write a half-finished
             // turn to disk, and it would come back as a ghost user message
@@ -968,7 +1002,7 @@ public class OllamaAiProcessManager extends AiProcessManager {
         ContextBrokerSettings resolved = lastResolvedSettings;
         if (resolved != null) {
             listener.onAiProcessEvent(new OllamaTokenUsageEvent(
-                    b.estimatedTokenTotal(), resolved.tokenThreshold()));
+                    b.estimatedTokenTotal(), contextWindowForEvent(b, resolved.tokenThreshold())));
         }
     }
 
