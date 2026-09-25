@@ -50,6 +50,16 @@ class AiTypeEnumSettingsTest {
         assertTrue(AiTypeEnum.OLLAMA_LOCAL.createDefaultSettings() instanceof OllamaSessionSettings);
     }
 
+    /**
+     * The tool-loop injection in OllamaAiProcessManager makes Ollama a mid-turn mail backend, so it must
+     * advertise DURING_TURN — this is the value senders see in ListAiSessions' mailDelivery. A regression
+     * back to AFTER_TURN would silently tell them an important message cannot be read mid-turn.
+     */
+    @Test
+    void ollamaLocalReportsDuringTurnMailDelivery() {
+        assertEquals(MailDeliveryTimingEnum.DURING_TURN, AiTypeEnum.OLLAMA_LOCAL.mailDeliveryTiming());
+    }
+
     @Test
     void openCodeCreatesOpenCodeSessionSettings() {
         assertTrue(AiTypeEnum.OPENCODE.createDefaultSettings() instanceof OpenCodeSessionSettings);

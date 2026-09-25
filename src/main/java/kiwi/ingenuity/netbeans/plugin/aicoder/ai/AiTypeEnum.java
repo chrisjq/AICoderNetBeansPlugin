@@ -47,10 +47,11 @@ public enum AiTypeEnum {
     // descriptions. The per-tool instruction lines describe the same tools
     // without the parameters, so enabling both only duplicated ~9k characters.
     //                                                          implemented  enabledByDefault  openAiCompatible  mailDeliveryTiming
-    // OllamaAiProcessManager:701 — "Mail IGNORED, no channel to inject into".
+    // OllamaAiProcessManager — interrupt(Mail) arms pendingMailNotice and the tool-loop's next
+    // iteration appends MAIL_NOTIFICATION_TEXT as a USER message, so this backend has a mid-turn channel.
     // NOT_APPLICABLE: ONLY_MCP_TOOL_ACCESS — this backend reaches the IDE through the in-process MCP
     // bridge and has no native file/shell tools of its own, so there is no such call to refuse.
-    OLLAMA_LOCAL("Ollama (Local)", "ollama_local", true, false, true, MailDeliveryTimingEnum.AFTER_TURN, McpSteeringSupportEnum.NOT_APPLICABLE, new OllamaSettingsCreator(),
+    OLLAMA_LOCAL("Ollama (Local)", "ollama_local", true, false, true, MailDeliveryTimingEnum.DURING_TURN, McpSteeringSupportEnum.NOT_APPLICABLE, new OllamaSettingsCreator(),
             Set.of(HEADER, ONLY_MCP_TOOL_ACCESS, SOFTEN_TOOL_DIRECTIVES, TOOL_CALLS_VIA_SCHEMA), null, null),
     // FORCE_MCP_TOOL_USE for the same reason as Copilot: OpenCode keeps its own
     // bash/grep/read/edit tools and reached for them first, shelling out to grep

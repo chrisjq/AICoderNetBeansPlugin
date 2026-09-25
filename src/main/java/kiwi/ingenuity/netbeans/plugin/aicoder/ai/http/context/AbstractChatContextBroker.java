@@ -85,6 +85,10 @@ public abstract class AbstractChatContextBroker {
     private long generation = 0L;
     private boolean inTurn = false;
     private long currentGroupId = -1L;
+    // Native tool calling (Ollama): when true, appendAssistant folds two assistant messages as usual but drops
+    // the prose content if the fold would carry BOTH content AND tool_calls — the banned shape for Mistral
+    // templates. Set once per turn alongside the schema/native decision.
+    private volatile boolean nativeToolCalling = false;
 
     private int totalGroupsTrimmed = 0;
     private volatile int lastReportedPromptTokens = 0;
@@ -161,6 +165,111 @@ public abstract class AbstractChatContextBroker {
         } finally {
             lock.unlock();
         }
+    }
+
+    /**
+     * Appends an ASSISTANT message, folding it into the previously appended ASSISTANT when that entry belongs
+     * to the same, still-open turn instead of adding a second one. Ollama's Mistral-family chat templates
+     * enforce strict USER/ASSISTANT alternation: a narration round (text, no tool call) immediately followed
+     * by a tool-calling round produces two consecutive ASSISTANT messages that break the template contract
+     * and make the model stop calling tools mid-session. Merging keeps one ASSISTANT per turn segment.
+     * <p>
+     * The merge is deliberately narrow. The group check ({@code inTurn} and same {@code currentGroupId})
+     * stops it ever crossing a committed turn boundary; the role check stops it ever absorbing a USER message
+     * or a TOOL result. Only an adjacent ASSISTANT whose tool results have not yet been emitted can take the
+     * new one. The content is joined with a blank line when both sides are non-blank (a blank side keeps the
+     * other; two blank sides produce a blank message) and the tool-call lists are unioned by id so neither
+     * side's calls are lost.
+     */
+    public final void appendAssistant(ChatMessage message) {
+        if (message.role() != ChatRole.ASSISTANT) {
+            append(message);
+            return;
+        }
+        lock.lock();
+        try {
+            List<ContextEntry> list = mutableEntries();
+            if (!list.isEmpty()) {
+                ContextEntry previous = list.get(list.size() - 1);
+                // Native tool calling: an assistant message must be text OR tool calls, never both. Mistral
+                // declares this upstream — TemplateConfig.forbids_assistant_content_with_tools
+                // (https://mistralai.github.io/mistral-common/code_reference/mistral_common/integrations/chat_templates/template_generator/)
+                // — and devstral's template enforces it with `if .Content ... else if .ToolCalls`: content
+                // wins and the call is silently dropped from the prompt, which is exactly the stop-calling
+                // bug we saw. Corroborating reports: ollama#9628, continuedev#9249. The fold STILL happens
+                // (FIX 1), but when it would produce content AND tool_calls the CONTENT gives way — it was
+                // already streamed to the user — never the call, and never a split into a separate preceding
+                // assistant message (that breaks the template's strict role alternation and fails as badly).
+                if (inTurn && previous.groupId() == currentGroupId
+                        && previous.message().role() == ChatRole.ASSISTANT) {
+                    ChatMessage merged = mergeAssistantMessages(previous.message(), message);
+                    if (nativeToolCalling && mergeCarriesContentAndToolCalls(previous.message(), message)) {
+                        merged = new ChatMessage(ChatRole.ASSISTANT, null, merged.toolCalls(), null);
+                    }
+                    previous.setMessage(merged);
+                    previous.setEstimatedTokens(estimateTokens(merged));
+                    bumpGeneration();
+                    debugLog.event("MERGE_ASSISTANT", "seq=" + previous.sequence()
+                            + " content=" + ContextDebugLog.truncate(merged.content())
+                            + " toolCalls=" + merged.toolCalls().size());
+                    return;
+                }
+            }
+            append(message);
+        } finally {
+            lock.unlock();
+        }
+    }
+
+    /**
+     * Selects whether this broker's history is served in native tool-calling mode (Ollama: tool calls as
+     * structured {@code tool_calls}, no schema). Call once per turn, at the same point the manager decides
+     * the protocol. This only flips the native merge rule above; it never touches the entries list.
+     */
+    public final void setNativeToolCalling(boolean nativeToolCalling) {
+        this.nativeToolCalling = nativeToolCalling;
+    }
+
+    /**
+     * True when an {@link #appendAssistant} merge would leave a single assistant message carrying BOTH
+     * non-blank prose content AND tool_calls. Decided on exactly what
+     * {@link #mergeAssistantMessages(ChatMessage, ChatMessage)} would produce, so the drop is precise. In
+     * native mode such a message is the banned shape (Mistral
+     * TemplateConfig.forbids_assistant_content_with_tools), and {@code appendAssistant} keeps the merge and
+     * blanks the content instead.
+     */
+    private static boolean mergeCarriesContentAndToolCalls(ChatMessage prev, ChatMessage next) {
+        if (prev.toolCalls().isEmpty() && next.toolCalls().isEmpty()) {
+            return false;
+        }
+        String content = joinAssistantContents(prev.content(), next.content());
+        return content != null && !content.isBlank();
+    }
+
+    private static ChatMessage mergeAssistantMessages(ChatMessage prev, ChatMessage next) {
+        String content = joinAssistantContents(prev.content(), next.content());
+        List<ChatToolCall> calls = new ArrayList<>(prev.toolCalls());
+        for (ChatToolCall call : next.toolCalls()) {
+            if (calls.stream().noneMatch(c -> c.id().equals(call.id()))) {
+                calls.add(call);
+            }
+        }
+        return new ChatMessage(ChatRole.ASSISTANT, content, calls, null);
+    }
+
+    private static String joinAssistantContents(String prev, String next) {
+        boolean prevBlank = prev == null || prev.isBlank();
+        boolean nextBlank = next == null || next.isBlank();
+        if (prevBlank && nextBlank) {
+            return null;
+        }
+        if (prevBlank) {
+            return next;
+        }
+        if (nextBlank) {
+            return prev;
+        }
+        return prev + "\n\n" + next;
     }
 
     public final List<ChatMessage> snapshot() {

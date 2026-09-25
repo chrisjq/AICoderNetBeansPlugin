@@ -20,9 +20,9 @@ public class SendAiMessageTool extends AbstractActionTool {
 
     public SendAiMessageTool() {
         super(McpSectionEnum.PLUGIN,
-              McpToolEnum.SEND_AI_MESSAGE.toolName(),
-              "Send a message to another AI session's inbox. Use " + McpToolEnum.LIST_AI_SESSIONS.toolName() + " to find peer sessionIds.",
-              McpToolEnum.SEND_AI_MESSAGE.toolName() + " -> send to a peer AI session's inbox; use " + SendAiMessageParamEnum.EXPECTS_REPLY.key() + "+" + SendAiMessageParamEnum.REPLY_IMPORTANT.key() + " to be interrupted when they reply");
+                McpToolEnum.SEND_AI_MESSAGE.toolName(),
+                "Send a message to another AI session's inbox. Use " + McpToolEnum.LIST_AI_SESSIONS.toolName() + " to find peer sessionIds.",
+                McpToolEnum.SEND_AI_MESSAGE.toolName() + " -> send to a peer AI session's inbox; use " + SendAiMessageParamEnum.EXPECTS_REPLY.key() + "+" + SendAiMessageParamEnum.REPLY_IMPORTANT.key() + " to be interrupted when they reply");
     }
 
     @Override
@@ -42,8 +42,8 @@ public class SendAiMessageTool extends AbstractActionTool {
         JsonObject subj = new JsonObject();
         subj.addProperty(ToolSchemaKeyEnum.TYPE.key(), "string");
         subj.addProperty(ToolSchemaKeyEnum.DESCRIPTION.key(), "Short subject line (max "
-                         + AiInboxMessage.MAX_SUBJECT_LENGTH + " chars). The recipient sees only this, not the body, "
-                         + "when the message is delivered — make it state what you want done.");
+                + AiInboxMessage.MAX_SUBJECT_LENGTH + " chars). The recipient sees only this, not the body, "
+                + "when the message is delivered — make it state what you want done.");
         props.add(SendAiMessageParamEnum.SUBJECT.key(), subj);
 
         JsonObject msg = new JsonObject();
@@ -166,10 +166,23 @@ public class SendAiMessageTool extends AbstractActionTool {
                         + " and copy the recipient's " + SendAiMessageParamEnum.TARGET_SESSION_ID.key()
                         + " verbatim — session IDs are full UUIDs and must match character for character.";
             }
+            // A comms-disabled session is never handed an inbox: AiTopComponent registers a session only when
+            // effectiveAllowInterAiComms() is on and unregisters it when comms is toggled off, so such a target
+            // always arrives here as "not active". isInterAiCommsAllowed reads the registry, not the inbox, so
+            // it still answers correctly for it. It must be told the real cause — "is not active" would send the
+            // caller back to the session list that hides this very session.
+            if (!broker.isInterAiCommsAllowed(targetSessionId)) {
+                return "Error: session '" + targetSessionId + "' has inter-AI messaging disabled — enable "
+                        + "Allow inter-AI comms in its session settings";
+            }
             return "Error: session '" + targetSessionId + "' is not active";
         }
+        // Defensive belt-and-braces: unreachable today because inbox registration is keyed on the comms setting
+        // (see above). Kept so a future change that decouples registration from the setting cannot silently
+        // deliver to a comms-disabled session; same wording as the registry-known refusal above.
         if (!broker.isInterAiCommsAllowed(targetSessionId)) {
-            return "Error: inter-AI communication is disabled for session '" + targetSessionId + "'";
+            return "Error: session '" + targetSessionId + "' has inter-AI messaging disabled — enable "
+                    + "Allow inter-AI comms in its session settings";
         }
         String replyToMessageId = args.str(SendAiMessageParamEnum.REPLY_TO_MESSAGE_ID.key());
         if (replyToMessageId != null && !replyToMessageId.isBlank()) {
@@ -188,9 +201,13 @@ public class SendAiMessageTool extends AbstractActionTool {
         boolean targetRunning = broker.isSessionRunning(targetSessionId);
         boolean targetAllowsImportant = broker.isImportantMessagesAllowed(targetSessionId);
         String messageId = broker.sendMessage(senderId, targetSessionId, subject, message,
-                                              replyToMessageId, important, expectsReply, replyImportant);
+                replyToMessageId, important, expectsReply, replyImportant);
         if (messageId == null) {
-            return "Error: session '" + targetSessionId + "' is not active";
+            // The target passed the liveness checks above but vanished before the send completed (a Stop or a
+            // session restart in the gap). Distinct from the "not active" refusal up front: that one means the
+            // recipient was GONE when we asked; this one means it was HERE and then left mid-send.
+            return "Error: session '" + targetSessionId + "' stopped before the message could be delivered — "
+                    + "retry once it has finished processing.";
         }
         boolean tryInterruptEnabled = targetAllowsImportant && important;
         String result = "Message sent to session " + targetSessionId + " (id=" + messageId + ")";
@@ -199,8 +216,7 @@ public class SendAiMessageTool extends AbstractActionTool {
 
             if (tryInterruptEnabled) {
                 result += ", message will be notified but read by recipient may be delayed.";
-            }
-            else {
+            } else {
                 result += ", message will be delivered when recipient ends current task.";
             }
 
@@ -213,12 +229,13 @@ public class SendAiMessageTool extends AbstractActionTool {
     }
 
     /**
-     * "You still owe replies to:" reminder appended after every successful send, so the reply obligation stays visible
-     * right when the sender is already in the mail tool rather than only on the next turn's preamble (see
-     * ContextProvider.appendOwedReplies, the equivalent per-turn section). Only messages already read are listed — an
-     * unread one has not been seen yet, so surfacing it here would be the same premature-reply nudge
-     * NotificationUtilInboxTest guards the auto-delivered notification against. The message just answered by this very
-     * call is excluded, though listOwedReplies would already drop it once its respondedAt is set.
+     * "You still owe replies to:" reminder appended after every successful send, so the reply obligation
+     * stays visible right when the sender is already in the mail tool rather than only on the next turn's
+     * preamble (see ContextProvider.appendOwedReplies, the equivalent per-turn section). Only messages
+     * already read are listed — an unread one has not been seen yet, so surfacing it here would be the same
+     * premature-reply nudge NotificationUtilInboxTest guards the auto-delivered notification against. The
+     * message just answered by this very call is excluded, though listOwedReplies would already drop it once
+     * its respondedAt is set.
      */
     private static String owedRepliesBlock(String senderId, String justAnsweredId) {
         List<AiInboxMessage> owed = AiSessionInboxBroker.getInstance().listOwedReplies(senderId).stream()
@@ -241,8 +258,8 @@ public class SendAiMessageTool extends AbstractActionTool {
     }
 
     /**
-     * The sender's display name, falling back to its session id when that session has since closed — same resolution
-     * and fallback ContextProvider.senderName() uses for the equivalent case.
+     * The sender's display name, falling back to its session id when that session has since closed — same
+     * resolution and fallback ContextProvider.senderName() uses for the equivalent case.
      */
     private static String senderName(String sessionId) {
         var abs = SessionRegistry.get(sessionId);

@@ -333,6 +333,34 @@ public final class PluginSettings {
         prefs().putBoolean(PluginSettingsKeyEnum.CONTEXT_PERSIST_ON_CLOSE.key(), v);
     }
 
+    public static int getOllamaMaxNarrationTurns() {
+        return Math.max(1, getInt(PluginSettingsKeyEnum.OLLAMA_MAX_NARRATION_TURNS));
+    }
+
+    public static void setOllamaMaxNarrationTurns(int v) {
+        prefs().putInt(PluginSettingsKeyEnum.OLLAMA_MAX_NARRATION_TURNS.key(), Math.max(1, v));
+    }
+
+    public static int getOllamaMaxUnproductiveRounds() {
+        return Math.max(1, getInt(PluginSettingsKeyEnum.OLLAMA_MAX_UNPRODUCTIVE_ROUNDS));
+    }
+
+    public static void setOllamaMaxUnproductiveRounds(int v) {
+        prefs().putInt(PluginSettingsKeyEnum.OLLAMA_MAX_UNPRODUCTIVE_ROUNDS.key(), Math.max(1, v));
+    }
+
+    /**
+     * Floor of 1 so a corrupt or zero preference can never disable the cap — an uncapped tool loop is an
+     * unbounded allocation, not merely a long one.
+     */
+    public static int getOllamaMaxToolIterations() {
+        return Math.max(1, getInt(PluginSettingsKeyEnum.OLLAMA_MAX_TOOL_ITERATIONS));
+    }
+
+    public static void setOllamaMaxToolIterations(int v) {
+        prefs().putInt(PluginSettingsKeyEnum.OLLAMA_MAX_TOOL_ITERATIONS.key(), Math.max(1, v));
+    }
+
     private PluginSettings() {
     }
 }

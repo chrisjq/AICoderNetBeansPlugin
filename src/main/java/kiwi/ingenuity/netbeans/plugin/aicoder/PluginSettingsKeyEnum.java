@@ -50,7 +50,23 @@ public enum PluginSettingsKeyEnum {
     CONTEXT_TOKEN_THRESHOLD("ai.contextTokenThreshold", 0),
     CONTEXT_TRIM_TARGET_PERCENT("ai.contextTrimTargetPercent", 70),
     CONTEXT_MAX_MESSAGES("ai.contextMaxMessages", 0),
-    CONTEXT_PERSIST_ON_CLOSE("ai.contextPersistOnClose", false);
+    CONTEXT_PERSIST_ON_CLOSE("ai.contextPersistOnClose", false),
+    OLLAMA_MAX_NARRATION_TURNS("ai.ollama.maxNarrationTurns", 10),
+    /**
+     * A turn with no tool call at all is narration — it never signals completion under the EndTurn contract,
+     * no matter how varied the prose is. {@link #OLLAMA_MAX_UNPRODUCTIVE_ROUNDS} catches the far rarer exact
+     * loop (a repeat of the same text or tool call); this is the normal bound on a model that will simply not
+     * end its turn.
+     */
+    OLLAMA_MAX_UNPRODUCTIVE_ROUNDS("ai.ollama.maxUnproductiveRounds", 3),
+    /**
+     * Hard upper bound on tool-loop iterations — the backstop that guarantees a turn ends whatever the model
+     * does. EndTurn is the normal exit and {@link #OLLAMA_MAX_NARRATION_TURNS} handles models that cannot
+     * call tools; neither binds a model making endless productive calls. Configurable mainly so tests can
+     * lower it: at the production default a runaway takes ~500 requests to stop, which is far longer than a
+     * unit test should run.
+     */
+    OLLAMA_MAX_TOOL_ITERATIONS("ai.ollama.maxToolIterations", 500);
 
     public static PluginSettingsKeyEnum forWebRequestAccessOption(WebRequestAccessOptionEnum option) {
         return switch (option) {

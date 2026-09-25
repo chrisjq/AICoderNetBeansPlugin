@@ -27,8 +27,8 @@ import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.ToolSchemaKeyEnu
  * Schema mode is the general creation default. Fresh Devstral 24B measurements with 80+ MCP tools showed
  * 4,208 prompt tokens in schema mode versus 16,763 with native tools. The gap is verbosity rather than
  * transport: Ollama renders the {@code tools} array into the prompt through its chat template, so both are
- * counted as prompt tokens; the rendered list carries parameter names and first sentences, while the tools
- * array carries full descriptions and full per-property schemas. The operative reason for the default is the
+ * counted as prompt tokens; the rendered list carries full descriptions and per-parameter details, while the
+ * tools array carries the same information as structured schemas. The operative reason for the default is the
  * template trigger above, not token cost, since trimming cannot empty the array; sessions needing native
  * tools can opt in explicitly.
  */
@@ -62,6 +62,7 @@ public final class SchemaToolCalls {
         if (knownToolNames != null && !knownToolNames.isEmpty()) {
             List<String> allowed = new ArrayList<>();
             allowed.add("");
+            allowed.add("EndTurn");
             allowed.addAll(knownToolNames);
             toolName.add(OpenAiJsonKeyEnum.ENUM.key(), GSON.toJsonTree(allowed));
         }
@@ -95,6 +96,28 @@ public final class SchemaToolCalls {
         return format;
     }
 
+    /**
+     * Synthetic completion tool. It is offered to the model but intercepted by the Ollama turn loop, so it
+     * never reaches the MCP bridge.
+     */
+    public static JsonObject endTurnToolSchema() {
+        JsonObject tool = new JsonObject();
+        tool.addProperty(ToolSchemaKeyEnum.NAME.key(), "EndTurn");
+        tool.addProperty(ToolSchemaKeyEnum.DESCRIPTION.key(),
+                "Finish the task and return the final answer in message.");
+        JsonObject inputSchema = new JsonObject();
+        inputSchema.addProperty(ToolSchemaKeyEnum.TYPE.key(), "object");
+        JsonObject message = new JsonObject();
+        message.addProperty(ToolSchemaKeyEnum.TYPE.key(), "string");
+        message.addProperty(ToolSchemaKeyEnum.DESCRIPTION.key(), "Final answer to show the user.");
+        JsonObject properties = new JsonObject();
+        properties.add("message", message);
+        inputSchema.add(ToolSchemaKeyEnum.PROPERTIES.key(), properties);
+        inputSchema.add(ToolSchemaKeyEnum.REQUIRED.key(), GSON.toJsonTree(List.of("message")));
+        tool.add(ToolSchemaKeyEnum.INPUT_SCHEMA.key(), inputSchema);
+        return tool;
+    }
+
     private static JsonObject stringField(String description) {
         JsonObject field = new JsonObject();
         field.addProperty(OpenAiJsonKeyEnum.TYPE.key(), "string");
@@ -103,9 +126,9 @@ public final class SchemaToolCalls {
     }
 
     /**
-     * Renders tool schemas as prompt text, since the model no longer receives the tools array. Parameter
-     * names must appear here or the model has no way to know them — the per-tool instruction lines alone do
-     * not carry them.
+     * Renders tool schemas as prompt text, since the model no longer receives the tools array. The full tool
+     * description and each parameter's type, description, and requiredness are included so the prompt retains
+     * the information that would otherwise have been supplied by the schema.
      */
     public static String renderToolList(Collection<JsonObject> toolSchemas) {
         StringBuilder sb = new StringBuilder();
@@ -116,28 +139,58 @@ public final class SchemaToolCalls {
                 continue;
             }
             sb.append("- ").append(tool.get(ToolSchemaKeyEnum.NAME.key()).getAsString()).append('(');
-            sb.append(String.join(", ", parameterNames(tool))).append(')');
+            sb.append(String.join(", ", parameterNames(tool))).append(')').append('\n');
             if (tool.has(ToolSchemaKeyEnum.DESCRIPTION.key())) {
-                sb.append(" - ").append(firstSentence(tool.get(ToolSchemaKeyEnum.DESCRIPTION.key()).getAsString()));
+                sb.append("  ").append(tool.get(ToolSchemaKeyEnum.DESCRIPTION.key()).getAsString()).append('\n');
             }
-            sb.append('\n');
+            appendParameterDetails(sb, tool);
         }
+        // The "## End of tool list" delimiter is protocol framing and is emitted by the caller
+        // (OllamaAiProcessManager.instructionsWithToolProtocol) alongside the "## MCP Tool List"
+        // heading that opens the section. Emitting it here too produced it twice.
         return sb.toString();
     }
 
-    /**
-     * First sentence of a description, to bound prompt size across 80+ tools. A full stop only ends a
-     * sentence when an upper-case word follows, so abbreviations survive — splitting naively on ". " cut
-     * "(e.g. /path)" to "(e.g" mid-word.
-     */
-    private static String firstSentence(String description) {
-        for (int i = 0; i + 2 < description.length(); i++) {
-            if (description.charAt(i) == '.' && description.charAt(i + 1) == ' '
-                    && Character.isUpperCase(description.charAt(i + 2))) {
-                return description.substring(0, i);
-            }
+    private static void appendParameterDetails(StringBuilder sb, JsonObject tool) {
+        JsonElement inputSchema = tool.get(ToolSchemaKeyEnum.INPUT_SCHEMA.key());
+        if (inputSchema == null || !inputSchema.isJsonObject()) {
+            return;
         }
-        return description;
+        JsonObject input = inputSchema.getAsJsonObject();
+        JsonElement properties = input.get(ToolSchemaKeyEnum.PROPERTIES.key());
+        if (properties == null || !properties.isJsonObject()) {
+            return;
+        }
+        List<String> required = requiredParameterNames(input);
+        for (Map.Entry<String, JsonElement> entry : properties.getAsJsonObject().entrySet()) {
+            JsonElement property = entry.getValue();
+            if (!property.isJsonObject()) {
+                continue;
+            }
+            JsonObject details = property.getAsJsonObject();
+            String type = details.has(ToolSchemaKeyEnum.TYPE.key())
+                    ? details.get(ToolSchemaKeyEnum.TYPE.key()).getAsString() : "unspecified";
+            String requiredness = required.contains(entry.getKey()) ? "required" : "optional";
+            sb.append("    ").append(entry.getKey()).append(" (").append(type).append(", ")
+                    .append(requiredness).append(')');
+            if (details.has(ToolSchemaKeyEnum.DESCRIPTION.key())) {
+                sb.append(" - ").append(details.get(ToolSchemaKeyEnum.DESCRIPTION.key()).getAsString());
+            }
+            sb.append('\n');
+        }
+    }
+
+    private static List<String> requiredParameterNames(JsonObject input) {
+        List<String> required = new ArrayList<>();
+        JsonElement requiredEl = input.get(ToolSchemaKeyEnum.REQUIRED.key());
+        if (requiredEl != null && requiredEl.isJsonArray()) {
+            requiredEl.getAsJsonArray().forEach(e -> {
+                if (e.isJsonPrimitive()) {
+                    required.add(e.getAsString());
+                }
+            });
+        }
+        return required;
     }
 
     /**
@@ -159,15 +212,7 @@ public final class SchemaToolCalls {
         if (properties == null || !properties.isJsonObject()) {
             return names;
         }
-        List<String> required = new ArrayList<>();
-        JsonElement requiredEl = input.get(ToolSchemaKeyEnum.REQUIRED.key());
-        if (requiredEl != null && requiredEl.isJsonArray()) {
-            requiredEl.getAsJsonArray().forEach(e -> {
-                if (e.isJsonPrimitive()) {
-                    required.add(e.getAsString());
-                }
-            });
-        }
+        List<String> required = requiredParameterNames(input);
         names.addAll(required);
         properties.getAsJsonObject().keySet().stream()
                 .filter(name -> !required.contains(name))
@@ -183,7 +228,7 @@ public final class SchemaToolCalls {
      */
     public static Reply parse(ChatResult result, Set<String> knownToolNames) {
         if (result == null) {
-            return new Reply(null, List.of());
+            return new Reply(null, List.of(), null, false);
         }
         if (result.toolCalls() != null && !result.toolCalls().isEmpty()) {
             return new Reply(result.assistantText(),
@@ -206,7 +251,7 @@ public final class SchemaToolCalls {
         } catch (RuntimeException ex) {
             // Not schema-shaped; fall through to the text extractor.
         }
-        return new Reply(text, ToolCallExtractor.extract(result, knownToolNames));
+        return new Reply(text, ToolCallExtractor.extract(result, knownToolNames), null, false);
     }
 
     /**
@@ -261,17 +306,17 @@ public final class SchemaToolCalls {
                     error += " " + OpenAiJsonKeyEnum.TOOL_ARGUMENTS.key()
                             + " must be a JSON object, not a string.";
                 }
-                return new Reply(message, List.of(), error);
+                return new Reply(message, List.of(), error, true);
             }
-            return new Reply(message, List.of());
+            return new Reply(message, List.of(), null, true);
         }
-        if (!knownToolNames.contains(name)) {
+        if (!"EndTurn".equals(name) && !knownToolNames.contains(name)) {
             return new Reply(message, List.of(),
                     "Error: there is no tool named \"" + name + "\", so nothing was called. "
-                    + "Use one of the tool names exactly as listed, or reply in plain text if no tool is needed.");
+                    + "Use one of the tool names exactly as listed, or reply in plain text if no tool is needed.", true);
         }
         JsonObject arguments = cleanArgumentNames(rawArguments);
-        return new Reply(message, List.of(new ExtractedToolCall(name, GSON.toJson(arguments), duplicateCounts)));
+        return new Reply(message, List.of(new ExtractedToolCall(name, GSON.toJson(arguments), duplicateCounts)), null, true);
     }
 
     /**
@@ -306,10 +351,10 @@ public final class SchemaToolCalls {
      * not the user: the caller feeds it back as a tool result so the next turn can correct itself. Without it
      * the malformed call is discarded in silence and the model has no idea anything went wrong.
      */
-    public record Reply(String message, List<ExtractedToolCall> calls, String toolCallError) {
+    public record Reply(String message, List<ExtractedToolCall> calls, String toolCallError, boolean spokeProtocol) {
 
         public Reply(String message, List<ExtractedToolCall> calls) {
-            this(message, calls, null);
+            this(message, calls, null, false);
         }
     }
 }

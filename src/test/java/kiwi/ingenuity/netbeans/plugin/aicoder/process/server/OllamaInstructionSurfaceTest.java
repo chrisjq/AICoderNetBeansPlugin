@@ -1,6 +1,8 @@
 package kiwi.ingenuity.netbeans.plugin.aicoder.process.server;
 
 import com.google.gson.JsonObject;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.AiTypeEnum;
@@ -9,24 +11,23 @@ import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.ollama.OllamaToolHandlerFa
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.McpToolEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.McpToolInterface;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.ToolSchemaKeyEnum;
-import org.junit.jupiter.api.Test;
-
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import org.junit.jupiter.api.Test;
 
 /**
  * End-to-end guard on everything an OLLAMA_LOCAL session can see.
  *
- * <p>Ollama has no built-in Read/Write/Bash/Grep tools, and reaches the plugin
- * through OllamaMcpBridge which injects sessionId/secretKey server-side. So the
- * assembled instruction text and every tool schema must be free of both
- * built-in-tool directives and credential parameters.
+ * <p>
+ * Ollama has no built-in Read/Write/Bash/Grep tools, and reaches the plugin through OllamaMcpBridge which
+ * injects sessionId/secretKey server-side. So the assembled instruction text and every tool schema must be
+ * free of both built-in-tool directives and credential parameters.
  *
- * <p>The per-tool unit tests check each tool in isolation; this checks the
- * fully assembled surface, which is where a leak actually reaches the model.
- * The schema half of this test is what catches a leak that lives in a tool's
- * schema description rather than its instruction() line.
+ * <p>
+ * The per-tool unit tests check each tool in isolation; this checks the fully assembled surface, which is
+ * where a leak actually reaches the model. The schema half of this test is what catches a leak that lives in
+ * a tool's schema description rather than its instruction() line.
  */
 class OllamaInstructionSurfaceTest {
 
@@ -39,7 +40,9 @@ class OllamaInstructionSurfaceTest {
                 AiTypeEnum.OLLAMA_LOCAL, ollamaHandlers());
     }
 
-    /** Every tool schema Ollama receives, concatenated as JSON. */
+    /**
+     * Every tool schema Ollama receives, concatenated as JSON.
+     */
     private static String ollamaSchemaJson() {
         StringBuilder sb = new StringBuilder();
         for (McpToolInterface h : ollamaHandlers().values()) {
@@ -49,9 +52,9 @@ class OllamaInstructionSurfaceTest {
     }
 
     /**
-     * Declared parameter names for one tool. Checked structurally rather than by
-     * scanning the JSON text: "targetSessionId" is a legitimate argument naming
-     * the peer to act on, and a substring search for "sessionId" would flag it.
+     * Declared parameter names for one tool. Checked structurally rather than by scanning the JSON text:
+     * "targetSessionId" is a legitimate argument naming the peer to act on, and a substring search for
+     * "sessionId" would flag it.
      */
     private static Set<String> paramNames(McpToolInterface handler, AiTypeEnum type) {
         JsonObject input = handler.schema(type.getMcpOptions())
@@ -101,10 +104,9 @@ class OllamaInstructionSurfaceTest {
     }
 
     /**
-     * Under TOOL_CALLS_VIA_SCHEMA the tools array is not sent and the tool list
-     * is rendered from the schemas by SchemaToolCalls — which carries parameter
-     * names the per-tool instruction lines never had. Enabling TOOL_INSTRUCTION
-     * as well would describe all 83 tools twice, ~9k characters of duplication.
+     * Under TOOL_CALLS_VIA_SCHEMA the tools array is not sent and the tool list is rendered from the schemas
+     * by SchemaToolCalls — which carries parameter names the per-tool instruction lines never had. Enabling
+     * TOOL_INSTRUCTION as well would describe all 83 tools twice, ~9k characters of duplication.
      */
     @Test
     void ollamaLearnsToolsFromTheRenderedListRatherThanPerToolProse() {
@@ -125,10 +127,49 @@ class OllamaInstructionSurfaceTest {
         assertTrue(handlers.size() > 50, "sanity check that the full tool set is present");
     }
 
+    @Test
+    void schemaModeAndNativeModeCarryTheSameToolInformation() {
+        Map<McpToolEnum, McpToolInterface> handlers = ollamaHandlers();
+        List<JsonObject> schemas = new ArrayList<>();
+        for (McpToolInterface handler : handlers.values()) {
+            schemas.add(handler.schema(AiTypeEnum.OLLAMA_LOCAL.getMcpOptions()));
+        }
+        String rendered = kiwi.ingenuity.netbeans.plugin.aicoder.ai.http.SchemaToolCalls.renderToolList(schemas);
+        Set<String> renderedNames = new java.util.HashSet<>();
+        for (String line : rendered.split("\\n")) {
+            if (line.startsWith("- ")) {
+                renderedNames.add(line.substring(2, line.indexOf('(')));
+            }
+        }
+        Set<String> schemaNames = new java.util.HashSet<>();
+        for (JsonObject schema : schemas) {
+            String name = schema.get(ToolSchemaKeyEnum.NAME.key()).getAsString();
+            schemaNames.add(name);
+            assertTrue(renderedNames.contains(name), name);
+            assertTrue(rendered.contains(schema.get(ToolSchemaKeyEnum.DESCRIPTION.key()).getAsString()), name);
+            JsonObject input = schema.getAsJsonObject(ToolSchemaKeyEnum.INPUT_SCHEMA.key());
+            Set<String> required = new java.util.HashSet<>();
+            if (input.has(ToolSchemaKeyEnum.REQUIRED.key())) {
+                input.getAsJsonArray(ToolSchemaKeyEnum.REQUIRED.key()).forEach(element -> required.add(element.getAsString()));
+            }
+            JsonObject properties = input.getAsJsonObject(ToolSchemaKeyEnum.PROPERTIES.key());
+            for (Map.Entry<String, com.google.gson.JsonElement> entry : properties.entrySet()) {
+                JsonObject property = entry.getValue().getAsJsonObject();
+                String type = property.get(ToolSchemaKeyEnum.TYPE.key()).getAsString();
+                String requiredness = required.contains(entry.getKey()) ? "required" : "optional";
+                String detail = "    " + entry.getKey() + " (" + type + ", " + requiredness + ")";
+                assertTrue(rendered.contains(detail), name + " / " + entry.getKey());
+                assertTrue(rendered.contains(property.get(ToolSchemaKeyEnum.DESCRIPTION.key()).getAsString()),
+                        name + " / " + entry.getKey());
+            }
+        }
+        assertEquals(schemaNames, renderedNames);
+    }
+
     /**
-     * SOFTEN_TOOL_DIRECTIVES exists because qwen2.5-coder:14b answered "hi" by
-     * calling a tool: the prompt told it to "call at session start" and to make
-     * an inter-AI call its "first action", and it complied literally.
+     * SOFTEN_TOOL_DIRECTIVES exists because qwen2.5-coder:14b answered "hi" by calling a tool: the prompt
+     * told it to "call at session start" and to make an inter-AI call its "first action", and it complied
+     * literally.
      */
     @Test
     void ollamaInstructionsCarryNoProactiveCallDirectives() {
@@ -139,7 +180,9 @@ class OllamaInstructionSurfaceTest {
                 "an unconditional 'first action is to call X' reads as an order to act on turn one");
     }
 
-    /** The softened wording must not cost the CLI types their directives. */
+    /**
+     * The softened wording must not cost the CLI types their directives.
+     */
     @Test
     void claudeKeepsProactiveCallDirectives() {
         String text = McpInstructionRegistry.buildFullInstructions(
@@ -149,9 +192,8 @@ class OllamaInstructionSurfaceTest {
     }
 
     /**
-     * The inter-AI tools declare caller credentials by hand rather than through
-     * applyCredentialsIfRequested, so they need their own check that the CLI
-     * path still gets them.
+     * The inter-AI tools declare caller credentials by hand rather than through applyCredentialsIfRequested,
+     * so they need their own check that the CLI path still gets them.
      */
     @Test
     void claudeInterAiToolsStillDeclareCallerCredentials() {
@@ -171,9 +213,8 @@ class OllamaInstructionSurfaceTest {
     }
 
     /**
-     * Control: the same builders must still emit the full text for a CLI type.
-     * Without this the assertions above would pass if the text vanished for
-     * everyone, or if the handler map were simply empty.
+     * Control: the same builders must still emit the full text for a CLI type. Without this the assertions
+     * above would pass if the text vanished for everyone, or if the handler map were simply empty.
      */
     @Test
     void claudeStillReceivesBuiltInToolDirectivesAndCredentials() {

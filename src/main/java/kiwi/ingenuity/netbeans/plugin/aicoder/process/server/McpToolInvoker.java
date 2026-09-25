@@ -26,23 +26,24 @@ import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.ToolSchemaKeyEnu
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.git.GitAccessGuard;
 
 /**
- * Runs a single MCP tool call with the same locking/handler semantics for both the HTTP {@code tools/call} path and
- * in-process callers. Returns the tool result string, or a human-readable lock-contention message.
+ * Runs a single MCP tool call with the same locking/handler semantics for both the HTTP {@code tools/call}
+ * path and in-process callers. Returns the tool result string, or a human-readable lock-contention message.
  */
 public final class McpToolInvoker {
 
     private static final ReentrantLock MUTATION_LOCK = new ReentrantLock(true);
 
     public static String invoke(McpToolEnum tool, McpToolInterface handler,
-                                JsonObject argsObj, AbstractAiSession session) throws McpArgumentException {
+            JsonObject argsObj, AbstractAiSession session) throws McpArgumentException {
         return invoke(tool, handler, argsObj, session, Map.of());
     }
 
     /**
-     * Invokes a tool after validating the materialised arguments and duplicate names found while its raw JSON was read.
+     * Invokes a tool after validating the materialised arguments and duplicate names found while its raw JSON
+     * was read.
      */
     public static String invoke(McpToolEnum tool, McpToolInterface handler,
-                                JsonObject argsObj, AbstractAiSession session, Map<String, Integer> duplicateCounts)
+            JsonObject argsObj, AbstractAiSession session, Map<String, Integer> duplicateCounts)
             throws McpArgumentException {
         // Logged here rather than at the HTTP entry point so in-process callers
         // are covered too: Ollama reaches tools through OllamaMcpBridge, so its
@@ -83,8 +84,7 @@ public final class McpToolInvoker {
             boolean mutLockAcquired;
             try {
                 mutLockAcquired = MUTATION_LOCK.tryLock(TimeoutEnum.MUTATION_LOCK_WAIT_MILLIS, TimeUnit.MILLISECONDS);
-            }
-            catch (InterruptedException ie) {
+            } catch (InterruptedException ie) {
                 Thread.currentThread().interrupt();
                 mutLockAcquired = false;
             }
@@ -93,12 +93,10 @@ public final class McpToolInvoker {
             }
             try {
                 return safe(handler.handle(new ToolRequestArguments(argsObj), session));
-            }
-            finally {
+            } finally {
                 MUTATION_LOCK.unlock();
             }
-        }
-        finally {
+        } finally {
             if (lockAcquired && requiredLock != null) {
                 lockManager.releaseLock(session.getId(), requiredLock);
             }
@@ -106,18 +104,18 @@ public final class McpToolInvoker {
     }
 
     /**
-     * Rejects malformed argument lists before a tool can acquire a lock or execute. Schema options are deliberately
-     * empty: credentials are accepted unconditionally because bridges may inject them while omitting them from their
-     * model-facing schema.
+     * Rejects malformed argument lists before a tool can acquire a lock or execute. Schema options are
+     * deliberately empty: credentials are accepted unconditionally because bridges may inject them while
+     * omitting them from their model-facing schema.
      */
     private static void validateArguments(McpToolEnum tool, McpToolInterface handler,
-                                          JsonObject argsObj, Map<String, Integer> duplicateCounts) throws McpArgumentException {
+            JsonObject argsObj, Map<String, Integer> duplicateCounts) throws McpArgumentException {
         JsonObject schema = handler.schema(Set.of());
         JsonObject input = schema.getAsJsonObject(ToolSchemaKeyEnum.INPUT_SCHEMA.key());
         JsonObject properties = input == null ? null
-                                : input.getAsJsonObject(ToolSchemaKeyEnum.PROPERTIES.key());
+                : input.getAsJsonObject(ToolSchemaKeyEnum.PROPERTIES.key());
         JsonArray required = input == null ? null
-                             : input.getAsJsonArray(ToolSchemaKeyEnum.REQUIRED.key());
+                : input.getAsJsonArray(ToolSchemaKeyEnum.REQUIRED.key());
         Set<String> accepted = new LinkedHashSet<>();
         if (properties != null) {
             accepted.addAll(properties.keySet());
@@ -149,8 +147,19 @@ public final class McpToolInvoker {
             }
         }
         if (!missing.isEmpty()) {
-            errors.add("Missing required parameters for " + tool.toolName() + ": "
-                    + String.join(", ", missing) + ".");
+            // State the ACTION, not just the diagnosis. Observed 2026-09-25: devstral:24b called
+            // SearchInFiles without its query, received the old bare "Missing required parameters"
+            // text, and its very next reply talked about an unrelated tool — it never retried, and
+            // reported a fabricated 0 for the result it had failed to fetch. A terse schema complaint
+            // sitting between two of the model's own narrations is easy to skim past; a sentence
+            // telling it what to do next is not. The malformed-tool-call recovery in
+            // OllamaAiProcessManager already ends with "call the tool again" for the same reason.
+            errors.add(tool.toolName() + " was NOT called — "
+                    + (missing.size() == 1
+                    ? "you left out the required parameter \"" + missing.get(0) + "\""
+                    : "you left out these required parameters: " + String.join(", ", missing))
+                    + ". Call " + tool.toolName()
+                    + " again with every required parameter set. Nothing ran, so no work was lost.");
         }
         if (!errors.isEmpty()) {
             throw new McpArgumentException(-32602, String.join("\n", errors));
@@ -158,30 +167,34 @@ public final class McpToolInvoker {
     }
 
     /**
-     * Denial message when a git tool is handed a path outside the calling session's file scope, or null when the call
-     * may proceed. Applied here rather than in each of the twenty-one git tools because this is the single dispatch
-     * point every one of them passes through (the HTTP {@code tools/call} path and OllamaMcpBridge both funnel into
-     * {@link #invoke}), so a git tool added later inherits the check instead of having to remember it.
+     * Denial message when a git tool is handed a path outside the calling session's file scope, or null when
+     * the call may proceed. Applied here rather than in each of the twenty-one git tools because this is the
+     * single dispatch point every one of them passes through (the HTTP {@code tools/call} path and
+     * OllamaMcpBridge both funnel into {@link #invoke}), so a git tool added later inherits the check instead
+     * of having to remember it.
      * <p>
-     * What is validated is the CALLER-SUPPLIED path, never the repository root that {@code GitProvider#resolveRoot}
-     * eventually walks up to. That distinction is the whole point: a {@code .git} directory very often sits ABOVE the
-     * NetBeans project directory, and a session legitimately scoped to the project must still be able to reach the
-     * repository that contains it. Scoping the resolved root would break that ordinary layout. Scoping the input does
-     * not — the caller must name somewhere it is allowed to be, and the upward walk then lands wherever it lands.
+     * What is validated is the CALLER-SUPPLIED path, never the repository root that
+     * {@code GitProvider#resolveRoot} eventually walks up to. That distinction is the whole point: a
+     * {@code .git} directory very often sits ABOVE the NetBeans project directory, and a session legitimately
+     * scoped to the project must still be able to reach the repository that contains it. Scoping the resolved
+     * root would break that ordinary layout. Scoping the input does not — the caller must name somewhere it
+     * is allowed to be, and the upward walk then lands wherever it lands.
      * <p>
      * Two arguments are checked. {@code projectPath} is documented as required on every git tool
-     * ({@code GitCommonParamEnum}), so it is the primary gate. {@code file} is checked too, but only when it is
-     * absolute: GitBlame is the one tool that lets {@code projectPath} be omitted when {@code file} is an absolute
-     * path, which would otherwise leave a per-line-authorship read of any file on disk completely ungated. A RELATIVE
-     * {@code file} is deliberately left alone — GitAdd/GitReset take repo-relative paths that {@code
-     * GitProvider#resolveFiles} already confines with its own within-repository check, and resolving them here against
-     * the JVM's working directory would reject ordinary, correct calls.
+     * ({@code GitCommonParamEnum}), so it is the primary gate. {@code file} is checked too, but only when it
+     * is absolute: GitBlame is the one tool that lets {@code projectPath} be omitted when {@code file} is an
+     * absolute path, which would otherwise leave a per-line-authorship read of any file on disk completely
+     * ungated. A RELATIVE {@code file} is deliberately left alone — GitAdd/GitReset take repo-relative paths
+     * that {@code
+     * GitProvider#resolveFiles} already confines with its own within-repository check, and resolving them
+     * here against the JVM's working directory would reject ordinary, correct calls.
      * <p>
-     * Uses {@link McpHookServer#isProjectFileAllowed} rather than {@code isFileAccessible}: a git repository is never
-     * the session's own config directory, so the config-dir exemption has nothing to contribute. It fails closed when
-     * the server or session id is missing, matching the build providers' existing treatment of the same question.
-     * {@code GitCommit}'s {@code areCommitTargetsAllowed} is untouched and still runs — it checks the individual files
-     * being committed, which is a narrower question than this one and not answered by it.
+     * Uses {@link McpHookServer#isProjectFileAllowed} rather than {@code isFileAccessible}: a git repository
+     * is never the session's own config directory, so the config-dir exemption has nothing to contribute. It
+     * fails closed when the server or session id is missing, matching the build providers' existing treatment
+     * of the same question. {@code GitCommit}'s {@code areCommitTargetsAllowed} is untouched and still runs —
+     * it checks the individual files being committed, which is a narrower question than this one and not
+     * answered by it.
      */
     static String gitScopeDenialOrNull(McpToolInterface handler, JsonObject argsObj, AbstractAiSession session) {
         if (handler == null || handler.section() != McpSectionEnum.GIT) {
@@ -203,18 +216,18 @@ public final class McpToolInvoker {
     }
 
     /**
-     * Contention message on acquisition failure. By the time this is returned the acquisition has already waited the
-     * lock's full configured wait and lost — the wait duration is reported straight from the {@link TimeoutEnum}
-     * constant the lock uses ({@link LockTypeEnum#getWaitTimeout()}) so it can never drift when the constant is
-     * retuned. Because the holder survived a full wait, it is still working, so the message steers the caller away from
-     * sleeping and retrying in a loop (observed behaviour after the old "try again shortly" wording) and towards doing
-     * other work or reporting the contention to the user.
+     * Contention message on acquisition failure. By the time this is returned the acquisition has already
+     * waited the lock's full configured wait and lost — the wait duration is reported straight from the
+     * {@link TimeoutEnum} constant the lock uses ({@link LockTypeEnum#getWaitTimeout()}) so it can never
+     * drift when the constant is retuned. Because the holder survived a full wait, it is still working, so
+     * the message steers the caller away from sleeping and retrying in a loop (observed behaviour after the
+     * old "try again shortly" wording) and towards doing other work or reporting the contention to the user.
      */
     static String lockedMessage(LockTypeEnum lockType, String holder, String toolName) {
         TimeoutEnum wait = lockType.getWaitTimeout();
         String waited = wait.millis() > 0
-                        ? "already waited " + wait.millis() / 1000 + "s (" + wait.name() + ") for this lock and lost"
-                        : "lost this lock immediately (no waiting is configured: " + wait.name() + " is 0)";
+                ? "already waited " + wait.millis() / 1000 + "s (" + wait.name() + ") for this lock and lost"
+                : "lost this lock immediately (no waiting is configured: " + wait.name() + " is 0)";
         return "Resource locked by session "
                 + (holder != null ? holder : "another operation")
                 + " performing " + lockType.getDescription()
@@ -226,10 +239,11 @@ public final class McpToolInvoker {
 
     /**
      * Contention message when the plugin-wide mutation lock stays busy for the full
-     * {@link TimeoutEnum#MUTATION_LOCK_WAIT_MILLIS} wait. The mutation lock guards a SINGLE handler invocation, so it
-     * is normally brief — unlike the long-lived global locks, an immediate retry really is the right next step here, so
-     * this message deliberately keeps a plain "Please try again." and carries none of the do-other-work steer (which
-     * would be wrong advice over a lock that is probably already free).
+     * {@link TimeoutEnum#MUTATION_LOCK_WAIT_MILLIS} wait. The mutation lock guards a SINGLE handler
+     * invocation, so it is normally brief — unlike the long-lived global locks, an immediate retry really is
+     * the right next step here, so this message deliberately keeps a plain "Please try again." and carries
+     * none of the do-other-work steer (which would be wrong advice over a lock that is probably already
+     * free).
      */
     static String mutationLockTimeoutMessage() {
         return "Error: mutation lock timeout — another operation held the mutation"

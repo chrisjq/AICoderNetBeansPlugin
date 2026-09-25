@@ -15,13 +15,13 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import org.junit.jupiter.api.Test;
 
 /**
- * The payloads here are the verbatim replies qwen2.5-coder:14b gave when driven with a response schema and the tools
- * listed in the prompt.
+ * The payloads here are the verbatim replies qwen2.5-coder:14b gave when driven with a response schema and
+ * the tools listed in the prompt.
  * <p>
- * Exception: the malformed-tool-call tests below are constructed, and say so individually. An earlier attempt to source
- * them from the log produced a payload that turned out to be an artifact of reassembling the SSE chunks rather than
- * anything the model sent - so treat "verbatim" as a claim to be checked against the plugin's own "Tool Used" log line,
- * not against a stream rebuilt by hand.
+ * Exception: the malformed-tool-call tests below are constructed, and say so individually. An earlier attempt
+ * to source them from the log produced a payload that turned out to be an artifact of reassembling the SSE
+ * chunks rather than anything the model sent - so treat "verbatim" as a claim to be checked against the
+ * plugin's own "Tool Used" log line, not against a stream rebuilt by hand.
  */
 class SchemaToolCallsTest {
 
@@ -54,8 +54,8 @@ class SchemaToolCallsTest {
     }
 
     /**
-     * Verbatim failures from qwen2.5-coder when required parameters were marked with a trailing "!": it folded the
-     * marker into the argument name, and the tool reported the argument as missing.
+     * Verbatim failures from qwen2.5-coder when required parameters were marked with a trailing "!": it
+     * folded the marker into the argument name, and the tool reported the argument as missing.
      */
     @Test
     void schemaObjectArgumentsRetainRawDuplicateCounts() {
@@ -75,11 +75,11 @@ class SchemaToolCallsTest {
                 + "\"tool_arguments\":{\"[startLine]\":\"1\"}}");
 
         assertEquals("{\"filePath\":\"/p/pom.xml\"}",
-                     SchemaToolCalls.parse(leading, Set.of("GetFileContent")).calls().get(0).argumentsJson());
+                SchemaToolCalls.parse(leading, Set.of("GetFileContent")).calls().get(0).argumentsJson());
         assertEquals("{\"filePath\":\"/p/pom.xml\"}",
-                     SchemaToolCalls.parse(trailing, Set.of("GetFileContent")).calls().get(0).argumentsJson());
+                SchemaToolCalls.parse(trailing, Set.of("GetFileContent")).calls().get(0).argumentsJson());
         assertEquals("{\"startLine\":\"1\"}",
-                     SchemaToolCalls.parse(bracketed, Set.of("GetFileContent")).calls().get(0).argumentsJson());
+                SchemaToolCalls.parse(bracketed, Set.of("GetFileContent")).calls().get(0).argumentsJson());
     }
 
     @Test
@@ -87,7 +87,7 @@ class SchemaToolCallsTest {
         ChatResult result = text("{\"message\":\"\",\"tool_name\":\"rm_rf\",\"tool_arguments\":{}}");
 
         assertTrue(SchemaToolCalls.parse(result, Set.of("get_current_weather")).calls().isEmpty(),
-                   "only advertised tools may be invoked");
+                "only advertised tools may be invoked");
     }
 
     /**
@@ -107,8 +107,8 @@ class SchemaToolCallsTest {
     @Test
     void structuredToolCallsStillWin() {
         ChatResult result = new ChatResult("",
-                                           List.of(new ChatToolCall("c1", "get_current_weather", "{\"city\":\"Oslo\"}")),
-                                           "tool_calls");
+                List.of(new ChatToolCall("c1", "get_current_weather", "{\"city\":\"Oslo\"}")),
+                "tool_calls");
 
         SchemaToolCalls.Reply reply = SchemaToolCalls.parse(result, Set.of("get_current_weather"));
 
@@ -117,9 +117,9 @@ class SchemaToolCallsTest {
     }
 
     /**
-     * Constructed, not observed - see the class comment. Arguments for a real tool with the name left empty is the
-     * shape the parser used to drop in silence, so the model believed the call had run. It has to be told, or it cannot
-     * correct itself.
+     * Constructed, not observed - see the class comment. Arguments for a real tool with the name left empty
+     * is the shape the parser used to drop in silence, so the model believed the call had run. It has to be
+     * told, or it cannot correct itself.
      */
     @Test
     void argumentsWithNoToolNameProduceAnErrorForTheModel() {
@@ -136,8 +136,8 @@ class SchemaToolCallsTest {
     }
 
     /**
-     * The ordinary "just answering" reply looks identical apart from empty arguments, and must stay silent — an error
-     * here would fire on every conversational turn.
+     * The ordinary "just answering" reply looks identical apart from empty arguments, and must stay silent —
+     * an error here would fire on every conversational turn.
      */
     @Test
     void emptyToolNameWithNoArgumentsIsAPlainAnswer() {
@@ -153,9 +153,9 @@ class SchemaToolCallsTest {
     }
 
     /**
-     * A backend that ignores the schema can send the arguments as a JSON string rather than an object. That is not an
-     * object, so the "is it empty" check has to ask the raw element - asking the parsed object would see nothing and
-     * drop the call silently, which is the bug this whole path exists for.
+     * A backend that ignores the schema can send the arguments as a JSON string rather than an object. That
+     * is not an object, so the "is it empty" check has to ask the raw element - asking the parsed object
+     * would see nothing and drop the call silently, which is the bug this whole path exists for.
      */
     @Test
     void argumentsSentAsAStringWithNoToolNameStillProduceAnError() {
@@ -172,7 +172,8 @@ class SchemaToolCallsTest {
     }
 
     /**
-     * The shapes that genuinely mean "no call" must stay silent, or the error fires on ordinary answering turns.
+     * The shapes that genuinely mean "no call" must stay silent, or the error fires on ordinary answering
+     * turns.
      */
     @Test
     void emptyArgumentContainersAreNotTreatedAsAnAttemptedCall() {
@@ -188,8 +189,8 @@ class SchemaToolCallsTest {
     }
 
     /**
-     * Second failure mode: a name that is not a tool. The enum in responseFormat should stop this reaching us, but only
-     * for backends that honour it.
+     * Second failure mode: a name that is not a tool. The enum in responseFormat should stop this reaching
+     * us, but only for backends that honour it.
      */
     @Test
     void unknownToolNameProducesAnErrorForTheModel() {
@@ -219,49 +220,90 @@ class SchemaToolCallsTest {
     }
 
     /**
-     * The empty string has to stay selectable or the model has no way to answer without calling something, which is how
-     * this backend ends up inventing a tool call for "hi".
+     * The empty string has to stay selectable or the model has no way to answer without calling something,
+     * which is how this backend ends up inventing a tool call for "hi".
      */
     @Test
-    void responseFormatPinsToolNameToKnownToolsPlusTheEmptyString() {
+    void responseFormatPinsToolNameToKnownToolsEndTurnAndTheEmptyString() {
         JsonObject format = SchemaToolCalls.responseFormat(List.of("GitLog", "SaveFile"));
 
         JsonArray allowed = format.getAsJsonObject("json_schema").getAsJsonObject("schema")
                 .getAsJsonObject("properties").getAsJsonObject("tool_name").getAsJsonArray("enum");
         List<String> values = new ArrayList<>();
         allowed.forEach(e -> values.add(e.getAsString()));
-        assertEquals(List.of("", "GitLog", "SaveFile"), values);
+        assertEquals(List.of("", "EndTurn", "GitLog", "SaveFile"), values);
     }
 
-    /**
-     * Parameter names exist only in the tool schemas, so dropping the tools array means the prompt must carry them or
-     * the model cannot call anything.
-     */
+    @Test
+    void renderedToolListCarriesTheFullToolDescription() {
+        String rendered = renderedGitLog();
+        assertTrue(rendered.contains("Returns recent commit history. Equivalent to git log."), rendered);
+    }
+
     @Test
     void renderedToolListCarriesParameterNames() {
+        String rendered = renderedGitLog();
+        assertTrue(rendered.contains("GitLog(projectPath, [limit])"), rendered);
+    }
+
+    @Test
+    void renderedToolListCarriesParameterTypes() {
+        String rendered = renderedGitLog();
+        assertTrue(rendered.contains("projectPath (string, required)"), rendered);
+        assertTrue(rendered.contains("limit (integer, optional)"), rendered);
+    }
+
+    @Test
+    void renderedToolListCarriesParameterDescriptions() {
+        String rendered = renderedGitLog();
+        assertTrue(rendered.contains("Project root."), rendered);
+        assertTrue(rendered.contains("Maximum entries."), rendered);
+    }
+
+    @Test
+    void renderedToolListDistinguishesRequiredParameters() {
+        String rendered = renderedGitLog();
+        assertTrue(rendered.contains("projectPath (string, required)"), rendered);
+        assertFalse(rendered.contains("projectPath (string, optional)"), rendered);
+    }
+
+    @Test
+    void renderedToolListDistinguishesOptionalParameters() {
+        String rendered = renderedGitLog();
+        assertTrue(rendered.contains("limit (integer, optional)"), rendered);
+        assertFalse(rendered.contains("limit (integer, required)"), rendered);
+        assertTrue(rendered.contains("GitLog(projectPath, [limit])"), rendered);
+    }
+
+    @Test
+    void parameterlessToolStillRendersDescription() {
         JsonObject tool = JsonParser.parseString("""
-            {"name":"GitLog","description":"Returns recent commit history. Equivalent to git log.",
-             "inputSchema":{"type":"object",
-               "properties":{"projectPath":{"type":"string"},"limit":{"type":"integer"}},
-               "required":["projectPath"]}}
+            {"name":"SaveFile","description":"Save a file. Creates a new file ONLY; use ApplyEdit to update an existing file.",
+             "inputSchema":{"type":"object","properties":{},"required":[]}}
             """).getAsJsonObject();
 
         String rendered = SchemaToolCalls.renderToolList(List.of(tool));
 
-        assertTrue(rendered.contains("GitLog("), rendered);
-        assertTrue(rendered.contains("GitLog(projectPath,"),
-                   "required names must be undecorated so they can be copied verbatim: " + rendered);
-        assertTrue(rendered.contains("[limit]"), "optional params are bracketed: " + rendered);
-        assertTrue(rendered.contains("Returns recent commit history"), rendered);
-        assertFalse(rendered.contains("Equivalent to git log"),
-                    "only the first sentence is kept, to bound prompt size");
+        assertTrue(rendered.contains("- SaveFile()"), rendered);
+        assertTrue(rendered.contains("Creates a new file ONLY; use ApplyEdit to update an existing file."), rendered);
+    }
+
+    private static String renderedGitLog() {
+        JsonObject tool = JsonParser.parseString("""
+            {"name":"GitLog","description":"Returns recent commit history. Equivalent to git log.",
+             "inputSchema":{"type":"object",
+               "properties":{"projectPath":{"type":"string","description":"Project root."},
+                             "limit":{"type":"integer","description":"Maximum entries."}},
+               "required":["projectPath"]}}
+            """).getAsJsonObject();
+        return SchemaToolCalls.renderToolList(List.of(tool));
     }
 
     /**
      * Splitting naively on ". " cut "(e.g. /path/Foo.java)" to "(e.g" mid-word.
      */
     @Test
-    void abbreviationsSurviveSentenceTruncation() {
+    void fullDescriptionsPreserveAbbreviations() {
         JsonObject tool = JsonParser.parseString("""
             {"name":"GetCurrentFile",
              "description":"Returns the cursor position (e.g. /path/Foo.java:42) in the editor.",

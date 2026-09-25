@@ -18,9 +18,10 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import org.junit.jupiter.api.Test;
 
 /**
- * Lock-contention messages must report that the tool ALREADY WAITED (duration derived from the TimeoutEnum constant the
- * acquisition actually used, never a hardcoded number), keep the holder and refused-tool facts, and steer the reader
- * away from sleep-and-retry loops — "try again shortly" has been observed to send AI sessions into exactly such loops.
+ * Lock-contention messages must report that the tool ALREADY WAITED (duration derived from the TimeoutEnum
+ * constant the acquisition actually used, never a hardcoded number), keep the holder and refused-tool facts,
+ * and steer the reader away from sleep-and-retry loops — "try again shortly" has been observed to send AI
+ * sessions into exactly such loops.
  */
 class McpToolInvokerTest {
 
@@ -42,12 +43,17 @@ class McpToolInvokerTest {
         args.addProperty("unknown", "value");
 
         McpArgumentException error = assertThrows(McpArgumentException.class,
-                                                  () -> McpToolInvoker.invoke(McpToolEnum.SEND_AI_MESSAGE, new SendAiMessageTool(), args, null));
+                () -> McpToolInvoker.invoke(McpToolEnum.SEND_AI_MESSAGE, new SendAiMessageTool(), args, null));
 
         assertEquals(-32602, error.getCode());
         assertTrue(error.getMessage().contains("Unknown parameter 'unknown' for SendAiMessage"));
-        assertTrue(error.getMessage().contains(
-                "Missing required parameters for SendAiMessage: targetSessionId, subject, message."));
+        // The message must name the missing parameters AND tell the model what to do about them. A bare
+        // diagnosis gets skimmed: devstral:24b received the old wording, never retried, and reported a
+        // fabricated result for the call that had not run.
+        assertTrue(error.getMessage().contains("SendAiMessage was NOT called"));
+        assertTrue(error.getMessage().contains("targetSessionId, subject, message"));
+        assertTrue(error.getMessage().contains("Call SendAiMessage again"),
+                "the error must state the corrective ACTION, not only the diagnosis");
     }
 
     @Test
@@ -56,14 +62,14 @@ class McpToolInvokerTest {
         args.addProperty("unknown", "value");
 
         McpArgumentException error = assertThrows(McpArgumentException.class,
-                                                  () -> McpToolInvoker.invoke(McpToolEnum.SEND_AI_MESSAGE, new SendAiMessageTool(), args, null,
-                                                                              Map.of("sessionId", 2, "subject", 2)));
+                () -> McpToolInvoker.invoke(McpToolEnum.SEND_AI_MESSAGE, new SendAiMessageTool(), args, null,
+                        Map.of("sessionId", 2, "subject", 2)));
 
         assertTrue(error.getMessage().contains("Duplicate parameters for SendAiMessage:"));
         assertTrue(error.getMessage().contains("sessionId (2×)"));
         assertTrue(error.getMessage().contains("subject (2×)"));
         assertTrue(error.getMessage().contains("Unknown parameter 'unknown'"));
-        assertTrue(error.getMessage().contains("Missing required parameters for SendAiMessage"));
+        assertTrue(error.getMessage().contains("SendAiMessage was NOT called"));
     }
 
     @Test
@@ -73,8 +79,8 @@ class McpToolInvokerTest {
                 .getAsJsonObject("params").getAsJsonObject("arguments");
 
         McpArgumentException error = assertThrows(McpArgumentException.class,
-                                                  () -> McpToolInvoker.invoke(McpToolEnum.FIND_FILE, new FindFileTool(null), args, null,
-                                                                              RawJsonArgumentScanner.duplicateKeys(body, "params", "arguments")));
+                () -> McpToolInvoker.invoke(McpToolEnum.FIND_FILE, new FindFileTool(null), args, null,
+                        RawJsonArgumentScanner.duplicateKeys(body, "params", "arguments")));
 
         assertEquals(-32602, error.getCode());
         assertTrue(error.getMessage().contains("Duplicate parameters for FindFile: pattern (2×)."));
@@ -84,7 +90,7 @@ class McpToolInvokerTest {
     void everyLockTypeDerivesItsWaitFromATimeoutEnumConstant() {
         for (LockTypeEnum lockType : LockTypeEnum.values()) {
             assertEquals(lockType.getWaitTimeoutMillis(),
-                         lockType.getWaitTimeout().millis(), lockType.name());
+                    lockType.getWaitTimeout().millis(), lockType.name());
             assertTrue(lockType.getWaitTimeoutMillis() >= 0, lockType.name());
         }
     }
@@ -96,9 +102,9 @@ class McpToolInvokerTest {
         assertTrue(message.contains("Tool: BuildMavenProject "));
         long expectedSeconds = TimeoutEnum.BUILD_LOCK_WAIT_MILLIS.millis() / 1000;
         assertTrue(message.contains("already waited " + expectedSeconds + "s"),
-                   "must state it already waited the configured duration: " + message);
+                "must state it already waited the configured duration: " + message);
         assertTrue(message.contains(TimeoutEnum.BUILD_LOCK_WAIT_MILLIS.name()),
-                   "must name the TimeoutEnum constant so the derivation is visible: " + message);
+                "must name the TimeoutEnum constant so the derivation is visible: " + message);
     }
 
     @Test
@@ -113,7 +119,7 @@ class McpToolInvokerTest {
     void globalLockMessagesSteerAwayFromSleepAndRetryLoops() {
         assertFalse(lowercase(McpToolInvoker.lockedMessage(LockTypeEnum.BUILD_LOCK, "s", "T"))
                 .contains("try again shortly"),
-                    "the old 'try again shortly' wording must not come back");
+                "the old 'try again shortly' wording must not come back");
         assertTrue(McpToolInvoker.lockedMessage(LockTypeEnum.BUILD_LOCK, "s", "T")
                 .contains("Do not sleep and retry in a loop"));
     }
@@ -126,16 +132,15 @@ class McpToolInvokerTest {
             if (lockType.getWaitTimeoutMillis() > 0) {
                 assertTrue(message.contains("already waited "
                         + lockType.getWaitTimeoutMillis() / 1000 + "s"),
-                           lockType.name() + ": " + message);
-            }
-            else {
+                        lockType.name() + ": " + message);
+            } else {
                 // A zero-wait lock (FILE_WRITE_LOCK today) fails immediately; the
                 // message must not claim a wait happened.
                 assertTrue(message.contains("immediately"), lockType.name() + ": " + message);
             }
             assertTrue(message.contains("holder-session"), lockType.name() + ": " + message);
             assertTrue(message.contains("report the contention to the user"),
-                       lockType.name() + ": " + message);
+                    lockType.name() + ": " + message);
         }
     }
 
@@ -144,14 +149,14 @@ class McpToolInvokerTest {
         String message = McpToolInvoker.mutationLockTimeoutMessage();
         assertTrue(message.startsWith("Error: mutation lock timeout"), message);
         assertTrue(message.contains("already held") || message.contains("held the mutation lock through the full"),
-                   message);
+                message);
         assertTrue(message.contains(TimeoutEnum.MUTATION_LOCK_WAIT_MILLIS / 1000 + "s wait"),
-                   "must state the full waited duration: " + message);
+                "must state the full waited duration: " + message);
         assertTrue(message.contains("MUTATION_LOCK_WAIT_MILLIS"), message);
         assertTrue(message.endsWith("Please try again."),
-                   "the mutation lock is brief by design; plain retry advice is correct: " + message);
+                "the mutation lock is brief by design; plain retry advice is correct: " + message);
         assertFalse(lowercase(message).contains("do not sleep")
                 || lowercase(message).contains("do other work"),
-                    "no anti-loop steer on the short-lived mutation lock: " + message);
+                "no anti-loop steer on the short-lived mutation lock: " + message);
     }
 }

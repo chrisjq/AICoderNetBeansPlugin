@@ -90,7 +90,7 @@ class InterAiToolHandlersTest {
     }
 
     private static ToolRequestArguments sendArgs(AiSession sender, String target, String subject, String body,
-                                                 String replyTo, boolean important, boolean expectsReply, boolean replyImportant) {
+            String replyTo, boolean important, boolean expectsReply, boolean replyImportant) {
         JsonObject object = new JsonObject();
         object.addProperty(SendAiMessageParamEnum.SESSION_ID.key(), sender.id());
         object.addProperty(SendAiMessageParamEnum.SECRET_KEY.key(), sender.secret());
@@ -121,7 +121,7 @@ class InterAiToolHandlersTest {
         SendAiMessageTool tool = new SendAiMessageTool();
 
         String accepted = tool.handle(sendArgs(sender, target.id(), "s".repeat(100), "b".repeat(200_000),
-                                               null, false, true, true), null);
+                null, false, true, true), null);
         assertTrue(accepted.startsWith("Message sent"), accepted);
         assertTrue(tool.handle(sendArgs(sender, target.id(), "s".repeat(101), "body", null, false, false, false), null)
                 .contains("subject exceeds maximum length"));
@@ -131,6 +131,82 @@ class InterAiToolHandlersTest {
         AiInboxMessage stored = broker.listInbox(target.id(), target.secret()).get(0);
         assertTrue(stored.expectsReply());
         assertTrue(stored.replyImportant());
+    }
+
+    /**
+     * FIX 4 (the incident Boss hit: a RUNNING session with allowInterAiComms=false was absent from
+     * ListAiSessions) — a comms-disabled target must be told so, and must NOT be told it is "not active": the
+     * two failures need opposite remedies, and pasting the wrong one sends the caller back to the session
+     * list that hides the real target. Nothing may be written to the inbox.
+     * <p>
+     * The target is built the way production builds a comms-disabled session: KNOWN to the registry (the
+     * session helper registers a wrapper) but never registered with the broker — AiTopComponent registers a
+     * session only when allowInterAiComms is on, so registering it with the broker first would test a state
+     * that cannot occur and would let the bug survive.
+     * <p>
+     * Moving the comms check out of the !isActive branch turns this red: the target falls through to "is not
+     * active".
+     */
+    @Test
+    void sendToolRefusesATargetWhoseInterAiCommsAreDisabled() {
+        AiSession sender = session("fx4-comms-sender", "Sender", true, true, false);
+        AiSession target = session("fx4-comms-target", "Target", false, true, false);
+        AiSessionInboxBroker broker = AiSessionInboxBroker.getInstance();
+        register(broker, sender);
+        SendAiMessageTool tool = new SendAiMessageTool();
+
+        String result = tool.handle(sendArgs(sender, target.id(), "s", "b", null, false, false, false), null);
+
+        assertTrue(result.startsWith("Error:"), result);
+        assertTrue(result.contains("inter-AI messaging disabled"), result);
+        assertTrue(result.contains(target.id()), "the refusal must name the id: " + result);
+        assertFalse(result.contains("is not active"),
+                "a comms-disabled target must not be told it is not active");
+        assertTrue(broker.listInbox(target.id(), target.secret()).isEmpty(),
+                "a refused send must not write an inbox entry");
+    }
+
+    /**
+     * A session that EXISTS (registered with a wrapper) but has no inbox is genuinely inactive, and must be
+     * told "is not active" — never the unknown-id advice, which would send the caller hunting for an id that
+     * is known to the registry.
+     */
+    @Test
+    void sendToolDistinguishesAKnownInactiveTargetFromAnUnknownId() {
+        AiSession sender = session("fx4-inactive-sender", "Sender", true, true, false);
+        // Known to the registry (the session helper registers the wrapper) but never given an inbox.
+        AiSession target = session("fx4-inactive-target", "Target", true, true, false);
+        AiSessionInboxBroker broker = AiSessionInboxBroker.getInstance();
+        register(broker, sender);
+        SendAiMessageTool tool = new SendAiMessageTool();
+
+        String result = tool.handle(sendArgs(sender, target.id(), "s", "b", null, false, false, false), null);
+
+        assertTrue(result.startsWith("Error:"), result);
+        assertTrue(result.contains("is not active"), result);
+        assertFalse(result.contains("no AI session has the ID"),
+                "a KNOWN but inactive session must not be told its id is unknown");
+    }
+
+    /**
+     * A truly unknown id must get the directive verbatim-id advice and must never be told "is not active" —
+     * that advice is reserved for sessions the registry can still find.
+     */
+    @Test
+    void sendToolDistinguishesAnUnknownIdFromAnInactiveSession() {
+        AiSession sender = session("fx4-unknown-sender", "Sender", true, true, false);
+        AiSessionInboxBroker broker = AiSessionInboxBroker.getInstance();
+        register(broker, sender);
+        SendAiMessageTool tool = new SendAiMessageTool();
+
+        String result = tool.handle(sendArgs(sender, "fx4-does-not-exist", "s", "b",
+                null, false, false, false), null);
+
+        assertTrue(result.startsWith("Error:"), result);
+        assertTrue(result.contains("no AI session has the ID"), result);
+        assertTrue(result.contains("verbatim"), result);
+        assertFalse(result.contains("is not active"),
+                "an unknown id must not get the 'is not active' advice meant for a known session");
     }
 
     @Test
@@ -174,7 +250,7 @@ class InterAiToolHandlersTest {
         assertTrue(broker.listInbox(self.id(), self.secret()).isEmpty(), "a refused self-send must not write an inbox entry");
         assertTrue(broker.listOwedReplies(self.id()).isEmpty());
         assertTrue(pendingRepliesOf(broker).values().stream().noneMatch(e -> e.toString().contains(self.id())),
-                   "a refused self-send must not create pending-reply tracking");
+                "a refused self-send must not create pending-reply tracking");
     }
 
     @Test

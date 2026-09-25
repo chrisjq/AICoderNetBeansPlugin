@@ -3,40 +3,45 @@ package kiwi.ingenuity.netbeans.plugin.aicoder.ai;
 /**
  * When an inbox message actually reaches a backend that is mid-turn.
  * <p>
- * This is a property of the backend's wire protocol, not a setting. It was previously implicit, spread across five
- * process managers, and invisible to the session doing the sending — so a sender could set {@code important=true}
- * against a backend with no mid-turn channel and have no way to discover that the flag did nothing.
+ * This is a property of the backend's wire protocol, not a setting. It was previously implicit, spread across
+ * five process managers, and invisible to the session doing the sending — so a sender could set
+ * {@code important=true} against a backend with no mid-turn channel and have no way to discover that the flag
+ * did nothing.
  * <p>
- * This alone does not decide whether a message arrives early. The recipient's session must ALSO permit interruption
- * ({@code allowImportantMessages}); either one missing and the message waits for the turn to end. Callers must check
- * both — see {@code ListAiSessionsTool}, which combines them into the {@code mailDelivery} it reports.
+ * This alone does not decide whether a message arrives early. The recipient's session must ALSO permit
+ * interruption ({@code allowImportantMessages}); either one missing and the message waits for the turn to
+ * end. Callers must check both — see {@code ListAiSessionsTool}, which combines them into the
+ * {@code mailDelivery} it reports.
  * <p>
- * The distinction also decides whether the recipient needs telling what happened afterwards: only {@link #ABORTS_TURN}
- * destroys work in progress, and only that case can be mistaken by the assistant for a rejection by the user.
+ * The distinction also decides whether the recipient needs telling what happened afterwards: only
+ * {@link #ABORTS_TURN} destroys work in progress, and only that case can be mistaken by the assistant for a
+ * rejection by the user.
  */
 public enum MailDeliveryTimingEnum {
 
     /**
-     * The message is injected INTO the running turn and read without stopping it. Nothing is aborted and no tool call
-     * is lost.
+     * The message is injected INTO the running turn and read without stopping it. Nothing is aborted and no
+     * tool call is lost.
      * <p>
-     * Codex does this with {@code turn/steer}; GitHub Copilot with an immediate-mode send.
+     * Codex does this with {@code turn/steer}; GitHub Copilot with an immediate-mode send; Ollama by arming a
+     * flag that the tool-loop is polled with, so the notice is queued as a user message.
      */
     DURING_TURN("mid-turn"),
     /**
-     * The message ends the turn in order to be delivered. The recipient sees it promptly, but any tool call in flight
-     * is aborted.
+     * The message ends the turn in order to be delivered. The recipient sees it promptly, but any tool call
+     * in flight is aborted.
      * <p>
-     * Claude does this: the plugin sends {@code control_request(interrupt)}, which is the same signal the Stop button
-     * sends, so the backend reports the abort as a user cancellation. The assistant can therefore conclude the USER
-     * rejected the call — a false belief about the user's intent — which is why this case gets a follow-up explanation.
+     * Claude does this: the plugin sends {@code control_request(interrupt)}, which is the same signal the
+     * Stop button sends, so the backend reports the abort as a user cancellation. The assistant can therefore
+     * conclude the USER rejected the call — a false belief about the user's intent — which is why this case
+     * gets a follow-up explanation.
      */
     ABORTS_TURN("mid-turn"),
     /**
-     * The message waits for the turn to finish on its own. There is no mid-turn channel, so marking a message important
-     * has no effect on this backend.
+     * The message waits for the turn to finish on its own. There is no mid-turn channel, so marking a message
+     * important has no effect on this backend.
      * <p>
-     * Grok and Ollama have no persistent session to inject into; OpenCode has not implemented it.
+     * Grok has no persistent session to inject into; OpenCode has not implemented it.
      */
     AFTER_TURN("end of turn");
 
@@ -47,12 +52,12 @@ public enum MailDeliveryTimingEnum {
     }
 
     /**
-     * A sentence FRAGMENT naming when the message is read, for callers to compose into a sender-facing sentence — "Read
-     * " + description() + " when important=true". It deliberately carries no leading capital and no trailing
-     * punctuation, so it can sit mid-sentence.
+     * A sentence FRAGMENT naming when the message is read, for callers to compose into a sender-facing
+     * sentence — "Read " + description() + " when important=true". It deliberately carries no leading capital
+     * and no trailing punctuation, so it can sit mid-sentence.
      * <p>
-     * Phrased by outcome rather than mechanism: a sender does not care that Codex uses {@code turn/steer} and Claude
-     * uses {@code control_request(interrupt)}, only when the peer will actually read the message.
+     * Phrased by outcome rather than mechanism: a sender does not care that Codex uses {@code turn/steer} and
+     * Claude uses {@code control_request(interrupt)}, only when the peer will actually read the message.
      */
     public String description() {
         return description;
