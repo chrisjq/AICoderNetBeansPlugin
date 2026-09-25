@@ -2,6 +2,7 @@ package kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.ollama;
 
 import com.google.gson.JsonObject;
 import java.util.List;
+import kiwi.ingenuity.netbeans.plugin.aicoder.ai.http.SchemaToolCalls;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import org.junit.jupiter.api.Test;
@@ -16,6 +17,9 @@ class OllamaAiProcessManagerToolInstructionsTest {
         assertFalse(instructions.isEmpty());
         assertTrue(instructions.contains("MCP instructions"));
         assertFalse(instructions.contains("read_file"));
+        assertTrue(instructions.contains("EndTurn with its message argument is REQUIRED"));
+        assertTrue(instructions.contains("returns control to the user so they can prompt again"));
+        assertTrue(instructions.contains("Text alone never ends the turn"));
     }
 
     @Test
@@ -46,6 +50,15 @@ class OllamaAiProcessManagerToolInstructionsTest {
         assertTrue(instructions.contains("leave tool_name empty"), instructions);
         assertTrue(endMarker >= 0, instructions);
         assertTrue(replyProtocol > endMarker, instructions);
+    }
+
+    @Test
+    void endTurnToolDescriptionMakesCompletionRequired() {
+        String description = SchemaToolCalls.endTurnToolSchema().get("description").getAsString();
+        assertTrue(description.contains("REQUIRED"));
+        assertTrue(description.contains("returns control to the user so they can prompt again"));
+        assertTrue(description.contains("message argument"));
+        assertTrue(description.contains("Text alone never ends the turn"));
     }
 
     private static JsonObject tool(String name) {

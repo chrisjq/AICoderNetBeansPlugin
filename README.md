@@ -131,6 +131,15 @@ Backend tabs supply executable locations and default backend settings. Session s
 | pi | CLI executable, live-discovered model and thinking-level pickers, and a version-verification status |
 | Ollama (Local) | OpenAI-compatible base URL (default `http://localhost:11434`), model, thinking level, context window, and context-management settings |
 
+### Ollama tool-calling modes
+
+When creating or configuring an **Ollama (Local)** session, **Use native tool calling** selects how the model receives and calls IDE tools. It is off by default for new sessions.
+
+- **Off (schema mode, recommended):** the tool list is placed in the prompt and a JSON response grammar constrains the reply shape and tool names. This is generally the more reliable choice for local models.
+- **On (native mode):** the plugin sends the standard OpenAI-style tools array and accepts structured `tool_calls`. This follows the path many models are tuned for, but depends on the selected model's chat template; behaviour can differ even between releases in the same family.
+
+Changing this setting in an existing session resets that session's conversation history so the model never sees mixed tool-call protocols. The pinned instructions and tool list remain. Ollama completes a turn by calling `EndTurn`, not merely by writing prose; the default safeguards stop a turn after 10 narration replies, 3 repeated unproductive rounds, or 500 total tool-loop iterations. See the [reference](REFERENCE.md#ollama-local-settings) for persistence and setting details.
+
 ### Thinking and reasoning effort
 
 Every backend that supports it exposes a thinking/reasoning-effort picker in its info bar, its session-create dialog, and its Options tab, using that backend's own terminology — Claude calls it *effort*, Codex, Grok and Copilot *reasoning effort*, pi and Ollama *thinking*. Two rules are common to all of them:

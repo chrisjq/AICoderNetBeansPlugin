@@ -852,6 +852,62 @@ class OllamaAiProcessManagerTest {
     }
 
     @Test
+    void nativeNarrationAfterNudgeIsAcceptedAsFinalAnswer() throws Exception {
+        PluginSettings.setOllamaMaxNarrationTurns(10);
+        List<AiProcessEvent> events = new ArrayList<>();
+        CountDownLatch done = new CountDownLatch(1);
+        AiProcessEventListener listener = event -> {
+            events.add(event);
+            if (event instanceof TurnCompleteEvent) {
+                done.countDown();
+            }
+        };
+        AiSession session = newSession();
+        ((OllamaSessionSettings) session.settings()).setUseNativeToolCalling(true);
+        FakeHttpClient fake = new FakeHttpClient(List.of(
+                new ChatResult("complete answer, first wording", List.of(), "stop"),
+                new ChatResult("complete answer, second wording", List.of(), "stop"),
+                new ChatResult("must not be requested", List.of(), "stop")));
+        TestOllamaProcessManager manager = new TestOllamaProcessManager(listener, fake);
+        manager.setCurrentSession(session);
+        manager.start(null, "qwen2.5-coder:7b");
+        manager.sendPrompt("summarize", new File(System.getProperty("user.home")), List.of());
+
+        assertTrue(done.await(5, TimeUnit.SECONDS));
+        assertEquals(2, fake.requests.size(),
+                "narration after the explicit nudge must be accepted without a third request");
+        assertTrue(events.stream().anyMatch(e -> e instanceof TextDeltaEvent td
+                && td.text() != null && td.text().contains("second wording")),
+                "the accepted narration must reach the user as the final answer");
+    }
+
+    @Test
+    void nudgeThenToolCallContinuesTheTurn() throws Exception {
+        PluginSettings.setOllamaMaxNarrationTurns(10);
+        CountDownLatch done = new CountDownLatch(1);
+        AiProcessEventListener listener = event -> {
+            if (event instanceof TurnCompleteEvent) {
+                done.countDown();
+            }
+        };
+        AiSession session = newSession();
+        ((OllamaSessionSettings) session.settings()).setUseNativeToolCalling(true);
+        FakeHttpClient fake = new FakeHttpClient(List.of(
+                new ChatResult("I will inspect it.", List.of(), "stop"),
+                new ChatResult("", List.of(new ChatToolCall("c1", "GetPluginVersion", "{}")), "tool_calls"),
+                NATIVE_END_TURN_ANSWER));
+        TestOllamaProcessManager manager = new TestOllamaProcessManager(listener, fake);
+        manager.setCurrentSession(session);
+        manager.start(null, "qwen2.5-coder:7b");
+        manager.sendPrompt("inspect", new File(System.getProperty("user.home")), List.of());
+
+        assertTrue(done.await(5, TimeUnit.SECONDS));
+        assertEquals(3, fake.requests.size(),
+                "a tool call after the nudge must continue to EndTurn");
+        assertEquals(List.of("GetPluginVersion"), manager.invokedToolNames);
+    }
+
+    @Test
     void stalledLoopStillProducesAnAnswer() throws Exception {
         CountDownLatch done = new CountDownLatch(1);
         List<AiProcessEvent> events = new ArrayList<>();

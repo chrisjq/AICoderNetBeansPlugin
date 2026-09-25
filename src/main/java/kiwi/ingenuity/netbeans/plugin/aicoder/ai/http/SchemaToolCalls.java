@@ -104,7 +104,7 @@ public final class SchemaToolCalls {
         JsonObject tool = new JsonObject();
         tool.addProperty(ToolSchemaKeyEnum.NAME.key(), "EndTurn");
         tool.addProperty(ToolSchemaKeyEnum.DESCRIPTION.key(),
-                "Finish the task and return the final answer in message.");
+                "EndTurn is REQUIRED to finish the turn, which returns control to the user so they can prompt again; put the final answer in its message argument. Text alone never ends the turn, however final it sounds.");
         JsonObject inputSchema = new JsonObject();
         inputSchema.addProperty(ToolSchemaKeyEnum.TYPE.key(), "object");
         JsonObject message = new JsonObject();

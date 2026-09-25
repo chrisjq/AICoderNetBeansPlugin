@@ -362,7 +362,7 @@ public class OllamaAiProcessManager extends AiProcessManager {
         if (!schemaMode) {
             return instructions
                     + "\n\n## MCP Tool List\nThe available tools are supplied separately in this request.\n\n"
-                    + "Use EndTurn with its message argument only when your task is complete. A real tool call continues "
+                    + "EndTurn with its message argument is REQUIRED to finish the turn, which returns control to the user so they can prompt again; put the final answer in its message argument. Text alone never ends the turn, however final it sounds. A real tool call continues "
                     + "the turn; any accompanying message is shown to the user. A reply with no tool call is narration and "
                     + "also continues the turn.\n";
         }
@@ -628,6 +628,7 @@ public class OllamaAiProcessManager extends AiProcessManager {
             int narrationRounds = 0;
             String previousAssistantText = null;
             int malformedToolCallRounds = 0;
+            boolean nudgeSentOnPreviousRequest = false;
 
             // Read once per turn so a preference change mid-turn cannot move the bound underneath us.
             int maxToolIterations = PluginSettings.getOllamaMaxToolIterations();
@@ -659,6 +660,7 @@ public class OllamaAiProcessManager extends AiProcessManager {
                 }
                 int estimatedForRequest = localBroker.estimatedTokenTotal();
                 List<ChatMessage> wireMessages = new ArrayList<>(localBroker.snapshot());
+                nudgeSentOnPreviousRequest = false;
                 if (!schemaMode && !wireMessages.isEmpty()) {
                     ChatMessage lastMessage = wireMessages.get(wireMessages.size() - 1);
                     if (lastMessage.role() == ChatRole.ASSISTANT
@@ -667,6 +669,7 @@ public class OllamaAiProcessManager extends AiProcessManager {
                             && !lastMessage.content().isBlank()) {
                         // Mistral-family templates treat a final assistant message as an unfinished continuation.
                         // Keep the nudge on the wire only: it must not accumulate in broker history or persistence.
+                        nudgeSentOnPreviousRequest = true;
                         wireMessages.add(new ChatMessage(ChatRole.USER,
                                 "Continue. Call the tool you need now, or call EndTurn if you have finished.",
                                 List.of(), null));
@@ -832,6 +835,16 @@ public class OllamaAiProcessManager extends AiProcessManager {
                     }
                     boolean repeatedAssistantText = assistantText != null
                             && assistantText.equals(previousAssistantText);
+                    if (!schemaMode && nudgeSentOnPreviousRequest
+                            && assistantText != null && !assistantText.isBlank()) {
+                        if (cancelledByUser) {
+                            return;
+                        }
+                        localBroker.commitTurn();
+                        turnCommitted = true;
+                        listener.onAiProcessEvent(new TurnCompleteEvent());
+                        return;
+                    }
                     previousAssistantText = assistantText;
                     if (repeatedAssistantText && ++unproductiveRounds >= maxUnproductiveRounds) {
                         // Counter A, prose half: the reply is exactly what the model already said last
