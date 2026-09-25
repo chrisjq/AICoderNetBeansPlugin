@@ -25,6 +25,7 @@ import kiwi.ingenuity.netbeans.plugin.aicoder.ai.http.ChatToolCall;
 public abstract class AbstractChatContextBroker {
 
     private static final int UNKNOWN_CONTEXT_TRIM_THRESHOLD = 12000;
+    private static final String RESTORED_CONTEXT_WARNING = "This conversation was resumed from a previous session. Tool results may be out of date; re-check factual information with a fresh tool call.";
 
     // Bump whenever a ContextJsonKeyEnum value is renamed or removed, and give
     // the old spelling a migration path. The gate below only fires on THIS
@@ -98,6 +99,12 @@ public abstract class AbstractChatContextBroker {
     private volatile boolean summarising = false;
     private volatile boolean pinnedOverBudget = false;
     private ContextEntry summaryEntry = null;
+    // Set only by restoreFromJson. Everything restored from disk describes the project as it was in an
+    // earlier run: a devstral session reopened after a rebuild answered "1.4.55" from a restored tool
+    // result when the installed version was 1.4.57, without re-reading anything. Held in a FIELD rather
+    // than appended to entries, like the trim and summary markers, so it can never be serialised by
+    // toJson and restored again — otherwise every open/close cycle would add one more copy.
+    private ContextEntry restoredContextWarning = null;
 
     protected AbstractChatContextBroker(String sessionId, ContextBrokerSettings settings) {
         this.sessionId = sessionId;
@@ -280,6 +287,11 @@ public abstract class AbstractChatContextBroker {
             if (!pinned.isEmpty()) {
                 out.add(new ChatMessage(ChatRole.SYSTEM, pinned, List.of(), null));
             }
+            // Ahead of the summary and trim markers: those describe what was REMOVED, this describes the
+            // provenance of everything that follows, so it reads as a preamble to the whole history.
+            if (restoredContextWarning != null) {
+                out.add(restoredContextWarning.message().copy());
+            }
             if (summaryEntry != null) {
                 out.add(summaryEntry.message().copy());
             }
@@ -326,6 +338,9 @@ public abstract class AbstractChatContextBroker {
             for (ContextEntry e : entries) {
                 total += e.estimatedTokens();
             }
+            if (restoredContextWarning != null) {
+                total += restoredContextWarning.estimatedTokens();
+            }
             if (summaryEntry != null) {
                 total += summaryEntry.estimatedTokens();
             }
@@ -370,6 +385,10 @@ public abstract class AbstractChatContextBroker {
         try {
             inTurn = false;
             currentGroupId = -1L;
+            // One turn is all it gets. Every request WITHIN the first turn carries it, so a model that
+            // needs several rounds to answer still sees it; keeping it beyond that would tax every later
+            // request on a 32k window forever, and the entries it describes are being trimmed away anyway.
+            restoredContextWarning = null;
         } finally {
             lock.unlock();
         }
@@ -401,6 +420,8 @@ public abstract class AbstractChatContextBroker {
             mutableEntries().clear();
             trimMarker = null;
             summaryEntry = null;
+            // The restored entries it warned about have just gone, so the warning goes with them.
+            restoredContextWarning = null;
             totalGroupsTrimmed = 0;
             bumpGeneration();
             debugLog.event("EVICT", "clearHistory dropped=" + dropped);
@@ -803,7 +824,9 @@ public abstract class AbstractChatContextBroker {
             root.addProperty(ContextJsonKeyEnum.CALIBRATION_RATIO.key(), estimator.calibrationRatio());
             JsonArray arr = new JsonArray();
             for (ContextEntry e : mutableEntries()) {
-                arr.add(e.toJson());
+                if (!RESTORED_CONTEXT_WARNING.equals(e.message().content())) {
+                    arr.add(e.toJson());
+                }
             }
             root.add(ContextJsonKeyEnum.ENTRIES.key(), arr);
             debugLog.event("PERSIST", "entries=" + mutableEntries().size());
@@ -857,10 +880,19 @@ public abstract class AbstractChatContextBroker {
             for (ContextEntry e : dropIncompleteGroups(loaded)) {
                 mutableEntries().add(e);
             }
+            // Only when something actually came back: warning about an empty history would be noise, and
+            // it must NOT be keyed on native/schema mode — restore runs at session open, before
+            // setNativeToolCalling is called for the first turn, so any such condition reads the default.
+            if (!mutableEntries().isEmpty()) {
+                ChatMessage warning = new ChatMessage(ChatRole.SYSTEM, RESTORED_CONTEXT_WARNING, List.of(), null);
+                restoredContextWarning = new ContextEntry(++sequenceForMarker, -3L, System.currentTimeMillis(),
+                        warning, ContextRetentionEnum.PINNED, estimateTokens(warning), null);
+            }
             sequenceCounter = maxSequence;
             groupCounter = maxGroup;
             bumpGeneration();
-            debugLog.event("RESTORE", "entries=" + mutableEntries().size());
+            debugLog.event("RESTORE", "entries=" + mutableEntries().size()
+                    + " warning=" + (restoredContextWarning != null));
         } finally {
             lock.unlock();
         }

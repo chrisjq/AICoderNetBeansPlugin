@@ -65,6 +65,11 @@ import org.junit.jupiter.api.io.TempDir;
 class OllamaAiProcessManagerTest {
 
     /**
+     * Port 1 refuses immediately, so context discovery fails fast instead of reaching a live Ollama.
+     */
+    private static final String UNREACHABLE_BASE_URL = "http://127.0.0.1:1";
+
+    /**
      * Most tests here script bare-prose replies and expect one request per turn. Under the EndTurn contract
      * bare prose is NARRATION, which continues the turn, so at the production defaults (narration 10,
      * unproductive rounds 3) every such test consumes more scripted replies and every request count is off.
@@ -121,13 +126,30 @@ class OllamaAiProcessManagerTest {
         return false;
     }
 
+    /**
+     * The base URL is pinned to a port that refuses instantly, per the standing "never touch the live server"
+     * rule. Without it {@code resolveEffectiveBaseUrl} falls back to {@code defaultBaseUrl()} —
+     * http://localhost:11434 — and every {@code manager.start(...)} fires a real GET /api/ps at whatever
+     * Ollama the developer happens to be running. 53 starts in this class produced a burst of ~60 live
+     * requests per suite run, visible in the Ollama access log. Tests that need a stub server override this
+     * with their own loopback address.
+     */
     private static AiSession newSession() {
-        return new AiSession("sid", "session", null,
+        return newSession("sid", "session");
+    }
+
+    /**
+     * Same guarantee as {@link #newSession()}, for tests that need their own session id.
+     */
+    private static AiSession newSession(String id, String name) {
+        AiSession session = new AiSession(id, name, null,
                 kiwi.ingenuity.netbeans.plugin.aicoder.ai.AiTypeEnum.OLLAMA_LOCAL,
                 null,
                 kiwi.ingenuity.netbeans.plugin.aicoder.ai.AiTypeEnum.OLLAMA_LOCAL
                         .createDefaultSettings(),
                 Instant.now(), Instant.now());
+        ((OllamaSessionSettings) session.settings()).setBaseUrl(UNREACHABLE_BASE_URL);
+        return session;
     }
 
     private static void awaitIdle(OllamaAiProcessManager manager) throws InterruptedException {
@@ -314,11 +336,7 @@ class OllamaAiProcessManagerTest {
                 new ChatResult("Finished.", List.of(), "stop")));
 
         TestOllamaProcessManager manager = new TestOllamaProcessManager(listener, fakeClient);
-        AiSession shared = new AiSession("sid", "session", null,
-                kiwi.ingenuity.netbeans.plugin.aicoder.ai.AiTypeEnum.OLLAMA_LOCAL,
-                null,
-                kiwi.ingenuity.netbeans.plugin.aicoder.ai.AiTypeEnum.OLLAMA_LOCAL.createDefaultSettings(),
-                Instant.now(), Instant.now());
+        AiSession shared = newSession();
         manager.setCurrentSession(shared);
         manager.start(null, "qwen2.5-coder:7b");
         manager.sendPrompt("hello", new File(System.getProperty("user.home")), List.of());
@@ -684,11 +702,7 @@ class OllamaAiProcessManagerTest {
         }
         FakeHttpClient fakeClient = new FakeHttpClient(repeating);
         TestOllamaProcessManager manager = new TestOllamaProcessManager(listener, fakeClient);
-        AiSession shared = new AiSession("sid", "session", null,
-                kiwi.ingenuity.netbeans.plugin.aicoder.ai.AiTypeEnum.OLLAMA_LOCAL,
-                null,
-                kiwi.ingenuity.netbeans.plugin.aicoder.ai.AiTypeEnum.OLLAMA_LOCAL.createDefaultSettings(),
-                Instant.now(), Instant.now());
+        AiSession shared = newSession();
         manager.setCurrentSession(shared);
         manager.start(null, "qwen2.5-coder:7b");
         manager.sendPrompt("hello", new File(System.getProperty("user.home")), List.of());
@@ -723,11 +737,7 @@ class OllamaAiProcessManagerTest {
         }
         TestOllamaProcessManager manager
                 = new TestOllamaProcessManager(listener, new FakeHttpClient(identical));
-        AiSession shared = new AiSession("sid3", "session3", null,
-                kiwi.ingenuity.netbeans.plugin.aicoder.ai.AiTypeEnum.OLLAMA_LOCAL,
-                null,
-                kiwi.ingenuity.netbeans.plugin.aicoder.ai.AiTypeEnum.OLLAMA_LOCAL.createDefaultSettings(),
-                Instant.now(), Instant.now());
+        AiSession shared = newSession("sid3", "session3");
         manager.setCurrentSession(shared);
         manager.start(null, "qwen2.5-coder:7b");
         manager.sendPrompt("hi", new File(System.getProperty("user.home")), List.of());
@@ -767,11 +777,7 @@ class OllamaAiProcessManagerTest {
         }
         TestOllamaProcessManager manager = new TestOllamaProcessManager(
                 listener, new FakeHttpClient(varying), "Description updated.");
-        AiSession shared = new AiSession("sid4", "session4", null,
-                kiwi.ingenuity.netbeans.plugin.aicoder.ai.AiTypeEnum.OLLAMA_LOCAL,
-                null,
-                kiwi.ingenuity.netbeans.plugin.aicoder.ai.AiTypeEnum.OLLAMA_LOCAL.createDefaultSettings(),
-                Instant.now(), Instant.now());
+        AiSession shared = newSession("sid4", "session4");
         manager.setCurrentSession(shared);
         manager.start(null, "qwen2.5-coder:7b");
         manager.sendPrompt("hi", new File(System.getProperty("user.home")), List.of());
@@ -934,11 +940,7 @@ class OllamaAiProcessManagerTest {
         FakeHttpClient fake = new FakeHttpClient(scripted);
         TestOllamaProcessManager manager
                 = new TestOllamaProcessManager(listener, fake, "Description updated.");
-        AiSession shared = new AiSession("sid6", "session6", null,
-                kiwi.ingenuity.netbeans.plugin.aicoder.ai.AiTypeEnum.OLLAMA_LOCAL,
-                null,
-                kiwi.ingenuity.netbeans.plugin.aicoder.ai.AiTypeEnum.OLLAMA_LOCAL.createDefaultSettings(),
-                Instant.now(), Instant.now());
+        AiSession shared = newSession("sid6", "session6");
         manager.setCurrentSession(shared);
         manager.start(null, "qwen2.5-coder:7b");
         manager.sendPrompt("hi", new File(System.getProperty("user.home")), List.of());
@@ -1442,11 +1444,7 @@ class OllamaAiProcessManagerTest {
 
         FakeHttpClient fake = new FakeHttpClient(List.of(new ChatResult("{}", List.of(), "stop")));
         TestOllamaProcessManager manager = new TestOllamaProcessManager(listener, fake);
-        AiSession shared = new AiSession("sid5", "session5", null,
-                kiwi.ingenuity.netbeans.plugin.aicoder.ai.AiTypeEnum.OLLAMA_LOCAL,
-                null,
-                kiwi.ingenuity.netbeans.plugin.aicoder.ai.AiTypeEnum.OLLAMA_LOCAL.createDefaultSettings(),
-                Instant.now(), Instant.now());
+        AiSession shared = newSession("sid5", "session5");
         manager.setCurrentSession(shared);
         manager.start(null, "qwen2.5-coder:7b");
         manager.sendPrompt("hi", new File(System.getProperty("user.home")), List.of());
@@ -1496,11 +1494,7 @@ class OllamaAiProcessManagerTest {
         TestOllamaProcessManager manager = new TestOllamaProcessManager(listener, cancelClient);
         ref[0] = manager;
 
-        AiSession shared = new AiSession("sid2", "session2", null,
-                kiwi.ingenuity.netbeans.plugin.aicoder.ai.AiTypeEnum.OLLAMA_LOCAL,
-                null,
-                kiwi.ingenuity.netbeans.plugin.aicoder.ai.AiTypeEnum.OLLAMA_LOCAL.createDefaultSettings(),
-                Instant.now(), Instant.now());
+        AiSession shared = newSession("sid2", "session2");
         manager.setCurrentSession(shared);
         manager.start(null, "qwen2.5-coder:7b");
         manager.sendPrompt("hello", new File(System.getProperty("user.home")), List.of());

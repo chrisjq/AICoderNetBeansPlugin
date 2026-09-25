@@ -19,6 +19,7 @@ import javax.swing.JTextArea;
 import javax.swing.JTextField;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.session.AiSession;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.settings.AiSessionSettings;
+import kiwi.ingenuity.netbeans.plugin.aicoder.ui.DialogBounds;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ui.ScrollablePanel;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ui.settings.AiSessionConfigPanel;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ui.settings.AiSessionConfigPanelMode;
@@ -29,9 +30,13 @@ import org.openide.windows.WindowManager;
  */
 public class AiSessionSettingsDialog extends JDialog {
 
+    private static final String DIALOG_BOUNDS_KEY = "session-configuration";
+
     public static AiSessionSettingsDialog show(AiSession session) {
         AiSessionSettingsDialog dialog = new AiSessionSettingsDialog(session);
-        dialog.setLocationRelativeTo(WindowManager.getDefault().getMainWindow());
+        if (!DialogBounds.restore(DIALOG_BOUNDS_KEY, dialog, 560, 400)) {
+            dialog.setLocationRelativeTo(WindowManager.getDefault().getMainWindow());
+        }
         dialog.setVisible(true);
         return dialog;
     }
@@ -55,7 +60,7 @@ public class AiSessionSettingsDialog extends JDialog {
     private String resultName;
     private String resultDescription;
 
-    private AiSessionSettingsDialog(AiSession session) {
+    AiSessionSettingsDialog(AiSession session) {
         super(WindowManager.getDefault().getMainWindow(), "Session Configuration", true);
         AiSessionSettings settings = session.settings();
         nameField.setText(session.name());
@@ -88,8 +93,7 @@ public class AiSessionSettingsDialog extends JDialog {
         if (gc != null) {
             screenBounds = gc.getBounds();
             screenInsets = Toolkit.getDefaultToolkit().getScreenInsets(gc);
-        }
-        else {
+        } else {
             screenBounds = GraphicsEnvironment.getLocalGraphicsEnvironment().getMaximumWindowBounds();
         }
 
@@ -104,11 +108,12 @@ public class AiSessionSettingsDialog extends JDialog {
 
     @Override
     public void dispose() {
+        DialogBounds.remember(DIALOG_BOUNDS_KEY, this);
         configPanel.dispose();
         super.dispose();
     }
 
-    private JScrollPane buildForm() {
+    JScrollPane buildForm() {
         ScrollablePanel form = new ScrollablePanel(new GridBagLayout());
         form.setBorder(BorderFactory.createEmptyBorder(12, 12, 12, 12));
         GridBagConstraints c = new GridBagConstraints();
@@ -117,16 +122,16 @@ public class AiSessionSettingsDialog extends JDialog {
         c.fill = GridBagConstraints.HORIZONTAL;
         addRow(form, c, 0, new JLabel("Session name:"), nameField);
 
-        JScrollPane descriptionScroll = new JScrollPane(descriptionArea);
-        descriptionScroll.setPreferredSize(new Dimension(300, 200));
-        descriptionScroll.setMinimumSize(new Dimension(200, 200));
-        addRow(form, c, 1, new JLabel("Description:"), descriptionScroll);
-
         c.gridx = 0;
-        c.gridy = 2;
+        c.gridy = 1;
         c.gridwidth = 2;
         c.weightx = 1;
         form.add(configPanel, c);
+
+        JScrollPane descriptionScroll = new JScrollPane(descriptionArea);
+        descriptionScroll.setPreferredSize(new Dimension(300, 200));
+        descriptionScroll.setMinimumSize(new Dimension(200, 200));
+        addRow(form, c, 2, new JLabel("Description:"), descriptionScroll);
 
         JScrollPane instructionsScroll = new JScrollPane(sessionInstructionsArea);
         instructionsScroll.setPreferredSize(new Dimension(300, 200));

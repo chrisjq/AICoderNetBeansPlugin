@@ -69,9 +69,13 @@ public class SessionPickerDialog extends JDialog {
     private static final int MAX_CREATE_COUNT = 50;
     private static String MCP_TOOLS_HELP_HTML = null;
 
+    private static final String DIALOG_BOUNDS_KEY = "ai-manager";
+
     public static void show(SessionPersistenceManager spm) {
         SessionPickerDialog dialog = new SessionPickerDialog(spm);
-        dialog.setLocationRelativeTo(WindowManager.getDefault().getMainWindow());
+        if (!DialogBounds.restore(DIALOG_BOUNDS_KEY, dialog, 820, 560)) {
+            dialog.setLocationRelativeTo(WindowManager.getDefault().getMainWindow());
+        }
         dialog.setVisible(true);
     }
 
@@ -138,7 +142,7 @@ public class SessionPickerDialog extends JDialog {
         projectCombo.setRenderer(new DefaultListCellRenderer() {
             @Override
             public Component getListCellRendererComponent(javax.swing.JList<?> list, Object value, int index,
-                                                          boolean isSelected, boolean cellHasFocus) {
+                    boolean isSelected, boolean cellHasFocus) {
                 Component component = super.getListCellRendererComponent(list, value, index, isSelected, cellHasFocus);
                 if (value instanceof String path) {
                     setText(projectDisplayLabel(path, openProjectPaths));
@@ -245,9 +249,9 @@ public class SessionPickerDialog extends JDialog {
     }
 
     /**
-     * Plugin identity, every value taken from the one place that already defines it rather than restated here: the
-     * version and homepage are filtered into version.properties from the pom, and the name is the bundle key the Plugin
-     * Manager displays. A literal copy in this panel would be the copy that goes stale.
+     * Plugin identity, every value taken from the one place that already defines it rather than restated
+     * here: the version and homepage are filtered into version.properties from the pom, and the name is the
+     * bundle key the Plugin Manager displays. A literal copy in this panel would be the copy that goes stale.
      */
     private Component buildAboutTab() {
         JPanel form = new JPanel(new GridBagLayout());
@@ -266,8 +270,8 @@ public class SessionPickerDialog extends JDialog {
     }
 
     /**
-     * A URL as a clickable link, or plain text when there is nothing to open - an underlined label that did nothing on
-     * click would be worse than an honest label.
+     * A URL as a clickable link, or plain text when there is nothing to open - an underlined label that did
+     * nothing on click would be worse than an honest label.
      */
     private Component buildLink(String url) {
         if (url == null || url.isBlank()) {
@@ -349,8 +353,7 @@ public class SessionPickerDialog extends JDialog {
     private void loadSessions() {
         try {
             sessions.setRows(spm.loadAll());
-        }
-        catch (IOException e) {
+        } catch (IOException e) {
             LOG.log(Level.WARNING, "Could not load sessions", e);
         }
     }
@@ -364,8 +367,7 @@ public class SessionPickerDialog extends JDialog {
         try {
             templates.saveConfigDefaultsIfEmpty().forEach(configCombo::addItem);
             templates.saveSpecialInstructionDefaultsIfEmpty().forEach(instructionsCombo::addItem);
-        }
-        catch (IOException e) {
+        } catch (IOException e) {
             LOG.log(Level.WARNING, "Could not load templates", e);
         }
         configCombo.setSelectedItem(config);
@@ -411,8 +413,7 @@ public class SessionPickerDialog extends JDialog {
                 try {
                     spm.save(session);
                     created.add(session);
-                }
-                catch (IOException ex) {
+                } catch (IOException ex) {
                     LOG.log(Level.WARNING, "Could not save session " + session.name(), ex);
                 }
             }
@@ -481,8 +482,7 @@ public class SessionPickerDialog extends JDialog {
         for (AiSession session : selected) try {
             spm.delete(session.id());
             closeTab(session.id());
-        }
-        catch (IOException e) {
+        } catch (IOException e) {
             LOG.log(Level.WARNING, "Could not delete session", e);
         }
         loadSessions();
@@ -515,14 +515,14 @@ public class SessionPickerDialog extends JDialog {
         };
         if (SwingUtilities.isEventDispatchThread()) {
             task.run();
-        }
-        else {
+        } else {
             SwingUtilities.invokeLater(task);
         }
     }
 
     @Override
     public void dispose() {
+        DialogBounds.remember(DIALOG_BOUNDS_KEY, this);
         OpenProjects.getDefault().removePropertyChangeListener(openProjectsListener);
         if (typeSettingsPanel != null) {
             typeSettingsPanel.dispose();

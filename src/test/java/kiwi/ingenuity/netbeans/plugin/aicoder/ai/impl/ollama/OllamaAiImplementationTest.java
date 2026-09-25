@@ -16,11 +16,31 @@ import static org.junit.jupiter.api.Assertions.assertNull;
 import org.junit.jupiter.api.Test;
 
 /**
- * Mirrors CodexAiImplementationTest and OpenCodeAiImplementationTest: a model picked for one session must reach that
- * session's own settings and must not touch the global Tools &gt; Options default, which is owned solely by
- * OllamaAiSettingsTab.
+ * Mirrors CodexAiImplementationTest and OpenCodeAiImplementationTest: a model picked for one session must
+ * reach that session's own settings and must not touch the global Tools &gt; Options default, which is owned
+ * solely by OllamaAiSettingsTab.
  */
 class OllamaAiImplementationTest {
+
+    /**
+     * Port 1 refuses immediately, so discovery fails fast instead of reaching a live Ollama.
+     */
+    private static final String UNREACHABLE_BASE_URL = "http://127.0.0.1:1";
+
+    /**
+     * Never leave the base URL unset here, per the standing "never touch the live server" rule.
+     * {@code createInfoBarExtension} calls both {@code triggerModelDiscovery()} and
+     * {@code triggerCapabilityDiscovery()} (OllamaAiImplementation:191-192), each resolving through
+     * {@code resolveBaseUrl()} — which falls back to {@code OllamaPluginSettings.getBaseUrl()},
+     * http://localhost:11434, when the session has none. That produced real GET /v1/models, GET /api/tags and
+     * a burst of POST /api/show against whatever Ollama the developer was running, several 404ing on model
+     * names this test invented.
+     */
+    private static OllamaSessionSettings newSettings() {
+        OllamaSessionSettings settings = new OllamaSessionSettings();
+        settings.setBaseUrl(UNREACHABLE_BASE_URL);
+        return settings;
+    }
 
     private static AiSession newSession(String id, OllamaSessionSettings settings) {
         return new AiSession(id, "Test", null, AiTypeEnum.OLLAMA_LOCAL, null, settings, Instant.now(), Instant.now());
@@ -59,7 +79,7 @@ class OllamaAiImplementationTest {
 
     @Test
     void setModel_updatesSessionSettings() {
-        OllamaSessionSettings settings = new OllamaSessionSettings();
+        OllamaSessionSettings settings = newSettings();
         OllamaAiImplementation impl = implFor(newSession("ollama-setmodel-1", settings));
 
         impl.setModel("llama3.3");
@@ -70,14 +90,14 @@ class OllamaAiImplementationTest {
     @Test
     void setModel_doesNotChangeOllamaPluginSettingsGlobalDefault() {
         String globalBefore = OllamaPluginSettings.getModel();
-        OllamaSessionSettings settings = new OllamaSessionSettings();
+        OllamaSessionSettings settings = newSettings();
         OllamaAiImplementation impl = implFor(newSession("ollama-setmodel-2", settings));
 
         impl.setModel("qwen3");
 
         assertEquals(globalBefore, OllamaPluginSettings.getModel(),
-                     "setModel must NOT write the global plugin default — picking a model for one "
-                     + "session would otherwise change Tools > Options for every other session");
+                "setModel must NOT write the global plugin default — picking a model for one "
+                + "session would otherwise change Tools > Options for every other session");
     }
 
     @Test
@@ -89,12 +109,12 @@ class OllamaAiImplementationTest {
         impl.setModel("mistral");
 
         assertEquals(globalBefore, OllamaPluginSettings.getModel(),
-                     "no session at all must neither throw nor fall back to writing the global default");
+                "no session at all must neither throw nor fall back to writing the global default");
     }
 
     @Test
     void createInfoBarExtension_seedsReasoningEffortFromSessionWhenPinned() throws Exception {
-        OllamaSessionSettings settings = new OllamaSessionSettings();
+        OllamaSessionSettings settings = newSettings();
         settings.setReasoningEffort("high");
         AiSession session = newSession("ollama-effort-1", settings);
         OllamaAiImplementation impl = implFor(session);
@@ -114,7 +134,7 @@ class OllamaAiImplementationTest {
         String before = OllamaPluginSettings.getReasoningEffort();
         try {
             OllamaPluginSettings.setReasoningEffort("medium");
-            OllamaSessionSettings settings = new OllamaSessionSettings();
+            OllamaSessionSettings settings = newSettings();
             AiSession session = newSession("ollama-effort-2", settings);
             OllamaAiImplementation impl = implFor(session);
 
@@ -123,23 +143,22 @@ class OllamaAiImplementationTest {
             OllamaAiInfoBarExtension ext = extHolder[0];
 
             assertEquals("medium", ext.getSelectedReasoningEffort(),
-                         "must display the global default rather than \"(model default)\" when one is set");
+                    "must display the global default rather than \"(model default)\" when one is set");
             assertNull(settings.reasoningEffort(),
-                       "seeding for display must never write the global fallback back into the session's own settings");
-        }
-        finally {
+                    "seeding for display must never write the global fallback back into the session's own settings");
+        } finally {
             OllamaPluginSettings.setReasoningEffort(before);
         }
     }
 
     /**
-     * Wired to {@code OllamaAiProcessManager.setOnReasoningEffortCleared}: fires only for a SESSION-sourced value, so
-     * this method itself needs no scope resolution — it must simply clear whatever the session currently has pinned and
-     * persist that through the host.
+     * Wired to {@code OllamaAiProcessManager.setOnReasoningEffortCleared}: fires only for a SESSION-sourced
+     * value, so this method itself needs no scope resolution — it must simply clear whatever the session
+     * currently has pinned and persist that through the host.
      */
     @Test
     void clearInvalidPersistedReasoningEffort_clearsSessionScopedValueAndPersistsThroughTheHost() {
-        OllamaSessionSettings settings = new OllamaSessionSettings();
+        OllamaSessionSettings settings = newSettings();
         settings.setReasoningEffort("high");
         AiSession session = newSession("ollama-clear-1", settings);
         OllamaAiImplementation impl = implFor(session);
