@@ -16,6 +16,17 @@ import org.junit.jupiter.api.io.TempDir;
 
 class PiAiSettingsTabTest {
 
+    /**
+     * Derived from {@link PiVersionCheck#TESTED_MAJOR_MINOR}, never spelled out — including the status
+     * label's own "tested: X.x" text, which is built from the same constant the tab renders it from.
+     * Hard-coded copies of the then-current number turned five tests in this class red the last time it was
+     * bumped. {@link #UNTESTED} sits far above any plausible pi release so a future bump cannot reclassify it
+     * as tested.
+     */
+    private static final String TESTED = PiVersionCheck.TESTED_MAJOR_MINOR + ".1";
+    private static final String UNTESTED = "9.99.0";
+    private static final String NOT_VERIFIED_TEXT = "Not verified (tested: " + PiVersionCheck.TESTED_MAJOR_MINOR + ".x)";
+
     @AfterEach
     void resetGlobalSettings() {
         PiPluginSettings.setExecutable("");
@@ -103,24 +114,24 @@ class PiAiSettingsTabTest {
 
     @Test
     void versionStatusText_testedVersion() {
-        assertEquals("Tested with this plugin", PiAiSettingsTab.versionStatusText(new PiVersionCheck("0.85.1")));
+        assertEquals("Tested with this plugin", PiAiSettingsTab.versionStatusText(new PiVersionCheck(TESTED)));
     }
 
     @Test
     void versionStatusText_verifiedByUser() {
-        PiPluginSettings.setVerifiedVersion("0.90.0");
-        assertEquals("Verified by you", PiAiSettingsTab.versionStatusText(new PiVersionCheck("0.90.0")));
+        PiPluginSettings.setVerifiedVersion(UNTESTED);
+        assertEquals("Verified by you", PiAiSettingsTab.versionStatusText(new PiVersionCheck(UNTESTED)));
     }
 
     @Test
     void versionStatusText_notVerified() {
-        assertEquals("Not verified (tested: 0.85.x)", PiAiSettingsTab.versionStatusText(new PiVersionCheck("0.90.0")));
+        assertEquals(NOT_VERIFIED_TEXT, PiAiSettingsTab.versionStatusText(new PiVersionCheck(UNTESTED)));
     }
 
     @Test
     void warningApplies_matchesPiVersionCheck() {
-        PiVersionCheck tested = new PiVersionCheck("0.85.1");
-        PiVersionCheck untested = new PiVersionCheck("0.90.0");
+        PiVersionCheck tested = new PiVersionCheck(TESTED);
+        PiVersionCheck untested = new PiVersionCheck(UNTESTED);
         assertFalse(PiAiSettingsTab.warningApplies(tested));
         assertTrue(PiAiSettingsTab.warningApplies(untested));
     }
@@ -128,7 +139,7 @@ class PiAiSettingsTabTest {
     @Test
     void load_autoProbesVersionForATestedExecutableWithoutClickingTest(@TempDir Path dir) throws Exception {
         Path exe = dir.resolve("pi");
-        Files.writeString(exe, "#!/bin/sh\necho 0.85.1\n");
+        Files.writeString(exe, "#!/bin/sh\necho " + TESTED + "\n");
         exe.toFile().setExecutable(true);
         PiPluginSettings.setExecutable(exe.toString());
 
@@ -142,7 +153,7 @@ class PiAiSettingsTabTest {
     @Test
     void load_autoProbeShowsVerifyButtonForAnUntestedExecutable(@TempDir Path dir) throws Exception {
         Path exe = dir.resolve("pi");
-        Files.writeString(exe, "#!/bin/sh\necho 0.99.0\n");
+        Files.writeString(exe, "#!/bin/sh\necho " + UNTESTED + "\n");
         exe.toFile().setExecutable(true);
         PiPluginSettings.setExecutable(exe.toString());
 
@@ -150,15 +161,16 @@ class PiAiSettingsTabTest {
         tab.load();
 
         waitUntil(tab::verifyButtonVisibleForTests);
-        assertEquals("Not verified (tested: 0.85.x)", tab.versionStatusLabelTextForTests());
+        assertEquals(NOT_VERIFIED_TEXT, tab.versionStatusLabelTextForTests());
     }
 
     /**
-     * {@code PiModelDiscovery.discoverAsync} guarantees exactly one terminal {@code onResult} call for every outcome,
-     * including the busy-skip case (a discovery already in progress). Occupies that shared in-progress latch with a
-     * slow discovery of our own first, so the tab's own Refresh call is very likely to land on the busy-skip path — but
-     * the assertion holds either way (busy-skip, or a real attempt of its own against a bad path that fails fast and
-     * exhausts its retries), since both converge on the button coming back.
+     * {@code PiModelDiscovery.discoverAsync} guarantees exactly one terminal {@code onResult} call for every
+     * outcome, including the busy-skip case (a discovery already in progress). Occupies that shared
+     * in-progress latch with a slow discovery of our own first, so the tab's own Refresh call is very likely
+     * to land on the busy-skip path — but the assertion holds either way (busy-skip, or a real attempt of its
+     * own against a bad path that fails fast and exhausts its retries), since both converge on the button
+     * coming back.
      */
     @Test
     void handleRefreshModels_secondCallWhileOneIsInProgress_stillReEnablesTheButton(@TempDir Path dir) throws Exception {
@@ -168,7 +180,7 @@ class PiAiSettingsTabTest {
 
         java.util.concurrent.CountDownLatch slowDiscoveryDone = new java.util.concurrent.CountDownLatch(1);
         kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.pi.PiModelDiscovery.discoverAsync(slowExe.toString(),
-                                                                                         models -> slowDiscoveryDone.countDown());
+                models -> slowDiscoveryDone.countDown());
 
         PiAiSettingsTab tab = new PiAiSettingsTab();
         tab.load();
@@ -179,7 +191,7 @@ class PiAiSettingsTabTest {
         waitUntil(tab::refreshModelsButtonEnabledForTests);
 
         assertTrue(slowDiscoveryDone.await(5, java.util.concurrent.TimeUnit.SECONDS),
-                   "let the background slow discovery finish before the next test runs");
+                "let the background slow discovery finish before the next test runs");
     }
 
     private static void waitUntil(java.util.function.BooleanSupplier condition) throws InterruptedException {

@@ -2,6 +2,7 @@ package kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.pi.ui;
 
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
+import javax.swing.JButton;
 import javax.swing.JComboBox;
 import javax.swing.JComponent;
 import javax.swing.JProgressBar;
@@ -14,6 +15,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import org.junit.jupiter.api.Test;
 
@@ -80,7 +82,8 @@ class PiAiInfoBarExtensionTest {
 
     @Test
     void versionWarningButtonHiddenForATestedVersion() {
-        PiAiInfoBarExtension ext = new PiAiInfoBarExtension(new FakeControl(), null, new PiVersionCheck("0.85.1"));
+        PiAiInfoBarExtension ext = new PiAiInfoBarExtension(new FakeControl(), null,
+                new PiVersionCheck(PiVersionCheck.TESTED_MAJOR_MINOR + ".1"));
         assertFalse(ext.createComponents().get(3).isVisible());
     }
 
@@ -88,6 +91,49 @@ class PiAiInfoBarExtensionTest {
     void versionWarningButtonVisibleWhenWarningApplies() {
         PiAiInfoBarExtension ext = new PiAiInfoBarExtension(new FakeControl(), null, new PiVersionCheck("0.99.0"));
         assertTrue(ext.createComponents().get(3).isVisible());
+    }
+
+    @Test
+    void clickingTheWarningButtonUsesTheCheckSuppliedAfterConstruction() throws Exception {
+        // AiTopComponent builds the info bar synchronously, BEFORE PiAiProcessManager.start() has discovered the
+        // installed version, so the constructor always gets null here and PiAiImplementation.onStarted() hands the
+        // real check over via setVersionCheck() afterwards. The click handler must therefore read the field at click
+        // time. It once captured the constructor's same-named parameter instead — the button still appeared and
+        // still showed the right tooltip (both read the field), but every click hit the null guard and returned,
+        // which is unobservable without driving the click itself.
+        PiVersionCheck[] opened = new PiVersionCheck[1];
+        PiAiInfoBarExtension ext = new PiAiInfoBarExtension(new FakeControl(), null, null) {
+            @Override
+            void showVersionWarningDialog(PiVersionCheck check) {
+                opened[0] = check;
+            }
+        };
+        JButton warningBtn = (JButton) ext.createComponents().get(3);
+
+        PiVersionCheck arrivedLater = new PiVersionCheck("0.99.0");
+        SwingUtilities.invokeAndWait(() -> ext.setVersionCheck(arrivedLater));
+        assertTrue(warningBtn.isVisible(), "the later check should make the button appear");
+
+        SwingUtilities.invokeAndWait(warningBtn::doClick);
+        assertSame(arrivedLater, opened[0], "the click must open the dialog with the check setVersionCheck supplied");
+    }
+
+    @Test
+    void compactButtonStaysDisabledUntilBothTheTurnAndTheCompactionHaveEnded() throws Exception {
+        // Compact has two independent reasons to be off — a turn running and a compaction in flight. If either input
+        // set the button alone, a turn ending mid-compaction would re-enable it and a second compact could be fired.
+        FakeControl control = new FakeControl();
+        PiAiInfoBarExtension ext = new PiAiInfoBarExtension(control, null, null);
+        JComponent compactBtn = ext.createComponents().get(4);
+
+        SwingUtilities.invokeAndWait(() -> ext.onCompactingChanged(true));
+        assertFalse(compactBtn.isEnabled(), "a compaction in flight must disable Compact");
+
+        SwingUtilities.invokeAndWait(() -> control.listener.onTurnRunningChanged(false));
+        assertFalse(compactBtn.isEnabled(), "a turn ending must not re-enable Compact while a compaction is still in flight");
+
+        SwingUtilities.invokeAndWait(() -> ext.onCompactingChanged(false));
+        assertTrue(compactBtn.isEnabled(), "Compact must come back once the compaction ends and no turn is running");
     }
 
     @Test
@@ -104,8 +150,7 @@ class PiAiInfoBarExtensionTest {
             PiPluginSettings.setVerifiedVersion("0.99.0");
             SwingUtilities.invokeAndWait(() -> ext.onPropertyEvent(new PiVersionVerifiedEvent()));
             assertFalse(warningBtn.isVisible(), "onPropertyEvent(PiVersionVerifiedEvent) must refresh the button");
-        }
-        finally {
+        } finally {
             PiPluginSettings.setVerifiedVersion("");
         }
     }
@@ -163,7 +208,7 @@ class PiAiInfoBarExtensionTest {
         modelCombo.setSelectedItem("github-copilot/gpt-5-mini");
 
         assertEquals("github-copilot", control.lastSetModelProvider,
-                     "reselecting the original value after an external change must notify again");
+                "reselecting the original value after an external change must notify again");
         assertEquals("gpt-5-mini", control.lastSetModelId);
     }
 
@@ -186,7 +231,7 @@ class PiAiInfoBarExtensionTest {
         levelCombo.setSelectedItem("high");
 
         assertEquals("high", control.lastSetThinkingLevel,
-                     "reselecting the original level after an external change must notify again");
+                "reselecting the original level after an external change must notify again");
     }
 
     @Test
@@ -214,8 +259,8 @@ class PiAiInfoBarExtensionTest {
         control.lastSetThinkingLevel = null;
         levelCombo.setSelectedItem(shown);
         assertNull(control.lastSetThinkingLevel,
-                   "reselecting the value already shown must be a no-op — lastNotifiedThinkingLevel must agree "
-                   + "with the combo after the refresh dropped the injected level");
+                "reselecting the value already shown must be a no-op — lastNotifiedThinkingLevel must agree "
+                + "with the combo after the refresh dropped the injected level");
     }
 
     @Test

@@ -3,17 +3,23 @@ package kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.githubcopilot;
 import com.github.copilot.rpc.PermissionInvocation;
 import com.github.copilot.rpc.PermissionRequest;
 import com.github.copilot.rpc.PermissionRequestResult;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.atomic.AtomicReference;
+import java.util.logging.Handler;
+import java.util.logging.LogRecord;
+import java.util.logging.Logger;
+import kiwi.ingenuity.netbeans.plugin.aicoder.PluginSettings;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.AiTypeEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.McpSteeringPolicy;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.events.ConfirmEvent;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.events.PermissionDecision;
-import kiwi.ingenuity.netbeans.plugin.aicoder.ai.events.SystemNotificationEvent;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.events.ToolUseEvent;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.session.AiSession;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.SessionRegistry;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.events.AiProcessEvent;
+import kiwi.ingenuity.netbeans.plugin.aicoder.process.server.McpHookServerUtil;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.session.AbstractAiSession;
 import org.junit.jupiter.api.AfterEach;
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -104,7 +110,7 @@ class GithubCopilotPermissionHandlerTest {
     }
 
     @Test
-    void internalKindsRejectAndRaiseSystemNotification() throws Exception {
+    void internalKindsRejectWithoutAnyEventOrNotification() throws Exception {
         for (String kind : new String[]{"read", "path", "url"}) {
             AtomicReference<AiProcessEvent> raised = new AtomicReference<>();
             GithubCopilotPermissionHandler handler = new GithubCopilotPermissionHandler(raised::set, "session-1");
@@ -121,8 +127,8 @@ class GithubCopilotPermissionHandlerTest {
                     "WebRequest";
             };
             assertTrue(result.getFeedback().contains(expectedTool));
-            assertTrue(raised.get() instanceof SystemNotificationEvent);
-            assertTrue(((SystemNotificationEvent) raised.get()).text().startsWith("Internal Command: "));
+            assertNull(raised.get(),
+                    "a steering refusal is kept in the tool-use log, not announced in the chat transcript");
         }
     }
 
@@ -135,8 +141,8 @@ class GithubCopilotPermissionHandlerTest {
 
         assertEquals("reject", result.getKind());
         assertTrue(result.getFeedback().contains("GetInstructions"));
-        assertTrue(raised.get() instanceof SystemNotificationEvent);
-        assertTrue(((SystemNotificationEvent) raised.get()).text().startsWith("Internal Command: "));
+        assertNull(raised.get(),
+                "a steering refusal is kept in the tool-use log, not announced in the chat transcript");
     }
 
     // ---- cancelPendingPermissions ----
@@ -266,9 +272,9 @@ class GithubCopilotPermissionHandlerTest {
         // Should be resolved immediately, not waiting for user input
         assertTrue(future.isDone(), "steering ON should auto-deny without waiting for user");
 
-        // No ConfirmEvent raised
-        assertTrue(raised.get() instanceof SystemNotificationEvent,
-                "steering ON should emit SystemNotificationEvent, not ConfirmEvent");
+        // No event at all: the refusal is a tool-use log line, not a chat announcement.
+        assertNull(raised.get(),
+                "steering ON must not announce refusals in chat (they go to the tool-use log)");
 
         // Reject with steering feedback
         PermissionRequestResult result = future.get();
@@ -330,8 +336,179 @@ class GithubCopilotPermissionHandlerTest {
             // INTERNAL must NOT mention the steering policy specifically
             assertFalse(feedback.contains("steering policy"),
                     "INTERNAL rejection is unconditional, not from the steering policy");
-            assertTrue(raised.get() instanceof SystemNotificationEvent);
-            assertTrue(((SystemNotificationEvent) raised.get()).text().startsWith("Internal Command: "));
+            assertNull(raised.get(),
+                    "a steering refusal is kept in the tool-use log, not announced in the chat transcript");
+        }
+    }
+
+    @Test
+    void writeKindWithSteeringOnRejectsWithWriteSteerAndLogsCategory() throws Exception {
+        // apply_patch arrives with kind "write". Steering ON must refuse it with the WRITE
+        // steer text (the same ApplyEdit/WriteFile set OpenCode's write path uses), not the
+        // generic GetInstructions text an UNKNOWN classification produced.
+        boolean previous = PluginSettings.isLogToolUse();
+        Logger logger = Logger.getLogger(McpHookServerUtil.class.getName());
+        List<String> captured = new ArrayList<>();
+        Handler capture = new Handler() {
+            @Override
+            public void publish(LogRecord record) {
+                captured.add(record.getMessage());
+            }
+
+            @Override
+            public void flush() {
+            }
+
+            @Override
+            public void close() {
+            }
+        };
+        logger.addHandler(capture);
+        try {
+            PluginSettings.setLogToolUse(true);
+
+            AtomicReference<AiProcessEvent> raised = new AtomicReference<>();
+            GithubCopilotPermissionHandler handler = new GithubCopilotPermissionHandler(raised::set, testSessionId);
+
+            CompletableFuture<PermissionRequestResult> future = handler.handle(request("write"), invocation());
+
+            assertTrue(future.isDone(), "steering ON must auto-deny a write without waiting for user");
+            PermissionRequestResult result = future.get();
+            assertEquals("reject", result.getKind());
+            assertTrue(result.getFeedback().contains(McpSteeringPolicy.steeringFeedbackFor(
+                    McpSteeringPolicy.Category.WRITE)),
+                    "a steered write must carry the WRITE steer text, not the generic GetInstructions one");
+            assertNull(raised.get(),
+                    "the refusal is only a tool-use log line, never a chat event");
+            assertEquals("MCP Steering refusal: backend=copilot, category=WRITE: "
+                    + GithubCopilotPermissionPolicy.describeRequest("write", null),
+                    captured.get(0), "the write refusal must log under category=WRITE");
+        } finally {
+            logger.removeHandler(capture);
+            PluginSettings.setLogToolUse(previous);
+        }
+    }
+
+    @Test
+    void writeKindWithoutSteeringIsNotAutoRefusedAndRaisesConfirmEvent() throws Exception {
+        // Steering OFF: a native write must stay OPTIONAL. It is not auto-denied (the
+        // regression risk of an INTERNAL-style mapping) — it falls through to the
+        // user confirm prompt like every other unsteered request.
+        AtomicReference<AiProcessEvent> raised = new AtomicReference<>();
+        GithubCopilotPermissionHandler handler = new GithubCopilotPermissionHandler(raised::set, "unregistered-session");
+
+        CompletableFuture<PermissionRequestResult> future = handler.handle(request("write"), invocation());
+
+        assertFalse(future.isDone(), "steering OFF must not auto-resolve a write; the user must be asked");
+        ConfirmEvent ce = assertInstanceOf(ConfirmEvent.class, raised.get(),
+                "with steering off a write must raise the user confirm prompt, not an auto-denial");
+        assertEquals("Write", ce.toolName());
+        assertTrue(ce.requireExplicitApproval());
+        ce.response().complete(PermissionDecision.denied("no"));
+        assertEquals("reject", future.get().getKind());
+        assertEquals("no", future.get().getFeedback());
+    }
+
+    @Test
+    void steeringRefusalsLogOneLinePerRefusalWhenToolUseLoggingIsOn() throws Exception {
+        boolean previous = PluginSettings.isLogToolUse();
+        Logger logger = Logger.getLogger(McpHookServerUtil.class.getName());
+        List<String> captured = new ArrayList<>();
+        Handler capture = new Handler() {
+            @Override
+            public void publish(LogRecord record) {
+                captured.add(record.getMessage());
+            }
+
+            @Override
+            public void flush() {
+            }
+
+            @Override
+            public void close() {
+            }
+        };
+        logger.addHandler(capture);
+        try {
+            PluginSettings.setLogToolUse(true);
+
+            // INTERNAL read/path/url and UNKNOWN each steer away from one MCP tool.
+            String[] kinds = {"read", "path", "url", "some-future-kind(thing)"};
+            McpSteeringPolicy.Category[] categories = {
+                McpSteeringPolicy.Category.READ,
+                McpSteeringPolicy.Category.PATH,
+                McpSteeringPolicy.Category.URL,
+                McpSteeringPolicy.Category.UNKNOWN
+            };
+            for (int i = 0; i < kinds.length; i++) {
+                String kind = kinds[i];
+                AtomicReference<AiProcessEvent> raised = new AtomicReference<>();
+                GithubCopilotPermissionHandler handler = new GithubCopilotPermissionHandler(raised::set, "session-1");
+
+                PermissionRequestResult result = handler.handle(request(kind), invocation()).get();
+
+                assertEquals("reject", result.getKind());
+                assertNull(raised.get(),
+                        "the refusal is only a log line, never an event");
+                assertEquals("MCP Steering refusal: backend=copilot, category=" + categories[i] + ": "
+                        + GithubCopilotPermissionPolicy.describeRequest(kind, null),
+                        captured.get(i), "one line per refusal, naming its category and what was refused");
+            }
+            assertEquals(4, captured.size(),
+                    "exactly one line per refusal — the old SystemNotificationEvent is not additionally logged");
+
+            // SHELL steering refusal (needs an active steering session, registered in @BeforeEach).
+            AtomicReference<AiProcessEvent> raised = new AtomicReference<>();
+            GithubCopilotPermissionHandler handler = new GithubCopilotPermissionHandler(raised::set, testSessionId);
+            PermissionRequestResult result = handler.handle(request("commands(echo)"), invocation()).get();
+            assertEquals("reject", result.getKind());
+            assertNull(raised.get(), "the shell refusal is only a log line, never an event");
+            assertEquals("MCP Steering refusal: backend=copilot, category=SHELL: "
+                    + GithubCopilotPermissionPolicy.describeRequest("commands(echo)", null),
+                    captured.get(4), "the shell refusal logs one line, not a chat notification");
+            assertEquals(5, captured.size());
+        } finally {
+            logger.removeHandler(capture);
+            PluginSettings.setLogToolUse(previous);
+        }
+    }
+
+    @Test
+    void steeringRefusalsLogNothingWhenToolUseLoggingIsOff() throws Exception {
+        boolean previous = PluginSettings.isLogToolUse();
+        Logger logger = Logger.getLogger(McpHookServerUtil.class.getName());
+        List<String> captured = new ArrayList<>();
+        Handler capture = new Handler() {
+            @Override
+            public void publish(LogRecord record) {
+                captured.add(record.getMessage());
+            }
+
+            @Override
+            public void flush() {
+            }
+
+            @Override
+            public void close() {
+            }
+        };
+        logger.addHandler(capture);
+        try {
+            PluginSettings.setLogToolUse(false);
+
+            AtomicReference<AiProcessEvent> raised = new AtomicReference<>();
+            GithubCopilotPermissionHandler handler = new GithubCopilotPermissionHandler(raised::set, testSessionId);
+            handler.handle(request("read"), invocation()).get();
+            PermissionRequestResult shell = handler.handle(request("commands(echo)"), invocation()).get();
+            assertEquals("reject", shell.getKind());
+            assertNull(raised.get(),
+                    "a steering refusal must not raise any event whether or not tool-use logging is on");
+
+            assertTrue(captured.isEmpty(),
+                    "with tool-use logging off, a steering refusal must keep out of the log");
+        } finally {
+            logger.removeHandler(capture);
+            PluginSettings.setLogToolUse(previous);
         }
     }
 }

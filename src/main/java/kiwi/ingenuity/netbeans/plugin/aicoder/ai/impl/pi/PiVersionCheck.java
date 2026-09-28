@@ -6,20 +6,25 @@ import java.util.concurrent.ConcurrentHashMap;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.pi.settings.PiPluginSettings;
 
 /**
- * Compares an installed pi version against the version this plugin was tested with, and against any version the user
- * has explicitly verified.
+ * Compares an installed pi version against the version this plugin was tested with, and against any version
+ * the user has explicitly verified.
  */
 public final class PiVersionCheck {
 
     /**
-     * The major.minor this plugin was tested against (pi 0.85.1).
+     * The major.minor this plugin was tested against (pi 0.87.1).
+     *
+     * <p>
+     * Tests must derive their "a tested version" / "the tested major.minor" fixtures from this constant
+     * rather than spelling the current number out — hard-coded copies turned eight tests red the last time it
+     * was bumped, none of them about the change.
      */
-    public static final String TESTED_MAJOR_MINOR = "0.85";
+    public static final String TESTED_MAJOR_MINOR = "0.87";
 
     /**
-     * Versions the user answered "No" to for this IDE session only — never persisted, so the warning returns on the
-     * next IDE start. Session-scoped, not settings-backed, on purpose (spec: "'Marked as not working' lasts for the IDE
-     * session only").
+     * Versions the user answered "No" to for this IDE session only — never persisted, so the warning returns
+     * on the next IDE start. Session-scoped, not settings-backed, on purpose (spec: "'Marked as not working'
+     * lasts for the IDE session only").
      */
     private static final Set<String> markedNotWorkingThisSession = Collections.newSetFromMap(new ConcurrentHashMap<>());
 
@@ -45,8 +50,8 @@ public final class PiVersionCheck {
     }
 
     /**
-     * True when the installed version is neither a tested version nor one the user has explicitly verified. Never true
-     * for a blank/unknown installed version — there is nothing to warn about yet.
+     * True when the installed version is neither a tested version nor one the user has explicitly verified.
+     * Never true for a blank/unknown installed version — there is nothing to warn about yet.
      */
     public boolean isWarningApplies() {
         if (installedVersion == null || installedVersion.isBlank()) {
@@ -76,8 +81,8 @@ public final class PiVersionCheck {
     }
 
     /**
-     * Extracts {@code "major.minor"} from a version string such as {@code "0.85.1"}. Tolerant of malformed/short input:
-     * returns the input unchanged if it has fewer than two dot-separated segments.
+     * Extracts {@code "major.minor"} from a version string such as {@code "0.85.1"}. Tolerant of
+     * malformed/short input: returns the input unchanged if it has fewer than two dot-separated segments.
      */
     static String majorMinor(String version) {
         if (version == null) {

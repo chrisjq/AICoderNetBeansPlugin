@@ -2,6 +2,7 @@ package kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.githubcopilot;
 
 import java.util.List;
 import java.util.Map;
+import kiwi.ingenuity.netbeans.plugin.aicoder.ai.McpSteeringPolicy;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -155,11 +156,10 @@ class GithubCopilotPermissionPolicyTest {
     }
 
     /**
-     * The kind getKind() actually reports for a shell command is "shell" —
-     * "commands" appears only inside extensionData, as a sub-array beside
-     * fullCommandText. Captured verbatim from a live request. A rewrite that
-     * matched only "commands" made the SHELL branch unreachable, so every shell
-     * command fell through to UNKNOWN and was auto-denied instead of prompting.
+     * The kind getKind() actually reports for a shell command is "shell" — "commands" appears only inside
+     * extensionData, as a sub-array beside fullCommandText. Captured verbatim from a live request. A rewrite
+     * that matched only "commands" made the SHELL branch unreachable, so every shell command fell through to
+     * UNKNOWN and was auto-denied instead of prompting.
      */
     @Test
     void shellKindFromLiveRequestRoutesToShellNotUnknown() {
@@ -194,6 +194,19 @@ class GithubCopilotPermissionPolicyTest {
                         Map.of("url", "https://example.com", "intention", "fetch")));
     }
 
+    /**
+     * apply_patch arrives with the bare kind "write", not a file kind. Captured verbatim from the IDE log
+     * during a live probe: "{@code MCP Steering refusal: backend=copilot, category=UNKNOWN: GitHub Copilot
+     * requests permission: write — intention=Create file, fileName=..., diff=}". It used to fall through to
+     * UNKNOWN and get the generic GetInstructions steer; it must now be its own steerable category.
+     */
+    @Test
+    void writeKindFromLiveRequestRoutesToWriteNotUnknown() {
+        assertEquals(GithubCopilotPermissionPolicy.Category.WRITE,
+                GithubCopilotPermissionPolicy.classify("write", MCP_SERVER_NAME,
+                        Map.of("intention", "Create file", "fileName", "target/steering-probe.txt", "diff", "")));
+    }
+
     @Test
     void unrecognisedKindIsUnknownRatherThanGuessed() {
         assertEquals(GithubCopilotPermissionPolicy.Category.UNKNOWN,
@@ -224,5 +237,12 @@ class GithubCopilotPermissionPolicyTest {
                 GithubCopilotPermissionPolicy.Category.INTERNAL, "url").contains("WebRequest"));
         assertTrue(GithubCopilotPermissionPolicy.rejectFeedbackFor(
                 GithubCopilotPermissionPolicy.Category.UNKNOWN, "future").contains("GetInstructions"));
+        assertTrue(GithubCopilotPermissionPolicy.rejectFeedbackFor(
+                GithubCopilotPermissionPolicy.Category.WRITE, "write").contains("ApplyEdit"),
+                "a write refusal must name ApplyEdit/WriteFile, not fall back to GetInstructions");
+        assertEquals(McpSteeringPolicy.steeringFeedbackFor(McpSteeringPolicy.Category.WRITE),
+                GithubCopilotPermissionPolicy.rejectFeedbackFor(
+                        GithubCopilotPermissionPolicy.Category.WRITE, "write"),
+                "WRITE must map to the same steer text the OpenCode/Codex write paths produce");
     }
 }

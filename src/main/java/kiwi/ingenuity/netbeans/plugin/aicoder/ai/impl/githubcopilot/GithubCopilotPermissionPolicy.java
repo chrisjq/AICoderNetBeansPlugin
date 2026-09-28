@@ -65,13 +65,20 @@ final class GithubCopilotPermissionPolicy {
         // sub-array alongside fullCommandText. Both are matched because the two
         // vocabularies were confused once already: a rewrite that matched only
         // "commands" made this branch unreachable, so every shell command fell
-        // through to UNKNOWN and was auto-denied instead of prompting. Confirmed
-        // from the handler's own log: getKind() yields only mcp, read and shell.
+        // through to UNKNOWN and was auto-denied instead of prompting.
         if (k.contains("shell") || k.contains("commands")) {
             return Category.SHELL;
         }
         if (k.contains("read") || k.contains("path") || k.contains("url")) {
             return Category.INTERNAL;
+        }
+        // Live evidence falsified the old claim that getKind() yields only mcp, read
+        // and shell: an apply_patch arrived with the bare kind "write" (intention,
+        // fileName and diff carried inside extensionData). Without this branch it fell
+        // through to UNKNOWN and the model got the generic GetInstructions steer instead
+        // of the WRITE one that OpenCode's write path produces.
+        if (k.contains("write")) {
+            return Category.WRITE;
         }
         return Category.UNKNOWN;
     }
@@ -129,25 +136,35 @@ final class GithubCopilotPermissionPolicy {
         return sb.toString();
     }
 
-    static String rejectFeedbackFor(Category category, String rawKind) {
+    /**
+     * The steering category to apply to a Copilot permission request. Shared by the refusal feedback and the
+     * refusal log line, so the user-visible text and the tool-use log can never disagree about what was
+     * steered away from. Native Copilot actions (INTERNAL) map onto the MCP-tool categories whose equivalents
+     * the steering policy insists on; native writes (WRITE) map onto the same {@code Category#WRITE} the
+     * OpenCode/Codex write paths steer with; anything unrecognised stays
+     * {@link McpSteeringPolicy.Category#UNKNOWN}.
+     */
+    static McpSteeringPolicy.Category steeringCategoryFor(Category category, String rawKind) {
         String kind = rawKind == null ? "" : rawKind.toLowerCase(Locale.ROOT);
-        McpSteeringPolicy.Category sharedCategory;
         if (category == Category.INTERNAL) {
             if (kind.contains("read")) {
-                sharedCategory = McpSteeringPolicy.Category.READ;
+                return McpSteeringPolicy.Category.READ;
             } else if (kind.contains("path")) {
-                sharedCategory = McpSteeringPolicy.Category.PATH;
+                return McpSteeringPolicy.Category.PATH;
             } else if (kind.contains("url")) {
-                sharedCategory = McpSteeringPolicy.Category.URL;
-            } else {
-                sharedCategory = McpSteeringPolicy.Category.UNKNOWN;
+                return McpSteeringPolicy.Category.URL;
             }
+            return McpSteeringPolicy.Category.UNKNOWN;
         } else if (category == Category.SHELL) {
-            sharedCategory = McpSteeringPolicy.Category.SHELL;
-        } else {
-            sharedCategory = McpSteeringPolicy.Category.UNKNOWN;
+            return McpSteeringPolicy.Category.SHELL;
+        } else if (category == Category.WRITE) {
+            return McpSteeringPolicy.Category.WRITE;
         }
-        return McpSteeringPolicy.steeringFeedbackFor(sharedCategory);
+        return McpSteeringPolicy.Category.UNKNOWN;
+    }
+
+    static String rejectFeedbackFor(Category category, String rawKind) {
+        return McpSteeringPolicy.steeringFeedbackFor(steeringCategoryFor(category, rawKind));
     }
 
     private static String redact(String key, Object value) {
@@ -181,6 +198,12 @@ final class GithubCopilotPermissionPolicy {
          */
         INTERNAL,
         /**
+         * Native Copilot file writes (apply_patch). Steerable in both directions like {@link #SHELL}: refused
+         * with the WRITE steer when MCP steering is on, left to the user confirm prompt when it is off —
+         * never non-optional like INTERNAL.
+         */
+        WRITE,
+        /**
          * Matches none of the known kinds — always denied.
          */
         UNKNOWN;
@@ -191,6 +214,8 @@ final class GithubCopilotPermissionPolicy {
                     "MCP";
                 case SHELL ->
                     "Shell";
+                case WRITE ->
+                    "Write";
                 case INTERNAL, UNKNOWN ->
                     "Internal Command";
             };

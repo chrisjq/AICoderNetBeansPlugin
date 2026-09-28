@@ -21,6 +21,14 @@ public interface AiInfoBarExtension extends AiProcessImplEventListener {
     default void onSessionSettingsChanged(AiSessionSettings settings) {
     }
 
+    /**
+     * Called on the EDT by {@code AiTopComponent.setCompacting} when a backend compaction starts and ends, so
+     * an extension with a Compact button can disable it for the duration. A compaction done over RPC is not a
+     * turn, so turn-running state never covers it.
+     */
+    default void onCompactingChanged(boolean compacting) {
+    }
+
     default void dispose() {
     }
 }

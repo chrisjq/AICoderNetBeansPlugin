@@ -2393,6 +2393,37 @@ public final class AiTopComponent extends TopComponent implements AiProcessEvent
         refreshSessionIdentity();
     }
 
+    /**
+     * Self-dispatches to the EDT rather than demanding callers remember to, for the same reason
+     * {@link #setAutoAccept} does: the release call arrives on a backend's RPC-completion thread, not the
+     * click thread that started the compaction.
+     *
+     * <p>
+     * Releases via {@link #refreshInputEnabled()} rather than {@code setSendEnabled(true)} — the compaction
+     * finishing does not by itself mean input should be live; a pending diff or an unresolved startup still
+     * wins.
+     */
+    @Override
+    public void setCompacting(boolean compacting) {
+        if (!SwingUtilities.isEventDispatchThread()) {
+            SwingUtilities.invokeLater(() -> setCompacting(compacting));
+            return;
+        }
+        if (infoBarExtension != null) {
+            infoBarExtension.onCompactingChanged(compacting);
+        }
+        if (compacting) {
+            infoBar.setProcessing(true);
+            setSendEnabled(false);
+            infoBar.setStatusMessage("Compacting conversation...");
+            return;
+        }
+        infoBar.setProcessing(false);
+        refreshInputEnabled();
+        // The status line is left alone on release: both the success and the failure path emit their own
+        // StatusEvent straight after this, and resetting to "Ready..." here would race that message away.
+    }
+
     @Override
     public void suppressNextTurn(String statusMessage, String completionMessage) {
         turnOutputSuppressed = true;

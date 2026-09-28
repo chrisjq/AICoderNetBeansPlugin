@@ -18,11 +18,13 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
+import java.util.logging.Level;
 import java.util.logging.Logger;
 import java.util.regex.Pattern;
 import kiwi.ingenuity.netbeans.plugin.aicoder.PluginSettings;
 import kiwi.ingenuity.netbeans.plugin.aicoder.StringConst;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.AiTypeEnum;
+import kiwi.ingenuity.netbeans.plugin.aicoder.ai.McpSteeringPolicy;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.session.AiSession;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.McpInstructionOptionEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.McpSectionEnum;
@@ -36,21 +38,22 @@ import kiwi.ingenuity.netbeans.plugin.aicoder.utils.OperatingSystemEnum;
 public final class McpHookServerUtil {
 
     /**
-     * Matches a raw JSON {@code "secretKey": "..."} pair so its value can be masked even when the body is malformed or
-     * truncated before the value's closing quote.
+     * Matches a raw JSON {@code "secretKey": "..."} pair so its value can be masked even when the body is
+     * malformed or truncated before the value's closing quote.
      * <p>
-     * Built from {@link McpToolPropertyEnum#SECRET_KEY} for the same reason the Tool Used redaction is: renaming the
-     * property must not silently switch the masking off. Applied to the raw request text rather than a parsed tree
-     * because the debug log deliberately records bodies that failed to parse.
+     * Built from {@link McpToolPropertyEnum#SECRET_KEY} for the same reason the Tool Used redaction is:
+     * renaming the property must not silently switch the masking off. Applied to the raw request text rather
+     * than a parsed tree because the debug log deliberately records bodies that failed to parse.
      */
     private static final Pattern SECRET_KEY_VALUE = Pattern.compile(
             "(\"" + Pattern.quote(McpToolPropertyEnum.SECRET_KEY.key()) + "\"\\s*:\\s*\")((?:\\\\.|[^\"\\\\])*)(\"?)");
 
     /**
-     * Below this length a "secret" is not trusted for value-based redaction: a blank or one-or-two-character value
-     * would turn {@link #redactKnownSecrets} into "replace every occurrence of a common character", masking the entire
-     * log line instead of the credential. Real session secrets are {@code UUID.randomUUID()} (36 chars, see
-     * {@link AiSession#secret()}); 16 is comfortably below that while still ruling out any degenerate value.
+     * Below this length a "secret" is not trusted for value-based redaction: a blank or one-or-two-character
+     * value would turn {@link #redactKnownSecrets} into "replace every occurrence of a common character",
+     * masking the entire log line instead of the credential. Real session secrets are
+     * {@code UUID.randomUUID()} (36 chars, see {@link AiSession#secret()}); 16 is comfortably below that
+     * while still ruling out any degenerate value.
      */
     private static final int MIN_SECRET_LENGTH = 16;
     static final Gson GSON = new GsonBuilder().disableHtmlEscaping().create();
@@ -58,9 +61,10 @@ public final class McpHookServerUtil {
     /**
      * A request body with any session secret masked, for logging.
      * <p>
-     * The debug-JSON body log used to write requests verbatim, and every tools/call carries the caller's secretKey in
-     * its arguments - so switching debug logging on wrote live session credentials into the IDE log, where any local
-     * process could read them. This operates on raw text so malformed request bodies are covered too.
+     * The debug-JSON body log used to write requests verbatim, and every tools/call carries the caller's
+     * secretKey in its arguments - so switching debug logging on wrote live session credentials into the IDE
+     * log, where any local process could read them. This operates on raw text so malformed request bodies are
+     * covered too.
      */
     public static String redactSecrets(String body) {
         if (body == null || body.isEmpty()) {
@@ -70,22 +74,23 @@ public final class McpHookServerUtil {
     }
 
     /**
-     * Masks every currently-live session secret found verbatim in {@code text}, regardless of the surrounding shape —
-     * native JSON, JSON escaped inside another JSON string, a Java {@code Map.toString()} rendering, or anything else
-     * no one has anticipated yet. {@link #redactSecrets} only catches a {@code "secretKey":"..."}-shaped pattern; three
-     * separate leak sites this project found in one day used three different shapes, which is exactly the blind spot a
-     * fixed pattern has and value-based matching does not.
+     * Masks every currently-live session secret found verbatim in {@code text}, regardless of the surrounding
+     * shape — native JSON, JSON escaped inside another JSON string, a Java {@code Map.toString()} rendering,
+     * or anything else no one has anticipated yet. {@link #redactSecrets} only catches a
+     * {@code "secretKey":"..."}-shaped pattern; three separate leak sites this project found in one day used
+     * three different shapes, which is exactly the blind spot a fixed pattern has and value-based matching
+     * does not.
      * <p>
      * Source of truth: {@link SessionRegistry#allSessions()}, the same live-session set
      * {@code AiSessionInboxBroker.validateSecret} reads. {@code SessionRegistry} is backed by a
-     * {@code ConcurrentHashMap}, so iterating it here — including from a logging call on any thread — is safe without
-     * extra locking, and neither {@code SessionRegistry} nor {@link AiSession#secret()} logs anything themselves, so
-     * there is no reentrancy or lock-inversion risk. Never logs the secret set itself, on any path, including malformed
-     * input — there is nothing to log here but the (masked) result.
+     * {@code ConcurrentHashMap}, so iterating it here — including from a logging call on any thread — is safe
+     * without extra locking, and neither {@code SessionRegistry} nor {@link AiSession#secret()} logs anything
+     * themselves, so there is no reentrancy or lock-inversion risk. Never logs the secret set itself, on any
+     * path, including malformed input — there is nothing to log here but the (masked) result.
      * <p>
-     * Cannot mask a secret it does not know about: a session that failed to register, one already unregistered by the
-     * time this runs, or a value this plugin never issued. {@link #redactSecrets}'s pattern match is the backstop for
-     * exactly that gap — see {@link #redactAllSecrets}.
+     * Cannot mask a secret it does not know about: a session that failed to register, one already
+     * unregistered by the time this runs, or a value this plugin never issued. {@link #redactSecrets}'s
+     * pattern match is the backstop for exactly that gap — see {@link #redactAllSecrets}.
      */
     public static String redactKnownSecrets(String text) {
         if (text == null || text.isEmpty()) {
@@ -102,11 +107,11 @@ public final class McpHookServerUtil {
     }
 
     /**
-     * Masks every occurrence of {@code secret} in {@code text}, or returns {@code text} unchanged if {@code secret} is
-     * null/blank or shorter than {@link #MIN_SECRET_LENGTH} — the guard against a degenerate registry value masking the
-     * entire log line. Split out from {@link #redactKnownSecrets} so the guard is testable directly, since
-     * {@link AiSession} always generates a real 36-char UUID and offers no way to register a deliberately short one
-     * through its public API.
+     * Masks every occurrence of {@code secret} in {@code text}, or returns {@code text} unchanged if
+     * {@code secret} is null/blank or shorter than {@link #MIN_SECRET_LENGTH} — the guard against a
+     * degenerate registry value masking the entire log line. Split out from {@link #redactKnownSecrets} so
+     * the guard is testable directly, since {@link AiSession} always generates a real 36-char UUID and offers
+     * no way to register a deliberately short one through its public API.
      */
     static String maskIfLongEnough(String text, String secret) {
         if (text == null || secret == null || secret.length() < MIN_SECRET_LENGTH) {
@@ -116,10 +121,10 @@ public final class McpHookServerUtil {
     }
 
     /**
-     * Belt and braces: masks every known-live secret by value first ({@link #redactKnownSecrets}, format-agnostic),
-     * then runs the pattern-based {@link #redactSecrets} backstop for a secret this redactor cannot know about
-     * (unregistered/never-issued). Neither alone is sufficient — this is the one both new and existing call sites
-     * should route through.
+     * Belt and braces: masks every known-live secret by value first ({@link #redactKnownSecrets},
+     * format-agnostic), then runs the pattern-based {@link #redactSecrets} backstop for a secret this
+     * redactor cannot know about (unregistered/never-issued). Neither alone is sufficient — this is the one
+     * both new and existing call sites should route through.
      */
     public static String redactAllSecrets(String text) {
         return redactSecrets(redactKnownSecrets(text));
@@ -135,8 +140,7 @@ public final class McpHookServerUtil {
         if (mcpOnly) {
             sb.append("You are connected to the NetBeans IDE plugin (").append(StringConst.PLUGIN_ID)
                     .append("). Use these plugin tools for ALL project work — they are the only tools available.");
-        }
-        else {
+        } else {
             sb.append("You are connected to the NetBeans IDE plugin (").append(StringConst.PLUGIN_ID)
                     .append("). Use these plugin tools for ALL project work — they are pre-authorized and integrate with the live IDE.");
         }
@@ -144,8 +148,7 @@ public final class McpHookServerUtil {
         if (!mcpOnly) {
             sb.append("- Edit project files ONLY via the Edit/Write tools or the plugin's ApplyEdit/WriteFile — these route through the Accept/Reject diff panel. NEVER modify project files with Bash (sed, echo, >/tee redirects): that skips the diff panel and is not reviewable.\n");
             sb.append("- Prefer plugin tools (search, git, build, refactor) over Bash/Grep for anything in the open project. Only use built-ins for files outside the project tree (e.g. memory, system config).\n");
-        }
-        else {
+        } else {
             sb.append("- Use plugin tools for ALL project work — they are the only tools available.\n");
         }
         sb.append("- The IDE is running — never claim tools are unavailable or the environment is headless. If a tool exists for the task, use it.\n");
@@ -191,8 +194,7 @@ public final class McpHookServerUtil {
         sb.append("You are connected to the NetBeans IDE plugin (").append(StringConst.PLUGIN_ID).append("). ");
         if (mcpOnly) {
             sb.append("It exposes a full set of tools for working in the live IDE: file edits, semantic refactors, build & test, full git, project-wide search, and inter-AI messaging.");
-        }
-        else {
+        } else {
             sb.append("It exposes a full set of tools for working in the live IDE: file edits applied through the NetBeans Accept/Reject diff panel, semantic refactors (rename/move/inline/change-signature), build & test, full git, project-wide search, and inter-AI messaging.");
         }
         sb.append("\n\nIMPORTANT: Call ").append(McpToolEnum.GET_INSTRUCTIONS.toolName()).append(" FIRST — before you read, open, search, or edit any file, run a build or any git command, or take any other action to do with the open project. This comes before your very first such action, not after.");
@@ -213,14 +215,15 @@ public final class McpHookServerUtil {
     }
 
     /**
-     * Builds the MCP instructions string from a handler map and per-tool overrides. Section grouping comes from
-     * handler.section(); instruction text comes from overrides map if present, else handler.instruction().
+     * Builds the MCP instructions string from a handler map and per-tool overrides. Section grouping comes
+     * from handler.section(); instruction text comes from overrides map if present, else
+     * handler.instruction().
      */
     public static String buildInstructions(AiTypeEnum type, String overrideInstructionsHeader, Map<McpToolEnum, McpToolInterface> handlers,
-                                           Map<McpToolEnum, String> overrides) {
+            Map<McpToolEnum, String> overrides) {
         Set<McpInstructionOptionEnum> opts = type.getMcpOptions();
         StringBuilder sb = new StringBuilder(overrideInstructionsHeader == null || overrideInstructionsHeader.trim().isEmpty()
-                                             ? getGlobalInstructionsHeader(opts) : overrideInstructionsHeader);
+                ? getGlobalInstructionsHeader(opts) : overrideInstructionsHeader);
         Map<McpSectionEnum, List<String>> grouped = new LinkedHashMap<>();
         for (McpSectionEnum s : McpSectionEnum.values()) {
             grouped.put(s, new ArrayList<>());
@@ -232,8 +235,8 @@ public final class McpHookServerUtil {
                 continue;
             }
             String instr = overrides.containsKey(entry.getKey())
-                           ? overrides.get(entry.getKey())
-                           : h.instruction(opts);
+                    ? overrides.get(entry.getKey())
+                    : h.instruction(opts);
             if (instr != null) {
                 grouped.get(sec).add("- " + instr);
             }
@@ -249,8 +252,8 @@ public final class McpHookServerUtil {
     }
 
     /**
-     * Injects sessionId and secretKey as required parameters into a tool's inputSchema. Adds the properties to the
-     * schema.properties object and adds both to the schema.required array. Skips if already present.
+     * Injects sessionId and secretKey as required parameters into a tool's inputSchema. Adds the properties
+     * to the schema.properties object and adds both to the schema.required array. Skips if already present.
      */
     public static JsonObject injectSessionParams(JsonObject toolSchema) {
         return kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.McpToolSchemas.injectCredentials(toolSchema);
@@ -286,8 +289,7 @@ public final class McpHookServerUtil {
                     || isIpv4Loopback(normalizedHost)
                     || "::1".equals(normalizedHost)
                     || "0:0:0:0:0:0:0:1".equals(normalizedHost);
-        }
-        catch (IllegalArgumentException e) {
+        } catch (IllegalArgumentException e) {
             return false;
         }
     }
@@ -311,8 +313,7 @@ public final class McpHookServerUtil {
                 if (value < 0 || value > 255) {
                     return false;
                 }
-            }
-            catch (NumberFormatException e) {
+            } catch (NumberFormatException e) {
                 return false;
             }
         }
@@ -327,8 +328,7 @@ public final class McpHookServerUtil {
             try (OutputStream out = ex.getResponseBody()) {
                 out.write(bytes);
             }
-        }
-        catch (IOException e) {
+        } catch (IOException e) {
             if (isPeerDisconnect(e)) {
                 return;
             }
@@ -354,17 +354,19 @@ public final class McpHookServerUtil {
 
     // ---- Decision helpers ----
     /**
-     * Prefix marking a "deny" response as the IDE having already applied the write itself, not a genuine rejection —
-     * pi's own extension template ({@code aicoder-pi-extension.ts.template}) matches this exact literal to rewrite the
-     * response into a non-retryable success instead of a real block — nothing previously tied the two together, so
-     * wording drift here would silently double-apply every accepted pi write). Keep both in sync if this prefix ever
-     * changes; {@code PiHookIntegrationTest} asserts against this constant, not a literal.
+     * Prefix marking a "deny" response as the IDE having already applied the write itself, not a genuine
+     * rejection — pi's own extension template ({@code aicoder-pi-extension.ts.template}) matches this exact
+     * literal to rewrite the response into a non-retryable success instead of a real block — nothing
+     * previously tied the two together, so wording drift here would silently double-apply every accepted pi
+     * write). Keep both in sync if this prefix ever changes; {@code PiHookIntegrationTest} asserts against
+     * this constant, not a literal.
      *
      * <p>
-     * <b>Cross-language coupling:</b> no automated check spans the two languages — the template still hardcodes its own
-     * copy of this literal (see its matching comment pointing back here). If you change this constant, you MUST also
-     * update the {@code reason.startsWith(...)} check in {@code aicoder-pi-extension.ts.template}'s
-     * {@code reviewGatedCall}, or accepted pi writes will double-apply.
+     * <b>Cross-language coupling:</b> no automated check spans the two languages — the template still
+     * hardcodes its own copy of this literal (see its matching comment pointing back here). If you change
+     * this constant, you MUST also update the {@code reason.startsWith(...)} check in
+     * {@code aicoder-pi-extension.ts.template}'s {@code reviewGatedCall}, or accepted pi writes will
+     * double-apply.
      */
     public static final String APPLIED_BY_PLUGIN_PREFIX = "Applied by NetBeans plugin";
 
@@ -457,13 +459,12 @@ public final class McpHookServerUtil {
                 }
                 JsonElement elem = entry.getValue();
                 String value = elem.isJsonNull() ? ""
-                               : elem.isJsonPrimitive() ? elem.getAsString()
-                                 : elem.toString();
+                        : elem.isJsonPrimitive() ? elem.getAsString()
+                        : elem.toString();
                 value = value.replace("\r\n", " ").replace("\n", " ").replace("\r", " ");
                 if (value.length() > 256) {
                     value = value.length() + " character string";
-                }
-                else if (value.length() > 128) {
+                } else if (value.length() > 128) {
                     value = "..." + value.substring(value.length() - 125);
                 }
                 sb.append(' ').append(entry.getKey()).append('[').append(value).append(']');
@@ -471,6 +472,27 @@ public final class McpHookServerUtil {
         }
         Logger.getLogger(McpHookServerUtil.class.getName())
                 .log(java.util.logging.Level.INFO, sb.toString());
+    }
+
+    /**
+     * One consistent log line for every backend's automatic MCP steering refusal. The refusal is policy, not
+     * a conversation: the backend has already told the user — in the rejection it reads back — that the
+     * plugin's own MCP server is the only channel, so nothing belongs in the chat transcript. gated on the
+     * "Log tool use" setting exactly like {@link #logToolUse}, with secrets masked. A single label shared
+     * across codex, opencode and github-copilot replaces home-grown "Internal Command" / "MCP Steering" names
+     * that made one mechanism look like two.
+     *
+     * @param backend the backend refusing (e.g. "codex", "opencode", "copilot")
+     * @param category the steering category being steered away from (READ/PATH/URL/WRITE/SHELL/UNKNOWN)
+     * @param refused a safe-to-display description of what was refused
+     */
+    public static void logMcpSteeringRefusal(String backend, McpSteeringPolicy.Category category, String refused) {
+        if (!PluginSettings.isLogToolUse()) {
+            return;
+        }
+        Logger.getLogger(McpHookServerUtil.class.getName())
+                .log(Level.INFO, "MCP Steering refusal: backend=" + backend + ", category=" + category + ": "
+                        + redactAllSecrets(refused));
     }
 
     private McpHookServerUtil() {

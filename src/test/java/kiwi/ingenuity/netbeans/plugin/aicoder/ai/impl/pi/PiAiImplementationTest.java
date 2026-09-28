@@ -27,16 +27,16 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import org.junit.jupiter.api.Test;
 
 /**
- * PiAiImplementation had zero test coverage. Mirrors ClaudeAiImplementationTest's shape (a currentSession-seeded
- * anonymous subclass, no real start()/MCP registration) and covers: afterStart()'s resumeSession +
- * effective-thinking-level wiring, onStarted()'s persistence of a freshly minted pi session id, isStoredSessionValid(),
- * and compact()'s running guard.
+ * PiAiImplementation had zero test coverage. Mirrors ClaudeAiImplementationTest's shape (a
+ * currentSession-seeded anonymous subclass, no real start()/MCP registration) and covers: afterStart()'s
+ * resumeSession + effective-thinking-level wiring, onStarted()'s persistence of a freshly minted pi session
+ * id, isStoredSessionValid(), and compact()'s running guard.
  */
 class PiAiImplementationTest {
 
     private static PiAiImplementation implFor(AiSession session) {
         return implFor(session, e -> {
-               });
+        });
     }
 
     private static PiAiImplementation implFor(AiSession session, AiProcessEventListener listener) {
@@ -69,9 +69,8 @@ class PiAiImplementationTest {
             PiAiImplementation impl = implFor(newSession("pi-model-1", settings));
 
             assertEquals("anthropic/claude-sonnet-4-6", impl.getCurrentModel(),
-                         "a reopened session with its own stored model must win over the global default, not fall back to it");
-        }
-        finally {
+                    "a reopened session with its own stored model must win over the global default, not fall back to it");
+        } finally {
             PiPluginSettings.setModel(globalBefore);
         }
     }
@@ -84,9 +83,8 @@ class PiAiImplementationTest {
             PiAiImplementation impl = implFor(newSession("pi-model-2", new PiSessionSettings()));
 
             assertEquals("github-copilot/gpt-5-mini", impl.getCurrentModel(),
-                         "only a session with no stored model at all should fall back to the global default");
-        }
-        finally {
+                    "only a session with no stored model at all should fall back to the global default");
+        } finally {
             PiPluginSettings.setModel(globalBefore);
         }
     }
@@ -102,7 +100,7 @@ class PiAiImplementationTest {
         impl.afterStart();
 
         assertEquals("stored-pi-id", impl.delegate().getPiSessionId(),
-                     "afterStart() must call resumeSession() with the settings' own stored id");
+                "afterStart() must call resumeSession() with the settings' own stored id");
         List<String> cmd = impl.delegate().buildLaunchCommand("sid", "/tmp/ext.ts");
         int idx = cmd.indexOf("--thinking");
         assertTrue(idx >= 0, cmd.toString());
@@ -122,8 +120,7 @@ class PiAiImplementationTest {
             int idx = cmd.indexOf("--thinking");
             assertTrue(idx >= 0, cmd.toString());
             assertEquals("medium", cmd.get(idx + 1));
-        }
-        finally {
+        } finally {
             PiPluginSettings.setThinkingLevel(globalBefore);
         }
     }
@@ -176,11 +173,12 @@ class PiAiImplementationTest {
         JButton versionBtn = (JButton) bar.createComponents().get(3);
         assertFalse(versionBtn.isVisible(), "no version check yet at construction time — the button must start hidden");
 
-        impl.delegate().setVersionCheckForTests(new PiVersionCheck("0.1.0")); // untested major.minor (tested: 0.85)
+        // 0.1.0 is below every pi release, so it stays an untested major.minor whatever TESTED_MAJOR_MINOR is bumped to.
+        impl.delegate().setVersionCheckForTests(new PiVersionCheck("0.1.0"));
         SwingUtilities.invokeAndWait(() -> impl.onStarted(host));
 
         assertTrue(versionBtn.isVisible(),
-                   "onStarted must hand the version check to the info bar it built, or the warning button can never appear");
+                "onStarted must hand the version check to the info bar it built, or the warning button can never appear");
     }
 
     // ---- isStoredSessionValid(): pi's --session-id creates-or-resumes transparently, so always true ----
@@ -205,14 +203,16 @@ class PiAiImplementationTest {
 
         assertTrue(events.stream().anyMatch(e -> e instanceof StatusEvent se
                 && se.type() == StatusEventTypeEnum.INFO && se.text().contains("Wait for pi to finish")),
-                   "must refuse with an INFO notice while delegate().isRunning() is false");
+                "must refuse with an INFO notice while delegate().isRunning() is false");
         assertEquals(0, host.suppressCalls, "the guard must refuse before ever suppressing the turn");
     }
 
-    // ---- compact()'s accept/reject paths, once past the running guard: the fix's own precise behaviour —
-    // suppress on confirmed acceptance, never on failure — had no test driving a real accept. ----
+    // ---- compact()'s accept/reject paths, once past the running guard. ----
+    // The accepted path used to assert suppressNextTurn WAS called, on the premise that pi emits an echo turn after
+    // compacting. Raw JSON logging against pi 0.87 disproved it — compaction_start, compaction_end, the compact
+    // response, then nothing — so suppressing left the session locked forever waiting for a turn that never came.
     @Test
-    void compact_acceptedPathSuppressesExactlyOnce() throws Exception {
+    void compact_acceptedPathReleasesTheSessionAndNeverSuppresses() throws Exception {
         List<AiProcessEvent> events = new ArrayList<>();
         AiSession session = newSession("pi-compact-2", new PiSessionSettings());
         PiAiImplementation impl = implFor(session, events::add);
@@ -228,12 +228,12 @@ class PiAiImplementationTest {
             AiInfoBarExtension bar = impl.createInfoBarExtension(session, host);
             clickCompact(bar);
 
-            awaitTrue(() -> host.suppressCalls > 0, "suppressNextTurn to be called after pi accepts the compact");
-            assertEquals(1, host.suppressCalls);
+            awaitTrue(() -> host.compacting.size() == 2, "the session to be released after pi accepts the compact");
+            assertEquals(List.of(true, false), host.compacting, "busy for the RPC's duration, then released");
+            assertEquals(0, host.suppressCalls, "pi sends no turn after a compact, so suppressing would strand the session");
             assertFalse(events.stream().anyMatch(e -> e instanceof StatusEvent se && se.type() == StatusEventTypeEnum.FAILED),
-                        "an accepted compact must never surface FAILED");
-        }
-        finally {
+                    "an accepted compact must never surface FAILED");
+        } finally {
             fakeSession.close();
         }
     }
@@ -256,10 +256,11 @@ class PiAiImplementationTest {
             clickCompact(bar);
 
             awaitTrue(() -> events.stream().anyMatch(e -> e instanceof StatusEvent se && se.type() == StatusEventTypeEnum.FAILED),
-                      "a rejected compact must surface FAILED");
+                    "a rejected compact must surface FAILED");
             assertEquals(0, host.suppressCalls, "a rejected compact must never suppress the next turn");
-        }
-        finally {
+            awaitTrue(() -> host.compacting.size() == 2, "the session to be released after pi rejects the compact");
+            assertEquals(List.of(true, false), host.compacting, "a rejected compact must not leave the session locked");
+        } finally {
             fakeSession.close();
         }
     }
@@ -300,6 +301,13 @@ class PiAiImplementationTest {
 
         int suppressCalls = 0;
         int updateCalls = 0;
+        // Written from pi's reader thread, read by the test thread's awaitTrue poll.
+        final List<Boolean> compacting = java.util.Collections.synchronizedList(new ArrayList<>());
+
+        @Override
+        public void setCompacting(boolean value) {
+            compacting.add(value);
+        }
 
         @Override
         public File resolveWorkDir() {

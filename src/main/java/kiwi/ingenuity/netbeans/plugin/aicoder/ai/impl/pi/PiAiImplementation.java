@@ -1,7 +1,7 @@
 package kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.pi;
 
 import java.nio.file.Path;
-import javax.swing.SwingUtilities;
+import java.util.concurrent.atomic.AtomicBoolean;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.AiImplementation;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.AiModelCatalog;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.AiSessionHost;
@@ -20,11 +20,12 @@ import kiwi.ingenuity.netbeans.plugin.aicoder.process.events.AiProcessEventListe
 import kiwi.ingenuity.netbeans.plugin.aicoder.utils.StatusMessageUtil;
 
 /**
- * Thin adapter so the generic multi-AI system (AiSession, AiTopComponent, etc.) can use the pi implementation, mirrors
- * {@code ClaudeAiImplementation}'s role. Unlike Claude, pi needs no credential monitor or its own model/usage-fetch
- * machinery — {@link PiModelDiscovery} already discovers models via {@code pi --list-models} and publishes straight
- * into {@link #modelCatalog()} on its own; this class only wires the process manager, session paths, the pi session id
- * used for {@code --session-id}, and the info bar.
+ * Thin adapter so the generic multi-AI system (AiSession, AiTopComponent, etc.) can use the pi
+ * implementation, mirrors {@code ClaudeAiImplementation}'s role. Unlike Claude, pi needs no credential
+ * monitor or its own model/usage-fetch machinery — {@link PiModelDiscovery} already discovers models via
+ * {@code pi --list-models} and publishes straight into {@link #modelCatalog()} on its own; this class only
+ * wires the process manager, session paths, the pi session id used for {@code --session-id}, and the info
+ * bar.
  */
 public class PiAiImplementation extends AiImplementation {
 
@@ -37,11 +38,11 @@ public class PiAiImplementation extends AiImplementation {
     private final PiAiProcessManager delegate;
 
     /**
-     * The info bar {@link #createInfoBarExtension} builds, kept so {@link #onStarted} can push the version check into
-     * it once {@code start()}'s async version probe has actually completed — see {@link #onStarted}'s javadoc for why
-     * that hand-off cannot happen at construction time. Null until an info bar has been built for this session; a
-     * session can be reopened (a fresh {@code AiTopComponent}, a fresh info bar) without a new
-     * {@code PiAiImplementation}, so this is reassigned rather than set-once.
+     * The info bar {@link #createInfoBarExtension} builds, kept so {@link #onStarted} can push the version
+     * check into it once {@code start()}'s async version probe has actually completed — see
+     * {@link #onStarted}'s javadoc for why that hand-off cannot happen at construction time. Null until an
+     * info bar has been built for this session; a session can be reopened (a fresh {@code AiTopComponent}, a
+     * fresh info bar) without a new {@code PiAiImplementation}, so this is reassigned rather than set-once.
      */
     private volatile PiAiInfoBarExtension infoBarProvider;
 
@@ -85,24 +86,22 @@ public class PiAiImplementation extends AiImplementation {
         String chosen;
         try {
             chosen = prompter.promptForExecutable("Locate pi executable", "pi").get();
-        }
-        catch (Exception ex) {
+        } catch (Exception ex) {
             chosen = null;
         }
         if (chosen != null) {
             PiPluginSettings.setExecutable(chosen);
             start(chosen, effectiveModel);
-        }
-        else {
+        } else {
             listener.onAiProcessEvent(new StatusEvent(StatusEventTypeEnum.FAILED, StatusMessageUtil.formatExecutableNotFound(null)));
         }
     }
 
     /**
-     * pi's process spawns lazily on the first {@link #sendPrompt} (see {@code PiAiProcessManager}'s class javadoc), so
-     * — unlike an earlier draft of this method — there is no race to beat: setting these after {@code delegate.start()}
-     * returns, exactly like {@code ClaudeAiImplementation.afterStart()}, is soon enough, since the first real
-     * {@code ensureSession()} call is always well after this method returns.
+     * pi's process spawns lazily on the first {@link #sendPrompt} (see {@code PiAiProcessManager}'s class
+     * javadoc), so — unlike an earlier draft of this method — there is no race to beat: setting these after
+     * {@code delegate.start()} returns, exactly like {@code ClaudeAiImplementation.afterStart()}, is soon
+     * enough, since the first real {@code ensureSession()} call is always well after this method returns.
      */
     @Override
     protected void afterStart() {
@@ -170,55 +169,67 @@ public class PiAiImplementation extends AiImplementation {
     }
 
     /**
-     * Mirrors {@code ClaudeAiImplementation.compact}: refuses while a turn is running (same wording as Claude, backend
-     * name substituted), otherwise sends the {@code compact} RPC command and only suppresses the next turn's echo in
-     * the transcript once pi has confirmed acceptance — suppressing on dispatch alone left a suppressed turn stranded
-     * whenever pi rejected or lost the compact, or exited first.
+     * Re-entrancy guard, same reason as {@code GithubCopilotAiImplementation}'s: a compact is an RPC, not a
+     * turn, so {@code isProcessing()} is false for its whole duration and the info bar's Compact button —
+     * disabled only while a TURN runs (see {@code PiAiInfoBarExtension.setCombosEnabledNow}) — would stay
+     * live without it. {@link AiSessionHost#setCompacting} now disables the button too; this remains the
+     * authority, because a button-only guard still races the click already in flight.
+     */
+    private final AtomicBoolean compactInFlight = new AtomicBoolean();
+
+    /**
+     * Refuses while a turn is running (same wording as Claude, backend name substituted), otherwise sends the
+     * {@code compact} RPC command, holding the session busy via {@link AiSessionHost#setCompacting} from
+     * dispatch until pi answers, and releasing it on success and failure alike.
      *
      * <p>
-     * {@code host.suppressNextTurn(...)} must run on the EDT — {@code AiTopComponent}'s implementation touches Swing
-     * components directly with no dispatch of its own, unlike {@link #listener}'s {@code onAiProcessEvent}, which
-     * self-dispatches. Every other caller of {@code suppressNextTurn} (Claude, Copilot) calls it synchronously from the
-     * button-click handler, i.e. already on the EDT; this is the one call site that only fires after an async RPC round
-     * trip completes on the pi-reader thread, so it needs an explicit hop (caught while double-checking the new
-     * {@code compaction_start}/{@code compaction_end} status-line ordering).
+     * Deliberately does NOT call {@code host.suppressNextTurn}. This method used to, on the premise that pi
+     * emits an echo turn after a compaction that needed hiding. Verified against pi 0.87 with raw JSON
+     * logging, it does not: the complete sequence is {@code compaction_start} → {@code compaction_end} → {@code response compact
+     * success:true}, and nothing follows. {@code suppressNextTurn} holds the session busy until a
+     * {@code TurnCompleteEvent} arrives, so with no turn coming the input stayed locked indefinitely — and
+     * because {@link #compactInFlight} had already cleared, Compact was pressable again into a session the
+     * user could not type into.
      *
      * <p>
-     * Passes {@code null} for the status message rather than "Compacting conversation...": pi's own
-     * {@code compaction_start}/{@code compaction_end} frames now surface that same text from a single source —
-     * including for an AUTOMATIC threshold compaction our own literal never covered — so duplicating it here would only
-     * differ from the parser's line by punctuation. {@code
-     * AiTopComponent.suppressNextTurn} already treats a null status message as "leave it alone" (skips
-     * {@code infoBar.setStatusMessage}), so this is the quietest thing the shared {@link AiSessionHost} API accepts.
+     * No status message is set here: pi's own {@code compaction_start}/{@code compaction_end} frames surface
+     * "Compacting conversation…" and "Conversation compacted." from a single source, via the parser —
+     * including for an AUTOMATIC threshold compaction the plugin never requested.
      */
     private void compact(AiSessionHost host) {
         if (!isRunning() || isProcessing()) {
             listener.onAiProcessEvent(new StatusEvent(StatusEventTypeEnum.INFO, "Wait for pi to finish before compacting"));
             return;
         }
+        if (!compactInFlight.compareAndSet(false, true)) {
+            listener.onAiProcessEvent(new StatusEvent(StatusEventTypeEnum.INFO, "Compaction already in progress"));
+            return;
+        }
+        host.setCompacting(true);
         delegate.compact().whenComplete((v, ex) -> {
+            compactInFlight.set(false);
+            host.setCompacting(false);
             if (ex != null) {
                 listener.onAiProcessEvent(new StatusEvent(StatusEventTypeEnum.FAILED,
-                                                          "Compact failed: " + (ex.getMessage() != null ? ex.getMessage() : "unknown error")));
-                return;
+                        "Compact failed: " + (ex.getMessage() != null ? ex.getMessage() : "unknown error")));
             }
-            SwingUtilities.invokeLater(() -> host.suppressNextTurn(null, null));
         });
     }
 
     /**
      * Persists a freshly generated pi session id (minted by {@code PiAiProcessManager.start} when
-     * {@code PiSessionSettings.piSessionId()} was still empty) back into the session's settings, so the NEXT reopen
-     * resumes the same pi conversation instead of minting another id and starting fresh. {@code start()} cannot do this
-     * itself — it has no {@link AiSessionHost} to call {@code updateSessionSettings} on.
+     * {@code PiSessionSettings.piSessionId()} was still empty) back into the session's settings, so the NEXT
+     * reopen resumes the same pi conversation instead of minting another id and starting fresh.
+     * {@code start()} cannot do this itself — it has no {@link AiSessionHost} to call
+     * {@code updateSessionSettings} on.
      *
      * <p>
      * Also pushes the version check into the info bar: {@code
-     * AiTopComponent} calls {@link #createInfoBarExtension} SYNCHRONOUSLY, before {@code start()} — which runs on the
-     * async executor and is the only place {@code PiAiProcessManager.versionCheck} is ever set — has had a chance to
-     * run. Without this hand-off {@link PiAiInfoBarExtension#setVersionCheck} is never called by anything and the ⚠
-     * button/verify dialog can never appear. {@code onStarted} already runs on the EDT right after startup completes,
-     * so the check is available by the time this runs.
+     * AiTopComponent} calls {@link #createInfoBarExtension} SYNCHRONOUSLY, before {@code start()} — which
+     * runs on the async executor and is the only place {@code PiAiProcessManager.versionCheck} is ever set —
+     * has had a chance to run. Without this hand-off {@link PiAiInfoBarExtension#setVersionCheck} is never
+     * called by anything and the ⚠ button/verify dialog can never appear. {@code onStarted} already runs on
+     * the EDT right after startup completes, so the check is available by the time this runs.
      */
     @Override
     public void onStarted(AiSessionHost session) {

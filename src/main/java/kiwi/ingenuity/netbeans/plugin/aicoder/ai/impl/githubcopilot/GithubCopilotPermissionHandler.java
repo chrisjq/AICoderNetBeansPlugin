@@ -14,7 +14,6 @@ import kiwi.ingenuity.netbeans.plugin.aicoder.StringConst;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.McpSteeringPolicy;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.events.ConfirmEvent;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.events.PermissionDecision;
-import kiwi.ingenuity.netbeans.plugin.aicoder.ai.events.SystemNotificationEvent;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.events.ToolUseEvent;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.SessionRegistry;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.events.AiProcessEventListener;
@@ -102,15 +101,19 @@ class GithubCopilotPermissionHandler implements PermissionHandler {
         String displayText = GithubCopilotPermissionPolicy.describeRequest(kind, extensionData);
         if (category == GithubCopilotPermissionPolicy.Category.INTERNAL
                 || category == GithubCopilotPermissionPolicy.Category.UNKNOWN) {
-            listener.onAiProcessEvent(new SystemNotificationEvent("Internal Command: " + displayText));
+            McpHookServerUtil.logMcpSteeringRefusal("copilot",
+                    GithubCopilotPermissionPolicy.steeringCategoryFor(category, kind), displayText);
             return CompletableFuture.completedFuture(PermissionRequestResult.reject(
                     GithubCopilotPermissionPolicy.rejectFeedbackFor(category, kind)));
         }
 
         // Check if MCP steering is enabled and would apply to this category
-        if ((category == GithubCopilotPermissionPolicy.Category.SHELL) && steeringIsActive()) {
-            McpSteeringPolicy.Category steeringCategory = McpSteeringPolicy.Category.SHELL;
-            listener.onAiProcessEvent(new SystemNotificationEvent("MCP Steering: " + displayText));
+        if ((category == GithubCopilotPermissionPolicy.Category.SHELL
+                || category == GithubCopilotPermissionPolicy.Category.WRITE) && steeringIsActive()) {
+            McpSteeringPolicy.Category steeringCategory = category == GithubCopilotPermissionPolicy.Category.WRITE
+                    ? McpSteeringPolicy.Category.WRITE
+                    : McpSteeringPolicy.Category.SHELL;
+            McpHookServerUtil.logMcpSteeringRefusal("copilot", steeringCategory, displayText);
             return CompletableFuture.completedFuture(PermissionRequestResult.reject(
                     McpSteeringPolicy.steeringFeedbackFor(steeringCategory)));
         }

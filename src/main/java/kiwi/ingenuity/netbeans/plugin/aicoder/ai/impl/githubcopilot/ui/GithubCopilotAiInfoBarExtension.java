@@ -48,8 +48,7 @@ public class GithubCopilotAiInfoBarExtension implements AiInfoBarExtension {
     private static String formatResetDate(String resetDate) {
         try {
             return OffsetDateTime.parse(resetDate).format(DateTimeFormatter.ISO_LOCAL_DATE);
-        }
-        catch (DateTimeParseException ex) {
+        } catch (DateTimeParseException ex) {
             return resetDate;
         }
     }
@@ -176,22 +175,21 @@ public class GithubCopilotAiInfoBarExtension implements AiInfoBarExtension {
         programmaticModelSelection = true;
         try {
             modelCombo.setSelectedItem(model);
-        }
-        finally {
+        } finally {
             programmaticModelSelection = false;
         }
     }
 
     /**
-     * Replaces the dropdown's items with a discovered model list, preserving the current selection. The combo stays
-     * editable so any model can still be typed. EDT-safe.
+     * Replaces the dropdown's items with a discovered model list, preserving the current selection. The combo
+     * stays editable so any model can still be typed. EDT-safe.
      *
      * <p>
-     * Repopulating must be guarded like {@link #setSelectedModel}: model discovery is broadcast to <em>every</em> open
-     * Copilot session's info bar, and {@code removeAllItems()}/{@code addItem()} fire combo action events. Unguarded,
-     * those reach the model-change listener as if the user had picked a model — which calls setModel(), rewrites the
-     * global default, recycles the live Copilot session and writes session settings to disk on the EDT, all off the
-     * back of another session's discovery finishing.
+     * Repopulating must be guarded like {@link #setSelectedModel}: model discovery is broadcast to
+     * <em>every</em> open Copilot session's info bar, and {@code removeAllItems()}/{@code addItem()} fire
+     * combo action events. Unguarded, those reach the model-change listener as if the user had picked a model
+     * — which calls setModel(), rewrites the global default, recycles the live Copilot session and writes
+     * session settings to disk on the EDT, all off the back of another session's discovery finishing.
      */
     public void setAvailableModels(String[] models) {
         if (models == null || models.length == 0) {
@@ -212,8 +210,7 @@ public class GithubCopilotAiInfoBarExtension implements AiInfoBarExtension {
             if (!current.equals(modelCombo.getSelectedItem())) {
                 modelCombo.getEditor().setItem(current);
             }
-        }
-        finally {
+        } finally {
             programmaticModelSelection = false;
         }
     }
@@ -241,6 +238,16 @@ public class GithubCopilotAiInfoBarExtension implements AiInfoBarExtension {
         return List.of(modelCombo, reasoningEffortCombo, compactBtn, contextBar, quotaBar, errorLabel);
     }
 
+    /**
+     * The only thing that ever disables this Compact button: it has no turn-running wiring, and a turn in
+     * flight is already refused with a notice by {@code GithubCopilotAiImplementation.compact}'s processing
+     * guard.
+     */
+    @Override
+    public void onCompactingChanged(boolean compacting) {
+        compactBtn.setEnabled(!compacting);
+    }
+
     @Override
     public void onPropertyEvent(AiPropertyEvent event) {
         if (event instanceof GithubCopilotModelsEvent me) {
@@ -252,8 +259,7 @@ public class GithubCopilotAiInfoBarExtension implements AiInfoBarExtension {
             // cache (GithubCopilotModelDiscovery's SDK tier) — refresh the effort combo for whichever model is
             // currently selected, keeping its current selection if still valid for that model.
             refreshReasoningEffortOptions(getSelectedModel(), getSelectedReasoningEffort());
-        }
-        else if (event instanceof GithubCopilotQuotaEvent quota) {
+        } else if (event instanceof GithubCopilotQuotaEvent quota) {
             updateQuota(quota);
         }
     }
@@ -270,10 +276,10 @@ public class GithubCopilotAiInfoBarExtension implements AiInfoBarExtension {
     }
 
     /**
-     * Rebuilds {@link #reasoningEffortCombo}'s options from {@code model}'s live-discovered supported list (empty/
-     * absent means "no support": only the "(model default)" entry is offered), selecting {@code preferredEffort} if it
-     * is still valid for this model, else the combo's own current selection if that is still valid, else "(model
-     * default)". EDT-safe: self-marshals like {@link #setAvailableModels}.
+     * Rebuilds {@link #reasoningEffortCombo}'s options from {@code model}'s live-discovered supported list
+     * (empty/ absent means "no support": only the "(model default)" entry is offered), selecting
+     * {@code preferredEffort} if it is still valid for this model, else the combo's own current selection if
+     * that is still valid, else "(model default)". EDT-safe: self-marshals like {@link #setAvailableModels}.
      */
     private void refreshReasoningEffortOptions(String model, String preferredEffort) {
         if (!SwingUtilities.isEventDispatchThread()) {
@@ -283,7 +289,7 @@ public class GithubCopilotAiInfoBarExtension implements AiInfoBarExtension {
         List<String> supported = GithubCopilotPluginSettings.getSupportedReasoningEfforts(model);
         String currentSelection = getSelectedReasoningEffort();
         String toSelect = (preferredEffort != null && supported.contains(preferredEffort)) ? preferredEffort
-                          : (currentSelection != null && supported.contains(currentSelection) ? currentSelection : null);
+                : (currentSelection != null && supported.contains(currentSelection) ? currentSelection : null);
         programmaticReasoningEffortSelection = true;
         try {
             reasoningEffortCombo.removeAllItems();
@@ -292,8 +298,7 @@ public class GithubCopilotAiInfoBarExtension implements AiInfoBarExtension {
                 reasoningEffortCombo.addItem(effort);
             }
             reasoningEffortCombo.setSelectedItem(toSelect != null ? toSelect : BlankSafeComboRenderer.DEFAULT_OPTION);
-        }
-        finally {
+        } finally {
             programmaticReasoningEffortSelection = false;
         }
     }
@@ -308,9 +313,9 @@ public class GithubCopilotAiInfoBarExtension implements AiInfoBarExtension {
     }
 
     /**
-     * Programmatically selects {@code effort} (e.g. restoring a stored session value) if it is valid for the currently
-     * selected model; otherwise falls back to "(model default)" — never sends an invalid combination to the combo
-     * itself. EDT-safe via {@link #refreshReasoningEffortOptions}.
+     * Programmatically selects {@code effort} (e.g. restoring a stored session value) if it is valid for the
+     * currently selected model; otherwise falls back to "(model default)" — never sends an invalid
+     * combination to the combo itself. EDT-safe via {@link #refreshReasoningEffortOptions}.
      */
     public void setSelectedReasoningEffort(String effort) {
         refreshReasoningEffortOptions(getSelectedModel(), effort);
@@ -340,12 +345,10 @@ public class GithubCopilotAiInfoBarExtension implements AiInfoBarExtension {
     public void onAiProcessImplEvent(kiwi.ingenuity.netbeans.plugin.aicoder.process.events.AiProcessImplEvent event) {
         if (event instanceof GithubCopilotTokenUsageEvent usage) {
             updateUsage(usage);
-        }
-        else if (event instanceof kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.githubcopilot.events.GithubCopilotFatalErrorEvent error) {
+        } else if (event instanceof kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.githubcopilot.events.GithubCopilotFatalErrorEvent error) {
             fatalError = error.errorMessage();
             updateErrorLabel();
-        }
-        else if (event instanceof GithubCopilotQuotaEvent quota) {
+        } else if (event instanceof GithubCopilotQuotaEvent quota) {
             updateQuota(quota);
         }
     }
@@ -356,8 +359,7 @@ public class GithubCopilotAiInfoBarExtension implements AiInfoBarExtension {
         // the model estimate only when the event has no limit.
         if (usage.maxTokens() > 0) {
             maxTokens = usage.maxTokens();
-        }
-        else if (usage.model() != null && !usage.model().isBlank()) {
+        } else if (usage.model() != null && !usage.model().isBlank()) {
             maxTokens = defaultMaxTokensForModel(usage.model());
         }
         updateContextBar();
@@ -380,13 +382,12 @@ public class GithubCopilotAiInfoBarExtension implements AiInfoBarExtension {
         }
         if (quotaUnlimited || quotaEntitlementRequests == 0) {
             quotaBar.setVisible(false);
-        }
-        else {
+        } else {
             int pct = (int) Math.round(100.0 - quotaRemainingPercentage);
             quotaBar.setValue(Math.min(100, Math.max(0, pct)));
             quotaBar.setString(pct + "%");
             String reset = showQuotaResetDate && quotaResetDate != null
-                           ? "; resets " + formatResetDate(quotaResetDate) : "";
+                    ? "; resets " + formatResetDate(quotaResetDate) : "";
             quotaBar.setToolTipText(String.format(
                     "Premium requests: %,d / %,d used (%d%%)%s",
                     quotaUsedRequests, quotaEntitlementRequests, pct, reset));
@@ -402,8 +403,7 @@ public class GithubCopilotAiInfoBarExtension implements AiInfoBarExtension {
         if (fatalError != null) {
             errorLabel.setText("⚠ " + fatalError);
             errorLabel.setVisible(true);
-        }
-        else {
+        } else {
             errorLabel.setVisible(false);
         }
     }

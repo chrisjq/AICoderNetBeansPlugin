@@ -25,7 +25,6 @@ import kiwi.ingenuity.netbeans.plugin.aicoder.ai.events.PermissionEvent;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.events.PolicyRefusalEvent;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.events.StatusEvent;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.events.StatusEventTypeEnum;
-import kiwi.ingenuity.netbeans.plugin.aicoder.ai.events.SystemNotificationEvent;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.events.TextDeltaEvent;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.events.ToolUseEvent;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.opencode.acp.AcpClientHandler;
@@ -769,11 +768,7 @@ class OpenCodeAcpClientHandler implements AcpClientHandler {
             String command = extractRawInputCommand(toolCall);
             String displayText = command != null ? command : title != null ? title : "(unknown command)";
             if (steeringIsActive() && !isOurMcpServerTool(toolCall)) {
-                if (PluginSettings.isDebugJson()) {
-                    LOG.log(Level.INFO, "OpenCode permission request: kind=execute -> auto-denied by MCP steering, "
-                            + "command={0}", displayText);
-                }
-                listener.onAiProcessEvent(new SystemNotificationEvent("MCP Steering: " + displayText));
+                McpHookServerUtil.logMcpSteeringRefusal("opencode", McpSteeringPolicy.Category.SHELL, displayText);
                 String steeringText = McpSteeringPolicy.steeringFeedbackFor(McpSteeringPolicy.Category.SHELL);
                 listener.onAiProcessEvent(new McpSteeringRefusalEvent(List.of(
                         new McpSteeringRefusalEvent.Refusal("Execute", steeringText))));
@@ -824,11 +819,8 @@ class OpenCodeAcpClientHandler implements AcpClientHandler {
 
         if (filePath != null && !isMutationRequest(kind, toolCall) && kind != null && ACCESS_KINDS.contains(kind)) {
             if (steeringIsActive() && !isOurMcpServerTool(toolCall)) {
-                if (PluginSettings.isDebugJson()) {
-                    LOG.log(Level.INFO, "OpenCode permission request: path={0} toolCall.kind={1} -> auto-denied by MCP steering",
-                            new Object[]{filePath, kind});
-                }
-                listener.onAiProcessEvent(new SystemNotificationEvent("MCP Steering: " + accessDisplayText(kind, title, filePath)));
+                McpHookServerUtil.logMcpSteeringRefusal("opencode", McpSteeringPolicy.Category.READ,
+                        accessDisplayText(kind, title, filePath));
                 String steeringText = McpSteeringPolicy.steeringFeedbackFor(McpSteeringPolicy.Category.READ);
                 listener.onAiProcessEvent(new McpSteeringRefusalEvent(List.of(
                         new McpSteeringRefusalEvent.Refusal(accessToolName(kind), steeringText))));
@@ -849,11 +841,7 @@ class OpenCodeAcpClientHandler implements AcpClientHandler {
 
         if (filePath != null) {
             if (steeringIsActive() && !isOurMcpServerTool(toolCall)) {
-                if (PluginSettings.isDebugJson()) {
-                    LOG.log(Level.INFO, "OpenCode permission request: path={0} toolCall.kind={1} -> auto-denied by MCP steering (Write)",
-                            new Object[]{filePath, kind});
-                }
-                listener.onAiProcessEvent(new SystemNotificationEvent("MCP Steering: Write " + filePath));
+                McpHookServerUtil.logMcpSteeringRefusal("opencode", McpSteeringPolicy.Category.WRITE, "Write " + filePath);
                 String steeringText = McpSteeringPolicy.steeringFeedbackFor(McpSteeringPolicy.Category.WRITE);
                 listener.onAiProcessEvent(new McpSteeringRefusalEvent(List.of(
                         new McpSteeringRefusalEvent.Refusal("Write", steeringText))));
@@ -889,10 +877,7 @@ class OpenCodeAcpClientHandler implements AcpClientHandler {
         String displayText = title != null && !title.isBlank()
                 ? title : "(unidentified OpenCode action, kind=" + toolName + ")";
         if (steeringIsActive() && !isOurMcpServerTool(toolCall)) {
-            if (PluginSettings.isDebugJson()) {
-                LOG.log(Level.INFO, "OpenCode permission request: unidentified (kind={0}) -> auto-denied by MCP steering", toolName);
-            }
-            listener.onAiProcessEvent(new SystemNotificationEvent("MCP Steering: " + displayText));
+            McpHookServerUtil.logMcpSteeringRefusal("opencode", McpSteeringPolicy.Category.UNKNOWN, displayText);
             String steeringText = McpSteeringPolicy.steeringFeedbackFor(McpSteeringPolicy.Category.UNKNOWN);
             listener.onAiProcessEvent(new McpSteeringRefusalEvent(List.of(
                     new McpSteeringRefusalEvent.Refusal(toolName, steeringText))));

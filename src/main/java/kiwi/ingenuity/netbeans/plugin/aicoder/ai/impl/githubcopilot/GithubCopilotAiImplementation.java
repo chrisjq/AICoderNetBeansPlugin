@@ -1,7 +1,9 @@
 package kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.githubcopilot;
 
+import com.github.copilot.generated.rpc.SessionHistoryCompactResult;
 import java.util.Arrays;
 import java.util.List;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.function.Consumer;
 import java.util.logging.Level;
 import java.util.logging.Logger;
@@ -28,8 +30,8 @@ import kiwi.ingenuity.netbeans.plugin.aicoder.process.events.AiProcessEventListe
 /**
  * GitHub Copilot backend implementation for NetBeans.
  *
- * Integrates GitHub Copilot (Codex) API to drive the shared AiTopComponent chat UI and reuses the shared MCP tool
- * server for IDE introspection, edits, builds, git, etc.
+ * Integrates GitHub Copilot (Codex) API to drive the shared AiTopComponent chat UI and reuses the shared MCP
+ * tool server for IDE introspection, edits, builds, git, etc.
  *
  * Implementation uses GitHub Copilot API (REST) or VS Code extension protocol. Manages session lifecycle,
  * authentication, and model selection.
@@ -63,29 +65,34 @@ public class GithubCopilotAiImplementation extends AiImplementation {
     }
 
     /**
-     * Discover the Copilot model list once per IDE run, then broadcast it to every open Copilot session's info bar via
-     * {@link AiTypePropertyBus} — mirroring the Claude flow. A session opened after discovery already completed replays
-     * the cached list immediately. Without this, only the session that happened to trigger discovery got the loaded
-     * list.
+     * Discover the Copilot model list once per IDE run, then broadcast it to every open Copilot session's
+     * info bar via {@link AiTypePropertyBus} — mirroring the Claude flow. A session opened after discovery
+     * already completed replays the cached list immediately. Without this, only the session that happened to
+     * trigger discovery got the loaded list.
      */
     public static void triggerModelDiscovery() {
         if (!MODEL_CATALOG.beginRefresh()) {
             return;
         }
         GithubCopilotModelDiscovery.discoverAsync(GithubCopilotExecutableLocator.locate(), models -> {
-                                              List<String> list = Arrays.asList(models);
-                                              if (MODEL_CATALOG.publish(list)) {
-                                                  AiTypePropertyBus.getInstance().fire(AiTypeEnum.GitHubCoPilot, new GithubCopilotModelsEvent(list));
-                                              }
-                                          });
+            List<String> list = Arrays.asList(models);
+            if (MODEL_CATALOG.publish(list)) {
+                AiTypePropertyBus.getInstance().fire(AiTypeEnum.GitHubCoPilot, new GithubCopilotModelsEvent(list));
+            }
+        });
     }
     private final GithubCopilotProcessManager processManager;
     private volatile AiSessionHost sessionHost;
     private volatile GithubCopilotAiInfoBarExtension infoBar;
 
     public GithubCopilotAiImplementation(AiProcessEventListener listener, ExecutablePrompter prompter) {
+        this(listener, prompter, new GithubCopilotProcessManager(listener));
+    }
+
+    GithubCopilotAiImplementation(AiProcessEventListener listener, ExecutablePrompter prompter,
+            GithubCopilotProcessManager processManager) {
         super(AiTypeEnum.GitHubCoPilot, listener, prompter);
-        this.processManager = new GithubCopilotProcessManager(listener);
+        this.processManager = processManager;
         this.processManager.setOnModelFallback(this::applyModelFallback);
         this.processManager.setOnReasoningEffortCleared(this::handleReasoningEffortCleared);
     }
@@ -119,29 +126,31 @@ public class GithubCopilotAiImplementation extends AiImplementation {
     }
 
     /**
-     * Resolves the model to start a session with: an explicit argument first, then the session's own choice, then the
-     * global default. Mirrors OpenCodeAiImplementation.resolveStartupModel and
+     * Resolves the model to start a session with: an explicit argument first, then the session's own choice,
+     * then the global default. Mirrors OpenCodeAiImplementation.resolveStartupModel and
      * CodexAiImplementation.resolveStartupModel — extracted so it can be tested without going through
-     * {@link GithubCopilotExecutableLocator#locate}, which depends on what is actually installed on the machine.
+     * {@link GithubCopilotExecutableLocator#locate}, which depends on what is actually installed on the
+     * machine.
      *
      * <p>
-     * AiTopComponent always calls {@code startWithDiscovery(null)}, so falling straight to the global default here — as
-     * this used to do — silently ran a session on {@code GithubCopilotPluginSettings.getModel()} regardless of what the
-     * user had picked for it. The info bar, session settings and ListAiSessions all kept reporting the session's own
-     * model, so the mismatch was invisible. Same bug already found and fixed for OpenCode and Codex; Claude, Grok and
-     * Ollama check session settings via their own getCurrentModel()/inline equivalents.
+     * AiTopComponent always calls {@code startWithDiscovery(null)}, so falling straight to the global default
+     * here — as this used to do — silently ran a session on {@code GithubCopilotPluginSettings.getModel()}
+     * regardless of what the user had picked for it. The info bar, session settings and ListAiSessions all
+     * kept reporting the session's own model, so the mismatch was invisible. Same bug already found and fixed
+     * for OpenCode and Codex; Claude, Grok and Ollama check session settings via their own
+     * getCurrentModel()/inline equivalents.
      */
     String resolveStartupModel(String model) {
         String sessionModel = currentSession != null
                 && currentSession.settings() instanceof AiModelSessionSettings s
                 && s.model() != null && !s.model().isBlank()
-                              ? s.model() : null;
+                ? s.model() : null;
         String effectiveModel = (model != null && !model.isBlank())
-                                ? model
-                                : sessionModel != null ? sessionModel : GithubCopilotPluginSettings.getModel();
+                ? model
+                : sessionModel != null ? sessionModel : GithubCopilotPluginSettings.getModel();
         if (PluginSettings.isDebugJson()) {
             String source = (model != null && !model.isBlank()) ? "explicit argument"
-                            : sessionModel != null ? "session setting" : "global default";
+                    : sessionModel != null ? "session setting" : "global default";
             LOG.log(Level.INFO, "GitHub Copilot requested model=\"{0}\" at session start (source: {1})",
                     new Object[]{effectiveModel, source});
         }
@@ -149,10 +158,10 @@ public class GithubCopilotAiImplementation extends AiImplementation {
     }
 
     /**
-     * Resolves the reasoning effort to apply at session construction: the session's own stored value wins over the
-     * global default. {@code null} means "omit the setting entirely" at every stage — mirrors
-     * {@link #resolveStartupModel} and {@code PiAiImplementation.effectiveThinkingLevel()}. Package-private for direct
-     * unit testing.
+     * Resolves the reasoning effort to apply at session construction: the session's own stored value wins
+     * over the global default. {@code null} means "omit the setting entirely" at every stage — mirrors
+     * {@link #resolveStartupModel} and {@code PiAiImplementation.effectiveThinkingLevel()}. Package-private
+     * for direct unit testing.
      */
     String resolveEffectiveReasoningEffort() {
         String sessionEffort = resolveEffectiveReasoningEffortFromSession();
@@ -164,17 +173,17 @@ public class GithubCopilotAiImplementation extends AiImplementation {
     }
 
     /**
-     * The session's own stored reasoning effort, or {@code null} if it has none. Not the effective value — the
-     * companion {@link #resolveEffectiveReasoningEffort()} falls back to the global default — this tells you which
-     * scope {@code resolveEffectiveReasoningEffort()} resolved from, which is exactly the provenance design-spec rule
-     * 3a keys on: a session-sourced value may be cleared when unsupported, a global-sourced one may not.
-     * Package-private for direct unit testing.
+     * The session's own stored reasoning effort, or {@code null} if it has none. Not the effective value —
+     * the companion {@link #resolveEffectiveReasoningEffort()} falls back to the global default — this tells
+     * you which scope {@code resolveEffectiveReasoningEffort()} resolved from, which is exactly the
+     * provenance design-spec rule 3a keys on: a session-sourced value may be cleared when unsupported, a
+     * global-sourced one may not. Package-private for direct unit testing.
      */
     String resolveEffectiveReasoningEffortFromSession() {
         return currentSession != null
                 && currentSession.settings() instanceof GithubCopilotSessionSettings s
                 && s.reasoningEffort() != null && !s.reasoningEffort().isBlank()
-               ? s.reasoningEffort() : null;
+                ? s.reasoningEffort() : null;
     }
 
     @Override
@@ -192,7 +201,7 @@ public class GithubCopilotAiImplementation extends AiImplementation {
         if (currentSession != null) {
             AiSessionSettings cfg = currentSession.settings();
             if (model != null && !model.equals(cfg instanceof AiModelSessionSettings mc
-                                               ? mc.model() : null)) {
+                    ? mc.model() : null)) {
                 if (cfg instanceof AiModelSessionSettings modelCfg) {
                     modelCfg.setModel(model);
                 }
@@ -201,10 +210,10 @@ public class GithubCopilotAiImplementation extends AiImplementation {
     }
 
     /**
-     * Session-scoped reasoning-effort change, mirroring {@link #setModel(String)}: a CopilotSession binds its reasoning
-     * effort at create/resume time just like the model, so a live change requires rebuilding the session — reusing
-     * {@link GithubCopilotProcessManager#recycleForModelChange()} rather than a second restart path, per the design
-     * spec.
+     * Session-scoped reasoning-effort change, mirroring {@link #setModel(String)}: a CopilotSession binds its
+     * reasoning effort at create/resume time just like the model, so a live change requires rebuilding the
+     * session — reusing {@link GithubCopilotProcessManager#recycleForModelChange()} rather than a second
+     * restart path, per the design spec.
      */
     public void setReasoningEffort(String effort) {
         processManager.setReasoningEffort(effort);
@@ -264,7 +273,7 @@ public class GithubCopilotAiImplementation extends AiImplementation {
         });
 
         String initialModel = session.settings() instanceof AiModelSessionSettings modelCfg && modelCfg.model() != null
-                              ? modelCfg.model() : GithubCopilotPluginSettings.getModel();
+                ? modelCfg.model() : GithubCopilotPluginSettings.getModel();
         provider.setSelectedModel(initialModel);
         if (initialModel != null && session.settings() instanceof AiModelSessionSettings modelSettings && modelSettings.model() == null) {
             modelSettings.setModel(initialModel);
@@ -290,15 +299,15 @@ public class GithubCopilotAiImplementation extends AiImplementation {
     }
 
     /**
-     * Applies the model the CLI fell back to when the requested one was not available for the account: session
-     * settings, persisted, then the info-bar dropdown. Wired to {@link GithubCopilotProcessManager#setOnModelFallback}
-     * in the constructor, so it is always connected regardless of whether the info bar or {@code onStarted} has run
-     * yet.
+     * Applies the model the CLI fell back to when the requested one was not available for the account:
+     * session settings, persisted, then the info-bar dropdown. Wired to
+     * {@link GithubCopilotProcessManager#setOnModelFallback} in the constructor, so it is always connected
+     * regardless of whether the info bar or {@code onStarted} has run yet.
      *
      * <p>
-     * Deliberately does not call {@link #setModel} — that would additionally recycle the Copilot session while we are
-     * already handling a start failure. Package-private rather than private so the test can call it directly, matching
-     * {@link #resolveStartupModel}.
+     * Deliberately does not call {@link #setModel} — that would additionally recycle the Copilot session
+     * while we are already handling a start failure. Package-private rather than private so the test can call
+     * it directly, matching {@link #resolveStartupModel}.
      */
     void applyModelFallback(String model) {
         if (currentSession != null && currentSession.settings() instanceof AiModelSessionSettings settings) {
@@ -315,9 +324,9 @@ public class GithubCopilotAiImplementation extends AiImplementation {
     }
 
     /**
-     * Resolves what the reasoning-effort combo should display for {@code settings}: its own stored value if present,
-     * else the global default, for display only — shared by {@link #createInfoBarExtension}'s initial seed and
-     * {@link #handleReasoningEffortCleared}, which both need exactly the same fallback.
+     * Resolves what the reasoning-effort combo should display for {@code settings}: its own stored value if
+     * present, else the global default, for display only — shared by {@link #createInfoBarExtension}'s
+     * initial seed and {@link #handleReasoningEffortCleared}, which both need exactly the same fallback.
      */
     private static String resolveDisplayReasoningEffort(GithubCopilotSessionSettings settings) {
         String effort = settings != null ? settings.reasoningEffort() : null;
@@ -330,12 +339,13 @@ public class GithubCopilotAiImplementation extends AiImplementation {
 
     /**
      * Wired to {@link GithubCopilotProcessManager#setOnReasoningEffortCleared} in the constructor: fires when
-     * {@link GithubCopilotProcessManager#resolveValidatedReasoningEffort} clears a stored-but-unsupported reasoning
-     * effort. The manager only clears its own in-memory field — without this, the persisted session setting would keep
-     * the stale value forever, re-triggering the same INFO event on every subsequent start. Mirrors
-     * {@link #applyModelFallback}: persists the clear into session settings, then updates the info-bar combo (which
-     * falls back to the global default for display, same as the initial seed — not blanked to "(model default)"
-     * unconditionally). Package-private so the test can call it directly, matching {@link #applyModelFallback}.
+     * {@link GithubCopilotProcessManager#resolveValidatedReasoningEffort} clears a stored-but-unsupported
+     * reasoning effort. The manager only clears its own in-memory field — without this, the persisted session
+     * setting would keep the stale value forever, re-triggering the same INFO event on every subsequent
+     * start. Mirrors {@link #applyModelFallback}: persists the clear into session settings, then updates the
+     * info-bar combo (which falls back to the global default for display, same as the initial seed — not
+     * blanked to "(model default)" unconditionally). Package-private so the test can call it directly,
+     * matching {@link #applyModelFallback}.
      */
     void handleReasoningEffortCleared() {
         GithubCopilotSessionSettings settings = currentSession != null
@@ -353,18 +363,57 @@ public class GithubCopilotAiImplementation extends AiImplementation {
         }
     }
 
+    /**
+     * Re-entrancy guard for {@link #compact}. The {@code isProcessing()} check below cannot cover a compact
+     * in flight: {@code session.history.compact} is an RPC, not a turn, so nothing is "processing" while it
+     * runs — and the Copilot info bar never disables its Compact button at all, so the user can press it
+     * again freely. The SDK does reject the second call ("Compaction already in progress"), but only as a
+     * JsonRpcException that surfaced to the user as a stack trace and a FAILED status. Held per
+     * implementation instance because a compaction is scoped to one Copilot session, not to the IDE.
+     */
+    private final AtomicBoolean compactInFlight = new AtomicBoolean();
+
     private void compact(AiSessionHost host) {
         if (!isRunning() || isProcessing()) {
             listener.onAiProcessEvent(new StatusEvent(StatusEventTypeEnum.INFO,
-                                                      "Wait for GitHub Copilot to finish before compacting"));
+                    "Wait for GitHub Copilot to finish before compacting"));
+            return;
+        }
+        if (!compactInFlight.compareAndSet(false, true)) {
+            listener.onAiProcessEvent(new StatusEvent(StatusEventTypeEnum.INFO,
+                    "Compaction already in progress"));
             return;
         }
 
-        sendPrompt("Please compact this conversation by creating a concise summary of the key context, decisions, and code changes made so far. Do not reply.", host.resolveWorkDir(), List.of());
+        host.setCompacting(true);
+        delegate().compactHistory(null).whenComplete((result, error) -> {
+            compactInFlight.set(false);
+            host.setCompacting(false);
+            if (error != null || result == null || !Boolean.TRUE.equals(result.success())) {
+                String detail = error == null ? "Copilot did not compact the conversation"
+                        : error.getMessage() == null ? error.toString() : error.getMessage();
+                listener.onAiProcessEvent(new StatusEvent(StatusEventTypeEnum.FAILED, "Compact failed: " + detail));
+                return;
+            }
+            listener.onAiProcessEvent(new StatusEvent(StatusEventTypeEnum.INFO, compactCompletionMessage(result)));
+        });
+    }
 
-        if (isProcessing()) {
-            host.suppressNextTurn("Compacting conversation...", null);
+    static String compactCompletionMessage(SessionHistoryCompactResult result) {
+        StringBuilder message = new StringBuilder("Conversation compacted");
+        if (result.tokensRemoved() != null || result.messagesRemoved() != null) {
+            message.append(" — removed ");
+            if (result.tokensRemoved() != null) {
+                message.append(result.tokensRemoved()).append(" tokens");
+            }
+            if (result.tokensRemoved() != null && result.messagesRemoved() != null) {
+                message.append(", ");
+            }
+            if (result.messagesRemoved() != null) {
+                message.append(result.messagesRemoved()).append(" messages");
+            }
         }
+        return message.toString();
     }
 
     @Override

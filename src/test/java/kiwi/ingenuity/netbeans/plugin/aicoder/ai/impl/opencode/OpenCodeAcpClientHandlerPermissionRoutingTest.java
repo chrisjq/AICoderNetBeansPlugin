@@ -7,17 +7,23 @@ import java.util.List;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
 import java.util.function.Predicate;
+import java.util.logging.Handler;
+import java.util.logging.LogRecord;
+import java.util.logging.Logger;
+import kiwi.ingenuity.netbeans.plugin.aicoder.PluginSettings;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.AiTypeEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.McpSteeringPolicy;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.events.ConfirmEvent;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.events.McpSteeringRefusalEvent;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.events.PermissionDecision;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.events.PermissionEvent;
+import kiwi.ingenuity.netbeans.plugin.aicoder.ai.events.SystemNotificationEvent;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.session.AiSession;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.McpToolEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.SessionRegistry;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.events.AiProcessEvent;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.events.AiProcessEventListener;
+import kiwi.ingenuity.netbeans.plugin.aicoder.process.server.McpHookServerUtil;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.session.AbstractAiSession;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.McpToolInterface;
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -362,6 +368,8 @@ class OpenCodeAcpClientHandlerPermissionRoutingTest {
         assertTrue(future.isDone(), "steering auto-denies without waiting for user");
         assertEquals("reject", optionId(future.get(1, TimeUnit.SECONDS)));
         assertTrue(fired.stream().noneMatch(e -> e instanceof ConfirmEvent), "no ConfirmEvent raised");
+        assertTrue(fired.stream().noneMatch(e -> e instanceof SystemNotificationEvent),
+                "a steering refusal is a tool-use log line, not a chat notification");
         McpSteeringRefusalEvent event = (McpSteeringRefusalEvent) fired.stream()
                 .filter(e -> e instanceof McpSteeringRefusalEvent).findFirst().get();
         assertEquals(1, event.refusals().size());
@@ -381,6 +389,8 @@ class OpenCodeAcpClientHandlerPermissionRoutingTest {
         assertTrue(future.isDone(), "steering auto-denies without waiting for user");
         assertEquals("reject", optionId(future.get(1, TimeUnit.SECONDS)));
         assertTrue(fired.stream().noneMatch(e -> e instanceof ConfirmEvent), "no ConfirmEvent raised for access kind");
+        assertTrue(fired.stream().noneMatch(e -> e instanceof SystemNotificationEvent),
+                "a steering refusal is a tool-use log line, not a chat notification");
         McpSteeringRefusalEvent event = (McpSteeringRefusalEvent) fired.stream()
                 .filter(e -> e instanceof McpSteeringRefusalEvent).findFirst().get();
         assertEquals(1, event.refusals().size());
@@ -409,6 +419,8 @@ class OpenCodeAcpClientHandlerPermissionRoutingTest {
         assertTrue(future.isDone(), "steering auto-denies without waiting for user");
         assertEquals("reject", optionId(future.get(1, TimeUnit.SECONDS)));
         assertTrue(fired.stream().noneMatch(e -> e instanceof PermissionEvent), "no PermissionEvent raised for write");
+        assertTrue(fired.stream().noneMatch(e -> e instanceof SystemNotificationEvent),
+                "a steering refusal is a tool-use log line, not a chat notification");
         McpSteeringRefusalEvent event = (McpSteeringRefusalEvent) fired.stream()
                 .filter(e -> e instanceof McpSteeringRefusalEvent).findFirst().get();
         assertEquals(1, event.refusals().size());
@@ -432,6 +444,8 @@ class OpenCodeAcpClientHandlerPermissionRoutingTest {
         assertTrue(future.isDone(), "steering auto-denies without waiting for user");
         assertEquals("reject", optionId(future.get(1, TimeUnit.SECONDS)));
         assertTrue(fired.stream().noneMatch(e -> e instanceof ConfirmEvent), "no ConfirmEvent raised");
+        assertTrue(fired.stream().noneMatch(e -> e instanceof SystemNotificationEvent),
+                "a steering refusal is a tool-use log line, not a chat notification");
         McpSteeringRefusalEvent event = (McpSteeringRefusalEvent) fired.stream()
                 .filter(e -> e instanceof McpSteeringRefusalEvent).findFirst().get();
         assertEquals(1, event.refusals().size());
@@ -581,5 +595,136 @@ class OpenCodeAcpClientHandlerPermissionRoutingTest {
         assertEquals(List.of("/a/file.txt", "/a", "/b"), OpenCodeAcpClientHandler.extractAllPermissionPaths(toolCall));
         assertEquals(List.of(), OpenCodeAcpClientHandler.extractAllPermissionPaths(null));
         assertEquals(List.of(), OpenCodeAcpClientHandler.extractAllPermissionPaths(new JsonObject()));
+    }
+
+    @Test
+    void steeringONLogsOneLinePerRefusalInsteadOfNotifying() throws Exception {
+        Predicate<String> steeringOn = sessionId -> true;
+        boolean previous = PluginSettings.isLogToolUse();
+        Logger logger = Logger.getLogger(McpHookServerUtil.class.getName());
+        List<String> captured = new ArrayList<>();
+        Handler capture = new Handler() {
+            @Override
+            public void publish(LogRecord record) {
+                captured.add(record.getMessage());
+            }
+
+            @Override
+            public void flush() {
+            }
+
+            @Override
+            public void close() {
+            }
+        };
+        logger.addHandler(capture);
+        try {
+            PluginSettings.setLogToolUse(true);
+            List<AiProcessEvent> fired = new ArrayList<>();
+            OpenCodeAcpClientHandler handler = handlerWithSteering(fired, ownTree(), steeringOn);
+
+            // 1. execute (SHELL)
+            JsonObject execute = new JsonObject();
+            execute.addProperty("title", "echo hello");
+            execute.addProperty("kind", "execute");
+            JsonObject rawInput = new JsonObject();
+            rawInput.addProperty("command", "echo hello");
+            execute.add("rawInput", rawInput);
+            execute.add("locations", new JsonArray());
+            assertEquals("reject", optionId(handler.onRequestPermission(params(execute)).get(1, TimeUnit.SECONDS)));
+
+            // 2. access/read (READ)
+            assertEquals("reject", optionId(handler.onRequestPermission(
+                    params(simple("read", "notes.txt", "/Users/chris/Documents/notes.txt")))
+                    .get(1, TimeUnit.SECONDS)));
+
+            // 3. edit with diff (WRITE)
+            JsonObject content = new JsonObject();
+            content.addProperty("type", "diff");
+            content.addProperty("path", "/proj/src/Foo.java");
+            content.addProperty("oldText", "a\n");
+            content.addProperty("newText", "b\n");
+            JsonArray contentArray = new JsonArray();
+            contentArray.add(content);
+            JsonObject edit = simple("edit", "/proj/src/Foo.java", "/proj/src/Foo.java");
+            edit.add("content", contentArray);
+            assertEquals("reject", optionId(handler.onRequestPermission(params(edit)).get(1, TimeUnit.SECONDS)));
+
+            // 4. unidentified (UNKNOWN)
+            JsonObject unknown = new JsonObject();
+            unknown.addProperty("title", "unknown action");
+            unknown.addProperty("kind", "unknown-kind");
+            unknown.add("locations", new JsonArray());
+            assertEquals("reject", optionId(handler.onRequestPermission(params(unknown)).get(1, TimeUnit.SECONDS)));
+
+            assertEquals(4, captured.size(), "exactly one log line per steering refusal");
+            assertTrue(captured.get(0).startsWith(
+                    "MCP Steering refusal: backend=opencode, category=SHELL: "), captured.get(0));
+            assertTrue(captured.get(0).endsWith("echo hello"), captured.get(0));
+            assertTrue(captured.get(1).startsWith(
+                    "MCP Steering refusal: backend=opencode, category=READ: "), captured.get(1));
+            assertTrue(captured.get(1).endsWith("/Users/chris/Documents/notes.txt"), captured.get(1));
+            assertTrue(captured.get(2).startsWith(
+                    "MCP Steering refusal: backend=opencode, category=WRITE: "), captured.get(2));
+            assertTrue(captured.get(2).endsWith("Write /proj/src/Foo.java"), captured.get(2));
+            assertTrue(captured.get(3).startsWith(
+                    "MCP Steering refusal: backend=opencode, category=UNKNOWN: "), captured.get(3));
+            assertTrue(captured.get(3).endsWith("unknown action"), captured.get(3));
+
+            // Four refusals still fire; no chat notification among them.
+            assertEquals(4, fired.stream().filter(e -> e instanceof McpSteeringRefusalEvent).count());
+            assertTrue(fired.stream().noneMatch(e -> e instanceof SystemNotificationEvent));
+        } finally {
+            logger.removeHandler(capture);
+            PluginSettings.setLogToolUse(previous);
+        }
+    }
+
+    @Test
+    void steeringONLogsNothingWhenToolUseLoggingIsOff() throws Exception {
+        Predicate<String> steeringOn = sessionId -> true;
+        boolean previous = PluginSettings.isLogToolUse();
+        Logger logger = Logger.getLogger(McpHookServerUtil.class.getName());
+        List<String> captured = new ArrayList<>();
+        Handler capture = new Handler() {
+            @Override
+            public void publish(LogRecord record) {
+                captured.add(record.getMessage());
+            }
+
+            @Override
+            public void flush() {
+            }
+
+            @Override
+            public void close() {
+            }
+        };
+        logger.addHandler(capture);
+        try {
+            PluginSettings.setLogToolUse(false);
+            List<AiProcessEvent> fired = new ArrayList<>();
+            OpenCodeAcpClientHandler handler = handlerWithSteering(fired, ownTree(), steeringOn);
+
+            JsonObject execute = new JsonObject();
+            execute.addProperty("title", "echo hello");
+            execute.addProperty("kind", "execute");
+            JsonObject rawInput = new JsonObject();
+            rawInput.addProperty("command", "echo hello");
+            execute.add("rawInput", rawInput);
+            execute.add("locations", new JsonArray());
+            handler.onRequestPermission(params(execute)).get(1, TimeUnit.SECONDS);
+            handler.onRequestPermission(params(simple("read", "notes.txt", "/Users/chris/Documents/notes.txt")))
+                    .get(1, TimeUnit.SECONDS);
+
+            assertTrue(captured.isEmpty(),
+                    "with tool-use logging off, steering refusals must keep out of the log");
+            // The backend still receives the refusal — only the log line is gated.
+            assertEquals(2, fired.stream().filter(e -> e instanceof McpSteeringRefusalEvent).count());
+            assertTrue(fired.stream().noneMatch(e -> e instanceof SystemNotificationEvent));
+        } finally {
+            logger.removeHandler(capture);
+            PluginSettings.setLogToolUse(previous);
+        }
     }
 }

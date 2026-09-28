@@ -651,7 +651,7 @@ class CodexAppServerHandler implements CodexNotificationListener, CodexServerReq
      *
      * <p>
      * Field names taken from a live notification, not guessed: null null null null null null null null null
-     * null null null null null null null null null null null null null null null null null null null     {@code {"item":{"type":"mcpToolCall","tool":"ListAiSessions",
+     * null null null null null null null null null null null null null null null null null null null null null     {@code {"item":{"type":"mcpToolCall","tool":"ListAiSessions",
      * "server":"aicoder-nb-ki-plugin",...}}}. Kind.OTHER with a null path deliberately —
      * {@code isFileModification()} stays false so no diff panel is raised; file changes keep their own path
      * below.
@@ -767,7 +767,7 @@ class CodexAppServerHandler implements CodexNotificationListener, CodexServerReq
                 : command != null ? "Codex wants to run: " + command
                         : "Codex wants to run a command";
         if (isMcpSteeringEnabled()) {
-            listener.onAiProcessEvent(new SystemNotificationEvent("Command execution auto-denied by MCP steering policy"));
+            McpHookServerUtil.logMcpSteeringRefusal("codex", McpSteeringPolicy.Category.SHELL, displayText);
             String steeringText = McpSteeringPolicy.steeringFeedbackFor(McpSteeringPolicy.Category.SHELL);
             listener.onAiProcessEvent(new McpSteeringRefusalEvent(List.of(
                     new McpSteeringRefusalEvent.Refusal("Command", steeringText))));
@@ -840,7 +840,7 @@ class CodexAppServerHandler implements CodexNotificationListener, CodexServerReq
 
         // MCP steering: auto-deny file changes when steering is enabled
         if (isMcpSteeringEnabled()) {
-            listener.onAiProcessEvent(new SystemNotificationEvent("File change auto-denied by MCP steering policy"));
+            McpHookServerUtil.logMcpSteeringRefusal("codex", McpSteeringPolicy.Category.WRITE, summarizeFileChanges(changes));
             String steeringText = McpSteeringPolicy.steeringFeedbackFor(McpSteeringPolicy.Category.WRITE);
             listener.onAiProcessEvent(new McpSteeringRefusalEvent(List.of(
                     new McpSteeringRefusalEvent.Refusal("FileChange", steeringText))));
@@ -983,7 +983,7 @@ class CodexAppServerHandler implements CodexNotificationListener, CodexServerReq
         // telling the agent to use.
         boolean isOurServer = StringConst.PLUGIN_ID.equals(serverName);
         if (isMcpSteeringEnabled() && !isOurServer) {
-            listener.onAiProcessEvent(new SystemNotificationEvent("MCP elicitation auto-denied by MCP steering policy"));
+            McpHookServerUtil.logMcpSteeringRefusal("codex", McpSteeringPolicy.Category.UNKNOWN, displayText);
             String steeringText = McpSteeringPolicy.steeringFeedbackFor(McpSteeringPolicy.Category.UNKNOWN);
             listener.onAiProcessEvent(new McpSteeringRefusalEvent(List.of(
                     new McpSteeringRefusalEvent.Refusal("McpElicitation", steeringText))));

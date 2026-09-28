@@ -20,6 +20,7 @@ import java.util.logging.Handler;
 import java.util.logging.Level;
 import java.util.logging.LogRecord;
 import java.util.logging.Logger;
+import kiwi.ingenuity.netbeans.plugin.aicoder.PluginSettings;
 import kiwi.ingenuity.netbeans.plugin.aicoder.StringConst;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.AiTypeEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.McpSteeringPolicy;
@@ -41,6 +42,7 @@ import kiwi.ingenuity.netbeans.plugin.aicoder.ai.session.AiSession;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.SessionRegistry;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.events.AiProcessEvent;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.events.AiProcessEventListener;
+import kiwi.ingenuity.netbeans.plugin.aicoder.process.server.McpHookServerUtil;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.session.AbstractAiSession;
 import org.junit.jupiter.api.AfterEach;
 import static org.junit.jupiter.api.Assertions.*;
@@ -209,7 +211,7 @@ class CodexAppServerHandlerTest {
 
     /**
      * Item shape copied from a live item/started notification, not invented: null null null null null null
-     * null null     {@code {"item":{"type":"mcpToolCall","tool":"ListAiSessions",
+     * null null null     {@code {"item":{"type":"mcpToolCall","tool":"ListAiSessions",
      * "server":"aicoder-nb-ki-plugin","status":"inProgress",...}}}.
      */
     @Test
@@ -1785,14 +1787,9 @@ class CodexAppServerHandlerTest {
             assertEquals("decline", reply.get("decision").getAsString(),
                     "Steering ON must auto-deny command execution");
 
-            SystemNotificationEvent sysEvent = events.stream()
-                    .filter(e -> e instanceof SystemNotificationEvent)
-                    .map(e -> (SystemNotificationEvent) e)
-                    .findFirst()
-                    .orElseThrow(() -> new AssertionError("No SystemNotificationEvent posted"));
-
-            assertTrue(sysEvent.text().contains("auto-denied"),
-                    "SystemNotificationEvent must indicate auto-denial");
+            // The refusal is a tool-use log line, not a chat announcement.
+            assertTrue(events.stream().noneMatch(e -> e instanceof SystemNotificationEvent),
+                    "a steering refusal must not announce itself in the chat transcript");
 
             McpSteeringRefusalEvent refusalEvent = events.stream()
                     .filter(e -> e instanceof McpSteeringRefusalEvent)
@@ -2024,6 +2021,134 @@ class CodexAppServerHandlerTest {
             assertFalse(hasConfirmEvent,
                     "Steering ON must NOT raise ConfirmEvent for other servers");
         } finally {
+            SessionRegistry.unregister(sessionId);
+        }
+    }
+
+    @Test
+    void mcpSteeringON_refusalsLogOneLineEachInsteadOfNotifying() throws Exception {
+        List<AiProcessEvent> events = new ArrayList<>();
+        String sessionId = "steering-test-log-session";
+        CodexAppServerHandler handler = handlerWithSteeringEnabled(sessionId, events);
+        boolean previous = PluginSettings.isLogToolUse();
+        Logger logger = Logger.getLogger(McpHookServerUtil.class.getName());
+        List<String> captured = new ArrayList<>();
+        Handler capture = new Handler() {
+            @Override
+            public void publish(LogRecord record) {
+                captured.add(record.getMessage());
+            }
+
+            @Override
+            public void flush() {
+            }
+
+            @Override
+            public void close() {
+            }
+        };
+        logger.addHandler(capture);
+        try {
+            PluginSettings.setLogToolUse(true);
+            handler.onTurnStarting();
+
+            JsonObject command = new JsonObject();
+            command.addProperty("command", "rm -rf /");
+            command.addProperty("reason", "Dangerous command");
+            assertEquals("decline", handler.onServerRequest(
+                    CodexAppServerHandler.METHOD_COMMAND_EXECUTION_APPROVAL, command)
+                    .get(2, TimeUnit.SECONDS).get("decision").getAsString());
+
+            JsonObject change = new JsonObject();
+            change.addProperty("path", "/tmp/test.txt");
+            change.addProperty("kind", "add");
+            change.addProperty("diff", "+ new file");
+            JsonArray changes = new JsonArray();
+            changes.add(change);
+            JsonObject fileChange = new JsonObject();
+            fileChange.add("changes", changes);
+            assertEquals("decline", handler.onServerRequest(
+                    CodexAppServerHandler.METHOD_FILE_CHANGE_APPROVAL, fileChange)
+                    .get(2, TimeUnit.SECONDS).get("decision").getAsString());
+
+            JsonObject elicitation = new JsonObject();
+            elicitation.addProperty("serverName", "some-other-mcp-server");
+            elicitation.addProperty("message", "Allow custom action?");
+            assertEquals("decline", handler.onServerRequest(
+                    CodexAppServerHandler.METHOD_MCP_ELICITATION, elicitation)
+                    .get(2, TimeUnit.SECONDS).get("action").getAsString());
+
+            assertEquals(3, captured.size(), "exactly one log line per steering refusal");
+            assertTrue(captured.get(0).startsWith(
+                    "MCP Steering refusal: backend=codex, category=SHELL: "), captured.get(0));
+            assertTrue(captured.get(0).contains("Dangerous command"),
+                    "the refusal names what was refused: " + captured.get(0));
+            assertTrue(captured.get(1).startsWith(
+                    "MCP Steering refusal: backend=codex, category=WRITE: "), captured.get(1));
+            assertTrue(captured.get(1).contains("Codex wants to modify a file"),
+                    "the refusal names what was refused: " + captured.get(1));
+            assertTrue(captured.get(2).startsWith(
+                    "MCP Steering refusal: backend=codex, category=UNKNOWN: "), captured.get(2));
+            assertTrue(captured.get(2).contains("Allow custom action?"),
+                    "the refusal names what was refused: " + captured.get(2));
+
+            // The chat notification is gone; the backend still gets the refusal events.
+            assertTrue(events.stream().noneMatch(e -> e instanceof SystemNotificationEvent),
+                    "a steering refusal must not announce itself in the chat transcript");
+            assertEquals(3, events.stream().filter(e -> e instanceof McpSteeringRefusalEvent).count(),
+                    "every refusal must still be reported to the backend");
+        } finally {
+            logger.removeHandler(capture);
+            PluginSettings.setLogToolUse(previous);
+            SessionRegistry.unregister(sessionId);
+        }
+    }
+
+    @Test
+    void mcpSteeringON_refusalsLogNothingWhenToolUseLoggingIsOff() throws Exception {
+        List<AiProcessEvent> events = new ArrayList<>();
+        String sessionId = "steering-test-log-off-session";
+        CodexAppServerHandler handler = handlerWithSteeringEnabled(sessionId, events);
+        boolean previous = PluginSettings.isLogToolUse();
+        Logger logger = Logger.getLogger(McpHookServerUtil.class.getName());
+        List<String> captured = new ArrayList<>();
+        Handler capture = new Handler() {
+            @Override
+            public void publish(LogRecord record) {
+                captured.add(record.getMessage());
+            }
+
+            @Override
+            public void flush() {
+            }
+
+            @Override
+            public void close() {
+            }
+        };
+        logger.addHandler(capture);
+        try {
+            PluginSettings.setLogToolUse(false);
+            handler.onTurnStarting();
+
+            JsonObject command = new JsonObject();
+            command.addProperty("command", "rm -rf /");
+            handler.onServerRequest(CodexAppServerHandler.METHOD_COMMAND_EXECUTION_APPROVAL, command)
+                    .get(2, TimeUnit.SECONDS);
+            JsonObject elicitation = new JsonObject();
+            elicitation.addProperty("serverName", "some-other-mcp-server");
+            elicitation.addProperty("message", "Allow custom action?");
+            handler.onServerRequest(CodexAppServerHandler.METHOD_MCP_ELICITATION, elicitation)
+                    .get(2, TimeUnit.SECONDS);
+
+            assertTrue(captured.isEmpty(),
+                    "with tool-use logging off, steering refusals must keep out of the log");
+            // The backend still receives the refusal — only the log line is gated.
+            assertEquals(2, events.stream().filter(e -> e instanceof McpSteeringRefusalEvent).count());
+            assertTrue(events.stream().noneMatch(e -> e instanceof SystemNotificationEvent));
+        } finally {
+            logger.removeHandler(capture);
+            PluginSettings.setLogToolUse(previous);
             SessionRegistry.unregister(sessionId);
         }
     }

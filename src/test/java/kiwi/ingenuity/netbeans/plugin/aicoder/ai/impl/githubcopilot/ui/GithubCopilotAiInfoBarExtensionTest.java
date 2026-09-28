@@ -10,19 +10,36 @@ import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.githubcopilot.settings.Git
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.githubcopilot.settings.GithubCopilotSessionSettings;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.session.AiSession;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import org.junit.jupiter.api.Test;
 
 /**
- * Covers {@link GithubCopilotAiInfoBarExtension#onSessionSettingsChanged} re-syncing the reasoning-effort combo, the
- * asymmetry Boss's review flagged against {@code onModelChanged}'s existing handling — mirrors
+ * Covers {@link GithubCopilotAiInfoBarExtension#onSessionSettingsChanged} re-syncing the reasoning-effort
+ * combo, the asymmetry Boss's review flagged against {@code onModelChanged}'s existing handling — mirrors
  * {@code OllamaAiInfoBarExtension.onSessionSettingsChanged}'s session-or-global-default seeding rule.
  */
 class GithubCopilotAiInfoBarExtensionTest {
 
     private static AiSession newSession(String id, GithubCopilotSessionSettings settings) {
         return new AiSession(id, "Test", null, AiTypeEnum.GitHubCoPilot, null, settings, Instant.now(), Instant.now());
+    }
+
+    @Test
+    void compactButtonIsDisabledForTheDurationOfACompaction() throws Exception {
+        // onCompactingChanged is the only thing that ever disables this button — without it Compact stayed pressable
+        // mid-compaction and the second press reached the SDK ("Compaction already in progress").
+        GithubCopilotAiInfoBarExtension ext = new GithubCopilotAiInfoBarExtension(
+                newSession("gh-ext-compacting", new GithubCopilotSessionSettings()), null);
+        javax.swing.JComponent compactBtn = ext.createComponents().get(2);
+        assertTrue(compactBtn.isEnabled(), "Compact starts enabled");
+
+        SwingUtilities.invokeAndWait(() -> ext.onCompactingChanged(true));
+        assertFalse(compactBtn.isEnabled(), "a compaction in flight must disable Compact");
+
+        SwingUtilities.invokeAndWait(() -> ext.onCompactingChanged(false));
+        assertTrue(compactBtn.isEnabled(), "Compact must come back once the compaction ends");
     }
 
     @Test
@@ -61,8 +78,7 @@ class GithubCopilotAiInfoBarExtensionTest {
 
             assertEquals("high", ext.getSelectedReasoningEffort());
             assertTrue(notified.isEmpty(), "syncing from settings must not notify listeners as if the user picked it");
-        }
-        finally {
+        } finally {
             GithubCopilotPluginSettings.setModelReasoningEffortInfo(Map.of(), Map.of());
         }
     }
@@ -83,9 +99,8 @@ class GithubCopilotAiInfoBarExtensionTest {
             });
 
             assertEquals("medium", ext.getSelectedReasoningEffort(),
-                         "with no session value, the combo must fall back to the global default rather than blanking");
-        }
-        finally {
+                    "with no session value, the combo must fall back to the global default rather than blanking");
+        } finally {
             GithubCopilotPluginSettings.setReasoningEffort(globalBefore);
             GithubCopilotPluginSettings.setModelReasoningEffortInfo(Map.of(), Map.of());
         }
@@ -112,10 +127,9 @@ class GithubCopilotAiInfoBarExtensionTest {
             });
 
             assertNull(ext.getSelectedReasoningEffort(),
-                       "with no live discovery data for the current model, the combo must show \"(model default)\" "
-                       + "— never the global default, even though one is configured");
-        }
-        finally {
+                    "with no live discovery data for the current model, the combo must show \"(model default)\" "
+                    + "— never the global default, even though one is configured");
+        } finally {
             GithubCopilotPluginSettings.setReasoningEffort(globalBefore);
         }
     }
