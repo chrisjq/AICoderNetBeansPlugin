@@ -15,8 +15,6 @@ import kiwi.ingenuity.netbeans.plugin.aicoder.ai.session.AiSession;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.McpToolEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.events.AiProcessEvent;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.events.AiProcessEventListener;
-import kiwi.ingenuity.netbeans.plugin.aicoder.process.locking.LockTypeEnum;
-import kiwi.ingenuity.netbeans.plugin.aicoder.process.locking.RequiresLock;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.locking.ToolLockRegistry;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.server.McpHookServer;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.session.AbstractAiSession;
@@ -52,14 +50,12 @@ class DeleteDirectoryToolTest {
     }
 
     @Test
-    void isMutatingAndRequiresFileWriteLock() {
+    void isMutatingWithOwnPerDirectoryLocking() {
         DeleteDirectoryTool tool = new DeleteDirectoryTool(unrestrictedServer());
 
-        assertTrue(tool.isMutating(), "DeleteDirectory must stay under the global mutation lock");
-        RequiresLock annotation = tool.getClass().getAnnotation(RequiresLock.class);
-        assertNotNull(annotation, "DeleteDirectoryTool must carry @RequiresLock");
-        assertEquals(LockTypeEnum.FILE_WRITE_LOCK, annotation.value());
-        assertEquals(LockTypeEnum.FILE_WRITE_LOCK, ToolLockRegistry.getLockType(McpToolEnum.DELETE_DIRECTORY, tool));
+        assertTrue(tool.isMutating());
+        assertTrue(tool.usesOwnFileLocking(), "directory mutation must avoid the global mutation lock");
+        assertEquals(null, ToolLockRegistry.getLockType(McpToolEnum.DELETE_DIRECTORY, tool));
     }
 
     @Test
@@ -123,6 +119,43 @@ class DeleteDirectoryToolTest {
         assertEquals("Delete", ((ConfirmEvent) session.captured.get(0)).toolName());
     }
 
+    /**
+     * N2: no lock is held during the confirm prompt, so a file could appear in the tree between the emptiness
+     * check that built the prompt text and the delete itself. {@code RefactoringProvider.deleteDirectory} is
+     * only ever invoked as the under-lock action, so its whole file-free-tree walk — not just a cheap type
+     * check — runs AFTER the lock is held; this proves a file created during the window the prompt is open is
+     * still caught.
+     */
+    @Test
+    void fileCreatedDuringConfirmationMakesTheUnderLockTreeWalkRefuse(@TempDir Path dir) throws Exception {
+        Path victim = dir.resolve("victim");
+        Files.createDirectories(victim.resolve("a/b"));
+        DeleteDirectoryTool tool = new DeleteDirectoryTool(unrestrictedServer());
+        StubSession session = new StubSession(SESSION_ID, PermissionDecision.allowed()) {
+            @Override
+            public AiProcessEventListener getAiProcessEventListener() {
+                return event -> {
+                    captured.add(event);
+                    if (event instanceof ConfirmEvent ce) {
+                        try {
+                            Files.writeString(victim.resolve("a/b/appeared-during-confirm.txt"), "content");
+                        }
+                        catch (java.io.IOException e) {
+                            throw new RuntimeException(e);
+                        }
+                        ce.response().complete(PermissionDecision.allowed());
+                    }
+                };
+            }
+        };
+
+        String result = tool.handle(args(victim.toString()), session);
+
+        assertTrue(result.contains("appeared-during-confirm.txt"), result);
+        assertTrue(Files.exists(victim), "nothing may be removed when a file appeared during the confirm prompt");
+        assertTrue(Files.exists(victim.resolve("a/b/appeared-during-confirm.txt")));
+    }
+
     private static void deleteRecursively(File f) {
         File[] children = f.listFiles();
         if (children != null) {
@@ -133,7 +166,7 @@ class DeleteDirectoryToolTest {
         f.delete();
     }
 
-    private static final class StubSession extends AbstractAiSession {
+    private static class StubSession extends AbstractAiSession {
 
         final List<AiProcessEvent> captured = new ArrayList<>();
         private final String id;

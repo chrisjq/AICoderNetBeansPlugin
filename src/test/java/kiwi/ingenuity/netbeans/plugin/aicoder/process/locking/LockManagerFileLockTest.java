@@ -1,12 +1,18 @@
 package kiwi.ingenuity.netbeans.plugin.aicoder.process.locking;
 
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.util.List;
 import java.util.UUID;
+import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
+import kiwi.ingenuity.netbeans.plugin.aicoder.process.server.McpToolInvoker;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import org.junit.jupiter.api.Test;
@@ -20,6 +26,20 @@ class LockManagerFileLockTest {
     // the same JVM, poisons every test in this file that touches that same lock type.
     private static String uniquePath() {
         return "/tmp/lock-test-" + UUID.randomUUID() + ".txt";
+    }
+
+    /**
+     * A contended file-lock attempt waits out the full file-lock wait before refusing; shorten it so a test
+     * asserting the refusal doesn't spend that whole wait.
+     */
+    private static boolean tryContendedFileLock(LockManager lm, String sessionId, String file) {
+        LockManager.waitTimeoutOverrideMillisForTests = 50L;
+        try {
+            return lm.acquireFileLock(sessionId, file);
+        }
+        finally {
+            LockManager.waitTimeoutOverrideMillisForTests = null;
+        }
     }
 
     @Test
@@ -41,7 +61,7 @@ class LockManagerFileLockTest {
         String file = uniquePath();
 
         assertTrue(lm.acquireFileLock("sessionA", file));
-        assertFalse(lm.acquireFileLock("sessionB", file));
+        assertFalse(tryContendedFileLock(lm, "sessionB", file));
 
         lm.releaseFileLock("sessionA", file);
 
@@ -76,7 +96,7 @@ class LockManagerFileLockTest {
         assertNull(lm.getFileLockHolder(file), "one release must fully clear the path");
         assertEquals(0, lm.getAllActiveLocks().stream()
                 .filter(l -> "sessionA".equals(l.getSessionId())
-                        && l.getLockedPaths().contains(file))
+                             && l.getLockedPaths().contains(file))
                 .count(),
                 "the superseded lock object must be retired from session tracking");
     }
@@ -100,7 +120,7 @@ class LockManagerFileLockTest {
                 "the original multi-path lock must still guard the untouched path");
 
         assertTrue(lm.acquireFileLock("sessionB", f1));
-        assertFalse(lm.acquireFileLock("sessionB", f2));
+        assertFalse(tryContendedFileLock(lm, "sessionB", f2));
 
         lm.releaseFileLock("sessionB", f1);
         lm.releaseFileLock("sessionM", f2);
@@ -163,6 +183,158 @@ class LockManagerFileLockTest {
         }
         finally {
             LockManager.waitTimeoutOverrideMillisForTests = null;
+        }
+    }
+
+    /**
+     * BigP_1 n1, direction 1: a read must be blocked by a directory lock covering its path, the same way a
+     * write already is.
+     */
+    @Test
+    void readUnderAnActiveDirectoryLockIsContended() {
+        LockManager lm = LockManager.getInstance();
+        String dir = "/tmp/lock-test-dir-" + UUID.randomUUID();
+        String file = dir + "/child.txt";
+
+        assertTrue(lm.acquireDirectoryLock("dir-holder", dir));
+        try {
+            LockManager.waitTimeoutOverrideMillisForTests = 50L;
+            try {
+                assertNull(lm.acquireFileReadLocks("reader", List.of(file), null),
+                        "a read under an active directory lock must be contended, not silently allowed");
+            }
+            finally {
+                LockManager.waitTimeoutOverrideMillisForTests = null;
+            }
+        }
+        finally {
+            lm.releaseFileLock("dir-holder", dir);
+        }
+    }
+
+    /**
+     * BigP_1 n1, direction 2: a directory lock must wait out an active read anywhere under it.
+     */
+    @Test
+    void directoryLockIsContendedByAnActiveReadUnderIt() {
+        LockManager lm = LockManager.getInstance();
+        String dir = "/tmp/lock-test-dir-" + UUID.randomUUID();
+        String file = dir + "/child.txt";
+
+        ResourceLock readLock = lm.acquireFileReadLocks("reader", List.of(file), null);
+        assertNotNull(readLock, "read must succeed first");
+        try {
+            LockManager.waitTimeoutOverrideMillisForTests = 50L;
+            try {
+                assertFalse(lm.acquireDirectoryLock("dir-holder", dir),
+                        "a directory lock must wait out an active read under it, not silently proceed");
+            }
+            finally {
+                LockManager.waitTimeoutOverrideMillisForTests = null;
+            }
+        }
+        finally {
+            lm.releaseFileReadLock("reader", readLock);
+        }
+    }
+
+    /**
+     * Cosmetic fix: a write refused because readers hold the path used to echo the NORMALISED key back in the
+     * message, which can differ from what the caller actually passed (here, a symlink alias resolves to a
+     * different real path). The message must show the caller's own spelling.
+     */
+    @Test
+    void writeRefusalByReadersShowsTheCallersOriginalPathNotTheResolvedRealPath() throws Exception {
+        Path realFile = Files.createTempFile("lock-test-real-", ".txt");
+        Path alias = realFile.resolveSibling(realFile.getFileName() + "-alias");
+        CountDownLatch readerEntered = new CountDownLatch(1);
+        CountDownLatch readerRelease = new CountDownLatch(1);
+        ExecutorService executor = Executors.newFixedThreadPool(2);
+        try {
+            Files.createSymbolicLink(alias, realFile);
+            Future<String> reader = executor.submit(() -> McpToolInvoker.withFileRead(
+                    "reader", List.of(realFile.toString()), () -> {
+                readerEntered.countDown();
+                awaitQuietly(readerRelease);
+                return "read";
+            }));
+            assertTrue(readerEntered.await(5, TimeUnit.SECONDS));
+
+            String result;
+            LockManager.waitTimeoutOverrideMillisForTests = 50L;
+            try {
+                result = McpToolInvoker.withFileMutation("writer", List.of(alias.toString()), () -> "should-not-run");
+            }
+            finally {
+                LockManager.waitTimeoutOverrideMillisForTests = null;
+            }
+            assertTrue(result.contains(alias.toString()),
+                    "refusal must show the caller's own path, not the resolved real path: " + result);
+
+            readerRelease.countDown();
+            assertEquals("read", reader.get(5, TimeUnit.SECONDS));
+        }
+        finally {
+            readerRelease.countDown();
+            executor.shutdownNow();
+            Files.deleteIfExists(alias);
+            Files.deleteIfExists(realFile);
+        }
+    }
+
+    /**
+     * Cosmetic fix: a directory-lock refusal caused by a reader at a CHILD path used to name a null holder
+     * (getFileLockHolder(dirPath) finds nothing at the exact directory key) and fall back to "another
+     * in-progress write" — misleading, since nothing is writing. It must say reads were in progress instead,
+     * naming the directory the caller asked for.
+     */
+    @Test
+    void directoryMutationRefusalByReadersUnderItNamesReadsNotAPhantomWriter() throws Exception {
+        String dir = "/tmp/lock-test-dir-" + UUID.randomUUID();
+        String file = dir + "/child.txt";
+        CountDownLatch readerEntered = new CountDownLatch(1);
+        CountDownLatch readerRelease = new CountDownLatch(1);
+        ExecutorService executor = Executors.newFixedThreadPool(2);
+        try {
+            Future<String> reader = executor.submit(() -> McpToolInvoker.withFileRead(
+                    "reader", List.of(file), () -> {
+                readerEntered.countDown();
+                awaitQuietly(readerRelease);
+                return "read";
+            }));
+            assertTrue(readerEntered.await(5, TimeUnit.SECONDS));
+
+            String result;
+            LockManager.waitTimeoutOverrideMillisForTests = 50L;
+            try {
+                result = McpToolInvoker.withDirectoryMutation("dir-writer", dir, () -> "should-not-run");
+            }
+            finally {
+                LockManager.waitTimeoutOverrideMillisForTests = null;
+            }
+            assertTrue(result.contains("reads under") && result.contains(dir),
+                    "must say reads were in progress, naming the directory: " + result);
+            assertFalse(result.contains("in-progress write"),
+                    "must not fall back to the misleading write message: " + result);
+
+            readerRelease.countDown();
+            assertEquals("read", reader.get(5, TimeUnit.SECONDS));
+        }
+        finally {
+            readerRelease.countDown();
+            executor.shutdownNow();
+        }
+    }
+
+    private static void awaitQuietly(CountDownLatch latch) {
+        try {
+            if (!latch.await(5, TimeUnit.SECONDS)) {
+                throw new AssertionError("timed out waiting for test release");
+            }
+        }
+        catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            throw new AssertionError("interrupted while waiting for test release", e);
         }
     }
 

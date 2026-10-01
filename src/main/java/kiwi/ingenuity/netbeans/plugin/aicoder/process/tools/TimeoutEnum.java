@@ -3,30 +3,32 @@ package kiwi.ingenuity.netbeans.plugin.aicoder.process.tools;
 import java.util.Arrays;
 
 /**
- * <b>Every duration in the plugin belongs here</b>, unless it is domain-specific — that is, owned by one AI backend,
- * which keeps its own enum ({@code OpenCodeTimeoutEnum}, {@code GrokTimeoutEnum}, {@code CodexTimeoutEnum}). There is
- * no other exemption. UI delays, poll intervals and animation timings are durations like any other and live here too: a
- * literal in a {@code new Timer(...)} call is a magic number wherever it appears, and putting it here is what makes
- * every timing in the system findable and tunable from one place.
+ * <b>Every duration in the plugin belongs here</b>, unless it is domain-specific — that is, owned by one AI
+ * backend, which keeps its own enum ({@code OpenCodeTimeoutEnum}, {@code GrokTimeoutEnum},
+ * {@code CodexTimeoutEnum}). There is no other exemption. UI delays, poll intervals and animation timings are
+ * durations like any other and live here too: a literal in a {@code new Timer(...)} call is a magic number
+ * wherever it appears, and putting it here is what makes every timing in the system findable and tunable from
+ * one place.
  * <p>
- * A UI timing does NOT need to be kept out to protect {@link #MUTATION_LOCK_WAIT_MILLIS} — that calculation filters on
- * {@link Kind#OPERATION_OR_WAIT} alone, so any other {@link Kind} is already excluded structurally. Choosing the right
- * Kind is the whole mechanism; keeping a value out of this enum is not.
+ * A UI timing does NOT need to be kept out to protect {@link #MUTATION_LOCK_WAIT_MILLIS} — that calculation
+ * filters on {@link Kind#OPERATION_OR_WAIT} alone, so any other {@link Kind} is already excluded
+ * structurally. Choosing the right Kind is the whole mechanism; keeping a value out of this enum is not.
  * <p>
- * Shared durations for user-facing tools and their supporting services. Lock lifetime and lock acquisition wait remain
- * distinct: lifetime releases abandoned locks, while a wait only bounds contention for a live holder. External I/O
- * timeouts (HTTP, database) are a separate {@link Kind#EXTERNAL_IO} category, deliberately excluded from
- * {@link #MUTATION_LOCK_WAIT_MILLIS} — they bound calls to other processes/machines, not mutation-lock handler
- * execution, so folding them into {@link Kind#OPERATION_OR_WAIT} would silently raise that ceiling.
+ * Shared durations for user-facing tools and their supporting services. Lock lifetime and lock acquisition
+ * wait remain distinct: lifetime releases abandoned locks, while a wait only bounds contention for a live
+ * holder. External I/O timeouts (HTTP, database) are a separate {@link Kind#EXTERNAL_IO} category,
+ * deliberately excluded from {@link #MUTATION_LOCK_WAIT_MILLIS} — they bound calls to other
+ * processes/machines, not mutation-lock handler execution, so folding them into
+ * {@link Kind#OPERATION_OR_WAIT} would silently raise that ceiling.
  */
 public enum TimeoutEnum {
     BUILD_PROCESS_MILLIS(600_000L, Kind.OPERATION_OR_WAIT),
     /**
-     * Time limit for an async build once it starts running (async build and test decision 6, raised to two hours by
-     * decision 28). Separate from the queue wait: this clock starts only when the build itself does.
-     * {@link Kind#EXTERNAL_IO}, not {@link Kind#OPERATION_OR_WAIT}: it bounds an external build process that no tool
-     * call waits on, and as an operation-or-wait value it would silently raise {@link #MUTATION_LOCK_WAIT_MILLIS} to
-     * more than two hours.
+     * Time limit for an async build once it starts running (async build and test decision 6, raised to two
+     * hours by decision 28). Separate from the queue wait: this clock starts only when the build itself does.
+     * {@link Kind#EXTERNAL_IO}, not {@link Kind#OPERATION_OR_WAIT}: it bounds an external build process that
+     * no tool call waits on, and as an operation-or-wait value it would silently raise
+     * {@link #MUTATION_LOCK_WAIT_MILLIS} to more than two hours.
      */
     ASYNC_BUILD_PROCESS_MILLIS(7_200_000L, Kind.EXTERNAL_IO),
     WEB_REQUEST_DEFAULT_MILLIS(30_000L, Kind.OPERATION_OR_WAIT),
@@ -37,10 +39,10 @@ public enum TimeoutEnum {
     LOCK_CLEANUP_INTERVAL_MILLIS(30_000L, Kind.BACKGROUND_INTERVAL),
     GIT_LOCK_LIFETIME_MILLIS(300_000L, Kind.LOCK_LIFETIME),
     /**
-     * The FLOOR for an inline build's run limit, not a fixed ceiling (decision 29). No tool takes BUILD_LOCK any more,
-     * so this and its wait define the queue's inline build instead: 120 s to reach the front, then at least this long
-     * to run. A project that has completed a longer build successfully gets that observed time plus a margin instead —
-     * see {@code BuildQueue.inlineTimeoutMillisFor}.
+     * The FLOOR for an inline build's run limit, not a fixed ceiling (decision 29). No tool takes BUILD_LOCK
+     * any more, so this and its wait define the queue's inline build instead: 120 s to reach the front, then
+     * at least this long to run. A project that has completed a longer build successfully gets that observed
+     * time plus a margin instead — see {@code BuildQueue.inlineTimeoutMillisFor}.
      */
     BUILD_LOCK_LIFETIME_MILLIS(300_000L, Kind.LOCK_LIFETIME),
     REFACTOR_LOCK_LIFETIME_MILLIS(180_000L, Kind.LOCK_LIFETIME),
@@ -50,116 +52,125 @@ public enum TimeoutEnum {
     GIT_LOCK_WAIT_MILLIS(5_000L, Kind.OPERATION_OR_WAIT),
     BUILD_LOCK_WAIT_MILLIS(120_000L, Kind.OPERATION_OR_WAIT),
     /**
-     * Grace period {@code ProjectActionProvider} waits, after an IDE build action returns, for the action's own
-     * {@code ActionProvider} to call {@code ActionProgress.started()}. A provider that does not support
-     * {@code ActionProgress} never calls back at all, so this timing out is how that absence is detected — short,
-     * because a supporting provider calls back before {@code invokeAction} even returns.
+     * Grace period {@code ProjectActionProvider} waits, after an IDE build action returns, for the action's
+     * own {@code ActionProvider} to call {@code ActionProgress.started()}. A provider that does not support
+     * {@code ActionProgress} never calls back at all, so this timing out is how that absence is detected —
+     * short, because a supporting provider calls back before {@code invokeAction} even returns.
      */
     IDE_ACTION_START_GRACE_MILLIS(2_000L, Kind.OPERATION_OR_WAIT),
     REFACTOR_LOCK_WAIT_MILLIS(5_000L, Kind.OPERATION_OR_WAIT),
-    FILE_WRITE_LOCK_WAIT_MILLIS(0L, Kind.OPERATION_OR_WAIT),
+    /**
+     * How long a per-file lock waits for another session's hold on the same file. Per-file locks are held
+     * only for the write itself, never across a diff approval or confirmation prompt, so a contender waits
+     * briefly rather than being refused.
+     */
+    FILE_WRITE_LOCK_WAIT_MILLIS(30_000L, Kind.OPERATION_OR_WAIT),
     SESSION_LOCK_WAIT_MILLIS(5_000L, Kind.OPERATION_OR_WAIT),
     PROJECT_STRUCTURE_LOCK_WAIT_MILLIS(5_000L, Kind.OPERATION_OR_WAIT),
     LOCK_WAIT_POLL_MILLIS(50L, Kind.BACKGROUND_INTERVAL),
     MCP_REGISTRY_POLL_INTERVAL_MILLIS(120_000L, Kind.BACKGROUND_INTERVAL),
     /**
-     * Bound on the bare TCP connect {@code McpServerRegistry.isResponsive} uses to decide whether the shared hook
-     * server is still alive. Was a 500 ms literal — fine for an idle machine, but a CPU-saturated one can delay the
-     * server's own accept loop past that, making a live server look dead and triggering a replacement that silently
-     * dropped every session's {@code SessionFileScopeRegistry} scope. {@link Kind#EXTERNAL_IO}: it waits on this JVM's
-     * own listener thread accepting a connection, not a mutation-lock handler, so it must not raise
-     * {@link #MUTATION_LOCK_WAIT_MILLIS}.
+     * Bound on the bare TCP connect {@code McpServerRegistry.isResponsive} uses to decide whether the shared
+     * hook server is still alive. Was a 500 ms literal — fine for an idle machine, but a CPU-saturated one
+     * can delay the server's own accept loop past that, making a live server look dead and triggering a
+     * replacement that silently dropped every session's {@code SessionFileScopeRegistry} scope.
+     * {@link Kind#EXTERNAL_IO}: it waits on this JVM's own listener thread accepting a connection, not a
+     * mutation-lock handler, so it must not raise {@link #MUTATION_LOCK_WAIT_MILLIS}.
      */
     MCP_HEALTH_PROBE_TIMEOUT_MILLIS(3_000L, Kind.EXTERNAL_IO),
     /**
-     * How old a plugin-created temp file (pasted images, tool-result logs) may get before the periodic age sweep
-     * deletes it. Deliberately uncritical: session close, IDE shutdown and plugin uninstall each remove whole temp
-     * directories regardless of age, so this value only bounds how much a very long-lived session can accumulate.
+     * How old a plugin-created temp file (pasted images, tool-result logs) may get before the periodic age
+     * sweep deletes it. Deliberately uncritical: session close, IDE shutdown and plugin uninstall each remove
+     * whole temp directories regardless of age, so this value only bounds how much a very long-lived session
+     * can accumulate.
      * <p>
-     * The trade is against live references, not disk: a spooled build log or a pasted image older than this is swept
-     * while its session is still open, so an agent that revisits a tool-result log — or a {@code @tmp.} marker left
-     * unsent in the input box — finds it gone. Both degrade safely (the log is re-creatable by re-running the tool, and
-     * TmpMarkerExpander reports an unresolvable marker to the user rather than sending a dead path), which is what
-     * makes four hours acceptable rather than merely tidy: long enough to outlast an ordinary working session, short
-     * enough that an abandoned one does not hoard build logs until the IDE closes.
+     * The trade is against live references, not disk: a spooled build log or a pasted image older than this
+     * is swept while its session is still open, so an agent that revisits a tool-result log — or a
+     * {@code @tmp.} marker left unsent in the input box — finds it gone. Both degrade safely (the log is
+     * re-creatable by re-running the tool, and TmpMarkerExpander reports an unresolvable marker to the user
+     * rather than sending a dead path), which is what makes four hours acceptable rather than merely tidy:
+     * long enough to outlast an ordinary working session, short enough that an abandoned one does not hoard
+     * build logs until the IDE closes.
      */
     TEMP_FILE_MAX_AGE_MILLIS(14_400_000L, Kind.LOCK_LIFETIME),
     TEMP_FILE_SWEEP_INTERVAL_MILLIS(60_000L, Kind.BACKGROUND_INTERVAL),
     /**
-     * Delay before re-stating a file the user has just accepted an AI diff for, so the IDE picks up the new bytes. The
-     * write itself has already completed by then; this only defers the refresh briefly.
+     * Delay before re-stating a file the user has just accepted an AI diff for, so the IDE picks up the new
+     * bytes. The write itself has already completed by then; this only defers the refresh briefly.
      * <p>
-     * The original choice of 600 ms was an undocumented literal at the call site and no rationale was recorded, so
-     * treat it as "short enough to be imperceptible, long enough to land after the accept settles" rather than as a
-     * tuned value.
+     * The original choice of 600 ms was an undocumented literal at the call site and no rationale was
+     * recorded, so treat it as "short enough to be imperceptible, long enough to land after the accept
+     * settles" rather than as a tuned value.
      */
     ACCEPTED_DIFF_REFRESH_DELAY_MILLIS(600L, Kind.UI_FEEDBACK),
     /**
-     * Tick interval for the session clock in the info bar. One second because the clock renders whole seconds — shorter
-     * repaints without changing the text, longer drops digits.
+     * Tick interval for the session clock in the info bar. One second because the clock renders whole seconds
+     * — shorter repaints without changing the text, longer drops digits.
      */
     CLOCK_TICK_MILLIS(1_000L, Kind.UI_FEEDBACK),
     /**
-     * How long a code block's copy button shows its confirmation tick before reverting to the copy glyph. Long enough
-     * to register, short enough to be back to normal before a second copy.
+     * How long a code block's copy button shows its confirmation tick before reverting to the copy glyph.
+     * Long enough to register, short enough to be back to normal before a second copy.
      */
     COPY_FEEDBACK_RESET_MILLIS(1_200L, Kind.UI_FEEDBACK),
     /**
-     * Duration of the tab status dot's flash each time AI output arrives mid-turn. Short enough that continuous
-     * streaming reads as a steady pulse rather than a colour change.
+     * Duration of the tab status dot's flash each time AI output arrives mid-turn. Short enough that
+     * continuous streaming reads as a steady pulse rather than a colour change.
      */
     THINKING_FLASH_MILLIS(250L, Kind.UI_FEEDBACK),
     /**
-     * Poll interval while waiting for the conversation view's layout to stop changing after new content, before
-     * scrolling to the end. Streaming resizes the panel repeatedly; this samples until height stabilises.
+     * Poll interval while waiting for the conversation view's layout to stop changing after new content,
+     * before scrolling to the end. Streaming resizes the panel repeatedly; this samples until height
+     * stabilises.
      */
     SCROLL_SETTLE_POLL_MILLIS(30L, Kind.UI_FEEDBACK),
     /**
-     * Throttle window bounding streamed chat deltas to at most one re-render per window — a rate limiter, NOT a
-     * debounce. Each delta appends its text immediately but defers the full markdown re-parse + component rebuild (the
-     * O(message-size) work in {@code MessagePanel.rebuildContent()}) to the next window boundary; a delta arriving
-     * while a rebuild is already pending does not reset the timer's deadline. So continuous streaming keeps rendering
-     * about every 100 ms (bounded by elapsed time, never by chunk count) rather than going blank until the model
-     * pauses. Without the throttle, N small deltas rebuild the whole message N times — O(N²) on the EDT, which
-     * saturated the UI thread and froze the IDE when several sessions streamed at once. The mandatory flush on message
-     * finalise guarantees no buffered tail is ever dropped and no timer is left armed.
+     * Throttle window bounding streamed chat deltas to at most one re-render per window — a rate limiter, NOT
+     * a debounce. Each delta appends its text immediately but defers the full markdown re-parse + component
+     * rebuild (the O(message-size) work in {@code MessagePanel.rebuildContent()}) to the next window
+     * boundary; a delta arriving while a rebuild is already pending does not reset the timer's deadline. So
+     * continuous streaming keeps rendering about every 100 ms (bounded by elapsed time, never by chunk count)
+     * rather than going blank until the model pauses. Without the throttle, N small deltas rebuild the whole
+     * message N times — O(N²) on the EDT, which saturated the UI thread and froze the IDE when several
+     * sessions streamed at once. The mandatory flush on message finalise guarantees no buffered tail is ever
+     * dropped and no timer is left armed.
      * <p>
-     * 100 ms is a deliberate trade: ten renders a second reads as smooth streaming while still capping the rebuild cost
-     * at ten per second per session rather than one per token. Raise it if several sessions streaming at once still
-     * strain the EDT — the throttle's protection scales directly with this number.
+     * 100 ms is a deliberate trade: ten renders a second reads as smooth streaming while still capping the
+     * rebuild cost at ten per second per session rather than one per token. Raise it if several sessions
+     * streaming at once still strain the EDT — the throttle's protection scales directly with this number.
      */
     MESSAGE_REBUILD_THROTTLE_MILLIS(100L, Kind.UI_FEEDBACK),
     DATABASE_QUERY_TIMEOUT_MILLIS(300_000L, Kind.EXTERNAL_IO),
     /**
-     * How long an OpenAI-compatible chat request (Ollama) may take to START responding. The JDK applies it only
-     * until the response headers arrive, so it bounds model loading plus prompt processing before the first
-     * token, not the streamed reply. Local models on slow hardware with a large context can need well over
-     * five minutes for that, hence the generous bound; an unreachable server is still caught quickly by the
-     * separate connect timeout.
+     * How long an OpenAI-compatible chat request (Ollama) may take to START responding. The JDK applies it
+     * only until the response headers arrive, so it bounds model loading plus prompt processing before the
+     * first token, not the streamed reply. Local models on slow hardware with a large context can need well
+     * over five minutes for that, hence the generous bound; an unreachable server is still caught quickly by
+     * the separate connect timeout.
      */
     OPENAI_HTTP_REQUEST_TIMEOUT_MILLIS(1_800_000L, Kind.EXTERNAL_IO),
     OPENAI_HTTP_CONNECT_TIMEOUT_MILLIS(10_000L, Kind.EXTERNAL_IO),
     MCP_HTTP_IDLE_INTERVAL_MILLIS(300_000L, Kind.EXTERNAL_IO),
     /**
-     * Upper bound for waiting on one AI backend's MCP endpoint registration with its CLI (the {@code .get(...)} after
-     * handing the registrar to {@code McpServerRegistry.register}). This blocks a local subprocess handshake — another
-     * process, possibly a hung CLI — hence {@link Kind#EXTERNAL_IO} so it never silently raises the mutation-lock
-     * ceiling. Replaces the former hardcoded two-minute waits and the dead per-backend {@code *_MCP_REGISTER_MILLIS}
-     * constants.
+     * Upper bound for waiting on one AI backend's MCP endpoint registration with its CLI (the
+     * {@code .get(...)} after handing the registrar to {@code McpServerRegistry.register}). This blocks a
+     * local subprocess handshake — another process, possibly a hung CLI — hence {@link Kind#EXTERNAL_IO} so
+     * it never silently raises the mutation-lock ceiling. Replaces the former hardcoded two-minute waits and
+     * the dead per-backend {@code *_MCP_REGISTER_MILLIS} constants.
      */
     MCP_REGISTRATION_WAIT_MILLIS(120_000L, Kind.EXTERNAL_IO),
     /**
-     * Upper bound for {@code McpServerRegistry.stopAll()}'s join on the exiting supervisor thread. The supervisor's
-     * shutdown path now also undoes each still-registered type's CLI hooks/endpoint (bounded subprocess calls that
-     * self-cap at a few seconds each), so this must cover a couple of CLI invocations — while still guaranteeing a
-     * wedged CLI can never make IDE exit hang unboundedly. {@link Kind#EXTERNAL_IO}: it waits on other processes and
-     * must not raise the mutation-lock ceiling.
+     * Upper bound for {@code McpServerRegistry.stopAll()}'s join on the exiting supervisor thread. The
+     * supervisor's shutdown path now also undoes each still-registered type's CLI hooks/endpoint (bounded
+     * subprocess calls that self-cap at a few seconds each), so this must cover a couple of CLI invocations —
+     * while still guaranteeing a wedged CLI can never make IDE exit hang unboundedly.
+     * {@link Kind#EXTERNAL_IO}: it waits on other processes and must not raise the mutation-lock ceiling.
      */
     MCP_SHUTDOWN_TEARDOWN_WAIT_MILLIS(10_000L, Kind.EXTERNAL_IO),
     /**
-     * How long plugin shutdown waits for the shared session-persist executor to finish already-queued work (history and
-     * session-config saves) after {@code shutdown()}. Queued saves are user data and must be given time to land; a
-     * wedged task must nonetheless not hang IDE exit, hence the bound.
+     * How long plugin shutdown waits for the shared session-persist executor to finish already-queued work
+     * (history and session-config saves) after {@code shutdown()}. Queued saves are user data and must be
+     * given time to land; a wedged task must nonetheless not hang IDE exit, hence the bound.
      */
     PERSIST_EXECUTOR_SHUTDOWN_WAIT_MILLIS(10_000L, Kind.OPERATION_OR_WAIT),
     AI_MODEL_CATALOG_REFRESH_TIMEOUT_MILLIS(120_000L, Kind.EXTERNAL_IO);
@@ -167,14 +178,15 @@ public enum TimeoutEnum {
     private static final long MUTATION_LOCK_SAFETY_MARGIN_MILLIS = 10000L;
 
     /**
-     * The longest individual operation or lock-acquisition wait, plus a small scheduling margin. The calculation
-     * deliberately ranges over every {@link Kind#OPERATION_OR_WAIT} value, including durations for operations that do
-     * not take the mutation lock (such as the web-request cap). This intentional over-estimate is safe because a waiter
-     * only waits longer than necessary; an under-estimate could make it give up while a legitimate lock holder is still
-     * working. Consequently, increasing any operation-or-wait duration also increases this ceiling, even when that
-     * operation does not itself hold the mutation lock. Lock lifetimes are excluded because they bound stale-lock
-     * cleanup, not handler execution. {@link Kind#EXTERNAL_IO} and {@link Kind#BACKGROUND_INTERVAL} durations are
-     * likewise excluded — they bound calls to other processes/machines or periodic polling, not mutation-lock handler
+     * The longest individual operation or lock-acquisition wait, plus a small scheduling margin. The
+     * calculation deliberately ranges over every {@link Kind#OPERATION_OR_WAIT} value, including durations
+     * for operations that do not take the mutation lock (such as the web-request cap). This intentional
+     * over-estimate is safe because a waiter only waits longer than necessary; an under-estimate could make
+     * it give up while a legitimate lock holder is still working. Consequently, increasing any
+     * operation-or-wait duration also increases this ceiling, even when that operation does not itself hold
+     * the mutation lock. Lock lifetimes are excluded because they bound stale-lock cleanup, not handler
+     * execution. {@link Kind#EXTERNAL_IO} and {@link Kind#BACKGROUND_INTERVAL} durations are likewise
+     * excluded — they bound calls to other processes/machines or periodic polling, not mutation-lock handler
      * execution, so a long HTTP or database timeout must not silently raise this ceiling.
      */
     public static final long MUTATION_LOCK_WAIT_MILLIS = Arrays.stream(values())
@@ -204,9 +216,9 @@ public enum TimeoutEnum {
          */
         EXTERNAL_IO,
         /**
-         * A purely presentational delay on the EDT — an animation pulse, a label reverting, a clock tick, a settle
-         * poll. Bounds nothing and blocks nothing; changing one can only alter how the UI looks. Excluded from
-         * {@link #MUTATION_LOCK_WAIT_MILLIS} like every non-{@link #OPERATION_OR_WAIT} kind.
+         * A purely presentational delay on the EDT — an animation pulse, a label reverting, a clock tick, a
+         * settle poll. Bounds nothing and blocks nothing; changing one can only alter how the UI looks.
+         * Excluded from {@link #MUTATION_LOCK_WAIT_MILLIS} like every non-{@link #OPERATION_OR_WAIT} kind.
          */
         UI_FEEDBACK
     }

@@ -14,9 +14,8 @@ import kiwi.ingenuity.netbeans.plugin.aicoder.process.McpInstructionOptionEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.McpSectionEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.McpToolEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.events.AiProcessEventListener;
-import kiwi.ingenuity.netbeans.plugin.aicoder.process.locking.LockTypeEnum;
-import kiwi.ingenuity.netbeans.plugin.aicoder.process.locking.RequiresLock;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.server.McpHookServer;
+import kiwi.ingenuity.netbeans.plugin.aicoder.process.server.McpToolInvoker;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.session.AbstractAiSession;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.TimeoutEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.AbstractFileTool;
@@ -26,20 +25,19 @@ import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.ToolSchemaKeyEnu
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.providers.netbeans.RefactoringProvider;
 import kiwi.ingenuity.netbeans.plugin.aicoder.utils.ProjectPathUtil;
 
-@RequiresLock(LockTypeEnum.FILE_WRITE_LOCK)
 public class SaveFileTool extends AbstractFileTool {
 
     private final McpHookServer server;
 
     public SaveFileTool(McpHookServer server) {
         super(McpSectionEnum.SYSTEM,
-              McpToolEnum.SAVE_FILE.toolName(),
-              "Save a file. When " + SaveFileParamEnum.CONTENT.key() + " is provided, creates a new file with the given content and saves it "
-              + "(works for open or closed files). Without " + SaveFileParamEnum.CONTENT.key() + ", saves "
-              + "existing unsaved editor changes to disk.",
-              McpToolEnum.SAVE_FILE.toolName() + " -> with " + SaveFileParamEnum.CONTENT.key() + ": creates a new file ONLY; to update existing files use " + McpToolEnum.APPLY_EDIT.toolName() + "; "
-              + "without " + SaveFileParamEnum.CONTENT.key() + ": flush unsaved NetBeans changes before Read+Edit",
-              McpToolEnum.SAVE_FILE.toolName() + " - with " + SaveFileParamEnum.CONTENT.key() + ": creates a new file ONLY; use " + McpToolEnum.APPLY_EDIT.toolName() + " to update existing files; without " + SaveFileParamEnum.CONTENT.key() + ": flush unsaved NetBeans changes");
+                McpToolEnum.SAVE_FILE.toolName(),
+                "Save a file. When " + SaveFileParamEnum.CONTENT.key() + " is provided, creates a new file with the given content and saves it "
+                + "(works for open or closed files). Without " + SaveFileParamEnum.CONTENT.key() + ", saves "
+                + "existing unsaved editor changes to disk.",
+                McpToolEnum.SAVE_FILE.toolName() + " -> with " + SaveFileParamEnum.CONTENT.key() + ": creates a new file ONLY; to update existing files use " + McpToolEnum.APPLY_EDIT.toolName() + "; "
+                + "without " + SaveFileParamEnum.CONTENT.key() + ": flush unsaved NetBeans changes before Read+Edit",
+                McpToolEnum.SAVE_FILE.toolName() + " - with " + SaveFileParamEnum.CONTENT.key() + ": creates a new file ONLY; use " + McpToolEnum.APPLY_EDIT.toolName() + " to update existing files; without " + SaveFileParamEnum.CONTENT.key() + ": flush unsaved NetBeans changes");
         this.server = server;
     }
 
@@ -48,22 +46,22 @@ public class SaveFileTool extends AbstractFileTool {
         JsonObject tool = new JsonObject();
         tool.addProperty(ToolSchemaKeyEnum.NAME.key(), McpToolEnum.SAVE_FILE.toolName());
         tool.addProperty(ToolSchemaKeyEnum.DESCRIPTION.key(),
-                         "Save a file. When " + SaveFileParamEnum.CONTENT.key() + " is provided, creates a new file with the given content and saves it "
-                         + "(works for open or closed files). Without " + SaveFileParamEnum.CONTENT.key() + ", saves "
-                         + "existing unsaved editor changes to disk.");
+                "Save a file. When " + SaveFileParamEnum.CONTENT.key() + " is provided, creates a new file with the given content and saves it "
+                + "(works for open or closed files). Without " + SaveFileParamEnum.CONTENT.key() + ", saves "
+                + "existing unsaved editor changes to disk.");
         JsonObject schema = new JsonObject();
         schema.addProperty(ToolSchemaKeyEnum.TYPE.key(), "object");
         JsonObject props = new JsonObject();
         JsonObject fp = new JsonObject();
         fp.addProperty(ToolSchemaKeyEnum.TYPE.key(), "string");
         fp.addProperty(ToolSchemaKeyEnum.DESCRIPTION.key(),
-                       "Absolute path to the file. Required — no fallback to the "
-                       + "focused editor. Call " + McpToolEnum.GET_CURRENT_FILE.toolName() + " for the file the user is looking at.");
+                "Absolute path to the file. Required — no fallback to the "
+                + "focused editor. Call " + McpToolEnum.GET_CURRENT_FILE.toolName() + " for the file the user is looking at.");
         props.add(SaveFileParamEnum.FILE_PATH.key(), fp);
         JsonObject ct = new JsonObject();
         ct.addProperty(ToolSchemaKeyEnum.TYPE.key(), "string");
         ct.addProperty(ToolSchemaKeyEnum.DESCRIPTION.key(),
-                       "New file content. When provided, creates a new file with this content. To update an existing file, use " + McpToolEnum.APPLY_EDIT.toolName() + ".");
+                "New file content. When provided, creates a new file with this content. To update an existing file, use " + McpToolEnum.APPLY_EDIT.toolName() + ".");
         props.add(SaveFileParamEnum.CONTENT.key(), ct);
         schema.add(ToolSchemaKeyEnum.PROPERTIES.key(), props);
         JsonArray required = new JsonArray();
@@ -71,6 +69,11 @@ public class SaveFileTool extends AbstractFileTool {
         schema.add(ToolSchemaKeyEnum.REQUIRED.key(), required);
         tool.add(ToolSchemaKeyEnum.INPUT_SCHEMA.key(), schema);
         return McpToolSchemas.applyCredentialsIfRequested(tool, options);
+    }
+
+    @Override
+    public boolean usesOwnFileLocking() {
+        return true;
     }
 
     @Override
@@ -84,7 +87,7 @@ public class SaveFileTool extends AbstractFileTool {
             // decided. The content path already required it; this makes the
             // no-content path agree.
             return SaveFileParamEnum.FILE_PATH.key() + " is required — this tool does not fall back to the focused editor. "
-                    + "Call " + McpToolEnum.GET_CURRENT_FILE.toolName() + " if you want the file the user is looking at.";
+                   + "Call " + McpToolEnum.GET_CURRENT_FILE.toolName() + " if you want the file the user is looking at.";
         }
         String sessionId = session.getId();
         boolean ownConfigFile = server.isOwnSessionConfigFile(sessionId, fp);
@@ -100,11 +103,13 @@ public class SaveFileTool extends AbstractFileTool {
                 // panel builds from content strings, not a project-anchored FileObject),
                 // but because this is a deliberate policy choice, consistent with the
                 // built-in Write hook and ApplyEdit/WriteFile's own-config branch.
-                return RefactoringProvider.writeFileContent(fp, content);
+                return McpToolInvoker.withFileMutation(sessionId, Set.of(fp),
+                        () -> RefactoringProvider.writeFileContent(fp, content));
             }
             AiProcessEventListener listener = session.getAiProcessEventListener();
             if (listener == null) {
-                return RefactoringProvider.writeFileContent(fp, content);
+                return McpToolInvoker.withFileMutation(sessionId, Set.of(fp),
+                        () -> RefactoringProvider.writeFileContent(fp, content));
             }
             // Refuse to overwrite existing project files: SaveFile with content creates NEW files only.
             // For existing files, use ApplyEdit to update them.
@@ -119,7 +124,7 @@ public class SaveFileTool extends AbstractFileTool {
             }
             catch (TimeoutException e) {
                 return "Timed out waiting for the user to review this change in the diff panel — "
-                        + "the user did not respond in time. You may retry.";
+                       + "the user did not respond in time. You may retry.";
             }
             catch (Exception e) {
                 decision = PermissionDecision.denied(null);
@@ -129,9 +134,11 @@ public class SaveFileTool extends AbstractFileTool {
                        ? "User rejected the write: " + decision.message().trim() + " — do not retry this change"
                        : "User rejected the write — do not retry this change";
             }
-            return RefactoringProvider.writeFileContent(fp, content);
+            return McpToolInvoker.withFileMutation(sessionId, Set.of(fp),
+                    () -> saveFileCreateAfterRecheck(fp, content));
         }
-        String result = RefactoringProvider.saveFile(fp);
+        String result = McpToolInvoker.withFileMutation(sessionId, Set.of(fp),
+                () -> RefactoringProvider.saveFile(fp));
         // No notification for the session's own config dir either — flushing its own
         // working data to disk is not something the user needs to be told about, same
         // as the write branch above never surfaces a PermissionEvent for it.
@@ -143,5 +150,17 @@ public class SaveFileTool extends AbstractFileTool {
             }
         }
         return result;
+    }
+
+    /**
+     * SaveFile-with-content creates NEW files only; the pre-approval check above is NOT enough on its own —
+     * between that check and this, the diff waits on the user, unguarded by any lock. Re-checked here, under
+     * the lock, so a file that appeared during the wait is refused rather than silently overwritten.
+     */
+    private static String saveFileCreateAfterRecheck(String filePath, String content) {
+        if (new File(filePath).exists()) {
+            return "Refused: " + filePath + " appeared while the diff was open; re-read and retry.";
+        }
+        return RefactoringProvider.writeFileContent(filePath, content);
     }
 }

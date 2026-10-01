@@ -9,6 +9,7 @@ import kiwi.ingenuity.netbeans.plugin.aicoder.process.McpSectionEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.McpToolEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.McpToolPropertyEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.server.McpHookServer;
+import kiwi.ingenuity.netbeans.plugin.aicoder.process.server.McpToolInvoker;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.session.AbstractAiSession;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.McpToolInterface;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.McpToolSchemas;
@@ -113,7 +114,13 @@ public class GetFileContentTool implements McpToolInterface {
         if (sessionId == null || !server.isFileAccessible(sessionId, fp)) {
             return McpHookServer.fileAccessDeniedMessage(server, sessionId, fp);
         }
-        return EditorContextProvider.getFileContent(fp, args.intOr(GetFileContentParamEnum.START_LINE.key(), 0),
-                args.intOr(GetFileContentParamEnum.END_LINE.key(), 0), args.bool(GetFileContentParamEnum.RAW.key()));
+        int startLine = args.intOr(GetFileContentParamEnum.START_LINE.key(), 0);
+        int endLine = args.intOr(GetFileContentParamEnum.END_LINE.key(), 0);
+        boolean raw = args.bool(GetFileContentParamEnum.RAW.key());
+        // This may flush unsaved editor text before reading. Use the same short
+        // per-file lock as writers so it cannot save/read half of a concurrent write;
+        // it is acquired here, not while another tool waits at a review prompt.
+        return McpToolInvoker.withFileRead(sessionId, Set.of(fp),
+                () -> EditorContextProvider.getFileContent(fp, startLine, endLine, raw));
     }
 }

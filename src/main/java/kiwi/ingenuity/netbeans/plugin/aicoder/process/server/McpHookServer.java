@@ -42,6 +42,7 @@ import kiwi.ingenuity.netbeans.plugin.aicoder.process.locking.LockManager;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.session.AbstractAiSession;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.TimeoutEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.McpToolInterface;
+import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.providers.netbeans.FileUtils;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.providers.netbeans.RefactoringProvider;
 import org.openide.util.Exceptions;
 
@@ -102,11 +103,11 @@ public class McpHookServer {
     public static String fileAccessDeniedMessage(McpHookServer server, String sessionId, String filePath) {
         if (sessionId == null || sessionId.isBlank()) {
             return "Access denied: file access scope is unavailable because this tool call has no "
-                    + McpToolPropertyEnum.SESSION_ID.key() + ". Retry with a valid session identity.";
+                   + McpToolPropertyEnum.SESSION_ID.key() + ". Retry with a valid session identity.";
         }
         if (server == null) {
             return "Access denied: file access scope is unavailable because the MCP server is not running. "
-                    + "Retry after MCP session setup completes.";
+                   + "Retry after MCP session setup completes.";
         }
         // A path the filesystem cannot represent is refused for a completely different reason than one that is simply
         // out of scope, and saying "outside the allowed project scope" for it is misleading: a caller reads that as a
@@ -115,7 +116,7 @@ public class McpHookServer {
         // tell them apart.
         if (SessionFileScopeRegistry.isMalformedPath(filePath)) {
             return "Malformed path: the supplied path contains characters the filesystem cannot represent, so it "
-                    + "cannot refer to any file. Check the path for stray control characters and resend it.";
+                   + "cannot refer to any file. Check the path for stray control characters and resend it.";
         }
         return server.fileScope.fileAccessDeniedMessage(sessionId, filePath);
     }
@@ -146,8 +147,8 @@ public class McpHookServer {
      */
     public static boolean isProjectFileAllowed(McpHookServer server, String sessionId, String filePath) {
         return server != null && sessionId != null
-                && !server.isSessionPersistenceWriteDenied(filePath)
-                && server.isFileAllowed(sessionId, filePath);
+               && !server.isSessionPersistenceWriteDenied(filePath)
+               && server.isFileAllowed(sessionId, filePath);
     }
 
     /**
@@ -164,7 +165,7 @@ public class McpHookServer {
      */
     public static boolean isFileWritable(McpHookServer server, String sessionId, String filePath) {
         return isFileAccessible(server, sessionId, filePath)
-                && !server.isSessionPersistenceWriteDenied(filePath);
+               && !server.isSessionPersistenceWriteDenied(filePath);
     }
 
     private HttpServer httpServer;
@@ -193,8 +194,9 @@ public class McpHookServer {
 
     /**
      * @param fileScope the scope registry this server delegates every access check to.
-     * {@link McpServerRegistry} passes its own single, long-lived instance so a server replacement (see
-     * {@code reconcile}) carries every session's scope forward instead of starting empty.
+     *                  {@link McpServerRegistry} passes its own single, long-lived instance so a server
+     *                  replacement (see {@code reconcile}) carries every session's scope forward instead of
+     *                  starting empty.
      */
     public McpHookServer(int port, SessionFileScopeRegistry fileScope) {
         this.port = port;
@@ -224,11 +226,13 @@ public class McpHookServer {
             httpServer.createContext("/", this::handle);
             httpServer.createContext("/mcp", this::handleMcp);
             LOG.log(Level.INFO, "Inited {0}", this.name);
-        } catch (IOException e) {
+        }
+        catch (IOException e) {
             if (httpServer != null) {
                 try {
                     httpServer.stop(0);
-                } catch (Exception ex1) {
+                }
+                catch (Exception ex1) {
                 }
 
                 httpServer = null;
@@ -267,7 +271,7 @@ public class McpHookServer {
      * @param aiTypeKey AI type key from {@code AiTypeEnum.key()}, e.g. {@code "claude"}
      */
     public void registerSession(String sessionId, AiTypeEnum aiType,
-            List<File> projectDirs, boolean restrictToProjectFiles) {
+                                List<File> projectDirs, boolean restrictToProjectFiles) {
         if (sessionId == null) {
             return;
         }
@@ -289,7 +293,7 @@ public class McpHookServer {
      * listener and calls unregisterSession, so this cannot resurrect a closed session.
      */
     public void updateSessionScope(String sessionId, AiTypeEnum aiType,
-            List<File> projectDirs, boolean restrictToProjectFiles) {
+                                   List<File> projectDirs, boolean restrictToProjectFiles) {
         if (sessionId == null) {
             return;
         }
@@ -459,7 +463,8 @@ public class McpHookServer {
         if (httpServer != null) {
             try {
                 httpServer.stop(0);
-            } catch (Exception e) {
+            }
+            catch (Exception e) {
                 LOG.log(Level.FINE, "httpServer.stop threw", e);
             }
             httpServer = null;
@@ -467,7 +472,8 @@ public class McpHookServer {
         if (executor != null) {
             try {
                 executor.shutdown();
-            } catch (Exception e) {
+            }
+            catch (Exception e) {
                 LOG.log(Level.FINE, "executor.shutdown threw", e);
             }
             executor = null;
@@ -501,14 +507,16 @@ public class McpHookServer {
         JsonObject req;
         try {
             req = McpHookServerUtil.GSON.fromJson(body, JsonObject.class);
-        } catch (JsonSyntaxException e) {
+        }
+        catch (JsonSyntaxException e) {
             LOG.log(Level.WARNING, "Hook: bad JSON: {0}", McpHookServerUtil.redactAllSecrets(body));
             McpHookServerUtil.sendJson(ex, 400, "{\"error\":\"bad json\"}");
             return;
         }
         try {
             handleRequest(ex, req);
-        } catch (RuntimeException e) {
+        }
+        catch (RuntimeException e) {
             LOG.log(Level.WARNING, "Hook request processing failed", e);
             McpHookServerUtil.sendJson(ex, 200, McpHookServerUtil.hookDeny(
                     "The IDE could not process this tool request. Retry using the IDE's MCP tools."));
@@ -556,8 +564,8 @@ public class McpHookServer {
                 McpHookServerUtil.logToolUse(null, toolName, input);
             }
             McpHookServerUtil.sendJson(ex, 200, nativeWrite
-                    ? McpHookServerUtil.hookDefer()
-                    : McpHookServerUtil.hookAllow());
+                                                ? McpHookServerUtil.hookDefer()
+                                                : McpHookServerUtil.hookAllow());
             return;
         }
 
@@ -570,9 +578,9 @@ public class McpHookServer {
                 McpHookServerUtil.logToolUse(session.getSessionName(), toolName, input);
             }
             McpHookServerUtil.sendJson(ex, 200, steered
-                    ? McpHookServerUtil.hookDeny(McpSteeringPolicy.steeringFeedbackFor(
+                                                ? McpHookServerUtil.hookDeny(McpSteeringPolicy.steeringFeedbackFor(
                             steeringCategoryForSteeredClaudeTool(toolName)))
-                    : McpHookServerUtil.hookAllow());
+                                                : McpHookServerUtil.hookAllow());
             return;
         }
 
@@ -593,8 +601,8 @@ public class McpHookServer {
         // applied ONE replacement while answering "File updated and saved" — a partial edit reported as complete,
         // with nothing to alert the caller. Threaded to both the preview and the apply, which must agree exactly.
         boolean replaceAll = input.has(ClaudeHookKeyEnum.REPLACE_ALL.key())
-                && input.get(ClaudeHookKeyEnum.REPLACE_ALL.key()).getAsJsonPrimitive().isBoolean()
-                && input.get(ClaudeHookKeyEnum.REPLACE_ALL.key()).getAsBoolean();
+                             && input.get(ClaudeHookKeyEnum.REPLACE_ALL.key()).getAsJsonPrimitive().isBoolean()
+                             && input.get(ClaudeHookKeyEnum.REPLACE_ALL.key()).getAsBoolean();
 
         // 0. ANY session's serialized-conversation directory (history.json, context.json,
         //    and their siblings) is never accessible to any tool, including this native
@@ -638,8 +646,8 @@ public class McpHookServer {
                 McpHookServerUtil.logToolUse(session.getSessionName(), toolName, input);
             }
             McpHookServerUtil.sendJson(ex, 200, isUnrestrictedFileAccess(sessionId)
-                    ? McpHookServerUtil.hookAllow()
-                    : McpHookServerUtil.hookDeny(fileAccessDeniedMessage(sessionId, filePath)));
+                                                ? McpHookServerUtil.hookAllow()
+                                                : McpHookServerUtil.hookDeny(fileAccessDeniedMessage(sessionId, filePath)));
             return;
         }
 
@@ -661,76 +669,102 @@ public class McpHookServer {
         ReentrantLock sessionHookLock = hookLocks.get(sessionId);
         if (sessionHookLock == null) {
             McpHookServerUtil.sendJson(ex, 200, nativeWrite
-                    ? McpHookServerUtil.hookDefer()
-                    : McpHookServerUtil.hookAllow());
+                                                ? McpHookServerUtil.hookDefer()
+                                                : McpHookServerUtil.hookAllow());
             return;
         }
 
-        // Per-file lock, held from before the diff is shown through the decision and the
-        // write — scoped to just this file, so a concurrent diff on a different file (from
-        // this session or another) is unaffected. Also keeps this native-hook path and the
-        // MCP-tool WriteFile/ApplyEdit path (which locks the same way) mutually exclusive on
-        // the same file, since they'd otherwise share no coordination at all.
-        LockManager lockManager = LockManager.getInstance();
-        if (!lockManager.acquireFileLock(sessionId, filePath)) {
-            McpHookServerUtil.sendJson(ex, 200, McpHookServerUtil.hookDeny(
-                    LockManager.fileLockedMessage(lockManager.getFileLockHolder(filePath))));
-            return;
+        // Do not hold either a file lock or this session's hook lock while the user is
+        // reviewing a diff. The short actual write below takes the shared per-file gate.
+        //
+        // Flushed before the snapshot, not merely before the eventual write: a LATER flush —
+        // GetFileContent's own, for instance, racing in while the diff panel is open — would
+        // otherwise bump the mtime between this capture and the under-lock recheck, making the
+        // plugin's own read look like someone else's edit. Only "Write" needs this: "Edit"
+        // (applyEdit) already verifies oldString matches the file's exact current content, under
+        // the lock, which is a stronger check than a snapshot.
+        if ("Write".equals(toolName)) {
+            RefactoringProvider.FlushResult preFlush
+                                            = RefactoringProvider.flushUnsavedEditorChanges(FileUtils.resolveByPath(filePath));
+            if (preFlush.error() != null) {
+                McpHookServerUtil.sendJson(ex, 200, McpHookServerUtil.hookDeny(preFlush.error()));
+                return;
+            }
         }
-        sessionHookLock.lock();
+        FileUtils.FileSnapshot approvedWriteSnapshot = "Write".equals(toolName)
+                                                       ? FileUtils.FileSnapshot.capture(filePath) : null;
+        CompletableFuture<PermissionDecision> future = new CompletableFuture<>();
+        procListener.onAiProcessEvent(
+                new PermissionEvent(toolName, filePath, oldString, newString, writeContent, replaceAll, future));
+
+        PermissionDecision decision;
         try {
-            CompletableFuture<PermissionDecision> future = new CompletableFuture<>();
-            procListener.onAiProcessEvent(
-                    new PermissionEvent(toolName, filePath, oldString, newString, writeContent, replaceAll, future));
-
-            PermissionDecision decision;
-            try {
-                decision = future.get(TimeoutEnum.USER_APPROVAL_WAIT_MILLIS.millis(), TimeUnit.MILLISECONDS);
-            } catch (TimeoutException e) {
-                LOG.log(Level.WARNING, "Permission request timed out for: {0}", filePath);
-                // Distinct from a genuine rejection: the user simply never acted on the
-                // diff panel in time. Say so and mark it retryable — a real rejection ends
-                // with "do not retry this change", which would be wrong advice here.
-                decision = PermissionDecision.denied(
-                        "Timed out waiting for the user to review this change in the diff panel — "
-                        + "the user did not respond in time. You may retry.");
-            } catch (InterruptedException e) {
-                Thread.currentThread().interrupt();
-                decision = PermissionDecision.denied(null);
-            } catch (Exception e) {
-                Exceptions.printStackTrace(e);
-                decision = PermissionDecision.denied(null);
-            }
-            if (decision != null && decision.allow()) {
-                String applyResult = "Write".equals(toolName)
-                        ? RefactoringProvider.writeFileContent(filePath, writeContent)
-                        : RefactoringProvider.applyEdit(filePath, oldString, newString, replaceAll);
-                McpHookServerUtil.logToolUse(session.getSessionName(), toolName, input);
-                String allowedResponse = McpHookServerUtil.hookDeny(
-                        McpHookServerUtil.APPLIED_BY_PLUGIN_PREFIX + ": " + applyResult);
-                if (PluginSettings.isDebugJson()) {
-                    LOG.log(Level.INFO, "Hook response (applied): {0}", allowedResponse);
-                }
-                McpHookServerUtil.sendJson(ex, 200, allowedResponse);
-            } else {
-                String deniedResponse = McpHookServerUtil.hookDeny(
-                        decision != null
-                                ? decision.effectiveDenyMessage("User rejected - do not retry this change")
-                                : "User rejected - do not retry this change");
-                if (PluginSettings.isDebugJson()) {
-                    LOG.log(Level.INFO, "Hook response (denied): {0}", deniedResponse);
-                }
-                McpHookServerUtil.sendJson(ex, 200, deniedResponse);
-            }
-        } finally {
-            sessionHookLock.unlock();
-            lockManager.releaseFileLock(sessionId, filePath);
+            decision = future.get(TimeoutEnum.USER_APPROVAL_WAIT_MILLIS.millis(), TimeUnit.MILLISECONDS);
         }
+        catch (TimeoutException e) {
+            LOG.log(Level.WARNING, "Permission request timed out for: {0}", filePath);
+            // Distinct from a genuine rejection: the user simply never acted on the
+            // diff panel in time. Say so and mark it retryable — a real rejection ends
+            // with "do not retry this change", which would be wrong advice here.
+            decision = PermissionDecision.denied(
+                    "Timed out waiting for the user to review this change in the diff panel — "
+                    + "the user did not respond in time. You may retry.");
+        }
+        catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            decision = PermissionDecision.denied(null);
+        }
+        catch (Exception e) {
+            Exceptions.printStackTrace(e);
+            decision = PermissionDecision.denied(null);
+        }
+        if (decision != null && decision.allow()) {
+            sessionHookLock.lock();
+            String applyResult;
+            try {
+                applyResult = McpToolInvoker.withFileMutation(sessionId, Set.of(filePath),
+                        () -> "Write".equals(toolName)
+                              ? writeFileContentAfterRecheck(filePath, writeContent, approvedWriteSnapshot)
+                              : RefactoringProvider.applyEdit(filePath, oldString, newString, replaceAll));
+            }
+            finally {
+                sessionHookLock.unlock();
+            }
+            McpHookServerUtil.logToolUse(session.getSessionName(), toolName, input);
+            String allowedResponse = McpHookServerUtil.hookDeny(
+                    McpHookServerUtil.APPLIED_BY_PLUGIN_PREFIX + ": " + applyResult);
+            if (PluginSettings.isDebugJson()) {
+                LOG.log(Level.INFO, "Hook response (applied): {0}", allowedResponse);
+            }
+            McpHookServerUtil.sendJson(ex, 200, allowedResponse);
+        }
+        else {
+            String deniedResponse = McpHookServerUtil.hookDeny(
+                    decision != null
+                    ? decision.effectiveDenyMessage("User rejected - do not retry this change")
+                    : "User rejected - do not retry this change");
+            if (PluginSettings.isDebugJson()) {
+                LOG.log(Level.INFO, "Hook response (denied): {0}", deniedResponse);
+            }
+            McpHookServerUtil.sendJson(ex, 200, deniedResponse);
+        }
+    }
+
+    /**
+     * Native hook counterpart of {@code WriteFileTool}'s own recheck: {@code approved}, captured right after
+     * the pre-diff flush, must still match once the lock is actually held, or the write is refused rather
+     * than silently overwriting a change made while the diff panel was open.
+     */
+    private static String writeFileContentAfterRecheck(String filePath, String content, FileUtils.FileSnapshot approved) {
+        if (approved != null && !approved.matches(filePath)) {
+            return "Refused: " + filePath + " changed while the diff was open; re-read and retry.";
+        }
+        return RefactoringProvider.writeFileContent(filePath, content);
     }
 
     private static boolean steeringIsActive(AbstractAiSession session) {
         return session.getSettings().effectiveMcpSteering()
-                && session.getType().mcpSteeringSupport().supported();
+               && session.getType().mcpSteeringSupport().supported();
     }
 
     static boolean isSteeredClaudeNativeTool(String toolName) {
@@ -803,7 +837,8 @@ public class McpHookServer {
             JsonObject req;
             try {
                 req = McpHookServerUtil.GSON.fromJson(body, JsonObject.class);
-            } catch (JsonSyntaxException e) {
+            }
+            catch (JsonSyntaxException e) {
                 McpHookServerUtil.sendJson(ex, 400, "{\"error\":\"bad json\"}");
                 return;
             }
@@ -824,11 +859,11 @@ public class McpHookServer {
             JsonElement id = req.get(idKey);
             JsonElement methodEl = req.has(methodKey) ? req.get(methodKey) : null;
             String rpcMethod = (methodEl != null && !methodEl.isJsonNull() && methodEl.isJsonPrimitive())
-                    ? methodEl.getAsString() : "";
+                               ? methodEl.getAsString() : "";
 
             String path = ex.getRequestURI().getPath();
             String aiTypeKey = path != null && path.startsWith("/mcp/")
-                    ? path.substring("/mcp/".length()) : null;
+                               ? path.substring("/mcp/".length()) : null;
             AiTypeEnum aiType = aiTypeKey != null ? AiTypeEnum.fromKey(aiTypeKey) : null;
 
             JsonObject params = McpHookServerUtil.obj(req, McpProtocolKeyEnum.PARAMS.key());
@@ -853,9 +888,9 @@ public class McpHookServer {
                 }
                 case "tools/list" -> {
                     Map<McpToolEnum, McpToolInterface> handlers
-                            = aiType != null ? McpInstructionRegistry.getHandlers(aiType) : Map.of();
+                                                       = aiType != null ? McpInstructionRegistry.getHandlers(aiType) : Map.of();
                     Set<McpInstructionOptionEnum> toolOptions
-                            = aiType != null ? aiType.getMcpOptions() : Set.of();
+                                                  = aiType != null ? aiType.getMcpOptions() : Set.of();
                     JsonObject result = new JsonObject();
                     JsonArray tools = new JsonArray();
                     for (McpToolInterface h : handlers.values()) {
@@ -922,16 +957,18 @@ public class McpHookServer {
                     McpHookServerUtil.sendJson(ex, 200,
                             McpHookServerUtil.mcpError(id, -32601, "Method not found: " + rpcMethod));
             }
-        } finally {
+        }
+        finally {
             try {
                 ex.close();
-            } catch (Exception ignored) {
+            }
+            catch (Exception ignored) {
             }
         }
     }
 
     private void handleMcpToolCall(HttpExchange ex, JsonObject req, JsonElement id,
-            AbstractAiSession session, Map<String, Integer> duplicateCounts) throws IOException {
+                                   AbstractAiSession session, Map<String, Integer> duplicateCounts) throws IOException {
         JsonObject params = McpHookServerUtil.obj(req, McpProtocolKeyEnum.PARAMS.key());
         String toolName = McpHookServerUtil.str(params, McpProtocolKeyEnum.NAME.key());
         JsonObject argsObj = McpHookServerUtil.obj(params, McpProtocolKeyEnum.ARGUMENTS.key());
@@ -952,15 +989,19 @@ public class McpHookServer {
             // McpToolInvoker logs the call — see the note there on why it moved.
             String result = McpToolInvoker.invoke(tool, handler, argsObj, session, duplicateCounts);
             McpHookServerUtil.sendJson(ex, 200, McpHookServerUtil.mcpTextResult(id, result));
-        } catch (McpArgumentException e) {
+        }
+        catch (McpArgumentException e) {
             McpHookServerUtil.sendJson(ex, 200,
                     McpHookServerUtil.mcpError(id, e.getCode(), e.getMessage()));
-        } catch (IOException e) {
+        }
+        catch (IOException e) {
             throw e;
-        } catch (Exception e) {
+        }
+        catch (Exception e) {
             if (PluginSettings.isLogToolUse()) {
                 Exceptions.printStackTrace(e);
-            } else {
+            }
+            else {
                 LOG.log(Level.FINE, "Tool failure: " + toolName, e);
             }
             McpHookServerUtil.sendJson(ex, 200,

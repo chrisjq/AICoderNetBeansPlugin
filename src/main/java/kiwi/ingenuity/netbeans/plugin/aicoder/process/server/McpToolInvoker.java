@@ -10,13 +10,16 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.TimeUnit;
-import java.util.concurrent.locks.ReentrantLock;
+import java.util.concurrent.atomic.AtomicReference;
+import java.util.concurrent.locks.ReentrantReadWriteLock;
+import javax.swing.SwingUtilities;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.McpArgumentException;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.McpSectionEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.McpToolEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.McpToolPropertyEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.locking.LockManager;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.locking.LockTypeEnum;
+import kiwi.ingenuity.netbeans.plugin.aicoder.process.locking.ResourceLock;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.locking.ToolLockRegistry;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.session.AbstractAiSession;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.TimeoutEnum;
@@ -31,10 +34,15 @@ import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.git.GitAccessGua
  */
 public final class McpToolInvoker {
 
-    private static final ReentrantLock MUTATION_LOCK = new ReentrantLock(true);
+    /**
+     * Fair gate between whole-workspace refactorings and short file writes. File mutations take the shared
+     * side only while RefactoringProvider performs the actual write; prompts deliberately happen before this
+     * gate, so a waiting user never blocks unrelated work.
+     */
+    private static final ReentrantReadWriteLock MUTATION_GATE = new ReentrantReadWriteLock(true);
 
     public static String invoke(McpToolEnum tool, McpToolInterface handler,
-            JsonObject argsObj, AbstractAiSession session) throws McpArgumentException {
+                                JsonObject argsObj, AbstractAiSession session) throws McpArgumentException {
         return invoke(tool, handler, argsObj, session, Map.of());
     }
 
@@ -43,7 +51,7 @@ public final class McpToolInvoker {
      * was read.
      */
     public static String invoke(McpToolEnum tool, McpToolInterface handler,
-            JsonObject argsObj, AbstractAiSession session, Map<String, Integer> duplicateCounts)
+                                JsonObject argsObj, AbstractAiSession session, Map<String, Integer> duplicateCounts)
             throws McpArgumentException {
         // Logged here rather than at the HTTP entry point so in-process callers
         // are covered too: Ollama reaches tools through OllamaMcpBridge, so its
@@ -81,10 +89,15 @@ public final class McpToolInvoker {
             if (!handler.requiresGlobalMutationLock()) {
                 return safe(handler.handle(new ToolRequestArguments(argsObj), session));
             }
+            if (SwingUtilities.isEventDispatchThread()) {
+                return "Error: mutation lock cannot wait on the EDT.";
+            }
             boolean mutLockAcquired;
             try {
-                mutLockAcquired = MUTATION_LOCK.tryLock(TimeoutEnum.MUTATION_LOCK_WAIT_MILLIS, TimeUnit.MILLISECONDS);
-            } catch (InterruptedException ie) {
+                mutLockAcquired = MUTATION_GATE.writeLock().tryLock(
+                        TimeoutEnum.MUTATION_LOCK_WAIT_MILLIS, TimeUnit.MILLISECONDS);
+            }
+            catch (InterruptedException ie) {
                 Thread.currentThread().interrupt();
                 mutLockAcquired = false;
             }
@@ -93,10 +106,12 @@ public final class McpToolInvoker {
             }
             try {
                 return safe(handler.handle(new ToolRequestArguments(argsObj), session));
-            } finally {
-                MUTATION_LOCK.unlock();
             }
-        } finally {
+            finally {
+                MUTATION_GATE.writeLock().unlock();
+            }
+        }
+        finally {
             if (lockAcquired && requiredLock != null) {
                 lockManager.releaseLock(session.getId(), requiredLock);
             }
@@ -109,13 +124,13 @@ public final class McpToolInvoker {
      * omitting them from their model-facing schema.
      */
     private static void validateArguments(McpToolEnum tool, McpToolInterface handler,
-            JsonObject argsObj, Map<String, Integer> duplicateCounts) throws McpArgumentException {
+                                          JsonObject argsObj, Map<String, Integer> duplicateCounts) throws McpArgumentException {
         JsonObject schema = handler.schema(Set.of());
         JsonObject input = schema.getAsJsonObject(ToolSchemaKeyEnum.INPUT_SCHEMA.key());
         JsonObject properties = input == null ? null
-                : input.getAsJsonObject(ToolSchemaKeyEnum.PROPERTIES.key());
+                                : input.getAsJsonObject(ToolSchemaKeyEnum.PROPERTIES.key());
         JsonArray required = input == null ? null
-                : input.getAsJsonArray(ToolSchemaKeyEnum.REQUIRED.key());
+                             : input.getAsJsonArray(ToolSchemaKeyEnum.REQUIRED.key());
         Set<String> accepted = new LinkedHashSet<>();
         if (properties != null) {
             accepted.addAll(properties.keySet());
@@ -133,8 +148,8 @@ public final class McpToolInvoker {
                 .filter(key -> !accepted.contains(key)).toList();
         if (!unknown.isEmpty()) {
             errors.add("Unknown parameter" + (unknown.size() == 1 ? " '" + unknown.get(0) + "'" : "s "
-                    + String.join(", ", unknown)) + " for " + tool.toolName()
-                    + ". Accepted parameters: " + String.join(", ", accepted) + ".");
+                                                                                                  + String.join(", ", unknown)) + " for " + tool.toolName()
+                       + ". Accepted parameters: " + String.join(", ", accepted) + ".");
         }
 
         List<String> missing = new ArrayList<>();
@@ -155,11 +170,11 @@ public final class McpToolInvoker {
             // telling it what to do next is not. The malformed-tool-call recovery in
             // OllamaAiProcessManager already ends with "call the tool again" for the same reason.
             errors.add(tool.toolName() + " was NOT called — "
-                    + (missing.size() == 1
-                    ? "you left out the required parameter \"" + missing.get(0) + "\""
-                    : "you left out these required parameters: " + String.join(", ", missing))
-                    + ". Call " + tool.toolName()
-                    + " again with every required parameter set. Nothing ran, so no work was lost.");
+                       + (missing.size() == 1
+                          ? "you left out the required parameter \"" + missing.get(0) + "\""
+                          : "you left out these required parameters: " + String.join(", ", missing))
+                       + ". Call " + tool.toolName()
+                       + " again with every required parameter set. Nothing ran, so no work was lost.");
         }
         if (!errors.isEmpty()) {
             throw new McpArgumentException(-32602, String.join("\n", errors));
@@ -204,12 +219,12 @@ public final class McpToolInvoker {
         String sessionId = session == null ? null : session.getId();
         String projectPath = McpHookServerUtil.str(argsObj, McpToolPropertyEnum.PROJECT_PATH.key());
         if (projectPath != null && !projectPath.isBlank()
-                && !McpHookServer.isProjectFileAllowed(server, sessionId, projectPath)) {
+            && !McpHookServer.isProjectFileAllowed(server, sessionId, projectPath)) {
             return McpHookServer.fileAccessDeniedMessage(server, sessionId, projectPath);
         }
         String file = McpHookServerUtil.str(argsObj, McpToolPropertyEnum.FILE.key());
         if (file != null && !file.isBlank() && new File(file).isAbsolute()
-                && !McpHookServer.isProjectFileAllowed(server, sessionId, file)) {
+            && !McpHookServer.isProjectFileAllowed(server, sessionId, file)) {
             return McpHookServer.fileAccessDeniedMessage(server, sessionId, file);
         }
         return null;
@@ -226,15 +241,15 @@ public final class McpToolInvoker {
     static String lockedMessage(LockTypeEnum lockType, String holder, String toolName) {
         TimeoutEnum wait = lockType.getWaitTimeout();
         String waited = wait.millis() > 0
-                ? "already waited " + wait.millis() / 1000 + "s (" + wait.name() + ") for this lock and lost"
-                : "lost this lock immediately (no waiting is configured: " + wait.name() + " is 0)";
+                        ? "already waited " + wait.millis() / 1000 + "s (" + wait.name() + ") for this lock and lost"
+                        : "lost this lock immediately (no waiting is configured: " + wait.name() + " is 0)";
         return "Resource locked by session "
-                + (holder != null ? holder : "another operation")
-                + " performing " + lockType.getDescription()
-                + ". Tool: " + toolName + " " + waited
-                + ", and the holder is still active — an immediate retry will probably fail again."
-                + " Do not sleep and retry in a loop: do other work and come back to this later,"
-                + " or report the contention to the user.";
+               + (holder != null ? holder : "another operation")
+               + " performing " + lockType.getDescription()
+               + ". Tool: " + toolName + " " + waited
+               + ", and the holder is still active — an immediate retry will probably fail again."
+               + " Do not sleep and retry in a loop: do other work and come back to this later,"
+               + " or report the contention to the user.";
     }
 
     /**
@@ -247,13 +262,169 @@ public final class McpToolInvoker {
      */
     static String mutationLockTimeoutMessage() {
         return "Error: mutation lock timeout — another operation held the mutation"
-                + " lock through the full "
-                + TimeoutEnum.MUTATION_LOCK_WAIT_MILLIS / 1000 + "s wait"
-                + " (MUTATION_LOCK_WAIT_MILLIS). Please try again.";
+               + " lock through the full "
+               + TimeoutEnum.MUTATION_LOCK_WAIT_MILLIS / 1000 + "s wait"
+               + " (MUTATION_LOCK_WAIT_MILLIS). Please try again.";
     }
 
     private static String safe(String s) {
         return s == null ? "" : s;
+    }
+
+    /**
+     * Maps a normalised lock key back to the caller's own spelling, for messages: the key may be case-folded
+     * (case-insensitive-volume handling), so echoing it back to the AI on refusal would show a path that
+     * differs from the one it actually passed. Falls back to the key itself if, somehow, none of the original
+     * paths normalise to it.
+     */
+    private static String originalPathFor(LockManager lockManager, java.util.Collection<String> paths, String normalisedKey) {
+        for (String original : paths) {
+            if (lockManager.normalisePaths(Set.of(original)).iterator().next().equals(normalisedKey)) {
+                return original;
+            }
+        }
+        return normalisedKey;
+    }
+
+    /**
+     * Runs a real file mutation under the shared side of the mutation gate and the per-file locks. Callers
+     * must invoke this only after every confirmation/diff prompt has completed. Paths are sorted and
+     * normalised by LockManager, avoiding A→B/B→A deadlocks for moves and copies.
+     */
+    public static String withFileMutation(String sessionId, java.util.Collection<String> paths,
+                                          java.util.function.Supplier<String> action) {
+        if (SwingUtilities.isEventDispatchThread()) {
+            return "Error: mutation lock cannot wait on the EDT.";
+        }
+        boolean gateAcquired;
+        try {
+            gateAcquired = MUTATION_GATE.readLock().tryLock(
+                    TimeoutEnum.MUTATION_LOCK_WAIT_MILLIS, TimeUnit.MILLISECONDS);
+        }
+        catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            gateAcquired = false;
+        }
+        if (!gateAcquired) {
+            return mutationLockTimeoutMessage();
+        }
+        LockManager lockManager = LockManager.getInstance();
+        Set<String> normalised = lockManager.normalisePaths(paths);
+        AtomicReference<String> contendedPath = new AtomicReference<>();
+        try {
+            if (!lockManager.acquireFileLocks(sessionId, normalised, contendedPath)) {
+                String path = contendedPath.get() != null ? contendedPath.get() : normalised.iterator().next();
+                if (lockManager.isPathBlockedByReadersOnly(path)) {
+                    return "File is locked: reads of " + originalPathFor(lockManager, paths, path)
+                           + " were in progress; retry shortly.";
+                }
+                return LockManager.fileLockedMessage(lockManager.getFileLockHolder(path));
+            }
+            try {
+                return safe(action.get());
+            }
+            finally {
+                for (String path : normalised) {
+                    lockManager.releaseFileLock(sessionId, path);
+                }
+            }
+        }
+        finally {
+            MUTATION_GATE.readLock().unlock();
+        }
+    }
+
+    /**
+     * Serializes a read only with an in-flight WRITE of the same file — never with another read, which may
+     * run concurrently alongside it. Deliberately does not enter the shared mutation gate either: reads must
+     * remain available while an unrelated refactoring is exclusive.
+     */
+    public static String withFileRead(String sessionId, java.util.Collection<String> paths,
+                                      java.util.function.Supplier<String> action) {
+        LockManager lockManager = LockManager.getInstance();
+        AtomicReference<String> contendedPath = new AtomicReference<>();
+        ResourceLock lock = lockManager.acquireFileReadLocks(sessionId, paths, contendedPath);
+        if (lock == null) {
+            String path = contendedPath.get() != null
+                          ? contendedPath.get() : lockManager.normalisePaths(paths).iterator().next();
+            return LockManager.fileLockedMessage(lockManager.getFileLockHolder(path));
+        }
+        try {
+            return safe(action.get());
+        }
+        finally {
+            lockManager.releaseFileReadLock(sessionId, lock);
+        }
+    }
+
+    /**
+     * Runs a refactoring exclusively after any confirmation has completed.
+     */
+    public static String withExclusiveMutation(java.util.function.Supplier<String> action) {
+        if (SwingUtilities.isEventDispatchThread()) {
+            return "Error: mutation lock cannot wait on the EDT.";
+        }
+        boolean acquired;
+        try {
+            acquired = MUTATION_GATE.writeLock().tryLock(
+                    TimeoutEnum.MUTATION_LOCK_WAIT_MILLIS, TimeUnit.MILLISECONDS);
+        }
+        catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            acquired = false;
+        }
+        if (!acquired) {
+            return mutationLockTimeoutMessage();
+        }
+        try {
+            return safe(action.get());
+        }
+        finally {
+            MUTATION_GATE.writeLock().unlock();
+        }
+    }
+
+    /**
+     * Runs an empty-directory operation under the shared mutation side and its path lock.
+     */
+    public static String withDirectoryMutation(String sessionId, String path,
+                                               java.util.function.Supplier<String> action) {
+        if (SwingUtilities.isEventDispatchThread()) {
+            return "Error: mutation lock cannot wait on the EDT.";
+        }
+        boolean gateAcquired;
+        try {
+            gateAcquired = MUTATION_GATE.readLock().tryLock(
+                    TimeoutEnum.MUTATION_LOCK_WAIT_MILLIS, TimeUnit.MILLISECONDS);
+        }
+        catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            gateAcquired = false;
+        }
+        if (!gateAcquired) {
+            return mutationLockTimeoutMessage();
+        }
+        LockManager lockManager = LockManager.getInstance();
+        String normalised = lockManager.normalisePaths(Set.of(path)).iterator().next();
+        try {
+            // acquireDirectoryLock normalises internally too (defensively, for any other
+            // caller); passing an already-normalised path here is a harmless no-op repeat.
+            if (!lockManager.acquireDirectoryLock(sessionId, normalised)) {
+                if (lockManager.isDirectoryBlockedByReadersOnly(normalised)) {
+                    return "Directory is locked: reads under " + path + " were in progress; retry shortly.";
+                }
+                return LockManager.fileLockedMessage(lockManager.getFileLockHolder(normalised));
+            }
+            try {
+                return safe(action.get());
+            }
+            finally {
+                lockManager.releaseFileLock(sessionId, normalised);
+            }
+        }
+        finally {
+            MUTATION_GATE.readLock().unlock();
+        }
     }
 
     public static String duplicateParametersMessage(String toolName, Map<String, Integer> duplicateCounts) {
@@ -268,7 +439,7 @@ public final class McpToolInvoker {
             return "";
         }
         return "Duplicate parameters for " + toolName + ": " + duplicates
-                + ". Each parameter may be given once.";
+               + ". Each parameter may be given once.";
     }
 
     private McpToolInvoker() {

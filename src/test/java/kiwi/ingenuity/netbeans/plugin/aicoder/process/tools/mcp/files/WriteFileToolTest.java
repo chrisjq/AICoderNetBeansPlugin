@@ -1,11 +1,17 @@
 package kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.files;
 
 import com.google.gson.JsonObject;
+import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
 import kiwi.ingenuity.netbeans.plugin.aicoder.PluginUtil;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.AiTypeEnum;
@@ -23,7 +29,9 @@ import kiwi.ingenuity.netbeans.plugin.aicoder.process.server.McpServerRegistry;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.session.AbstractAiSession;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.McpToolInterface;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.ToolRequestArguments;
+import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.system.GetFileContentTool;
 import org.junit.jupiter.api.AfterEach;
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -59,7 +67,7 @@ class WriteFileToolTest {
     }
 
     @Test
-    void handle_fileAlreadyLockedByAnotherSession_rejectsWithoutFiringPermissionEvent() {
+    void handle_fileAlreadyLockedByAnotherSession_showsPromptBeforeShortWriteLock() {
         String filePath = uniqueFile();
         LockManager lockManager = LockManager.getInstance();
         assertTrue(lockManager.acquireFileLock("otherSession", filePath));
@@ -70,8 +78,8 @@ class WriteFileToolTest {
 
             String result = tool.handle(args(filePath, "hello"), session);
 
-            assertTrue(result.toLowerCase().contains("locked"), "expected a 'locked' message, got: " + result);
-            assertTrue(listener.events.isEmpty(), "no PermissionEvent should be fired while the file is locked");
+            assertTrue(result.toLowerCase().contains("rejected"), "the listener's deliberate denial should win: " + result);
+            assertEquals(1, listener.events.size(), "the diff prompt must not be blocked by a pending short write lock");
         }
         finally {
             lockManager.releaseFileLock("otherSession", filePath);
@@ -117,6 +125,85 @@ class WriteFileToolTest {
         LockManager lockManager = LockManager.getInstance();
         assertTrue(lockManager.acquireFileLock("otherSession", filePath));
         lockManager.releaseFileLock("otherSession", filePath);
+    }
+
+    @Test
+    void fileChangedWhileDiffWasOpenIsRefusedUnderTheLock() throws Exception {
+        Path file = Files.writeString(Path.of(uniqueFile()), "original");
+        WriteFileTool tool = new WriteFileTool();
+        BlockingListener listener = new BlockingListener();
+        FakeSession session = new FakeSession("mySession", listener);
+        ExecutorService executor = Executors.newFixedThreadPool(2);
+        try {
+            Future<String> pending = executor.submit(() -> tool.handle(args(file.toString(), "new content"), session));
+            assertTrue(listener.shown.await(5, TimeUnit.SECONDS), "diff approval must be shown");
+
+            Files.writeString(file, "changed-while-diff-was-open");
+            listener.decision.complete(PermissionDecision.allowed());
+
+            String result = pending.get(5, TimeUnit.SECONDS);
+            assertTrue(result.contains("changed while the diff was open"), result);
+            assertEquals("changed-while-diff-was-open", Files.readString(file),
+                    "the change made during review must survive — the approved write must not overwrite it");
+        }
+        finally {
+            listener.decision.complete(PermissionDecision.denied("cleanup"));
+            executor.shutdownNow();
+            Files.deleteIfExists(file);
+        }
+    }
+
+    /**
+     * N1: GetFileContent's own flush must not make an unrelated, genuinely-unchanged write look like it
+     * changed. This environment has no live NetBeans editor document for an arbitrary temp file, so the flush
+     * GetFileContent performs is itself a no-op here — the assertion that matters is that routing a read
+     * through the exact path WriteFile's recheck depends on, while its diff is open, still lets the approved
+     * write through afterward.
+     */
+    @Test
+    void getFileContentReadWhileDiffIsOpenDoesNotCauseAFalseRefusal() throws Exception {
+        Path file = Files.writeString(Path.of(uniqueFile()), "original");
+        WriteFileTool tool = new WriteFileTool();
+        BlockingListener listener = new BlockingListener();
+        FakeSession session = new FakeSession("mySession", listener);
+        ExecutorService executor = Executors.newFixedThreadPool(2);
+        try {
+            Future<String> pending = executor.submit(() -> tool.handle(args(file.toString(), "updated"), session));
+            assertTrue(listener.shown.await(5, TimeUnit.SECONDS), "diff approval must be shown");
+
+            JsonObject readArgs = new JsonObject();
+            readArgs.addProperty("filePath", file.toString());
+            readArgs.addProperty("raw", true);
+            String readResult = new GetFileContentTool(McpServerRegistry.getServer()).handle(
+                    new ToolRequestArguments(readArgs), session);
+            assertEquals("original", readResult, "the read must see the pre-approval content");
+
+            listener.decision.complete(PermissionDecision.allowed());
+            String writeResult = pending.get(5, TimeUnit.SECONDS);
+            assertTrue(writeResult.toLowerCase().contains("saved"),
+                    "a read racing the diff must not cause a false 'changed' refusal: " + writeResult);
+            assertEquals("updated", Files.readString(file));
+        }
+        finally {
+            listener.decision.complete(PermissionDecision.denied("cleanup"));
+            executor.shutdownNow();
+            Files.deleteIfExists(file);
+        }
+    }
+
+    private static final class BlockingListener implements AiProcessEventListener {
+
+        final CountDownLatch shown = new CountDownLatch(1);
+        final CompletableFuture<PermissionDecision> decision = new CompletableFuture<>();
+
+        @Override
+        public void onAiProcessEvent(AiProcessEvent event) {
+            if (event instanceof PermissionEvent permission) {
+                shown.countDown();
+                decision.whenComplete((value, error) -> permission.response().complete(
+                        error == null && value != null ? value : PermissionDecision.denied("cleanup")));
+            }
+        }
     }
 
     private static final class NoopRegistrar extends AiMcpRegistrar {

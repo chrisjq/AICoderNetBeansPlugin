@@ -7,8 +7,8 @@ import kiwi.ingenuity.netbeans.plugin.aicoder.process.McpToolEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.McpToolInterface;
 
 /**
- * Registry mapping tools to their required locks. Primary source: @RequiresLock annotation on tool class. Fallback:
- * Hard-coded mappings for tools without annotation.
+ * Registry mapping tools to their required locks. Primary source: @RequiresLock annotation on tool class.
+ * Fallback: Hard-coded mappings for tools without annotation.
  */
 public class ToolLockRegistry implements Registry {
 
@@ -41,15 +41,8 @@ public class ToolLockRegistry implements Registry {
         FALLBACK_LOCKS.put(McpToolEnum.INLINE_VARIABLE, LockTypeEnum.REFACTOR_LOCK);
         FALLBACK_LOCKS.put(McpToolEnum.CHANGE_METHOD_SIGNATURE, LockTypeEnum.REFACTOR_LOCK);
 
-        // File write operations - FILE_WRITE_LOCK
-        FALLBACK_LOCKS.put(McpToolEnum.SAVE_FILE, LockTypeEnum.FILE_WRITE_LOCK);
-        FALLBACK_LOCKS.put(McpToolEnum.DELETE_FILE, LockTypeEnum.FILE_WRITE_LOCK);
-        FALLBACK_LOCKS.put(McpToolEnum.COPY_FILE, LockTypeEnum.FILE_WRITE_LOCK);
-        FALLBACK_LOCKS.put(McpToolEnum.MOVE_FILE, LockTypeEnum.FILE_WRITE_LOCK);
-        FALLBACK_LOCKS.put(McpToolEnum.FIX_IMPORTS, LockTypeEnum.FILE_WRITE_LOCK);
-        FALLBACK_LOCKS.put(McpToolEnum.ORGANISE_IMPORTS, LockTypeEnum.FILE_WRITE_LOCK);
-        FALLBACK_LOCKS.put(McpToolEnum.ORGANISE_MEMBERS, LockTypeEnum.FILE_WRITE_LOCK);
-        FALLBACK_LOCKS.put(McpToolEnum.REFORMAT_FILE, LockTypeEnum.FILE_WRITE_LOCK);
+        // Per-file tools acquire FileUtils-normalised locks around their actual write
+        // themselves. They must never hold a process-wide FILE_WRITE_LOCK across a prompt.
     }
 
     /**

@@ -2,16 +2,14 @@ package kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.ui.source;
 
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.McpSectionEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.McpToolEnum;
-import kiwi.ingenuity.netbeans.plugin.aicoder.process.locking.LockTypeEnum;
-import kiwi.ingenuity.netbeans.plugin.aicoder.process.locking.RequiresLock;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.server.McpHookServer;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.server.McpServerRegistry;
+import kiwi.ingenuity.netbeans.plugin.aicoder.process.server.McpToolInvoker;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.session.AbstractAiSession;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.AbstractFileTool;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.ToolRequestArguments;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.providers.netbeans.RefactoringProvider;
 
-@RequiresLock(LockTypeEnum.FILE_WRITE_LOCK)
 public class FixImportsTool extends AbstractFileTool {
 
     public FixImportsTool() {
@@ -20,6 +18,11 @@ public class FixImportsTool extends AbstractFileTool {
                 "Adds missing imports and removes unused ones in the user's IDE editor, then saves the file.",
                 "" + McpToolEnum.FIX_IMPORTS.toolName() + " -> INSTEAD OF manual import editing - removes unused and adds missing imports",
                 "" + McpToolEnum.FIX_IMPORTS.toolName() + " - removes unused and adds missing imports");
+    }
+
+    @Override
+    public boolean usesOwnFileLocking() {
+        return true;
     }
 
     @Override
@@ -32,6 +35,10 @@ public class FixImportsTool extends AbstractFileTool {
                 return McpHookServer.fileAccessDeniedMessage(server, sessionId, fp);
             }
         }
-        return RefactoringProvider.fixImports(fp);
+        if (fp == null || fp.isBlank()) {
+            return RefactoringProvider.fixImports(fp);
+        }
+        return McpToolInvoker.withFileMutation(session.getId(), java.util.Set.of(fp),
+                () -> RefactoringProvider.fixImports(fp));
     }
 }

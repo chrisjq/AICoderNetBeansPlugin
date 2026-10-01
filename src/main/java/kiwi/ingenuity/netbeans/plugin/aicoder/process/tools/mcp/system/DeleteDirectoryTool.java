@@ -8,9 +8,8 @@ import kiwi.ingenuity.netbeans.plugin.aicoder.ai.events.PermissionDecision;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.McpSectionEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.McpToolEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.events.AiProcessEventListener;
-import kiwi.ingenuity.netbeans.plugin.aicoder.process.locking.LockTypeEnum;
-import kiwi.ingenuity.netbeans.plugin.aicoder.process.locking.RequiresLock;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.server.McpHookServer;
+import kiwi.ingenuity.netbeans.plugin.aicoder.process.server.McpToolInvoker;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.session.AbstractAiSession;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.TimeoutEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.AbstractFileTool;
@@ -18,7 +17,6 @@ import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.ToolRequestArgum
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.providers.netbeans.RefactoringProvider;
 import kiwi.ingenuity.netbeans.plugin.aicoder.utils.ProjectPathUtil;
 
-@RequiresLock(LockTypeEnum.FILE_WRITE_LOCK)
 public class DeleteDirectoryTool extends AbstractFileTool {
 
     private final McpHookServer server;
@@ -36,6 +34,11 @@ public class DeleteDirectoryTool extends AbstractFileTool {
     }
 
     @Override
+    public boolean usesOwnFileLocking() {
+        return true;
+    }
+
+    @Override
     public String handle(ToolRequestArguments args, AbstractAiSession session) {
         String fp = args.str(DeleteDirectoryParamEnum.FILE_PATH.key());
         if (fp == null || fp.isBlank()) {
@@ -48,11 +51,13 @@ public class DeleteDirectoryTool extends AbstractFileTool {
             return McpHookServer.fileAccessDeniedMessage(server, sessionId, fp);
         }
         if (!new java.io.File(fp).exists()) {
-            return RefactoringProvider.deleteDirectory(fp);
+            return McpToolInvoker.withDirectoryMutation(session.getId(), fp,
+                    () -> RefactoringProvider.deleteDirectory(fp));
         }
         AiProcessEventListener listener = session.getAiProcessEventListener();
         if (listener == null) {
-            return RefactoringProvider.deleteDirectory(fp);
+            return McpToolInvoker.withDirectoryMutation(session.getId(), fp,
+                    () -> RefactoringProvider.deleteDirectory(fp));
         }
         CompletableFuture<PermissionDecision> future = new CompletableFuture<>();
         listener.onAiProcessEvent(new ConfirmEvent("Delete",
@@ -74,6 +79,7 @@ public class DeleteDirectoryTool extends AbstractFileTool {
         if (decision == null || !decision.allow()) {
             return "User declined the delete — do not retry without asking.";
         }
-        return RefactoringProvider.deleteDirectory(fp);
+        return McpToolInvoker.withDirectoryMutation(session.getId(), fp,
+                () -> RefactoringProvider.deleteDirectory(fp));
     }
 }

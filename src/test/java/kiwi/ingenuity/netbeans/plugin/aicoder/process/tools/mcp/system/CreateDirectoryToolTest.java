@@ -11,8 +11,6 @@ import static kiwi.ingenuity.netbeans.plugin.aicoder.ai.AiTypeEnum.CLAUDE;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.session.AiSession;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.McpToolEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.events.AiProcessEventListener;
-import kiwi.ingenuity.netbeans.plugin.aicoder.process.locking.LockTypeEnum;
-import kiwi.ingenuity.netbeans.plugin.aicoder.process.locking.RequiresLock;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.locking.ToolLockRegistry;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.server.McpHookServer;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.session.AbstractAiSession;
@@ -46,14 +44,12 @@ class CreateDirectoryToolTest {
     }
 
     @Test
-    void isMutatingAndRequiresFileWriteLock() {
+    void isMutatingWithOwnPerDirectoryLocking() {
         CreateDirectoryTool tool = new CreateDirectoryTool(unrestrictedServer());
 
-        assertTrue(tool.isMutating(), "CreateDirectory must stay under the global mutation lock");
-        RequiresLock annotation = tool.getClass().getAnnotation(RequiresLock.class);
-        assertNotNull(annotation, "CreateDirectoryTool must carry @RequiresLock");
-        assertEquals(LockTypeEnum.FILE_WRITE_LOCK, annotation.value());
-        assertEquals(LockTypeEnum.FILE_WRITE_LOCK, ToolLockRegistry.getLockType(McpToolEnum.CREATE_DIRECTORY, tool));
+        assertTrue(tool.isMutating());
+        assertTrue(tool.usesOwnFileLocking(), "directory mutation must avoid the global mutation lock");
+        assertEquals(null, ToolLockRegistry.getLockType(McpToolEnum.CREATE_DIRECTORY, tool));
     }
 
     @Test

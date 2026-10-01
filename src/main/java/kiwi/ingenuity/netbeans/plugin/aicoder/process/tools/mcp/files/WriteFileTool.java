@@ -13,35 +13,39 @@ import kiwi.ingenuity.netbeans.plugin.aicoder.process.McpSectionEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.McpToolEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.McpToolPropertyEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.events.AiProcessEventListener;
-import kiwi.ingenuity.netbeans.plugin.aicoder.process.locking.LockManager;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.server.McpHookServer;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.server.McpServerRegistry;
+import kiwi.ingenuity.netbeans.plugin.aicoder.process.server.McpToolInvoker;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.session.AbstractAiSession;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.TimeoutEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.AbstractActionTool;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.McpToolSchemas;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.ToolRequestArguments;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.ToolSchemaKeyEnum;
+import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.providers.netbeans.FileUtils;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.providers.netbeans.RefactoringProvider;
 
 /**
  * Writes full file content (creating or overwriting), routed through the NetBeans Accept/Reject diff panel
- * (PermissionEvent) before applying. Used so GitHub Copilot file creation goes through the review UX — Copilot's native
- * {@code create} tool is excluded via {@code GithubCopilotProcessManager.EXCLUDED_NATIVE_TOOLS}, so this is the only
- * route its file creation can take.
+ * (PermissionEvent) before applying. Used so GitHub Copilot file creation goes through the review UX —
+ * Copilot's native {@code create} tool is excluded via
+ * {@code GithubCopilotProcessManager.EXCLUDED_NATIVE_TOOLS}, so this is the only route its file creation can
+ * take.
  *
  * <p>
- * Locks the target file (not a global lock — see usesOwnFileLocking()) from before the diff is shown through the user's
- * decision and the write, so the file can't change underneath a pending decision. A different file being edited
- * concurrently is unaffected.
+ * Locks the target file (not a global lock — see usesOwnFileLocking()) only around the write itself, after
+ * the user's Accept/Reject decision has already been made — never while the diff panel is open. A snapshot of
+ * the target (existence, size, modified time), taken right after flushing any pending editor change, is
+ * rechecked under the lock, so a change made while the diff was open is refused rather than silently
+ * overwritten. A different file being edited concurrently is unaffected.
  */
 public class WriteFileTool extends AbstractActionTool {
 
     public WriteFileTool() {
         super(McpSectionEnum.UI_FILES,
-              McpToolEnum.WRITE_FILE.toolName(),
-              "Create or overwrite a file with the given content. The user approves the change in the NetBeans Accept/Reject diff panel before it is applied.",
-              McpToolEnum.WRITE_FILE.toolName() + " -> create/overwrite a file with content; user approves via the NetBeans diff panel");
+                McpToolEnum.WRITE_FILE.toolName(),
+                "Create or overwrite a file with the given content. The user approves the change in the NetBeans Accept/Reject diff panel before it is applied.",
+                McpToolEnum.WRITE_FILE.toolName() + " -> create/overwrite a file with content; user approves via the NetBeans diff panel");
     }
 
     @Override
@@ -97,45 +101,58 @@ public class WriteFileTool extends AbstractActionTool {
         // policy choice. Consistent with the built-in Write hook. Checked before the
         // project-scope gate so it works even for a restrict-to-project session.
         if (server.isOwnSessionConfigFile(session.getId(), filePath)) {
-            return RefactoringProvider.writeFileContent(filePath, content);
+            return McpToolInvoker.withFileMutation(session.getId(), Set.of(filePath),
+                    () -> RefactoringProvider.writeFileContent(filePath, content));
         }
         if (!McpHookServer.isProjectFileAllowed(server, session.getId(), filePath)) {
             return McpHookServer.fileAccessDeniedMessage(server, session.getId(), filePath);
         }
-        LockManager lockManager = LockManager.getInstance();
-        if (!lockManager.acquireFileLock(session.getId(), filePath)) {
-            return LockManager.fileLockedMessage(lockManager.getFileLockHolder(filePath));
+        AiProcessEventListener listener = session.getAiProcessEventListener();
+        if (listener == null) {
+            return McpToolInvoker.withFileMutation(session.getId(), Set.of(filePath),
+                    () -> RefactoringProvider.writeFileContent(filePath, content));
         }
+        // Flushed before the snapshot, not merely before the eventual write: a LATER flush —
+        // GetFileContent's own, for instance, racing in while the diff panel is open — would
+        // otherwise bump the mtime between this capture and the under-lock recheck, making the
+        // plugin's own read look like someone else's edit. Flushing first makes this capture
+        // already the post-flush state, so a later flush of the same file is a no-op that
+        // changes nothing.
+        RefactoringProvider.FlushResult preFlush
+                                        = RefactoringProvider.flushUnsavedEditorChanges(FileUtils.resolveByPath(filePath));
+        if (preFlush.error() != null) {
+            return preFlush.error();
+        }
+        FileUtils.FileSnapshot approved = FileUtils.FileSnapshot.capture(filePath);
+        CompletableFuture<PermissionDecision> future = new CompletableFuture<>();
+        listener.onAiProcessEvent(new PermissionEvent("Write", filePath, null, null, content, future));
+        PermissionDecision decision;
         try {
-            AiProcessEventListener listener = session.getAiProcessEventListener();
-            if (listener == null) {
-                return RefactoringProvider.writeFileContent(filePath, content);
-            }
-            CompletableFuture<PermissionDecision> future = new CompletableFuture<>();
-            listener.onAiProcessEvent(new PermissionEvent("Write", filePath, null, null, content, future));
-            PermissionDecision decision;
-            try {
-                decision = future.get(TimeoutEnum.USER_APPROVAL_WAIT_MILLIS.millis(), TimeUnit.MILLISECONDS);
-            }
-            catch (TimeoutException e) {
-                // A timeout is not a rejection — the user simply never acted on the diff
-                // panel. Return a distinct, retryable message (a real rejection below ends
-                // with "do not retry this change").
-                return "Timed out waiting for the user to review this change in the diff panel — "
-                        + "the user did not respond in time. You may retry.";
-            }
-            catch (Exception e) {
-                decision = PermissionDecision.denied(null);
-            }
-            if (decision == null || !decision.allow()) {
-                return decision != null && decision.message() != null && !decision.message().isBlank()
-                       ? "User rejected the write: " + decision.message().trim() + " — do not retry this change"
-                       : "User rejected the write — do not retry this change";
-            }
-            return RefactoringProvider.writeFileContent(filePath, content);
+            decision = future.get(TimeoutEnum.USER_APPROVAL_WAIT_MILLIS.millis(), TimeUnit.MILLISECONDS);
         }
-        finally {
-            lockManager.releaseFileLock(session.getId(), filePath);
+        catch (TimeoutException e) {
+            // A timeout is not a rejection — the user simply never acted on the diff
+            // panel. Return a distinct, retryable message (a real rejection below ends
+            // with "do not retry this change").
+            return "Timed out waiting for the user to review this change in the diff panel — "
+                   + "the user did not respond in time. You may retry.";
         }
+        catch (Exception e) {
+            decision = PermissionDecision.denied(null);
+        }
+        if (decision == null || !decision.allow()) {
+            return decision != null && decision.message() != null && !decision.message().isBlank()
+                   ? "User rejected the write: " + decision.message().trim() + " — do not retry this change"
+                   : "User rejected the write — do not retry this change";
+        }
+        return McpToolInvoker.withFileMutation(session.getId(), Set.of(filePath),
+                () -> writeFileContentAfterRecheck(filePath, content, approved));
+    }
+
+    private static String writeFileContentAfterRecheck(String filePath, String content, FileUtils.FileSnapshot approved) {
+        if (!approved.matches(filePath)) {
+            return "Refused: " + filePath + " changed while the diff was open; re-read and retry.";
+        }
+        return RefactoringProvider.writeFileContent(filePath, content);
     }
 }

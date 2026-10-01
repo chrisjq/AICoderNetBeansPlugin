@@ -99,6 +99,63 @@ class DeleteFileToolTest {
     }
 
     @Test
+    void fileReplacedDuringPromptIsRefusedUnderTheLock(@TempDir Path dir) throws Exception {
+        Path victim = Files.writeString(dir.resolve("doomed.txt"), "payload");
+        DeleteFileTool tool = new DeleteFileTool(unrestrictedServer());
+        StubSession session = new StubSession(SESSION_ID, PermissionDecision.allowed()) {
+            @Override
+            public AiProcessEventListener getAiProcessEventListener() {
+                return event -> {
+                    captured.add(event);
+                    if (event instanceof ConfirmEvent ce) {
+                        try {
+                            Files.writeString(victim, "changed-after-approval-xyz");
+                        }
+                        catch (java.io.IOException e) {
+                            throw new RuntimeException(e);
+                        }
+                        ce.response().complete(PermissionDecision.allowed());
+                    }
+                };
+            }
+        };
+
+        String result = tool.handle(args(victim.toString()), session);
+
+        assertTrue(result.contains("changed after approval"), result);
+        assertTrue(Files.exists(victim), "file must survive when it changed after approval");
+    }
+
+    @Test
+    void fileTurnedIntoDirectoryDuringPromptIsRefused(@TempDir Path dir) throws Exception {
+        Path victim = Files.writeString(dir.resolve("doomed.txt"), "payload");
+        DeleteFileTool tool = new DeleteFileTool(unrestrictedServer());
+        StubSession session = new StubSession(SESSION_ID, PermissionDecision.allowed()) {
+            @Override
+            public AiProcessEventListener getAiProcessEventListener() {
+                return event -> {
+                    captured.add(event);
+                    if (event instanceof ConfirmEvent ce) {
+                        try {
+                            Files.delete(victim);
+                            Files.createDirectory(victim);
+                        }
+                        catch (java.io.IOException e) {
+                            throw new RuntimeException(e);
+                        }
+                        ce.response().complete(PermissionDecision.allowed());
+                    }
+                };
+            }
+        };
+
+        String result = tool.handle(args(victim.toString()), session);
+
+        assertTrue(result.contains("is a directory"), result);
+        assertTrue(Files.isDirectory(victim), "must still be the directory the prompt turned it into");
+    }
+
+    @Test
     void refusesADirectoryWithoutConfirming(@TempDir Path dir) throws Exception {
         Path sub = Files.createDirectory(dir.resolve("sub"));
         Files.writeString(sub.resolve("keep.txt"), "payload");
@@ -123,7 +180,7 @@ class DeleteFileToolTest {
         assertTrue(session.captured.isEmpty(), "must not act at all without a path");
     }
 
-    private static final class StubSession extends AbstractAiSession {
+    private static class StubSession extends AbstractAiSession {
 
         final List<AiProcessEvent> captured = new ArrayList<>();
         private final String id;

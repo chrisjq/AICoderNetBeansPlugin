@@ -27,9 +27,9 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
 /**
- * AUDIT 3/6 — proves every CopyFileTool parameter is read and changes the operation: sourcePath selects the file to
- * copy, targetDirectory selects the destination, and newName renames the copy (base name without extension; blank
- * behaves as omitted). Also proves the ConfirmEvent gate stops a denied copy.
+ * AUDIT 3/6 — proves every CopyFileTool parameter is read and changes the operation: sourcePath selects the
+ * file to copy, targetDirectory selects the destination, and newName renames the copy (base name without
+ * extension; blank behaves as omitted). Also proves the ConfirmEvent gate stops a denied copy.
  */
 class CopyFileToolTest {
 
@@ -141,6 +141,65 @@ class CopyFileToolTest {
     }
 
     @Test
+    void sourceReplacedDuringPromptIsRefusedUnderTheLock(@TempDir Path dir) throws Exception {
+        Path source = Files.writeString(dir.resolve("orig.txt"), "payload");
+        Path targetDir = Files.createDirectory(dir.resolve("dest"));
+        CopyFileTool tool = new CopyFileTool(unrestrictedServer());
+        StubSession session = new StubSession(SESSION_ID, PermissionDecision.allowed()) {
+            @Override
+            public AiProcessEventListener getAiProcessEventListener() {
+                return event -> {
+                    captured.add(event);
+                    if (event instanceof ConfirmEvent ce) {
+                        try {
+                            Files.writeString(source, "changed-after-approval-xyz");
+                        }
+                        catch (java.io.IOException e) {
+                            throw new RuntimeException(e);
+                        }
+                        ce.response().complete(PermissionDecision.allowed());
+                    }
+                };
+            }
+        };
+
+        String result = tool.handle(args(source.toString(), targetDir.toString(), null), session);
+
+        assertTrue(result.contains("changed after approval"), result);
+        assertFalse(Files.exists(targetDir.resolve("orig.txt")), "no copy may appear when the source changed after approval");
+    }
+
+    @Test
+    void targetAppearedDuringPromptIsRefused(@TempDir Path dir) throws Exception {
+        Path source = Files.writeString(dir.resolve("orig.txt"), "payload");
+        Path targetDir = Files.createDirectory(dir.resolve("dest"));
+        CopyFileTool tool = new CopyFileTool(unrestrictedServer());
+        StubSession session = new StubSession(SESSION_ID, PermissionDecision.allowed()) {
+            @Override
+            public AiProcessEventListener getAiProcessEventListener() {
+                return event -> {
+                    captured.add(event);
+                    if (event instanceof ConfirmEvent ce) {
+                        try {
+                            Files.writeString(targetDir.resolve("orig.txt"), "already-here");
+                        }
+                        catch (java.io.IOException e) {
+                            throw new RuntimeException(e);
+                        }
+                        ce.response().complete(PermissionDecision.allowed());
+                    }
+                };
+            }
+        };
+
+        String result = tool.handle(args(source.toString(), targetDir.toString(), null), session);
+
+        assertTrue(result.contains("appeared after approval"), result);
+        assertEquals("already-here", Files.readString(targetDir.resolve("orig.txt")),
+                "the file that appeared during the prompt must not be overwritten");
+    }
+
+    @Test
     void missingSourcePathThrows() {
         CopyFileTool tool = new CopyFileTool(unrestrictedServer());
 
@@ -148,7 +207,7 @@ class CopyFileToolTest {
                 () -> tool.handle(args(null, "/tmp", null), new StubSession(SESSION_ID, PermissionDecision.allowed())));
     }
 
-    private static final class StubSession extends AbstractAiSession {
+    private static class StubSession extends AbstractAiSession {
 
         final List<AiProcessEvent> captured = new ArrayList<>();
         private final String id;

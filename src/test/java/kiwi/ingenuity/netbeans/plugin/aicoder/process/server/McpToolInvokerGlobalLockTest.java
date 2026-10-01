@@ -2,7 +2,7 @@ package kiwi.ingenuity.netbeans.plugin.aicoder.process.server;
 
 import com.google.gson.JsonArray;
 import com.google.gson.JsonObject;
-import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
@@ -15,24 +15,10 @@ import kiwi.ingenuity.netbeans.plugin.aicoder.process.McpSectionEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.McpToolEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.session.AbstractAiSession;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.McpToolInterface;
+import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.ToolHandlerFactory;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.ToolRequestArguments;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.ToolSchemaKeyEnum;
-import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.ai.DeleteAiMessageTool;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.ai.SendAiMessageTool;
-import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.devops.build.BuildAntProjectTool;
-import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.devops.build.BuildGradleProjectTool;
-import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.devops.build.BuildMavenProjectTool;
-import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.devops.build.CleanAndBuildAntProjectTool;
-import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.devops.build.CleanAndBuildGradleProjectTool;
-import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.devops.build.CleanAndBuildMavenProjectTool;
-import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.devops.build.DownloadMavenJavadocTool;
-import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.devops.build.DownloadMavenSourcesTool;
-import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.devops.test.RunAntTestsTool;
-import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.devops.test.RunGradleTestsTool;
-import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.devops.test.RunMavenTestsTool;
-import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.ui.build.BuildProjectTool;
-import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.ui.build.CleanAndBuildProjectTool;
-import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.ui.build.CleanProjectTool;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -148,36 +134,39 @@ class McpToolInvokerGlobalLockTest {
         }
     }
 
+    /**
+     * M2: registry-driven, like {@code
+     * McpToolInvokerFileLockConcurrencyTest#everyMutatingHandlerIsWiredForLockingDeliberately} — rather than
+     * a hand-maintained list of expected bypass tools (which drifts silently whenever one is added, renamed
+     * or removed), this iterates the real {@link ToolHandlerFactory} registry and checks the property every
+     * bypassing handler must have: still mutating, never a bypass used to dodge the lock on a tool that isn't
+     * a write at all.
+     */
     @Test
     void queuedBuildAndInboxHandlersBypassGlobalLockButRemainMutating() {
-        for (McpToolInterface tool : handlersThatBypassGlobalLock()) {
-            assertFalse(tool.requiresGlobalMutationLock(), tool.getClass().getSimpleName());
-            assertTrue(tool.isMutating(), tool.getClass().getSimpleName());
+        McpHookServer server = new McpHookServer(0);
+        for (Map.Entry<McpToolEnum, McpToolInterface> entry : ToolHandlerFactory.getToolHandlers(server).entrySet()) {
+            McpToolInterface tool = entry.getValue();
+            // Identifies an EXPLICIT requiresGlobalMutationLock() override by comparing it
+            // against what the default formula (isMutating() && !usesOwnFileLocking()) would
+            // have produced on its own — rather than re-deriving "bypasses the lock" from the
+            // same formula a tool might itself be overriding, which would make this tautological.
+            boolean defaultWouldRequireIt = tool.isMutating() && !tool.usesOwnFileLocking();
+            boolean explicitlyOverridden = tool.requiresGlobalMutationLock() != defaultWouldRequireIt;
+            if (!explicitlyOverridden) {
+                continue;
+            }
+            // The only sense such an override makes is a mutating tool choosing its OWN
+            // synchronisation instead of the global lock (build queue, git's lock, the in-memory
+            // inbox broker) — never the reverse, a non-mutating tool claiming it needs a lock it
+            // was never going to take anyway.
+            assertTrue(tool.isMutating(), entry.getKey() + " (" + tool.getClass().getSimpleName() + ")");
+            assertFalse(tool.requiresGlobalMutationLock(), entry.getKey() + " (" + tool.getClass().getSimpleName() + ")");
         }
     }
 
     private static String invoke(McpToolInterface tool) throws McpArgumentException {
         return McpToolInvoker.invoke(McpToolEnum.GET_PLUGIN_VERSION, tool, new JsonObject(), null);
-    }
-
-    private static List<McpToolInterface> handlersThatBypassGlobalLock() {
-        return List.of(
-                new BuildMavenProjectTool(),
-                new CleanAndBuildMavenProjectTool(),
-                new RunMavenTestsTool(),
-                new BuildGradleProjectTool(),
-                new CleanAndBuildGradleProjectTool(),
-                new RunGradleTestsTool(),
-                new BuildAntProjectTool(),
-                new CleanAndBuildAntProjectTool(),
-                new RunAntTestsTool(),
-                new DownloadMavenSourcesTool(),
-                new DownloadMavenJavadocTool(),
-                new BuildProjectTool(),
-                new CleanProjectTool(),
-                new CleanAndBuildProjectTool(),
-                new SendAiMessageTool(),
-                new DeleteAiMessageTool());
     }
 
     private static class BlockingMutatingTool implements McpToolInterface {

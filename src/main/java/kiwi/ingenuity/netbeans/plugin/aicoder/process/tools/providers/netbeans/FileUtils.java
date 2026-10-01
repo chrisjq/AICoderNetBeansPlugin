@@ -2,10 +2,16 @@ package kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.providers.netbeans;
 
 import java.io.File;
 import java.io.IOException;
+import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Collection;
 import java.util.Collections;
 import java.util.HashMap;
+import java.util.List;
+import java.util.Locale;
 import java.util.Map;
+import java.util.Set;
+import java.util.TreeSet;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 import kiwi.ingenuity.netbeans.plugin.aicoder.PluginSettings;
@@ -53,8 +59,8 @@ public class FileUtils {
     }
 
     /**
-     * Resolves an absolute path string to a FileObject, resolving symlinks so the result is always recognised within
-     * the open project. Falls back to direct VFS lookup if no source or project root matches.
+     * Resolves an absolute path string to a FileObject, resolving symlinks so the result is always recognised
+     * within the open project. Falls back to direct VFS lookup if no source or project root matches.
      */
     public static FileObject resolveByPath(String filePath) {
         if (filePath == null || filePath.isBlank()) {
@@ -68,9 +74,9 @@ public class FileUtils {
     }
 
     /**
-     * Same as resolveByPath but accepts a File directly. Resolution order: 1. GlobalPathRegistry source roots (Java
-     * source files) 2. OpenProjects project directories (all project files incl. pom.xml) 3. Direct VFS lookup (files
-     * outside any project)
+     * Same as resolveByPath but accepts a File directly. Resolution order: 1. GlobalPathRegistry source roots
+     * (Java source files) 2. OpenProjects project directories (all project files incl. pom.xml) 3. Direct VFS
+     * lookup (files outside any project)
      */
     public static FileObject resolveByFile(File f) {
         try {
@@ -100,21 +106,103 @@ public class FileUtils {
     }
 
     /**
+     * Produces canonical lock keys. Existing files resolve fully through {@link #toRealPath(File)}; for a
+     * planned destination, the deepest existing ancestor is resolved first and the missing suffix is
+     * appended. Thus a symlinked parent and its real spelling identify the same future target as well.
+     */
+    public static Set<String> normaliseLockPaths(Collection<String> paths) {
+        Set<String> keys = new TreeSet<>();
+        boolean foldCase = isCaseInsensitiveVolume();
+        for (String path : paths) {
+            if (path == null || path.isBlank()) {
+                continue;
+            }
+            File candidate = new File(path);
+            List<String> missingSuffix = new ArrayList<>();
+            while (!candidate.exists() && candidate.getParentFile() != null) {
+                missingSuffix.add(candidate.getName());
+                candidate = candidate.getParentFile();
+            }
+            File resolved = toRealPath(candidate);
+            for (int i = missingSuffix.size() - 1; i >= 0; i--) {
+                resolved = new File(resolved, missingSuffix.get(i));
+            }
+            String key = FileUtil.normalizeFile(resolved).getPath();
+            keys.add(foldCase ? key.toLowerCase(Locale.ROOT) : key);
+        }
+        return keys;
+    }
+
+    /**
+     * Test seam: when non-null, used instead of detecting the platform's default case sensitivity for
+     * {@link #normaliseLockPaths}'s key folding. Null in production, where the OS name decides (Windows and
+     * macOS default volumes are case-insensitive; Linux is case-sensitive). Same pattern as
+     * {@code LockManager#waitTimeoutOverrideMillisForTests}. Tests must restore it afterwards.
+     */
+    static volatile Boolean caseInsensitiveVolumeOverrideForTests;
+
+    /**
+     * {@code toRealPath} fixes the case of a path's already-existing portion to match the real filesystem
+     * entry, but a not-yet-existing suffix keeps the caller's own spelling verbatim — so two callers naming
+     * the same future file with different case would otherwise produce two different lock keys on a
+     * case-insensitive volume. Folding every key to one case here, consistently, makes the whole-path
+     * comparison safe without touching the plain string {@code startsWith}/{@code equals} checks in
+     * {@code LockManager}: every path those checks compare has already passed through this method.
+     *
+     * <p>
+     * A heuristic, not a per-volume filesystem probe: folding on Windows/macOS when the actual volume is
+     * case-sensitive only over-locks (safe, just occasionally more conservative than necessary), and a
+     * case-insensitive mount on Linux (CIFS, vfat) is not detected and keeps colliding-case paths apart. Both
+     * sides of that trade-off were accepted deliberately rather than taking on a real filesystem probe.
+     */
+    private static boolean isCaseInsensitiveVolume() {
+        Boolean override = caseInsensitiveVolumeOverrideForTests;
+        if (override != null) {
+            return override;
+        }
+        String os = System.getProperty("os.name", "").toLowerCase(Locale.ROOT);
+        return os.contains("win") || os.contains("mac");
+    }
+
+    /**
+     * Captured identity of a regular file at one instant. Delete/copy/move tools capture this when the user
+     * approves an operation and {@link #matches} it again once the per-file lock is actually held, so a file
+     * that was replaced, deleted, or turned into a directory during the confirmation prompt is caught instead
+     * of silently acted on. Comparing size and modified time, not content, keeps the recheck cheap enough to
+     * run inside the lock.
+     */
+    public record FileSnapshot(boolean isRegularFile, long size, long lastModifiedMillis) {
+
+        public static FileSnapshot capture(String path) {
+            File f = path == null ? null : new File(path);
+            if (f == null || !f.isFile()) {
+                return new FileSnapshot(false, -1L, -1L);
+            }
+            return new FileSnapshot(true, f.length(), f.lastModified());
+        }
+
+        public boolean matches(String path) {
+            return equals(capture(path));
+        }
+    }
+
+    /**
      * Resolves a file through the filesystem's real path, so symlink aliases such as {@code /share/code} and
      * {@code /Users/chris/.SyncShare} compare identically for project and scope checks.
      *
      * <p>
-     * The real-path lookup is strongest because it follows existing symlinks. If it cannot complete, the canonical path
-     * still removes {@code .}/{@code ..} and makes the result absolute; if that also fails, NetBeans normalization
-     * provides a stable non-null fallback. This method intentionally differs from
-     * {@code SessionFileScopeRegistry.resolveRealPath(Path)}, which resolves not-yet-existing paths through their
-     * parent and therefore has distinct security-scope semantics.</p>
+     * The real-path lookup is strongest because it follows existing symlinks. If it cannot complete, the
+     * canonical path still removes {@code .}/{@code ..} and makes the result absolute; if that also fails,
+     * NetBeans normalization provides a stable non-null fallback. This method intentionally differs from
+     * {@code SessionFileScopeRegistry.resolveRealPath(Path)}, which resolves not-yet-existing paths through
+     * their parent and therefore has distinct security-scope semantics.</p>
      *
      * <p>
      * Use the returned path only for comparisons and OS-level work, such as scope checks or process working
-     * directories. Never pass it to NetBeans {@code FileObject} or cache APIs: those caches are keyed by the path
-     * spelling they were given, so resolving {@code /share/code/...} to {@code /Users/chris/.SyncShare/...} can address
-     * a different object from the one the IDE already knows.</p>
+     * directories. Never pass it to NetBeans {@code FileObject} or cache APIs: those caches are keyed by the
+     * path spelling they were given, so resolving {@code /share/code/...} to
+     * {@code /Users/chris/.SyncShare/...} can address a different object from the one the IDE already
+     * knows.</p>
      *
      * @param f file or directory to resolve
      *
@@ -143,19 +231,21 @@ public class FileUtils {
 
     /**
      * Converts an inbound path to the spelling NetBeans uses for the matching open project, for outbound tool
-     * responses. The input is resolved through {@link #toRealPath(File)} only for comparison; the returned path is
-     * rebuilt beneath the project's own {@link FileObject} directory spelling. If no open project matches, the
-     * normalized input spelling is returned unchanged, and the result is never null.
+     * responses. The input is resolved through {@link #toRealPath(File)} only for comparison; the returned
+     * path is rebuilt beneath the project's own {@link FileObject} directory spelling. If no open project
+     * matches, the normalized input spelling is returned unchanged, and the result is never null.
      *
      * <p>
-     * This is the outbound counterpart to {@link #toRealPath(File)}. Use this result when handing a path back to an AI,
-     * not as input to NetBeans {@code FileObject} or cache APIs. Prefer the {@code FileObject} itself for IDE
-     * operations because cache keys are spelling-sensitive. Known project roots are cached and invalidated when the
-     * open-project set changes; already-IDE-spelled paths take a syscall-free prefix fast path.</p>
+     * This is the outbound counterpart to {@link #toRealPath(File)}. Use this result when handing a path back
+     * to an AI, not as input to NetBeans {@code FileObject} or cache APIs. Prefer the {@code FileObject}
+     * itself for IDE operations because cache keys are spelling-sensitive. Known project roots are cached and
+     * invalidated when the open-project set changes; already-IDE-spelled paths take a syscall-free prefix
+     * fast path.</p>
      *
      * @param f inbound file or directory
      *
-     * @return the IDE-known spelling when the path belongs to an open project, otherwise a normalized input path
+     * @return the IDE-known spelling when the path belongs to an open project, otherwise a normalized input
+     *         path
      */
     public static File toIdePath(File f) {
         File input = f != null ? f : new File("");
@@ -210,23 +300,24 @@ public class FileUtils {
     }
 
     /**
-     * Re-stats a {@link FileObject} after its content has been written, so the IDE's cached size and the editor's view
-     * match the bytes now on disk. Without it the next cached read sees the pre-write length.
+     * Re-stats a {@link FileObject} after its content has been written, so the IDE's cached size and the
+     * editor's view match the bytes now on disk. Without it the next cached read sees the pre-write length.
      *
      * <p>
-     * <b>There is deliberately no refreshBeforeRead sibling, and refreshing before a read is not a way to make one
-     * safe.</b> NetBeans caches a FileObject's size and {@code asBytes()} returns only that many bytes, so a stale
-     * cache yields a TRUNCATED read — which a read-modify-write then persists, destroying everything past the boundary.
-     * {@code refresh()} does not fix that: it re-stats from last-modified time, so a file whose mtime has not changed
-     * keeps its stale cached length however often it is called: a 969-line file was read as 114 lines and a 282-line
-     * file as 120 lines, both while a refresh ran before every read. A method named for refreshing before a read is a
-     * trap for exactly the reader who goes looking for one, so it was deleted rather than left with a warning. Content
-     * reads must go to disk with {@code java.nio} and check the byte count against the file's real size — see
+     * <b>There is deliberately no refreshBeforeRead sibling, and refreshing before a read is not a way to
+     * make one safe.</b> NetBeans caches a FileObject's size and {@code asBytes()} returns only that many
+     * bytes, so a stale cache yields a TRUNCATED read — which a read-modify-write then persists, destroying
+     * everything past the boundary. {@code refresh()} does not fix that: it re-stats from last-modified time,
+     * so a file whose mtime has not changed keeps its stale cached length however often it is called: a
+     * 969-line file was read as 114 lines and a 282-line file as 120 lines, both while a refresh ran before
+     * every read. A method named for refreshing before a read is a trap for exactly the reader who goes
+     * looking for one, so it was deleted rather than left with a warning. Content reads must go to disk with
+     * {@code java.nio} and check the byte count against the file's real size — see
      * {@code RefactoringProvider.applyEdit}.
      *
      * <p>
-     * This method rests on the same last-modified assumption and is sound only because it runs AFTER a write, and a
-     * write does change mtime. Do not repurpose it as a general "make this FileObject current" call.
+     * This method rests on the same last-modified assumption and is sound only because it runs AFTER a write,
+     * and a write does change mtime. Do not repurpose it as a general "make this FileObject current" call.
      *
      * @param fo the file object just written; null is ignored
      */
@@ -241,13 +332,13 @@ public class FileUtils {
      *
      * <p>
      * Resolves through {@link #resolveByPath} so the object refreshed is the CANONICAL one. A bare
-     * {@code FileUtil.toFileObject(new File(path))} does not canonicalise, and callers here address the project through
-     * the {@code /share} symlink — so it can hand back a different object (or none) than the one the IDE actually
-     * holds, leaving the refresh with no effect.
+     * {@code FileUtil.toFileObject(new File(path))} does not canonicalise, and callers here address the
+     * project through the {@code /share} symlink — so it can hand back a different object (or none) than the
+     * one the IDE actually holds, leaving the refresh with no effect.
      *
      * <p>
-     * Swallows failures: callers are UI callbacks where a refresh is best-effort housekeeping and must never surface as
-     * an error.
+     * Swallows failures: callers are UI callbacks where a refresh is best-effort housekeeping and must never
+     * surface as an error.
      *
      * @param filePath absolute path of the file just written; null, blank or missing is ignored
      */
@@ -262,8 +353,8 @@ public class FileUtils {
 
     /**
      * Finds the source FileObject for a class name by walking registered source roots. Accepts a FQN
-     * ("com.example.Outer.Inner") or simple name ("Foo"). Progressive shortening handles inner classes: Outer.Inner →
-     * Outer.java.
+     * ("com.example.Outer.Inner") or simple name ("Foo"). Progressive shortening handles inner classes:
+     * Outer.Inner → Outer.java.
      */
     public static FileObject locateSourceFile(String className) {
         String[] parts = className.replace('$', '.').split("\\.");

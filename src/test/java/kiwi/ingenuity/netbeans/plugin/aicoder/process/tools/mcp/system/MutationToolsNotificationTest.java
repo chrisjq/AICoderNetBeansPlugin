@@ -5,6 +5,12 @@ import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
 import static kiwi.ingenuity.netbeans.plugin.aicoder.ai.AiTypeEnum.CLAUDE;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.events.ConfirmEvent;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.events.PermissionDecision;
@@ -15,6 +21,7 @@ import kiwi.ingenuity.netbeans.plugin.aicoder.process.McpToolEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.events.AiProcessEvent;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.events.AiProcessEventListener;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.server.McpHookServer;
+import kiwi.ingenuity.netbeans.plugin.aicoder.process.server.McpToolInvoker;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.session.AbstractAiSession;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.McpToolInterface;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.ToolRequestArguments;
@@ -316,7 +323,139 @@ class MutationToolsNotificationTest {
         }
     }
 
+    @Test
+    void pendingDeleteFileConfirmationDoesNotBlockFileOrRefactorWork() throws Exception {
+        java.io.File file = tempFile();
+        BlockingConfirmSession session = new BlockingConfirmSession();
+        DeleteFileTool tool = new DeleteFileTool(allowAllServer());
+        tool.confirmTimeoutMillis = 5_000;
+        assertPendingConfirmationDoesNotBlock(session, () -> tool.handle(
+                deleteArgs(file.getAbsolutePath()), session));
+        assertTrue(file.exists(), "the denied pending delete must not remove the file");
+    }
+
+    @Test
+    void pendingDeleteDirectoryConfirmationDoesNotBlockFileOrRefactorWork() throws Exception {
+        java.io.File directory = java.nio.file.Files.createTempDirectory("aicoder-delete-dir-").toFile();
+        BlockingConfirmSession session = new BlockingConfirmSession();
+        DeleteDirectoryTool tool = new DeleteDirectoryTool(allowAllServer());
+        tool.confirmTimeoutMillis = 5_000;
+        assertPendingConfirmationDoesNotBlock(session, () -> tool.handle(
+                deleteArgs(directory.getAbsolutePath()), session));
+        assertTrue(directory.exists(), "the denied pending directory delete must not remove the directory");
+    }
+
+    @Test
+    void pendingCopyFileConfirmationDoesNotBlockFileOrRefactorWork() throws Exception {
+        java.io.File file = tempFile();
+        java.io.File targetDir = java.nio.file.Files.createTempDirectory("aicoder-copy-target-").toFile();
+        BlockingConfirmSession session = new BlockingConfirmSession();
+        CopyFileTool tool = new CopyFileTool(allowAllServer());
+        tool.confirmTimeoutMillis = 5_000;
+        assertPendingConfirmationDoesNotBlock(session, () -> {
+            try {
+                return tool.handle(copyArgs(file.getAbsolutePath(), targetDir.getAbsolutePath()), session);
+            }
+            catch (kiwi.ingenuity.netbeans.plugin.aicoder.process.McpArgumentException e) {
+                throw new RuntimeException(e);
+            }
+        });
+        assertFalse(new java.io.File(targetDir, file.getName()).exists(),
+                "the denied pending copy must not create a copy");
+    }
+
+    @Test
+    void pendingCopyFileConfirmationThroughRealInvokeDoesNotBlockFileOrRefactorWork() throws Exception {
+        java.io.File file = tempFile();
+        java.io.File targetDir = java.nio.file.Files.createTempDirectory("aicoder-copy-target-invoke-").toFile();
+        BlockingConfirmSession session = new BlockingConfirmSession();
+        CopyFileTool tool = new CopyFileTool(allowAllServer());
+        tool.confirmTimeoutMillis = 5_000;
+        JsonObject invokeArgs = new JsonObject();
+        invokeArgs.addProperty("sourcePath", file.getAbsolutePath());
+        invokeArgs.addProperty("targetDirectory", targetDir.getAbsolutePath());
+        // Through the real dispatcher, not tool.handle() directly: this is what actually consults
+        // requiresGlobalMutationLock()/usesOwnFileLocking() to decide whether the confirmation prompt
+        // below runs under the exclusive gate or outside it entirely.
+        assertPendingConfirmationDoesNotBlock(session, () -> {
+            try {
+                return McpToolInvoker.invoke(McpToolEnum.COPY_FILE, tool, invokeArgs, session);
+            }
+            catch (kiwi.ingenuity.netbeans.plugin.aicoder.process.McpArgumentException e) {
+                throw new RuntimeException(e);
+            }
+        });
+        assertFalse(new java.io.File(targetDir, file.getName()).exists(),
+                "the denied pending copy must not create a copy");
+    }
+
+    @Test
+    void pendingDeleteFileConfirmationThroughRealInvokeDoesNotBlockFileOrRefactorWork() throws Exception {
+        java.io.File file = tempFile();
+        BlockingConfirmSession session = new BlockingConfirmSession();
+        DeleteFileTool tool = new DeleteFileTool(allowAllServer());
+        tool.confirmTimeoutMillis = 5_000;
+        JsonObject invokeArgs = new JsonObject();
+        invokeArgs.addProperty("filePath", file.getAbsolutePath());
+        assertPendingConfirmationDoesNotBlock(session, () -> {
+            try {
+                return McpToolInvoker.invoke(McpToolEnum.DELETE_FILE, tool, invokeArgs, session);
+            }
+            catch (kiwi.ingenuity.netbeans.plugin.aicoder.process.McpArgumentException e) {
+                throw new RuntimeException(e);
+            }
+        });
+        assertTrue(file.exists(), "the denied pending delete must not remove the file");
+    }
+
+    private static void assertPendingConfirmationDoesNotBlock(
+            BlockingConfirmSession session, java.util.function.Supplier<String> pendingOperation) throws Exception {
+        ExecutorService executor = Executors.newFixedThreadPool(4);
+        try {
+            Future<String> pending = executor.submit(pendingOperation::get);
+            assertTrue(session.shown.await(5, TimeUnit.SECONDS), "delete confirmation must be shown");
+
+            Future<String> sameFile = executor.submit(() -> McpToolInvoker.withFileMutation(
+                    "delete-same", List.of(session.confirmedPath), () -> "same-file-ran"));
+            Future<String> otherFile = executor.submit(() -> McpToolInvoker.withFileMutation(
+                    "delete-other", List.of(session.confirmedPath + "-other"), () -> "other-file-ran"));
+            Future<String> refactor = executor.submit(() -> McpToolInvoker.withExclusiveMutation(
+                    () -> "refactor-ran"));
+
+            assertEquals("same-file-ran", sameFile.get(2, TimeUnit.SECONDS));
+            assertEquals("other-file-ran", otherFile.get(2, TimeUnit.SECONDS));
+            assertEquals("refactor-ran", refactor.get(2, TimeUnit.SECONDS));
+
+            session.decision.complete(PermissionDecision.denied("test"));
+            assertTrue(pending.get(5, TimeUnit.SECONDS).contains("declined"));
+        }
+        finally {
+            session.decision.complete(PermissionDecision.denied("cleanup"));
+            executor.shutdownNow();
+        }
+    }
+
     // ---- ConfirmEvent tests: tools ask before acting ----
+    private static final class BlockingConfirmSession extends StubSession {
+
+        final CountDownLatch shown = new CountDownLatch(1);
+        final CompletableFuture<PermissionDecision> decision = new CompletableFuture<>();
+        volatile String confirmedPath;
+
+        @Override
+        public AiProcessEventListener getAiProcessEventListener() {
+            return event -> {
+                captured.add(event);
+                if (event instanceof ConfirmEvent confirm) {
+                    confirmedPath = confirm.filePath();
+                    shown.countDown();
+                    decision.whenComplete((value, error) -> confirm.response().complete(
+                            error == null && value != null ? value : PermissionDecision.denied("cleanup")));
+                }
+            };
+        }
+    }
+
     private static class ConfirmStubSession extends StubSession {
 
         private final PermissionDecision resolveWith;

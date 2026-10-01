@@ -8,6 +8,11 @@ import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
 import static kiwi.ingenuity.netbeans.plugin.aicoder.ai.AiTypeEnum.CLAUDE;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.events.ConfirmEvent;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.events.PermissionDecision;
@@ -18,6 +23,7 @@ import kiwi.ingenuity.netbeans.plugin.aicoder.process.McpToolEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.events.AiProcessEvent;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.events.AiProcessEventListener;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.server.McpHookServer;
+import kiwi.ingenuity.netbeans.plugin.aicoder.process.server.McpToolInvoker;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.session.AbstractAiSession;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.McpToolInterface;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.ToolRequestArguments;
@@ -27,9 +33,9 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
 /**
- * AUDIT 3/6 — proves MoveFileTool honours both parameters: sourcePath selects the file to move and targetDirectory the
- * destination (content lands in the target, source is gone). Also proves the ConfirmEvent gate and the missing-argument
- * errors.
+ * AUDIT 3/6 — proves MoveFileTool honours both parameters: sourcePath selects the file to move and
+ * targetDirectory the destination (content lands in the target, source is gone). Also proves the ConfirmEvent
+ * gate and the missing-argument errors.
  */
 class MoveFileToolTest {
 
@@ -74,10 +80,10 @@ class MoveFileToolTest {
         JsonObject props = schema.getAsJsonObject(ToolSchemaKeyEnum.PROPERTIES.key());
         assertTrue(props.has(MoveFileParamEnum.TARGET_PROJECT_PATH.key()));
         assertEquals("string", props.getAsJsonObject(MoveFileParamEnum.TARGET_PROJECT_PATH.key())
-                     .get(ToolSchemaKeyEnum.TYPE.key()).getAsString());
+                .get(ToolSchemaKeyEnum.TYPE.key()).getAsString());
         assertTrue(props.has(MoveFileParamEnum.COMMIT_WITH_WARNING.key()));
         assertEquals("boolean", props.getAsJsonObject(MoveFileParamEnum.COMMIT_WITH_WARNING.key())
-                     .get(ToolSchemaKeyEnum.TYPE.key()).getAsString());
+                .get(ToolSchemaKeyEnum.TYPE.key()).getAsString());
         JsonArray required = schema.getAsJsonArray(ToolSchemaKeyEnum.REQUIRED.key());
         assertEquals(2, required.size(), "the two new parameters must not join the required set: " + required);
     }
@@ -109,7 +115,7 @@ class MoveFileToolTest {
         MoveFileTool tool = new MoveFileTool(unrestrictedServer());
 
         String result = tool.handle(args(source.toString(), targetDir.toString()),
-                                    new StubSession(SESSION_ID, PermissionDecision.allowed()));
+                new StubSession(SESSION_ID, PermissionDecision.allowed()));
 
         assertEquals("File moved", result);
         assertFalse(Files.exists(source), "source must be gone after a move");
@@ -135,7 +141,7 @@ class MoveFileToolTest {
         MoveFileTool tool = new MoveFileTool(unrestrictedServer());
 
         String result = tool.handle(args(source.toString(), dir.resolve("no-such-dir").toString()),
-                                    new StubSession(SESSION_ID, PermissionDecision.allowed()));
+                new StubSession(SESSION_ID, PermissionDecision.allowed()));
 
         assertTrue(result.contains("Target directory not found"), result);
         assertTrue(Files.exists(source), "source must survive a failed move");
@@ -158,14 +164,129 @@ class MoveFileToolTest {
     }
 
     @Test
+    void sourceReplacedDuringPromptIsRefusedUnderTheLock(@TempDir Path dir) throws Exception {
+        Path source = Files.writeString(dir.resolve("moved.txt"), "payload");
+        Path targetDir = Files.createDirectory(dir.resolve("dest"));
+        MoveFileTool tool = new MoveFileTool(unrestrictedServer());
+        StubSession session = new StubSession(SESSION_ID, PermissionDecision.allowed()) {
+            @Override
+            public AiProcessEventListener getAiProcessEventListener() {
+                return event -> {
+                    captured.add(event);
+                    if (event instanceof ConfirmEvent ce) {
+                        try {
+                            Files.writeString(source, "changed-after-approval-xyz");
+                        }
+                        catch (java.io.IOException e) {
+                            throw new RuntimeException(e);
+                        }
+                        ce.response().complete(PermissionDecision.allowed());
+                    }
+                };
+            }
+        };
+
+        String result = tool.handle(args(source.toString(), targetDir.toString()), session);
+
+        assertTrue(result.contains("changed after approval"), result);
+        assertTrue(Files.exists(source), "source must survive when it changed after approval");
+        assertFalse(Files.exists(targetDir.resolve("moved.txt")), "nothing may land in the target");
+    }
+
+    @Test
+    void targetAppearedDuringPromptIsRefusedForMove(@TempDir Path dir) throws Exception {
+        Path source = Files.writeString(dir.resolve("moved.txt"), "payload");
+        Path targetDir = Files.createDirectory(dir.resolve("dest"));
+        MoveFileTool tool = new MoveFileTool(unrestrictedServer());
+        StubSession session = new StubSession(SESSION_ID, PermissionDecision.allowed()) {
+            @Override
+            public AiProcessEventListener getAiProcessEventListener() {
+                return event -> {
+                    captured.add(event);
+                    if (event instanceof ConfirmEvent ce) {
+                        try {
+                            Files.writeString(targetDir.resolve("moved.txt"), "already-here");
+                        }
+                        catch (java.io.IOException e) {
+                            throw new RuntimeException(e);
+                        }
+                        ce.response().complete(PermissionDecision.allowed());
+                    }
+                };
+            }
+        };
+
+        String result = tool.handle(args(source.toString(), targetDir.toString()), session);
+
+        assertTrue(result.contains("appeared after approval"), result);
+        assertTrue(Files.exists(source), "source must survive when the target appeared during the prompt");
+        assertEquals("already-here", Files.readString(targetDir.resolve("moved.txt")),
+                "the file that appeared during the prompt must not be overwritten");
+    }
+
+    @Test
     void missingSourcePathThrows() {
         MoveFileTool tool = new MoveFileTool(unrestrictedServer());
 
         assertThrows(McpArgumentException.class,
-                     () -> tool.handle(args(null, "/tmp"), new StubSession(SESSION_ID, PermissionDecision.allowed())));
+                () -> tool.handle(args(null, "/tmp"), new StubSession(SESSION_ID, PermissionDecision.allowed())));
     }
 
-    private static final class StubSession extends AbstractAiSession {
+    @Test
+    void javaMoveWaitsForAnInFlightSharedOperationThenCompletes(@TempDir Path dir) throws Exception {
+        Path source = Files.writeString(dir.resolve("Moved.java"), "class Moved {}");
+        Path target = Files.createDirectory(dir.resolve("java-target"));
+        assertMoveWaitsForHeldPaths(source, target, true);
+    }
+
+    @Test
+    void nonJavaMoveWaitsForSourceAndTargetLocksThenCompletes(@TempDir Path dir) throws Exception {
+        Path source = Files.writeString(dir.resolve("moved.txt"), "payload");
+        Path target = Files.createDirectory(dir.resolve("text-target"));
+        assertMoveWaitsForHeldPaths(source, target, false);
+    }
+
+    private static void assertMoveWaitsForHeldPaths(Path source, Path target, boolean javaMove) throws Exception {
+        MoveFileTool tool = new MoveFileTool(unrestrictedServer());
+        CountDownLatch holderEntered = new CountDownLatch(1);
+        CountDownLatch holderRelease = new CountDownLatch(1);
+        ExecutorService executor = Executors.newFixedThreadPool(2);
+        try {
+            Future<String> holder = executor.submit(() -> McpToolInvoker.withFileMutation(
+                    "move-holder-" + javaMove, List.of(source.toString(), target.resolve(source.getFileName()).toString()), () -> {
+                holderEntered.countDown();
+                try {
+                    if (!holderRelease.await(5, TimeUnit.SECONDS)) {
+                        throw new AssertionError("timed out holding move paths");
+                    }
+                }
+                catch (InterruptedException ex) {
+                    Thread.currentThread().interrupt();
+                    throw new AssertionError("interrupted holding move paths", ex);
+                }
+                return "held";
+            }));
+            assertTrue(holderEntered.await(5, TimeUnit.SECONDS));
+
+            Future<String> move = executor.submit(() -> tool.handle(
+                    args(source.toString(), target.toString()),
+                    new StubSession(SESSION_ID, PermissionDecision.allowed())));
+            Thread.sleep(250);
+            assertFalse(move.isDone(), javaMove
+                                       ? "Java moves must wait on the exclusive mutation side; result=" + (move.isDone() ? move.get() : "<pending>")
+                                       : "non-Java moves must wait on source/target file locks; result=" + (move.isDone() ? move.get() : "<pending>"));
+
+            holderRelease.countDown();
+            assertEquals("held", holder.get(5, TimeUnit.SECONDS));
+            move.get(5, TimeUnit.SECONDS);
+        }
+        finally {
+            holderRelease.countDown();
+            executor.shutdownNow();
+        }
+    }
+
+    private static class StubSession extends AbstractAiSession {
 
         final List<AiProcessEvent> captured = new ArrayList<>();
         private final String id;
@@ -173,7 +294,7 @@ class MoveFileToolTest {
 
         StubSession(String id, PermissionDecision autoDecision) {
             super(new AiSession(id, "Test", null, null, null, null,
-                                Instant.EPOCH, Instant.EPOCH));
+                    Instant.EPOCH, Instant.EPOCH));
             this.id = id;
             this.autoDecision = autoDecision;
         }

@@ -8,17 +8,16 @@ import kiwi.ingenuity.netbeans.plugin.aicoder.ai.events.PermissionDecision;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.McpSectionEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.McpToolEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.events.AiProcessEventListener;
-import kiwi.ingenuity.netbeans.plugin.aicoder.process.locking.LockTypeEnum;
-import kiwi.ingenuity.netbeans.plugin.aicoder.process.locking.RequiresLock;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.server.McpHookServer;
+import kiwi.ingenuity.netbeans.plugin.aicoder.process.server.McpToolInvoker;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.session.AbstractAiSession;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.TimeoutEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.AbstractFileTool;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.ToolRequestArguments;
+import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.providers.netbeans.FileUtils;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.providers.netbeans.RefactoringProvider;
 import kiwi.ingenuity.netbeans.plugin.aicoder.utils.ProjectPathUtil;
 
-@RequiresLock(LockTypeEnum.FILE_WRITE_LOCK)
 public class DeleteFileTool extends AbstractFileTool {
 
     private final McpHookServer server;
@@ -31,6 +30,11 @@ public class DeleteFileTool extends AbstractFileTool {
                 + "and refreshes the project tree and VCS status.",
                 McpToolEnum.DELETE_FILE.toolName() + " -> permanently removes a file; closes open tab and refreshes VCS automatically");
         this.server = server;
+    }
+
+    @Override
+    public boolean usesOwnFileLocking() {
+        return true;
     }
 
     @Override
@@ -54,8 +58,24 @@ public class DeleteFileTool extends AbstractFileTool {
                 return McpHookServer.fileAccessDeniedMessage(server, sessionId, effectivePath);
             }
         }
+        // Flushed before the snapshot, not merely before the eventual delete: a LATER flush —
+        // GetFileContent's own, for instance, racing in while the confirm prompt is open — would
+        // otherwise bump the mtime between this capture and the under-lock recheck, making the
+        // plugin's own read look like someone else's edit. Flushing first makes this capture
+        // already the post-flush state, so a later flush of the same file is a no-op that
+        // changes nothing.
+        RefactoringProvider.FlushResult preFlush
+                                        = RefactoringProvider.flushUnsavedEditorChanges(FileUtils.resolveByPath(effectivePath));
+        if (preFlush.error() != null) {
+            return preFlush.error();
+        }
+        // Captured before any branch below, so the under-lock recheck in deleteFileAfterRecheck
+        // catches a change no matter which return site reaches it — including the two that skip
+        // confirmation entirely.
+        FileUtils.FileSnapshot approved = FileUtils.FileSnapshot.capture(effectivePath);
         if (effectivePath == null || !new java.io.File(effectivePath).exists()) {
-            return RefactoringProvider.deleteFile(effectivePath);
+            return McpToolInvoker.withFileMutation(session.getId(), java.util.Set.of(effectivePath),
+                    () -> deleteFileAfterRecheck(effectivePath, approved));
         }
         if (new java.io.File(effectivePath).isDirectory()) {
             // Checked before the confirmation prompt: DataObject.find(fo).delete() deletes a folder
@@ -66,7 +86,8 @@ public class DeleteFileTool extends AbstractFileTool {
         }
         AiProcessEventListener listener = session.getAiProcessEventListener();
         if (listener == null) {
-            return RefactoringProvider.deleteFile(effectivePath);
+            return McpToolInvoker.withFileMutation(session.getId(), java.util.Set.of(effectivePath),
+                    () -> deleteFileAfterRecheck(effectivePath, approved));
         }
         CompletableFuture<PermissionDecision> future = new CompletableFuture<>();
         listener.onAiProcessEvent(new ConfirmEvent("Delete",
@@ -88,6 +109,18 @@ public class DeleteFileTool extends AbstractFileTool {
         if (decision == null || !decision.allow()) {
             return "User declined the delete — do not retry without asking.";
         }
-        return RefactoringProvider.deleteFile(effectivePath);
+        return McpToolInvoker.withFileMutation(session.getId(), java.util.Set.of(effectivePath),
+                () -> deleteFileAfterRecheck(effectivePath, approved));
+    }
+
+    private static String deleteFileAfterRecheck(String path, FileUtils.FileSnapshot approved) {
+        if (new java.io.File(path).isDirectory()) {
+            return "Refused: " + path + " is a directory — use "
+                   + McpToolEnum.DELETE_DIRECTORY.toolName() + " instead.";
+        }
+        if (!approved.matches(path)) {
+            return "Refused: " + path + " changed after approval (size or modified time differs); please retry.";
+        }
+        return RefactoringProvider.deleteFile(path);
     }
 }

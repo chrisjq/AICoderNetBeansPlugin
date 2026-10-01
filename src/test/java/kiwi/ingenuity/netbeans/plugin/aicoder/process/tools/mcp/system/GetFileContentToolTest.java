@@ -6,13 +6,20 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.AiTypeEnum;
 import static kiwi.ingenuity.netbeans.plugin.aicoder.ai.AiTypeEnum.CLAUDE;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.session.AiSession;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.McpArgumentException;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.McpToolEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.events.AiProcessEventListener;
+import kiwi.ingenuity.netbeans.plugin.aicoder.process.locking.LockManager;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.server.McpHookServer;
+import kiwi.ingenuity.netbeans.plugin.aicoder.process.server.McpToolInvoker;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.session.AbstractAiSession;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.McpToolInterface;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.ToolRequestArguments;
@@ -215,6 +222,46 @@ class GetFileContentToolTest {
         String result = tool.handle(rawArgs(f.toString(), 2, 2), session());
 
         assertEquals("beta\r\n", result);
+    }
+
+    @Test
+    void readWaitsForAnInFlightWriteOnTheSameFile(@TempDir Path dir) throws Exception {
+        Path file = threeLineFile(dir);
+        GetFileContentTool tool = new GetFileContentTool(unrestrictedServer());
+        CountDownLatch writeEntered = new CountDownLatch(1);
+        CountDownLatch writeRelease = new CountDownLatch(1);
+        ExecutorService executor = Executors.newFixedThreadPool(2);
+        try {
+            Future<String> write = executor.submit(() -> McpToolInvoker.withFileMutation(
+                    "writer", List.of(file.toString()), () -> {
+                writeEntered.countDown();
+                try {
+                    if (!writeRelease.await(5, TimeUnit.SECONDS)) {
+                        throw new AssertionError("timed out holding write lock");
+                    }
+                }
+                catch (InterruptedException ex) {
+                    Thread.currentThread().interrupt();
+                    throw new AssertionError("interrupted holding write lock", ex);
+                }
+                return "write-done";
+            }));
+            assertTrue(writeEntered.await(5, TimeUnit.SECONDS));
+            assertEquals("writer", LockManager.getInstance().getFileLockHolder(file.toString()));
+
+            Future<String> read = executor.submit(() -> tool
+                    .handle(rawArgs(file.toString(), null, null), session()));
+            Thread.sleep(250);
+            assertFalse(read.isDone(), "GetFileContent must wait while the same file is being written; result=" + (read.isDone() ? read.get() : "<pending>"));
+
+            writeRelease.countDown();
+            assertEquals("write-done", write.get(5, TimeUnit.SECONDS));
+            assertEquals("alpha\nbeta\ngamma", read.get(5, TimeUnit.SECONDS));
+        }
+        finally {
+            writeRelease.countDown();
+            executor.shutdownNow();
+        }
     }
 
     private static final class FakeSession extends AbstractAiSession {

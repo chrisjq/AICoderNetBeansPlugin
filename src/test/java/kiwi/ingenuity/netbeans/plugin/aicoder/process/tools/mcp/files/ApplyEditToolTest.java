@@ -7,6 +7,10 @@ import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
 import kiwi.ingenuity.netbeans.plugin.aicoder.PluginUtil;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.AiTypeEnum;
@@ -21,9 +25,11 @@ import kiwi.ingenuity.netbeans.plugin.aicoder.process.events.AiProcessEventListe
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.locking.LockManager;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.server.AiMcpRegistrar;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.server.McpServerRegistry;
+import kiwi.ingenuity.netbeans.plugin.aicoder.process.server.McpToolInvoker;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.session.AbstractAiSession;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.McpToolInterface;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.ToolRequestArguments;
+import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.system.GetFileContentTool;
 import org.junit.jupiter.api.AfterEach;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -74,7 +80,7 @@ class ApplyEditToolTest {
     }
 
     @Test
-    void handle_fileAlreadyLockedByAnotherSession_rejectsWithoutFiringPermissionEvent() throws Exception {
+    void handle_fileAlreadyLockedByAnotherSession_showsPromptBeforeShortWriteLock() throws Exception {
         String filePath = uniqueFile();
         LockManager lockManager = LockManager.getInstance();
         assertTrue(lockManager.acquireFileLock("otherSession", filePath));
@@ -85,8 +91,8 @@ class ApplyEditToolTest {
 
             String result = tool.handle(args(filePath, "old", "new"), session);
 
-            assertTrue(result.toLowerCase().contains("locked"), "expected a 'locked' message, got: " + result);
-            assertTrue(listener.events.isEmpty(), "no PermissionEvent should be fired while the file is locked");
+            assertTrue(result.toLowerCase().contains("rejected"), "the listener's deliberate denial should win: " + result);
+            assertEquals(1, listener.events.size(), "the diff prompt must not be blocked by a pending short write lock");
         }
         finally {
             lockManager.releaseFileLock("otherSession", filePath);
@@ -268,6 +274,44 @@ class ApplyEditToolTest {
         }
     }
 
+    @Test
+    void pendingDiffApprovalDoesNotBlockSameOtherFileOrRefactorWork() throws Exception {
+        String filePath = uniqueFile();
+        Files.writeString(Path.of(filePath), "old");
+        BlockingListener listener = new BlockingListener();
+        FakeSession session = new FakeSession("mySession", listener);
+        ApplyEditTool tool = new ApplyEditTool();
+        ExecutorService executor = Executors.newFixedThreadPool(4);
+        try {
+            Future<String> pending = executor.submit(() -> tool.handle(
+                    args(filePath, "old", "new"), session));
+            assertTrue(listener.shown.await(5, TimeUnit.SECONDS), "diff approval must be shown");
+
+            Future<String> sameFile = executor.submit(() -> {
+                JsonObject read = new JsonObject();
+                read.addProperty("filePath", filePath);
+                read.addProperty("raw", true);
+                return new GetFileContentTool(McpServerRegistry.getServer()).handle(
+                        new ToolRequestArguments(read), session);
+            });
+            Future<String> otherFile = executor.submit(() -> McpToolInvoker.withFileMutation(
+                    "other-writer", List.of(filePath + "-other"), () -> "other-file-ran"));
+            Future<String> refactor = executor.submit(() -> McpToolInvoker.withExclusiveMutation(
+                    () -> "refactor-ran"));
+
+            assertEquals("old", sameFile.get(2, TimeUnit.SECONDS));
+            assertEquals("other-file-ran", otherFile.get(2, TimeUnit.SECONDS));
+            assertEquals("refactor-ran", refactor.get(2, TimeUnit.SECONDS));
+
+            listener.decision.complete(PermissionDecision.denied("test"));
+            assertTrue(pending.get(5, TimeUnit.SECONDS).contains("rejected"));
+        }
+        finally {
+            listener.decision.complete(PermissionDecision.denied("cleanup"));
+            executor.shutdownNow();
+        }
+    }
+
     private static final class NoopRegistrar extends AiMcpRegistrar {
 
         NoopRegistrar(String sessionId) {
@@ -289,6 +333,22 @@ class ApplyEditToolTest {
 
         @Override
         public void unregisterHooks() {
+        }
+    }
+
+    private static final class BlockingListener implements AiProcessEventListener {
+
+        final CountDownLatch shown = new CountDownLatch(1);
+        final java.util.concurrent.CompletableFuture<PermissionDecision> decision
+                                                                         = new java.util.concurrent.CompletableFuture<>();
+
+        @Override
+        public void onAiProcessEvent(AiProcessEvent event) {
+            if (event instanceof PermissionEvent permission) {
+                shown.countDown();
+                decision.whenComplete((value, error) -> permission.response().complete(
+                        error == null && value != null ? value : PermissionDecision.denied("cleanup")));
+            }
         }
     }
 

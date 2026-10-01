@@ -1089,6 +1089,18 @@ public class RefactoringProvider {
         return "File deleted";
     }
 
+    /**
+     * Resolves the exact destination filename used by {@link #copyFile}.
+     */
+    public static String copyTargetPath(String sourcePath, String targetDirectory, String newName) {
+        String sourceName = new File(sourcePath).getName();
+        int extensionAt = sourceName.lastIndexOf('.');
+        String baseName = extensionAt > 0 ? sourceName.substring(0, extensionAt) : sourceName;
+        String extension = extensionAt > 0 ? sourceName.substring(extensionAt) : "";
+        String destinationName = newName != null && !newName.isBlank() ? newName : baseName;
+        return new File(targetDirectory, destinationName + extension).getPath();
+    }
+
     public static String copyFile(String sourcePath, String targetDirectory, String newName) {
         if (sourcePath == null || sourcePath.isBlank()) {
             return McpToolPropertyEnum.SOURCE_PATH.key() + " is required";
