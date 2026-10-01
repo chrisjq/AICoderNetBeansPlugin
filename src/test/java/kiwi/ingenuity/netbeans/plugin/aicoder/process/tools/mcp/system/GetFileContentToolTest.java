@@ -22,9 +22,9 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
 /**
- * AUDIT 3/6 — proves every GetFileContentTool parameter is read and changes the output: filePath selects the file,
- * startLine narrows from that line, endLine narrows to that line (both 1-based inclusive), and out-of-range values
- * clamp instead of failing.
+ * AUDIT 3/6 — proves every GetFileContentTool parameter is read and changes the output: filePath selects the
+ * file, startLine narrows from that line, endLine narrows to that line (both 1-based inclusive), and
+ * out-of-range values clamp instead of failing.
  */
 class GetFileContentToolTest {
 
@@ -41,6 +41,19 @@ class GetFileContentToolTest {
         if (endLine != null) {
             o.addProperty(GetFileContentParamEnum.END_LINE.key(), endLine);
         }
+        return new ToolRequestArguments(o);
+    }
+
+    private static ToolRequestArguments rawArgs(String filePath, Integer startLine, Integer endLine) {
+        JsonObject o = new JsonObject();
+        o.addProperty(GetFileContentParamEnum.FILE_PATH.key(), filePath);
+        if (startLine != null) {
+            o.addProperty(GetFileContentParamEnum.START_LINE.key(), startLine);
+        }
+        if (endLine != null) {
+            o.addProperty(GetFileContentParamEnum.END_LINE.key(), endLine);
+        }
+        o.addProperty(GetFileContentParamEnum.RAW.key(), true);
         return new ToolRequestArguments(o);
     }
 
@@ -68,6 +81,9 @@ class GetFileContentToolTest {
         assertTrue(props.has(GetFileContentParamEnum.FILE_PATH.key()));
         assertTrue(props.has(GetFileContentParamEnum.START_LINE.key()));
         assertTrue(props.has(GetFileContentParamEnum.END_LINE.key()));
+        assertTrue(props.has(GetFileContentParamEnum.RAW.key()));
+        assertEquals("boolean", props.getAsJsonObject(GetFileContentParamEnum.RAW.key())
+                .get(ToolSchemaKeyEnum.TYPE.key()).getAsString());
         JsonArray required = schema.getAsJsonArray(ToolSchemaKeyEnum.REQUIRED.key());
         assertEquals(1, required.size());
         assertEquals(GetFileContentParamEnum.FILE_PATH.key(), required.get(0).getAsString());
@@ -148,6 +164,57 @@ class GetFileContentToolTest {
         GetFileContentTool tool = new GetFileContentTool(unrestrictedServer());
 
         assertThrows(McpArgumentException.class, () -> tool.handle(args(null, null, null), session()));
+    }
+
+    @Test
+    void rawReturnsExactTextWithNoGutterAndNoHeader(@TempDir Path dir) throws Exception {
+        Path f = threeLineFile(dir);
+        GetFileContentTool tool = new GetFileContentTool(unrestrictedServer());
+
+        String result = tool.handle(rawArgs(f.toString(), null, null), session());
+
+        assertEquals("alpha\nbeta\ngamma", result);
+    }
+
+    @Test
+    void rawWithLineRangeStillApplies_keepingTheLinesOwnTerminator(@TempDir Path dir) throws Exception {
+        Path f = threeLineFile(dir);
+        GetFileContentTool tool = new GetFileContentTool(unrestrictedServer());
+
+        String result = tool.handle(rawArgs(f.toString(), 2, 2), session());
+
+        // threeLineFile is "alpha\nbeta\ngamma" (no trailing newline) — line 2 ("beta") is followed by the \n
+        // that separates it from "gamma", so the exact original characters for that line include it.
+        assertEquals("beta\n", result);
+    }
+
+    @Test
+    void rawOversizeReturnsErrorWithNoTruncationMarker(@TempDir Path dir) throws Exception {
+        Path f = dir.resolve("huge.txt");
+        Files.writeString(f, "x".repeat(200_001));
+        GetFileContentTool tool = new GetFileContentTool(unrestrictedServer());
+
+        String result = tool.handle(rawArgs(f.toString(), null, null), session());
+
+        assertTrue(result.startsWith("Error:"), result);
+        assertTrue(result.contains(GetFileContentParamEnum.START_LINE.key())
+                   && result.contains(GetFileContentParamEnum.END_LINE.key()), result);
+        assertFalse(result.contains("[Truncated"), "raw output must never carry the inline truncation marker: " + result);
+    }
+
+    /**
+     * Mutation-prove target: a ranged raw read used to rejoin {@code Files.readAllLines} output with a
+     * hardcoded {@code \n}, silently turning CRLF into LF for every line but the file's own terminators.
+     */
+    @Test
+    void rawRangeOnACrlfFilePreservesOriginalLineTerminators(@TempDir Path dir) throws Exception {
+        Path f = dir.resolve("crlf.txt");
+        Files.writeString(f, "alpha\r\nbeta\r\ngamma\r\n");
+        GetFileContentTool tool = new GetFileContentTool(unrestrictedServer());
+
+        String result = tool.handle(rawArgs(f.toString(), 2, 2), session());
+
+        assertEquals("beta\r\n", result);
     }
 
     private static final class FakeSession extends AbstractAiSession {

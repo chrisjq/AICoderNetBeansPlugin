@@ -86,6 +86,8 @@ public enum McpToolEnum {
     DELETE_FILE("DeleteFile"),
     COPY_FILE("CopyFile"),
     MOVE_FILE("MoveFile"),
+    CREATE_DIRECTORY("CreateDirectory"),
+    DELETE_DIRECTORY("DeleteDirectory"),
     REFRESH_NB_FILE_STATUS("RefreshFileStatus"),
     // UI_BUILD
     BUILD_PROJECT("BuildProject"),

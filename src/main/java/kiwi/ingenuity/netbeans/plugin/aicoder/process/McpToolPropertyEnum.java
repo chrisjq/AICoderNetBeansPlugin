@@ -3,15 +3,16 @@ package kiwi.ingenuity.netbeans.plugin.aicoder.process;
 /**
  * The single source of truth for MCP tool property (parameter) names.
  * <p>
- * Every tool exposes its parameters through a per-tool {@code *ParamEnum}, which names the subset it accepts; the wire
- * key itself comes from here, so the twenty tools that take a file path cannot end up advertising twenty slightly
- * different spellings of it. Anything that would otherwise write a property name as a string literal —
- * {@code props.add(...)} in a schema, {@code args.str(...)} in a handler — takes it from this enum instead.
+ * Every tool exposes its parameters through a per-tool {@code *ParamEnum}, which names the subset it accepts;
+ * the wire key itself comes from here, so the twenty tools that take a file path cannot end up advertising
+ * twenty slightly different spellings of it. Anything that would otherwise write a property name as a string
+ * literal — {@code props.add(...)} in a schema, {@code args.str(...)} in a handler — takes it from this enum
+ * instead.
  * <p>
  * Keys are camelCase without exception. {@code WriteFile} and {@code ApplyEdit} previously used snake_case
- * ({@code file_path}, {@code old_string}, {@code new_string}) while every other tool used camelCase, which meant an AI
- * that had learned one spelling supplied an argument the other tool silently ignored. McpToolPropertyEnumTest enforces
- * the convention.
+ * ({@code file_path}, {@code old_string}, {@code new_string}) while every other tool used camelCase, which
+ * meant an AI that had learned one spelling supplied an argument the other tool silently ignored.
+ * McpToolPropertyEnumTest enforces the convention.
  */
 public enum McpToolPropertyEnum {
     /**
@@ -55,8 +56,8 @@ public enum McpToolPropertyEnum {
      */
     COLUMN("column"),
     /**
-     * Whether a refactoring proceeds despite non-fatal problems, reporting them instead of refusing. Never overrides a
-     * fatal problem.
+     * Whether a refactoring proceeds despite non-fatal problems, reporting them instead of refusing. Never
+     * overrides a fatal problem.
      */
     COMMIT_WITH_WARNING("commitWithWarning"),
     /**
@@ -72,8 +73,8 @@ public enum McpToolPropertyEnum {
      */
     CONTEXT_LINES("contextLines"),
     /**
-     * Gradle --continue / Maven -fae equivalent for Gradle: keep running other tasks after a failure instead of
-     * stopping at the first one.
+     * Gradle --continue / Maven -fae equivalent for Gradle: keep running other tasks after a failure instead
+     * of stopping at the first one.
      */
     CONTINUE_ON_FAILURE("continueOnFailure"),
     /**
@@ -101,12 +102,16 @@ public enum McpToolPropertyEnum {
      */
     DIRECTORY_PATH("directoryPath"),
     /**
+     * Expected number of matches an edit must find before it is applied.
+     */
+    EXPECTED_COUNT("expectedCount"),
+    /**
      * Whether a message requires a reply.
      */
     EXPECTS_REPLY("expectsReply"),
     /**
-     * Maven -fae: run every module before failing, reporting all failures at the end instead of stopping at the first
-     * one.
+     * Maven -fae: run every module before failing, reporting all failures at the end instead of stopping at
+     * the first one.
      */
     FAIL_AT_END("failAtEnd"),
     /**
@@ -146,8 +151,9 @@ public enum McpToolPropertyEnum {
      */
     FOCUS("focus"),
     /**
-     * Maven goals to run (e.g. {@code package}, {@code clean install}). Gradle's equivalent is {@link #TASKS}, Ant's is
-     * {@link #TARGETS} — each build system keeps its own vocabulary rather than sharing this key.
+     * Maven goals to run (e.g. {@code package}, {@code clean install}). Gradle's equivalent is
+     * {@link #TASKS}, Ant's is {@link #TARGETS} — each build system keeps its own vocabulary rather than
+     * sharing this key.
      */
     GOALS("goals"),
     /**
@@ -263,7 +269,8 @@ public enum McpToolPropertyEnum {
      */
     NOTE("note"),
     /**
-     * Maven -o / Gradle --offline: work from the local repository/cache only, without contacting remote repos.
+     * Maven -o / Gradle --offline: work from the local repository/cache only, without contacting remote
+     * repos.
      */
     OFFLINE("offline"),
     /**
@@ -328,6 +335,11 @@ public enum McpToolPropertyEnum {
      */
     QUESTIONS("questions"),
     /**
+     * Whether to return the exact file text (decoded with the file's encoding), no line-number gutter and no
+     * header.
+     */
+    RAW("raw"),
+    /**
      * Whether an idle watcher re-arms after the target's next turn.
      */
     RECURRING("recurring"),
@@ -339,6 +351,10 @@ public enum McpToolPropertyEnum {
      * Git remote name.
      */
     REMOTE("remote"),
+    /**
+     * Whether an edit replaces every occurrence rather than only the first.
+     */
+    REPLACE_ALL("replaceAll"),
     /**
      * Whether a reply should interrupt its sender.
      */
@@ -376,8 +392,8 @@ public enum McpToolPropertyEnum {
      */
     SESSION_ID("sessionId"),
     /**
-     * Maven -DskipTests / Gradle -x test: skip running tests as part of the build. Default differs by tool — see each
-     * tool's own description for what it preserves from before this option existed.
+     * Maven -DskipTests / Gradle -x test: skip running tests as part of the build. Default differs by tool —
+     * see each tool's own description for what it preserves from before this option existed.
      */
     SKIP_TESTS("skipTests"),
     /**
@@ -418,8 +434,8 @@ public enum McpToolPropertyEnum {
      */
     TARGET_PACKAGE("targetPackage"),
     /**
-     * Optional destination project root — omitted keeps a move inside the source file's own project; given, moves
-     * across module boundaries into this project instead.
+     * Optional destination project root — omitted keeps a move inside the source file's own project; given,
+     * moves across module boundaries into this project instead.
      */
     TARGET_PROJECT_PATH("targetProjectPath"),
     /**
@@ -432,8 +448,8 @@ public enum McpToolPropertyEnum {
      */
     TARGET_SESSION_ID("targetSessionId"),
     /**
-     * Gradle tasks to run (e.g. {@code build}, {@code assemble}, {@code :module:build}). Maven's equivalent is
-     * {@link #GOALS}, Ant's is {@link #TARGETS}.
+     * Gradle tasks to run (e.g. {@code build}, {@code assemble}, {@code :module:build}). Maven's equivalent
+     * is {@link #GOALS}, Ant's is {@link #TARGETS}.
      */
     TASKS("tasks"),
     /**

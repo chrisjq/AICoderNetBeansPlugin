@@ -17,6 +17,7 @@ import java.nio.charset.Charset;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.InvalidPathException;
+import java.nio.file.LinkOption;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -74,23 +75,24 @@ public class RefactoringProvider {
     private static final Logger LOG = Logger.getLogger(RefactoringProvider.class.getName());
 
     private static final String RUN_INSPECT_ACTION
-            = "Actions/Source/org-netbeans-modules-analysis-RunAnalysisAction.instance";
+                                = "Actions/Source/org-netbeans-modules-analysis-RunAnalysisAction.instance";
     private static final String FIX_IMPORTS_ACTION
-            = "Editors/text/x-java/Actions/fix-imports.instance";
+                                = "Editors/text/x-java/Actions/fix-imports.instance";
     private static final String ORGANISE_IMPORTS_ACTION
-            = "Editors/text/x-java/Actions/organize-imports.instance";
+                                = "Editors/text/x-java/Actions/organize-imports.instance";
     private static final String ORGANISE_MEMBERS_ACTION
-            = "Editors/text/x-java/Actions/organize-members.instance";
+                                = "Editors/text/x-java/Actions/organize-members.instance";
 
     /**
      * The single source of truth for "what charset does this file's byte I/O use" across the whole plugin —
-     * {@link EditorContextProvider}, {@code AiTopComponent}, and {@code CodexAppServerHandler} all resolve through this
-     * method rather than deciding independently, so a read and its matching write can never disagree. Resolves via
-     * NetBeans' {@link FileEncodingQuery} against the best-available {@link FileObject}
-     * ({@link FileUtils#resolveByFile}), which is how the editor itself decides a file's encoding (per-project
-     * settings, detection). Falls back to UTF-8 — a documented default, never {@link Charset#defaultCharset()} — when
-     * there is no resolvable FileObject (a path outside every open project and every registered source root) or the
-     * query itself is unavailable (e.g. outside a fully started IDE).
+     * {@link EditorContextProvider}, {@code AiTopComponent}, and {@code CodexAppServerHandler} all resolve
+     * through this method rather than deciding independently, so a read and its matching write can never
+     * disagree. Resolves via NetBeans' {@link FileEncodingQuery} against the best-available {@link FileObject}
+     * ({@link FileUtils#resolveByFile}), which is how the editor itself decides a file's encoding
+     * (per-project settings, detection). Falls back to UTF-8 — a documented default, never
+     * {@link Charset#defaultCharset()} — when there is no resolvable FileObject (a path outside every open
+     * project and every registered source root) or the query itself is unavailable (e.g. outside a fully
+     * started IDE).
      */
     public static Charset resolveCharset(FileObject fo) {
         if (fo != null) {
@@ -121,13 +123,13 @@ public class RefactoringProvider {
             return filePath != null && !filePath.isBlank()
                    ? "File not found: " + filePath
                    : McpToolPropertyEnum.FILE_PATH.key() + " is required — this tool does not fall back to the focused editor. "
-                    + "Call " + McpToolEnum.GET_CURRENT_FILE.toolName()
-                    + " if you want the file the user is looking at.";
+                     + "Call " + McpToolEnum.GET_CURRENT_FILE.toolName()
+                     + " if you want the file the user is looking at.";
         }
         if (line <= 0) {
             return McpToolPropertyEnum.LINE.key() + " is required and must be 1-based — this tool does not follow the user's cursor. "
-                    + "Call " + McpToolEnum.GET_CURRENT_FILE.toolName()
-                    + " if you want the line the user is on.";
+                   + "Call " + McpToolEnum.GET_CURRENT_FILE.toolName()
+                   + " if you want the line the user is on.";
         }
         TreePathHandle handle = resolveHandle(fo, line);
         if (handle == null) {
@@ -156,7 +158,7 @@ public class RefactoringProvider {
         // rejected on its own terms and does not depend on the IDE being able to resolve the file first.
         if (line < 0) {
             return "Error: " + McpToolPropertyEnum.LINE.key()
-                    + " must be 1-based, or omitted to move the whole file. Received: " + line;
+                   + " must be 1-based, or omitted to move the whole file. Received: " + line;
         }
         boolean targetProjectGiven = targetProjectPath != null && !targetProjectPath.isBlank();
         // Validated alongside the other arguments, before any file resolution — the same principle commit d056587
@@ -171,8 +173,8 @@ public class RefactoringProvider {
             return filePath != null && !filePath.isBlank()
                    ? "File not found: " + filePath
                    : McpToolPropertyEnum.FILE_PATH.key() + " is required — this tool does not fall back to the focused editor. "
-                    + "Call " + McpToolEnum.GET_CURRENT_FILE.toolName()
-                    + " if you want the file the user is looking at.";
+                     + "Call " + McpToolEnum.GET_CURRENT_FILE.toolName()
+                     + " if you want the file the user is looking at.";
         }
         if (!isUsableRefactoringFile(fo)) {
             return "Source file is no longer valid: " + filePath + ". Re-resolve the path and retry.";
@@ -209,9 +211,9 @@ public class RefactoringProvider {
         TopLevelClassMatch match = line > 0 ? resolveTopLevelClassMatch(fo, line) : null;
         if (line > 0 && match == null) {
             return "No top-level class declaration found at " + pos(filePath, line)
-                    + (topLevelTypes.isEmpty() ? "" : ". This file declares: " + String.join(", ", topLevelTypes))
-                    + ". Give the line of the class declaration, or omit " + McpToolPropertyEnum.LINE.key()
-                    + " to move the whole file.";
+                   + (topLevelTypes.isEmpty() ? "" : ". This file declares: " + String.join(", ", topLevelTypes))
+                   + ". Give the line of the class declaration, or omit " + McpToolPropertyEnum.LINE.key()
+                   + " to move the whole file.";
         }
         if (match != null && topLevelTypes.size() > 1) {
             FileObject handleFile = match.handle().getFileObject();
@@ -226,9 +228,9 @@ public class RefactoringProvider {
         // guard exists to prevent - so name them and ask which one.
         if (line == 0 && topLevelTypes.size() > 1) {
             return "This file declares " + topLevelTypes.size() + " top-level types ("
-                    + String.join(", ", topLevelTypes) + "), so moving it without "
-                    + McpToolPropertyEnum.LINE.key() + " would move all of them. Pass "
-                    + McpToolPropertyEnum.LINE.key() + " with the declaration line of the class to move.";
+                   + String.join(", ", topLevelTypes) + "), so moving it without "
+                   + McpToolPropertyEnum.LINE.key() + " would move all of them. Pass "
+                   + McpToolPropertyEnum.LINE.key() + " with the declaration line of the class to move.";
         }
 
         // A TreePathHandle is required only to extract one type from a multi-type file. Single-type files use the
@@ -245,7 +247,7 @@ public class RefactoringProvider {
             // the source file's own name — so the resulting path is reported from the class's name, not fo's.
             String resultingPath = targetFolder.getPath() + "/" + match.simpleName() + ".java";
             return runMoveRefactoringWithRecovery(byClass, commitWithWarning,
-                                                  "Moved class to '" + targetPackage + "': " + resultingPath, fo, targetFolder, match.simpleName() + ".java");
+                    "Moved class to '" + targetPackage + "': " + resultingPath, fo, targetFolder, match.simpleName() + ".java");
         }
 
         // Use fo directly (not DataObject) so the Java plugin uses the fresh
@@ -254,12 +256,12 @@ public class RefactoringProvider {
         r.setTarget(Lookups.singleton(targetFolder.toURL()));
         String resultingPath = targetFolder.getPath() + "/" + fo.getNameExt();
         return runMoveRefactoringWithRecovery(r, commitWithWarning,
-                                              "Moved to '" + targetPackage + "': " + resultingPath, fo, targetFolder, fo.getNameExt());
+                "Moved to '" + targetPackage + "': " + resultingPath, fo, targetFolder, fo.getNameExt());
     }
 
     /**
-     * Moves a complete Java file, avoiding the broken class-handle template path when the file has only one top-level
-     * type. Package-private route seam for the single-type-with-line regression test.
+     * Moves a complete Java file, avoiding the broken class-handle template path when the file has only one
+     * top-level type. Package-private route seam for the single-type-with-line regression test.
      */
     static boolean usesWholeFileMoveForResolvedClass(int topLevelTypeCount) {
         return topLevelTypeCount == 1;
@@ -271,21 +273,22 @@ public class RefactoringProvider {
         refactoring.setTarget(Lookups.singleton(targetFolder.toURL()));
         String resultingPath = targetFolder.getPath() + "/" + source.getNameExt();
         return runMoveRefactoringWithRecovery(refactoring, commitWithWarning,
-                                              "Moved to '" + targetPackage + "': " + resultingPath, source, targetFolder, source.getNameExt());
+                "Moved to '" + targetPackage + "': " + resultingPath, source, targetFolder, source.getNameExt());
     }
 
     /**
-     * Moves several Java classes to the same target package in ONE refactoring. NetBeans' {@link MoveRefactoring} takes
-     * a {@link org.openide.util.Lookup}, and a lookup can hold many {@link FileObject}s (the same pattern
-     * {@code renameSymbol} already uses via {@code Lookups.fixed} for a single file's handle+FileObject pair), so the
-     * whole batch is one preCheck/prepare/doRefactoring transaction rather than N of them. Every source is validated
-     * immediately before constructing the refactoring because an invalid FileObject must never be passed to the engine.
+     * Moves several Java classes to the same target package in ONE refactoring. NetBeans'
+     * {@link MoveRefactoring} takes a {@link org.openide.util.Lookup}, and a lookup can hold many
+     * {@link FileObject}s (the same pattern {@code renameSymbol} already uses via {@code Lookups.fixed} for a
+     * single file's handle+FileObject pair), so the whole batch is one preCheck/prepare/doRefactoring
+     * transaction rather than N of them. Every source is validated immediately before constructing the
+     * refactoring because an invalid FileObject must never be passed to the engine.
      * <p>
-     * Every path is validated — resolvable, exactly one top-level type, and a shared target folder — before anything
-     * moves, so a bad file among several is caught while nothing has changed. {@code line} has no meaning here: a line
-     * number cannot identify a class across several files, so every file in a batch moves as a whole, and a file
-     * declaring more than one top-level type is refused for the same reason the single-file path refuses it — moving it
-     * would silently take classes nobody named.
+     * Every path is validated — resolvable, exactly one top-level type, and a shared target folder — before
+     * anything moves, so a bad file among several is caught while nothing has changed. {@code line} has no
+     * meaning here: a line number cannot identify a class across several files, so every file in a batch
+     * moves as a whole, and a file declaring more than one top-level type is refused for the same reason the
+     * single-file path refuses it — moving it would silently take classes nobody named.
      */
     public static String moveClasses(List<String> filePaths, String targetPackage, String targetProjectPath,
                                      boolean commitWithWarning) {
@@ -321,9 +324,9 @@ public class RefactoringProvider {
             List<String> topLevelTypes = topLevelTypeNames(fo);
             if (topLevelTypes.size() > 1) {
                 return filePath + " declares " + topLevelTypes.size() + " top-level types ("
-                        + String.join(", ", topLevelTypes) + "). A batch move has no " + McpToolPropertyEnum.LINE.key()
-                        + " to pick one, so every file in the batch must declare exactly one top-level type — move "
-                        + "this file on its own with " + McpToolPropertyEnum.LINE.key() + " instead.";
+                       + String.join(", ", topLevelTypes) + "). A batch move has no " + McpToolPropertyEnum.LINE.key()
+                       + " to pick one, so every file in the batch must declare exactly one top-level type — move "
+                       + "this file on its own with " + McpToolPropertyEnum.LINE.key() + " instead.";
             }
             // Same silent-misplacement guard as the single-file path, applied per file — a batch can draw its
             // files from more than one source project even though they all share one target.
@@ -344,7 +347,7 @@ public class RefactoringProvider {
             }
             else if (!targetFolder.equals(folder)) {
                 return filePath + " resolves to a different source root than the rest of the batch (target would be "
-                        + folder.getPath() + " instead of " + targetFolder.getPath() + "). Move it in its own call.";
+                       + folder.getPath() + " instead of " + targetFolder.getPath() + "). Move it in its own call.";
             }
             resolved.add(fo);
         }
@@ -365,21 +368,23 @@ public class RefactoringProvider {
     }
 
     /**
-     * A top-level class resolved at a given line, paired with its simple name — the name is captured in the same
-     * {@code JavaSource} pass that resolves the handle so a caller needing both (a class-only move reports the moved
-     * file's new name, which is always the class's own name, never the source file's) does not need a second pass.
+     * A top-level class resolved at a given line, paired with its simple name — the name is captured in the
+     * same {@code JavaSource} pass that resolves the handle so a caller needing both (a class-only move
+     * reports the moved file's new name, which is always the class's own name, never the source file's) does
+     * not need a second pass.
      */
     private record TopLevelClassMatch(TreePathHandle handle, String simpleName, long endPosition) {
 
     }
 
     /**
-     * The top-level class declared at {@code line}, as a handle the refactoring can move on its own, plus its simple
-     * name.
+     * The top-level class declared at {@code line}, as a handle the refactoring can move on its own, plus its
+     * simple name.
      * <p>
-     * An exact match on the declaration line wins; otherwise a class whose body spans the line is accepted, so a caller
-     * pointing anywhere inside the class still gets it. Only top-level types are considered - a nested class cannot be
-     * moved to another package on its own, and silently moving its outer class instead would be worse than refusing.
+     * An exact match on the declaration line wins; otherwise a class whose body spans the line is accepted,
+     * so a caller pointing anywhere inside the class still gets it. Only top-level types are considered - a
+     * nested class cannot be moved to another package on its own, and silently moving its outer class instead
+     * would be worse than refusing.
      */
     private static TopLevelClassMatch resolveTopLevelClassMatch(FileObject fo, int line) {
         JavaSource js = JavaSource.forFileObject(fo);
@@ -416,7 +421,7 @@ public class RefactoringProvider {
                     TreePath path = TreePath.getPath(cu, match);
                     if (path != null) {
                         ref.set(new TopLevelClassMatch(TreePathHandle.create(path, cc), match.getSimpleName().toString(),
-                                                       sp.getEndPosition(cu, match)));
+                                sp.getEndPosition(cu, match)));
                     }
                 }
             }, true);
@@ -430,8 +435,9 @@ public class RefactoringProvider {
     /**
      * Names of the top-level types declared in a Java file, in declaration order.
      * <p>
-     * Used only to describe what a move actually affected. Returns an empty list when the file cannot be parsed, which
-     * makes the caller silently skip the note rather than fail a refactoring that otherwise succeeded.
+     * Used only to describe what a move actually affected. Returns an empty list when the file cannot be
+     * parsed, which makes the caller silently skip the note rather than fail a refactoring that otherwise
+     * succeeded.
      */
     private static void logMoveClassModel(String filePath, FileObject source, TopLevelClassMatch match) {
         if (!PluginSettings.isDebugJson()) {
@@ -450,8 +456,8 @@ public class RefactoringProvider {
         FileObject handleFile = match.handle().getFileObject();
         LOG.log(Level.FINE, "MoveClass model file={0}, bytes={1}, source={2}@{3}, handle={4}@{5}, treeEnd={6}",
                 new Object[]{filePath, byteLength, source != null ? source.getPath() : "<null>",
-                    System.identityHashCode(source), handleFile != null ? handleFile.getPath() : "<null>",
-                    System.identityHashCode(handleFile), match.endPosition()});
+                             System.identityHashCode(source), handleFile != null ? handleFile.getPath() : "<null>",
+                             System.identityHashCode(handleFile), match.endPosition()});
     }
 
     private static List<String> topLevelTypeNames(FileObject fo) {
@@ -486,13 +492,13 @@ public class RefactoringProvider {
             return filePath != null && !filePath.isBlank()
                    ? "File not found: " + filePath
                    : McpToolPropertyEnum.FILE_PATH.key() + " is required — this tool does not fall back to the focused editor. "
-                    + "Call " + McpToolEnum.GET_CURRENT_FILE.toolName()
-                    + " if you want the file the user is looking at.";
+                     + "Call " + McpToolEnum.GET_CURRENT_FILE.toolName()
+                     + " if you want the file the user is looking at.";
         }
         if (line <= 0) {
             return McpToolPropertyEnum.LINE.key() + " is required and must be 1-based — this tool does not follow the user's cursor. "
-                    + "Call " + McpToolEnum.GET_CURRENT_FILE.toolName()
-                    + " if you want the line the user is on.";
+                   + "Call " + McpToolEnum.GET_CURRENT_FILE.toolName()
+                   + " if you want the line the user is on.";
         }
         TreePathHandle handle = resolveHandle(fo, line);
         if (handle == null) {
@@ -510,13 +516,13 @@ public class RefactoringProvider {
             return filePath != null && !filePath.isBlank()
                    ? "File not found: " + filePath
                    : McpToolPropertyEnum.FILE_PATH.key() + " is required — this tool does not fall back to the focused editor. "
-                    + "Call " + McpToolEnum.GET_CURRENT_FILE.toolName()
-                    + " if you want the file the user is looking at.";
+                     + "Call " + McpToolEnum.GET_CURRENT_FILE.toolName()
+                     + " if you want the file the user is looking at.";
         }
         if (line <= 0) {
             return McpToolPropertyEnum.LINE.key() + " is required and must be 1-based — this tool does not follow the user's cursor. "
-                    + "Call " + McpToolEnum.GET_CURRENT_FILE.toolName()
-                    + " if you want the line the user is on.";
+                   + "Call " + McpToolEnum.GET_CURRENT_FILE.toolName()
+                   + " if you want the line the user is on.";
         }
         TreePathHandle handle = resolveHandle(fo, line);
         if (handle == null) {
@@ -564,8 +570,8 @@ public class RefactoringProvider {
             return filePath != null && !filePath.isBlank()
                    ? "File not found: " + filePath
                    : McpToolPropertyEnum.FILE_PATH.key() + " is required — this tool rewrites a file, so it does not fall back to "
-                    + "the focused editor. Call " + McpToolEnum.GET_CURRENT_FILE.toolName()
-                    + " if you want the file the user is looking at.";
+                     + "the focused editor. Call " + McpToolEnum.GET_CURRENT_FILE.toolName()
+                     + " if you want the file the user is looking at.";
         }
         File diskFile = FileUtil.toFile(fo);
         if (diskFile == null) {
@@ -593,13 +599,13 @@ public class RefactoringProvider {
                     // needs a long run of Ctrl+Z to undo one tool call.
                     if (doc instanceof StyledDocument styled) {
                         NbDocument.runAtomic(styled, () -> {
-                                         try {
-                                             reformat.reformat(0, doc.getLength());
-                                         }
-                                         catch (BadLocationException e) {
-                                             result.set("Reformat error: " + e.getMessage());
-                                         }
-                                     });
+                            try {
+                                reformat.reformat(0, doc.getLength());
+                            }
+                            catch (BadLocationException e) {
+                                result.set("Reformat error: " + e.getMessage());
+                            }
+                        });
                     }
                     else {
                         reformat.reformat(0, doc.getLength());
@@ -734,21 +740,22 @@ public class RefactoringProvider {
     }
 
     /**
-     * Fail-closed check on a content read that is about to drive a write: null when the bytes read account for the
-     * whole file, otherwise the error to return instead of writing.
+     * Fail-closed check on a content read that is about to drive a write: null when the bytes read account
+     * for the whole file, otherwise the error to return instead of writing.
      *
      * <p>
-     * A read-modify-write is only as safe as its read. If fewer bytes came back than the file actually holds, the
-     * replacement built from them is missing the tail, and writing it destroys that tail silently. Refusing is always
-     * recoverable — the caller retries and nothing is lost — so this errs towards refusing.</p>
+     * A read-modify-write is only as safe as its read. If fewer bytes came back than the file actually holds,
+     * the replacement built from them is missing the tail, and writing it destroys that tail silently.
+     * Refusing is always recoverable — the caller retries and nothing is lost — so this errs towards
+     * refusing.</p>
      *
      * <p>
-     * Pure, and separate from the read, so a test can drive a disagreement between "bytes read" and "size on disk"
-     * without needing a live filesystem to produce a genuinely stale cache. The truncation itself cannot be reproduced
-     * headlessly; this decision can.</p>
+     * Pure, and separate from the read, so a test can drive a disagreement between "bytes read" and "size on
+     * disk" without needing a live filesystem to produce a genuinely stale cache. The truncation itself
+     * cannot be reproduced headlessly; this decision can.</p>
      *
-     * @param filePath the path to name in the error, as the caller supplied it
-     * @param bytesRead how many bytes the read actually returned
+     * @param filePath   the path to name in the error, as the caller supplied it
+     * @param bytesRead  how many bytes the read actually returned
      * @param sizeOnDisk how many bytes the file holds, stat'd from disk
      */
     static String describeShortRead(String filePath, long bytesRead, long sizeOnDisk) {
@@ -756,21 +763,42 @@ public class RefactoringProvider {
             return null;
         }
         return "Edit refused: read " + bytesRead + " bytes of " + filePath + " but it is " + sizeOnDisk
-                + " bytes on disk. The IDE's view of this file is stale, so the edit was NOT applied and nothing "
-                + "was changed. Retry — the read is re-taken each attempt.";
+               + " bytes on disk. The IDE's view of this file is stale, so the edit was NOT applied and nothing "
+               + "was changed. Retry — the read is re-taken each attempt.";
     }
 
     /**
      * @param replaceAll replace every occurrence rather than the first. Shares
-     * {@link PermissionDiffPolicy#replaceEvery} with the preview so the approved diff and the written bytes cannot
-     * diverge — see that method for why neither side uses String.replace/replaceAll.
+     *                   {@link PermissionDiffPolicy#replaceEvery} with the preview so the approved diff and
+     *                   the written bytes cannot diverge — see that method for why neither side uses
+     *                   String.replace/replaceAll.
      */
     public static String applyEdit(String filePath, String oldString, String newString, boolean replaceAll) {
+        return applyEdit(filePath, oldString, newString, replaceAll, -1);
+    }
+
+    /**
+     * @param replaceAll    replace every occurrence rather than the first. Shares
+     *                      {@link PermissionDiffPolicy#replaceEvery} with the preview so the approved diff
+     *                      and the written bytes cannot diverge — see that method for why neither side uses
+     *                      String.replace/replaceAll.
+     * @param expectedCount asserted number of occurrences of {@code oldString}; a mismatch leaves the file
+     *                      untouched and reports the actual count. {@code -1} means no assertion was
+     *                      requested.
+     */
+    public static String applyEdit(String filePath, String oldString, String newString, boolean replaceAll,
+                                   int expectedCount) {
         if (filePath == null || filePath.isBlank()) {
             return McpToolPropertyEnum.FILE_PATH.key() + " is required";
         }
         if (oldString == null) {
             return McpToolPropertyEnum.OLD_STRING.key() + " is required";
+        }
+        if (oldString.isEmpty()) {
+            // An empty oldString matches at index 0 of any content, so replaceFirst/replaceEvery would prepend
+            // newString instead of refusing the "not found" case they otherwise always reach for a match this
+            // degenerate.
+            return McpToolPropertyEnum.OLD_STRING.key() + " must not be empty";
         }
         if (newString == null) {
             return McpToolPropertyEnum.NEW_STRING.key() + " is required";
@@ -847,23 +875,30 @@ public class RefactoringProvider {
                 int oldStringLen = oldString.length();
                 int contentLen = content.length();
                 LOG.info("ApplyEdit: oldString not found in " + filePath
-                        + " | content: " + contentLen + " bytes"
-                        + " | oldString: " + oldStringLen + " bytes, hash=" + hash
-                        + " | wsInsensitiveMatch: " + wsInsensitiveMatch
-                        + " | oldString: " + oldString);
+                         + " | content: " + contentLen + " bytes"
+                         + " | oldString: " + oldStringLen + " bytes, hash=" + hash
+                         + " | wsInsensitiveMatch: " + wsInsensitiveMatch
+                         + " | oldString: " + oldString);
             }
             String hint = PermissionDiffPolicy.diagnoseWhitespaceMismatch(content, oldString);
             if (hint != null) {
                 return hint;
             }
             return McpToolPropertyEnum.OLD_STRING.key()
-                    + " not found in file. A common cause is copying from GetFileContent and leaving its line-number gutter; "
-                    + McpToolPropertyEnum.OLD_STRING.key()
-                    + " must match the file byte-for-byte, including leading whitespace.";
+                   + " not found in file. A common cause is copying from GetFileContent and leaving its line-number gutter; "
+                   + McpToolPropertyEnum.OLD_STRING.key()
+                   + " must match the file byte-for-byte, including leading whitespace.";
+        }
+        int actualCount = countOccurrences(content, oldString);
+        if (expectedCount >= 0 && actualCount != expectedCount) {
+            return "Edit refused: expected " + expectedCount + " occurrence(s) of " + McpToolPropertyEnum.OLD_STRING.key()
+                   + " but found " + actualCount + ". Nothing was changed.";
         }
         String updated = replaceAll
                          ? PermissionDiffPolicy.replaceEvery(content, oldString, replacement)
                          : PermissionDiffPolicy.replaceFirst(content, oldString, replacement);
+        int replacedCount = replaceAll ? actualCount : 1;
+        String countSuffix = " (" + replacedCount + " occurrence" + (replacedCount == 1 ? "" : "s") + " replaced)";
         try {
             // This guard exists to catch the file moving under us between match and write. It reads from disk for the
             // same reason the match above does — re-reading the same cache the match used would compare one possibly
@@ -900,41 +935,61 @@ public class RefactoringProvider {
             // than overwrite them.
             String viaDoc = writeViaDocument(fo, updated, content);
             GitProvider.refreshVcsStatus(filePath);
-            return viaDoc + flushNote(flush);
+            return viaDoc + countSuffix + flushNote(flush);
         }
         catch (IOException e) {
             return "Edit error: " + e.getMessage();
         }
         FileUtils.refreshAfterWrite(fo);
         GitProvider.refreshVcsStatus(filePath);
-        return "File updated and saved" + flushNote(flush);
+        return "File updated and saved" + countSuffix + flushNote(flush);
+    }
+
+    /**
+     * Counts non-overlapping literal occurrences of {@code target} in {@code content}, scanning left to right
+     * and resuming after each match — the same walk {@link PermissionDiffPolicy#replaceEvery} uses, so the
+     * count always agrees with how many replacements that method would actually make.
+     */
+    static int countOccurrences(String content, String target) {
+        if (target.isEmpty()) {
+            return 0;
+        }
+        int count = 0;
+        int from = 0;
+        int idxFound;
+        while ((idxFound = content.indexOf(target, from)) >= 0) {
+            count++;
+            from = idxFound + target.length();
+        }
+        return count;
     }
 
     /**
      * Normalises line endings so document text and disk bytes can be compared for equality.
      *
      * <p>
-     * NetBeans documents hold {@code \n} internally whatever the file uses on disk, so a CRLF file read as bytes and
-     * the same file read from its document differ on every single line. Comparing them raw is not a stricter check, it
-     * is a broken one — it would report "changed" for every CRLF file and turn the locked-file path into a path that
-     * never works.</p>
+     * NetBeans documents hold {@code \n} internally whatever the file uses on disk, so a CRLF file read as
+     * bytes and the same file read from its document differ on every single line. Comparing them raw is not a
+     * stricter check, it is a broken one — it would report "changed" for every CRLF file and turn the
+     * locked-file path into a path that never works.</p>
      */
     private static String normaliseLineEndings(String text) {
         return text == null ? null : text.replace("\r\n", "\n").replace('\r', '\n');
     }
 
     /**
-     * True when the editor document still holds the text that passed disk verification, so replacing it would discard
-     * nothing the caller has not accounted for.
+     * True when the editor document still holds the text that passed disk verification, so replacing it would
+     * discard nothing the caller has not accounted for.
      *
      * <p>
-     * NOT a plain {@code equals}: see {@link #normaliseLineEndings} for why line endings are normalised on both sides
-     * first. Do not "simplify" this back to {@code documentText.equals(verifiedContent)} — that breaks every file with
-     * CRLF endings.</p>
+     * NOT a plain {@code equals}: see {@link #normaliseLineEndings} for why line endings are normalised on
+     * both sides first. Do not "simplify" this back to {@code documentText.equals(verifiedContent)} — that
+     * breaks every file with CRLF endings.</p>
      *
      * <p>
-     * Pure, and separate from the write, so a test can drive identical text, changed text and the CRLF-versus-LF case
-     * directly. That last one is the whole reason this function exists rather than an inline comparison.</p>
+     * Pure, and separate from the write, so a test can drive identical text, changed text and the
+     * CRLF-versus-LF case directly. That last one is the whole reason this function exists rather than an
+     * inline comparison.</p>
      */
     static boolean documentMatchesVerified(String documentText, String verifiedContent) {
         if (documentText == null || verifiedContent == null) {
@@ -944,25 +999,25 @@ public class RefactoringProvider {
     }
 
     /**
-     * Fallback writer for a file that is open in the editor with unsaved changes (a held write lock prevents a direct
-     * FileObject write). Replaces the whole document and saves; this path can trigger On-Save reformatting, but it only
-     * runs when a direct byte write is impossible.
+     * Fallback writer for a file that is open in the editor with unsaved changes (a held write lock prevents
+     * a direct FileObject write). Replaces the whole document and saves; this path can trigger On-Save
+     * reformatting, but it only runs when a direct byte write is impossible.
      *
      * <p>
-     * Refuses if the document no longer holds {@code verifiedContent}. The lock we are here because of is taken by a
-     * dirty document, and the likeliest reason it is dirty is that the USER typed after
-     * {@code flushUnsavedEditorChanges} made disk authoritative and after both disk verifications passed. Replacing the
-     * document wholesale at that point would overwrite their typing and then save it — silent destruction of the user's
-     * own work, the same class of defect as the truncating write, through a different door. Refuse first; never write
-     * and then report.</p>
+     * Refuses if the document no longer holds {@code verifiedContent}. The lock we are here because of is
+     * taken by a dirty document, and the likeliest reason it is dirty is that the USER typed after
+     * {@code flushUnsavedEditorChanges} made disk authoritative and after both disk verifications passed.
+     * Replacing the document wholesale at that point would overwrite their typing and then save it — silent
+     * destruction of the user's own work, the same class of defect as the truncating write, through a
+     * different door. Refuse first; never write and then report.</p>
      *
      * <p>
      * There is no unguarded form and no null-baseline escape. Both callers establish a baseline from disk — a
-     * read-modify-write inherits the content it verified, and a whole-file write reads it straight after the flush — so
-     * a null here would mean a caller lost track of its own state, and the only safe answer to that is to refuse. A
-     * guard with an opt-out is the one a future caller opts out of.</p>
+     * read-modify-write inherits the content it verified, and a whole-file write reads it straight after the
+     * flush — so a null here would mean a caller lost track of its own state, and the only safe answer to
+     * that is to refuse. A guard with an opt-out is the one a future caller opts out of.</p>
      *
-     * @param content the text to write
+     * @param content         the text to write
      * @param verifiedContent the content the document must still hold; required, and a null refuses the write
      */
     private static String writeViaDocument(FileObject fo, String content, String verifiedContent) {
@@ -980,7 +1035,7 @@ public class RefactoringProvider {
                     String documentText = doc.getText(0, doc.getLength());
                     if (!documentMatchesVerified(documentText, verifiedContent)) {
                         result.set("Edit refused: this file changed in the editor after it was verified, so the edit "
-                                + "was NOT applied and nothing was changed. Retry — the read is re-taken each attempt.");
+                                   + "was NOT applied and nothing was changed. Retry — the read is re-taken each attempt.");
                         return;
                     }
                     doc.remove(0, doc.getLength());
@@ -1061,13 +1116,14 @@ public class RefactoringProvider {
     }
 
     /**
-     * @param targetDirectory the FINAL, already-resolved absolute directory — callers combine an optional
-     * {@code targetProjectPath} with a possibly-relative {@code targetDirectory} via
-     * {@link #resolveMoveTargetDirectory} BEFORE calling this, so the access check the tool runs beforehand and the
-     * move performed here agree on the exact same path (see {@code MoveFileTool}).
-     * @param commitWithWarning now honoured instead of hardcoded {@code false} — MoveFile is exactly the tool a
-     * cross-module move hits the "non-fatal warning" refusal on, and previously it had no way to proceed past it short
-     * of hand-editing.
+     * @param targetDirectory   the FINAL, already-resolved absolute directory — callers combine an optional
+     *                          {@code targetProjectPath} with a possibly-relative {@code targetDirectory} via
+     *                          {@link #resolveMoveTargetDirectory} BEFORE calling this, so the access check
+     *                          the tool runs beforehand and the move performed here agree on the exact same
+     *                          path (see {@code MoveFileTool}).
+     * @param commitWithWarning now honoured instead of hardcoded {@code false} — MoveFile is exactly the tool
+     *                          a cross-module move hits the "non-fatal warning" refusal on, and previously it
+     *                          had no way to proceed past it short of hand-editing.
      */
     public static String moveFile(String sourcePath, String targetDirectory, boolean commitWithWarning) {
         if (sourcePath == null || sourcePath.isBlank()) {
@@ -1111,6 +1167,242 @@ public class RefactoringProvider {
     }
 
     /**
+     * Creates a directory and any missing parents through {@link FileUtil#createFolder}, so the IDE sees it.
+     * Project containment and the write-permission gate are the caller's job — see
+     * {@code CreateDirectoryTool}.
+     */
+    public static String createDirectory(String path) {
+        if (path == null || path.isBlank()) {
+            return McpToolPropertyEnum.FILE_PATH.key() + " is required";
+        }
+        File dir = new File(path);
+        if (dir.isDirectory()) {
+            return "Directory already existed: " + FileUtils.toIdePath(dir);
+        }
+        if (dir.exists()) {
+            return "Cannot create directory: " + FileUtils.toIdePath(dir) + " already exists and is a file";
+        }
+        // Walk up to the nearest ancestor that actually exists: if it is a file rather than a directory, every
+        // level below it can never be created, so refuse with a precise reason instead of a raw IOException.
+        File ancestor = dir.getParentFile();
+        while (ancestor != null && !ancestor.exists()) {
+            ancestor = ancestor.getParentFile();
+        }
+        if (ancestor != null && !ancestor.isDirectory()) {
+            return "Cannot create directory: " + FileUtils.toIdePath(ancestor) + " exists and is a file, not a directory";
+        }
+        File parentDir = dir.getParentFile();
+        FileObject parentFO = null;
+        if (parentDir != null && parentDir.exists()) {
+            parentFO = FileUtils.resolveByFile(parentDir);
+        }
+        try {
+            FileObject created = parentFO != null
+                                 ? FileUtil.createFolder(parentFO, dir.getName())
+                                 : FileUtil.createFolder(dir);
+            FileUtils.refreshAfterWrite(created);
+            GitProvider.refreshVcsStatus(path);
+            return "Directory created: " + FileUtils.toIdePath(dir);
+        }
+        catch (IOException e) {
+            return "Could not create directory: " + e.getMessage();
+        }
+    }
+
+    /**
+     * Deletes a directory whose whole tree holds no files — only empty subdirectories, at any depth. Refuses,
+     * naming up to 5 of the files it found and their total count, when it does not. Project containment and
+     * the write-permission/confirmation gate are the caller's job — see {@code DeleteDirectoryTool}; the
+     * project-root refusal below is NetBeans-specific and belongs here rather than being duplicated by every
+     * caller.
+     */
+    public static String deleteDirectory(String path) {
+        if (path == null || path.isBlank()) {
+            return McpToolPropertyEnum.FILE_PATH.key() + " is required";
+        }
+        File dir = new File(path);
+        // Checked before exists()/isDirectory(), both of which follow symlinks: a link whose target is a
+        // directory would otherwise sail through those checks and into the walk below.
+        if (Files.isSymbolicLink(dir.toPath())) {
+            return "Refused: " + FileUtils.toIdePath(dir) + " is a symbolic link.";
+        }
+        if (!dir.exists()) {
+            return "Directory not found: " + FileUtils.toIdePath(dir);
+        }
+        if (!dir.isDirectory()) {
+            return "Not a directory: " + FileUtils.toIdePath(dir) + " — use " + McpToolEnum.DELETE_FILE.toolName() + " for a file.";
+        }
+        Path realDirPath = FileUtils.toRealPath(dir).toPath();
+        for (File projectDir : openProjectRoots()) {
+            Path realProjectPath = FileUtils.toRealPath(projectDir).toPath();
+            // One comparison covers both unsafe cases: the target equals the project root, or the project
+            // root is nested inside the target (a descendant that deleting the target would delete with it).
+            // A target nested INSIDE a project root is deliberately NOT refused here — that is the normal
+            // case for almost every call (e.g. /project/build/empty), and containment within the open
+            // projects is already enforced by the session scope check before this method ever runs.
+            if (realProjectPath.startsWith(realDirPath)) {
+                return "Refused: " + FileUtils.toIdePath(dir) + " overlaps an open project's root directory ("
+                       + FileUtils.toIdePath(projectDir) + ").";
+            }
+        }
+        List<File> filesFound = new ArrayList<>();
+        List<File> symlinksFound = new ArrayList<>();
+        List<File> unreadableFound = new ArrayList<>();
+        List<File> directoriesDeepestFirst = new ArrayList<>();
+        collectTree(dir, filesFound, symlinksFound, unreadableFound, directoriesDeepestFirst);
+        if (!unreadableFound.isEmpty()) {
+            return "Refused: cannot read " + FileUtils.toIdePath(unreadableFound.get(0))
+                   + (unreadableFound.size() > 1 ? " (and " + (unreadableFound.size() - 1) + " more)" : "");
+        }
+        if (!symlinksFound.isEmpty()) {
+            return listingRefusal(dir, symlinksFound, "contains a symbolic link");
+        }
+        if (!filesFound.isEmpty()) {
+            return listingRefusal(dir, filesFound, "contains " + filesFound.size()
+                                                   + (filesFound.size() == 1 ? " file" : " files") + ", not just empty subdirectories");
+        }
+        // Resolved before any delete happens, while still valid: the deletes below go straight through
+        // java.nio, bypassing NetBeans entirely, so without an explicit refresh afterward the FileObjects for
+        // everything removed would keep reporting stale, deleted-but-still-valid state.
+        FileObject fo = resolveFileObject(path);
+        File parent = dir.getParentFile();
+        FileObject parentFo = fo != null ? fo.getParent()
+                              : (parent != null ? FileUtils.resolveByFile(parent) : null);
+        // Deletes each directory individually, deepest first, with java.nio.file.Files.delete rather than a
+        // single recursive FileObject/DataObject delete on the top folder. A recursive delete would silently
+        // remove any file another session creates inside this tree between the emptiness check above and the
+        // delete itself; Files.delete refuses a non-empty directory (DirectoryNotEmptyException), so a file
+        // that appears mid-delete stops the walk instead of being swept away with its directory. The explicit
+        // re-check just below narrows, but — Java has no rmdir-only call that refuses atomically unless the
+        // entry is still a plain directory — cannot fully close, the separate case where the entry at a
+        // recorded path stops being a directory at all (replaced by a file or a symlink) between the walk and
+        // this delete: said honestly, a microsecond-scale window remains either way.
+        beforeDeleteDirectoryDeletes.run();
+        String failureMessage = null;
+        for (File d : directoriesDeepestFirst) {
+            Path dPath = d.toPath();
+            if (!Files.isDirectory(dPath, LinkOption.NOFOLLOW_LINKS)) {
+                failureMessage = "Refused: " + FileUtils.toIdePath(d)
+                                 + " is no longer a directory; nothing containing files was removed.";
+                break;
+            }
+            try {
+                Files.delete(dPath);
+            }
+            catch (IOException e) {
+                failureMessage = "Refused: a file appeared in " + FileUtils.toIdePath(d)
+                                 + " during the delete; nothing containing files was removed.";
+                break;
+            }
+        }
+        // Runs whether every delete succeeded or one failed part-way: a synchronous refresh on the parent is
+        // what invalidates the deleted FileObjects/DataObjects and fires fileDeleted events, so the Projects/
+        // Files views, package nodes, the indexer and VCS all catch up with whatever java.nio actually did —
+        // including a partial delete, which removed real directories even though it then stopped.
+        if (parentFo != null) {
+            parentFo.refresh();
+        }
+        else if (parent != null) {
+            FileUtil.refreshFor(parent);
+        }
+        if (parent != null) {
+            GitProvider.refreshVcsStatus(parent.getAbsolutePath());
+        }
+        return failureMessage != null ? failureMessage : "Directory deleted";
+    }
+
+    /**
+     * Test seam: runs once, after {@link #deleteDirectory}'s emptiness check and before its first directory
+     * delete — a test can swap this to create a file in the tree at exactly that point, deterministically. A
+     * no-op in production; tests must restore it afterwards.
+     */
+    static Runnable beforeDeleteDirectoryDeletes = () -> {
+    };
+
+    /**
+     * Test seam: when non-null, used instead of the real {@code OpenProjects.getDefault().getOpenProjects()}
+     * for {@link #deleteDirectory}'s project-root refusal — {@code OpenProjects} is reliably empty in this
+     * headless test harness, so there is no other way to drive that check from a test. Null in production;
+     * tests must restore it afterwards.
+     */
+    static List<File> testOpenProjectRoots;
+
+    private static List<File> openProjectRoots() {
+        if (testOpenProjectRoots != null) {
+            return testOpenProjectRoots;
+        }
+        List<File> roots = new ArrayList<>();
+        for (Project project : OpenProjects.getDefault().getOpenProjects()) {
+            File dir = FileUtil.toFile(project.getProjectDirectory());
+            if (dir != null) {
+                roots.add(dir);
+            }
+        }
+        return roots;
+    }
+
+    /**
+     * Walks the whole tree rather than stopping early — {@link #deleteDirectory} needs the true total file
+     * count, not just enough to show a few. Collects {@code directories} in post order (every directory's
+     * children, files aside, are added before the directory itself), so deleting it front-to-back is always
+     * deepest first — the order {@link #deleteDirectory}'s {@code Files.delete} loop relies on.
+     *
+     * <p>
+     * A symlink — to a file or a directory — is never followed: {@link Files#isSymbolicLink} is checked
+     * before anything else, and a match is recorded in {@code symlinks} and never recursed into. Checking
+     * {@code isDirectory} with {@link LinkOption#NOFOLLOW_LINKS} (rather than {@code File.isDirectory()},
+     * which follows links) means the only way into a subtree is a real directory entry. Without this, a link
+     * inside the tree pointing outside it would be walked and then deleted through — {@code Files.delete}
+     * resolves intermediate symlinks in the path it is given — and a link that cycles back on itself would
+     * recurse until {@code StackOverflowError}.
+     *
+     * <p>
+     * {@code dir.listFiles()} returning null (permission denied, or it stopped being a directory) is recorded
+     * in {@code unreadable} rather than treated as empty — otherwise an unreadable directory looked exactly
+     * like an empty one, and whatever it actually hides would surface later as a confusing "a file appeared
+     * during the delete" instead of the true reason.
+     */
+    private static void collectTree(File dir, List<File> files, List<File> symlinks, List<File> unreadable,
+                                    List<File> directories) {
+        File[] children = dir.listFiles();
+        if (children == null) {
+            unreadable.add(dir);
+            directories.add(dir);
+            return;
+        }
+        for (File child : children) {
+            Path childPath = child.toPath();
+            if (Files.isSymbolicLink(childPath)) {
+                symlinks.add(child);
+            }
+            else if (Files.isDirectory(childPath, LinkOption.NOFOLLOW_LINKS)) {
+                collectTree(child, files, symlinks, unreadable, directories);
+            }
+            else {
+                files.add(child);
+            }
+        }
+        directories.add(dir);
+    }
+
+    /**
+     * Builds a {@link #deleteDirectory} refusal naming up to 5 of {@code items} (and the directory they were
+     * found under), for both the file-found and symlink-found cases — the two share the same "say why, then
+     * list a few" shape.
+     */
+    private static String listingRefusal(File dir, List<File> items, String reason) {
+        StringBuilder sb = new StringBuilder("Refused: ").append(FileUtils.toIdePath(dir)).append(" ")
+                .append(reason).append(". First ").append(Math.min(5, items.size())).append(": ");
+        for (int i = 0; i < Math.min(5, items.size()); i++) {
+            if (i > 0) {
+                sb.append(", ");
+            }
+            sb.append(FileUtils.toIdePath(items.get(i)));
+        }
+        return sb.toString();
+    }
+
+    /**
      * Outcome of {@link #resolveMoveTargetDirectory}: exactly one of {@code path}/{@code error} is non-null.
      */
     public record TargetDirectoryResolution(String path, String error) {
@@ -1125,15 +1417,16 @@ public class RefactoringProvider {
     }
 
     /**
-     * Combines {@code targetDirectory} with an optional {@code targetProjectPath} into the single absolute directory a
-     * move should use. Pure path arithmetic — no filesystem or NetBeans API calls — so both sides of the access-check
-     * boundary can agree on the identical resolved path without duplicating the combination rules: {@code MoveFileTool}
-     * calls this BEFORE its {@code isFileWritable} scope check, and passes the resulting path, not the raw arguments,
-     * on to {@link #moveFile}.
+     * Combines {@code targetDirectory} with an optional {@code targetProjectPath} into the single absolute
+     * directory a move should use. Pure path arithmetic — no filesystem or NetBeans API calls — so both sides
+     * of the access-check boundary can agree on the identical resolved path without duplicating the
+     * combination rules: {@code MoveFileTool} calls this BEFORE its {@code isFileWritable} scope check, and
+     * passes the resulting path, not the raw arguments, on to {@link #moveFile}.
      * <ul>
-     * <li>{@code targetProjectPath} omitted (null/blank): {@code targetDirectory} is used exactly as given — today's
-     * behaviour, now explicit.</li>
-     * <li>{@code targetProjectPath} given, {@code targetDirectory} relative: resolved AGAINST it, so a caller can write
+     * <li>{@code targetProjectPath} omitted (null/blank): {@code targetDirectory} is used exactly as given —
+     * today's behaviour, now explicit.</li>
+     * <li>{@code targetProjectPath} given, {@code targetDirectory} relative: resolved AGAINST it, so a caller
+     * can write
      * {@code targetProjectPath=.../app-platform-rest, targetDirectory=src/main/java/.../oauth}.</li>
      * <li>{@code targetProjectPath} given, {@code targetDirectory} already absolute: must already be under
      * {@code targetProjectPath}; refused, naming both, if it is not.</li>
@@ -1151,12 +1444,12 @@ public class RefactoringProvider {
         }
         catch (InvalidPathException e) {
             return TargetDirectoryResolution.error("Malformed path in " + McpToolPropertyEnum.TARGET_DIRECTORY.key()
-                    + " or " + McpToolPropertyEnum.TARGET_PROJECT_PATH.key() + ": " + e.getMessage());
+                                                   + " or " + McpToolPropertyEnum.TARGET_PROJECT_PATH.key() + ": " + e.getMessage());
         }
         Path resolved = (dirPath.isAbsolute() ? dirPath : projectPath.resolve(dirPath)).normalize();
         if (!resolved.startsWith(projectPath)) {
             return TargetDirectoryResolution.error(McpToolPropertyEnum.TARGET_DIRECTORY.key() + " '" + targetDirectory
-                    + "' is not under " + McpToolPropertyEnum.TARGET_PROJECT_PATH.key() + " '" + targetProjectPath + "'.");
+                                                   + "' is not under " + McpToolPropertyEnum.TARGET_PROJECT_PATH.key() + " '" + targetProjectPath + "'.");
         }
         return TargetDirectoryResolution.ok(resolved.toString());
     }
@@ -1164,17 +1457,17 @@ public class RefactoringProvider {
     /**
      * Saves a file's unsaved editor changes before a tool reads or writes that file on disk.
      * <p>
-     * Disk-based read/write tools here (including ApplyEdit and writeFileContent) flush before accessing bytes, while
-     * delete/copy/move operate on filesystem objects without a read/write byte path and do not flush. The editor holds
-     * its own copy. Touching the file while the buffer is dirty loses whatever the user had typed: the tool computes
-     * its result from disk, which never contained those edits, and the write then either replaces the document or makes
-     * the editor reload. Verified by experiment - a one-line ApplyEdit against a file with an unsaved line silently
-     * discarded that line and reported success, and the diff panel could not show it because the diff was computed from
-     * disk in the first place.
+     * Disk-based read/write tools here (including ApplyEdit and writeFileContent) flush before accessing
+     * bytes, while delete/copy/move operate on filesystem objects without a read/write byte path and do not
+     * flush. The editor holds its own copy. Touching the file while the buffer is dirty loses whatever the
+     * user had typed: the tool computes its result from disk, which never contained those edits, and the
+     * write then either replaces the document or makes the editor reload. Verified by experiment - a one-line
+     * ApplyEdit against a file with an unsaved line silently discarded that line and reported success, and
+     * the diff panel could not show it because the diff was computed from disk in the first place.
      * <p>
-     * Flushing first makes disk and buffer agree, so the AI edits what the user actually has on screen and the diff
-     * they approve is the real one. A save that FAILS returns an error instead: continuing would destroy the very
-     * changes this exists to protect.
+     * Flushing first makes disk and buffer agree, so the AI edits what the user actually has on screen and
+     * the diff they approve is the real one. A save that FAILS returns an error instead: continuing would
+     * destroy the very changes this exists to protect.
      */
     public static FlushResult flushUnsavedEditorChanges(FileObject fo) {
         if (fo == null) {
@@ -1192,8 +1485,8 @@ public class RefactoringProvider {
                 // see - the exact failure this guard exists to prevent - so fail
                 // closed instead.
                 return new FlushResult(false, "Refusing to continue: " + fo.getPath()
-                                       + " has unsaved editor changes and offers no way to save them, so proceeding"
-                                       + " would discard them. Ask the user to save or revert the file, then retry.");
+                                              + " has unsaved editor changes and offers no way to save them, so proceeding"
+                                              + " would discard them. Ask the user to save or revert the file, then retry.");
             }
             save.save();
             return new FlushResult(true, null);
@@ -1204,8 +1497,8 @@ public class RefactoringProvider {
         }
         catch (IOException e) {
             return new FlushResult(false, "Refusing to continue: " + fo.getPath()
-                                   + " has unsaved editor changes that could not be saved first (" + e.getMessage()
-                                   + "). Proceeding would discard them. Ask the user to save or revert the file, then retry.");
+                                          + " has unsaved editor changes that could not be saved first (" + e.getMessage()
+                                          + "). Proceeding would discard them. Ask the user to save or revert the file, then retry.");
         }
     }
 
@@ -1284,7 +1577,7 @@ public class RefactoringProvider {
             return "Error: " + e.getMessage();
         }
         return "Inspect dialog opened — select 'All Analysers' configuration "
-                + "and 'All Open Projects' scope, then click Inspect";
+               + "and 'All Open Projects' scope, then click Inspect";
     }
 
     private static String runSourceAction(String filePath, String actionPath, String label) {
@@ -1335,18 +1628,20 @@ public class RefactoringProvider {
     }
 
     /**
-     * Last check before the array is handed to {@code ChangeParametersRefactoring.setParameterInfo}, which is the point
-     * of no return: NetBeans' transformer dereferences each entry's type while rewriting call sites, so an entry whose
-     * type is still null takes the IDE down inside the refactoring rather than failing our call. See the note in
-     * {@link #existingParamInfos} — {@code ParameterInfo(index)} alone leaves the type null.
+     * Last check before the array is handed to {@code ChangeParametersRefactoring.setParameterInfo}, which is
+     * the point of no return: NetBeans' transformer dereferences each entry's type while rewriting call
+     * sites, so an entry whose type is still null takes the IDE down inside the refactoring rather than
+     * failing our call. See the note in {@link #existingParamInfos} — {@code ParameterInfo(index)} alone
+     * leaves the type null.
      * <p>
-     * {@link #mergeParameterInfos} resolves an omitted name/type from the parameter at {@code originalIndex}, but it
-     * can only do that when the index actually points at one. An out-of-range index — {@code {"originalIndex": 99}}
-     * against a three-parameter method — falls through its merge branch untouched and arrives here still null-typed.
-     * That is a caller mistake, so it must come back as a readable error naming the offending entry, not as a crash and
-     * not as an internal error the caller cannot act on.
+     * {@link #mergeParameterInfos} resolves an omitted name/type from the parameter at {@code originalIndex},
+     * but it can only do that when the index actually points at one. An out-of-range index —
+     * {@code {"originalIndex": 99}} against a three-parameter method — falls through its merge branch
+     * untouched and arrives here still null-typed. That is a caller mistake, so it must come back as a
+     * readable error naming the offending entry, not as a crash and not as an internal error the caller
+     * cannot act on.
      *
-     * @param merged the resolved entries about to be set
+     * @param merged        the resolved entries about to be set
      * @param existingCount how many parameters the method currently declares
      *
      * @return an error message to return to the caller, or null when the array is safe to hand over
@@ -1360,11 +1655,11 @@ public class RefactoringProvider {
                                ? "the method has no parameters, so only -1 (a new parameter) is valid"
                                : "valid values are 0.." + (existingCount - 1) + " to keep an existing parameter, or -1 for a new one";
                 return "Error: parameters[" + i + "]: originalIndex " + idx + " does not match this method, which declares "
-                        + existingCount + " parameter(s) — " + valid;
+                       + existingCount + " parameter(s) — " + valid;
             }
             if (p.getType() == null || p.getType().isBlank()) {
                 return "Error: parameters[" + i + "]: type is required and could not be resolved from the existing "
-                        + "signature — supply type explicitly for this entry";
+                       + "signature — supply type explicitly for this entry";
             }
         }
         return null;
@@ -1387,7 +1682,7 @@ public class RefactoringProvider {
                     return;
                 }
                 List<? extends VariableTree> params
-                        = ((MethodTree) path.getLeaf()).getParameters();
+                                             = ((MethodTree) path.getLeaf()).getParameters();
                 ParameterInfo[] infos = new ParameterInfo[params.size()];
                 for (int i = 0; i < params.size(); i++) {
                     VariableTree vt = params.get(i);
@@ -1405,22 +1700,23 @@ public class RefactoringProvider {
 
     /**
      * Resolves caller-supplied parameter entries against the method's current signature so a PARTIAL update
-     * ({@code name}-only or {@code type}-only — exactly the shape the ChangeMethodSignature tool schema's own example
-     * shows) is no longer a silent no-op: anything an entry omits is filled in from the existing parameter at
-     * {@code originalIndex}. Entries naming both fields pass through untouched, as do brand-new parameters
-     * ({@code originalIndex == -1}), which the tool layer has already validated for required fields. A null
-     * {@code defaultValue} stays null on existing-index entries — NetBeans reads that as "keep call-site arguments as
-     * they are", whereas substituting an empty string would rewrite every call site to pass nothing.
+     * ({@code name}-only or {@code type}-only — exactly the shape the ChangeMethodSignature tool schema's own
+     * example shows) is no longer a silent no-op: anything an entry omits is filled in from the existing
+     * parameter at {@code originalIndex}. Entries naming both fields pass through untouched, as do brand-new
+     * parameters ({@code originalIndex == -1}), which the tool layer has already validated for required
+     * fields. A null {@code defaultValue} stays null on existing-index entries — NetBeans reads that as "keep
+     * call-site arguments as they are", whereas substituting an empty string would rewrite every call site to
+     * pass nothing.
      *
-     * An EMPTY {@code requested} array is not the same as a null one and must not be folded into it. The tool schema
-     * calls {@code parameters} "the complete desired parameter list — omit to keep existing params", so {@code []} is
-     * an explicit request for a method with no parameters, while omission is the no-change signal. Treating both as
-     * "keep existing" made removing every parameter impossible AND silent: the refactoring ran, changed nothing, and
-     * still reported "Method signature updated". Only null returns {@code existing} now; an empty array falls through
-     * and yields an empty result.
+     * An EMPTY {@code requested} array is not the same as a null one and must not be folded into it. The tool
+     * schema calls {@code parameters} "the complete desired parameter list — omit to keep existing params",
+     * so {@code []} is an explicit request for a method with no parameters, while omission is the no-change
+     * signal. Treating both as "keep existing" made removing every parameter impossible AND silent: the
+     * refactoring ran, changed nothing, and still reported "Method signature updated". Only null returns
+     * {@code existing} now; an empty array falls through and yields an empty result.
      *
      * @param requested entries built by the tool from the JSON {@code parameters} array, or null when omitted
-     * @param existing the method's current parameters (see {@link #existingParamInfos})
+     * @param existing  the method's current parameters (see {@link #existingParamInfos})
      */
     static ParameterInfo[] mergeParameterInfos(ParameterInfo[] requested, ParameterInfo[] existing) {
         if (requested == null) {
@@ -1437,9 +1733,9 @@ public class RefactoringProvider {
             if (idx >= 0 && idx < existing.length && (req.getName() == null || req.getType() == null)) {
                 ParameterInfo ex = existing[idx];
                 merged[i] = new ParameterInfo(idx,
-                                              req.getName() != null ? req.getName() : ex.getName(),
-                                              req.getType() != null ? req.getType() : ex.getType(),
-                                              req.getDefaultValue());
+                        req.getName() != null ? req.getName() : ex.getName(),
+                        req.getType() != null ? req.getType() : ex.getType(),
+                        req.getDefaultValue());
             }
             else {
                 merged[i] = req;
@@ -1480,10 +1776,10 @@ public class RefactoringProvider {
 
     /**
      * Runs a refactoring's preCheck/prepare/doRefactoring pipeline and formats the outcome around {@code
-     * successMessage}. Convenience wrapper around {@link #runRefactoringInternal} for the common case: a caller with
-     * one success string and nothing to do after the refactoring itself. {@link #moveFile} calls
-     * {@link #runRefactoringInternal} directly instead, because it still has its own file-move bookkeeping to run after
-     * a successful Java move and before it knows its own final message.
+     * successMessage}. Convenience wrapper around {@link #runRefactoringInternal} for the common case: a
+     * caller with one success string and nothing to do after the refactoring itself. {@link #moveFile} calls
+     * {@link #runRefactoringInternal} directly instead, because it still has its own file-move bookkeeping to
+     * run after a successful Java move and before it knows its own final message.
      */
     private static String runRefactoring(AbstractRefactoring refactoring, boolean commitWithWarning, String successMessage) {
         RefactoringRunResult result = runRefactoringInternal(refactoring, commitWithWarning);
@@ -1499,31 +1795,32 @@ public class RefactoringProvider {
     // end to end instead would need a live NetBeans project with a real Java source, the same gap the single-file
     // success path already has.
     /**
-     * Runs a refactoring's preCheck/prepare/doRefactoring pipeline, collecting EVERY problem reported at each stage —
-     * {@link Problem} is a linked list via {@link Problem#getNext()}, so reporting only the head (the original
-     * behaviour here) silently hid every problem after the first — and classifying each with {@link Problem#isFatal()}
-     * so the caller can tell advice from a veto.
+     * Runs a refactoring's preCheck/prepare/doRefactoring pipeline, collecting EVERY problem reported at each
+     * stage — {@link Problem} is a linked list via {@link Problem#getNext()}, so reporting only the head (the
+     * original behaviour here) silently hid every problem after the first — and classifying each with
+     * {@link Problem#isFatal()} so the caller can tell advice from a veto.
      * <p>
-     * {@code commitWithWarning} is OUR policy, not something the refactoring engine enforces for us. Nothing in the
-     * {@code Problem} API documents what {@code doRefactoring} itself would do if invoked past a fatal problem —
-     * {@code isFatal()} is known to disable the Refactor button in NetBeans' own interactive dialogs, but whether the
-     * engine would refuse outright or would happily commit broken code is not established by the API surface, and this
-     * method never finds out, because a fatal problem stops it before {@code doRefactoring} is ever called. The actual
-     * reason to refuse by default on ANY problem, fatal or not, is that these tools apply their change immediately with
-     * no diff panel and no confirm step — a non-fatal problem is still the engine's own considered guess that something
-     * behind the scenes will break, and committing that guess unreviewed is not a decision a tool should make silently
-     * on an AI's behalf. {@code commitWithWarning = true} is permission to accept that risk for non-fatal problems
-     * specifically. FATAL problems always block regardless: the flag means "proceed despite advice", never "ignore
-     * errors".
+     * {@code commitWithWarning} is OUR policy, not something the refactoring engine enforces for us. Nothing
+     * in the {@code Problem} API documents what {@code doRefactoring} itself would do if invoked past a fatal
+     * problem — {@code isFatal()} is known to disable the Refactor button in NetBeans' own interactive
+     * dialogs, but whether the engine would refuse outright or would happily commit broken code is not
+     * established by the API surface, and this method never finds out, because a fatal problem stops it
+     * before {@code doRefactoring} is ever called. The actual reason to refuse by default on ANY problem,
+     * fatal or not, is that these tools apply their change immediately with no diff panel and no confirm step
+     * — a non-fatal problem is still the engine's own considered guess that something behind the scenes will
+     * break, and committing that guess unreviewed is not a decision a tool should make silently on an AI's
+     * behalf. {@code commitWithWarning = true} is permission to accept that risk for non-fatal problems
+     * specifically. FATAL problems always block regardless: the flag means "proceed despite advice", never
+     * "ignore errors".
      * <p>
-     * A problem {@code doRefactoring} itself returns is reported separately from the pre-commit checks and never blocks
-     * anything, fatal or not — by the time {@code doRefactoring} runs, the files are already being written, so unlike a
-     * preCheck/prepare refusal this can never read as "nothing happened".
+     * A problem {@code doRefactoring} itself returns is reported separately from the pre-commit checks and
+     * never blocks anything, fatal or not — by the time {@code doRefactoring} runs, the files are already
+     * being written, so unlike a preCheck/prepare refusal this can never read as "nothing happened".
      */
     /**
-     * Snapshots a move source before the engine runs and restores it if the engine returns after leaving neither the
-     * source nor its expected destination on disk. RefactoringSession can throw after deleting its source; reporting
-     * that as merely "blocked" without recovery turns an engine failure into data loss.
+     * Snapshots a move source before the engine runs and restores it if the engine returns after leaving
+     * neither the source nor its expected destination on disk. RefactoringSession can throw after deleting
+     * its source; reporting that as merely "blocked" without recovery turns an engine failure into data loss.
      */
     private static String runMoveRefactoringWithRecovery(AbstractRefactoring refactoring, boolean commitWithWarning,
                                                          String successMessage, FileObject source, FileObject targetFolder,
@@ -1535,7 +1832,7 @@ public class RefactoringProvider {
         }
         if (targetDirectory == null || !targetDirectory.isDirectory()) {
             return "Cannot safely move because the target directory is unavailable: "
-                    + (targetFolder != null ? targetFolder.getPath() : "<unknown>");
+                   + (targetFolder != null ? targetFolder.getPath() : "<unknown>");
         }
         byte[] sourceBytes;
         try {
@@ -1543,7 +1840,7 @@ public class RefactoringProvider {
         }
         catch (IOException e) {
             return "Cannot safely move because the source could not be backed up: " + sourceFile.getPath()
-                    + " (" + e.getMessage() + ")";
+                   + " (" + e.getMessage() + ")";
         }
 
         File expectedTarget = new File(targetDirectory, targetName);
@@ -1551,7 +1848,7 @@ public class RefactoringProvider {
         byte[] expectedTargetBytes = readBytesOrNull(expectedTarget.toPath());
         String result = runRefactoring(refactoring, commitWithWarning, successMessage);
         return restoreSourceIfMoveLost(sourceFile, expectedTarget, sourceBytes, result,
-                                       expectedTargetBytes, targetSnapshot, targetDirectory);
+                expectedTargetBytes, targetSnapshot, targetDirectory);
     }
 
     static String runMoveRefactoringWithRecoveryForTest(Supplier<String> engine, File sourceFile,
@@ -1568,16 +1865,17 @@ public class RefactoringProvider {
             result = "Refactoring failed during commit: " + e.getMessage();
         }
         return restoreSourceIfMoveLost(sourceFile, expectedTarget, sourceBytes, result,
-                                       expectedTargetBytes, targetSnapshot, targetDirectory);
+                expectedTargetBytes, targetSnapshot, targetDirectory);
     }
 
     /**
-     * Restores a move source only when the engine left neither it nor the expected destination on disk. Package-private
-     * so the no-data-loss recovery can be proven without starting the NetBeans refactoring engine.
+     * Restores a move source only when the engine left neither it nor the expected destination on disk.
+     * Package-private so the no-data-loss recovery can be proven without starting the NetBeans refactoring
+     * engine.
      */
     static String restoreSourceIfMoveLost(File sourceFile, File expectedTarget, byte[] sourceBytes, String engineResult) {
         return restoreSourceIfMoveLost(sourceFile, expectedTarget, sourceBytes, engineResult, null, Map.of(),
-                                       expectedTarget.getParentFile());
+                expectedTarget.getParentFile());
     }
 
     static String restoreSourceIfMoveLost(File sourceFile, File expectedTarget, byte[] sourceBytes,
@@ -1590,14 +1888,14 @@ public class RefactoringProvider {
         }
         byte[] currentTargetBytes = readBytesOrNull(expectedTarget.toPath());
         boolean targetChanged = currentTargetBytes != null
-                && (expectedTargetBytes == null || !Arrays.equals(expectedTargetBytes, currentTargetBytes));
+                                && (expectedTargetBytes == null || !Arrays.equals(expectedTargetBytes, currentTargetBytes));
         if (targetChanged) {
             return engineResult;
         }
         if (hasNewOrChangedJavaFile(targetDirectory.toPath(), targetSnapshot,
-                                    expectedTarget.toPath().toAbsolutePath().normalize())) {
+                expectedTarget.toPath().toAbsolutePath().normalize())) {
             return engineResult + " The source is missing, but the move may have landed under a collision-renamed "
-                    + "path in target folder " + targetDirectory.getPath() + "; inspect that folder before retrying.";
+                   + "path in target folder " + targetDirectory.getPath() + "; inspect that folder before retrying.";
         }
         try {
             Files.createDirectories(sourceFile.toPath().getParent());
@@ -1611,13 +1909,13 @@ public class RefactoringProvider {
                         sourceFile.getPath());
             }
             return "Move failed after the refactoring engine removed the source; the original source was restored: "
-                    + sourceFile.getPath() + ". Engine result: " + engineResult;
+                   + sourceFile.getPath() + ". Engine result: " + engineResult;
         }
         catch (IOException restoreFailure) {
             LOG.log(Level.SEVERE, "MoveRefactoring lost source and target; source restoration also failed: "
-                    + sourceFile.getPath(), restoreFailure);
+                                  + sourceFile.getPath(), restoreFailure);
             return "CRITICAL: move removed both source and target and restoration failed for " + sourceFile.getPath()
-                    + ": " + restoreFailure.getMessage() + ". Engine result: " + engineResult;
+                   + ": " + restoreFailure.getMessage() + ". Engine result: " + engineResult;
         }
     }
 
@@ -1698,7 +1996,7 @@ public class RefactoringProvider {
                     String msg = e.getMessage();
                     LOG.log(Level.WARNING, "Refactoring failed during commit; files may be partially applied", e);
                     return RefactoringRunResult.blocked("Refactoring failed during commit; files may be partially applied: "
-                            + (msg != null ? msg : e.getClass().getName()));
+                                                        + (msg != null ? msg : e.getClass().getName()));
                 }
             }
             finally {
@@ -1709,13 +2007,13 @@ public class RefactoringProvider {
             String msg = e.getMessage();
             LOG.log(Level.WARNING, "Refactoring failed before commit", e);
             return RefactoringRunResult.blocked("Refactoring blocked before commit: "
-                    + (msg != null ? msg : e.getClass().getName()));
+                                                + (msg != null ? msg : e.getClass().getName()));
         }
     }
 
     /**
-     * Walks a {@link Problem} chain via {@link Problem#getNext()} into a plain list, head first. Empty (never null)
-     * when {@code head} is null. Package-private: see the test-seam note above.
+     * Walks a {@link Problem} chain via {@link Problem#getNext()} into a plain list, head first. Empty (never
+     * null) when {@code head} is null. Package-private: see the test-seam note above.
      */
     static List<Problem> flattenProblems(Problem head) {
         List<Problem> problems = new ArrayList<>();
@@ -1727,14 +2025,15 @@ public class RefactoringProvider {
 
     /**
      * Null when this stage's problems do not block proceeding: none at all, or all non-fatal with {@code
-     * commitWithWarning} true. Otherwise the full "Refactoring blocked" text. Package-private: see the test-seam note
-     * above.
+     * commitWithWarning} true. Otherwise the full "Refactoring blocked" text. Package-private: see the
+     * test-seam note above.
      * <p>
-     * A fatal problem always blocks and the message never mentions {@code commitWithWarning} — suggesting it there
-     * would invite a retry that cannot work, since the flag has no effect on a fatal problem. A warnings-only refusal
-     * (no fatal problems, {@code commitWithWarning} false or absent) DOES name the flag and say it will let the
-     * refactoring proceed: an AI reading this refusal cannot see the schema, and a refusal that does not say how to get
-     * past it leaves only worse options — giving up, retrying the identical call, or hand-editing the files.
+     * A fatal problem always blocks and the message never mentions {@code commitWithWarning} — suggesting it
+     * there would invite a retry that cannot work, since the flag has no effect on a fatal problem. A
+     * warnings-only refusal (no fatal problems, {@code commitWithWarning} false or absent) DOES name the flag
+     * and say it will let the refactoring proceed: an AI reading this refusal cannot see the schema, and a
+     * refusal that does not say how to get past it leaves only worse options — giving up, retrying the
+     * identical call, or hand-editing the files.
      */
     static String blockedMessageOrNull(List<Problem> problems, boolean commitWithWarning) {
         if (problems.isEmpty()) {
@@ -1755,10 +2054,10 @@ public class RefactoringProvider {
     }
 
     /**
-     * The trailing text to append after a success message when a refactoring committed with problems still worth
-     * reporting: non-fatal problems tolerated pre-commit via {@code commitWithWarning}, and/or problems
-     * {@code doRefactoring} itself returned after already writing the change to disk. Null when both are empty — a
-     * clean commit gets no suffix at all. Package-private: see the test-seam note above.
+     * The trailing text to append after a success message when a refactoring committed with problems still
+     * worth reporting: non-fatal problems tolerated pre-commit via {@code commitWithWarning}, and/or problems
+     * {@code doRefactoring} itself returned after already writing the change to disk. Null when both are
+     * empty — a clean commit gets no suffix at all. Package-private: see the test-seam note above.
      */
     static String buildProblemSuffix(List<Problem> tolerated, List<Problem> postCommit) {
         StringBuilder suffix = new StringBuilder();
@@ -1769,7 +2068,7 @@ public class RefactoringProvider {
         }
         if (!postCommit.isEmpty()) {
             suffix.append("\n\nThe refactoring engine reported problem(s) AFTER applying this change "
-                    + "(already written to disk):\n");
+                          + "(already written to disk):\n");
             appendProblemLines(suffix, postCommit);
         }
         return suffix.length() > 0 ? suffix.toString() : null;
@@ -1782,9 +2081,9 @@ public class RefactoringProvider {
     }
 
     /**
-     * Outcome of {@link #runRefactoringInternal}: either blocked with the full refusal text, or committed with an
-     * optional trailing problem report to append after a caller's own success message. Package-private: see the
-     * test-seam note above.
+     * Outcome of {@link #runRefactoringInternal}: either blocked with the full refusal text, or committed
+     * with an optional trailing problem report to append after a caller's own success message.
+     * Package-private: see the test-seam note above.
      */
     static final class RefactoringRunResult {
 
@@ -1832,19 +2131,19 @@ public class RefactoringProvider {
     }
 
     /**
-     * The declaration (class/interface/enum/record, method, or field/local variable) at or enclosing {@code line} —
-     * preferring the narrowest kind (Method &gt; Variable &gt; Class) and an EXACT start-line match over a SPANNING
-     * one. Mirrors {@link JavaSourceUtils#classAtLine}, generalised from classes alone to all three declaration kinds
-     * {@code RenameSymbol} can target.
+     * The declaration (class/interface/enum/record, method, or field/local variable) at or enclosing
+     * {@code line} — preferring the narrowest kind (Method &gt; Variable &gt; Class) and an EXACT start-line
+     * match over a SPANNING one. Mirrors {@link JavaSourceUtils#classAtLine}, generalised from classes alone
+     * to all three declaration kinds {@code RenameSymbol} can target.
      * <p>
-     * An exact-start-line match used to be the WHOLE algorithm, and it failed on any declaration preceded by javadoc or
-     * an annotation: javac reports the tree's start position at the comment/annotation, not at the
-     * {@code class}/{@code record}/method/field keyword, so pointing at the declaration line itself — exactly what
-     * every one of these tools documents as the contract — found no tree whose start position equalled that line
-     * (confirmed on {@code ManagedFileSummary.java}, a record with a preceding javadoc block and {@code @Dto}). The
-     * span fallback below is {@code classAtLine}'s fix, applied to all three kinds: when nothing starts exactly on
-     * {@code line}, the innermost declaration whose full span (javadoc/annotations through closing brace) CONTAINS
-     * {@code line} is used instead.
+     * An exact-start-line match used to be the WHOLE algorithm, and it failed on any declaration preceded by
+     * javadoc or an annotation: javac reports the tree's start position at the comment/annotation, not at the
+     * {@code class}/{@code record}/method/field keyword, so pointing at the declaration line itself — exactly
+     * what every one of these tools documents as the contract — found no tree whose start position equalled
+     * that line (confirmed on {@code ManagedFileSummary.java}, a record with a preceding javadoc block and
+     * {@code @Dto}). The span fallback below is {@code classAtLine}'s fix, applied to all three kinds: when
+     * nothing starts exactly on {@code line}, the innermost declaration whose full span (javadoc/annotations
+     * through closing brace) CONTAINS {@code line} is used instead.
      */
     private static TreePath bestDeclarationAtLine(CompilationUnitTree cu, LineMap lineMap, SourcePositions sp, int line) {
         class Finder extends TreePathScanner<Void, Void> {
@@ -1902,10 +2201,11 @@ public class RefactoringProvider {
      * Resolves the file a refactoring will act on.
      *
      * <p>
-     * There is deliberately no fallback. This used to take whatever file the editor had focused, which meant a caller
-     * that omitted {@code filePath} refactored a file it had never named — chosen by wherever the user last clicked.
-     * Unlike a search, a refactoring writes, so guessing the target is not recoverable by trying again. Callers that
-     * want the file the user is looking at should call GetCurrentFile and pass the path it returns.
+     * There is deliberately no fallback. This used to take whatever file the editor had focused, which meant
+     * a caller that omitted {@code filePath} refactored a file it had never named — chosen by wherever the
+     * user last clicked. Unlike a search, a refactoring writes, so guessing the target is not recoverable by
+     * trying again. Callers that want the file the user is looking at should call GetCurrentFile and pass the
+     * path it returns.
      */
     private static FileObject resolveFileObject(String filePath) {
         if (filePath == null || filePath.isBlank()) {
@@ -1927,9 +2227,9 @@ public class RefactoringProvider {
     }
 
     /**
-     * A refactoring must never be constructed from an invalid or disappeared source FileObject. This is deliberately
-     * checked immediately before creating the NetBeans refactoring as directory creation and external filesystem events
-     * can invalidate a previously resolved object.
+     * A refactoring must never be constructed from an invalid or disappeared source FileObject. This is
+     * deliberately checked immediately before creating the NetBeans refactoring as directory creation and
+     * external filesystem events can invalidate a previously resolved object.
      */
     static boolean isUsableRefactoringFile(FileObject fileObject) {
         if (fileObject == null || !fileObject.isValid() || !fileObject.isData()) {
@@ -1941,7 +2241,7 @@ public class RefactoringProvider {
 
     private static boolean isValidJavaPackageName(String name) {
         if (name.startsWith("java.") || name.startsWith("javax.")
-                || name.equals("java") || name.equals("javax")) {
+            || name.equals("java") || name.equals("javax")) {
             return false;
         }
         return name.matches("^[a-zA-Z_][a-zA-Z0-9_]*(\\.[a-zA-Z_][a-zA-Z0-9_]*)*$");
@@ -1984,16 +2284,19 @@ public class RefactoringProvider {
     /**
      * Resolves (creating if necessary) the folder for {@code packageName}.
      *
-     * @param sourceFile the file being moved. Its own project supplies the default root set, and anchors the "already
-     * under one of these roots" check below, exactly as before {@code targetProjectPath} existed.
-     * @param packageName dot-separated target package.
-     * @param targetProjectPath optional. Omitted: behaviour is unchanged — search, then create if needed, under
-     * {@code sourceFile}'s own project roots only. Given: search/create under THAT project's own Java source roots
-     * instead, regardless of which project {@code sourceFile} belongs to — this is what makes a cross-module move land
-     * in the right place instead of silently inside {@code sourceFile}'s own module.
+     * @param sourceFile        the file being moved. Its own project supplies the default root set, and
+     *                          anchors the "already under one of these roots" check below, exactly as before
+     *                          {@code targetProjectPath} existed.
+     * @param packageName       dot-separated target package.
+     * @param targetProjectPath optional. Omitted: behaviour is unchanged — search, then create if needed,
+     *                          under {@code sourceFile}'s own project roots only. Given: search/create under
+     *                          THAT project's own Java source roots instead, regardless of which project
+     *                          {@code sourceFile} belongs to — this is what makes a cross-module move land in
+     *                          the right place instead of silently inside {@code sourceFile}'s own module.
      *
-     * @return the resolved/created folder, or null when the relevant roots (source file's own, or the named project's)
-     * cannot be determined — the caller distinguishes the two cases by whether {@code targetProjectPath} was given.
+     * @return the resolved/created folder, or null when the relevant roots (source file's own, or the named
+     *         project's) cannot be determined — the caller distinguishes the two cases by whether
+     *         {@code targetProjectPath} was given.
      */
     private static FileObject findOrCreatePackage(FileObject sourceFile, String packageName, String targetProjectPath) {
         ClassPath cp;
@@ -2032,7 +2335,7 @@ public class RefactoringProvider {
             // roots is a legitimate place to create it — the "is sourceFile under this root" anchor only makes sense
             // for the default (same-module) case, where cp's roots are sourceFile's own.
             if (targetProjectPath != null && !targetProjectPath.isBlank()
-                    || FileUtil.getRelativePath(root, sourceFile) != null) {
+                || FileUtil.getRelativePath(root, sourceFile) != null) {
                 try {
                     return FileUtil.createFolder(root, packagePath);
                 }
@@ -2045,8 +2348,9 @@ public class RefactoringProvider {
     }
 
     /**
-     * Resolves {@code projectPath} to one of the currently open projects by comparing real directories — same pattern
-     * as {@code ProjectActionProvider}'s build-tool project resolution. Null when no open project's directory matches.
+     * Resolves {@code projectPath} to one of the currently open projects by comparing real directories — same
+     * pattern as {@code ProjectActionProvider}'s build-tool project resolution. Null when no open project's
+     * directory matches.
      */
     private static Project resolveOpenProjectByPath(String projectPath) {
         if (projectPath == null || projectPath.isBlank()) {
@@ -2063,14 +2367,15 @@ public class RefactoringProvider {
     }
 
     /**
-     * The silent-misplacement guard for the {@code targetProjectPath}-omitted case: when {@code packageName} does not
-     * already exist under {@code sourceFile}'s own project but DOES exist under a different open project's Java source
-     * roots, creating it in the source project would almost certainly be wrong — the caller very likely meant the
-     * package that already exists elsewhere. Refuses by naming both projects rather than guessing.
+     * The silent-misplacement guard for the {@code targetProjectPath}-omitted case: when {@code packageName}
+     * does not already exist under {@code sourceFile}'s own project but DOES exist under a different open
+     * project's Java source roots, creating it in the source project would almost certainly be wrong — the
+     * caller very likely meant the package that already exists elsewhere. Refuses by naming both projects
+     * rather than guessing.
      *
      * @return the ready-to-return refusal message, or null when the omitted-{@code targetProjectPath} default
-     * (search/create under {@code sourceFile}'s own project) may proceed normally — either because the package already
-     * exists there, or because no OTHER open project claims it either
+     *         (search/create under {@code sourceFile}'s own project) may proceed normally — either because
+     *         the package already exists there, or because no OTHER open project claims it either
      */
     private static String packageBelongsToOtherOpenProjectMessage(FileObject sourceFile, String packageName) {
         String packagePath = packageName.replace('.', '/');
@@ -2098,8 +2403,8 @@ public class RefactoringProvider {
                         String ownName = ownProject != null
                                          ? ProjectUtils.getInformation(ownProject).getDisplayName() : "the source file's project";
                         return "Error: " + McpToolPropertyEnum.TARGET_PACKAGE.key() + " '" + packageName
-                                + "' belongs to project " + otherName + ", not " + ownName + ". Pass "
-                                + McpToolPropertyEnum.TARGET_PROJECT_PATH.key() + " to move it there.";
+                               + "' belongs to project " + otherName + ", not " + ownName + ". Pass "
+                               + McpToolPropertyEnum.TARGET_PROJECT_PATH.key() + " to move it there.";
                     }
                 }
             }

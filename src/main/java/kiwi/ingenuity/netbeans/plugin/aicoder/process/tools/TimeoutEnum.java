@@ -130,7 +130,14 @@ public enum TimeoutEnum {
      */
     MESSAGE_REBUILD_THROTTLE_MILLIS(100L, Kind.UI_FEEDBACK),
     DATABASE_QUERY_TIMEOUT_MILLIS(300_000L, Kind.EXTERNAL_IO),
-    OPENAI_HTTP_REQUEST_TIMEOUT_MILLIS(300_000L, Kind.EXTERNAL_IO),
+    /**
+     * How long an OpenAI-compatible chat request (Ollama) may take to START responding. The JDK applies it only
+     * until the response headers arrive, so it bounds model loading plus prompt processing before the first
+     * token, not the streamed reply. Local models on slow hardware with a large context can need well over
+     * five minutes for that, hence the generous bound; an unreachable server is still caught quickly by the
+     * separate connect timeout.
+     */
+    OPENAI_HTTP_REQUEST_TIMEOUT_MILLIS(1_800_000L, Kind.EXTERNAL_IO),
     OPENAI_HTTP_CONNECT_TIMEOUT_MILLIS(10_000L, Kind.EXTERNAL_IO),
     MCP_HTTP_IDLE_INTERVAL_MILLIS(300_000L, Kind.EXTERNAL_IO),
     /**

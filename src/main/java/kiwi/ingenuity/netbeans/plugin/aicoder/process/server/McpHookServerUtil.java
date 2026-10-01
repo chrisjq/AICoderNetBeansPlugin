@@ -148,6 +148,7 @@ public final class McpHookServerUtil {
         sb.append("\n\n## Policy\n");
         if (!mcpOnly) {
             sb.append("- Edit project files ONLY via the Edit/Write tools or the plugin's ApplyEdit/WriteFile — these route through the Accept/Reject diff panel. NEVER modify project files with Bash (sed, echo, >/tee redirects): that skips the diff panel and is not reviewable.\n");
+            sb.append("- GetFileContent/GetCurrentFileContent default to a line-number gutter and header — do not write that back as file content; pass raw=true for the exact file text (decoded with the file's encoding). ApplyEdit replaces only the first occurrence of oldString unless replaceAll is true; expectedCount asserts the exact match count and leaves the file untouched on a mismatch.\n");
             sb.append("- Prefer plugin tools (search, git, build, refactor) over Bash/Grep for anything in the open project. Only use built-ins for files outside the project tree (e.g. memory, system config).\n");
         }
         else {

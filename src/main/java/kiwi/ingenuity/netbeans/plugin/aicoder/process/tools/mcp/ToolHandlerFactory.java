@@ -74,6 +74,8 @@ import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.search.SearchInF
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.search.SearchSymbolsTool;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.search.SearchTypesTool;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.system.CopyFileTool;
+import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.system.CreateDirectoryTool;
+import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.system.DeleteDirectoryTool;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.system.DeleteFileTool;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.system.GetClipboardTool;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.system.GetFileContentTool;
@@ -173,6 +175,8 @@ public final class ToolHandlerFactory {
         map.put(McpToolEnum.DELETE_FILE, new DeleteFileTool(server));
         map.put(McpToolEnum.COPY_FILE, new CopyFileTool(server));
         map.put(McpToolEnum.MOVE_FILE, new MoveFileTool(server));
+        map.put(McpToolEnum.CREATE_DIRECTORY, new CreateDirectoryTool(server));
+        map.put(McpToolEnum.DELETE_DIRECTORY, new DeleteDirectoryTool(server));
         map.put(McpToolEnum.CLOSE_FILE, new CloseFileTool());
         map.put(McpToolEnum.GET_PLUGIN_VERSION, new GetPluginVersionTool());
         map.put(McpToolEnum.GET_INSTRUCTIONS, new GetInstructionsTool());

@@ -8,6 +8,7 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.events.PermissionDecision;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.events.PermissionEvent;
+import kiwi.ingenuity.netbeans.plugin.aicoder.process.McpArgumentException;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.McpInstructionOptionEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.McpSectionEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.McpToolEnum;
@@ -25,29 +26,30 @@ import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.ToolSchemaKeyEnu
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.providers.netbeans.RefactoringProvider;
 
 /**
- * Replaces an exact string in a file, routed through the NetBeans Accept/Reject diff panel (PermissionEvent) before
- * applying. Used so GitHub Copilot edits go through the same review UX — Copilot's native {@code edit} tool is excluded
- * via {@code GithubCopilotProcessManager.EXCLUDED_NATIVE_TOOLS}, so this is the only route its edits can take.
+ * Replaces an exact string in a file, routed through the NetBeans Accept/Reject diff panel (PermissionEvent)
+ * before applying. Used so GitHub Copilot edits go through the same review UX — Copilot's native {@code edit}
+ * tool is excluded via {@code GithubCopilotProcessManager.EXCLUDED_NATIVE_TOOLS}, so this is the only route
+ * its edits can take.
  *
  * <p>
- * Locks the target file (not a global lock — see usesOwnFileLocking()) from before the diff is shown through the user's
- * decision and the write, so the file can't change underneath a pending decision. A different file being edited
- * concurrently is unaffected.
+ * Locks the target file (not a global lock — see usesOwnFileLocking()) from before the diff is shown through
+ * the user's decision and the write, so the file can't change underneath a pending decision. A different file
+ * being edited concurrently is unaffected.
  */
 public class ApplyEditTool extends AbstractActionTool {
 
     public ApplyEditTool() {
         super(McpSectionEnum.UI_FILES,
-              McpToolEnum.APPLY_EDIT.toolName(),
-              "Replace an exact string in a file. " + McpToolPropertyEnum.OLD_STRING.key() + " must match the source byte-for-byte including indentation; strip the line-number gutter if text was copied from " + McpToolEnum.GET_FILE_CONTENT.toolName() + ". The user approves the change in the NetBeans Accept/Reject diff panel.",
-              McpToolEnum.APPLY_EDIT.toolName() + " -> replace " + McpToolPropertyEnum.OLD_STRING.key() + " with " + McpToolPropertyEnum.NEW_STRING.key() + " in a file; " + McpToolPropertyEnum.OLD_STRING.key() + " must be byte-for-byte exact (strip " + McpToolEnum.GET_FILE_CONTENT.toolName() + " gutter if copying from there); user approves via the NetBeans diff panel");
+                McpToolEnum.APPLY_EDIT.toolName(),
+                "Replace an exact string in a file. " + McpToolPropertyEnum.OLD_STRING.key() + " must match the source byte-for-byte including indentation; strip the line-number gutter if text was copied from " + McpToolEnum.GET_FILE_CONTENT.toolName() + ". The user approves the change in the NetBeans Accept/Reject diff panel.",
+                McpToolEnum.APPLY_EDIT.toolName() + " -> replace " + McpToolPropertyEnum.OLD_STRING.key() + " with " + McpToolPropertyEnum.NEW_STRING.key() + " in a file; " + McpToolPropertyEnum.OLD_STRING.key() + " must be byte-for-byte exact (strip " + McpToolEnum.GET_FILE_CONTENT.toolName() + " gutter if copying from there); user approves via the NetBeans diff panel; " + McpToolPropertyEnum.REPLACE_ALL.key() + " replaces every occurrence");
     }
 
     @Override
     public JsonObject schema(Set<McpInstructionOptionEnum> options) {
         JsonObject tool = new JsonObject();
         tool.addProperty(ToolSchemaKeyEnum.NAME.key(), McpToolEnum.APPLY_EDIT.toolName());
-        tool.addProperty(ToolSchemaKeyEnum.DESCRIPTION.key(), "Replace an exact string in a file, routing edits through the user's Accept/Reject diff panel. " + McpToolPropertyEnum.OLD_STRING.key() + " must match the source byte-for-byte including indentation; strip the line-number gutter if text was copied from " + McpToolEnum.GET_FILE_CONTENT.toolName() + ". Any unsaved editor changes are saved first, so " + McpToolPropertyEnum.OLD_STRING.key() + " is matched against what the user has on screen. Replaces only the first occurrence — make " + McpToolPropertyEnum.OLD_STRING.key() + " unique enough to identify the intended site.");
+        tool.addProperty(ToolSchemaKeyEnum.DESCRIPTION.key(), "Replace an exact string in a file, routing edits through the user's Accept/Reject diff panel. " + McpToolPropertyEnum.OLD_STRING.key() + " must match the source byte-for-byte including indentation; strip the line-number gutter if text was copied from " + McpToolEnum.GET_FILE_CONTENT.toolName() + ". Any unsaved editor changes are saved first, so " + McpToolPropertyEnum.OLD_STRING.key() + " is matched against what the user has on screen. Replaces only the first occurrence unless " + McpToolPropertyEnum.REPLACE_ALL.key() + " is true — make " + McpToolPropertyEnum.OLD_STRING.key() + " unique enough to identify the intended site otherwise. " + McpToolPropertyEnum.EXPECTED_COUNT.key() + " asserts the exact number of occurrences; a mismatch changes nothing and reports the actual count.");
         JsonObject schema = new JsonObject();
         schema.addProperty(ToolSchemaKeyEnum.TYPE.key(), "object");
         JsonObject props = new JsonObject();
@@ -63,6 +65,19 @@ public class ApplyEditTool extends AbstractActionTool {
         ns.addProperty(ToolSchemaKeyEnum.TYPE.key(), "string");
         ns.addProperty(ToolSchemaKeyEnum.DESCRIPTION.key(), "The replacement text.");
         props.add(McpToolPropertyEnum.NEW_STRING.key(), ns);
+        JsonObject ra = new JsonObject();
+        ra.addProperty(ToolSchemaKeyEnum.TYPE.key(), "boolean");
+        ra.addProperty(ToolSchemaKeyEnum.DESCRIPTION.key(), "Replace every occurrence of " + McpToolPropertyEnum.OLD_STRING.key()
+                                                            + " rather than only the first. Default false.");
+        props.add(McpToolPropertyEnum.REPLACE_ALL.key(), ra);
+        JsonObject ec = new JsonObject();
+        ec.addProperty(ToolSchemaKeyEnum.TYPE.key(), "integer");
+        ec.addProperty(ToolSchemaKeyEnum.MINIMUM.key(), 0);
+        ec.addProperty(ToolSchemaKeyEnum.DESCRIPTION.key(), "Asserted number of occurrences of " + McpToolPropertyEnum.OLD_STRING.key()
+                                                            + ". If the actual count differs, nothing is changed and an error reports the actual count. Works with or "
+                                                            + "without " + McpToolPropertyEnum.REPLACE_ALL.key() + " — without it, this still replaces only the first "
+                                                            + "occurrence, but first asserts the total number of matches is exactly this many. Omit for no assertion.");
+        props.add(McpToolPropertyEnum.EXPECTED_COUNT.key(), ec);
         schema.add(ToolSchemaKeyEnum.PROPERTIES.key(), props);
         JsonArray req = new JsonArray();
         req.add(McpToolPropertyEnum.FILE_PATH.key());
@@ -84,10 +99,20 @@ public class ApplyEditTool extends AbstractActionTool {
     }
 
     @Override
-    public String handle(ToolRequestArguments args, AbstractAiSession session) {
+    public String handle(ToolRequestArguments args, AbstractAiSession session) throws McpArgumentException {
         String filePath = args.str(McpToolPropertyEnum.FILE_PATH.key());
         String oldString = args.str(McpToolPropertyEnum.OLD_STRING.key());
         String newString = args.str(McpToolPropertyEnum.NEW_STRING.key());
+        boolean replaceAll = args.bool(McpToolPropertyEnum.REPLACE_ALL.key());
+        // -1 is the internal "omitted" sentinel RefactoringProvider.applyEdit reads as "no assertion" — kept
+        // distinct from anything the caller actually supplied, so a caller passing -1 cannot use it to disable
+        // the assertion it just asked for.
+        boolean expectedCountGiven = args.has(McpToolPropertyEnum.EXPECTED_COUNT.key());
+        int expectedCountArg = expectedCountGiven ? args.intOr(McpToolPropertyEnum.EXPECTED_COUNT.key(), 0) : -1;
+        if (expectedCountGiven && expectedCountArg < 0) {
+            return "Error: " + McpToolPropertyEnum.EXPECTED_COUNT.key() + " must be 0 or greater, got " + expectedCountArg;
+        }
+        int expectedCount = expectedCountArg;
         if (filePath == null || filePath.isBlank()) {
             return "Error: " + McpToolPropertyEnum.FILE_PATH.key() + " is required";
         }
@@ -102,7 +127,7 @@ public class ApplyEditTool extends AbstractActionTool {
         // policy choice. Consistent with the built-in Edit hook. Checked before the
         // project-scope gate so it works even for a restrict-to-project session.
         if (server.isOwnSessionConfigFile(session.getId(), filePath)) {
-            return RefactoringProvider.applyEdit(filePath, oldString, newString);
+            return RefactoringProvider.applyEdit(filePath, oldString, newString, replaceAll, expectedCount);
         }
         if (!McpHookServer.isProjectFileAllowed(server, session.getId(), filePath)) {
             return McpHookServer.fileAccessDeniedMessage(server, session.getId(), filePath);
@@ -114,10 +139,10 @@ public class ApplyEditTool extends AbstractActionTool {
         try {
             AiProcessEventListener listener = session.getAiProcessEventListener();
             if (listener == null) {
-                return RefactoringProvider.applyEdit(filePath, oldString, newString);
+                return RefactoringProvider.applyEdit(filePath, oldString, newString, replaceAll, expectedCount);
             }
             CompletableFuture<PermissionDecision> future = new CompletableFuture<>();
-            listener.onAiProcessEvent(new PermissionEvent("Edit", filePath, oldString, newString, null, future));
+            listener.onAiProcessEvent(new PermissionEvent("Edit", filePath, oldString, newString, null, replaceAll, future));
             PermissionDecision decision;
             try {
                 // The tool-call wait and shared user-approval deadline race; whichever completes first decides.
@@ -128,7 +153,7 @@ public class ApplyEditTool extends AbstractActionTool {
                 // panel. Return a distinct, retryable message (a real rejection below ends
                 // with "do not retry this change").
                 return "Timed out waiting for the user to review this change in the diff panel — "
-                        + "the user did not respond in time. You may retry.";
+                       + "the user did not respond in time. You may retry.";
             }
             catch (Exception e) {
                 decision = PermissionDecision.denied(null);
@@ -138,7 +163,7 @@ public class ApplyEditTool extends AbstractActionTool {
                        ? "User rejected the edit: " + decision.message().trim() + " — do not retry this change"
                        : "User rejected the edit — do not retry this change";
             }
-            return RefactoringProvider.applyEdit(filePath, oldString, newString);
+            return RefactoringProvider.applyEdit(filePath, oldString, newString, replaceAll, expectedCount);
         }
         finally {
             lockManager.releaseFileLock(session.getId(), filePath);

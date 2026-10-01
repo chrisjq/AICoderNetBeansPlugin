@@ -48,10 +48,10 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
 /**
- * Pins the requirement that a session's own serialized conversation history (history.json / context.json, under
- * SessionPersistenceManager's per-session directory) is invisible to every file tool — read or write — even though the
- * rest of the session's own data (memory, tool_results, under the unrelated ~/.ai-coder/{type}/{sessionId}/ tree) is
- * freely accessible.
+ * Pins the requirement that a session's own serialized conversation history (history.json / context.json,
+ * under SessionPersistenceManager's per-session directory) is invisible to every file tool — read or write —
+ * even though the rest of the session's own data (memory, tool_results, under the unrelated
+ * ~/.ai-coder/{type}/{sessionId}/ tree) is freely accessible.
  */
 class SessionHistoryFileProtectionTest {
 
@@ -132,7 +132,7 @@ class SessionHistoryFileProtectionTest {
     }
 
     @Test
-    void applyEdit_deniesHistoryFileWithoutReachingDiffPanel() {
+    void applyEdit_deniesHistoryFileWithoutReachingDiffPanel() throws Exception {
         ApplyEditTool tool = new ApplyEditTool();
         JsonObject o = new JsonObject();
         o.addProperty(McpToolPropertyEnum.FILE_PATH.key(), historyFile.toString());

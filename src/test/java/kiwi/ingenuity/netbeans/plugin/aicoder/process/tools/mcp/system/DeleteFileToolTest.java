@@ -25,9 +25,9 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
 /**
- * AUDIT 3/6 — proves DeleteFileTool's filePath parameter drives the whole operation: the file it names is the one
- * deleted, a missing target is reported (with no confirm asked), a denied delete leaves the file untouched, and a blank
- * path is refused rather than guessing the focused editor.
+ * AUDIT 3/6 — proves DeleteFileTool's filePath parameter drives the whole operation: the file it names is the
+ * one deleted, a missing target is reported (with no confirm asked), a denied delete leaves the file
+ * untouched, and a blank path is refused rather than guessing the focused editor.
  */
 class DeleteFileToolTest {
 
@@ -96,6 +96,20 @@ class DeleteFileToolTest {
         assertTrue(Files.exists(victim), "file must survive a denied delete");
         assertEquals(1, session.captured.size(), "denial path must fire the Delete ConfirmEvent");
         assertEquals("Delete", ((ConfirmEvent) session.captured.get(0)).toolName());
+    }
+
+    @Test
+    void refusesADirectoryWithoutConfirming(@TempDir Path dir) throws Exception {
+        Path sub = Files.createDirectory(dir.resolve("sub"));
+        Files.writeString(sub.resolve("keep.txt"), "payload");
+        DeleteFileTool tool = new DeleteFileTool(unrestrictedServer());
+        StubSession session = new StubSession(SESSION_ID, PermissionDecision.allowed());
+
+        String result = tool.handle(args(sub.toString()), session);
+
+        assertTrue(result.contains("DeleteDirectory"), result);
+        assertTrue(session.captured.isEmpty(), "a folder must be refused before any confirm is asked");
+        assertTrue(Files.exists(sub.resolve("keep.txt")), "the folder and its contents must survive");
     }
 
     @Test

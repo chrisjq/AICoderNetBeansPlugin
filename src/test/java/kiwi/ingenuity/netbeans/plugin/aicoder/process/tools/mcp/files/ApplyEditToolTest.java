@@ -25,6 +25,7 @@ import kiwi.ingenuity.netbeans.plugin.aicoder.process.session.AbstractAiSession;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.McpToolInterface;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.ToolRequestArguments;
 import org.junit.jupiter.api.AfterEach;
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -40,6 +41,19 @@ class ApplyEditToolTest {
         o.addProperty(McpToolPropertyEnum.FILE_PATH.key(), filePath);
         o.addProperty(McpToolPropertyEnum.OLD_STRING.key(), oldString);
         o.addProperty(McpToolPropertyEnum.NEW_STRING.key(), newString);
+        return new ToolRequestArguments(o);
+    }
+
+    private static ToolRequestArguments args(String filePath, String oldString, String newString,
+                                             boolean replaceAll, Integer expectedCount) {
+        JsonObject o = new JsonObject();
+        o.addProperty(McpToolPropertyEnum.FILE_PATH.key(), filePath);
+        o.addProperty(McpToolPropertyEnum.OLD_STRING.key(), oldString);
+        o.addProperty(McpToolPropertyEnum.NEW_STRING.key(), newString);
+        o.addProperty(McpToolPropertyEnum.REPLACE_ALL.key(), replaceAll);
+        if (expectedCount != null) {
+            o.addProperty(McpToolPropertyEnum.EXPECTED_COUNT.key(), expectedCount);
+        }
         return new ToolRequestArguments(o);
     }
 
@@ -60,7 +74,7 @@ class ApplyEditToolTest {
     }
 
     @Test
-    void handle_fileAlreadyLockedByAnotherSession_rejectsWithoutFiringPermissionEvent() {
+    void handle_fileAlreadyLockedByAnotherSession_rejectsWithoutFiringPermissionEvent() throws Exception {
         String filePath = uniqueFile();
         LockManager lockManager = LockManager.getInstance();
         assertTrue(lockManager.acquireFileLock("otherSession", filePath));
@@ -105,7 +119,7 @@ class ApplyEditToolTest {
     }
 
     @Test
-    void handle_releasesFileLockAfterRejection() {
+    void handle_releasesFileLockAfterRejection() throws Exception {
         String filePath = uniqueFile();
         ApplyEditTool tool = new ApplyEditTool();
         RecordingListener listener = new RecordingListener();
@@ -118,6 +132,140 @@ class ApplyEditToolTest {
         LockManager lockManager = LockManager.getInstance();
         assertTrue(lockManager.acquireFileLock("otherSession", filePath));
         lockManager.releaseFileLock("otherSession", filePath);
+    }
+
+    @Test
+    void handle_replaceAll_replacesEveryOccurrence() throws Exception {
+        Path file = Files.createTempFile("apply-edit-replace-all-", ".txt");
+        Files.writeString(file, "old one, old two, old three");
+        try {
+            ApplyEditTool tool = new ApplyEditTool();
+            RecordingListener listener = new RecordingListener();
+            listener.autoDecision = PermissionDecision.allowed();
+            FakeSession session = new FakeSession("mySession", listener);
+
+            String result = tool.handle(args(file.toString(), "old", "new", true, null), session);
+
+            assertTrue(result.contains("3 occurrences replaced"), "expected a 3-occurrence report, got: " + result);
+            assertEquals("new one, new two, new three", Files.readString(file));
+        }
+        finally {
+            Files.deleteIfExists(file);
+        }
+    }
+
+    @Test
+    void handle_expectedCountMismatch_leavesFileUnchanged() throws Exception {
+        Path file = Files.createTempFile("apply-edit-expected-count-", ".txt");
+        String original = "old one, old two";
+        Files.writeString(file, original);
+        try {
+            ApplyEditTool tool = new ApplyEditTool();
+            RecordingListener listener = new RecordingListener();
+            listener.autoDecision = PermissionDecision.allowed();
+            FakeSession session = new FakeSession("mySession", listener);
+
+            String result = tool.handle(args(file.toString(), "old", "new", true, 5), session);
+
+            assertTrue(result.contains("expected 5") && result.contains("found 2"),
+                    "expected a mismatch error naming both counts, got: " + result);
+            assertEquals(original, Files.readString(file), "a count mismatch must change nothing");
+        }
+        finally {
+            Files.deleteIfExists(file);
+        }
+    }
+
+    @Test
+    void handle_expectedCountWithoutReplaceAll_assertsExactMatches() throws Exception {
+        Path file = Files.createTempFile("apply-edit-expected-count-single-", ".txt");
+        Files.writeString(file, "only one old here");
+        try {
+            ApplyEditTool tool = new ApplyEditTool();
+            RecordingListener listener = new RecordingListener();
+            listener.autoDecision = PermissionDecision.allowed();
+            FakeSession session = new FakeSession("mySession", listener);
+
+            String result = tool.handle(args(file.toString(), "old", "new", false, 1), session);
+
+            assertTrue(result.contains("1 occurrence replaced"), "expected a 1-occurrence report, got: " + result);
+            assertEquals("only one new here", Files.readString(file));
+        }
+        finally {
+            Files.deleteIfExists(file);
+        }
+    }
+
+    /**
+     * Pins down the documented "asserts N, replaces one" behaviour of expectedCount without replaceAll: three
+     * occurrences actually present, expectedCount=3 passes the assertion, but only the FIRST is replaced —
+     * the assertion and the replacement count are independent of each other.
+     */
+    @Test
+    void handle_expectedCountWithoutReplaceAll_onThreeMatches_assertsAllButReplacesOnlyTheFirst() throws Exception {
+        Path file = Files.createTempFile("apply-edit-expected-count-three-", ".txt");
+        Files.writeString(file, "old one, old two, old three");
+        try {
+            ApplyEditTool tool = new ApplyEditTool();
+            RecordingListener listener = new RecordingListener();
+            listener.autoDecision = PermissionDecision.allowed();
+            FakeSession session = new FakeSession("mySession", listener);
+
+            String result = tool.handle(args(file.toString(), "old", "new", false, 3), session);
+
+            assertTrue(result.contains("1 occurrence replaced"), "assertion passing must not change how many are replaced: " + result);
+            assertEquals("new one, old two, old three", Files.readString(file), "only the first occurrence may change");
+        }
+        finally {
+            Files.deleteIfExists(file);
+        }
+    }
+
+    /**
+     * Mutation-prove target: a negative expectedCount must be refused outright, not treated as the internal
+     * "omitted" sentinel (which would silently disable the assertion the caller just asked for).
+     */
+    @Test
+    void handle_negativeExpectedCount_isRefusedWithoutTouchingTheFile() throws Exception {
+        Path file = Files.createTempFile("apply-edit-negative-expected-count-", ".txt");
+        String original = "old text";
+        Files.writeString(file, original);
+        try {
+            ApplyEditTool tool = new ApplyEditTool();
+            RecordingListener listener = new RecordingListener();
+            listener.autoDecision = PermissionDecision.allowed();
+            FakeSession session = new FakeSession("mySession", listener);
+
+            String result = tool.handle(args(file.toString(), "old", "new", false, -1), session);
+
+            assertTrue(result.contains("must be 0 or greater"), result);
+            assertEquals(original, Files.readString(file), "a refused negative expectedCount must change nothing");
+            assertTrue(listener.events.isEmpty(), "must be refused before reaching the diff panel");
+        }
+        finally {
+            Files.deleteIfExists(file);
+        }
+    }
+
+    @Test
+    void handle_emptyOldString_isRefused() throws Exception {
+        Path file = Files.createTempFile("apply-edit-empty-old-string-", ".txt");
+        String original = "some text";
+        Files.writeString(file, original);
+        try {
+            ApplyEditTool tool = new ApplyEditTool();
+            RecordingListener listener = new RecordingListener();
+            listener.autoDecision = PermissionDecision.allowed();
+            FakeSession session = new FakeSession("mySession", listener);
+
+            String result = tool.handle(args(file.toString(), "", "new"), session);
+
+            assertTrue(result.contains("must not be empty"), result);
+            assertEquals(original, Files.readString(file));
+        }
+        finally {
+            Files.deleteIfExists(file);
+        }
     }
 
     private static final class NoopRegistrar extends AiMcpRegistrar {

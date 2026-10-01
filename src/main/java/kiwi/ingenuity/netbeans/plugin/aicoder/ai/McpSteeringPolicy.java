@@ -27,7 +27,7 @@ public final class McpSteeringPolicy {
     }
 
     private static final String AUTOMATIC
-            = "Refused automatically by this IDE — the user was not asked and did not reject this. ";
+                                = "Refused automatically by this IDE — the user was not asked and did not reject this. ";
 
     /**
      * Returns steering feedback text naming the MCP tools to use instead of a native tool call. Text is built
@@ -69,7 +69,9 @@ public final class McpSteeringPolicy {
                 + McpToolEnum.RUN_ANT_TESTS.toolName() + " to test, the Git* tools for version control, "
                 + McpToolEnum.DELETE_FILE.toolName() + " / "
                 + McpToolEnum.COPY_FILE.toolName() + " / "
-                + McpToolEnum.MOVE_FILE.toolName() + " for file management, or "
+                + McpToolEnum.MOVE_FILE.toolName() + " for file management, "
+                + McpToolEnum.CREATE_DIRECTORY.toolName() + " / "
+                + McpToolEnum.DELETE_DIRECTORY.toolName() + " for directories, or "
                 + McpToolEnum.SEARCH_IN_FILES.toolName() + " to search.";
 
             case UNKNOWN ->

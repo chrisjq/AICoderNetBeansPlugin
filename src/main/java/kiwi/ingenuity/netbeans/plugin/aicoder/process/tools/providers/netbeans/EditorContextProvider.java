@@ -102,18 +102,19 @@ public class EditorContextProvider {
     }
 
     /**
-     * Caret position in the focused editor as {@code line:column}, or null when there is no editor or the caret cannot
-     * be read.
+     * Caret position in the focused editor as {@code line:column}, or null when there is no editor or the
+     * caret cannot be read.
      *
      * <p>
-     * Unlike {@link #getCurrentFile()} this is safe to call from the EDT: it reads directly when already on the
-     * dispatch thread instead of calling {@code invokeAndWait}, which throws when invoked from the EDT itself. The
-     * context preamble is built on the EDT, which is why the plain accessor cannot be reused there.
+     * Unlike {@link #getCurrentFile()} this is safe to call from the EDT: it reads directly when already on
+     * the dispatch thread instead of calling {@code invokeAndWait}, which throws when invoked from the EDT
+     * itself. The context preamble is built on the EDT, which is why the plain accessor cannot be reused
+     * there.
      *
      * <p>
-     * This is informational only. Tools deliberately do not act on the caret — the caller cannot see it, so a tool that
-     * used it would behave differently depending on where the user last clicked. Supplying the position lets the caller
-     * decide whether the user's location is relevant and pass it explicitly.
+     * This is informational only. Tools deliberately do not act on the caret — the caller cannot see it, so a
+     * tool that used it would behave differently depending on where the user last clicked. Supplying the
+     * position lets the caller decide whether the user's location is relevant and pass it explicitly.
      */
     public static String getCaretLineColumn() {
         AtomicReference<String> ref = new AtomicReference<>(null);
@@ -149,6 +150,16 @@ public class EditorContextProvider {
     }
 
     public static String getCurrentFileContent() {
+        return getCurrentFileContent(false);
+    }
+
+    /**
+     * @param raw when true, returns the exact editor text with no "File: path" header and no truncation
+     *            marker — an oversize result is an error directing the caller to {@link #getFileContent} with
+     *            {@code startLine}/{@code endLine} instead, since this method has no range parameters of its
+     *            own.
+     */
+    public static String getCurrentFileContent(boolean raw) {
         AtomicReference<String> ref = new AtomicReference<>("No editor focused");
         try {
             SwingUtilities.invokeAndWait(() -> {
@@ -163,9 +174,16 @@ public class EditorContextProvider {
                 try {
                     String text = doc.getText(0, doc.getLength());
                     if (text.length() > MAX_FILE_CONTENT_CHARS) {
+                        if (raw) {
+                            ref.set("Error: raw content of " + path + " is " + text.length() + " characters, over the "
+                                    + MAX_FILE_CONTENT_CHARS + "-character limit. Use " + McpToolEnum.GET_FILE_CONTENT.toolName()
+                                    + " with " + McpToolPropertyEnum.START_LINE.key() + "/" + McpToolPropertyEnum.END_LINE.key()
+                                    + " to read a specific range instead.");
+                            return;
+                        }
                         text = text.substring(0, MAX_FILE_CONTENT_CHARS) + "\n[truncated at " + MAX_FILE_CONTENT_CHARS + " chars]";
                     }
-                    ref.set("File: " + path + "\n\n" + text);
+                    ref.set(raw ? text : "File: " + path + "\n\n" + text);
                 }
                 catch (javax.swing.text.BadLocationException ex) {
                     ref.set("Error reading content: " + ex.getMessage());
@@ -203,6 +221,18 @@ public class EditorContextProvider {
     }
 
     public static String getFileContent(String filePath, int startLine, int endLine) {
+        return getFileContent(filePath, startLine, endLine, false);
+    }
+
+    /**
+     * @param raw when true, returns the exact file text (decoded with the file's encoding) for the requested
+     *            range — no "File: ... (lines ...)" header and no line-number gutter. {@code startLine}/
+     *            {@code endLine} still apply, and each selected line keeps its own original terminator
+     *            ({@code \r\n}, {@code \n} or {@code \r}) — see {@link #rawFileContent}. A result that would
+     *            exceed {@link #MAX_FILE_CONTENT_CHARS} is an error directing the caller to narrow the range,
+     *            never a truncated result with an inline marker appended.
+     */
+    public static String getFileContent(String filePath, int startLine, int endLine, boolean raw) {
         File f = new File(filePath);
         if (!f.exists() || !f.isFile()) {
             return buildNotFoundMessage(filePath);
@@ -212,7 +242,7 @@ public class EditorContextProvider {
         // user cannot see. Flushing first makes the read match both what is on
         // screen and what a later ApplyEdit will match against.
         RefactoringProvider.FlushResult flush
-                = RefactoringProvider.flushUnsavedEditorChanges(FileUtils.resolveByFile(f));
+                                        = RefactoringProvider.flushUnsavedEditorChanges(FileUtils.resolveByFile(f));
         if (flush.error() != null) {
             return flush.error();
         }
@@ -221,14 +251,17 @@ public class EditorContextProvider {
             // startLine 999 on a 13-line file returned the header "lines 999–13 of 13" and no content.
             if (startLine > 0 && startLine > lines.size()) {
                 return GetFileContentParamEnum.START_LINE.key() + " " + startLine + " is past the end of "
-                        + FileUtils.toIdePath(f) + " (" + lines.size() + " lines).";
+                       + FileUtils.toIdePath(f) + " (" + lines.size() + " lines).";
             }
             if (startLine > 0 && endLine > 0 && endLine < startLine) {
                 return GetFileContentParamEnum.END_LINE.key() + " (" + endLine + ") must not be before "
-                        + GetFileContentParamEnum.START_LINE.key() + " (" + startLine + ").";
+                       + GetFileContentParamEnum.START_LINE.key() + " (" + startLine + ").";
             }
             int from = startLine > 0 ? Math.max(0, startLine - 1) : 0;
             int to = endLine > 0 ? Math.min(lines.size(), endLine) : lines.size();
+            if (raw) {
+                return rawFileContent(f, lines, from, to);
+            }
             StringBuilder sb = new StringBuilder();
             // Include the whole-file size so a caller whose own tool-result limit
             // truncates large results (many agent harnesses cap at ~20 KB) can
@@ -254,19 +287,91 @@ public class EditorContextProvider {
     }
 
     /**
-     * Pattern-matches lines within a single file, without ever holding the whole file in memory — the motivating case
-     * is grepping a 115k+ line build/test log, not a handful of source lines. Runs two sequential streaming passes
-     * instead: the first counts every match and records which line numbers must be shown (matches plus their
-     * {@code contextLines} neighbours) in a bounded {@link TreeSet}; the second re-reads the file and emits only those
-     * lines. Two passes of cheap sequential I/O is the trade against holding either the full content or a sliding
-     * window in memory to support look-ahead context — the file is read fully, twice, rather than partially, once, held
-     * in memory.
+     * Exact file text (decoded with the file's encoding) for {@code [from, to)} (0-based, half-open), with no
+     * header and no gutter. The whole file is read directly from disk rather than rejoined line by line, so a
+     * file with no trailing newline is returned exactly as it is on disk. A requested sub-range is sliced
+     * from the same decoded text with {@link #splitKeepingTerminators}, which keeps each line's own
+     * {@code \r\n}, {@code \n} or {@code \r} attached — {@code Files.readAllLines} (what {@code lines} came
+     * from) discards line terminators entirely, so rejoining with a hardcoded {@code \n} silently turned a
+     * CRLF range into LF. This re-decodes the file rather than reusing {@code lines} so the characters
+     * returned are exactly what was on disk for that range, not a reconstruction.
+     */
+    private static String rawFileContent(File f, List<String> lines, int from, int to) throws IOException {
+        boolean wholeFile = from == 0 && to == lines.size();
+        String fullText = Files.readString(f.toPath(), RefactoringProvider.resolveCharset(f));
+        String text;
+        if (wholeFile) {
+            text = fullText;
+        }
+        else {
+            List<String> linesWithTerminators = splitKeepingTerminators(fullText);
+            StringBuilder sb = new StringBuilder();
+            for (int i = from; i < to; i++) {
+                sb.append(linesWithTerminators.get(i));
+            }
+            text = sb.toString();
+        }
+        if (text.length() > MAX_FILE_CONTENT_CHARS) {
+            return "Error: raw content of " + FileUtils.toIdePath(f) + (wholeFile ? "" : " (lines " + (from + 1) + "–" + to + ")")
+                   + " is " + text.length() + " characters, over the " + MAX_FILE_CONTENT_CHARS
+                   + "-character limit. Use " + GetFileContentParamEnum.START_LINE.key() + "/"
+                   + GetFileContentParamEnum.END_LINE.key() + " to read a smaller range.";
+        }
+        return text;
+    }
+
+    /**
+     * Splits decoded text into lines the way {@link Files#readAllLines} does — {@code \n}, {@code \r}, and
+     * {@code \r\n} all end a line, a {@code \r\n} pair counting as one terminator, not two lines — except
+     * each returned line keeps its own terminator attached, and a final line with none (the file does not end
+     * in a newline) is still included. Produces exactly as many entries as {@code Files.readAllLines} would,
+     * so indices already validated against that count stay valid against this list too.
+     */
+    private static List<String> splitKeepingTerminators(String text) {
+        List<String> result = new ArrayList<>();
+        int start = 0;
+        int i = 0;
+        int len = text.length();
+        while (i < len) {
+            char c = text.charAt(i);
+            if (c == '\n') {
+                result.add(text.substring(start, i + 1));
+                i++;
+                start = i;
+            }
+            else if (c == '\r') {
+                int end = i + 1;
+                if (end < len && text.charAt(end) == '\n') {
+                    end++;
+                }
+                result.add(text.substring(start, end));
+                i = end;
+                start = i;
+            }
+            else {
+                i++;
+            }
+        }
+        if (start < len) {
+            result.add(text.substring(start, len));
+        }
+        return result;
+    }
+
+    /**
+     * Pattern-matches lines within a single file, without ever holding the whole file in memory — the
+     * motivating case is grepping a 115k+ line build/test log, not a handful of source lines. Runs two
+     * sequential streaming passes instead: the first counts every match and records which line numbers must
+     * be shown (matches plus their {@code contextLines} neighbours) in a bounded {@link TreeSet}; the second
+     * re-reads the file and emits only those lines. Two passes of cheap sequential I/O is the trade against
+     * holding either the full content or a sliding window in memory to support look-ahead context — the file
+     * is read fully, twice, rather than partially, once, held in memory.
      *
      * <p>
      * {@code maxMatches <= 0} means "use the default cap" ({@link #MAX_FILTER_MATCHES}), matching the
      * {@code startLine}/{@code endLine} 0-means-omitted convention used by {@link #getFileContent}.
-     * {@code contextLines} is clamped to {@code [0, MAX_FILTER_CONTEXT_LINES]} defensively even though the tool layer
-     * should already have done so, so a direct caller cannot request an unbounded context window.
+     * {@code contextLines} is clamped to {@code [0, MAX_FILTER_CONTEXT_LINES]} defensively even though the
+     * tool layer should already have done so, so a direct caller cannot request an unbounded context window.
      */
     public static String filterFileContent(String filePath, String pattern, boolean isRegex,
                                            boolean caseSensitive, int contextLines, int maxMatches) {
@@ -278,7 +383,7 @@ public class EditorContextProvider {
         // yet saved would otherwise be invisible to a filter over the on-disk copy,
         // which is a false negative from the one operation this tool exists to do.
         RefactoringProvider.FlushResult flush
-                = RefactoringProvider.flushUnsavedEditorChanges(FileUtils.resolveByFile(f));
+                                        = RefactoringProvider.flushUnsavedEditorChanges(FileUtils.resolveByFile(f));
         if (flush.error() != null) {
             return flush.error();
         }
@@ -320,7 +425,7 @@ public class EditorContextProvider {
             // A pathological pattern must not hang the handler thread; report it like an
             // invalid pattern — the query, not the file, is the problem.
             return "Regex timed out after " + e.timeoutMillis()
-                    + " ms — the pattern backtracks catastrophically; simplify it.";
+                   + " ms — the pattern backtracks catastrophically; simplify it.";
         }
         catch (IOException e) {
             return "Error reading file: " + e.getMessage();
@@ -356,14 +461,15 @@ public class EditorContextProvider {
     }
 
     /**
-     * Reports metadata for any path — regular file, directory or symbolic link — without returning its contents. A
-     * regular file gets the exact byte size, line count, text encoding, created and last-modified times, writability,
-     * link status and unsaved-editor-change flag. A directory gets immediate (non-recursive) entry counts split into
-     * files and directories, each split hidden vs non-hidden, plus created and modified times. A symbolic link is
-     * resolved to its target and the target's info reported with both paths shown; a broken link is stated as such.
-     * Nothing here throws out: an unreadable field degrades on its own so the caller still gets the facts that were
-     * readable. The encoding is resolved through NetBeans' own {@link FileEncodingQuery} so it matches how the editor
-     * reads the file (per-project charset settings, detection); the size/line count are the on-disk copy — an "unsaved
+     * Reports metadata for any path — regular file, directory or symbolic link — without returning its
+     * contents. A regular file gets the exact byte size, line count, text encoding, created and last-modified
+     * times, writability, link status and unsaved-editor-change flag. A directory gets immediate
+     * (non-recursive) entry counts split into files and directories, each split hidden vs non-hidden, plus
+     * created and modified times. A symbolic link is resolved to its target and the target's info reported
+     * with both paths shown; a broken link is stated as such. Nothing here throws out: an unreadable field
+     * degrades on its own so the caller still gets the facts that were readable. The encoding is resolved
+     * through NetBeans' own {@link FileEncodingQuery} so it matches how the editor reads the file
+     * (per-project charset settings, detection); the size/line count are the on-disk copy — an "unsaved
      * editor changes" flag warns when the editor's in-memory copy has diverged from it.
      */
     public static String getFileInfo(String filePath) {
@@ -375,7 +481,7 @@ public class EditorContextProvider {
         // which is a well-formed path that simply is not there.
         if (filePath == null || filePath.isBlank()) {
             return McpToolPropertyEnum.FILE_PATH.key() + " is required — supply an absolute path to a file, directory "
-                    + "or symbolic link.";
+                   + "or symbolic link.";
         }
         Path link;
         try {
@@ -522,33 +628,36 @@ public class EditorContextProvider {
     }
 
     /**
-     * Appends created and last-modified times, rendered in the machine's local zone by DateUtil like every other date
-     * an AI sees, plus age in seconds so a caller can judge staleness without a second clock call of its own. Each time
-     * degrades on its own: a filesystem that offers no creation time gets a plain statement, not an invented value.
+     * Appends created and last-modified times, rendered in the machine's local zone by DateUtil like every
+     * other date an AI sees, plus age in seconds so a caller can judge staleness without a second clock call
+     * of its own. Each time degrades on its own: a filesystem that offers no creation time gets a plain
+     * statement, not an invented value.
      */
     /**
      * The file's MIME type, preferring NetBeans' own resolution over the JDK's.
      * <p>
-     * {@code FileObject.getMIMEType()} goes through the IDE's MIMEResolver chain, which is content- and extension-aware
-     * and knows the editor types that matter here — {@code text/x-java}, {@code text/x-maven-pom+xml} and so on. It is
-     * also the type the editor itself uses, so what this reports matches how the IDE actually treats the file rather
-     * than being a second opinion about it.
+     * {@code FileObject.getMIMEType()} goes through the IDE's MIMEResolver chain, which is content- and
+     * extension-aware and knows the editor types that matter here — {@code text/x-java},
+     * {@code text/x-maven-pom+xml} and so on. It is also the type the editor itself uses, so what this
+     * reports matches how the IDE actually treats the file rather than being a second opinion about it.
      * <p>
-     * {@code Files.probeContentType} is the fallback rather than the primary for a specific reason: on Linux it depends
-     * on installed {@code FileTypeDetector}s and very often returns null for ordinary source files, so leading with it
-     * would answer "unknown" for exactly the files a caller most wants identified. NetBeans returns the sentinel
-     * {@code content/unknown} when it cannot decide, which is treated as no answer so the fallback still gets its turn.
+     * {@code Files.probeContentType} is the fallback rather than the primary for a specific reason: on Linux
+     * it depends on installed {@code FileTypeDetector}s and very often returns null for ordinary source
+     * files, so leading with it would answer "unknown" for exactly the files a caller most wants identified.
+     * NetBeans returns the sentinel {@code content/unknown} when it cannot decide, which is treated as no
+     * answer so the fallback still gets its turn.
      * <p>
-     * Both calls are guarded: MIME resolution reaches into global Lookup and can fail with an Error outside a fully
-     * started IDE, and a type is metadata rather than the point of the call — losing it must not fail the whole result.
+     * Both calls are guarded: MIME resolution reaches into global Lookup and can fail with an Error outside a
+     * fully started IDE, and a type is metadata rather than the point of the call — losing it must not fail
+     * the whole result.
      */
     /**
      * Whether a MIME type reported by NetBeans is an actual answer.
      * <p>
      * {@code FileObject.getMIMEType()} does not return null when it cannot decide — it returns the sentinel
-     * {@code content/unknown}. Treating that as a real type is the trap: it reads like a result, so it would be
-     * reported to the caller as the file's type AND would suppress the {@code probeContentType} fallback that might
-     * genuinely have identified it. Both failures at once, and neither visible in the output.
+     * {@code content/unknown}. Treating that as a real type is the trap: it reads like a result, so it would
+     * be reported to the caller as the file's type AND would suppress the {@code probeContentType} fallback
+     * that might genuinely have identified it. Both failures at once, and neither visible in the output.
      */
     static boolean isUsableMimeType(String type) {
         return type != null && !type.isBlank() && !"content/unknown".equals(type);
@@ -585,22 +694,26 @@ public class EditorContextProvider {
     /**
      * The created-time fragment, or empty when there is nothing trustworthy to say.
      * <p>
-     * Answers ONE question — did the filesystem supply a usable value — and is pure so both of its branches can be
-     * tested on any machine. Whether the PLATFORM records birth times at all is a separate decision, made by
-     * {@link #appendTimes(StringBuilder, Path, boolean)}, which takes that capability as an argument so its branch is
-     * reachable in a test off Windows and macOS too. Keeping the two questions in separate methods is what lets both be
-     * pinned here; folding either into the other puts one of them out of reach again.
+     * Answers ONE question — did the filesystem supply a usable value — and is pure so both of its branches
+     * can be tested on any machine. Whether the PLATFORM records birth times at all is a separate decision,
+     * made by {@link #appendTimes(StringBuilder, Path, boolean)}, which takes that capability as an argument
+     * so its branch is reachable in a test off Windows and macOS too. Keeping the two questions in separate
+     * methods is what lets both be pinned here; folding either into the other puts one of them out of reach
+     * again.
      *
      * @param createdMillis the reported creation time; {@code <= 0} means the filesystem did not supply one.
-     * Deliberate: {@link BasicFileAttributes#creationTime()} on a platform/filesystem combination that cannot supply a
-     * real value returns the epoch ({@code FileTime.fromMillis(0)}), not an absent/optional result — there is no
-     * separate "unsupported" signal to check instead. Reading {@code <= 0} as absent therefore treats "no value
-     * supplied" and "the epoch itself" the same way, which is correct in practice: no file on a real project's
-     * filesystem was genuinely created at or before 1970-01-01T00:00:00Z, so this can never misclassify a real project
-     * file's timestamp. This was raised and re-examined once already — do not "fix" it into accepting epoch-era values;
-     * there is no way to tell a genuine epoch timestamp apart from the platform's absent-value sentinel, and treating
-     * them differently would let unsupported platforms leak a misleading {@code 1970} date into results instead of
-     * correctly reporting the field as absent.
+     *                      Deliberate: {@link BasicFileAttributes#creationTime()} on a platform/filesystem
+     *                      combination that cannot supply a real value returns the epoch
+     *                      ({@code FileTime.fromMillis(0)}), not an absent/optional result — there is no
+     *                      separate "unsupported" signal to check instead. Reading {@code <= 0} as absent
+     *                      therefore treats "no value supplied" and "the epoch itself" the same way, which is
+     *                      correct in practice: no file on a real project's filesystem was genuinely created
+     *                      at or before 1970-01-01T00:00:00Z, so this can never misclassify a real project
+     *                      file's timestamp. This was raised and re-examined once already — do not "fix" it
+     *                      into accepting epoch-era values; there is no way to tell a genuine epoch timestamp
+     *                      apart from the platform's absent-value sentinel, and treating them differently
+     *                      would let unsupported platforms leak a misleading {@code 1970} date into results
+     *                      instead of correctly reporting the field as absent.
      */
     static String createdSuffix(long createdMillis) {
         if (createdMillis <= 0) {
@@ -614,14 +727,16 @@ public class EditorContextProvider {
     }
 
     /**
-     * Package-visible overload taking the platform capability as an argument, so the WIRING — that this method actually
-     * consults {@link #createdSuffix} and appends its result — is testable off Windows and macOS.
+     * Package-visible overload taking the platform capability as an argument, so the WIRING — that this
+     * method actually consults {@link #createdSuffix} and appends its result — is testable off Windows and
+     * macOS.
      * <p>
-     * Extracting the pure {@code createdSuffix} closed the DECISION gap: its body is now pinned on every platform. It
-     * did not close the wiring gap. With the capability read from a static inside this method, the emitting branch was
-     * unreachable on Linux, so deleting the whole created-time block still passed here — the absence assertions stayed
-     * true and the pure-function tests kept calling {@code createdSuffix} directly. A reviewer caught that distinction
-     * precisely: the decision was pinned, the call was not. Passing the flag in makes both observable anywhere.
+     * Extracting the pure {@code createdSuffix} closed the DECISION gap: its body is now pinned on every
+     * platform. It did not close the wiring gap. With the capability read from a static inside this method,
+     * the emitting branch was unreachable on Linux, so deleting the whole created-time block still passed
+     * here — the absence assertions stayed true and the pure-function tests kept calling
+     * {@code createdSuffix} directly. A reviewer caught that distinction precisely: the decision was pinned,
+     * the call was not. Passing the flag in makes both observable anywhere.
      */
     static void appendTimes(StringBuilder sb, Path path, boolean platformProvidesBirthTime) {
         try {
@@ -664,9 +779,9 @@ public class EditorContextProvider {
     }
 
     /**
-     * Appends a directory's immediate — not recursive — entry counts split into files and directories, each split
-     * hidden vs non-hidden via {@link FindFileProvider#isHiddenPath}, plus created/modified times. An unreadable
-     * directory reports the times it could read and a note instead of an exception.
+     * Appends a directory's immediate — not recursive — entry counts split into files and directories, each
+     * split hidden vs non-hidden via {@link FindFileProvider#isHiddenPath}, plus created/modified times. An
+     * unreadable directory reports the times it could read and a note instead of an exception.
      */
     private static void appendDirectoryInfo(StringBuilder sb, Path dir) {
         sb.append(": directory");
@@ -723,8 +838,8 @@ public class EditorContextProvider {
     }
 
     /**
-     * Opens a file in the editor and optionally scrolls to a line. Pass focus=true when showing the user something;
-     * false for internal tool use.
+     * Opens a file in the editor and optionally scrolls to a line. Pass focus=true when showing the user
+     * something; false for internal tool use.
      */
     public static String navigateToLine(String filePath, int lineNumber, boolean focus) {
         File f = new File(filePath);

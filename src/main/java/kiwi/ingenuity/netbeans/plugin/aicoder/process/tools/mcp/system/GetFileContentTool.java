@@ -19,12 +19,14 @@ import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.providers.netbeans.E
 public class GetFileContentTool implements McpToolInterface {
 
     /**
-     * Model-facing tool description. Callers with ONLY_MCP_TOOL_ACCESS have no built-in Read tool, so the comparison
-     * against it is omitted rather than pointing them at something they cannot call.
+     * Model-facing tool description. Callers with ONLY_MCP_TOOL_ACCESS have no built-in Read tool, so the
+     * comparison against it is omitted rather than pointing them at something they cannot call.
      */
     private static String description(Set<McpInstructionOptionEnum> options) {
         return "Read file content with unsaved editor changes flushed first. Output includes a line-number gutter; strip it before using in "
-                + McpToolEnum.APPLY_EDIT.toolName() + " " + McpToolPropertyEnum.OLD_STRING.key() + ". Omit " + GetFileContentParamEnum.START_LINE.key() + "/" + GetFileContentParamEnum.END_LINE.key() + " for full file.";
+               + McpToolEnum.APPLY_EDIT.toolName() + " " + McpToolPropertyEnum.OLD_STRING.key() + ". Omit " + GetFileContentParamEnum.START_LINE.key() + "/" + GetFileContentParamEnum.END_LINE.key() + " for full file. "
+               + "The default output's line-number gutter means it must not be written back as file content; pass "
+               + GetFileContentParamEnum.RAW.key() + "=true for the exact file text (decoded with the file's encoding) instead.";
     }
 
     private final McpHookServer server;
@@ -47,10 +49,10 @@ public class GetFileContentTool implements McpToolInterface {
             return McpToolEnum.GET_FILE_CONTENT.toolName() + " - reads project source files with live NetBeans annotations (compilation errors, warnings); do not guess paths — use " + McpToolEnum.GET_PROJECT_STRUCTURE.toolName() + " for package layout or " + McpToolEnum.SEARCH_SYMBOLS.toolName() + "/" + McpToolEnum.SEARCH_IN_FILES.toolName() + " to locate a file first";
         }
         return McpToolEnum.GET_FILE_CONTENT.toolName() + " -> INSTEAD OF Read tool for project source files; saves any "
-                + "unsaved editor changes first so you read what the user has on screen; output carries a line-number gutter — strip it before using in " + McpToolEnum.APPLY_EDIT.toolName() + " " + McpToolPropertyEnum.OLD_STRING.key() + ". "
-                + "Full rewrite: " + McpToolEnum.GET_FILE_CONTENT.toolName() + " → " + McpToolEnum.WRITE_FILE.toolName() + " (shows full diff). "
-                + "Partial edit: " + McpToolEnum.GET_FILE_CONTENT.toolName() + " → Read (built-in) → Edit (built-in). "
-                + "Do not guess paths — use " + McpToolEnum.GET_PROJECT_STRUCTURE.toolName() + " for package layout or " + McpToolEnum.SEARCH_SYMBOLS.toolName() + "/" + McpToolEnum.SEARCH_IN_FILES.toolName() + " to locate a file first";
+               + "unsaved editor changes first so you read what the user has on screen; output carries a line-number gutter — strip it before using in " + McpToolEnum.APPLY_EDIT.toolName() + " " + McpToolPropertyEnum.OLD_STRING.key() + ". "
+               + "Full rewrite: " + McpToolEnum.GET_FILE_CONTENT.toolName() + " → " + McpToolEnum.WRITE_FILE.toolName() + " (shows full diff). "
+               + "Partial edit: " + McpToolEnum.GET_FILE_CONTENT.toolName() + " → Read (built-in) → Edit (built-in). "
+               + "Do not guess paths — use " + McpToolEnum.GET_PROJECT_STRUCTURE.toolName() + " for package layout or " + McpToolEnum.SEARCH_SYMBOLS.toolName() + "/" + McpToolEnum.SEARCH_IN_FILES.toolName() + " to locate a file first";
     }
 
     @Override
@@ -73,6 +75,13 @@ public class GetFileContentTool implements McpToolInterface {
         el.addProperty(ToolSchemaKeyEnum.TYPE.key(), "integer");
         el.addProperty(ToolSchemaKeyEnum.DESCRIPTION.key(), "Last line to include (1-based, inclusive). Omit for end of file.");
         props.add(GetFileContentParamEnum.END_LINE.key(), el);
+        JsonObject raw = new JsonObject();
+        raw.addProperty(ToolSchemaKeyEnum.TYPE.key(), "boolean");
+        raw.addProperty(ToolSchemaKeyEnum.DESCRIPTION.key(), "When true, return the exact file text (decoded with "
+                                                             + "the file's encoding): no line-number gutter and no header. "
+                                                             + GetFileContentParamEnum.START_LINE.key() + "/" + GetFileContentParamEnum.END_LINE.key()
+                                                             + " still apply. Default false.");
+        props.add(GetFileContentParamEnum.RAW.key(), raw);
         schema.add(ToolSchemaKeyEnum.PROPERTIES.key(), props);
         JsonArray required = new JsonArray();
         required.add(GetFileContentParamEnum.FILE_PATH.key());
@@ -104,6 +113,7 @@ public class GetFileContentTool implements McpToolInterface {
         if (sessionId == null || !server.isFileAccessible(sessionId, fp)) {
             return McpHookServer.fileAccessDeniedMessage(server, sessionId, fp);
         }
-        return EditorContextProvider.getFileContent(fp, args.intOr(GetFileContentParamEnum.START_LINE.key(), 0), args.intOr(GetFileContentParamEnum.END_LINE.key(), 0));
+        return EditorContextProvider.getFileContent(fp, args.intOr(GetFileContentParamEnum.START_LINE.key(), 0),
+                args.intOr(GetFileContentParamEnum.END_LINE.key(), 0), args.bool(GetFileContentParamEnum.RAW.key()));
     }
 }
