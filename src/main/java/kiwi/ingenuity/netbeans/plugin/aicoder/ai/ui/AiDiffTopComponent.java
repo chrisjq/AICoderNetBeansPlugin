@@ -44,8 +44,14 @@ import javax.swing.UIManager;
 import javax.swing.table.AbstractTableModel;
 import javax.swing.table.DefaultTableCellRenderer;
 import javax.swing.table.TableColumnModel;
+import javax.swing.text.AttributeSet;
+import javax.swing.text.StyleConstants;
 import kiwi.ingenuity.netbeans.plugin.aicoder.PluginSettings;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.ui.events.DiffDecisionListener;
+import org.netbeans.api.editor.mimelookup.MimeLookup;
+import org.netbeans.api.editor.mimelookup.MimePath;
+import org.netbeans.api.editor.settings.FontColorNames;
+import org.netbeans.api.editor.settings.FontColorSettings;
 import org.netbeans.api.project.Project;
 import org.netbeans.api.project.ui.OpenProjects;
 import org.openide.cookies.OpenCookie;
@@ -55,15 +61,59 @@ import org.openide.loaders.DataObjectNotFoundException;
 import org.openide.windows.TopComponent;
 
 /**
- * Side-by-side diff view. Default shows a compact "changes only" view with configurable context lines; a toggle
- * switches to the full file view. A minimap bar on the right shows change positions and supports click-to-jump. Left
- * and right panes scroll vertically together but independently horizontally.
+ * Side-by-side diff view. Default shows a compact "changes only" view with configurable context lines; a
+ * toggle switches to the full file view. A minimap bar on the right shows change positions and supports
+ * click-to-jump. Left and right panes scroll vertically together but independently horizontally.
  */
 public class AiDiffTopComponent extends TopComponent {
 
     private static final Logger LOG = Logger.getLogger(AiDiffTopComponent.class.getName());
+    /**
+     * Fallback code font when the editor's settings cannot be read.
+     */
     private static final Font MONO = new Font(Font.MONOSPACED, Font.PLAIN, 12);
     private static final int GUTTER_W = 52;
+
+    /**
+     * The font the NetBeans editor uses for this file's type (Tools > Options > Fonts & Colors), so the diff
+     * reads at the same size as the file does when opened. Falls back to {@link #MONO} when no settings are
+     * available.
+     */
+    static Font editorFont(String filePath) {
+        try {
+            MimePath mimePath = MimePath.EMPTY;
+            org.openide.filesystems.FileObject fo = filePath == null ? null
+                                                    : FileUtil.toFileObject(FileUtil.normalizeFile(new File(filePath)));
+            if (fo != null) {
+                mimePath = MimePath.parse(fo.getMIMEType());
+            }
+            FontColorSettings fcs = MimeLookup.getLookup(mimePath).lookup(FontColorSettings.class);
+            return editorFont(fcs != null ? fcs.getFontColors(FontColorNames.DEFAULT_COLORING) : null);
+        }
+        catch (RuntimeException e) {
+            LOG.log(Level.FINE, "Could not read the editor font; using the default", e);
+            return MONO;
+        }
+    }
+
+    /**
+     * The IDE's own label font (which follows NetBeans' --fontsize), bold, for the header text and badges —
+     * so the panel's chrome reads at the same size as the rest of the IDE rather than a fixed small size.
+     */
+    static Font headerFont() {
+        Font label = UIManager.getFont("Label.font");
+        return (label != null ? label : new JLabel().getFont()).deriveFont(Font.BOLD);
+    }
+
+    static Font editorFont(AttributeSet coloring) {
+        if (coloring == null) {
+            return MONO;
+        }
+        Object family = coloring.getAttribute(StyleConstants.FontFamily);
+        Object size = coloring.getAttribute(StyleConstants.FontSize);
+        return new Font(family instanceof String f && !f.isBlank() ? f : MONO.getFamily(), Font.PLAIN,
+                size instanceof Integer s && s > 0 ? s : MONO.getSize());
+    }
 
     /**
      * ---- Shared color helpers ----
@@ -114,23 +164,33 @@ public class AiDiffTopComponent extends TopComponent {
         return parent != null ? parent.toString() : absolutePath;
     }
 
-    private static JTable makeTable(SidedModel model, boolean left) {
+    private static JTable makeTable(SidedModel model, boolean left, Font font) {
         JTable tbl = new JTable(model);
-        tbl.setDefaultRenderer(Object.class, new SidedCellRenderer(model, left));
+        tbl.setDefaultRenderer(Object.class, new SidedCellRenderer(model, left, font));
         tbl.setShowGrid(false);
         tbl.setIntercellSpacing(new Dimension(0, 0));
         tbl.setRowSelectionAllowed(false);
         tbl.setColumnSelectionAllowed(false);
         tbl.setAutoResizeMode(JTable.AUTO_RESIZE_OFF);
-        tbl.setFont(MONO);
-        tbl.setRowHeight(MONO.getSize() + 4);
+        tbl.setFont(font);
+        // Line height from the font's metrics, not its point size: editor fonts with extra leading would clip.
+        tbl.setRowHeight(Math.max(font.getSize() + 4, tbl.getFontMetrics(font).getHeight() + 2));
         tbl.setTableHeader(null);
         return tbl;
     }
 
-    private static void adjustColumnWidths(JTable tbl, JScrollPane sp) {
+    /**
+     * The line-number column's width: wide enough for a five-digit line number plus the renderer's 2px/6px
+     * padding in the code font, never narrower than the {@link #GUTTER_W} it used to be fixed at — a large
+     * editor font would otherwise clip the numbers.
+     */
+    static int gutterWidth(java.awt.FontMetrics fm) {
+        return Math.max(GUTTER_W, fm.stringWidth("99999") + 12);
+    }
+
+    private static void adjustColumnWidths(JTable tbl, JScrollPane sp, int gutterW) {
         int vw = sp.getViewport().getWidth();
-        if (vw < GUTTER_W + 10) {
+        if (vw < gutterW + 10) {
             return;
         }
         java.awt.FontMetrics fm = tbl.getFontMetrics(tbl.getFont());
@@ -144,11 +204,11 @@ public class AiDiffTopComponent extends TopComponent {
                 }
             }
         }
-        int contentW = Math.max(vw - GUTTER_W, maxLine + 12);
+        int contentW = Math.max(vw - gutterW, maxLine + 12);
         TableColumnModel cm = tbl.getColumnModel();
-        cm.getColumn(0).setMinWidth(GUTTER_W);
-        cm.getColumn(0).setMaxWidth(GUTTER_W);
-        cm.getColumn(0).setPreferredWidth(GUTTER_W);
+        cm.getColumn(0).setMinWidth(gutterW);
+        cm.getColumn(0).setMaxWidth(gutterW);
+        cm.getColumn(0).setPreferredWidth(gutterW);
         cm.getColumn(1).setPreferredWidth(contentW);
     }
 
@@ -230,7 +290,7 @@ public class AiDiffTopComponent extends TopComponent {
             RowKind lk = full.get(i).leftKind();
             RowKind rk = full.get(i).rightKind();
             if (lk == RowKind.ADDED || lk == RowKind.REMOVED
-                    || rk == RowKind.ADDED || rk == RowKind.REMOVED) {
+                || rk == RowKind.ADDED || rk == RowKind.REMOVED) {
                 int from = Math.max(0, i - contextLines);
                 int to = Math.min(n - 1, i + contextLines);
                 for (int j = from; j <= to; j++) {
@@ -264,6 +324,8 @@ public class AiDiffTopComponent extends TopComponent {
     private final String sessionName;
     private final boolean rejectNoteOnly;
     private final boolean hideDecisionMessage;
+    private final Font codeFont;
+    private final int gutterW;
     private DiffDecisionListener decisionListener;
     private boolean decided = false;
     private boolean compactView = true;
@@ -292,6 +354,8 @@ public class AiDiffTopComponent extends TopComponent {
         this.sessionName = sessionName != null ? sessionName : "AI";
         this.rejectNoteOnly = rejectNoteOnly;
         this.hideDecisionMessage = hideDecisionMessage;
+        this.codeFont = editorFont(filePath);
+        this.gutterW = gutterWidth(getFontMetrics(codeFont));
         String displayPath = computeDisplayPath(filePath);
         String fileName = Path.of(filePath).getFileName().toString();
         boolean isNewFile = originalContent == null || originalContent.isBlank();
@@ -347,8 +411,8 @@ public class AiDiffTopComponent extends TopComponent {
         leftModel = new SidedModel(compactRows, true);
         rightModel = new SidedModel(compactRows, false);
 
-        leftTable = makeTable(leftModel, true);
-        rightTable = makeTable(rightModel, false);
+        leftTable = makeTable(leftModel, true, codeFont);
+        rightTable = makeTable(rightModel, false, codeFont);
 
         // Left pane: no vertical scrollbar (driven by right)
         leftScrollPane = new JScrollPane(leftTable,
@@ -382,17 +446,17 @@ public class AiDiffTopComponent extends TopComponent {
         leftScrollPane.addComponentListener(new ComponentAdapter() {
             @Override
             public void componentResized(ComponentEvent e) {
-                adjustColumnWidths(leftTable, leftScrollPane);
+                adjustColumnWidths(leftTable, leftScrollPane, gutterW);
             }
         });
         rightScrollPane.addComponentListener(new ComponentAdapter() {
             @Override
             public void componentResized(ComponentEvent e) {
-                adjustColumnWidths(rightTable, rightScrollPane);
+                adjustColumnWidths(rightTable, rightScrollPane, gutterW);
             }
         });
-        adjustColumnWidths(leftTable, leftScrollPane);
-        adjustColumnWidths(rightTable, rightScrollPane);
+        adjustColumnWidths(leftTable, leftScrollPane, gutterW);
+        adjustColumnWidths(rightTable, rightScrollPane, gutterW);
 
         overviewBar = new DiffOverviewBar();
 
@@ -426,12 +490,12 @@ public class AiDiffTopComponent extends TopComponent {
         header.add(new BadgeLabel("New File:", new Color(0x00, 0xBB, 0x44)));
         header.add(new BadgeLabel(sessionName, new Color(0x40, 0x80, 0xC0)));
         JLabel newFileText = new JLabel(fileName + " @ " + displayDir);
-        newFileText.setFont(MONO.deriveFont(Font.BOLD, 11f));
+        newFileText.setFont(headerFont());
         newFileText.setForeground(fg);
         header.add(newFileText);
 
         JTextArea contentArea = new JTextArea(content);
-        contentArea.setFont(MONO);
+        contentArea.setFont(codeFont);
         contentArea.setEditable(false);
         contentArea.setBackground(base);
         contentArea.setForeground(fg);
@@ -455,8 +519,6 @@ public class AiDiffTopComponent extends TopComponent {
 
         JToggleButton changesBtn = new JToggleButton("Changes");
         JToggleButton fullBtn = new JToggleButton("Full");
-        changesBtn.setFont(changesBtn.getFont().deriveFont(11f));
-        fullBtn.setFont(fullBtn.getFont().deriveFont(11f));
         changesBtn.setSelected(true);
         ButtonGroup bg = new ButtonGroup();
         bg.add(changesBtn);
@@ -471,16 +533,16 @@ public class AiDiffTopComponent extends TopComponent {
 
         JLabel origLabel = new JLabel("<html>Original&nbsp;&nbsp;<u>" + escapeHtml(displayPath) + "</u></html>");
         JLabel propLabel = new JLabel("<html>Proposed&nbsp;&nbsp;<u>" + escapeHtml(displayPath) + "</u></html>");
-        origLabel.setFont(MONO.deriveFont(Font.BOLD, 11f));
-        propLabel.setFont(MONO.deriveFont(Font.BOLD, 11f));
+        origLabel.setFont(headerFont());
+        propLabel.setFont(headerFont());
         origLabel.setForeground(fg);
         propLabel.setForeground(fg);
         origLabel.setOpaque(false);
         propLabel.setOpaque(false);
         origLabel.setToolTipText(filePath);
         propLabel.setToolTipText(filePath);
-        origLabel.setBorder(BorderFactory.createEmptyBorder(2, GUTTER_W + 4, 2, 4));
-        propLabel.setBorder(BorderFactory.createEmptyBorder(2, GUTTER_W + 4, 2, 4));
+        origLabel.setBorder(BorderFactory.createEmptyBorder(2, gutterW + 4, 2, 4));
+        propLabel.setBorder(BorderFactory.createEmptyBorder(2, gutterW + 4, 2, 4));
         makeFileLink(origLabel);
         makeFileLink(propLabel);
         int labelH = origLabel.getPreferredSize().height;
@@ -502,7 +564,7 @@ public class AiDiffTopComponent extends TopComponent {
         titlePanel.add(new BadgeLabel("Diff:", new Color(0xFF, 0x8C, 0x00)));
         titlePanel.add(new BadgeLabel(sessionName, new Color(0x40, 0x80, 0xC0)));
         JLabel diffText = new JLabel(fileName + " @ " + displayDir);
-        diffText.setFont(MONO.deriveFont(Font.BOLD, 11f));
+        diffText.setFont(headerFont());
         diffText.setForeground(fg);
         diffText.setToolTipText(filePath);
         makeFileLink(diffText);
@@ -525,8 +587,8 @@ public class AiDiffTopComponent extends TopComponent {
         super.addNotify();
         SwingUtilities.invokeLater(() -> {
             if (leftTable != null) {
-                adjustColumnWidths(leftTable, leftScrollPane);
-                adjustColumnWidths(rightTable, rightScrollPane);
+                adjustColumnWidths(leftTable, leftScrollPane, gutterW);
+                adjustColumnWidths(rightTable, rightScrollPane, gutterW);
             }
             scrollToFirstChange();
         });
@@ -541,8 +603,8 @@ public class AiDiffTopComponent extends TopComponent {
             JLabel messageLabel = new JLabel(rejectNoteOnly ? "Reject note:" : "Message:");
             decisionMessageField = new JTextField();
             decisionMessageField.setToolTipText(rejectNoteOnly
-                    ? "Optional note returned only when rejecting this change"
-                    : "Optional note sent back with Accept or Reject");
+                                                ? "Optional note returned only when rejecting this change"
+                                                : "Optional note sent back with Accept or Reject");
             messagePanel.add(messageLabel, BorderLayout.WEST);
             messagePanel.add(decisionMessageField, BorderLayout.CENTER);
             panel.add(messagePanel, BorderLayout.CENTER);
@@ -576,8 +638,8 @@ public class AiDiffTopComponent extends TopComponent {
         List<DiffRow> rows = compact ? compactRows : fullRows;
         leftModel.setRows(rows);
         rightModel.setRows(rows);
-        adjustColumnWidths(leftTable, leftScrollPane);
-        adjustColumnWidths(rightTable, rightScrollPane);
+        adjustColumnWidths(leftTable, leftScrollPane, gutterW);
+        adjustColumnWidths(rightTable, rightScrollPane, gutterW);
         SwingUtilities.invokeLater(this::scrollToFirstChange);
         overviewBar.repaint();
     }
@@ -590,7 +652,7 @@ public class AiDiffTopComponent extends TopComponent {
         for (int i = 0; i < rows.size(); i++) {
             DiffRow row = rows.get(i);
             if (row.leftKind() == RowKind.ADDED || row.leftKind() == RowKind.REMOVED
-                    || row.rightKind() == RowKind.ADDED || row.rightKind() == RowKind.REMOVED) {
+                || row.rightKind() == RowKind.ADDED || row.rightKind() == RowKind.REMOVED) {
                 leftTable.scrollRectToVisible(leftTable.getCellRect(i, 0, true));
                 return;
             }
@@ -625,8 +687,8 @@ public class AiDiffTopComponent extends TopComponent {
     }
 
     /**
-     * Closes this diff without firing the decision listener. Called by the host AiTopComponent on teardown so late
-     * clicks cannot act on a stopped backend.
+     * Closes this diff without firing the decision listener. Called by the host AiTopComponent on teardown so
+     * late clicks cannot act on a stopped backend.
      */
     public void cancelAndClose() {
         decided = true;
@@ -693,13 +755,13 @@ public class AiDiffTopComponent extends TopComponent {
             DiffRow dr = rows.get(row);
             if (left) {
                 return col == 0
-                        ? (dr.leftNum() < 0 ? "" : String.valueOf(dr.leftNum()))
-                        : dr.leftText();
+                       ? (dr.leftNum() < 0 ? "" : String.valueOf(dr.leftNum()))
+                       : dr.leftText();
             }
             else {
                 return col == 0
-                        ? (dr.rightNum() < 0 ? "" : String.valueOf(dr.rightNum()))
-                        : dr.rightText();
+                       ? (dr.rightNum() < 0 ? "" : String.valueOf(dr.rightNum()))
+                       : dr.rightText();
             }
         }
     }
@@ -711,12 +773,16 @@ public class AiDiffTopComponent extends TopComponent {
 
         private final SidedModel model;
         private final boolean left;
+        private final Font font;
+        private final Font separatorFont;
         private final Color gutterBg, gutterFg, contextBg, contentFg;
         private final Color addBg, removeBg, blankBg, separatorBg, separatorFg;
 
-        SidedCellRenderer(SidedModel model, boolean left) {
+        SidedCellRenderer(SidedModel model, boolean left, Font font) {
             this.model = model;
             this.left = left;
+            this.font = font;
+            this.separatorFont = font.deriveFont(Font.ITALIC);
             boolean dark = isDarkTheme();
             Color base = uiColorOrFallback("TextArea.background",
                     dark ? new Color(0x1e, 0x1e, 0x1e) : Color.WHITE);
@@ -735,17 +801,17 @@ public class AiDiffTopComponent extends TopComponent {
 
         @Override
         public Component getTableCellRendererComponent(JTable table, Object value,
-                boolean isSelected, boolean hasFocus, int row, int col) {
+                                                       boolean isSelected, boolean hasFocus, int row, int col) {
             JLabel lbl = (JLabel) super.getTableCellRendererComponent(
                     table, value, false, false, row, col);
             lbl.setOpaque(true);
-            lbl.setFont(MONO);
+            lbl.setFont(font);
 
             DiffRow dr = model.getRows().get(row);
             if (dr.leftKind() == RowKind.SEPARATOR) {
                 lbl.setBackground(separatorBg);
                 lbl.setForeground(separatorFg);
-                lbl.setFont(MONO.deriveFont(Font.ITALIC));
+                lbl.setFont(separatorFont);
                 if (col == 1) {
                     lbl.setHorizontalAlignment(SwingConstants.CENTER);
                     lbl.setBorder(BorderFactory.createEmptyBorder(0, 4, 0, 2));
@@ -803,7 +869,7 @@ public class AiDiffTopComponent extends TopComponent {
             this.badgeColor = badgeColor;
             setForeground(Color.BLACK);
             setOpaque(false);
-            setFont(MONO.deriveFont(Font.BOLD, 11f));
+            setFont(headerFont());
             setBorder(BorderFactory.createEmptyBorder(1, 8, 1, 8));
         }
 
@@ -897,7 +963,7 @@ public class AiDiffTopComponent extends TopComponent {
             }
             DiffRow target = fullRows.get(fullIdx);
             int targetLine = target.leftNum() > 0 ? target.leftNum()
-                    : target.rightNum() > 0 ? target.rightNum() : -1;
+                             : target.rightNum() > 0 ? target.rightNum() : -1;
             if (targetLine < 0) {
                 return 0;
             }
