@@ -11,18 +11,19 @@ import org.junit.jupiter.api.Test;
 
 /**
  * Pins the post-handshake race fix in {@code handshakeAndSend} via its extracted seam
- * {@link OpenCodeAiProcessManager#deliverAfterHandshake}: {@code processing} stays held across the hand-off and the
- * queued prompt goes straight to {@code sendTurn} — never back through {@code sendPrompt}, whose own guard (with
- * {@code processing} still true) would silently drop the prompt. Mirrors {@code CodexAiProcessManagerHandshakeTest} —
- * same race, same fix shape, same shared {@code AiProcessManager} base fields. Reverting
- * {@link OpenCodeAiProcessManager#deliverAfterHandshake} to the pre-fix shape (unconditional clear + {@code sendPrompt}
- * re-entry) turns the first test red on both counts.
+ * {@link OpenCodeAiProcessManager#deliverAfterHandshake}: {@code processing} stays held across the hand-off
+ * and the queued prompt goes straight to {@code sendTurn} — never back through {@code sendPrompt}, whose own
+ * guard (with {@code processing} still true) would silently drop the prompt. Mirrors
+ * {@code CodexAiProcessManagerHandshakeTest} — same race, same fix shape, same shared
+ * {@code AiProcessManager} base fields. Reverting {@link OpenCodeAiProcessManager#deliverAfterHandshake} to
+ * the pre-fix shape (unconditional clear + {@code sendPrompt} re-entry) turns the first test red on both
+ * counts.
  */
 class OpenCodeAiProcessManagerHandshakeTest {
 
     /**
-     * Records both delivery routes so each test can prove which one ran. State mutators live here because the lifecycle
-     * flags are protected in AiProcessManager and only reachable through the subclass itself.
+     * Records both delivery routes so each test can prove which one ran. State mutators live here because the
+     * lifecycle flags are protected in AiProcessManager and only reachable through the subclass itself.
      */
     private static class RecordingManager extends OpenCodeAiProcessManager {
 
@@ -43,22 +44,34 @@ class OpenCodeAiProcessManagerHandshakeTest {
             promptReentries.add(text);
         }
 
-        void armDeliverable() {
+        /**
+         * Each arm method opens a handshake turn the way sendPrompt does and returns it.
+         */
+        Object armDeliverable() {
             running = true;
             processing = true;
             pendingDiff = false;
+            return openTurn();
         }
 
-        void armPendingDiff() {
+        Object armPendingDiff() {
             running = true;
             pendingDiff = true;
             processing = true;
+            return openTurn();
         }
 
-        void armStoppedButProcessing() {
+        Object armStoppedButProcessing() {
             running = false;
             pendingDiff = false;
             processing = true;
+            return openTurn();
+        }
+
+        private Object openTurn() {
+            Object turn = new Object();
+            handshakeTurn = turn;
+            return turn;
         }
 
         boolean processingFlag() {
@@ -70,9 +83,9 @@ class OpenCodeAiProcessManagerHandshakeTest {
     void deliverableAtHandoff_deliversViaSendTurn_neverBackThroughSendPrompt() {
         RecordingManager manager = new RecordingManager(event -> {
         });
-        manager.armDeliverable();
+        Object turn = manager.armDeliverable();
 
-        manager.deliverAfterHandshake("hello");
+        manager.deliverAfterHandshake("hello", turn);
 
         assertEquals(List.of("hello"), manager.directTurns,
                 "post-handshake delivery must go straight to sendTurn");
@@ -86,9 +99,9 @@ class OpenCodeAiProcessManagerHandshakeTest {
     void pendingDiffAtHandoff_clearsProcessingExactlyOnce_withoutAnyDelivery() {
         RecordingManager manager = new RecordingManager(event -> {
         });
-        manager.armPendingDiff();
+        Object turn = manager.armPendingDiff();
 
-        manager.deliverAfterHandshake("queued");
+        manager.deliverAfterHandshake("queued", turn);
 
         assertFalse(manager.processingFlag(), "diff panel won the race: cleared once, under the monitor");
         assertTrue(manager.directTurns.isEmpty());
@@ -99,12 +112,32 @@ class OpenCodeAiProcessManagerHandshakeTest {
     void stoppedBeforeHandoff_clearsWithoutDelivery() {
         RecordingManager manager = new RecordingManager(event -> {
         });
-        manager.armStoppedButProcessing();
+        Object turn = manager.armStoppedButProcessing();
 
-        manager.deliverAfterHandshake("late");
+        manager.deliverAfterHandshake("late", turn);
 
         assertFalse(manager.processingFlag());
         assertTrue(manager.directTurns.isEmpty());
         assertTrue(manager.promptReentries.isEmpty());
+    }
+
+    /**
+     * Stop (or stop(), or a reported exit) ended the turn while its handshake ran, and a newer turn has since
+     * claimed processing. The stale hand-off must not send the stopped prompt, must not report anything, and
+     * must not clear the newer turn's processing flag.
+     */
+    @Test
+    void turnEndedWhileHandshakeRan_sendsNothing_andLeavesTheNewerTurnsProcessingAlone() {
+        List<kiwi.ingenuity.netbeans.plugin.aicoder.process.events.AiProcessEvent> events = new ArrayList<>();
+        RecordingManager manager = new RecordingManager(events::add);
+        Object stoppedTurn = manager.armDeliverable();
+        manager.armDeliverable(); // a newer turn now owns the handshake slot and processing
+
+        manager.deliverAfterHandshake("stopped prompt", stoppedTurn);
+
+        assertTrue(manager.directTurns.isEmpty(), "a turn the user stopped must not be sent");
+        assertTrue(manager.promptReentries.isEmpty());
+        assertTrue(events.isEmpty(), "the turn already has its closing status: " + events);
+        assertTrue(manager.processingFlag(), "the newer turn's processing must be left alone");
     }
 }

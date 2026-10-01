@@ -515,6 +515,15 @@ public class CodexAiProcessManager extends AiProcessManager {
      */
     private Process workClosedByDisconnectOf;
     /**
+     * The turn a handshake in flight was started for: set by {@link #submitPrompt} when it hands the
+     * prompt to the handshake thread, cleared by whatever ends that turn first — Stop, {@link #stop()},
+     * or an exit that reports EXITED. The handshake only sends the prompt, reports FAILED or clears
+     * {@code processing} while its turn is still this one, so a handshake that outlived its turn can
+     * neither start a turn the user stopped, add a second closing status, nor clear the
+     * {@code processing} of a newer turn. Compared by identity; guarded by {@code this}.
+     */
+    Object handshakeTurn;
+    /**
      * Set when Stop cancelled a turn whose {@code turn/completed} has not arrived yet. The UI is unlocked at
      * that point, but the turn is still winding down (or has not even reported {@code turn/started}), and a
      * compaction armed now would claim that dead turn as its own. Cleared by any {@code turn/completed} and
@@ -689,6 +698,7 @@ public class CodexAiProcessManager extends AiProcessManager {
             throw new IOException((resumeId != null ? "thread/resume" : "thread/start") + " returned no usable thread id");
         }
 
+        beforeHandshakePublish(c);
         synchronized (this) {
             if (!running) {
                 c.close();
@@ -697,6 +707,25 @@ public class CodexAiProcessManager extends AiProcessManager {
                     currentProcess = null;
                 }
                 throw new IOException("stop() called during handshake");
+            }
+            if (currentProcess != p) {
+                // The process died between answering thread/start and this publish, and handleProcessExit has
+                // already run for it — while client was still null, so it had nothing to close. Publishing c
+                // now would hand every later prompt a dead connection (submitPrompt only re-handshakes when
+                // client is null) and leak c's executors, which only close() shuts down.
+                c.close();
+                p.destroyForcibly();
+                throw new IOException("Codex exited during start-up");
+            }
+            if (c.isStreamEnded()) {
+                // Codex's output ended after answering thread/start but before this publish, and its exit (if
+                // it exits at all) has not been handled yet. Nothing more can ever be read from c, so a turn
+                // sent on it would never get a response. Kill the process and detach from it first, so its exit
+                // arrives as stale and adds no EXITED: the handshake's own FAILED is the turn's one closer.
+                currentProcess = null;
+                c.close();
+                p.destroyForcibly();
+                throw new IOException("Codex stopped responding during start-up");
             }
             threadId = id;
             pendingResumeThreadId = null;
@@ -733,6 +762,14 @@ public class CodexAiProcessManager extends AiProcessManager {
         if (cb != null) {
             cb.run();
         }
+    }
+
+    /**
+     * Runs on the handshake thread after the thread id is known and before the connection is published.
+     * No-op; the window it marks is the one the process can die in, so a test can hold the handshake here
+     * and let the exit win deterministically.
+     */
+    void beforeHandshakePublish(CodexJsonRpcClient c) {
     }
 
     @Override
@@ -780,8 +817,10 @@ public class CodexAiProcessManager extends AiProcessManager {
             // Hand off to a background thread and return immediately so the UI stays
             // responsive. processing=true prevents a second submit from racing the handshake.
             processing = true;
+            Object turn = new Object();
+            handshakeTurn = turn;
             final File wd = effectiveWorkDir;
-            new Thread(() -> handshakeAndSend(text, wd, projectDirs), "codex-handshake").start();
+            new Thread(() -> handshakeAndSend(text, wd, turn), "codex-handshake").start();
             return null;
         }
         sendTurn(text);
@@ -796,19 +835,28 @@ public class CodexAiProcessManager extends AiProcessManager {
      * its guard and start a duplicate turn/handshake. Runs entirely outside the instance monitor during the
      * blocking wait.
      */
-    private void handshakeAndSend(String text, File workDir, List<File> projectDirs) {
+    private void handshakeAndSend(String text, File workDir, Object turn) {
         try {
             spawnAndHandshake(workDir);
         }
         catch (Exception e) {
+            boolean stillOurTurn;
             synchronized (this) {
-                processing = false;
+                stillOurTurn = handshakeTurn == turn;
+                if (stillOurTurn) {
+                    handshakeTurn = null;
+                    processing = false;
+                }
             }
-            listener.onAiProcessEvent(new StatusEvent(StatusEventTypeEnum.FAILED,
-                    StatusMessageUtil.formatSendFailed(e.getMessage())));
+            // Not our turn any more: Stop, stop() or the exit already ended it, and processing may now
+            // belong to a newer turn — report nothing and leave it alone.
+            if (stillOurTurn) {
+                listener.onAiProcessEvent(new StatusEvent(StatusEventTypeEnum.FAILED,
+                        StatusMessageUtil.formatSendFailed(e.getMessage())));
+            }
             return;
         }
-        deliverAfterHandshake(text);
+        deliverAfterHandshake(text, turn);
     }
 
     /**
@@ -817,13 +865,19 @@ public class CodexAiProcessManager extends AiProcessManager {
      * {@code processing} true through the hand-off below: sendTurn rearms it, so only paths that never reach
      * sendTurn clear it — exactly once, under the monitor. Clearing it unconditionally here reopened a window
      * in which an EDT sendPrompt saw !processing and raced this thread with a second submit.
+     * <p>
+     * Runs entirely under the monitor so a Stop cannot land between the turn check and {@code sendTurn}.
      */
-    void deliverAfterHandshake(String text) {
-        synchronized (this) {
-            if (!running || pendingDiff) {
-                processing = false; // stop()/diff panel won the race; nobody else will rearm
-                return;
-            }
+    synchronized void deliverAfterHandshake(String text, Object turn) {
+        if (handshakeTurn != turn) {
+            // The turn ended while the handshake ran — Stop, stop() or an exit already gave it its closing
+            // status. Sending it now would start a turn the user stopped.
+            return;
+        }
+        handshakeTurn = null;
+        if (!running || pendingDiff) {
+            processing = false; // stop()/diff panel won the race; nobody else will rearm
+            return;
         }
         // Client is now established; deliver through the normal turn path. Deliberately
         // sendTurn(), not sendPrompt(): with processing still held true, sendPrompt's own
@@ -1016,6 +1070,7 @@ public class CodexAiProcessManager extends AiProcessManager {
             cancelledByUser = true;
             processing = false;
             stoppedTurnWindingDown = true;
+            handshakeTurn = null; // STOPPED below closes it; a handshake still running must not send it
             c = client;
             handler = appServerHandler;
             tid = threadId;
@@ -1133,6 +1188,10 @@ public class CodexAiProcessManager extends AiProcessManager {
         stoppedTurnWindingDown = false;
         cancelledByUser = true;
         interruptRequested = false;
+        // Ends the turn without a closing status of its own, deliberately: stop() runs either from start(),
+        // whose READY or FAILED then closes it, or when the session closes and nothing is listening. A
+        // handshake still running for it must stay silent rather than report a late FAILED.
+        handshakeTurn = null;
 
         CodexJsonRpcClient c = client;
         client = null;
@@ -1287,6 +1346,7 @@ public class CodexAiProcessManager extends AiProcessManager {
         boolean suppress;
         boolean closedWork;
         int code;
+        boolean reportExit;
         CodexJsonRpcClient orphaned;
         synchronized (this) {
             if (currentProcess != dead) {
@@ -1310,6 +1370,10 @@ public class CodexAiProcessManager extends AiProcessManager {
             closedWork = failWorkInFlight("Codex exited (code " + code + ") during compaction")
                          || workClosedByDisconnectOf == dead;
             workClosedByDisconnectOf = null;
+            reportExit = !suppress && code != 0 && !closedWork;
+            if (reportExit) {
+                handshakeTurn = null; // EXITED below closes it
+            }
         }
 
         // Same leak this method must not reintroduce even if onHandlerDisconnected
@@ -1318,7 +1382,7 @@ public class CodexAiProcessManager extends AiProcessManager {
         if (orphaned != null) {
             orphaned.close();
         }
-        if (!suppress && code != 0 && !closedWork) {
+        if (reportExit) {
             listener.onAiProcessEvent(new StatusEvent(StatusEventTypeEnum.EXITED,
                     StatusMessageUtil.formatExited("Codex", code, new ArrayList<>(recentStderr))));
         }

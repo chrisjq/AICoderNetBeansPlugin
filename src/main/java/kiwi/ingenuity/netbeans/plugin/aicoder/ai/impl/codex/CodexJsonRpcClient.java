@@ -59,6 +59,7 @@ public class CodexJsonRpcClient {
     private final ExecutorService dispatchExecutor;
     private final Thread readerThread;
     private final AtomicBoolean closed = new AtomicBoolean(false);
+    private volatile boolean streamEnded;
 
     public CodexJsonRpcClient(OutputStream out, InputStream in,
                               CodexNotificationListener notificationListener,
@@ -113,6 +114,21 @@ public class CodexJsonRpcClient {
             msg.add(CodexJsonKeyEnum.PARAMS.key(), params);
         }
         writeMessage(msg);
+    }
+
+    /**
+     * True once {@link #close()} has run — the only thing that shuts the notify/dispatch executors down.
+     */
+    boolean isClosed() {
+        return closed.get();
+    }
+
+    /**
+     * True once the reader has hit end of stream or a read error: nothing more will ever be read, so no
+     * response can arrive. Set before the disconnect callback is queued.
+     */
+    boolean isStreamEnded() {
+        return streamEnded;
     }
 
     public void close() {
@@ -175,11 +191,13 @@ public class CodexJsonRpcClient {
             }
         }
         catch (IOException e) {
+            streamEnded = true;
             if (!closed.get()) {
                 notifyExecutor.execute(() -> connectionListener.onDisconnected(e));
                 return;
             }
         }
+        streamEnded = true;
         if (!closed.get()) {
             notifyExecutor.execute(() -> connectionListener.onDisconnected(null));
         }

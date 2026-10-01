@@ -50,6 +50,7 @@ public class AcpConnection {
     private final ExecutorService dispatchExecutor;
     private final Thread readerThread;
     private final AtomicBoolean closed = new AtomicBoolean(false);
+    private volatile boolean streamEnded;
 
     public AcpConnection(OutputStream out, InputStream in, AcpClientHandler handler) {
         this.writer = new PrintWriter(new OutputStreamWriter(out, StandardCharsets.UTF_8), false);
@@ -82,13 +83,32 @@ public class AcpConnection {
             msg.add(AcpJsonKeyEnum.PARAMS.key(), params);
         }
         try {
-            writeMessage(msg);
+            if (!writeMessage(msg)) {
+                // PrintWriter swallows write errors, so without this a request to a dead agent never fails: its
+                // future waits forever, and so does the turn that is waiting on it.
+                throw new IOException("write failed — the OpenCode process pipe is closed");
+            }
         }
         catch (Exception e) {
             pending.remove(id);
             future.completeExceptionally(e);
         }
         return future;
+    }
+
+    /**
+     * True once {@link #close()} has run — the only thing that shuts the notify/dispatch executors down.
+     */
+    public boolean isClosed() {
+        return closed.get();
+    }
+
+    /**
+     * True once the reader has hit end of stream or a read error: nothing more will ever be read, so no
+     * response can arrive. Set before the disconnect callback is queued.
+     */
+    public boolean isStreamEnded() {
+        return streamEnded;
     }
 
     public void sendNotification(AcpMethodEnum method, JsonObject params) {
@@ -137,13 +157,18 @@ public class AcpConnection {
         notifyExecutor.execute(task);
     }
 
-    private void writeMessage(JsonObject message) {
+    /**
+     * @return false when the write failed (the agent's stdin is closed); notifications and responses ignore
+     *         it as before, only {@link #sendRequest} acts on it
+     */
+    private boolean writeMessage(JsonObject message) {
         String line = GSON.toJson(message);
         writeLock.lock();
         try {
             writer.print(line);
             writer.print('\n');
             writer.flush();
+            return !writer.checkError();
         }
         finally {
             writeLock.unlock();
@@ -161,11 +186,13 @@ public class AcpConnection {
             }
         }
         catch (IOException e) {
+            streamEnded = true;
             if (!closed.get()) {
                 notifyExecutor.execute(() -> handler.onDisconnected(e));
                 return;
             }
         }
+        streamEnded = true;
         if (!closed.get()) {
             notifyExecutor.execute(() -> handler.onDisconnected(null));
         }

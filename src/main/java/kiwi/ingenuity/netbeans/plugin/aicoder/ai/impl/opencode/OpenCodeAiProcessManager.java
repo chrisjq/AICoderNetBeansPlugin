@@ -118,6 +118,13 @@ public class OpenCodeAiProcessManager extends AiProcessManager {
     private static final long MAIL_INTERRUPT_HOLD_MILLIS = 180_000L;
 
     /**
+     * How long a lost connection waits for its agent to exit before treating the agent as hung (see
+     * onHandlerDisconnected). A crashing process closes its output as it dies, so its exit follows within
+     * milliseconds; this only has to outlast that.
+     */
+    private static final long DISCONNECT_EXIT_GRACE_MILLIS = 2_000L;
+
+    /**
      * Builds the value for the OPENCODE_CONFIG_CONTENT environment variable. Forces "ask" permission for all
      * edit, bash and external-directory operations, and denies sub-agent spawning outright. This MERGES with
      * the user's existing config — it does not replace it (verified by live probe) — so it constrains only
@@ -245,6 +252,22 @@ public class OpenCodeAiProcessManager extends AiProcessManager {
     volatile String acpSessionId = null;
     volatile String pendingAcpResumeId = null;
     volatile JsonArray sessionConfigOptions = null;
+    /**
+     * The turn a handshake in flight was started for: set by {@link #sendPrompt} when it hands the prompt to
+     * the handshake thread, cleared by whatever ends that turn first — Stop, {@link #stop()}, or an exit that
+     * reports EXITED. The handshake only sends the prompt, reports FAILED or clears {@code processing} while
+     * its turn is still this one, so a handshake that outlived its turn can neither start a turn the user
+     * stopped, add a second closing status, nor clear the {@code processing} of a newer turn. Compared by
+     * identity; guarded by {@code this}.
+     */
+    Object handshakeTurn;
+    /**
+     * The turn whose {@code session/prompt} response is awaited: set by {@link #sendTurn}, claimed by that
+     * response (see {@link #claimTurn}), and cleared by an exit that reports EXITED or by {@link #stop()} —
+     * whose closing of the connection then fails the response, which must stay silent. Guarded by
+     * {@code this}.
+     */
+    private Object activeTurn;
     // Package-private so tests can hand the manager a handler that has recorded refusals.
     volatile OpenCodeAcpClientHandler activeHandler = null;
     private final List<String> recentStderr = new CopyOnWriteArrayList<>();
@@ -452,10 +475,15 @@ public class OpenCodeAiProcessManager extends AiProcessManager {
 
             startStderrDrainer(process);
 
-            OpenCodeAcpClientHandler handler = new OpenCodeAcpClientHandler(listener, this::onHandlerDisconnected,
+            // The disconnect callback must know WHICH connection lost its stream, so a late callback from an
+            // abandoned connection can never tear down the one that replaced it.
+            AcpConnection[] connHolder = new AcpConnection[1];
+            OpenCodeAcpClientHandler handler = new OpenCodeAcpClientHandler(listener,
+                    () -> onHandlerDisconnected(connHolder[0]),
                     this::trackToolCallLifecycle,
                     ownSessionConfigFileCheck(), null, sessionId);
             AcpConnection conn = new AcpConnection(process.getOutputStream(), process.getInputStream(), handler);
+            connHolder[0] = conn;
 
             process.onExit().thenRun(() -> handleProcessExit(process));
 
@@ -543,6 +571,7 @@ public class OpenCodeAiProcessManager extends AiProcessManager {
             }
 
             // ---- Publish results under the lock; bail if stop() ran during the waits ----
+            beforeHandshakePublish(conn);
             synchronized (this) {
                 if (!running) {
                     conn.close();
@@ -551,6 +580,24 @@ public class OpenCodeAiProcessManager extends AiProcessManager {
                         currentProcess = null;
                     }
                     throw new IOException("stop() called during handshake");
+                }
+                if (currentProcess != process) {
+                    // The process died between answering session/new and this publish, and handleProcessExit has
+                    // already run for it while there was no connection to drop. Publishing conn now would hand every
+                    // later prompt a dead connection and leak its executors.
+                    conn.close();
+                    process.destroyForcibly();
+                    throw new IOException("OpenCode exited during start-up");
+                }
+                if (conn.isStreamEnded()) {
+                    // OpenCode's output ended after answering, before this publish, and its exit (if it exits at all)
+                    // has not been handled yet. Nothing more can be read from conn, so a turn sent on it would never
+                    // complete. Detach first so the process's exit arrives as stale and adds no EXITED: the
+                    // handshake's own FAILED is the turn's one closer.
+                    currentProcess = null;
+                    conn.close();
+                    process.destroyForcibly();
+                    throw new IOException("OpenCode stopped responding during start-up");
                 }
                 acpSessionId = sid;
                 pendingAcpResumeId = null;
@@ -1026,8 +1073,17 @@ public class OpenCodeAiProcessManager extends AiProcessManager {
         t.start();
     }
 
+    /**
+     * Runs on the handshake thread after the session id is known and before the connection is published.
+     * No-op; the window it marks is the one the process can die in, so a test can hold the handshake here and
+     * let an exit, a Stop or a restart land in it deterministically.
+     */
+    void beforeHandshakePublish(AcpConnection conn) {
+    }
+
     void handleProcessExit(Process dead) {
         boolean suppress;
+        AcpConnection orphaned;
         synchronized (this) {
             if (currentProcess != dead) {
                 return; // stale exit from a superseded process
@@ -1038,6 +1094,18 @@ public class OpenCodeAiProcessManager extends AiProcessManager {
             pendingMailInterrupt = false;
             currentProcess = null;
             suppress = cancelledByUser;
+            orphaned = detachDeadConnection();
+            if (suppress || dead.exitValue() != 0) {
+                // The turn already has its closing status — the EXITED below, or the STOPPED the user's Stop
+                // sent — whether its handshake or its prompt was in flight. Closing the connection then fails
+                // the prompt's response; that must not add a FAILED. A clean exit reports nothing, so there the
+                // turn is left for that FAILED to close.
+                handshakeTurn = null;
+                activeTurn = null;
+            }
+        }
+        if (orphaned != null) {
+            orphaned.close();
         }
         // A compaction whose process died must not be left locking the UI: its closing FAILED comes from
         // here, not from a response that will never arrive (mirrors PiAiProcessManager.handleProcessExit).
@@ -1052,14 +1120,78 @@ public class OpenCodeAiProcessManager extends AiProcessManager {
         }
     }
 
-    private void onHandlerDisconnected() {
-        // handleProcessExit handles exit reporting; this is defensive cleanup only.
+    /**
+     * {@code dead}'s reader lost its stream. handleProcessExit handles exit reporting; this drops the dead
+     * connection so the next prompt re-handshakes instead of writing to it. Only for the connection actually
+     * published: a handshake still in flight owns its own (see the publish block's stream-ended check), and a
+     * late callback from a connection already replaced must not touch the new one.
+     */
+    private void onHandlerDisconnected(AcpConnection dead) {
+        Process owner;
         synchronized (this) {
+            if (dead == null || connection != dead) {
+                return;
+            }
+            owner = currentProcess;
+        }
+        // An agent that crashed closes its output as it dies, so its exit is normally only moments behind this
+        // callback. Leave that case to handleProcessExit, which reports it once as EXITED (with the exit code
+        // and stderr) and drops the connection itself. Runs on the dead connection's own notify thread, so
+        // the short wait holds up nothing else.
+        if (owner != null) {
+            try {
+                if (owner.waitFor(DISCONNECT_EXIT_GRACE_MILLIS, TimeUnit.MILLISECONDS)) {
+                    return;
+                }
+            }
+            catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                return;
+            }
+        }
+        // Still running with its output gone: it can never answer again, and no exit will come to say so.
+        // Kill it and detach from it, so its eventual exit is stale and adds no EXITED; closing the connection
+        // then fails the prompt in flight, which reports the turn's one FAILED.
+        AcpConnection orphaned;
+        synchronized (this) {
+            if (connection != dead) {
+                return; // handleProcessExit or stop() got there first
+            }
             processing = false;
             inFlightToolCalls = 0;
             inFlightToolCallIds.clear();
             pendingMailInterrupt = false;
+            orphaned = detachDeadConnection();
+            if (currentProcess == owner) {
+                currentProcess = null;
+            }
         }
+        if (owner != null) {
+            owner.destroyForcibly();
+        }
+        if (orphaned != null) {
+            orphaned.close();
+        }
+    }
+
+    /**
+     * Drops the published connection of an agent that has died, keeping its ACP session id as the one to
+     * resume, so the next prompt starts a fresh process that picks the conversation up again rather than
+     * writing to a dead pipe forever. Before this, {@code connection} was only ever cleared by stop(), and a
+     * crashed session stayed wedged until its tab was closed. Caller holds the monitor and closes the
+     * returned connection outside it.
+     */
+    private AcpConnection detachDeadConnection() {
+        AcpConnection orphaned = connection;
+        connection = null;
+        activeHandler = null;
+        // No live agent means no HTTP endpoint to steer: ListAiSessions must not keep offering mid-turn mail.
+        steerCapable = false;
+        if (acpSessionId != null) {
+            pendingAcpResumeId = acpSessionId;
+        }
+        acpSessionId = null;
+        return orphaned;
     }
 
     @Override
@@ -1092,8 +1224,10 @@ public class OpenCodeAiProcessManager extends AiProcessManager {
             // Hand off to a background thread and return immediately so the UI stays responsive.
             // processing=true prevents a second submit from racing the handshake.
             processing = true;
+            Object turn = new Object();
+            handshakeTurn = turn;
             final File wd = effectiveWorkDir;
-            new Thread(() -> handshakeAndSend(text, wd, projectDirs), "opencode-handshake").start();
+            new Thread(() -> handshakeAndSend(text, wd, turn), "opencode-handshake").start();
             return;
         }
 
@@ -1124,19 +1258,28 @@ public class OpenCodeAiProcessManager extends AiProcessManager {
      * cannot slip past its guard and start a duplicate turn/handshake. Runs entirely outside the instance
      * monitor during the blocking wait.
      */
-    private void handshakeAndSend(String text, File workDir, List<File> projectDirs) {
+    private void handshakeAndSend(String text, File workDir, Object turn) {
         try {
             spawnAndHandshake(workDir);
         }
         catch (Exception e) {
+            boolean stillOurTurn;
             synchronized (this) {
-                processing = false;
+                stillOurTurn = handshakeTurn == turn;
+                if (stillOurTurn) {
+                    handshakeTurn = null;
+                    processing = false;
+                }
             }
-            listener.onAiProcessEvent(new StatusEvent(StatusEventTypeEnum.FAILED,
-                    StatusMessageUtil.formatSendFailed(e.getMessage())));
+            // Not our turn any more: Stop, stop() or the exit already ended it, and processing may now
+            // belong to a newer turn — report nothing and leave it alone.
+            if (stillOurTurn) {
+                listener.onAiProcessEvent(new StatusEvent(StatusEventTypeEnum.FAILED,
+                        StatusMessageUtil.formatSendFailed(e.getMessage())));
+            }
             return;
         }
-        deliverAfterHandshake(text);
+        deliverAfterHandshake(text, turn);
     }
 
     /**
@@ -1145,17 +1288,23 @@ public class OpenCodeAiProcessManager extends AiProcessManager {
      * {@code processing} true through the hand-off below: sendTurn rearms it, so only paths that never reach
      * sendTurn clear it — exactly once, under the monitor. Clearing it unconditionally here reopened a window
      * in which an EDT sendPrompt saw !processing and raced this thread with a second submit.
+     * <p>
+     * Runs entirely under the monitor so a Stop cannot land between the turn check and {@code sendTurn}.
      */
-    void deliverAfterHandshake(String text) {
-        synchronized (this) {
-            if (!running || pendingDiff) {
-                processing = false; // stop()/diff panel won the race; nobody else will rearm
-                // Same contract as sendPrompt's guard: the UI locked for this submit before it was queued, so a
-                // silent drop would leave the tab locked. Say why and end the turn it is waiting on.
-                listener.onAiProcessEvent(new StatusEvent(StatusEventTypeEnum.INFO, sendRefusalReason()));
-                listener.onAiProcessEvent(new TurnCompleteEvent());
-                return;
-            }
+    synchronized void deliverAfterHandshake(String text, Object turn) {
+        if (handshakeTurn != turn) {
+            // The turn ended while the handshake ran — Stop, stop() or an exit already gave it its closing
+            // status. Sending it now would start a turn the user stopped.
+            return;
+        }
+        handshakeTurn = null;
+        if (!running || pendingDiff) {
+            processing = false; // stop()/diff panel won the race; nobody else will rearm
+            // Same contract as sendPrompt's guard: the UI locked for this submit before it was queued, so a
+            // silent drop would leave the tab locked. Say why and end the turn it is waiting on.
+            listener.onAiProcessEvent(new StatusEvent(StatusEventTypeEnum.INFO, sendRefusalReason()));
+            listener.onAiProcessEvent(new TurnCompleteEvent());
+            return;
         }
         // Connection is now established; deliver through the normal turn path. Deliberately
         // sendTurn(), not sendPrompt(): with processing still held true, sendPrompt's own
@@ -1194,13 +1343,34 @@ public class OpenCodeAiProcessManager extends AiProcessManager {
             handler.clearTextSuppression();
         }
         processing = true;
+        Object turn = new Object();
+        activeTurn = turn; // before the send: a write to a dead agent fails it synchronously
         CompletableFuture<JsonObject> promptFuture = connection.sendRequest(AcpMethodEnum.SESSION_PROMPT, params);
         promptFuture
-                .thenAccept(this::handleTurnComplete)
+                .thenAccept(result -> {
+                    if (claimTurn(turn)) {
+                        handleTurnComplete(result);
+                    }
+                })
                 .exceptionally(ex -> {
-                    handleTurnError(ex);
+                    if (claimTurn(turn)) {
+                        handleTurnError(ex);
+                    }
                     return null;
                 });
+    }
+
+    /**
+     * True, once, for the turn whose response this is while it is still the session's turn. False for a turn
+     * an exit or stop() already closed — its future then fails only because the dead connection was closed,
+     * and reporting that would be a second closing status, or land on a newer turn the user has started.
+     */
+    private synchronized boolean claimTurn(Object turn) {
+        if (activeTurn != turn) {
+            return false;
+        }
+        activeTurn = null;
+        return true;
     }
 
     void handleTurnComplete(JsonObject result) {
@@ -1365,6 +1535,7 @@ public class OpenCodeAiProcessManager extends AiProcessManager {
             }
             cancelledByUser = true;
             processing = false;
+            handshakeTurn = null; // STOPPED below closes it; a handshake still running must not send it
             conn = connection;
             sid = acpSessionId;
             h = activeHandler;
@@ -1422,6 +1593,11 @@ public class OpenCodeAiProcessManager extends AiProcessManager {
         inFlightToolCalls = 0;
         inFlightToolCallIds.clear();
         pendingMailInterrupt = false;
+        // Ends the turn without a closing status of its own, deliberately: stop() runs either from start(),
+        // whose READY or FAILED then closes it, or when the session closes and nothing is listening. A
+        // handshake still running for it must stay silent rather than report a late FAILED.
+        handshakeTurn = null;
+        activeTurn = null; // same for a prompt in flight, whose response fails when the connection is closed
 
         OpenCodeAcpClientHandler h = activeHandler;
         activeHandler = null;

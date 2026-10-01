@@ -55,6 +55,29 @@ class AcpConnectionTest {
         }
     }
 
+    /**
+     * PrintWriter swallows write errors, so a request to an agent whose stdin is gone used to wait forever —
+     * and so did the turn waiting on it. It must fail at once instead.
+     */
+    @Test
+    void requestToAnAgentThatCannotReadFailsImmediately() throws Exception {
+        agentIn.close(); // the agent's end of our writes is gone
+
+        CompletableFuture<JsonObject> future = connection.sendRequest(AcpMethodEnum.SESSION_PROMPT, new JsonObject());
+
+        assertTrue(future.isCompletedExceptionally(), "the request must fail now, not wait for a reply that cannot come");
+    }
+
+    @Test
+    void streamEndedIsSetWhenTheAgentsOutputEnds() throws Exception {
+        assertFalse(connection.isStreamEnded());
+
+        agentOut.close();
+
+        assertTrue(handler.disconnectedLatch.await(5, TimeUnit.SECONDS), "the reader must report the disconnect");
+        assertTrue(connection.isStreamEnded(), "set before the disconnect callback is queued");
+    }
+
     private void agentSend(JsonObject msg) throws Exception {
         byte[] bytes = (msg.toString() + "\n").getBytes(StandardCharsets.UTF_8);
         agentOut.write(bytes);
@@ -245,7 +268,7 @@ class AcpConnectionTest {
 
         AcpClientHandler orderHandler = new AcpClientHandler() {
             private final java.util.concurrent.atomic.AtomicBoolean first
-                    = new java.util.concurrent.atomic.AtomicBoolean(true);
+                                                                    = new java.util.concurrent.atomic.AtomicBoolean(true);
 
             @Override
             public void onSessionUpdate(String sid, JsonObject update) {
@@ -339,7 +362,7 @@ class AcpConnectionTest {
 
         AcpClientHandler combinedHandler = new AcpClientHandler() {
             private final java.util.concurrent.atomic.AtomicBoolean first
-                    = new java.util.concurrent.atomic.AtomicBoolean(true);
+                                                                    = new java.util.concurrent.atomic.AtomicBoolean(true);
 
             @Override
             public void onSessionUpdate(String sid, JsonObject update) {

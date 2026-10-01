@@ -890,6 +890,19 @@ class CodexAiProcessManagerTest {
         manager.setCurrentSession(newSession("s1", new CodexSessionSettings()));
 
         manager.start(script.getAbsolutePath(), "fake-model");
+        // stop() in finally: when an assertion below fails, skipping it leaves this manager's client and its
+        // codex-notify/codex-dispatch threads alive, which then fails CodexJsonRpcClientTest's JVM-wide
+        // thread check as well and hides which test actually broke.
+        try {
+            crashAfterHandshakeAssertions(manager, events);
+        }
+        finally {
+            manager.stop();
+        }
+    }
+
+    private static void crashAfterHandshakeAssertions(CodexAiProcessManager manager,
+                                                      CopyOnWriteArrayList<AiProcessEvent> events) throws Exception {
         assertTrue(manager.isRunning());
 
         manager.sendPrompt("hi", new File(System.getProperty("java.io.tmpdir")), List.of());
@@ -909,8 +922,223 @@ class CodexAiProcessManagerTest {
         assertNull(manager.appServerHandler(), "appServerHandler cleared after crash");
         assertNull(manager.threadId(), "threadId cleared after crash");
         assertFalse(manager.isProcessing(), "processing must not stay stuck true after a crash");
+    }
 
-        manager.stop();
+    /**
+     * Codex dying in the instant between answering {@code thread/start} and the handshake publishing its
+     * connection. The exit callback runs first — reports EXITED and clears state while the connection is not
+     * yet published — so the handshake must not then publish a connection to the dead process: that leaked
+     * its executor threads, sent the queued prompt down a dead pipe (a second closing status, FAILED after
+     * EXITED) and made every later prompt reuse the dead connection instead of re-handshaking. The handshake
+     * is held at the publish point so the exit wins every time, not just under load.
+     */
+    @Test
+    void processExitBeforeHandshakePublishes_deadConnectionIsClosedNotPublished() throws Exception {
+        File script = fakeCodexThatExitsAfterHandshake(7);
+        CopyOnWriteArrayList<AiProcessEvent> events = new CopyOnWriteArrayList<>();
+        HeldHandshakeManager manager = new HeldHandshakeManager(events::add);
+        manager.setCurrentSession(newSession("s1", new CodexSessionSettings()));
+        manager.start(script.getAbsolutePath(), "fake-model");
+        try {
+            manager.sendPrompt("hi", new File(System.getProperty("java.io.tmpdir")), List.of());
+            manager.awaitHeld();
+            awaitTrue(() -> statusCount(events, StatusEventTypeEnum.EXITED) == 1,
+                    "EXITED from the exit callback while the handshake is held");
+
+            manager.releaseAndJoinHeld();
+
+            assertNull(manager.client(), "a connection to the dead process must not be published");
+            assertNull(manager.appServerHandler());
+            assertNull(manager.threadId());
+            assertFalse(manager.isProcessing(), "the turn must not stay processing");
+            assertTrue(manager.clients.get(0).isClosed(),
+                    "the unpublished connection must be closed, or its executor threads leak");
+            assertEquals(1, statusCount(events, StatusEventTypeEnum.EXITED));
+            assertEquals(0, statusCount(events, StatusEventTypeEnum.FAILED),
+                    "EXITED already closed the turn; a FAILED as well would be a second closing status: " + events);
+        }
+        finally {
+            manager.release.countDown();
+            manager.stop();
+        }
+    }
+
+    /**
+     * Stop pressed while the first prompt's handshake is still running, the process staying alive. STOPPED
+     * closes the turn, so the handshake must not then send the prompt as a turn anyway — it used to, starting
+     * work the user had just stopped. The live connection is still published: the session stays usable for
+     * the next prompt.
+     */
+    @Test
+    void stopDuringHandshake_keepsTheConnection_butNeverSendsTheStoppedPrompt() throws Exception {
+        File script = fakeCodexHandshakeThenSleep();
+        CopyOnWriteArrayList<AiProcessEvent> events = new CopyOnWriteArrayList<>();
+        HeldHandshakeManager manager = new HeldHandshakeManager(events::add);
+        manager.setCurrentSession(newSession("s1", new CodexSessionSettings()));
+        manager.start(script.getAbsolutePath(), "fake-model");
+        try {
+            manager.sendPrompt("hi", new File(System.getProperty("java.io.tmpdir")), List.of());
+            manager.awaitHeld();
+
+            manager.interrupt(InterruptTypeEnum.Cancel);
+            manager.releaseAndJoinHeld();
+
+            assertEquals(1, statusCount(events, StatusEventTypeEnum.STOPPED));
+            assertEquals(0, statusCount(events, StatusEventTypeEnum.FAILED), "STOPPED already closed the turn: " + events);
+            // The fake never answers turn/start, so a prompt sent as a turn would leave this true.
+            assertFalse(manager.isProcessing(), "the stopped prompt must not have been sent as a turn");
+            assertNotNull(manager.client(), "the live connection is kept for the next prompt");
+        }
+        finally {
+            manager.release.countDown();
+            manager.stop();
+        }
+    }
+
+    /**
+     * The session was stopped and restarted, and a new prompt is in flight, while the first prompt's
+     * handshake was still running. When that stale handshake finally fails it must report nothing — its
+     * turn ended with the stop — and must not clear the new turn's processing flag, which would let a
+     * third prompt in while the second is still running.
+     */
+    @Test
+    void staleHandshakeAfterRestart_reportsNothing_andLeavesTheNewTurnProcessing() throws Exception {
+        File script = fakeCodexHandshakeThenSleep();
+        CopyOnWriteArrayList<AiProcessEvent> events = new CopyOnWriteArrayList<>();
+        HeldHandshakeManager manager = new HeldHandshakeManager(events::add);
+        manager.setCurrentSession(newSession("s1", new CodexSessionSettings()));
+        manager.start(script.getAbsolutePath(), "fake-model");
+        try {
+            File workDir = new File(System.getProperty("java.io.tmpdir"));
+            manager.sendPrompt("first", workDir, List.of());
+            manager.awaitHeld();
+
+            manager.stop();
+            manager.start(script.getAbsolutePath(), "fake-model");
+            manager.sendPrompt("second", workDir, List.of());
+            awaitTrue(() -> manager.threads.size() == 2, "the second prompt's handshake");
+            manager.threads.get(1).join(10_000);
+            assertTrue(manager.isProcessing(), "the second prompt is in flight");
+
+            manager.releaseAndJoinHeld();
+
+            assertEquals(0, statusCount(events, StatusEventTypeEnum.FAILED),
+                    "the first turn ended with the stop; a FAILED now would close the second turn: " + events);
+            assertTrue(manager.isProcessing(), "the stale handshake must not clear the second turn's processing");
+            assertTrue(manager.clients.get(0).isClosed(), "the stale connection must be closed");
+            assertSame(manager.clients.get(1), manager.client(), "the second prompt's connection stays published");
+        }
+        finally {
+            manager.release.countDown();
+            manager.stop();
+        }
+    }
+
+    /**
+     * Codex's output ends after it answers {@code thread/start}, before the handshake publishes, while the
+     * process itself stays alive — so there is no exit to report anything. The handshake must not publish a
+     * connection nothing can ever be read from: a turn sent on it never gets a response, leaving the session
+     * processing forever with no closing status. It must close the connection, kill and detach from the
+     * process, and report exactly one FAILED.
+     */
+    @Test
+    void outputEndsBeforeHandshakePublishes_processAlive_failsOnceAndPublishesNothing() throws Exception {
+        File script = fakeCodexThatClosesOutputAfterHandshake();
+        CopyOnWriteArrayList<AiProcessEvent> events = new CopyOnWriteArrayList<>();
+        HeldHandshakeManager manager = new HeldHandshakeManager(events::add);
+        manager.setCurrentSession(newSession("s1", new CodexSessionSettings()));
+        manager.start(script.getAbsolutePath(), "fake-model");
+        try {
+            manager.sendPrompt("hi", new File(System.getProperty("java.io.tmpdir")), List.of());
+            manager.awaitHeld();
+            awaitTrue(() -> manager.clients.get(0).isStreamEnded(), "end of Codex's output while the handshake is held");
+
+            manager.releaseAndJoinHeld();
+
+            assertNull(manager.client(), "a connection nothing can be read from must not be published");
+            assertFalse(manager.isProcessing(), "the turn must not stay processing");
+            assertTrue(manager.clients.get(0).isClosed(), "the unpublished connection must be closed");
+            assertNull(manager.process(), "detached from the killed process, so its exit is stale and adds no EXITED");
+            assertEquals(1, statusCount(events, StatusEventTypeEnum.FAILED), "exactly one closing status: " + events);
+            assertEquals(0, statusCount(events, StatusEventTypeEnum.EXITED), events.toString());
+        }
+        finally {
+            manager.release.countDown();
+            manager.stop();
+        }
+    }
+
+    /**
+     * Answers the handshake like {@link #fakeCodexThatExitsAfterHandshake}, then closes its stdout but keeps
+     * running — Codex's output ends with no process exit to report it.
+     */
+    private static File fakeCodexThatClosesOutputAfterHandshake() throws IOException {
+        File script = File.createTempFile("fake-codex-", ".sh");
+        script.deleteOnExit();
+        String body = "#!/bin/sh\n"
+                      + "read -r _req1\n"
+                      + "printf '{\"jsonrpc\":\"2.0\",\"id\":1,\"result\":{\"userAgent\":\"fake\",\"codexHome\":\"/tmp\"}}\\n'\n"
+                      + "read -r _notif\n"
+                      + "read -r _req2\n"
+                      + "printf '{\"jsonrpc\":\"2.0\",\"id\":2,\"result\":{\"thread\":{\"id\":\"fake-thread-id\"},\"model\":\"fake-model\"}}\\n'\n"
+                      + "exec 1>&-\n"
+                      // Long enough to outlast the test: an early exit would clean up after a wrongly published
+                      // connection and let the test pass without the fix.
+                      + "sleep 60\n";
+        Files.writeString(script.toPath(), body, StandardCharsets.UTF_8);
+        script.setExecutable(true);
+        return script;
+    }
+
+    /**
+     * Holds the FIRST handshake at the publish point until released, so a test can make an exit, a Stop or a
+     * restart happen in exactly that window; later handshakes run straight through.
+     */
+    private static final class HeldHandshakeManager extends CodexAiProcessManager {
+
+        final CountDownLatch held = new CountDownLatch(1);
+        final CountDownLatch release = new CountDownLatch(1);
+        final List<CodexJsonRpcClient> clients = new CopyOnWriteArrayList<>();
+        final List<Thread> threads = new CopyOnWriteArrayList<>();
+
+        HeldHandshakeManager(kiwi.ingenuity.netbeans.plugin.aicoder.process.events.AiProcessEventListener l) {
+            super(l);
+        }
+
+        @Override
+        void beforeHandshakePublish(CodexJsonRpcClient c) {
+            clients.add(c);
+            threads.add(Thread.currentThread());
+            if (threads.size() == 1) {
+                held.countDown();
+                try {
+                    release.await(10, TimeUnit.SECONDS);
+                }
+                catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                }
+            }
+        }
+
+        Process process() {
+            synchronized (this) {
+                return currentProcess;
+            }
+        }
+
+        void awaitHeld() throws InterruptedException {
+            assertTrue(held.await(10, TimeUnit.SECONDS), "the handshake must reach the publish point");
+        }
+
+        void releaseAndJoinHeld() throws InterruptedException {
+            release.countDown();
+            threads.get(0).join(10_000);
+            assertFalse(threads.get(0).isAlive(), "the held handshake thread must finish");
+        }
+    }
+
+    private static long statusCount(List<AiProcessEvent> events, StatusEventTypeEnum type) {
+        return events.stream().filter(e -> e instanceof StatusEvent se && se.type() == type).count();
     }
 
     @Test

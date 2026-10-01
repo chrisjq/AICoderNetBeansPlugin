@@ -42,22 +42,34 @@ class CodexAiProcessManagerHandshakeTest {
             promptReentries.add(text);
         }
 
-        void armDeliverable() {
+        /**
+         * Each arm method opens a handshake turn the way submitPrompt does and returns it.
+         */
+        Object armDeliverable() {
             running = true;
             processing = true;
             pendingDiff = false;
+            return openTurn();
         }
 
-        void armPendingDiff() {
+        Object armPendingDiff() {
             running = true;
             pendingDiff = true;
             processing = true;
+            return openTurn();
         }
 
-        void armStoppedButProcessing() {
+        Object armStoppedButProcessing() {
             running = false;
             pendingDiff = false;
             processing = true;
+            return openTurn();
+        }
+
+        private Object openTurn() {
+            Object turn = new Object();
+            handshakeTurn = turn;
+            return turn;
         }
 
         boolean processingFlag() {
@@ -69,9 +81,9 @@ class CodexAiProcessManagerHandshakeTest {
     void deliverableAtHandoff_deliversViaSendTurn_neverBackThroughSendPrompt() {
         RecordingManager manager = new RecordingManager(event -> {
         });
-        manager.armDeliverable();
+        Object turn = manager.armDeliverable();
 
-        manager.deliverAfterHandshake("hello");
+        manager.deliverAfterHandshake("hello", turn);
 
         assertEquals(List.of("hello"), manager.directTurns,
                 "post-handshake delivery must go straight to sendTurn");
@@ -85,9 +97,9 @@ class CodexAiProcessManagerHandshakeTest {
     void pendingDiffAtHandoff_clearsProcessingExactlyOnce_withoutAnyDelivery() {
         RecordingManager manager = new RecordingManager(event -> {
         });
-        manager.armPendingDiff();
+        Object turn = manager.armPendingDiff();
 
-        manager.deliverAfterHandshake("queued");
+        manager.deliverAfterHandshake("queued", turn);
 
         assertFalse(manager.processingFlag(), "diff panel won the race: cleared once, under the monitor");
         assertTrue(manager.directTurns.isEmpty());
@@ -98,12 +110,31 @@ class CodexAiProcessManagerHandshakeTest {
     void stoppedBeforeHandoff_clearsWithoutDelivery() {
         RecordingManager manager = new RecordingManager(event -> {
         });
-        manager.armStoppedButProcessing();
+        Object turn = manager.armStoppedButProcessing();
 
-        manager.deliverAfterHandshake("late");
+        manager.deliverAfterHandshake("late", turn);
 
         assertFalse(manager.processingFlag());
         assertTrue(manager.directTurns.isEmpty());
         assertTrue(manager.promptReentries.isEmpty());
+    }
+
+    /**
+     * Stop (or stop(), or a reported exit) ended the turn while its handshake ran, and a newer turn has since
+     * claimed processing. The stale hand-off must not send the stopped prompt, and must not clear the newer
+     * turn's processing flag.
+     */
+    @Test
+    void turnEndedWhileHandshakeRan_sendsNothing_andLeavesTheNewerTurnsProcessingAlone() {
+        RecordingManager manager = new RecordingManager(event -> {
+        });
+        Object stoppedTurn = manager.armDeliverable();
+        manager.armDeliverable(); // a newer turn now owns the handshake slot and processing
+
+        manager.deliverAfterHandshake("stopped prompt", stoppedTurn);
+
+        assertTrue(manager.directTurns.isEmpty(), "a turn the user stopped must not be sent");
+        assertTrue(manager.promptReentries.isEmpty());
+        assertTrue(manager.processingFlag(), "the newer turn's processing must be left alone");
     }
 }

@@ -104,6 +104,9 @@ class OpenCodeCompactTest {
          * run, so tests can assert on the full aftermath of a compacted/stopped sequence deterministically.
          */
         void awaitNotifyDrained() throws InterruptedException {
+            if (isClosed()) {
+                return; // a closed connection queues nothing: callers run their finish inline instead
+            }
             CountDownLatch drained = new CountDownLatch(1);
             runOnNotifyThread(drained::countDown);
             assertTrue(drained.await(5, TimeUnit.SECONDS), "acp-notify must drain within the timeout");
@@ -680,8 +683,10 @@ class OpenCodeCompactTest {
     void deliverAfterHandshakeRefusedWhenNotRunningReportsInfoAndUnlocks() {
         List<AiProcessEvent> events = new ArrayList<>();
         OpenCodeAiProcessManager manager = new OpenCodeAiProcessManager(events::add);
+        Object turn = new Object();
+        manager.handshakeTurn = turn; // the turn sendPrompt handed to the handshake
 
-        manager.deliverAfterHandshake("hello");
+        manager.deliverAfterHandshake("hello", turn);
 
         assertEquals(2, events.size(), "exactly INFO then TurnCompleteEvent");
         assertEquals("OpenCode session is not running", ((StatusEvent) events.get(0)).text());
@@ -693,7 +698,9 @@ class OpenCodeCompactTest {
         List<AiProcessEvent> events = new ArrayList<>();
         OpenCodeAiProcessManager manager = new OpenCodeAiProcessManager(events::add);
         manager.setPendingDiff(true);
-        manager.deliverAfterHandshake("hello");
+        Object turn = new Object();
+        manager.handshakeTurn = turn; // the turn sendPrompt handed to the handshake
+        manager.deliverAfterHandshake("hello", turn);
 
         assertEquals(2, events.size(), "exactly INFO then TurnCompleteEvent");
         assertEquals("OpenCode is waiting for a pending diff review", ((StatusEvent) events.get(0)).text());
@@ -722,6 +729,7 @@ class OpenCodeCompactTest {
             assertEquals(StatusEventTypeEnum.FAILED, closing.type());
             assertTrue(closing.text().contains("exited (code 137)"), "the single closer must carry the exit, was: " + closing.text());
             assertNone(events, TurnCompleteEvent.class, "an exit mid-compaction must never report a TurnCompleteEvent");
+            assertTrue(conn.isClosed(), "the exit drops and closes the dead agent's connection");
 
             conn.lastRequest.complete(new JsonObject());
             conn.awaitNotifyDrained();
