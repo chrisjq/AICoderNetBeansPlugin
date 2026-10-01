@@ -8,13 +8,16 @@ import java.time.format.DateTimeFormatter;
 import java.time.format.DateTimeParseException;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import javax.swing.JButton;
 import javax.swing.JComboBox;
-import javax.swing.SwingUtilities;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.AiSessionHost;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.events.AiPropertyEvent;
-import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.githubcopilot.events.GithubCopilotModelsEvent;
+import kiwi.ingenuity.netbeans.plugin.aicoder.ai.events.AvailableModelsEvent;
+import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.githubcopilot.events.GithubCopilotModelFallbackEvent;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.githubcopilot.events.GithubCopilotQuotaEvent;
+import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.githubcopilot.events.GithubCopilotReasoningEffortClearedEvent;
+import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.githubcopilot.events.GithubCopilotReasoningEffortsEvent;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.githubcopilot.events.GithubCopilotTokenUsageEvent;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.githubcopilot.settings.GithubCopilotPluginSettings;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.githubcopilot.settings.GithubCopilotSessionSettings;
@@ -23,6 +26,7 @@ import kiwi.ingenuity.netbeans.plugin.aicoder.ai.settings.AiModelSessionSettings
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.settings.AiSessionSettings;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.ui.AiInfoBarExtension;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.ui.BlankSafeComboRenderer;
+import kiwi.ingenuity.netbeans.plugin.aicoder.ai.ui.GuardedCombo;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ui.UIConstants;
 
 /**
@@ -48,7 +52,8 @@ public class GithubCopilotAiInfoBarExtension implements AiInfoBarExtension {
     private static String formatResetDate(String resetDate) {
         try {
             return OffsetDateTime.parse(resetDate).format(DateTimeFormatter.ISO_LOCAL_DATE);
-        } catch (DateTimeParseException ex) {
+        }
+        catch (DateTimeParseException ex) {
             return resetDate;
         }
     }
@@ -60,9 +65,10 @@ public class GithubCopilotAiInfoBarExtension implements AiInfoBarExtension {
     private final JButton compactBtn;
     private final JComboBox<String> modelCombo;
     private final JComboBox<String> reasoningEffortCombo;
+    private final GuardedCombo<String> modelGuard;
+    private final GuardedCombo<String> effortGuard;
     private final javax.swing.JProgressBar quotaBar;
     private final List<GithubCopilotInfoBarListener> listeners = new ArrayList<>();
-    private boolean programmaticReasoningEffortSelection = false;
     private volatile int maxTokens = 0;
     private volatile int currentTokens = 0;
     private volatile boolean hasUsageData = false;
@@ -73,8 +79,7 @@ public class GithubCopilotAiInfoBarExtension implements AiInfoBarExtension {
     private volatile String quotaResetDate;
     private volatile boolean showQuotaResetDate;
     private volatile boolean quotaUnlimited = false;
-    private boolean programmaticModelSelection = false;
-    private Runnable disposeAction;
+    private volatile Map<String, List<String>> supportedReasoningEffortsByModel = Map.of();
 
     public GithubCopilotAiInfoBarExtension(AiSession session, AiSessionHost host) {
         this.session = session;
@@ -87,6 +92,7 @@ public class GithubCopilotAiInfoBarExtension implements AiInfoBarExtension {
         errorLabel.setBorder(javax.swing.BorderFactory.createEmptyBorder(2, 4, 2, 4));
         errorLabel.setVisible(false);
         modelCombo = new JComboBox<>(GithubCopilotPluginSettings.getKnownModels());
+        modelGuard = new GuardedCombo<>(modelCombo);
         modelCombo.setEditable(true);
         modelCombo.setSelectedItem(GithubCopilotPluginSettings.getModel());
         modelCombo.setToolTipText("Model — pick or type a model ID");
@@ -96,13 +102,11 @@ public class GithubCopilotAiInfoBarExtension implements AiInfoBarExtension {
         // the selected model — recompute it on every model change (not just
         // before the first usage event) so the bar's denominator stays correct.
         reasoningEffortCombo = new JComboBox<>();
+        effortGuard = new GuardedCombo<>(reasoningEffortCombo);
         reasoningEffortCombo.setToolTipText("Reasoning effort — options depend on the selected model");
         reasoningEffortCombo.setRenderer(new BlankSafeComboRenderer());
         refreshReasoningEffortOptions(initialModel, null);
-        reasoningEffortCombo.addActionListener(e -> {
-            if (programmaticReasoningEffortSelection) {
-                return;
-            }
+        effortGuard.addActionListener(e -> {
             String effort = getSelectedReasoningEffort();
             listeners.forEach(l -> l.onReasoningEffortChanged(effort));
         });
@@ -136,16 +140,8 @@ public class GithubCopilotAiInfoBarExtension implements AiInfoBarExtension {
         listeners.add(l);
     }
 
-    public void setDisposeAction(Runnable disposeAction) {
-        this.disposeAction = disposeAction;
-    }
-
     @Override
     public void dispose() {
-        if (disposeAction != null) {
-            disposeAction.run();
-            disposeAction = null;
-        }
         listeners.clear();
     }
 
@@ -154,8 +150,8 @@ public class GithubCopilotAiInfoBarExtension implements AiInfoBarExtension {
     }
 
     public void addModelChangeListener(ActionListener l) {
-        modelCombo.addActionListener(e -> {
-            if (!programmaticModelSelection && l != null) {
+        modelGuard.addActionListener(e -> {
+            if (l != null) {
                 l.actionPerformed(e);
             }
         });
@@ -168,16 +164,7 @@ public class GithubCopilotAiInfoBarExtension implements AiInfoBarExtension {
     }
 
     public void setSelectedModel(String model) {
-        if (!SwingUtilities.isEventDispatchThread()) {
-            SwingUtilities.invokeLater(() -> setSelectedModel(model));
-            return;
-        }
-        programmaticModelSelection = true;
-        try {
-            modelCombo.setSelectedItem(model);
-        } finally {
-            programmaticModelSelection = false;
-        }
+        modelGuard.runProgrammatic(() -> modelCombo.setSelectedItem(model));
     }
 
     /**
@@ -195,13 +182,8 @@ public class GithubCopilotAiInfoBarExtension implements AiInfoBarExtension {
         if (models == null || models.length == 0) {
             return;
         }
-        if (!SwingUtilities.isEventDispatchThread()) {
-            SwingUtilities.invokeLater(() -> setAvailableModels(models));
-            return;
-        }
         String current = getSelectedModel();
-        programmaticModelSelection = true;
-        try {
+        modelGuard.runProgrammatic(() -> {
             modelCombo.removeAllItems();
             for (String m : models) {
                 modelCombo.addItem(m);
@@ -210,16 +192,10 @@ public class GithubCopilotAiInfoBarExtension implements AiInfoBarExtension {
             if (!current.equals(modelCombo.getSelectedItem())) {
                 modelCombo.getEditor().setItem(current);
             }
-        } finally {
-            programmaticModelSelection = false;
-        }
+        });
     }
 
     private void updateContextBar() {
-        if (!SwingUtilities.isEventDispatchThread()) {
-            SwingUtilities.invokeLater(this::updateContextBar);
-            return;
-        }
         if (!hasUsageData) {
             contextBar.setVisible(true);
             hasUsageData = true;
@@ -239,40 +215,29 @@ public class GithubCopilotAiInfoBarExtension implements AiInfoBarExtension {
     }
 
     /**
-     * The only thing that ever disables this Compact button: it has no turn-running wiring, and a turn in
-     * flight is already refused with a notice by {@code GithubCopilotAiImplementation.compact}'s processing
-     * guard.
+     * The core busy/ready contract's single lock input: busy disables every action control (Compact, the
+     * model combo, the reasoning-effort combo), ready re-enables them. This is the bar's only busy lock.
      */
     @Override
-    public void onCompactingChanged(boolean compacting) {
-        compactBtn.setEnabled(!compacting);
+    public void onBusyChanged(boolean busy) {
+        modelCombo.setEnabled(!busy);
+        reasoningEffortCombo.setEnabled(!busy);
+        compactBtn.setEnabled(!busy);
     }
 
     @Override
     public void onPropertyEvent(AiPropertyEvent event) {
-        if (event instanceof GithubCopilotModelsEvent me) {
-            // Broadcast from GithubCopilotAiImplementation when the model list is
-            // discovered (or replayed from cache for a newly opened session).
-            // Delivered on the EDT; setAvailableModels also self-marshals.
+        if (event instanceof AvailableModelsEvent me) {
             setAvailableModels(me.models().toArray(String[]::new));
-            // The same discovery cycle that populated the model list also populated the per-model reasoning-effort
-            // cache (GithubCopilotModelDiscovery's SDK tier) — refresh the effort combo for whichever model is
-            // currently selected, keeping its current selection if still valid for that model.
             refreshReasoningEffortOptions(getSelectedModel(), getSelectedReasoningEffort());
-        } else if (event instanceof GithubCopilotQuotaEvent quota) {
+        }
+        else if (event instanceof GithubCopilotReasoningEffortsEvent efforts) {
+            supportedReasoningEffortsByModel = efforts.supportedByModel();
+            refreshReasoningEffortOptions(getSelectedModel(), getSelectedReasoningEffort());
+        }
+        else if (event instanceof GithubCopilotQuotaEvent quota) {
             updateQuota(quota);
         }
-    }
-
-    @Override
-    public void onProcessingChanged(boolean processing) {
-        if (!SwingUtilities.isEventDispatchThread()) {
-            SwingUtilities.invokeLater(() -> onProcessingChanged(processing));
-            return;
-        }
-        // A reasoning-effort change requires rebuilding the CopilotSession (same as a model change) — Copilot cannot
-        // accept it mid-turn, so the picker is disabled while a turn is running.
-        reasoningEffortCombo.setEnabled(!processing);
     }
 
     /**
@@ -282,25 +247,19 @@ public class GithubCopilotAiInfoBarExtension implements AiInfoBarExtension {
      * that is still valid, else "(model default)". EDT-safe: self-marshals like {@link #setAvailableModels}.
      */
     private void refreshReasoningEffortOptions(String model, String preferredEffort) {
-        if (!SwingUtilities.isEventDispatchThread()) {
-            SwingUtilities.invokeLater(() -> refreshReasoningEffortOptions(model, preferredEffort));
-            return;
-        }
-        List<String> supported = GithubCopilotPluginSettings.getSupportedReasoningEfforts(model);
+        List<String> supported = model == null ? List.of()
+                                 : supportedReasoningEffortsByModel.getOrDefault(model, List.of());
         String currentSelection = getSelectedReasoningEffort();
         String toSelect = (preferredEffort != null && supported.contains(preferredEffort)) ? preferredEffort
-                : (currentSelection != null && supported.contains(currentSelection) ? currentSelection : null);
-        programmaticReasoningEffortSelection = true;
-        try {
+                          : (currentSelection != null && supported.contains(currentSelection) ? currentSelection : null);
+        effortGuard.runProgrammatic(() -> {
             reasoningEffortCombo.removeAllItems();
             reasoningEffortCombo.addItem(BlankSafeComboRenderer.DEFAULT_OPTION);
             for (String effort : supported) {
                 reasoningEffortCombo.addItem(effort);
             }
             reasoningEffortCombo.setSelectedItem(toSelect != null ? toSelect : BlankSafeComboRenderer.DEFAULT_OPTION);
-        } finally {
-            programmaticReasoningEffortSelection = false;
-        }
+        });
     }
 
     /**
@@ -315,7 +274,7 @@ public class GithubCopilotAiInfoBarExtension implements AiInfoBarExtension {
     /**
      * Programmatically selects {@code effort} (e.g. restoring a stored session value) if it is valid for the
      * currently selected model; otherwise falls back to "(model default)" — never sends an invalid
-     * combination to the combo itself. EDT-safe via {@link #refreshReasoningEffortOptions}.
+     * combination to the combo itself.
      */
     public void setSelectedReasoningEffort(String effort) {
         refreshReasoningEffortOptions(getSelectedModel(), effort);
@@ -324,7 +283,7 @@ public class GithubCopilotAiInfoBarExtension implements AiInfoBarExtension {
     @Override
     public void onSessionSettingsChanged(AiSessionSettings settings) {
         if (settings instanceof AiModelSessionSettings modelSettings
-                && modelSettings.model() != null && !modelSettings.model().isBlank()) {
+            && modelSettings.model() != null && !modelSettings.model().isBlank()) {
             setSelectedModel(modelSettings.model());
         }
         if (settings instanceof GithubCopilotSessionSettings ghSettings) {
@@ -343,13 +302,18 @@ public class GithubCopilotAiInfoBarExtension implements AiInfoBarExtension {
 
     @Override
     public void onAiProcessImplEvent(kiwi.ingenuity.netbeans.plugin.aicoder.process.events.AiProcessImplEvent event) {
-        if (event instanceof GithubCopilotTokenUsageEvent usage) {
+        if (event instanceof GithubCopilotModelFallbackEvent fallback) {
+            setSelectedModel(fallback.model());
+        }
+        else if (event instanceof GithubCopilotReasoningEffortClearedEvent) {
+            setSelectedReasoningEffort(GithubCopilotPluginSettings.getReasoningEffort());
+        }
+        else if (event instanceof GithubCopilotTokenUsageEvent usage) {
             updateUsage(usage);
-        } else if (event instanceof kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.githubcopilot.events.GithubCopilotFatalErrorEvent error) {
+        }
+        else if (event instanceof kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.githubcopilot.events.GithubCopilotFatalErrorEvent error) {
             fatalError = error.errorMessage();
             updateErrorLabel();
-        } else if (event instanceof GithubCopilotQuotaEvent quota) {
-            updateQuota(quota);
         }
     }
 
@@ -359,7 +323,8 @@ public class GithubCopilotAiInfoBarExtension implements AiInfoBarExtension {
         // the model estimate only when the event has no limit.
         if (usage.maxTokens() > 0) {
             maxTokens = usage.maxTokens();
-        } else if (usage.model() != null && !usage.model().isBlank()) {
+        }
+        else if (usage.model() != null && !usage.model().isBlank()) {
             maxTokens = defaultMaxTokensForModel(usage.model());
         }
         updateContextBar();
@@ -376,18 +341,15 @@ public class GithubCopilotAiInfoBarExtension implements AiInfoBarExtension {
     }
 
     private void updateQuotaBar() {
-        if (!SwingUtilities.isEventDispatchThread()) {
-            SwingUtilities.invokeLater(this::updateQuotaBar);
-            return;
-        }
         if (quotaUnlimited || quotaEntitlementRequests == 0) {
             quotaBar.setVisible(false);
-        } else {
+        }
+        else {
             int pct = (int) Math.round(100.0 - quotaRemainingPercentage);
             quotaBar.setValue(Math.min(100, Math.max(0, pct)));
             quotaBar.setString(pct + "%");
             String reset = showQuotaResetDate && quotaResetDate != null
-                    ? "; resets " + formatResetDate(quotaResetDate) : "";
+                           ? "; resets " + formatResetDate(quotaResetDate) : "";
             quotaBar.setToolTipText(String.format(
                     "Premium requests: %,d / %,d used (%d%%)%s",
                     quotaUsedRequests, quotaEntitlementRequests, pct, reset));
@@ -396,14 +358,11 @@ public class GithubCopilotAiInfoBarExtension implements AiInfoBarExtension {
     }
 
     private void updateErrorLabel() {
-        if (!SwingUtilities.isEventDispatchThread()) {
-            SwingUtilities.invokeLater(this::updateErrorLabel);
-            return;
-        }
         if (fatalError != null) {
             errorLabel.setText("⚠ " + fatalError);
             errorLabel.setVisible(true);
-        } else {
+        }
+        else {
             errorLabel.setVisible(false);
         }
     }

@@ -1,9 +1,8 @@
 package kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.githubcopilot.events;
 
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.events.AiPropertyEvent;
-import kiwi.ingenuity.netbeans.plugin.aicoder.process.events.AiProcessImplEvent;
 
-public class GithubCopilotQuotaEvent implements AiProcessImplEvent, AiPropertyEvent {
+public class GithubCopilotQuotaEvent implements AiPropertyEvent {
 
     private final boolean unlimited;
     private final long usedRequests;
@@ -13,7 +12,7 @@ public class GithubCopilotQuotaEvent implements AiProcessImplEvent, AiPropertyEv
     private final boolean showResetDate;
 
     public GithubCopilotQuotaEvent(boolean unlimited, long usedRequests, long entitlementRequests,
-            double remainingPercentage, String resetDate, boolean showResetDate) {
+                                   double remainingPercentage, String resetDate, boolean showResetDate) {
         this.unlimited = unlimited;
         this.usedRequests = usedRequests;
         this.entitlementRequests = entitlementRequests;

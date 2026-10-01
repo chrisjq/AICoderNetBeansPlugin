@@ -26,20 +26,22 @@ import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.pi.PiTimeoutEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.utils.JsonUtils;
 
 /**
- * Owns ONE long-lived {@code pi --mode rpc} process for the whole plugin session. stdin is held open for the session's
- * lifetime; each RPC command is written as a JSONL frame carrying a caller-generated {@code id}
- * ({@code {type:<command name>, id, ...params}} — the command name IS the frame's {@code type}; there is no generic
- * {@code "command"} command), and the corresponding {@code {type:"response", command, success, data?, error?}} frame
- * echoes that id and completes the matching future ({@code command} names the request that produced it — pi sends this
- * field only in the response, never the request; see {@link #frameRequest}). Event frames (no id) are forwarded to
- * {@code eventLine} for {@code PiStreamJsonParser}. Response frames are forwarded too, so the parser can act on command
- * failures; successful {@code get_state}/{@code get_available_models}/{@code get_session_stats} results are read
+ * Owns ONE long-lived {@code pi --mode rpc} process for the whole plugin session. stdin is held open for the
+ * session's lifetime; each RPC command is written as a JSONL frame carrying a caller-generated {@code id}
+ * ({@code {type:<command name>, id, ...params}} — the command name IS the frame's {@code type}; there is no
+ * generic {@code "command"} command), and the corresponding
+ * {@code {type:"response", command, success, data?, error?}} frame echoes that id and completes the matching
+ * future ({@code command} names the request that produced it — pi sends this field only in the response,
+ * never the request; see {@link #frameRequest}). Event frames (no id) are forwarded to {@code eventLine} for
+ * {@code PiStreamJsonParser}. Response frames are forwarded too, so the parser can act on command failures;
+ * successful {@code get_state}/{@code get_available_models}/{@code get_session_stats} results are read
  * directly by {@code PiAiProcessManager} off this same id-correlated future instead.
  *
  * <p>
- * Framing is strict JSONL: frames are delimited by LF only, a trailing CR is stripped, and U+2028/U+2029 inside JSON
- * strings are never treated as delimiters. A malformed frame is skipped (never forwarded, never completing a future)
- * and logged only when {@link PluginSettings#isDebugJson()} is set, so a torn line cannot kill the reader thread.
+ * Framing is strict JSONL: frames are delimited by LF only, a trailing CR is stripped, and U+2028/U+2029
+ * inside JSON strings are never treated as delimiters. A malformed frame is skipped (never forwarded, never
+ * completing a future) and logged only when {@link PluginSettings#isDebugJson()} is set, so a torn line
+ * cannot kill the reader thread.
  */
 public final class PiPersistentSession {
 
@@ -61,14 +63,15 @@ public final class PiPersistentSession {
     }
 
     /**
-     * Frames an RPC command for the wire. pi has no generic {@code "command"} command — the command NAME is the frame's
-     * own {@code type} (verified live against a real pi process: requests are
+     * Frames an RPC command for the wire. pi has no generic {@code "command"} command — the command NAME is
+     * the frame's own {@code type} (verified live against a real pi process: requests are
      * {@code {"id":"1","type":"get_state"}} / {@code {"id":"p1","type":"prompt","message":"…"}}; {@code "command"}
-     * appears only in pi's own {@code response} frames, never in a request). The caller-built command object (produced
-     * by {@code PiAiProcessManager.command(PiRpcCommandEnum)}) still carries the command name under
-     * {@link PiJsonKeyEnum#COMMAND} as an internal-only marker — this method reads it off to become {@code type} and
-     * strips it before copying the rest, so it is never itself written to the wire; every other field is preserved as a
-     * top-level frame parameter alongside the correlation {@code id}, newline-terminated.
+     * appears only in pi's own {@code response} frames, never in a request). The caller-built command object
+     * (produced by {@code PiAiProcessManager.command(PiRpcCommandEnum)}) still carries the command name under
+     * {@link PiJsonKeyEnum#COMMAND} as an internal-only marker — this method reads it off to become
+     * {@code type} and strips it before copying the rest, so it is never itself written to the wire; every
+     * other field is preserved as a top-level frame parameter alongside the correlation {@code id},
+     * newline-terminated.
      */
     static String frameRequest(JsonObject command, String id) {
         JsonObject frame = new JsonObject();
@@ -85,9 +88,9 @@ public final class PiPersistentSession {
     }
 
     /**
-     * Reads one stdout JSONL stream: splits on LF, strips one trailing CR per frame, skips blank and malformed frames,
-     * completes the future whose id the frame carries, and forwards every well-formed frame to {@code eventLine}. Runs
-     * until EOF (process exit or closed stream).
+     * Reads one stdout JSONL stream: splits on LF, strips one trailing CR per frame, skips blank and
+     * malformed frames, completes the future whose id the frame carries, and forwards every well-formed frame
+     * to {@code eventLine}. Runs until EOF (process exit or closed stream).
      */
     static void pump(InputStream in, Map<String, CompletableFuture<JsonObject>> pending, Consumer<String> eventLine) {
         try (BufferedReader r = new BufferedReader(new InputStreamReader(in, StandardCharsets.UTF_8))) {
@@ -116,11 +119,11 @@ public final class PiPersistentSession {
     }
 
     /**
-     * Fails every unfinished future and empties the map. Shared by {@code close()} (which ends the session on purpose)
-     * and {@code pump()} (which detects the stream ending underneath it).
+     * Fails every unfinished future and empties the map. Shared by {@code close()} (which ends the session on
+     * purpose) and {@code pump()} (which detects the stream ending underneath it).
      */
     private static void failAllPending(Map<String, CompletableFuture<JsonObject>> pending, String message) {
-        IOException ex = new IOException(message);
+        IOException ex = new PiSessionEndedException(message);
         for (CompletableFuture<JsonObject> future : pending.values()) {
             future.completeExceptionally(ex);
         }
@@ -165,8 +168,8 @@ public final class PiPersistentSession {
     }
 
     /**
-     * Reads one stderr stream and delivers each line to {@code consumer}. Line splitting here is line-based (not the
-     * JSONL framing above) because stderr is free-form diagnostic output.
+     * Reads one stderr stream and delivers each line to {@code consumer}. Line splitting here is line-based
+     * (not the JSONL framing above) because stderr is free-form diagnostic output.
      */
     static void pumpStderr(InputStream in, Consumer<String> consumer) {
         try (BufferedReader r = new BufferedReader(new InputStreamReader(in, StandardCharsets.UTF_8))) {
@@ -202,9 +205,10 @@ public final class PiPersistentSession {
     }
 
     /**
-     * Sends a command frame and returns a future completed with the {@code {type:"response", ...}} frame that echoes
-     * the generated correlation id. The future completes exceptionally if the session is already closed or the write
-     * fails; a response that never arrives leaves the future pending (its timeout is the caller's decision).
+     * Sends a command frame and returns a future completed with the {@code {type:"response", ...}} frame that
+     * echoes the generated correlation id. The future completes exceptionally if the session is already
+     * closed or the write fails; a response that never arrives leaves the future pending (its timeout is the
+     * caller's decision).
      */
     public CompletableFuture<JsonObject> send(JsonObject command) {
         String id = UUID.randomUUID().toString();
@@ -228,8 +232,8 @@ public final class PiPersistentSession {
     }
 
     /**
-     * Writes a pre-framed line verbatim (newline-terminated) — used for {@code extension_ui_response} replies, which
-     * are event frames with no correlation id.
+     * Writes a pre-framed line verbatim (newline-terminated) — used for {@code extension_ui_response}
+     * replies, which are event frames with no correlation id.
      */
     public synchronized boolean sendRawLine(String jsonLine) {
         if (closed) {
@@ -255,8 +259,8 @@ public final class PiPersistentSession {
     }
 
     /**
-     * Closes stdin (which makes an idle {@code pi --mode rpc} exit with code 0 and no shutdown event), fails every
-     * pending future, then waits the close grace period before destroying a still-alive process.
+     * Closes stdin (which makes an idle {@code pi --mode rpc} exit with code 0 and no shutdown event), fails
+     * every pending future, then waits the close grace period before destroying a still-alive process.
      */
     public synchronized void close() {
         if (closed) {

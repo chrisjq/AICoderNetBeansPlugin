@@ -1,11 +1,12 @@
 package kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.claude;
 
+import java.io.File;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Arrays;
 import java.util.List;
-import java.util.function.Consumer;
+import java.util.concurrent.Executor;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 import java.util.stream.Stream;
@@ -16,9 +17,10 @@ import kiwi.ingenuity.netbeans.plugin.aicoder.ai.AiTypeEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.AiTypeLifecycle;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.AiTypePropertyBus;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.ExecutablePrompter;
+import kiwi.ingenuity.netbeans.plugin.aicoder.ai.SerialBackgroundExecutor;
+import kiwi.ingenuity.netbeans.plugin.aicoder.ai.events.AvailableModelsEvent;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.events.StatusEvent;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.events.StatusEventTypeEnum;
-import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.claude.events.ClaudeModelsEvent;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.claude.events.ClaudeUsageEvent;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.claude.settings.ClaudePluginSettings;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.claude.settings.ClaudeSessionSettings;
@@ -34,15 +36,16 @@ import kiwi.ingenuity.netbeans.plugin.aicoder.process.events.AiProcessEventListe
 import kiwi.ingenuity.netbeans.plugin.aicoder.utils.StatusMessageUtil;
 
 /**
- * Thin adapter so the generic multi-AI system (AiSession, AiTopComponent, etc.) can use the Claude implementation
- * without any behavior change for Claude users. All Claude-specific code stays in this package or the classes it owns.
+ * Thin adapter so the generic multi-AI system (AiSession, AiTopComponent, etc.) can use the Claude
+ * implementation without any behavior change for Claude users. All Claude-specific code stays in this package
+ * or the classes it owns.
  */
 public class ClaudeAiImplementation extends AiImplementation {
 
     private static final Logger LOG = Logger.getLogger(ClaudeAiImplementation.class.getName());
 
     private static final Object MODEL_LOCK = new Object();
-    private static final AiModelCatalog MODEL_CATALOG = new AiModelCatalog();
+    private static final AiModelCatalog MODEL_CATALOG = new AiModelCatalog(AiTypeEnum.CLAUDE);
     private static final AiTypeLifecycle TYPE_LIFECYCLE = new AiTypeLifecycle() {
         @Override
         public void start() {
@@ -61,16 +64,17 @@ public class ClaudeAiImplementation extends AiImplementation {
     private static volatile ClaudeUsageEvent cachedUsageEvent = null;
     private static volatile long lastUsageFetchAttemptMs = 0;
     /**
-     * Learned minimum gap between usage-endpoint fetch attempts. Starts at {@link #INITIAL_USAGE_INTERVAL_MS} — a
-     * conservative baseline rather than 0, since direct testing against /api/oauth/usage showed the real limit trips
-     * after as few as 3 requests within a few seconds, so waiting for the first 429 before throttling at all would
-     * still let an initial burst through. From there, every subsequent 429 grows the interval further by
-     * {@link #OFFSET_MS} (see {@link #recordUsageFetch429IfApplicable()}) — a plain additive ratchet rather than a
-     * one-shot measurement, since Anthropic's Retry-After header on this endpoint is always "0" (it never varies and
-     * retrying immediately keeps failing for tens of seconds), so there is no reliable single-shot signal to derive an
-     * exact value from. The interval never shrinks back down since there's no signal for when that would be safe.
-     * onTurnComplete() fires this on every single turn, so without a floor a fast multi-turn conversation hammers
-     * /api/oauth/usage far faster than Anthropic allows.
+     * Learned minimum gap between usage-endpoint fetch attempts. Starts at {@link #INITIAL_USAGE_INTERVAL_MS}
+     * — a conservative baseline rather than 0, since direct testing against /api/oauth/usage showed the real
+     * limit trips after as few as 3 requests within a few seconds, so waiting for the first 429 before
+     * throttling at all would still let an initial burst through. From there, every subsequent 429 grows the
+     * interval further by {@link #OFFSET_MS} (see {@link #recordUsageFetch429IfApplicable()}) — a plain
+     * additive ratchet rather than a one-shot measurement, since Anthropic's Retry-After header on this
+     * endpoint is always "0" (it never varies and retrying immediately keeps failing for tens of seconds), so
+     * there is no reliable single-shot signal to derive an exact value from. The interval never shrinks back
+     * down since there's no signal for when that would be safe. onTurnComplete() fires this on every single
+     * turn, so without a floor a fast multi-turn conversation hammers /api/oauth/usage far faster than
+     * Anthropic allows.
      */
     private static final long INITIAL_USAGE_INTERVAL_MS = 30_000L;
     private static volatile long learnedUsageIntervalMs = INITIAL_USAGE_INTERVAL_MS;
@@ -82,8 +86,8 @@ public class ClaudeAiImplementation extends AiImplementation {
 
     /**
      * Invoked by {@link ClaudeCredentialMonitor} when ~/.claude/.credentials.json changes (the user ran
-     * {@code claude login} after the plugin started). Resets model discovery state so the fresh credentials are used to
-     * re-fetch models, and triggers usage fetch.
+     * {@code claude login} after the plugin started). Resets model discovery state so the fresh credentials
+     * are used to re-fetch models, and triggers usage fetch.
      */
     public static void onCredentialsChanged() {
         synchronized (MODEL_LOCK) {
@@ -95,9 +99,9 @@ public class ClaudeAiImplementation extends AiImplementation {
     }
 
     /**
-     * Fires cached models to this session's dropdown immediately (if available), then re-fetches from the API if the
-     * last successful fetch was more than {@link #MODEL_REFRESH_INTERVAL_MS} ago. Only called once per session (from
-     * {@link #registerLifecycleListeners}) and on credentials change.
+     * Fires cached models to this session's dropdown immediately (if available), then re-fetches from the API
+     * if the last successful fetch was more than {@link #MODEL_REFRESH_INTERVAL_MS} ago. Only called once per
+     * session (from {@link #registerLifecycleListeners}) and on credentials change.
      */
     public static void triggerModelDiscovery() {
         AnthropicApiClient.refreshCredentialsState();
@@ -111,8 +115,9 @@ public class ClaudeAiImplementation extends AiImplementation {
     }
 
     /**
-     * Submits a model fetch to the rate-limit manager. Coalesced by the {@code "models"} key so only one fetch runs at
-     * a time. On failure, retries up to {@link #MAX_MODEL_DISCOVERY_RETRIES} times within the current fetch cycle.
+     * Submits a model fetch to the rate-limit manager. Coalesced by the {@code "models"} key so only one
+     * fetch runs at a time. On failure, retries up to {@link #MAX_MODEL_DISCOVERY_RETRIES} times within the
+     * current fetch cycle.
      */
     private static void submitModelFetch() {
         AnthropicApiClient.rateLimitManager().submitWhenClear("models", ClaudeAiImplementation::doFetchModels);
@@ -126,9 +131,7 @@ public class ClaudeAiImplementation extends AiImplementation {
                     modelDiscoveryRetries = 0;
                 }
                 ClaudePluginSettings.setDiscoveredModels(modelList.toArray(String[]::new));
-                if (MODEL_CATALOG.publish(modelList)) {
-                    AiTypePropertyBus.getInstance().fire(AiTypeEnum.CLAUDE, new ClaudeModelsEvent(modelList));
-                }
+                MODEL_CATALOG.publish(modelList);
             }
             else {
                 MODEL_CATALOG.refreshFailed();
@@ -159,37 +162,37 @@ public class ClaudeAiImplementation extends AiImplementation {
         AnthropicApiClient
                 .rateLimitManager()
                 .submitWhenClear("usage", () -> {
-                             try {
-                                 AnthropicApiClient.UsageData data = new AnthropicApiClient().fetchUsage();
-                                 ClaudeUsageEvent event = new ClaudeUsageEvent(data.fiveHourPct(), data.sevenDayPct());
-                                 cachedUsageEvent = event;
-                                 AiTypePropertyBus.getInstance().fire(AiTypeEnum.CLAUDE, event);
-                             }
-                             catch (Exception e) {
-                                 recordUsageFetch429IfApplicable();
-                                 LOG.log(Level.WARNING, "Usage fetch failed: {0}", e.getMessage());
-                             }
-                         });
+                    try {
+                        AnthropicApiClient.UsageData data = new AnthropicApiClient().fetchUsage();
+                        ClaudeUsageEvent event = new ClaudeUsageEvent(data.fiveHourPct(), data.sevenDayPct());
+                        cachedUsageEvent = event;
+                        AiTypePropertyBus.getInstance().fire(AiTypeEnum.CLAUDE, event);
+                    }
+                    catch (Exception e) {
+                        recordUsageFetch429IfApplicable();
+                        LOG.log(Level.WARNING, "Usage fetch failed: {0}", e.getMessage());
+                    }
+                });
     }
 
     /**
-     * True when the last usage-fetch attempt was recent enough that a new one would almost certainly retrigger the same
-     * server-side rate limit already learned about — skips the network call entirely rather than hitting the endpoint
-     * and eating another 429/backoff cycle. Package- visible (not private) purely so it's unit-testable as a pure
-     * function.
+     * True when the last usage-fetch attempt was recent enough that a new one would almost certainly
+     * retrigger the same server-side rate limit already learned about — skips the network call entirely
+     * rather than hitting the endpoint and eating another 429/backoff cycle. Package- visible (not private)
+     * purely so it's unit-testable as a pure function.
      */
     static boolean shouldThrottleUsageFetch(long now, long lastAttemptMs, long learnedIntervalMs) {
         return learnedIntervalMs > 0 && now - lastAttemptMs < learnedIntervalMs;
     }
 
     /**
-     * Called on a failed usage fetch. Only grows the throttle when the failure was actually the rate limiter tripping
-     * (not some other network/parse error) — {@code RateLimitManager.isRateLimited()} is true immediately after
-     * {@code AnthropicApiClient.get()} calls {@code setRateLimit()} on a 429, so this reliably distinguishes a
-     * rate-limit failure from any other exception without needing to parse the exception message. Each 429 adds another
-     * {@link #OFFSET_MS} step — a fresh attempt only happens after waiting at least the current learned interval (see
-     * {@link #shouldThrottleUsageFetch}), so a 429 here means that interval still wasn't long enough and needs to grow
-     * further.
+     * Called on a failed usage fetch. Only grows the throttle when the failure was actually the rate limiter
+     * tripping (not some other network/parse error) — {@code RateLimitManager.isRateLimited()} is true
+     * immediately after {@code AnthropicApiClient.get()} calls {@code setRateLimit()} on a 429, so this
+     * reliably distinguishes a rate-limit failure from any other exception without needing to parse the
+     * exception message. Each 429 adds another {@link #OFFSET_MS} step — a fresh attempt only happens after
+     * waiting at least the current learned interval (see {@link #shouldThrottleUsageFetch}), so a 429 here
+     * means that interval still wasn't long enough and needs to grow further.
      */
     private static void recordUsageFetch429IfApplicable() {
         if (AnthropicApiClient.rateLimitManager().isRateLimited()) {
@@ -200,6 +203,13 @@ public class ClaudeAiImplementation extends AiImplementation {
 
     private final ClaudeAiProcessManager delegate;
 
+    /**
+     * Runs the work that takes the process manager's monitor. {@code start()} holds that monitor while it
+     * waits
+     * for MCP registration, so these calls must never be made from the EDT.
+     */
+    Executor sessionControl = new SerialBackgroundExecutor();
+
     public ClaudeAiImplementation(AiProcessEventListener listener, ExecutablePrompter prompter) {
         super(AiTypeEnum.CLAUDE, listener, prompter);
         this.delegate = new ClaudeAiProcessManager(listener);
@@ -208,6 +218,11 @@ public class ClaudeAiImplementation extends AiImplementation {
     @Override
     protected ClaudeAiProcessManager delegate() {
         return delegate;
+    }
+
+    @Override
+    protected Executor sessionControlExecutor() {
+        return sessionControl;
     }
 
     @Override
@@ -223,13 +238,14 @@ public class ClaudeAiImplementation extends AiImplementation {
     }
 
     /**
-     * Effort to launch the session with: the per-session value wins over the global default; {@code null} when neither
-     * is set, meaning the {@code --effort} flag is omitted entirely (Claude's own default). Mirrors
-     * {@code PiAiImplementation.effectiveThinkingLevel}. Package-visible (not private) purely so it's unit-testable.
+     * Effort to launch the session with: the per-session value wins over the global default; {@code null}
+     * when neither is set, meaning the {@code --effort} flag is omitted entirely (Claude's own default).
+     * Mirrors {@code PiAiImplementation.effectiveThinkingLevel}. Package-visible (not private) purely so it's
+     * unit-testable.
      */
     String effectiveEffort() {
         if (currentSession != null && currentSession.settings() instanceof ClaudeSessionSettings cs
-                && cs.effort() != null && !cs.effort().isBlank()) {
+            && cs.effort() != null && !cs.effort().isBlank()) {
             return cs.effort();
         }
         String global = ClaudePluginSettings.getEffort();
@@ -274,12 +290,13 @@ public class ClaudeAiImplementation extends AiImplementation {
     }
 
     /**
-     * Run after every {@code delegate.start()}. Applies session paths, then — if this session already exists in
-     * Claude's on-disk store — switches the freshly started manager to RESUME it. start() always defaults to create-via
-     * {@code --session-id}, which the Claude CLI rejects for an id that already exists, so the process exits
-     * immediately. That is why an in-place restart of a dead session "sends but dies again": every other start path
-     * (componentOpened) reaches resumeSession() via loadHistory(), but the resend-into-dead-session path did not.
-     * resumeSession() flips the next turn to {@code --resume}, so a restart behaves like reopening the tab.
+     * Run after every {@code delegate.start()}. Applies session paths, then — if this session already exists
+     * in Claude's on-disk store — switches the freshly started manager to RESUME it. start() always defaults
+     * to create-via {@code --session-id}, which the Claude CLI rejects for an id that already exists, so the
+     * process exits immediately. That is why an in-place restart of a dead session "sends but dies again":
+     * every other start path (componentOpened) reaches resumeSession() via loadHistory(), but the
+     * resend-into-dead-session path did not. resumeSession() flips the next turn to {@code --resume}, so a
+     * restart behaves like reopening the tab.
      */
     @Override
     protected void afterStart() {
@@ -297,22 +314,32 @@ public class ClaudeAiImplementation extends AiImplementation {
         if (currentSession != null && currentSession.settings() instanceof AiModelSessionSettings mc) {
             mc.setModel(model);
         }
-        delegate.setModel(model);
-        delegate.recycleForModelChange();
+        delegate().setModel(model);
+        recycleInBackground();
     }
 
     /**
-     * Session-scoped effort change — deliberately does not write the global default; the global default (Tools →
-     * Options) is owned solely by the settings panel. The effort only takes effect at spawn, so the session is recycled
-     * via the same path a model change uses ({@link #delegate}'s {@code recycleForModelChange}); a turn in flight
-     * defers the relaunch to the start of the next turn.
+     * Session-scoped effort change — deliberately does not write the global default; the global default
+     * (Tools → Options) is owned solely by the settings panel. The effort only takes effect at spawn, so the
+     * session is recycled via the same path a model change uses ({@link #delegate}'s
+     * {@code recycleForModelChange}); a turn in flight defers the relaunch to the start of the next turn.
      */
     public void setEffort(String effort) {
         if (currentSession != null && currentSession.settings() instanceof ClaudeSessionSettings cs) {
             cs.setEffort(effort == null || effort.isBlank() ? null : effort);
         }
-        delegate.configureEffort(effort);
-        delegate.recycleForModelChange();
+        delegate().configureEffort(effort);
+        recycleInBackground();
+    }
+
+    /**
+     * The recycle is only an optimisation: {@code ensureSession} compares the launched model and effort with
+     * the current ones at the start of every turn, so a send that beats this task still relaunches with the
+     * new values, and this task then finds the turn in flight and does nothing.
+     */
+    private void recycleInBackground() {
+        ClaudeAiProcessManager manager = delegate();
+        sessionControl.execute(manager::recycleForModelChange);
     }
 
     @Override
@@ -338,9 +365,10 @@ public class ClaudeAiImplementation extends AiImplementation {
     @Override
     public AiInfoBarExtension createInfoBarExtension(AiSession session, AiSessionHost host) {
         ClaudeAiInfoBarExtension provider = new ClaudeAiInfoBarExtension();
-        Consumer<List<String>> catalogListener = provider::setAvailableModels;
-        MODEL_CATALOG.addListener(catalogListener);
-        provider.setDisposeAction(() -> MODEL_CATALOG.removeListener(catalogListener));
+        List<String> cachedModels = MODEL_CATALOG.getCachedModels();
+        if (!cachedModels.isEmpty()) {
+            provider.onPropertyEvent(new AvailableModelsEvent(cachedModels));
+        }
         provider.addListener(new ClaudeInfoBarListener() {
             @Override
             public void onCompactRequested() {
@@ -402,15 +430,19 @@ public class ClaudeAiImplementation extends AiImplementation {
     }
 
     private void compact(AiSessionHost host) {
-        if (!isRunning() || isProcessing()) {
+        if (!isRunning() || isPendingDiff() || delegate().isAwaitingCancelResult()
+            || (isBusy() && !isWorkInFlight())) {
             listener.onAiProcessEvent(new StatusEvent(StatusEventTypeEnum.INFO,
-                                                      "Wait for Claude to finish before compacting"));
+                    "Wait for Claude to finish before compacting"));
             return;
         }
-        sendPrompt("/compact", host.resolveWorkDir(), List.of());
-        if (isProcessing()) {
-            host.suppressNextTurn("Compacting conversation...", null);
-        }
+        File workDir = host.resolveWorkDir();
+        ClaudeAiProcessManager manager = delegate();
+        sessionControl.execute(() -> {
+            if (!manager.compact(workDir)) {
+                listener.onAiProcessEvent(new StatusEvent(StatusEventTypeEnum.INFO, "Compaction already in progress"));
+            }
+        });
     }
 
     @Override

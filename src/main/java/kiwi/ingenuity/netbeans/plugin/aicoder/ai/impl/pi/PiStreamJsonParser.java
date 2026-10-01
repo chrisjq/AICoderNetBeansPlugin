@@ -20,32 +20,33 @@ import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.pi.events.PiToolResultEven
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.events.AiProcessEvent;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.events.AiProcessEventListener;
 import kiwi.ingenuity.netbeans.plugin.aicoder.utils.JsonUtils;
-import kiwi.ingenuity.netbeans.plugin.aicoder.utils.StatusMessageUtil;
 
 /**
- * Turns the {@code pi --mode rpc} stdout stream into the shared {@link AiProcessEvent} feed. The session forwards every
- * well-formed line here, so this class sees event frames, correlated {@code response} frames, and
- * {@code extension_ui_request} frames alike.
+ * Turns the {@code pi --mode rpc} stdout stream into the shared {@link AiProcessEvent} feed. The session
+ * forwards every well-formed line here, so this class sees event frames, correlated {@code response} frames,
+ * and {@code extension_ui_request} frames alike.
  *
  * <p>
  * Turn lifecycle maps as follows: {@code agent_start} and the first {@code thinking_delta} surface THINKING;
- * {@code agent_settled} closes the turn with TurnCompleteEvent and READY; a {@code message_update} carries
- * {@code assistantMessageEvent} text deltas; tool activity arrives as
- * {@code tool_execution_start}/{@code tool_execution_end} pairs (the {@code toolcall_*} subtypes inside
- * assistantMessageEvent are ignored); {@code message_end} with {@code stopReason:"error"} surfaces FAILED (a
- * {@code stopReason:"aborted"} is left to the run manager, which owns Stop; nothing is shown here for it).
+ * {@code agent_settled} closes the turn with TurnCompleteEvent (never READY — a turn's only closer is its
+ * TurnCompleteEvent); a {@code message_update} carries {@code assistantMessageEvent} text deltas; tool
+ * activity arrives as {@code tool_execution_start}/{@code tool_execution_end} pairs (the {@code toolcall_*}
+ * subtypes inside assistantMessageEvent are ignored); {@code message_end} with {@code stopReason:"error"}
+ * surfaces FAILED (a {@code stopReason:"aborted"} is left to the run manager, which owns Stop; nothing is
+ * shown here for it).
  *
  * <p>
  * {@code extension_ui_request}{@code :confirm} becomes a {@link ConfirmEvent}; once the caller resolves its
  * {@code PermissionDecision}, the reply is written through {@link #setUiResponseSender} as
- * {@code {type:"extension_ui_response", id, confirmed|cancelled:true}}. Other request methods — select/input/editor —
- * are not supported yet and are answered {@code cancelled:true} immediately. {@code notify} requests surface as INFO.
+ * {@code {type:"extension_ui_response", id, confirmed|cancelled:true}}. Other request methods —
+ * select/input/editor — are not supported yet and are answered {@code cancelled:true} immediately.
+ * {@code notify} requests surface as INFO.
  *
  * <p>
- * Any field path not pinned by live verification is read best-effort with the camelCase spelling from pi's TypeScript
- * types. Successful command responses ({@code get_state}, {@code get_available_models}, {@code get_session_stats}, ...)
- * are read directly by {@code PiAiProcessManager} via the id-correlated future in {@code PiPersistentSession} — this
- * class does not act on them itself.
+ * Any field path not pinned by live verification is read best-effort with the camelCase spelling from pi's
+ * TypeScript types. Successful command responses ({@code get_state}, {@code get_available_models},
+ * {@code get_session_stats}, ...) are read directly by {@code PiAiProcessManager} via the id-correlated
+ * future in {@code PiPersistentSession} — this class does not act on them itself.
  */
 public final class PiStreamJsonParser {
 
@@ -62,8 +63,8 @@ public final class PiStreamJsonParser {
     }
 
     /**
-     * Writer for {@code extension_ui_response} replies ({@code {type, id, confirmed|cancelled}} without a trailing
-     * newline). Wire it to the session's control channel.
+     * Writer for {@code extension_ui_response} replies ({@code {type, id, confirmed|cancelled}} without a
+     * trailing newline). Wire it to the session's control channel.
      */
     public void setUiResponseSender(Consumer<String> uiResponseSender) {
         this.uiResponseSender = uiResponseSender;
@@ -97,7 +98,7 @@ public final class PiStreamJsonParser {
             // which do not depend on this fallback at all.
             if (line.contains("\"type\":\"" + PiEventTypeEnum.MESSAGE_END.type() + "\"")) {
                 listener.onAiProcessEvent(new StatusEvent(StatusEventTypeEnum.FAILED,
-                                                          "Pi response could not be parsed. This may indicate an incomplete or corrupted response."));
+                        "Pi response could not be parsed. This may indicate an incomplete or corrupted response."));
             }
         }
 
@@ -120,8 +121,10 @@ public final class PiStreamJsonParser {
                 yield null;
             }
             case AGENT_SETTLED -> {
+                // TurnCompleteEvent alone closes a turn — never followed by READY (see StatusEventTypeEnum.READY).
+                // This used to emit READY as well, which restarted the session clock after every turn
+                // and, once READY unlocks the UI, could unlock a queued turn the UI had already started.
                 emit(new TurnCompleteEvent());
-                emit(new StatusEvent(StatusEventTypeEnum.READY, StatusMessageUtil.formatReady("Pi")));
                 yield null;
             }
             case MESSAGE_UPDATE ->
@@ -171,7 +174,7 @@ public final class PiStreamJsonParser {
 
     private AiProcessEvent parseMessageUpdate(JsonObject obj) {
         JsonObject ame = obj.has(PiJsonKeyEnum.ASSISTANT_MESSAGE_EVENT.key())
-                && obj.get(PiJsonKeyEnum.ASSISTANT_MESSAGE_EVENT.key()).isJsonObject()
+                         && obj.get(PiJsonKeyEnum.ASSISTANT_MESSAGE_EVENT.key()).isJsonObject()
                          ? obj.getAsJsonObject(PiJsonKeyEnum.ASSISTANT_MESSAGE_EVENT.key()) : null;
         if (ame == null) {
             return null;
@@ -231,7 +234,7 @@ public final class PiStreamJsonParser {
         long delayMs = JsonUtils.getLong(obj, PiJsonKeyEnum.DELAY_MS.key());
         String errorMessage = JsonUtils.getString(obj, PiJsonKeyEnum.ERROR_MESSAGE.key());
         String msg = "Retrying (" + attempt + "/" + max + ") in " + delayMs + " ms"
-                + (errorMessage == null || errorMessage.isBlank() ? "" : ": " + errorMessage);
+                     + (errorMessage == null || errorMessage.isBlank() ? "" : ": " + errorMessage);
         emit(new StatusEvent(StatusEventTypeEnum.INFO, msg));
     }
 
@@ -242,11 +245,12 @@ public final class PiStreamJsonParser {
     }
 
     /**
-     * {@code stopReason}/{@code errorMessage} live on {@code message_end.message} (pi's {@code AssistantMessage}), NOT
-     * top-level on the event itself — confirmed live against a real pi 0.85.1 process:
-     * {@code {"type":"message_end","message":{"role":"assistant",...,"stopReason":"stop",...}}}. A {@code message_end}
-     * fires for BOTH the user's own echoed message and the assistant's — the user one has no {@code stopReason} field
-     * at all (not an {@code AssistantMessage}), so this is naturally a no-op for it.
+     * {@code stopReason}/{@code errorMessage} live on {@code message_end.message} (pi's
+     * {@code AssistantMessage}), NOT top-level on the event itself — confirmed live against a real pi 0.85.1
+     * process: {@code {"type":"message_end","message":{"role":"assistant",...,"stopReason":"stop",...}}}. A
+     * {@code message_end} fires for BOTH the user's own echoed message and the assistant's — the user one has
+     * no {@code stopReason} field at all (not an {@code AssistantMessage}), so this is naturally a no-op for
+     * it.
      */
     private void parseMessageEnd(JsonObject obj) {
         JsonObject message = obj.has(PiJsonKeyEnum.MESSAGE.key()) && obj.get(PiJsonKeyEnum.MESSAGE.key()).isJsonObject()
@@ -258,16 +262,16 @@ public final class PiStreamJsonParser {
         if ("error".equals(stopReason)) {
             String errorMessage = JsonUtils.getString(message, PiJsonKeyEnum.ERROR_MESSAGE.key());
             emit(new StatusEvent(StatusEventTypeEnum.FAILED,
-                                 errorMessage == null || errorMessage.isBlank() ? "Pi turn failed." : errorMessage));
+                    errorMessage == null || errorMessage.isBlank() ? "Pi turn failed." : errorMessage));
         }
         // stopReason "aborted" is owned by the run manager (Stop); nothing is rendered here.
     }
 
     /**
      * {@code compaction_start} — fires for BOTH the plugin's own explicit {@code compact} command
-     * ({@code reason:"manual"}) and pi's own automatic compaction ({@code reason:"threshold"|"overflow"}, never
-     * requested by the plugin) — verified against the shipped {@code agent-session.d.ts}. Surfaced as INFO regardless
-     * of reason so an automatic compaction is never a silent context-gauge jump.
+     * ({@code reason:"manual"}) and pi's own automatic compaction ({@code reason:"threshold"|"overflow"},
+     * never requested by the plugin) — verified against the shipped {@code agent-session.d.ts}. Surfaced as
+     * INFO regardless of reason so an automatic compaction is never a silent context-gauge jump.
      */
     private void parseCompactionStart(JsonObject obj) {
         emit(new StatusEvent(StatusEventTypeEnum.INFO, "Compacting conversation…"));
@@ -275,11 +279,17 @@ public final class PiStreamJsonParser {
 
     /**
      * {@code compaction_end} — {@code {reason, result, aborted, willRetry, errorMessage?}} per {@code
-     * agent-session.d.ts}. Reports whichever of the three real outcomes applies; {@code willRetry}/{@code result} are
-     * not surfaced individually to keep this to the same "one INFO line" level of detail as {@link
+     * agent-session.d.ts}. Reports whichever of the three real outcomes applies;
+     * {@code willRetry}/{@code result} are not surfaced individually to keep this to the same "one INFO line"
+     * level of detail as {@link
      * #parseCompactionStart}.
      */
     private void parseCompactionEnd(JsonObject obj) {
+        // Manual compaction is closed by PiAiImplementation.runWork, so do not emit a second final status here.
+        // Automatic threshold/overflow compactions still need their own completion message.
+        if ("manual".equals(JsonUtils.getString(obj, PiJsonKeyEnum.REASON.key()))) {
+            return;
+        }
         String text;
         if (getBoolean(obj, PiJsonKeyEnum.ABORTED.key())) {
             text = "Compaction aborted.";
@@ -293,11 +303,9 @@ public final class PiStreamJsonParser {
     }
 
     /**
-     * {@code thinking_level_changed} — {@code {type, level}} per {@code agent-session.d.ts}. Fires when the level
-     * changes by any means OTHER than the plugin's own {@code set_thinking_level} RPC. Produces
-     * {@link PiThinkingLevelChangedEvent} rather than acting on it directly — see that class's own doc comment for why
-     * (the info-bar-facing {@code PiSessionControl.Listener} hop lives in {@code
-     * PiAiProcessManager}, a different class than this parser).
+     * {@code thinking_level_changed} — {@code {type, level}} per {@code agent-session.d.ts}. Fires when the
+     * level changes by any means OTHER than the plugin's own {@code set_thinking_level} RPC. Produces
+     * {@link PiThinkingLevelChangedEvent}, which the info bar applies to its thinking-level picker.
      */
     private AiProcessEvent parseThinkingLevelChanged(JsonObject obj) {
         String level = JsonUtils.getString(obj, PiJsonKeyEnum.LEVEL.key());
@@ -305,24 +313,24 @@ public final class PiStreamJsonParser {
     }
 
     /**
-     * A failed {@code prompt}/{@code steer}/{@code abort} response is the direct result of a user action with no other
-     * owner, so it is shown as FAILED here. {@code compact} is deliberately EXCLUDED even though it is also
-     * user-facing: {@code PiAiImplementation.compact()}'s own {@code whenComplete} already emits "Compact failed: …"
-     * for a rejected response, and it must stay the single owner of that error surface because it also has to report
-     * the no-session and failed-send cases this parser never sees at all — including COMPACT here too double-reported a
-     * rejected compact. Every other command (get_state, get_available_models, get_session_stats, set_model,
-     * get_available_thinking_levels, set_thinking_level) is background/housekeeping that {@code PiAiProcessManager}
-     * already treats as best-effort and silently swallows on failure (see e.g. its
-     * refreshThinkingLevels/refreshContextUsage, which just return on a failed response) — showing the user a FAILED
-     * banner for one of THOSE, e.g. a transient get_session_stats hiccup right after a perfectly good turn, would
-     * report an error that has nothing to do with anything the user did. Log-only for every command in this second
-     * group, compact included.
+     * A failed {@code prompt}/{@code steer}/{@code abort} response is the direct result of a user action with
+     * no other owner, so it is shown as FAILED here. {@code compact} is deliberately EXCLUDED even though it
+     * is also user-facing: {@code PiAiImplementation.compact()}'s own {@code whenComplete} already emits
+     * "Compact failed: …" for a rejected response, and it must stay the single owner of that error surface
+     * because it also has to report the no-session and failed-send cases this parser never sees at all —
+     * including COMPACT here too double-reported a rejected compact. Every other command (get_state,
+     * get_available_models, get_session_stats, set_model, get_available_thinking_levels, set_thinking_level)
+     * is background/housekeeping that {@code PiAiProcessManager} already treats as best-effort and silently
+     * swallows on failure (see e.g. its refreshThinkingLevels/refreshContextUsage, which just return on a
+     * failed response) — showing the user a FAILED banner for one of THOSE, e.g. a transient
+     * get_session_stats hiccup right after a perfectly good turn, would report an error that has nothing to
+     * do with anything the user did. Log-only for every command in this second group, compact included.
      *
      * <p>
-     * A response that lacks the {@code command} field real pi always echoes (test fakes, and real pi on some paths)
-     * lands on {@code null} here too: {@code PiRpcCommandEnum.of(null)} returns {@code null}, and the {@code
-     * Set.of(...)} {@code contains} check NPEs on Java 21 — so a well-formed failed response with no command is treated
-     * as the background/ignored case (FINE), never as unparseable WARNING.
+     * A response that lacks the {@code command} field real pi always echoes (test fakes, and real pi on some
+     * paths) lands on {@code null} here too: {@code PiRpcCommandEnum.of(null)} returns {@code null}, and the {@code
+     * Set.of(...)} {@code contains} check NPEs on Java 21 — so a well-formed failed response with no command
+     * is treated as the background/ignored case (FINE), never as unparseable WARNING.
      */
     private static final Set<PiRpcCommandEnum> USER_FACING_COMMANDS = Set.of(
             PiRpcCommandEnum.PROMPT, PiRpcCommandEnum.STEER, PiRpcCommandEnum.ABORT);
@@ -407,8 +415,9 @@ public final class PiStreamJsonParser {
     }
 
     /**
-     * A {@code result.content} array can carry more than one text part (e.g. a multi-file tool result) — every
-     * non-blank part is joined with newlines rather than returning only the first and silently dropping the rest.
+     * A {@code result.content} array can carry more than one text part (e.g. a multi-file tool result) —
+     * every non-blank part is joined with newlines rather than returning only the first and silently dropping
+     * the rest.
      */
     private static String extractResultText(JsonObject obj) {
         if (!obj.has(PiJsonKeyEnum.RESULT.key()) || !obj.get(PiJsonKeyEnum.RESULT.key()).isJsonObject()) {
@@ -436,7 +445,7 @@ public final class PiStreamJsonParser {
 
     private static boolean getBoolean(JsonObject o, String key) {
         return o.has(key) && !o.get(key).isJsonNull() && o.get(key).isJsonPrimitive()
-                && o.get(key).getAsBoolean();
+               && o.get(key).getAsBoolean();
     }
 
     private void emit(AiProcessEvent event) {

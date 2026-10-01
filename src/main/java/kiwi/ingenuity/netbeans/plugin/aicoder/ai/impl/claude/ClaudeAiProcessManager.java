@@ -14,6 +14,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
 import java.util.Set;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.TimeUnit;
 import java.util.function.Consumer;
@@ -24,6 +25,7 @@ import kiwi.ingenuity.netbeans.plugin.aicoder.ai.AiProcessManager;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.events.StatusEvent;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.events.StatusEventTypeEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.events.TurnCompleteEvent;
+import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.claude.events.ClaudeSessionInfoEvent;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.claude.session.ClaudeAiSession;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.claude.session.ClaudePersistentSession;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.session.InterruptTypeEnum;
@@ -37,9 +39,9 @@ import kiwi.ingenuity.netbeans.plugin.aicoder.utils.StatusMessageUtil;
 
 /**
  * Manages Claude via ONE long-lived {@code claude --input-format stream-json} process per plugin session (see
- * {@link ClaudePersistentSession}). The process is launched lazily on the first turn and kept alive across turns. On an
- * unexpected process exit (e.g. credit exhausted) the turn is unwedged and the exit surfaced, but the process is NOT
- * auto-restarted — the next user message relaunches it via {@code --resume}.
+ * {@link ClaudePersistentSession}). The process is launched lazily on the first turn and kept alive across
+ * turns. On an unexpected process exit (e.g. credit exhausted) the turn is unwedged and the exit surfaced,
+ * but the process is NOT auto-restarted — the next user message relaunches it via {@code --resume}.
  */
 public class ClaudeAiProcessManager extends AiProcessManager {
 
@@ -50,8 +52,9 @@ public class ClaudeAiProcessManager extends AiProcessManager {
      * Master switch for logging {@code input_json_delta} tool-input fragments to "ai json". Default OFF.
      *
      * <p>
-     * Why off: a fragment cannot be redacted — a secret's characters can straddle two separate chunks, and no per-line
-     * redactor can ever see it whole. This is demonstrated, not theoretical: a live-captured log line contains {@code "partial_json":"{\"sessionId\": \"b154400c-bbb"} — a
+     * Why off: a fragment cannot be redacted — a secret's characters can straddle two separate chunks, and no
+     * per-line redactor can ever see it whole. This is demonstrated, not theoretical: a live-captured log
+     * line contains {@code "partial_json":"{\"sessionId\": \"b154400c-bbb"} — a
      * 36-character UUID cut off after 12. Individually these fragments are
      * near-unreadable anyway, and the ASSEMBLED tool input is already logged
      * in the following {@code assistant} event (see
@@ -81,16 +84,17 @@ public class ClaudeAiProcessManager extends AiProcessManager {
     }
 
     /**
-     * True iff {@code line} is a {@code stream_event} wrapping a {@code content_block_delta} whose {@code delta.type}
-     * is {@code input_json_delta} — a tool-input fragment. Confirmed against a live-captured log line (see
-     * {@link #LOG_INPUT_JSON_DELTA_FRAGMENTS}); the other {@code content_block_delta} carrier, {@code text_delta} (the
-     * assistant's own live-typing text), deliberately does NOT match this predicate, nor do
-     * {@code content_block_start/stop}, {@code message_start} (full usage/token accounting), {@code message_delta}, or
-     * {@code message_stop} (stop reason) — none of those carry tool arguments, and message_start especially is
-     * genuinely useful for debugging. Parses defensively: anything unparseable or not matching returns false, so the
-     * failure mode is "logs too much" rather than "silently swallows real content". Detection is unconditional —
-     * {@link #LOG_INPUT_JSON_DELTA_FRAGMENTS} only gates whether a detected fragment is then logged, not whether it is
-     * detected, so this method's tests do not depend on the flag.
+     * True iff {@code line} is a {@code stream_event} wrapping a {@code content_block_delta} whose
+     * {@code delta.type} is {@code input_json_delta} — a tool-input fragment. Confirmed against a
+     * live-captured log line (see {@link #LOG_INPUT_JSON_DELTA_FRAGMENTS}); the other
+     * {@code content_block_delta} carrier, {@code text_delta} (the assistant's own live-typing text),
+     * deliberately does NOT match this predicate, nor do {@code content_block_start/stop},
+     * {@code message_start} (full usage/token accounting), {@code message_delta}, or {@code message_stop}
+     * (stop reason) — none of those carry tool arguments, and message_start especially is genuinely useful
+     * for debugging. Parses defensively: anything unparseable or not matching returns false, so the failure
+     * mode is "logs too much" rather than "silently swallows real content". Detection is unconditional —
+     * {@link #LOG_INPUT_JSON_DELTA_FRAGMENTS} only gates whether a detected fragment is then logged, not
+     * whether it is detected, so this method's tests do not depend on the flag.
      */
     static boolean isInputJsonDeltaFragment(String line) {
         if (line == null || line.isBlank()) {
@@ -114,20 +118,21 @@ public class ClaudeAiProcessManager extends AiProcessManager {
     }
 
     /**
-     * Number of {@code tool_use} content blocks in an {@code assistant} stream-json line — usually 0 or 1, but Claude
-     * can request more than one tool in the same turn (parallel tool calls), so this counts rather than flags. Used by
-     * {@link #trackToolCallLifecycle} to hold a Mail interrupt while a call is in flight. Parses defensively: 0 for
-     * anything unparseable, the wrong event type, or with no content array — the failure mode is "an interrupt is held
-     * a little longer than strictly necessary", never a crash on a malformed line.
+     * Number of {@code tool_use} content blocks in an {@code assistant} stream-json line — usually 0 or 1,
+     * but Claude can request more than one tool in the same turn (parallel tool calls), so this counts rather
+     * than flags. Used by {@link #trackToolCallLifecycle} to hold a Mail interrupt while a call is in flight.
+     * Parses defensively: 0 for anything unparseable, the wrong event type, or with no content array — the
+     * failure mode is "an interrupt is held a little longer than strictly necessary", never a crash on a
+     * malformed line.
      */
     static int countToolUseStarts(String line) {
         return countContentBlocksOfType(line, "assistant", "tool_use");
     }
 
     /**
-     * Number of {@code tool_result} content blocks in a {@code user} stream-json line — the CLI's own echo of a tool
-     * call's result being fed back into the model. This is the normal way {@link #inFlightToolCalls} returns to zero;
-     * {@link #isTurnEndLine} is the backstop for a turn that ends without one.
+     * Number of {@code tool_result} content blocks in a {@code user} stream-json line — the CLI's own echo of
+     * a tool call's result being fed back into the model. This is the normal way {@link #inFlightToolCalls}
+     * returns to zero; {@link #isTurnEndLine} is the backstop for a turn that ends without one.
      */
     static int countToolResults(String line) {
         return countContentBlocksOfType(line, "user", "tool_result");
@@ -162,10 +167,10 @@ public class ClaudeAiProcessManager extends AiProcessManager {
     }
 
     /**
-     * True iff {@code line} is a {@code result} stream-json event — the whole turn ending. A safety net alongside
-     * {@link #countToolResults}: if a turn somehow ends without an explicit tool_result for every tool_use (an error
-     * path, a cancelled call), {@link #trackToolCallLifecycle} resets the in-flight count to zero here rather than
-     * leaving it stuck positive, which would hold a Mail interrupt forever.
+     * True iff {@code line} is a {@code result} stream-json event — the whole turn ending. A safety net
+     * alongside {@link #countToolResults}: if a turn somehow ends without an explicit tool_result for every
+     * tool_use (an error path, a cancelled call), {@link #trackToolCallLifecycle} resets the in-flight count
+     * to zero here rather than leaving it stuck positive, which would hold a Mail interrupt forever.
      */
     static boolean isTurnEndLine(String line) {
         if (line == null || line.isBlank()) {
@@ -188,6 +193,18 @@ public class ClaudeAiProcessManager extends AiProcessManager {
     private ClaudeAiSession claudeAiSession = null;
     protected volatile ClaudePersistentSession persistentSession = null;
     private ClaudeStreamJsonParser parser = null;
+    /**
+     * Completion of the current internally initiated {@code /compact} turn. While non-null, all parser output
+     * belongs to that turn and remains backend-local; {@link #runWork} reports its single BUSY/closing
+     * status. Guarded by {@code this}.
+     */
+    private CompletableFuture<Boolean> compactionFuture;
+    /**
+     * Text of an INTERRUPTED status seen during the {@code /compact} turn. The user cannot stop a compaction,
+     * so an abnormal result ending it means the compaction failed; the failure is reported when the turn
+     * completes so the trailing TurnCompleteEvent stays suppressed. Guarded by {@code this}.
+     */
+    private String compactionInterruptDetail;
     private final List<String> recentStderr = new CopyOnWriteArrayList<>();
     private Set<String> launchedProjectDirs = Set.of();
     // The model the live session was actually launched under, which is not always the model field: a switch
@@ -198,16 +215,17 @@ public class ClaudeAiProcessManager extends AiProcessManager {
     private String launchedModel;
     /**
      * Launch-time effort level for the next spawn, from {@code ClaudeSessionSettings.effort()} (session) or
-     * {@code ClaudePluginSettings.getEffort()} (global default) — set by {@code ClaudeAiImplementation} before the
-     * first turn. Compared in {@link #ensureSession} and deferred by {@link #recycleForModelChange} exactly like
-     * {@link #launchedModel}.
+     * {@code ClaudePluginSettings.getEffort()} (global default) — set by {@code ClaudeAiImplementation}
+     * before the first turn. Compared in {@link #ensureSession} and deferred by
+     * {@link #recycleForModelChange} exactly like {@link #launchedModel}.
      */
     private volatile String configuredEffort;
     /**
-     * The only effort levels the Claude CLI accepts (also the info bar's {@code EFFORT_OPTIONS}). No live discovery
-     * exists for these — unlike Copilot, which validates against the model's supported list, Claude has a fixed
-     * five-level set. Anything outside this set is treated as a corrupted or hand-edited value and dropped by
-     * {@link #configureEffort} rather than passed to {@code --effort}, which would hard-fail the CLI at spawn.
+     * The only effort levels the Claude CLI accepts (also the info bar's {@code EFFORT_OPTIONS}). No live
+     * discovery exists for these — unlike Copilot, which validates against the model's supported list, Claude
+     * has a fixed five-level set. Anything outside this set is treated as a corrupted or hand-edited value
+     * and dropped by {@link #configureEffort} rather than passed to {@code --effort}, which would hard-fail
+     * the CLI at spawn.
      */
     private static final Set<String> KNOWN_EFFORT_LEVELS = Set.of("low", "medium", "high", "xhigh", "max");
     private String launchedEffort;
@@ -217,23 +235,24 @@ public class ClaudeAiProcessManager extends AiProcessManager {
 
     /**
      * Count of tool_use blocks seen (stream-json {@code assistant} events) not yet matched by a tool_result
-     * ({@code user} event) or turn end ({@code result} event) — see {@link #trackToolCallLifecycle}. Tracked so a Mail
-     * interrupt can be HELD while a tool call this plugin is itself servicing over the MCP HTTP endpoint is still in
-     * flight, rather than the CLI's {@code control_request(interrupt)} aborting it mid-flight. Guarded by {@code this},
-     * same as {@link #processing}/{@link #turnInterrupted}.
+     * ({@code user} event) or turn end ({@code result} event) — see {@link #trackToolCallLifecycle}. Tracked
+     * so a Mail interrupt can be HELD while a tool call this plugin is itself servicing over the MCP HTTP
+     * endpoint is still in flight, rather than the CLI's {@code control_request(interrupt)} aborting it
+     * mid-flight. Guarded by {@code this}, same as {@link #processing}/{@link #turnInterrupted}.
      */
     private int inFlightToolCalls = 0;
 
     /**
-     * True when a Mail interrupt was requested while {@link #inFlightToolCalls} was &gt; 0 and is waiting to be sent —
-     * either by {@link #trackToolCallLifecycle} as soon as the count returns to zero, or by
+     * True when a Mail interrupt was requested while {@link #inFlightToolCalls} was &gt; 0 and is waiting to
+     * be sent — either by {@link #trackToolCallLifecycle} as soon as the count returns to zero, or by
      * {@link #startMailInterruptSafetyValve} if it never does. Guarded by {@code this}.
      */
     private boolean pendingMailInterrupt = false;
 
     /**
-     * Test seam for {@link #startMailInterruptSafetyValve}'s wait — see {@link #cancelWatchdogMillis}'s identical
-     * purpose for Cancel. Production default sourced from {@link ClaudeTimeoutEnum#MAIL_INTERRUPT_HOLD_MILLIS}.
+     * Test seam for {@link #startMailInterruptSafetyValve}'s wait — see {@link #cancelWatchdogMillis}'s
+     * identical purpose for Cancel. Production default sourced from
+     * {@link ClaudeTimeoutEnum#MAIL_INTERRUPT_HOLD_MILLIS}.
      */
     int mailInterruptSafetyValveMillis = (int) ClaudeTimeoutEnum.MAIL_INTERRUPT_HOLD_MILLIS.millis();
 
@@ -263,11 +282,12 @@ public class ClaudeAiProcessManager extends AiProcessManager {
     }
 
     /**
-     * Configures the effort level for the next spawn (and only the next spawn — the level is fixed at launch time and a
-     * change after that goes through {@link #recycleForModelChange}, which drops the process so {@link #ensureSession}
-     * relaunches on the next turn). An empty or null level means "omit {@code --effort}" (Claude's own default). A
-     * value that is not one of the five known levels is dropped the same way, with exactly one INFO event — so a
-     * corrupted or hand-edited stored value can never break the session at spawn.
+     * Configures the effort level for the next spawn (and only the next spawn — the level is fixed at launch
+     * time and a change after that goes through {@link #recycleForModelChange}, which drops the process so
+     * {@link #ensureSession} relaunches on the next turn). An empty or null level means "omit
+     * {@code --effort}" (Claude's own default). A value that is not one of the five known levels is dropped
+     * the same way, with exactly one INFO event — so a corrupted or hand-edited stored value can never break
+     * the session at spawn.
      */
     public void configureEffort(String level) {
         if (level == null || level.isBlank()) {
@@ -277,7 +297,7 @@ public class ClaudeAiProcessManager extends AiProcessManager {
         if (!KNOWN_EFFORT_LEVELS.contains(level)) {
             this.configuredEffort = null;
             listener.onAiProcessEvent(new StatusEvent(StatusEventTypeEnum.INFO,
-                                                      "Effort level \"" + level + "\" is not a known Claude effort level; using Claude's default"));
+                    "Effort level \"" + level + "\" is not a known Claude effort level; using Claude's default"));
             return;
         }
         this.configuredEffort = level;
@@ -288,9 +308,10 @@ public class ClaudeAiProcessManager extends AiProcessManager {
     }
 
     /**
-     * Package-visible test seam (mirrors {@link #getLaunchCount}). The launch itself is untestable in unit tests (the
-     * CLI spawn is environment-dependent), but {@link #configureEffort}'s drop-and-INFO behavior for an unknown level
-     * is. Sentinel {@code null} means "omit {@code --effort}" — which is exactly what an invalid level must resolve to.
+     * Package-visible test seam (mirrors {@link #getLaunchCount}). The launch itself is untestable in unit
+     * tests (the CLI spawn is environment-dependent), but {@link #configureEffort}'s drop-and-INFO behavior
+     * for an unknown level is. Sentinel {@code null} means "omit {@code --effort}" — which is exactly what an
+     * invalid level must resolve to.
      */
     String getConfiguredEffort() {
         return configuredEffort;
@@ -309,12 +330,12 @@ public class ClaudeAiProcessManager extends AiProcessManager {
         if (!ClaudeExecutableLocator.isExecutableFile(executablePath)) {
             running = false;
             listener.onAiProcessEvent(new StatusEvent(StatusEventTypeEnum.FAILED,
-                                                      StatusMessageUtil.formatStartFailed("executable not found at " + executablePath)));
+                    StatusMessageUtil.formatStartFailed("executable not found at " + executablePath)));
             return;
         }
         if (currentSession == null) {
             listener.onAiProcessEvent(new StatusEvent(StatusEventTypeEnum.FAILED,
-                                                      StatusMessageUtil.formatSessionNotConfigured()));
+                    StatusMessageUtil.formatSessionNotConfigured()));
             return;
         }
         sessionId = currentSession.id();
@@ -340,7 +361,7 @@ public class ClaudeAiProcessManager extends AiProcessManager {
         }
         if (!mcpReady) {
             listener.onAiProcessEvent(new StatusEvent(StatusEventTypeEnum.FAILED,
-                                                      StatusMessageUtil.formatMcpSetupFailed()));
+                    StatusMessageUtil.formatMcpSetupFailed()));
             return;
         }
         registrar = reg;
@@ -407,6 +428,9 @@ public class ClaudeAiProcessManager extends AiProcessManager {
             boolean isTurnComplete = event instanceof TurnCompleteEvent;
             boolean isFailure = event instanceof StatusEvent fse && fse.type() == StatusEventTypeEnum.FAILED;
             boolean suppress;
+            CompletableFuture<Boolean> completedCompaction = null;
+            Throwable compactionFailure = null;
+            boolean compacted = false;
             synchronized (ClaudeAiProcessManager.this) {
                 if (isTurnComplete) {
                     processing = false;
@@ -419,17 +443,53 @@ public class ClaudeAiProcessManager extends AiProcessManager {
                 else if (isFailure) {
                     processing = false;
                 }
-                suppress = cancelledByUser || (turnInterrupted && event instanceof StatusEvent se
-                        && se.type() == StatusEventTypeEnum.INTERRUPTED);
+                if (compactionFuture != null) {
+                    // /compact is an implementation turn, not a user turn: hide every one of its display events,
+                    // including text/thinking and TurnCompleteEvent, and let runWork own the single closing status.
+                    suppress = !(event instanceof ClaudeSessionInfoEvent);
+                    if (event instanceof StatusEvent ie && ie.type() == StatusEventTypeEnum.INTERRUPTED) {
+                        compactionInterruptDetail = ie.text();
+                    }
+                    if (isTurnComplete || isFailure) {
+                        completedCompaction = compactionFuture;
+                        compactionFuture = null;
+                        String interruptDetail = compactionInterruptDetail;
+                        compactionInterruptDetail = null;
+                        if (isFailure) {
+                            StatusEvent failure = (StatusEvent) event;
+                            compactionFailure = new IllegalStateException(failure.text());
+                        }
+                        else {
+                            boolean boundary = parser != null && parser.consumeCompactBoundary();
+                            if (interruptDetail != null) {
+                                compactionFailure = new IllegalStateException(interruptDetail);
+                            }
+                            else {
+                                compacted = boundary;
+                            }
+                        }
+                    }
+                }
+                else {
+                    suppress = cancelledByUser || (turnInterrupted && event instanceof StatusEvent se
+                                                   && se.type() == StatusEventTypeEnum.INTERRUPTED);
+                }
                 if (isTurnComplete || isFailure) {
                     turnInterrupted = false;
                     cancelledByUser = false;
                 }
             }
-            if (suppress) {
-                return;
+            if (completedCompaction != null) {
+                if (compactionFailure == null) {
+                    completedCompaction.complete(compacted);
+                }
+                else {
+                    completedCompaction.completeExceptionally(compactionFailure);
+                }
             }
-            listener.onAiProcessEvent(event);
+            if (!suppress) {
+                listener.onAiProcessEvent(event);
+            }
         };
     }
 
@@ -468,33 +528,33 @@ public class ClaudeAiProcessManager extends AiProcessManager {
         recentStderr.clear();
         final String sid = sessionId;
         ClaudePersistentSession launched = launchPersistentSession(cmd, workDir,
-                                                                   line -> {
-                                                                       // input_json_delta fragments are excluded by default (not just redacted),
-                                                                       // behind LOG_INPUT_JSON_DELTA_FRAGMENTS — see that flag's javadoc for the
-                                                                       // full trade-off (a fragment cannot be made safe, not that it's
-                                                                       // uninteresting; the assembled tool_use block IS visible, fully redacted,
-                                                                       // in the following "assistant" event). text_delta fragments (assistant's
-                                                                       // own live-typing text) share the same event.delta nesting and are never
-                                                                       // excluded — only input_json_delta is, and only while the flag is off.
-                                                                       if (PluginSettings.isDebugJson()
-                                                                       && (LOG_INPUT_JSON_DELTA_FRAGMENTS || !isInputJsonDeltaFragment(line))) {
-                                                                           LOG.log(Level.INFO, "ai json [{0}]: {1}",
-                                                                                   new Object[]{sid, McpHookServerUtil.redactAllSecrets(line)});
-                                                                       }
-                                                                       trackToolCallLifecycle(line);
-                                                                       p.parseLine(line);
-                                                                   },
-                                                                   err -> {
-                                                                       // Claude's stream-json protocol runs on stdout, not stderr, so a
-                                                                       // tool_use block's secretKey argument should never appear here — but
-                                                                       // redacting anyway costs nothing and removes the risk if the CLI ever
-                                                                       // echoes malformed/offending input to stderr on a parse failure.
-                                                                       if (PluginSettings.isDebugJson()) {
-                                                                           LOG.log(Level.WARNING, "claude stderr [{0}]: {1}",
-                                                                                   new Object[]{sid, McpHookServerUtil.redactAllSecrets(err)});
-                                                                       }
-                                                                       addStderr(err);
-                                                                   });
+                line -> {
+                    // input_json_delta fragments are excluded by default (not just redacted),
+                    // behind LOG_INPUT_JSON_DELTA_FRAGMENTS — see that flag's javadoc for the
+                    // full trade-off (a fragment cannot be made safe, not that it's
+                    // uninteresting; the assembled tool_use block IS visible, fully redacted,
+                    // in the following "assistant" event). text_delta fragments (assistant's
+                    // own live-typing text) share the same event.delta nesting and are never
+                    // excluded — only input_json_delta is, and only while the flag is off.
+                    if (PluginSettings.isDebugJson()
+                        && (LOG_INPUT_JSON_DELTA_FRAGMENTS || !isInputJsonDeltaFragment(line))) {
+                        LOG.log(Level.INFO, "ai json [{0}]: {1}",
+                                new Object[]{sid, McpHookServerUtil.redactAllSecrets(line)});
+                    }
+                    trackToolCallLifecycle(line);
+                    p.parseLine(line);
+                },
+                err -> {
+                    // Claude's stream-json protocol runs on stdout, not stderr, so a
+                    // tool_use block's secretKey argument should never appear here — but
+                    // redacting anyway costs nothing and removes the risk if the CLI ever
+                    // echoes malformed/offending input to stderr on a parse failure.
+                    if (PluginSettings.isDebugJson()) {
+                        LOG.log(Level.WARNING, "claude stderr [{0}]: {1}",
+                                new Object[]{sid, McpHookServerUtil.redactAllSecrets(err)});
+                    }
+                    addStderr(err);
+                });
         persistentSession = launched;
         launchedProjectDirs = currentDirs;
         launchedModel = model;
@@ -507,13 +567,18 @@ public class ClaudeAiProcessManager extends AiProcessManager {
 
     /**
      * Called when the persistent process exits. Unwedges the current turn and surfaces the exit, but does NOT
-     * auto-restart: running stays true so the user's next message relaunches the process via ensureSession (--resume).
-     * Ignores stale exits from a superseded session (recycle/stop/relaunch).
+     * auto-restart: running stays true so the user's next message relaunches the process via ensureSession
+     * (--resume). Ignores stale exits from a superseded session (recycle/stop/relaunch).
      */
     private void handleProcessExit(ClaudePersistentSession dead) {
         boolean suppress;
+        CompletableFuture<Boolean> deadSessionCompaction;
         synchronized (this) {
             if (persistentSession != dead) {
+                if (persistentSession == null && isWorkInFlight()) {
+                    failWorkInFlight("Claude exited during compaction");
+                    completeCompactionFailure(new IllegalStateException("Claude exited during compaction"));
+                }
                 return;
             }
             processing = false;
@@ -522,19 +587,26 @@ public class ClaudeAiProcessManager extends AiProcessManager {
             inFlightToolCalls = 0;
             pendingMailInterrupt = false;
             suppress = cancelledByUser || turnInterrupted;
+            deadSessionCompaction = compactionFuture;
         }
         int code = dead.process().exitValue();
+        boolean failedWork = failWorkInFlight("Claude exited (code " + code + ") during compaction");
+        failCompaction(deadSessionCompaction, new IllegalStateException("Claude exited (code " + code + ") during compaction"));
+        if (failedWork) {
+            return;
+        }
         if (!suppress && code != 0) {
             listener.onAiProcessEvent(new StatusEvent(StatusEventTypeEnum.EXITED,
-                                                      StatusMessageUtil.formatExited("AI", code, new ArrayList<>(recentStderr))));
+                    StatusMessageUtil.formatExited("AI", code, new ArrayList<>(recentStderr))));
         }
     }
 
     /**
      * Updates {@link #inFlightToolCalls} from one raw stream-json line and flushes a HELD Mail interrupt
-     * ({@link #pendingMailInterrupt}) as soon as the count returns to zero — before whatever line comes next, which is
-     * what keeps the interrupt from landing mid-tool-call. Called for every line, so the common case (none of the three
-     * predicates match) must stay cheap; each predicate parses defensively and returns 0/false rather than throwing.
+     * ({@link #pendingMailInterrupt}) as soon as the count returns to zero — before whatever line comes next,
+     * which is what keeps the interrupt from landing mid-tool-call. Called for every line, so the common case
+     * (none of the three predicates match) must stay cheap; each predicate parses defensively and returns
+     * 0/false rather than throwing.
      */
     private void trackToolCallLifecycle(String line) {
         int starts = countToolUseStarts(line);
@@ -577,12 +649,12 @@ public class ClaudeAiProcessManager extends AiProcessManager {
     }
 
     /**
-     * Backstop for a HELD Mail interrupt: if {@link #inFlightToolCalls} never returns to zero — a lost/malformed
-     * tool_result line, or the CLI itself hanging — {@link #trackToolCallLifecycle} would otherwise never flush it, and
-     * the interrupt would wait forever. Delivers it anyway after {@link #mailInterruptSafetyValveMillis}, exactly like
-     * {@link #startCancelWatchdog}'s identical pattern for Cancel. Guards on {@code persistentSession == s} (the
-     * session captured when the hold began) so a watchdog from an earlier, already-resolved hold can never fire against
-     * a later, unrelated one.
+     * Backstop for a HELD Mail interrupt: if {@link #inFlightToolCalls} never returns to zero — a
+     * lost/malformed tool_result line, or the CLI itself hanging — {@link #trackToolCallLifecycle} would
+     * otherwise never flush it, and the interrupt would wait forever. Delivers it anyway after
+     * {@link #mailInterruptSafetyValveMillis}, exactly like {@link #startCancelWatchdog}'s identical pattern
+     * for Cancel. Guards on {@code persistentSession == s} (the session captured when the hold began) so a
+     * watchdog from an earlier, already-resolved hold can never fire against a later, unrelated one.
      */
     private void startMailInterruptSafetyValve(ClaudePersistentSession s) {
         Thread watchdog = new Thread(() -> {
@@ -618,7 +690,64 @@ public class ClaudeAiProcessManager extends AiProcessManager {
 
     @Override
     public synchronized void sendPrompt(String text, File workingDir, List<File> projectDirs) {
-        if (pendingDiff || !running || processing || awaitingCancelResult) {
+        sendPromptInternal(text, workingDir, projectDirs, false);
+    }
+
+    /**
+     * Starts Claude's own {@code /compact} turn through the shared work lifecycle. Parser events are
+     * correlated by the manager's single-turn invariant and suppressed while {@link #compactionFuture} is
+     * set.
+     */
+    public boolean compact(File workingDir) {
+        return compact(workingDir, DEFAULT_WORK_TIMEOUT_MILLIS);
+    }
+
+    boolean compact(File workingDir, long timeoutMillis) {
+        return runWork("Compacting conversation...", false, timeoutMillis,
+                () -> startCompaction(workingDir),
+                compacted -> new StatusEvent(StatusEventTypeEnum.READY,
+                        compacted ? "Conversation compacted" : "Nothing to compact"),
+                error -> new StatusEvent(StatusEventTypeEnum.FAILED, "Compact failed: "
+                                                                     + (error.getMessage() != null ? error.getMessage() : error.toString())));
+    }
+
+    private synchronized CompletableFuture<Boolean> startCompaction(File workingDir) {
+        if (!running) {
+            return CompletableFuture.failedFuture(new IllegalStateException("Claude is not running"));
+        }
+        if (processing || awaitingCancelResult) {
+            return CompletableFuture.failedFuture(new IllegalStateException("Wait for Claude to finish before compacting"));
+        }
+        CompletableFuture<Boolean> future = new CompletableFuture<>();
+        compactionFuture = future;
+        compactionInterruptDetail = null;
+        // runWork may timeout before Claude sends a result. Clear only our own future so a late completion
+        // cannot suppress the next user turn.
+        future.whenComplete((ignored, error) -> {
+            synchronized (ClaudeAiProcessManager.this) {
+                if (compactionFuture == future) {
+                    compactionFuture = null;
+                }
+            }
+        });
+        sendPromptInternal("/compact", workingDir, List.of(), true);
+        return future;
+    }
+
+    private void sendPromptInternal(String text, File workingDir, List<File> projectDirs, boolean compacting) {
+        if (pendingDiff || !running || processing || awaitingCancelResult || (!compacting && isWorkInFlight())) {
+            String reason = processing ? "Claude is already processing"
+                            : pendingDiff ? "Wait for the pending diff review before sending another message"
+                              : awaitingCancelResult ? "Claude is still stopping"
+                                : isWorkInFlight() ? "Compaction already in progress"
+                                  : "Claude is not running";
+            if (compacting) {
+                completeCompactionFailure(new IllegalStateException(reason));
+            }
+            else {
+                listener.onAiProcessEvent(new StatusEvent(StatusEventTypeEnum.INFO, reason));
+                listener.onAiProcessEvent(new TurnCompleteEvent());
+            }
             return;
         }
         cancelledByUser = false;
@@ -637,9 +766,11 @@ public class ClaudeAiProcessManager extends AiProcessManager {
             session = ensureSession(effectiveWorkDir, projDirs);
         }
         catch (IOException e) {
-            listener.onAiProcessEvent(new StatusEvent(StatusEventTypeEnum.FAILED,
-                                                      StatusMessageUtil.formatSendFailed(e.getMessage())));
+            reportSendFailure(e.getMessage(), compacting);
             return;
+        }
+        if (compacting && parser != null) {
+            parser.armCompactBoundary();
         }
         processing = true;
         if (PluginSettings.isDebugJson()) {
@@ -652,17 +783,38 @@ public class ClaudeAiProcessManager extends AiProcessManager {
             try {
                 session = ensureSession(effectiveWorkDir, projDirs);
                 if (!session.sendUserTurn(text)) {
-                    processing = false;
-                    listener.onAiProcessEvent(new StatusEvent(StatusEventTypeEnum.FAILED,
-                                                              StatusMessageUtil.formatSendFailed("Claude session not available")));
+                    reportSendFailure("Claude session not available", compacting);
                 }
             }
             catch (IOException e) {
-                processing = false;
-                listener.onAiProcessEvent(new StatusEvent(StatusEventTypeEnum.FAILED,
-                                                          StatusMessageUtil.formatSendFailed(e.getMessage())));
+                reportSendFailure(e.getMessage(), compacting);
             }
         }
+    }
+
+    private void reportSendFailure(String detail, boolean compacting) {
+        processing = false;
+        if (compacting) {
+            completeCompactionFailure(new IllegalStateException(detail));
+        }
+        else {
+            listener.onAiProcessEvent(new StatusEvent(StatusEventTypeEnum.FAILED,
+                    StatusMessageUtil.formatSendFailed(detail)));
+        }
+    }
+
+    private synchronized void completeCompactionFailure(Throwable failure) {
+        failCompaction(compactionFuture, failure);
+    }
+
+    private synchronized void failCompaction(CompletableFuture<Boolean> future, Throwable failure) {
+        if (future == null) {
+            return;
+        }
+        if (compactionFuture == future) {
+            compactionFuture = null;
+        }
+        future.completeExceptionally(failure);
     }
 
     @Override
@@ -671,6 +823,11 @@ public class ClaudeAiProcessManager extends AiProcessManager {
         // user is told: the UI re-enables its input on STOPPED alone, so returning early here — as this method used
         // to for a null session — leaves Stop an inert button and the chat permanently unusable. Codex, OpenCode,
         // Grok and Ollama all gate on `processing` and treat the transport as optional; this now matches them.
+        if (isWorkInFlight()) {
+            // Compaction is non-cancellable work. Its turn is internal, so neither a user Stop nor a queued-mail
+            // interrupt may turn its single READY/FAILED work closer into STOPPED plus a leaked turn completion.
+            return;
+        }
         ClaudePersistentSession s;
         switch (type) {
             case Mail -> {
@@ -764,8 +921,9 @@ public class ClaudeAiProcessManager extends AiProcessManager {
     }
 
     /**
-     * Force-closes the session if the CLI never answers the interrupt. Started only when an interrupt was actually
-     * sent: with no session there is no reply to wait for, and the capture-compare below could never match.
+     * Force-closes the session if the CLI never answers the interrupt. Started only when an interrupt was
+     * actually sent: with no session there is no reply to wait for, and the capture-compare below could never
+     * match.
      */
     private void startCancelWatchdog(ClaudePersistentSession s) {
         Thread watchdog = new Thread(() -> {
@@ -800,6 +958,8 @@ public class ClaudeAiProcessManager extends AiProcessManager {
         }
         running = false;
         processing = false;
+        failWorkInFlight("Claude stopped during compaction");
+        completeCompactionFailure(new IllegalStateException("Claude stopped during compaction"));
         cancelledByUser = true;
         inFlightToolCalls = 0;
         pendingMailInterrupt = false;
@@ -838,18 +998,19 @@ public class ClaudeAiProcessManager extends AiProcessManager {
      * Drops the CLI session so the next turn relaunches under the newly selected model.
      *
      * <p>
-     * Refuses while a turn is in flight. Without this guard the method nulls {@code persistentSession} and kills the
-     * process while {@code processing} stays true — and it does so silently, clearing no state and firing no event.
-     * {@link #interrupt} checks the session before it checks {@code processing}, so from that moment Stop is a no-op
-     * and the chat input never re-enables; the user's only escape is closing the tab. GithubCopilotProcessManager has
-     * always carried this guard. Deferring costs nothing: {@link #ensureSession} compares {@code launchedModel} against
-     * the current model and relaunches at the start of the next turn, where no turn can be orphaned.
+     * Refuses while a turn is in flight. Without this guard the method nulls {@code persistentSession} and
+     * kills the process while {@code processing} stays true — and it does so silently, clearing no state and
+     * firing no event. {@link #interrupt} checks the session before it checks {@code processing}, so from
+     * that moment Stop is a no-op and the chat input never re-enables; the user's only escape is closing the
+     * tab. GithubCopilotProcessManager has always carried this guard. Deferring costs nothing:
+     * {@link #ensureSession} compares {@code launchedModel} against the current model and relaunches at the
+     * start of the next turn, where no turn can be orphaned.
      */
     public synchronized void recycleForModelChange() {
         if (!running || processing) {
             if (PluginSettings.isDebugJson()) {
                 LOG.log(Level.INFO, "Claude recycleForModelChange: DEFERRED to next turn "
-                        + "(running={0}, turnInFlight={1}, session={2})",
+                                    + "(running={0}, turnInFlight={1}, session={2})",
                         new Object[]{running, processing, sessionId});
             }
             return;

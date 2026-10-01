@@ -3,11 +3,21 @@ package kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.codex;
 import java.io.File;
 import java.time.Instant;
 import java.util.List;
+import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicReference;
+import javax.swing.JButton;
 import javax.swing.JComboBox;
+import javax.swing.JProgressBar;
 import javax.swing.SwingUtilities;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.AiSessionHost;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.AiTypeEnum;
+import kiwi.ingenuity.netbeans.plugin.aicoder.ai.AiTypePropertyBus;
+import kiwi.ingenuity.netbeans.plugin.aicoder.ai.events.AiPropertyListener;
+import kiwi.ingenuity.netbeans.plugin.aicoder.ai.events.StatusEvent;
+import kiwi.ingenuity.netbeans.plugin.aicoder.ai.events.StatusEventTypeEnum;
+import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.codex.events.CodexRateLimitEvent;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.codex.events.CodexReasoningEffortEvent;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.codex.settings.CodexPluginSettings;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.codex.settings.CodexSessionSettings;
@@ -16,6 +26,7 @@ import kiwi.ingenuity.netbeans.plugin.aicoder.ai.session.AiSession;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.settings.AiSessionSettings;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.ui.AiInfoBarExtension;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.ui.BlankSafeComboRenderer;
+import kiwi.ingenuity.netbeans.plugin.aicoder.process.events.AiProcessEvent;
 import static org.junit.jupiter.api.Assertions.*;
 import org.junit.jupiter.api.Test;
 
@@ -35,10 +46,6 @@ class CodexAiImplementationTest {
             @Override
             public File resolveWorkDir() {
                 return null;
-            }
-
-            @Override
-            public void suppressNextTurn(String statusMessage, String completionMessage) {
             }
 
             @Override
@@ -114,8 +121,8 @@ class CodexAiImplementationTest {
         };
 
         assertEquals("gpt-5.6-luna", impl.resolveStartupModel(null),
-                     "startWithDiscovery(null) must fall back to the session's chosen model, "
-                     + "not CodexPluginSettings.getModel() — this is the per-session-model bug");
+                "startWithDiscovery(null) must fall back to the session's chosen model, "
+                + "not CodexPluginSettings.getModel() — this is the per-session-model bug");
     }
 
     @Test
@@ -132,7 +139,7 @@ class CodexAiImplementationTest {
         };
 
         assertEquals("gpt-5.5", impl.resolveStartupModel("gpt-5.5"),
-                     "an explicit model argument must still win over the session setting");
+                "an explicit model argument must still win over the session setting");
     }
 
     @Test
@@ -149,7 +156,7 @@ class CodexAiImplementationTest {
         };
 
         assertEquals(CodexPluginSettings.getModel(), impl.resolveStartupModel(null),
-                     "with no session model and no explicit argument, the global default is still correct");
+                "with no session model and no explicit argument, the global default is still correct");
     }
 
     @Test
@@ -166,7 +173,7 @@ class CodexAiImplementationTest {
         };
 
         assertEquals(CodexPluginSettings.getModel(), impl.resolveStartupModel(null),
-                     "a blank (not null) session model must not be treated as a real choice");
+                "a blank (not null) session model must not be treated as a real choice");
     }
 
     // ---- resumeSession: must use the stored Codex thread id, never the plugin's own UUID ----
@@ -193,7 +200,7 @@ class CodexAiImplementationTest {
         impl.resumeSession(pluginUuid);
 
         assertEquals(threadId, impl.exposedDelegate().pendingResumeThreadId,
-                     "resumeSession(pluginUUID) must use the stored thread id, not the plugin UUID");
+                "resumeSession(pluginUUID) must use the stored thread id, not the plugin UUID");
     }
 
     @Test
@@ -217,7 +224,7 @@ class CodexAiImplementationTest {
         impl.resumeSession(pluginUuid);
 
         assertNull(impl.exposedDelegate().pendingResumeThreadId,
-                   "resumeSession must not set pendingResumeThreadId when no thread id is stored");
+                "resumeSession must not set pendingResumeThreadId when no thread id is stored");
     }
 
     @Test
@@ -247,13 +254,13 @@ class CodexAiImplementationTest {
         // Simulate startAiProcess() -> afterStart() setting the stored thread id.
         impl.start("non-existent-codex-executable", "model");
         assertEquals(threadId, impl.exposedDelegate().pendingResumeThreadId,
-                     "after afterStart(), pendingResumeThreadId must be the stored thread id");
+                "after afterStart(), pendingResumeThreadId must be the stored thread id");
 
         // Simulate AiTopComponent.loadHistory() calling resumeSession with the plugin UUID.
         impl.resumeSession(pluginUuid);
 
         assertEquals(threadId, impl.exposedDelegate().pendingResumeThreadId,
-                     "resumeSession(pluginUUID) must NOT overwrite the thread id set by afterStart()");
+                "resumeSession(pluginUUID) must NOT overwrite the thread id set by afterStart()");
     }
 
     @Test
@@ -272,7 +279,7 @@ class CodexAiImplementationTest {
 
         assertTrue(ext instanceof CodexAiInfoBarExtension);
         assertEquals("gpt-5.6-luna", ((CodexAiInfoBarExtension) ext).getSelectedModel(),
-                     "must seed from the session's own model, not CodexPluginSettings.getModel()");
+                "must seed from the session's own model, not CodexPluginSettings.getModel()");
     }
 
     @Test
@@ -297,7 +304,7 @@ class CodexAiImplementationTest {
         combo.setSelectedItem("gpt-5.5");
 
         assertEquals("gpt-5.5", settings.model(),
-                     "a user-initiated selection must persist to the session settings via setModel()");
+                "a user-initiated selection must persist to the session settings via setModel()");
         assertSame(settings, updated.get(), "host.updateSessionSettings() must be called so the change is saved");
     }
 
@@ -380,7 +387,7 @@ class CodexAiImplementationTest {
 
         AiInfoBarExtension ext = impl.createInfoBarExtension(session, stubHost(settings, new AtomicReference<>()));
         CodexAiInfoBarExtension codexExt = (CodexAiInfoBarExtension) ext;
-        codexExt.onSessionSettingsChanged(settings); // primes lastStoredEffort
+        SwingUtilities.invokeAndWait(() -> codexExt.onSessionSettingsChanged(settings)); // primes lastStoredEffort
         JComboBox<?> effortCombo = (JComboBox<?>) codexExt.createComponents().get(1);
 
         SwingUtilities.invokeAndWait(() -> codexExt.onAiProcessImplEvent(
@@ -388,5 +395,66 @@ class CodexAiImplementationTest {
 
         assertEquals("high", effortCombo.getSelectedItem(), "a stored supported effort wins over the read-back");
         assertEquals("high", codexExt.getSelectedEffort());
+    }
+
+    // ---- Compact button: wired to the implementation, which reports through the listener ----
+    @Test
+    void createInfoBarExtension_compactButtonWithNoConversationYetSaysThereIsNothingToCompact() throws Exception {
+        List<AiProcessEvent> events = new CopyOnWriteArrayList<>();
+        CodexAiImplementation impl = new CodexAiImplementation(events::add, null);
+        AiInfoBarExtension ext = impl.createInfoBarExtension(null, null);
+        JButton compact = (JButton) ext.createComponents().get(2);
+
+        SwingUtilities.invokeAndWait(compact::doClick);
+
+        assertEquals(1, events.size());
+        StatusEvent info = (StatusEvent) events.get(0);
+        assertEquals(StatusEventTypeEnum.INFO, info.type());
+        assertTrue(info.text().contains("Nothing to compact yet"), info.text());
+    }
+
+    @Test
+    void publishRateLimit_updatesEveryOpenBarAndLateCreatedBar() throws Exception {
+        CodexAiInfoBarExtension firstOpenBar = new CodexAiInfoBarExtension(null);
+        CodexAiInfoBarExtension secondOpenBar = new CodexAiInfoBarExtension(null);
+        CountDownLatch deliveredToOpenBars = new CountDownLatch(2);
+        AiPropertyListener firstListener = event -> {
+            // Mirrors AiTopComponent's own bus-listener forwarding: the bus dispatches off the EDT, and the core
+            // is now the only place that hops back onto it before touching a bar.
+            SwingUtilities.invokeLater(() -> firstOpenBar.onPropertyEvent(event));
+            deliveredToOpenBars.countDown();
+        };
+        AiPropertyListener secondListener = event -> {
+            SwingUtilities.invokeLater(() -> secondOpenBar.onPropertyEvent(event));
+            deliveredToOpenBars.countDown();
+        };
+        AiTypePropertyBus bus = AiTypePropertyBus.getInstance();
+        bus.addListener(AiTypeEnum.CODEX, firstListener);
+        bus.addListener(AiTypeEnum.CODEX, secondListener);
+        try {
+            CodexAiImplementation.publishRateLimit(new CodexRateLimitEvent(51.0, 43_200L, 1_789_468_349L));
+
+            assertTrue(deliveredToOpenBars.await(5, TimeUnit.SECONDS),
+                    "The type-wide property bus must deliver the account rate limit to every open Codex bar");
+            SwingUtilities.invokeAndWait(() -> {
+            });
+            assertEquals("51%", ((JProgressBar) firstOpenBar.createComponents().get(4)).getString(),
+                    "The first open Codex bar must show the account-wide rate limit");
+            assertEquals("51%", ((JProgressBar) secondOpenBar.createComponents().get(4)).getString(),
+                    "The second open Codex bar must show the account-wide rate limit");
+
+            AtomicReference<CodexAiInfoBarExtension> lateCreatedBar = new AtomicReference<>();
+            CodexAiImplementation impl = new CodexAiImplementation(e -> {
+            }, null);
+            SwingUtilities.invokeAndWait(() -> lateCreatedBar.set(
+                    (CodexAiInfoBarExtension) impl.createInfoBarExtension(null, null)));
+
+            assertEquals("51%", ((JProgressBar) lateCreatedBar.get().createComponents().get(4)).getString(),
+                    "A Codex bar opened after the rate-limit event must replay the cached account-wide fact");
+        }
+        finally {
+            bus.removeListener(AiTypeEnum.CODEX, firstListener);
+            bus.removeListener(AiTypeEnum.CODEX, secondListener);
+        }
     }
 }

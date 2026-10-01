@@ -27,12 +27,13 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
 /**
- * Regression test for the resume-session-lifecycle bug found in review: {@code grok -s <sessionId>} (create) is
- * rejected by the real CLI with {@code Error: Session ID <id> is already in use.} if that id already has an on-disk
- * session (empirically confirmed against a live installed grok CLI). {@code GrokAiImplementation.afterStart()} now
- * consults {@link #isStoredSessionValid} (delegating to {@link GrokUsageSignalsReader#sessionExists}) before deciding
- * whether to treat a start as "new" or "resume" — mirroring {@code ClaudeAiImplementation}'s established pattern for
- * the same failure mode. This locks in the {@code isStoredSessionValid} half of that fix.
+ * Regression test for the resume-session-lifecycle bug found in review: {@code grok -s <sessionId>} (create)
+ * is rejected by the real CLI with {@code Error: Session ID <id> is already in use.} if that id already has
+ * an on-disk session (empirically confirmed against a live installed grok CLI).
+ * {@code GrokAiImplementation.afterStart()} now consults {@link #isStoredSessionValid} (delegating to
+ * {@link GrokUsageSignalsReader#sessionExists}) before deciding whether to treat a start as "new" or "resume"
+ * — mirroring {@code ClaudeAiImplementation}'s established pattern for the same failure mode. This locks in
+ * the {@code isStoredSessionValid} half of that fix.
  */
 class GrokAiImplementationTest {
 
@@ -63,10 +64,6 @@ class GrokAiImplementationTest {
             @Override
             public File resolveWorkDir() {
                 return null;
-            }
-
-            @Override
-            public void suppressNextTurn(String statusMessage, String completionMessage) {
             }
 
             @Override
@@ -131,7 +128,7 @@ class GrokAiImplementationTest {
         impl.setModel("grok-3");
 
         assertEquals(globalBefore, GrokPluginSettings.getModel(),
-                     "setModel must NOT write the global plugin default");
+                "setModel must NOT write the global plugin default");
     }
 
     // ---- afterStart(): effective reasoning effort (session wins over global default) ----
@@ -145,8 +142,8 @@ class GrokAiImplementationTest {
         impl.afterStart();
 
         assertEquals(List.of("--reasoning-effort", "high"),
-                     impl.delegate().buildReasoningEffortArgs("grok-4.6"),
-                     "the session's own reasoning effort must win over any global default");
+                impl.delegate().buildReasoningEffortArgs("grok-4.6"),
+                "the session's own reasoning effort must win over any global default");
     }
 
     @Test
@@ -161,7 +158,7 @@ class GrokAiImplementationTest {
             impl.afterStart();
 
             assertEquals(List.of("--reasoning-effort", "medium"),
-                         impl.delegate().buildReasoningEffortArgs("grok-4.5"));
+                    impl.delegate().buildReasoningEffortArgs("grok-4.5"));
         }
         finally {
             GrokPluginSettings.setReasoningEffort(globalBefore);
@@ -183,8 +180,8 @@ class GrokAiImplementationTest {
         impl.delegate().buildReasoningEffortArgs("grok-4.5");
 
         assertNull(settings.reasoningEffort(),
-                   "a stored-unsupported value must end up null in the persisted session settings, not just the "
-                   + "in-memory field");
+                "a stored-unsupported value must end up null in the persisted session settings, not just the "
+                + "in-memory field");
         assertEquals(settings, updated.get(), "the cleared settings must actually be persisted through the host");
     }
 
@@ -216,8 +213,8 @@ class GrokAiImplementationTest {
             impl.clearInvalidPersistedReasoningEffort();
 
             assertEquals("xhigh", GrokPluginSettings.getReasoningEffort(),
-                         "with no session-level override, the global default must be left completely untouched — "
-                         + "this callback only ever fires for the session-sourced case in the first place");
+                    "with no session-level override, the global default must be left completely untouched — "
+                    + "this callback only ever fires for the session-sourced case in the first place");
         }
         finally {
             GrokPluginSettings.setReasoningEffort(globalBefore);
@@ -245,10 +242,50 @@ class GrokAiImplementationTest {
 
             assertNull(settings.reasoningEffort(), "the session's own unsupported value must be cleared");
             assertEquals("medium", GrokPluginSettings.getReasoningEffort(),
-                         "the global default must be left completely untouched, even though it is also set");
+                    "the global default must be left completely untouched, even though it is also set");
         }
         finally {
             GrokPluginSettings.setReasoningEffort(globalBefore);
+        }
+    }
+
+    @Test
+    void modelCatalogPublishUpdatesTheOpenBarsModelComboThroughAvailableModelsEvent() throws Exception {
+        kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.grok.ui.GrokAiInfoBarExtension bar
+                                                                                      = new kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.grok.ui.GrokAiInfoBarExtension();
+        java.util.concurrent.CountDownLatch delivered = new java.util.concurrent.CountDownLatch(1);
+        kiwi.ingenuity.netbeans.plugin.aicoder.ai.events.AiPropertyListener listener = event -> {
+            // Mirrors AiTopComponent's own bus-listener forwarding: the bus dispatches off the EDT.
+            javax.swing.SwingUtilities.invokeLater(() -> bar.onPropertyEvent(event));
+            delivered.countDown();
+        };
+        kiwi.ingenuity.netbeans.plugin.aicoder.ai.AiTypePropertyBus bus
+                                                                    = kiwi.ingenuity.netbeans.plugin.aicoder.ai.AiTypePropertyBus.getInstance();
+        // AiModelCatalog.publish retains whatever it's given as the new cached snapshot indefinitely (there is
+        // no per-test scope), so a later test's createInfoBarExtension replay — or a later bar in the same
+        // JVM — would otherwise see this synthetic list. Restore the prior snapshot in finally.
+        List<String> before = GrokAiImplementation.modelCatalog().getCachedModels();
+        bus.addListener(AiTypeEnum.GROK, listener);
+        try {
+            List<String> discovered = List.of("grok-catalog-test-1", "grok-catalog-test-2");
+            GrokAiImplementation.modelCatalog().publish(discovered);
+
+            assertTrue(delivered.await(5, java.util.concurrent.TimeUnit.SECONDS),
+                    "the type-wide property bus must deliver the discovered list to every open Grok bar");
+            javax.swing.SwingUtilities.invokeAndWait(() -> {
+            });
+
+            javax.swing.JComboBox<?> modelCombo = (javax.swing.JComboBox<?>) bar.createComponents().get(0);
+            List<Object> items = new java.util.ArrayList<>();
+            for (int i = 0; i < modelCombo.getItemCount(); i++) {
+                items.add(modelCombo.getItemAt(i));
+            }
+            assertEquals(discovered, items,
+                    "publishing through the catalog — the only channel now — must repopulate the model combo");
+        }
+        finally {
+            bus.removeListener(AiTypeEnum.GROK, listener);
+            GrokAiImplementation.modelCatalog().publish(before);
         }
     }
 }

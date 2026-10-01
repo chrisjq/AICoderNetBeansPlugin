@@ -14,28 +14,26 @@ import java.util.function.Consumer;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 import java.util.regex.Pattern;
-import kiwi.ingenuity.netbeans.plugin.aicoder.ai.AiTypeEnum;
-import kiwi.ingenuity.netbeans.plugin.aicoder.ai.AiTypePropertyBus;
-import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.pi.events.PiModelsEvent;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.pi.settings.PiPluginSettings;
 
 /**
  * Live discovery of the model list available to pi's configured providers, via {@code pi --list-models}
- * (https://pi.dev/docs/latest/usage). Confirmed against a real installed pi CLI (v0.85.1); actual output looks like:
+ * (https://pi.dev/docs/latest/usage). Confirmed against a real installed pi CLI (v0.85.1); actual output
+ * looks like:
  * <pre>
  * provider        model            context  max-out  thinking  images
  * github-copilot  claude-sonnet-5  1M       128K     yes       yes
- * </pre> — a header row followed by one whitespace-column-aligned row per model. Only the first two columns (provider,
- * model) are used; each row is published as {@code "provider/model"}. Any failure (pi not installed, not authenticated
- * with any provider, unexpected future format change) is swallowed and the caller keeps whatever was last stored in
- * {@link PiPluginSettings#getKnownModels()}. Mirrors {@code GrokModelDiscovery}'s discover-once-per-IDE-run / cache /
- * broadcast shape.
+ * </pre> — a header row followed by one whitespace-column-aligned row per model. Only the first two columns
+ * (provider, model) are used; each row is published as {@code "provider/model"}. Any failure (pi not
+ * installed, not authenticated with any provider, unexpected future format change) is swallowed and the
+ * caller keeps whatever was last stored in {@link PiPluginSettings#getKnownModels()}. Mirrors
+ * {@code GrokModelDiscovery}'s discover-once-per-IDE-run / cache / broadcast shape.
  *
  * <p>
- * {@code inProgress}/{@code retryCount} are per-class (static), not keyed by executable path or provider config —
- * accepted for now because the plugin supports exactly one pi CLI configuration per IDE run (a single
- * {@code ai.pi.executable}), so there is only ever one discovery to coordinate. Revisit if that ever changes (e.g.
- * per-session executable overrides).
+ * {@code inProgress}/{@code retryCount} are per-class (static), not keyed by executable path or provider
+ * config — accepted for now because the plugin supports exactly one pi CLI configuration per IDE run (a
+ * single {@code ai.pi.executable}), so there is only ever one discovery to coordinate. Revisit if that ever
+ * changes (e.g. per-session executable overrides).
  */
 public final class PiModelDiscovery {
 
@@ -48,16 +46,16 @@ public final class PiModelDiscovery {
     private static final AtomicBoolean inProgress = new AtomicBoolean(false);
     private static volatile int retryCount = 0;
     /**
-     * Test seam: when non-null, replaces {@link PiTimeoutEnum#PI_MODEL_DISCOVERY_MILLIS} as the whole-attempt budget so
-     * a hung fake CLI fails a test in milliseconds instead of seconds. Null in production.
+     * Test seam: when non-null, replaces {@link PiTimeoutEnum#PI_MODEL_DISCOVERY_MILLIS} as the whole-attempt
+     * budget so a hung fake CLI fails a test in milliseconds instead of seconds. Null in production.
      */
     static volatile Long discoveryBudgetMillisForTests = null;
 
     /**
-     * Starts a fresh discovery cycle: resets the retry counter and submits a background fetch that, on success, stores
-     * the result in {@link PiPluginSettings#setDiscoveredModels(String[])}, publishes it to
-     * {@link PiAiImplementation#modelCatalog()} and broadcasts {@link PiModelsEvent}. On failure, retries up to
-     * {@value #MAX_RETRIES} times within the cycle.
+     * Starts a fresh discovery cycle: resets the retry counter and submits a background fetch that, on
+     * success, stores the result in {@link PiPluginSettings#setDiscoveredModels(String[])}, publishes it to
+     * {@link PiAiImplementation#modelCatalog()}, which broadcasts the change to every open pi info bar. On
+     * failure, retries up to {@value #MAX_RETRIES} times within the cycle.
      *
      * @param executablePath the located pi CLI path, or null to use PATH
      */
@@ -66,27 +64,27 @@ public final class PiModelDiscovery {
     }
 
     /**
-     * Same as {@link #discoverAsync(String)} but with a caller-supplied result handler instead of the standard
-     * settings/catalog/event publish — used directly by {@code PiAiSettingsTab}'s Refresh button (which repopulates its
-     * own combo from the result and re-enables itself from {@code onResult}) and by tests that want to observe the
-     * discovered list in isolation.
+     * Same as {@link #discoverAsync(String)} but with a caller-supplied result handler instead of the
+     * standard settings/catalog/event publish — used directly by {@code PiAiSettingsTab}'s Refresh button
+     * (which repopulates its own combo from the result and re-enables itself from {@code onResult}) and by
+     * tests that want to observe the discovered list in isolation.
      *
      * <p>
-     * {@code onResult} is guaranteed exactly one terminal call per invocation of this method, on every outcome: newly
-     * discovered models on success; {@link PiPluginSettings#getKnownModels()}'s cached list when a discovery was
-     * already in progress (this call is dropped, but the caller still needs a completion signal) or when retries are
-     * exhausted without success. A caller that disables a UI control before calling this and re-enables it only from
-     * {@code onResult} can therefore rely on that control always coming back, never staying disabled forever.
+     * {@code onResult} is guaranteed exactly one terminal call per invocation of this method, on every
+     * outcome: newly discovered models on success; {@link PiPluginSettings#getKnownModels()}'s cached list
+     * when a discovery was already in progress (this call is dropped, but the caller still needs a completion
+     * signal) or when retries are exhausted without success. A caller that disables a UI control before
+     * calling this and re-enables it only from {@code onResult} can therefore rely on that control always
+     * coming back, never staying disabled forever.
      */
     public static void discoverAsync(String executablePath, Consumer<List<String>> onResult) {
         retryCount = 0;
         tryDiscover(executablePath, onResult);
     }
 
-    private static void publish(List<String> models) {
+    static void publish(List<String> models) {
         PiPluginSettings.setDiscoveredModels(models.toArray(new String[0]));
         PiAiImplementation.modelCatalog().publish(models);
-        AiTypePropertyBus.getInstance().fire(AiTypeEnum.PI, new PiModelsEvent(models));
     }
 
     private static void tryDiscover(String executablePath, Consumer<List<String>> onResult) {
@@ -153,9 +151,10 @@ public final class PiModelDiscovery {
     }
 
     /**
-     * The last successfully discovered list (or empty if none yet), used as the completion payload for outcomes that
-     * found nothing new to report (busy-skip, exhausted retries) — see {@link #discoverAsync(String, Consumer)}'s doc
-     * comment: every call must reach a terminal {@code onResult} invocation, never silence.
+     * The last successfully discovered list (or empty if none yet), used as the completion payload for
+     * outcomes that found nothing new to report (busy-skip, exhausted retries) — see
+     * {@link #discoverAsync(String, Consumer)}'s doc comment: every call must reach a terminal
+     * {@code onResult} invocation, never silence.
      */
     private static List<String> cachedModels() {
         String[] known = PiPluginSettings.getKnownModels();
@@ -217,9 +216,10 @@ public final class PiModelDiscovery {
     }
 
     /**
-     * Extracts {@code "provider/model"} entries from raw {@code pi --list-models} stdout lines. Package-private (not
-     * private) so it can be unit tested directly. Skips the header row (first column literally {@code "provider"},
-     * case-insensitive), blank lines and any row with fewer than two whitespace-delimited columns.
+     * Extracts {@code "provider/model"} entries from raw {@code pi --list-models} stdout lines.
+     * Package-private (not private) so it can be unit tested directly. Skips the header row (first column
+     * literally {@code "provider"}, case-insensitive), blank lines and any row with fewer than two
+     * whitespace-delimited columns.
      */
     static List<String> parseModels(List<String> lines) {
         LinkedHashSet<String> out = new LinkedHashSet<>();

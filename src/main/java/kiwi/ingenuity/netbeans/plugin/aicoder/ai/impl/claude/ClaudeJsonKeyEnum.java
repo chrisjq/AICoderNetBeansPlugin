@@ -16,8 +16,8 @@ public enum ClaudeJsonKeyEnum {
     // Tool-use block fields
     TOOL_NAME("name"),
     INPUT("input"),
-    PATH("path"),
     // Write/Edit tool input fields
+    FILE_PATH("file_path"),
     WRITE_CONTENT("content"),
     OLD_STRING("old_string"),
     NEW_STRING("new_string"),

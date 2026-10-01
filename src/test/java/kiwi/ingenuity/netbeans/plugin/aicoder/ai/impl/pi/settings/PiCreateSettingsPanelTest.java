@@ -1,6 +1,7 @@
 package kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.pi.settings;
 
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.AiModelCatalog;
+import kiwi.ingenuity.netbeans.plugin.aicoder.ai.AiTypeEnum;
 import org.junit.jupiter.api.AfterEach;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;
@@ -19,7 +20,7 @@ class PiCreateSettingsPanelTest {
     @Test
     void globalDefaultThinkingLevelPropagatesWhenNothingRememberedOrSet() {
         PiPluginSettings.setThinkingLevel("high");
-        PiCreateSettingsPanel panel = new PiCreateSettingsPanel(new AiModelCatalog());
+        PiCreateSettingsPanel panel = new PiCreateSettingsPanel(new AiModelCatalog(AiTypeEnum.PI));
         PiSessionSettings empty = new PiSessionSettings();
         panel.load(empty);
 
@@ -31,7 +32,7 @@ class PiCreateSettingsPanelTest {
 
     @Test
     void defaultLabelMapsToNullStoredThinkingLevel() {
-        PiCreateSettingsPanel panel = new PiCreateSettingsPanel(new AiModelCatalog());
+        PiCreateSettingsPanel panel = new PiCreateSettingsPanel(new AiModelCatalog(AiTypeEnum.PI));
         PiSessionSettings empty = new PiSessionSettings();
         panel.load(empty);
 
@@ -44,7 +45,7 @@ class PiCreateSettingsPanelTest {
     @Test
     void rememberedSelectionSurvivesAcrossPanelsWithoutAStoredSetting() {
         PiCreateSettingsPanel.lastSelectedThinkingLevel = "medium";
-        PiCreateSettingsPanel panel = new PiCreateSettingsPanel(new AiModelCatalog());
+        PiCreateSettingsPanel panel = new PiCreateSettingsPanel(new AiModelCatalog(AiTypeEnum.PI));
         PiSessionSettings empty = new PiSessionSettings();
         panel.load(empty);
 
@@ -58,7 +59,7 @@ class PiCreateSettingsPanelTest {
     void storedSettingWinsOverRememberedSelectionAndGlobalDefault() {
         PiPluginSettings.setThinkingLevel("low");
         PiCreateSettingsPanel.lastSelectedThinkingLevel = "medium";
-        PiCreateSettingsPanel panel = new PiCreateSettingsPanel(new AiModelCatalog());
+        PiCreateSettingsPanel panel = new PiCreateSettingsPanel(new AiModelCatalog(AiTypeEnum.PI));
         PiSessionSettings stored = new PiSessionSettings();
         stored.setThinkingLevel("xhigh");
         panel.load(stored);
@@ -71,19 +72,19 @@ class PiCreateSettingsPanelTest {
 
     @Test
     void loadingAStoredThinkingLevelDoesNotPolluteTheRememberedSelection() {
-        PiCreateSettingsPanel panel = new PiCreateSettingsPanel(new AiModelCatalog());
+        PiCreateSettingsPanel panel = new PiCreateSettingsPanel(new AiModelCatalog(AiTypeEnum.PI));
         PiSessionSettings stored = new PiSessionSettings();
         stored.setThinkingLevel("xhigh");
 
         panel.load(stored);
 
         assertNull(PiCreateSettingsPanel.lastSelectedThinkingLevel,
-                   "merely loading a session's stored thinking level must not overwrite the remembered selection");
+                "merely loading a session's stored thinking level must not overwrite the remembered selection");
     }
 
     @Test
     void modelSelectionRoundTripsThroughLoadAndApplyTo() {
-        PiCreateSettingsPanel panel = new PiCreateSettingsPanel(new AiModelCatalog());
+        PiCreateSettingsPanel panel = new PiCreateSettingsPanel(new AiModelCatalog(AiTypeEnum.PI));
         PiSessionSettings settings = new PiSessionSettings();
         settings.setModel("github-copilot/gpt-5-mini");
         panel.load(settings);

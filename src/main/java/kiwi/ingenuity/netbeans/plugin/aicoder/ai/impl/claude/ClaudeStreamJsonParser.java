@@ -29,9 +29,10 @@ public class ClaudeStreamJsonParser {
     private static final Gson GSON = new Gson();
 
     /**
-     * Decodes with {@link RefactoringProvider#resolveCharset}, the same charset the write side of every disk-based tool
-     * uses — not hardcoded UTF-8. Missing file and undecodable content both still return null, which callers treat as
-     * "no known content"; a genuinely empty file decodes to "", never null, so the two are never conflated.
+     * Decodes with {@link RefactoringProvider#resolveCharset}, the same charset the write side of every
+     * disk-based tool uses — not hardcoded UTF-8. Missing file and undecodable content both still return
+     * null, which callers treat as "no known content"; a genuinely empty file decodes to "", never null, so
+     * the two are never conflated.
      */
     private static String readFileQuietly(String path) {
         if (path == null || path.isBlank()) {
@@ -59,6 +60,7 @@ public class ClaudeStreamJsonParser {
     private final AiProcessEventListener listener;
     private final Map<String, String> fileContents = new ConcurrentHashMap<>();
     private long cachedContextWindow = 0;
+    private volatile boolean compactBoundarySeen;
     private Consumer<String> onFirstSessionId;
     private java.util.function.Predicate<String> fileAllowed;
 
@@ -82,6 +84,16 @@ public class ClaudeStreamJsonParser {
         if (cw > 0) {
             cachedContextWindow = cw;
         }
+    }
+
+    void armCompactBoundary() {
+        compactBoundarySeen = false;
+    }
+
+    boolean consumeCompactBoundary() {
+        boolean seen = compactBoundarySeen;
+        compactBoundarySeen = false;
+        return seen;
     }
 
     /**
@@ -198,7 +210,9 @@ public class ClaudeStreamJsonParser {
             return null;
         }
 
-        String path = JsonUtils.getString(input, ClaudeJsonKeyEnum.PATH.key());
+        String path = JsonUtils.getString(input, ClaudeJsonKeyEnum.FILE_PATH.key());
+        // No path, no cached content: ConcurrentHashMap rejects a null key, and that NPE would discard the event.
+        String cached = path != null ? fileContents.get(path) : null;
 
         return switch (toolName == null ? "" : toolName) {
             case "Write" -> {
@@ -237,12 +251,12 @@ public class ClaudeStreamJsonParser {
                     }
                     else {
                         // Neither string found — fall back to cache
-                        original = fileContents.getOrDefault(path, disk);
+                        original = cached != null ? cached : disk;
                         proposed = disk;
                     }
                 }
                 else {
-                    String base = disk != null ? disk : fileContents.getOrDefault(path, "");
+                    String base = disk != null ? disk : (cached != null ? cached : "");
                     original = base;
                     proposed = (oldStr != null && newStr != null) ? base.replace(oldStr, newStr) : base;
                 }
@@ -260,8 +274,8 @@ public class ClaudeStreamJsonParser {
             // Input context window usage — output_tokens are generated tokens and don't
             // consume the input context window, so exclude them to avoid inflating the %.
             total += JsonUtils.getLong(usage, ClaudeJsonKeyEnum.INPUT_TOKENS.key())
-                    + JsonUtils.getLong(usage, ClaudeJsonKeyEnum.CACHE_READ_INPUT_TOKENS.key())
-                    + JsonUtils.getLong(usage, ClaudeJsonKeyEnum.CACHE_CREATION_INPUT_TOKENS.key());
+                     + JsonUtils.getLong(usage, ClaudeJsonKeyEnum.CACHE_READ_INPUT_TOKENS.key())
+                     + JsonUtils.getLong(usage, ClaudeJsonKeyEnum.CACHE_CREATION_INPUT_TOKENS.key());
         }
 
         // Cache context window whenever modelUsage is present so later result events
@@ -321,6 +335,11 @@ public class ClaudeStreamJsonParser {
             String model = JsonUtils.getString(obj, ClaudeJsonKeyEnum.MODEL.key());
             // usage_pct/session_pct not present in init — session% comes from result event
             return new ClaudeSessionInfoEvent(-1, -1, model);
+        }
+
+        if ("compact_boundary".equals(subtype)) {
+            compactBoundarySeen = true;
+            return null;
         }
 
         if ("task_notification".equals(subtype)) {

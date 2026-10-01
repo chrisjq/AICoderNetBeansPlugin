@@ -8,10 +8,10 @@ import java.time.Instant;
 import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
 import java.util.List;
+import javax.swing.JButton;
 import javax.swing.JComboBox;
 import javax.swing.JComponent;
 import javax.swing.JProgressBar;
-import javax.swing.SwingUtilities;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.events.AiPropertyEvent;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.codex.events.CodexRateLimitEvent;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.codex.events.CodexReasoningEffortEvent;
@@ -22,34 +22,36 @@ import kiwi.ingenuity.netbeans.plugin.aicoder.ai.settings.AiModelSessionSettings
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.settings.AiSessionSettings;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.ui.AiInfoBarExtension;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.ui.BlankSafeComboRenderer;
+import kiwi.ingenuity.netbeans.plugin.aicoder.ai.ui.GuardedCombo;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.events.AiProcessImplEvent;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ui.UIConstants;
 
 /**
- * Info bar for Codex sessions: model selector + reasoning-effort selector + context-window usage gauge. Mirrors
- * {@code GrokAiInfoBarExtension} in structure.
+ * Info bar for Codex sessions: model selector + reasoning-effort selector + context-window usage gauge.
+ * Mirrors {@code GrokAiInfoBarExtension} in structure.
  *
  * <p>
- * The effort combo is fed per-session by {@link CodexReasoningEffortEvent} (the {@code model/list} probe done during
- * thread establishment): the selectable entries are the model's {@code supportedReasoningEfforts} and the first entry
- * is always {@code (model default)}, which maps to a {@code null} stored effort meaning "omit the {@code turn/start}
- * effort field". The combo's current selection is seeded from the session's stored effort, or from the
- * {@code reasoningEffort} threaded back by {@code thread/start}. Because Codex applies an {@code effort} override per
- * turn (no restart), the combo stays enabled while a turn is running — a "disabled while a turn runs" rule applies only
- * to backends that cannot accept the change mid-turn.
+ * The effort combo is fed per-session by {@link CodexReasoningEffortEvent} (the {@code model/list} probe done
+ * during thread establishment): the selectable entries are the model's {@code supportedReasoningEfforts} and
+ * the first entry is always {@code (model default)}, which maps to a {@code null} stored effort meaning "omit
+ * the {@code turn/start} effort field". The combo's current selection is seeded from the session's stored
+ * effort, or from the {@code reasoningEffort} threaded back by {@code thread/start}. Both combos and Compact
+ * are locked while the backend is busy — a turn or a compaction — and unlocked when it is ready again;
+ * {@link #onBusyChanged} is the only thing that locks them.
  *
  * <p>
  * Two traps this design deliberately avoids:
  * <ul>
- * <li>{@code AiTypePropertyBus} is keyed by AI type, not session — one session's model broadcast would reset every
- * other Codex session's combo. This class receives model and effort updates only through
+ * <li>{@code AiTypePropertyBus} is keyed by AI type, not session — one session's model broadcast would reset
+ * every other Codex session's combo. This class receives model and effort updates only through
  * {@link #onSessionSettingsChanged} and {@link #onAiProcessImplEvent}, both of which are session-scoped.</li>
- * <li>The combo is seeded from the session's own {@code settings.model()}, falling back to the global default only when
- * the session has no stored preference — matching what the process manager itself does at start time.</li>
+ * <li>The combo is seeded from the session's own {@code settings.model()}, falling back to the global default
+ * only when the session has no stored preference — matching what the process manager itself does at start
+ * time.</li>
  * </ul>
  *
  * <p>
- * Layout: {@code [Model ▾] [Effort ▾]  [=== context gauge ===]}
+ * Layout: {@code [Model ▾] [Effort ▾] [⇒ Compact]  [=== context gauge ===]}
  */
 public class CodexAiInfoBarExtension implements AiInfoBarExtension {
 
@@ -57,20 +59,22 @@ public class CodexAiInfoBarExtension implements AiInfoBarExtension {
 
     private final JComboBox<String> modelCombo;
     private final JComboBox<String> effortCombo;
+    private final GuardedCombo<String> modelGuard;
+    private final GuardedCombo<String> effortGuard;
+    private final JButton compactBtn;
     private final JProgressBar contextBar;
     private final JProgressBar rateLimitBar;
     private volatile long maxTokens = 0;
     private volatile long currentTokens = 0;
     private volatile String lastStoredEffort;
-    private boolean programmatic = false;
-    private Runnable disposeAction;
 
     /**
      * @param initialModel the session's stored model, or null to fall back to the global default from
-     * {@link CodexPluginSettings#getModel()}
+     *                     {@link CodexPluginSettings#getModel()}
      */
     public CodexAiInfoBarExtension(String initialModel) {
         modelCombo = new JComboBox<>(CodexPluginSettings.KNOWN_MODELS);
+        modelGuard = new GuardedCombo<>(modelCombo);
         modelCombo.setEditable(true);
         String model = (initialModel != null && !initialModel.isBlank())
                        ? initialModel : CodexPluginSettings.getModel();
@@ -78,9 +82,14 @@ public class CodexAiInfoBarExtension implements AiInfoBarExtension {
         modelCombo.setToolTipText("Codex model — pick from list or type any model ID");
 
         effortCombo = new JComboBox<>(new String[]{BlankSafeComboRenderer.DEFAULT_OPTION});
+        effortGuard = new GuardedCombo<>(effortCombo);
         effortCombo.setToolTipText("Reasoning effort for this session's turns (applies from the next turn) — "
-                + "options come from the model/list probe at session start");
+                                   + "options come from the model/list probe at session start");
         effortCombo.setRenderer(new BlankSafeComboRenderer());
+
+        compactBtn = new JButton("⇒ Compact");
+        compactBtn.setFont(compactBtn.getFont().deriveFont(11f));
+        compactBtn.setToolTipText("Compact conversation to reduce context window usage");
 
         contextBar = new JProgressBar(0, 100);
         contextBar.setPreferredSize(new Dimension(UIConstants.INFO_BAR_CONTEXT_PROGRESS_WIDTH, UIConstants.INFO_BAR_PROGRESS_HEIGHT));
@@ -95,53 +104,53 @@ public class CodexAiInfoBarExtension implements AiInfoBarExtension {
         rateLimitBar.setToolTipText("Codex account rate-limit usage");
     }
 
-    public void setDisposeAction(Runnable disposeAction) {
-        this.disposeAction = disposeAction;
-    }
-
-    @Override
-    public void dispose() {
-        if (disposeAction != null) {
-            disposeAction.run();
-            disposeAction = null;
-        }
-    }
-
     @Override
     public List<JComponent> createComponents() {
-        return List.of(modelCombo, effortCombo, contextBar, rateLimitBar);
+        return List.of(modelCombo, effortCombo, compactBtn, contextBar, rateLimitBar);
     }
 
     /**
-     * Registers a listener for user-initiated model selection changes. The listener is NOT called for programmatic
-     * changes (e.g. {@link #setSelectedModel}). The caller (typically
+     * Registers the handler for the Compact button. The button is disabled whenever the backend is busy, so
+     * the handler is never invoked mid-turn or mid-compaction.
+     */
+    public void addCompactListener(Runnable r) {
+        compactBtn.addActionListener(e -> r.run());
+    }
+
+    /**
+     * The core busy/ready contract's only lock input: busy disables the model and effort combos and Compact;
+     * ready re-enables them. Self-dispatching, so it may be called from any thread.
+     */
+    @Override
+    public void onBusyChanged(boolean busy) {
+        modelCombo.setEnabled(!busy);
+        effortCombo.setEnabled(!busy);
+        compactBtn.setEnabled(!busy);
+    }
+
+    /**
+     * Registers a listener for user-initiated model selection changes. The listener is NOT called for
+     * programmatic changes (e.g. {@link #setSelectedModel}). The caller (typically
      * {@code CodexAiImplementation.createInfoBarExtension}) is responsible for persisting the selection via
      * {@code delegate.setModel()} / {@code host.updateSessionSettings()}.
      */
     public void addModelChangeListener(ActionListener l) {
-        modelCombo.addActionListener(e -> {
-            if (!programmatic) {
-                l.actionPerformed(e);
-            }
-        });
+        modelGuard.addActionListener(l);
     }
 
     /**
      * Registers a listener for user-initiated reasoning-effort changes. Not called for programmatic changes
-     * ({@link #setSelectedEffort} or the {@link CodexReasoningEffortEvent} refresh). The caller persists the selection
-     * via {@code host.updateSessionSettings()} — sending happens per turn from the session settings, so no backend call
-     * is needed.
+     * ({@link #setSelectedEffort} or the {@link CodexReasoningEffortEvent} refresh). The caller persists the
+     * selection via {@code host.updateSessionSettings()} — sending happens per turn from the session
+     * settings, so no backend call is needed.
      */
     public void addEffortChangeListener(ActionListener l) {
-        effortCombo.addActionListener(e -> {
-            if (!programmatic) {
-                l.actionPerformed(e);
-            }
-        });
+        effortGuard.addActionListener(l);
     }
 
     /**
-     * Returns the currently shown model — reads the editor field so a typed (not-yet-confirmed) value is included.
+     * Returns the currently shown model — reads the editor field so a typed (not-yet-confirmed) value is
+     * included.
      */
     public String getSelectedModel() {
         Object item = modelCombo.getEditor().getItem();
@@ -150,8 +159,8 @@ public class CodexAiInfoBarExtension implements AiInfoBarExtension {
     }
 
     /**
-     * Returns the currently selected effort, or {@code null} when {@code (model default)} is selected (meaning "omit
-     * the effort field").
+     * Returns the currently selected effort, or {@code null} when {@code (model default)} is selected
+     * (meaning "omit the effort field").
      */
     public String getSelectedEffort() {
         Object sel = effortCombo.getSelectedItem();
@@ -163,21 +172,13 @@ public class CodexAiInfoBarExtension implements AiInfoBarExtension {
      * Updates the combo to show {@code model}, without firing the change listener. EDT-safe.
      */
     public void setSelectedModel(String model) {
-        if (!SwingUtilities.isEventDispatchThread()) {
-            SwingUtilities.invokeLater(() -> setSelectedModel(model));
-            return;
-        }
-        programmatic = true;
-        try {
+        modelGuard.runProgrammatic(() -> {
             Component focused = KeyboardFocusManager.getCurrentKeyboardFocusManager().getFocusOwner();
             modelCombo.setSelectedItem(model);
             if (focused != null) {
                 focused.requestFocusInWindow();
             }
-        }
-        finally {
-            programmatic = false;
-        }
+        });
     }
 
     /**
@@ -185,18 +186,10 @@ public class CodexAiInfoBarExtension implements AiInfoBarExtension {
      * {@code (model default)}. EDT-safe.
      */
     public void setSelectedEffort(String effort) {
-        if (!SwingUtilities.isEventDispatchThread()) {
-            SwingUtilities.invokeLater(() -> setSelectedEffort(effort));
-            return;
-        }
-        programmatic = true;
-        try {
+        effortGuard.runProgrammatic(() -> {
             String target = (effort == null || effort.isBlank()) ? BlankSafeComboRenderer.DEFAULT_OPTION : effort;
             effortCombo.setSelectedItem(containsItem(target) ? target : BlankSafeComboRenderer.DEFAULT_OPTION);
-        }
-        finally {
-            programmatic = false;
-        }
+        });
     }
 
     private boolean containsItem(String value) {
@@ -210,22 +203,18 @@ public class CodexAiInfoBarExtension implements AiInfoBarExtension {
 
     /**
      * Rebuilds the effort combo from the capability event: {@code (model
-     * default)} first, then each supported effort. Seeding picks the session's stored effort when it is supported, else
-     * the live {@code reasoningEffort} read back from {@code thread/start}. Doesn't fire the change listener. EDT-safe.
+     * default)} first, then each supported effort. Seeding picks the session's stored effort when it is
+     * supported, else the live {@code reasoningEffort} read back from {@code thread/start}. Doesn't fire the
+     * change listener. EDT-safe.
      */
     private void refreshEffortOptions(CodexReasoningEffortEvent ev) {
-        if (!SwingUtilities.isEventDispatchThread()) {
-            SwingUtilities.invokeLater(() -> refreshEffortOptions(ev));
-            return;
-        }
         List<String> supported = ev.supportedEfforts();
         String[] items = new String[1 + supported.size()];
         items[0] = BlankSafeComboRenderer.DEFAULT_OPTION;
         for (int i = 0; i < supported.size(); i++) {
             items[i + 1] = supported.get(i);
         }
-        programmatic = true;
-        try {
+        effortGuard.runProgrammatic(() -> {
             effortCombo.setModel(new javax.swing.DefaultComboBoxModel<>(items));
             effortCombo.setSelectedItem(BlankSafeComboRenderer.DEFAULT_OPTION);
             String stored = lastStoredEffort;
@@ -238,17 +227,10 @@ public class CodexAiInfoBarExtension implements AiInfoBarExtension {
                     effortCombo.setSelectedItem(cur);
                 }
             }
-        }
-        finally {
-            programmatic = false;
-        }
+        });
     }
 
     private void updateContextBar() {
-        if (!SwingUtilities.isEventDispatchThread()) {
-            SwingUtilities.invokeLater(this::updateContextBar);
-            return;
-        }
         if (maxTokens <= 0) {
             contextBar.setString(String.format("%,d tokens", currentTokens));
             contextBar.setValue(0);
@@ -277,10 +259,6 @@ public class CodexAiInfoBarExtension implements AiInfoBarExtension {
     }
 
     private void updateRateLimitBar(CodexRateLimitEvent rateLimit) {
-        if (!SwingUtilities.isEventDispatchThread()) {
-            SwingUtilities.invokeLater(() -> updateRateLimitBar(rateLimit));
-            return;
-        }
         int usedPercent = (int) Math.round(Math.max(0.0, Math.min(100.0, rateLimit.usedPercent())));
         rateLimitBar.setValue(usedPercent);
         rateLimitBar.setString(usedPercent + "%");
@@ -296,7 +274,7 @@ public class CodexAiInfoBarExtension implements AiInfoBarExtension {
     @Override
     public void onSessionSettingsChanged(AiSessionSettings settings) {
         if (settings instanceof AiModelSessionSettings modelSettings
-                && modelSettings.model() != null && !modelSettings.model().isBlank()) {
+            && modelSettings.model() != null && !modelSettings.model().isBlank()) {
             setSelectedModel(modelSettings.model());
         }
         if (settings instanceof CodexSessionSettings codexSettings) {

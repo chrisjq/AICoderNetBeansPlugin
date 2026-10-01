@@ -32,9 +32,9 @@ import java.util.concurrent.locks.ReentrantLock;
  *
  * <p>
  * Notifications (session/update) and the disconnection callback are delivered via a single-thread executor
- * («acp-notify») to guarantee FIFO order. Inbound requests (particularly session/request_permission, whose approval
- * response expires after 120 s) and response-future completions run on a cached-thread-pool executor («acp-dispatch»)
- * so the reader thread is never blocked.
+ * («acp-notify») to guarantee FIFO order. Inbound requests (particularly session/request_permission, whose
+ * approval response expires after 120 s) and response-future completions run on a cached-thread-pool executor
+ * («acp-dispatch») so the reader thread is never blocked.
  */
 public class AcpConnection {
 
@@ -123,6 +123,18 @@ public class AcpConnection {
         finally {
             writeLock.unlock();
         }
+    }
+
+    /**
+     * Runs {@code task} on the single-thread FIFO notification executor ({@code acp-notify}), the same
+     * executor that delivers session/update notifications and the disconnection callback — so it is ordered
+     * after every notification the reader already queued. The process manager uses this to sequence a
+     * compaction's flag-clear and completion behind the streamed-back summary. Throws
+     * {@link java.util.concurrent.RejectedExecutionException} once the connection is closed; callers run the
+     * task inline then.
+     */
+    public void runOnNotifyThread(Runnable task) {
+        notifyExecutor.execute(task);
     }
 
     private void writeMessage(JsonObject message) {

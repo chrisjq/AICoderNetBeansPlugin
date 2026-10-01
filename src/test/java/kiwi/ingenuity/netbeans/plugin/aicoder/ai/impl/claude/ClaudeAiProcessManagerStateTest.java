@@ -12,6 +12,7 @@ import java.util.function.Consumer;
 import java.util.function.Predicate;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.events.StatusEvent;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.events.StatusEventTypeEnum;
+import kiwi.ingenuity.netbeans.plugin.aicoder.ai.events.TextDeltaEvent;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.events.TurnCompleteEvent;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.claude.session.ClaudePersistentSession;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.session.InterruptTypeEnum;
@@ -102,6 +103,234 @@ class ClaudeAiProcessManagerStateTest {
     }
 
     @Test
+    void compactUsesOneBusyReadyLifecycleAndHidesItsTurn() throws InterruptedException {
+        assertTrue(manager.compact(workDir));
+        assertTrue(manager.isWorkInFlight());
+        assertTrue(events.hasEvent(StatusEvent.class,
+                e -> ((StatusEvent) e).type() == StatusEventTypeEnum.BUSY));
+
+        manager.getSession().sendRawLine(
+                "{\"type\":\"assistant\",\"message\":{\"content\":[{\"type\":\"text\",\"text\":\"hidden compact output\"}]}}");
+        manager.getSession().sendRawLine("{\"type\":\"system\",\"subtype\":\"compact_boundary\"}");
+        manager.getSession().sendRawLine("{\"type\":\"result\",\"subtype\":\"success\"}");
+        awaitTrue(() -> !manager.isWorkInFlight(), "compaction complete");
+
+        assertFalse(events.hasEvent(TextDeltaEvent.class), "the /compact turn must not leak chat text");
+        assertFalse(events.hasEvent(TurnCompleteEvent.class), "runWork's READY, not TurnCompleteEvent, closes compaction");
+        assertTrue(events.hasEvent(StatusEvent.class,
+                e -> ((StatusEvent) e).type() == StatusEventTypeEnum.READY
+                     && "Conversation compacted".equals(((StatusEvent) e).text())));
+    }
+
+    @Test
+    void compactWithoutBoundaryIsAReadyNoOp() throws InterruptedException {
+        assertTrue(manager.compact(workDir));
+        manager.getSession().sendRawLine("{\"type\":\"result\",\"subtype\":\"success\"}");
+        awaitTrue(() -> !manager.isWorkInFlight(), "no-op compaction complete");
+
+        assertTrue(events.hasEvent(StatusEvent.class,
+                e -> ((StatusEvent) e).type() == StatusEventTypeEnum.READY
+                     && "Nothing to compact".equals(((StatusEvent) e).text())),
+                "a completed /compact turn without compact_boundary must stay green as Nothing to compact");
+        assertFalse(events.hasEvent(TurnCompleteEvent.class),
+                "a no-op compaction must still be closed only by READY");
+    }
+
+    @Test
+    void stopDuringCompactionClosesOnlyWithFailed() {
+        assertTrue(manager.compact(workDir));
+        events.clear();
+
+        manager.stop();
+
+        assertTrue(events.hasEvent(StatusEvent.class,
+                e -> ((StatusEvent) e).type() == StatusEventTypeEnum.FAILED),
+                "stop during compaction must emit one FAILED work closer");
+        assertEquals(1, events.countStatusClosers(),
+                "stop during compaction must emit exactly one work closer");
+        assertFalse(events.hasEvent(TurnCompleteEvent.class),
+                "stop during compaction must not leak the internal turn completion");
+    }
+
+    @Test
+    void timedOutCompactionDoesNotSuppressTheNextSessionsTurn() throws InterruptedException {
+        assertTrue(manager.compact(workDir, 1));
+        awaitTrue(() -> !manager.isWorkInFlight(), "compaction timeout");
+
+        // The CLI never answers /compact: Stop, and the cancel watchdog recycles the session. No late compact result
+        // ever arrives to consume the stale suppression, so only the timeout can have released it.
+        manager.cancelWatchdogMillis = 200;
+        manager.interrupt(InterruptTypeEnum.Cancel);
+        awaitTrue(() -> !manager.isAwaitingCancelResult(), "watchdog recycles the session");
+        events.clear();
+
+        manager.sendPrompt("next real turn", workDir, List.of());
+        manager.getSession().sendRawLine("{\"type\":\"result\",\"subtype\":\"success\"}");
+        awaitTrue(() -> events.hasEvent(TurnCompleteEvent.class),
+                "a timed-out compaction must not suppress the next real turn's TurnCompleteEvent");
+    }
+
+    @Test
+    void nonZeroExitDuringCompactionHasExactlyOneFailedCloser() throws InterruptedException {
+        assertTrue(manager.compact(workDir));
+        events.clear();
+
+        manager.getSession().process().destroyForcibly();
+        awaitTrue(() -> !manager.isWorkInFlight(), "exit closes compaction");
+
+        assertEquals(1, events.countStatusClosers(),
+                "a non-zero process exit during compaction must emit exactly one work closer");
+        assertTrue(events.hasEvent(StatusEvent.class,
+                e -> ((StatusEvent) e).type() == StatusEventTypeEnum.FAILED),
+                "the sole closer for a non-zero compaction exit must be FAILED, not EXITED");
+        assertFalse(events.hasEvent(TurnCompleteEvent.class),
+                "an exiting internal compact turn must not leak TurnCompleteEvent");
+    }
+
+    @Test
+    void zeroExitDuringCompactionHasExactlyOneFailedCloser() throws Exception {
+        assertTrue(manager.compact(workDir));
+        events.clear();
+
+        manager.getSession().process().getOutputStream().close();
+        awaitTrue(() -> !manager.isWorkInFlight(), "clean exit closes compaction");
+        Thread.sleep(100); // Fixed short sleep: asserting absence of a second closer; none is expected
+
+        assertEquals(1, events.countStatusClosers(),
+                "a zero-code process exit during compaction must emit exactly one work closer");
+        assertTrue(events.hasEvent(StatusEvent.class,
+                e -> ((StatusEvent) e).type() == StatusEventTypeEnum.FAILED),
+                "the sole closer for a zero-code compaction exit must be FAILED");
+        assertFalse(events.hasEvent(StatusEvent.class,
+                e -> ((StatusEvent) e).type() == StatusEventTypeEnum.EXITED),
+                "a zero-code exit must not add an EXITED closer to the compaction's FAILED");
+        assertFalse(events.hasEvent(TurnCompleteEvent.class),
+                "an exiting internal compact turn must not leak TurnCompleteEvent");
+    }
+
+    @Test
+    void parserReportedCompactFailureHasOneFailedCloserAndNoTurnComplete() throws Exception {
+        assertTrue(manager.compact(workDir));
+        events.clear();
+
+        manager.getSession().sendRawLine("{\"type\":\"result\",\"subtype\":\"api_error\"}");
+        awaitTrue(() -> !manager.isWorkInFlight(), "parser-reported failure closes compaction");
+        Thread.sleep(100); // Fixed short sleep: asserting absence of a second closer; none is expected
+
+        assertEquals(1, events.countStatusClosers(),
+                "a parser-reported compact failure must emit exactly one work closer");
+        assertTrue(events.hasEvent(StatusEvent.class,
+                e -> ((StatusEvent) e).type() == StatusEventTypeEnum.FAILED
+                     && ((StatusEvent) e).text().startsWith("Compact failed: ")),
+                "the closer must be runWork's FAILED built from the parser's failure");
+        assertFalse(events.hasEvent(TurnCompleteEvent.class),
+                "a failed compact must not leak TurnCompleteEvent");
+        assertFalse(manager.isProcessing(), "the failure must release the turn");
+    }
+
+    @Test
+    void abnormalResultEndingACompactIsReportedAsFailureNotNothingToCompact() throws Exception {
+        assertTrue(manager.compact(workDir));
+        events.clear();
+
+        manager.getSession().sendRawLine("{\"type\":\"result\",\"subtype\":\"error_during_execution\"}");
+        awaitTrue(() -> !manager.isWorkInFlight(), "abnormal result closes compaction");
+        Thread.sleep(100); // Fixed short sleep: asserting absence of a second closer; none is expected
+
+        assertEquals(1, events.countStatusClosers(),
+                "an abnormal compact result must emit exactly one work closer");
+        assertTrue(events.hasEvent(StatusEvent.class,
+                e -> ((StatusEvent) e).type() == StatusEventTypeEnum.FAILED
+                     && ((StatusEvent) e).text().contains("error_during_execution")),
+                "the closer must be FAILED and carry the result subtype");
+        assertFalse(events.hasEvent(StatusEvent.class,
+                e -> ((StatusEvent) e).type() == StatusEventTypeEnum.READY),
+                "a failed compaction must never be reported as READY 'Nothing to compact'");
+        assertFalse(events.hasEvent(StatusEvent.class,
+                e -> ((StatusEvent) e).type() == StatusEventTypeEnum.INTERRUPTED),
+                "the compact turn's INTERRUPTED must stay backend-local");
+        assertFalse(events.hasEvent(TurnCompleteEvent.class),
+                "a failed compact must not leak TurnCompleteEvent");
+        assertFalse(manager.isProcessing(), "the failure must release the turn");
+    }
+
+    @Test
+    void sendStartFailureWhileCompactingHasExactlyOneFailedCloser() throws Exception {
+        manager.setLaunchFails(true);
+
+        assertTrue(manager.compact(workDir));
+        awaitTrue(() -> events.countStatusClosers() > 0, "send-start failure closes compaction");
+        Thread.sleep(100); // Fixed short sleep: asserting absence of a second closer; none is expected
+
+        assertEquals(1, events.countStatusClosers(),
+                "a send-start failure while compacting must emit exactly one work closer");
+        assertTrue(events.hasEvent(StatusEvent.class,
+                e -> ((StatusEvent) e).type() == StatusEventTypeEnum.FAILED
+                     && ((StatusEvent) e).text().contains("launch failed")),
+                "the closer must be FAILED carrying the launch error");
+        assertFalse(events.hasEvent(TurnCompleteEvent.class),
+                "a failed compact start must not leak TurnCompleteEvent");
+        assertFalse(manager.isWorkInFlight());
+        assertFalse(manager.isProcessing());
+    }
+
+    @Test
+    void interruptDuringCompactionIsIgnored() {
+        assertTrue(manager.compact(workDir));
+        events.clear();
+
+        manager.interrupt(InterruptTypeEnum.Cancel);
+        manager.interrupt(InterruptTypeEnum.Mail);
+
+        assertTrue(manager.isWorkInFlight(), "Stop and Mail must not cancel non-cancellable compaction");
+        assertFalse(events.hasEvent(StatusEvent.class,
+                e -> ((StatusEvent) e).type() == StatusEventTypeEnum.STOPPED),
+                "Stop must not emit STOPPED while compaction owns the lifecycle");
+    }
+
+    @Test
+    void sendPromptRefusalWhilePendingDiffIsInfoOnly() {
+        manager.setPendingDiff(true);
+        events.clear();
+
+        manager.sendPrompt("blocked by diff", workDir, List.of());
+
+        assertTrue(events.hasEvent(StatusEvent.class,
+                e -> ((StatusEvent) e).type() == StatusEventTypeEnum.INFO
+                     && ((StatusEvent) e).text().contains("pending diff")),
+                "pending diff refusal must explain the INFO-only guard");
+        assertTrue(events.hasEvent(TurnCompleteEvent.class),
+                "pending diff refusal must hand control back so the user can prompt again");
+        assertFalse(events.hasEvent(StatusEvent.class,
+                e -> ((StatusEvent) e).type() == StatusEventTypeEnum.BUSY
+                     || ((StatusEvent) e).type() == StatusEventTypeEnum.FAILED),
+                "pending diff refusal must not claim a work lifecycle");
+        assertFalse(manager.isProcessing());
+    }
+
+    @Test
+    void sendPromptRefusalWhileAwaitingCancelResultIsInfoOnly() {
+        manager.sendPrompt("first prompt", workDir, List.of());
+        assertTrue(manager.isProcessing());
+        manager.interrupt(InterruptTypeEnum.Cancel);
+        assertTrue(manager.isAwaitingCancelResult());
+        events.clear();
+
+        manager.sendPrompt("blocked while stopping", workDir, List.of());
+
+        assertTrue(events.hasEvent(StatusEvent.class,
+                e -> ((StatusEvent) e).type() == StatusEventTypeEnum.INFO
+                     && ((StatusEvent) e).text().contains("still stopping")),
+                "cancel-result refusal must explain the INFO-only guard");
+        assertTrue(events.hasEvent(TurnCompleteEvent.class),
+                "cancel-result refusal must hand control back so the user can prompt again");
+        assertFalse(events.hasEvent(StatusEvent.class,
+                e -> ((StatusEvent) e).type() == StatusEventTypeEnum.BUSY
+                     || ((StatusEvent) e).type() == StatusEventTypeEnum.FAILED),
+                "cancel-result refusal must not claim a work lifecycle");
+    }
+
+    @Test
     void handleProcessExitStaleSuppression() throws InterruptedException {
         manager.sendPrompt("turn 1", workDir, List.of());
         ClaudePersistentSession sessionA = manager.getPersistentSession();
@@ -130,12 +359,12 @@ class ClaudeAiProcessManagerStateTest {
     }
 
     /**
-     * REACHABILITY half. Uses only the real public API, so it proves the stranded state can occur in production — not
-     * merely that we can recover from one we manufactured ourselves.
+     * REACHABILITY half. Uses only the real public API, so it proves the stranded state can occur in
+     * production — not merely that we can recover from one we manufactured ourselves.
      *
      * <p>
-     * Asserts the invariant rather than the mechanism: it does not care whether the fix declines the recycle or ends
-     * the turn first, only that "in flight with no session" never survives the call.
+     * Asserts the invariant rather than the mechanism: it does not care whether the fix declines the recycle
+     * or ends the turn first, only that "in flight with no session" never survives the call.
      */
     @Test
     void recycleMidTurnMustNotStrandTheTurn() {
@@ -151,9 +380,9 @@ class ClaudeAiProcessManagerStateTest {
     }
 
     /**
-     * RECOVERY half. Deliberately manufactures the stranded state rather than reaching it through the API, because once
-     * the reachability fix lands the real path can no longer produce it. Recovery still has to work — any future path
-     * that strands a turn must not cost the user their session.
+     * RECOVERY half. Deliberately manufactures the stranded state rather than reaching it through the API,
+     * because once the reachability fix lands the real path can no longer produce it. Recovery still has to
+     * work — any future path that strands a turn must not cost the user their session.
      */
     @Test
     void cancelStillNotifiesWhenSessionIsMissing() {
@@ -252,6 +481,16 @@ class ClaudeAiProcessManagerStateTest {
                     .anyMatch(e -> predicate.test(e));
         }
 
+        long countStatusClosers() {
+            return new ArrayList<>(events).stream()
+                    .filter(StatusEvent.class::isInstance)
+                    .map(StatusEvent.class::cast)
+                    .filter(e -> e.type() == StatusEventTypeEnum.READY
+                                 || e.type() == StatusEventTypeEnum.FAILED
+                                 || e.type() == StatusEventTypeEnum.EXITED)
+                    .count();
+        }
+
         void clear() {
             events.clear();
         }
@@ -260,9 +499,14 @@ class ClaudeAiProcessManagerStateTest {
     static class TestableClaudeAiProcessManager extends ClaudeAiProcessManager {
 
         private boolean firstSessionDead = false;
+        private boolean launchFails = false;
 
         TestableClaudeAiProcessManager(AiProcessEventListener listener) {
             super(listener);
+        }
+
+        void setLaunchFails(boolean fails) {
+            this.launchFails = fails;
         }
 
         void setupForTest() {
@@ -278,7 +522,10 @@ class ClaudeAiProcessManagerStateTest {
 
         @Override
         protected ClaudePersistentSession launchPersistentSession(List<String> cmd, File workDir,
-                Consumer<String> stdoutLine, Consumer<String> stderrLine) throws IOException {
+                                                                  Consumer<String> stdoutLine, Consumer<String> stderrLine) throws IOException {
+            if (launchFails) {
+                throw new IOException("launch failed");
+            }
             if (firstSessionDead && getLaunchCount() == 0) {
                 firstSessionDead = false;
                 ClaudePersistentSession dead = ClaudePersistentSession.launch(
@@ -295,8 +542,8 @@ class ClaudeAiProcessManagerStateTest {
         }
 
         /**
-         * Drops the session WITHOUT clearing {@code processing} — the stranded state, manufactured directly. Only for
-         * the recovery test; the reachability test uses the real {@code recycleForModelChange()}.
+         * Drops the session WITHOUT clearing {@code processing} — the stranded state, manufactured directly.
+         * Only for the recovery test; the reachability test uses the real {@code recycleForModelChange()}.
          */
         void orphanSessionForTest() {
             persistentSession = null;

@@ -8,12 +8,34 @@ import java.util.UUID;
 import kiwi.ingenuity.netbeans.plugin.aicoder.PluginUtil;
 import static kiwi.ingenuity.netbeans.plugin.aicoder.ai.AiTypeEnum.CLAUDE;
 import kiwi.ingenuity.netbeans.plugin.aicoder.serialization.SessionPersistenceManager;
+import org.junit.jupiter.api.AfterEach;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
 class McpHookServerScopeTest {
+
+    // These tests create session directories and index files under the persistence base and the per-session config
+    // dirs, both of which derive from user.home. Without the redirect they wrote into the real
+    // ~/.netbeans/.aicoder of whoever ran the build, leaving directories that a running IDE then reported and swept
+    // as orphaned sessions — and that same sweep could remove one mid-test.
+    private String originalUserHome;
+
+    @TempDir
+    Path tempHome;
+
+    @BeforeEach
+    void redirectUserHome() {
+        originalUserHome = System.getProperty("user.home");
+        System.setProperty("user.home", tempHome.toString());
+    }
+
+    @AfterEach
+    void restoreUserHome() {
+        System.setProperty("user.home", originalUserHome);
+    }
 
     // ---- ANY session's serialized-conversation directory (history.json,
     // context.json) must be invisible to every file tool, read or write, even

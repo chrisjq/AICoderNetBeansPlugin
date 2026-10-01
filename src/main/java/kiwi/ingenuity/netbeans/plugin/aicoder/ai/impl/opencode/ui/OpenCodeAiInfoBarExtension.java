@@ -3,48 +3,47 @@ package kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.opencode.ui;
 import com.google.gson.JsonArray;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
+import java.awt.Component;
 import java.awt.FlowLayout;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.function.BiConsumer;
 import java.util.logging.Level;
 import java.util.logging.Logger;
+import javax.swing.JButton;
 import javax.swing.JComboBox;
 import javax.swing.JComponent;
 import javax.swing.JPanel;
-import javax.swing.SwingUtilities;
 import kiwi.ingenuity.netbeans.plugin.aicoder.PluginSettings;
-import kiwi.ingenuity.netbeans.plugin.aicoder.ai.AiSessionHost;
-import kiwi.ingenuity.netbeans.plugin.aicoder.ai.AiTypeEnum;
-import kiwi.ingenuity.netbeans.plugin.aicoder.ai.AiTypePropertyBus;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.events.AiPropertyEvent;
+import kiwi.ingenuity.netbeans.plugin.aicoder.ai.events.AvailableModelsEvent;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.http.context.ContextGaugePanel;
-import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.opencode.OpenCodeAiImplementation;
-import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.opencode.OpenCodeAiProcessManager;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.opencode.OpenCodeConfigOptionsEvent;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.opencode.OpenCodeUsageEvent;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.opencode.acp.AcpJsonKeyEnum;
-import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.opencode.events.OpenCodeModelsEvent;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.opencode.settings.OpenCodePluginSettings;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.opencode.settings.OpenCodeSessionSettings;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.ui.AiInfoBarExtension;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.ui.BlankSafeComboRenderer;
+import kiwi.ingenuity.netbeans.plugin.aicoder.ai.ui.GuardedCombo;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.events.AiProcessImplEvent;
 
 /**
- * Info bar for OpenCode sessions. Builds combo boxes dynamically from the {@code configOptions} array returned by the
- * ACP {@code session/new} handshake. Each user selection calls {@code session/set_config_option} and repopulates all
- * combos from the response (options are interdependent — changing the model can change the available effort options).
+ * Info bar for OpenCode sessions. Builds combo boxes dynamically from the {@code configOptions} array
+ * returned by the ACP {@code session/new} handshake. Each user selection calls
+ * {@code session/set_config_option} and repopulates all combos from the response (options are interdependent
+ * — changing the model can change the available effort options).
  *
  * <p>
- * Layout: {@code [Model ▾] [Mode ▾] [Effort ▾]  [=== context gauge ===]}
+ * Layout: {@code [Model ▾] [Mode ▾] [Effort ▾]  [=== context gauge ===]  [⇒ Compact]}
  */
 public class OpenCodeAiInfoBarExtension implements AiInfoBarExtension {
 
     private static final Logger LOG = Logger.getLogger(OpenCodeAiInfoBarExtension.class.getName());
 
     /**
-     * Parses a {@code configOptions} JSON array, retaining only {@code type=select} entries. Intended for use from the
-     * info bar and from tests.
+     * Parses a {@code configOptions} JSON array, retaining only {@code type=select} entries. Intended for use
+     * from the info bar and from tests.
      */
     public static List<OptionSpec> parseConfigOptions(JsonArray configOptions) {
         List<OptionSpec> result = new ArrayList<>();
@@ -79,6 +78,7 @@ public class OpenCodeAiInfoBarExtension implements AiInfoBarExtension {
                             String name = (rawName != null && !rawName.isBlank()) ? rawName : value;
                             values.add(new OptionValue(value, name));
                         }
+
                     }
                 }
             }
@@ -88,17 +88,21 @@ public class OpenCodeAiInfoBarExtension implements AiInfoBarExtension {
     }
 
     /**
-     * Builds a fallback configOptions-shaped array for pre-seeding the combos before the ACP session/new handshake
-     * completes. Produces Model and Mode entries only — Effort is model-dependent and genuinely unknowable without a
-     * live session.
+     * Builds a fallback configOptions-shaped array for pre-seeding the combos before the ACP session/new
+     * handshake completes. Produces Model and Mode entries only — Effort is model-dependent and genuinely
+     * unknowable without a live session.
      */
-    static JsonArray buildFallbackConfigOptions(OpenCodeSessionSettings s) {
+    public static JsonArray buildFallbackConfigOptions(OpenCodeSessionSettings s) {
+        return buildFallbackConfigOptions(s, OpenCodePluginSettings.getKnownModels());
+    }
+
+    static JsonArray buildFallbackConfigOptions(OpenCodeSessionSettings s, String[] models) {
         String currentModel = (s != null && s.model() != null && !s.model().isBlank())
                               ? s.model() : OpenCodePluginSettings.getModel();
         String currentMode = (s != null && s.mode() != null && !s.mode().isBlank())
                              ? s.mode() : OpenCodePluginSettings.getMode();
         JsonArray arr = new JsonArray();
-        arr.add(buildSelectOption("model", currentModel, OpenCodePluginSettings.getKnownModels()));
+        arr.add(buildSelectOption("model", currentModel, models));
         arr.add(buildSelectOption("mode", currentMode, new String[]{"build", "plan"}));
         return arr;
     }
@@ -117,37 +121,6 @@ public class OpenCodeAiInfoBarExtension implements AiInfoBarExtension {
         }
         opt.add(AcpJsonKeyEnum.OPTIONS.key(), options);
         return opt;
-    }
-
-    private static void cacheDiscoveredModels(JsonArray configOptions) {
-        if (configOptions == null) {
-            return;
-        }
-        for (JsonElement el : configOptions) {
-            if (!el.isJsonObject()) {
-                continue;
-            }
-            JsonObject opt = el.getAsJsonObject();
-            if (!"model".equals(opt.has(AcpJsonKeyEnum.ID.key()) ? opt.get(AcpJsonKeyEnum.ID.key()).getAsString() : null)) {
-                continue;
-            }
-            if (!opt.has(AcpJsonKeyEnum.OPTIONS.key()) || !opt.get(AcpJsonKeyEnum.OPTIONS.key()).isJsonArray()) {
-                return;
-            }
-            List<String> models = new ArrayList<>();
-            for (JsonElement v : opt.getAsJsonArray(AcpJsonKeyEnum.OPTIONS.key())) {
-                if (v.isJsonObject() && v.getAsJsonObject().has(AcpJsonKeyEnum.VALUE.key())) {
-                    models.add(v.getAsJsonObject().get(AcpJsonKeyEnum.VALUE.key()).getAsString());
-                }
-            }
-            if (!models.isEmpty()) {
-                String[] arr = models.toArray(new String[0]);
-                OpenCodePluginSettings.setDiscoveredModels(arr);
-                OpenCodeAiImplementation.modelCatalog().publish(models);
-                AiTypePropertyBus.getInstance().fire(AiTypeEnum.OPENCODE, new OpenCodeModelsEvent(models));
-            }
-            return;
-        }
     }
 
     private static String extractCurrentValue(JsonArray opts, String id) {
@@ -171,10 +144,11 @@ public class OpenCodeAiInfoBarExtension implements AiInfoBarExtension {
      * {@code currentValue} exactly as it was in {@code displayed} — the state already on screen.
      *
      * <p>
-     * A model-discovery broadcast is keyed by AiType, not by session (see class javadoc), so every idle session's info
-     * bar receives it regardless of which session actually did the discovering. Re-deriving currentValue from
-     * settings/global here — instead of keeping what is already displayed — is what silently resets an unrelated idle
-     * session's model combo to the global default the moment any other session finishes discovery.
+     * A model-discovery broadcast is keyed by AiType, not by session (see class javadoc), so every idle
+     * session's info bar receives it regardless of which session actually did the discovering. Re-deriving
+     * currentValue from settings/global here — instead of keeping what is already displayed — is what
+     * silently resets an unrelated idle session's model combo to the global default the moment any other
+     * session finishes discovery.
      */
     static JsonArray preserveSelections(JsonArray displayed, JsonArray refreshed) {
         if (refreshed == null) {
@@ -199,8 +173,8 @@ public class OpenCodeAiInfoBarExtension implements AiInfoBarExtension {
 
     /**
      * Returns a copy of {@code configOptions} with the {@code id} entry's {@code currentValue} replaced by
-     * {@code value}. Copies rather than mutates in place — the array may be shared with the process manager's own
-     * cached configOptions.
+     * {@code value}. Copies rather than mutates in place — the array may be shared with the process manager's
+     * own cached configOptions.
      */
     private static JsonArray withCurrentValue(JsonArray configOptions, String id, String value) {
         JsonArray copy = configOptions.deepCopy();
@@ -217,71 +191,80 @@ public class OpenCodeAiInfoBarExtension implements AiInfoBarExtension {
         return copy;
     }
 
-    private final OpenCodeAiProcessManager manager;
     private final OpenCodeSessionSettings settings;
-    private final AiSessionHost host;
+    private BiConsumer<String, String> configChangeListener;
+    private final Runnable compactListener;
     final JPanel comboPanel = new JPanel(new FlowLayout(FlowLayout.LEFT, 2, 0));
     private final ContextGaugePanel gauge = new ContextGaugePanel();
+    private final JButton compactButton;
     /**
      * The configOptions array most recently handed to applyConfigOptions().
      */
     private volatile JsonArray lastKnownConfigOptions;
+    /**
+     * True unless {@link #onBusyChanged} last reported busy. Reapplied by {@link #applyConfigOptions} when it
+     * rebuilds the combos, so a repopulation while a turn runs cannot silently re-enable what the busy
+     * contract locked.
+     */
+    private volatile boolean actionControlsEnabled = true;
 
-    public OpenCodeAiInfoBarExtension(OpenCodeAiProcessManager manager, OpenCodeSessionSettings settings, AiSessionHost host) {
-        this.manager = manager;
+    public OpenCodeAiInfoBarExtension(JsonArray initialConfigOptions, OpenCodeSessionSettings settings,
+                                      BiConsumer<String, String> configChangeListener, Runnable compactListener) {
         this.settings = settings;
-        this.host = host;
+        this.configChangeListener = configChangeListener;
+        this.compactListener = compactListener;
+        this.lastKnownConfigOptions = initialConfigOptions;
         comboPanel.setOpaque(false);
-        if (PluginSettings.isDebugJson()) {
-            LOG.log(Level.INFO, "OpenCode info bar [{0}] <init>: settings#={1} model={2}",
-                    new Object[]{manager.getSessionId(),
-                        settings != null ? System.identityHashCode(settings) : null,
-                        settings != null ? settings.model() : null});
-        }
+        compactButton = new JButton("⇒ Compact");
+        compactButton.setFont(compactButton.getFont().deriveFont(11f));
+        compactButton.setToolTipText("Compact conversation to reduce context window usage");
+        compactButton.addActionListener(e -> this.compactListener.run());
     }
 
     @Override
     public List<JComponent> createComponents() {
-        JsonArray initial = manager.configOptions();
-        JsonArray toApply = initial != null ? initial : buildFallbackConfigOptions(settings);
-        if (PluginSettings.isDebugJson()) {
-            LOG.log(Level.INFO, "OpenCode info bar [{0}] createComponents: source={1} settings#={2} model={3}",
-                    new Object[]{manager.getSessionId(), initial != null ? "manager.configOptions()" : "fallback",
-                        settings != null ? System.identityHashCode(settings) : null,
-                        extractCurrentValue(toApply, "model")});
-        }
+        JsonArray toApply = lastKnownConfigOptions != null
+                            ? lastKnownConfigOptions : buildFallbackConfigOptions(settings);
         recordAndApply(toApply);
-        return List.of(comboPanel, gauge.component());
+        return List.of(comboPanel, gauge.component(), compactButton);
+    }
+
+    @Override
+    public void onBusyChanged(boolean busy) {
+        actionControlsEnabled = !busy;
+        setActionControlsEnabled(actionControlsEnabled);
+    }
+
+    private void setActionControlsEnabled(boolean enabled) {
+        for (Component c : comboPanel.getComponents()) {
+            if (c instanceof JComboBox<?> combo) {
+                combo.setEnabled(enabled);
+            }
+        }
+        compactButton.setEnabled(enabled);
     }
 
     @Override
     public void onPropertyEvent(AiPropertyEvent event) {
-        if (event instanceof OpenCodeModelsEvent && !manager.isSessionLive()) {
-            // Model list updated while no live ACP session — refresh the option
-            // list only and keep whatever selection is already displayed; see
-            // preserveSelections() for why re-deriving currentValue here is wrong.
+        if (event instanceof AvailableModelsEvent modelsEvent) {
             JsonArray displayed = lastKnownConfigOptions;
-            JsonArray refreshed = buildFallbackConfigOptions(settings);
-            JsonArray merged = preserveSelections(displayed, refreshed);
-            if (PluginSettings.isDebugJson()) {
-                LOG.log(Level.INFO, "OpenCode info bar [{0}] onPropertyEvent(OpenCodeModelsEvent): "
-                        + "lastKnown model={1} refreshed model={2} merged model={3}",
-                        new Object[]{manager.getSessionId(), extractCurrentValue(displayed, "model"),
-                            extractCurrentValue(refreshed, "model"), extractCurrentValue(merged, "model")});
-            }
-            SwingUtilities.invokeLater(() -> recordAndApply(merged));
+            JsonArray refreshed = buildFallbackConfigOptions(settings,
+                    modelsEvent.models().toArray(new String[0]));
+            recordAndApply(preserveSelections(displayed, refreshed));
         }
     }
 
     @Override
     public void onAiProcessImplEvent(AiProcessImplEvent event) {
         if (event instanceof OpenCodeConfigOptionsEvent co) {
+            lastKnownConfigOptions = co.configOptions();
+
             if (PluginSettings.isDebugJson()) {
                 LOG.log(Level.INFO, "OpenCode info bar [{0}] onAiProcessImplEvent(OpenCodeConfigOptionsEvent): "
-                        + "incoming model={1}",
-                        new Object[]{manager.getSessionId(), extractCurrentValue(co.configOptions(), "model")});
+                                    + "incoming model={1}",
+                        new Object[]{"OpenCode", extractCurrentValue(co.configOptions(), "model")});
             }
-            cacheDiscoveredModels(co.configOptions());
+
             recordAndApply(co.configOptions());
         }
         else if (event instanceof OpenCodeUsageEvent usage) {
@@ -298,21 +281,13 @@ public class OpenCodeAiInfoBarExtension implements AiInfoBarExtension {
     }
 
     private void onUsageUpdate(int used, int size) {
-        if (!SwingUtilities.isEventDispatchThread()) {
-            SwingUtilities.invokeLater(() -> onUsageUpdate(used, size));
-            return;
-        }
         gauge.update(used, size);
     }
 
     void applyConfigOptions(JsonArray configOptions) {
-        if (!SwingUtilities.isEventDispatchThread()) {
-            SwingUtilities.invokeLater(() -> applyConfigOptions(configOptions));
-            return;
-        }
         if (PluginSettings.isDebugJson()) {
             LOG.log(Level.INFO, "OpenCode info bar [{0}] applyConfigOptions: applied model={1}",
-                    new Object[]{manager.getSessionId(), extractCurrentValue(configOptions, "model")});
+                    new Object[]{"OpenCode", extractCurrentValue(configOptions, "model")});
         }
         comboPanel.removeAll();
         for (OptionSpec spec : parseConfigOptions(configOptions)) {
@@ -320,6 +295,7 @@ public class OpenCodeAiInfoBarExtension implements AiInfoBarExtension {
         }
         comboPanel.revalidate();
         comboPanel.repaint();
+        setActionControlsEnabled(actionControlsEnabled);
     }
 
     private JComboBox<String> buildCombo(OptionSpec spec) {
@@ -329,157 +305,57 @@ public class OpenCodeAiInfoBarExtension implements AiInfoBarExtension {
             // effort set" sentinel (a blank value; see parseConfigOptions) that needs the placeholder.
             combo.setRenderer(new BlankSafeComboRenderer());
         }
-        boolean[] programmatic = {true};
-        for (String name : spec.displayNames()) {
-            combo.addItem(name);
-        }
-        if (spec.currentValue() != null) {
-            String requestedDisplay = spec.displayForValue(spec.currentValue());
-            if (!spec.displayNames().contains(requestedDisplay)) {
-                // The stored value has no match in this option list — e.g. a
-                // fallback list seeded before discovery ever added it, or a
-                // discovery broadcast whose value strings use a different form
-                // than what was persisted. Insert it so the user's actual
-                // choice stays visible instead of setSelectedItem silently
-                // refusing the value and leaving whatever item is first shown
-                // as though it were selected.
-                if (PluginSettings.isDebugJson()) {
-                    LOG.log(Level.INFO,
-                            "OpenCode info bar [{0}] combo \"{1}\": stored value \"{2}\" not found "
-                            + "in discovered options {3} — inserting it",
-                            new Object[]{manager.getSessionId(), spec.id(), spec.currentValue(),
-                                spec.options().stream().map(OptionValue::value).toList()});
+        GuardedCombo<String> guarded = new GuardedCombo<>(combo);
+        guarded.runProgrammatic(() -> {
+            for (String name : spec.displayNames()) {
+                combo.addItem(name);
+            }
+            if (spec.currentValue() != null) {
+                String requestedDisplay = spec.displayForValue(spec.currentValue());
+                if (!spec.displayNames().contains(requestedDisplay)) {
+                    // The stored value has no match in this option list — e.g. a
+                    // fallback list seeded before discovery ever added it, or a
+                    // discovery broadcast whose value strings use a different form
+                    // than what was persisted. Insert it so the user's actual
+                    // choice stays visible instead of setSelectedItem silently
+                    // refusing the value and leaving whatever item is first shown
+                    // as though it were selected.
+                    if (PluginSettings.isDebugJson()) {
+                        LOG.log(Level.INFO,
+                                "OpenCode info bar [{0}] combo \"{1}\": stored value \"{2}\" not found "
+                                + "in discovered options {3} — inserting it",
+                                new Object[]{"OpenCode", spec.id(), spec.currentValue(),
+                                             spec.options().stream().map(OptionValue::value).toList()});
+                    }
+                    combo.insertItemAt(requestedDisplay, 0);
                 }
-                combo.insertItemAt(requestedDisplay, 0);
+                combo.setSelectedItem(requestedDisplay);
+                // Kept permanently, not just for this investigation: a combo silently
+                // refusing a selection (e.g. Nimbus/GTK look-and-feel quirks, or a
+                // display-name collision) is exactly the kind of failure that would
+                // stay invisible without this check.
+                Object actual = combo.getSelectedItem();
+                if (!requestedDisplay.equals(actual)) {
+                    LOG.log(Level.WARNING,
+                            "OpenCode info bar [{0}] combo \"{1}\": setSelectedItem(\"{2}\") did not take — "
+                            + "getSelectedItem() returned \"{3}\"",
+                            new Object[]{"OpenCode", spec.id(), requestedDisplay, actual});
+                }
             }
-            combo.setSelectedItem(requestedDisplay);
-            // Kept permanently, not just for this investigation: a combo silently
-            // refusing a selection (e.g. Nimbus/GTK look-and-feel quirks, or a
-            // display-name collision) is exactly the kind of failure that would
-            // stay invisible without this check.
-            Object actual = combo.getSelectedItem();
-            if (!requestedDisplay.equals(actual)) {
-                LOG.log(Level.WARNING,
-                        "OpenCode info bar [{0}] combo \"{1}\": setSelectedItem(\"{2}\") did not take — "
-                        + "getSelectedItem() returned \"{3}\"",
-                        new Object[]{manager.getSessionId(), spec.id(), requestedDisplay, actual});
-            }
-        }
-        programmatic[0] = false;
-        combo.addActionListener(e -> {
-            if (programmatic[0]) {
-                return;
-            }
+        });
+        guarded.addActionListener(e -> {
             Object sel = combo.getSelectedItem();
             if (sel == null) {
                 return;
             }
-            programmatic[0] = true;
-            handleConfigChange(spec, spec.valueForDisplay(sel.toString()),
-                               () -> programmatic[0] = false);
+            configChangeListener.accept(spec.id(), spec.valueForDisplay(sel.toString()));
         });
         return combo;
     }
 
     /**
-     * Handles a user-initiated combo selection change. When a live ACP session exists the change is sent via
-     * {@code session/set_config_option} and the combos are repopulated from the authoritative response. When no session
-     * is active the change is written directly to the session settings and persisted via the host so the choice is
-     * honoured by the next {@code session/new}.
-     */
-    void handleConfigChange(OptionSpec spec, String value, Runnable onComplete) {
-        if (value != null && value.equals(spec.currentValue())) {
-            if (onComplete != null) {
-                onComplete.run();
-            }
-            return;
-        }
-        if (PluginSettings.isDebugJson()) {
-            LOG.log(Level.INFO,
-                    "OpenCode info bar [{0}] handleConfigChange: branch={1} settings#={2} id={3} value={4}",
-                    new Object[]{manager.getSessionId(), manager.isSessionLive() ? "live" : "idle",
-                        settings != null ? System.identityHashCode(settings) : null, spec.id(), value});
-        }
-        if (manager.isSessionLive()) {
-            manager.setConfigOption(spec.id(), value)
-                    .thenAccept(opts -> {
-                        // Write the agent's applied value (may differ from requested on rejection).
-                        String applied = extractCurrentValue(opts, spec.id());
-                        if (applied != null) {
-                            applyToSettings(spec.id(), applied);
-                        }
-                        SwingUtilities.invokeLater(() -> recordAndApply(opts));
-                    })
-                    .whenComplete((v, ex) -> {
-                        if (onComplete != null) {
-                            onComplete.run();
-                        }
-                    });
-        }
-        else {
-            applyToSettings(spec.id(), value);
-            // Without this, lastKnownConfigOptions keeps the pre-change
-            // currentValue. The next OpenCodeModelsEvent broadcast (from any
-            // other session's discovery — see preserveSelections()) would then
-            // "preserve" that stale value right back over the pick just made,
-            // silently reverting it while settings itself stays correct.
-            JsonArray current = lastKnownConfigOptions;
-            if (current != null) {
-                if (PluginSettings.isDebugJson()) {
-                    LOG.log(Level.INFO,
-                            "OpenCode info bar [{0}] handleConfigChange (idle): patching lastKnownConfigOptions "
-                            + "\"{1}\" -> \"{2}\"",
-                            new Object[]{manager.getSessionId(), spec.id(), value});
-                }
-                recordAndApply(withCurrentValue(current, spec.id(), value));
-            }
-            if (onComplete != null) {
-                onComplete.run();
-            }
-        }
-    }
-
-    void applyToSettings(String configId, String value) {
-        if (settings == null) {
-            if (PluginSettings.isDebugJson()) {
-                LOG.log(Level.INFO, "OpenCode info bar [{0}] applyToSettings: settings is null — write dropped, "
-                        + "id={1} value={2}", new Object[]{manager.getSessionId(), configId, value});
-            }
-            return;
-        }
-        switch (configId) {
-            case "model" ->
-                settings.setModel(value);
-            case "mode" ->
-                settings.setMode(value);
-            case "effort" ->
-                settings.setEffort(value);
-            default -> {
-                return;
-            }
-        }
-        if (PluginSettings.isDebugJson()) {
-            LOG.log(Level.INFO,
-                    "OpenCode info bar [{0}] applyToSettings: settings#={1} id={2} value={3} "
-                    + "settings.model() afterwards={4}",
-                    new Object[]{manager.getSessionId(), System.identityHashCode(settings), configId, value,
-                        settings.model()});
-        }
-        AiSessionHost h = host;
-        if (h != null) {
-            if (PluginSettings.isDebugJson()) {
-                LOG.log(Level.INFO,
-                        "OpenCode info bar [{0}] applyToSettings: calling host.updateSessionSettings with "
-                        + "settings#={1}",
-                        new Object[]{manager.getSessionId(), System.identityHashCode(settings)});
-            }
-            h.updateSessionSettings(settings);
-        }
-    }
-
-    /**
-     * A parsed representation of one {@code configOptions} entry. Retains both the underlying {@code value} sent to
-     * {@code session/set_config_option} and the human-friendly {@code name} shown in the combo.
+     * A parsed representation of one {@code configOptions} entry. Retains both the underlying {@code value}
+     * sent to {@code session/set_config_option} and the human-friendly {@code name} shown in the combo.
      */
     public static final class OptionSpec {
 
@@ -517,8 +393,8 @@ public class OpenCodeAiInfoBarExtension implements AiInfoBarExtension {
         }
 
         /**
-         * The underlying value to send for a chosen display name. Falls back to the display name itself when it matches
-         * no known option (e.g. an editable/custom entry).
+         * The underlying value to send for a chosen display name. Falls back to the display name itself when
+         * it matches no known option (e.g. an editable/custom entry).
          */
         public String valueForDisplay(String displayName) {
             for (OptionValue o : options) {
@@ -530,7 +406,8 @@ public class OpenCodeAiInfoBarExtension implements AiInfoBarExtension {
         }
 
         /**
-         * The display name for an underlying value. Falls back to the value itself when it matches no known option.
+         * The display name for an underlying value. Falls back to the value itself when it matches no known
+         * option.
          */
         public String displayForValue(String value) {
             for (OptionValue o : options) {

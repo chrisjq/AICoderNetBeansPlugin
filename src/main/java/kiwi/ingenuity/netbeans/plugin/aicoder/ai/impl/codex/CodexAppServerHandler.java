@@ -185,11 +185,11 @@ class CodexAppServerHandler implements CodexNotificationListener, CodexServerReq
      * auth failure genuinely reports it, and the message-text path for the one this project has actually
      * observed.
      */
-    private static String buildFailedMessage(JsonObject params) {
+    static String buildFailedMessage(JsonObject params) {
         String codexErrorInfo = extractTurnCodexErrorInfo(params);
         String message = extractTurnErrorMessage(params);
         boolean isAuthFailure = "unauthorized".equals(codexErrorInfo)
-                || (message != null && message.contains("401 Unauthorized"));
+                                || (message != null && message.contains("401 Unauthorized"));
         if (isAuthFailure) {
             if (PluginSettings.isDebugJson()) {
                 LOG.log(Level.INFO, "codex turn failed: mapped to authentication error (codexErrorInfo={0}, message={1})",
@@ -244,7 +244,7 @@ class CodexAppServerHandler implements CodexNotificationListener, CodexServerReq
      * newline on every write.</p>
      *
      * @throws PatchFailedException if the hunk does not match the file content (stale read, CRLF vs LF,
-     * whitespace mismatch)
+     *                              whitespace mismatch)
      */
     static String applyUnifiedDiff(String original, String diffHunk) throws PatchFailedException {
         String hunk = diffHunk.endsWith("\n") ? diffHunk.substring(0, diffHunk.length() - 1) : diffHunk;
@@ -279,9 +279,9 @@ class CodexAppServerHandler implements CodexNotificationListener, CodexServerReq
             }
             JsonObject change = element.getAsJsonObject();
             String filePath = change.has(CodexJsonKeyEnum.PATH.key()) && change.get(CodexJsonKeyEnum.PATH.key()).isJsonPrimitive()
-                    ? change.get(CodexJsonKeyEnum.PATH.key()).getAsString() : null;
+                              ? change.get(CodexJsonKeyEnum.PATH.key()).getAsString() : null;
             String diffHunk = change.has(CodexJsonKeyEnum.DIFF.key()) && change.get(CodexJsonKeyEnum.DIFF.key()).isJsonPrimitive()
-                    ? change.get(CodexJsonKeyEnum.DIFF.key()).getAsString() : null;
+                              ? change.get(CodexJsonKeyEnum.DIFF.key()).getAsString() : null;
             items.add(new MultiPermissionItem(
                     filePath != null && !filePath.isBlank() ? filePath : UNNAMED_CHANGE_PATH,
                     proposedContentFor(filePath, diffHunk, changeKind(change), changeMovePath(change))));
@@ -306,12 +306,12 @@ class CodexAppServerHandler implements CodexNotificationListener, CodexServerReq
         for (JsonElement element : changes) {
             if (!element.isJsonObject()) {
                 return "This client can only review 'add' and in-place 'update' file changes. One entry in this patch"
-                        + " is not a change object at all (" + element + "), so it could not be identified and nothing"
-                        + " was applied.";
+                       + " is not a change object at all (" + element + "), so it could not be identified and nothing"
+                       + " was applied.";
             }
             JsonObject change = element.getAsJsonObject();
             String path = change.has(CodexJsonKeyEnum.PATH.key()) && change.get(CodexJsonKeyEnum.PATH.key()).isJsonPrimitive()
-                    ? change.get(CodexJsonKeyEnum.PATH.key()).getAsString() : UNNAMED_CHANGE_PATH;
+                          ? change.get(CodexJsonKeyEnum.PATH.key()).getAsString() : UNNAMED_CHANGE_PATH;
             String kind = changeKind(change);
             if (KIND_ADD.equals(kind)) {
                 continue;
@@ -322,23 +322,23 @@ class CodexAppServerHandler implements CodexNotificationListener, CodexServerReq
                     continue;
                 }
                 return "This client can only review in-place 'add' and 'update' file changes, and " + path
-                        + " is an 'update' that also renames the file to " + movePath
-                        + ". A rename cannot be shown in its diff review, so nothing was applied."
-                        + " Do the rename as a separate step and send the content change on its own.";
+                       + " is an 'update' that also renames the file to " + movePath
+                       + ". A rename cannot be shown in its diff review, so nothing was applied."
+                       + " Do the rename as a separate step and send the content change on its own.";
             }
             if (KIND_DELETE.equals(kind)) {
                 return "This client can only review 'add' and in-place 'update' file changes, and " + path
-                        + " is a 'delete'. Deletions cannot be shown in its diff review, so nothing was applied."
-                        + " Do the deletion as a separate step (for example with a shell command the user can approve)"
-                        + " and keep add/update changes in the patch.";
+                       + " is a 'delete'. Deletions cannot be shown in its diff review, so nothing was applied."
+                       + " Do the deletion as a separate step (for example with a shell command the user can approve)"
+                       + " and keep add/update changes in the patch.";
             }
             // Neither on the allowlist nor a kind we have a specific message for. The raw value goes in the message
             // verbatim: this string is how we find out Codex shipped a kind we have never seen, so it has to be
             // something a user can paste into a bug report.
             return "This client can only review 'add' and in-place 'update' file changes, and " + path
-                    + " arrived with a change kind it does not recognise: " + describeKind(change)
-                    + ". Nothing was applied. If this is a new Codex change kind, this client needs updating to"
-                    + " support it.";
+                   + " arrived with a change kind it does not recognise: " + describeKind(change)
+                   + ". Nothing was applied. If this is a new Codex change kind, this client needs updating to"
+                   + " support it.";
         }
         return null;
     }
@@ -385,7 +385,7 @@ class CodexAppServerHandler implements CodexNotificationListener, CodexServerReq
         if (kind.isJsonObject()) {
             JsonObject asObject = kind.getAsJsonObject();
             return asObject.has(CodexJsonKeyEnum.TYPE.key()) && asObject.get(CodexJsonKeyEnum.TYPE.key()).isJsonPrimitive()
-                    ? asObject.get(CodexJsonKeyEnum.TYPE.key()).getAsString() : null;
+                   ? asObject.get(CodexJsonKeyEnum.TYPE.key()).getAsString() : null;
         }
         return kind.isJsonPrimitive() ? kind.getAsString() : null;
     }
@@ -395,12 +395,12 @@ class CodexAppServerHandler implements CodexNotificationListener, CodexServerReq
      */
     static String changeMovePath(JsonObject change) {
         if (change == null || !change.has(CodexJsonKeyEnum.KIND.key())
-                || !change.get(CodexJsonKeyEnum.KIND.key()).isJsonObject()) {
+            || !change.get(CodexJsonKeyEnum.KIND.key()).isJsonObject()) {
             return null;
         }
         JsonObject kind = change.get(CodexJsonKeyEnum.KIND.key()).getAsJsonObject();
         return kind.has(CodexJsonKeyEnum.MOVE_PATH.key()) && kind.get(CodexJsonKeyEnum.MOVE_PATH.key()).isJsonPrimitive()
-                ? kind.get(CodexJsonKeyEnum.MOVE_PATH.key()).getAsString() : null;
+               ? kind.get(CodexJsonKeyEnum.MOVE_PATH.key()).getAsString() : null;
     }
 
     /**
@@ -609,7 +609,8 @@ class CodexAppServerHandler implements CodexNotificationListener, CodexServerReq
                 default:
                     break; // Unrecognised notification — ignore silently, never throw.
             }
-        } catch (Throwable t) {
+        }
+        catch (Throwable t) {
             // This executor drains every inbound notification FIFO, so a throw
             // escaping one malformed payload would silently kill the worker and
             // drop all later traffic until the next connection. Log and keep
@@ -650,9 +651,9 @@ class CodexAppServerHandler implements CodexNotificationListener, CodexServerReq
      * break has to be synthesised at the only point that knows a tool ran.
      *
      * <p>
-     * Field names taken from a live notification, not guessed: null null null null null null null null null
-     * null null null null null null null null null null null null null null null null null null null null null     {@code {"item":{"type":"mcpToolCall","tool":"ListAiSessions",
-     * "server":"aicoder-nb-ki-plugin",...}}}. Kind.OTHER with a null path deliberately —
+     * Field names taken from a live notification, not guessed: {@code item.type} is {@code "mcpToolCall"},
+     * {@code item.tool} names the tool (e.g. {@code "ListAiSessions"}) and {@code item.server} the MCP server
+     * (e.g. {@code "aicoder-nb-ki-plugin"}). Kind.OTHER with a null path deliberately —
      * {@code isFileModification()} stays false so no diff panel is raised; file changes keep their own path
      * below.
      */
@@ -662,12 +663,12 @@ class CodexAppServerHandler implements CodexNotificationListener, CodexServerReq
         }
         JsonObject item = params.getAsJsonObject(CodexJsonKeyEnum.ITEM.key());
         String type = item.has(CodexJsonKeyEnum.TYPE.key()) && item.get(CodexJsonKeyEnum.TYPE.key()).isJsonPrimitive()
-                ? item.get(CodexJsonKeyEnum.TYPE.key()).getAsString() : null;
+                      ? item.get(CodexJsonKeyEnum.TYPE.key()).getAsString() : null;
         if (!"mcpToolCall".equals(type)) {
             return;
         }
         String tool = item.has(CodexJsonKeyEnum.TOOL.key()) && item.get(CodexJsonKeyEnum.TOOL.key()).isJsonPrimitive()
-                ? item.get(CodexJsonKeyEnum.TOOL.key()).getAsString() : "tool";
+                      ? item.get(CodexJsonKeyEnum.TOOL.key()).getAsString() : "tool";
         listener.onAiProcessEvent(new ToolUseEvent(tool, null, null, null, ToolUseEvent.Kind.OTHER));
     }
 
@@ -688,7 +689,7 @@ class CodexAppServerHandler implements CodexNotificationListener, CodexServerReq
         // context usage and is therefore comparable with modelContextWindow.
         JsonObject last = tokenUsage.getAsJsonObject(CodexJsonKeyEnum.LAST.key());
         long usedTokens = last.has(CodexJsonKeyEnum.TOTAL_TOKENS.key()) && last.get(CodexJsonKeyEnum.TOTAL_TOKENS.key()).isJsonPrimitive()
-                ? last.get(CodexJsonKeyEnum.TOTAL_TOKENS.key()).getAsLong() : 0L;
+                          ? last.get(CodexJsonKeyEnum.TOTAL_TOKENS.key()).getAsLong() : 0L;
         if (PluginSettings.isDebugJson()) {
             LOG.log(Level.INFO, "codex tokenUsage: used={0} contextWindow={1}",
                     new Object[]{usedTokens, contextWindow});
@@ -710,11 +711,10 @@ class CodexAppServerHandler implements CodexNotificationListener, CodexServerReq
         }
         double usedPercent = primary.get(CodexJsonKeyEnum.USED_PERCENT.key()).getAsDouble();
         long windowDurationMins = primary.has(CodexJsonKeyEnum.WINDOW_DURATION_MINS.key()) && primary.get(CodexJsonKeyEnum.WINDOW_DURATION_MINS.key()).isJsonPrimitive()
-                ? primary.get(CodexJsonKeyEnum.WINDOW_DURATION_MINS.key()).getAsLong() : 0L;
+                                  ? primary.get(CodexJsonKeyEnum.WINDOW_DURATION_MINS.key()).getAsLong() : 0L;
         long resetsAt = primary.has(CodexJsonKeyEnum.RESETS_AT.key()) && primary.get(CodexJsonKeyEnum.RESETS_AT.key()).isJsonPrimitive()
-                ? primary.get(CodexJsonKeyEnum.RESETS_AT.key()).getAsLong() : 0L;
+                        ? primary.get(CodexJsonKeyEnum.RESETS_AT.key()).getAsLong() : 0L;
         CodexRateLimitEvent event = new CodexRateLimitEvent(usedPercent, windowDurationMins, resetsAt);
-        listener.onAiProcessEvent(event);
         CodexAiImplementation.publishRateLimit(event);
     }
 
@@ -745,7 +745,8 @@ class CodexAppServerHandler implements CodexNotificationListener, CodexServerReq
                     return CompletableFuture.failedFuture(
                             new UnsupportedOperationException("Unhandled Codex server request: " + method));
             }
-        } catch (Throwable t) {
+        }
+        catch (Throwable t) {
             // A handler throwing synchronously must still yield an answer: this
             // failed future routes through CodexJsonRpcClient's exceptionally
             // path as a JSON-RPC INTERNAL_ERROR response, so Codex's approval
@@ -760,12 +761,12 @@ class CodexAppServerHandler implements CodexNotificationListener, CodexServerReq
 
     private CompletableFuture<JsonObject> handleCommandExecutionApproval(JsonObject params) {
         String reason = params.has(CodexJsonKeyEnum.REASON.key()) && params.get(CodexJsonKeyEnum.REASON.key()).isJsonPrimitive()
-                ? params.get(CodexJsonKeyEnum.REASON.key()).getAsString() : null;
+                        ? params.get(CodexJsonKeyEnum.REASON.key()).getAsString() : null;
         String command = params.has(CodexJsonKeyEnum.COMMAND.key()) && params.get(CodexJsonKeyEnum.COMMAND.key()).isJsonPrimitive()
-                ? params.get(CodexJsonKeyEnum.COMMAND.key()).getAsString() : null;
+                         ? params.get(CodexJsonKeyEnum.COMMAND.key()).getAsString() : null;
         String displayText = reason != null ? reason
-                : command != null ? "Codex wants to run: " + command
-                        : "Codex wants to run a command";
+                             : command != null ? "Codex wants to run: " + command
+                               : "Codex wants to run a command";
         if (isMcpSteeringEnabled()) {
             McpHookServerUtil.logMcpSteeringRefusal("codex", McpSteeringPolicy.Category.SHELL, displayText);
             String steeringText = McpSteeringPolicy.steeringFeedbackFor(McpSteeringPolicy.Category.SHELL);
@@ -796,14 +797,14 @@ class CodexAppServerHandler implements CodexNotificationListener, CodexServerReq
      */
     private CompletableFuture<JsonObject> handleFileChangeApproval(JsonObject params) {
         String itemId = params.has(CodexJsonKeyEnum.ITEM_ID.key()) && params.get(CodexJsonKeyEnum.ITEM_ID.key()).isJsonPrimitive()
-                ? params.get(CodexJsonKeyEnum.ITEM_ID.key()).getAsString() : null;
+                        ? params.get(CodexJsonKeyEnum.ITEM_ID.key()).getAsString() : null;
         if (itemId == null) {
             return respondToFileChange(null, null);
         }
         // computeIfAbsent, not get: if the approval won the race the entry does not exist yet, and installing the
         // future here is what lets the later notification hand the changes over.
         CompletableFuture<JsonArray> pendingChanges
-                = fileChangeCache.computeIfAbsent(itemId, k -> new CompletableFuture<>());
+                                     = fileChangeCache.computeIfAbsent(itemId, k -> new CompletableFuture<>());
         // copy() so the timeout completes only THIS wait — completing the cached future itself would poison it for a
         // notification still on its way and turn a slow arrival into a permanent null.
         long waitMillis = fileChangeWaitMillis;
@@ -969,12 +970,12 @@ class CodexAppServerHandler implements CodexNotificationListener, CodexServerReq
      */
     private CompletableFuture<JsonObject> handleMcpElicitationRequest(JsonObject params) {
         String message = params.has(CodexJsonKeyEnum.MESSAGE.key()) && params.get(CodexJsonKeyEnum.MESSAGE.key()).isJsonPrimitive()
-                ? params.get(CodexJsonKeyEnum.MESSAGE.key()).getAsString() : null;
+                         ? params.get(CodexJsonKeyEnum.MESSAGE.key()).getAsString() : null;
         String serverName = params.has(CodexJsonKeyEnum.SERVER_NAME.key()) && params.get(CodexJsonKeyEnum.SERVER_NAME.key()).isJsonPrimitive()
-                ? params.get(CodexJsonKeyEnum.SERVER_NAME.key()).getAsString() : null;
+                            ? params.get(CodexJsonKeyEnum.SERVER_NAME.key()).getAsString() : null;
         String displayText = message != null ? message
-                : serverName != null ? "MCP server \'" + serverName + "\' requests approval"
-                        : "MCP server requests approval";
+                             : serverName != null ? "MCP server \'" + serverName + "\' requests approval"
+                               : "MCP server requests approval";
         if (PluginSettings.isDebugJson()) {
             LOG.log(Level.INFO, "codex mcpServer/elicitation/request: serverName={0}", serverName);
         }

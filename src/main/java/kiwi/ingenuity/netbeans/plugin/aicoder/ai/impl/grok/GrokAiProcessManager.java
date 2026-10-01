@@ -29,9 +29,12 @@ import kiwi.ingenuity.netbeans.plugin.aicoder.utils.StatusMessageUtil;
  * Manages the {@code grok} CLI (xAI's Grok CLI, https://docs.x.ai/build/cli). Unlike Claude's persistent
  * {@code --input-format stream-json} conversation, grok's headless mode
  * (https://docs.x.ai/build/cli/headless-scripting) is a one-shot process per turn: each prompt spawns
- * {@code grok -p "<prompt>"} with either {@code -s <sessionId>} (first turn, creates the named headless session) or
- * {@code -r <sessionId>} (subsequent turns, resumes it) so the grok-side session persists across turns even though the
- * OS process does not. Output is captured with {@code --output-format json} and parsed by {@link GrokResponseParser}
+ * {@code grok -p "<prompt>"} with either {@code -s <sessionId>} (first turn, creates the named headless
+ * session) or
+ * {@code -r <sessionId>} (subsequent turns, resumes it) so the grok-side session persists across turns even
+ * though the
+ * OS process does not. Output is captured with {@code --output-format json} and parsed by
+ * {@link GrokResponseParser}
  * once the process exits.
  */
 public class GrokAiProcessManager extends AiProcessManager {
@@ -39,7 +42,8 @@ public class GrokAiProcessManager extends AiProcessManager {
     private static final Logger LOG = Logger.getLogger(GrokAiProcessManager.class.getName());
 
     /**
-     * Ask the process to exit gracefully (SIGTERM-equivalent), give it up to 5 seconds to do so, and only escalate to a
+     * Ask the process to exit gracefully (SIGTERM-equivalent), give it up to 5 seconds to do so, and only
+     * escalate to a
      * forced kill if it is still alive afterwards.
      */
     private static void terminateProcess(Process p) {
@@ -59,17 +63,48 @@ public class GrokAiProcessManager extends AiProcessManager {
     }
 
     /**
-     * Grant the headless CLI access to every open NetBeans project, mirroring Claude's {@code --add-dir} loop.
+     * Same kill as {@link #terminateProcess}, but never blocks the caller: {@code destroy()} itself is a
+     * quick signal-only call, but the up-to-5s wait plus forced-kill escalation is not, and
+     * {@code interrupt()}/{@code stop()} can be reached directly from the EDT (AiImplementation delivers a
+     * Cancel immediately while the manager is busy) — nothing on that path may block for seconds. The
+     * escalation still runs, just on a background thread instead of the caller's.
+     */
+    private static void terminateProcessAsync(Process p) {
+        if (p == null) {
+            return;
+        }
+        p.destroy();
+        Thread escalate = new Thread(() -> {
+            try {
+                if (!p.waitFor(5, TimeUnit.SECONDS)) {
+                    p.destroyForcibly();
+                }
+            }
+            catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                p.destroyForcibly();
+            }
+        }, "grok-kill-escalation");
+        escalate.setDaemon(true);
+        escalate.start();
+    }
+
+    /**
+     * Grant the headless CLI access to every open NetBeans project, mirroring Claude's {@code --add-dir}
+     * loop.
      *
      * <p>
      * Grok exposes no {@code --add-dir}. Instead:
      * <ul>
-     * <li>{@code --cwd} pins the session working directory (also set on {@link ProcessBuilder#directory(File)} for
+     * <li>{@code --cwd} pins the session working directory (also set on
+     * {@link ProcessBuilder#directory(File)} for
      * child processes)</li>
-     * <li>path-scoped {@code --allow} rules grant native Read/Edit/Write/Grep under each project root (repeatable;
+     * <li>path-scoped {@code --allow} rules grant native Read/Edit/Write/Grep under each project root
+     * (repeatable;
      * works with headless mode)</li>
      * </ul>
-     * MCP tools already receive the same list via {@code McpHookServer.updateSessionScope}; these flags cover the CLI's
+     * MCP tools already receive the same list via {@code McpHookServer.updateSessionScope}; these flags cover
+     * the CLI's
      * own filesystem tools.
      */
     static void appendProjectDirArgs(List<String> args, File workDir, List<File> projDirs) {
@@ -115,19 +150,27 @@ public class GrokAiProcessManager extends AiProcessManager {
     private GrokAiSession grokAiSession = null;
     private volatile String reasoningEffort;
     /**
-     * Whether {@link #reasoningEffort} came from the session's own setting ({@code true}) or the global default
-     * ({@code false}) — set together with {@link #reasoningEffort} by every {@link #configureReasoningEffort} caller.
-     * The two are treated very differently on an unsupported value: only a session-sourced value is ever cleared; the
-     * global default is never modified automatically, since one session's model rejecting it says nothing about the
+     * Whether {@link #reasoningEffort} came from the session's own setting ({@code true}) or the global
+     * default
+     * ({@code false}) — set together with {@link #reasoningEffort} by every {@link #configureReasoningEffort}
+     * caller.
+     * The two are treated very differently on an unsupported value: only a session-sourced value is ever
+     * cleared; the
+     * global default is never modified automatically, since one session's model rejecting it says nothing
+     * about the
      * other sessions (and other backends' sessions not yet created) that also use it.
      */
     private volatile boolean reasoningEffortFromSession;
     /**
-     * Notified (no argument — the caller already knows it only fires for the session-sourced case, per rule 3a) when
+     * Notified (no argument — the caller already knows it only fires for the session-sourced case, per rule
+     * 3a) when
      * {@link #buildReasoningEffortArgs} clears an unsupported SESSION-sourced value, so the owning
-     * {@code GrokAiImplementation} can also clear the PERSISTED session setting — otherwise only this in-memory field
-     * is cleared, and the next session start (tab reopen, IDE restart) re-reads the same stale persisted value and
-     * fires the INFO again, forever. Never invoked for a global-sourced value — that case is never cleared anywhere,
+     * {@code GrokAiImplementation} can also clear the PERSISTED session setting — otherwise only this
+     * in-memory field
+     * is cleared, and the next session start (tab reopen, IDE restart) re-reads the same stale persisted
+     * value and
+     * fires the INFO again, forever. Never invoked for a global-sourced value — that case is never cleared
+     * anywhere,
      * persisted or in-memory-only-until-corrected. Deliberately a plain callback rather than plumbing an
      * {@code AiSessionHost} reference into this process-manager layer, which has no business knowing about
      * session-settings persistence otherwise.
@@ -139,13 +182,17 @@ public class GrokAiProcessManager extends AiProcessManager {
     }
 
     /**
-     * Sets the reasoning-effort level to pass on the next {@code runTurn}, or clears it. {@code null}/blank means "pass
-     * nothing" — mirrors {@code PiAiProcessManager.configureThinkingLevel}. Since grok spawns a fresh process per turn
-     * (unlike pi's persistent one), this is also the live-update path: a later call — e.g. from the info bar's combo —
+     * Sets the reasoning-effort level to pass on the next {@code runTurn}, or clears it. {@code null}/blank
+     * means "pass
+     * nothing" — mirrors {@code PiAiProcessManager.configureThinkingLevel}. Since grok spawns a fresh process
+     * per turn
+     * (unlike pi's persistent one), this is also the live-update path: a later call — e.g. from the info
+     * bar's combo —
      * simply changes what the NEXT turn launches with, no restart needed.
      *
-     * @param fromSession whether {@code level} came from the session's own setting rather than the global default — see
-     * {@link #reasoningEffortFromSession}'s javadoc for why this matters
+     * @param fromSession whether {@code level} came from the session's own setting rather than the global
+     *                    default — see
+     *                    {@link #reasoningEffortFromSession}'s javadoc for why this matters
      */
     public void configureReasoningEffort(String level, boolean fromSession) {
         this.reasoningEffort = (level == null || level.isBlank()) ? null : level;
@@ -160,12 +207,17 @@ public class GrokAiProcessManager extends AiProcessManager {
     }
 
     /**
-     * Package-private for direct unit testing (unset/set-supported/set-unsupported), without spawning a process —
+     * Package-private for direct unit testing (unset/set-supported/set-unsupported), without spawning a
+     * process —
      * mirrors {@code PiAiProcessManager.buildLaunchCommand} being split out for the same reason. Returns
-     * {@code ["--reasoning-effort", level]} when {@code reasoningEffort} is set and {@code model} supports it, or an
-     * empty list otherwise. A configured level unsupported by {@code model} is handled so: a SESSION-sourced value is
-     * cleared (self-correcting: the next call for the same mismatch finds nothing to clear) and fires exactly one INFO
-     * status event; a GLOBAL-sourced value is left completely alone — not cleared, not written anywhere, no INFO — the
+     * {@code ["--reasoning-effort", level]} when {@code reasoningEffort} is set and {@code model} supports
+     * it, or an
+     * empty list otherwise. A configured level unsupported by {@code model} is handled so: a SESSION-sourced
+     * value is
+     * cleared (self-correcting: the next call for the same mismatch finds nothing to clear) and fires exactly
+     * one INFO
+     * status event; a GLOBAL-sourced value is left completely alone — not cleared, not written anywhere, no
+     * INFO — the
      * level is simply omitted for this turn and the mismatch is logged at FINE only.
      */
     List<String> buildReasoningEffortArgs(String model) {
@@ -179,7 +231,7 @@ public class GrokAiProcessManager extends AiProcessManager {
         reasoningEffort = null;
         if (reasoningEffortFromSession) {
             listener.onAiProcessEvent(new StatusEvent(StatusEventTypeEnum.INFO,
-                                                      "Reasoning effort \"" + effort + "\" is not supported by model \"" + model + "\"; clearing it"));
+                    "Reasoning effort \"" + effort + "\" is not supported by model \"" + model + "\"; clearing it"));
             Runnable cb = onReasoningEffortCleared;
             if (cb != null) {
                 cb.run();
@@ -191,7 +243,7 @@ public class GrokAiProcessManager extends AiProcessManager {
             // anywhere. The combo already shows "(model default)" for a model that can't take it, so the UI
             // communicates this without a warning the user can't dismiss.
             LOG.log(Level.FINE, "Reasoning effort \"{0}\" (global default) is not supported by model \"{1}\"; omitting "
-                    + "it for this turn without touching the global default", new Object[]{effort, model});
+                                + "it for this turn without touching the global default", new Object[]{effort, model});
         }
         return List.of();
     }
@@ -205,12 +257,12 @@ public class GrokAiProcessManager extends AiProcessManager {
         if (!GrokExecutableLocator.isExecutableFile(executablePath)) {
             running = false;
             listener.onAiProcessEvent(new StatusEvent(StatusEventTypeEnum.FAILED,
-                                                      StatusMessageUtil.formatStartFailed("grok executable not found at " + executablePath)));
+                    StatusMessageUtil.formatStartFailed("grok executable not found at " + executablePath)));
             return;
         }
         if (currentSession == null) {
             listener.onAiProcessEvent(new StatusEvent(StatusEventTypeEnum.FAILED,
-                                                      StatusMessageUtil.formatSessionNotConfigured()));
+                    StatusMessageUtil.formatSessionNotConfigured()));
             return;
         }
         sessionId = currentSession.id();
@@ -237,7 +289,7 @@ public class GrokAiProcessManager extends AiProcessManager {
         }
         if (!mcpReady) {
             listener.onAiProcessEvent(new StatusEvent(StatusEventTypeEnum.FAILED,
-                                                      StatusMessageUtil.formatMcpSetupFailed()));
+                    StatusMessageUtil.formatMcpSetupFailed()));
             return;
         }
         registrar = reg;
@@ -271,6 +323,14 @@ public class GrokAiProcessManager extends AiProcessManager {
         Thread t = new Thread(() -> runTurn(text, effectiveWorkDir, sid, isFirst, projDirs), "grok-turn");
         t.setDaemon(true);
         t.start();
+    }
+
+    /**
+     * Seam for tests: overridden to return a controllable fake {@link Process} instead of actually spawning
+     * the grok CLI, so the Cancel/stop race conditions around it can be driven deterministically.
+     */
+    Process startProcess(ProcessBuilder pb) throws IOException {
+        return pb.start();
     }
 
     private void runTurn(String text, File workDir, String sid, boolean isFirst, List<File> projDirs) {
@@ -309,7 +369,7 @@ public class GrokAiProcessManager extends AiProcessManager {
                 pb.directory(workDir);
             }
             pb.redirectErrorStream(false);
-            p = pb.start();
+            p = startProcess(pb);
             synchronized (this) {
                 if (!running) {
                     // stop() arrived while the process was starting — kill it and leave
@@ -398,14 +458,28 @@ public class GrokAiProcessManager extends AiProcessManager {
                         processing = false;
                     }
                     listener.onAiProcessEvent(new StatusEvent(StatusEventTypeEnum.EXITED,
-                                                              StatusMessageUtil.formatExited("Grok", code, stderrLines)));
+                            StatusMessageUtil.formatExited("Grok", code, stderrLines)));
                 }
             }
             else {
                 // Cancelled (or process superseded): same create-vs-resume resolution.
                 resolveFirstMessageAfterAttempt(isFirst, sid);
+                boolean wasUserCancel;
+                boolean stillRunning;
                 synchronized (this) {
                     processing = false;
+                    wasUserCancel = cancelledByUser;
+                    stillRunning = running;
+                }
+                // The turn's one closer, for the cancelled case: interrupt() marks cancelledByUser and
+                // leaves processing set so the gate stays shut, but deliberately emits nothing itself —
+                // emitting here instead, after processing is already false, means this can never be a
+                // second closer alongside whatever the turn itself would otherwise have reported. Gated on
+                // "running" too: a full stop() also sets cancelledByUser, but the session it would be
+                // closing no longer exists by the time this thread wakes from the terminated process.
+                if (wasUserCancel && stillRunning) {
+                    listener.onAiProcessEvent(new StatusEvent(StatusEventTypeEnum.STOPPED,
+                            StatusMessageUtil.formatStopped()));
                 }
             }
         }
@@ -414,8 +488,10 @@ public class GrokAiProcessManager extends AiProcessManager {
                 Thread.currentThread().interrupt();
             }
             boolean wasUserCancel;
+            boolean stillRunning;
             synchronized (this) {
                 wasUserCancel = cancelledByUser;
+                stillRunning = running;
                 cancelledByUser = false;
                 processing = false;
                 currentProcess = null;
@@ -427,7 +503,11 @@ public class GrokAiProcessManager extends AiProcessManager {
             if (!wasUserCancel) {
                 LOG.log(Level.WARNING, "Grok turn failed", e);
                 listener.onAiProcessEvent(new StatusEvent(StatusEventTypeEnum.FAILED,
-                                                          StatusMessageUtil.formatSendFailed(e.getMessage())));
+                        StatusMessageUtil.formatSendFailed(e.getMessage())));
+            }
+            else if (stillRunning) {
+                listener.onAiProcessEvent(new StatusEvent(StatusEventTypeEnum.STOPPED,
+                        StatusMessageUtil.formatStopped()));
             }
         }
     }
@@ -440,8 +520,10 @@ public class GrokAiProcessManager extends AiProcessManager {
     }
 
     /**
-     * After a non-success first-turn attempt, keep {@code -s} if grok never created the session; switch to {@code -r}
-     * only when the session directory already exists (e.g. CLI created it then exited non-zero, or user cancelled
+     * After a non-success first-turn attempt, keep {@code -s} if grok never created the session; switch to
+     * {@code -r}
+     * only when the session directory already exists (e.g. CLI created it then exited non-zero, or user
+     * cancelled
      * mid-create).
      */
     private void resolveFirstMessageAfterAttempt(boolean wasFirst, String sid) {
@@ -455,33 +537,42 @@ public class GrokAiProcessManager extends AiProcessManager {
 
     /**
      * Grok headless mode has no documented mid-turn graceful-abort control message (unlike Claude's stdin
-     * control_request or Copilot's session.abort()), so Cancel hard-kills the OS process. Mail has nothing to inject
+     * control_request or Copilot's session.abort()), so Cancel hard-kills the OS process. Mail has nothing to
+     * inject
      * into since there is no persistent session to interrupt.
      */
     @Override
     public synchronized void interrupt(InterruptTypeEnum type) {
         if (type == InterruptTypeEnum.Cancel) {
+            // Gated on processing now, like every other AI type: with no turn in flight there is nothing to
+            // cancel, so this must do nothing and emit nothing (a Cancel arriving between turns used to
+            // report STOPPED unconditionally, a closer with no turn for it to close).
+            if (!processing) {
+                return;
+            }
             // Stamping the moment the user actually pressed Stop is the only way to
             // measure the wind-down tail afterwards: without it, "it carried on
             // after I stopped it" cannot be told apart from a normal wind-down, and
-            // the agent's own log gives no click time to compare against. Grok has
-            // no processing-gated early return here (unlike the other AI types) —
-            // turnInFlight/processAlive are logged so "Stop did nothing" and "Stop
-            // acted" can still be told apart afterwards.
+            // the agent's own log gives no click time to compare against.
             if (PluginSettings.isDebugJson()) {
                 LOG.log(Level.INFO, "Grok interrupt: user pressed Stop (session={0}, turnInFlight={1}, processAlive={2})",
                         new Object[]{sessionId, processing, currentProcess != null});
             }
             cancelledByUser = true;
-            processing = false;
+            // processing stays set: only the turn thread that owns it may clear it, once it has actually
+            // unwound — clearing it here would re-open the sendPrompt gate while that thread is still
+            // winding down, letting a second turn start underneath it.
             if (currentProcess != null) {
-                terminateProcess(currentProcess);
+                terminateProcessAsync(currentProcess);
                 if (PluginSettings.isDebugJson()) {
-                    LOG.log(Level.INFO, "Grok interrupt: process terminated (session={0})", sessionId);
+                    LOG.log(Level.INFO, "Grok interrupt: kill signal sent, escalation running in background (session={0})", sessionId);
                 }
                 currentProcess = null;
             }
-            listener.onAiProcessEvent(new StatusEvent(StatusEventTypeEnum.STOPPED, StatusMessageUtil.formatStopped()));
+            // STOPPED no longer fires here: the turn thread's own teardown (runTurn's cancelled branch or
+            // its exception catch) is the one closer, emitted only after processing is actually cleared —
+            // so a caller checking isBusy() when STOPPED arrives sees it already false, and this can never
+            // be a second closer alongside whatever the turn itself would otherwise have reported.
         }
         else if (PluginSettings.isDebugJson()) {
             // Legitimate no-op, not a bug: headless one-shot-process-per-prompt has no
@@ -506,7 +597,9 @@ public class GrokAiProcessManager extends AiProcessManager {
         processing = false;
         cancelledByUser = true;
         if (currentProcess != null) {
-            terminateProcess(currentProcess);
+            // Same EDT-safety reason as interrupt(): stop() can also be reached directly from the EDT
+            // (closing a session tab), so the kill escalation must not block it either.
+            terminateProcessAsync(currentProcess);
             currentProcess = null;
         }
         GrokAiSession sess = grokAiSession;

@@ -2,19 +2,20 @@ package kiwi.ingenuity.netbeans.plugin.aicoder.process;
 
 import java.util.ArrayList;
 import java.util.List;
-import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.claude.ClaudeStreamJsonParser;
-import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.claude.events.ClaudeSessionInfoEvent;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.events.StatusEvent;
+import kiwi.ingenuity.netbeans.plugin.aicoder.ai.events.StatusEventTypeEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.events.TextDeltaEvent;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.events.ToolUseEvent;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.events.TurnCompleteEvent;
-import kiwi.ingenuity.netbeans.plugin.aicoder.ai.events.StatusEventTypeEnum;
+import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.claude.ClaudeStreamJsonParser;
+import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.claude.events.ClaudeSessionInfoEvent;
+import kiwi.ingenuity.netbeans.plugin.aicoder.process.events.AiProcessEvent;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import org.junit.jupiter.api.Test;
-import kiwi.ingenuity.netbeans.plugin.aicoder.process.events.AiProcessEvent;
 
 class ClaudeStreamJsonParserTest {
 
@@ -46,7 +47,7 @@ class ClaudeStreamJsonParserTest {
     void toolUse_Write_producesToolUseEvent() {
         String line = """
             {"type":"assistant","message":{"content":[{"type":"tool_use","id":"t1",
-             "name":"Write","input":{"path":"/foo/Bar.java","content":"public class Bar {}"}}]}}
+             "name":"Write","input":{"file_path":"/foo/Bar.java","content":"public class Bar {}"}}]}}
             """.strip().replace("\n", "");
 
         List<AiProcessEvent> events = parse(line);
@@ -63,7 +64,7 @@ class ClaudeStreamJsonParserTest {
         String original = "public class Foo { int x = 1; }";
         String line = """
             {"type":"assistant","message":{"content":[{"type":"tool_use","id":"t2",
-             "name":"Edit","input":{"path":"/foo/Foo.java",
+             "name":"Edit","input":{"file_path":"/foo/Foo.java",
              "old_string":"int x = 1;","new_string":"int x = 42;"}}]}}
             """.strip().replace("\n", "");
 
@@ -78,6 +79,47 @@ class ClaudeStreamJsonParserTest {
         assertEquals(1, events.size());
         ToolUseEvent e = assertInstanceOf(ToolUseEvent.class, events.get(0));
         assertEquals("public class Foo { int x = 42; }", e.proposedContent());
+        assertEquals(ToolUseEvent.Kind.EDIT, e.kind());
+    }
+
+    /**
+     * The exact shape Claude Code sends for its built-in Edit: the path is {@code file_path}, alongside
+     * {@code replace_all}, a {@code caller} object and a top-level {@code wire_tool_inputs}. Reading the path
+     * under the wrong key made it null, and the null key then threw inside the parser, so the whole line was
+     * logged as unparseable and the event was lost.
+     */
+    @Test
+    void toolUse_Edit_realClaudeShape_isParsedWithItsFilePath() {
+        String line = """
+            {"type":"assistant","message":{"model":"claude-opus-5-5","id":"msg_1","type":"message",
+             "role":"assistant","content":[{"type":"tool_use","id":"toolu_1","name":"Edit",
+             "input":{"replace_all":false,"file_path":"/no/such/dir/Foo.java",
+             "old_string":"int x = 1;","new_string":"int x = 42;"},"caller":{"type":"direct"}}]},
+             "parent_tool_use_id":null,"session_id":"s1",
+             "wire_tool_inputs":{"toolu_1":{"replace_all":false,"file_path":"/no/such/dir/Foo.java",
+             "old_string":"int x = 1;","new_string":"int x = 42;"}}}
+            """.strip().replace("\n", "");
+
+        List<AiProcessEvent> events = parse(line);
+
+        assertEquals(1, events.size(), "the Edit must surface as one event, not be skipped: " + events);
+        ToolUseEvent e = assertInstanceOf(ToolUseEvent.class, events.get(0));
+        assertEquals("/no/such/dir/Foo.java", e.filePath());
+        assertEquals(ToolUseEvent.Kind.EDIT, e.kind());
+    }
+
+    @Test
+    void toolUse_Edit_withoutFilePath_stillProducesAnEvent() {
+        String line = """
+            {"type":"assistant","message":{"content":[{"type":"tool_use","id":"t3",
+             "name":"Edit","input":{"old_string":"a","new_string":"b"}}]}}
+            """.strip().replace("\n", "");
+
+        List<AiProcessEvent> events = parse(line);
+
+        assertEquals(1, events.size(), "a missing path must not throw and discard the line: " + events);
+        ToolUseEvent e = assertInstanceOf(ToolUseEvent.class, events.get(0));
+        assertNull(e.filePath());
         assertEquals(ToolUseEvent.Kind.EDIT, e.kind());
     }
 
@@ -167,12 +209,12 @@ class ClaudeStreamJsonParserTest {
 
         List<AiProcessEvent> events = parse(line);
 
-        boolean failed = events.stream().anyMatch(e ->
-                e instanceof StatusEvent se
-                && se.type() == StatusEventTypeEnum.FAILED
-                && se.text() != null && se.text().contains("plan limits"));
-        boolean anyTurnComplete = events.stream().anyMatch(e ->
-                e instanceof TurnCompleteEvent);
+        boolean failed = events.stream().anyMatch(e
+                -> e instanceof StatusEvent se
+                   && se.type() == StatusEventTypeEnum.FAILED
+                   && se.text() != null && se.text().contains("plan limits"));
+        boolean anyTurnComplete = events.stream().anyMatch(e
+                -> e instanceof TurnCompleteEvent);
         assertTrue(failed, "api_error should surface as FAILED");
         assertFalse(anyTurnComplete, "api_error must not emit TurnCompleteEvent");
     }
@@ -185,12 +227,12 @@ class ClaudeStreamJsonParserTest {
         List<AiProcessEvent> events = parse(line);
 
         // Should emit exactly one StatusEvent with FAILED type
-        boolean failed = events.stream().anyMatch(e ->
-                e instanceof StatusEvent se
-                && se.type() == StatusEventTypeEnum.FAILED
-                && se.text() != null && se.text().contains("could not be parsed"));
-        boolean anyTurnComplete = events.stream().anyMatch(e ->
-                e instanceof TurnCompleteEvent);
+        boolean failed = events.stream().anyMatch(e
+                -> e instanceof StatusEvent se
+                   && se.type() == StatusEventTypeEnum.FAILED
+                   && se.text() != null && se.text().contains("could not be parsed"));
+        boolean anyTurnComplete = events.stream().anyMatch(e
+                -> e instanceof TurnCompleteEvent);
         assertTrue(failed, "malformed result line should emit StatusEvent FAILED");
         assertFalse(anyTurnComplete, "malformed result line must not emit TurnCompleteEvent");
         assertEquals(1, events.size(), "malformed result should emit exactly one event");

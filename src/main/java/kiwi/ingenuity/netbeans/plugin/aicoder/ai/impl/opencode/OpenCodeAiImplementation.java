@@ -26,16 +26,16 @@ import kiwi.ingenuity.netbeans.plugin.aicoder.utils.StatusMessageUtil;
 public class OpenCodeAiImplementation extends AiImplementation {
 
     private static final Logger LOG = Logger.getLogger(OpenCodeAiImplementation.class.getName());
-    private static final AiModelCatalog modelCatalog = new AiModelCatalog();
+    private static final AiModelCatalog modelCatalog = new AiModelCatalog(AiTypeEnum.OPENCODE);
 
     public static AiModelCatalog modelCatalog() {
         return modelCatalog;
     }
 
     /**
-     * OpenCode's model list only becomes available after a successful ACP
-     * {@code session/new} handshake, via the {@code configOptions} array. There
-     * is nothing to discover before a session exists; models are cached in
+     * OpenCode's model list only becomes available after a successful ACP {@code session/new} handshake, via
+     * the {@code configOptions} array. There is nothing to discover before a session exists; models are
+     * cached in
      * {@link kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.opencode.settings.OpenCodePluginSettings#setDiscoveredModels}
      * when the first {@code session/new} response arrives.
      */
@@ -81,32 +81,29 @@ public class OpenCodeAiImplementation extends AiImplementation {
     }
 
     /**
-     * Resolves the model to start a session with: an explicit argument first,
-     * then the session's own choice, then the global default. Extracted from
-     * {@link #startWithDiscovery} so it can be tested without going through
-     * {@link OpenCodeExecutableLocator#locate}, which depends on what is
-     * actually installed on the machine running the tests.
+     * Resolves the model to start a session with: an explicit argument first, then the session's own choice,
+     * then the global default. Extracted from {@link #startWithDiscovery} so it can be tested without going
+     * through {@link OpenCodeExecutableLocator#locate}, which depends on what is actually installed on the
+     * machine running the tests.
      *
      * <p>
-     * AiTopComponent always calls {@code startWithDiscovery(null)} — the
-     * session-picker flow applies the chosen model to session settings, not
-     * through this argument — so falling straight to the global default here,
-     * as this used to do, silently ran every OpenCode session on
-     * {@code OpenCodePluginSettings.getModel()} regardless of what the user
-     * picked per session. Session settings must be checked before the global
-     * default, matching Claude/Ollama's pattern.
+     * AiTopComponent always calls {@code startWithDiscovery(null)} — the session-picker flow applies the
+     * chosen model to session settings, not through this argument — so falling straight to the global default
+     * here, as this used to do, silently ran every OpenCode session on
+     * {@code OpenCodePluginSettings.getModel()} regardless of what the user picked per session. Session
+     * settings must be checked before the global default, matching Claude/Ollama's pattern.
      */
     String resolveStartupModel(String model) {
         String sessionModel = currentSession != null
-                && currentSession.settings() instanceof OpenCodeSessionSettings s
-                && s.model() != null && !s.model().isBlank()
-                ? s.model() : null;
+                              && currentSession.settings() instanceof OpenCodeSessionSettings s
+                              && s.model() != null && !s.model().isBlank()
+                              ? s.model() : null;
         String effectiveModel = (model != null && !model.isBlank())
-                ? model
-                : sessionModel != null ? sessionModel : OpenCodePluginSettings.getModel();
+                                ? model
+                                : sessionModel != null ? sessionModel : OpenCodePluginSettings.getModel();
         if (PluginSettings.isDebugJson()) {
             String source = (model != null && !model.isBlank()) ? "explicit argument"
-                    : sessionModel != null ? "session setting" : "global default";
+                            : sessionModel != null ? "session setting" : "global default";
             LOG.log(Level.INFO, "OpenCode requested model=\"{0}\" at session start (source: {1})",
                     new Object[]{effectiveModel, source});
         }
@@ -136,13 +133,30 @@ public class OpenCodeAiImplementation extends AiImplementation {
         // persist in OpenCodeSessionSettings.acpSessionId. Ignore the argument and
         // always resume from the stored ACP id (or not at all).
         String stored = currentSession != null
-                && currentSession.settings() instanceof OpenCodeSessionSettings
-                ? ((OpenCodeSessionSettings) currentSession.settings()).acpSessionId()
-                : null;
+                        && currentSession.settings() instanceof OpenCodeSessionSettings
+                        ? ((OpenCodeSessionSettings) currentSession.settings()).acpSessionId()
+                        : null;
         if (stored != null && !stored.isBlank()) {
             delegate().resumeSession(stored);
         }
         // else: do nothing — a fresh session/new is correct
+    }
+
+    private static String extractConfigValue(JsonArray options, String id) {
+        if (options == null) {
+            return null;
+        }
+        for (JsonElement element : options) {
+            if (element.isJsonObject()) {
+                JsonObject option = element.getAsJsonObject();
+                if (id.equals(option.has(AcpJsonKeyEnum.ID.key())
+                              ? option.get(AcpJsonKeyEnum.ID.key()).getAsString() : null)) {
+                    return option.has(AcpJsonKeyEnum.CURRENT_VALUE.key())
+                           ? option.get(AcpJsonKeyEnum.CURRENT_VALUE.key()).getAsString() : null;
+                }
+            }
+        }
+        return null;
     }
 
     private String currentConfigValue(String id) {
@@ -189,17 +203,81 @@ public class OpenCodeAiImplementation extends AiImplementation {
 
     @Override
     public AiInfoBarExtension createInfoBarExtension(AiSession session, AiSessionHost host) {
+        // The bar is installed before asynchronous startup calls onStarted(); capture the host now so an
+        // early idle selection is persisted instead of being visible only in the in-memory settings object.
+        this.sessionHost = host;
         OpenCodeSessionSettings s = (session != null && session.settings() instanceof OpenCodeSessionSettings)
-                ? (OpenCodeSessionSettings) session.settings() : null;
+                                    ? (OpenCodeSessionSettings) session.settings() : null;
         if (PluginSettings.isDebugJson()) {
             LOG.log(Level.INFO,
                     "OpenCode createInfoBarExtension [{0}]: session#={1} settings#={2} model={3}",
                     new Object[]{session != null ? session.id() : null,
-                        session != null ? System.identityHashCode(session) : null,
-                        s != null ? System.identityHashCode(s) : null,
-                        s != null ? s.model() : null});
+                                 session != null ? System.identityHashCode(session) : null,
+                                 s != null ? System.identityHashCode(s) : null,
+                                 s != null ? s.model() : null});
         }
-        return new OpenCodeAiInfoBarExtension(delegate, s, host);
+        return new OpenCodeAiInfoBarExtension(delegate().configOptions(), s, this::handleInfoBarConfigChange, this::compact);
+    }
+
+    private void handleInfoBarConfigChange(String configId, String value) {
+        if (currentSession == null || !(currentSession.settings() instanceof OpenCodeSessionSettings settings)) {
+            return;
+        }
+        if (delegate().isSessionLive()) {
+            String current = currentConfigValue(configId);
+            if (value != null && value.equals(current)) {
+                return;
+            }
+            delegate().setConfigOption(configId, value).thenAccept(options -> {
+                String applied = extractConfigValue(options, configId);
+                if (applied != null) {
+                    applyInfoBarSetting(settings, configId, applied);
+                    AiSessionHost h = sessionHost;
+                    if (h != null) {
+                        h.updateSessionSettings(settings);
+                    }
+                }
+                listener.onAiProcessEvent(new OpenCodeConfigOptionsEvent(options));
+            }).exceptionally(error -> {
+                JsonArray authoritative = delegate().configOptions();
+                if (authoritative == null) {
+                    authoritative = OpenCodeAiInfoBarExtension.buildFallbackConfigOptions(settings);
+                }
+                if (authoritative != null) {
+                    listener.onAiProcessEvent(new OpenCodeConfigOptionsEvent(authoritative));
+                }
+                String detail = error.getMessage() == null ? error.getClass().getSimpleName() : error.getMessage();
+                listener.onAiProcessEvent(new StatusEvent(StatusEventTypeEnum.INFO,
+                        "OpenCode configuration change failed: " + detail));
+                return null;
+            });
+        }
+        else {
+            applyInfoBarSetting(settings, configId, value);
+            AiSessionHost h = sessionHost;
+            if (h != null) {
+                h.updateSessionSettings(settings);
+            }
+            listener.onAiProcessEvent(new OpenCodeConfigOptionsEvent(
+                    OpenCodeAiInfoBarExtension.buildFallbackConfigOptions(settings)));
+        }
+    }
+
+    private static void applyInfoBarSetting(OpenCodeSessionSettings settings, String configId, String value) {
+        switch (configId) {
+            case "model" ->
+                settings.setModel(value);
+            case "mode" ->
+                settings.setMode(value);
+            case "effort" ->
+                settings.setEffort(value);
+            default -> {
+            }
+        }
+    }
+
+    void compact() {
+        delegate().compact();
     }
 
     @Override

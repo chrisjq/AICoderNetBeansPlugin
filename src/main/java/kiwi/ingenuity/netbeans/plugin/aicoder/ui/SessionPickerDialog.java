@@ -13,9 +13,12 @@ import java.awt.event.MouseAdapter;
 import java.awt.event.MouseEvent;
 import java.beans.PropertyChangeListener;
 import java.io.IOException;
+import java.lang.reflect.InvocationTargetException;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.atomic.AtomicReference;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 import javax.swing.BorderFactory;
@@ -112,9 +115,14 @@ public class SessionPickerDialog extends JDialog {
     }
 
     private final SessionPersistenceManager spm;
+    private final SessionPickerOperations operations;
+    private final LoadEpochGuard loadEpoch = new LoadEpochGuard();
     private final TemplatePersistenceManager templates = new TemplatePersistenceManager();
     private final SessionTableModel sessions = new SessionTableModel();
     private final JTable sessionTable = new JTable(sessions);
+    private final JLabel sessionsStatusLabel = new JLabel(" ");
+    private JButton openButton;
+    private JButton deleteButton;
     private final List<String> openProjectPaths = new ArrayList<>();
     private final PropertyChangeListener openProjectsListener = evt -> {
         if (OpenProjects.PROPERTY_OPEN_PROJECTS.equals(evt.getPropertyName())) {
@@ -137,12 +145,13 @@ public class SessionPickerDialog extends JDialog {
     private SessionPickerDialog(SessionPersistenceManager spm) {
         super(WindowManager.getDefault().getMainWindow(), "AI Manager", true);
         this.spm = spm;
+        this.operations = new SessionPickerOperations(spm, this::closeAndDeleteTab);
         setLayout(new BorderLayout());
         OpenProjects.getDefault().addPropertyChangeListener(openProjectsListener);
         projectCombo.setRenderer(new DefaultListCellRenderer() {
             @Override
             public Component getListCellRendererComponent(javax.swing.JList<?> list, Object value, int index,
-                    boolean isSelected, boolean cellHasFocus) {
+                                                          boolean isSelected, boolean cellHasFocus) {
                 Component component = super.getListCellRendererComponent(list, value, index, isSelected, cellHasFocus);
                 if (value instanceof String path) {
                     setText(projectDisplayLabel(path, openProjectPaths));
@@ -185,14 +194,15 @@ public class SessionPickerDialog extends JDialog {
         sessionTable.setPreferredScrollableViewportSize(new Dimension(780, 320));
         JPanel panel = new JPanel(new BorderLayout(4, 4));
         panel.add(new JScrollPane(sessionTable), BorderLayout.CENTER);
+        panel.add(sessionsStatusLabel, BorderLayout.NORTH);
         JPanel actions = new JPanel(new FlowLayout(FlowLayout.RIGHT));
-        JButton open = new JButton("Open");
-        open.addActionListener(e -> onOpenSelected());
-        JButton delete = new JButton("Delete");
-        delete.addActionListener(e -> onDelete());
-        actions.add(open);
+        openButton = new JButton("Open");
+        openButton.addActionListener(e -> onOpenSelected());
+        deleteButton = new JButton("Delete");
+        deleteButton.addActionListener(e -> onDelete());
+        actions.add(openButton);
         actions.add(closeAfterOpen);
-        actions.add(delete);
+        actions.add(deleteButton);
         panel.add(actions, BorderLayout.SOUTH);
         return panel;
     }
@@ -351,11 +361,46 @@ public class SessionPickerDialog extends JDialog {
     }
 
     private void loadSessions() {
-        try {
-            sessions.setRows(spm.loadAll());
-        } catch (IOException e) {
-            LOG.log(Level.WARNING, "Could not load sessions", e);
-        }
+        loadSessions(null);
+    }
+
+    /**
+     * SessionPersistenceManager.loadAll takes a cross-process file lock with no timeout, so it must not run
+     * on the EDT: another IDE instance holding the lock would freeze this one for as long as the picker
+     * stayed open. Returns at once — the dialog shows a loading state immediately, then the table populates
+     * (or an error is reported) once the background load completes.
+     *
+     * @param pendingMessage a message to keep showing once the load succeeds (e.g. a delete failure this
+     *                       reload is following up on) instead of clearing the status label — a load failure still overrides it,
+     *                       since that is the more current problem
+     */
+    private void loadSessions(String pendingMessage) {
+        long epoch = loadEpoch.next();
+        setSessionsActionsEnabled(false);
+        sessionsStatusLabel.setText(pendingMessage != null ? pendingMessage : "Loading sessions…");
+        operations.loadAll().whenComplete((result, error) -> SwingUtilities.invokeLater(() -> {
+            // A later loadSessions call (e.g. a quick delete-then-reload) may have already started and could
+            // finish first; applying this stale result on top of it would show outdated data. Disposing the
+            // dialog while a load is in flight must not touch it either.
+            if (!loadEpoch.isCurrent(epoch) || !isDisplayable()) {
+                return;
+            }
+            if (error != null) {
+                LOG.log(Level.WARNING, "Could not load sessions", error);
+                sessionsStatusLabel.setText("Could not load sessions: " + error.getMessage());
+                sessions.setRows(List.of());
+            }
+            else {
+                sessionsStatusLabel.setText(pendingMessage != null ? pendingMessage : " ");
+                sessions.setRows(result);
+            }
+            setSessionsActionsEnabled(true);
+        }));
+    }
+
+    private void setSessionsActionsEnabled(boolean enabled) {
+        openButton.setEnabled(enabled);
+        deleteButton.setEnabled(enabled);
     }
 
     private void refreshTemplates() {
@@ -367,7 +412,8 @@ public class SessionPickerDialog extends JDialog {
         try {
             templates.saveConfigDefaultsIfEmpty().forEach(configCombo::addItem);
             templates.saveSpecialInstructionDefaultsIfEmpty().forEach(instructionsCombo::addItem);
-        } catch (IOException e) {
+        }
+        catch (IOException e) {
             LOG.log(Level.WARNING, "Could not load templates", e);
         }
         configCombo.setSelectedItem(config);
@@ -397,37 +443,34 @@ public class SessionPickerDialog extends JDialog {
         boolean startup = instruction != null && injectOnCreate.isSelected();
         boolean close = closeAfterCreate.isSelected();
         int count = (Integer) countSpinner.getValue();
+        List<AiSession> toCreate = new ArrayList<>();
+        for (int i = 1; i <= count; i++) {
+            AiSession session = AiSession.create(project, type).withName(count == 1 ? baseName : baseName + "_" + i);
+            type.getSettingsCreator().update(session.settings(), typeSettingsJson);
+            if (config != null) {
+                config.applyTo(session.settings());
+            }
+            if (instruction != null) {
+                session.settings().setSessionInstructions(instruction.body());
+            }
+            session.setSessionInstructionsDelivery(startup ? SessionInstructionsDeliveryEnum.ON_START : SessionInstructionsDeliveryEnum.ON_FIRST_REQUEST);
+            toCreate.add(session);
+        }
         setCreateEnabled(false);
-        new Thread(() -> {
-            List<AiSession> created = new ArrayList<>();
-            for (int i = 1; i <= count; i++) {
-                AiSession session = AiSession.create(project, type).withName(count == 1 ? baseName : baseName + "_" + i);
-                type.getSettingsCreator().update(session.settings(), typeSettingsJson);
-                if (config != null) {
-                    config.applyTo(session.settings());
-                }
-                if (instruction != null) {
-                    session.settings().setSessionInstructions(instruction.body());
-                }
-                session.setSessionInstructionsDelivery(startup ? SessionInstructionsDeliveryEnum.ON_START : SessionInstructionsDeliveryEnum.ON_FIRST_REQUEST);
-                try {
-                    spm.save(session);
-                    created.add(session);
-                } catch (IOException ex) {
-                    LOG.log(Level.WARNING, "Could not save session " + session.name(), ex);
+        operations.createAll(toCreate).whenComplete((created, error) -> SwingUtilities.invokeLater(() -> {
+            if (error != null) {
+                LOG.log(Level.WARNING, "Could not create sessions", error);
+                sessionsStatusLabel.setText("Could not create sessions: " + error.getMessage());
+            }
+            else if (!created.isEmpty()) {
+                created.forEach(this::openSession);
+                loadSessions();
+                if (close) {
+                    dispose();
                 }
             }
-            SwingUtilities.invokeLater(() -> {
-                if (!created.isEmpty()) {
-                    created.forEach(this::openSession);
-                    loadSessions();
-                    if (close) {
-                        dispose();
-                    }
-                }
-                setCreateEnabled(true);
-            });
-        }, "aicoder-session-create").start();
+            setCreateEnabled(true);
+        }));
     }
 
     private void setCreateEnabled(boolean enabled) {
@@ -471,6 +514,12 @@ public class SessionPickerDialog extends JDialog {
         }
     }
 
+    /**
+     * Confirms on the EDT, then hands the actual deletes to {@link #operations}, which runs them off it: for
+     * a session with no open tab, {@code SessionDeletion.delete} falls through to
+     * {@code SessionPersistenceManager.delete}, which takes the same untimed cross-process file lock as
+     * loadSessions.
+     */
     private void onDelete() {
         List<AiSession> selected = selectedSessions();
         if (selected.isEmpty()) {
@@ -479,22 +528,52 @@ public class SessionPickerDialog extends JDialog {
         if (JOptionPane.showConfirmDialog(this, "Delete selected sessions and their history permanently?", "Delete Sessions", JOptionPane.YES_NO_OPTION, JOptionPane.WARNING_MESSAGE) != JOptionPane.YES_OPTION) {
             return;
         }
-        for (AiSession session : selected) try {
-            spm.delete(session.id());
-            closeTab(session.id());
-        } catch (IOException e) {
-            LOG.log(Level.WARNING, "Could not delete session", e);
-        }
-        loadSessions();
-    }
-
-    private void closeTab(String id) {
-        for (TopComponent tc : new ArrayList<>(TopComponent.getRegistry().getOpened())) {
-            if (tc instanceof AiTopComponent ai && id.equals(ai.getSession().id())) {
-                ai.closeWithoutPrompt();
+        setSessionsActionsEnabled(false);
+        operations.deleteAll(selected).whenComplete((failedNames, error) -> SwingUtilities.invokeLater(() -> {
+            if (!isDisplayable()) {
                 return;
             }
+            String message;
+            if (error != null) {
+                LOG.log(Level.WARNING, "Could not delete sessions", error);
+                message = "Could not delete sessions: " + error.getMessage();
+            }
+            else if (!failedNames.isEmpty()) {
+                message = "Could not delete one or more sessions: " + String.join(", ", failedNames);
+            }
+            else {
+                message = null;
+            }
+            loadSessions(message);
+        }));
+    }
+
+    /**
+     * Called off the EDT (from {@link #operations}' delete task). The TopComponent lookup and, if found, the
+     * tab close must themselves run on the EDT, so this hops there and back rather than running on the
+     * caller's thread — the same reason {@link AiTopComponent#closeAndDelete} must be called on the EDT.
+     * Nothing on the EDT ever blocks waiting for this method's caller (the delete task's future is only ever
+     * consumed via whenComplete, never get()), so this cannot deadlock against it.
+     */
+    private CompletableFuture<Void> closeAndDeleteTab(String id) {
+        AtomicReference<CompletableFuture<Void>> result = new AtomicReference<>();
+        try {
+            SwingUtilities.invokeAndWait(() -> {
+                for (TopComponent tc : new ArrayList<>(TopComponent.getRegistry().getOpened())) {
+                    if (tc instanceof AiTopComponent ai && id.equals(ai.getSession().id())) {
+                        result.set(ai.closeAndDelete());
+                        return;
+                    }
+                }
+            });
         }
+        catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+        }
+        catch (InvocationTargetException e) {
+            LOG.log(Level.WARNING, "Could not check for an open tab for session " + id, e);
+        }
+        return result.get();
     }
 
     private void openSession(AiSession session) {
@@ -515,7 +594,8 @@ public class SessionPickerDialog extends JDialog {
         };
         if (SwingUtilities.isEventDispatchThread()) {
             task.run();
-        } else {
+        }
+        else {
             SwingUtilities.invokeLater(task);
         }
     }

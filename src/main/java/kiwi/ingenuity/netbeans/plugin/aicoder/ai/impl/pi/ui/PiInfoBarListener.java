@@ -1,9 +1,9 @@
 package kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.pi.ui;
 
+import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.pi.PiVersionCheck;
+
 /**
- * Notified when the user changes a combo in {@link PiAiInfoBarExtension}, mirroring {@code ClaudeInfoBarListener}.
- * {@link PiAiInfoBarExtension} already sends the change to the running session itself via {@link PiSessionControl};
- * this is an additional hook for callers that also want to observe the choice (e.g. status logging).
+ * Receives user actions from {@link PiAiInfoBarExtension}.
  */
 public interface PiInfoBarListener {
 
@@ -12,4 +12,10 @@ public interface PiInfoBarListener {
     void onThinkingLevelChanged(String level);
 
     void onCompactRequested();
+
+    default void onVersionVerified(PiVersionCheck check) {
+    }
+
+    default void onVersionMarkedNotWorking(PiVersionCheck check) {
+    }
 }

@@ -10,9 +10,8 @@ import javax.swing.JButton;
 import javax.swing.JComboBox;
 import javax.swing.JComponent;
 import javax.swing.JProgressBar;
-import javax.swing.SwingUtilities;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.events.AiPropertyEvent;
-import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.claude.events.ClaudeModelsEvent;
+import kiwi.ingenuity.netbeans.plugin.aicoder.ai.events.AvailableModelsEvent;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.claude.events.ClaudeSessionInfoEvent;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.claude.events.ClaudeUsageEvent;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.claude.settings.ClaudePluginSettings;
@@ -21,6 +20,7 @@ import kiwi.ingenuity.netbeans.plugin.aicoder.ai.settings.AiModelSessionSettings
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.settings.AiSessionSettings;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.ui.AiInfoBarExtension;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.ui.BlankSafeComboRenderer;
+import kiwi.ingenuity.netbeans.plugin.aicoder.ai.ui.GuardedCombo;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.events.AiProcessImplEvent;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ui.UIConstants;
 
@@ -49,22 +49,24 @@ public class ClaudeAiInfoBarExtension implements AiInfoBarExtension {
 
     private final JComboBox<String> modelCombo;
     private final JComboBox<String> effortCombo;
+    private final GuardedCombo<String> modelGuard;
+    private final GuardedCombo<String> effortGuard;
     private final JButton compactBtn;
     private final JProgressBar sessionBar;
     private final JProgressBar fiveHourBar;
     private final JProgressBar sevenDayBar;
 
     private final List<ClaudeInfoBarListener> listeners = new ArrayList<>();
-    private boolean programmatic = false;
-    private Runnable disposeAction;
 
     public ClaudeAiInfoBarExtension() {
         modelCombo = new JComboBox<>(ClaudePluginSettings.KNOWN_MODELS);
+        modelGuard = new GuardedCombo<>(modelCombo);
         modelCombo.setEditable(true);
         modelCombo.setSelectedItem(ClaudePluginSettings.getModel());
         modelCombo.setToolTipText("Claude model — pick from list or type any model ID");
 
         effortCombo = new JComboBox<>(EFFORT_OPTIONS);
+        effortGuard = new GuardedCombo<>(effortCombo);
         effortCombo.setToolTipText("Claude effort level — a change relaunches the session");
         effortCombo.setRenderer(new BlankSafeComboRenderer());
         effortCombo.setSelectedItem(ClaudePluginSettings.getEffort().isBlank() ? BlankSafeComboRenderer.DEFAULT_OPTION : ClaudePluginSettings.getEffort());
@@ -101,16 +103,8 @@ public class ClaudeAiInfoBarExtension implements AiInfoBarExtension {
         listeners.remove(listener);
     }
 
-    public void setDisposeAction(Runnable disposeAction) {
-        this.disposeAction = disposeAction;
-    }
-
     @Override
     public void dispose() {
-        if (disposeAction != null) {
-            disposeAction.run();
-            disposeAction = null;
-        }
         listeners.clear();
     }
 
@@ -120,44 +114,41 @@ public class ClaudeAiInfoBarExtension implements AiInfoBarExtension {
     }
 
     @Override
+    public void onBusyChanged(boolean busy) {
+        modelCombo.setEnabled(!busy);
+        effortCombo.setEnabled(!busy);
+        compactBtn.setEnabled(!busy);
+    }
+
+    @Override
     public void onPropertyEvent(AiPropertyEvent event) {
         if (event instanceof ClaudeUsageEvent ue) {
-            SwingUtilities.invokeLater(() -> {
-                setPctBar(fiveHourBar, ue.fiveHourPct(), "Session (5-hour limit)");
-                setPctBar(sevenDayBar, ue.sevenDayPct(), "Weekly (7-day limit)");
-            });
+            setPctBar(fiveHourBar, ue.fiveHourPct(), "Session (5-hour limit)");
+            setPctBar(sevenDayBar, ue.sevenDayPct(), "Weekly (7-day limit)");
         }
-        else if (event instanceof ClaudeModelsEvent me) {
-            SwingUtilities.invokeLater(() -> setAvailableModels(me.models()));
+        else if (event instanceof AvailableModelsEvent models) {
+            setAvailableModels(models.models());
         }
     }
 
     @Override
     public void onSessionSettingsChanged(AiSessionSettings settings) {
         if (settings instanceof AiModelSessionSettings modelSettings
-                && modelSettings.model() != null && !modelSettings.model().isBlank()) {
+            && modelSettings.model() != null && !modelSettings.model().isBlank()) {
             setSelectedModel(modelSettings.model());
         }
         if (settings instanceof ClaudeSessionSettings claudeSettings
-                && claudeSettings.effort() != null && !claudeSettings.effort().isBlank()) {
+            && claudeSettings.effort() != null && !claudeSettings.effort().isBlank()) {
             setSelectedEffort(claudeSettings.effort());
         }
     }
 
     public void addModelChangeListener(ActionListener l) {
-        modelCombo.addActionListener(e -> {
-            if (!programmatic) {
-                l.actionPerformed(e);
-            }
-        });
+        modelGuard.addActionListener(l);
     }
 
     public void addEffortChangeListener(ActionListener l) {
-        effortCombo.addActionListener(e -> {
-            if (!programmatic) {
-                l.actionPerformed(e);
-            }
-        });
+        effortGuard.addActionListener(l);
     }
 
     public String getSelectedEffort() {
@@ -167,21 +158,13 @@ public class ClaudeAiInfoBarExtension implements AiInfoBarExtension {
     }
 
     public void setSelectedEffort(String effort) {
-        if (!SwingUtilities.isEventDispatchThread()) {
-            SwingUtilities.invokeLater(() -> setSelectedEffort(effort));
-            return;
-        }
-        programmatic = true;
-        try {
+        effortGuard.runProgrammatic(() -> {
             Component focused = KeyboardFocusManager.getCurrentKeyboardFocusManager().getFocusOwner();
             effortCombo.setSelectedItem((effort == null || effort.isBlank()) ? BlankSafeComboRenderer.DEFAULT_OPTION : effort);
             if (focused != null) {
                 focused.requestFocusInWindow();
             }
-        }
-        finally {
-            programmatic = false;
-        }
+        });
     }
 
     public String getSelectedModel() {
@@ -191,30 +174,17 @@ public class ClaudeAiInfoBarExtension implements AiInfoBarExtension {
     }
 
     public void setSelectedModel(String model) {
-        if (!SwingUtilities.isEventDispatchThread()) {
-            SwingUtilities.invokeLater(() -> setSelectedModel(model));
-            return;
-        }
-        programmatic = true;
-        try {
+        modelGuard.runProgrammatic(() -> {
             Component focused = KeyboardFocusManager.getCurrentKeyboardFocusManager().getFocusOwner();
             modelCombo.setSelectedItem(model);
             if (focused != null) {
                 focused.requestFocusInWindow();
             }
-        }
-        finally {
-            programmatic = false;
-        }
+        });
     }
 
     public void setAvailableModels(List<String> models) {
-        if (!SwingUtilities.isEventDispatchThread()) {
-            SwingUtilities.invokeLater(() -> setAvailableModels(models));
-            return;
-        }
-        programmatic = true;
-        try {
+        modelGuard.runProgrammatic(() -> {
             Component focused = KeyboardFocusManager.getCurrentKeyboardFocusManager().getFocusOwner();
             String current = getSelectedModel();
             modelCombo.removeAllItems();
@@ -228,10 +198,7 @@ public class ClaudeAiInfoBarExtension implements AiInfoBarExtension {
             if (focused != null) {
                 focused.requestFocusInWindow();
             }
-        }
-        finally {
-            programmatic = false;
-        }
+        });
     }
 
     @Override
@@ -240,10 +207,6 @@ public class ClaudeAiInfoBarExtension implements AiInfoBarExtension {
     }
 
     public void setSessionPct(double pct) {
-        if (!SwingUtilities.isEventDispatchThread()) {
-            SwingUtilities.invokeLater(() -> setSessionPct(pct));
-            return;
-        }
         if (pct < 0) {
             sessionBar.setValue(0);
             sessionBar.setString("N/A");

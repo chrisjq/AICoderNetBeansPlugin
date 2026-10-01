@@ -5,21 +5,31 @@ import java.io.OutputStream;
 import java.net.InetAddress;
 import java.net.InetSocketAddress;
 import java.nio.charset.StandardCharsets;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
+import javax.swing.JButton;
+import javax.swing.JComboBox;
+import javax.swing.JComponent;
+import javax.swing.JProgressBar;
 import javax.swing.SwingUtilities;
+import kiwi.ingenuity.netbeans.plugin.aicoder.ai.events.AvailableModelsEvent;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.ollama.OllamaModelDiscovery;
+import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.ollama.events.OllamaTokenUsageEvent;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.ollama.settings.OllamaPluginSettings;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.ollama.settings.OllamaSessionSettings;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import org.junit.jupiter.api.Test;
 
 /**
- * The reasoning-effort combo must show what will actually be used, like Grok's and Copilot's info bars: the session's
- * own value when pinned, otherwise the global default — without ever writing that fallback back into the session's
- * settings, or "inherits the global" and "pinned to this session" become indistinguishable.
+ * The reasoning-effort combo must show what will actually be used, like Grok's and Copilot's info bars: the
+ * session's own value when pinned, otherwise the global default — without ever writing that fallback back
+ * into the session's settings, or "inherits the global" and "pinned to this session" become
+ * indistinguishable.
  */
 class OllamaAiInfoBarExtensionTest {
 
@@ -48,9 +58,9 @@ class OllamaAiInfoBarExtensionTest {
             SwingUtilities.invokeAndWait(() -> ext.onSessionSettingsChanged(settings));
 
             assertEquals("medium", ext.getSelectedReasoningEffort(),
-                         "must display the global default, not \"(model default)\", when one is set");
+                    "must display the global default, not \"(model default)\", when one is set");
             assertNull(settings.reasoningEffort(),
-                       "the fallback must be display-only and never written back into the session's settings");
+                    "the fallback must be display-only and never written back into the session's settings");
         }
         finally {
             OllamaPluginSettings.setReasoningEffort(before);
@@ -58,27 +68,27 @@ class OllamaAiInfoBarExtensionTest {
     }
 
     /**
-     * Serves a fixed {@code /api/tags} body on an ephemeral loopback port — never the real Ollama, per the standing "do
-     * not hammer the box" instruction. A fresh ephemeral port per call keeps the discovery cache entry isolated from
-     * every other test.
+     * Serves a fixed {@code /api/tags} body on an ephemeral loopback port — never the real Ollama, per the
+     * standing "do not hammer the box" instruction. A fresh ephemeral port per call keeps the discovery cache
+     * entry isolated from every other test.
      */
     private static HttpServer startFakeOllamaServer(String tagsResponseBody) throws Exception {
         HttpServer server = HttpServer.create(new InetSocketAddress(InetAddress.getLoopbackAddress(), 0), 0);
         server.createContext("/api/tags", exchange -> {
-                         byte[] bytes = tagsResponseBody.getBytes(StandardCharsets.UTF_8);
-                         exchange.getResponseHeaders().add("Content-Type", "application/json");
-                         exchange.sendResponseHeaders(200, bytes.length);
-                         try (OutputStream os = exchange.getResponseBody()) {
-                             os.write(bytes);
-                         }
-                     });
+            byte[] bytes = tagsResponseBody.getBytes(StandardCharsets.UTF_8);
+            exchange.getResponseHeaders().add("Content-Type", "application/json");
+            exchange.sendResponseHeaders(200, bytes.length);
+            try (OutputStream os = exchange.getResponseBody()) {
+                os.write(bytes);
+            }
+        });
         server.createContext("/v1/models", exchange -> {
-                         byte[] bytes = "{\"data\":[]}".getBytes(StandardCharsets.UTF_8);
-                         exchange.sendResponseHeaders(200, bytes.length);
-                         try (OutputStream os = exchange.getResponseBody()) {
-                             os.write(bytes);
-                         }
-                     });
+            byte[] bytes = "{\"data\":[]}".getBytes(StandardCharsets.UTF_8);
+            exchange.sendResponseHeaders(200, bytes.length);
+            try (OutputStream os = exchange.getResponseBody()) {
+                os.write(bytes);
+            }
+        });
         server.start();
         return server;
     }
@@ -88,8 +98,8 @@ class OllamaAiInfoBarExtensionTest {
     }
 
     /**
-     * Once live discovery has POSITIVELY confirmed a model cannot think, the combo must collapse to only the "not set"
-     * entry — even if a level was previously requested/pinned for it.
+     * Once live discovery has POSITIVELY confirmed a model cannot think, the combo must collapse to only the
+     * "not set" entry — even if a level was previously requested/pinned for it.
      */
     @Test
     void comboCollapsesToNotSetForAModelDiscoveryConfirmsCannotThink() throws Exception {
@@ -99,7 +109,7 @@ class OllamaAiInfoBarExtensionTest {
             String baseUrl = baseUrlOf(server);
             CountDownLatch done = new CountDownLatch(1);
             OllamaModelDiscovery.discoverAsync(baseUrl, models -> done.countDown(), hint -> {
-                                       });
+            });
             assertTrue(done.await(5, TimeUnit.SECONDS), "discovery did not complete");
 
             OllamaAiInfoBarExtension ext = new OllamaAiInfoBarExtension();
@@ -110,8 +120,8 @@ class OllamaAiInfoBarExtensionTest {
             });
 
             assertNull(ext.getSelectedReasoningEffort(),
-                       "a model discovery confirms cannot think must collapse the combo to \"not set\", even though "
-                       + "\"high\" was requested");
+                    "a model discovery confirms cannot think must collapse the combo to \"not set\", even though "
+                    + "\"high\" was requested");
         }
         finally {
             server.stop(0);
@@ -119,8 +129,8 @@ class OllamaAiInfoBarExtensionTest {
     }
 
     /**
-     * The mirror case: a model discovery positively confirms CAN think must offer the static level list and let the
-     * requested level actually be selected.
+     * The mirror case: a model discovery positively confirms CAN think must offer the static level list and
+     * let the requested level actually be selected.
      */
     @Test
     void comboOffersLevelsForAModelDiscoveryConfirmsCanThink() throws Exception {
@@ -130,7 +140,7 @@ class OllamaAiInfoBarExtensionTest {
             String baseUrl = baseUrlOf(server);
             CountDownLatch done = new CountDownLatch(1);
             OllamaModelDiscovery.discoverAsync(baseUrl, models -> done.countDown(), hint -> {
-                                       });
+            });
             assertTrue(done.await(5, TimeUnit.SECONDS), "discovery did not complete");
 
             OllamaAiInfoBarExtension ext = new OllamaAiInfoBarExtension();
@@ -145,5 +155,80 @@ class OllamaAiInfoBarExtensionTest {
         finally {
             server.stop(0);
         }
+    }
+
+    /**
+     * {@code onBusyChanged} is the sole busy signal now — both Compact and Clear must disable while busy and
+     * re-enable once ready again, but only when there is content: the non-busy {@code hasContent} rule
+     * survives the migration off the old {@code isProcessing}/{@code isSummarising} suppliers.
+     */
+    @Test
+    void compactAndClearDisabledWhileBusyAndReenabledAfter() throws Exception {
+        OllamaAiInfoBarExtension ext = new OllamaAiInfoBarExtension();
+        List<JComponent> components = ext.createComponents();
+        JComboBox<?> modelCombo = (JComboBox<?>) components.get(0);
+        JButton compactBtn = (JButton) components.get(2);
+        JButton clearBtn = (JButton) components.get(3);
+
+        SwingUtilities.invokeAndWait(() -> ext.onAiProcessImplEvent(new OllamaTokenUsageEvent(100, 1000)));
+        assertTrue(compactBtn.isEnabled(), "precondition: enabled once there is content and nothing is busy");
+        assertTrue(clearBtn.isEnabled(), "precondition: enabled once there is content and nothing is busy");
+        assertTrue(modelCombo.isEnabled(), "precondition: enabled while nothing is busy");
+
+        SwingUtilities.invokeAndWait(() -> ext.onBusyChanged(true));
+        assertFalse(compactBtn.isEnabled(), "compact must disable while busy");
+        assertFalse(clearBtn.isEnabled(), "clear must disable while busy");
+        assertFalse(modelCombo.isEnabled(), "model combo must disable while busy (A2)");
+
+        SwingUtilities.invokeAndWait(() -> ext.onBusyChanged(false));
+        assertTrue(compactBtn.isEnabled(), "compact must re-enable once ready again");
+        assertTrue(clearBtn.isEnabled(), "clear must re-enable once ready again");
+        assertTrue(modelCombo.isEnabled(), "model combo must re-enable once ready again");
+    }
+
+    @Test
+    void availableModelsEventReplacesTheModelComboItems() throws Exception {
+        OllamaAiInfoBarExtension ext = new OllamaAiInfoBarExtension();
+        JComboBox<?> modelCombo = (JComboBox<?>) ext.createComponents().get(0);
+
+        SwingUtilities.invokeAndWait(() -> ext.onPropertyEvent(new AvailableModelsEvent(List.of("bus-a", "bus-b"))));
+        SwingUtilities.invokeAndWait(() -> {
+        });
+
+        List<Object> items = new ArrayList<>();
+        for (int i = 0; i < modelCombo.getItemCount(); i++) {
+            items.add(modelCombo.getItemAt(i));
+        }
+        assertEquals(List.of("bus-a", "bus-b"), items, "the bar must take its model list from AvailableModelsEvent");
+    }
+
+    /**
+     * A1 fix: the gauge must flip to "summarising" only once a listener confirms the compaction actually
+     * started, never optimistically before asking — a refusal (not running, already busy, or runWork
+     * declining) fires no onBusyChanged, so nothing would ever clear an optimistic flip made before the
+     * refusal was known.
+     */
+    @Test
+    void gaugeStaysNotSummarisingWhenCompactIsRefused() throws Exception {
+        OllamaAiInfoBarExtension ext = new OllamaAiInfoBarExtension();
+        ext.addListener(new OllamaInfoBarListener() {
+            @Override
+            public void onClearRequested() {
+            }
+
+            @Override
+            public boolean onCompactRequested() {
+                return false; // every refusal path reports "did not start" this way
+            }
+        });
+        List<JComponent> components = ext.createComponents();
+        JProgressBar gauge = (JProgressBar) components.get(4);
+        JButton compactBtn = (JButton) components.get(2);
+        SwingUtilities.invokeAndWait(() -> ext.onAiProcessImplEvent(new OllamaTokenUsageEvent(100, 1000)));
+        assertTrue(compactBtn.isEnabled(), "precondition: content present, nothing busy");
+
+        SwingUtilities.invokeAndWait(compactBtn::doClick);
+
+        assertFalse(gauge.isIndeterminate(), "a refused compact must never leave the gauge spinning");
     }
 }

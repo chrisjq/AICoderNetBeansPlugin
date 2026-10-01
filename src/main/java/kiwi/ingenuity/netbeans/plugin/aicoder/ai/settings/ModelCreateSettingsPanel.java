@@ -5,7 +5,6 @@ import java.util.EnumMap;
 import java.util.List;
 import java.util.Map;
 import java.util.function.BiConsumer;
-import java.util.function.Consumer;
 import java.util.function.Function;
 import javax.swing.JComboBox;
 import javax.swing.JComponent;
@@ -14,16 +13,18 @@ import javax.swing.JPanel;
 import javax.swing.SwingUtilities;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.AiModelCatalog;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.AiTypeEnum;
+import kiwi.ingenuity.netbeans.plugin.aicoder.ai.AiTypePropertyBus;
+import kiwi.ingenuity.netbeans.plugin.aicoder.ai.events.AiPropertyListener;
+import kiwi.ingenuity.netbeans.plugin.aicoder.ai.events.AvailableModelsEvent;
 
 /**
  * Reusable session-create panel for AI types with a model setting.
  *
  * <p>
- * Knows nothing about any particular AI. Each AI's own create panel supplies
- * its model list and default by overriding {@link #knownModels()} and
- * {@link #defaultModel()}; this class previously switched over every
- * {@link AiTypeEnum} value and imported all six settings classes, so adding an
- * AI meant editing this file too.
+ * Knows nothing about any particular AI. Each AI's own create panel supplies its model list and default by
+ * overriding {@link #knownModels()} and {@link #defaultModel()}; this class previously switched over every
+ * {@link AiTypeEnum} value and imported all six settings classes, so adding an AI meant editing this file
+ * too.
  */
 public abstract class ModelCreateSettingsPanel<E extends AiModelSessionSettings>
         implements AiSessionCreateSettingsPanel<E> {
@@ -33,23 +34,24 @@ public abstract class ModelCreateSettingsPanel<E extends AiModelSessionSettings>
     private final JPanel panel = new JPanel(new BorderLayout(0, 4));
     private final JPanel modelRow = new JPanel(new BorderLayout(6, 0));
     /**
-     * Created on first use by {@link #content()}. An always-present empty panel
-     * would contribute its own gaps to the four AIs that only offer a model,
-     * shifting their layout for nothing; created lazily, those four lay out
-     * exactly as they did when this class was only ever the model row.
+     * Created on first use by {@link #content()}. An always-present empty panel would contribute its own gaps
+     * to the four AIs that only offer a model, shifting their layout for nothing; created lazily, those four
+     * lay out exactly as they did when this class was only ever the model row.
      */
     private JPanel content;
     private final JComboBox<String> model = new JComboBox<>();
-    private final AiModelCatalog catalog;
     private final AiTypeEnum aiType;
-    private final Consumer<List<String>> catalogListener = this::replaceModels;
+    private final AiPropertyListener catalogListener = event -> {
+        if (event instanceof AvailableModelsEvent available) {
+            replaceModels(available.models());
+        }
+    };
     private boolean updating;
     private final Function<E, String> modelReader;
     private final BiConsumer<E, String> modelWriter;
 
     public ModelCreateSettingsPanel(AiTypeEnum aiType, AiModelCatalog catalog, Function<E, String> modelReader,
-            BiConsumer<E, String> modelWriter) {
-        this.catalog = catalog;
+                                    BiConsumer<E, String> modelWriter) {
         this.aiType = aiType;
         this.modelReader = modelReader;
         this.modelWriter = modelWriter;
@@ -58,7 +60,7 @@ public abstract class ModelCreateSettingsPanel<E extends AiModelSessionSettings>
         modelRow.add(new JLabel("Model:"), BorderLayout.WEST);
         modelRow.add(model, BorderLayout.CENTER);
         panel.add(modelRow, BorderLayout.NORTH);
-        catalog.addListener(catalogListener);
+        AiTypePropertyBus.getInstance().addListener(aiType, catalogListener);
         List<String> cached = catalog.getCachedModels();
         if (cached == null || cached.isEmpty()) {
             cached = knownModels();
@@ -67,23 +69,20 @@ public abstract class ModelCreateSettingsPanel<E extends AiModelSessionSettings>
     }
 
     /**
-     * Models to offer before the catalog has discovered any, i.e. this AI's
-     * built-in list.
+     * Models to offer before the catalog has discovered any, i.e. this AI's built-in list.
      *
      * <p>
-     * <b>Called from this class's constructor</b>, so an implementation must
-     * not read state declared in the subclass — that state is not assigned yet
-     * and would still be null. Returning values from the AI's settings class,
-     * which is what every implementation does, is safe.
+     * <b>Called from this class's constructor</b>, so an implementation must not read state declared in the
+     * subclass — that state is not assigned yet and would still be null. Returning values from the AI's
+     * settings class, which is what every implementation does, is safe.
      *
      * @return known models, never null; empty is acceptable
      */
     protected abstract List<String> knownModels();
 
     /**
-     * Model to select when the session has none stored and nothing was
-     * previously chosen for this AI. Same constructor-time restriction as
-     * {@link #knownModels()} applies.
+     * Model to select when the session has none stored and nothing was previously chosen for this AI. Same
+     * constructor-time restriction as {@link #knownModels()} applies.
      *
      * @return the default model, or null if this AI has none
      */
@@ -95,17 +94,15 @@ public abstract class ModelCreateSettingsPanel<E extends AiModelSessionSettings>
     }
 
     /**
-     * Area below the model row for a subclass to add its own controls, e.g.
-     * OpenCode's build/plan mode or Ollama's base URL. Lets an AI that needs
-     * extra fields still extend this panel instead of wrapping it — a wrapper
-     * has to redeclare {@code component}/{@code load}/{@code applyTo}/
-     * {@code dispose} purely to forward them.
+     * Area below the model row for a subclass to add its own controls, e.g. OpenCode's build/plan mode or
+     * Ollama's base URL. Lets an AI that needs extra fields still extend this panel instead of wrapping it —
+     * a wrapper has to redeclare {@code component}/{@code load}/{@code applyTo}/ {@code dispose} purely to
+     * forward them.
      *
      * <p>
-     * A subclass adding controls here will usually also override
-     * {@link #load(AiModelSessionSettings)} and
-     * {@link #applyTo(AiModelSessionSettings)}, calling {@code super} so the
-     * model itself is still read and written.
+     * A subclass adding controls here will usually also override {@link #load(AiModelSessionSettings)} and
+     * {@link #applyTo(AiModelSessionSettings)}, calling {@code super} so the model itself is still read and
+     * written.
      *
      * @return the content panel, created on first call
      */
@@ -152,7 +149,8 @@ public abstract class ModelCreateSettingsPanel<E extends AiModelSessionSettings>
 
     @Override
     public void dispose() {
-        catalog.removeListener(catalogListener);
+        AiTypePropertyBus.getInstance().removeListener(aiType, catalogListener);
+
     }
 
     private String getSelectedModel() {

@@ -2,16 +2,15 @@ package kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.grok;
 
 import java.util.Arrays;
 import java.util.List;
-import java.util.function.Consumer;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.AiImplementation;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.AiModelCatalog;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.AiSessionHost;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.AiTypeEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.AiTypePropertyBus;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.ExecutablePrompter;
+import kiwi.ingenuity.netbeans.plugin.aicoder.ai.events.AvailableModelsEvent;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.events.StatusEvent;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.events.StatusEventTypeEnum;
-import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.grok.events.GrokModelsEvent;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.grok.settings.GrokPluginSettings;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.grok.settings.GrokSessionSettings;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.grok.ui.GrokAiInfoBarExtension;
@@ -23,47 +22,46 @@ import kiwi.ingenuity.netbeans.plugin.aicoder.process.events.AiProcessEventListe
 import kiwi.ingenuity.netbeans.plugin.aicoder.utils.StatusMessageUtil;
 
 /**
- * Thin adapter so the generic multi-AI system (AiSession, AiTopComponent, etc.) can use the Grok (xAI) implementation.
- * Drives the {@code grok} CLI (https://docs.x.ai/build/cli) in headless mode via {@link GrokAiProcessManager}, reusing
- * the shared MCP tool server for IDE introspection, edits, builds, git, etc. — the same architecture as
- * {@code ClaudeAiImplementation}.
+ * Thin adapter so the generic multi-AI system (AiSession, AiTopComponent, etc.) can use the Grok (xAI)
+ * implementation. Drives the {@code grok} CLI (https://docs.x.ai/build/cli) in headless mode via
+ * {@link GrokAiProcessManager}, reusing the shared MCP tool server for IDE introspection, edits, builds, git,
+ * etc. — the same architecture as {@code ClaudeAiImplementation}.
  */
 public class GrokAiImplementation extends AiImplementation {
 
     // The discovered model list is shared across all Grok sessions for the IDE
     // run (like Claude/Copilot): discover once via `grok models`, cache, and
     // broadcast to every open session's dropdown via AiTypePropertyBus.
-    private static final AiModelCatalog MODEL_CATALOG = new AiModelCatalog();
+    private static final AiModelCatalog MODEL_CATALOG = new AiModelCatalog(AiTypeEnum.GROK);
 
     public static AiModelCatalog modelCatalog() {
         return MODEL_CATALOG;
     }
 
     /**
-     * Discover the Grok model list once per IDE run via {@code grok models}, then broadcast it to every open Grok
-     * session's info bar via {@link AiTypePropertyBus} — mirroring the Claude/Copilot flow. A session opened after
-     * discovery already completed replays the cached list immediately.
+     * Discover the Grok model list once per IDE run via {@code grok models}, then broadcast it to every open
+     * Grok session's info bar via {@link AiTypePropertyBus} — mirroring the Claude/Copilot flow. A session
+     * opened after discovery already completed replays the cached list immediately.
      */
     public static void triggerModelDiscovery() {
         if (!MODEL_CATALOG.beginRefresh()) {
             return;
         }
         GrokModelDiscovery.discoverAsync(GrokExecutableLocator.locate(), list -> {
-                                     if (list != null && !list.isEmpty()) {
-                                         GrokPluginSettings.setDiscoveredModels(list.toArray(String[]::new));
-                                     }
-                                     if (MODEL_CATALOG.publish(list)) {
-                                         AiTypePropertyBus.getInstance().fire(AiTypeEnum.GROK, new GrokModelsEvent(list));
-                                     }
-                                 });
+            if (list != null && !list.isEmpty()) {
+                GrokPluginSettings.setDiscoveredModels(list.toArray(String[]::new));
+            }
+            MODEL_CATALOG.publish(list);
+        });
     }
 
     private final GrokAiProcessManager delegate;
     /**
-     * Retained so {@link #clearInvalidPersistedReasoningEffort} can persist a clear even when it fires from deep in the
-     * process manager's send path (a background thread, well after {@link #createInfoBarExtension} returned) — mirrors
-     * {@code GithubCopilotAiImplementation}'s identical {@code sessionHost} field, kept for the same reason (a
-     * write-back path needed outside {@code createInfoBarExtension}'s own call).
+     * Retained so {@link #clearInvalidPersistedReasoningEffort} can persist a clear even when it fires from
+     * deep in the process manager's send path (a background thread, well after
+     * {@link #createInfoBarExtension} returned) — mirrors {@code GithubCopilotAiImplementation}'s identical
+     * {@code sessionHost} field, kept for the same reason (a write-back path needed outside
+     * {@code createInfoBarExtension}'s own call).
      */
     private volatile AiSessionHost sessionHost;
 
@@ -125,9 +123,10 @@ public class GrokAiImplementation extends AiImplementation {
     }
 
     /**
-     * The effective reasoning effort (session wins over global default) plus which scope it came from — the two are
-     * treated differently when the value turns out to be unsupported by the model: only a session-sourced value is ever
-     * cleared, never the global default. {@code value()} is {@code null} when neither scope has one set.
+     * The effective reasoning effort (session wins over global default) plus which scope it came from — the
+     * two are treated differently when the value turns out to be unsupported by the model: only a
+     * session-sourced value is ever cleared, never the global default. {@code value()} is {@code null} when
+     * neither scope has one set.
      */
     private record EffectiveReasoningEffort(String value, boolean fromSession) {
 
@@ -135,7 +134,7 @@ public class GrokAiImplementation extends AiImplementation {
 
     private EffectiveReasoningEffort effectiveReasoningEffort() {
         if (currentSession != null && currentSession.settings() instanceof GrokSessionSettings gs
-                && gs.reasoningEffort() != null && !gs.reasoningEffort().isBlank()) {
+            && gs.reasoningEffort() != null && !gs.reasoningEffort().isBlank()) {
             return new EffectiveReasoningEffort(gs.reasoningEffort(), true);
         }
         String global = GrokPluginSettings.getReasoningEffort();
@@ -144,10 +143,10 @@ public class GrokAiImplementation extends AiImplementation {
 
     /**
      * Called back by {@link GrokAiProcessManager#buildReasoningEffortArgs} only when it clears an unsupported
-     * SESSION-sourced value from its own in-memory field (never for a global-sourced one — the global default is never
-     * modified automatically), so the PERSISTED session setting is also cleared — otherwise the next session start
-     * re-reads the same stale value from disk and re-triggers the same INFO event forever. Package-private for direct
-     * unit testing.
+     * SESSION-sourced value from its own in-memory field (never for a global-sourced one — the global default
+     * is never modified automatically), so the PERSISTED session setting is also cleared — otherwise the next
+     * session start re-reads the same stale value from disk and re-triggers the same INFO event forever.
+     * Package-private for direct unit testing.
      */
     void clearInvalidPersistedReasoningEffort() {
         if (currentSession != null && currentSession.settings() instanceof GrokSessionSettings gs) {
@@ -163,9 +162,10 @@ public class GrokAiImplementation extends AiImplementation {
     public AiInfoBarExtension createInfoBarExtension(AiSession session, AiSessionHost host) {
         this.sessionHost = host;
         GrokAiInfoBarExtension provider = new GrokAiInfoBarExtension();
-        Consumer<List<String>> catalogListener = provider::setAvailableModels;
-        MODEL_CATALOG.addListener(catalogListener);
-        provider.setDisposeAction(() -> MODEL_CATALOG.removeListener(catalogListener));
+        List<String> cachedModels = MODEL_CATALOG.getCachedModels();
+        if (!cachedModels.isEmpty()) {
+            provider.onPropertyEvent(new AvailableModelsEvent(cachedModels));
+        }
         provider.addModelChangeListener(e -> {
             String model = provider.getSelectedModel();
             if (model == null) {
@@ -194,7 +194,7 @@ public class GrokAiImplementation extends AiImplementation {
         // by CodexAiImplementationTest's createInfoBarExtension_modelChangeListenerHandlesNullHostAndSession),
         // exactly like initialModel above uses session.settings() rather than currentSession for the same reason.
         String initialEffort = session.settings() instanceof GrokSessionSettings initialGrokCfg && initialGrokCfg.reasoningEffort() != null
-                && !initialGrokCfg.reasoningEffort().isBlank()
+                               && !initialGrokCfg.reasoningEffort().isBlank()
                                ? initialGrokCfg.reasoningEffort() : GrokPluginSettings.getReasoningEffort();
         provider.setSelectedReasoningEffort((initialEffort != null && !initialEffort.isBlank()) ? initialEffort : null);
         provider.addReasoningEffortChangeListener(e -> {
@@ -225,12 +225,12 @@ public class GrokAiImplementation extends AiImplementation {
     }
 
     /**
-     * Run after every {@code delegate.start()}. grok's {@code -s} flag (create a new headless session) is rejected by
-     * the CLI if the id already exists on disk ({@code Error: Session ID <id> is already in
-     * use.}, empirically confirmed) — but {@code start()} always defaults to create mode. If this session id already
-     * exists in grok's on-disk store, switch the freshly started manager to resume it instead, so an in-place restart
-     * or reopen of an existing session (e.g. on IDE restart, or reopening the chat tab) behaves like a resume rather
-     * than failing outright on the next message.
+     * Run after every {@code delegate.start()}. grok's {@code -s} flag (create a new headless session) is
+     * rejected by the CLI if the id already exists on disk ({@code Error: Session ID <id> is already in
+     * use.}, empirically confirmed) — but {@code start()} always defaults to create mode. If this session id
+     * already exists in grok's on-disk store, switch the freshly started manager to resume it instead, so an
+     * in-place restart or reopen of an existing session (e.g. on IDE restart, or reopening the chat tab)
+     * behaves like a resume rather than failing outright on the next message.
      */
     @Override
     protected void afterStart() {

@@ -2,15 +2,16 @@ package kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.ollama;
 
 import java.util.Arrays;
 import java.util.List;
-import java.util.function.Consumer;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.AiImplementation;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.AiModelCatalog;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.AiSessionHost;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.AiTypeEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.AiTypePropertyBus;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.ExecutablePrompter;
+import kiwi.ingenuity.netbeans.plugin.aicoder.ai.events.AvailableModelsEvent;
+import kiwi.ingenuity.netbeans.plugin.aicoder.ai.events.StatusEvent;
+import kiwi.ingenuity.netbeans.plugin.aicoder.ai.events.StatusEventTypeEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.ollama.events.OllamaCapabilityHintEvent;
-import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.ollama.events.OllamaModelsEvent;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.ollama.settings.OllamaPluginSettings;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.ollama.settings.OllamaSessionSettings;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.ollama.ui.OllamaAiInfoBarExtension;
@@ -21,7 +22,7 @@ import kiwi.ingenuity.netbeans.plugin.aicoder.process.events.AiProcessEventListe
 
 public class OllamaAiImplementation extends AiImplementation implements OllamaInfoBarListener {
 
-    private static final AiModelCatalog MODEL_CATALOG = new AiModelCatalog();
+    private static final AiModelCatalog MODEL_CATALOG = new AiModelCatalog(AiTypeEnum.OLLAMA_LOCAL);
 
     public static AiModelCatalog modelCatalog() {
         return MODEL_CATALOG;
@@ -35,26 +36,25 @@ public class OllamaAiImplementation extends AiImplementation implements OllamaIn
             return;
         }
         OllamaModelDiscovery.discoverAsync(baseUrl,
-                                           models -> {
-                                               List<String> list = Arrays.asList(models);
-                                               OllamaPluginSettings.setDiscoveredModels(models);
-                                               if (MODEL_CATALOG.publish(list)) {
-                                                   AiTypePropertyBus.getInstance().fire(AiTypeEnum.OLLAMA_LOCAL, new OllamaModelsEvent(list));
-                                               }
-                                           },
-                                           hint -> {
-                                               if (hint != null) {
-                                                   AiTypePropertyBus.getInstance().fire(AiTypeEnum.OLLAMA_LOCAL,
-                                                                                        new OllamaCapabilityHintEvent(hint));
-                                               }
-                                           });
+                models -> {
+                    List<String> list = Arrays.asList(models);
+                    OllamaPluginSettings.setDiscoveredModels(models);
+                    MODEL_CATALOG.publish(list);
+                },
+                hint -> {
+                    if (hint != null) {
+                        AiTypePropertyBus.getInstance().fire(AiTypeEnum.OLLAMA_LOCAL,
+                                new OllamaCapabilityHintEvent(hint));
+                    }
+                });
     }
     private final OllamaAiProcessManager processManager;
     /**
-     * Retained so {@link #clearInvalidPersistedReasoningEffort} can persist a clear even when it fires from deep in the
-     * process manager's send path (a background turn thread, well after {@link #createInfoBarExtension} or
-     * {@link #onStarted} last ran) — mirrors {@code GrokAiImplementation}/{@code GithubCopilotAiImplementation}'s
-     * identical {@code sessionHost} field, kept for the same reason.
+     * Retained so {@link #clearInvalidPersistedReasoningEffort} can persist a clear even when it fires from
+     * deep in the process manager's send path (a background turn thread, well after
+     * {@link #createInfoBarExtension} or {@link #onStarted} last ran) — mirrors
+     * {@code GrokAiImplementation}/{@code GithubCopilotAiImplementation}'s identical {@code sessionHost}
+     * field, kept for the same reason.
      */
     private volatile AiSessionHost sessionHost;
 
@@ -70,10 +70,11 @@ public class OllamaAiImplementation extends AiImplementation implements OllamaIn
     }
 
     /**
-     * Wired to {@link OllamaAiProcessManager#setOnReasoningEffortCleared}: fires only for a SESSION-sourced value —
-     * {@link OllamaAiProcessManager#applyThinkingCapabilityValidation} never invokes this for a global-sourced one), so
-     * no scope resolution is needed here — just clear whatever the session currently has pinned. Package-private for
-     * direct unit testing, mirroring {@code GrokAiImplementation}'s identical method.
+     * Wired to {@link OllamaAiProcessManager#setOnReasoningEffortCleared}: fires only for a SESSION-sourced
+     * value — {@link OllamaAiProcessManager#applyThinkingCapabilityValidation} never invokes this for a
+     * global-sourced one), so no scope resolution is needed here — just clear whatever the session currently
+     * has pinned. Package-private for direct unit testing, mirroring {@code GrokAiImplementation}'s identical
+     * method.
      */
     void clearInvalidPersistedReasoningEffort() {
         if (currentSession != null && currentSession.settings() instanceof OllamaSessionSettings gs) {
@@ -86,12 +87,13 @@ public class OllamaAiImplementation extends AiImplementation implements OllamaIn
     }
 
     /**
-     * Base URL for the current session (its own override, if set) or the global default — shared by discovery triggers
-     * and the info bar's live capability lookups, so there is exactly one place this precedence lives.
+     * Base URL for the current session (its own override, if set) or the global default — shared by discovery
+     * triggers and the info bar's live capability lookups, so there is exactly one place this precedence
+     * lives.
      */
     private String resolveBaseUrl() {
         return currentSession != null && currentSession.settings() instanceof OllamaSessionSettings settings
-                && settings.baseUrl() != null && !settings.baseUrl().isBlank()
+               && settings.baseUrl() != null && !settings.baseUrl().isBlank()
                ? settings.baseUrl()
                : defaultBaseUrl();
     }
@@ -122,7 +124,7 @@ public class OllamaAiImplementation extends AiImplementation implements OllamaIn
         String effectiveModel = model != null && !model.isBlank()
                                 ? model
                                 : currentSession != null && currentSession.settings() instanceof OllamaSessionSettings os
-                && os.model() != null
+                                  && os.model() != null
                                   ? os.model()
                                   : defaultModel();
         start(null, effectiveModel);
@@ -143,17 +145,16 @@ public class OllamaAiImplementation extends AiImplementation implements OllamaIn
         this.sessionHost = host;
         OllamaAiInfoBarExtension ext = new OllamaAiInfoBarExtension();
         ext.setBaseUrl(session.settings() instanceof OllamaSessionSettings baseUrlSettings
-                && baseUrlSettings.baseUrl() != null && !baseUrlSettings.baseUrl().isBlank()
+                       && baseUrlSettings.baseUrl() != null && !baseUrlSettings.baseUrl().isBlank()
                        ? baseUrlSettings.baseUrl()
                        : defaultBaseUrl());
-        ext.setProcessingSupplier(delegate()::isProcessing);
-        ext.setSummarisingSupplier(delegate()::isSummarising);
         ext.addListener(this);
-        Consumer<List<String>> catalogListener = models -> ext.setAvailableModels(models.toArray(String[]::new));
-        MODEL_CATALOG.addListener(catalogListener);
-        ext.setDisposeAction(() -> MODEL_CATALOG.removeListener(catalogListener));
+        List<String> cachedModels = MODEL_CATALOG.getCachedModels();
+        if (!cachedModels.isEmpty()) {
+            ext.onPropertyEvent(new AvailableModelsEvent(cachedModels));
+        }
         String initialModel = session.settings() instanceof OllamaSessionSettings settings
-                && settings.model() != null
+                              && settings.model() != null
                               ? settings.model()
                               : defaultModel();
         ext.setSelectedModel(initialModel);
@@ -199,8 +200,8 @@ public class OllamaAiImplementation extends AiImplementation implements OllamaIn
 
     private void triggerCapabilityDiscovery(String model) {
         OllamaModelDiscovery.probeCapabilityAsync(resolveBaseUrl(), model,
-                                                  hint -> AiTypePropertyBus.getInstance().fire(type,
-                                                                                               new OllamaCapabilityHintEvent(hint)));
+                hint -> AiTypePropertyBus.getInstance().fire(type,
+                        new OllamaCapabilityHintEvent(hint)));
     }
 
     @Override
@@ -220,8 +221,26 @@ public class OllamaAiImplementation extends AiImplementation implements OllamaIn
         delegate().clearContext();
     }
 
+    /**
+     * Guard mirrors {@code PiAiImplementation.compact()}: refuses while a turn or another compaction is
+     * already running, otherwise runs {@link OllamaAiProcessManager#compactContext} through the shared
+     * busy/ready contract and reports the rare race where {@code runWork} itself declines because a
+     * compaction is already in flight.
+     *
+     * @return true only when the compaction actually started — see
+     *         {@link OllamaInfoBarListener#onCompactRequested()}
+     */
     @Override
-    public void onCompactRequested() {
-        delegate().compactContext();
+    public boolean onCompactRequested() {
+        if (!isRunning() || isBusy()) {
+            listener.onAiProcessEvent(new StatusEvent(StatusEventTypeEnum.INFO,
+                    "Wait for Ollama to finish before compacting"));
+            return false;
+        }
+        boolean started = delegate().compactContext();
+        if (!started) {
+            listener.onAiProcessEvent(new StatusEvent(StatusEventTypeEnum.INFO, "Compaction already in progress"));
+        }
+        return started;
     }
 }

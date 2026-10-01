@@ -210,9 +210,9 @@ class CodexAppServerHandlerTest {
     }
 
     /**
-     * Item shape copied from a live item/started notification, not invented: null null null null null null
-     * null null null     {@code {"item":{"type":"mcpToolCall","tool":"ListAiSessions",
-     * "server":"aicoder-nb-ki-plugin","status":"inProgress",...}}}.
+     * Item shape copied from a live item/started notification, not invented: {@code item.type} is
+     * {@code "mcpToolCall"}, {@code item.tool} is {@code "ListAiSessions"}, {@code item.server} is
+     * {@code "aicoder-nb-ki-plugin"} and {@code item.status} is {@code "inProgress"}.
      */
     @Test
     void mcpToolCallItemStarted_firesToolUseEventSoNarrationStaysSeparated() {
@@ -477,7 +477,7 @@ class CodexAppServerHandlerTest {
     }
 
     private JsonObject multiItemStartedParams(String itemId, List<String> paths, List<String> diffs,
-            List<JsonObject> kinds) {
+                                              List<JsonObject> kinds) {
         JsonObject item = new JsonObject();
         item.addProperty("id", itemId);
         item.addProperty("type", "fileChange");
@@ -737,32 +737,32 @@ class CodexAppServerHandlerTest {
      * the errors seen in the live run.
      */
     private static final String REAL_ORIGINAL
-            = "/*\n"
-            + " * Click nbfs://nbhost/SystemFileSystem/Templates/Licenses/license-default.txt to change this license\n"
-            + " */\n"
-            + "\n"
-            + "package kiwi.ingenuity.cc.mavenproject1;\n"
-            + "\n"
-            + "/**\n"
-            + " *\n"
-            + " * @author chris\n"
-            + " */\n"
-            + "public class Mavenproject1 {\n"
-            + "\n"
-            + "    public static void main(String[] args) {\n"
-            + "        System.out.println(\"Hello World!\");\n"
-            + "    }\n"
-            + "}\n";
+                                = "/*\n"
+                                  + " * Click nbfs://nbhost/SystemFileSystem/Templates/Licenses/license-default.txt to change this license\n"
+                                  + " */\n"
+                                  + "\n"
+                                  + "package kiwi.ingenuity.cc.mavenproject1;\n"
+                                  + "\n"
+                                  + "/**\n"
+                                  + " *\n"
+                                  + " * @author chris\n"
+                                  + " */\n"
+                                  + "public class Mavenproject1 {\n"
+                                  + "\n"
+                                  + "    public static void main(String[] args) {\n"
+                                  + "        System.out.println(\"Hello World!\");\n"
+                                  + "    }\n"
+                                  + "}\n";
 
     private static final String FAILED_HUNK
-            = "@@ -7,2 +7,3 @@\n /**\n+ * Entry point for the sample Maven application.\n  *\n";
+                                = "@@ -7,2 +7,3 @@\n /**\n+ * Entry point for the sample Maven application.\n  *\n";
 
     private static final String WORKED_HUNK
-            = "@@ -7,3 +7,3 @@\n /**\n- *\n+ * A small Maven application entry point.\n  * @author chris\n"
-            + "@@ -13,4 +13,9 @@\n     public static void main(String[] args) {\n"
-            + "+        // Print the application greeting.\n         System.out.println(\"Hello World!\");\n"
-            + "     }\n+\n+    public static String applicationName() {\n+        return \"Mavenproject1\";\n"
-            + "+    }\n }\n";
+                                = "@@ -7,3 +7,3 @@\n /**\n- *\n+ * A small Maven application entry point.\n  * @author chris\n"
+                                  + "@@ -13,4 +13,9 @@\n     public static void main(String[] args) {\n"
+                                  + "+        // Print the application greeting.\n         System.out.println(\"Hello World!\");\n"
+                                  + "     }\n+\n+    public static String applicationName() {\n+        return \"Mavenproject1\";\n"
+                                  + "+    }\n }\n";
 
     /**
      * THE DIFFERENTIAL. Both hunks were captured from live Codex runs on 2026-08-29 against the same file;
@@ -823,31 +823,31 @@ class CodexAppServerHandlerTest {
     @Test
     void capturedThirdRunHunksAllApply() throws Exception {
         String farewell = "package kiwi.ingenuity.cc.mavenproject1;\n"
-                + "\n"
-                + "public class Farewell {\n"
-                + "\n"
-                + "    public String farewell() {\n"
-                + "        return \"Goodbye!\";\n"
-                + "    }\n"
-                + "}\n";
+                          + "\n"
+                          + "public class Farewell {\n"
+                          + "\n"
+                          + "    public String farewell() {\n"
+                          + "        return \"Goodbye!\";\n"
+                          + "    }\n"
+                          + "}\n";
         String farewellHunk = "@@ -5,3 +5,3 @@\n     public String farewell() {\n"
-                + "-        return \"Goodbye!\";\n+        return \"Goodbye from Farewell!\";\n     }\n";
+                              + "-        return \"Goodbye!\";\n+        return \"Goodbye from Farewell!\";\n     }\n";
 
         String greeter = "package kiwi.ingenuity.cc.mavenproject1;\n"
-                + "\n"
-                + "public class Greeter {\n"
-                + "\n"
-                + "    public String greeting() {\n"
-                + "        return \"Hello!\";\n"
-                + "    }\n"
-                + "}\n";
+                         + "\n"
+                         + "public class Greeter {\n"
+                         + "\n"
+                         + "    public String greeting() {\n"
+                         + "        return \"Hello!\";\n"
+                         + "    }\n"
+                         + "}\n";
         String greeterHunk = "@@ -5,3 +5,3 @@\n     public String greeting() {\n"
-                + "-        return \"Hello!\";\n+        return \"Hello from Greeter!\";\n     }\n";
+                             + "-        return \"Hello!\";\n+        return \"Hello from Greeter!\";\n     }\n";
 
         String mainHunk = "@@ -13,3 +13,3 @@\n     public static void main(String[] args) {\n"
-                + "-        // Print the application greeting.\n"
-                + "+        // Print the application greeting to standard output.\n"
-                + "         System.out.println(\"Hello World!\");\n";
+                          + "-        // Print the application greeting.\n"
+                          + "+        // Print the application greeting to standard output.\n"
+                          + "         System.out.println(\"Hello World!\");\n";
         String mainFile = REAL_ORIGINAL.replace("    public static void main(String[] args) {\n",
                 "    public static void main(String[] args) {\n        // Print the application greeting.\n");
 
@@ -907,7 +907,7 @@ class CodexAppServerHandlerTest {
         String result = CodexAppServerHandler.applyUnifiedDiff(REAL_ORIGINAL, FAILED_HUNK);
 
         assertTrue(result.endsWith("}\n"), "the file's final newline must survive: ..."
-                + result.substring(Math.max(0, result.length() - 12)).replace("\n", "\\n"));
+                                           + result.substring(Math.max(0, result.length() - 12)).replace("\n", "\\n"));
     }
 
     @Test
@@ -1310,14 +1310,14 @@ class CodexAppServerHandlerTest {
      * so the proposed content must be the field's value EXACTLY, byte for byte.
      */
     private static final String CAPTURED_ADD_CONTENT
-            = "package kiwi.ingenuity.cc.mavenproject1;\n"
-            + "\n"
-            + "public class Farewell {\n"
-            + "\n"
-            + "    public String farewell() {\n"
-            + "        return \"Goodbye!\";\n"
-            + "    }\n"
-            + "}\n";
+                                = "package kiwi.ingenuity.cc.mavenproject1;\n"
+                                  + "\n"
+                                  + "public class Farewell {\n"
+                                  + "\n"
+                                  + "    public String farewell() {\n"
+                                  + "        return \"Goodbye!\";\n"
+                                  + "    }\n"
+                                  + "}\n";
 
     @Test
     void handleFileChangeApproval_multiFile_addUsesRawContentVerbatim() throws Exception {
@@ -1598,7 +1598,7 @@ class CodexAppServerHandlerTest {
     }
 
     @Test
-    void accountRateLimitsUpdated_firesPrimaryUsageEvent() {
+    void accountRateLimitsUpdated_doesNotSendAccountWideFactToOneSession() {
         List<AiProcessEvent> events = new ArrayList<>();
         CodexAppServerHandler handler = newHandler(events);
 
@@ -1613,12 +1613,8 @@ class CodexAppServerHandlerTest {
 
         handler.onNotification(CodexAppServerHandler.METHOD_ACCOUNT_RATE_LIMITS_UPDATED, params);
 
-        assertEquals(1, events.size());
-        assertInstanceOf(CodexRateLimitEvent.class, events.get(0));
-        CodexRateLimitEvent event = (CodexRateLimitEvent) events.get(0);
-        assertEquals(51.0, event.usedPercent());
-        assertEquals(43200L, event.windowDurationMins());
-        assertEquals(1789468349L, event.resetsAtEpochSeconds());
+        assertTrue(events.isEmpty(),
+                "Account-wide Codex rate limits must use only the type-wide property bus, never a session event");
     }
 
     @Test
@@ -1808,7 +1804,8 @@ class CodexAppServerHandlerTest {
                     .anyMatch(e -> e instanceof ConfirmEvent);
             assertFalse(hasConfirmEvent,
                     "Steering ON must NOT raise ConfirmEvent");
-        } finally {
+        }
+        finally {
             SessionRegistry.unregister(sessionId);
         }
     }
@@ -1860,7 +1857,8 @@ class CodexAppServerHandlerTest {
                     .anyMatch(e -> e instanceof PermissionEvent || e instanceof MultiPermissionEvent);
             assertFalse(hasPermissionEvent,
                     "Steering ON must NOT raise PermissionEvent or MultiPermissionEvent");
-        } finally {
+        }
+        finally {
             SessionRegistry.unregister(sessionId);
         }
     }
@@ -1896,7 +1894,8 @@ class CodexAppServerHandlerTest {
             assertEquals(McpSteeringPolicy.steeringFeedbackFor(McpSteeringPolicy.Category.SHELL),
                     refusal.steeringText(),
                     "Refusal event must be posted immediately with correct steering text");
-        } finally {
+        }
+        finally {
             SessionRegistry.unregister(sessionId);
         }
     }
@@ -1972,7 +1971,8 @@ class CodexAppServerHandlerTest {
             JsonObject replyResult = reply.get(2, TimeUnit.SECONDS);
             assertEquals("accept", replyResult.get("action").getAsString(),
                     "Our server elicitation must follow normal approval flow");
-        } finally {
+        }
+        finally {
             SessionRegistry.unregister(sessionId);
         }
     }
@@ -2020,7 +2020,8 @@ class CodexAppServerHandlerTest {
                     .anyMatch(e -> e instanceof ConfirmEvent);
             assertFalse(hasConfirmEvent,
                     "Steering ON must NOT raise ConfirmEvent for other servers");
-        } finally {
+        }
+        finally {
             SessionRegistry.unregister(sessionId);
         }
     }
@@ -2097,7 +2098,8 @@ class CodexAppServerHandlerTest {
                     "a steering refusal must not announce itself in the chat transcript");
             assertEquals(3, events.stream().filter(e -> e instanceof McpSteeringRefusalEvent).count(),
                     "every refusal must still be reported to the backend");
-        } finally {
+        }
+        finally {
             logger.removeHandler(capture);
             PluginSettings.setLogToolUse(previous);
             SessionRegistry.unregister(sessionId);
@@ -2146,7 +2148,8 @@ class CodexAppServerHandlerTest {
             // The backend still receives the refusal — only the log line is gated.
             assertEquals(2, events.stream().filter(e -> e instanceof McpSteeringRefusalEvent).count());
             assertTrue(events.stream().noneMatch(e -> e instanceof SystemNotificationEvent));
-        } finally {
+        }
+        finally {
             logger.removeHandler(capture);
             PluginSettings.setLogToolUse(previous);
             SessionRegistry.unregister(sessionId);
@@ -2244,19 +2247,13 @@ class CodexAppServerHandlerTest {
     }
 
     @Test
-    void rateLimits_nonPrimitiveWindowFields_stillPublishes() {
+    void rateLimits_nonPrimitiveWindowFields_stayOffTheSessionChannel() {
         hardenedHandler.onNotification(CodexAppServerHandler.METHOD_ACCOUNT_RATE_LIMITS_UPDATED,
                 json("{\"rateLimits\":{\"primary\":{\"usedPercent\":12.5,"
-                        + "\"windowDurationMins\":[5],\"resetsAt\":null}}}"));
+                     + "\"windowDurationMins\":[5],\"resetsAt\":null}}}"));
 
-        CodexRateLimitEvent limits = hardeningEvents.stream()
-                .filter(CodexRateLimitEvent.class::isInstance)
-                .map(CodexRateLimitEvent.class::cast)
-                .findFirst().orElse(null);
-        assertTrue(limits != null);
-        assertEquals(12.5, limits.usedPercent());
-        assertEquals(0L, limits.windowDurationMins());
-        assertEquals(0L, limits.resetsAtEpochSeconds());
+        assertTrue(hardeningEvents.stream().noneMatch(CodexRateLimitEvent.class::isInstance),
+                "Even malformed optional rate-limit fields must not turn an account-wide fact into a session event");
     }
 
     @Test
@@ -2331,7 +2328,7 @@ class CodexAppServerHandlerTest {
     void fileChangeApproval_malformedChange_repliesWithAnErrorNotABlindConfirm() {
         hardenedHandler.onNotification(CodexAppServerHandler.METHOD_ITEM_STARTED,
                 json("{\"item\":{\"type\":\"fileChange\",\"id\":\"i1\","
-                        + "\"changes\":[{\"path\":{\"deep\":1}}]}}"));
+                     + "\"changes\":[{\"path\":{\"deep\":1}}]}}"));
 
         CompletableFuture<JsonObject> reply = hardenedHandler.onServerRequest(
                 CodexAppServerHandler.METHOD_FILE_CHANGE_APPROVAL,

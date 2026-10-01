@@ -1,20 +1,16 @@
 package kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.pi.events;
 
-import kiwi.ingenuity.netbeans.plugin.aicoder.process.events.AiProcessEvent;
+import kiwi.ingenuity.netbeans.plugin.aicoder.process.events.AiProcessImplEvent;
 
 /**
- * A pi {@code thinking_level_changed} frame ({@code {type, level}} per the shipped {@code agent-session.d.ts}) — fires
- * when the thinking level changes by any means OTHER than the plugin's own {@code set_thinking_level} RPC (e.g. pi
- * normalising an unsupported level, or an in-session mechanism outside the plugin's control). {@code level} is pi's raw
- * {@code ThinkingLevel} string ({@code "off"|"minimal"|"low"|"medium"
- * |"high"|"xhigh"|"max"}).
- *
- * <p>
- * {@code PiStreamJsonParser} only produces this event; it does not act on it itself — {@code PiAiProcessManager} (which
- * owns the {@code PiSessionControl.Listener} the info bar's picker follows) is expected to catch it in its own listener
- * wrapper and forward {@code level} to {@code PiSessionControl.Listener#onCurrentSelectionChanged}, the same way it
- * already does for {@code get_state}'s {@code data.thinkingLevel} at session start.
+ * The thinking level this session's pi process is actually using. Produced by {@code PiStreamJsonParser} from
+ * a {@code thinking_level_changed} frame ({@code {type, level}} per the shipped {@code agent-session.d.ts}),
+ * which fires when the level changes by any means OTHER than the plugin's own {@code set_thinking_level} RPC
+ * (e.g. pi normalising an unsupported level); {@code PiAiProcessManager} also emits it for the level
+ * {@code get_state} reports when the process spawns and for a successful {@code set_thinking_level}.
+ * {@code level} is pi's raw {@code ThinkingLevel} string
+ * ({@code "off"|"minimal"|"low"|"medium"|"high"|"xhigh"|"max"}).
  */
-public record PiThinkingLevelChangedEvent(String level) implements AiProcessEvent {
+public record PiThinkingLevelChangedEvent(String level) implements AiProcessImplEvent {
 
 }

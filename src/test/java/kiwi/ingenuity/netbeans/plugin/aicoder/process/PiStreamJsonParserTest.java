@@ -26,7 +26,7 @@ import org.junit.jupiter.api.Test;
 class PiStreamJsonParserTest {
 
     private static final String ACCEPTED_MARKER
-            = "SUCCESS " + (char) 0x2014 + " the user accepted";
+                                = "SUCCESS " + (char) 0x2014 + " the user accepted";
 
     private List<AiProcessEvent> parse(String... lines) {
         List<AiProcessEvent> events = new ArrayList<>();
@@ -45,7 +45,7 @@ class PiStreamJsonParserTest {
                 "{\"type\":\"message_update\",\"assistantMessageEvent\":{\"type\":\"thinking_delta\",\"delta\":\"hmm2\"}}");
 
         long thinking = events.stream().filter(e -> e instanceof StatusEvent se
-                && se.type() == StatusEventTypeEnum.THINKING).count();
+                                                    && se.type() == StatusEventTypeEnum.THINKING).count();
         assertEquals(2, thinking, "agent_start plus the first thinking_delta each surface THINKING");
     }
 
@@ -63,7 +63,7 @@ class PiStreamJsonParserTest {
     @Test
     void toolExecutionStart_producesToolUseEventWithPath() {
         String line = "{\"type\":\"tool_execution_start\",\"toolCallId\":\"tc1\",\"toolName\":\"Write\","
-                + "\"args\":{\"path\":\"/foo/Bar.java\",\"content\":\"hi\"}}";
+                      + "\"args\":{\"path\":\"/foo/Bar.java\",\"content\":\"hi\"}}";
 
         List<AiProcessEvent> events = parse(line);
 
@@ -77,7 +77,7 @@ class PiStreamJsonParserTest {
     @Test
     void toolExecutionEnd_producesToolResultEvent() {
         String line = "{\"type\":\"tool_execution_end\",\"toolCallId\":\"tc1\",\"toolName\":\"Write\","
-                + "\"result\":{\"content\":[{\"text\":\"File dumped\"}]},\"isError\":false}";
+                      + "\"result\":{\"content\":[{\"text\":\"File dumped\"}]},\"isError\":false}";
 
         List<AiProcessEvent> events = parse(line);
 
@@ -92,22 +92,22 @@ class PiStreamJsonParserTest {
     @Test
     void toolExecutionEnd_multiPartContent_joinsAllNonBlankTextParts() {
         String line = "{\"type\":\"tool_execution_end\",\"toolCallId\":\"tc4\",\"toolName\":\"Read\","
-                + "\"result\":{\"content\":[{\"text\":\"first part\"},{\"text\":\"\"},{\"text\":\"second part\"}]},"
-                + "\"isError\":false}";
+                      + "\"result\":{\"content\":[{\"text\":\"first part\"},{\"text\":\"\"},{\"text\":\"second part\"}]},"
+                      + "\"isError\":false}";
 
         List<AiProcessEvent> events = parse(line);
 
         assertEquals(1, events.size());
         PiToolResultEvent e = assertInstanceOf(PiToolResultEvent.class, events.get(0));
         assertEquals("first part\nsecond part", e.resultText(),
-                     "every non-blank text part must be kept, not just the first — a blank part is skipped, not "
-                     + "joined as an empty line");
+                "every non-blank text part must be kept, not just the first — a blank part is skipped, not "
+                + "joined as an empty line");
     }
 
     @Test
     void toolExecutionEnd_resultContentObjectFallsBackToText() {
         String line = "{\"type\":\"tool_execution_end\",\"toolCallId\":\"tc2\",\"toolName\":\"Read\","
-                + "\"result\":{\"text\":\"file contents\"},\"isError\":false}";
+                      + "\"result\":{\"text\":\"file contents\"},\"isError\":false}";
 
         List<AiProcessEvent> events = parse(line);
 
@@ -119,7 +119,7 @@ class PiStreamJsonParserTest {
     @Test
     void toolExecutionEnd_acceptedMarker_downgradesIsError() {
         String line = "{\"type\":\"tool_execution_end\",\"toolCallId\":\"tc3\",\"toolName\":\"Edit\","
-                + "\"result\":{\"content\":[{\"text\":\"" + ACCEPTED_MARKER + "\"}]},\"isError\":true}";
+                      + "\"result\":{\"content\":[{\"text\":\"" + ACCEPTED_MARKER + "\"}]},\"isError\":true}";
 
         List<AiProcessEvent> events = parse(line);
 
@@ -127,20 +127,19 @@ class PiStreamJsonParserTest {
         PiToolResultEvent e = assertInstanceOf(PiToolResultEvent.class, events.get(0));
         assertFalse(e.isError(), "a user-accepted write/edit is a rejection notice, not an error");
         assertEquals(ACCEPTED_MARKER, e.resultText(),
-                     "resultText must match the exact accepted-marker text (the same constant this test used to "
-                     + "build the input), not merely start with \"SUCCESS\" — a dash or wording drift between the "
-                     + "extension and the parser must fail this test");
+                "resultText must match the exact accepted-marker text (the same constant this test used to "
+                + "build the input), not merely start with \"SUCCESS\" — a dash or wording drift between the "
+                + "extension and the parser must fail this test");
     }
 
     @Test
-    void agentSettled_closesTurnWithTurnCompleteThenReady() {
+    void agentSettled_closesTurnWithTurnCompleteAlone() {
+        // A turn's only closer is its TurnCompleteEvent. pi used to follow it with READY, which restarted the session
+        // clock after every turn and — once READY unlocks the UI — could unlock a queued turn already started.
         List<AiProcessEvent> events = parse("{\"type\":\"agent_settled\"}");
 
-        assertEquals(2, events.size());
+        assertEquals(1, events.size(), "agent_settled must emit TurnCompleteEvent and nothing else");
         assertInstanceOf(TurnCompleteEvent.class, events.get(0));
-        StatusEvent ready = assertInstanceOf(StatusEvent.class, events.get(1));
-        assertEquals(StatusEventTypeEnum.READY, ready.type());
-        assertTrue(ready.text().contains("Pi"));
     }
 
     @Test
@@ -152,8 +151,8 @@ class PiStreamJsonParserTest {
                 + "\"errorMessage\":\"cannot help\"}}");
 
         boolean failed = events.stream().anyMatch(e -> e instanceof StatusEvent se
-                && se.type() == StatusEventTypeEnum.FAILED
-                && se.text() != null && se.text().contains("cannot help"));
+                                                       && se.type() == StatusEventTypeEnum.FAILED
+                                                       && se.text() != null && se.text().contains("cannot help"));
         assertTrue(failed, "stopReason error must surface FAILED");
         assertFalse(events.stream().anyMatch(e -> e instanceof TurnCompleteEvent));
     }
@@ -181,17 +180,18 @@ class PiStreamJsonParserTest {
                 "{\"type\":\"response\",\"command\":\"prompt\",\"success\":false,\"error\":\"no such model\"}");
 
         boolean failed = events.stream().anyMatch(e -> e instanceof StatusEvent se
-                && se.type() == StatusEventTypeEnum.FAILED
-                && se.text() != null && se.text().contains("no such model"));
+                                                       && se.type() == StatusEventTypeEnum.FAILED
+                                                       && se.text() != null && se.text().contains("no such model"));
         assertTrue(failed, "a failed prompt/steer/abort response is a direct result of a user action");
     }
 
     /**
-     * get_state/get_available_models/get_session_stats/set_model/get_available_thinking_levels/set_thinking_level are
-     * background/housekeeping commands PiAiProcessManager already treats as best-effort and silently swallows on
-     * failure — surfacing FAILED for one of these would show an error unrelated to anything the user did. set_model is
-     * deliberately used here (not get_session_stats) to also prove this isn't merely "some background commands", now
-     * that a DIFFERENT background command moved out of this test's spot above.
+     * get_state/get_available_models/get_session_stats/set_model/get_available_thinking_levels/set_thinking_level
+     * are background/housekeeping commands PiAiProcessManager already treats as best-effort and silently
+     * swallows on failure — surfacing FAILED for one of these would show an error unrelated to anything the
+     * user did. set_model is deliberately used here (not get_session_stats) to also prove this isn't merely
+     * "some background commands", now that a DIFFERENT background command moved out of this test's spot
+     * above.
      */
     @Test
     void responseFailure_backgroundCommand_producesNoEvent() {
@@ -201,17 +201,17 @@ class PiStreamJsonParserTest {
     }
 
     /**
-     * compact IS user-facing but is deliberately excluded from USER_FACING_COMMANDS: PiAiImplementation.compact()'s own
-     * whenComplete already emits "Compact failed: …" for a rejected response and must stay the single owner of that
-     * error surface (it also reports no-session/failed-send cases this parser never sees) — including compact here too
-     * double-reported a rejected compact.
+     * compact IS user-facing but is deliberately excluded from USER_FACING_COMMANDS:
+     * PiAiImplementation.compact()'s own whenComplete already emits "Compact failed: …" for a rejected
+     * response and must stay the single owner of that error surface (it also reports no-session/failed-send
+     * cases this parser never sees) — including compact here too double-reported a rejected compact.
      */
     @Test
     void responseFailure_compact_producesNoEvent() {
         List<AiProcessEvent> events = parse(
                 "{\"type\":\"response\",\"command\":\"compact\",\"success\":false,\"error\":\"nothing to compact\"}");
         assertTrue(events.isEmpty(),
-                   "a failed compact must not surface FAILED here — PiAiImplementation.compact() already does");
+                "a failed compact must not surface FAILED here — PiAiImplementation.compact() already does");
     }
 
     @Test
@@ -222,10 +222,10 @@ class PiStreamJsonParserTest {
     }
 
     /**
-     * A successful {@code get_state}/{@code get_available_models}/{@code get_session_stats} response is read directly
-     * by {@code PiAiProcessManager} off the id-correlated future instead — the parser itself must produce no event for
-     * any of them. This is exactly the behaviour that changed (previously these commands each fired their own event);
-     * only the failure branch was covered before this test existed.
+     * A successful {@code get_state}/{@code get_available_models}/{@code get_session_stats} response is read
+     * directly by {@code PiAiProcessManager} off the id-correlated future instead — the parser itself must
+     * produce no event for any of them. This is exactly the behaviour that changed (previously these commands
+     * each fired their own event); only the failure branch was covered before this test existed.
      */
     @Test
     void responseSuccess_getState_producesNoEvents() {
@@ -252,9 +252,10 @@ class PiStreamJsonParserTest {
     }
 
     /**
-     * {@code queue_update} and {@code tool_execution_update} are kept in {@code PiEventTypeEnum} specifically so
-     * {@code PiEventTypeEnum.of()} resolves them to a known constant instead of logging them as an unhandled type on
-     * every occurrence — the parser itself renders nothing for either. Guards the behaviour those comments document.
+     * {@code queue_update} and {@code tool_execution_update} are kept in {@code PiEventTypeEnum} specifically
+     * so {@code PiEventTypeEnum.of()} resolves them to a known constant instead of logging them as an
+     * unhandled type on every occurrence — the parser itself renders nothing for either. Guards the behaviour
+     * those comments document.
      */
     @Test
     void queueUpdate_producesNoEvents() {
@@ -296,13 +297,10 @@ class PiStreamJsonParserTest {
     }
 
     @Test
-    void compactionEnd_aborted_surfacesInfo() {
+    void manualCompactionEnd_isClosedByRunWorkWithoutDuplicateInfo() {
         List<AiProcessEvent> events = parse(
                 "{\"type\":\"compaction_end\",\"reason\":\"manual\",\"aborted\":true,\"willRetry\":false}");
-        assertEquals(1, events.size());
-        StatusEvent se = assertInstanceOf(StatusEvent.class, events.get(0));
-        assertEquals(StatusEventTypeEnum.INFO, se.type());
-        assertTrue(se.text().contains("aborted"));
+        assertTrue(events.isEmpty(), "manual compaction's runWork closer owns the single final status");
     }
 
     @Test
@@ -337,7 +335,7 @@ class PiStreamJsonParserTest {
         PiStreamJsonParser parser = new PiStreamJsonParser(events::add);
         parser.setUiResponseSender(ui::add);
         parser.parseLine("{\"type\":\"extension_ui_request\",\"method\":\"confirm\",\"id\":\"ui-1\","
-                + "\"title\":\"Approve Write?\",\"message\":\"details\"}");
+                         + "\"title\":\"Approve Write?\",\"message\":\"details\"}");
 
         assertEquals(1, events.size());
         ConfirmEvent ce = assertInstanceOf(ConfirmEvent.class, events.get(0));
@@ -346,7 +344,7 @@ class PiStreamJsonParserTest {
 
         ce.response().complete(PermissionDecision.allowed());
         assertEquals(List.of("{\"type\":\"extension_ui_response\",\"id\":\"ui-1\",\"confirmed\":true}"),
-                     ui, "resolving the decision must write the extension_ui_response");
+                ui, "resolving the decision must write the extension_ui_response");
     }
 
     @Test
@@ -410,8 +408,8 @@ class PiStreamJsonParserTest {
         List<AiProcessEvent> events = parse(line);
 
         boolean failed = events.stream().anyMatch(e -> e instanceof StatusEvent se
-                && se.type() == StatusEventTypeEnum.FAILED
-                && se.text() != null && se.text().contains("could not be parsed"));
+                                                       && se.type() == StatusEventTypeEnum.FAILED
+                                                       && se.text() != null && se.text().contains("could not be parsed"));
         assertTrue(failed);
         assertEquals(1, events.size());
     }
@@ -425,9 +423,10 @@ class PiStreamJsonParserTest {
     /**
      * Real pi can answer a send (here a rejected compact) as {@code {"type":"response","success":false,
      * "error":"cannot compact now","id":…}} with no {@code command} field — and test fakes often omit it too.
-     * {@code PiRpcCommandEnum.of(null)} returns null, and the old {@code USER_FACING_COMMANDS.contains(...)} check NPEs
-     * on a {@code null} argument on Java 21, landing in the parseLine catch as a bogus "Skipping unparseable pi line"
-     * WARNING. The null/unknown command must be treated as the background/ignored case: no event, no WARNING.
+     * {@code PiRpcCommandEnum.of(null)} returns null, and the old {@code USER_FACING_COMMANDS.contains(...)}
+     * check NPEs on a {@code null} argument on Java 21, landing in the parseLine catch as a bogus "Skipping
+     * unparseable pi line" WARNING. The null/unknown command must be treated as the background/ignored case:
+     * no event, no WARNING.
      */
     @Test
     void responseFailure_noCommandField_producesNoEventNoWarning() {
@@ -439,7 +438,7 @@ class PiStreamJsonParserTest {
                     "{\"type\":\"response\",\"success\":false,\"error\":\"cannot compact now\",\"id\":\"crv-17\"}");
             assertTrue(events.isEmpty(), "a failed response with no command field must not surface FAILED");
             assertFalse(capture.anyContains("unparseable"),
-                        "a well-formed failed response must not be logged as an unparseable line");
+                    "a well-formed failed response must not be logged as an unparseable line");
         }
         finally {
             logger.removeHandler(capture);
@@ -456,7 +455,7 @@ class PiStreamJsonParserTest {
                     "{\"type\":\"response\",\"command\":\"frobnicate\",\"success\":false,\"error\":\"no such command\"}");
             assertTrue(events.isEmpty(), "a failed response for an unknown command must not surface FAILED");
             assertFalse(capture.anyContains("unparseable"),
-                        "a well-formed failed response for an unknown command must not be logged as unparseable");
+                    "a well-formed failed response for an unknown command must not be logged as unparseable");
         }
         finally {
             logger.removeHandler(capture);
@@ -472,7 +471,7 @@ class PiStreamJsonParserTest {
             List<AiProcessEvent> events = parse("{\"type\":\"response\",\"success\":fal");
             assertTrue(events.isEmpty());
             assertTrue(capture.anyContains("unparseable"),
-                       "genuinely malformed input must still be logged as an unparseable line");
+                    "genuinely malformed input must still be logged as an unparseable line");
         }
         finally {
             logger.removeHandler(capture);

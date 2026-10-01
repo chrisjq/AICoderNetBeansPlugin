@@ -1,6 +1,7 @@
 package kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.opencode.settings;
 
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.AiModelCatalog;
+import kiwi.ingenuity.netbeans.plugin.aicoder.ai.AiTypeEnum;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import org.junit.jupiter.api.Test;
 
@@ -11,7 +12,7 @@ class OpenCodeCreateSettingsPanelTest {
         OpenCodePluginSettings.setMode("plan");
         OpenCodeCreateSettingsPanel.lastSelectedMode = null;
         try {
-            OpenCodeCreateSettingsPanel panel = new OpenCodeCreateSettingsPanel(new AiModelCatalog());
+            OpenCodeCreateSettingsPanel panel = new OpenCodeCreateSettingsPanel(new AiModelCatalog(AiTypeEnum.OPENCODE));
             OpenCodeSessionSettings empty = new OpenCodeSessionSettings(); // mode() == null
 
             panel.load(empty);

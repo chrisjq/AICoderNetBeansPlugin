@@ -3,13 +3,13 @@ package kiwi.ingenuity.netbeans.plugin.aicoder.ai;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
-import java.util.concurrent.CopyOnWriteArrayList;
-import java.util.function.Consumer;
+import kiwi.ingenuity.netbeans.plugin.aicoder.ai.events.AvailableModelsEvent;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.TimeoutEnum;
 
 /**
- * Type-scoped cache and subscription point for asynchronously discovered model lists. Providers retain ownership of
- * their discovery transport while this class ensures every panel sees the same successful result.
+ * Type-scoped cache of asynchronously discovered model lists. Providers retain ownership of their discovery
+ * transport; a changed successful result is announced as an {@link AvailableModelsEvent} on the
+ * {@link AiTypePropertyBus}, and consumers that appear later seed themselves from {@link #getCachedModels()}.
  */
 public final class AiModelCatalog {
 
@@ -17,28 +17,20 @@ public final class AiModelCatalog {
     private static final long REFRESH_TIMEOUT_MS = TimeoutEnum.AI_MODEL_CATALOG_REFRESH_TIMEOUT_MILLIS.millis();
 
     private final Object lock = new Object();
-    private final CopyOnWriteArrayList<Consumer<List<String>>> listeners = new CopyOnWriteArrayList<>();
+    private final AiTypeEnum aiType;
     private List<String> models = List.of();
     private long lastSuccessfulLoadMs;
     private long refreshStartedMs;
     private boolean refreshing;
 
+    public AiModelCatalog(AiTypeEnum aiType) {
+        this.aiType = Objects.requireNonNull(aiType, "aiType");
+    }
+
     public List<String> getCachedModels() {
         synchronized (lock) {
             return models;
         }
-    }
-
-    public void addListener(Consumer<List<String>> listener) {
-        listeners.add(Objects.requireNonNull(listener, "listener"));
-        List<String> cached = getCachedModels();
-        if (!cached.isEmpty()) {
-            listener.accept(cached);
-        }
-    }
-
-    public void removeListener(Consumer<List<String>> listener) {
-        listeners.remove(listener);
     }
 
     public boolean beginRefresh() {
@@ -61,8 +53,8 @@ public final class AiModelCatalog {
     }
 
     /**
-     * Completes a successful discovery and notifies listeners only when the discovered list differs from the previously
-     * successful list.
+     * Completes a successful discovery and fires the event only when the discovered list differs from the
+     * previously successful list.
      */
     public boolean publish(List<String> discoveredModels) {
         List<String> snapshot = List.copyOf(new ArrayList<>(discoveredModels));
@@ -74,7 +66,7 @@ public final class AiModelCatalog {
             lastSuccessfulLoadMs = System.currentTimeMillis();
         }
         if (changed) {
-            listeners.forEach(listener -> listener.accept(snapshot));
+            AiTypePropertyBus.getInstance().fire(aiType, new AvailableModelsEvent(snapshot));
         }
         return changed;
     }

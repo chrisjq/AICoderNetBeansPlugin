@@ -10,6 +10,7 @@ import java.io.InputStreamReader;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.TimeUnit;
 import java.util.logging.Level;
@@ -21,6 +22,7 @@ import kiwi.ingenuity.netbeans.plugin.aicoder.ai.AiProcessManager;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.AiTypeEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.events.StatusEvent;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.events.StatusEventTypeEnum;
+import kiwi.ingenuity.netbeans.plugin.aicoder.ai.events.TurnCompleteEvent;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.codex.events.CodexReasoningEffortEvent;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.codex.settings.CodexSessionSettings;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.session.InterruptTypeEnum;
@@ -176,6 +178,33 @@ public class CodexAiProcessManager extends AiProcessManager {
     }
 
     /**
+     * {@code thread/compact/start} takes only the thread id; its response is an empty object and the
+     * compaction then runs as a turn on that thread.
+     */
+    static JsonObject buildThreadCompactStartParams(String threadId) {
+        JsonObject params = new JsonObject();
+        params.addProperty(CodexJsonKeyEnum.THREAD_ID.key(), threadId);
+        return params;
+    }
+
+    /**
+     * The turn a notification belongs to: {@code params.turn.id} on {@code turn/started} and
+     * {@code turn/completed}, a flat {@code params.turnId} on item, delta and token-usage notifications. Null
+     * when the notification names no turn.
+     */
+    static String notificationTurnId(JsonObject params) {
+        String nested = extractTurnId(params);
+        if (nested != null) {
+            return nested;
+        }
+        if (params != null && params.has(CodexJsonKeyEnum.TURN_ID.key())
+            && params.get(CodexJsonKeyEnum.TURN_ID.key()).isJsonPrimitive()) {
+            return params.get(CodexJsonKeyEnum.TURN_ID.key()).getAsString();
+        }
+        return null;
+    }
+
+    /**
      * Extracts the thread id from a {@code thread/start} or {@code
      * thread/resume} response — both nest it at {@code result.thread.id} (camelCase, confirmed by live
      * probe), not a top-level {@code thread_id} as an earlier unverified example (sourced from {@code codex exec
@@ -263,7 +292,7 @@ public class CodexAiProcessManager extends AiProcessManager {
             JsonObject o = e.getAsJsonObject();
             for (CodexJsonKeyEnum key : new CodexJsonKeyEnum[]{CodexJsonKeyEnum.ID, CodexJsonKeyEnum.MODEL}) {
                 if (o.has(key.key()) && !o.get(key.key()).isJsonNull() && o.get(key.key()).isJsonPrimitive()
-                        && model.equals(o.get(key.key()).getAsString())) {
+                    && model.equals(o.get(key.key()).getAsString())) {
                     return o;
                 }
             }
@@ -326,11 +355,13 @@ public class CodexAiProcessManager extends AiProcessManager {
             if (modelObj != null) {
                 supported = extractSupportedReasoningEfforts(modelObj);
                 defaultEffort = extractDefaultReasoningEffort(modelObj);
-            } else {
+            }
+            else {
                 LOG.log(Level.FINE, "model/list did not include \"{0}\"; treating as no reasoning-effort support",
                         activeModel);
             }
-        } catch (Exception e) {
+        }
+        catch (Exception e) {
             LOG.log(Level.FINE, "model/list unavailable; reasoning effort stays (model default): {0}",
                     e.getMessage() != null ? e.getMessage() : e.toString());
         }
@@ -363,8 +394,8 @@ public class CodexAiProcessManager extends AiProcessManager {
             return;
         }
         String reason = supported.isEmpty()
-                ? "but " + activeModel + " exposes no supported reasoning efforts from the server"
-                : "it is not one of the supported efforts for " + activeModel + "; using the model default";
+                        ? "but " + activeModel + " exposes no supported reasoning efforts from the server"
+                        : "it is not one of the supported efforts for " + activeModel + "; using the model default";
         synchronized (this) {
             if (currentSession != null && currentSession.settings() instanceof CodexSessionSettings cs) {
                 cs.setEffort(null);
@@ -452,6 +483,44 @@ public class CodexAiProcessManager extends AiProcessManager {
      * the turn id becomes known, instead of the request silently going nowhere.
      */
     private volatile boolean interruptRequested;
+
+    /**
+     * One in-flight {@code thread/compact/start}. Codex runs a compaction as a TURN on the thread, so its
+     * notifications arrive on the same stream as a real turn's; this identifies which of them belong to the
+     * compaction so they can be kept away from the UI. {@link #done} completes on that turn's
+     * {@code turn/completed}, which is what closes the work.
+     */
+    static final class CompactionTurn {
+
+        final CompletableFuture<Void> done = new CompletableFuture<>();
+        /**
+         * The id from the {@code turn/started} that followed the request; null until it arrives.
+         */
+        volatile String turnId;
+    }
+
+    /**
+     * The compaction turn whose notifications must be swallowed. Set when {@code thread/compact/start} is
+     * sent and cleared only by that turn's own {@code turn/completed} (or a failed request, or the session
+     * ending) — deliberately NOT when the work closes, so a compaction that outlives the work's timeout is
+     * still kept from the UI as a real turn end.
+     */
+    private volatile CompactionTurn compaction;
+
+    /**
+     * The process whose in-flight work losing the stream closed first, so the process-exit that follows knows
+     * the session already got its one closing status and must not add an EXITED. Identity-compared in
+     * {@link #handleProcessExit}, so a token left over from a superseded process can never suppress the
+     * EXITED of a later one. Guarded by {@code this}.
+     */
+    private Process workClosedByDisconnectOf;
+    /**
+     * Set when Stop cancelled a turn whose {@code turn/completed} has not arrived yet. The UI is unlocked at
+     * that point, but the turn is still winding down (or has not even reported {@code turn/started}), and a
+     * compaction armed now would claim that dead turn as its own. Cleared by any {@code turn/completed} and
+     * whenever the connection goes away. Guarded by {@code this}.
+     */
+    private boolean stoppedTurnWindingDown;
     volatile String pendingResumeThreadId;
     volatile Runnable onSessionEstablished;
 
@@ -489,11 +558,13 @@ public class CodexAiProcessManager extends AiProcessManager {
             boolean ok = McpServerRegistry.register(reg).get(30, TimeUnit.SECONDS);
             if (ok) {
                 registrar = reg;
-            } else {
+            }
+            else {
                 listener.onAiProcessEvent(new StatusEvent(StatusEventTypeEnum.INFO,
                         "MCP server registration returned false — running without MCP tools"));
             }
-        } catch (Exception e) {
+        }
+        catch (Exception e) {
             LOG.log(Level.WARNING, "MCP server registration failed; running without MCP tools", e);
             listener.onAiProcessEvent(new StatusEvent(StatusEventTypeEnum.INFO,
                     "MCP server unavailable — running without MCP tools"));
@@ -579,7 +650,8 @@ public class CodexAiProcessManager extends AiProcessManager {
                     threadResult = c.sendRequest("thread/resume",
                             buildThreadResumeParams(resumeId, workDir.getAbsolutePath(), model))
                             .get(30, TimeUnit.SECONDS);
-                } catch (Exception e) {
+                }
+                catch (Exception e) {
                     LOG.log(Level.INFO, "thread/resume failed; falling back to thread/start: {0}", e.getMessage());
                     listener.onAiProcessEvent(new StatusEvent(StatusEventTypeEnum.INFO,
                             "Previous Codex session could not be resumed; starting fresh"));
@@ -587,12 +659,14 @@ public class CodexAiProcessManager extends AiProcessManager {
                             buildThreadStartParams(workDir.getAbsolutePath(), model))
                             .get(30, TimeUnit.SECONDS);
                 }
-            } else {
+            }
+            else {
                 threadResult = c.sendRequest("thread/start",
                         buildThreadStartParams(workDir.getAbsolutePath(), model))
                         .get(30, TimeUnit.SECONDS);
             }
-        } catch (Exception e) {
+        }
+        catch (Exception e) {
             c.close();
             synchronized (this) {
                 if (currentProcess == p) {
@@ -662,9 +736,37 @@ public class CodexAiProcessManager extends AiProcessManager {
     }
 
     @Override
-    public synchronized void sendPrompt(String text, File workingDir, List<File> projectDirs) {
-        if (pendingDiff || !running || processing) {
-            return;
+    public void sendPrompt(String text, File workingDir, List<File> projectDirs) {
+        String refusal = submitPrompt(text, workingDir, projectDirs);
+        if (refusal != null) {
+            // The UI has already entered busy for this prompt and only calls sendPrompt once the previous
+            // turn's closer arrived, so a backend still "processing" is unwinding a turn the UI closed. Every
+            // refusal therefore closes the turn it opened: INFO says why, TurnCompleteEvent ends it.
+            listener.onAiProcessEvent(new StatusEvent(StatusEventTypeEnum.INFO, refusal));
+            listener.onAiProcessEvent(new TurnCompleteEvent());
+        }
+    }
+
+    /**
+     * @return why the prompt was refused, or null when it was accepted
+     */
+    private synchronized String submitPrompt(String text, File workingDir, List<File> projectDirs) {
+        if (pendingDiff) {
+            return "Review the pending diff before sending another message";
+        }
+        if (!running) {
+            return "Codex is not running — start the session before sending a message";
+        }
+        if (processing) {
+            return "Codex is still working on the previous message";
+        }
+        if (isWorkInFlight()) {
+            return "Codex is busy with another operation — try again when it finishes";
+        }
+        CompactionTurn stale = compaction;
+        if (stale != null && stale.turnId == null) {
+            // A timed-out compaction whose turn never started: don't let it swallow this prompt's turn/started.
+            compaction = null;
         }
         cancelledByUser = false;
 
@@ -680,9 +782,10 @@ public class CodexAiProcessManager extends AiProcessManager {
             processing = true;
             final File wd = effectiveWorkDir;
             new Thread(() -> handshakeAndSend(text, wd, projectDirs), "codex-handshake").start();
-            return;
+            return null;
         }
         sendTurn(text);
+        return null;
     }
 
     /**
@@ -696,7 +799,8 @@ public class CodexAiProcessManager extends AiProcessManager {
     private void handshakeAndSend(String text, File workDir, List<File> projectDirs) {
         try {
             spawnAndHandshake(workDir);
-        } catch (Exception e) {
+        }
+        catch (Exception e) {
             synchronized (this) {
                 processing = false;
             }
@@ -774,6 +878,118 @@ public class CodexAiProcessManager extends AiProcessManager {
                 });
     }
 
+    /**
+     * Compacts the thread through the shared busy/ready contract. {@code thread/compact/start} answers
+     * {@code {}} and the compaction then runs as a turn; that turn's {@code turn/completed} closes the work —
+     * READY on success, FAILED otherwise — and none of its turn notifications reach the UI
+     * ({@link #consumeCompactionNotification}), only the token-usage update, so the context gauge tracks the
+     * shrink.
+     *
+     * @return false if other non-turn work is already in flight, in which case nothing was reported
+     */
+    public boolean compact() {
+        return compact(DEFAULT_WORK_TIMEOUT_MILLIS);
+    }
+
+    /**
+     * True between Stop on a turn and that turn's {@code turn/completed}: the UI is already unlocked but the
+     * app-server is still unwinding the turn, so a compaction started now would swallow its late
+     * notifications.
+     */
+    synchronized boolean isStoppedTurnWindingDown() {
+        return stoppedTurnWindingDown;
+    }
+
+    boolean compact(long timeoutMillis) {
+        CompactionTurn turn = new CompactionTurn();
+        return runWork("Compacting conversation...", false, timeoutMillis,
+                () -> startCompaction(turn),
+                ignored -> new StatusEvent(StatusEventTypeEnum.READY, "Conversation compacted"),
+                error -> new StatusEvent(StatusEventTypeEnum.FAILED, "Compact failed: "
+                                                                     + (error.getMessage() != null ? error.getMessage() : error.toString())));
+    }
+
+    private CompletableFuture<Void> startCompaction(CompactionTurn turn) {
+        CodexJsonRpcClient c;
+        String tid;
+        synchronized (this) {
+            c = client;
+            tid = threadId;
+            if (!running || c == null || tid == null) {
+                return CompletableFuture.failedFuture(new IllegalStateException("Codex session is not active"));
+            }
+            if (processing) {
+                return CompletableFuture.failedFuture(new IllegalStateException("a turn is in progress"));
+            }
+            if (stoppedTurnWindingDown) {
+                return CompletableFuture.failedFuture(new IllegalStateException(
+                        "Wait for Codex to finish the turn you stopped, then compact again"));
+            }
+            compaction = turn;
+        }
+        c.sendRequest("thread/compact/start", buildThreadCompactStartParams(tid))
+                .whenComplete((result, ex) -> {
+                    if (ex != null) {
+                        endCompaction(turn);
+                        turn.done.completeExceptionally(ex);
+                    }
+                });
+        return turn.done;
+    }
+
+    private synchronized void endCompaction(CompactionTurn turn) {
+        if (compaction == turn) {
+            compaction = null;
+        }
+    }
+
+    /**
+     * Decides whether a notification belongs to the live compaction turn and must therefore be kept from the
+     * UI. Returns true when it was consumed here. Ownership is by turn id, learned from the first
+     * {@code turn/started} after the request: a {@code turn/completed} of some earlier turn (a cancelled one
+     * winding down) is not ours and must neither close the compaction nor be swallowed. Token usage and rate
+     * limits are never consumed — the gauge must follow the shrink.
+     */
+    private boolean consumeCompactionNotification(CompactionTurn turn, String method, JsonObject params) {
+        String notificationTurnId = notificationTurnId(params);
+        if (CodexAppServerHandler.METHOD_TURN_STARTED.equals(method)) {
+            if (turn.turnId == null && notificationTurnId != null) {
+                turn.turnId = notificationTurnId;
+                return true;
+            }
+            return notificationTurnId != null && notificationTurnId.equals(turn.turnId);
+        }
+        String ours = turn.turnId;
+        if (ours == null || (notificationTurnId != null && !ours.equals(notificationTurnId))) {
+            return false;
+        }
+        switch (method) {
+            case CodexAppServerHandler.METHOD_AGENT_MESSAGE_DELTA:
+            case CodexAppServerHandler.METHOD_ITEM_STARTED:
+                return true;
+            case CodexAppServerHandler.METHOD_TURN_COMPLETED:
+                finishCompaction(turn, params);
+                endCompaction(turn);
+                return true;
+            default:
+                return false;
+        }
+    }
+
+    private static void finishCompaction(CompactionTurn turn, JsonObject params) {
+        String status = CodexAppServerHandler.extractTurnStatus(params);
+        if ("failed".equals(status)) {
+            turn.done.completeExceptionally(
+                    new IllegalStateException(CodexAppServerHandler.buildFailedMessage(params)));
+        }
+        else if ("interrupted".equals(status)) {
+            turn.done.completeExceptionally(new IllegalStateException("the compaction was interrupted"));
+        }
+        else {
+            turn.done.complete(null);
+        }
+    }
+
     @Override
     public void interrupt(InterruptTypeEnum type) {
         if (type == InterruptTypeEnum.Mail) {
@@ -799,6 +1015,7 @@ public class CodexAiProcessManager extends AiProcessManager {
             }
             cancelledByUser = true;
             processing = false;
+            stoppedTurnWindingDown = true;
             c = client;
             handler = appServerHandler;
             tid = threadId;
@@ -831,7 +1048,8 @@ public class CodexAiProcessManager extends AiProcessManager {
                 LOG.log(Level.INFO, "Codex interrupt: turn/interrupt sent (threadId={0}, turnId={1})",
                         new Object[]{tid, tuid});
             }
-        } else if (PluginSettings.isDebugJson()) {
+        }
+        else if (PluginSettings.isDebugJson()) {
             LOG.log(Level.INFO, "Codex interrupt: turn/interrupt deferred, turnId not yet known (threadId={0})", tid);
         }
         listener.onAiProcessEvent(new StatusEvent(StatusEventTypeEnum.STOPPED, StatusMessageUtil.formatStopped()));
@@ -886,7 +1104,8 @@ public class CodexAiProcessManager extends AiProcessManager {
                                     + "flush (threadId={0}, turnId={1}, reason={2})",
                                     new Object[]{tid, tuid, ex.getMessage()});
                         }
-                    } else if (PluginSettings.isDebugJson()) {
+                    }
+                    else if (PluginSettings.isDebugJson()) {
                         LOG.log(Level.INFO, "Codex interrupt: turn/steer delivered (threadId={0}, turnId={1})",
                                 new Object[]{tid, tuid});
                     }
@@ -895,6 +1114,11 @@ public class CodexAiProcessManager extends AiProcessManager {
 
     @Override
     public synchronized void stop() {
+        // A compaction still running when the session stops must not leave the UI locked: its closing
+        // FAILED comes from here, never from a turn/completed that will not arrive.
+        compaction = null;
+        failWorkInFlight("Codex stopped before the compaction finished");
+
         // Logged before the state is torn down, so the record says what was
         // actually in flight at the moment of the stop rather than the
         // cleared-out aftermath.
@@ -902,10 +1126,11 @@ public class CodexAiProcessManager extends AiProcessManager {
             LOG.log(Level.INFO,
                     "Codex stop: shutting session down (threadId={0}, turnInFlight={1}, connected={2}, processAlive={3})",
                     new Object[]{threadId, processing, client != null,
-                        currentProcess != null && currentProcess.isAlive()});
+                                 currentProcess != null && currentProcess.isAlive()});
         }
         running = false;
         processing = false;
+        stoppedTurnWindingDown = false;
         cancelledByUser = true;
         interruptRequested = false;
 
@@ -986,10 +1211,15 @@ public class CodexAiProcessManager extends AiProcessManager {
         return appServerHandler;
     }
 
-    private void onNotification(String method, JsonObject params) {
+    void onNotification(String method, JsonObject params) {
+        CompactionTurn compacting = compaction;
+        if (compacting != null && consumeCompactionNotification(compacting, method, params)) {
+            return;
+        }
         if (CodexAppServerHandler.METHOD_TURN_COMPLETED.equals(method)) {
             synchronized (this) {
                 processing = false;
+                stoppedTurnWindingDown = false;
             }
         }
         CodexAppServerHandler handler = appServerHandler;
@@ -1013,6 +1243,8 @@ public class CodexAiProcessManager extends AiProcessManager {
         CodexJsonRpcClient orphaned;
         synchronized (this) {
             processing = false;
+            stoppedTurnWindingDown = false;
+            compaction = null;
             orphaned = client;
             client = null;
             appServerHandler = null;
@@ -1020,7 +1252,14 @@ public class CodexAiProcessManager extends AiProcessManager {
             currentTurnId = null;
             interruptRequested = false;
             suppress = cancelledByUser;
+            // The stream is gone, so the compaction's turn/completed can never arrive. Closed under the lock
+            // handleProcessExit also takes, so the exit sees either this close plus its token, or has already
+            // closed the work itself: never a gap in which both report.
+            if (failWorkInFlight("Codex disconnected before the compaction finished")) {
+                workClosedByDisconnectOf = currentProcess;
+            }
         }
+
         // Nulling the field alone abandons the object: its notify/dispatch
         // executors are only ever shut down by close(), so an orphaned client
         // leaks two live thread pools forever. close() is idempotent (guarded
@@ -1046,12 +1285,16 @@ public class CodexAiProcessManager extends AiProcessManager {
      */
     void handleProcessExit(Process dead) {
         boolean suppress;
+        boolean closedWork;
+        int code;
         CodexJsonRpcClient orphaned;
         synchronized (this) {
             if (currentProcess != dead) {
                 return; // stale exit from a superseded process
             }
             processing = false;
+            stoppedTurnWindingDown = false;
+            compaction = null;
             currentProcess = null;
             orphaned = client;
             client = null;
@@ -1060,15 +1303,22 @@ public class CodexAiProcessManager extends AiProcessManager {
             currentTurnId = null;
             interruptRequested = false;
             suppress = cancelledByUser;
+            // After the stale-exit guard so a superseded process's exit cannot fail new work. One closer only:
+            // work closed here or by the disconnect (which holds this lock while it closes) already told the UI
+            // the session is over, so a second EXITED would be a second closing status.
+            code = dead.exitValue();
+            closedWork = failWorkInFlight("Codex exited (code " + code + ") during compaction")
+                         || workClosedByDisconnectOf == dead;
+            workClosedByDisconnectOf = null;
         }
+
         // Same leak this method must not reintroduce even if onHandlerDisconnected
         // somehow fires after this (e.g. SIGKILL) — see its javadoc. close() is
         // idempotent, so closing an already-closed client here is a safe no-op.
         if (orphaned != null) {
             orphaned.close();
         }
-        int code = dead.exitValue();
-        if (!suppress && code != 0) {
+        if (!suppress && code != 0 && !closedWork) {
             listener.onAiProcessEvent(new StatusEvent(StatusEventTypeEnum.EXITED,
                     StatusMessageUtil.formatExited("Codex", code, new ArrayList<>(recentStderr))));
         }
@@ -1088,7 +1338,8 @@ public class CodexAiProcessManager extends AiProcessManager {
                         recentStderr.remove(0);
                     }
                 }
-            } catch (IOException e) {
+            }
+            catch (IOException e) {
                 LOG.log(Level.FINE, "codex stderr drainer ended", e);
             }
         }, "codex-stderr");

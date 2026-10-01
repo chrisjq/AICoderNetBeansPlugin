@@ -17,17 +17,16 @@ import org.junit.jupiter.api.Test;
 
 /**
  * Regression coverage for the shared-code fix (Boss review, 2026-09-19): several {@code AiSessionHost.
- * updateSessionSettings}/{@code suppressNextTurn} callers reach {@link AiInfoBar#setAutoAccept}/
- * {@link AiInfoBar#setSaveHistory}/{@link AiInfoBar#setStatusMessage}/{@link AiInfoBar#setProcessing} from a background
- * thread — Grok's clear-invalid-effort callback (its own turn thread), OpenCode's and Codex's session-established
- * callbacks (their own ACP/handshake threads), and (for the status/processing pair)
- * {@code AiTopComponent.suppressNextTurn}, which at least one backend's compact-request handling already reaches off
- * the EDT. Mutating Swing components off the EDT is undefined behaviour. All four setters now self-dispatch to the EDT
- * when called off it, mirroring every other Swing-mutating setter in this codebase (e.g. the various
- * {@code *AiInfoBarExtension} classes). Every test method here runs on the JUnit thread, which is not the EDT — exactly
- * the condition that exposes the bug — matching {@code CodexAiImplementationTest}'s/
- * {@code GrokAiInfoBarExtensionTest}'s idiom of flushing with {@code SwingUtilities.invokeAndWait(() -> {})} before
- * asserting.
+ * updateSessionSettings} callers reach {@link AiInfoBar#setAutoAccept}/
+ * {@link AiInfoBar#setSaveHistory}/{@link AiInfoBar#setStatusMessage}/{@link AiInfoBar#setProcessing} from a
+ * background thread — Grok's clear-invalid-effort callback (its own turn thread), OpenCode's and Codex's
+ * session-established callbacks (their own ACP/handshake threads), and backends' status reports. Mutating
+ * Swing components off the EDT is undefined behaviour. All four setters now self-dispatch to the EDT when
+ * called off it, mirroring every other Swing-mutating setter in this codebase (e.g. the various
+ * {@code *AiInfoBarExtension} classes). Every test method here runs on the JUnit thread, which is not the EDT
+ * — exactly the condition that exposes the bug — matching {@code CodexAiImplementationTest}'s/
+ * {@code GrokAiInfoBarExtensionTest}'s idiom of flushing with {@code SwingUtilities.invokeAndWait(() -> {})}
+ * before asserting.
  */
 class AiInfoBarTest {
 
@@ -62,8 +61,8 @@ class AiInfoBarTest {
     }
 
     /**
-     * Identified by its right-alignment (set once, in the constructor) rather than by text, since its text is exactly
-     * what these tests are mutating.
+     * Identified by its right-alignment (set once, in the constructor) rather than by text, since its text is
+     * exactly what these tests are mutating.
      */
     private static JLabel rightAlignedLabel(Container root) {
         for (Component c : root.getComponents()) {
@@ -118,8 +117,8 @@ class AiInfoBarTest {
         SwingUtilities.invokeAndWait(() -> {
             infoBar.setAutoAccept(true);
             assertTrue(autoAcceptCheck.isSelected(),
-                       "an EDT caller must see the update applied synchronously, with no invokeLater round trip — "
-                       + "existing EDT callers' behaviour must not change");
+                    "an EDT caller must see the update applied synchronously, with no invokeLater round trip — "
+                    + "existing EDT callers' behaviour must not change");
         });
     }
 
@@ -146,35 +145,37 @@ class AiInfoBarTest {
         SwingUtilities.invokeAndWait(() -> {
             infoBar.setStatusMessage("Busy");
             assertEquals("Busy", statusLabel.getText(),
-                         "an EDT caller must see the update applied synchronously, with no invokeLater round trip");
+                    "an EDT caller must see the update applied synchronously, with no invokeLater round trip");
         });
     }
 
     @Test
-    void setProcessingFromOffTheEdtEventuallyShowsTheStopButtonOnTheEdt() throws Exception {
+    void hideStopFromOffTheEdtEventuallyHidesTheStopButtonOnTheEdt() throws Exception {
         AiInfoBar infoBar = new AiInfoBar();
         JButton stopButton = buttonWithText(infoBar, "■ Stop");
         assertNotNull(stopButton, "test setup: could not find the Stop button");
-        assertFalse(stopButton.isVisible(), "test setup: the Stop button starts hidden");
+        SwingUtilities.invokeAndWait(() -> infoBar.setBusy(true, true));
+        assertTrue(stopButton.isVisible(), "test setup: the Stop button starts visible");
         assertFalse(SwingUtilities.isEventDispatchThread(), "test setup: this test must run off the EDT");
 
-        infoBar.setProcessing(true);
+        infoBar.hideStop();
         SwingUtilities.invokeAndWait(() -> {
         });
 
-        assertTrue(stopButton.isVisible(), "the Stop button must be shown once the EDT catches up");
+        assertFalse(stopButton.isVisible(), "the Stop button must be hidden once the EDT catches up");
     }
 
     @Test
-    void setProcessingOnTheEdtAppliesImmediatelyWithNoDeferral() throws Exception {
+    void hideStopOnTheEdtAppliesImmediatelyWithNoDeferral() throws Exception {
         AiInfoBar infoBar = new AiInfoBar();
         JButton stopButton = buttonWithText(infoBar, "■ Stop");
         assertNotNull(stopButton);
 
         SwingUtilities.invokeAndWait(() -> {
-            infoBar.setProcessing(true);
-            assertTrue(stopButton.isVisible(),
-                       "an EDT caller must see the update applied synchronously, with no invokeLater round trip");
+            infoBar.setBusy(true, true);
+            infoBar.hideStop();
+            assertFalse(stopButton.isVisible(),
+                    "an EDT caller must see the update applied synchronously, with no invokeLater round trip");
         });
     }
 
@@ -202,7 +203,7 @@ class AiInfoBarTest {
             }
         });
         assertTrue(edtStarted.await(10, TimeUnit.SECONDS),
-                   "EDT must reach the blocking task before the setter is called");
+                "EDT must reach the blocking task before the setter is called");
         try {
             offEdtCall.run();
             assertNotYetApplied.run();
@@ -225,8 +226,8 @@ class AiInfoBarTest {
         assertDeferredOffEdtApplication(
                 () -> infoBar.setAutoAccept(true),
                 () -> assertFalse(autoAcceptCheck.isSelected(),
-                                  "off-EDT setAutoAccept must not apply synchronously on the calling thread "
-                                  + "— without the guard this assert would already see the checkbox selected"),
+                        "off-EDT setAutoAccept must not apply synchronously on the calling thread "
+                        + "— without the guard this assert would already see the checkbox selected"),
                 () -> assertTrue(autoAcceptCheck.isSelected(), "the checkbox must be selected once the EDT catches up"));
     }
 
@@ -240,8 +241,8 @@ class AiInfoBarTest {
         assertDeferredOffEdtApplication(
                 () -> infoBar.setSaveHistory(true),
                 () -> assertFalse(saveHistoryCheck.isSelected(),
-                                  "off-EDT setSaveHistory must not apply synchronously on the calling thread "
-                                  + "— without the guard this assert would already see the checkbox selected"),
+                        "off-EDT setSaveHistory must not apply synchronously on the calling thread "
+                        + "— without the guard this assert would already see the checkbox selected"),
                 () -> assertTrue(saveHistoryCheck.isSelected(), "the checkbox must be selected once the EDT catches up"));
     }
 
@@ -255,25 +256,59 @@ class AiInfoBarTest {
         assertDeferredOffEdtApplication(
                 () -> infoBar.setStatusMessage("Busy"),
                 () -> assertEquals(original, statusLabel.getText(),
-                                   "off-EDT setStatusMessage must not apply synchronously on the calling thread "
-                                   + "— without the guard this assert would already see the label updated"),
+                        "off-EDT setStatusMessage must not apply synchronously on the calling thread "
+                        + "— without the guard this assert would already see the label updated"),
                 () -> assertEquals("Busy", statusLabel.getText(),
-                                   "the label must be updated once the EDT catches up"));
+                        "the label must be updated once the EDT catches up"));
     }
 
     @Test
-    void setProcessingOffEdtIsDeferredNotAppliedOnCallingThread() throws Exception {
+    void hideStopOffEdtIsDeferredNotAppliedOnCallingThread() throws Exception {
         AiInfoBar infoBar = new AiInfoBar();
         JButton stopButton = buttonWithText(infoBar, "■ Stop");
         assertNotNull(stopButton, "test setup: could not find the Stop button");
-        assertFalse(stopButton.isVisible(), "test setup: the Stop button starts hidden");
+        SwingUtilities.invokeAndWait(() -> infoBar.setBusy(true, true));
+        assertTrue(stopButton.isVisible(), "test setup: the Stop button starts visible");
 
         assertDeferredOffEdtApplication(
-                () -> infoBar.setProcessing(true),
-                () -> assertFalse(stopButton.isVisible(),
-                                  "off-EDT setProcessing must not apply synchronously on the calling thread "
-                                  + "— without the guard this assert would already see the Stop button visible"),
+                () -> infoBar.hideStop(),
                 () -> assertTrue(stopButton.isVisible(),
-                                 "the Stop button must be shown once the EDT catches up"));
+                        "off-EDT hideStop must not apply synchronously on the calling thread "
+                        + "— without the guard this assert would already see the Stop button hidden"),
+                () -> assertFalse(stopButton.isVisible(),
+                        "the Stop button must be hidden once the EDT catches up"));
+    }
+
+    @Test
+    void setBusyHonoursCancellableForStopVisibility() throws Exception {
+        AiInfoBar infoBar = new AiInfoBar();
+        JButton stopButton = buttonWithText(infoBar, "■ Stop");
+        assertNotNull(stopButton);
+
+        SwingUtilities.invokeAndWait(() -> {
+            infoBar.setBusy(true, false);
+            assertFalse(stopButton.isVisible(),
+                    "non-cancellable busy work must not expose a Stop button");
+            infoBar.setBusy(true, true);
+            assertTrue(stopButton.isVisible(),
+                    "cancellable busy work must expose a Stop button");
+            infoBar.setBusy(false, true);
+            assertFalse(stopButton.isVisible(),
+                    "leaving busy must hide Stop regardless of the stale cancellable flag");
+        });
+    }
+
+    @Test
+    void hideStopDoesNotReleaseBusyState() throws Exception {
+        AiInfoBar infoBar = new AiInfoBar();
+        JButton stopButton = buttonWithText(infoBar, "■ Stop");
+        assertNotNull(stopButton);
+
+        SwingUtilities.invokeAndWait(() -> {
+            infoBar.setBusy(true, true);
+            infoBar.hideStop();
+            assertFalse(stopButton.isVisible(),
+                    "Stop is hidden after the request but busy state remains owned by the backend");
+        });
     }
 }

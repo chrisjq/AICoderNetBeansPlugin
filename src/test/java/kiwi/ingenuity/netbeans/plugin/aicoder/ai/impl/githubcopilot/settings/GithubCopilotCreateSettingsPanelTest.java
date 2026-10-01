@@ -7,6 +7,7 @@ import java.util.concurrent.atomic.AtomicReference;
 import javax.swing.JComboBox;
 import javax.swing.SwingUtilities;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.AiModelCatalog;
+import kiwi.ingenuity.netbeans.plugin.aicoder.ai.AiTypeEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.ui.BlankSafeComboRenderer;
 import org.junit.jupiter.api.AfterEach;
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -16,8 +17,8 @@ import org.junit.jupiter.api.Test;
 
 /**
  * Mirrors {@code GrokCreateSettingsPanelTest}. Also covers the review finding shared with
- * {@code GithubCopilotAiSettingsTabTest}: {@code applyTo()} must never persist a reasoning effort the currently
- * selected model does not support, even if the combo's own selection were somehow stale.
+ * {@code GithubCopilotAiSettingsTabTest}: {@code applyTo()} must never persist a reasoning effort the
+ * currently selected model does not support, even if the combo's own selection were somehow stale.
  */
 class GithubCopilotCreateSettingsPanelTest {
 
@@ -34,7 +35,7 @@ class GithubCopilotCreateSettingsPanelTest {
 
     @Test
     void defaultLabelMapsToNullStoredReasoningEffort() {
-        GithubCopilotCreateSettingsPanel panel = new GithubCopilotCreateSettingsPanel(new AiModelCatalog());
+        GithubCopilotCreateSettingsPanel panel = new GithubCopilotCreateSettingsPanel(new AiModelCatalog(AiTypeEnum.GitHubCoPilot));
         GithubCopilotSessionSettings empty = new GithubCopilotSessionSettings();
         panel.load(empty);
 
@@ -50,7 +51,7 @@ class GithubCopilotCreateSettingsPanelTest {
         settings.setModel("auto");
         GithubCopilotPluginSettings.setModelReasoningEffortInfo(Map.of("auto", List.of("low", "medium")), Map.of());
         GithubCopilotPluginSettings.setReasoningEffort("medium");
-        GithubCopilotCreateSettingsPanel panel = new GithubCopilotCreateSettingsPanel(new AiModelCatalog());
+        GithubCopilotCreateSettingsPanel panel = new GithubCopilotCreateSettingsPanel(new AiModelCatalog(AiTypeEnum.GitHubCoPilot));
         panel.load(settings);
 
         GithubCopilotSessionSettings result = new GithubCopilotSessionSettings();
@@ -62,7 +63,7 @@ class GithubCopilotCreateSettingsPanelTest {
     @Test
     void storedReasoningEffortRoundTripsThroughLoadAndApplyToWhenSupported() {
         GithubCopilotPluginSettings.setModelReasoningEffortInfo(Map.of("auto", List.of("low", "xhigh")), Map.of());
-        GithubCopilotCreateSettingsPanel panel = new GithubCopilotCreateSettingsPanel(new AiModelCatalog());
+        GithubCopilotCreateSettingsPanel panel = new GithubCopilotCreateSettingsPanel(new AiModelCatalog(AiTypeEnum.GitHubCoPilot));
         GithubCopilotSessionSettings stored = new GithubCopilotSessionSettings();
         stored.setModel("auto");
         stored.setReasoningEffort("xhigh");
@@ -77,7 +78,7 @@ class GithubCopilotCreateSettingsPanelTest {
     @Test
     void storedReasoningEffortUnsupportedByModelNeverPersists() {
         // No discovery has populated the per-model cache for "auto" — an unknown/no-data model means "no support".
-        GithubCopilotCreateSettingsPanel panel = new GithubCopilotCreateSettingsPanel(new AiModelCatalog());
+        GithubCopilotCreateSettingsPanel panel = new GithubCopilotCreateSettingsPanel(new AiModelCatalog(AiTypeEnum.GitHubCoPilot));
         GithubCopilotSessionSettings stored = new GithubCopilotSessionSettings();
         stored.setModel("auto");
         stored.setReasoningEffort("xhigh");
@@ -87,7 +88,7 @@ class GithubCopilotCreateSettingsPanelTest {
         panel.applyTo(result);
 
         assertNull(result.reasoningEffort(),
-                   "applyTo() must never persist a reasoning effort the currently selected model does not support");
+                "applyTo() must never persist a reasoning effort the currently selected model does not support");
     }
 
     @Test
@@ -100,7 +101,7 @@ class GithubCopilotCreateSettingsPanelTest {
         // can never return a value the current model does not support. The defensive re-validation in applyTo() is
         // therefore belt-and-braces, not a fix for a live bug — the equivalent path IS live in Grok's Options tab.
         GithubCopilotPluginSettings.setModelReasoningEffortInfo(Map.of("auto", List.of("low", "xhigh")), Map.of());
-        GithubCopilotCreateSettingsPanel panel = new GithubCopilotCreateSettingsPanel(new AiModelCatalog());
+        GithubCopilotCreateSettingsPanel panel = new GithubCopilotCreateSettingsPanel(new AiModelCatalog(AiTypeEnum.GitHubCoPilot));
         GithubCopilotSessionSettings stored = new GithubCopilotSessionSettings();
         stored.setModel("auto");
         stored.setReasoningEffort("xhigh");
@@ -121,19 +122,19 @@ class GithubCopilotCreateSettingsPanelTest {
         AtomicReference<Object> collapsed = new AtomicReference<>();
         SwingUtilities.invokeAndWait(() -> collapsed.set(combo.getSelectedItem()));
         assertEquals(BlankSafeComboRenderer.DEFAULT_OPTION, collapsed.get(),
-                     "the repopulated combo must collapse the no-longer-supported selection to the first entry; "
-                     + "a stale selectedItemReminder must not survive");
+                "the repopulated combo must collapse the no-longer-supported selection to the first entry; "
+                + "a stale selectedItemReminder must not survive");
 
         GithubCopilotSessionSettings result = new GithubCopilotSessionSettings();
         panel.applyTo(result);
 
         assertNull(result.reasoningEffort(),
-                   "applyTo() must never persist a reasoning effort the currently selected model does not support");
+                "applyTo() must never persist a reasoning effort the currently selected model does not support");
     }
 
     @Test
     void modelSelectionRoundTripsThroughLoadAndApplyTo() {
-        GithubCopilotCreateSettingsPanel panel = new GithubCopilotCreateSettingsPanel(new AiModelCatalog());
+        GithubCopilotCreateSettingsPanel panel = new GithubCopilotCreateSettingsPanel(new AiModelCatalog(AiTypeEnum.GitHubCoPilot));
         GithubCopilotSessionSettings settings = new GithubCopilotSessionSettings();
         settings.setModel("gpt-5.4");
         panel.load(settings);

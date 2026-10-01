@@ -21,15 +21,16 @@ import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.function.Consumer;
 import java.util.logging.Level;
 import java.util.logging.Logger;
+import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.githubcopilot.events.GithubCopilotReasoningEffortsEvent;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.githubcopilot.settings.GithubCopilotPluginSettings;
 
 /**
- * Phase 1 of adopting the official GitHub Copilot SDK for Java: query the real list of models available to the account
- * via {@code CopilotClient.listModels()} and feed it into the model dropdown. The {@code copilot -p} runtime is
+ * Queries the real list of models available to the account, via the official GitHub Copilot SDK for Java's
+ * {@code CopilotClient.listModels()}, and feeds it into the model dropdown. The {@code copilot -p} runtime is
  * unchanged; this only refreshes the model list.
  * <p>
- * Discovery is best-effort and fully isolated: any failure (CLI missing, RPC error, timeout) is swallowed and the
- * hardcoded fallback list remains in use.
+ * Discovery is best-effort and fully isolated: any failure (CLI missing, RPC error, timeout) is swallowed and
+ * the hardcoded fallback list remains in use.
  */
 public final class GithubCopilotModelDiscovery {
 
@@ -41,8 +42,8 @@ public final class GithubCopilotModelDiscovery {
     private static volatile int retryCount = 0;
 
     /**
-     * Builds the dropdown list from discovered model ids: "auto" first (it always works), then the discovered ids in
-     * order, de-duplicated and trimmed, blanks dropped. Pure and side-effect free.
+     * Builds the dropdown list from discovered model ids: "auto" first (it always works), then the discovered
+     * ids in order, de-duplicated and trimmed, blanks dropped. Pure and side-effect free.
      */
     static String[] assembleModelList(List<String> discoveredIds) {
         LinkedHashSet<String> out = new LinkedHashSet<>();
@@ -58,8 +59,9 @@ public final class GithubCopilotModelDiscovery {
     }
 
     /**
-     * Starts a fresh discovery cycle: resets the retry counter and submits a background fetch. Does nothing if a
-     * discovery is already in progress. On failure, retries up to {@value #MAX_RETRIES} times within the cycle.
+     * Starts a fresh discovery cycle: resets the retry counter and submits a background fetch. Does nothing
+     * if a discovery is already in progress. On failure, retries up to {@value #MAX_RETRIES} times within the
+     * cycle.
      *
      * @param cliPath the located copilot CLI path, or null to use PATH
      */
@@ -131,10 +133,10 @@ public final class GithubCopilotModelDiscovery {
     /**
      * Tier 1: official Copilot SDK ({@code CopilotClient.listModels()}). Also populates
      * {@code GithubCopilotPluginSettings}'s per-model reasoning-effort cache from each {@code ModelInfo}'s
-     * {@code getSupportedReasoningEfforts()}/{@code getDefaultReasoningEffort()} — the live discovery, so nothing about
-     * effort levels is hardcoded. The direct-RPC fallback tier does not carry this (its
-     * response shape is not verified to include these fields), so a model discovered only via that tier is treated as
-     * "no support" until SDK-tier discovery succeeds — the fail-safe default.
+     * {@code getSupportedReasoningEfforts()}/{@code getDefaultReasoningEffort()} — the live discovery, so
+     * nothing about effort levels is hardcoded. The direct-RPC fallback tier does not carry this (its
+     * response shape is not verified to include these fields), so a model discovered only via that tier is
+     * treated as "no support" until SDK-tier discovery succeeds — the fail-safe default.
      */
     private static String[] discoverViaSdk(String cliPath) throws Exception {
         CopilotClientOptions opts = new CopilotClientOptions();
@@ -163,15 +165,16 @@ public final class GithubCopilotModelDiscovery {
                     }
                 }
             }
-            GithubCopilotPluginSettings.setModelReasoningEffortInfo(supportedByModel, defaultByModel);
+            GithubCopilotAiImplementation.publishReasoningEfforts(
+                    new GithubCopilotReasoningEffortsEvent(supportedByModel, defaultByModel));
             return assembleModelList(ids);
         }
     }
 
     /**
-     * Tier 2: drive the CLI's JSON-RPC server directly — spawn {@code copilot --server --stdio}, do a {@code ping}
-     * handshake, then call {@code models.list}. Uses only gson; no SDK classes. Mirrors exactly what the SDK does on
-     * the wire (LSP-framed JSON-RPC 2.0).
+     * Tier 2: drive the CLI's JSON-RPC server directly — spawn {@code copilot --server --stdio}, do a
+     * {@code ping} handshake, then call {@code models.list}. Uses only gson; no SDK classes. Mirrors exactly
+     * what the SDK does on the wire (LSP-framed JSON-RPC 2.0).
      */
     private static String[] discoverViaRpc(String cliPath) throws Exception {
         Process proc = new ProcessBuilder(buildServerCommand(cliPath)).start();
@@ -195,7 +198,7 @@ public final class GithubCopilotModelDiscovery {
             while ((body = readFramed(in)) != null) {
                 JsonObject msg = GSON.fromJson(body, JsonObject.class);
                 if (msg != null && msg.has(GithubCopilotJsonKeyEnum.ID.key()) && msg.get(GithubCopilotJsonKeyEnum.ID.key()).isJsonPrimitive()
-                        && msg.get(GithubCopilotJsonKeyEnum.ID.key()).getAsInt() == 2) {
+                    && msg.get(GithubCopilotJsonKeyEnum.ID.key()).getAsInt() == 2) {
                     return assembleModelList(parseModelIds(body));
                 }
             }
@@ -265,8 +268,8 @@ public final class GithubCopilotModelDiscovery {
     }
 
     /**
-     * Reads one LSP-framed message (Content-Length header + body). Returns the body as a UTF-8 string, or null at end
-     * of stream.
+     * Reads one LSP-framed message (Content-Length header + body). Returns the body as a UTF-8 string, or
+     * null at end of stream.
      */
     static String readFramed(InputStream in) throws java.io.IOException {
         ByteArrayOutputStream header = new ByteArrayOutputStream();

@@ -154,9 +154,8 @@ public class AiInfoBar extends JPanel {
     }
 
     /**
-     * Safe to call from any thread — same reason as {@link #setAutoAccept(boolean)}: {@code AiTopComponent.
-     * suppressNextTurn} (another {@code AiSessionHost} method that reaches this) is called off the EDT by at least one
-     * backend's compact-request handling. Self-dispatches rather than relying on every caller to remember to.
+     * Safe to call from any thread — same reason as {@link #setAutoAccept(boolean)}: backends report status
+     * from their own threads. Self-dispatches rather than relying on every caller to remember to.
      */
     public void setStatusMessage(String text) {
         if (!SwingUtilities.isEventDispatchThread()) {
@@ -204,11 +203,11 @@ public class AiInfoBar extends JPanel {
     }
 
     /**
-     * Set the auto-accept checkbox state without firing the listener (used to initialise or sync the UI from session
-     * settings). Safe to call from any thread: several {@code AiSessionHost.updateSessionSettings} callers reach this
-     * from a background thread (e.g. a backend's clear-invalid-effort callback, an ACP handshake thread) —
-     * self-dispatches to the EDT rather than demanding every caller remember to — demanding it is what let this go
-     * unguarded before.
+     * Set the auto-accept checkbox state without firing the listener (used to initialise or sync the UI from
+     * session settings). Safe to call from any thread: several {@code AiSessionHost.updateSessionSettings}
+     * callers reach this from a background thread (e.g. a backend's clear-invalid-effort callback, an ACP
+     * handshake thread) — self-dispatches to the EDT rather than demanding every caller remember to —
+     * demanding it is what let this go unguarded before.
      */
     public void setAutoAccept(boolean value) {
         if (!SwingUtilities.isEventDispatchThread()) {
@@ -234,18 +233,32 @@ public class AiInfoBar extends JPanel {
     }
 
     /**
-     * Show or hide the stop button and notify the extension. Same thread-safety contract as
-     * {@link #setAutoAccept(boolean)}.
+     * Busy/ready from the backend. Stop is shown only while the work in flight can be cancelled; the
+     * extension hears {@link AiInfoBarExtension#onBusyChanged} so every bar applies the same lock rule.
      */
-    public void setProcessing(boolean processing) {
+    public void setBusy(boolean busy, boolean cancellable) {
         if (!SwingUtilities.isEventDispatchThread()) {
-            SwingUtilities.invokeLater(() -> setProcessing(processing));
+            SwingUtilities.invokeLater(() -> setBusy(busy, cancellable));
             return;
         }
-        stopButton.setVisible(processing);
+        stopButton.setVisible(busy && cancellable);
         if (extension != null) {
-            extension.onProcessingChanged(processing);
+            extension.onBusyChanged(busy);
         }
+        revalidate();
+        repaint();
+    }
+
+    /**
+     * Hides Stop without changing busy state — once pressed, the cancel request has been sent and the session
+     * stays locked until the backend reports it has actually stopped.
+     */
+    public void hideStop() {
+        if (!SwingUtilities.isEventDispatchThread()) {
+            SwingUtilities.invokeLater(this::hideStop);
+            return;
+        }
+        stopButton.setVisible(false);
         revalidate();
         repaint();
     }

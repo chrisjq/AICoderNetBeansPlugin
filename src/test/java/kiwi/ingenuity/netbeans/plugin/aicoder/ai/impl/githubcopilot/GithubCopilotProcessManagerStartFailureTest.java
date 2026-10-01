@@ -8,6 +8,7 @@ import java.util.function.Consumer;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.events.StatusEvent;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.events.StatusEventTypeEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.githubcopilot.events.GithubCopilotFatalErrorEvent;
+import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.githubcopilot.events.GithubCopilotModelFallbackEvent;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.events.AiProcessEvent;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -16,12 +17,12 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import org.junit.jupiter.api.Test;
 
 /**
- * Pins the failed-start teardown in {@code handleSessionStartFailure}: a start that dies mid-flight must release
- * everything {@code start()} had already created — dispose the AI session, deregister the MCP endpoint, cancel pending
- * permission dialogs, close client/session — before mapping the failure to events, with each step guarded so cleanup
- * cannot mask the original failure. Reverting the method to its pre-fix shape (which only mapped events) leaves the
- * stale registrar/handler in place and turns the first test red; SDK-typed fields stay null here since every teardown
- * step is individually null-guarded by design.
+ * Pins the failed-start teardown in {@code handleSessionStartFailure}: a start that dies mid-flight must
+ * release everything {@code start()} had already created — dispose the AI session, deregister the MCP
+ * endpoint, cancel pending permission dialogs, close client/session — before mapping the failure to events,
+ * with each step guarded so cleanup cannot mask the original failure. Reverting the method to its pre-fix
+ * shape (which only mapped events) leaves the stale registrar/handler in place and turns the first test red;
+ * SDK-typed fields stay null here since every teardown step is individually null-guarded by design.
  */
 class GithubCopilotProcessManagerStartFailureTest {
 
@@ -87,7 +88,7 @@ class GithubCopilotProcessManagerStartFailureTest {
         startFailure(manager, "Not authenticated — run copilot login");
 
         assertTrue(events.stream().anyMatch(e -> e instanceof GithubCopilotFatalErrorEvent
-                && "AUTHENTICATION_REQUIRED".equals(((GithubCopilotFatalErrorEvent) e).errorType())),
+                                                 && "AUTHENTICATION_REQUIRED".equals(((GithubCopilotFatalErrorEvent) e).errorType())),
                 () -> "events were: " + events);
     }
 
@@ -104,7 +105,34 @@ class GithubCopilotProcessManagerStartFailureTest {
         assertEquals("auto", get(manager, "model"));
         assertEquals(List.of("auto"), fallbacks);
         assertTrue(events.stream().anyMatch(e -> e instanceof StatusEvent
-                && ((StatusEvent) e).type() == StatusEventTypeEnum.INFO));
+                                                 && ((StatusEvent) e).type() == StatusEventTypeEnum.INFO));
+    }
+
+    @Test
+    void unavailableExplicitModel_emitsFallbackEventWithoutPersistenceCallback() throws Exception {
+        GithubCopilotProcessManager manager = managerWithStaleState();
+        set(manager, "model", "grok-nonexistent");
+
+        startFailure(manager, "model grok-nonexistent is not available for your account");
+
+        assertTrue(events.stream().anyMatch(e -> e instanceof GithubCopilotModelFallbackEvent fallback
+                                                 && "auto".equals(fallback.model())),
+                "the fallback event must be emitted even without an optional persistence callback");
+    }
+
+    @Test
+    void unavailableExplicitModel_emitsFallbackEventWhenPersistenceCallbackThrows() throws Exception {
+        GithubCopilotProcessManager manager = managerWithStaleState();
+        set(manager, "model", "grok-nonexistent");
+        set(manager, "onModelFallback", (Consumer<String>) model -> {
+            throw new IllegalStateException("persistence failed");
+        });
+
+        startFailure(manager, "model grok-nonexistent is not available for your account");
+
+        assertTrue(events.stream().anyMatch(e -> e instanceof GithubCopilotModelFallbackEvent fallback
+                                                 && "auto".equals(fallback.model())),
+                "a persistence callback failure must not suppress the fallback event");
     }
 
     @Test

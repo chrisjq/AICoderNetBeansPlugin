@@ -10,6 +10,7 @@ import java.util.Set;
 import java.util.concurrent.CancellationException;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.atomic.AtomicLong;
 import java.util.function.BiConsumer;
 import java.util.function.Function;
 import java.util.function.Predicate;
@@ -135,7 +136,7 @@ class OpenCodeAcpClientHandler implements AcpClientHandler {
         }
         JsonObject rawInput = toolCall.getAsJsonObject(AcpJsonKeyEnum.RAW_INPUT.key());
         return rawInput.has(AcpJsonKeyEnum.COMMAND.key()) && !rawInput.get(AcpJsonKeyEnum.COMMAND.key()).isJsonNull()
-                ? rawInput.get(AcpJsonKeyEnum.COMMAND.key()).getAsString() : null;
+               ? rawInput.get(AcpJsonKeyEnum.COMMAND.key()).getAsString() : null;
     }
 
     /**
@@ -212,7 +213,7 @@ class OpenCodeAcpClientHandler implements AcpClientHandler {
 
     private static void addIfString(JsonObject obj, String key, Set<String> into) {
         if (obj.has(key) && obj.get(key).isJsonPrimitive() && obj.get(key).getAsJsonPrimitive().isString()
-                && !obj.get(key).getAsString().isBlank()) {
+            && !obj.get(key).getAsString().isBlank()) {
             into.add(obj.get(key).getAsString());
         }
     }
@@ -233,13 +234,13 @@ class OpenCodeAcpClientHandler implements AcpClientHandler {
         if (toolCall.has(AcpJsonKeyEnum.CONTENT.key()) && toolCall.get(AcpJsonKeyEnum.CONTENT.key()).isJsonArray()) {
             for (var element : toolCall.getAsJsonArray(AcpJsonKeyEnum.CONTENT.key())) {
                 if (element.isJsonObject() && element.getAsJsonObject().has(AcpJsonKeyEnum.TYPE.key())
-                        && "diff".equals(element.getAsJsonObject().get(AcpJsonKeyEnum.TYPE.key()).getAsString())) {
+                    && "diff".equals(element.getAsJsonObject().get(AcpJsonKeyEnum.TYPE.key()).getAsString())) {
                     return true;
                 }
             }
         }
         return toolCall.has(AcpJsonKeyEnum.RAW_INPUT.key()) && toolCall.get(AcpJsonKeyEnum.RAW_INPUT.key()).isJsonObject()
-                && toolCall.getAsJsonObject(AcpJsonKeyEnum.RAW_INPUT.key()).has("diff");
+               && toolCall.getAsJsonObject(AcpJsonKeyEnum.RAW_INPUT.key()).has("diff");
     }
 
     /**
@@ -312,7 +313,8 @@ class OpenCodeAcpClientHandler implements AcpClientHandler {
                     return false;
                 }
             }
-        } catch (RuntimeException e) {
+        }
+        catch (RuntimeException e) {
             LOG.log(Level.FINE, "own-session check failed; asking the user instead", e);
             return false;
         }
@@ -357,6 +359,56 @@ class OpenCodeAcpClientHandler implements AcpClientHandler {
      */
     private final List<PolicyRefusalEvent.Refusal> turnRefusals = new ArrayList<>();
     private volatile CompletableFuture<PermissionDecision> pendingPermission = null;
+    /**
+     * Non-zero while the process manager is running a non-turn {@code session/prompt} whose streamed-back
+     * text is not part of the conversation (the compaction route — OpenCode answers a {@code "/compact"}
+     * prompt by streaming the summary back as ordinary agent text, which must never leak into the
+     * transcript). While set, {@code agent_message_chunk}, {@code agent_thought_chunk}, {@code tool_call} and
+     * {@code tool_call_update} updates are dropped instead of surfacing as
+     * {@link TextDeltaEvent}s/THINKING/ToolUseEvents, so the summary cannot leak into the transcript;
+     * {@code usage_update} still flows so the context gauge tracks the shrink. Toggled by the process manager
+     * around the compaction prompt.
+     *
+     * <p>
+     * Suppression is owned by a token rather than a plain boolean so a stale compaction's late response can
+     * never clear a newer compaction's suppression: {@link #beginTextSuppression} arms a fresh token and
+     * {@link #endTextSuppression} clears only while it still matches.
+     */
+    private volatile long suppressionToken;
+
+    private final AtomicLong suppressionTokens = new AtomicLong();
+
+    /**
+     * Arms suppression for one compaction and returns its ownership token. Tokens come from a counter, never
+     * {@code nanoTime}, so two compactions can never receive the same token.
+     */
+    long beginTextSuppression() {
+        long token = suppressionTokens.incrementAndGet();
+        this.suppressionToken = token;
+        return token;
+    }
+
+    /**
+     * Disarms suppression owned by {@code token}. A stale token (a newer compaction already re-armed it)
+     * leaves the newer suppression untouched.
+     */
+    void endTextSuppression(long token) {
+        if (suppressionToken == token) {
+            suppressionToken = 0;
+        }
+    }
+
+    /**
+     * Disarms suppression unconditionally — the safety net {@code sendTurn} uses so a stalled or abandoned
+     * compaction can never silence a real turn.
+     */
+    void clearTextSuppression() {
+        suppressionToken = 0;
+    }
+
+    boolean isSuppressingSessionText() {
+        return suppressionToken != 0;
+    }
 
     OpenCodeAcpClientHandler(AiProcessEventListener listener, Runnable disconnectCallback) {
         this(listener, disconnectCallback, null, null, null);
@@ -364,53 +416,53 @@ class OpenCodeAcpClientHandler implements AcpClientHandler {
 
     /**
      * @param toolCallTracker receives {@code (toolCallId, status)} for every {@code tool_call} and
-     * {@code tool_call_update} session/update so the process manager can track in-flight tool calls (F5)
-     * without reaching into the handler's internals. May be null when the caller is not a manager (e.g. tests
-     * wiring a handler to a bare connection).
+     *                        {@code tool_call_update} session/update so the process manager can track in-flight tool calls (F5)
+     *                        without reaching into the handler's internals. May be null when the caller is not a manager (e.g. tests
+     *                        wiring a handler to a bare connection).
      */
     OpenCodeAcpClientHandler(AiProcessEventListener listener, Runnable disconnectCallback,
-            BiConsumer<String, String> toolCallTracker) {
+                             BiConsumer<String, String> toolCallTracker) {
         this(listener, disconnectCallback, toolCallTracker, null, null);
     }
 
     /**
      * @param ownSessionConfigFile true for a path inside this plugin session's own
-     * {@code ~/.ai-coder/{type}/{sessionId}/} tree — see {@link #ownSessionConfigFileCheck}. A permission
-     * request whose every path passes is answered "allow once" without asking the user, exactly as the
-     * plugin's own file tools and the Claude/Pi hook treat that tree. Null means "nothing is exempt": every
-     * path-bearing request is put to the user, as before this parameter existed.
+     *                             {@code ~/.ai-coder/{type}/{sessionId}/} tree — see {@link #ownSessionConfigFileCheck}. A permission
+     *                             request whose every path passes is answered "allow once" without asking the user, exactly as the
+     *                             plugin's own file tools and the Claude/Pi hook treat that tree. Null means "nothing is exempt": every
+     *                             path-bearing request is put to the user, as before this parameter existed.
      */
     OpenCodeAcpClientHandler(AiProcessEventListener listener, Runnable disconnectCallback,
-            BiConsumer<String, String> toolCallTracker, Predicate<String> ownSessionConfigFile) {
+                             BiConsumer<String, String> toolCallTracker, Predicate<String> ownSessionConfigFile) {
         this(listener, disconnectCallback, toolCallTracker, ownSessionConfigFile, null);
     }
 
     /**
-     * @param ownSessionConfigFile true for a path inside this plugin session's own
-     * {@code ~/.ai-coder/{type}/{sessionId}/} tree
+     * @param ownSessionConfigFile  true for a path inside this plugin session's own
+     *                              {@code ~/.ai-coder/{type}/{sessionId}/} tree
      * @param steeringIsActiveCheck optional check for whether MCP steering is active for a session (by
-     * sessionId). If null, steering is determined via {@link SessionRegistry} at runtime, under the plugin
-     * session id passed as {@code pluginSessionId}.
+     *                              sessionId). If null, steering is determined via {@link SessionRegistry} at runtime, under the plugin
+     *                              session id passed as {@code pluginSessionId}.
      */
     OpenCodeAcpClientHandler(AiProcessEventListener listener, Runnable disconnectCallback,
-            BiConsumer<String, String> toolCallTracker, Predicate<String> ownSessionConfigFile,
-            Predicate<String> steeringIsActiveCheck) {
+                             BiConsumer<String, String> toolCallTracker, Predicate<String> ownSessionConfigFile,
+                             Predicate<String> steeringIsActiveCheck) {
         this(listener, disconnectCallback, toolCallTracker, ownSessionConfigFile, steeringIsActiveCheck, null);
     }
 
     /**
-     * @param ownSessionConfigFile true for a path inside this plugin session's own
-     * {@code ~/.ai-coder/{type}/{sessionId}/} tree
+     * @param ownSessionConfigFile  true for a path inside this plugin session's own
+     *                              {@code ~/.ai-coder/{type}/{sessionId}/} tree
      * @param steeringIsActiveCheck optional check for whether MCP steering is active for a session (by
-     * sessionId). If null, steering is determined via {@link SessionRegistry} at runtime, under
-     * {@code pluginSessionId}.
-     * @param pluginSessionId the PLUGIN session UUID the plugin session is registered under in
-     * {@link SessionRegistry} — see the field. Null for callers with no plugin session (older callers, plain
-     * tests); steering then resolves through {@code steeringIsActiveCheck} if given, else off.
+     *                              sessionId). If null, steering is determined via {@link SessionRegistry} at runtime, under
+     *                              {@code pluginSessionId}.
+     * @param pluginSessionId       the PLUGIN session UUID the plugin session is registered under in
+     *                              {@link SessionRegistry} — see the field. Null for callers with no plugin session (older callers, plain
+     *                              tests); steering then resolves through {@code steeringIsActiveCheck} if given, else off.
      */
     OpenCodeAcpClientHandler(AiProcessEventListener listener, Runnable disconnectCallback,
-            BiConsumer<String, String> toolCallTracker, Predicate<String> ownSessionConfigFile,
-            Predicate<String> steeringIsActiveCheck, String pluginSessionId) {
+                             BiConsumer<String, String> toolCallTracker, Predicate<String> ownSessionConfigFile,
+                             Predicate<String> steeringIsActiveCheck, String pluginSessionId) {
         this.listener = listener;
         this.disconnectCallback = disconnectCallback;
         this.toolCallTracker = toolCallTracker;
@@ -440,7 +492,7 @@ class OpenCodeAcpClientHandler implements AcpClientHandler {
         }
 
         SessionFileScope(Predicate<String> ownSessionConfigFile, Predicate<String> readAllowed,
-                Function<String, String> refusalReason) {
+                         Function<String, String> refusalReason) {
             this.ownSessionConfigFile = ownSessionConfigFile;
             this.readAllowed = readAllowed;
             this.refusalReason = refusalReason;
@@ -516,13 +568,21 @@ class OpenCodeAcpClientHandler implements AcpClientHandler {
         }
         switch (type) {
             case AGENT_MESSAGE_CHUNK:
+                if (isSuppressingSessionText()) {
+                    break;
+                }
                 handleAgentMessageChunk(update);
                 break;
             case AGENT_THOUGHT_CHUNK:
-                listener.onAiProcessEvent(new StatusEvent(StatusEventTypeEnum.THINKING, ""));
+                if (!isSuppressingSessionText()) {
+                    listener.onAiProcessEvent(new StatusEvent(StatusEventTypeEnum.THINKING, ""));
+                }
                 break;
             case TOOL_CALL:
             case TOOL_CALL_UPDATE:
+                if (isSuppressingSessionText()) {
+                    break; // during a compaction the agent's own tool visibility is no part of the conversation either
+                }
                 // locations and rawInput may be empty on the initial tool_call
                 handleToolEvent(update);
                 break;
@@ -651,7 +711,8 @@ class OpenCodeAcpClientHandler implements AcpClientHandler {
                 }
             }
             return new ReadDecision(true, null);
-        } catch (RuntimeException e) {
+        }
+        catch (RuntimeException e) {
             LOG.log(Level.FINE, "read-scope check failed; asking the user instead", e);
             return null;
         }
@@ -671,7 +732,8 @@ class OpenCodeAcpClientHandler implements AcpClientHandler {
         try {
             String text = reason.apply(refusedPath);
             return text == null || text.isBlank() ? null : text;
-        } catch (RuntimeException e) {
+        }
+        catch (RuntimeException e) {
             return null;
         }
     }
@@ -757,11 +819,11 @@ class OpenCodeAcpClientHandler implements AcpClientHandler {
     @Override
     public CompletableFuture<JsonObject> onRequestPermission(JsonObject params) {
         JsonObject toolCall = params.has(AcpJsonKeyEnum.TOOL_CALL.key()) && params.get(AcpJsonKeyEnum.TOOL_CALL.key()).isJsonObject()
-                ? params.getAsJsonObject(AcpJsonKeyEnum.TOOL_CALL.key()) : null;
+                              ? params.getAsJsonObject(AcpJsonKeyEnum.TOOL_CALL.key()) : null;
         String kind = toolCall != null && toolCall.has(AcpJsonKeyEnum.KIND.key()) && !toolCall.get(AcpJsonKeyEnum.KIND.key()).isJsonNull()
-                ? toolCall.get(AcpJsonKeyEnum.KIND.key()).getAsString() : null;
+                      ? toolCall.get(AcpJsonKeyEnum.KIND.key()).getAsString() : null;
         String title = toolCall != null && toolCall.has(AcpJsonKeyEnum.TITLE.key()) && !toolCall.get(AcpJsonKeyEnum.TITLE.key()).isJsonNull()
-                ? toolCall.get(AcpJsonKeyEnum.TITLE.key()).getAsString() : null;
+                       ? toolCall.get(AcpJsonKeyEnum.TITLE.key()).getAsString() : null;
         String filePath = extractPermissionFilePath(toolCall);
 
         if ("execute".equals(kind)) {
@@ -801,9 +863,9 @@ class OpenCodeAcpClientHandler implements AcpClientHandler {
                 // policy decision is not worth a line per read unless the user asked for the JSON trail.
                 if (PluginSettings.isDebugJson()) {
                     LOG.log(Level.INFO, "OpenCode read request: path={0} toolCall.kind={1} originatingKind={2} -> {3} by "
-                            + "the read-scope rule, no prompt{4}", new Object[]{filePath, kind, originatingToolKind(toolCall),
-                                decision.allowed() ? "allowed" : "denied",
-                                refusal == null ? "" : ". Reason: " + refusal});
+                                        + "the read-scope rule, no prompt{4}", new Object[]{filePath, kind, originatingToolKind(toolCall),
+                                                                                            decision.allowed() ? "allowed" : "denied",
+                                                                                            refusal == null ? "" : ". Reason: " + refusal});
                 }
                 return CompletableFuture.completedFuture(selectedResult(decision.allowed() ? "once" : "reject"));
             }
@@ -812,7 +874,7 @@ class OpenCodeAcpClientHandler implements AcpClientHandler {
         if (filePath != null && isEntirelyInsideOwnSessionTree(toolCall)) {
             if (PluginSettings.isDebugJson()) {
                 LOG.log(Level.INFO, "OpenCode permission request: path={0} toolCall.kind={1} title={2} is inside this "
-                        + "session's own config tree -> allowed once, no prompt", new Object[]{filePath, kind, title});
+                                    + "session's own config tree -> allowed once, no prompt", new Object[]{filePath, kind, title});
             }
             return CompletableFuture.completedFuture(selectedResult("once"));
         }
@@ -828,10 +890,10 @@ class OpenCodeAcpClientHandler implements AcpClientHandler {
             }
             if (PluginSettings.isDebugJson()) {
                 LOG.log(Level.INFO, "OpenCode permission request: path={0} toolCall.kind={1} title={2} rawInput={3} "
-                        + "-> ConfirmEvent({4}), not a Write", new Object[]{filePath, kind, title,
-                            McpHookServerUtil.redactAllSecrets(String.valueOf(
-                                    toolCall != null ? toolCall.get(AcpJsonKeyEnum.RAW_INPUT.key()) : null)),
-                            accessToolName(kind)});
+                                    + "-> ConfirmEvent({4}), not a Write", new Object[]{filePath, kind, title,
+                                                                                        McpHookServerUtil.redactAllSecrets(String.valueOf(
+                                                                                                toolCall != null ? toolCall.get(AcpJsonKeyEnum.RAW_INPUT.key()) : null)),
+                                                                                        accessToolName(kind)});
             }
             // A request to look at a path, not to change it. Yes/no, named for the kind, and auto-acceptable exactly as
             // it was when it was mislabelled a Write — the label and the diff are what change, not who may approve it.
@@ -875,7 +937,7 @@ class OpenCodeAcpClientHandler implements AcpClientHandler {
         }
         String toolName = kind != null && !kind.isBlank() ? kind : "Unknown";
         String displayText = title != null && !title.isBlank()
-                ? title : "(unidentified OpenCode action, kind=" + toolName + ")";
+                             ? title : "(unidentified OpenCode action, kind=" + toolName + ")";
         if (steeringIsActive() && !isOurMcpServerTool(toolCall)) {
             McpHookServerUtil.logMcpSteeringRefusal("opencode", McpSteeringPolicy.Category.UNKNOWN, displayText);
             String steeringText = McpSteeringPolicy.steeringFeedbackFor(McpSteeringPolicy.Category.UNKNOWN);
@@ -931,7 +993,8 @@ class OpenCodeAcpClientHandler implements AcpClientHandler {
             JsonObject outcome = new JsonObject();
             outcome.addProperty(AcpJsonKeyEnum.OUTCOME.key(), "cancelled");
             result.add(AcpJsonKeyEnum.OUTCOME.key(), outcome);
-        } else {
+        }
+        else {
             JsonObject outcome = new JsonObject();
             outcome.addProperty(AcpJsonKeyEnum.OUTCOME.key(), "selected");
             outcome.addProperty(AcpJsonKeyEnum.OPTION_ID.key(), decision.allow() ? "once" : "reject");
@@ -973,7 +1036,7 @@ class OpenCodeAcpClientHandler implements AcpClientHandler {
             return false;
         }
         return session.getSettings().effectiveMcpSteering()
-                && session.getType().mcpSteeringSupport().supported();
+               && session.getType().mcpSteeringSupport().supported();
     }
 
     /**

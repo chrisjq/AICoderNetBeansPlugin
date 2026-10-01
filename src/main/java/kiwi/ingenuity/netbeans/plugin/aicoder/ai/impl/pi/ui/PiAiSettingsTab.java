@@ -61,11 +61,11 @@ public class PiAiSettingsTab implements SettingsTab {
     private volatile PiVersionCheck currentVersionCheck;
 
     /**
-     * True while {@link #load()} or {@link #applyDiscoveredModels} is mutating the executable field or a combo, so
-     * {@link #fireChanged()} can tell a programmatic restore from a real user edit — mirrors
-     * {@code PiAiInfoBarExtension}'s {@code programmatic} flag. Saved and restored (not just set/cleared) around each
-     * guarded block because {@link #load()} itself calls {@link #applyDiscoveredModels}, and an unconditional clear on
-     * the inner call's exit would prematurely stop guarding the outer one.
+     * True while {@link #load()} or {@link #applyDiscoveredModels} is mutating the executable field or a
+     * combo, so {@link #fireChanged()} can tell a programmatic restore from a real user edit — mirrors
+     * {@code PiAiInfoBarExtension}'s {@code programmatic} flag. Saved and restored (not just set/cleared)
+     * around each guarded block because {@link #load()} itself calls {@link #applyDiscoveredModels}, and an
+     * unconditional clear on the inner call's exit would prematurely stop guarding the outer one.
      */
     private boolean programmatic = false;
 
@@ -207,10 +207,10 @@ public class PiAiSettingsTab implements SettingsTab {
     }
 
     /**
-     * Runs the version probe once in the background when the tab opens, so the version status/Verify button show
-     * without waiting for an explicit Test click. Uses the field's current path, or an auto-detected one if the field
-     * is empty; leaves {@link #testResultLabel} and {@link #testButton} untouched either way — a failed probe here just
-     * leaves the version status blank, same as before this existed.
+     * Runs the version probe once in the background when the tab opens, so the version status/Verify button
+     * show without waiting for an explicit Test click. Uses the field's current path, or an auto-detected one
+     * if the field is empty; leaves {@link #testResultLabel} and {@link #testButton} untouched either way — a
+     * failed probe here just leaves the version status blank, same as before this existed.
      */
     private void autoProbeVersion() {
         String path = executableField.getText().strip();
@@ -374,13 +374,13 @@ public class PiAiSettingsTab implements SettingsTab {
         // that way this button coming back is guaranteed by this method's own structure, not only by trusting
         // discoverAsync's contract to never regress.
         PiModelDiscovery.discoverAsync(path.isEmpty() ? null : path, models -> SwingUtilities.invokeLater(() -> {
-                                   try {
-                                       applyDiscoveredModels(models);
-                                   }
-                                   finally {
-                                       refreshModelsButton.setEnabled(true);
-                                   }
-                               }));
+            try {
+                applyDiscoveredModels(models);
+            }
+            finally {
+                refreshModelsButton.setEnabled(true);
+            }
+        }));
     }
 
     private void applyDiscoveredModels(List<String> models) {
@@ -405,7 +405,17 @@ public class PiAiSettingsTab implements SettingsTab {
         if (check == null) {
             return;
         }
-        PiVersionWarningDialog.show(panel, check);
+        PiVersionWarningDialog.show(panel, check,
+                () -> {
+                    PiPluginSettings.setVerifiedVersion(check.installedVersion());
+                    kiwi.ingenuity.netbeans.plugin.aicoder.ai.AiTypePropertyBus.getInstance().fire(
+                            AiTypeEnum.PI, new kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.pi.events.PiVersionVerifiedEvent());
+                },
+                () -> {
+                    check.markNotWorkingThisSession();
+                    kiwi.ingenuity.netbeans.plugin.aicoder.ai.AiTypePropertyBus.getInstance().fire(
+                            AiTypeEnum.PI, new kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.pi.events.PiVersionVerifiedEvent());
+                });
         updateVersionStatus(check.installedVersion());
     }
 
@@ -437,8 +447,8 @@ public class PiAiSettingsTab implements SettingsTab {
     }
 
     /**
-     * Package-private test accessors — {@link #autoProbeVersion()} runs its {@code SwingWorker} asynchronously, so
-     * tests need to observe its result without a public getter cluttering the real API.
+     * Package-private test accessors — {@link #autoProbeVersion()} runs its {@code SwingWorker}
+     * asynchronously, so tests need to observe its result without a public getter cluttering the real API.
      */
     String versionStatusLabelTextForTests() {
         return versionStatusLabel.getText();
@@ -449,8 +459,8 @@ public class PiAiSettingsTab implements SettingsTab {
     }
 
     /**
-     * Invokes the same handler the Refresh button's own {@code ActionListener} calls, without needing a live Swing
-     * click — lets tests drive {@link #handleRefreshModels()} directly, e.g. to fire it twice in a row.
+     * Invokes the same handler the Refresh button's own {@code ActionListener} calls, without needing a live
+     * Swing click — lets tests drive {@link #handleRefreshModels()} directly, e.g. to fire it twice in a row.
      */
     void triggerRefreshForTests() {
         handleRefreshModels();

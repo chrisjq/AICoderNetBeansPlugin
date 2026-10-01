@@ -14,29 +14,31 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import org.junit.jupiter.api.Test;
 
 /**
- * The mail-interrupt explanation: that an aborted tool call was interrupted rather than refused, and that it may have
- * run anyway.
+ * The mail-interrupt explanation: that an aborted tool call was interrupted rather than refused, and that it
+ * may have run anyway.
  *
  * <p>
- * Both failures this pins were observed, not theorised. A session reported to the user that they had rejected a command
- * they never saw; and separately, a SendAiMessage reported as rejected had in fact been delivered, so the session told
- * the user it was never sent and a round trip was spent undoing that.</p>
+ * Both failures this pins were observed, not theorised. A session reported to the user that they had rejected
+ * a command they never saw; and separately, a SendAiMessage reported as rejected had in fact been delivered,
+ * so the session told the user it was never sent and a round trip was spent undoing that.</p>
  *
  * <p>
- * Mostly source-level, because {@code AiTopComponent} eagerly builds a real backend and cannot be instantiated in a
- * unit test. Those assertions are deliberately built from occurrence COUNTS and relative ORDER rather than from
- * extracted method bodies — no marker declaration is used as a boundary, so a member reordering cannot break them,
- * which is the failure that took out eight tests in this package earlier today. The nonce tests are the exception:
- * {@code composeAgentBlock} was extracted precisely so they could run against real output instead.</p>
+ * Mostly source-level, because {@code AiTopComponent} eagerly builds a real backend and cannot be
+ * instantiated in a unit test. Those assertions are deliberately built from occurrence COUNTS and relative
+ * ORDER rather than from extracted method bodies — no marker declaration is used as a boundary, so a member
+ * reordering cannot break them, which is the failure that took out eight tests in this package earlier today.
+ * The nonce tests are the exception: {@code composeAgentBlock} was extracted precisely so they could run
+ * against real output instead.</p>
  */
 class AiTopComponentInboxInterruptWiringTest {
 
     private static final String SOURCE_PATH
-            = "src/main/java/kiwi/ingenuity/netbeans/plugin/aicoder/ai/ui/AiTopComponent.java";
+                                = "src/main/java/kiwi/ingenuity/netbeans/plugin/aicoder/ai/ui/AiTopComponent.java";
 
     /**
-     * The opening delimiter and its nonce. Sixteen LOWERCASE hex digits, fixed width — see {@code randomNonce}. The
-     * pattern doubles as the format assertion: a variable-width or uppercase nonce simply fails to match.
+     * The opening delimiter and its nonce. Sixteen LOWERCASE hex digits, fixed width — see
+     * {@code randomNonce}. The pattern doubles as the format assertion: a variable-width or uppercase nonce
+     * simply fails to match.
      */
     private static final Pattern OPEN_TAG = Pattern.compile("<SYSTEM:([0-9a-f]{16})>");
 
@@ -52,10 +54,10 @@ class AiTopComponentInboxInterruptWiringTest {
      * The explanation's text with Java's concatenation seams closed up.
      *
      * <p>
-     * The constant is written as several adjacent string literals, so a sentence that reads as one phrase at runtime is
-     * split by {@code " + "} in the source. Asserting on the raw source would therefore fail for wording that is
-     * actually present, and would break again every time the literal is re-wrapped. Joining the chunks tests what the
-     * assistant will read.</p>
+     * The constant is written as several adjacent string literals, so a sentence that reads as one phrase at
+     * runtime is split by {@code " + "} in the source. Asserting on the raw source would therefore fail for
+     * wording that is actually present, and would break again every time the literal is re-wrapped. Joining
+     * the chunks tests what the assistant will read.</p>
      */
     private String explanationText() throws IOException {
         String source = readSource();
@@ -66,23 +68,24 @@ class AiTopComponentInboxInterruptWiringTest {
     }
 
     /**
-     * The explanation must exist once and be reached from both delivery paths. Two literals would drift, and the whole
-     * point is that the flush path says the same thing as the empty-queue path.
+     * The explanation must exist once and be reached from both delivery paths. Two literals would drift, and
+     * the whole point is that the flush path says the same thing as the empty-queue path.
      */
     @Test
     void oneSharedExplanationIsUsedByBothPaths() throws IOException {
         String source = readSource();
 
         assertTrue(source.contains("INBOX_INTERRUPT_EXPLANATION"),
-                   "the explanation must be a named shared constant");
+                "the explanation must be a named shared constant");
         assertEquals(3, countOf(source, "consumeInboxInterruptExplanation()"),
-                     "exactly one declaration and two call sites — the flush path and the empty-queue path");
+                "exactly one declaration and two call sites — the flush path and the empty-queue path");
     }
 
     /**
-     * THE GAP THIS CLOSES. When mail IS delivered, the flush used to say nothing about the interrupt and leave it to
-     * the arriving message to imply. It does not imply it: the message explains why new mail exists, not why the tool
-     * call died. The explanation must be prepended into that same turn, before it is submitted.
+     * THE GAP THIS CLOSES. When mail IS delivered, the flush used to say nothing about the interrupt and
+     * leave it to the arriving message to imply. It does not imply it: the message explains why new mail
+     * exists, not why the tool call died. The explanation must be prepended into that same turn, before it is
+     * submitted.
      */
     @Test
     void theFlushPathCarriesTheExplanationIntoTheTurnThatDeliversMail() throws IOException {
@@ -93,14 +96,14 @@ class AiTopComponentInboxInterruptWiringTest {
         assertTrue(consume >= 0, "the flush must take the interrupt explanation");
         assertTrue(submit > consume, "and pass it into the turn it submits");
         assertTrue(source.substring(submit, Math.min(submit + 200, source.length())).contains("interrupt"),
-                   "the explanation must be handed to the submitted turn as its agent-only text");
+                "the explanation must be handed to the submitted turn as its agent-only text");
     }
 
     /**
-     * THE EXPLANATION IS FOR THE MODEL, NOT THE USER. It reached the assistant correctly but was also rendered in the
-     * conversation as a user message — two long paragraphs of protocol instructions sitting in the transcript. It is
-     * hidden, never shortened: the wording is a correctness mechanism that cost two false "the user rejected this"
-     * reports to earn.
+     * THE EXPLANATION IS FOR THE MODEL, NOT THE USER. It reached the assistant correctly but was also
+     * rendered in the conversation as a user message — two long paragraphs of protocol instructions sitting
+     * in the transcript. It is hidden, never shortened: the wording is a correctness mechanism that cost two
+     * false "the user rejected this" reports to earn.
      */
     @Test
     void theExplanationIsAgentOnlyAndNeverDisplayed() throws IOException {
@@ -111,38 +114,39 @@ class AiTopComponentInboxInterruptWiringTest {
 
         // The agent's prompt is built from it — placement is pinned by theAgentOnlyBlockGoesAtTheEndBehindTheMarker.
         assertTrue(source.contains("agentOnlyText"),
-                   "agent-only text must reach what the agent receives");
+                "agent-only text must reach what the agent receives");
         // ...and the display call is skipped when there is nothing visible. Guarded on the CURRENT text — see
         // theVisibleTextIsAlwaysSentAndTestedAfterDeferredMailIsAppended for why the entry-time flag was wrong.
         assertTrue(source.contains("if (!text.isBlank()) {"),
-                   "addUserMessage must be guarded, so a hidden-only submit renders nothing");
+                "addUserMessage must be guarded, so a hidden-only submit renders nothing");
         assertEquals(1, countOf(source, "conversationPanel.addUserMessage(text, userInitiated)"),
-                     "exactly one display call, and it takes the VISIBLE text only — never the agent text");
+                "exactly one display call, and it takes the VISIBLE text only — never the agent text");
     }
 
     /**
-     * The empty-queue path submits a turn whose only content is the explanation. With that hidden there is nothing left
-     * to show, and it must render nothing rather than an empty bubble.
+     * The empty-queue path submits a turn whose only content is the explanation. With that hidden there is
+     * nothing left to show, and it must render nothing rather than an empty bubble.
      */
     @Test
     void theEmptyQueuePathDisplaysNothingAtAll() throws IOException {
         String source = readSource();
 
         assertTrue(source.contains("submitNotificationTurn(NotificationTypeEnum.INBOX_INTERRUPT_NOTICE, null, explanation)"),
-                   "the empty-queue path must submit no visible text and the explanation as agent-only");
+                "the empty-queue path must submit no visible text and the explanation as agent-only");
     }
 
     /**
      * THE CUT IS BY PROVENANCE, NOT BY CONTENT — the constraint that decides whether this feature is safe.
      *
      * <p>
-     * A content scan would truncate any message containing the marker. Both of these demonstrably occur: a user can
-     * type or paste "[SYSTEM]", and an assistant discussing this very feature writes it — this session has done so
-     * repeatedly today. Either would be silently cut mid-message, which is worse than the bug being fixed.</p>
+     * A content scan would truncate any message containing the marker. Both of these demonstrably occur: a
+     * user can type or paste "[SYSTEM]", and an assistant discussing this very feature writes it — this
+     * session has done so repeatedly today. Either would be silently cut mid-message, which is worse than the
+     * bug being fixed.</p>
      *
      * <p>
-     * So the split is structural: agent-only text arrives as its own parameter and the visible text is displayed from
-     * its own variable. Nothing is searched, so nothing can be falsely matched.</p>
+     * So the split is structural: agent-only text arrives as its own parameter and the visible text is
+     * displayed from its own variable. Nothing is searched, so nothing can be falsely matched.</p>
      */
     @Test
     void theBlockIsByProvenanceNotByScanningForTheTags() throws IOException {
@@ -155,7 +159,7 @@ class AiTopComponentInboxInterruptWiringTest {
         // a user's or the assistant's own message containing them could be mangled.
         for (String tag : List.of("SYSTEM_BLOCK_OPEN", "SYSTEM_BLOCK_CLOSE")) {
             assertEquals(0, countOf(source, "indexOf(" + tag),
-                         "the UI must never search for " + tag + " — that would mangle a user or assistant message");
+                    "the UI must never search for " + tag + " — that would mangle a user or assistant message");
             assertEquals(0, countOf(source, "split(" + tag), "nor split on " + tag);
             assertEquals(0, countOf(source, "contains(" + tag), "nor test for " + tag);
             assertEquals(0, countOf(source, "replace(" + tag), "nor strip " + tag);
@@ -163,15 +167,16 @@ class AiTopComponentInboxInterruptWiringTest {
     }
 
     /**
-     * THE DROPPED-MAIL BUG. hasVisible was computed on entry, BEFORE deferred inbox notifications were appended to the
-     * text. A notice-only turn (blank visible text, agent-only explanation) submitted while mail was queued then took
-     * the no-visible branch: the composed prompt never included expandedText(), so THE MAIL NEVER REACHED THE MODEL,
-     * and the display guard was still false, so IT WAS NEVER SHOWN EITHER. Lost from both sides, silently.
+     * THE DROPPED-MAIL BUG. hasVisible was computed on entry, BEFORE deferred inbox notifications were
+     * appended to the text. A notice-only turn (blank visible text, agent-only explanation) submitted while
+     * mail was queued then took the no-visible branch: the composed prompt never included expandedText(), so
+     * THE MAIL NEVER REACHED THE MODEL, and the display guard was still false, so IT WAS NEVER SHOWN EITHER.
+     * Lost from both sides, silently.
      *
      * <p>
-     * Both sites now read the CURRENT text. The delimited block is what makes that safe to keep: with the agent-only
-     * text wrapped rather than positioned, appending to the visible text cannot break it no matter where the appending
-     * happens.</p>
+     * Both sites now read the CURRENT text. The delimited block is what makes that safe to keep: with the
+     * agent-only text wrapped rather than positioned, appending to the visible text cannot break it no matter
+     * where the appending happens.</p>
      */
     @Test
     void theVisibleTextIsAlwaysSentAndTestedAfterDeferredMailIsAppended() throws IOException {
@@ -179,20 +184,20 @@ class AiTopComponentInboxInterruptWiringTest {
 
         // The agent's copy always includes the visible text — there is no branch that omits it.
         assertTrue(source.contains("String visibleForAgent = tmpExpansion.expandedText();"),
-                   "the visible text must always be part of what the agent receives");
+                "the visible text must always be part of what the agent receives");
         assertEquals(0, countOf(source, "hasVisible ? tmpExpansion.expandedText()"),
-                     "the agent composition must not branch on the stale visible flag");
+                "the agent composition must not branch on the stale visible flag");
 
         // The display decision is taken from the current text, not the entry-time flag.
         assertTrue(source.contains("if (!text.isBlank()) {"),
-                   "display must be decided from the CURRENT text, after deferred mail may have been appended");
+                "display must be decided from the CURRENT text, after deferred mail may have been appended");
         assertEquals(0, countOf(source, "if (hasVisible) {"),
-                     "the stale flag must no longer gate display");
+                "the stale flag must no longer gate display");
     }
 
     /**
-     * The composition goes through the extracted helper, which is what makes the nonce testable at all. Inline, the
-     * only thing a test could reach was the source text of the expression — see
+     * The composition goes through the extracted helper, which is what makes the nonce testable at all.
+     * Inline, the only thing a test could reach was the source text of the expression — see
      * {@link #theComposedBlockCarriesOneMatchingNoncePairAndLeavesThePayloadIntact}.
      */
     @Test
@@ -200,22 +205,23 @@ class AiTopComponentInboxInterruptWiringTest {
         String source = readSource();
 
         assertEquals(1, countOf(source, "String agentText = composeAgentBlock("),
-                     "exactly one composition site, and it delegates to the testable helper");
+                "exactly one composition site, and it delegates to the testable helper");
     }
 
     /**
      * THE NONCE PROPERTY, ON REAL OUTPUT. This is the test the extraction was for.
      *
      * <p>
-     * Every previous nonce assertion here read the SOURCE TEXT of the composition, and none of them could distinguish a
-     * working nonce from a dead one: passing the wrong argument to {@code systemBlockNonce} would leave the collision
-     * check unreachable while every source-level assertion still passed. This composes a real block instead.</p>
+     * Every previous nonce assertion here read the SOURCE TEXT of the composition, and none of them could
+     * distinguish a working nonce from a dead one: passing the wrong argument to {@code systemBlockNonce}
+     * would leave the collision check unreachable while every source-level assertion still passed. This
+     * composes a real block instead.</p>
      *
      * <p>
-     * Both payloads deliberately contain forged delimiters — the agent-only half quoting a complete tag pair, the
-     * VISIBLE half quoting a closing tag. The visible half matters because it is concatenated into the same string and
-     * is the half an outsider can most easily choose the contents of; the collision check covers it for that
-     * reason.</p>
+     * Both payloads deliberately contain forged delimiters — the agent-only half quoting a complete tag pair,
+     * the VISIBLE half quoting a closing tag. The visible half matters because it is concatenated into the
+     * same string and is the half an outsider can most easily choose the contents of; the collision check
+     * covers it for that reason.</p>
      */
     @Test
     void theComposedBlockCarriesOneMatchingNoncePairAndLeavesThePayloadIntact() {
@@ -230,30 +236,31 @@ class AiTopComponentInboxInterruptWiringTest {
 
         assertTrue(block.contains("<SYSTEM:" + nonce + ">"), "the opening delimiter must embed the nonce");
         assertTrue(block.contains("</SYSTEM:" + nonce + ">"),
-                   "the closing delimiter must carry the SAME nonce, so the pair cannot be half-forged");
+                "the closing delimiter must carry the SAME nonce, so the pair cannot be half-forged");
         assertTrue(block.contains(payload),
-                   "the payload must reach the model byte-for-byte — nothing escaped, nothing stripped");
+                "the payload must reach the model byte-for-byte — nothing escaped, nothing stripped");
         assertTrue(block.contains(visible), "and so must the visible text");
         assertFalse(payload.contains(nonce), "the nonce must not appear in the agent-only payload");
         assertFalse(visible.contains(nonce),
-                    "nor in the visible text, which is concatenated into the very same composed string");
+                "nor in the visible text, which is concatenated into the very same composed string");
     }
 
     /**
-     * Nothing hidden means no block at all — not an empty one. A stray {@code <SYSTEM:...></SYSTEM:...>} wrapper around
-     * nothing would be a prompt the assistant has to interpret, for a turn that had nothing to hide.
+     * Nothing hidden means no block at all — not an empty one. A stray {@code <SYSTEM:...></SYSTEM:...>}
+     * wrapper around nothing would be a prompt the assistant has to interpret, for a turn that had nothing to
+     * hide.
      */
     @Test
     void anAbsentOrBlankPayloadProducesNoBlockAtAll() {
         assertEquals("just the user's text", AiTopComponent.composeAgentBlock("just the user's text", null));
         assertEquals("just the user's text", AiTopComponent.composeAgentBlock("just the user's text", "   "));
         assertEquals("", AiTopComponent.composeAgentBlock(null, null),
-                     "neither half present is the empty prompt, not a wrapper");
+                "neither half present is the empty prompt, not a wrapper");
     }
 
     /**
-     * A hidden-only turn carries the block with no leading blank line — the build-result case, where the visible half
-     * is genuinely empty and the agent-only report is the whole payload.
+     * A hidden-only turn carries the block with no leading blank line — the build-result case, where the
+     * visible half is genuinely empty and the agent-only report is the whole payload.
      */
     @Test
     void aHiddenOnlyTurnStartsDirectlyWithTheBlock() {
@@ -264,10 +271,10 @@ class AiTopComponentInboxInterruptWiringTest {
     }
 
     /**
-     * The nonce is per BLOCK, not per session or per class: a value reused across turns is one an earlier payload could
-     * have been written to contain. Also pins the format, since the pattern only matches 16 lowercase hex digits —
-     * {@code Long.toHexString} returned as little as one character for a small value, which reads as a typo rather than
-     * a boundary and is cheap for a payload to contain by accident.
+     * The nonce is per BLOCK, not per session or per class: a value reused across turns is one an earlier
+     * payload could have been written to contain. Also pins the format, since the pattern only matches 16
+     * lowercase hex digits — {@code Long.toHexString} returned as little as one character for a small value,
+     * which reads as a typo rather than a boundary and is cheap for a payload to contain by accident.
      */
     @Test
     void everyBlockGetsItsOwnSixteenDigitNonce() {
@@ -282,38 +289,39 @@ class AiTopComponentInboxInterruptWiringTest {
     }
 
     /**
-     * The regeneration loop must test the chosen nonce against the payloads rather than assume uniqueness, exactly as
-     * mail libraries choose a multipart boundary.
+     * The regeneration loop must test the chosen nonce against the payloads rather than assume uniqueness,
+     * exactly as mail libraries choose a multipart boundary.
      *
      * <p>
-     * Source-level on purpose, and honestly so: the collision branch cannot be forced from outside, because a test
-     * cannot make a 64-bit random value land inside a payload it chose beforehand. What
-     * {@link #theComposedBlockCarriesOneMatchingNoncePairAndLeavesThePayloadIntact} proves is the post-condition; this
-     * pins that the check exists to maintain it.</p>
+     * Source-level on purpose, and honestly so: the collision branch cannot be forced from outside, because a
+     * test cannot make a 64-bit random value land inside a payload it chose beforehand. What
+     * {@link #theComposedBlockCarriesOneMatchingNoncePairAndLeavesThePayloadIntact} proves is the
+     * post-condition; this pins that the check exists to maintain it.</p>
      */
     @Test
     void theNonceIsRegeneratedUntilNoPayloadCanContainIt() throws IOException {
         String source = readSource();
 
         assertTrue(source.contains("payload.contains(nonce)"),
-                   "the chosen nonce must be checked against the payload, not merely assumed unique");
+                "the chosen nonce must be checked against the payload, not merely assumed unique");
         assertTrue(source.contains("systemBlockNonce(visible, agentOnlyText)"),
-                   "and checked against BOTH halves — the visible text shares the composed string");
+                "and checked against BOTH halves — the visible text shares the composed string");
     }
 
     /**
-     * A MALFORMED BLOCK RENDERS AS-IS — unclosed, nested, tags out of order, anything. No strip, no repair, no
-     * best-effort fallback.
+     * A MALFORMED BLOCK RENDERS AS-IS — unclosed, nested, tags out of order, anything. No strip, no repair,
+     * no best-effort fallback.
      *
      * <p>
-     * We compose those tags ourselves, so a malformed block means WE have a bug. Rendering it puts that bug in front of
-     * the user immediately; swallowing text while guessing at what was meant hides it. A visible "&lt;SYSTEM&gt;" in
-     * the transcript gets reported and fixed — text that silently vanishes does not.</p>
+     * We compose those tags ourselves, so a malformed block means WE have a bug. Rendering it puts that bug
+     * in front of the user immediately; swallowing text while guessing at what was meant hides it. A visible
+     * "&lt;SYSTEM&gt;" in the transcript gets reported and fixed — text that silently vanishes does not.</p>
      *
      * <p>
-     * This holds by construction rather than by a rule: the transcript is BUILT from the visible text and never DERIVED
-     * by removing anything, so there is no parse to be malformed. These assertions exist to stop someone later adding a
-     * "helpful" strip — the one change that would turn a cosmetic defect back into a vanishing one.</p>
+     * This holds by construction rather than by a rule: the transcript is BUILT from the visible text and
+     * never DERIVED by removing anything, so there is no parse to be malformed. These assertions exist to
+     * stop someone later adding a "helpful" strip — the one change that would turn a cosmetic defect back
+     * into a vanishing one.</p>
      */
     @Test
     void aMalformedBlockRendersAsIsWithNoRecoveryLogic() throws IOException {
@@ -321,30 +329,31 @@ class AiTopComponentInboxInterruptWiringTest {
 
         // The displayed string is the visible text VERBATIM — no transformation of any kind on the way to the panel.
         assertTrue(source.contains("conversationPanel.addUserMessage(text, userInitiated)"),
-                   "the transcript must render the visible text exactly as composed");
+                "the transcript must render the visible text exactly as composed");
 
         // No stripping, trimming or rewriting of the tags anywhere.
         for (String needle : List.of("replaceAll(\"<SYSTEM", "replace(\"<SYSTEM", "replaceAll(\"</SYSTEM",
-                                     "replace(\"</SYSTEM", "stripSystemBlock", "removeSystemBlock")) {
+                "replace(\"</SYSTEM", "stripSystemBlock", "removeSystemBlock")) {
             assertEquals(0, countOf(source, needle),
-                         "no recovery or strip logic may exist — a malformed block must render, not vanish: " + needle);
+                    "no recovery or strip logic may exist — a malformed block must render, not vanish: " + needle);
         }
     }
 
     /**
-     * Deferred mail must still be impossible to lose — but it is no longer shown by pasting its identifying block into
-     * the user's own message. The block goes to the assistant in the agent-only text, which is ALWAYS part of what the
-     * model receives and which on its own is enough to make handleSubmit submit; the user gets one system line saying
-     * the mail went out. The guarantee the old assertion protected is unchanged, only the half it rides in.
+     * Deferred mail must still be impossible to lose — but it is no longer shown by pasting its identifying
+     * block into the user's own message. The block goes to the assistant in the agent-only text, which is
+     * ALWAYS part of what the model receives and which on its own is enough to make handleSubmit submit; the
+     * user gets one system line saying the mail went out. The guarantee the old assertion protected is
+     * unchanged, only the half it rides in.
      */
     @Test
     void deferredInboxMessagesReachTheModelAndAreAnnouncedToTheUser() throws IOException {
         String source = readSource();
 
         assertTrue(source.contains("conversationPanel.addSystemMessage(\"Delivered pending inbox messages\")"),
-                   "the user must be told deferred mail went out, rather than shown its raw block");
+                "the user must be told deferred mail went out, rather than shown its raw block");
         assertEquals(0, countOf(source, "\"[Pending inbox messages]\\n\" + deferred"),
-                     "the raw block must no longer be pasted into the visible text");
+                "the raw block must no longer be pasted into the visible text");
 
         // THE FOLD, THE FLAG AND THE COMPOSITION ARE ONE ORDERED CHAIN. Folding the mail into agentOnlyText is not
         // enough on its own: agentText is composed from `hasHidden ? agentOnlyText : null`, so with the flag left false
@@ -357,13 +366,13 @@ class AiTopComponentInboxInterruptWiringTest {
         assertTrue(flag > fold, "the flag must be set AFTER the fold, or the folded mail never reaches the prompt");
         int composition = source.indexOf("String agentText = composeAgentBlock(", flag);
         assertTrue(composition > flag,
-                   "and the composition must come after both, or it reads a flag that has not been set yet");
+                "and the composition must come after both, or it reads a flag that has not been set yet");
     }
 
     /**
-     * THE ORDERING THAT MUST NOT BE UNDONE. The drain AND its system line sit BELOW the not-running early return. Moved
-     * above it, the user would be told "Delivered pending inbox messages" while the payload was discarded — worse than
-     * the original dropped-mail bug, because it reports success.
+     * THE ORDERING THAT MUST NOT BE UNDONE. The drain AND its system line sit BELOW the not-running early
+     * return. Moved above it, the user would be told "Delivered pending inbox messages" while the payload was
+     * discarded — worse than the original dropped-mail bug, because it reports success.
      */
     @Test
     void deferredMailIsDrainedAndAnnouncedOnlyAfterTheNotRunningEarlyReturn() throws IOException {
@@ -374,15 +383,15 @@ class AiTopComponentInboxInterruptWiringTest {
         int announce = source.indexOf("conversationPanel.addSystemMessage(\"Delivered pending inbox messages\")");
         assertTrue(earlyReturn >= 0, "the not-running early return must still exist");
         assertTrue(drain > earlyReturn,
-                   "the deferred drain must come AFTER the early return, or it empties the queue into a discarded value");
+                "the deferred drain must come AFTER the early return, or it empties the queue into a discarded value");
         assertTrue(announce > earlyReturn,
-                   "and so must the announcement, or the user is told mail went out on a turn that discarded it");
+                "and so must the announcement, or the user is told mail went out on a turn that discarded it");
     }
 
     /**
-     * Hiding it in the panel alone would leave it reappearing on reload. addUserMessage is the single call that feeds
-     * BOTH the transcript and saved history, so skipping it covers both — this pins that there is no second, separate
-     * history write that could still record it.
+     * Hiding it in the panel alone would leave it reappearing on reload. addUserMessage is the single call
+     * that feeds BOTH the transcript and saved history, so skipping it covers both — this pins that there is
+     * no second, separate history write that could still record it.
      */
     @Test
     void nothingHiddenCanReappearFromHistory() throws IOException {
@@ -393,39 +402,37 @@ class AiTopComponentInboxInterruptWiringTest {
     }
 
     /**
-     * One turn, not two. handleSubmit runs a single turn at a time and submitting in a loop drops all but the first, so
-     * the explanation has to ride the same submission as the mail rather than be sent on its own.
+     * One turn, not two. handleSubmit runs a single turn at a time and submitting in a loop drops all but the
+     * first, so the explanation has to ride the same submission as the mail rather than be sent on its own.
      */
     @Test
     void theExplanationRidesTheSameTurnAsTheMail() throws IOException {
         String source = readSource();
 
         assertEquals(1, countOf(source, "submitNotificationTurn(NotificationTypeEnum.NEW_INBOX_MESSAGE"),
-                     "the flush must submit exactly one turn, carrying both the explanation and the mail");
+                "the flush must submit exactly one turn, carrying both the explanation and the mail");
     }
 
     /**
-     * BOTH turn-completion paths must offer the empty-queue explanation, not just one.
+     * Turn completion must offer the empty-queue explanation.
      *
      * <p>
-     * They drifted: the suppressed-turn path had the fallback and ordinary turn completion did not, so the notice was
-     * missing from the path most turns take — and that is exactly the mechanism's own scenario, where the session read
-     * the mail itself during the interrupted turn and nothing else is left to tell it the abort was not a user
-     * rejection.</p>
+     * That is exactly the mechanism's own scenario: the session read the mail itself during the interrupted
+     * turn and nothing else is left to tell it the abort was not a user rejection.</p>
      */
     @Test
-    void bothTurnCompletionPathsOfferTheEmptyQueueExplanation() throws IOException {
+    void turnCompletionOffersTheEmptyQueueExplanation() throws IOException {
         String source = readSource();
 
-        assertEquals(2, countOf(source, "!flushPendingNotifications() && !explainInboxInterruptIfNeeded()"),
-                     "both the suppressed-turn path and ordinary turn completion must offer the fallback");
+        assertEquals(1, countOf(source, "!flushPendingNotifications() && !explainInboxInterruptIfNeeded()"),
+                "ordinary turn completion must offer the fallback");
         assertEquals(3, countOf(source, "explainInboxInterruptIfNeeded()"),
-                     "one declaration and exactly two call sites — the fallback must not be invoked anywhere else");
+                "one declaration and exactly two call sites: turn completion plus work-closing READY");
     }
 
     /**
-     * The notice submits a turn, so it must suppress the idle branch exactly as the flush does — otherwise the tab goes
-     * green and the input goes live for the moment between the two.
+     * The notice submits a turn, so it must suppress the idle branch exactly as the flush does — otherwise
+     * the tab goes green and the input goes live for the moment between the two.
      */
     @Test
     void noTurnCompletionPathGoesIdleWithoutOfferingTheFallback() throws IOException {
@@ -434,14 +441,14 @@ class AiTopComponentInboxInterruptWiringTest {
         // "if (!flushPendingNotifications())" can only appear where the guard ENDS at the flush — a site paired with
         // the fallback reads "... () && !explain...". Whitespace-independent, so reformatting cannot fake a pass.
         assertEquals(0, countOf(source, "if (!flushPendingNotifications())"),
-                     "a turn-completion path that guards only on the flush would report idle without ever offering the "
-                     + "empty-queue explanation — that is the drift this pins");
+                "a turn-completion path that guards only on the flush would report idle without ever offering the "
+                + "empty-queue explanation — that is the drift this pins");
     }
 
     /**
-     * The double-notice guard. The flag is consumed — read and cleared together — so whichever path asks first gets the
-     * text and the other gets nothing. A session told twice that it was interrupted starts narrating the interruption
-     * to the user, which is its own noise.
+     * The double-notice guard. The flag is consumed — read and cleared together — so whichever path asks
+     * first gets the text and the other gets nothing. A session told twice that it was interrupted starts
+     * narrating the interruption to the user, which is its own noise.
      */
     @Test
     void theInterruptFlagIsConsumedInExactlyOnePlace() throws IOException {
@@ -452,19 +459,19 @@ class AiTopComponentInboxInterruptWiringTest {
 
         int clearInConsume = source.indexOf("mailArrivedDuringTurn = false", declaration);
         assertTrue(clearInConsume > declaration && clearInConsume - declaration < 400,
-                   "the flag must be cleared inside the consuming accessor, not by its callers");
+                "the flag must be cleared inside the consuming accessor, not by its callers");
         assertEquals(2, countOf(source, "mailArrivedDuringTurn = false"),
-                     "cleared in the consuming accessor and on a user-initiated submit — nowhere else");
+                "cleared in the consuming accessor and on a user-initiated submit — nowhere else");
     }
 
     /**
-     * THE REGRESSION THAT WOULD MAKE THE NOTICE LIE. Codex steers, Copilot injects, Grok and Ollama drop the mail —
-     * none of them abort anything, so telling those sessions their turn was interrupted would be a plain falsehood
-     * about their own history.
+     * THE REGRESSION THAT WOULD MAKE THE NOTICE LIE. Codex steers, Copilot injects, Grok and Ollama drop the
+     * mail — none of them abort anything, so telling those sessions their turn was interrupted would be a
+     * plain falsehood about their own history.
      *
      * <p>
-     * The flag is cleared BEFORE that gate on purpose: an interrupt those backends never had must not be reported on
-     * some later turn either.</p>
+     * The flag is cleared BEFORE that gate on purpose: an interrupt those backends never had must not be
+     * reported on some later turn either.</p>
      */
     @Test
     void nonAbortingBackendsAreStillExcluded() throws IOException {
@@ -475,32 +482,32 @@ class AiTopComponentInboxInterruptWiringTest {
         int clear = source.indexOf("mailArrivedDuringTurn = false", declaration);
 
         assertTrue(gate > declaration && gate - declaration < 600,
-                   "the ABORTS_TURN gate must still be applied");
+                "the ABORTS_TURN gate must still be applied");
         assertTrue(clear < gate,
-                   "the flag must be cleared before the gate, so a non-aborting backend cannot report it later");
+                "the flag must be cleared before the gate, so a non-aborting backend cannot report it later");
     }
 
     /**
-     * The second, sharper half. "Rejected" reads as "it did not happen", so the notice has to say outright that it may
-     * have happened anyway and direct the session to check the actual result before resuming.
+     * The second, sharper half. "Rejected" reads as "it did not happen", so the notice has to say outright
+     * that it may have happened anyway and direct the session to check the actual result before resuming.
      */
     @Test
     void theWordingWarnsThatAnAbortedCallMayHaveAlreadyRun() throws IOException {
         String wording = explanationText();
 
         assertTrue(wording.contains("outcome is UNKNOWN"),
-                   "the notice must say an aborted call's outcome is unknown: " + wording);
+                "the notice must say an aborted call's outcome is unknown: " + wording);
         assertTrue(wording.contains("may already have taken effect"),
-                   "it must say a rejected/cancelled call may already have taken effect: " + wording);
+                "it must say a rejected/cancelled call may already have taken effect: " + wording);
         assertTrue(wording.contains("Check its effect"),
-                   "it must direct the session to check the interrupted call's effect: " + wording);
+                "it must direct the session to check the interrupted call's effect: " + wording);
         assertTrue(wording.contains("Then read your inbox and resume your work."),
-                   "it must direct the session to process mail before resuming: " + wording);
+                "it must direct the session to process mail before resuming: " + wording);
     }
 
     /**
-     * The original guarantee must survive the rewrite: the abort is not a user decision, and the session must not tell
-     * the user it was.
+     * The original guarantee must survive the rewrite: the abort is not a user decision, and the session must
+     * not tell the user it was.
      */
     @Test
     void theWordingStillDeniesAUserRejection() throws IOException {
@@ -511,9 +518,9 @@ class AiTopComponentInboxInterruptWiringTest {
     }
 
     /**
-     * F5: the hold makes a completed call the NORMAL case now, not the exception — Claude and OpenCode both wait for an
-     * in-flight tool call before delivering the interrupt (safety-valve backstopped), so the wording must lead with
-     * that rather than opening on the residual abort case.
+     * F5: the hold makes a completed call the NORMAL case now, not the exception — Claude and OpenCode both
+     * wait for an in-flight tool call before delivering the interrupt (safety-valve backstopped), so the
+     * wording must lead with that rather than opening on the residual abort case.
      */
     @Test
     void theWordingLeadsWithTheCompletedCallBeingTheNormalCase() throws IOException {

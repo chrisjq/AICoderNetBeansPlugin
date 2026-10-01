@@ -17,6 +17,7 @@ import kiwi.ingenuity.netbeans.plugin.aicoder.process.server.McpServerRegistry;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tempfile.TempFileRegistry;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.build.BuildQueue;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.build.SessionBuildNotifier;
+import kiwi.ingenuity.netbeans.plugin.aicoder.ui.SessionPickerOperations;
 import org.openide.modules.ModuleInstall;
 import org.openide.util.NbBundle;
 import org.openide.windows.TopComponent;
@@ -28,8 +29,10 @@ public class Installer extends ModuleInstall {
     public static final String VERSION;
 
     /**
-     * Project homepage, filtered in from the pom's {@code <url>} so it cannot drift from the one the built nbm
-     * advertises. Blank rather than null if the resource is missing, so callers can test it without a null check.
+     * Project homepage, filtered in from the pom's {@code <url>} so it cannot drift from the one the built
+     * nbm
+     * advertises. Blank rather than null if the resource is missing, so callers can test it without a null
+     * check.
      */
     public static final String HOMEPAGE;
 
@@ -52,11 +55,14 @@ public class Installer extends ModuleInstall {
     }
 
     /**
-     * Release page for exactly this build, derived from {@link #HOMEPAGE} and {@link #VERSION} rather than stored, so a
+     * Release page for exactly this build, derived from {@link #HOMEPAGE} and {@link #VERSION} rather than
+     * stored, so a
      * version bump cannot leave it pointing at an older release.
      * <p>
-     * Only a guess at a URL: the tag is created when a release is published, so a build made between releases - or any
-     * build where the version could not be read - has no page to link to. Returns blank in that case, and callers
+     * Only a guess at a URL: the tag is created when a release is published, so a build made between releases
+     * - or any
+     * build where the version could not be read - has no page to link to. Returns blank in that case, and
+     * callers
      * should say the link may not exist rather than promise it resolves.
      */
     public static String releaseUrl() {
@@ -68,9 +74,11 @@ public class Installer extends ModuleInstall {
     }
 
     /**
-     * The plugin's display name, read from the same bundle key the Plugin Manager shows, so the two cannot disagree.
+     * The plugin's display name, read from the same bundle key the Plugin Manager shows, so the two cannot
+     * disagree.
      * <p>
-     * Falls back rather than propagating: {@link NbBundle} throws when a key is absent, and a build that dropped this
+     * Falls back rather than propagating: {@link NbBundle} throws when a key is absent, and a build that
+     * dropped this
      * one would take out every panel that shows the name for the sake of a caption.
      */
     public static String displayName() {
@@ -103,11 +111,16 @@ public class Installer extends ModuleInstall {
     }
 
     /**
-     * Called when the IDE itself is shutting down (module stays installed) — as opposed to {@link #uninstalled()},
-     * which fires only when the user disables/uninstalls the plugin via the Plugins manager and NEVER on a normal exit.
-     * Runs the same teardown either way: closing every open AI session releases its live process/MCP-scope/listener
-     * state (and, via {@code componentClosed}, sweeps its temp dir), and {@link TempFileRegistry#cleanupAll()} catches
-     * anything not tied to a still-open session. Persisted session data (sessions.json, history) is untouched by either
+     * Called when the IDE itself is shutting down (module stays installed) — as opposed to
+     * {@link #uninstalled()},
+     * which fires only when the user disables/uninstalls the plugin via the Plugins manager and NEVER on a
+     * normal exit.
+     * Runs the same teardown either way: closing every open AI session releases its live
+     * process/MCP-scope/listener
+     * state (and, via {@code componentClosed}, sweeps its temp dir), and
+     * {@link TempFileRegistry#cleanupAll()} catches
+     * anything not tied to a still-open session. Persisted session data (sessions.json, history) is untouched
+     * by either
      * path — only live state and registry-owned temp directories are cleaned up.
      */
     @Override
@@ -132,6 +145,7 @@ public class Installer extends ModuleInstall {
             // release the persist threads so a disabled module's classloader can be
             // collected instead of being pinned by the idle pool.
             AiTopComponent.shutdownPersistExecutor();
+            SessionPickerOperations.shutdownExecutor();
             // Force-stop the MCP server in case any session cleanup was incomplete.
             McpServerRegistry.stopAll();
             AiSessionInboxBroker.getInstance().shutdownNotifier();

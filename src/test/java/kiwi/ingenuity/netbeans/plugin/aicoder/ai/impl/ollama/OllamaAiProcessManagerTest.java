@@ -15,8 +15,12 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
+import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Consumer;
 import kiwi.ingenuity.netbeans.plugin.aicoder.PluginSettings;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.events.StatusEvent;
@@ -161,6 +165,35 @@ class OllamaAiProcessManagerTest {
     }
 
     /**
+     * True for the events that close a turn or a refusal: {@code processing} is cleared and the event is
+     * emitted afterward, on the turn thread, outside any lock a test could otherwise synchronize on — so
+     * {@code awaitIdle} (which only polls {@code processing}) can observe "idle" a hair before one of these
+     * has actually been appended to a listener's list. Any test that inspects emitted events must wait for
+     * one of these first, never poll-then-inspect.
+     */
+    private static boolean isCloserEvent(AiProcessEvent event) {
+        return event instanceof TurnCompleteEvent
+               || (event instanceof StatusEvent se && (se.type() == StatusEventTypeEnum.STOPPED
+                                                       || se.type() == StatusEventTypeEnum.FAILED));
+    }
+
+    /**
+     * A listener that appends to {@code events} like {@code events::add}, but also counts down whatever
+     * latch {@code closer} currently holds when a closer event (see {@link #isCloserEvent}) arrives — the
+     * race-proof replacement for {@code awaitIdle}-then-inspect. For a multi-turn test, call
+     * {@code closer.set(new CountDownLatch(1))} before each subsequent send and await the new one.
+     */
+    private static AiProcessEventListener closerTrackingListener(List<AiProcessEvent> events,
+                                                                 AtomicReference<CountDownLatch> closer) {
+        return event -> {
+            events.add(event);
+            if (isCloserEvent(event)) {
+                closer.get().countDown();
+            }
+        };
+    }
+
+    /**
      * A contract-following reply: the model ends its turn with an EndTurn tool call carrying a message.
      */
     private static final ChatResult END_TURN_ANSWER = new ChatResult(
@@ -222,7 +255,7 @@ class OllamaAiProcessManagerTest {
 
         FakeHttpClient fake = new FakeHttpClient(List.of(
                 new ChatResult("{\"message\":\"envelope text\",\"tool_name\":\"EndTurn\","
-                        + "\"tool_arguments\":{\"message\":\"the real final answer\"}}",
+                               + "\"tool_arguments\":{\"message\":\"the real final answer\"}}",
                         List.of(), "stop")));
 
         TestOllamaProcessManager manager = new TestOllamaProcessManager(listener, fake);
@@ -234,10 +267,10 @@ class OllamaAiProcessManagerTest {
         assertEquals(1, fake.requests.size(),
                 "EndTurn must end the turn on the first reply, not continue as narration");
         assertTrue(events.stream().anyMatch(e -> e instanceof TextDeltaEvent td
-                && td.text() != null && td.text().contains("the real final answer")),
+                                                 && td.text() != null && td.text().contains("the real final answer")),
                 "the EndTurn message argument must be the user-visible final answer");
         assertFalse(events.stream().anyMatch(e -> e instanceof TextDeltaEvent td
-                && td.text() != null && td.text().contains("tool_name")),
+                                                  && td.text() != null && td.text().contains("tool_name")),
                 "the raw EndTurn envelope must never reach the user");
         assertTrue(manager.invokedToolNames.isEmpty(),
                 "EndTurn is synthetic and must never be dispatched to the bridge as a real tool");
@@ -260,7 +293,7 @@ class OllamaAiProcessManagerTest {
 
         FakeHttpClient fake = new FakeHttpClient(List.of(
                 new ChatResult("{\"message\":\"fallback answer\",\"tool_name\":\"EndTurn\","
-                        + "\"tool_arguments\":{}}",
+                               + "\"tool_arguments\":{}}",
                         List.of(), "stop")));
 
         TestOllamaProcessManager manager = new TestOllamaProcessManager(listener, fake);
@@ -270,7 +303,7 @@ class OllamaAiProcessManagerTest {
 
         assertTrue(done.await(5, TimeUnit.SECONDS));
         assertTrue(events.stream().anyMatch(e -> e instanceof TextDeltaEvent td
-                && td.text() != null && td.text().contains("fallback answer")),
+                                                 && td.text() != null && td.text().contains("fallback answer")),
                 "with no arguments.message the top-level envelope message must be used");
     }
 
@@ -310,7 +343,7 @@ class OllamaAiProcessManagerTest {
         assertEquals(1, fake.requests.size(),
                 "an EndTurn reaching us through the extractor must end the turn on the first reply");
         assertFalse(events.stream().anyMatch(e -> e instanceof TextDeltaEvent td
-                && td.text() != null && td.text().contains("\"name\"")),
+                                                  && td.text() != null && td.text().contains("\"name\"")),
                 "the raw EndTurn envelope must never be emitted to the user as narration");
         assertTrue(manager.invokedToolNames.isEmpty(),
                 "EndTurn is synthetic and must never be dispatched to the bridge");
@@ -416,7 +449,7 @@ class OllamaAiProcessManagerTest {
                 "USER + one merged ASSISTANT + one TOOL + the EndTurn answer");
         for (int i = 1; i < finalMessages.size(); i++) {
             assertFalse(finalMessages.get(i - 1).role() == ChatRole.ASSISTANT
-                    && finalMessages.get(i).role() == ChatRole.ASSISTANT,
+                        && finalMessages.get(i).role() == ChatRole.ASSISTANT,
                     "no two consecutive ASSISTANT messages may reach the model");
         }
         assertEquals(1, events.stream().filter(e -> e instanceof TurnCompleteEvent).count());
@@ -576,7 +609,7 @@ class OllamaAiProcessManagerTest {
             List<ChatMessage> messages = fake.requests.get(i).messages();
             for (int j = 0; j + 1 < messages.size(); j++) {
                 assertFalse(messages.get(j).role() == ChatRole.ASSISTANT
-                        && messages.get(j + 1).role() == ChatRole.ASSISTANT,
+                            && messages.get(j + 1).role() == ChatRole.ASSISTANT,
                         "request " + i + ": two adjacent assistant messages break devstral's alternation");
             }
         }
@@ -636,14 +669,9 @@ class OllamaAiProcessManagerTest {
      */
     @Test
     void modeFlipResetsHistoryButKeepsPinsBetweenTurns() throws Exception {
-        // Turn completion is awaited via awaitIdle below — no latch is needed.
         List<AiProcessEvent> events = new ArrayList<>();
-        AiProcessEventListener listener = event -> {
-            events.add(event);
-            if (event instanceof TurnCompleteEvent) {
-                // completion is awaited via awaitIdle below
-            }
-        };
+        AtomicReference<CountDownLatch> closer = new AtomicReference<>(new CountDownLatch(1));
+        AiProcessEventListener listener = closerTrackingListener(events, closer);
         FakeHttpClient fake = new FakeHttpClient(List.of(
                 END_TURN_ANSWER,
                 new ChatResult("{\"message\":\"second answer\",\"tool_name\":\"EndTurn\",\"tool_arguments\":{}}",
@@ -660,8 +688,9 @@ class OllamaAiProcessManagerTest {
 
         // OLLAMA_LOCAL defaults to schema-based tool calling; flip the live session to native.
         ((OllamaSessionSettings) session.settings()).setUseNativeToolCalling(Boolean.TRUE);
+        closer.set(new CountDownLatch(1));
         manager.sendPrompt("turn two", home, List.of());
-        awaitIdle(manager);
+        assertTrue(closer.get().await(5, TimeUnit.SECONDS), "the closer for turn two never arrived within 5s");
 
         assertEquals(2, fake.requests.size());
         List<ChatMessage> msgs = fake.requests.get(1).messages();
@@ -673,8 +702,8 @@ class OllamaAiProcessManagerTest {
         // assistant message at all — neither turn one's, nor its own. The noneMatch above covers the reset.
         // (See the events assertion below for the update notice.)
         assertTrue(events.stream().anyMatch(e -> e instanceof StatusEvent se
-                && se.type() == StatusEventTypeEnum.INFO
-                && se.text() != null && se.text().contains("history was reset")),
+                                                 && se.type() == StatusEventTypeEnum.INFO
+                                                 && se.text() != null && se.text().contains("history was reset")),
                 "the flip must be reported to the user");
     }
 
@@ -710,7 +739,7 @@ class OllamaAiProcessManagerTest {
         assertTrue(done.await(5, TimeUnit.SECONDS));
         assertEquals(25, manager.invokedToolNames.size());
         assertTrue(events.stream().anyMatch(e -> e instanceof StatusEvent se
-                && se.text() != null && se.text().contains("Stopped after 25 tool iterations")));
+                                                 && se.text() != null && se.text().contains("Stopped after 25 tool iterations")));
     }
 
     /**
@@ -736,7 +765,7 @@ class OllamaAiProcessManagerTest {
                     "tool_calls"));
         }
         TestOllamaProcessManager manager
-                = new TestOllamaProcessManager(listener, new FakeHttpClient(identical));
+                                 = new TestOllamaProcessManager(listener, new FakeHttpClient(identical));
         AiSession shared = newSession("sid3", "session3");
         manager.setCurrentSession(shared);
         manager.start(null, "qwen2.5-coder:7b");
@@ -746,9 +775,9 @@ class OllamaAiProcessManagerTest {
         assertEquals(1, manager.invokedToolNames.size(),
                 "a repeated identical call must not re-run the tool");
         assertTrue(events.stream().anyMatch(e -> e instanceof StatusEvent se
-                && se.text() != null && se.text().contains("kept repeating the same tool call")));
+                                                 && se.text() != null && se.text().contains("kept repeating the same tool call")));
         assertFalse(events.stream().anyMatch(e -> e instanceof StatusEvent se
-                && se.text() != null && se.text().contains("Stopped after 25")),
+                                                  && se.text() != null && se.text().contains("Stopped after 25")),
                 "should end on the repeat guard, not grind out the iteration cap");
     }
 
@@ -786,7 +815,7 @@ class OllamaAiProcessManagerTest {
         assertTrue(manager.invokedToolNames.size() <= 3,
                 "identical results must end the turn quickly, got " + manager.invokedToolNames.size());
         assertTrue(events.stream().anyMatch(e -> e instanceof StatusEvent se
-                && se.text() != null && se.text().contains("kept repeating the same tool call")));
+                                                 && se.text() != null && se.text().contains("kept repeating the same tool call")));
     }
 
     /**
@@ -883,7 +912,7 @@ class OllamaAiProcessManagerTest {
         assertEquals(2, fake.requests.size(),
                 "narration after the explicit nudge must be accepted without a third request");
         assertTrue(events.stream().anyMatch(e -> e instanceof TextDeltaEvent td
-                && td.text() != null && td.text().contains("second wording")),
+                                                 && td.text() != null && td.text().contains("second wording")),
                 "the accepted narration must reach the user as the final answer");
     }
 
@@ -939,7 +968,7 @@ class OllamaAiProcessManagerTest {
 
         FakeHttpClient fake = new FakeHttpClient(scripted);
         TestOllamaProcessManager manager
-                = new TestOllamaProcessManager(listener, fake, "Description updated.");
+                                 = new TestOllamaProcessManager(listener, fake, "Description updated.");
         AiSession shared = newSession("sid6", "session6");
         manager.setCurrentSession(shared);
         manager.start(null, "qwen2.5-coder:7b");
@@ -947,7 +976,7 @@ class OllamaAiProcessManagerTest {
 
         assertTrue(done.await(5, TimeUnit.SECONDS));
         assertTrue(events.stream().anyMatch(e -> e instanceof TextDeltaEvent td
-                && td.text() != null && td.text().contains("How can I help")),
+                                                 && td.text() != null && td.text().contains("How can I help")),
                 "the user must get a real answer, not just a status line");
         // The recovery request must offer no tools, or the model can stall again.
         ChatRequest recovery = fake.requests.get(fake.requests.size() - 1);
@@ -986,10 +1015,10 @@ class OllamaAiProcessManagerTest {
         assertEquals(3, fake.requests.size(),
                 "two identical repeats in a row must end the turn at the 2-limited unproductive bound");
         assertTrue(events.stream().anyMatch(e -> e instanceof StatusEvent se
-                && se.text() != null && se.text().contains("kept repeating itself")),
+                                                 && se.text() != null && se.text().contains("kept repeating itself")),
                 "counter A must report the exact loop");
         assertFalse(events.stream().anyMatch(e -> e instanceof StatusEvent se
-                && se.text() != null && se.text().contains("without signalling")),
+                                                  && se.text() != null && se.text().contains("without signalling")),
                 "counter B must not fire — the narration bound (10 here) is far above A's 2");
     }
 
@@ -1026,7 +1055,7 @@ class OllamaAiProcessManagerTest {
                 "three varied prose rounds must all pass with A pinned to 1 — none is unproductive — "
                 + "and only the scripted EndTurn may end the turn");
         assertFalse(events.stream().anyMatch(e -> e instanceof StatusEvent se
-                && se.text() != null && se.text().contains("kept repeating")),
+                                                  && se.text() != null && se.text().contains("kept repeating")),
                 "varying narration must never hit the exact-loop bound");
         assertEquals(1, events.stream().filter(e -> e instanceof TurnCompleteEvent).count(),
                 "exactly one completion, from the EndTurn");
@@ -1064,10 +1093,10 @@ class OllamaAiProcessManagerTest {
         assertEquals(3, fake.requests.size(),
                 "three varied prose replies must trip the narration bound of 3, as configured here");
         assertTrue(events.stream().anyMatch(e -> e instanceof StatusEvent se
-                && se.text() != null && se.text().contains("without signalling")),
+                                                 && se.text() != null && se.text().contains("without signalling")),
                 "counter B must report that the model answered without signalling completion");
         assertFalse(events.stream().anyMatch(e -> e instanceof StatusEvent se
-                && se.text() != null && se.text().contains("kept repeating itself")),
+                                                  && se.text() != null && se.text().contains("kept repeating itself")),
                 "varied prose is never counter A");
     }
 
@@ -1108,10 +1137,10 @@ class OllamaAiProcessManagerTest {
                 "two identical prose, a productive tool round, then two more identical prose must rest a "
                 + "freshly-reset unproductive bound — the turn reaches all six requests");
         assertFalse(events.stream().anyMatch(e -> e instanceof StatusEvent se
-                && se.text() != null && se.text().contains("without signalling")),
+                                                  && se.text() != null && se.text().contains("without signalling")),
                 "counter B must never fire: the productive round reset it, so it stays below 4");
         assertTrue(events.stream().anyMatch(e -> e instanceof StatusEvent se
-                && se.text() != null && se.text().contains("kept repeating itself")),
+                                                 && se.text() != null && se.text().contains("kept repeating itself")),
                 "the turn ends only when the post-reset exact loop finally trips counter A");
         assertEquals(1, events.stream().filter(e -> e instanceof TurnCompleteEvent).count(),
                 "exactly one completion");
@@ -1200,8 +1229,8 @@ class OllamaAiProcessManagerTest {
         assertEquals(1, events.stream().filter(e -> e instanceof TurnCompleteEvent).count(),
                 "exactly one completion — the turn was not aborted or ended early");
         assertTrue(events.stream().noneMatch(e -> e instanceof StatusEvent se
-                && (se.type() == StatusEventTypeEnum.STOPPED
-                || se.type() == StatusEventTypeEnum.FAILED)),
+                                                  && (se.type() == StatusEventTypeEnum.STOPPED
+                                                      || se.type() == StatusEventTypeEnum.FAILED)),
                 "no abort, no failure: Mail must not disturb the turn");
     }
 
@@ -1213,7 +1242,8 @@ class OllamaAiProcessManagerTest {
     @Test
     void mailQueuedButTheTurnEndsFirstIsStillDeliveredNextTurn() throws Exception {
         List<AiProcessEvent> events = new ArrayList<>();
-        AiProcessEventListener listener = events::add;
+        AtomicReference<CountDownLatch> closer = new AtomicReference<>(new CountDownLatch(1));
+        AiProcessEventListener listener = closerTrackingListener(events, closer);
 
         GatedHttpClient client = new GatedHttpClient(new Gate(END_TURN_ANSWER, false));
         TestOllamaProcessManager manager = new TestOllamaProcessManager(listener, client);
@@ -1225,7 +1255,7 @@ class OllamaAiProcessManagerTest {
         client.gates[0].awaitInCall();
         manager.interrupt(InterruptTypeEnum.Mail);
         client.gates[0].open();
-        awaitIdle(manager);
+        assertTrue(closer.get().await(5, TimeUnit.SECONDS), "the closer for turn one never arrived within 5s");
 
         assertEquals(1, client.requests.size(), "the EndTurn request must end the turn immediately");
         assertFalse(containsMailNotice(client.requests.get(0).messages()),
@@ -1233,8 +1263,9 @@ class OllamaAiProcessManagerTest {
         assertEquals(1, events.stream().filter(e -> e instanceof TurnCompleteEvent).count(),
                 "turn one completed normally");
 
+        closer.set(new CountDownLatch(1));
         manager.sendPrompt("turn two", home, List.of());
-        awaitIdle(manager);
+        assertTrue(closer.get().await(5, TimeUnit.SECONDS), "the closer for turn two never arrived within 5s");
 
         assertEquals(2, client.requests.size());
         assertTrue(containsMailNotice(client.requests.get(1).messages()),
@@ -1252,7 +1283,8 @@ class OllamaAiProcessManagerTest {
     @Test
     void staleThreadDoesNotConsumeAQueuedMailNotice() throws Exception {
         List<AiProcessEvent> events = new ArrayList<>();
-        AiProcessEventListener listener = events::add;
+        AtomicReference<CountDownLatch> closer = new AtomicReference<>(new CountDownLatch(1));
+        AiProcessEventListener listener = closerTrackingListener(events, closer);
         PluginSettings.setOllamaMaxUnproductiveRounds(2);
 
         GatedHttpClient client = new GatedHttpClient(
@@ -1269,7 +1301,7 @@ class OllamaAiProcessManagerTest {
         manager.interrupt(InterruptTypeEnum.Mail);
         manager.interrupt(InterruptTypeEnum.Cancel);
         client.gates[0].open();
-        awaitIdle(manager);
+        assertTrue(closer.get().await(5, TimeUnit.SECONDS), "the closer for turn one never arrived within 5s");
 
         assertEquals(1, client.requests.size(), "the cancelled turn must not loop past its one request");
         assertFalse(containsMailNotice(client.requests.get(0).messages()),
@@ -1277,8 +1309,9 @@ class OllamaAiProcessManagerTest {
         assertEquals(0, events.stream().filter(e -> e instanceof TurnCompleteEvent).count(),
                 "the cancelled turn must not complete");
 
+        closer.set(new CountDownLatch(1));
         manager.sendPrompt("turn two", home, List.of());
-        awaitIdle(manager);
+        assertTrue(closer.get().await(5, TimeUnit.SECONDS), "the closer for turn two never arrived within 5s");
 
         assertEquals(2, client.requests.size());
         assertTrue(containsMailNotice(client.requests.get(1).messages()),
@@ -1298,7 +1331,8 @@ class OllamaAiProcessManagerTest {
     @Test
     void mailNoticeConsumedByARolledBackTurnIsStillDeliveredNextTurn() throws Exception {
         List<AiProcessEvent> events = new ArrayList<>();
-        AiProcessEventListener listener = events::add;
+        AtomicReference<CountDownLatch> closer = new AtomicReference<>(new CountDownLatch(1));
+        AiProcessEventListener listener = closerTrackingListener(events, closer);
 
         GatedHttpClient client = new GatedHttpClient(
                 new Gate(new ChatResult("", List.of(new ChatToolCall("c0", "GetPluginVersion", "{}")), "tool_calls"), false),
@@ -1318,7 +1352,7 @@ class OllamaAiProcessManagerTest {
         client.gates[1].awaitInCall();
         manager.interrupt(InterruptTypeEnum.Cancel);
         client.gates[1].open();
-        awaitIdle(manager);
+        assertTrue(closer.get().await(5, TimeUnit.SECONDS), "the closer for turn one never arrived within 5s");
 
         assertEquals(2, client.requests.size(), "the cancelled turn must stop at its second request");
         assertFalse(containsMailNotice(client.requests.get(0).messages()),
@@ -1328,8 +1362,9 @@ class OllamaAiProcessManagerTest {
         assertEquals(0, events.stream().filter(e -> e instanceof TurnCompleteEvent).count(),
                 "a cancelled turn must not complete");
 
+        closer.set(new CountDownLatch(1));
         manager.sendPrompt("turn two", home, List.of());
-        awaitIdle(manager);
+        assertTrue(closer.get().await(5, TimeUnit.SECONDS), "the closer for turn two never arrived within 5s");
 
         assertEquals(3, client.requests.size());
         assertTrue(containsMailNotice(client.requests.get(2).messages()),
@@ -1380,7 +1415,7 @@ class OllamaAiProcessManagerTest {
         assertTrue(containsMailNotice(client.requests.get(1).messages()),
                 "the notice rides the first request after the interrupt");
         assertTrue(events.stream().anyMatch(e -> e instanceof StatusEvent se
-                && se.text() != null && se.text().contains("without signalling")),
+                                                 && se.text() != null && se.text().contains("without signalling")),
                 "the turn must end at the narration bound, never at the mail notice");
         assertEquals(1, events.stream().filter(e -> e instanceof TurnCompleteEvent).count(),
                 "exactly one completion");
@@ -1421,8 +1456,8 @@ class OllamaAiProcessManagerTest {
                 "two identical (A=2, one below the unproductive limit of 3) followed by varied prose and the "
                 + "EndTurn must not trip either counter at the production values");
         assertFalse(events.stream().anyMatch(e -> e instanceof StatusEvent se
-                && se.text() != null && (se.text().contains("kept repeating")
-                || se.text().contains("without signalling"))),
+                                                  && se.text() != null && (se.text().contains("kept repeating")
+                                                                           || se.text().contains("without signalling"))),
                 "neither counter may fire on this short sequence");
         assertEquals(1, events.stream().filter(e -> e instanceof TurnCompleteEvent).count(),
                 "exactly one completion, from the EndTurn");
@@ -1451,10 +1486,10 @@ class OllamaAiProcessManagerTest {
 
         assertTrue(done.await(5, TimeUnit.SECONDS));
         assertFalse(events.stream().anyMatch(e -> e instanceof TextDeltaEvent td
-                && td.text() != null && td.text().contains("{}")),
+                                                  && td.text() != null && td.text().contains("{}")),
                 "a bare {} must never reach the user as the assistant's reply");
         assertTrue(events.stream().anyMatch(e -> e instanceof StatusEvent se
-                && se.text() != null && se.text().contains("empty response")));
+                                                 && se.text() != null && se.text().contains("empty response")));
     }
 
     @Test
@@ -1506,7 +1541,7 @@ class OllamaAiProcessManagerTest {
         }
 
         assertFalse(events.stream().anyMatch(e -> e instanceof StatusEvent se
-                && se.text() != null && se.text().contains("Stopped after 25")));
+                                                  && se.text() != null && se.text().contains("Stopped after 25")));
         assertFalse(events.stream().anyMatch(e -> e instanceof TurnCompleteEvent));
         assertTrue(manager.invokedToolNames.isEmpty());
     }
@@ -1518,13 +1553,17 @@ class OllamaAiProcessManagerTest {
      * drove the same broker — double commits, or a rollback that deleted the second turn's user message. The
      * fix: interrupt() leaves {@code processing} set (only the owning thread's finally clears it) and bumps
      * {@code turnGeneration}, and runTurn's loop and streaming callback compare against the epoch the turn
-     * was started with. A reprompt during the wind-down must therefore be IGNORED, the cancelled turn must
-     * leave no trace, and the next turn must commit exactly once.
+     * was started with. A reprompt during the wind-down must therefore start no work of its own — the
+     * cancelled turn must leave no trace, and the next turn must commit exactly once — but per the sendPrompt
+     * contract (AiTopComponent already unlocked via STOPPED before this reprompt was sent) it still gets its
+     * own refusal closer: exactly one INFO + TurnCompleteEvent for the refused "turn two", not the turn it
+     * refused to start.
      */
     @Test
     void cancelThenRepromptProducesExactlyOneCommittedTurn() throws Exception {
         List<AiProcessEvent> events = new ArrayList<>();
-        AiProcessEventListener listener = events::add;
+        AtomicReference<CountDownLatch> closer = new AtomicReference<>(new CountDownLatch(1));
+        AiProcessEventListener listener = closerTrackingListener(events, closer);
         GatedHttpClient client = new GatedHttpClient(
                 new Gate(new ChatResult("", List.of(new ChatToolCall("c0", "GetPluginVersion", "{}")), "tool_calls"), false),
                 new Gate(END_TURN_ANSWER, true));
@@ -1545,6 +1584,9 @@ class OllamaAiProcessManagerTest {
         assertTrue(firstTurnThread != null, "the first turn must own a thread");
         assertEquals(1, client.requests.size(), "exactly one request so far");
 
+        // Two distinct closers land in this phase: the cancelled turn's own STOPPED, and the refused
+        // reprompt's own INFO + TurnCompleteEvent — the latch must wait for both before either is inspected.
+        closer.set(new CountDownLatch(2));
         manager.interrupt(InterruptTypeEnum.Cancel);
         manager.sendPrompt("turn two", home, List.of());
         // The reprompt was sent while the cancelled turn's request is still in flight. With the fix the gate
@@ -1555,17 +1597,22 @@ class OllamaAiProcessManagerTest {
         assertEquals(1, client.requests.size(), "no request may be issued for a turn that never started");
 
         client.gates[0].open();
-        awaitIdle(manager);
+        assertTrue(closer.get().await(5, TimeUnit.SECONDS), "both closers for this phase never arrived within 5s");
         assertEquals(1, client.requests.size(), "the cancelled turn must not loop into a second request");
         assertNull(manager.activeTurnThread, "the owner reference must be released once the turn unwound");
-        assertTrue(events.stream().noneMatch(e -> e instanceof TurnCompleteEvent),
-                "no turn may complete: the first was cancelled and the reprompt was ignored");
+        // "turn two" was refused while processing was still true (the first turn's cancel-unwind) — per
+        // the sendPrompt contract this closes with its OWN INFO + TurnCompleteEvent (the UI already
+        // unlocked via STOPPED before sending it), not silence. That is one TurnCompleteEvent total: the
+        // refusal's, since the first turn never reaches its own success path.
+        assertEquals(1, events.stream().filter(e -> e instanceof TurnCompleteEvent).count(),
+                "exactly one TurnCompleteEvent: the refused reprompt's own closer");
         assertEquals(1, events.stream().filter(e -> e instanceof StatusEvent se
-                && se.type() == StatusEventTypeEnum.STOPPED).count(), "exactly one Stop");
+                                                    && se.type() == StatusEventTypeEnum.STOPPED).count(), "exactly one Stop");
 
         events.clear();
+        closer.set(new CountDownLatch(1));
         manager.sendPrompt("turn three", home, List.of());
-        awaitIdle(manager);
+        assertTrue(closer.get().await(5, TimeUnit.SECONDS), "the closer for turn three never arrived within 5s");
 
         assertEquals(2, client.requests.size());
         StringBuilder history = new StringBuilder();
@@ -1592,7 +1639,8 @@ class OllamaAiProcessManagerTest {
     @Test
     void staleThreadFinallyNeverRollsBackALiveTurn() throws Exception {
         List<AiProcessEvent> events = new ArrayList<>();
-        AiProcessEventListener listener = events::add;
+        AtomicReference<CountDownLatch> closer = new AtomicReference<>(new CountDownLatch(1));
+        AiProcessEventListener listener = closerTrackingListener(events, closer);
         GatedHttpClient client = new GatedHttpClient(
                 new Gate(new ChatResult("", List.of(new ChatToolCall("c0", "GetPluginVersion", "{}")), "tool_calls"), false),
                 new Gate(END_TURN_ANSWER, true));
@@ -1611,17 +1659,22 @@ class OllamaAiProcessManagerTest {
         Thread firstTurnThread = manager.activeTurnThread;
         assertTrue(firstTurnThread != null, "the first turn must own a thread");
 
+        // Two distinct closers land in this phase: the cancelled turn's own STOPPED, and the refused
+        // reprompt's own INFO + TurnCompleteEvent (fired synchronously inside sendPrompt below, before the
+        // gate even opens) — the latch must wait for both before either is inspected.
+        closer.set(new CountDownLatch(2));
         manager.interrupt(InterruptTypeEnum.Cancel);
         manager.sendPrompt("turn two", home, List.of());
         assertSame(firstTurnThread, manager.activeTurnThread,
                 "a reprompt during the wind-down must not replace the owner reference");
         client.gates[0].open();
-        awaitIdle(manager);
+        assertTrue(closer.get().await(5, TimeUnit.SECONDS), "both closers for this phase never arrived within 5s");
         assertNull(manager.activeTurnThread, "teardown must release the owner reference");
         assertEquals(1, client.requests.size(), "the cancelled turn must make its one request and unwind");
 
+        closer.set(new CountDownLatch(1));
         manager.sendPrompt("survivor", home, List.of());
-        awaitIdle(manager);
+        assertTrue(closer.get().await(5, TimeUnit.SECONDS), "the closer for survivor never arrived within 5s");
         assertNull(manager.activeTurnThread, "the survivor turn must release the reference when it completes");
         assertEquals(2, client.requests.size());
 
@@ -1633,8 +1686,13 @@ class OllamaAiProcessManagerTest {
         assertTrue(text.contains("survivor"), "the survivor's user message must survive the rollback");
         assertFalse(text.contains("turn one"), "the cancelled turn must leave no trace behind the survivor");
         assertFalse(text.contains("turn two"), "the ignored reprompt must leave no trace");
-        assertEquals(1, events.stream().filter(e -> e instanceof TurnCompleteEvent).count(),
-                "exactly one committed turn (the survivor) and no ghost from the cancelled turn");
+        // Two TurnCompleteEvents, not a ghost from the cancelled turn: one is "turn two"'s own refusal
+        // closer (sent while processing was still true from the cancel-unwind — per the sendPrompt
+        // contract that still gets INFO + TurnComplete, since the UI already unlocked via STOPPED before
+        // sending it), the other is the survivor's genuine completion.
+        assertEquals(2, events.stream().filter(e -> e instanceof TurnCompleteEvent).count(),
+                "the refused reprompt's own closer, plus the survivor's genuine completion — no ghost from "
+                + "the cancelled turn");
     }
 
     /**
@@ -1646,7 +1704,8 @@ class OllamaAiProcessManagerTest {
     @Test
     void stopAfterCancelThenRepromptStillInterruptsTheLiveTurn() throws Exception {
         List<AiProcessEvent> events = new ArrayList<>();
-        AiProcessEventListener listener = events::add;
+        AtomicReference<CountDownLatch> closer = new AtomicReference<>(new CountDownLatch(1));
+        AiProcessEventListener listener = closerTrackingListener(events, closer);
         GatedHttpClient client = new GatedHttpClient(
                 new Gate(new ChatResult("", List.of(new ChatToolCall("c0", "GetPluginVersion", "{}")), "tool_calls"), false),
                 new Gate(END_TURN_ANSWER, false));
@@ -1661,10 +1720,11 @@ class OllamaAiProcessManagerTest {
         client.gates[0].awaitInCall();
         manager.interrupt(InterruptTypeEnum.Cancel);
         client.gates[0].open();
-        awaitIdle(manager);
+        assertTrue(closer.get().await(5, TimeUnit.SECONDS), "the closer for turn one never arrived within 5s");
         assertEquals(1, client.requests.size(), "turn one must make its one request and unwind");
 
         // Turn two: the fresh turn, live with its own request in flight.
+        closer.set(new CountDownLatch(1));
         manager.sendPrompt("turn two", home, List.of());
         client.gates[1].awaitInCall();
         assertTrue(manager.activeTurnThread != null, "the fresh turn must own the thread reference");
@@ -1674,16 +1734,17 @@ class OllamaAiProcessManagerTest {
         assertTrue(manager.activeTurnThread != null,
                 "the second Stop must find a live thread, not a stale null");
         client.gates[1].open();
-        awaitIdle(manager);
+        assertTrue(closer.get().await(5, TimeUnit.SECONDS), "the closer for turn two never arrived within 5s");
 
         assertEquals(2, events.stream().filter(e -> e instanceof StatusEvent se
-                && se.type() == StatusEventTypeEnum.STOPPED).count(), "both Stops must be acknowledged");
+                                                    && se.type() == StatusEventTypeEnum.STOPPED).count(), "both Stops must be acknowledged");
         assertTrue(events.stream().noneMatch(e -> e instanceof TurnCompleteEvent),
                 "turn two must not complete — the second Stop must have landed on it");
 
         // History: both cancelled turns rolled back; the follow-up commits exactly once with only its own message.
+        closer.set(new CountDownLatch(1));
         manager.sendPrompt("turn three", home, List.of());
-        awaitIdle(manager);
+        assertTrue(closer.get().await(5, TimeUnit.SECONDS), "the closer for turn three never arrived within 5s");
         StringBuilder history = new StringBuilder();
         for (ChatMessage m : client.requests.get(2).messages()) {
             history.append(m.content() == null ? "" : m.content()).append('\n');
@@ -1705,7 +1766,8 @@ class OllamaAiProcessManagerTest {
     @Test
     void interruptKeepsProcessingSetUntilTheOwningThreadFullyUnwinds() throws Exception {
         List<AiProcessEvent> events = new ArrayList<>();
-        AiProcessEventListener listener = events::add;
+        AtomicReference<CountDownLatch> closer = new AtomicReference<>(new CountDownLatch(1));
+        AiProcessEventListener listener = closerTrackingListener(events, closer);
         GatedHttpClient client = new GatedHttpClient(
                 new Gate(new ChatResult("", List.of(new ChatToolCall("c0", "GetPluginVersion", "{}")), "tool_calls"), false),
                 new Gate(END_TURN_ANSWER, true));
@@ -1726,19 +1788,225 @@ class OllamaAiProcessManagerTest {
                 "the cancelled turn must still be unwinding, not already torn down");
 
         client.gates[0].open();
-        awaitIdle(manager);
+        assertTrue(closer.get().await(5, TimeUnit.SECONDS), "the closer for turn one never arrived within 5s");
 
         assertFalse(manager.isProcessing(), "the owning thread's finally must clear processing once unwound");
         assertTrue(events.stream().noneMatch(e -> e instanceof TurnCompleteEvent),
                 "the cancelled turn must not complete");
         assertEquals(1, events.stream().filter(e -> e instanceof StatusEvent se
-                && se.type() == StatusEventTypeEnum.STOPPED).count());
+                                                    && se.type() == StatusEventTypeEnum.STOPPED).count());
         assertNull(manager.activeTurnThread, "teardown must release the owner reference");
 
+        closer.set(new CountDownLatch(1));
         manager.sendPrompt("turn two", home, List.of());
-        awaitIdle(manager);
+        assertTrue(closer.get().await(5, TimeUnit.SECONDS), "the closer for turn two never arrived within 5s");
         assertEquals(1, events.stream().filter(e -> e instanceof TurnCompleteEvent).count(),
                 "the follow-up turn completes exactly once");
+    }
+
+    /**
+     * Mirrors Grok's {@code stopMidTurnEmitsNoStoppedEvent}: a full session stop() also sets
+     * cancelledByUser while tearing everything down, and also nulls {@code activeTurnThread} directly
+     * (before the owning thread's own finally ever runs) — so when that finally does run, its
+     * {@code Thread.currentThread() == activeTurnThread} guard is already false and the whole teardown
+     * (including the STOPPED emission) is skipped. Stop must never emit a closer for a session that no
+     * longer exists.
+     */
+    @Test
+    void stopMidTurnEmitsNoStoppedEvent() throws Exception {
+        List<AiProcessEvent> events = new CopyOnWriteArrayList<>();
+        AiProcessEventListener listener = events::add;
+        GatedHttpClient client = new GatedHttpClient(
+                new Gate(new ChatResult("", List.of(new ChatToolCall("c0", "GetPluginVersion", "{}")), "tool_calls"), false));
+        TestOllamaProcessManager manager = new TestOllamaProcessManager(listener, client);
+        manager.setCurrentSession(newSession());
+        manager.start(null, "qwen2.5-coder:7b");
+
+        File home = new File(System.getProperty("user.home"));
+        manager.sendPrompt("hello", home, List.of());
+        client.gates[0].awaitInCall();
+        assertTrue(manager.isProcessing(), "test setup: the turn must be in flight");
+
+        manager.stop();
+        assertFalse(manager.isProcessing(), "stop() clears processing itself, synchronously");
+        assertNull(manager.activeTurnThread, "stop() must release the owner reference itself");
+
+        client.gates[0].open();
+        long deadline = System.currentTimeMillis() + 500L;
+        while (System.currentTimeMillis() < deadline) {
+            Thread.sleep(10L);
+        }
+        assertTrue(events.stream().noneMatch(e -> e instanceof StatusEvent se
+                                                  && se.type() == StatusEventTypeEnum.STOPPED),
+                "a full stop() must not emit STOPPED for the turn it tore down");
+        assertTrue(events.stream().noneMatch(e -> e instanceof TurnCompleteEvent),
+                "a full stop() must not let the torn-down turn complete either");
+    }
+
+    /**
+     * The no-op half of the fix: every other backend treats a Cancel that finds no turn in flight as
+     * nothing to do. Before the fix Ollama's interrupt() fired STOPPED unconditionally, so a Cancel that
+     * landed between turns (or a second Stop click after the first already lands) reported a closer for a
+     * turn that did not exist.
+     */
+    @Test
+    void cancelWhenIdleEmitsNothing() throws Exception {
+        List<AiProcessEvent> events = new ArrayList<>();
+        AiProcessEventListener listener = events::add;
+        TestOllamaProcessManager manager = new TestOllamaProcessManager(listener, new FakeHttpClient(List.of()));
+        manager.setCurrentSession(newSession());
+        manager.start(null, "qwen2.5-coder:7b");
+
+        assertFalse(manager.isProcessing(), "test setup: no turn must be in flight");
+        events.clear();
+        manager.interrupt(InterruptTypeEnum.Cancel);
+
+        assertTrue(events.isEmpty(), "a Cancel with no turn in flight must do nothing and emit nothing, "
+                                     + "beyond whatever start() itself already reported");
+    }
+
+    /**
+     * The ordering half of the fix, pinned directly: STOPPED must be observed only once {@code isBusy()} is
+     * already false, since that is exactly the state {@code AiTopComponent.refreshInputEnabled()} reads when
+     * it reacts to the event. Before the fix interrupt() emitted STOPPED itself while {@code processing} was
+     * still true, so the UI's Send button saw the backend still busy and stayed disabled.
+     */
+    @Test
+    void stoppedIsObservedOnlyAfterProcessingAlreadyClear() throws Exception {
+        OllamaAiProcessManager[] ref = {null};
+        List<Boolean> busyWhenStopped = new ArrayList<>();
+        CountDownLatch stopped = new CountDownLatch(1);
+
+        AiProcessEventListener listener = event -> {
+            if (event instanceof StatusEvent se && se.type() == StatusEventTypeEnum.STOPPED) {
+                busyWhenStopped.add(ref[0].isBusy());
+                stopped.countDown();
+            }
+        };
+
+        HttpAiClient cancelClient = (ChatRequest request, Consumer<String> onTextDelta) -> {
+            if (ref[0] != null) {
+                ref[0].interrupt(InterruptTypeEnum.Cancel);
+            }
+            return new ChatResult("", List.of(new ChatToolCall("c0", "GetPluginVersion", "{}")), "tool_calls");
+        };
+
+        TestOllamaProcessManager manager = new TestOllamaProcessManager(listener, cancelClient);
+        ref[0] = manager;
+        manager.setCurrentSession(newSession("sid6", "session6"));
+        manager.start(null, "qwen2.5-coder:7b");
+        manager.sendPrompt("hello", new File(System.getProperty("user.home")), List.of());
+
+        assertTrue(stopped.await(5, TimeUnit.SECONDS), "a mid-turn Cancel must still emit exactly one STOPPED");
+        assertEquals(List.of(false), busyWhenStopped,
+                "isBusy() must already be false the instant STOPPED is observed — a second closer firing "
+                + "from interrupt() itself, while processing was still true, is exactly the bug this guards "
+                + "against");
+    }
+
+    /**
+     * Luna's review finding: the unproductive-rounds fallback calls {@code answerWithoutTools} — a blocking
+     * HTTP round-trip — and then, before this fix, emitted its TurnCompleteEvent unconditionally regardless
+     * of whether a Cancel landed during that call. A Cancel arriving mid-call makes
+     * {@code answerWithoutTools}
+     * itself return false (it re-checks {@code cancelledByUser} right after its own HTTP call), so the
+     * unconditional TurnCompleteEvent after it would have contradicted the Stop the user just pressed —
+     * exactly the second-closer shape every other exit in this method already guards against.
+     */
+    @Test
+    void cancelDuringUnproductiveFallbackEmitsExactlyOneStoppedNoTurnComplete() throws Exception {
+        List<AiProcessEvent> events = new ArrayList<>();
+        CountDownLatch stopped = new CountDownLatch(1);
+        OllamaAiProcessManager[] ref = {null};
+        AiProcessEventListener listener = event -> {
+            events.add(event);
+            if (event instanceof StatusEvent se && se.type() == StatusEventTypeEnum.STOPPED) {
+                stopped.countDown();
+            }
+        };
+
+        HttpAiClient client = (ChatRequest request, Consumer<String> onTextDelta) -> {
+            if (request.toolSchemas().isEmpty()) {
+                // The no-tools fallback request: simulate a Cancel landing mid-call, exactly like a real
+                // Stop press racing this HTTP round-trip.
+                ref[0].interrupt(InterruptTypeEnum.Cancel);
+                return new ChatResult("too late", List.of(), "stop");
+            }
+            return new ChatResult("", List.of(new ChatToolCall("c0", "GetPluginVersion", "{}")), "tool_calls");
+        };
+
+        TestOllamaProcessManager manager = new TestOllamaProcessManager(listener, client);
+        ref[0] = manager;
+        AiSession session = newSession("sid7", "session7");
+        ((OllamaSessionSettings) session.settings()).setUseNativeToolCalling(true);
+        manager.setCurrentSession(session);
+        manager.start(null, "qwen2.5-coder:7b");
+        manager.sendPrompt("hello", new File(System.getProperty("user.home")), List.of());
+
+        assertTrue(stopped.await(5, TimeUnit.SECONDS), "a cancel during the fallback must still close with STOPPED");
+        Thread turnThread = manager.activeTurnThread;
+        if (turnThread != null) {
+            turnThread.join(2000);
+        }
+
+        assertTrue(events.stream().noneMatch(e -> e instanceof TurnCompleteEvent),
+                "a cancel during the no-tools fallback must never also complete the turn");
+        assertEquals(1, events.stream().filter(e -> e instanceof StatusEvent se
+                                                    && se.type() == StatusEventTypeEnum.STOPPED).count());
+    }
+
+    /**
+     * Same gap, one level up: the hard-cap exit (maxToolIterations reached) also calls
+     * {@code answerWithoutTools} inside its own {@code !cancelledByUser} guard, but before this fix did not
+     * re-check {@code cancelledByUser} after that call returned — so a Cancel landing during it could still
+     * reach the unconditional commit/TurnComplete below.
+     */
+    @Test
+    void cancelDuringHardCapFallbackEmitsExactlyOneStoppedNoTurnComplete() throws Exception {
+        PluginSettings.setOllamaMaxToolIterations(2);
+        List<AiProcessEvent> events = new ArrayList<>();
+        CountDownLatch stopped = new CountDownLatch(1);
+        OllamaAiProcessManager[] ref = {null};
+        AiProcessEventListener listener = event -> {
+            events.add(event);
+            if (event instanceof StatusEvent se && se.type() == StatusEventTypeEnum.STOPPED) {
+                stopped.countDown();
+            }
+        };
+
+        AtomicInteger toolRound = new AtomicInteger();
+        HttpAiClient client = (ChatRequest request, Consumer<String> onTextDelta) -> {
+            if (request.toolSchemas().isEmpty()) {
+                ref[0].interrupt(InterruptTypeEnum.Cancel);
+                return new ChatResult("too late", List.of(), "stop");
+            }
+            // Distinct arguments each round: a repeated call signature is short-circuited as
+            // "already called" without even reaching the tool, which would trip the (pinned to 1)
+            // unproductive-rounds fallback tested separately — this test is about the hard cap instead, so
+            // every round must be genuinely productive to survive long enough to reach it.
+            int n = toolRound.incrementAndGet();
+            return new ChatResult("", List.of(new ChatToolCall("c" + n, "GetPluginVersion", "{\"n\":" + n + "}")),
+                    "tool_calls");
+        };
+
+        TestOllamaProcessManager manager = new TestOllamaProcessManager(listener, client);
+        ref[0] = manager;
+        AiSession session = newSession("sid8", "session8");
+        ((OllamaSessionSettings) session.settings()).setUseNativeToolCalling(true);
+        manager.setCurrentSession(session);
+        manager.start(null, "qwen2.5-coder:7b");
+        manager.sendPrompt("hello", new File(System.getProperty("user.home")), List.of());
+
+        assertTrue(stopped.await(5, TimeUnit.SECONDS), "a cancel during the hard-cap fallback must still close with STOPPED");
+        Thread turnThread = manager.activeTurnThread;
+        if (turnThread != null) {
+            turnThread.join(2000);
+        }
+
+        assertTrue(events.stream().noneMatch(e -> e instanceof TurnCompleteEvent),
+                "a cancel during the hard-cap fallback must never also complete the turn");
+        assertEquals(1, events.stream().filter(e -> e instanceof StatusEvent se
+                                                    && se.type() == StatusEventTypeEnum.STOPPED).count());
     }
 
     @Test
@@ -1821,7 +2089,7 @@ class OllamaAiProcessManagerTest {
         PluginSettings.setOllamaMaxUnproductiveRounds(2);
 
         TestOllamaProcessManager manager
-                = new TestOllamaProcessManager(listener, fakeClient, "Description updated.");
+                                 = new TestOllamaProcessManager(listener, fakeClient, "Description updated.");
         manager.setCurrentSession(newSession());
         manager.start(null, "qwen2.5-coder:7b");
 
@@ -1852,21 +2120,22 @@ class OllamaAiProcessManagerTest {
     @Test
     void serverSideToolCallParseFailureIsRecoveredAndTheTurnSurvives() throws Exception {
         List<AiProcessEvent> events = new ArrayList<>();
-        AiProcessEventListener listener = events::add;
+        AtomicReference<CountDownLatch> closer = new AtomicReference<>(new CountDownLatch(1));
+        AiProcessEventListener listener = closerTrackingListener(events, closer);
         ToolCallParse500ThenAnswerClient client = new ToolCallParse500ThenAnswerClient();
         TestOllamaProcessManager manager = new TestOllamaProcessManager(listener, client);
         manager.setCurrentSession(newSession());
         manager.start(null, "qwen2.5-coder:7b");
         manager.sendPrompt("hello", new File(System.getProperty("user.home")), List.of());
-        awaitIdle(manager);
+        assertTrue(closer.get().await(5, TimeUnit.SECONDS), "the closer never arrived within 5s");
 
         assertEquals(2, client.requests.size(),
                 "one parse-failure request, then the repaired retry — the turn must survive, not die on the 500");
         ChatRequest repaired = client.requests.get(1);
         ChatMessage recoveryAssistant = repaired.messages().stream()
                 .filter(m -> m.role() == ChatRole.ASSISTANT
-                        && m.toolCalls().size() == 1
-                        && "unknown_tool".equals(m.toolCalls().get(0).name()))
+                             && m.toolCalls().size() == 1
+                             && "unknown_tool".equals(m.toolCalls().get(0).name()))
                 .findFirst().orElse(null);
         assertTrue(recoveryAssistant != null, "the repaired request must carry the synthetic malformed-call pair");
         String callId = recoveryAssistant.toolCalls().get(0).id();
@@ -1879,10 +2148,10 @@ class OllamaAiProcessManagerTest {
                 "the model must be told its tool call was malformed: " + recoveryResult.content());
 
         assertFalse(events.stream().anyMatch(e -> e instanceof StatusEvent se
-                && se.type() == StatusEventTypeEnum.FAILED),
+                                                  && se.type() == StatusEventTypeEnum.FAILED),
                 "a recoverable parse failure must not fail the turn");
         assertTrue(events.stream().anyMatch(e -> e instanceof TextDeltaEvent td
-                && td.text() != null && td.text().contains("Understood")),
+                                                 && td.text() != null && td.text().contains("Understood")),
                 "the turn must still deliver its final answer");
         assertInstanceOf(TurnCompleteEvent.class, events.get(events.size() - 1));
     }
@@ -1894,19 +2163,20 @@ class OllamaAiProcessManagerTest {
     @Test
     void persistentServerSideToolCallParseFailureHitsTheBoundAndFailsLikeATransportError() throws Exception {
         List<AiProcessEvent> events = new ArrayList<>();
-        AiProcessEventListener listener = events::add;
+        AtomicReference<CountDownLatch> closer = new AtomicReference<>(new CountDownLatch(1));
+        AiProcessEventListener listener = closerTrackingListener(events, closer);
         ToolCallParse500EveryTimeClient client = new ToolCallParse500EveryTimeClient();
         TestOllamaProcessManager manager = new TestOllamaProcessManager(listener, client);
         manager.setCurrentSession(newSession());
         manager.start(null, "qwen2.5-coder:7b");
         manager.sendPrompt("hello", new File(System.getProperty("user.home")), List.of());
-        awaitIdle(manager);
+        assertTrue(closer.get().await(5, TimeUnit.SECONDS), "the closer never arrived within 5s");
 
         assertEquals(2, client.requests.size(),
                 "two parse-failure rounds reach the bound; a third request must never be made");
         assertTrue(events.stream().anyMatch(e -> e instanceof StatusEvent se
-                && se.type() == StatusEventTypeEnum.FAILED
-                && se.text() != null && se.text().contains("Failed to send") && se.text().contains("HTTP 500")),
+                                                 && se.type() == StatusEventTypeEnum.FAILED
+                                                 && se.text() != null && se.text().contains("Failed to send") && se.text().contains("HTTP 500")),
                 "after the bound the turn must fail as a transport error would");
         assertFalse(events.stream().anyMatch(e -> e instanceof TurnCompleteEvent),
                 "a failed turn must not complete normally");
@@ -1919,18 +2189,19 @@ class OllamaAiProcessManagerTest {
     @Test
     void anUnrelatedHttp500StillFailsTheTurnUntouched() throws Exception {
         List<AiProcessEvent> events = new ArrayList<>();
-        AiProcessEventListener listener = events::add;
+        AtomicReference<CountDownLatch> closer = new AtomicReference<>(new CountDownLatch(1));
+        AiProcessEventListener listener = closerTrackingListener(events, closer);
         Plain500Client client = new Plain500Client();
         TestOllamaProcessManager manager = new TestOllamaProcessManager(listener, client);
         manager.setCurrentSession(newSession());
         manager.start(null, "qwen2.5-coder:7b");
         manager.sendPrompt("hello", new File(System.getProperty("user.home")), List.of());
-        awaitIdle(manager);
+        assertTrue(closer.get().await(5, TimeUnit.SECONDS), "the closer never arrived within 5s");
 
         assertEquals(1, client.requests.size(), "an unrelated 500 must fail on the first request");
         assertTrue(events.stream().anyMatch(e -> e instanceof StatusEvent se
-                && se.type() == StatusEventTypeEnum.FAILED
-                && se.text() != null && se.text().contains("Failed to send") && se.text().contains("HTTP 500")),
+                                                 && se.type() == StatusEventTypeEnum.FAILED
+                                                 && se.text() != null && se.text().contains("Failed to send") && se.text().contains("HTTP 500")),
                 "an unrelated 500 must still fail the turn");
         assertFalse(events.stream().anyMatch(e -> e instanceof TurnCompleteEvent),
                 "a failed turn must not complete normally");
@@ -2033,19 +2304,116 @@ class OllamaAiProcessManagerTest {
                 "turn two's trim must trigger one extra summariser call in between");
         boolean sawSummary = fakeClient.requests.get(2).messages().stream()
                 .anyMatch(m -> m.content() != null
-                        && m.content().contains("[Summary of earlier conversation:"));
+                               && m.content().contains("[Summary of earlier conversation:"));
         assertTrue(sawSummary, "the summariser wired unconditionally in start() must be used "
-                + "by the broker's SUMMARISE trim path");
+                               + "by the broker's SUMMARISE trim path");
+    }
+
+    // ---- sendPrompt(): AiTopComponent.handleSubmit locks the UI before calling this, so every refusal
+    // must close that lock itself rather than returning silently (D-none, cross-cutting rule) ----
+    @Test
+    void sendPromptWhenNotRunningIsRefusedWithInfoThenTurnCompleteOnceEach() {
+        List<AiProcessEvent> events = new ArrayList<>();
+        TestOllamaProcessManager manager = new TestOllamaProcessManager(events::add, new FakeHttpClient(List.of()));
+        // Deliberately never start(): running stays false.
+
+        manager.sendPrompt("hello", new File(System.getProperty("user.home")), List.of());
+
+        assertEquals(2, events.size(), "a refusal is exactly INFO then TurnComplete: " + events);
+        assertTrue(events.get(0) instanceof StatusEvent info && info.type() == StatusEventTypeEnum.INFO
+                   && !info.text().isBlank(), "first the INFO carrying the reason: " + events.get(0));
+        assertTrue(events.get(1) instanceof TurnCompleteEvent, "then the TurnCompleteEvent closing the UI's turn");
+        assertFalse(manager.isProcessing());
+    }
+
+    @Test
+    void sendPromptWhilePendingDiffIsRefusedWithInfoThenTurnComplete() throws Exception {
+        List<AiProcessEvent> events = new ArrayList<>();
+        TestOllamaProcessManager manager = new TestOllamaProcessManager(events::add, new FakeHttpClient(List.of()));
+        manager.setCurrentSession(newSession());
+        manager.start(null, "qwen2.5-coder:7b");
+        manager.setPendingDiff(true);
+        events.clear();
+
+        manager.sendPrompt("hello", new File(System.getProperty("user.home")), List.of());
+
+        assertEquals(2, events.size(), "a refusal is exactly INFO then TurnComplete: " + events);
+        assertTrue(events.get(0) instanceof StatusEvent info && info.type() == StatusEventTypeEnum.INFO);
+        assertTrue(events.get(1) instanceof TurnCompleteEvent);
+        assertFalse(manager.isProcessing());
+    }
+
+    /**
+     * Corrected per Boss's review: the UI only calls sendPrompt once the PREVIOUS turn's own closer has
+     * already arrived (Send stays disabled, and mail is held, while isBusy()) — so a refusal that finds
+     * {@code processing} still true is about a turn the UI has ALREADY closed from its side (e.g. after Stop:
+     * STOPPED has fired but this backend's {@code processing} stays true until the in-flight HTTP call
+     * unwinds). This new attempt still needs its own INFO + TurnCompleteEvent, or it locks the tab forever —
+     * the same as every other refusal. Uses a {@link GatedHttpClient} to hold a real turn genuinely in flight
+     * rather than racing the fake's near-instant return.
+     */
+    @Test
+    void sendPromptWhileAlreadyProcessingIsRefusedWithInfoThenTurnComplete() throws Exception {
+        List<AiProcessEvent> events = new CopyOnWriteArrayList<>();
+        Gate gate = new Gate(END_TURN_ANSWER, false);
+        TestOllamaProcessManager manager = new TestOllamaProcessManager(events::add, new GatedHttpClient(gate));
+        manager.setCurrentSession(newSession());
+        manager.start(null, "qwen2.5-coder:7b");
+        manager.sendPrompt("hello", new File(System.getProperty("user.home")), List.of());
+        gate.awaitInCall();
+        assertTrue(manager.isProcessing(), "precondition: a turn must genuinely be in flight");
+        events.clear();
+
+        manager.sendPrompt("second", new File(System.getProperty("user.home")), List.of());
+
+        assertEquals(2, events.size(), "a refusal is exactly INFO then TurnComplete: " + events);
+        assertTrue(events.get(0) instanceof StatusEvent info && info.type() == StatusEventTypeEnum.INFO);
+        assertTrue(events.get(1) instanceof TurnCompleteEvent);
+        assertTrue(manager.isProcessing(),
+                "the ORIGINAL turn's own flag is untouched by the refusal — only the NEW attempt is closed");
+
+        gate.open();
+        awaitIdle(manager);
+    }
+
+    @Test
+    void sendPromptWhileWorkInFlightIsRefusedWithInfoThenTurnComplete() throws Exception {
+        List<AiProcessEvent> events = new CopyOnWriteArrayList<>();
+        TestOllamaProcessManager manager = new TestOllamaProcessManager(events::add, new FakeHttpClient(List.of()));
+        manager.setCurrentSession(newSession());
+        manager.start(null, "qwen2.5-coder:7b");
+        CountDownLatch gate = new CountDownLatch(1);
+        manager.setCompactGate(gate);
+        manager.compactContext();
+        events.clear();
+
+        manager.sendPrompt("hello", new File(System.getProperty("user.home")), List.of());
+
+        assertEquals(2, events.size(), "a refusal is exactly INFO then TurnComplete: " + events);
+        assertTrue(events.get(0) instanceof StatusEvent info && info.type() == StatusEventTypeEnum.INFO);
+        assertTrue(events.get(1) instanceof TurnCompleteEvent);
+        assertFalse(manager.isProcessing());
+
+        gate.countDown();
     }
 
     @Test
     void compactContextRunsOffTheCallingThreadAndReportsUsageWhenDone() throws Exception {
-        List<AiProcessEvent> events = new ArrayList<>();
-        CountDownLatch usageReported = new CountDownLatch(1);
+        // CopyOnWriteArrayList, not ArrayList: the closing status lands on the compaction's own
+        // background thread while this test still holds a reference to the same list.
+        List<AiProcessEvent> events = new CopyOnWriteArrayList<>();
+        CountDownLatch closed = new CountDownLatch(1);
+        // start() posts its own READY ("Ollama (Local) Ready...") — armed stays false until
+        // compactContext() is actually called, so that startup event can never satisfy this latch.
+        AtomicBoolean armed = new AtomicBoolean(false);
         AiProcessEventListener listener = event -> {
             events.add(event);
-            if (event instanceof OllamaTokenUsageEvent) {
-                usageReported.countDown();
+            // Waiting on the closing READY by TYPE, not on the OllamaTokenUsageEvent: usage is emitted
+            // BEFORE READY and before runWork's in-flight marker clears (see compactSucceeded/closeWork),
+            // so a latch keyed on usage let both assertions below race the compaction thread's own
+            // remaining work — an intermittent failure Boss's review caught.
+            if (armed.get() && event instanceof StatusEvent se && se.type() == StatusEventTypeEnum.READY) {
+                closed.countDown();
             }
         };
         FakeHttpClient fakeClient = new FakeHttpClient(List.of());
@@ -2053,16 +2421,199 @@ class OllamaAiProcessManagerTest {
         manager.setCurrentSession(newSession());
         manager.start(null, "qwen2.5-coder:7b");
 
+        armed.set(true);
         manager.compactContext();
 
-        assertTrue(usageReported.await(5, TimeUnit.SECONDS),
-                "compactContext must report usage once its background thread finishes, "
-                + "the same way the info bar learns a turn finished");
+        assertTrue(closed.await(5, TimeUnit.SECONDS),
+                "compactContext must close with its READY status once its background thread finishes");
+        assertTrue(events.stream().anyMatch(e -> e instanceof OllamaTokenUsageEvent),
+                "a successful compaction must re-emit usage so the gauge updates");
         assertTrue(events.stream().anyMatch(e -> e instanceof StatusEvent se
-                && se.text() != null && se.text().contains("Nothing to compact")),
+                                                 && se.type() == StatusEventTypeEnum.READY
+                                                 && se.text() != null && se.text().contains("Nothing to compact")),
                 "an empty broker has nothing to compact");
-        assertFalse(manager.isSummarising(),
-                "summarising must have cleared by the time usage is reported");
+        assertFalse(manager.isBusy(),
+                "the compaction's work-in-flight must have cleared by the time its status is reported");
+    }
+
+    /**
+     * Stopping the session while a compaction is genuinely in flight must close that work exactly once, as
+     * FAILED (via failWorkInFlight), and the stale background thread's own eventual completion — once
+     * released — must add nothing further: runWork's own token-based exactly-once guard means its computed
+     * closing status is silently discarded once stop() already closed the same work.
+     */
+    @Test
+    void stopDuringACompactionReportsExactlyOneFailedAndALateCompletionAddsNothing() throws Exception {
+        List<AiProcessEvent> events = new CopyOnWriteArrayList<>();
+        TestOllamaProcessManager manager = new TestOllamaProcessManager(events::add, new FakeHttpClient(List.of()));
+        manager.setCurrentSession(newSession());
+        manager.start(null, "qwen2.5-coder:7b");
+        CountDownLatch gate = new CountDownLatch(1);
+        manager.setCompactGate(gate);
+        manager.compactContext();
+        events.clear();
+
+        manager.stop();
+
+        List<StatusEvent> statusesAfterStop = events.stream()
+                .filter(e -> e instanceof StatusEvent).map(e -> (StatusEvent) e).toList();
+        assertEquals(1, statusesAfterStop.size(),
+                "stop() must close the in-flight compaction with exactly one status: " + events);
+        assertEquals(StatusEventTypeEnum.FAILED, statusesAfterStop.get(0).type(),
+                "a compaction cut short by stop() is a genuine failure, not a quiet success: " + events);
+        assertFalse(manager.isBusy(), "work-in-flight must clear immediately on stop()");
+
+        // Release the stale background thread: its eventual completion must add nothing, since stop()'s
+        // failWorkInFlight already closed this work under runWork's own exactly-once token.
+        gate.countDown();
+        Thread.sleep(200);
+        long statusCountAfterLateCompletion = events.stream().filter(e -> e instanceof StatusEvent).count();
+        assertEquals(1, statusCountAfterLateCompletion,
+                "a late completion after stop() must not add a second closing status: " + events);
+    }
+
+    /**
+     * An exception out of the trim/summarise call must still close the work — FAILED, carrying the
+     * exception's message — and unlock (clear isBusy()), never leaving the session stuck "busy" forever.
+     */
+    @Test
+    void compactContextReportsFailedAndUnlocksWhenCompactNowThrows() throws Exception {
+        List<AiProcessEvent> events = new ArrayList<>();
+        CountDownLatch closed = new CountDownLatch(1);
+        AiProcessEventListener listener = event -> {
+            events.add(event);
+            if (event instanceof StatusEvent se && se.type() == StatusEventTypeEnum.FAILED) {
+                closed.countDown();
+            }
+        };
+        FakeHttpClient fakeClient = new FakeHttpClient(List.of());
+        TestOllamaProcessManager manager = new TestOllamaProcessManager(listener, fakeClient);
+        manager.setThrowOnCompact(true);
+        manager.setCurrentSession(newSession());
+        manager.start(null, "qwen2.5-coder:7b");
+
+        boolean started = manager.compactContext();
+
+        assertTrue(started, "compactContext must start — nothing else is in flight");
+        assertTrue(closed.await(5, TimeUnit.SECONDS),
+                "an exception inside compactNow must still close the work exactly once, as FAILED");
+        assertTrue(events.stream().anyMatch(e -> e instanceof StatusEvent se
+                                                 && se.type() == StatusEventTypeEnum.FAILED
+                                                 && se.text() != null && se.text().contains("boom")),
+                "the exception's message must reach the FAILED status text");
+        assertFalse(manager.isBusy(), "a failed compaction must still unlock — never leave the session stuck busy");
+    }
+
+    /**
+     * When {@code broker == null} (session not started, or torn down mid-race) must still close the work
+     * rather than silently reporting nothing — chosen as FAILED, since there is genuinely no context to act
+     * on.
+     */
+    @Test
+    void compactContextReportsFailedWhenBrokerIsNull() throws Exception {
+        List<AiProcessEvent> events = new ArrayList<>();
+        CountDownLatch closed = new CountDownLatch(1);
+        AiProcessEventListener listener = event -> {
+            events.add(event);
+            if (event instanceof StatusEvent se && se.type() == StatusEventTypeEnum.FAILED) {
+                closed.countDown();
+            }
+        };
+        FakeHttpClient fakeClient = new FakeHttpClient(List.of());
+        TestOllamaProcessManager manager = new TestOllamaProcessManager(listener, fakeClient);
+        // Deliberately never start(): broker stays null.
+
+        boolean started = manager.compactContext();
+
+        assertTrue(started, "runWork itself must start — the failure is inside the work, not a busy refusal");
+        assertTrue(closed.await(5, TimeUnit.SECONDS), "a missing broker must still close the work, not hang it");
+        assertTrue(events.stream().anyMatch(e -> e instanceof StatusEvent se
+                                                 && se.type() == StatusEventTypeEnum.FAILED),
+                "a missing broker is a genuine error, reported as FAILED");
+        assertFalse(manager.isBusy(), "work-in-flight must clear even with no broker to act on");
+    }
+
+    /**
+     * Success path: a real committed turn leaves one evictable group; compactNow() must trim it and report
+     * exactly one BUSY followed by READY carrying the evicted count.
+     */
+    @Test
+    void compactContextEvictsAndReportsReadyWithCountOnSuccess() throws Exception {
+        // CopyOnWriteArrayList, not ArrayList: compactNow() may summarise via the network, so the closing
+        // status can land on the compaction's own background thread while this test still holds a reference
+        // to the same list — a plain ArrayList threw ConcurrentModificationException here under that race.
+        List<AiProcessEvent> events = new CopyOnWriteArrayList<>();
+        CountDownLatch closed = new CountDownLatch(1);
+        // start() posts its own READY ("Ollama (Local) Ready...") — armed stays false until compactContext()
+        // is actually called, so that startup event can never satisfy this latch before the compaction runs.
+        AtomicBoolean armed = new AtomicBoolean(false);
+        AiProcessEventListener listener = event -> {
+            events.add(event);
+            if (armed.get() && event instanceof StatusEvent se
+                && (se.type() == StatusEventTypeEnum.READY || se.type() == StatusEventTypeEnum.FAILED)) {
+                closed.countDown();
+            }
+        };
+        FakeHttpClient fakeClient = new FakeHttpClient(List.of(END_TURN_ANSWER));
+        TestOllamaProcessManager manager = new TestOllamaProcessManager(listener, fakeClient);
+        AiSession s = newSession();
+        manager.setCurrentSession(s);
+        manager.start(null, "qwen2.5-coder:7b");
+        File home = new File(System.getProperty("user.home"));
+        manager.sendPrompt("hello", home, List.of());
+        awaitIdle(manager);
+
+        // Recalibrate AFTER the turn commits, not before start(): the standing tool-instructions pin
+        // (upserted per-turn, OllamaAiProcessManager's own PinSlotEnum.TOOLS) dwarfs one short exchange —
+        // measured at ~750+ of this turn's ~800 total tokens — so any threshold small enough to guarantee
+        // eviction via the normal 70%-of-threshold low-water mark also trips compactNow()'s own
+        // pinned-content guard (pinnedCost >= lowWater), which bails out at evicted=0 before ever reaching
+        // the eviction loop. trimTargetPercent=0 sidesteps both problems at once: the guard's own
+        // lowWater is threshold*0/100=0, so "lowWater > 0" is false and the guard never fires, and the
+        // eviction loop's target is likewise 0, so any nonzero usage is "over budget" — evicting the
+        // committed group regardless of exactly how large the pin turns out to be.
+        ContextBrokerSettings recalibrated = ContextBrokerSettings.defaults();
+        recalibrated.setTokenThreshold(1);
+        recalibrated.setTrimTargetPercent(0);
+        manager.broker.updateSettings(recalibrated);
+
+        armed.set(true);
+        boolean started = manager.compactContext();
+
+        assertTrue(started, "compactContext must start — nothing else is in flight");
+        assertTrue(closed.await(5, TimeUnit.SECONDS), "compaction must close with exactly one status");
+        assertTrue(events.stream().anyMatch(e -> e instanceof StatusEvent se && se.type() == StatusEventTypeEnum.BUSY),
+                "compactContext must report BUSY before its closing status");
+        assertTrue(events.stream().anyMatch(e -> e instanceof StatusEvent se
+                                                 && se.type() == StatusEventTypeEnum.READY
+                                                 && se.text() != null && se.text().startsWith("Compacted — ")),
+                "the earlier turn's committed group must be evicted and reported with its count");
+        assertFalse(manager.isBusy(), "a successful compaction must clear work-in-flight");
+    }
+
+    /**
+     * runWork's own exclusivity guard: a second compaction requested while the first is still in flight must
+     * decline rather than start a competing trim.
+     */
+    @Test
+    void secondCompactContextCallWhileFirstIsInFlightReturnsFalse() throws Exception {
+        AiProcessEventListener listener = event -> {
+        };
+        FakeHttpClient fakeClient = new FakeHttpClient(List.of());
+        TestOllamaProcessManager manager = new TestOllamaProcessManager(listener, fakeClient);
+        manager.setCurrentSession(newSession());
+        manager.start(null, "qwen2.5-coder:7b");
+        // An empty broker's compactNow() would otherwise return before the second call below can observe the
+        // first still in flight — held open until both calls have happened, then released so nothing leaks.
+        CountDownLatch gate = new CountDownLatch(1);
+        manager.setCompactGate(gate);
+
+        boolean first = manager.compactContext();
+        boolean second = manager.compactContext();
+        gate.countDown();
+
+        assertTrue(first, "the first call must start");
+        assertFalse(second, "a second call while the first is still in flight must decline, not race it");
     }
 
     @Test
@@ -2252,27 +2803,29 @@ class OllamaAiProcessManagerTest {
     @Test
     void reasoningEffortRejectedWith4xxIsRetriedOnceAndNeverSentAgainThisSession() throws Exception {
         List<AiProcessEvent> events = new ArrayList<>();
-        AiProcessEventListener listener = events::add;
+        AtomicReference<CountDownLatch> closer = new AtomicReference<>(new CountDownLatch(1));
+        AiProcessEventListener listener = closerTrackingListener(events, closer);
         RejectReasoningEffortHttpClient client
-                = new RejectReasoningEffortHttpClient(new ChatResult("answer", List.of(), "stop"));
+                                        = new RejectReasoningEffortHttpClient(new ChatResult("answer", List.of(), "stop"));
         TestOllamaProcessManager manager = new TestOllamaProcessManager(listener, client);
         AiSession s = newSession();
         ((OllamaSessionSettings) s.settings()).setReasoningEffort("high");
         manager.setCurrentSession(s);
         manager.start(null, "qwen2.5-coder:7b");
         manager.sendPrompt("hi", new File(System.getProperty("user.home")), List.of());
-        awaitIdle(manager);
+        assertTrue(closer.get().await(5, TimeUnit.SECONDS), "the closer for turn one never arrived within 5s");
 
         assertEquals(2, client.requests.size(), "must retry exactly once");
         assertEquals("high", client.requests.get(0).reasoningEffort());
         assertNull(client.requests.get(1).reasoningEffort(), "the retry must omit the field");
         long infoCount = events.stream().filter(e -> e instanceof StatusEvent se
-                && se.type() == StatusEventTypeEnum.INFO
-                && se.text() != null && se.text().contains(OpenAiJsonKeyEnum.REASONING_EFFORT.key())).count();
+                                                     && se.type() == StatusEventTypeEnum.INFO
+                                                     && se.text() != null && se.text().contains(OpenAiJsonKeyEnum.REASONING_EFFORT.key())).count();
         assertEquals(1, infoCount, "exactly one INFO event for the rejection");
 
+        closer.set(new CountDownLatch(1));
         manager.sendPrompt("hi again", new File(System.getProperty("user.home")), List.of());
-        awaitIdle(manager);
+        assertTrue(closer.get().await(5, TimeUnit.SECONDS), "the closer for turn two never arrived within 5s");
 
         assertEquals(3, client.requests.size());
         assertNull(client.requests.get(2).reasoningEffort(),
@@ -2311,7 +2864,8 @@ class OllamaAiProcessManagerTest {
     @Test
     void barrenRoundsExitAfterAMidTurnRejectionNeverResendsReasoningEffortToTheFallbackRequest() throws Exception {
         List<AiProcessEvent> events = new ArrayList<>();
-        AiProcessEventListener listener = events::add;
+        AtomicReference<CountDownLatch> closer = new AtomicReference<>(new CountDownLatch(1));
+        AiProcessEventListener listener = closerTrackingListener(events, closer);
         // The request sequence documented above depends on TWO unproductive rounds before the fallback,
         // so this test raises the unproductive bound rather than using the class-wide pin of 1.
         PluginSettings.setOllamaMaxUnproductiveRounds(2);
@@ -2322,7 +2876,7 @@ class OllamaAiProcessManagerTest {
         manager.setCurrentSession(s);
         manager.start(null, "qwen2.5-coder:7b");
         manager.sendPrompt("hi", new File(System.getProperty("user.home")), List.of());
-        awaitIdle(manager);
+        assertTrue(closer.get().await(5, TimeUnit.SECONDS), "the closer never arrived within 5s");
 
         assertEquals(5, client.requests.size(),
                 "expected exactly 5 requests: reject, retry, two repeated barren rounds, then the fallback — "
@@ -2333,8 +2887,8 @@ class OllamaAiProcessManagerTest {
                 + "already been told the server rejects");
 
         long infoCount = events.stream().filter(e -> e instanceof StatusEvent se
-                && se.type() == StatusEventTypeEnum.INFO
-                && se.text() != null && se.text().contains(OpenAiJsonKeyEnum.REASONING_EFFORT.key())).count();
+                                                     && se.type() == StatusEventTypeEnum.INFO
+                                                     && se.text() != null && se.text().contains(OpenAiJsonKeyEnum.REASONING_EFFORT.key())).count();
         assertEquals(1, infoCount,
                 "exactly one INFO event for the whole turn — not a second one from the fallback request");
     }
@@ -2358,7 +2912,8 @@ class OllamaAiProcessManagerTest {
             assertTrue(discovered.await(5, TimeUnit.SECONDS), "discovery did not complete");
 
             List<AiProcessEvent> events = new ArrayList<>();
-            AiProcessEventListener listener = events::add;
+            AtomicReference<CountDownLatch> closer = new AtomicReference<>(new CountDownLatch(1));
+            AiProcessEventListener listener = closerTrackingListener(events, closer);
             // A CONTRACT-FOLLOWING reply: the model ends its turn with EndTurn rather than bare prose.
             // Bare prose is narration under the EndTurn contract, so it would hit the narration bound and
             // fire a second INFO ("answered without signalling it had finished") — correct behaviour, but
@@ -2373,7 +2928,7 @@ class OllamaAiProcessManagerTest {
             manager.setCurrentSession(s);
             manager.start(null, "qwen2.5-coder:7b");
             manager.sendPrompt("hi", new File(System.getProperty("user.home")), List.of());
-            awaitIdle(manager);
+            assertTrue(closer.get().await(5, TimeUnit.SECONDS), "the closer never arrived within 5s");
 
             assertEquals(1, fakeClient.requests.size(),
                     "the pre-flight clear must strip the field before the request is even built — one clean "
@@ -2381,13 +2936,14 @@ class OllamaAiProcessManagerTest {
             assertNull(fakeClient.requests.get(0).reasoningEffort());
 
             long infoCount = events.stream().filter(e -> e instanceof StatusEvent se
-                    && se.type() == StatusEventTypeEnum.INFO).count();
+                                                         && se.type() == StatusEventTypeEnum.INFO).count();
             assertEquals(1, infoCount, "exactly one INFO in total for the whole turn — the pre-flight clear, "
-                    + "with no second one from the (never-reached) 4xx retry path");
+                                       + "with no second one from the (never-reached) 4xx retry path");
             assertTrue(events.stream().anyMatch(e -> e instanceof StatusEvent se && se.text() != null
-                    && se.text().contains("Thinking") && se.text().contains("not supported")),
+                                                     && se.text().contains("Thinking") && se.text().contains("not supported")),
                     "the one INFO must be the pre-flight clear's own message");
-        } finally {
+        }
+        finally {
             discoveryServer.stop(0);
         }
     }
@@ -2556,7 +3112,8 @@ class OllamaAiProcessManagerTest {
             while (!open) {
                 try {
                     Thread.sleep(10);
-                } catch (InterruptedException ex) {
+                }
+                catch (InterruptedException ex) {
                     // turnThread.interrupt() can land here while the turn is winding down; a Stop must not
                     // be able to release the gate, or the test's timing assumptions break.
                 }
@@ -2631,16 +3188,52 @@ class OllamaAiProcessManagerTest {
         final List<String> invokedToolNames = new ArrayList<>();
         private volatile Path contextBaseDir = Path.of(System.getProperty("java.io.tmpdir"),
                 "ollama-test-" + UUID.randomUUID());
+        private volatile boolean throwOnCompact = false;
+        private volatile CountDownLatch compactGate;
 
         TestOllamaProcessManager(AiProcessEventListener listener, HttpAiClient fakeClient) {
             this(listener, fakeClient, null);
         }
 
         TestOllamaProcessManager(AiProcessEventListener listener, HttpAiClient fakeClient,
-                String fixedToolResult) {
+                                 String fixedToolResult) {
             super(listener);
             this.fakeClient = fakeClient;
             this.fixedToolResult = fixedToolResult;
+        }
+
+        /**
+         * Forces {@link #invokeCompactNow} to fail without needing a broker genuinely wired to trip an
+         * exception — proves {@code compactContext}'s FAILED path.
+         */
+        void setThrowOnCompact(boolean throwOnCompact) {
+            this.throwOnCompact = throwOnCompact;
+        }
+
+        /**
+         * Holds {@link #invokeCompactNow} on the background thread until the test counts {@code gate} down —
+         * an empty broker's real {@code compactNow()} otherwise returns before a second, synchronous
+         * {@code compactContext()} call can observe the first one still in flight.
+         */
+        void setCompactGate(CountDownLatch gate) {
+            this.compactGate = gate;
+        }
+
+        @Override
+        int invokeCompactNow(AbstractChatContextBroker b) {
+            if (throwOnCompact) {
+                throw new IllegalStateException("boom");
+            }
+            CountDownLatch gate = compactGate;
+            if (gate != null) {
+                try {
+                    gate.await();
+                }
+                catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                }
+            }
+            return super.invokeCompactNow(b);
         }
 
         /**
@@ -2714,7 +3307,7 @@ class OllamaAiProcessManagerTest {
 
                 @Override
                 public String handle(ToolRequestArguments args,
-                        kiwi.ingenuity.netbeans.plugin.aicoder.process.session.AbstractAiSession session) {
+                                     kiwi.ingenuity.netbeans.plugin.aicoder.process.session.AbstractAiSession session) {
                     return "ok";
                 }
             });

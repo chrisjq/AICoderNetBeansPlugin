@@ -6,11 +6,11 @@ import java.util.List;
 import java.util.Map;
 import javax.swing.SwingUtilities;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.AiTypeEnum;
+import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.githubcopilot.events.GithubCopilotReasoningEffortsEvent;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.githubcopilot.settings.GithubCopilotPluginSettings;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.githubcopilot.settings.GithubCopilotSessionSettings;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.session.AiSession;
 import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import org.junit.jupiter.api.Test;
@@ -27,19 +27,22 @@ class GithubCopilotAiInfoBarExtensionTest {
     }
 
     @Test
-    void compactButtonIsDisabledForTheDurationOfACompaction() throws Exception {
-        // onCompactingChanged is the only thing that ever disables this button — without it Compact stayed pressable
-        // mid-compaction and the second press reached the SDK ("Compaction already in progress").
+    void onBusyChangedDisablesEveryActionControlWhileBusyAndReEnablesWhenReady() throws Exception {
+        // The busy/ready lock: busy disables every action control — Compact, the model combo and the
+        // reasoning-effort combo — and ready re-enables them all, so the model combo cannot be pressed into an
+        // in-flight compaction or turn.
         GithubCopilotAiInfoBarExtension ext = new GithubCopilotAiInfoBarExtension(
-                newSession("gh-ext-compacting", new GithubCopilotSessionSettings()), null);
-        javax.swing.JComponent compactBtn = ext.createComponents().get(2);
-        assertTrue(compactBtn.isEnabled(), "Compact starts enabled");
+                newSession("gh-ext-busy", new GithubCopilotSessionSettings()), null);
+        List<javax.swing.JComponent> actions = ext.createComponents().subList(0, 3);
+        assertTrue(actions.stream().allMatch(javax.swing.JComponent::isEnabled), "all action controls start enabled");
 
-        SwingUtilities.invokeAndWait(() -> ext.onCompactingChanged(true));
-        assertFalse(compactBtn.isEnabled(), "a compaction in flight must disable Compact");
+        SwingUtilities.invokeAndWait(() -> ext.onBusyChanged(true));
+        assertTrue(actions.stream().noneMatch(javax.swing.JComponent::isEnabled),
+                "busy must disable Compact, the model combo and the reasoning-effort combo");
 
-        SwingUtilities.invokeAndWait(() -> ext.onCompactingChanged(false));
-        assertTrue(compactBtn.isEnabled(), "Compact must come back once the compaction ends");
+        SwingUtilities.invokeAndWait(() -> ext.onBusyChanged(false));
+        assertTrue(actions.stream().allMatch(javax.swing.JComponent::isEnabled),
+                "ready must re-enable every action control");
     }
 
     @Test
@@ -50,8 +53,9 @@ class GithubCopilotAiInfoBarExtensionTest {
         // getSelectedModel(), not assumed to equal GithubCopilotPluginSettings.getModel() — a fresh editable
         // JComboBox's getSelectedItem() and its editor's displayed text are not guaranteed to agree, the same
         // divergence setAvailableModels already works around).
-        GithubCopilotPluginSettings.setModelReasoningEffortInfo(Map.of(ext.getSelectedModel(), List.of("low", "high")), Map.of());
-        try {
+        SwingUtilities.invokeAndWait(() -> ext.onPropertyEvent(new GithubCopilotReasoningEffortsEvent(
+                Map.of(ext.getSelectedModel(), List.of("low", "high")), Map.of())));
+        {
             List<String> notified = new ArrayList<>();
             ext.addListener(new GithubCopilotInfoBarListener() {
                 @Override
@@ -69,17 +73,10 @@ class GithubCopilotAiInfoBarExtensionTest {
             });
 
             settings.setReasoningEffort("high");
-            ext.onSessionSettingsChanged(settings);
-            // onSessionSettingsChanged's effort-sync routes through setSelectedReasoningEffort ->
-            // refreshReasoningEffortOptions, which defers to the EDT via invokeLater when called off it (as this
-            // test thread is) — flush the queue before asserting, or the getter reads pre-update state.
-            SwingUtilities.invokeAndWait(() -> {
-            });
+            SwingUtilities.invokeAndWait(() -> ext.onSessionSettingsChanged(settings));
 
             assertEquals("high", ext.getSelectedReasoningEffort());
             assertTrue(notified.isEmpty(), "syncing from settings must not notify listeners as if the user picked it");
-        } finally {
-            GithubCopilotPluginSettings.setModelReasoningEffortInfo(Map.of(), Map.of());
         }
     }
 
@@ -90,19 +87,16 @@ class GithubCopilotAiInfoBarExtensionTest {
         GithubCopilotSessionSettings settings = new GithubCopilotSessionSettings();
         // settings.setReasoningEffort(...) never called — session carries no effort of its own.
         GithubCopilotAiInfoBarExtension ext = new GithubCopilotAiInfoBarExtension(newSession("gh-ext-2", settings), null);
-        GithubCopilotPluginSettings.setModelReasoningEffortInfo(Map.of(ext.getSelectedModel(), List.of("low", "medium")), Map.of());
+        SwingUtilities.invokeAndWait(() -> ext.onPropertyEvent(new GithubCopilotReasoningEffortsEvent(
+                Map.of(ext.getSelectedModel(), List.of("low", "medium")), Map.of())));
         try {
-            ext.onSessionSettingsChanged(settings);
-            // Flush the EDT: the effort-sync's refreshReasoningEffortOptions call defers via invokeLater when
-            // called off it, as this test thread is.
-            SwingUtilities.invokeAndWait(() -> {
-            });
+            SwingUtilities.invokeAndWait(() -> ext.onSessionSettingsChanged(settings));
 
             assertEquals("medium", ext.getSelectedReasoningEffort(),
                     "with no session value, the combo must fall back to the global default rather than blanking");
-        } finally {
+        }
+        finally {
             GithubCopilotPluginSettings.setReasoningEffort(globalBefore);
-            GithubCopilotPluginSettings.setModelReasoningEffortInfo(Map.of(), Map.of());
         }
     }
 
@@ -122,14 +116,13 @@ class GithubCopilotAiInfoBarExtensionTest {
             // No setModelReasoningEffortInfo call — the per-model cache is empty for whatever model this combo is
             // showing, i.e. discovery has not (yet) reported support for anything.
 
-            ext.onSessionSettingsChanged(settings);
-            SwingUtilities.invokeAndWait(() -> {
-            });
+            SwingUtilities.invokeAndWait(() -> ext.onSessionSettingsChanged(settings));
 
             assertNull(ext.getSelectedReasoningEffort(),
                     "with no live discovery data for the current model, the combo must show \"(model default)\" "
                     + "— never the global default, even though one is configured");
-        } finally {
+        }
+        finally {
             GithubCopilotPluginSettings.setReasoningEffort(globalBefore);
         }
     }

@@ -2,17 +2,26 @@ package kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.ollama;
 
 import java.io.File;
 import java.time.Instant;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.concurrent.atomic.AtomicReference;
+import javax.swing.JComboBox;
 import javax.swing.SwingUtilities;
+import kiwi.ingenuity.netbeans.plugin.aicoder.ai.AiModelCatalog;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.AiSessionHost;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.AiTypeEnum;
+import kiwi.ingenuity.netbeans.plugin.aicoder.ai.events.StatusEvent;
+import kiwi.ingenuity.netbeans.plugin.aicoder.ai.events.StatusEventTypeEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.ollama.settings.OllamaPluginSettings;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.ollama.settings.OllamaSessionSettings;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.ollama.ui.OllamaAiInfoBarExtension;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.session.AiSession;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.settings.AiSessionSettings;
+import kiwi.ingenuity.netbeans.plugin.aicoder.process.events.AiProcessEvent;
+import kiwi.ingenuity.netbeans.plugin.aicoder.process.events.AiProcessEventListener;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import org.junit.jupiter.api.Test;
 
 /**
@@ -47,8 +56,12 @@ class OllamaAiImplementationTest {
     }
 
     private static OllamaAiImplementation implFor(AiSession session) {
-        return new OllamaAiImplementation(e -> {
-        }, null) {
+        return implFor(session, e -> {
+        });
+    }
+
+    private static OllamaAiImplementation implFor(AiSession session, AiProcessEventListener listener) {
+        return new OllamaAiImplementation(listener, null) {
             {
                 currentSession = session;
             }
@@ -60,10 +73,6 @@ class OllamaAiImplementationTest {
             @Override
             public File resolveWorkDir() {
                 return null;
-            }
-
-            @Override
-            public void suppressNextTurn(String statusMessage, String completionMessage) {
             }
 
             @Override
@@ -146,7 +155,8 @@ class OllamaAiImplementationTest {
                     "must display the global default rather than \"(model default)\" when one is set");
             assertNull(settings.reasoningEffort(),
                     "seeding for display must never write the global fallback back into the session's own settings");
-        } finally {
+        }
+        finally {
             OllamaPluginSettings.setReasoningEffort(before);
         }
     }
@@ -170,10 +180,6 @@ class OllamaAiImplementationTest {
             }
 
             @Override
-            public void suppressNextTurn(String statusMessage, String completionMessage) {
-            }
-
-            @Override
             public AiSessionSettings getSessionSettings() {
                 return settings;
             }
@@ -188,5 +194,56 @@ class OllamaAiImplementationTest {
 
         assertNull(settings.reasoningEffort());
         assertEquals(settings, updated.get(), "the cleared settings must actually be persisted through the host");
+    }
+
+    /**
+     * The bus keeps no history, so a bar opened after discovery finished would show only the stale settings
+     * list unless {@code createInfoBarExtension} seeds it from the catalog's cache.
+     */
+    @Test
+    void createInfoBarExtension_seedsALateBarFromTheCatalogsCachedModels() throws Exception {
+        AiModelCatalog catalog = OllamaAiImplementation.modelCatalog();
+        List<String> before = catalog.getCachedModels();
+        try {
+            catalog.publish(List.of("late-bar-model-a", "late-bar-model-b"));
+            OllamaSessionSettings settings = newSettings();
+            AiSession session = newSession("ollama-late-bar-1", settings);
+            OllamaAiImplementation impl = implFor(session);
+
+            OllamaAiInfoBarExtension[] extHolder = new OllamaAiInfoBarExtension[1];
+            SwingUtilities.invokeAndWait(() -> extHolder[0] = impl.createInfoBarExtension(session, fakeHost(settings)));
+            SwingUtilities.invokeAndWait(() -> {
+            });
+
+            JComboBox<?> modelCombo = (JComboBox<?>) extHolder[0].createComponents().get(0);
+            List<Object> items = new ArrayList<>();
+            for (int i = 0; i < modelCombo.getItemCount(); i++) {
+                items.add(modelCombo.getItemAt(i));
+            }
+            assertEquals(List.of("late-bar-model-a", "late-bar-model-b"), items,
+                    "a bar created after discovery must be seeded with the catalog's cached models");
+        }
+        finally {
+            catalog.publish(before);
+        }
+    }
+
+    /**
+     * The guard: refusing while the backend is not running must never reach
+     * {@code OllamaAiProcessManager#compactContext} — it must post the INFO notice and stop there.
+     */
+    @Test
+    void onCompactRequested_postsInfoWhenNotRunning() {
+        List<AiProcessEvent> events = new ArrayList<>();
+        OllamaSessionSettings settings = newSettings();
+        AiSession session = newSession("ollama-compact-guard-1", settings);
+        OllamaAiImplementation impl = implFor(session, events::add);
+
+        impl.onCompactRequested();
+
+        assertTrue(events.stream().anyMatch(e -> e instanceof StatusEvent se
+                                                 && se.type() == StatusEventTypeEnum.INFO
+                                                 && "Wait for Ollama to finish before compacting".equals(se.text())),
+                "must refuse with an INFO notice while the backend is not running, never attempt the compaction");
     }
 }

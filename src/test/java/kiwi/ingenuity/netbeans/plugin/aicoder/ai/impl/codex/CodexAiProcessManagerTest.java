@@ -18,6 +18,7 @@ import java.util.function.BooleanSupplier;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.AiTypeEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.events.StatusEvent;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.events.StatusEventTypeEnum;
+import kiwi.ingenuity.netbeans.plugin.aicoder.ai.events.TurnCompleteEvent;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.codex.events.CodexReasoningEffortEvent;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.codex.settings.CodexSessionSettings;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.session.AiSession;
@@ -32,14 +33,11 @@ import org.junit.jupiter.api.Test;
 class CodexAiProcessManagerTest {
 
     /**
-     * Bind the MCP hook server on an ephemeral port instead of the configured
-     * one, as every other test that starts a manager does. Without this the
-     * registration in {@code start()} tries to bind the real port, which a
-     * running NetBeans with this plugin installed already holds — the bind
-     * fails and start() reports it with a StatusEvent INFO. The
-     * effort-validation tests below count INFO events, so that stray one made
-     * them fail on any developer machine with the IDE open while passing
-     * everywhere the IDE was not running.
+     * Bind the MCP hook server on an ephemeral port instead of the configured one, as every other test that
+     * starts a manager does. Without this the registration in {@code start()} tries to bind the real port,
+     * which a running NetBeans with this plugin installed already holds — the bind fails and start() reports
+     * it with a StatusEvent INFO. The effort-validation tests below count INFO events, so that stray one made
+     * them fail on any developer machine with the IDE open while passing everywhere the IDE was not running.
      */
     @BeforeEach
     void useEphemeralMcpPort() {
@@ -72,23 +70,22 @@ class CodexAiProcessManagerTest {
     }
 
     /**
-     * A minimal real {@code sh} process speaking just enough of the handshake
-     * to satisfy {@code spawnAndHandshake}: replies to {@code initialize} (id
-     * 1) then {@code thread/start} (id 2), then exits with {@code exitCode} —
-     * simulating a crash immediately after a successful handshake. Ids are
-     * deterministic because each spawn gets a fresh {@code CodexJsonRpcClient}
-     * whose id counter always starts at 1.
+     * A minimal real {@code sh} process speaking just enough of the handshake to satisfy
+     * {@code spawnAndHandshake}: replies to {@code initialize} (id 1) then {@code thread/start} (id 2), then
+     * exits with {@code exitCode} — simulating a crash immediately after a successful handshake. Ids are
+     * deterministic because each spawn gets a fresh {@code CodexJsonRpcClient} whose id counter always starts
+     * at 1.
      */
     private static File fakeCodexThatExitsAfterHandshake(int exitCode) throws IOException {
         File script = File.createTempFile("fake-codex-", ".sh");
         script.deleteOnExit();
         String body = "#!/bin/sh\n"
-                + "read -r _req1\n"
-                + "printf '{\"jsonrpc\":\"2.0\",\"id\":1,\"result\":{\"userAgent\":\"fake\",\"codexHome\":\"/tmp\"}}\\n'\n"
-                + "read -r _notif\n"
-                + "read -r _req2\n"
-                + "printf '{\"jsonrpc\":\"2.0\",\"id\":2,\"result\":{\"thread\":{\"id\":\"fake-thread-id\"},\"model\":\"fake-model\"}}\\n'\n"
-                + "exit " + exitCode + "\n";
+                      + "read -r _req1\n"
+                      + "printf '{\"jsonrpc\":\"2.0\",\"id\":1,\"result\":{\"userAgent\":\"fake\",\"codexHome\":\"/tmp\"}}\\n'\n"
+                      + "read -r _notif\n"
+                      + "read -r _req2\n"
+                      + "printf '{\"jsonrpc\":\"2.0\",\"id\":2,\"result\":{\"thread\":{\"id\":\"fake-thread-id\"},\"model\":\"fake-model\"}}\\n'\n"
+                      + "exit " + exitCode + "\n";
         Files.writeString(script.toPath(), body, StandardCharsets.UTF_8);
         script.setExecutable(true);
         return script;
@@ -103,56 +100,53 @@ class CodexAiProcessManagerTest {
     // ActiveTurnNotSteerable) can only arrive as a genuine JSON-RPC error, never a
     // "successful" body. ----
     /**
-     * Handshake identical to {@link #fakeCodexThatExitsAfterHandshake} plus the
-     * reasoning-effort {@code model/list} probe (id 3, answered empty), then
-     * answers {@code turn/start} (id 4) so a turn is genuinely in flight,
-     * {@code touch}es {@code markerFile} the instant {@code turn/steer} (id 5)
-     * actually arrives — proving the request was sent, not just that no
-     * exception was thrown — then answers it with {@code steerResponseLine} and
-     * sleeps so the connection stays up for the rest of the test instead of
+     * Handshake identical to {@link #fakeCodexThatExitsAfterHandshake} plus the reasoning-effort
+     * {@code model/list} probe (id 3, answered empty), then answers {@code turn/start} (id 4) so a turn is
+     * genuinely in flight, {@code touch}es {@code markerFile} the instant {@code turn/steer} (id 5) actually
+     * arrives — proving the request was sent, not just that no exception was thrown — then answers it with
+     * {@code steerResponseLine} and sleeps so the connection stays up for the rest of the test instead of
      * triggering a crash/EXITED event.
      */
     private static File fakeCodexHandshakeTurnThenSteer(File markerFile, String steerResponseLine) throws IOException {
         File script = File.createTempFile("fake-codex-", ".sh");
         script.deleteOnExit();
         String body = "#!/bin/sh\n"
-                + "read -r _req1\n"
-                + "printf '{\"jsonrpc\":\"2.0\",\"id\":1,\"result\":{\"userAgent\":\"fake\",\"codexHome\":\"/tmp\"}}\\n'\n"
-                + "read -r _notif\n"
-                + "read -r _req2\n"
-                + "printf '{\"jsonrpc\":\"2.0\",\"id\":2,\"result\":{\"thread\":{\"id\":\"fake-thread-id\"},\"model\":\"fake-model\"}}\\n'\n"
-                + "read -r _req3\n"
-                + "printf '{\"jsonrpc\":\"2.0\",\"id\":3,\"result\":{\"data\":[]}}\\n'\n"
-                + "read -r _req4\n"
-                + "printf '{\"jsonrpc\":\"2.0\",\"id\":4,\"result\":{\"turn\":{\"id\":\"fake-turn-id\",\"items\":[],\"status\":\"inProgress\"}}}\\n'\n"
-                + "read -r _req5\n"
-                + "touch '" + markerFile.getAbsolutePath() + "'\n"
-                + "printf '" + steerResponseLine + "\\n'\n"
-                + "sleep 5\n";
+                      + "read -r _req1\n"
+                      + "printf '{\"jsonrpc\":\"2.0\",\"id\":1,\"result\":{\"userAgent\":\"fake\",\"codexHome\":\"/tmp\"}}\\n'\n"
+                      + "read -r _notif\n"
+                      + "read -r _req2\n"
+                      + "printf '{\"jsonrpc\":\"2.0\",\"id\":2,\"result\":{\"thread\":{\"id\":\"fake-thread-id\"},\"model\":\"fake-model\"}}\\n'\n"
+                      + "read -r _req3\n"
+                      + "printf '{\"jsonrpc\":\"2.0\",\"id\":3,\"result\":{\"data\":[]}}\\n'\n"
+                      + "read -r _req4\n"
+                      + "printf '{\"jsonrpc\":\"2.0\",\"id\":4,\"result\":{\"turn\":{\"id\":\"fake-turn-id\",\"items\":[],\"status\":\"inProgress\"}}}\\n'\n"
+                      + "read -r _req5\n"
+                      + "touch '" + markerFile.getAbsolutePath() + "'\n"
+                      + "printf '" + steerResponseLine + "\\n'\n"
+                      + "sleep 5\n";
         Files.writeString(script.toPath(), body, StandardCharsets.UTF_8);
         script.setExecutable(true);
         return script;
     }
 
     /**
-     * Handshake identical to {@link #fakeCodexThatExitsAfterHandshake} plus the
-     * reasoning-effort {@code model/list} probe (id 3, answered empty), but
-     * sleeps afterward instead of exiting — a real, connected, idle
-     * (never-processing) session with no turn started, for testing the
-     * Mail-while-idle no-op path.
+     * Handshake identical to {@link #fakeCodexThatExitsAfterHandshake} plus the reasoning-effort
+     * {@code model/list} probe (id 3, answered empty), but sleeps afterward instead of exiting — a real,
+     * connected, idle (never-processing) session with no turn started, for testing the Mail-while-idle no-op
+     * path.
      */
     private static File fakeCodexHandshakeThenSleep() throws IOException {
         File script = File.createTempFile("fake-codex-", ".sh");
         script.deleteOnExit();
         String body = "#!/bin/sh\n"
-                + "read -r _req1\n"
-                + "printf '{\"jsonrpc\":\"2.0\",\"id\":1,\"result\":{\"userAgent\":\"fake\",\"codexHome\":\"/tmp\"}}\\n'\n"
-                + "read -r _notif\n"
-                + "read -r _req2\n"
-                + "printf '{\"jsonrpc\":\"2.0\",\"id\":2,\"result\":{\"thread\":{\"id\":\"fake-thread-id\"},\"model\":\"fake-model\"}}\\n'\n"
-                + "read -r _req3\n"
-                + "printf '{\"jsonrpc\":\"2.0\",\"id\":3,\"result\":{\"data\":[]}}\\n'\n"
-                + "sleep 5\n";
+                      + "read -r _req1\n"
+                      + "printf '{\"jsonrpc\":\"2.0\",\"id\":1,\"result\":{\"userAgent\":\"fake\",\"codexHome\":\"/tmp\"}}\\n'\n"
+                      + "read -r _notif\n"
+                      + "read -r _req2\n"
+                      + "printf '{\"jsonrpc\":\"2.0\",\"id\":2,\"result\":{\"thread\":{\"id\":\"fake-thread-id\"},\"model\":\"fake-model\"}}\\n'\n"
+                      + "read -r _req3\n"
+                      + "printf '{\"jsonrpc\":\"2.0\",\"id\":3,\"result\":{\"data\":[]}}\\n'\n"
+                      + "sleep 5\n";
         Files.writeString(script.toPath(), body, StandardCharsets.UTF_8);
         script.setExecutable(true);
         return script;
@@ -160,7 +154,7 @@ class CodexAiProcessManagerTest {
 
     private static boolean noStoppedOrFailedEvent(List<AiProcessEvent> events) {
         return events.stream().noneMatch(e -> e instanceof StatusEvent se
-                && (se.type() == StatusEventTypeEnum.STOPPED || se.type() == StatusEventTypeEnum.FAILED));
+                                              && (se.type() == StatusEventTypeEnum.STOPPED || se.type() == StatusEventTypeEnum.FAILED));
     }
 
     // ---- buildInitializeParams: shape confirmed by live probe against codex-cli 0.147.0 ----
@@ -364,8 +358,8 @@ class CodexAiProcessManagerTest {
     @Test
     void extractSupportedReasoningEffortsReadsAndDedupes() {
         JsonObject m = json("{\"supportedReasoningEfforts\":["
-                + "{\"reasoningEffort\":\"high\",\"description\":\"thorough\"},"
-                + "{\"reasoningEffort\":\"high\"},{\"reasoningEffort\":\"low\"}]}");
+                            + "{\"reasoningEffort\":\"high\",\"description\":\"thorough\"},"
+                            + "{\"reasoningEffort\":\"high\"},{\"reasoningEffort\":\"low\"}]}");
         assertEquals(List.of("high", "low"), CodexAiProcessManager.extractSupportedReasoningEfforts(m));
         assertTrue(CodexAiProcessManager.extractSupportedReasoningEfforts(json("{}")).isEmpty());
         assertTrue(CodexAiProcessManager.extractSupportedReasoningEfforts(json("{\"supportedReasoningEfforts\":\"oops\"}")).isEmpty());
@@ -442,12 +436,15 @@ class CodexAiProcessManagerTest {
     }
 
     @Test
-    void sendPromptIsNoOpWhenNotRunning() {
+    void sendPromptWhenNotRunningIsRefusedWithInfoThenTurnCompleteOnceEach() {
         List<AiProcessEvent> events = new ArrayList<>();
         CodexAiProcessManager manager = new CodexAiProcessManager(events::add);
         // running is false — never started.
         assertDoesNotThrow(() -> manager.sendPrompt("hello", new File(System.getProperty("java.io.tmpdir")), List.of()));
-        assertTrue(events.isEmpty());
+        assertEquals(2, events.size(), "a refusal is exactly INFO then TurnComplete: " + events);
+        assertTrue(events.get(0) instanceof StatusEvent info && info.type() == StatusEventTypeEnum.INFO
+                   && !info.text().isBlank(), "first the INFO carrying the reason: " + events.get(0));
+        assertTrue(events.get(1) instanceof TurnCompleteEvent, "then the TurnCompleteEvent closing the UI's turn");
         assertFalse(manager.isProcessing());
     }
 
@@ -660,14 +657,14 @@ class CodexAiProcessManagerTest {
         File script = File.createTempFile("fake-codex-reasoning-", ".sh");
         script.deleteOnExit();
         String body = "#!/bin/sh\n"
-                + "read -r _req1\n"
-                + "printf '{\"jsonrpc\":\"2.0\",\"id\":1,\"result\":{\"userAgent\":\"fake\",\"codexHome\":\"/tmp\"}}\\n'\n"
-                + "read -r _notif\n"
-                + "read -r _req2\n"
-                + "printf '{\"jsonrpc\":\"2.0\",\"id\":2,\"result\":{\"thread\":{\"id\":\"fake-thread-id\"},\"model\":\"fake-model\",\"reasoningEffort\":\"medium\"}}\\n'\n"
-                + "read -r _req3\n"
-                + "printf '{\"jsonrpc\":\"2.0\",\"id\":3,\"result\":{\"data\":[{\"id\":\"fake-model\",\"supportedReasoningEfforts\":[{\"reasoningEffort\":\"high\"},{\"reasoningEffort\":\"low\"}],\"defaultReasoningEffort\":\"high\"}]}}\\n'\n"
-                + "sleep 5\n";
+                      + "read -r _req1\n"
+                      + "printf '{\"jsonrpc\":\"2.0\",\"id\":1,\"result\":{\"userAgent\":\"fake\",\"codexHome\":\"/tmp\"}}\\n'\n"
+                      + "read -r _notif\n"
+                      + "read -r _req2\n"
+                      + "printf '{\"jsonrpc\":\"2.0\",\"id\":2,\"result\":{\"thread\":{\"id\":\"fake-thread-id\"},\"model\":\"fake-model\",\"reasoningEffort\":\"medium\"}}\\n'\n"
+                      + "read -r _req3\n"
+                      + "printf '{\"jsonrpc\":\"2.0\",\"id\":3,\"result\":{\"data\":[{\"id\":\"fake-model\",\"supportedReasoningEfforts\":[{\"reasoningEffort\":\"high\"},{\"reasoningEffort\":\"low\"}],\"defaultReasoningEffort\":\"high\"}]}}\\n'\n"
+                      + "sleep 5\n";
         Files.writeString(script.toPath(), body, StandardCharsets.UTF_8);
         script.setExecutable(true);
 
@@ -690,8 +687,9 @@ class CodexAiProcessManagerTest {
 
             assertEquals(List.of("high", "low"), CodexReasoningEffortCatalog.supportedEffortsFor("fake-model"));
             assertTrue(events.stream().noneMatch(e -> e instanceof StatusEvent se
-                    && se.type() == StatusEventTypeEnum.INFO), "unset stored effort must not fire validation INFO");
-        } finally {
+                                                      && se.type() == StatusEventTypeEnum.INFO), "unset stored effort must not fire validation INFO");
+        }
+        finally {
             CodexReasoningEffortCatalog.clear();
             manager.stop();
         }
@@ -705,14 +703,14 @@ class CodexAiProcessManagerTest {
         File script = File.createTempFile("fake-codex-clear-persist-", ".sh");
         script.deleteOnExit();
         String body = "#!/bin/sh\n"
-                + "read -r _req1\n"
-                + "printf '{\"jsonrpc\":\"2.0\",\"id\":1,\"result\":{\"userAgent\":\"fake\",\"codexHome\":\"/tmp\"}}\\n'\n"
-                + "read -r _notif\n"
-                + "read -r _req2\n"
-                + "printf '{\"jsonrpc\":\"2.0\",\"id\":2,\"result\":{\"thread\":{\"id\":\"fake-thread-id\"},\"model\":\"fake-model\"}}\\n'\n"
-                + "read -r _req3\n"
-                + "printf '{\"jsonrpc\":\"2.0\",\"id\":3,\"result\":{\"data\":[]}}\\n'\n"
-                + "sleep 5\n";
+                      + "read -r _req1\n"
+                      + "printf '{\"jsonrpc\":\"2.0\",\"id\":1,\"result\":{\"userAgent\":\"fake\",\"codexHome\":\"/tmp\"}}\\n'\n"
+                      + "read -r _notif\n"
+                      + "read -r _req2\n"
+                      + "printf '{\"jsonrpc\":\"2.0\",\"id\":2,\"result\":{\"thread\":{\"id\":\"fake-thread-id\"},\"model\":\"fake-model\"}}\\n'\n"
+                      + "read -r _req3\n"
+                      + "printf '{\"jsonrpc\":\"2.0\",\"id\":3,\"result\":{\"data\":[]}}\\n'\n"
+                      + "sleep 5\n";
         Files.writeString(script.toPath(), body, StandardCharsets.UTF_8);
         script.setExecutable(true);
 
@@ -734,7 +732,8 @@ class CodexAiProcessManagerTest {
                     + "CLEARED effort — otherwise the clear is lost on restart and the INFO repeats "
                     + "every session");
             assertNull(settings.effort(), "stored effort must be cleared in the live settings");
-        } finally {
+        }
+        finally {
             CodexReasoningEffortCatalog.clear();
             manager.stop();
         }
@@ -749,14 +748,14 @@ class CodexAiProcessManagerTest {
         File script = File.createTempFile("fake-codex-two-handshake-", ".sh");
         script.deleteOnExit();
         String body = "#!/bin/sh\n"
-                + "read -r _req1\n"
-                + "printf '{\"jsonrpc\":\"2.0\",\"id\":1,\"result\":{\"userAgent\":\"fake\",\"codexHome\":\"/tmp\"}}\\n'\n"
-                + "read -r _notif\n"
-                + "read -r _req2\n"
-                + "printf '{\"jsonrpc\":\"2.0\",\"id\":2,\"result\":{\"thread\":{\"id\":\"fake-thread-id\"},\"model\":\"fake-model\"}}\\n'\n"
-                + "read -r _req3\n"
-                + "printf '{\"jsonrpc\":\"2.0\",\"id\":3,\"result\":{\"data\":[]}}\\n'\n"
-                + "sleep 5\n";
+                      + "read -r _req1\n"
+                      + "printf '{\"jsonrpc\":\"2.0\",\"id\":1,\"result\":{\"userAgent\":\"fake\",\"codexHome\":\"/tmp\"}}\\n'\n"
+                      + "read -r _notif\n"
+                      + "read -r _req2\n"
+                      + "printf '{\"jsonrpc\":\"2.0\",\"id\":2,\"result\":{\"thread\":{\"id\":\"fake-thread-id\"},\"model\":\"fake-model\"}}\\n'\n"
+                      + "read -r _req3\n"
+                      + "printf '{\"jsonrpc\":\"2.0\",\"id\":3,\"result\":{\"data\":[]}}\\n'\n"
+                      + "sleep 5\n";
         Files.writeString(script.toPath(), body, StandardCharsets.UTF_8);
         script.setExecutable(true);
 
@@ -777,7 +776,8 @@ class CodexAiProcessManagerTest {
                     "exactly one INFO across two back-to-back handshakes — the clear is read-and-done "
                     + "synchronously, so the second handshake sees effort already null");
             assertNull(settings.effort(), "the stored effort stays cleared across both handshakes");
-        } finally {
+        }
+        finally {
             CodexReasoningEffortCatalog.clear();
             manager.stop();
         }
@@ -791,17 +791,17 @@ class CodexAiProcessManagerTest {
         File script = File.createTempFile("fake-codex-effort-delivery-", ".sh");
         script.deleteOnExit();
         String body = "#!/bin/sh\n"
-                + "read -r _req1\n"
-                + "printf '{\"jsonrpc\":\"2.0\",\"id\":1,\"result\":{\"userAgent\":\"fake\",\"codexHome\":\"/tmp\"}}\\n'\n"
-                + "read -r _notif\n"
-                + "read -r _req2\n"
-                + "printf '{\"jsonrpc\":\"2.0\",\"id\":2,\"result\":{\"thread\":{\"id\":\"fake-thread-id\"},\"model\":\"fake-model\"}}\\n'\n"
-                + "read -r _req3\n"
-                + "printf '{\"jsonrpc\":\"2.0\",\"id\":3,\"result\":{\"data\":[{\"id\":\"fake-model\",\"supportedReasoningEfforts\":[{\"reasoningEffort\":\"high\"},{\"reasoningEffort\":\"low\"}],\"defaultReasoningEffort\":\"high\"}]}}\\n'\n"
-                + "read -r _req4\n"
-                + "printf '%s\\n' \"$_req4\" >> '" + marker.getAbsolutePath() + "'\n"
-                + "printf '{\"jsonrpc\":\"2.0\",\"id\":4,\"result\":{\"turn\":{\"id\":\"fake-turn-id\",\"items\":[],\"status\":\"inProgress\"}}}\\n'\n"
-                + "sleep 5\n";
+                      + "read -r _req1\n"
+                      + "printf '{\"jsonrpc\":\"2.0\",\"id\":1,\"result\":{\"userAgent\":\"fake\",\"codexHome\":\"/tmp\"}}\\n'\n"
+                      + "read -r _notif\n"
+                      + "read -r _req2\n"
+                      + "printf '{\"jsonrpc\":\"2.0\",\"id\":2,\"result\":{\"thread\":{\"id\":\"fake-thread-id\"},\"model\":\"fake-model\"}}\\n'\n"
+                      + "read -r _req3\n"
+                      + "printf '{\"jsonrpc\":\"2.0\",\"id\":3,\"result\":{\"data\":[{\"id\":\"fake-model\",\"supportedReasoningEfforts\":[{\"reasoningEffort\":\"high\"},{\"reasoningEffort\":\"low\"}],\"defaultReasoningEffort\":\"high\"}]}}\\n'\n"
+                      + "read -r _req4\n"
+                      + "printf '%s\\n' \"$_req4\" >> '" + marker.getAbsolutePath() + "'\n"
+                      + "printf '{\"jsonrpc\":\"2.0\",\"id\":4,\"result\":{\"turn\":{\"id\":\"fake-turn-id\",\"items\":[],\"status\":\"inProgress\"}}}\\n'\n"
+                      + "sleep 5\n";
         Files.writeString(script.toPath(), body, StandardCharsets.UTF_8);
         script.setExecutable(true);
 
@@ -819,7 +819,8 @@ class CodexAiProcessManagerTest {
             String request = Files.readString(marker.toPath(), StandardCharsets.UTF_8);
             assertTrue(request.contains("\"effort\":\"high\""),
                     "the session's stored effort must reach the actual turn/start params, got: " + request);
-        } finally {
+        }
+        finally {
             CodexReasoningEffortCatalog.clear();
             manager.stop();
         }
@@ -859,7 +860,7 @@ class CodexAiProcessManagerTest {
                 args.get(3));
         assertEquals("-c", args.get(4));
         assertEquals("mcp_servers." + CodexAiProcessManager.MCP_SERVER_NAME + ".tool_timeout_sec="
-                + TimeUnit.MILLISECONDS.toSeconds(CodexTimeoutEnum.MCP_TOOL_TIMEOUT_MILLIS.millis()), args.get(5));
+                     + TimeUnit.MILLISECONDS.toSeconds(CodexTimeoutEnum.MCP_TOOL_TIMEOUT_MILLIS.millis()), args.get(5));
     }
 
     // ---- extractModel: thread/start echoes the applied model back as a top-level
@@ -955,13 +956,11 @@ class CodexAiProcessManagerTest {
     }
 
     /**
-     * {@code processing}/{@code cancelledByUser}/{@code currentProcess} are
-     * {@code protected} on the base class in a different package — a subclass
-     * (even a test-only one) can set them from its own code, a plain top-level
-     * test class cannot. Exists purely to simulate "a turn was in flight" /
-     * "the user pressed stop" without driving a real handshake for tests that
-     * only care about {@code handleProcessExit}/{@code onHandlerDisconnected}'s
-     * own logic.
+     * {@code processing}/{@code cancelledByUser}/{@code currentProcess} are {@code protected} on the base
+     * class in a different package — a subclass (even a test-only one) can set them from its own code, a
+     * plain top-level test class cannot. Exists purely to simulate "a turn was in flight" / "the user pressed
+     * stop" without driving a real handshake for tests that only care about
+     * {@code handleProcessExit}/{@code onHandlerDisconnected}'s own logic.
      */
     private static final class TestableCodexAiProcessManager extends CodexAiProcessManager {
 

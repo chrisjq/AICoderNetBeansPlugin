@@ -18,7 +18,9 @@ import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CompletionException;
 import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 import kiwi.ingenuity.netbeans.plugin.aicoder.Installer;
@@ -153,7 +155,8 @@ public class OpenCodeAiProcessManager extends AiProcessManager {
     private OpenCodeStartupCoordinator coordinateOpenCodeStartup() {
         try {
             return OpenCodeStartupCoordinator.acquire(sharedOpenCodeDatabase(), probeOpenCodeVersion());
-        } catch (Exception e) {
+        }
+        catch (Exception e) {
             LOG.log(Level.WARNING, "Could not probe OpenCode version; starting without migration coordination", e);
             return OpenCodeStartupCoordinator.acquire(null, null);
         }
@@ -168,8 +171,8 @@ public class OpenCodeAiProcessManager extends AiProcessManager {
 
     static List<String> buildAcpCommand(String executablePath, int port) {
         return port > 0
-                ? OpenCodeExecutableLocator.buildHostCommand(executablePath, "acp", "--port", Integer.toString(port))
-                : OpenCodeExecutableLocator.buildHostCommand(executablePath, "acp");
+               ? OpenCodeExecutableLocator.buildHostCommand(executablePath, "acp", "--port", Integer.toString(port))
+               : OpenCodeExecutableLocator.buildHostCommand(executablePath, "acp");
     }
 
     static JsonObject buildInitializeParams(String pluginVersion) {
@@ -233,7 +236,7 @@ public class OpenCodeAiProcessManager extends AiProcessManager {
             return resumeId;
         }
         return sessionResult != null && sessionResult.has(AcpJsonKeyEnum.SESSION_ID.key())
-                ? sessionResult.get(AcpJsonKeyEnum.SESSION_ID.key()).getAsString() : null;
+               ? sessionResult.get(AcpJsonKeyEnum.SESSION_ID.key()).getAsString() : null;
     }
 
     // Package-private like pendingAcpResumeId/sessionConfigOptions below, so tests
@@ -363,11 +366,13 @@ public class OpenCodeAiProcessManager extends AiProcessManager {
             boolean ok = McpServerRegistry.register(reg).get(30, TimeUnit.SECONDS);
             if (ok) {
                 registrar = reg;
-            } else {
+            }
+            else {
                 listener.onAiProcessEvent(new StatusEvent(StatusEventTypeEnum.INFO,
                         "MCP server registration returned false — running without MCP tools"));
             }
-        } catch (Exception e) {
+        }
+        catch (Exception e) {
             LOG.log(Level.WARNING, "MCP server registration failed; running without MCP tools", e);
             listener.onAiProcessEvent(new StatusEvent(StatusEventTypeEnum.INFO,
                     "MCP server unavailable — running without MCP tools"));
@@ -378,7 +383,7 @@ public class OpenCodeAiProcessManager extends AiProcessManager {
             LOG.log(Level.INFO,
                     "OpenCode start() [{0}]: registering OpenCodeAiSession — session#={1} settings#={2} model={3}",
                     new Object[]{sessionId, System.identityHashCode(currentSession),
-                        System.identityHashCode(currentSession.settings()), m});
+                                 System.identityHashCode(currentSession.settings()), m});
         }
         openCodeAiSession = new OpenCodeAiSession(currentSession, listener);
         // Live check, not a snapshot: capability is probed asynchronously after the handshake and is reset whenever
@@ -407,7 +412,7 @@ public class OpenCodeAiProcessManager extends AiProcessManager {
         // start at all. Verified — it does not fall back to another port.
         OpenCodeStartupCoordinator startupCoordinator = coordinateOpenCodeStartup();
         int port = EXPERIMENTAL_STEERING && startupCoordinator.supportsAcpPortFlag()
-                ? OpenCodeSteerClient.pickFreePort() : 0;
+                   ? OpenCodeSteerClient.pickFreePort() : 0;
         try {
             // OpenCode v2's acp command accepts no flags. The process directory and
             // session/new or session/resume cwd parameter carry the working directory.
@@ -459,7 +464,8 @@ public class OpenCodeAiProcessManager extends AiProcessManager {
             try {
                 initResult = conn.sendRequest(AcpMethodEnum.INITIALIZE, buildInitializeParams(Installer.VERSION))
                         .get(30, TimeUnit.SECONDS);
-            } catch (Exception e) {
+            }
+            catch (Exception e) {
                 conn.close();
                 synchronized (this) {
                     if (currentProcess == process) {
@@ -498,7 +504,8 @@ public class OpenCodeAiProcessManager extends AiProcessManager {
                     // supplied the id in the request; a non-exception return means resume succeeded.
                     sessionResult = resumeResult;
                     resumed = true;
-                } catch (Exception e) {
+                }
+                catch (Exception e) {
                     LOG.log(Level.INFO, "session/resume failed; falling back to session/new: {0}", e.getMessage());
                     listener.onAiProcessEvent(new StatusEvent(StatusEventTypeEnum.INFO,
                             "Previous OpenCode session could not be resumed; starting fresh"));
@@ -510,7 +517,8 @@ public class OpenCodeAiProcessManager extends AiProcessManager {
                     sessionResult = conn.sendRequest(AcpMethodEnum.SESSION_NEW,
                             buildSessionNewParams(workDir.getAbsolutePath(), mcpBaseUrl))
                             .get(30, TimeUnit.SECONDS);
-                } catch (Exception e) {
+                }
+                catch (Exception e) {
                     conn.close();
                     synchronized (this) {
                         if (currentProcess == process) {
@@ -561,7 +569,8 @@ public class OpenCodeAiProcessManager extends AiProcessManager {
             startupCoordinator.recordSuccessfulStart();
             if (resumed) {
                 LOG.log(Level.INFO, "Resumed OpenCode ACP session: {0}", acpSessionId);
-            } else {
+            }
+            else {
                 LOG.log(Level.INFO, "Started new OpenCode ACP session: {0}", acpSessionId);
             }
             Runnable cb = onSessionEstablished;
@@ -582,7 +591,8 @@ public class OpenCodeAiProcessManager extends AiProcessManager {
             if (EXPERIMENTAL_STEERING) {
                 probeSteerCapabilityAsync(process, port, openCodeMCPPassword);
             }
-        } finally {
+        }
+        finally {
             startupCoordinator.close();
         }
     }
@@ -691,7 +701,8 @@ public class OpenCodeAiProcessManager extends AiProcessManager {
                 if (inFlightToolCallIds.remove(toolCallId)) {
                     inFlightToolCalls = Math.max(0, inFlightToolCalls - 1);
                 }
-            } else if (s.isInFlight()) {
+            }
+            else if (s.isInFlight()) {
                 if (inFlightToolCallIds.add(toolCallId)) {
                     inFlightToolCalls++;
                 }
@@ -732,7 +743,8 @@ public class OpenCodeAiProcessManager extends AiProcessManager {
         Thread watchdog = new Thread(() -> {
             try {
                 Thread.sleep(mailInterruptSafetyValveMillis);
-            } catch (InterruptedException e) {
+            }
+            catch (InterruptedException e) {
                 Thread.currentThread().interrupt();
                 return;
             }
@@ -749,7 +761,8 @@ public class OpenCodeAiProcessManager extends AiProcessManager {
                     conn = connection;
                     sid = acpSessionId;
                     h = activeHandler;
-                } else {
+                }
+                else {
                     return;
                 }
             }
@@ -876,7 +889,8 @@ public class OpenCodeAiProcessManager extends AiProcessManager {
         try {
             JsonArray updated = setConfigOption("model", requestedModel).get(30, TimeUnit.SECONDS);
             sessionConfigOptions = updated;
-        } catch (Exception e) {
+        }
+        catch (Exception e) {
             LOG.log(Level.WARNING, "OpenCode rejected model \"{0}\": {1}",
                     new Object[]{requestedModel, e.getMessage()});
             listener.onAiProcessEvent(new StatusEvent(StatusEventTypeEnum.INFO,
@@ -924,7 +938,8 @@ public class OpenCodeAiProcessManager extends AiProcessManager {
             try {
                 JsonArray updated = setConfigOption("mode", effectiveMode).get(30, TimeUnit.SECONDS);
                 sessionConfigOptions = updated;
-            } catch (Exception e) {
+            }
+            catch (Exception e) {
                 listener.onAiProcessEvent(new StatusEvent(StatusEventTypeEnum.INFO,
                         "Mode \"" + effectiveMode + "\" rejected by OpenCode; using default"));
             }
@@ -979,7 +994,8 @@ public class OpenCodeAiProcessManager extends AiProcessManager {
             try {
                 JsonArray updated = setConfigOption("effort", storedEffort).get(30, TimeUnit.SECONDS);
                 sessionConfigOptions = updated;
-            } catch (Exception e) {
+            }
+            catch (Exception e) {
                 listener.onAiProcessEvent(new StatusEvent(StatusEventTypeEnum.INFO,
                         "Effort \"" + storedEffort + "\" rejected by OpenCode"));
             }
@@ -1001,7 +1017,8 @@ public class OpenCodeAiProcessManager extends AiProcessManager {
                         recentStderr.remove(0);
                     }
                 }
-            } catch (IOException e) {
+            }
+            catch (IOException e) {
                 LOG.log(Level.FINE, "opencode stderr drainer ended", e);
             }
         }, "opencode-stderr");
@@ -1009,7 +1026,7 @@ public class OpenCodeAiProcessManager extends AiProcessManager {
         t.start();
     }
 
-    private void handleProcessExit(Process dead) {
+    void handleProcessExit(Process dead) {
         boolean suppress;
         synchronized (this) {
             if (currentProcess != dead) {
@@ -1022,8 +1039,14 @@ public class OpenCodeAiProcessManager extends AiProcessManager {
             currentProcess = null;
             suppress = cancelledByUser;
         }
+        // A compaction whose process died must not be left locking the UI: its closing FAILED comes from
+        // here, not from a response that will never arrive (mirrors PiAiProcessManager.handleProcessExit).
+        // Placed after the stale-exit guard so a superseded process's exit cannot fail new work. When that
+        // FAILED did close the work, the exit is folded into its message and no separate EXITED is reported —
+        // one closing status per work unit (review).
         int code = dead.exitValue();
-        if (!suppress && code != 0) {
+        if (!failWorkInFlight("OpenCode exited (code " + code + ") while work was in progress")
+            && !suppress && code != 0) {
             listener.onAiProcessEvent(new StatusEvent(StatusEventTypeEnum.EXITED,
                     StatusMessageUtil.formatExited("OpenCode", code, new ArrayList<>(recentStderr))));
         }
@@ -1041,7 +1064,20 @@ public class OpenCodeAiProcessManager extends AiProcessManager {
 
     @Override
     public synchronized void sendPrompt(String text, File workingDir, List<File> projectDirs) {
-        if (pendingDiff || !running || processing) {
+        if (processing) {
+            // Every refusal reports its reason and returns control to the user; the in-flight turn's later completion
+            // is stale and is ignored by the UI busy/ready contract.
+            listener.onAiProcessEvent(new StatusEvent(StatusEventTypeEnum.INFO, sendRefusalReason()));
+            listener.onAiProcessEvent(new TurnCompleteEvent());
+
+            return;
+        }
+        if (pendingDiff || !running || isWorkInFlight()) {
+            // A submit AiTopComponent has already locked the UI for must never return silently, or the tab
+            // would stay locked forever (cross-cutting rule found in the Copilot and Codex backends). None of
+            // these refusals has a closer of its own, so INFO says why and TurnCompleteEvent releases the lock.
+            listener.onAiProcessEvent(new StatusEvent(StatusEventTypeEnum.INFO, sendRefusalReason()));
+            listener.onAiProcessEvent(new TurnCompleteEvent());
             return;
         }
         cancelledByUser = false;
@@ -1065,6 +1101,23 @@ public class OpenCodeAiProcessManager extends AiProcessManager {
     }
 
     /**
+     * The reason a send was refused, for the INFO a refused send must post before its TurnCompleteEvent. Each
+     * call runs under the manager monitor (sendPrompt and deliverAfterHandshake are both synchronized).
+     */
+    private String sendRefusalReason() {
+        if (processing) {
+            return "OpenCode is already processing a turn";
+        }
+        if (isWorkInFlight()) {
+            return "OpenCode is compacting the conversation";
+        }
+        if (pendingDiff) {
+            return "OpenCode is waiting for a pending diff review";
+        }
+        return "OpenCode session is not running";
+    }
+
+    /**
      * Background-thread entry point when no ACP connection exists yet. Calls {@link #spawnAndHandshake}
      * (which blocks up to 60 s), then hands the prompt to {@link #sendTurn} once the connection is live —
      * holding {@code processing} true across the hand-off so an EDT {@link #sendPrompt} landing in between
@@ -1074,7 +1127,8 @@ public class OpenCodeAiProcessManager extends AiProcessManager {
     private void handshakeAndSend(String text, File workDir, List<File> projectDirs) {
         try {
             spawnAndHandshake(workDir);
-        } catch (Exception e) {
+        }
+        catch (Exception e) {
             synchronized (this) {
                 processing = false;
             }
@@ -1096,6 +1150,10 @@ public class OpenCodeAiProcessManager extends AiProcessManager {
         synchronized (this) {
             if (!running || pendingDiff) {
                 processing = false; // stop()/diff panel won the race; nobody else will rearm
+                // Same contract as sendPrompt's guard: the UI locked for this submit before it was queued, so a
+                // silent drop would leave the tab locked. Say why and end the turn it is waiting on.
+                listener.onAiProcessEvent(new StatusEvent(StatusEventTypeEnum.INFO, sendRefusalReason()));
+                listener.onAiProcessEvent(new TurnCompleteEvent());
                 return;
             }
         }
@@ -1130,6 +1188,10 @@ public class OpenCodeAiProcessManager extends AiProcessManager {
         OpenCodeAcpClientHandler handler = activeHandler;
         if (handler != null) {
             handler.clearTurnRefusals();
+            // A compaction that stalled past its timeout (or was raced by an exit) may have left the
+            // suppression flag set; a real turn must never be silenced by one. Each turn re-enters here,
+            // which is why this is the safety net and not only sendCompactPrompt's own completion.
+            handler.clearTextSuppression();
         }
         processing = true;
         CompletableFuture<JsonObject> promptFuture = connection.sendRequest(AcpMethodEnum.SESSION_PROMPT, params);
@@ -1164,7 +1226,8 @@ public class OpenCodeAiProcessManager extends AiProcessManager {
             // told of it. Events reach the UI in the order they are posted here.
             reportPolicyRefusals(endedByCancellation(result), stoppedByUser);
             listener.onAiProcessEvent(new TurnCompleteEvent());
-        } else {
+        }
+        else {
             discardTurnRefusals();
         }
     }
@@ -1180,7 +1243,7 @@ public class OpenCodeAiProcessManager extends AiProcessManager {
         }
         JsonElement reason = result.get(AcpJsonKeyEnum.STOP_REASON.key());
         return reason.isJsonPrimitive()
-                && AcpStopReasonEnum.fromWire(reason.getAsString()) == AcpStopReasonEnum.CANCELLED;
+               && AcpStopReasonEnum.fromWire(reason.getAsString()) == AcpStopReasonEnum.CANCELLED;
     }
 
     /**
@@ -1220,7 +1283,7 @@ public class OpenCodeAiProcessManager extends AiProcessManager {
         }
         if (PluginSettings.isDebugJson()) {
             LOG.log(Level.INFO, "OpenCode policy refusal ended the turn: telling the UI so the agent can be resumed "
-                    + "(session={0}, refusals={1})", new Object[]{sessionId, refusals.size()});
+                                + "(session={0}, refusals={1})", new Object[]{sessionId, refusals.size()});
         }
         listener.onAiProcessEvent(new PolicyRefusalEvent(refusals));
     }
@@ -1250,7 +1313,7 @@ public class OpenCodeAiProcessManager extends AiProcessManager {
             cancelledByUser = false;
         }
         boolean cancelledReply = cause instanceof AcpException cancelEx
-                && cancelEx.code() == AcpErrorCodeEnum.REQUEST_CANCELLED.code();
+                                 && cancelEx.code() == AcpErrorCodeEnum.REQUEST_CANCELLED.code();
         if (!cancelledReply) {
             // A turn that failed for any other reason is not one a refusal ended, and its refusals must not be carried
             // into a later turn.
@@ -1342,12 +1405,16 @@ public class OpenCodeAiProcessManager extends AiProcessManager {
 
     @Override
     public synchronized void stop() {
+        // A compaction still running when the session is stopped must not be left locking the UI: its
+        // closing FAILED comes from here, never a late READY from a response that will not come
+        // (mirrors PiAiProcessManager.stop()).
+        failWorkInFlight("OpenCode session stopped while work was in progress");
         // Logged before the state is torn down, so the record says what was actually
         // in flight at the moment of the stop rather than the cleared-out aftermath.
         if (PluginSettings.isDebugJson()) {
             LOG.log(Level.INFO, "OpenCode stop: shutting session down (session={0}, turnInFlight={1}, connected={2}, processAlive={3})",
                     new Object[]{acpSessionId, processing, connection != null,
-                        currentProcess != null && currentProcess.isAlive()});
+                                 currentProcess != null && currentProcess.isAlive()});
         }
         running = false;
         processing = false;
@@ -1393,9 +1460,11 @@ public class OpenCodeAiProcessManager extends AiProcessManager {
             Thread reaper = new Thread(() -> {
                 try {
                     closeFuture.get(OpenCodeTimeoutEnum.SESSION_CLOSE_WAIT_MILLIS.millis(), TimeUnit.MILLISECONDS);
-                } catch (InterruptedException e) {
+                }
+                catch (InterruptedException e) {
                     Thread.currentThread().interrupt();
-                } catch (Exception e) {
+                }
+                catch (Exception e) {
                     LOG.log(Level.FINE, "session/close timed out or failed during stop", e);
                 }
                 conn.close();
@@ -1405,7 +1474,8 @@ public class OpenCodeAiProcessManager extends AiProcessManager {
             }, "opencode-stop-reaper");
             reaper.setDaemon(true);
             reaper.start();
-        } else if (proc != null) {
+        }
+        else if (proc != null) {
             proc.destroy();
         }
 
@@ -1453,6 +1523,35 @@ public class OpenCodeAiProcessManager extends AiProcessManager {
         return registrar != null;
     }
 
+    private void cacheDiscoveredModels(JsonArray configOptions) {
+        if (configOptions == null) {
+            return;
+        }
+        for (JsonElement element : configOptions) {
+            if (!element.isJsonObject()) {
+                continue;
+            }
+            JsonObject option = element.getAsJsonObject();
+            String id = option.has(AcpJsonKeyEnum.ID.key())
+                        ? option.get(AcpJsonKeyEnum.ID.key()).getAsString() : null;
+            if (!"model".equals(id) || !option.has(AcpJsonKeyEnum.OPTIONS.key())
+                || !option.get(AcpJsonKeyEnum.OPTIONS.key()).isJsonArray()) {
+                continue;
+            }
+            List<String> models = new ArrayList<>();
+            for (JsonElement value : option.getAsJsonArray(AcpJsonKeyEnum.OPTIONS.key())) {
+                if (value.isJsonObject() && value.getAsJsonObject().has(AcpJsonKeyEnum.VALUE.key())) {
+                    models.add(value.getAsJsonObject().get(AcpJsonKeyEnum.VALUE.key()).getAsString());
+                }
+            }
+            if (!models.isEmpty()) {
+                OpenCodePluginSettings.setDiscoveredModels(models.toArray(new String[0]));
+                OpenCodeAiImplementation.modelCatalog().publish(models);
+            }
+            return;
+        }
+    }
+
     /**
      * The configOptions array captured from the session/new response. Null before the ACP handshake
      * completes.
@@ -1483,11 +1582,114 @@ public class OpenCodeAiProcessManager extends AiProcessManager {
         return conn.sendRequest(AcpMethodEnum.SESSION_SET_CONFIG_OPTION, params)
                 .thenApply(result -> {
                     JsonArray options = result != null && result.has(AcpJsonKeyEnum.CONFIG_OPTIONS.key())
-                            && result.get(AcpJsonKeyEnum.CONFIG_OPTIONS.key()).isJsonArray()
-                            ? result.getAsJsonArray(AcpJsonKeyEnum.CONFIG_OPTIONS.key())
-                            : new JsonArray();
+                                        && result.get(AcpJsonKeyEnum.CONFIG_OPTIONS.key()).isJsonArray()
+                                        ? result.getAsJsonArray(AcpJsonKeyEnum.CONFIG_OPTIONS.key())
+                                        : new JsonArray();
                     sessionConfigOptions = options;
                     return options;
                 });
+    }
+
+    /**
+     * Compacts the OpenCode session's conversation. ACP has no dedicated compaction method; OpenCode answers
+     * a {@code session/prompt} whose text is exactly {@code "/compact"} by summarising the session and
+     * returning {@code stopReason: "end_turn"}. Run through {@link #runWork} so the busy/ready contract is
+     * honoured: one BUSY (non-cancellable) on the way in, one closing status on every path out — never a
+     * TurnCompleteEvent, and the summary OpenCode streams back as ordinary text is suppressed.
+     */
+    public void compact() {
+        if (isBusy()) {
+            listener.onAiProcessEvent(new StatusEvent(StatusEventTypeEnum.INFO,
+                    "Wait for OpenCode to finish before compacting"));
+            return;
+        }
+        if (connection == null || acpSessionId == null) {
+            // Lazy start: no ACP session exists before the first prompt, so there is nothing to summarise. A
+            // FAILED here would be a red status for a non-event — say so in an INFO instead (review).
+            listener.onAiProcessEvent(new StatusEvent(StatusEventTypeEnum.INFO,
+                    "Nothing to compact yet"));
+            return;
+        }
+        boolean started = runWork(
+                "Compacting conversation…",
+                false,
+                DEFAULT_WORK_TIMEOUT_MILLIS,
+                this::sendCompactPrompt,
+                result -> new StatusEvent(StatusEventTypeEnum.READY, "Conversation compacted"),
+                error -> new StatusEvent(StatusEventTypeEnum.FAILED,
+                        error instanceof TimeoutException ? "Compact timed out" : "Compact failed: "
+                                                                                  + (error != null && error.getMessage() != null ? error.getMessage() : "unknown error")));
+        if (!started) {
+            listener.onAiProcessEvent(new StatusEvent(StatusEventTypeEnum.INFO,
+                    "Compaction already in progress"));
+        }
+    }
+
+    /**
+     * The work for {@link #compact()}: sends the exact {@code "/compact"} prompt with no MCP-tool guidance —
+     * that prefix belongs to user turns only and would make OpenCode treat this as a normal prompt. The
+     * future completes when the {@code session/prompt} response arrives; {@link #runWork} closes it as READY.
+     * Deliberately NOT chained through {@link #handleTurnComplete}: a compaction is not a turn, so it must
+     * report no TurnCompleteEvent.
+     *
+     * <p>
+     * While the prompt is in flight the handler drops streamed-back text/thought/tool chunks — OpenCode v1
+     * answers {@code /compact} by streaming the summary back as ordinary agent text, which is not part of the
+     * conversation. The flag is cleared and the returned future completed only once the response is sequenced
+     * onto the connection's notification executor (acp-notify), i.e. after every session/update chunk the
+     * reader already queued has been delivered suppressed. Clearing on the response thread itself would let a
+     * lagging acp-notify deliver those queued chunks as {@link TextDeltaEvent}s after READY — exactly the
+     * leak this ordering closes (review). Every path releases the flag: the sequenced finish, the connection
+     * being closed out from under us (inline fallback), and the timeout (an {@code orTimeout} on the gate).
+     */
+    private CompletableFuture<JsonObject> sendCompactPrompt() {
+        AcpConnection conn = connection;
+        String sid = acpSessionId;
+        if (conn == null || sid == null) {
+            return CompletableFuture.failedFuture(new IllegalStateException("OpenCode session is not active"));
+        }
+        OpenCodeAcpClientHandler handler = activeHandler;
+        long token = handler != null ? handler.beginTextSuppression() : 0L;
+        JsonObject promptItem = new JsonObject();
+        promptItem.addProperty(AcpJsonKeyEnum.TYPE.key(), "text");
+        promptItem.addProperty(AcpJsonKeyEnum.TEXT.key(), "/compact");
+        JsonArray promptArray = new JsonArray();
+        promptArray.add(promptItem);
+        JsonObject params = new JsonObject();
+        params.addProperty(AcpJsonKeyEnum.SESSION_ID.key(), sid);
+        params.add(AcpJsonKeyEnum.PROMPT.key(), promptArray);
+        CompletableFuture<JsonObject> sequenced = new CompletableFuture<>();
+        conn.sendRequest(AcpMethodEnum.SESSION_PROMPT, params)
+                .whenComplete((result, error) -> {
+                    // The wire future completes on the dispatch executor (or the thread that answered it). The
+                    // reader already queued any chunks that precede the response on acp-notify, so finish must
+                    // be queued on the SAME executor to run after them — clearing and READY then follow the
+                    // suppression rather than race ahead of it.
+                    Runnable finish = () -> {
+                        if (handler != null) {
+                            handler.endTextSuppression(token);
+                        }
+                        if (error != null) {
+                            sequenced.completeExceptionally(error);
+                        }
+                        else {
+                            sequenced.complete(result);
+                        }
+                    };
+                    try {
+                        conn.runOnNotifyThread(finish);
+                    }
+                    catch (RejectedExecutionException e) {
+                        finish.run(); // connection already closed: nothing is queued behind this finish, run inline
+                    }
+                });
+        // A compaction that stalls past its timeout must still release the suppression flag. Every other path
+        // is closed by finish above, so this re-arms only on the timeout signal.
+        sequenced.whenComplete((result, error) -> {
+            if (error instanceof TimeoutException && handler != null) {
+                handler.endTextSuppression(token);
+            }
+        });
+        return sequenced;
     }
 }

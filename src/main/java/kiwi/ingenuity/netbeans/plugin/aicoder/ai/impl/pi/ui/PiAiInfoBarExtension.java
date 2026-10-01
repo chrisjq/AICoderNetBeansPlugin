@@ -7,52 +7,62 @@ import java.util.List;
 import javax.swing.JButton;
 import javax.swing.JComboBox;
 import javax.swing.JComponent;
-import javax.swing.SwingUtilities;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.events.AiPropertyEvent;
+import kiwi.ingenuity.netbeans.plugin.aicoder.ai.events.AvailableModelsEvent;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.http.context.ContextGaugePanel;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.pi.PiVersionCheck;
+import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.pi.events.PiAvailableThinkingLevelsEvent;
+import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.pi.events.PiContextUsageEvent;
+import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.pi.events.PiModelChangedEvent;
+import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.pi.events.PiSessionModelsEvent;
+import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.pi.events.PiThinkingLevelChangedEvent;
+import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.pi.events.PiVersionCheckedEvent;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.pi.events.PiVersionVerifiedEvent;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.pi.settings.PiSessionSettings;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.settings.AiModelSessionSettings;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.settings.AiSessionSettings;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.ui.AiInfoBarExtension;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.ui.BlankSafeComboRenderer;
+import kiwi.ingenuity.netbeans.plugin.aicoder.ai.ui.GuardedCombo;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.events.AiProcessImplEvent;
 
 /**
- * Info bar for pi sessions: a model combo and a thinking-level combo live from the running process (via
- * {@link PiSessionControl}), a context gauge fed from {@code get_session_stats.contextUsage}, and a
- * version-warning button.
+ * Info bar for pi sessions: a model combo and a thinking-level combo kept live by pi events from the running
+ * process, a context gauge fed from {@code get_session_stats.contextUsage}, and a version-warning button.
+ * User actions are reported to {@link PiInfoBarListener}; the implementation owns commands and persistence.
  */
 public class PiAiInfoBarExtension implements AiInfoBarExtension {
 
-    private final PiSessionControl control;
     private volatile PiVersionCheck versionCheck;
 
     private final JComboBox<String> modelCombo;
     private final JComboBox<String> thinkingLevelCombo;
+    private final GuardedCombo<String> modelGuard;
+    private final GuardedCombo<String> thinkingGuard;
     private final JButton versionWarningBtn;
     private final JButton compactBtn;
     private final ContextGaugePanel gauge = new ContextGaugePanel();
 
     private final List<PiInfoBarListener> listeners = new ArrayList<>();
-    private final PiSessionControl.Listener controlListener = new ControlListener();
-    private boolean programmatic = false;
-    // The two inputs to refreshCompactEnabled(); EDT-confined like every other component mutation in this class.
-    private boolean combosEnabled = true;
-    private boolean compacting = false;
+    private volatile VersionDialogPresenter versionDialogPresenter = PiVersionWarningDialog::show;
     /**
-     * The last KNOWN selection — either notified out (this class called {@code control.setModel}/
-     * {@code setThinkingLevel} and its listeners for it) or seeded/pushed in programmatically (a
+     * Set once this session has reported its own model list; from then on the shared catalog no longer
+     * overwrites it.
+     */
+    private volatile boolean sessionModelsReported;
+    /**
+     * The last KNOWN selection — either notified out (its listeners were told about it) or seeded/pushed in
+     * programmatically (a
      * session-restore seed, or pi itself reporting a new current model/level via
-     * {@link PiSessionControl.Listener}) — so a duplicate non-programmatic action event for the SAME value is
-     * a no-op. Needed because {@code JComboBox.setSelectedItem} fires an action event even when the value
-     * does not change, and {@code addItem} on a still-empty combo auto-selects the first item and fires one
-     * too (both plain Swing behaviour, confirmed live) — without this, one real selection could reach
-     * {@link PiSessionControl} twice. Kept in sync with every programmatic combo mutation (not just the two
-     * action listeners): otherwise a value pi itself reported externally (e.g. the user picks A, pi later
-     * reports its actual model is B via {@code onCurrentSelectionChanged}) would desync this field from what
-     * the combo shows, and re-picking A would look like a no-op change and get silently swallowed.
+     * {@link PiModelChangedEvent}/{@link PiThinkingLevelChangedEvent}) — so a duplicate non-programmatic
+     * action event for the SAME value is a no-op. Needed because {@code JComboBox.setSelectedItem} fires an
+     * action event even when the value does not change, and {@code addItem} on a still-empty combo
+     * auto-selects the first item and fires one too (both plain Swing behaviour, confirmed live) — without
+     * this, one real selection could reach the listeners twice. Kept in sync with every
+     * programmatic combo mutation (not just the two action listeners): otherwise a value pi itself reported
+     * externally (e.g. the user picks A, pi later reports its actual model is B via a
+     * {@link PiModelChangedEvent}) would desync this field from what the combo shows, and re-picking A would
+     * look like a no-op change and get silently swallowed.
      */
     private String lastNotifiedModel;
     private String lastNotifiedThinkingLevel;
@@ -62,39 +72,34 @@ public class PiAiInfoBarExtension implements AiInfoBarExtension {
      * for the whole constructor body, including the lambdas declared in it — which is exactly how the
      * version-warning button's click handler ended up capturing the null it was constructed with (see its
      * listener below).
+     *
+     * <p>
+     * {@code cachedCatalogModels} is the catalog snapshot as of construction (the property bus does not
+     * replay events, so a bar opened after the catalog was published would otherwise show no model list until
+     * the next change); it may be null or empty.
      */
-    public PiAiInfoBarExtension(PiSessionControl control, PiSessionSettings settings, PiVersionCheck initialVersionCheck) {
-        this.control = control;
+    public PiAiInfoBarExtension(PiSessionSettings settings, PiVersionCheck initialVersionCheck,
+                                List<String> cachedCatalogModels) {
         this.versionCheck = initialVersionCheck;
 
         modelCombo = new JComboBox<>();
+        modelGuard = new GuardedCombo<>(modelCombo);
         modelCombo.setEditable(true);
         modelCombo.setToolTipText("pi model — provider/id");
-        modelCombo.addActionListener(e -> {
-            if (programmatic) {
-                return;
-            }
+        modelGuard.addActionListener(e -> {
             String selected = selectedModel();
             if (selected == null || selected.isBlank() || selected.equals(lastNotifiedModel)) {
                 return;
             }
             lastNotifiedModel = selected;
-            int slash = selected.indexOf('/');
-            String provider = slash > 0 ? selected.substring(0, slash) : "";
-            String modelId = slash > 0 ? selected.substring(slash + 1) : selected;
-            if (control != null) {
-                control.setModel(provider, modelId);
-            }
             listeners.forEach(l -> l.onModelChanged(selected));
         });
 
         thinkingLevelCombo = new JComboBox<>();
+        thinkingGuard = new GuardedCombo<>(thinkingLevelCombo);
         thinkingLevelCombo.setToolTipText("pi thinking level");
         thinkingLevelCombo.setRenderer(new BlankSafeComboRenderer());
-        thinkingLevelCombo.addActionListener(e -> {
-            if (programmatic) {
-                return;
-            }
+        thinkingGuard.addActionListener(e -> {
             Object sel = thinkingLevelCombo.getSelectedItem();
             if (sel == null) {
                 return;
@@ -104,9 +109,6 @@ public class PiAiInfoBarExtension implements AiInfoBarExtension {
                 return;
             }
             lastNotifiedThinkingLevel = level;
-            if (control != null) {
-                control.setThinkingLevel(level);
-            }
             listeners.forEach(l -> l.onThinkingLevelChanged(level));
         });
 
@@ -116,7 +118,7 @@ public class PiAiInfoBarExtension implements AiInfoBarExtension {
         versionWarningBtn.addActionListener(e -> {
             // this.versionCheck, always — the field, never a same-named local. The info bar is built synchronously
             // before pi starts, so the check handed to the constructor is null and the real one only arrives later
-            // via setVersionCheck(). While the constructor's parameter shadowed the field, this lambda captured that
+            // as a PiVersionCheckedEvent. While the constructor's parameter shadowed the field, this lambda captured that
             // null for the lifetime of the button: refreshVersionWarningButtonNow() reads the field, so the button
             // appeared with a correct tooltip, and clicking it returned here and silently did nothing.
             PiVersionCheck check = this.versionCheck;
@@ -137,33 +139,25 @@ public class PiAiInfoBarExtension implements AiInfoBarExtension {
         compactBtn.setToolTipText("Compact conversation to reduce context window usage");
         compactBtn.addActionListener(e -> listeners.forEach(PiInfoBarListener::onCompactRequested));
 
-        if (control != null) {
-            control.setListener(controlListener);
-            // A tab can be created (e.g. session restore) while a turn from before the IDE restart/tab reopen is
-            // already running — without this, a freshly built info bar starts with its combos/Compact enabled
-            // regardless, and stays that way until the NEXT onTurnRunningChanged fires, letting the user fire
-            // setModel/setThinkingLevel/compact mid-turn. Direct call to the un-dispatched core (see
-            // refreshVersionWarningButtonNow's comment above for why): this constructor's other initial state is
-            // also set synchronously regardless of thread.
-            setCombosEnabledNow(!control.isTurnRunning());
-        }
+        // Locking is driven exclusively by the core busy/ready contract via onBusyChanged.
         // Guarded like every other combo mutation in this class: addItem() on a still-empty combo auto-selects the
         // first item and fires an action event on its own (confirmed live Swing behaviour), which would otherwise
-        // reach PiSessionControl.setModel/setThinkingLevel and PiInfoBarListener for a value nobody chose — it was
+        // reach the PiInfoBarListeners for a value nobody chose — it was
         // only ever seeded from the session's own stored settings.
-        programmatic = true;
-        try {
+        modelGuard.runProgrammatic(() -> thinkingGuard.runProgrammatic(() -> {
             if (settings != null && settings.model() != null && !settings.model().isBlank()) {
                 modelCombo.addItem(settings.model());
                 modelCombo.setSelectedItem(settings.model());
+                modelCombo.getEditor().setItem(settings.model());
             }
             if (settings != null && settings.thinkingLevel() != null && !settings.thinkingLevel().isBlank()) {
                 thinkingLevelCombo.addItem(settings.thinkingLevel());
                 thinkingLevelCombo.setSelectedItem(settings.thinkingLevel());
             }
-        } finally {
-            programmatic = false;
-        }
+            if (cachedCatalogModels != null && !cachedCatalogModels.isEmpty()) {
+                applyAvailableModels(cachedCatalogModels);
+            }
+        }));
     }
 
     public void addListener(PiInfoBarListener listener) {
@@ -181,38 +175,65 @@ public class PiAiInfoBarExtension implements AiInfoBarExtension {
 
     @Override
     public void onPropertyEvent(AiPropertyEvent event) {
-        // Pi's model/usage/session-state updates arrive through PiSessionControl.Listener instead, EXCEPT
-        // PiVersionVerifiedEvent: version-verification state (PiPluginSettings.verifiedVersion, and
-        // PiVersionCheck's process-wide not-working-this-session set) is type-global, written from whichever tab's
-        // dialog the user answered, so every open pi tab's info bar must hear about it here rather than only the
-        // one instance that triggered the write.
-        if (event instanceof PiVersionVerifiedEvent) {
+        // Type-wide facts arrive here: the discovered model catalog, and PiVersionVerifiedEvent —
+        // version-verification state (PiPluginSettings.verifiedVersion, and PiVersionCheck's process-wide
+        // not-working-this-session set) is written from whichever tab's dialog the user answered, so every open pi
+        // tab's info bar must hear about it rather than only the one instance that triggered the write.
+        if (event instanceof AvailableModelsEvent available) {
+            // The running session's own get_available_models answer is authoritative for this bar; the catalog is
+            // only the stand-in until (or unless) the session reports one.
+            if (!sessionModelsReported) {
+                setAvailableModels(available.models());
+            }
+        }
+        else if (event instanceof PiVersionVerifiedEvent) {
             refreshVersionWarningButton();
         }
     }
 
     @Override
     public void onAiProcessImplEvent(AiProcessImplEvent event) {
-        // See onPropertyEvent(AiPropertyEvent) above.
+        // Per-session facts, reported by the session's own process manager.
+        if (event instanceof PiSessionModelsEvent models) {
+            sessionModelsReported = true;
+            setAvailableModels(models.models());
+        }
+        else if (event instanceof PiAvailableThinkingLevelsEvent levels) {
+            setAvailableThinkingLevels(levels.levels());
+        }
+        else if (event instanceof PiModelChangedEvent changed) {
+            if (changed.model() != null && !changed.model().isBlank()) {
+                setSelectedModel(changed.model());
+            }
+        }
+        else if (event instanceof PiThinkingLevelChangedEvent changed) {
+            if (changed.level() != null && !changed.level().isBlank()) {
+                setSelectedThinkingLevel(changed.level());
+            }
+        }
+        else if (event instanceof PiContextUsageEvent usage) {
+            setContextUsage(usage.usedTokens(), usage.contextWindowTokens());
+        }
+        else if (event instanceof PiVersionCheckedEvent checked) {
+            this.versionCheck = checked.check();
+            refreshVersionWarningButton();
+        }
     }
 
     @Override
     public void onSessionSettingsChanged(AiSessionSettings sessionSettings) {
         if (sessionSettings instanceof AiModelSessionSettings modelSettings
-                && modelSettings.model() != null && !modelSettings.model().isBlank()) {
+            && modelSettings.model() != null && !modelSettings.model().isBlank()) {
             setSelectedModel(modelSettings.model());
         }
         if (sessionSettings instanceof PiSessionSettings piSettings
-                && piSettings.thinkingLevel() != null && !piSettings.thinkingLevel().isBlank()) {
+            && piSettings.thinkingLevel() != null && !piSettings.thinkingLevel().isBlank()) {
             setSelectedThinkingLevel(piSettings.thinkingLevel());
         }
     }
 
     @Override
     public void dispose() {
-        if (control != null) {
-            control.setListener(null);
-        }
         listeners.clear();
     }
 
@@ -222,12 +243,7 @@ public class PiAiInfoBarExtension implements AiInfoBarExtension {
     }
 
     private void setSelectedModel(String providerSlashId) {
-        if (!SwingUtilities.isEventDispatchThread()) {
-            SwingUtilities.invokeLater(() -> setSelectedModel(providerSlashId));
-            return;
-        }
-        programmatic = true;
-        try {
+        modelGuard.runProgrammatic(() -> {
             Component focused = KeyboardFocusManager.getCurrentKeyboardFocusManager().getFocusOwner();
             modelCombo.setSelectedItem(providerSlashId);
             if (modelCombo.getEditor() != null) {
@@ -237,46 +253,38 @@ public class PiAiInfoBarExtension implements AiInfoBarExtension {
             if (focused != null) {
                 focused.requestFocusInWindow();
             }
-        } finally {
-            programmatic = false;
-        }
+        });
     }
 
     private void setAvailableModels(List<String> models) {
-        if (!SwingUtilities.isEventDispatchThread()) {
-            SwingUtilities.invokeLater(() -> setAvailableModels(models));
-            return;
+        modelGuard.runProgrammatic(() -> applyAvailableModels(models));
+    }
+
+    /**
+     * Must run inside {@code modelGuard.runProgrammatic}: replaces the combo's items while keeping whatever
+     * model is currently shown.
+     */
+    private void applyAvailableModels(List<String> models) {
+        Component focused = KeyboardFocusManager.getCurrentKeyboardFocusManager().getFocusOwner();
+        String current = selectedModel();
+        modelCombo.removeAllItems();
+        for (String m : models) {
+            modelCombo.addItem(m);
         }
-        programmatic = true;
-        try {
-            Component focused = KeyboardFocusManager.getCurrentKeyboardFocusManager().getFocusOwner();
-            String current = selectedModel();
-            modelCombo.removeAllItems();
-            for (String m : models) {
-                modelCombo.addItem(m);
+        if (current != null && !current.isBlank()) {
+            modelCombo.setSelectedItem(current);
+            if (modelCombo.getEditor() != null) {
+                modelCombo.getEditor().setItem(current);
             }
-            if (current != null && !current.isBlank()) {
-                modelCombo.setSelectedItem(current);
-                if (modelCombo.getEditor() != null) {
-                    modelCombo.getEditor().setItem(current);
-                }
-                lastNotifiedModel = current;
-            }
-            if (focused != null) {
-                focused.requestFocusInWindow();
-            }
-        } finally {
-            programmatic = false;
+            lastNotifiedModel = current;
+        }
+        if (focused != null) {
+            focused.requestFocusInWindow();
         }
     }
 
     private void setSelectedThinkingLevel(String level) {
-        if (!SwingUtilities.isEventDispatchThread()) {
-            SwingUtilities.invokeLater(() -> setSelectedThinkingLevel(level));
-            return;
-        }
-        programmatic = true;
-        try {
+        thinkingGuard.runProgrammatic(() -> {
             // Unlike modelCombo (editable), thinkingLevelCombo is NOT editable — JComboBox.setSelectedItem silently
             // no-ops on a non-editable combo when the value isn't already one of its items (confirmed live; this is
             // NOT the same as DefaultComboBoxModel.setSelectedItem, which has no such restriction). Without this, an
@@ -286,9 +294,7 @@ public class PiAiInfoBarExtension implements AiInfoBarExtension {
             ensureThinkingLevelItemPresent(level);
             thinkingLevelCombo.setSelectedItem(level);
             lastNotifiedThinkingLevel = level;
-        } finally {
-            programmatic = false;
-        }
+        });
     }
 
     private void ensureThinkingLevelItemPresent(String level) {
@@ -304,12 +310,7 @@ public class PiAiInfoBarExtension implements AiInfoBarExtension {
     }
 
     private void setAvailableThinkingLevels(List<String> levels) {
-        if (!SwingUtilities.isEventDispatchThread()) {
-            SwingUtilities.invokeLater(() -> setAvailableThinkingLevels(levels));
-            return;
-        }
-        programmatic = true;
-        try {
+        thinkingGuard.runProgrammatic(() -> {
             Object current = thinkingLevelCombo.getSelectedItem();
             thinkingLevelCombo.removeAllItems();
             for (String level : levels) {
@@ -328,56 +329,18 @@ public class PiAiInfoBarExtension implements AiInfoBarExtension {
                 Object actual = thinkingLevelCombo.getSelectedItem();
                 lastNotifiedThinkingLevel = actual != null ? actual.toString() : null;
             }
-        } finally {
-            programmatic = false;
-        }
+        });
     }
 
     private void setContextUsage(int used, int total) {
-        if (!SwingUtilities.isEventDispatchThread()) {
-            SwingUtilities.invokeLater(() -> setContextUsage(used, total));
-            return;
-        }
         gauge.update(used, total);
     }
 
-    private void setCombosEnabled(boolean enabled) {
-        if (!SwingUtilities.isEventDispatchThread()) {
-            SwingUtilities.invokeLater(() -> setCombosEnabled(enabled));
-            return;
-        }
-        setCombosEnabledNow(enabled);
-    }
-
-    private void setCombosEnabledNow(boolean enabled) {
-        combosEnabled = enabled;
-        modelCombo.setEnabled(enabled);
-        thinkingLevelCombo.setEnabled(enabled);
-        refreshCompactEnabled();
-    }
-
     @Override
-    public void onCompactingChanged(boolean compacting) {
-        this.compacting = compacting;
-        refreshCompactEnabled();
-    }
-
-    /**
-     * Compact has two independent reasons to be disabled — a turn running, and a compaction in flight — and
-     * must honour both. Setting it from either alone let one undo the other: a turn ending mid-compaction
-     * re-enabled it.
-     */
-    private void refreshCompactEnabled() {
-        compactBtn.setEnabled(combosEnabled && !compacting);
-    }
-
-    /**
-     * Updates {@code versionCheck} in place (e.g. after a later {@code get_state} reports a different
-     * installed version than was known at construction time) and refreshes the button.
-     */
-    public void setVersionCheck(PiVersionCheck versionCheck) {
-        this.versionCheck = versionCheck;
-        refreshVersionWarningButton();
+    public void onBusyChanged(boolean busy) {
+        modelCombo.setEnabled(!busy);
+        thinkingLevelCombo.setEnabled(!busy);
+        compactBtn.setEnabled(!busy);
     }
 
     /**
@@ -387,14 +350,26 @@ public class PiAiInfoBarExtension implements AiInfoBarExtension {
      * that reason alone; production has exactly one implementation.
      */
     void showVersionWarningDialog(PiVersionCheck check) {
-        PiVersionWarningDialog.show(versionWarningBtn, check);
+        versionDialogPresenter.present(versionWarningBtn, check,
+                () -> listeners.forEach(listener -> listener.onVersionVerified(check)),
+                () -> listeners.forEach(listener -> listener.onVersionMarkedNotWorking(check)));
+    }
+
+    /**
+     * Opens the version dialog and reports the user's answer through one of the two callbacks. Replaceable so
+     * the answer path can be driven without a modal dialog.
+     */
+    @FunctionalInterface
+    public interface VersionDialogPresenter {
+
+        void present(Component parent, PiVersionCheck check, Runnable onVerified, Runnable onMarkedNotWorking);
+    }
+
+    public void setVersionDialogPresenter(VersionDialogPresenter presenter) {
+        this.versionDialogPresenter = presenter;
     }
 
     private void refreshVersionWarningButton() {
-        if (!SwingUtilities.isEventDispatchThread()) {
-            SwingUtilities.invokeLater(this::refreshVersionWarningButton);
-            return;
-        }
         refreshVersionWarningButtonNow();
     }
 
@@ -408,41 +383,8 @@ public class PiAiInfoBarExtension implements AiInfoBarExtension {
         }
         String version = check.installedVersion();
         versionWarningBtn.setToolTipText(markedNotWorking
-                ? "pi " + version + " was marked as not working with this plugin. Click to report a bug."
-                : "pi " + version + " has not been verified with this plugin (tested: " + check.testedVersion()
-                + ".x). Click to verify.");
-    }
-
-    private final class ControlListener implements PiSessionControl.Listener {
-
-        @Override
-        public void onAvailableModelsChanged(List<String> providerSlashId) {
-            setAvailableModels(providerSlashId);
-        }
-
-        @Override
-        public void onAvailableThinkingLevelsChanged(List<String> levels) {
-            setAvailableThinkingLevels(levels);
-        }
-
-        @Override
-        public void onCurrentSelectionChanged(String providerSlashId, String thinkingLevel) {
-            if (providerSlashId != null && !providerSlashId.isBlank()) {
-                setSelectedModel(providerSlashId);
-            }
-            if (thinkingLevel != null && !thinkingLevel.isBlank()) {
-                setSelectedThinkingLevel(thinkingLevel);
-            }
-        }
-
-        @Override
-        public void onContextUsageChanged(int usedTokens, int contextWindowTokens) {
-            setContextUsage(usedTokens, contextWindowTokens);
-        }
-
-        @Override
-        public void onTurnRunningChanged(boolean running) {
-            setCombosEnabled(!running);
-        }
+                                         ? "pi " + version + " was marked as not working with this plugin. Click to report a bug."
+                                         : "pi " + version + " has not been verified with this plugin (tested: " + check.testedVersion()
+                                           + ".x). Click to verify.");
     }
 }
