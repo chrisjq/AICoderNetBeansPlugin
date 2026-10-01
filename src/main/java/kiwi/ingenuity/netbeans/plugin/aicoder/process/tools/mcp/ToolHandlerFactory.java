@@ -185,17 +185,17 @@ public final class ToolHandlerFactory {
         map.put(McpToolEnum.CLEAN_AND_BUILD_ANT_PROJECT, new CleanAndBuildAntProjectTool());
         map.put(McpToolEnum.RUN_ANT_TESTS, new RunAntTestsTool());
         map.put(McpToolEnum.GET_JAVADOC, new GetJavadocTool());
-        map.put(McpToolEnum.LIST_AI_SESSIONS, new ListAiSessionsTool());
-        map.put(McpToolEnum.SEND_AI_MESSAGE, new SendAiMessageTool());
-        map.put(McpToolEnum.GET_AI_MESSAGES, new GetAiMessagesTool());
-        map.put(McpToolEnum.READ_AI_MESSAGE, new ReadAiMessageTool());
-        map.put(McpToolEnum.MARK_AI_MESSAGE_REPLIED, new MarkAiMessageRepliedTool());
-        map.put(McpToolEnum.DELETE_AI_MESSAGE, new DeleteAiMessageTool());
-        map.put(McpToolEnum.IS_AI_SESSION_ACTIVE, new IsAiSessionActiveTool());
-        map.put(McpToolEnum.UPDATE_SESSION_DESCRIPTION, new UpdateSessionDescriptionTool());
-        map.put(McpToolEnum.CREATE_IDLE_WATCHER, new CreateIdleWatcherTool());
-        map.put(McpToolEnum.CANCEL_IDLE_WATCHER, new CancelIdleWatcherTool());
-        map.put(McpToolEnum.LIST_IDLE_WATCHERS, new ListIdleWatchersTool());
+        map.put(McpToolEnum.PEER_SESSION_LIST, new ListAiSessionsTool());
+        map.put(McpToolEnum.PEER_MESSAGE_SEND, new SendAiMessageTool());
+        map.put(McpToolEnum.PEER_MESSAGE_LIST, new GetAiMessagesTool());
+        map.put(McpToolEnum.PEER_MESSAGE_READ, new ReadAiMessageTool());
+        map.put(McpToolEnum.PEER_MESSAGE_MARK_REPLIED, new MarkAiMessageRepliedTool());
+        map.put(McpToolEnum.PEER_MESSAGE_DELETE, new DeleteAiMessageTool());
+        map.put(McpToolEnum.PEER_SESSION_IS_ACTIVE, new IsAiSessionActiveTool());
+        map.put(McpToolEnum.PEER_SESSION_DESCRIBE, new UpdateSessionDescriptionTool());
+        map.put(McpToolEnum.PEER_IDLE_WATCHER_CREATE, new CreateIdleWatcherTool());
+        map.put(McpToolEnum.PEER_IDLE_WATCHER_CANCEL, new CancelIdleWatcherTool());
+        map.put(McpToolEnum.PEER_IDLE_WATCHER_LIST, new ListIdleWatchersTool());
         return Collections.unmodifiableMap(map);
     }
 

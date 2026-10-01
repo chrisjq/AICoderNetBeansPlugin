@@ -21,15 +21,15 @@ import org.junit.jupiter.api.Test;
 /**
  * Drives CreateIdleWatcherTool/CancelIdleWatcherTool/ListIdleWatchersTool end to end against the real {@link
  * IdleWatcherRegistry#getInstance()} singleton and a real {@link SessionRegistry} registration, the way {@code
- * BuildSubmitterTest} drives the real {@code BuildQueue}. Every session this test registers and every watcher it
- * creates is torn down in {@link #tearDown()} so no clock is left running on the singleton's real scheduler thread
- * after the suite moves on.
+ * BuildSubmitterTest} drives the real {@code BuildQueue}. Every session this test registers and every watcher
+ * it creates is torn down in {@link #tearDown()} so no clock is left running on the singleton's real
+ * scheduler thread after the suite moves on.
  */
 class IdleWatcherToolsTest {
 
     private static final String DISABLED
-            = "Error: Idle AI watcher timers are disabled for this session. Enable 'Allow Idle AI Watcher Timer?' in"
-            + " this session's configuration.";
+                                = "Error: Idle AI watcher timers are disabled for this session. Enable 'Allow Idle AI Watcher Timer?' in"
+                                  + " this session's configuration.";
 
     private final List<String> registeredSessionIds = new ArrayList<>();
     private final List<String[]> createdWatchers = new ArrayList<>();
@@ -48,7 +48,7 @@ class IdleWatcherToolsTest {
         AiSessionSettings settings = new AiSessionSettings();
         settings.setAllowIdleWatcherTimer(allowIdleWatcherTimer);
         AiSession aiSession = new AiSession(id, "Name-" + id, null, AiTypeEnum.CLAUDE, null, settings, Instant.now(),
-                                            Instant.now());
+                Instant.now());
         AbstractAiSession wrapper = new AbstractAiSession(aiSession) {
             @Override
             public String getId() {
@@ -77,7 +77,7 @@ class IdleWatcherToolsTest {
 
     private void rememberLatestWatcher(String watcherSessionId) {
         List<kiwi.ingenuity.netbeans.plugin.aicoder.ai.idlewatch.IdleWatcherStatus> statuses
-                = IdleWatcherRegistry.getInstance().list(watcherSessionId);
+                                                                                    = IdleWatcherRegistry.getInstance().list(watcherSessionId);
         String id = statuses.get(statuses.size() - 1).watcher().id();
         createdWatchers.add(new String[]{watcherSessionId, id});
     }
@@ -111,9 +111,9 @@ class IdleWatcherToolsTest {
         AbstractAiSession target = session("idlewatch-tool-disabled-target", true);
 
         assertEquals(DISABLED, new CreateIdleWatcherTool().handle(
-                     args(CreateIdleWatcherParamEnum.TARGET_SESSION_ID.key(), target.getId()), watcher));
+                args(CreateIdleWatcherParamEnum.TARGET_SESSION_ID.key(), target.getId()), watcher));
         assertEquals(DISABLED, new CancelIdleWatcherTool().handle(
-                     args(CancelIdleWatcherParamEnum.WATCHER_ID.key(), "idle-watch-1"), watcher));
+                args(CancelIdleWatcherParamEnum.WATCHER_ID.key(), "idle-watch-1"), watcher));
         assertEquals(DISABLED, new ListIdleWatchersTool().handle(args(), watcher));
     }
 
@@ -143,8 +143,8 @@ class IdleWatcherToolsTest {
     }
 
     /**
-     * Explicit JSON-type validation for timeoutMinutes: a non-integer number, a string, a boolean, and overflow must
-     * all be refused cleanly rather than silently coerced or thrown as an uncaught exception.
+     * Explicit JSON-type validation for timeoutMinutes: a non-integer number, a string, a boolean, and
+     * overflow must all be refused cleanly rather than silently coerced or thrown as an uncaught exception.
      */
     @Test
     void timeoutMinutesWithTheWrongJsonShapeIsRefused() {
@@ -207,8 +207,8 @@ class IdleWatcherToolsTest {
     }
 
     /**
-     * The not-found reply is a non-error message (not an "Error:"-prefixed one), matching StopAsyncBuild's "No queued
-     * or running async build ... belongs to you" pattern.
+     * The not-found reply is a non-error message (not an "Error:"-prefixed one), matching StopAsyncBuild's
+     * "No queued or running async build ... belongs to you" pattern.
      */
     @Test
     void cancellingTwiceTheSecondTimeIsTheNonErrorNotFoundReply() {

@@ -24,30 +24,30 @@ public class NotificationUtil {
         if (subject != null && !subject.isBlank()) {
             notifBuilder.append(", Subject=").append(subject);
         }
-
         // The header alone reads as an FYI. Three sessions received one, replied "I
         // am ready to execute it" in their own chat, and ended the turn without ever
-        // calling ReadAiMessage — so the notification has to name the tools.
+        // calling PeerMessageRead — so the notification has to name the tools.
         //
         // The names come from McpToolEnum rather than being retyped: this text is
         // an instruction the AI acts on, so if a tool were renamed the notice
         // would send it after a tool that no longer exists, and we would be back
         // to the turn ending with the message unread.
         notifBuilder.append(" — read it with ")
-                .append(McpToolEnum.READ_AI_MESSAGE.toolName()).append('.');
+                .append(McpToolEnum.PEER_MESSAGE_READ.toolName()).append('.');
 
         return notifBuilder.toString();
     }
 
     /**
-     * States the message id literally rather than telling the reader to go find "this message's id" — the only
-     * hex-shaped thing nearby in a delivered turn may be the unrelated {@code <SYSTEM:nonce>} wrapper
-     * AiTopComponent.composeAgentBlock opens around this very text, not the id itself, and the two are easy to confuse.
+     * States the message id literally rather than telling the reader to go find "this message's id" — the
+     * only hex-shaped thing nearby in a delivered turn may be the unrelated {@code <SYSTEM:nonce>} wrapper
+     * AiTopComponent.composeAgentBlock opens around this very text, not the id itself, and the two are easy
+     * to confuse.
      */
     public static String formatReplyExpectedInstruction(String messageId) {
         return "A response must be sent to this message with "
-                + McpToolEnum.SEND_AI_MESSAGE.toolName() + " with the " + SendAiMessageParamEnum.REPLY_TO_MESSAGE_ID.key()
-                + " parameter set to \"" + messageId + "\".";
+               + McpToolEnum.PEER_MESSAGE_SEND.toolName() + " with the " + SendAiMessageParamEnum.REPLY_TO_MESSAGE_ID.key()
+               + " parameter set to \"" + messageId + "\".";
     }
 
     // Chat system messages
@@ -60,8 +60,9 @@ public class NotificationUtil {
     }
 
     /**
-     * A question that was shown but never answered — the tool timed out or the turn was cancelled. Recorded in history
-     * (unlike the live question panel, which is transient) so the conversation shows it was asked and left unanswered.
+     * A question that was shown but never answered — the tool timed out or the turn was cancelled. Recorded
+     * in history (unlike the live question panel, which is transient) so the conversation shows it was asked
+     * and left unanswered.
      */
     public static String formatUnansweredQuestion(com.google.gson.JsonArray questions) {
         StringBuilder sb = new StringBuilder("Question not answered (timed out or cancelled)");
@@ -133,4 +134,5 @@ public class NotificationUtil {
 
     private NotificationUtil() {
     }
+
 }

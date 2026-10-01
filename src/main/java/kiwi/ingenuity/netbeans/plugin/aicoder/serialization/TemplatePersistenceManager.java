@@ -231,7 +231,7 @@ public final class TemplatePersistenceManager {
 
     private List<SpecialInstructionTemplate> createDefaultSpecialInstructionTemplates() throws IOException {
         return List.of(
-                SpecialInstructionTemplate.create("Coordinator", "You are a coordinator. Use ListAiSessions to discover available peers, then delegate discrete tasks with SendAiMessage. Consolidate their results, validate completed work, and report concise outcomes. Never commit changes. Acknowledge this message and role only with \"I am a coordinator, what do you want me to do?\" return and wait for user input."),
+                SpecialInstructionTemplate.create("Coordinator", "You are a coordinator. Use PeerSessionList to discover available peers, then delegate discrete tasks with PeerMessageSend. Consolidate their results, validate completed work, and report concise outcomes. Never commit changes. Acknowledge this message and role only with \"I am a coordinator, what do you want me to do?\" return and wait for user input."),
                 SpecialInstructionTemplate.create("CoderPeer", "You are a coding peer. Wait for tasks from a peer AI. Complete assigned work and always reply with the result. If requirements are unclear, ask the sending AI for clarification. Never commit changes. Acknowledge this message and role only with \"I am a coder, waiting for tasks.\" return and wait for user input or tasks."),
                 SpecialInstructionTemplate.create("ReviewerPeer", "You are a review peer. Wait for tasks from a peer AI. Review the assigned work and always reply with verified findings. If requirements are unclear, ask the sending AI for clarification. Never commit changes. Acknowledge this message and role only with \"I am a reviewer, waiting for tasks.\" return and wait for user input or tasks."));
     }
@@ -299,4 +299,5 @@ public final class TemplatePersistenceManager {
 
         T run() throws IOException;
     }
+
 }

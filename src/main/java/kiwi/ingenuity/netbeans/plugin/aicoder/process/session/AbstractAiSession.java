@@ -60,10 +60,10 @@ public abstract class AbstractAiSession {
      * When mail sent with {@code important=true} actually reaches this session.
      *
      * <p>
-     * Defaults to the backend's declared timing, which is right for every backend whose capability is fixed. It is
-     * overridable because one is not: OpenCode can only steer mid-turn when the agent it spawned exposes the route,
-     * which is discovered at runtime from that process. Reporting the static answer there would tell senders the flag
-     * does nothing on a session where it works, and they would stop setting it.
+     * Defaults to the backend's declared timing, which is right for every backend whose capability is fixed.
+     * It is overridable because one is not: OpenCode can only steer mid-turn when the agent it spawned
+     * exposes the route, which is discovered at runtime from that process. Reporting the static answer there
+     * would tell senders the flag does nothing on a session where it works, and they would stop setting it.
      *
      * @return the effective timing; never null
      */

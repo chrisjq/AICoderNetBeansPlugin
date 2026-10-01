@@ -43,16 +43,16 @@ class McpToolInvokerTest {
         args.addProperty("unknown", "value");
 
         McpArgumentException error = assertThrows(McpArgumentException.class,
-                () -> McpToolInvoker.invoke(McpToolEnum.SEND_AI_MESSAGE, new SendAiMessageTool(), args, null));
+                () -> McpToolInvoker.invoke(McpToolEnum.PEER_MESSAGE_SEND, new SendAiMessageTool(), args, null));
 
         assertEquals(-32602, error.getCode());
-        assertTrue(error.getMessage().contains("Unknown parameter 'unknown' for SendAiMessage"));
+        assertTrue(error.getMessage().contains("Unknown parameter 'unknown' for PeerMessageSend"));
         // The message must name the missing parameters AND tell the model what to do about them. A bare
         // diagnosis gets skimmed: devstral:24b received the old wording, never retried, and reported a
         // fabricated result for the call that had not run.
-        assertTrue(error.getMessage().contains("SendAiMessage was NOT called"));
+        assertTrue(error.getMessage().contains("PeerMessageSend was NOT called"));
         assertTrue(error.getMessage().contains("targetSessionId, subject, message"));
-        assertTrue(error.getMessage().contains("Call SendAiMessage again"),
+        assertTrue(error.getMessage().contains("Call PeerMessageSend again"),
                 "the error must state the corrective ACTION, not only the diagnosis");
     }
 
@@ -62,14 +62,14 @@ class McpToolInvokerTest {
         args.addProperty("unknown", "value");
 
         McpArgumentException error = assertThrows(McpArgumentException.class,
-                () -> McpToolInvoker.invoke(McpToolEnum.SEND_AI_MESSAGE, new SendAiMessageTool(), args, null,
+                () -> McpToolInvoker.invoke(McpToolEnum.PEER_MESSAGE_SEND, new SendAiMessageTool(), args, null,
                         Map.of("sessionId", 2, "subject", 2)));
 
-        assertTrue(error.getMessage().contains("Duplicate parameters for SendAiMessage:"));
+        assertTrue(error.getMessage().contains("Duplicate parameters for PeerMessageSend:"));
         assertTrue(error.getMessage().contains("sessionId (2×)"));
         assertTrue(error.getMessage().contains("subject (2×)"));
         assertTrue(error.getMessage().contains("Unknown parameter 'unknown'"));
-        assertTrue(error.getMessage().contains("SendAiMessage was NOT called"));
+        assertTrue(error.getMessage().contains("PeerMessageSend was NOT called"));
     }
 
     @Test
@@ -112,7 +112,7 @@ class McpToolInvokerTest {
         String message = McpToolInvoker.lockedMessage(LockTypeEnum.BUILD_LOCK, null, "RunMavenTests");
         assertTrue(message.contains("Resource locked by session another operation performing Build Operations"));
         assertTrue(message.contains("already waited "
-                + TimeoutEnum.BUILD_LOCK_WAIT_MILLIS.millis() / 1000 + "s"));
+                                    + TimeoutEnum.BUILD_LOCK_WAIT_MILLIS.millis() / 1000 + "s"));
     }
 
     @Test
@@ -131,9 +131,10 @@ class McpToolInvokerTest {
             assertFalse(lowercase(message).contains("shortly"), lockType.name() + ": " + message);
             if (lockType.getWaitTimeoutMillis() > 0) {
                 assertTrue(message.contains("already waited "
-                        + lockType.getWaitTimeoutMillis() / 1000 + "s"),
+                                            + lockType.getWaitTimeoutMillis() / 1000 + "s"),
                         lockType.name() + ": " + message);
-            } else {
+            }
+            else {
                 // A zero-wait lock (FILE_WRITE_LOCK today) fails immediately; the
                 // message must not claim a wait happened.
                 assertTrue(message.contains("immediately"), lockType.name() + ": " + message);
@@ -156,7 +157,8 @@ class McpToolInvokerTest {
         assertTrue(message.endsWith("Please try again."),
                 "the mutation lock is brief by design; plain retry advice is correct: " + message);
         assertFalse(lowercase(message).contains("do not sleep")
-                || lowercase(message).contains("do other work"),
+                    || lowercase(message).contains("do other work"),
                 "no anti-loop steer on the short-lived mutation lock: " + message);
     }
+
 }

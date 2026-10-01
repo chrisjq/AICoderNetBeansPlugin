@@ -91,7 +91,7 @@ public class OpenCodeAiProcessManager extends AiProcessManager {
      * <p>
      * While off, OpenCode spawns exactly as it always did — no {@code --port}, no probe, no HTTP calls — and
      * reports {@code AFTER_TURN} honestly, because reporting mid-turn capability we cannot deliver would make
-     * ListAiSessions lie to every peer that reads it.
+     * PeerSessionList lie to every peer that reads it.
      */
     static final boolean EXPERIMENTAL_STEERING = false;
     /**
@@ -373,7 +373,6 @@ public class OpenCodeAiProcessManager extends AiProcessManager {
             return;
         }
         sessionId = currentSession.id();
-
         // Opt-in hardening (off by default): pin experimental.mcp_timeout into
         // the user's global OpenCode config so long MCP tool calls survive
         // OpenCode's short default. Invasive enough to stay behind a flag — it
@@ -382,7 +381,6 @@ public class OpenCodeAiProcessManager extends AiProcessManager {
         if (OpenCodeMcpTimeoutPinner.PIN_MCP_TIMEOUT) {
             OpenCodeMcpTimeoutPinner.applyMcpTimeoutPin();
         }
-
         // MCP registration: start the shared HTTP server. Degrade gracefully on failure.
         OpenCodeAiMcpRegistrar reg = new OpenCodeAiMcpRegistrar(sessionId);
         try {
@@ -410,7 +408,7 @@ public class OpenCodeAiProcessManager extends AiProcessManager {
         }
         openCodeAiSession = new OpenCodeAiSession(currentSession, listener);
         // Live check, not a snapshot: capability is probed asynchronously after the handshake and is reset whenever
-        // the process is recycled, so ListAiSessions must read it at the moment a peer asks.
+        // the process is recycled, so PeerSessionList must read it at the moment a peer asks.
         openCodeAiSession.setSteerCapableSupplier(() -> steerCapable);
         running = true;
         listener.onAiProcessEvent(new StatusEvent(StatusEventTypeEnum.READY, StatusMessageUtil.formatReady("OpenCode")));
@@ -440,7 +438,6 @@ public class OpenCodeAiProcessManager extends AiProcessManager {
             // OpenCode v2's acp command accepts no flags. The process directory and
             // session/new or session/resume cwd parameter carry the working directory.
             List<String> cmd = buildAcpCommand(executablePath, port);
-
             // Locks the agent's HTTP server to this plugin. Verified against opencode 1.18.23: with this set, /doc and
             // POST /api/session/{id}/prompt both answer 401 unauthenticated and 200 with the credentials, while the ACP
             // stdio channel is unaffected. Two things depend on it. First, opencode keeps sessions in a shared SQLite
@@ -458,7 +455,6 @@ public class OpenCodeAiProcessManager extends AiProcessManager {
 
             recentStderr.clear();
             Process process = pb.start();
-
             // Register the process under the lock so stop() can destroy it if it races us here.
             synchronized (this) {
                 if (!running) {
@@ -474,7 +470,6 @@ public class OpenCodeAiProcessManager extends AiProcessManager {
             }
 
             startStderrDrainer(process);
-
             // The disconnect callback must know WHICH connection lost its stream, so a late callback from an
             // abandoned connection can never tear down the one that replaced it.
             AcpConnection[] connHolder = new AcpConnection[1];
@@ -486,7 +481,6 @@ public class OpenCodeAiProcessManager extends AiProcessManager {
             connHolder[0] = conn;
 
             process.onExit().thenRun(() -> handleProcessExit(process));
-
             // ---- Blocking wait 1: initialize (outside the monitor) ----
             JsonObject initResult;
             try {
@@ -514,7 +508,6 @@ public class OpenCodeAiProcessManager extends AiProcessManager {
                 process.destroyForcibly();
                 throw new IOException("Unsupported ACP protocol version: " + proto + " (expected 1)");
             }
-
             // ---- Blocking wait 2: session/resume (if stored) or session/new ----
             // Use the registry's single source of truth for the endpoint URL — correct for all sessions,
             // not just the first (the registrar only receives addMcpEndpoint on the first of its type).
@@ -569,7 +562,6 @@ public class OpenCodeAiProcessManager extends AiProcessManager {
                 process.destroyForcibly();
                 throw new IOException("session/new returned no " + AcpJsonKeyEnum.SESSION_ID.key());
             }
-
             // ---- Publish results under the lock; bail if stop() ran during the waits ----
             beforeHandshakePublish(conn);
             if (conn.isStreamEnded()) {
@@ -1212,7 +1204,7 @@ public class OpenCodeAiProcessManager extends AiProcessManager {
         AcpConnection orphaned = connection;
         connection = null;
         activeHandler = null;
-        // No live agent means no HTTP endpoint to steer: ListAiSessions must not keep offering mid-turn mail.
+        // No live agent means no HTTP endpoint to steer: PeerSessionList must not keep offering mid-turn mail.
         steerCapable = false;
         if (acpSessionId != null) {
             pendingAcpResumeId = acpSessionId;
@@ -1895,4 +1887,5 @@ public class OpenCodeAiProcessManager extends AiProcessManager {
         });
         return sequenced;
     }
+
 }

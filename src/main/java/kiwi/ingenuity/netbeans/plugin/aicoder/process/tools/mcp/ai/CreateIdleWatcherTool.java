@@ -20,24 +20,24 @@ public class CreateIdleWatcherTool extends AbstractActionTool {
 
     private static final int NOTE_MAX_LENGTH = 500;
     private static final String DESCRIPTION
-            = "Watch another AI session and be told when it has been idle (between turns) for timeoutMinutes. "
-            + "The clock starts when its turn ends and resets whenever it starts another turn. oneshot (default) fires "
-            + "once and is removed; recurring fires once per idle period and re-arms after the target's next turn. "
-            + "The notice says when the target became idle. Use it while waiting on another AI so you wake up if it "
-            + "stops. It never interrupts your turn by default.";
+                                = "Watch another AI session open in this IDE (not an internal subagent) and be told when it has been idle (between turns) for timeoutMinutes. "
+                                  + "The clock starts when its turn ends and resets whenever it starts another turn. oneshot (default) fires "
+                                  + "once and is removed; recurring fires once per idle period and re-arms after the target's next turn. "
+                                  + "The notice says when the target became idle. Use it while waiting on another AI so you wake up if it "
+                                  + "stops. It never interrupts your turn by default.";
 
     public CreateIdleWatcherTool() {
         super(McpSectionEnum.PLUGIN,
-              McpToolEnum.CREATE_IDLE_WATCHER.toolName(),
-              DESCRIPTION,
-              McpToolEnum.CREATE_IDLE_WATCHER.toolName() + " -> creates an idle watcher on the target session; you are "
-              + "notified when the target stays idle past the timeout");
+                McpToolEnum.PEER_IDLE_WATCHER_CREATE.toolName(),
+                DESCRIPTION,
+                McpToolEnum.PEER_IDLE_WATCHER_CREATE.toolName() + " -> creates an idle watcher on the target session; you are "
+                + "notified when the target stays idle past the timeout");
     }
 
     @Override
     public JsonObject schema(Set<McpInstructionOptionEnum> options) {
         JsonObject tool = new JsonObject();
-        tool.addProperty(ToolSchemaKeyEnum.NAME.key(), McpToolEnum.CREATE_IDLE_WATCHER.toolName());
+        tool.addProperty(ToolSchemaKeyEnum.NAME.key(), McpToolEnum.PEER_IDLE_WATCHER_CREATE.toolName());
         tool.addProperty(ToolSchemaKeyEnum.DESCRIPTION.key(), DESCRIPTION);
         JsonObject schema = new JsonObject();
         schema.addProperty(ToolSchemaKeyEnum.TYPE.key(), "object");
@@ -45,29 +45,29 @@ public class CreateIdleWatcherTool extends AbstractActionTool {
         JsonObject tid = new JsonObject();
         tid.addProperty(ToolSchemaKeyEnum.TYPE.key(), "string");
         tid.addProperty(ToolSchemaKeyEnum.DESCRIPTION.key(),
-                        "Target session ID from " + McpToolEnum.LIST_AI_SESSIONS.toolName() + " (not your own).");
+                "Target session ID from " + McpToolEnum.PEER_SESSION_LIST.toolName() + " (not your own).");
         props.add(CreateIdleWatcherParamEnum.TARGET_SESSION_ID.key(), tid);
         JsonObject timeout = new JsonObject();
         timeout.addProperty(ToolSchemaKeyEnum.TYPE.key(), "integer");
         timeout.addProperty(ToolSchemaKeyEnum.DESCRIPTION.key(),
-                            "Idle timeout in whole minutes. Default " + IdleWatcherRegistry.DEFAULT_TIMEOUT.toMinutes()
-                            + ", minimum " + IdleWatcherRegistry.MIN_TIMEOUT.toMinutes() + ".");
+                "Idle timeout in whole minutes. Default " + IdleWatcherRegistry.DEFAULT_TIMEOUT.toMinutes()
+                + ", minimum " + IdleWatcherRegistry.MIN_TIMEOUT.toMinutes() + ".");
         props.add(CreateIdleWatcherParamEnum.TIMEOUT_MINUTES.key(), timeout);
         JsonObject recurring = new JsonObject();
         recurring.addProperty(ToolSchemaKeyEnum.TYPE.key(), "boolean");
         recurring.addProperty(ToolSchemaKeyEnum.DESCRIPTION.key(),
-                              "true = fire once per idle period and re-arm after the target's next turn; false (default) = fire once and remove.");
+                "true = fire once per idle period and re-arm after the target's next turn; false (default) = fire once and remove.");
         props.add(CreateIdleWatcherParamEnum.RECURRING.key(), recurring);
         JsonObject interrupt = new JsonObject();
         interrupt.addProperty(ToolSchemaKeyEnum.TYPE.key(), "boolean");
         interrupt.addProperty(ToolSchemaKeyEnum.DESCRIPTION.key(),
-                              "true = interrupt your turn when the watcher fires, if your session allows important "
-                              + "messages; false (default) = the notice waits until your current turn ends.");
+                "true = interrupt your turn when the watcher fires, if your session allows important "
+                + "messages; false (default) = the notice waits until your current turn ends.");
         props.add(CreateIdleWatcherParamEnum.INTERRUPT.key(), interrupt);
         JsonObject note = new JsonObject();
         note.addProperty(ToolSchemaKeyEnum.TYPE.key(), "string");
         note.addProperty(ToolSchemaKeyEnum.DESCRIPTION.key(),
-                         "Optional note (max " + NOTE_MAX_LENGTH + " chars) attached to the watcher.");
+                "Optional note (max " + NOTE_MAX_LENGTH + " chars) attached to the watcher.");
         props.add(CreateIdleWatcherParamEnum.NOTE.key(), note);
         schema.add(ToolSchemaKeyEnum.PROPERTIES.key(), props);
         JsonArray required = new JsonArray();
@@ -112,13 +112,13 @@ public class CreateIdleWatcherTool extends AbstractActionTool {
         if (rawTimeout == null) {
             if (args.has(CreateIdleWatcherParamEnum.TIMEOUT_MINUTES.key())) {
                 return "Error: " + CreateIdleWatcherParamEnum.TIMEOUT_MINUTES.key()
-                        + " must be a whole number of minutes";
+                       + " must be a whole number of minutes";
             }
             minutes = (int) IdleWatcherRegistry.DEFAULT_TIMEOUT.toMinutes();
         }
         else if (!rawTimeout.matches("[0-9]+")) {
             return "Error: " + CreateIdleWatcherParamEnum.TIMEOUT_MINUTES.key()
-                    + " must be a whole number of minutes";
+                   + " must be a whole number of minutes";
         }
         else {
             try {
@@ -126,21 +126,21 @@ public class CreateIdleWatcherTool extends AbstractActionTool {
             }
             catch (NumberFormatException e) {
                 return "Error: " + CreateIdleWatcherParamEnum.TIMEOUT_MINUTES.key()
-                        + " must be a whole number of minutes";
+                       + " must be a whole number of minutes";
             }
         }
         long minimum = IdleWatcherRegistry.MIN_TIMEOUT.toMinutes();
         if (minutes < minimum) {
             return "Error: " + CreateIdleWatcherParamEnum.TIMEOUT_MINUTES.key()
-                    + " must be at least " + minimum
-                    + " minutes (the minimum allowed idle watcher timeout).";
+                   + " must be at least " + minimum
+                   + " minutes (the minimum allowed idle watcher timeout).";
         }
         boolean recurring = args.bool(CreateIdleWatcherParamEnum.RECURRING.key());
         boolean interrupt = args.bool(CreateIdleWatcherParamEnum.INTERRUPT.key());
         String note = args.str(CreateIdleWatcherParamEnum.NOTE.key());
         if (note != null && note.length() > NOTE_MAX_LENGTH) {
             return "Error: " + CreateIdleWatcherParamEnum.NOTE.key()
-                    + " must be at most " + NOTE_MAX_LENGTH + " characters.";
+                   + " must be at most " + NOTE_MAX_LENGTH + " characters.";
         }
         String callerSessionId = session.getId();
         String watcherId;
@@ -161,12 +161,13 @@ public class CreateIdleWatcherTool extends AbstractActionTool {
                                : " It will not interrupt you — the notice arrives at the end of your turn.";
         if (status != null && status.idleSince() != null) {
             return "Idle watcher " + watcherId + " created on " + targetName + " (" + targetSessionId + "): "
-                    + kind + ", " + minutes + " minutes. " + targetName + " has been idle since "
-                    + DateUtil.format(status.idleSince()) + " — you will be told if it is still idle at "
-                    + DateUtil.format(status.dueAt()) + "." + interruptNote;
+                   + kind + ", " + minutes + " minutes. " + targetName + " has been idle since "
+                   + DateUtil.format(status.idleSince()) + " — you will be told if it is still idle at "
+                   + DateUtil.format(status.dueAt()) + "." + interruptNote;
         }
         return "Idle watcher " + watcherId + " created on " + targetName + " (" + targetSessionId + "): "
-                + kind + ", " + minutes + " minutes. " + targetName
-                + " is currently busy — the clock starts when its turn ends." + interruptNote;
+               + kind + ", " + minutes + " minutes. " + targetName
+               + " is currently busy — the clock starts when its turn ends." + interruptNote;
     }
+
 }

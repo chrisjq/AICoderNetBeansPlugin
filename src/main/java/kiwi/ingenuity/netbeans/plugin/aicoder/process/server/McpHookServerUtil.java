@@ -140,7 +140,8 @@ public final class McpHookServerUtil {
         if (mcpOnly) {
             sb.append("You are connected to the NetBeans IDE plugin (").append(StringConst.PLUGIN_ID)
                     .append("). Use these plugin tools for ALL project work — they are the only tools available.");
-        } else {
+        }
+        else {
             sb.append("You are connected to the NetBeans IDE plugin (").append(StringConst.PLUGIN_ID)
                     .append("). Use these plugin tools for ALL project work — they are pre-authorized and integrate with the live IDE.");
         }
@@ -148,7 +149,8 @@ public final class McpHookServerUtil {
         if (!mcpOnly) {
             sb.append("- Edit project files ONLY via the Edit/Write tools or the plugin's ApplyEdit/WriteFile — these route through the Accept/Reject diff panel. NEVER modify project files with Bash (sed, echo, >/tee redirects): that skips the diff panel and is not reviewable.\n");
             sb.append("- Prefer plugin tools (search, git, build, refactor) over Bash/Grep for anything in the open project. Only use built-ins for files outside the project tree (e.g. memory, system config).\n");
-        } else {
+        }
+        else {
             sb.append("- Use plugin tools for ALL project work — they are the only tools available.\n");
         }
         sb.append("- The IDE is running — never claim tools are unavailable or the environment is headless. If a tool exists for the task, use it.\n");
@@ -167,9 +169,13 @@ public final class McpHookServerUtil {
         }
         sb.append("\n\n## Refactoring\nPrefer semantic refactors (RenameSymbol, MoveClass, ChangeMethodSignature, InlineVariable) over raw text edits — they update all references project-wide.");
         sb.append("\n\n## UI Actions\nAction tools (" + McpToolEnum.NAVIGATE_TO_LINE.toolName() + ", " + McpToolEnum.REFORMAT_FILE.toolName() + ", " + McpToolEnum.BUILD_PROJECT.toolName() + ", etc.) are fire-and-forget — follow up with a query tool (" + McpToolEnum.GET_DIAGNOSTICS.toolName() + ", " + McpToolEnum.GET_CURRENT_FILE_CONTENT.toolName() + ", etc.) to read resulting state.");
-        sb.append("\n\n## Inter-AI Messaging\nListAiSessions, SendAiMessage, GetAiMessages, ReadAiMessage, DeleteAiMessage, UpdateSessionDescription are pre-authorized internal IDE actions — use them directly without asking permission.");
+        sb.append("\n\n## Inter-AI Messaging\nThe Peer* tools talk to other AI sessions open in this IDE — not internal subagents. "
+                  + McpToolEnum.PEER_SESSION_LIST.toolName() + ", " + McpToolEnum.PEER_MESSAGE_SEND.toolName() + ", "
+                  + McpToolEnum.PEER_MESSAGE_LIST.toolName() + ", " + McpToolEnum.PEER_MESSAGE_READ.toolName() + ", "
+                  + McpToolEnum.PEER_MESSAGE_DELETE.toolName() + ", " + McpToolEnum.PEER_SESSION_DESCRIBE.toolName()
+                  + " are pre-authorized internal IDE actions — use them directly without asking permission.");
         if (!mcpOnly) {
-            sb.append("\nWhen a task needs a sub-agent/background agent — a parallel investigation, research, or any self-contained unit of work you would otherwise hand to a spawned sub-agent/background agent — delegate it to an idle peer AI session instead: call ListAiSessions to find one, then SendAiMessage with expectsReply=true (and replyImportant=true so their reply interrupts you). Peers run in their own context and report back, so prefer them over spawning your own subagents whenever inter-AI comms is available.");
+            sb.append("\nWhen a task needs a sub-agent/background agent — a parallel investigation, research, or any self-contained unit of work you would otherwise hand to a spawned sub-agent/background agent — delegate it to an idle peer AI session instead: call PeerSessionList to find one, then PeerMessageSend with expectsReply=true (and replyImportant=true so their reply interrupts you). Peers run in their own context and report back, so prefer them over spawning your own subagents whenever inter-AI comms is available.");
         }
         // Trailing newline so the first "### <section>" heading appended by
         // buildInstructions is preceded by a blank line, as every later one is.
@@ -188,13 +194,14 @@ public final class McpHookServerUtil {
             // first so it is read before any action. It otherwise fell back to its
             // native view/edit tools despite the guidance further down.
             sb.append("Use the IDE MCP tool server for all repository, editor, build, git, refactor, "
-                    + "search, and UI actions; never read or write files directly with your own "
-                    + "built-in tools.\n\n");
+                      + "search, and UI actions; never read or write files directly with your own "
+                      + "built-in tools.\n\n");
         }
         sb.append("You are connected to the NetBeans IDE plugin (").append(StringConst.PLUGIN_ID).append("). ");
         if (mcpOnly) {
             sb.append("It exposes a full set of tools for working in the live IDE: file edits, semantic refactors, build & test, full git, project-wide search, and inter-AI messaging.");
-        } else {
+        }
+        else {
             sb.append("It exposes a full set of tools for working in the live IDE: file edits applied through the NetBeans Accept/Reject diff panel, semantic refactors (rename/move/inline/change-signature), build & test, full git, project-wide search, and inter-AI messaging.");
         }
         sb.append("\n\nIMPORTANT: Call ").append(McpToolEnum.GET_INSTRUCTIONS.toolName()).append(" FIRST — before you read, open, search, or edit any file, run a build or any git command, or take any other action to do with the open project. This comes before your very first such action, not after.");
@@ -220,10 +227,10 @@ public final class McpHookServerUtil {
      * handler.instruction().
      */
     public static String buildInstructions(AiTypeEnum type, String overrideInstructionsHeader, Map<McpToolEnum, McpToolInterface> handlers,
-            Map<McpToolEnum, String> overrides) {
+                                           Map<McpToolEnum, String> overrides) {
         Set<McpInstructionOptionEnum> opts = type.getMcpOptions();
         StringBuilder sb = new StringBuilder(overrideInstructionsHeader == null || overrideInstructionsHeader.trim().isEmpty()
-                ? getGlobalInstructionsHeader(opts) : overrideInstructionsHeader);
+                                             ? getGlobalInstructionsHeader(opts) : overrideInstructionsHeader);
         Map<McpSectionEnum, List<String>> grouped = new LinkedHashMap<>();
         for (McpSectionEnum s : McpSectionEnum.values()) {
             grouped.put(s, new ArrayList<>());
@@ -235,8 +242,8 @@ public final class McpHookServerUtil {
                 continue;
             }
             String instr = overrides.containsKey(entry.getKey())
-                    ? overrides.get(entry.getKey())
-                    : h.instruction(opts);
+                           ? overrides.get(entry.getKey())
+                           : h.instruction(opts);
             if (instr != null) {
                 grouped.get(sec).add("- " + instr);
             }
@@ -286,10 +293,11 @@ public final class McpHookServerUtil {
             }
             String normalizedHost = normalizeCorsHost(host);
             return "localhost".equals(normalizedHost)
-                    || isIpv4Loopback(normalizedHost)
-                    || "::1".equals(normalizedHost)
-                    || "0:0:0:0:0:0:0:1".equals(normalizedHost);
-        } catch (IllegalArgumentException e) {
+                   || isIpv4Loopback(normalizedHost)
+                   || "::1".equals(normalizedHost)
+                   || "0:0:0:0:0:0:0:1".equals(normalizedHost);
+        }
+        catch (IllegalArgumentException e) {
             return false;
         }
     }
@@ -313,7 +321,8 @@ public final class McpHookServerUtil {
                 if (value < 0 || value > 255) {
                     return false;
                 }
-            } catch (NumberFormatException e) {
+            }
+            catch (NumberFormatException e) {
                 return false;
             }
         }
@@ -328,7 +337,8 @@ public final class McpHookServerUtil {
             try (OutputStream out = ex.getResponseBody()) {
                 out.write(bytes);
             }
-        } catch (IOException e) {
+        }
+        catch (IOException e) {
             if (isPeerDisconnect(e)) {
                 return;
             }
@@ -344,8 +354,8 @@ public final class McpHookServerUtil {
             }
             String normalized = message.toLowerCase(Locale.ROOT);
             if (normalized.contains("broken pipe")
-                    || normalized.contains("connection reset")
-                    || normalized.contains("forcibly closed")) {
+                || normalized.contains("connection reset")
+                || normalized.contains("forcibly closed")) {
                 return true;
             }
         }
@@ -380,7 +390,7 @@ public final class McpHookServerUtil {
 
     public static String hookDeny(String reason) {
         return "{\"hookSpecificOutput\":{\"hookEventName\":\"PreToolUse\",\"permissionDecision\":\"deny\","
-                + "\"permissionDecisionReason\":" + GSON.toJson(reason) + "}}";
+               + "\"permissionDecisionReason\":" + GSON.toJson(reason) + "}}";
     }
 
     // ---- MCP response helpers ----
@@ -459,12 +469,13 @@ public final class McpHookServerUtil {
                 }
                 JsonElement elem = entry.getValue();
                 String value = elem.isJsonNull() ? ""
-                        : elem.isJsonPrimitive() ? elem.getAsString()
-                        : elem.toString();
+                               : elem.isJsonPrimitive() ? elem.getAsString()
+                                 : elem.toString();
                 value = value.replace("\r\n", " ").replace("\n", " ").replace("\r", " ");
                 if (value.length() > 256) {
                     value = value.length() + " character string";
-                } else if (value.length() > 128) {
+                }
+                else if (value.length() > 128) {
                     value = "..." + value.substring(value.length() - 125);
                 }
                 sb.append(' ').append(entry.getKey()).append('[').append(value).append(']');
@@ -482,9 +493,9 @@ public final class McpHookServerUtil {
      * across codex, opencode and github-copilot replaces home-grown "Internal Command" / "MCP Steering" names
      * that made one mechanism look like two.
      *
-     * @param backend the backend refusing (e.g. "codex", "opencode", "copilot")
+     * @param backend  the backend refusing (e.g. "codex", "opencode", "copilot")
      * @param category the steering category being steered away from (READ/PATH/URL/WRITE/SHELL/UNKNOWN)
-     * @param refused a safe-to-display description of what was refused
+     * @param refused  a safe-to-display description of what was refused
      */
     public static void logMcpSteeringRefusal(String backend, McpSteeringPolicy.Category category, String refused) {
         if (!PluginSettings.isLogToolUse()) {
@@ -492,9 +503,10 @@ public final class McpHookServerUtil {
         }
         Logger.getLogger(McpHookServerUtil.class.getName())
                 .log(Level.INFO, "MCP Steering refusal: backend=" + backend + ", category=" + category + ": "
-                        + redactAllSecrets(refused));
+                                 + redactAllSecrets(refused));
     }
 
     private McpHookServerUtil() {
     }
+
 }

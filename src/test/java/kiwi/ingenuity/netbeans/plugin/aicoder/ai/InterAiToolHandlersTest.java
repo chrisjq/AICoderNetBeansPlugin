@@ -90,7 +90,7 @@ class InterAiToolHandlersTest {
     }
 
     private static ToolRequestArguments sendArgs(AiSession sender, String target, String subject, String body,
-            String replyTo, boolean important, boolean expectsReply, boolean replyImportant) {
+                                                 String replyTo, boolean important, boolean expectsReply, boolean replyImportant) {
         JsonObject object = new JsonObject();
         object.addProperty(SendAiMessageParamEnum.SESSION_ID.key(), sender.id());
         object.addProperty(SendAiMessageParamEnum.SECRET_KEY.key(), sender.secret());
@@ -135,8 +135,8 @@ class InterAiToolHandlersTest {
 
     /**
      * FIX 4 (the incident Boss hit: a RUNNING session with allowInterAiComms=false was absent from
-     * ListAiSessions) — a comms-disabled target must be told so, and must NOT be told it is "not active": the
-     * two failures need opposite remedies, and pasting the wrong one sends the caller back to the session
+     * PeerSessionList) — a comms-disabled target must be told so, and must NOT be told it is "not active":
+     * the two failures need opposite remedies, and pasting the wrong one sends the caller back to the session
      * list that hides the real target. Nothing may be written to the inbox.
      * <p>
      * The target is built the way production builds a comms-disabled session: KNOWN to the registry (the
@@ -203,8 +203,8 @@ class InterAiToolHandlersTest {
                 null, false, false, false), null);
 
         assertTrue(result.startsWith("Error:"), result);
-        assertTrue(result.contains("no AI session has the ID"), result);
-        assertTrue(result.contains("verbatim"), result);
+        assertTrue(result.contains("no active AI session has the id or name"), result);
+        assertTrue(result.contains("listed id or unique name"), result);
         assertFalse(result.contains("is not active"),
                 "an unknown id must not get the 'is not active' advice meant for a known session");
     }
@@ -239,14 +239,13 @@ class InterAiToolHandlersTest {
         AiSessionInboxBroker broker = AiSessionInboxBroker.getInstance();
         register(broker, self);
         SendAiMessageTool tool = new SendAiMessageTool();
-
         // expectsReply=true is the worst case: it is the flag that would create a pending-reply entry.
         String result = tool.handle(sendArgs(self, self.id(), "Ping", "to myself", null, false, true, true), null);
 
         assertTrue(result.startsWith("Error:"), result);
         assertTrue(result.contains("cannot send a message to your own session"), result);
         assertTrue(result.contains(self.id()), "the refusal must name the offending id: " + result);
-        assertTrue(result.contains("ListAiSessions"), "the refusal must point at the fix: " + result);
+        assertTrue(result.contains("PeerSessionList"), "the refusal must point at the fix: " + result);
         assertTrue(broker.listInbox(self.id(), self.secret()).isEmpty(), "a refused self-send must not write an inbox entry");
         assertTrue(broker.listOwedReplies(self.id()).isEmpty());
         assertTrue(pendingRepliesOf(broker).values().stream().noneMatch(e -> e.toString().contains(self.id())),
@@ -266,6 +265,59 @@ class InterAiToolHandlersTest {
         assertTrue(result.startsWith("Message sent"), result);
         assertEquals(1, broker.listInbox(target.id(), target.secret()).size());
         assertTrue(broker.listInbox(sender.id(), sender.secret()).isEmpty());
+    }
+
+    @Test
+    void sendToolResolvesUniqueNamesRejectsDuplicatesAndRefusesSelfByName() {
+        AiSession sender = session("name-sender", "NameRouteSender", true, true, false);
+        AiSession target = session("name-target", "NameRouteTarget", true, true, false);
+        AiSession duplicateOne = session("name-duplicate-one", "NameRouteDuplicate", true, true, false);
+        AiSession duplicateTwo = session("name-duplicate-two", "NameRouteDuplicate", true, true, false);
+        AiSessionInboxBroker broker = AiSessionInboxBroker.getInstance();
+        register(broker, sender, target, duplicateOne, duplicateTwo);
+        SendAiMessageTool tool = new SendAiMessageTool();
+
+        String unique = tool.handle(sendArgs(sender, "NameRouteTarget", "Hello", "body", null, false, false, false), null);
+        assertTrue(unique.startsWith("Message sent to session " + target.id()), unique);
+
+        String duplicate = tool.handle(sendArgs(sender, "NameRouteDuplicate", "Hello", "body", null, false, false, false), null);
+        assertTrue(duplicate.startsWith("Error:"), duplicate);
+        assertTrue(duplicate.contains(duplicateOne.id()), duplicate);
+        assertTrue(duplicate.contains(duplicateTwo.id()), duplicate);
+
+        String unknown = tool.handle(sendArgs(sender, "Nobody", "Hello", "body", null, false, false, false), null);
+        assertTrue(unknown.contains("id or name"), unknown);
+
+        String self = tool.handle(sendArgs(sender, "NameRouteSender", "Hello", "body", null, false, false, false), null);
+        assertTrue(self.contains("cannot send a message to your own session"), self);
+    }
+
+    @Test
+    void nameRoutingIsCaseSensitiveAndARealIdWinsOverAMatchingName() {
+        AiSession sender = session("edge-sender", "EdgeSender", true, true, false);
+        AiSession idTarget = session("edge-id", "edge-name", true, true, false);
+        AiSession namedTarget = session("edge-name", "different", true, true, false);
+        AiSessionInboxBroker broker = AiSessionInboxBroker.getInstance();
+        register(broker, sender, idTarget, namedTarget);
+        SendAiMessageTool tool = new SendAiMessageTool();
+
+        String idWins = tool.handle(sendArgs(sender, "edge-name", "Hello", "body", null, false, false, false), null);
+        assertTrue(idWins.contains("session edge-name"), idWins);
+        String wrongCase = tool.handle(sendArgs(sender, "EDGE-NAME", "Hello", "body", null, false, false, false), null);
+        assertTrue(wrongCase.contains("no active AI session"), wrongCase);
+    }
+
+    @Test
+    void exitedPeersNameIsNotFound() {
+        AiSession sender = session("exited-name-sender", "ExitedNameSender", true, true, false);
+        AiSession exited = session("exited-name-peer", "ExitedNamePeer", true, true, false);
+        AiSessionInboxBroker broker = AiSessionInboxBroker.getInstance();
+        register(broker, sender, exited);
+        broker.unregister(exited.id());
+
+        String result = new SendAiMessageTool().handle(
+                sendArgs(sender, "ExitedNamePeer", "Hello", "body", null, false, false, false), null);
+        assertTrue(result.contains("no active AI session"), result);
     }
 
     @SuppressWarnings("unchecked")
@@ -349,6 +401,23 @@ class InterAiToolHandlersTest {
     }
 
     @Test
+    void readToolShowsTheActiveSendersNameBesideItsSessionId() {
+        AiSession sender = session("read-name-sender", "Named Sender", true, true, false);
+        AiSession target = session("read-name-target", "Target", true, true, false);
+        AiSessionInboxBroker broker = AiSessionInboxBroker.getInstance();
+        register(broker, sender, target);
+        String id = broker.sendMessage(sender.id(), target.id(), "Question", "body", null);
+
+        JsonObject object = new JsonObject();
+        object.addProperty(ReadAiMessageParamEnum.SESSION_ID.key(), target.id());
+        object.addProperty(ReadAiMessageParamEnum.SECRET_KEY.key(), target.secret());
+        object.addProperty(ReadAiMessageParamEnum.MESSAGE_ID.key(), id);
+        String result = new ReadAiMessageTool().handle(new ToolRequestArguments(object), null);
+
+        assertTrue(result.contains("from=" + sender.id() + " (Named Sender)"), result);
+    }
+
+    @Test
     void activeToolReportsUnknownIdleAndBusy() {
         AiSession idle = session("handler-active-idle", "Idle", true, true, false);
         AiSession busy = session("handler-active-busy", "Busy", true, true, true);
@@ -379,4 +448,5 @@ class InterAiToolHandlersTest {
         assertTrue(result.contains("handler audit"), result);
         assertEquals("handler audit", session.description());
     }
+
 }

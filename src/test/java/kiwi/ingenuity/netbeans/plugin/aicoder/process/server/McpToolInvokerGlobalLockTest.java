@@ -82,7 +82,7 @@ class McpToolInvokerGlobalLockTest {
 
             Future<String> secondCall = executor.submit(() -> invoke(second));
             assertFalse(secondEntered.await(200, TimeUnit.MILLISECONDS),
-                        "the second default-mutating invocation must wait for the global lock");
+                    "the second default-mutating invocation must wait for the global lock");
 
             firstRelease.countDown();
             assertEquals("done", firstCall.get(WAIT_SECONDS, TimeUnit.SECONDS));
@@ -136,7 +136,7 @@ class McpToolInvokerGlobalLockTest {
             args.addProperty("targetSessionId", "target");
             args.addProperty("subject", "subject");
             args.addProperty("message", "message");
-            String result = McpToolInvoker.invoke(McpToolEnum.SEND_AI_MESSAGE, new SendAiMessageTool(), args, null);
+            String result = McpToolInvoker.invoke(McpToolEnum.PEER_MESSAGE_SEND, new SendAiMessageTool(), args, null);
             assertEquals("Error: sessionId is required", result);
 
             holderRelease.countDown();
@@ -246,4 +246,5 @@ class McpToolInvokerGlobalLockTest {
             return true;
         }
     }
+
 }

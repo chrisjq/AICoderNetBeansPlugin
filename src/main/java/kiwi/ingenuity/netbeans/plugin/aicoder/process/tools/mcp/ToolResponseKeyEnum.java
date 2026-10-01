@@ -3,15 +3,15 @@ package kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp;
 /**
  * Field names in the JSON a tool returns, as opposed to the arguments it accepts.
  * <p>
- * Kept separate from {@link kiwi.ingenuity.netbeans.plugin.aicoder.process.McpToolPropertyEnum} on purpose. That enum
- * names the parameters a caller sends in; these name what comes back out. Several words appear in both vocabularies —
- * {@link kiwi.ingenuity.netbeans.plugin.aicoder.process.McpToolPropertyEnum#METHOD} is an argument to
- * {@code WebRequest} and {@link #METHOD} is also a response field — and folding them together would mean renaming a
- * parameter silently renamed a response field that callers parse. They are different contracts that happen to share
- * spellings.
+ * Kept separate from {@link kiwi.ingenuity.netbeans.plugin.aicoder.process.McpToolPropertyEnum} on purpose.
+ * That enum names the parameters a caller sends in; these name what comes back out. Several words appear in
+ * both vocabularies — {@link kiwi.ingenuity.netbeans.plugin.aicoder.process.McpToolPropertyEnum#METHOD} is an
+ * argument to {@code WebRequest} and {@link #METHOD} is also a response field — and folding them together
+ * would mean renaming a parameter silently renamed a response field that callers parse. They are different
+ * contracts that happen to share spellings.
  * <p>
- * These are read by the AI rather than by another program, so a rename is not catastrophic; it is still worth one
- * definition each so a tool and its documentation cannot drift.
+ * These are read by the AI rather than by another program, so a rename is not catastrophic; it is still worth
+ * one definition each so a tool and its documentation cannot drift.
  */
 public enum ToolResponseKeyEnum {
     // WebRequest response
@@ -32,8 +32,8 @@ public enum ToolResponseKeyEnum {
      */
     STATUS("status"),
     /**
-     * Response headers. Note WebRequest also takes a {@code headers} argument — same spelling, different direction,
-     * which is why the two vocabularies are separate enums.
+     * Response headers. Note WebRequest also takes a {@code headers} argument — same spelling, different
+     * direction, which is why the two vocabularies are separate enums.
      */
     HEADERS("headers"),
     /**
@@ -45,15 +45,15 @@ public enum ToolResponseKeyEnum {
      */
     BODY("body"),
     /**
-     * Session temp file holding the complete response (request line, status, headers, then the raw body). Present only
-     * when the body was truncated; readable with GetFileContent or FilterFileContent.
+     * Session temp file holding the complete response (request line, status, headers, then the raw body).
+     * Present only when the body was truncated; readable with GetFileContent or FilterFileContent.
      */
     FULL_RESPONSE_FILE("fullResponseFile"),
     /**
      * Present and true when the full response file itself stopped at its size cap.
      */
     FULL_RESPONSE_TRUNCATED("fullResponseTruncated"),
-    // ListAiSessions response
+    // PeerSessionList response
     /**
      * Peer session identifier, passed back as targetSessionId when messaging it.
      */
@@ -81,4 +81,5 @@ public enum ToolResponseKeyEnum {
     public String key() {
         return key;
     }
+
 }

@@ -17,16 +17,16 @@ public class CancelIdleWatcherTool extends AbstractActionTool {
 
     public CancelIdleWatcherTool() {
         super(McpSectionEnum.PLUGIN,
-              McpToolEnum.CANCEL_IDLE_WATCHER.toolName(),
-              "Cancel one of this session's idle watcher timers.",
-              McpToolEnum.CANCEL_IDLE_WATCHER.toolName()
-              + " -> cancels the named idle watcher owned by this session");
+                McpToolEnum.PEER_IDLE_WATCHER_CANCEL.toolName(),
+                "Cancel one of this session's idle watcher timers.",
+                McpToolEnum.PEER_IDLE_WATCHER_CANCEL.toolName()
+                + " -> cancels the named idle watcher owned by this session");
     }
 
     @Override
     public JsonObject schema(Set<McpInstructionOptionEnum> options) {
         JsonObject tool = new JsonObject();
-        tool.addProperty(ToolSchemaKeyEnum.NAME.key(), McpToolEnum.CANCEL_IDLE_WATCHER.toolName());
+        tool.addProperty(ToolSchemaKeyEnum.NAME.key(), McpToolEnum.PEER_IDLE_WATCHER_CANCEL.toolName());
         tool.addProperty(ToolSchemaKeyEnum.DESCRIPTION.key(), "Cancel one of this session's idle watcher timers.");
         JsonObject schema = new JsonObject();
         schema.addProperty(ToolSchemaKeyEnum.TYPE.key(), "object");
@@ -34,8 +34,8 @@ public class CancelIdleWatcherTool extends AbstractActionTool {
         JsonObject wid = new JsonObject();
         wid.addProperty(ToolSchemaKeyEnum.TYPE.key(), "string");
         wid.addProperty(ToolSchemaKeyEnum.DESCRIPTION.key(),
-                        "Idle watcher ID from " + McpToolEnum.LIST_IDLE_WATCHERS.toolName()
-                        + " or the reply to " + McpToolEnum.CREATE_IDLE_WATCHER.toolName() + ".");
+                "Idle watcher ID from " + McpToolEnum.PEER_IDLE_WATCHER_LIST.toolName()
+                + " or the reply to " + McpToolEnum.PEER_IDLE_WATCHER_CREATE.toolName() + ".");
         props.add(CancelIdleWatcherParamEnum.WATCHER_ID.key(), wid);
         schema.add(ToolSchemaKeyEnum.PROPERTIES.key(), props);
         JsonArray required = new JsonArray();
@@ -66,8 +66,9 @@ public class CancelIdleWatcherTool extends AbstractActionTool {
         boolean cancelled = IdleWatcherRegistry.getInstance().cancel(session.getId(), watcherId);
         if (!cancelled) {
             return "No idle watcher " + watcherId
-                    + " belongs to you (it may have already fired as a oneshot, been cancelled, or its target session closed).";
+                   + " belongs to you (it may have already fired as a oneshot, been cancelled, or its target session closed).";
         }
         return "Idle watcher " + watcherId + " cancelled.";
     }
+
 }

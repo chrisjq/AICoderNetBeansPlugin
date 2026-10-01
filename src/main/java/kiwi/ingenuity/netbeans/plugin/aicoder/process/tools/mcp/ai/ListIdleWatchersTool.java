@@ -16,10 +16,10 @@ public class ListIdleWatchersTool extends AbstractActionTool {
 
     public ListIdleWatchersTool() {
         super(McpSectionEnum.PLUGIN,
-              McpToolEnum.LIST_IDLE_WATCHERS.toolName(),
-              "List this session's idle watcher timers and their current state.",
-              McpToolEnum.LIST_IDLE_WATCHERS.toolName()
-              + " -> one line per idle watcher owned by this session: id, target, oneshot/recurring, timeout, state and note");
+                McpToolEnum.PEER_IDLE_WATCHER_LIST.toolName(),
+                "List this session's idle watcher timers and their current state.",
+                McpToolEnum.PEER_IDLE_WATCHER_LIST.toolName()
+                + " -> one line per idle watcher owned by this session: id, target, oneshot/recurring, timeout, state and note");
     }
 
     @Override
@@ -67,4 +67,5 @@ public class ListIdleWatchersTool extends AbstractActionTool {
         }
         return String.join("\n", lines);
     }
+
 }

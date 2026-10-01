@@ -18,11 +18,11 @@ import static org.junit.jupiter.api.Assertions.*;
 import org.junit.jupiter.api.Test;
 
 /**
- * Covers the F4 reply-tracking behaviour owned by this session: the SendAiMessageTool refusal for an unknown
- * replyToMessageId, the "You still owe replies to:" reminder SendAiMessageTool appends after a successful send, and the
- * DeleteAiMessageTool warning for deleting an unanswered expects-reply message. Setup mirrors InterAiToolHandlersTest's
- * real-session/real-broker pattern rather than mocking, since the behaviour under test lives in how the tools compose
- * real AiSessionInboxBroker state.
+ * Covers reply tracking owned by this session, including SendAiMessageTool delivery for an unknown
+ * replyToMessageId, the "You still owe replies to:" reminder SendAiMessageTool appends after a successful
+ * send, and the DeleteAiMessageTool warning for deleting an unanswered expects-reply message. Setup mirrors
+ * InterAiToolHandlersTest's real-session/real-broker pattern rather than mocking, since the behaviour under
+ * test lives in how the tools compose real AiSessionInboxBroker state.
  */
 class ReplyTrackingToolsTest {
 
@@ -87,19 +87,29 @@ class ReplyTrackingToolsTest {
         return new ToolRequestArguments(o);
     }
 
-    // ---- SendAiMessageTool: unknown replyToMessageId ----
     @Test
-    void sendWithAnUnknownReplyToMessageIdIsRefusedAndNothingIsDelivered() {
-        AiSession sender = session("rtt-refuse-sender", "Sender", true);
-        AiSession target = session("rtt-refuse-target", "Target", true);
+    void invalidReplyToIdsDeliverUnlinkedMailAndExplainEachReason() {
+        AiSession sender = session("rtt-invalid-sender", "Sender", true);
+        AiSession target = session("rtt-invalid-target", "Target", true);
+        AiSession peer = session("rtt-invalid-peer", "Peer", true);
+        AiSession other = session("rtt-invalid-other", "Other", true);
+        AiSessionInboxBroker broker = AiSessionInboxBroker.getInstance();
+        SendAiMessageTool tool = new SendAiMessageTool();
 
-        String result = new SendAiMessageTool().handle(
-                sendArgs(sender, target, "Hello", "body", "does-not-exist-12345"), null);
+        String unknown = tool.handle(sendArgs(sender, target, "Unknown", "body", "does-not-exist-12345"), null);
+        assertTrue(unknown.startsWith("Message sent"), unknown);
+        assertTrue(unknown.contains("Note:"), unknown);
+        assertTrue(unknown.contains("unknown"), unknown);
 
-        assertTrue(result.startsWith("Error:"), result);
-        assertTrue(result.contains("<SYSTEM:"), result);
-        assertTrue(AiSessionInboxBroker.getInstance().listInbox(target.id(), target.secret()).isEmpty(),
-                   "a refused send must deliver nothing to the target: " + result);
+        String sentBySender = broker.sendMessage(sender.id(), peer.id(), "Earlier", "body", null);
+        String own = tool.handle(sendArgs(sender, target, "Own", "body", sentBySender), null);
+        assertTrue(own.contains("message you sent to Peer"), own);
+
+        String foreign = broker.sendMessage(peer.id(), other.id(), "Private", "body", null);
+        String addressedElsewhere = tool.handle(sendArgs(sender, target, "Foreign", "body", foreign), null);
+        assertTrue(addressedElsewhere.contains("addressed to Other"), addressedElsewhere);
+
+        broker.listInbox(target.id(), target.secret()).forEach(message -> assertNull(message.replyToId()));
     }
 
     // ---- SendAiMessageTool: owed-replies block ----
@@ -112,14 +122,14 @@ class ReplyTrackingToolsTest {
         AiSessionInboxBroker broker = AiSessionInboxBroker.getInstance();
 
         String readOwedId = broker.sendMessage(readPeer.id(), me.id(), "Please review", "body", null,
-                                               false, true, false);
+                false, true, false);
         broker.readMessageWithResult(me.id(), me.secret(), readOwedId);
 
         broker.sendMessage(unreadPeer.id(), me.id(), "Also needs a reply", "body", null, false, true, false);
         // left unread deliberately
 
         String toBeAnsweredId = broker.sendMessage(answeredPeer.id(), me.id(), "Answering this one now", "body", null,
-                                                   false, true, false);
+                false, true, false);
         broker.readMessageWithResult(me.id(), me.secret(), toBeAnsweredId);
 
         String result = new SendAiMessageTool().handle(
@@ -130,7 +140,7 @@ class ReplyTrackingToolsTest {
         assertTrue(result.contains("Please review"), result);
         assertFalse(result.contains("Also needs a reply"), "unread messages must not be surfaced here: " + result);
         assertFalse(result.contains("id=" + toBeAnsweredId),
-                    "the message just answered by this call must be excluded: " + result);
+                "the message just answered by this call must be excluded: " + result);
     }
 
     @Test
@@ -151,7 +161,7 @@ class ReplyTrackingToolsTest {
         AiSessionInboxBroker broker = AiSessionInboxBroker.getInstance();
 
         String owedId = broker.sendMessage(peer.id(), me.id(), "Needs an answer", "body", null,
-                                           false, true, false);
+                false, true, false);
         String fyiId = broker.sendMessage(peer.id(), me.id(), "FYI only", "body", null, false, false, false);
 
         JsonObject deleteOwed = new JsonObject();

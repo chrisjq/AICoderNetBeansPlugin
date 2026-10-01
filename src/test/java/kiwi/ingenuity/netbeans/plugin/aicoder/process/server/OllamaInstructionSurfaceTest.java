@@ -198,10 +198,10 @@ class OllamaInstructionSurfaceTest {
     @Test
     void claudeInterAiToolsStillDeclareCallerCredentials() {
         Map<McpToolEnum, McpToolInterface> handlers
-                = ClaudeToolHandlerFactory.build(() -> null, null);
-        for (McpToolEnum tool : new McpToolEnum[]{McpToolEnum.SEND_AI_MESSAGE,
-            McpToolEnum.GET_AI_MESSAGES, McpToolEnum.READ_AI_MESSAGE,
-            McpToolEnum.DELETE_AI_MESSAGE, McpToolEnum.UPDATE_SESSION_DESCRIPTION}) {
+                                           = ClaudeToolHandlerFactory.build(() -> null, null);
+        for (McpToolEnum tool : new McpToolEnum[]{McpToolEnum.PEER_MESSAGE_SEND,
+                                                  McpToolEnum.PEER_MESSAGE_LIST, McpToolEnum.PEER_MESSAGE_READ,
+                                                  McpToolEnum.PEER_MESSAGE_DELETE, McpToolEnum.PEER_SESSION_DESCRIBE}) {
             McpToolInterface handler = handlers.get(tool);
             if (handler == null) {
                 continue;
@@ -219,7 +219,7 @@ class OllamaInstructionSurfaceTest {
     @Test
     void claudeStillReceivesBuiltInToolDirectivesAndCredentials() {
         Map<McpToolEnum, McpToolInterface> handlers
-                = ClaudeToolHandlerFactory.build(() -> null, null);
+                                           = ClaudeToolHandlerFactory.build(() -> null, null);
         assertFalse(handlers.isEmpty(), "handler map must be populated for the control to mean anything");
 
         String text = McpInstructionRegistry.buildFullInstructions(

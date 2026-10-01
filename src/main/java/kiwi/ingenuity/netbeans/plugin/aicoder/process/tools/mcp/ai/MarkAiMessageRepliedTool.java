@@ -17,15 +17,15 @@ public class MarkAiMessageRepliedTool extends AbstractActionTool {
 
     public MarkAiMessageRepliedTool() {
         super(McpSectionEnum.PLUGIN,
-              McpToolEnum.MARK_AI_MESSAGE_REPLIED.toolName(),
-              "Mark a message that expected a reply as answered when you replied some other way (a message without replyToMessageId, a commit, a build, or a message to a third session). Stops its sender getting a false no-reply notice.",
-              McpToolEnum.MARK_AI_MESSAGE_REPLIED.toolName() + " -> mark an expected-reply message as answered after replying another way");
+                McpToolEnum.PEER_MESSAGE_MARK_REPLIED.toolName(),
+                "Mark a message that expected a reply as answered when you replied some other way (a message without replyToMessageId, a commit, a build, or a message to a third session). Stops its sender getting a false no-reply notice.",
+                McpToolEnum.PEER_MESSAGE_MARK_REPLIED.toolName() + " -> mark an expected-reply message as answered after replying another way");
     }
 
     @Override
     public JsonObject schema(Set<McpInstructionOptionEnum> options) {
         JsonObject tool = new JsonObject();
-        tool.addProperty(ToolSchemaKeyEnum.NAME.key(), McpToolEnum.MARK_AI_MESSAGE_REPLIED.toolName());
+        tool.addProperty(ToolSchemaKeyEnum.NAME.key(), McpToolEnum.PEER_MESSAGE_MARK_REPLIED.toolName());
         tool.addProperty(ToolSchemaKeyEnum.DESCRIPTION.key(), "Mark a message that expected a reply as answered when you replied some other way (a message without replyToMessageId, a commit, a build, or a message to a third session). Stops its sender getting a false no-reply notice.");
         JsonObject schema = new JsonObject();
         schema.addProperty(ToolSchemaKeyEnum.TYPE.key(), "object");
@@ -45,7 +45,7 @@ public class MarkAiMessageRepliedTool extends AbstractActionTool {
         }
         JsonObject mid = new JsonObject();
         mid.addProperty(ToolSchemaKeyEnum.TYPE.key(), "string");
-        mid.addProperty(ToolSchemaKeyEnum.DESCRIPTION.key(), "Message ID from " + McpToolEnum.GET_AI_MESSAGES.toolName() + ".");
+        mid.addProperty(ToolSchemaKeyEnum.DESCRIPTION.key(), "Message ID from " + McpToolEnum.PEER_MESSAGE_LIST.toolName() + ".");
         props.add(MarkAiMessageRepliedParamEnum.MESSAGE_ID.key(), mid);
         schema.add(ToolSchemaKeyEnum.PROPERTIES.key(), props);
         required.add(MarkAiMessageRepliedParamEnum.MESSAGE_ID.key());
@@ -85,7 +85,7 @@ public class MarkAiMessageRepliedTool extends AbstractActionTool {
         }
         if (!AiSessionInboxBroker.getInstance().validateSecret(sessionId, secretKey)) {
             return "Error: authentication failed — check that " + MarkAiMessageRepliedParamEnum.SESSION_ID.key()
-                    + " and " + MarkAiMessageRepliedParamEnum.SECRET_KEY.key() + " match your session identity";
+                   + " and " + MarkAiMessageRepliedParamEnum.SECRET_KEY.key() + " match your session identity";
         }
         AiSessionInboxBroker.MarkRepliedResultEnum result = AiSessionInboxBroker.getInstance()
                 .markReplied(sessionId, messageId);
@@ -100,4 +100,5 @@ public class MarkAiMessageRepliedTool extends AbstractActionTool {
                 "Error: no message " + messageId + " in your inbox.";
         };
     }
+
 }

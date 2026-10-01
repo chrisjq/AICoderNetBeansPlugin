@@ -28,9 +28,9 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
 /**
- * Tests for required fix 16: pending-reply hijack guard, unread-aware eviction, zero-capacity floor, visible
- * capacity-checked failure/expiry notices, and the coalescing notifier that never drops announcements under burst.
- * Lives in the broker's package so it can drive the package-private {@code setMaxInboxSize} supplier.
+ * Tests pending-reply hijack protection, unread-aware eviction, zero-capacity floor, visible capacity-checked
+ * failure/expiry notices, and the coalescing notifier that never drops announcements under burst. Lives in
+ * the broker's package so it can drive the package-private {@code setMaxInboxSize} supplier.
  */
 class AiSessionInboxBrokerNotifierTest {
 
@@ -113,7 +113,7 @@ class AiSessionInboxBrokerNotifierTest {
 
         assertDoesNotThrow(() -> broker.sendMessage("s", "cap-target", "first", "body", null));
         assertEquals(1, broker.listInbox("cap-target", target.secret()).size(),
-                     "capacity floors at one message");
+                "capacity floors at one message");
 
         broker.sendMessage("s", "cap-target", "second", "body", null);
         assertTrue(broker.awaitNotifierIdle(2, TimeUnit.SECONDS));
@@ -165,7 +165,7 @@ class AiSessionInboxBrokerNotifierTest {
         broker.register(target);
 
         broker.sendMessage("fail-sender", "fail-target", "need answer", "body", null,
-                           false, true, false);
+                false, true, false);
         broker.sendMessage("other", "fail-target", "filler", "body", null);
         // Third send fills the inbox and evicts the oldest entry — every entry is unread, so the
         // oldest unread (the expects-reply message) falls and its sender must be told.
@@ -174,9 +174,9 @@ class AiSessionInboxBrokerNotifierTest {
 
         List<String> subjects = subjectsOf("fail-sender", sender.secret());
         assertTrue(subjects.stream().anyMatch(s -> s.startsWith("Delivery failed")),
-                   "failure notice stored in sender inbox: " + subjects);
+                "failure notice stored in sender inbox: " + subjects);
         assertTrue(broker.listInbox("fail-sender", sender.secret()).size() <= 2,
-                   "notice insertion respected the capacity policy");
+                "notice insertion respected the capacity policy");
 
         assertTrue(eventArrived.await(2, TimeUnit.SECONDS), "AiInboxMessageEvent fired for the notice");
         assertEquals("fail-sender", seenEvent.get().targetSessionId());
@@ -206,7 +206,7 @@ class AiSessionInboxBrokerNotifierTest {
 
         List<String> subjects = subjectsOf("sys-sender", sender.secret());
         assertEquals(List.of("a", "b"), subjects,
-                     "system notice neither displaced unread mail nor exceeded capacity");
+                "system notice neither displaced unread mail nor exceeded capacity");
     }
 
     @Test
@@ -215,9 +215,9 @@ class AiSessionInboxBrokerNotifierTest {
         CountDownLatch allDelivered = new CountDownLatch(total);
         AtomicInteger deliveries = new AtomicInteger();
         AiSession target = stubSession("burst-target", "TargetAI", () -> {
-                                   deliveries.incrementAndGet();
-                                   allDelivered.countDown();
-                               });
+            deliveries.incrementAndGet();
+            allDelivered.countDown();
+        });
         broker.setMaxInboxSize(() -> 10_000);
         broker.register(target);
 
@@ -226,13 +226,13 @@ class AiSessionInboxBrokerNotifierTest {
         }
 
         assertTrue(allDelivered.await(15, TimeUnit.SECONDS),
-                   "every message announced despite burst that would overflow the old queue of 100");
+                "every message announced despite burst that would overflow the old queue of 100");
         assertEquals(total, deliveries.get(), "no duplicate announcements either");
         assertTrue(broker.awaitNotifierIdle(2, TimeUnit.SECONDS));
     }
 
     @Test
-    void replyFromNonOwnerIsRefusedAndInheritsNothing() {
+    void replyFromNonOwnerIsDeliveredUnlinkedAndInheritsNothing() {
         AiSession owner = stubSession("hijack-owner", "OwnerAI", null);
         AiSession impostor = stubSession("hijack-impostor", "ImpostorAI", null);
         AiSession originalSender = stubSession("hijack-sender", "SenderAI", null);
@@ -241,14 +241,16 @@ class AiSessionInboxBrokerNotifierTest {
         broker.register(originalSender);
 
         String origId = broker.sendMessage("hijack-sender", "hijack-owner", "Q", "question", null,
-                                           false, true, true);
+                false, true, true);
 
-        // The impostor quotes someone else's message id: the send is now refused outright (F4), so
-        // nothing is delivered and the impostor inherits nothing — no priority upgrade, no stamp.
+        // The impostor quotes someone else's message id: delivery succeeds as a new unlinked message, but it
+        // inherits neither the original's priority nor its reply-tracking authority.
         String hijackId = broker.sendMessage("hijack-impostor", "hijack-sender", "Re: Q", "spoofed", origId);
-        assertNull(hijackId, "an impostor's replyToMessageId is refused");
-        assertTrue(broker.listInbox("hijack-sender", originalSender.secret()).isEmpty(),
-                   "refused reply is not delivered to the sender");
+        assertNotNull(hijackId, "an impostor's message is delivered without a reply link");
+        AiInboxMessage hijackReply = broker.listInbox("hijack-sender", originalSender.secret()).stream()
+                .filter(m -> m.id().equals(hijackId)).findFirst().orElseThrow();
+        assertNull(hijackReply.replyToId(), "an impostor's message must not claim the original reply id");
+        assertFalse(hijackReply.important(), "an impostor must not inherit replyImportant");
 
         AiInboxMessage original = broker.listInbox("hijack-owner", owner.secret()).stream()
                 .filter(m -> m.id().equals(origId)).findFirst().orElseThrow();
@@ -276,14 +278,14 @@ class AiSessionInboxBrokerNotifierTest {
         broker.register(target);
 
         String id = broker.sendMessage("purge-sender", "purge-target", "answer me", "body", null,
-                                       false, true, false);
+                false, true, false);
         broker.readMessageWithResult("purge-target", target.secret(), id);
 
         broker.purgeExpiredRead(System.currentTimeMillis() + 1_000, 0L);
 
         List<String> subjects = subjectsOf("purge-sender", sender.secret());
         assertTrue(subjects.stream().anyMatch(s -> s.startsWith("No reply")),
-                   "expired expectation must notify the sender, got: " + subjects);
+                "expired expectation must notify the sender, got: " + subjects);
         assertTrue(delivered.await(2, TimeUnit.SECONDS), "notice routed through the notifier path");
     }
 
@@ -295,7 +297,7 @@ class AiSessionInboxBrokerNotifierTest {
         broker.register(target);
 
         String id = broker.sendMessage("answered-sender", "answered-target", "answer me", "body", null,
-                                       false, true, false);
+                false, true, false);
         // Genuine reply consumes the expectation before expiry.
         broker.sendMessage("answered-target", "answered-sender", "Re: answer me", "here", id);
         broker.readMessageWithResult("answered-target", target.secret(), id);

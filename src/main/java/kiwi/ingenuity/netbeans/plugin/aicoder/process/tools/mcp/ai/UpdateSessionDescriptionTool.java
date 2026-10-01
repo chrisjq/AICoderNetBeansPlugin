@@ -17,18 +17,18 @@ public class UpdateSessionDescriptionTool extends AbstractActionTool {
 
     public UpdateSessionDescriptionTool() {
         super(McpSectionEnum.PLUGIN,
-              McpToolEnum.UPDATE_SESSION_DESCRIPTION.toolName(),
-              "Update the session description visible to peer sessions.",
-              McpToolEnum.UPDATE_SESSION_DESCRIPTION.toolName() + " -> call at session start to identify your role to peer sessions (visible in " + McpToolEnum.LIST_AI_SESSIONS.toolName() + ")");
+                McpToolEnum.PEER_SESSION_DESCRIBE.toolName(),
+                "Update the session description visible to peer sessions.",
+                McpToolEnum.PEER_SESSION_DESCRIBE.toolName() + " -> call at session start to identify your role to peer sessions (visible in " + McpToolEnum.PEER_SESSION_LIST.toolName() + ")");
     }
 
     @Override
     public String instruction(Set<McpInstructionOptionEnum> options) {
         if (options.contains(McpInstructionOptionEnum.SOFTEN_TOOL_DIRECTIVES)
-                && options.contains(McpInstructionOptionEnum.TOOL_INSTRUCTION)) {
+            && options.contains(McpInstructionOptionEnum.TOOL_INSTRUCTION)) {
             // "call at session start" makes literal-minded models fire this on
             // the user's first message, whatever the message actually was.
-            return McpToolEnum.UPDATE_SESSION_DESCRIPTION.toolName() + " - set your session's description so peer sessions can see your role";
+            return McpToolEnum.PEER_SESSION_DESCRIBE.toolName() + " - set your session's description so peer sessions can see your role";
         }
         return super.instruction(options);
     }
@@ -36,11 +36,11 @@ public class UpdateSessionDescriptionTool extends AbstractActionTool {
     @Override
     public JsonObject schema(Set<McpInstructionOptionEnum> options) {
         JsonObject tool = new JsonObject();
-        tool.addProperty(ToolSchemaKeyEnum.NAME.key(), McpToolEnum.UPDATE_SESSION_DESCRIPTION.toolName());
+        tool.addProperty(ToolSchemaKeyEnum.NAME.key(), McpToolEnum.PEER_SESSION_DESCRIBE.toolName());
         tool.addProperty(ToolSchemaKeyEnum.DESCRIPTION.key(),
-                         options.contains(McpInstructionOptionEnum.CREDENTIALS)
-                         ? "Update the session description visible to peer sessions."
-                         : "Update your session's description visible to peer sessions.");
+                options.contains(McpInstructionOptionEnum.CREDENTIALS)
+                ? "Update the session description visible to peer sessions."
+                : "Update your session's description visible to peer sessions.");
         JsonObject schema = new JsonObject();
         schema.addProperty(ToolSchemaKeyEnum.TYPE.key(), "object");
         JsonObject props = new JsonObject();
@@ -63,7 +63,7 @@ public class UpdateSessionDescriptionTool extends AbstractActionTool {
         }
         JsonObject desc = new JsonObject();
         desc.addProperty(ToolSchemaKeyEnum.TYPE.key(), "string");
-        desc.addProperty(ToolSchemaKeyEnum.DESCRIPTION.key(), "Required description visible to peers via " + McpToolEnum.LIST_AI_SESSIONS.toolName() + ".");
+        desc.addProperty(ToolSchemaKeyEnum.DESCRIPTION.key(), "Required description visible to peers via " + McpToolEnum.PEER_SESSION_LIST.toolName() + ".");
         props.add(UpdateSessionDescriptionParamEnum.DESCRIPTION.key(), desc);
         schema.add(ToolSchemaKeyEnum.PROPERTIES.key(), props);
         required.add(UpdateSessionDescriptionParamEnum.DESCRIPTION.key());
@@ -106,6 +106,7 @@ public class UpdateSessionDescriptionTool extends AbstractActionTool {
         // caller that only sees "Description updated." cannot observe its own
         // change and may conclude the write failed and retry with a new value.
         return "Session description is now: " + description
-                + "\nThis is already in effect — do not call this tool again this turn.";
+               + "\nThis is already in effect — do not call this tool again this turn.";
     }
+
 }

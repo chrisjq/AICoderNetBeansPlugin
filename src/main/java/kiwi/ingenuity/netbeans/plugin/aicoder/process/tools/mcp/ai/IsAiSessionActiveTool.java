@@ -18,22 +18,22 @@ public class IsAiSessionActiveTool extends AbstractActionTool {
 
     public IsAiSessionActiveTool() {
         super(McpSectionEnum.PLUGIN,
-              McpToolEnum.IS_AI_SESSION_ACTIVE.toolName(),
-              "Check whether a target AI session is open and whether it is idle, busy, or awaiting approval. Open sessions can receive messages regardless of state; awaiting approval is reported separately from active.",
-              McpToolEnum.IS_AI_SESSION_ACTIVE.toolName() + " -> check before " + McpToolEnum.SEND_AI_MESSAGE.toolName() + " if you need the session to respond promptly; active=false means idle (can still receive), active=true means busy");
+                McpToolEnum.PEER_SESSION_IS_ACTIVE.toolName(),
+                "Check whether another AI session in this IDE (not an internal subagent) is open and whether it is idle, busy, or awaiting approval. Open sessions can receive messages regardless of state; awaiting approval is reported separately from active.",
+                McpToolEnum.PEER_SESSION_IS_ACTIVE.toolName() + " -> check before " + McpToolEnum.PEER_MESSAGE_SEND.toolName() + " if you need the session to respond promptly; active=false means idle (can still receive), active=true means busy");
     }
 
     @Override
     public JsonObject schema(Set<McpInstructionOptionEnum> options) {
         JsonObject tool = new JsonObject();
-        tool.addProperty(ToolSchemaKeyEnum.NAME.key(), McpToolEnum.IS_AI_SESSION_ACTIVE.toolName());
-        tool.addProperty(ToolSchemaKeyEnum.DESCRIPTION.key(), "Check whether a target AI session is open and whether it is idle, busy, or awaiting approval. Open sessions can receive messages regardless of state; awaiting approval is reported separately from active.");
+        tool.addProperty(ToolSchemaKeyEnum.NAME.key(), McpToolEnum.PEER_SESSION_IS_ACTIVE.toolName());
+        tool.addProperty(ToolSchemaKeyEnum.DESCRIPTION.key(), "Check whether another AI session in this IDE (not an internal subagent) is open and whether it is idle, busy, or awaiting approval. Open sessions can receive messages regardless of state; awaiting approval is reported separately from active.");
         JsonObject schema = new JsonObject();
         schema.addProperty(ToolSchemaKeyEnum.TYPE.key(), "object");
         JsonObject props = new JsonObject();
         JsonObject tid = new JsonObject();
         tid.addProperty(ToolSchemaKeyEnum.TYPE.key(), "string");
-        tid.addProperty(ToolSchemaKeyEnum.DESCRIPTION.key(), "Target session ID from " + McpToolEnum.LIST_AI_SESSIONS.toolName() + " or your session identity.");
+        tid.addProperty(ToolSchemaKeyEnum.DESCRIPTION.key(), "Target session ID from " + McpToolEnum.PEER_SESSION_LIST.toolName() + " or your session identity.");
         props.add(IsAiSessionActiveParamEnum.TARGET_SESSION_ID.key(), tid);
         schema.add(ToolSchemaKeyEnum.PROPERTIES.key(), props);
         JsonArray required = new JsonArray();
@@ -66,6 +66,7 @@ public class IsAiSessionActiveTool extends AbstractActionTool {
                        ? "currently processing a turn (busy — message will queue until turn completes)"
                        : "idle (ready to receive messages)";
         return "Session " + targetSessionId + " is open and " + state
-                + (awaitingApproval ? "; awaiting approval from its user." : ".");
+               + (awaitingApproval ? "; awaiting approval from its user." : ".");
     }
+
 }

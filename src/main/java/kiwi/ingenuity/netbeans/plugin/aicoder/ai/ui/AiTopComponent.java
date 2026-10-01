@@ -108,6 +108,7 @@ import org.openide.windows.TopComponent;
 import org.openide.windows.WindowManager;
 
 @TopComponent.Description(preferredID = "AiTopComponent", persistenceType = TopComponent.PERSISTENCE_NEVER)
+
 public final class AiTopComponent extends TopComponent implements AiProcessEventListener, SessionLifecycleSource, AiSessionHost, ExecutablePrompter {
 
     private static final Logger LOG = Logger.getLogger(AiTopComponent.class.getName());
@@ -177,7 +178,7 @@ public final class AiTopComponent extends TopComponent implements AiProcessEvent
      *
      * <p>
      * "May already have taken effect" is deliberate, not hedging for its own sake: observed twice in one day,
-     * a SendAiMessage reported as rejected WAS delivered, and the session told the user it had never been
+     * a PeerMessageSend reported as rejected WAS delivered, and the session told the user it had never been
      * sent, which cost a round trip to undo. "Rejected" reads as "it did not happen", so the notice has to
      * say outright that it may have.</p>
      */
@@ -187,12 +188,12 @@ public final class AiTopComponent extends TopComponent implements AiProcessEvent
                                   + "A tool call that was running when the message arrived is normally allowed to finish first, so a result "
                                   + "you received is real. If a tool call is instead reported to you as rejected, cancelled or \"the user "
                                   + "doesn't want to proceed\", it was aborted by this incoming message and its outcome is UNKNOWN: it may "
-                                  + "already have taken effect. Check its effect (re-read the file, " + McpToolEnum.LIST_BUILDS.toolName() + ", " + McpToolEnum.GET_AI_MESSAGES.toolName() + ", " + McpToolEnum.GET_GIT_STATUS.toolName() + "…) "
+                                  + "already have taken effect. Check its effect (re-read the file, " + McpToolEnum.LIST_BUILDS.toolName() + ", " + McpToolEnum.PEER_MESSAGE_LIST.toolName() + ", " + McpToolEnum.GET_GIT_STATUS.toolName() + "…) "
                                   + "before repeating it. Then read your inbox and resume your work.";
     /**
      * @param userInitiated false when the plugin submits a turn on the user's behalf — currently the
-     *                      queued-inbox-notification flush at turn end. Only the auto-scroll decision depends on it: a turn the
-     *                      user did not ask for must not drag their view to the bottom.
+     *                      queued-inbox-notification flush at turn end. Only the auto-scroll decision depends
+     *                      on it: a turn the user did not ask for must not drag their view to the bottom.
      */
     /**
      * DELIMITS the agent-only block inside a prompt the PLUGIN composed, so what the assistant sees is marked
@@ -446,8 +447,8 @@ public final class AiTopComponent extends TopComponent implements AiProcessEvent
      * <p>
      * Stashing only the visible half used to be harmless, because everything a notification had to say was
      * visible. It is not any more: a build result and an arriving message now render as system entries and
-     * carry ALL of their content — the build report, the message ids, the instruction to call ReadAiMessage —
-     * in the agent-only half. A build finishing while the backend was stopped therefore composed an empty
+     * carry ALL of their content — the build report, the message ids, the instruction to call PeerMessageRead
+     * — in the agent-only half. A build finishing while the backend was stopped therefore composed an empty
      * visible string and a full agent-only payload, and the restart path kept the empty one and dropped the
      * payload entirely.
      */
@@ -568,7 +569,6 @@ public final class AiTopComponent extends TopComponent implements AiProcessEvent
         }
         bottom.setBorder(BorderFactory.createMatteBorder(1, 0, 0, 0, sepColor));
         bottom.add(infoBar, BorderLayout.NORTH);
-
         // Minimum and initial height come from INPUT_AREA_HEIGHT (preferred ==
         // minimum), so the window always opens at the minimum size.
         JScrollPane inputScrollPane = new JScrollPane(inputField, JScrollPane.VERTICAL_SCROLLBAR_AS_NEEDED, JScrollPane.HORIZONTAL_SCROLLBAR_NEVER);
@@ -579,7 +579,6 @@ public final class AiTopComponent extends TopComponent implements AiProcessEvent
         configButton.setToolTipText("Session configuration");
         configButton.setMargin(new Insets(0, 4, 0, 4));
         configButton.addActionListener(e -> openSessionConfig());
-
         // On by default for a freshly opened session, which is what it has always done — the
         // toggle exists to let the user stop it, not to change the starting behaviour.
         //
@@ -700,10 +699,11 @@ public final class AiTopComponent extends TopComponent implements AiProcessEvent
      * Drains queued notifications into a single new turn.
      *
      * @return whether a turn was actually submitted. Callers finishing a turn use this to decide whether to
-     *         show the session as idle: a queued notification means the session carries straight on, and announcing
-     *         idle first is what let a green tab and a live input field appear mid-conversation. A non-empty queue is
-     *         NOT the same answer - every entry can be filtered out below and nothing sent - so the decision has to
-     *         come from here, after filtering, or the UI would be left permanently busy with no turn running.
+     *         show the session as idle: a queued notification means the session carries straight on, and
+     *         announcing idle first is what let a green tab and a live input field appear mid-conversation. A
+     *         non-empty queue is NOT the same answer - every entry can be filtered out below and nothing sent
+     *         - so the decision has to come from here, after filtering, or the UI would be left permanently
+     *         busy with no turn running.
      */
     private boolean flushPendingNotifications(AbstractNotification... extra) {
         assert SwingUtilities.isEventDispatchThread();
@@ -1087,8 +1087,9 @@ public final class AiTopComponent extends TopComponent implements AiProcessEvent
 
     /**
      * @param notificationText what the user sees, already fully composed by the caller —
-     *                         {@link #groupedVisibleText} for the flush path, which applies each entry's own type prefix itself, so
-     *                         this no longer prefixes again; blank submits nothing visible
+     *                         {@link #groupedVisibleText} for the flush path, which applies each entry's own
+     *                         type prefix itself, so this no longer prefixes again; blank submits nothing
+     *                         visible
      * @param agentOnlyText    what only the assistant sees
      */
     private void submitNotificationTurn(NotificationTypeEnum type, String notificationText, String agentOnlyText) {
@@ -1301,7 +1302,6 @@ public final class AiTopComponent extends TopComponent implements AiProcessEvent
             };
             OpenProjects.getDefault().addPropertyChangeListener(openProjectsListener);
         }
-
         // loadHistory() now loads/parses off the EDT and resolves the session dir
         // itself once it (asynchronously) finishes — see loadHistory() below.
         loadHistory(startAiProcess());
@@ -1688,7 +1688,7 @@ public final class AiTopComponent extends TopComponent implements AiProcessEvent
             case READY, FATAL ->
                 registry.onSessionIdle(session.id());
             case AWAITING_USER -> {
-                // Mid-turn approval is not idle: the target is still inside its turn, waiting on the user.
+            // Mid-turn approval is not idle: the target is still inside its turn, waiting on the user.
             }
         }
     }
@@ -1799,7 +1799,6 @@ public final class AiTopComponent extends TopComponent implements AiProcessEvent
         if (aiBackend == null) {
             return; // stale invokeLater fired after close
         }
-
         // The flash pulse is requested in onAiProcessEvent() before this event
         // is dispatched; handleEvent() only does the full per-event UI work.
         if (event instanceof TextDeltaEvent td) {
@@ -2048,8 +2047,9 @@ public final class AiTopComponent extends TopComponent implements AiProcessEvent
 
     /**
      * @param agentOnlyText text the assistant must receive but the user must NOT see. APPENDED to the prompt
-     *                      and omitted from {@code conversationPanel.addUserMessage}, which is the single call that feeds both the
-     *                      transcript and saved history — so nothing hidden here can reappear on reload.
+     *                      and omitted from {@code conversationPanel.addUserMessage}, which is the single
+     *                      call that feeds both the transcript and saved history — so nothing hidden here can
+     *                      reappear on reload.
      * <p>
      * ORDER IS LOAD-BEARING, not incidental: the prompt is composed as the visible text, then
      * {@link #SYSTEM_CUT_MARKER}, then the agent-only block. Everything the user should see comes before the
@@ -2611,7 +2611,7 @@ public final class AiTopComponent extends TopComponent implements AiProcessEvent
                 return;
             }
             case SHOW_DIFF -> {
-                // fall through to open the panel
+            // fall through to open the panel
             }
         }
 
@@ -2828,7 +2828,6 @@ public final class AiTopComponent extends TopComponent implements AiProcessEvent
             SwingUtilities.invokeLater(this::resolveSessionDir);
             return;
         }
-
         // Don't block this pool thread waiting for the AI backend to start —
         // register a continuation instead, so the thread is released back to
         // PERSIST_EXECUTOR while waiting and the stored-session check runs (as a
@@ -3182,4 +3181,5 @@ public final class AiTopComponent extends TopComponent implements AiProcessEvent
         FATAL,
         AWAITING_USER
     }
+
 }

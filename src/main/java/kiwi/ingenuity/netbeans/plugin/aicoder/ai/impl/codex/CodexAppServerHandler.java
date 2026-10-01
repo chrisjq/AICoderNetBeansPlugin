@@ -652,8 +652,8 @@ class CodexAppServerHandler implements CodexNotificationListener, CodexServerReq
      *
      * <p>
      * Field names taken from a live notification, not guessed: {@code item.type} is {@code "mcpToolCall"},
-     * {@code item.tool} names the tool (e.g. {@code "ListAiSessions"}) and {@code item.server} the MCP server
-     * (e.g. {@code "aicoder-nb-ki-plugin"}). Kind.OTHER with a null path deliberately —
+     * {@code item.tool} names the tool (e.g. {@code "PeerSessionList"}) and {@code item.server} the MCP
+     * server (e.g. {@code "aicoder-nb-ki-plugin"}). Kind.OTHER with a null path deliberately —
      * {@code isFileModification()} stays false so no diff panel is raised; file changes keep their own path
      * below.
      */
@@ -838,7 +838,6 @@ class CodexAppServerHandler implements CodexNotificationListener, CodexServerReq
                     + unsupported));
             return CompletableFuture.failedFuture(new UnsupportedOperationException(unsupported));
         }
-
         // MCP steering: auto-deny file changes when steering is enabled
         if (isMcpSteeringEnabled()) {
             McpHookServerUtil.logMcpSteeringRefusal("codex", McpSteeringPolicy.Category.WRITE, summarizeFileChanges(changes));
@@ -849,7 +848,6 @@ class CodexAppServerHandler implements CodexNotificationListener, CodexServerReq
             result.addProperty(CodexJsonKeyEnum.DECISION.key(), "decline");
             return CompletableFuture.completedFuture(result);
         }
-
         // Multi-file change: one review over the whole ordered set. Before this existed, every multi-file edit fell
         // through to the blind ConfirmEvent below — one line saying "Codex wants to modify 3 files", Yes/No, no diff —
         // which is the approval-sight-unseen this feature removes.
@@ -860,7 +858,6 @@ class CodexAppServerHandler implements CodexNotificationListener, CodexServerReq
             }
             return raiseMultiPermissionAndReply(items);
         }
-
         // Single-file change with a diff: upgrade to PermissionEvent so the user
         // reviews Codex edits in the same diff panel as the plugin's own edits.
         if (changes != null && changes.size() == 1 && changes.get(0).isJsonObject()) {
@@ -877,11 +874,10 @@ class CodexAppServerHandler implements CodexNotificationListener, CodexServerReq
                     }
                     return raisePermissionAndReply(fp, proposed);
                 }
-                // Nothing we can render honestly — fall through to the ConfirmEvent path below. proposedContentFor has
-                // already logged why.
+            // Nothing we can render honestly — fall through to the ConfirmEvent path below. proposedContentFor has
+            // already logged why.
             }
         }
-
         // Fallback, reached only for a SINGLE change we could not turn into a diff — missing diff field, unreadable
         // file, or a patch that would not apply (stale content / CRLF / whitespace mismatch) — or for a request whose
         // cached changes[] is absent or empty.
@@ -1012,4 +1008,5 @@ class CodexAppServerHandler implements CodexNotificationListener, CodexServerReq
     public void onDisconnected(Exception cause) {
         disconnectCallback.run();
     }
+
 }

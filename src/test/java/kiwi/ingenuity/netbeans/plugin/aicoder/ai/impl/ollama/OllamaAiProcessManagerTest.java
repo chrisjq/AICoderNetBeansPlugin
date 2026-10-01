@@ -743,7 +743,7 @@ class OllamaAiProcessManagerTest {
     }
 
     /**
-     * qwen2.5-coder:14b answered "hi" by calling UpdateSessionDescription, got back "Description updated.",
+     * qwen2.5-coder:14b answered "hi" by calling PeerSessionDescribe, got back "Description updated.",
      * and — having no signal that the work was done — reissued the identical call every iteration. The tool
      * must run once and the turn must end promptly rather than at the iteration cap.
      */
@@ -782,7 +782,7 @@ class OllamaAiProcessManagerTest {
     }
 
     /**
-     * Observed with qwen2.5-coder:14b: it called UpdateSessionDescription four times, varying the description
+     * Observed with qwen2.5-coder:14b: it called PeerSessionDescribe four times, varying the description
      * each time, so an arguments-based guard never matched — yet every call returned "Description updated."
      * An already-seen result means the call taught the model nothing.
      */

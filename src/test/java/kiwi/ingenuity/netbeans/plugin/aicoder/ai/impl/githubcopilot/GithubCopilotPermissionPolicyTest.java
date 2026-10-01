@@ -62,10 +62,10 @@ class GithubCopilotPermissionPolicyTest {
     // ---- panel labelling and credential masking ----
     @Test
     void toolNamePrefersTheToolTitleOverTheCategoryLabel() {
-        assertEquals("SendAiMessage",
+        assertEquals("PeerMessageSend",
                 GithubCopilotPermissionPolicy.describeToolName(
                         GithubCopilotPermissionPolicy.Category.UNKNOWN, "mcp",
-                        Map.of("toolTitle", "SendAiMessage")),
+                        Map.of("toolTitle", "PeerMessageSend")),
                 "a live panel read \"Unknown\" while the tool title sat unused in extensionData");
     }
 
@@ -90,10 +90,10 @@ class GithubCopilotPermissionPolicyTest {
 
     @Test
     void aRecognisedMcpRequestStillShowsItsToolTitle() {
-        // The case that actually matters in practice: "SendAiMessage", not "Unknown".
-        assertEquals("SendAiMessage", GithubCopilotPermissionPolicy.describeToolName(
+        // The case that actually matters in practice: "PeerMessageSend", not "Unknown".
+        assertEquals("PeerMessageSend", GithubCopilotPermissionPolicy.describeToolName(
                 GithubCopilotPermissionPolicy.Category.UNKNOWN, "mcp",
-                Map.of("toolTitle", "SendAiMessage")));
+                Map.of("toolTitle", "PeerMessageSend")));
     }
 
     @Test
@@ -245,4 +245,5 @@ class GithubCopilotPermissionPolicyTest {
                         GithubCopilotPermissionPolicy.Category.WRITE, "write"),
                 "WRITE must map to the same steer text the OpenCode/Codex write paths produce");
     }
+
 }

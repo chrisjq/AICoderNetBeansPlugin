@@ -60,8 +60,10 @@ public final class AiSessionInboxBroker {
     private final Map<String, List<AiInboxMessage>> inbox = new HashMap<>();
     private final Map<String, AiInboxMessage> inboxMessageById = new HashMap<>();
 
-    // pendingReplies is guarded by `lock`.
+    // Reply tracking maps are guarded by `lock`. Deleted expects-reply messages remain as tombstones so
+    // replying, marking replied, expiry, and exit can still resolve their expectation without keeping them visible.
     private final Map<String, PendingReplyEntry> pendingReplies = new HashMap<>();
+    private final Map<String, DeletedMessageTombstone> deletedMessageTombstones = new HashMap<>();
 
     // Effective max inbox size. Defaults to a literal so unit tests never touch
     // NbPreferences; getInstance() swaps in PluginSettings::getInboxMaxSize for prod.
@@ -74,7 +76,7 @@ public final class AiSessionInboxBroker {
     //
     // Replaces the former single-worker ThreadPoolExecutor with a queue of 100 and
     // DiscardOldestPolicy, which silently dropped agent delivery notifications and important-message
-    // interrupts under burst. The design keeps every constraint from the review watchlist:
+    // interrupts under burst. The design keeps every required delivery constraint:
     //
     // - BOUNDED: pendingWork holds at most one entry per target session, so it can never grow with
     //   traffic. No unbounded queue.
@@ -109,8 +111,8 @@ public final class AiSessionInboxBroker {
     }
 
     /**
-     * Sets the effective inbox capacity. Clamped to at least 1: the setter accepts any {@link IntSupplier}, and a
-     * supplier returning 0 would otherwise drive the capacity loop onto an empty list.
+     * Sets the effective inbox capacity. Clamped to at least 1: the setter accepts any {@link IntSupplier},
+     * and a supplier returning 0 would otherwise drive the capacity loop onto an empty list.
      */
     void setMaxInboxSize(IntSupplier supplier) {
         this.maxInboxSize = () -> Math.max(1, supplier.getAsInt());
@@ -132,10 +134,11 @@ public final class AiSessionInboxBroker {
     }
 
     /**
-     * Unregisters a session. Senders of messages the exiting session never opened (never read with ReadAiMessage and
-     * never answered) are told it exited without reading them — the messages WERE delivered to its inbox, just not
-     * read. Senders whose messages were read but not yet replied to (expectsReply=true) receive a separate "no reply"
-     * notification; if replyImportant was set, the sender is interrupted regardless of their own setting.
+     * Unregisters a session. Senders of messages the exiting session never opened (never read with
+     * PeerMessageRead and never answered) are told it exited without reading them — the messages WERE
+     * delivered to its inbox, just not read. Senders whose messages were read but not yet replied to
+     * (expectsReply=true) receive a separate "no reply" notification; if replyImportant was set, the sender
+     * is interrupted regardless of their own setting.
      */
     public void unregister(String sessionId) {
         List<AiInboxMessage> unread;
@@ -152,7 +155,7 @@ public final class AiSessionInboxBroker {
             // are still queued in other recipients' backlogs stay queued, since those inbox copies
             // remain readable there.
             unannouncedBySession.remove(sessionId);
-            // Only messages never explicitly read (ReadAiMessage) are "not opened". A message that was
+            // Only messages never explicitly read (PeerMessageRead) are "not opened". A message that was
             // answered proves it was handled even if never read, so it is excluded here too; the
             // pending-reply check below excludes whatever still expects a reply.
             unread = removedMessages.stream()
@@ -163,8 +166,12 @@ public final class AiSessionInboxBroker {
                     .filter(e -> e.toSessionId().equals(sessionId))
                     .toList();
             pendingAsRecipient.forEach(e -> pendingReplies.remove(e.messageId()));
-            // Remove orphaned entries where the exiting session was the sender
+            // Remove orphaned entries where the exiting session was the sender.
             pendingReplies.entrySet().removeIf(e -> e.getValue().fromSessionId().equals(sessionId));
+            deletedMessageTombstones.entrySet().removeIf(e -> {
+                AiInboxMessage message = e.getValue().message();
+                return message.fromSessionId().equals(sessionId) || message.toSessionId().equals(sessionId);
+            });
             activeIds = new HashSet<>(inbox.keySet());
         }
         if (unread.isEmpty() && pendingAsRecipient.isEmpty()) {
@@ -202,21 +209,21 @@ public final class AiSessionInboxBroker {
             String notifId = UUID.randomUUID().toString();
             String notifSubject = "Not read — session " + exitingName + " exited";
             String notifBody = "Session " + exitingName
-                    + " exited with message(s) from you it never opened: "
-                    + subjects.stream().map(s -> "\"" + s + "\"").collect(Collectors.joining(", "))
-                    + ". They were delivered to its inbox but not read.";
+                               + " exited with message(s) from you it never opened: "
+                               + subjects.stream().map(s -> "\"" + s + "\"").collect(Collectors.joining(", "))
+                               + ". They were delivered to its inbox but not read.";
             AiInboxMessage notification = new AiInboxMessage(notifId, sessionId, senderId,
-                                                             notifSubject, notifBody, null, wasImportant, false, false,
-                                                             Instant.now(), null, null);
+                    notifSubject, notifBody, null, wasImportant, false, false,
+                    Instant.now(), null, null);
             String deliveryNote = "Session " + exitingName + " exited — it never opened your message(s): "
-                    + subjects.stream().map(s -> "\"" + s + "\"").collect(Collectors.joining(", "));
+                                  + subjects.stream().map(s -> "\"" + s + "\"").collect(Collectors.joining(", "));
             List<AiInboxMessage> stored;
             synchronized (lock) {
                 ArrayDeque<PendingInsert> inserts = new ArrayDeque<>();
                 // System notice: never displaces an unread message; wasImportant keeps the
                 // unconditional interrupt the old path gave the sender.
                 inserts.add(new PendingInsert(notification, wasImportant, true,
-                                              new SimpleNotification(deliveryNote)));
+                        new SimpleNotification(deliveryNote)));
                 stored = insertAllLocked(inserts);
             }
             announceStored(stored);
@@ -235,18 +242,18 @@ public final class AiSessionInboxBroker {
             String notifId = UUID.randomUUID().toString();
             String notifSubject = "No reply — session " + sessionId + " exited";
             String notifBody = "Session '" + sessionId + "' exited without responding to your message."
-                    + " Subject: \"" + pendingEntry.subject() + "\"";
+                               + " Subject: \"" + pendingEntry.subject() + "\"";
             AiInboxMessage notification = new AiInboxMessage(notifId, sessionId, senderId,
-                                                             notifSubject, notifBody, pendingEntry.messageId(), pendingEntry.replyImportant(), false, false,
-                                                             Instant.now(), null, null);
+                    notifSubject, notifBody, pendingEntry.messageId(), pendingEntry.replyImportant(), false, false,
+                    Instant.now(), null, null);
             String deliveryNote = "Session " + sessionId + " exited without responding to your message."
-                    + " Subject: \"" + pendingEntry.subject() + "\"";
+                                  + " Subject: \"" + pendingEntry.subject() + "\"";
             List<AiInboxMessage> stored;
             synchronized (lock) {
                 ArrayDeque<PendingInsert> inserts = new ArrayDeque<>();
                 // System notice; replyImportant keeps the unconditional interrupt.
                 inserts.add(new PendingInsert(notification, pendingEntry.replyImportant(), true,
-                                              new SimpleNotification(deliveryNote)));
+                        new SimpleNotification(deliveryNote)));
                 stored = insertAllLocked(inserts);
             }
             announceStored(stored);
@@ -262,10 +269,10 @@ public final class AiSessionInboxBroker {
     /**
      * Whether the IDE knows this session at all, regardless of whether it can currently receive mail.
      * <p>
-     * Distinct from {@link #isActive(String)}: a sender that mistypes a session ID and a sender addressing a session
-     * that has since stopped both fail the active check, but they need opposite advice — fix the ID, versus pick a
-     * different recipient. Without this the caller can only say "not active", which reads as "they have stopped" and
-     * sends a caller with a corrupted ID looking in entirely the wrong place.
+     * Distinct from {@link #isActive(String)}: a sender that mistypes a session ID and a sender addressing a
+     * session that has since stopped both fail the active check, but they need opposite advice — fix the ID,
+     * versus pick a different recipient. Without this the caller can only say "not active", which reads as
+     * "they have stopped" and sends a caller with a corrupted ID looking in entirely the wrong place.
      */
     public boolean isKnownSession(String sessionId) {
         return sessionFromRegistry(sessionId) != null;
@@ -284,6 +291,19 @@ public final class AiSessionInboxBroker {
     public boolean isImportantMessagesAllowed(String sessionId) {
         AiSession session = sessionFromRegistry(sessionId);
         return session != null && session.allowsImportantMessages();
+    }
+
+    /**
+     * Finds active sessions by exact display name, including the caller so self-addressing remains
+     * detectable.
+     */
+    public List<AiSession> findActiveSessionsByName(String name) {
+        synchronized (lock) {
+            return inbox.keySet().stream()
+                    .map(this::sessionFromRegistry)
+                    .filter(s -> s != null && s.name().equals(name))
+                    .toList();
+        }
     }
 
     public List<AiSession> listActive(String callerSessionId) {
@@ -318,39 +338,42 @@ public final class AiSessionInboxBroker {
     /**
      * Sends a message to another session's inbox.
      *
-     * Returns the generated message ID, or null if the target session is not active. The active check and inbox
-     * insertion are atomic under the same lock, closing the TOCTOU gap between isActive() and delivery.
+     * Returns the generated message ID, or null if the target session is not active. The active check and
+     * inbox insertion are atomic under the same lock, closing the TOCTOU gap between isActive() and delivery.
      *
-     * When replyToId refers to an expectsReply entry with replyImportant=true, the reply is automatically upgraded to
-     * important so the original sender is interrupted when the reply arrives.
+     * When replyToId refers to an expectsReply entry with replyImportant=true, the reply is automatically
+     * upgraded to important so the original sender is interrupted when the reply arrives.
      *
-     * When expectsReply=true a lightweight PendingReplyEntry (no body) is stored. If the recipient exits without
-     * replying, the sender receives an automatic "no reply" notification; if replyImportant=true the sender is also
-     * interrupted regardless of their allowImportantMessages setting.
+     * When expectsReply=true a lightweight PendingReplyEntry (no body) is stored. If the recipient exits
+     * without replying, the sender receives an automatic "no reply" notification; if replyImportant=true the
+     * sender is also interrupted regardless of their allowImportantMessages setting.
      */
     public String sendMessage(String callerSessionId, String targetSessionId,
                               String subject, String body, String replyToId,
                               boolean important, boolean expectsReply, boolean replyImportant) {
+        return sendMessageWithResult(callerSessionId, targetSessionId, subject, body, replyToId,
+                important, expectsReply, replyImportant).messageId();
+    }
+
+    public SendResult sendMessageWithResult(String callerSessionId, String targetSessionId,
+                                            String subject, String body, String replyToId,
+                                            boolean important, boolean expectsReply, boolean replyImportant) {
         String id = UUID.randomUUID().toString();
         String truncatedSubject = subject != null && subject.length() > AiInboxMessage.MAX_SUBJECT_LENGTH
                                   ? subject.substring(0, AiInboxMessage.MAX_SUBJECT_LENGTH)
                                   : subject;
         boolean effectiveImportant = important;
+        String replyToNote;
         List<AiInboxMessage> stored;
         synchronized (lock) {
             if (!inbox.containsKey(targetSessionId)) {
-                return null;
+                return new SendResult(null, null);
             }
-            // An unknown or mis-addressed replyToMessageId is refused outright (F4, Chris's decision): nothing is sent
-            // and validateReplyTo gives the caller the reason. Ownership is confirmed under this same lock, so the
-            // original below is guaranteed present and addressed to the caller. consumeReplyLocked stamps respondedAt
-            // and removes the pending expectation exactly once, sharing that step with markReplied so the two cannot
-            // drift.
-            if (validateReplyTo(callerSessionId, replyToId) != null) {
-                return null;
-            }
-            if (replyToId != null) {
-                AiInboxMessage original = inboxMessageById.get(replyToId);
+            String normalizedReplyToId = replyToId != null && !replyToId.isBlank() ? replyToId : null;
+            replyToNote = validateReplyTo(callerSessionId, normalizedReplyToId);
+            String effectiveReplyToId = replyToNote == null ? normalizedReplyToId : null;
+            if (effectiveReplyToId != null) {
+                AiInboxMessage original = replyTrackedMessageLocked(effectiveReplyToId);
                 if (original != null) {
                     PendingReplyEntry pending = consumeReplyLocked(original);
                     if (pending != null && pending.replyImportant()) {
@@ -359,58 +382,79 @@ public final class AiSessionInboxBroker {
                 }
             }
             AiInboxMessage msg = new AiInboxMessage(id, callerSessionId, targetSessionId,
-                                                    truncatedSubject, body, replyToId, effectiveImportant, expectsReply, replyImportant,
-                                                    Instant.now(), null, null);
+                    truncatedSubject, body, effectiveReplyToId, effectiveImportant, expectsReply, replyImportant,
+                    Instant.now(), null, null);
             ArrayDeque<PendingInsert> inserts = new ArrayDeque<>();
             // Not a system notice: it always makes room for itself under the capacity policy.
             inserts.add(new PendingInsert(msg, false, false, new DeliverIncomingMessageNotification(msg)));
             stored = insertAllLocked(inserts);
             if (expectsReply) {
                 pendingReplies.put(id, new PendingReplyEntry(
-                                   id,
-                                   truncatedSubject != null ? truncatedSubject : "",
-                                   callerSessionId,
-                                   targetSessionId,
-                                   replyImportant));
+                        id,
+                        truncatedSubject != null ? truncatedSubject : "",
+                        callerSessionId,
+                        targetSessionId,
+                        replyImportant));
             }
         }
         announceStored(stored);
-        return id;
+        return new SendResult(id, replyToNote);
+    }
+
+    public record SendResult(String messageId, String replyToNote) {
+
     }
 
     /**
-     * Validates a replyToMessageId before a reply is sent. Returns null when the id is absent or blank, or names a
-     * message that is still in this session's inbox and was addressed to this session; otherwise returns a
-     * user-readable reason for refusing the send. Enforced inside {@link #sendMessage}, which returns null for a
-     * refused reply, and exposed so the SendAiMessage tool can show the caller the reason.
+     * Validates a reply target. Invalid ids are reported to the caller but do not block delivery; the send
+     * becomes a new message without a reply link. Ownership is checked against visible inbox messages and
+     * reply tombstones.
      */
     public String validateReplyTo(String callerSessionId, String replyToId) {
         if (replyToId == null || replyToId.isBlank()) {
             return null;
         }
-        AiInboxMessage original;
         synchronized (lock) {
-            original = inboxMessageById.get(replyToId);
+            AiInboxMessage original = replyTrackedMessageLocked(replyToId);
+            if (original == null) {
+                return "replyToMessageId " + replyToId
+                       + " is unknown or no longer reply-trackable, so it was delivered as a new message and "
+                       + "nothing will be marked replied.";
+            }
+            if (!callerSessionId.equals(original.toSessionId())) {
+                String recipient = sessionName(original.toSessionId());
+                if (callerSessionId.equals(original.fromSessionId())) {
+                    return "replyToMessageId " + replyToId + " is a message you sent to " + recipient
+                           + ", not one you received, so it was delivered as a new message and nothing will "
+                           + "be marked replied.";
+                }
+                return "replyToMessageId " + replyToId + " is a message addressed to " + recipient
+                       + ", not you, so it was delivered as a new message and nothing will be marked replied.";
+            }
+            return null;
         }
-        if (original == null) {
-            return "replyToMessageId " + replyToId
-                    + " does not match any message in your inbox, so nothing was sent. Use the id= value of the message"
-                    + " you are answering (a UUID shown by GetAiMessages/ReadAiMessage), not the tag of a <SYSTEM:…>"
-                    + " block. If the original has expired or been deleted, send again without replyToMessageId.";
+    }
+
+    private AiInboxMessage replyTrackedMessageLocked(String messageId) {
+        AiInboxMessage visible = inboxMessageById.get(messageId);
+        if (visible != null) {
+            return visible;
         }
-        if (!callerSessionId.equals(original.toSessionId())) {
-            return "replyToMessageId " + replyToId + " is not a message sent to you, so nothing was sent.";
-        }
-        return null;
+        DeletedMessageTombstone tombstone = deletedMessageTombstones.get(messageId);
+        return tombstone != null ? tombstone.message() : null;
+    }
+
+    private String sessionName(String sessionId) {
+        AiSession session = sessionFromRegistry(sessionId);
+        return session != null ? session.name() : sessionId;
     }
 
     /**
-     * Stamps a message as answered and consumes its pending-reply expectation, sharing the single source of truth with
-     * genuine replies in {@link #sendMessage} so the two cannot drift. The caller must hold {@code lock} and the
-     * message must be present and addressed to the acting session. Returns the consumed expectation, if any.
+     * Stamps a message as answered and consumes its pending-reply expectation. The caller holds {@code lock}.
      */
     private PendingReplyEntry consumeReplyLocked(AiInboxMessage original) {
         PendingReplyEntry pending = pendingReplies.remove(original.id());
+        deletedMessageTombstones.remove(original.id());
         original.setRespondedAt(Instant.now());
         return pending;
     }
@@ -438,13 +482,13 @@ public final class AiSessionInboxBroker {
     }
 
     /**
-     * Marks a message this session received as replied, for replies sent without replyToMessageId or answered outside
-     * the mail system. Stamps respondedAt and consumes the pending-reply expectation exactly as a genuine reply with
-     * replyToMessageId does.
+     * Marks a message this session received as replied, for replies sent without replyToMessageId or answered
+     * outside the mail system. Stamps respondedAt and consumes the pending-reply expectation exactly as a
+     * genuine reply with replyToMessageId does.
      */
     public MarkRepliedResultEnum markReplied(String sessionId, String messageId) {
         synchronized (lock) {
-            AiInboxMessage m = inboxMessageById.get(messageId);
+            AiInboxMessage m = replyTrackedMessageLocked(messageId);
             if (m == null || !sessionId.equals(m.toSessionId())) {
                 return MarkRepliedResultEnum.NOT_FOUND;
             }
@@ -460,9 +504,9 @@ public final class AiSessionInboxBroker {
     }
 
     /**
-     * Messages this session received that still owe a reply: addressed to this session with expectsReply set and
-     * respondedAt still unset, oldest first, read or unread. Note the direction: replies this session owes, not the
-     * replies it is waiting for (those live in the sender-side pendingReplies bookkeeping).
+     * Messages this session received that still owe a reply: addressed to this session with expectsReply set
+     * and respondedAt still unset, oldest first, read or unread. Note the direction: replies this session
+     * owes, not the replies it is waiting for (those live in the sender-side pendingReplies bookkeeping).
      */
     public List<AiInboxMessage> listOwedReplies(String sessionId) {
         synchronized (lock) {
@@ -494,12 +538,12 @@ public final class AiSessionInboxBroker {
     }
 
     /**
-     * Marks a message as read and returns it. Returns null if not found, not owned by this session, or authentication
-     * fails.
+     * Marks a message as read and returns it. Returns null if not found, not owned by this session, or
+     * authentication fails.
      */
     /**
-     * Marks a message as read and reports whether this call performed the first read. The message lookup and first-read
-     * decision happen under one lock.
+     * Marks a message as read and reports whether this call performed the first read. The message lookup and
+     * first-read decision happen under one lock.
      */
     public ReadResult readMessageWithResult(String sessionId, String secret, String messageId) {
         if (!validateSecret(sessionId, secret)) {
@@ -530,13 +574,9 @@ public final class AiSessionInboxBroker {
     }
 
     /**
-     * Deletes inbox messages by id for the authenticated session. Returns the count actually removed (unknown ids are
-     * ignored). Returns 0 on auth failure.
-     *
-     * <p>
-     * Deleting a message that still expected a reply drops that pending-reply expectation silently: the sender is never
-     * notified at deletion time, and a later exit of this session can no longer fabricate a "no reply" notice for a
-     * deliberately deleted message.
+     * Deletes visible inbox messages by id for the authenticated session. An unanswered expects-reply message
+     * becomes a non-visible tombstone, preserving its reply tracking until it is answered, expires, or either
+     * session exits. Tombstones do not consume inbox capacity and are not returned as owed replies.
      */
     public int deleteMessages(String sessionId, String secret, List<String> ids) {
         if (!validateSecret(sessionId, secret) || ids == null || ids.isEmpty()) {
@@ -552,10 +592,10 @@ public final class AiSessionInboxBroker {
             messages.removeIf(m -> {
                 if (idSet.contains(m.id())) {
                     inboxMessageById.remove(m.id());
-                    // Drop any outstanding reply expectation with the message. Deleting is a deliberate
-                    // resolution, so the sender is not told, and no stale entry may outlive the message
-                    // to trigger a false "no reply" notice when the deleter's session exits.
-                    pendingReplies.remove(m.id());
+                    // Deleted expects-reply messages retain a non-visible tracking tombstone.
+                    if (m.expectsReply() && m.respondedAt() == null) {
+                        deletedMessageTombstones.put(m.id(), new DeletedMessageTombstone(m, Instant.now()));
+                    }
                     // A deleted message must never be announced later.
                     removeUnannouncedLocked(m);
                     return true;
@@ -588,15 +628,15 @@ public final class AiSessionInboxBroker {
     }
 
     /**
-     * Removes read messages whose readAt + retentionMs is at or before nowMs. Iterates the flat inboxMessageById map
-     * for efficient expired-only scanning; uses toSessionId for O(1) inbox list lookup to remove the entry. Unread
-     * messages are never purged.
+     * Removes read messages whose readAt + retentionMs is at or before nowMs. Iterates the flat
+     * inboxMessageById map for efficient expired-only scanning; uses toSessionId for O(1) inbox list lookup
+     * to remove the entry. Unread messages are never purged.
      *
      * <p>
-     * A purged message that still expected a reply no longer loses its expectation silently: the sender receives a "no
-     * reply" notice through the normal capacity-checked insert, event and notifier path (interrupted when
-     * replyImportant was set). Expiry collection happens before any insertion so the id map is never mutated while it
-     * is being iterated.
+     * A purged message that still expected a reply no longer loses its expectation silently: the sender
+     * receives a "no reply" notice through the normal capacity-checked insert, event and notifier path
+     * (interrupted when replyImportant was set). Expiry collection happens before any insertion so the id map
+     * is never mutated while it is being iterated.
      */
     public void purgeExpiredRead(long nowMs, long retentionMs) {
         List<AiInboxMessage> storedNotices;
@@ -618,7 +658,20 @@ public final class AiSessionInboxBroker {
                 PendingReplyEntry orphanedReply = pendingReplies.remove(m.id());
                 if (orphanedReply != null) {
                     notices.add(new PendingInsert(expiredNoReplyNotice(orphanedReply),
-                                                  orphanedReply.replyImportant(), true, null));
+                            orphanedReply.replyImportant(), true, null));
+                }
+            }
+            Iterator<Map.Entry<String, DeletedMessageTombstone>> tombstones
+                                                                 = deletedMessageTombstones.entrySet().iterator();
+            while (tombstones.hasNext()) {
+                DeletedMessageTombstone tombstone = tombstones.next().getValue();
+                if (tombstone.expiresAtMs(retentionMs) <= nowMs) {
+                    tombstones.remove();
+                    PendingReplyEntry orphanedReply = pendingReplies.remove(tombstone.message().id());
+                    if (orphanedReply != null) {
+                        notices.add(new PendingInsert(expiredNoReplyNotice(orphanedReply),
+                                orphanedReply.replyImportant(), true, null));
+                    }
                 }
             }
             storedNotices = insertAllLocked(notices);
@@ -635,15 +688,15 @@ public final class AiSessionInboxBroker {
         AiSession recipient = sessionFromRegistry(orphanedReply.toSessionId());
         String recipientName = recipient != null ? recipient.name() : orphanedReply.toSessionId();
         String body = "Your message \"" + orphanedReply.subject()
-                + "\" expired unanswered and was never marked replied by session " + recipientName + ".";
+                      + "\" expired unanswered and was never marked replied by session " + recipientName + ".";
         return new AiInboxMessage(notifId, orphanedReply.toSessionId(), orphanedReply.fromSessionId(),
-                                  subject, body, orphanedReply.messageId(), orphanedReply.replyImportant(), false, false,
-                                  Instant.now(), null, null);
+                subject, body, orphanedReply.messageId(), orphanedReply.replyImportant(), false, false,
+                Instant.now(), null, null);
     }
 
     /**
-     * Starts the periodic retention sweep (prod only; called from getInstance() before the instance is published — no
-     * concurrent access).
+     * Starts the periodic retention sweep (prod only; called from getInstance() before the instance is
+     * published — no concurrent access).
      */
     private void startSweeper() {
         sweeper = Executors.newSingleThreadScheduledExecutor(r -> {
@@ -676,15 +729,15 @@ public final class AiSessionInboxBroker {
     }
 
     /**
-     * Blocks until every notification enqueued before this call has been processed, or the timeout expires. Returns
-     * true if the notifier drained in time.
+     * Blocks until every notification enqueued before this call has been processed, or the timeout expires.
+     * Returns true if the notifier drained in time.
      *
      * <p>
-     * Work items carry monotonically increasing sequence numbers assigned at enqueue time and the single worker
-     * publishes the highest finished sequence, so waiting for {@code completed >= captured} is an exact barrier. Exists
-     * because delivery and the mail interrupt are dispatched asynchronously: without a barrier a caller (notably a
-     * test) observing state straight after {@code sendMessage} reads it before the work has run, which makes a "did not
-     * interrupt" assertion pass whether or not the code is correct.
+     * Work items carry monotonically increasing sequence numbers assigned at enqueue time and the single
+     * worker publishes the highest finished sequence, so waiting for {@code completed >= captured} is an
+     * exact barrier. Exists because delivery and the mail interrupt are dispatched asynchronously: without a
+     * barrier a caller (notably a test) observing state straight after {@code sendMessage} reads it before
+     * the work has run, which makes a "did not interrupt" assertion pass whether or not the code is correct.
      */
     public boolean awaitNotifierIdle(long timeout, TimeUnit unit) throws InterruptedException {
         long deadlineNanos = System.nanoTime() + unit.toNanos(timeout);
@@ -721,9 +774,9 @@ public final class AiSessionInboxBroker {
     }
 
     /**
-     * Queues an agent-facing announcement for {@code targetSessionId}. Never blocks and never discards: at most one
-     * pending item per target exists, so further submissions for the same target coalesce — the queued item will sweep
-     * whatever is unannounced when it runs.
+     * Queues an agent-facing announcement for {@code targetSessionId}. Never blocks and never discards: at
+     * most one pending item per target exists, so further submissions for the same target coalesce — the
+     * queued item will sweep whatever is unannounced when it runs.
      */
     private void enqueueNotification(String targetSessionId) {
         synchronized (notifierLock) {
@@ -783,15 +836,15 @@ public final class AiSessionInboxBroker {
     }
 
     /**
-     * Delivers every currently-unannounced message for one target and fires its interrupt decision. The batch is
-     * snapshotted under the broker lock and delivered outside it; entries are consumed by the snapshot so nothing is
-     * announced twice, while anything enqueued during delivery gets its own follow-up work item — that is the
-     * reconciliation half of the burst contract.
+     * Delivers every currently-unannounced message for one target and fires its interrupt decision. The batch
+     * is snapshotted under the broker lock and delivered outside it; entries are consumed by the snapshot so
+     * nothing is announced twice, while anything enqueued during delivery gets its own follow-up work item —
+     * that is the reconciliation half of the burst contract.
      *
      * <p>
-     * Interrupt rules per entry match the paths that produced it: normal sends interrupt only when the recipient allows
-     * important messages and is running, while exit/expiry notices carry an unconditional interrupt when replyImportant
-     * was set.
+     * Interrupt rules per entry match the paths that produced it: normal sends interrupt only when the
+     * recipient allows important messages and is running, while exit/expiry notices carry an unconditional
+     * interrupt when replyImportant was set.
      */
     private void announceToTarget(String targetSessionId) {
         List<UnannouncedEntry> batch;
@@ -815,7 +868,7 @@ public final class AiSessionInboxBroker {
                 LOG.log(Level.WARNING, "Delivering inbox notification failed", e);
             }
             if (entry.unconditionalInterrupt()
-                    || (entry.message().important() && handle.isRunning() && handle.allowsImportantMessages())) {
+                || (entry.message().important() && handle.isRunning() && handle.allowsImportantMessages())) {
                 interrupt = true;
             }
         }
@@ -831,8 +884,8 @@ public final class AiSessionInboxBroker {
 
     /**
      * Fires the synchronous {@link AiInboxMessageEvent} for every stored message and queues its agent-facing
-     * announcement. Must be called OUTSIDE {@code lock}: the bus event is delivered to listeners synchronously and they
-     * may re-enter the broker.
+     * announcement. Must be called OUTSIDE {@code lock}: the bus event is delivered to listeners
+     * synchronously and they may re-enter the broker.
      */
     private void announceStored(List<AiInboxMessage> stored) {
         for (AiInboxMessage message : stored) {
@@ -845,20 +898,21 @@ public final class AiSessionInboxBroker {
     }
 
     /**
-     * Inserts every queued request under the capacity policy and tracks stored messages for agent notification. While a
-     * recipient's inbox is at capacity the oldest already-read message is evicted; only when every entry is unread does
-     * the oldest unread message fall. Evicting a message that still expects a reply queues a delivery-failure notice
-     * for its sender, which is processed through this same policy — chained notices terminate because each link either
-     * fits, consumes one of the finite read entries, or is dropped by the system-notice rule below.
+     * Inserts every queued request under the capacity policy and tracks stored messages for agent
+     * notification. While a recipient's inbox is at capacity the oldest already-read message is evicted; only
+     * when every entry is unread does the oldest unread message fall. Evicting a message that still expects a
+     * reply queues a delivery-failure notice for its sender, which is processed through this same policy —
+     * chained notices terminate because each link either fits, consumes one of the finite read entries, or is
+     * dropped by the system-notice rule below.
      *
      * <p>
-     * A system notice (exit notices, expiry notices, failure notices) never displaces an unread message: when no read
-     * entry can make room it is dropped and logged instead, so system traffic can neither bypass the capacity policy
-     * nor cascade evictions through unread mail.
+     * A system notice (exit notices, expiry notices, failure notices) never displaces an unread message: when
+     * no read entry can make room it is dropped and logged instead, so system traffic can neither bypass the
+     * capacity policy nor cascade evictions through unread mail.
      *
      * <p>
-     * Returns the messages actually stored, in insertion order; callers fire events and queue announcements for exactly
-     * these via {@link #announceStored}. Caller must hold {@code lock}.
+     * Returns the messages actually stored, in insertion order; callers fire events and queue announcements
+     * for exactly these via {@link #announceStored}. Caller must hold {@code lock}.
      */
     private List<AiInboxMessage> insertAllLocked(ArrayDeque<PendingInsert> queue) {
         List<AiInboxMessage> stored = new ArrayList<>();
@@ -891,10 +945,10 @@ public final class AiSessionInboxBroker {
                 if (orphanedReply != null) {
                     String failSubject = "Delivery failed — inbox full (session " + recipientId + ")";
                     String failBody = "Your message \"" + orphanedReply.subject()
-                            + "\" was dropped because the recipient's inbox is full.";
+                                      + "\" was dropped because the recipient's inbox is full.";
                     AiInboxMessage failNotif = new AiInboxMessage(UUID.randomUUID().toString(),
-                                                                  recipientId, orphanedReply.fromSessionId(), failSubject, failBody,
-                                                                  evicted.id(), false, false, false, Instant.now(), null, null);
+                            recipientId, orphanedReply.fromSessionId(), failSubject, failBody,
+                            evicted.id(), false, false, false, Instant.now(), null, null);
                     SimpleNotification failDelivery = new SimpleNotification(
                             "Your message \"" + orphanedReply.subject()
                             + "\" was dropped because session " + recipientId + "'s inbox is full.");
@@ -910,7 +964,7 @@ public final class AiSessionInboxBroker {
             inboxMessageById.put(insert.message().id(), insert.message());
             unannouncedBySession.computeIfAbsent(recipientId, k -> new LinkedHashMap<>())
                     .put(insert.message().id(), new UnannouncedEntry(insert.message(), insert.notification(),
-                                                                     insert.unconditionalInterrupt()));
+                            insert.unconditionalInterrupt()));
             stored.add(insert.message());
         }
         return stored;
@@ -1014,8 +1068,17 @@ public final class AiSessionInboxBroker {
         }
     }
 
+    // Non-visible reply target retained after deletion so an expectation can still be answered or reported.
+    private record DeletedMessageTombstone(AiInboxMessage message, Instant deletedAt) {
+
+        long expiresAtMs(long retentionMs) {
+            Instant base = message.readAt() != null ? message.readAt() : deletedAt;
+            return base.toEpochMilli() + retentionMs;
+        }
+    }
+
     // Lightweight entry tracking a sent message that expects a reply.
-    // Stored without message body to save memory; cleaned up on reply or session exit.
+    // Stored without message body to save memory; cleaned up on reply, expiry, or session exit.
     private record PendingReplyEntry(
             String messageId, String subject,
             String fromSessionId, String toSessionId,

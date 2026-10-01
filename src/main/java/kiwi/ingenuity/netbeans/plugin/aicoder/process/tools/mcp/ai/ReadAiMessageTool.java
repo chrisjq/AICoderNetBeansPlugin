@@ -8,6 +8,7 @@ import kiwi.ingenuity.netbeans.plugin.aicoder.ai.mail.AiSessionInboxBroker;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.McpInstructionOptionEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.McpSectionEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.McpToolEnum;
+import kiwi.ingenuity.netbeans.plugin.aicoder.process.SessionRegistry;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.session.AbstractAiSession;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.AbstractActionTool;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.McpToolSchemas;
@@ -20,16 +21,16 @@ public class ReadAiMessageTool extends AbstractActionTool {
 
     public ReadAiMessageTool() {
         super(McpSectionEnum.PLUGIN,
-              McpToolEnum.READ_AI_MESSAGE.toolName(),
-              "Read and mark an inbox message by ID. It remains until " + McpToolEnum.DELETE_AI_MESSAGE.toolName() + " or expiry.",
-              McpToolEnum.READ_AI_MESSAGE.toolName() + " -> read full body of an inbox message by ID (message stays in inbox until deleted)");
+                McpToolEnum.PEER_MESSAGE_READ.toolName(),
+                "Read and mark an inbox message by ID. It remains until " + McpToolEnum.PEER_MESSAGE_DELETE.toolName() + " or expiry.",
+                McpToolEnum.PEER_MESSAGE_READ.toolName() + " -> read full body of an inbox message by ID (message stays in inbox until deleted)");
     }
 
     @Override
     public JsonObject schema(Set<McpInstructionOptionEnum> options) {
         JsonObject tool = new JsonObject();
-        tool.addProperty(ToolSchemaKeyEnum.NAME.key(), McpToolEnum.READ_AI_MESSAGE.toolName());
-        tool.addProperty(ToolSchemaKeyEnum.DESCRIPTION.key(), "Read and mark an inbox message by ID. It remains until " + McpToolEnum.DELETE_AI_MESSAGE.toolName() + " or expiry.");
+        tool.addProperty(ToolSchemaKeyEnum.NAME.key(), McpToolEnum.PEER_MESSAGE_READ.toolName());
+        tool.addProperty(ToolSchemaKeyEnum.DESCRIPTION.key(), "Read and mark an inbox message by ID. It remains until " + McpToolEnum.PEER_MESSAGE_DELETE.toolName() + " or expiry.");
         JsonObject schema = new JsonObject();
         schema.addProperty(ToolSchemaKeyEnum.TYPE.key(), "object");
         JsonObject props = new JsonObject();
@@ -52,7 +53,7 @@ public class ReadAiMessageTool extends AbstractActionTool {
         }
         JsonObject mid = new JsonObject();
         mid.addProperty(ToolSchemaKeyEnum.TYPE.key(), "string");
-        mid.addProperty(ToolSchemaKeyEnum.DESCRIPTION.key(), "Message ID from " + McpToolEnum.GET_AI_MESSAGES.toolName() + ".");
+        mid.addProperty(ToolSchemaKeyEnum.DESCRIPTION.key(), "Message ID from " + McpToolEnum.PEER_MESSAGE_LIST.toolName() + ".");
         props.add(ReadAiMessageParamEnum.MESSAGE_ID.key(), mid);
         schema.add(ToolSchemaKeyEnum.PROPERTIES.key(), props);
         required.add(ReadAiMessageParamEnum.MESSAGE_ID.key());
@@ -91,14 +92,19 @@ public class ReadAiMessageTool extends AbstractActionTool {
         AiInboxMessage msg = readResult.message();
         if (msg == null) {
             return "Error: message not found — ID is incorrect or the message has expired/been deleted. Call "
-                    + McpToolEnum.GET_AI_MESSAGES.toolName() + " to list the IDs currently in your inbox.";
+                   + McpToolEnum.PEER_MESSAGE_LIST.toolName() + " to list the IDs currently in your inbox.";
         }
         StringBuilder sb = new StringBuilder();
         sb.append("Server time: ").append(DateUtil.now()).append("\n");
-        sb.append(msg.formatSummary()).append("\n\n").append(msg.body());
+        var sender = SessionRegistry.get(msg.fromSessionId());
+        String senderName = sender != null ? sender.getAiSession().name() : msg.fromSessionId();
+        String summary = msg.formatSummary().replace("from=" + msg.fromSessionId(),
+                "from=" + msg.fromSessionId() + " (" + senderName + ")");
+        sb.append(summary).append("\n\n").append(msg.body());
         if (readResult.firstRead() && msg.expectsReply()) {
             sb.append("\n\n").append(NotificationUtil.formatReplyExpectedInstruction(msg.id()));
         }
         return sb.toString();
     }
+
 }

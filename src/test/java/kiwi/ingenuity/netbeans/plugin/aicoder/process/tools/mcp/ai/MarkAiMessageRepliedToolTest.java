@@ -51,9 +51,9 @@ class MarkAiMessageRepliedToolTest {
         String notExpected = broker.sendMessage("mark-sender", target.id(), "FYI", "body", null, false, false, false);
         assertNotNull(notExpected);
         assertEquals("Message " + notExpected + " did not ask for a reply; nothing to mark.",
-                     tool.handle(arguments(target, notExpected), null));
+                tool.handle(arguments(target, notExpected), null));
         assertEquals("Error: no message missing-message in your inbox.",
-                     tool.handle(arguments(target, "missing-message"), null));
+                tool.handle(arguments(target, "missing-message"), null));
     }
 
     @Test

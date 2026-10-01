@@ -211,7 +211,7 @@ class CodexAppServerHandlerTest {
 
     /**
      * Item shape copied from a live item/started notification, not invented: {@code item.type} is
-     * {@code "mcpToolCall"}, {@code item.tool} is {@code "ListAiSessions"}, {@code item.server} is
+     * {@code "mcpToolCall"}, {@code item.tool} is {@code "PeerSessionList"}, {@code item.server} is
      * {@code "aicoder-nb-ki-plugin"} and {@code item.status} is {@code "inProgress"}.
      */
     @Test
@@ -223,7 +223,7 @@ class CodexAppServerHandlerTest {
         item.addProperty("type", "mcpToolCall");
         item.addProperty("id", "exec-c29c4888");
         item.addProperty("server", "aicoder-nb-ki-plugin");
-        item.addProperty("tool", "ListAiSessions");
+        item.addProperty("tool", "PeerSessionList");
         item.addProperty("status", "inProgress");
         JsonObject params = new JsonObject();
         params.add("item", item);
@@ -232,7 +232,7 @@ class CodexAppServerHandlerTest {
 
         assertEquals(1, events.size());
         ToolUseEvent tu = assertInstanceOf(ToolUseEvent.class, events.get(0));
-        assertEquals("ListAiSessions", tu.toolName());
+        assertEquals("PeerSessionList", tu.toolName());
         assertEquals(ToolUseEvent.Kind.OTHER, tu.kind());
         assertFalse(tu.isFileModification(), "an MCP call must not trigger the diff panel");
     }
@@ -327,7 +327,6 @@ class CodexAppServerHandlerTest {
     void turnCompleted_unauthorizedCodexErrorInfo_surfacesActionableLoginMessage() {
         List<AiProcessEvent> events = new ArrayList<>();
         CodexAppServerHandler handler = newHandler(events);
-
         // codexErrorInfo == "unauthorized" (schema: CodexErrorInfo plain-string variant)
         JsonObject error = new JsonObject();
         error.addProperty("message", "401 Unauthorized");
@@ -515,7 +514,6 @@ class CodexAppServerHandlerTest {
 
         handler.onNotification(CodexAppServerHandler.METHOD_ITEM_STARTED,
                 itemStartedParams("itm-cache", "/tmp/f.java", null));
-
         // Cache hit: the approval should find the item and mention its path
         CompletableFuture<JsonObject> reply = handler.onServerRequest(
                 CodexAppServerHandler.METHOD_FILE_CHANGE_APPROVAL, approvalParams("itm-cache"));
@@ -537,7 +535,6 @@ class CodexAppServerHandlerTest {
         JsonObject params = new JsonObject();
         params.add("item", item);
         handler.onNotification(CodexAppServerHandler.METHOD_ITEM_STARTED, params);
-
         // Approval for that id: nothing was cached, so it waits the bound and then falls back.
         handler.setFileChangeWaitMillisForTest(50L);
         CompletableFuture<JsonObject> reply = handler.onServerRequest(
@@ -666,7 +663,6 @@ class CodexAppServerHandlerTest {
 
         CompletableFuture<JsonObject> reply = handler.onServerRequest(
                 CodexAppServerHandler.METHOD_COMMAND_EXECUTION_APPROVAL, new JsonObject());
-
         // Turn is now awaiting approval — cancel it
         handler.cancelPendingPermissions();
 
@@ -952,7 +948,6 @@ class CodexAppServerHandlerTest {
 
         List<AiProcessEvent> events = new ArrayList<>();
         CodexAppServerHandler handler = newHandler(events);
-
         // diff expects "yellow" but file has "green" -> PatchFailedException -> fallback
         handler.onNotification(CodexAppServerHandler.METHOD_ITEM_STARTED,
                 itemStartedParams("itm2", file.toString(), "@@ -1,2 +1,2 @@\n red\n-yellow\n+BLUE\n"));
@@ -973,7 +968,6 @@ class CodexAppServerHandlerTest {
     void handleFileChangeApproval_noDiff_fallsBackToConfirmEvent() throws Exception {
         List<AiProcessEvent> events = new ArrayList<>();
         CodexAppServerHandler handler = newHandler(events);
-
         // no diff field -> no patch attempt -> ConfirmEvent (no file read either)
         handler.onNotification(CodexAppServerHandler.METHOD_ITEM_STARTED,
                 itemStartedParams("itm3", "/some/path.java", null));
@@ -1061,7 +1055,6 @@ class CodexAppServerHandlerTest {
 
         List<AiProcessEvent> events = new ArrayList<>();
         CodexAppServerHandler handler = newHandler(events);
-
         // Second hunk expects "yellow" where the file has "green" -> PatchFailedException.
         handler.onNotification(CodexAppServerHandler.METHOD_ITEM_STARTED,
                 multiItemStartedParams("multi-bad", List.of(good.toString(), stale.toString()),
@@ -1189,14 +1182,12 @@ class CodexAppServerHandlerTest {
 
         List<AiProcessEvent> events = new ArrayList<>();
         CodexAppServerHandler handler = newHandler(events);
-
         // Approval first — the notification has not been drained yet.
         CompletableFuture<JsonObject> reply = handler.onServerRequest(
                 CodexAppServerHandler.METHOD_FILE_CHANGE_APPROVAL, approvalParams("raced"));
 
         assertTrue(events.isEmpty(), "nothing may be raised until the changes arrive");
         assertFalse(reply.isDone(), "the approval must wait rather than fall through to a blind confirm");
-
         // Now the notification is drained.
         handler.onNotification(CodexAppServerHandler.METHOD_ITEM_STARTED,
                 multiItemStartedParams("raced", List.of(a.toString(), b.toString()),
@@ -1677,7 +1668,6 @@ class CodexAppServerHandlerTest {
         ConfirmEvent ce = (ConfirmEvent) events.get(0);
         assertTrue(ce.displayText().contains("probe_echo"),
                 "ConfirmEvent display text must include the MCP message");
-
         // Response field is "action", not "decision" (schema: McpServerElicitationRequestResponse)
         ce.response().complete(PermissionDecision.allowed());
         JsonObject result = reply.get(2, TimeUnit.SECONDS);
@@ -1782,7 +1772,6 @@ class CodexAppServerHandlerTest {
 
             assertEquals("decline", reply.get("decision").getAsString(),
                     "Steering ON must auto-deny command execution");
-
             // The refusal is a tool-use log line, not a chat announcement.
             assertTrue(events.stream().noneMatch(e -> e instanceof SystemNotificationEvent),
                     "a steering refusal must not announce itself in the chat transcript");
@@ -1880,7 +1869,6 @@ class CodexAppServerHandlerTest {
             params.addProperty("command", "test");
             handler.onServerRequest(CodexAppServerHandler.METHOD_COMMAND_EXECUTION_APPROVAL, params)
                     .get(2, TimeUnit.SECONDS);
-
             // Verify McpSteeringRefusalEvent is posted immediately at denial time, not at turn end
             McpSteeringRefusalEvent refusalEvent = events.stream()
                     .filter(e -> e instanceof McpSteeringRefusalEvent)
@@ -1919,13 +1907,11 @@ class CodexAppServerHandlerTest {
                 .map(e -> (ConfirmEvent) e)
                 .findFirst()
                 .orElseThrow(() -> new AssertionError("Steering OFF must raise ConfirmEvent"));
-
         // Verify no McpSteeringRefusalEvent posted
         boolean hasRefusalEvent = events.stream()
                 .anyMatch(e -> e instanceof McpSteeringRefusalEvent);
         assertFalse(hasRefusalEvent,
                 "Steering OFF must not post McpSteeringRefusalEvent");
-
         // Complete the decision future with a decline decision to allow reply to complete
         confirmEvent.response().complete(new PermissionDecision(false, null));
         JsonObject replyResult = reply.get(2, TimeUnit.SECONDS);
@@ -1952,20 +1938,17 @@ class CodexAppServerHandlerTest {
 
             CompletableFuture<JsonObject> reply = handler.onServerRequest(
                     CodexAppServerHandler.METHOD_MCP_ELICITATION, params);
-
             // Verify ConfirmEvent was raised (not declined by steering)
             ConfirmEvent confirmEvent = events.stream()
                     .filter(e -> e instanceof ConfirmEvent)
                     .map(e -> (ConfirmEvent) e)
                     .findFirst()
                     .orElseThrow(() -> new AssertionError("Our server elicitation must raise ConfirmEvent, not be steered"));
-
             // Verify no McpSteeringRefusalEvent posted (steering exempted our server)
             boolean hasRefusalEvent = events.stream()
                     .anyMatch(e -> e instanceof McpSteeringRefusalEvent);
             assertFalse(hasRefusalEvent,
                     "Steering must NOT deny elicitation from our own MCP server");
-
             // Complete the decision and verify normal approval flow
             confirmEvent.response().complete(new PermissionDecision(true, null));
             JsonObject replyResult = reply.get(2, TimeUnit.SECONDS);
@@ -2000,7 +1983,6 @@ class CodexAppServerHandlerTest {
 
             assertEquals("decline", reply.get("action").getAsString(),
                     "Steering ON must auto-deny elicitation from other servers");
-
             // Verify McpSteeringRefusalEvent was posted
             McpSteeringRefusalEvent refusalEvent = events.stream()
                     .filter(e -> e instanceof McpSteeringRefusalEvent)
@@ -2014,7 +1996,6 @@ class CodexAppServerHandlerTest {
             assertEquals(McpSteeringPolicy.steeringFeedbackFor(McpSteeringPolicy.Category.UNKNOWN),
                     refusal.steeringText(),
                     "Refusal text must match UNKNOWN category steering feedback");
-
             // Verify no ConfirmEvent was raised (steering denied it)
             boolean hasConfirmEvent = events.stream()
                     .anyMatch(e -> e instanceof ConfirmEvent);
@@ -2092,7 +2073,6 @@ class CodexAppServerHandlerTest {
                     "MCP Steering refusal: backend=codex, category=UNKNOWN: "), captured.get(2));
             assertTrue(captured.get(2).contains("Allow custom action?"),
                     "the refusal names what was refused: " + captured.get(2));
-
             // The chat notification is gone; the backend still gets the refusal events.
             assertTrue(events.stream().noneMatch(e -> e instanceof SystemNotificationEvent),
                     "a steering refusal must not announce itself in the chat transcript");
@@ -2356,4 +2336,5 @@ class CodexAppServerHandlerTest {
                 CodexAppServerHandler.summarizeFileChanges(
                         JsonParser.parseString("[{\"path\":{}}]").getAsJsonArray()));
     }
+
 }

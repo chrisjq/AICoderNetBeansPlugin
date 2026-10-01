@@ -148,7 +148,7 @@ public class GithubCopilotAiImplementation extends AiImplementation {
      * <p>
      * AiTopComponent always calls {@code startWithDiscovery(null)}, so falling straight to the global default
      * here — as this used to do — silently ran a session on {@code GithubCopilotPluginSettings.getModel()}
-     * regardless of what the user had picked for it. The info bar, session settings and ListAiSessions all
+     * regardless of what the user had picked for it. The info bar, session settings and PeerSessionList all
      * kept reporting the session's own model, so the mismatch was invisible. Same bug already found and fixed
      * for OpenCode and Codex; Claude, Grok and Ollama check session settings via their own
      * getCurrentModel()/inline equivalents.
@@ -297,14 +297,12 @@ public class GithubCopilotAiImplementation extends AiImplementation {
             modelSettings.setModel(initialModel);
             host.updateSessionSettings(modelSettings);
         }
-
         // Seed the combo from the session's own stored value, falling back to the global default for display only —
         // unlike the model, an unset reasoning effort is never written back into session settings just because it
         // is shown: doing so would turn "inherits the global default" into a pinned value that survives a later
         // global-default change, breaking the session-wins-over-global rule.
         provider.setSelectedReasoningEffort(resolveDisplayReasoningEffort(
                 session.settings() instanceof GithubCopilotSessionSettings ghSettings ? ghSettings : null));
-
         // Discover the real available model list (best-effort; falls back
         // silently to the hardcoded list). Discovery runs once per IDE run
         // and the result is broadcast to EVERY open Copilot session's dropdown.
@@ -458,15 +456,16 @@ public class GithubCopilotAiImplementation extends AiImplementation {
         // Retain the host so applyModelFallback can persist session settings
         // even if the info bar has not been created or has been recreated.
         this.sessionHost = session;
-        // Nothing else to do here. Copilot is driven exclusively in prompt mode (`copilot -p`),
-        // where memory is disabled by default (the only switch is the opt-in
-        // `--enable-memory`, which GithubCopilotProcessManager never passes).
-        // The user's ~/.copilot/settings.json also persists "memory": false.
-        // So there is nothing to do on start or resume — a previous "/memory off"
-        // turn here was redundant and cost a startup round-trip every session.
+    // Nothing else to do here. Copilot is driven exclusively in prompt mode (`copilot -p`),
+    // where memory is disabled by default (the only switch is the opt-in
+    // `--enable-memory`, which GithubCopilotProcessManager never passes).
+    // The user's ~/.copilot/settings.json also persists "memory": false.
+    // So there is nothing to do on start or resume — a previous "/memory off"
+    // turn here was redundant and cost a startup round-trip every session.
     }
 
     @Override
     protected void afterStart() {
     }
+
 }

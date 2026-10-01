@@ -75,7 +75,8 @@ class AiManagerModelTest {
     private static void setRows(TableModel model, List<?> rows) {
         if (model instanceof SessionTableModel sessionModel) {
             sessionModel.setRows((List<AiSession>) rows);
-        } else if (model instanceof SimpleTableModel simpleModel) {
+        }
+        else if (model instanceof SimpleTableModel simpleModel) {
             simpleModel.setRows(rows);
         }
     }
@@ -86,7 +87,8 @@ class AiManagerModelTest {
         SwingUtilities.invokeAndWait(() -> {
             try {
                 value.set(action.call());
-            } catch (Exception e) {
+            }
+            catch (Exception e) {
                 failure.set(e);
             }
         });
@@ -182,7 +184,8 @@ class AiManagerModelTest {
         try {
             Files.createSymbolicLink(alias, real);
             return true;
-        } catch (UnsupportedOperationException | IOException e) {
+        }
+        catch (UnsupportedOperationException | IOException e) {
             return false;
         }
     }
@@ -228,12 +231,11 @@ class AiManagerModelTest {
             PluginSettings.setAllowGitAccessOption(GitAccessOptionEnum.WRITE, false);
 
             AiSessionConfigPanel panel
-                    = onEdt(() -> new AiSessionConfigPanel(AiSessionConfigPanelMode.GLOBAL));
+                                 = onEdt(() -> new AiSessionConfigPanel(AiSessionConfigPanelMode.GLOBAL));
             onEdt(() -> {
                 panel.loadGlobal();
                 return null;
             });
-
             // Panel now holds true/true/false. Move the store to the opposite of each so a
             // no-op applyGlobal cannot be mistaken for a working one.
             PluginSettings.setAllowGitAccess(false);
@@ -251,7 +253,8 @@ class AiManagerModelTest {
                     "READ not written by applyGlobal");
             assertFalse(PluginSettings.isAllowGitAccessOption(GitAccessOptionEnum.WRITE),
                     "WRITE not written by applyGlobal");
-        } finally {
+        }
+        finally {
             PluginSettings.setAllowGitAccess(savedMaster);
             PluginSettings.setAllowGitAccessOption(GitAccessOptionEnum.READ, savedRead);
             PluginSettings.setAllowGitAccessOption(GitAccessOptionEnum.WRITE, savedWrite);
@@ -342,7 +345,6 @@ class AiManagerModelTest {
         });
         AiSessionSettings snapshot = onEdt(panel::snapshot);
         assertFalse(snapshot.mcpSteering(), "a value set in template mode must survive snapshot()");
-
         // clearEditor() calls loadSession(new AiSessionSettings()) — must not re-hide the control either.
         onEdt(() -> {
             panel.loadSession(new AiSessionSettings());
@@ -356,8 +358,8 @@ class AiManagerModelTest {
 
     private static JCheckBox findMcpSteeringCheckBox(Component root) {
         if (root instanceof JPanel panel
-                && panel.getBorder() instanceof TitledBorder border
-                && "MCP steering".equals(border.getTitle())) {
+            && panel.getBorder() instanceof TitledBorder border
+            && "MCP steering".equals(border.getTitle())) {
             return findCheckBox(panel);
         }
         if (root instanceof Container container) {
@@ -391,8 +393,9 @@ class AiManagerModelTest {
         String html = McpToolsDocumentation.buildHtml();
 
         assertTrue(html.contains("BuildMavenProject"));
-        assertTrue(html.contains("SendAiMessage"));
+        assertTrue(html.contains("PeerMessageSend"));
         assertFalse(html.contains("sessionId"));
         assertFalse(html.contains("secretKey"));
     }
+
 }

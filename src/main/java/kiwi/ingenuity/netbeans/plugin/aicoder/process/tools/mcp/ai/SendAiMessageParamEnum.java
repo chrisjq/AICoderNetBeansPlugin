@@ -3,8 +3,8 @@ package kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.ai;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.McpToolPropertyEnum;
 
 /**
- * Parameter-name keys for the SendAiMessageTool MCP tool, shared between its
- * schema() definition and handle() argument extraction so the two cannot drift.
+ * Parameter-name keys for the SendAiMessageTool MCP tool, shared between its schema() definition and handle()
+ * argument extraction so the two cannot drift.
  */
 public enum SendAiMessageParamEnum {
     SESSION_ID(McpToolPropertyEnum.SESSION_ID),

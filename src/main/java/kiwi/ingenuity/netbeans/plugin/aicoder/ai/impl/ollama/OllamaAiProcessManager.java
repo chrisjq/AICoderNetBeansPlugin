@@ -651,7 +651,7 @@ public class OllamaAiProcessManager extends AiProcessManager {
             // the full iteration cap.
             Set<String> executedCalls = new LinkedHashSet<>();
             // Identical arguments are not the only way to make no progress: the
-            // model varied the description on every UpdateSessionDescription call
+            // model varied the description on every PeerSessionDescribe call
             // and got "Description updated." back each time. A tool result already
             // seen this turn means the call told the model nothing new.
             Set<String> seenResults = new LinkedHashSet<>();
@@ -830,7 +830,7 @@ public class OllamaAiProcessManager extends AiProcessManager {
                         }
                     }
                     catch (RuntimeException ex) {
-                        // A malformed synthetic completion request falls back to the schema envelope's message.
+                    // A malformed synthetic completion request falls back to the schema envelope's message.
                     }
                     if (finalText != null && !finalText.isBlank()) {
                         if (schemaMode || !streaming[0]) {
@@ -1267,15 +1267,15 @@ public class OllamaAiProcessManager extends AiProcessManager {
                     LOG.log(Level.INFO, "Ollama interrupt: turn thread interrupted (session={0})", sessionId);
                 }
             }
-            // STOPPED no longer fires here: the turn thread's own finally is the one closer, emitted only
-            // after processing is actually cleared, so a caller checking isBusy() when STOPPED arrives sees
-            // it already false — and Cancel is never a second closer alongside whatever the turn itself
-            // would otherwise have emitted.
+        // STOPPED no longer fires here: the turn thread's own finally is the one closer, emitted only
+        // after processing is actually cleared, so a caller checking isBusy() when STOPPED arrives sees
+        // it already false — and Cancel is never a second closer alongside whatever the turn itself
+        // would otherwise have emitted.
         }
         else if (type == InterruptTypeEnum.Mail) {
             // A Mail interrupt carries no payload — it only nudges the running turn to check the inbox.
             // Arm a flag: the tool-loop's next iteration appends MAIL_NOTIFICATION_TEXT as a USER message
-            // and the assistant fetches the mail itself with GetAiMessages. If the turn ends first the
+            // and the assistant fetches the mail itself with PeerMessageList. If the turn ends first the
             // flag stays armed, so the notice is delivered at the start of the next turn instead of being
             // lost.
             pendingMailNotice = true;

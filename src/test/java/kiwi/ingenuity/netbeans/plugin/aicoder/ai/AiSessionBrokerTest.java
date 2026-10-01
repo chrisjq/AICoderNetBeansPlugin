@@ -143,7 +143,7 @@ class AiSessionBrokerTest {
         AiSession target = stubSession("target", "TargetAI");
         broker.register(target);
         String id = broker.sendMessage("sender", "target", "reply", "please respond", null,
-                                       false, true, false);
+                false, true, false);
 
         AiSessionInboxBroker.ReadResult first = broker.readMessageWithResult("target", target.secret(), id);
         assertNotNull(first.message());
@@ -155,7 +155,7 @@ class AiSessionBrokerTest {
         assertFalse(second.firstRead());
 
         String noReplyId = broker.sendMessage("sender", "target", "no-reply", "FYI", null,
-                                              false, false, false);
+                false, false, false);
         AiSessionInboxBroker.ReadResult noReply = broker.readMessageWithResult(
                 "target", target.secret(), noReplyId);
         assertNotNull(noReply.message());
@@ -172,7 +172,7 @@ class AiSessionBrokerTest {
         ReadAiMessageTool tool = new ReadAiMessageTool();
 
         String expectedId = productionBroker.sendMessage("sender", targetId, "reply", "please respond",
-                                                         null, false, true, false);
+                null, false, true, false);
         String expectedInstruction = NotificationUtil.formatReplyExpectedInstruction(expectedId);
         JsonObject args = new JsonObject();
         args.addProperty(ReadAiMessageParamEnum.SESSION_ID.key(), target.id());
@@ -186,7 +186,7 @@ class AiSessionBrokerTest {
         assertFalse(second.contains(expectedInstruction), second);
 
         String noReplyId = productionBroker.sendMessage("sender", targetId, "fyi", "just information",
-                                                        null, false, false, false);
+                null, false, false, false);
         args.addProperty(ReadAiMessageParamEnum.MESSAGE_ID.key(), noReplyId);
         String noReply = tool.handle(new ToolRequestArguments(args), null);
         assertFalse(noReply.contains(expectedInstruction), noReply);

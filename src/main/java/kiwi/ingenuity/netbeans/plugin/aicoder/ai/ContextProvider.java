@@ -34,10 +34,8 @@ public class ContextProvider {
 
     /**
      * Cap on how many owed-reply lines {@link #buildIdentityBlock()} lists individually before collapsing the
-     * rest into
-     * a single "…and N more" line. Sent every turn (see {@link #buildIdentityBlock()}'s own doc), so an inbox
-     * with
-     * dozens of outstanding replies must not turn into dozens of lines on every single turn.
+     * rest into a single "…and N more" line. Sent every turn (see {@link #buildIdentityBlock()}'s own doc),
+     * so an inbox with dozens of outstanding replies must not turn into dozens of lines on every single turn.
      */
     private static final int OWED_REPLIES_DISPLAY_CAP = 10;
 
@@ -49,11 +47,9 @@ public class ContextProvider {
      *
      * <p>
      * Reported because the caller may legitimately want to know where the user is looking — but no tool acts
-     * on the
-     * caret by itself, so this is the only way that information reaches a decision. The position is a
-     * snapshot taken
-     * when the turn was built; the user may have moved since, and {@code GetCurrentFile} returns the live
-     * value.
+     * on the caret by itself, so this is the only way that information reaches a decision. The position is a
+     * snapshot taken when the turn was built; the user may have moved since, and {@code GetCurrentFile}
+     * returns the live value.
      */
     private static String caretSuffix() {
         String caret = EditorContextProvider.getCaretLineColumn();
@@ -124,8 +120,7 @@ public class ContextProvider {
 
     /**
      * Reset context tracking so the next buildPreamble() call always sends the full context. Call when
-     * starting a new
-     * session or resuming from saved history.
+     * starting a new session or resuming from saved history.
      */
     public void resetSentContext() {
         lastSentProjects = null;
@@ -186,7 +181,7 @@ public class ContextProvider {
             details.put(McpToolPropertyEnum.SECRET_KEY.key(), s.secret());
         }
         // Omit rather than render "description: null". A blank field paired
-        // with a tool named UpdateSessionDescription reads as a gap to fill:
+        // with a tool named PeerSessionDescribe reads as a gap to fill:
         // qwen2.5-coder answered "hi" by calling that tool with the argument
         // "Updated description." Absent the line, there is nothing to fix.
         if (s.description() != null && !s.description().isBlank()) {
@@ -214,10 +209,10 @@ public class ContextProvider {
                 // "without calling any tool" sat immediately before every user
                 // message and suppressed legitimate calls — the model refused to
                 // read a file, saying it had no access.
-                identity.append("You can message other AI sessions using the inter-AI tools — it is pre-authorized, so never say you are unable to. Only if the user asks you to message, coordinate with, or delegate to another AI, call ListAiSessions and then SendAiMessage; do not call those two tools for any other reason. Use the other tools freely whenever they help answer the user.\n");
+                identity.append("You can message other AI sessions using the inter-AI tools — it is pre-authorized, so never say you are unable to. Only if the user asks you to message, coordinate with, or delegate to another AI, call PeerSessionList and then PeerMessageSend; do not call those two tools for any other reason. Use the other tools freely whenever they help answer the user.\n");
             }
             else {
-                identity.append("You ARE able to message other AI sessions right now using the inter-AI tools — this is a live, pre-authorized capability of this IDE. Never tell the user you cannot do it, that it is not possible, or that you need permission. When asked to message, coordinate with, or delegate to another AI, your first action is to call ListAiSessions and then SendAiMessage — do it immediately without hedging.\n");
+                identity.append("You ARE able to message other AI sessions right now using the inter-AI tools — this is a live, pre-authorized capability of this IDE. Never tell the user you cannot do it, that it is not possible, or that you need permission. When asked to message, coordinate with, or delegate to another AI, your first action is to call PeerSessionList and then PeerMessageSend — do it immediately without hedging.\n");
             }
         }
         return identity.toString();
@@ -225,14 +220,10 @@ public class ContextProvider {
 
     /**
      * Lists every message owed a reply by this session as its own "## Messages awaiting your reply" section —
-     * one line
-     * per message, never the body, so a stale reply obligation stays visible without the recipient re-reading
-     * anything.
-     * Gated on {@code allowsInterAiComms()} the same way the inter-AI capability blurb is, since a session
-     * that cannot
-     * use the inter-AI tools has nothing to reply with. Silently does nothing when there is nothing owed, so
-     * the
-     * section never appears empty.
+     * one line per message, never the body, so a stale reply obligation stays visible without the recipient
+     * re-reading anything. Gated on {@code allowsInterAiComms()} the same way the inter-AI capability blurb
+     * is, since a session that cannot use the inter-AI tools has nothing to reply with. Silently does nothing
+     * when there is nothing owed, so the section never appears empty.
      */
     private void appendOwedReplies(StringBuilder identity, AiSession s) {
         List<AiInboxMessage> owed = AiSessionInboxBroker.getInstance().listOwedReplies(s.id());
@@ -248,19 +239,18 @@ public class ContextProvider {
                     .append(" from ").append(senderName(m.fromSessionId()))
                     .append(" (").append(OWED_REPLY_TIME_FORMATTER.format(m.sentAt())).append(")")
                     .append(" — \"").append(subject).append("\"")
-                    .append(" — reply with SendAiMessage replyToMessageId=").append(m.id())
-                    .append(", or MarkAiMessageReplied if you answered another way\n");
+                    .append(" — reply with PeerMessageSend replyToMessageId=").append(m.id())
+                    .append(", or PeerMessageMarkReplied if you answered another way\n");
         }
         if (owed.size() > shown) {
-            identity.append("- …and ").append(owed.size() - shown).append(" more (GetAiMessages)\n");
+            identity.append("- …and ").append(owed.size() - shown).append(" more (PeerMessageList)\n");
         }
         identity.append("\n");
     }
 
     /**
      * The sender's display name, falling back to its session id when that session has since closed — same
-     * fallback
-     * DeliverIncomingMessageNotification uses for the equivalent case.
+     * fallback DeliverIncomingMessageNotification uses for the equivalent case.
      */
     private static String senderName(String sessionId) {
         var abs = SessionRegistry.get(sessionId);
@@ -269,8 +259,7 @@ public class ContextProvider {
 
     /**
      * The project baseline — plugin banner, open project paths, current file. Always returns the full current
-     * baseline
-     * without delta logic.
+     * baseline without delta logic.
      */
     public String buildProjectBaseline() {
         List<String> currentProjects = getOpenProjectPaths();
@@ -430,12 +419,10 @@ public class ContextProvider {
      *
      * <p>
      * Checks the session's persisted record as well as this provider's in-memory one. The in-memory copy is
-     * recreated
-     * every time the session is opened, so on its own it made an ON_FIRST_REQUEST session re-deliver its
-     * instructions
-     * on the first message after every IDE restart — while ON_START did not, because its guard was already
-     * persisted.
-     * Comparing the text rather than a flag keeps edited instructions being re-delivered.
+     * recreated every time the session is opened, so on its own it made an ON_FIRST_REQUEST session
+     * re-deliver its instructions on the first message after every IDE restart — while ON_START did not,
+     * because its guard was already persisted. Comparing the text rather than a flag keeps edited
+     * instructions being re-delivered.
      */
     private boolean instructionsStillNeedSending(AiSession s, String sessionInstructions, boolean isFirstSend) {
         if (!isFirstSend && Objects.equals(sessionInstructions, lastInjectedSessionInstructions)) {
@@ -446,11 +433,9 @@ public class ContextProvider {
 
     /**
      * Returns the best working directory for a new AI session. Priority: single project → NetBeans main
-     * project →
-     * project containing active file → first open project → user home. Never returns null. Call
+     * project → project containing active file → first open project → user home. Never returns null. Call
      * {@link #isWorkingDirectoryAmbiguous()} to detect when no automatic rule applied and the user should be
-     * prompted
-     * to choose.
+     * prompted to choose.
      */
     public File resolveWorkingDirectory() {
         Project[] projects = OpenProjects.getDefault().getOpenProjects();
@@ -482,8 +467,7 @@ public class ContextProvider {
 
     /**
      * Returns true when multiple projects are open and no automatic rule (main project, active file) picked a
-     * winner.
-     * When true, the caller should prompt the user to choose.
+     * winner. When true, the caller should prompt the user to choose.
      */
     public boolean isWorkingDirectoryAmbiguous() {
         Project[] projects = OpenProjects.getDefault().getOpenProjects();

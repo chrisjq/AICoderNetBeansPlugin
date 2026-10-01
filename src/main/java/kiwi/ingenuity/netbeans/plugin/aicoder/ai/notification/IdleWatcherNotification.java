@@ -10,13 +10,13 @@ import kiwi.ingenuity.netbeans.plugin.aicoder.ai.idlewatch.IdleWatcher;
 import kiwi.ingenuity.netbeans.plugin.aicoder.utils.DateUtil;
 
 /**
- * An idle watcher firing: the watcher's target has now been continuously idle for the configured timeout, or the target
- * session was closed (which is explicitly NOT an idle event — the closing must be unmistakable so a coordinator can
- * never misread it as its target having gone quiet). Delivered to the watching session, which is normally idle and
- * waiting for exactly this.
+ * An idle watcher firing: the watcher's target has now been continuously idle for the configured timeout, or
+ * the target session was closed (which is explicitly NOT an idle event — the closing must be unmistakable so
+ * a coordinator can never misread it as its target having gone quiet). Delivered to the watching session,
+ * which is normally idle and waiting for exactly this.
  * <p>
- * Like {@link BuildCompletionNotification}, this reaches the session at once — never held back by the auto-notify-inbox
- * setting — because the watcher armed it specifically to be told about this moment.
+ * Like {@link BuildCompletionNotification}, this reaches the session at once — never held back by the
+ * auto-notify-inbox setting — because the watcher armed it specifically to be told about this moment.
  */
 public class IdleWatcherNotification extends AbstractNotification {
 
@@ -25,7 +25,7 @@ public class IdleWatcherNotification extends AbstractNotification {
      * {@link DateUtil#format(Instant)} instead, which carries the zone.
      */
     private static final DateTimeFormatter TIME_OF_DAY_FORMATTER
-            = DateTimeFormatter.ofPattern("HH:mm:ss", Locale.ROOT).withZone(ZoneId.systemDefault());
+                                           = DateTimeFormatter.ofPattern("HH:mm:ss", Locale.ROOT).withZone(ZoneId.systemDefault());
 
     private final IdleWatcher watcher;
     private final IdleWatchEventEnum event;
@@ -46,8 +46,8 @@ public class IdleWatcherNotification extends AbstractNotification {
             return "IDLE WATCH: " + name + " closed — " + watcher.id() + " removed";
         }
         return "IDLE WATCH: " + name + " idle since "
-                + (idleSince != null ? TIME_OF_DAY_FORMATTER.format(idleSince) : "?")
-                + " (" + watcher.id() + ")";
+               + (idleSince != null ? TIME_OF_DAY_FORMATTER.format(idleSince) : "?")
+               + " (" + watcher.id() + ")";
     }
 
     @Override
@@ -76,12 +76,12 @@ public class IdleWatcherNotification extends AbstractNotification {
         sb.append('\n');
         if (event == IdleWatchEventEnum.TARGET_CLOSED) {
             sb.append("The target session was closed; the idle condition was NOT the reason for this notice; watcher"
-                    + " removed.");
+                      + " removed.");
         }
         else if (watcher.recurring()) {
             sb.append("This recurring watcher stays armed and will fire again the next time ").append(targetName)
                     .append(" goes idle for ").append(watcher.timeout().toMinutes())
-                    .append(" minutes after starting another turn. Cancel it with CancelIdleWatcher.");
+                    .append(" minutes after starting another turn. Cancel it with PeerIdleWatcherCancel.");
         }
         else {
             sb.append("This oneshot watcher has now been removed.");
@@ -103,4 +103,5 @@ public class IdleWatcherNotification extends AbstractNotification {
     public boolean skipAutoNotifyDeferral() {
         return true;
     }
+
 }

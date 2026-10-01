@@ -24,33 +24,34 @@ import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.ToolSchemaKeyEnu
 public class ListAiSessionsTool extends AbstractActionTool {
 
     /**
-     * Shared by the constructor and {@link #schema}, which both publish it, so the two copies cannot drift apart.
+     * Shared by the constructor and {@link #schema}, which both publish it, so the two copies cannot drift
+     * apart.
      */
     private static final String TOOL_DESCRIPTION
-            = "List all active AI sessions (excluding caller). Each entry includes active=true if"
-            + " the session is busy processing a turn, active=false if idle. awaitingApproval=true"
-            + " means an interactive approval prompt is awaiting that session's user; active keeps"
-            + " its independent busy/idle meaning. Both idle and busy sessions can receive "
-            + McpToolEnum.SEND_AI_MESSAGE.toolName() + "."
-            + " Each entry also reports mailDelivery: when that peer will actually read your"
-            + " message, and whether " + SendAiMessageParamEnum.IMPORTANT.key() + "=true changes"
-            + " it. Where mailDelivery says the peer reads at end of turn, it cannot be reached"
-            + " sooner and " + SendAiMessageParamEnum.IMPORTANT.key() + "=true is silently"
-            + " ignored for it — either that backend has no mid-turn channel, or the peer's"
-            + " session does not permit interruption. Read mailDelivery before setting "
-            + SendAiMessageParamEnum.IMPORTANT.key() + ".";
+                                = "List the other AI sessions open in this IDE — not internal subagents. Each entry includes active=true if"
+                                  + " the session is busy processing a turn, active=false if idle. awaitingApproval=true"
+                                  + " means an interactive approval prompt is awaiting that session's user; active keeps"
+                                  + " its independent busy/idle meaning. Both idle and busy sessions can receive "
+                                  + McpToolEnum.PEER_MESSAGE_SEND.toolName() + "."
+                                  + " Each entry also reports mailDelivery: when that peer will actually read your"
+                                  + " message, and whether " + SendAiMessageParamEnum.IMPORTANT.key() + "=true changes"
+                                  + " it. Where mailDelivery says the peer reads at end of turn, it cannot be reached"
+                                  + " sooner and " + SendAiMessageParamEnum.IMPORTANT.key() + "=true is silently"
+                                  + " ignored for it — either that backend has no mid-turn channel, or the peer's"
+                                  + " session does not permit interruption. Read mailDelivery before setting "
+                                  + SendAiMessageParamEnum.IMPORTANT.key() + ".";
 
     public ListAiSessionsTool() {
         super(McpSectionEnum.PLUGIN,
-              McpToolEnum.LIST_AI_SESSIONS.toolName(),
-              TOOL_DESCRIPTION,
-              McpToolEnum.LIST_AI_SESSIONS.toolName() + " -> discover peer AI sessions; call before " + McpToolEnum.SEND_AI_MESSAGE.toolName() + " to find session IDs and to see when each peer will read your message");
+                McpToolEnum.PEER_SESSION_LIST.toolName(),
+                TOOL_DESCRIPTION,
+                McpToolEnum.PEER_SESSION_LIST.toolName() + " -> discover peer AI sessions; call before " + McpToolEnum.PEER_MESSAGE_SEND.toolName() + " to find session IDs and to see when each peer will read your message");
     }
 
     @Override
     public JsonObject schema(Set<McpInstructionOptionEnum> options) {
         JsonObject tool = new JsonObject();
-        tool.addProperty(ToolSchemaKeyEnum.NAME.key(), McpToolEnum.LIST_AI_SESSIONS.toolName());
+        tool.addProperty(ToolSchemaKeyEnum.NAME.key(), McpToolEnum.PEER_SESSION_LIST.toolName());
         tool.addProperty(ToolSchemaKeyEnum.DESCRIPTION.key(), TOOL_DESCRIPTION);
         JsonObject schema = new JsonObject();
         schema.addProperty(ToolSchemaKeyEnum.TYPE.key(), "object");
@@ -107,7 +108,6 @@ public class ListAiSessionsTool extends AbstractActionTool {
             AiTypeEnum aiType = s.aiType();
             if (aiType != null) {
                 obj.addProperty(ToolResponseKeyEnum.AI_TYPE.key(), aiType.displayName());
-
                 // Two things must both hold for a message to reach a peer sooner: the peer's
                 // session must permit interruption, and its backend must have a mid-turn
                 // channel. Either one missing and important=true is silently inert, so a sender
@@ -122,13 +122,13 @@ public class ListAiSessionsTool extends AbstractActionTool {
                                                 : aiType.mailDeliveryTiming();
                 if (s.allowsImportantMessages() && timing != AFTER_TURN) {
                     obj.addProperty(ToolResponseKeyEnum.MAIL_DELIVERY.key(),
-                                    "Read " + timing.description() + " when "
-                                    + SendAiMessageParamEnum.IMPORTANT.key() + "=true, otherwise at "
-                                    + AFTER_TURN.description() + ".");
+                            "Read " + timing.description() + " when "
+                            + SendAiMessageParamEnum.IMPORTANT.key() + "=true, otherwise at "
+                            + AFTER_TURN.description() + ".");
                 }
                 else {
                     obj.addProperty(ToolResponseKeyEnum.MAIL_DELIVERY.key(),
-                                    "Read at " + AFTER_TURN.description() + ".");
+                            "Read at " + AFTER_TURN.description() + ".");
                 }
             }
             if (abstractSession != null) {
@@ -137,10 +137,11 @@ public class ListAiSessionsTool extends AbstractActionTool {
                 }
             }
             obj.addProperty(ToolResponseKeyEnum.AWAITING_APPROVAL.key(), abstractSession != null
-                            && abstractSession.getAiSession().isAwaitingApproval());
+                                                                         && abstractSession.getAiSession().isAwaitingApproval());
             obj.addProperty(ToolResponseKeyEnum.ACTIVE.key(), s.isRunning());
             arr.add(obj);
         }
         return arr.toString();
     }
+
 }

@@ -19,8 +19,8 @@ import org.junit.jupiter.api.Test;
  *
  * <p>
  * Both failures this pins were observed, not theorised. A session reported to the user that they had rejected
- * a command they never saw; and separately, a SendAiMessage reported as rejected had in fact been delivered,
- * so the session told the user it was never sent and a round trip was spent undoing that.</p>
+ * a command they never saw; and separately, a PeerMessageSend reported as rejected had in fact been
+ * delivered, so the session told the user it was never sent and a round trip was spent undoing that.</p>
  *
  * <p>
  * Mostly source-level, because {@code AiTopComponent} eagerly builds a real backend and cannot be
@@ -111,7 +111,6 @@ class AiTopComponentInboxInterruptWiringTest {
 
         int handleSubmit = source.indexOf("private void handleSubmit(String text, boolean userInitiated, String agentOnlyText)");
         assertTrue(handleSubmit >= 0, "handleSubmit must accept agent-only text");
-
         // The agent's prompt is built from it — placement is pinned by theAgentOnlyBlockGoesAtTheEndBehindTheMarker.
         assertTrue(source.contains("agentOnlyText"),
                 "agent-only text must reach what the agent receives");
@@ -154,7 +153,6 @@ class AiTopComponentInboxInterruptWiringTest {
 
         assertTrue(source.contains("static final String SYSTEM_BLOCK_OPEN"), "the tags must be named constants");
         assertTrue(source.contains("static final String SYSTEM_BLOCK_CLOSE"), "including the closing tag");
-
         // The tags are only ever CONCATENATED into agent-facing text. If they were searched for, split on, or stripped,
         // a user's or the assistant's own message containing them could be mangled.
         for (String tag : List.of("SYSTEM_BLOCK_OPEN", "SYSTEM_BLOCK_CLOSE")) {
@@ -181,13 +179,11 @@ class AiTopComponentInboxInterruptWiringTest {
     @Test
     void theVisibleTextIsAlwaysSentAndTestedAfterDeferredMailIsAppended() throws IOException {
         String source = readSource();
-
         // The agent's copy always includes the visible text — there is no branch that omits it.
         assertTrue(source.contains("String visibleForAgent = tmpExpansion.expandedText();"),
                 "the visible text must always be part of what the agent receives");
         assertEquals(0, countOf(source, "hasVisible ? tmpExpansion.expandedText()"),
                 "the agent composition must not branch on the stale visible flag");
-
         // The display decision is taken from the current text, not the entry-time flag.
         assertTrue(source.contains("if (!text.isBlank()) {"),
                 "display must be decided from the CURRENT text, after deferred mail may have been appended");
@@ -326,11 +322,9 @@ class AiTopComponentInboxInterruptWiringTest {
     @Test
     void aMalformedBlockRendersAsIsWithNoRecoveryLogic() throws IOException {
         String source = readSource();
-
         // The displayed string is the visible text VERBATIM — no transformation of any kind on the way to the panel.
         assertTrue(source.contains("conversationPanel.addUserMessage(text, userInitiated)"),
                 "the transcript must render the visible text exactly as composed");
-
         // No stripping, trimming or rewriting of the tags anywhere.
         for (String needle : List.of("replaceAll(\"<SYSTEM", "replace(\"<SYSTEM", "replaceAll(\"</SYSTEM",
                 "replace(\"</SYSTEM", "stripSystemBlock", "removeSystemBlock")) {
@@ -354,7 +348,6 @@ class AiTopComponentInboxInterruptWiringTest {
                 "the user must be told deferred mail went out, rather than shown its raw block");
         assertEquals(0, countOf(source, "\"[Pending inbox messages]\\n\" + deferred"),
                 "the raw block must no longer be pasted into the visible text");
-
         // THE FOLD, THE FLAG AND THE COMPOSITION ARE ONE ORDERED CHAIN. Folding the mail into agentOnlyText is not
         // enough on its own: agentText is composed from `hasHidden ? agentOnlyText : null`, so with the flag left false
         // the mail is silently dropped from the model while the fold line, the system line and the count above all
@@ -437,7 +430,6 @@ class AiTopComponentInboxInterruptWiringTest {
     @Test
     void noTurnCompletionPathGoesIdleWithoutOfferingTheFallback() throws IOException {
         String source = readSource();
-
         // "if (!flushPendingNotifications())" can only appear where the guard ENDS at the flush — a site paired with
         // the fallback reads "... () && !explain...". Whitespace-independent, so reformatting cannot fake a pass.
         assertEquals(0, countOf(source, "if (!flushPendingNotifications())"),
@@ -529,4 +521,5 @@ class AiTopComponentInboxInterruptWiringTest {
         assertTrue(wording.contains("normally allowed to finish first"), wording);
         assertTrue(wording.contains("a result you received is real"), wording);
     }
+
 }

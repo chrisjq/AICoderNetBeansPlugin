@@ -8,8 +8,8 @@ public enum McpToolEnum {
 
     /**
      * IMPORTANT: When adding a new MCP tool to McpHookServer, add its enum constant here at the same time —
-     * allMcpNames() auto-generates the --allowedTools entry from this list. Constants are grouped by McpSectionEnum to
-     * make coverage easy to audit.
+     * allMcpNames() auto-generates the --allowedTools entry from this list. Constants are grouped by
+     * McpSectionEnum to make coverage easy to audit.
      *
      * Tool names are qualified with the shared MCP server name.
      */
@@ -113,20 +113,21 @@ public enum McpToolEnum {
     GET_PLUGIN_VERSION("GetPluginVersion"),
     GET_INSTRUCTIONS("GetInstructions"),
     // INTER_AI
-    LIST_AI_SESSIONS("ListAiSessions"),
-    SEND_AI_MESSAGE("SendAiMessage"),
-    GET_AI_MESSAGES("GetAiMessages"),
-    READ_AI_MESSAGE("ReadAiMessage"),
-    MARK_AI_MESSAGE_REPLIED("MarkAiMessageReplied"),
-    DELETE_AI_MESSAGE("DeleteAiMessage"),
-    IS_AI_SESSION_ACTIVE("IsAiSessionActive"),
-    UPDATE_SESSION_DESCRIPTION("UpdateSessionDescription"),
-    CREATE_IDLE_WATCHER("CreateIdleWatcher"),
-    CANCEL_IDLE_WATCHER("CancelIdleWatcher"),
-    LIST_IDLE_WATCHERS("ListIdleWatchers");
+    PEER_SESSION_LIST("PeerSessionList"),
+    PEER_MESSAGE_SEND("PeerMessageSend"),
+    PEER_MESSAGE_LIST("PeerMessageList"),
+    PEER_MESSAGE_READ("PeerMessageRead"),
+    PEER_MESSAGE_MARK_REPLIED("PeerMessageMarkReplied"),
+    PEER_MESSAGE_DELETE("PeerMessageDelete"),
+    PEER_SESSION_IS_ACTIVE("PeerSessionIsActive"),
+    PEER_SESSION_DESCRIBE("PeerSessionDescribe"),
+    PEER_IDLE_WATCHER_CREATE("PeerIdleWatcherCreate"),
+    PEER_IDLE_WATCHER_CANCEL("PeerIdleWatcherCancel"),
+    PEER_IDLE_WATCHER_LIST("PeerIdleWatcherList");
 
     /**
-     * Comma-separated list of all plugin MCP tool names for --allowedTools, qualified with the shared MCP server name.
+     * Comma-separated list of all plugin MCP tool names for --allowedTools, qualified with the shared MCP
+     * server name.
      */
     public static String allMcpNames() {
         String prefix = "mcp__" + StringConst.PLUGIN_ID + "__";

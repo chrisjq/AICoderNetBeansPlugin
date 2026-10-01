@@ -23,19 +23,19 @@ public class DeleteAiMessageTool extends AbstractActionTool {
 
     public DeleteAiMessageTool() {
         super(McpSectionEnum.PLUGIN,
-              McpToolEnum.DELETE_AI_MESSAGE.toolName(),
-              "Delete one or more inbox messages by id. Pass " + DeleteAiMessageParamEnum.MESSAGE_ID.key() + " for a single message or " + DeleteAiMessageParamEnum.MESSAGE_IDS.key() + " array for bulk delete. At least one of the two is required; if both are given they are combined and all are deleted.",
-              McpToolEnum.DELETE_AI_MESSAGE.toolName() + " -> delete one or more inbox messages once processed; pass " + DeleteAiMessageParamEnum.MESSAGE_IDS.key() + " array for bulk delete");
+                McpToolEnum.PEER_MESSAGE_DELETE.toolName(),
+                "Delete one or more inbox messages by id. Pass " + DeleteAiMessageParamEnum.MESSAGE_ID.key() + " for a single message or " + DeleteAiMessageParamEnum.MESSAGE_IDS.key() + " array for bulk delete. At least one of the two is required; if both are given they are combined and all are deleted.",
+                McpToolEnum.PEER_MESSAGE_DELETE.toolName() + " -> delete one or more inbox messages once processed; pass " + DeleteAiMessageParamEnum.MESSAGE_IDS.key() + " array for bulk delete");
     }
 
     @Override
     public JsonObject schema(Set<McpInstructionOptionEnum> options) {
         JsonObject tool = new JsonObject();
-        tool.addProperty(ToolSchemaKeyEnum.NAME.key(), McpToolEnum.DELETE_AI_MESSAGE.toolName());
+        tool.addProperty(ToolSchemaKeyEnum.NAME.key(), McpToolEnum.PEER_MESSAGE_DELETE.toolName());
         tool.addProperty(ToolSchemaKeyEnum.DESCRIPTION.key(),
-                         // The schema is the only description a model sees, so it has to describe what the
-                         // handler actually accepts: handle() merges messageId and messageIds into a single id list.
-                         "Delete inbox messages by ID. Provide " + DeleteAiMessageParamEnum.MESSAGE_ID.key() + ", " + DeleteAiMessageParamEnum.MESSAGE_IDS.key() + ", or both; both are combined.");
+                // The schema is the only description a model sees, so it has to describe what the
+                // handler actually accepts: handle() merges messageId and messageIds into a single id list.
+                "Delete inbox messages by ID. Provide " + DeleteAiMessageParamEnum.MESSAGE_ID.key() + ", " + DeleteAiMessageParamEnum.MESSAGE_IDS.key() + ", or both; both are combined.");
         JsonObject schema = new JsonObject();
         schema.addProperty(ToolSchemaKeyEnum.TYPE.key(), "object");
         JsonObject props = new JsonObject();
@@ -114,9 +114,8 @@ public class DeleteAiMessageTool extends AbstractActionTool {
             return "Error: authentication failed — check that " + DeleteAiMessageParamEnum.SESSION_ID.key() + " and " + DeleteAiMessageParamEnum.SECRET_KEY.key() + " match your session identity";
         }
         List<String> distinctIds = ids.stream().distinct().toList();
-        // Snapshotted BEFORE deleting: once a message is gone, listOwedReplies can no longer see it to report on it,
-        // and a message owed by this session is necessarily already in its own inbox, so anything found here is
-        // exactly what deleteMessages is about to remove.
+        // Snapshotted before deletion because deleted messages stay reply-trackable without remaining visible in
+        // listOwedReplies. The warning tells the caller that deleting does not resolve the outstanding obligation.
         List<AiInboxMessage> owedAmongRequested = AiSessionInboxBroker.getInstance().listOwedReplies(sessionId)
                 .stream()
                 .filter(m -> distinctIds.contains(m.id()))
@@ -126,9 +125,8 @@ public class DeleteAiMessageTool extends AbstractActionTool {
     }
 
     /**
-     * Warns when a delete silently discarded an unanswered reply obligation: deleting a message does not mark it
-     * replied or notify its sender, so without this the sender is left waiting on a message that no longer exists to
-     * answer.
+     * Warns when a delete hides an unanswered reply obligation. Deletion does not mark it replied; reply
+     * tracking and the normal no-reply notice remain in force.
      */
     private static String owedDeletionWarning(List<AiInboxMessage> owed) {
         if (owed.isEmpty()) {
@@ -136,16 +134,16 @@ public class DeleteAiMessageTool extends AbstractActionTool {
         }
         String entries = owed.stream()
                 .map(m -> "id=" + m.id() + " from " + senderName(m.fromSessionId()) + " \""
-                        + (m.subject() != null && !m.subject().isBlank() ? m.subject() : "(no subject)") + "\"")
+                          + (m.subject() != null && !m.subject().isBlank() ? m.subject() : "(no subject)") + "\"")
                 .collect(Collectors.joining("; "));
         return "\nWarning: you deleted " + owed.size()
-                + " message(s) that asked for a reply and were never answered — they are not marked replied and "
-                + "their sender(s) will not be told: " + entries;
+               + " message(s) that asked for a reply and were never answered — they are not marked replied, "
+               + "and their sender(s) will receive the normal no-reply notice: " + entries;
     }
 
     /**
-     * The sender's display name, falling back to its session id when that session has since closed — same resolution
-     * and fallback ContextProvider.senderName() uses for the equivalent case.
+     * The sender's display name, falling back to its session id when that session has since closed — same
+     * resolution and fallback ContextProvider.senderName() uses for the equivalent case.
      */
     private static String senderName(String sessionId) {
         var abs = SessionRegistry.get(sessionId);
@@ -153,17 +151,18 @@ public class DeleteAiMessageTool extends AbstractActionTool {
     }
 
     /**
-     * Says when requested IDs matched nothing, so a wrong or expired ID is reported as an error rather than a success
-     * delete.
+     * Says when requested IDs matched nothing, so a wrong or expired ID is reported as an error rather than a
+     * success delete.
      */
     static String deleteResultMessage(int deleted, int requested) {
         if (deleted >= requested) {
             return "Deleted " + deleted + " message(s).";
         }
         String unmatched = (requested - deleted) + " ID(s) matched no message — the ID is incorrect or the message has "
-                + "expired or was already deleted.";
+                           + "expired or was already deleted.";
         return deleted == 0
                ? "Error: nothing deleted. " + unmatched
                : "Deleted " + deleted + " of " + requested + " message(s). " + unmatched;
     }
+
 }

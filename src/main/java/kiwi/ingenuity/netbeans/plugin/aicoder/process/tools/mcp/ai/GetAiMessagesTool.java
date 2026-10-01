@@ -20,18 +20,18 @@ public class GetAiMessagesTool extends AbstractActionTool {
 
     public GetAiMessagesTool() {
         super(McpSectionEnum.PLUGIN,
-                McpToolEnum.GET_AI_MESSAGES.toolName(),
-                "List inbox message summaries (id, subject, sender). Use " + McpToolEnum.READ_AI_MESSAGE.toolName() + " to fetch a full message.",
-                McpToolEnum.GET_AI_MESSAGES.toolName() + " -> list inbox summaries; call at session start and after interrupts to check for messages");
+                McpToolEnum.PEER_MESSAGE_LIST.toolName(),
+                "List inbox message summaries (id, subject, sender). Use " + McpToolEnum.PEER_MESSAGE_READ.toolName() + " to fetch a full message.",
+                McpToolEnum.PEER_MESSAGE_LIST.toolName() + " -> list inbox summaries; call at session start and after interrupts to check for messages");
     }
 
     @Override
     public String instruction(Set<McpInstructionOptionEnum> options) {
         if (options.contains(McpInstructionOptionEnum.SOFTEN_TOOL_DIRECTIVES)
-                && options.contains(McpInstructionOptionEnum.TOOL_INSTRUCTION)) {
+            && options.contains(McpInstructionOptionEnum.TOOL_INSTRUCTION)) {
             // "call at session start" makes literal-minded models fire this on
             // the user's first message, whatever the message actually was.
-            return McpToolEnum.GET_AI_MESSAGES.toolName() + " - list inbox summaries when checking for messages from peer AI sessions";
+            return McpToolEnum.PEER_MESSAGE_LIST.toolName() + " - list inbox summaries when checking for messages from peer AI sessions";
         }
         return super.instruction(options);
     }
@@ -39,8 +39,8 @@ public class GetAiMessagesTool extends AbstractActionTool {
     @Override
     public JsonObject schema(Set<McpInstructionOptionEnum> options) {
         JsonObject tool = new JsonObject();
-        tool.addProperty(ToolSchemaKeyEnum.NAME.key(), McpToolEnum.GET_AI_MESSAGES.toolName());
-        tool.addProperty(ToolSchemaKeyEnum.DESCRIPTION.key(), "List inbox message summaries (id, subject, sender). Use " + McpToolEnum.READ_AI_MESSAGE.toolName() + " to fetch a full message.");
+        tool.addProperty(ToolSchemaKeyEnum.NAME.key(), McpToolEnum.PEER_MESSAGE_LIST.toolName());
+        tool.addProperty(ToolSchemaKeyEnum.DESCRIPTION.key(), "List inbox message summaries (id, subject, sender). Use " + McpToolEnum.PEER_MESSAGE_READ.toolName() + " to fetch a full message.");
         JsonObject schema = new JsonObject();
         schema.addProperty(ToolSchemaKeyEnum.TYPE.key(), "object");
         JsonObject props = new JsonObject();
@@ -97,4 +97,5 @@ public class GetAiMessagesTool extends AbstractActionTool {
         }
         return sb.toString().stripTrailing();
     }
+
 }

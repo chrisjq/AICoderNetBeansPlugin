@@ -52,7 +52,7 @@ class AiTypeEnumSettingsTest {
 
     /**
      * The tool-loop injection in OllamaAiProcessManager makes Ollama a mid-turn mail backend, so it must
-     * advertise DURING_TURN — this is the value senders see in ListAiSessions' mailDelivery. A regression
+     * advertise DURING_TURN — this is the value senders see in PeerSessionList' mailDelivery. A regression
      * back to AFTER_TURN would silently tell them an important message cannot be read mid-turn.
      */
     @Test
@@ -67,10 +67,10 @@ class AiTypeEnumSettingsTest {
 
     @Test
     void ollamaLocalUsesCredentialFreePromptPath() {
-        //assertFalse(AiTypeEnum.OLLAMA_LOCAL.includeSessionCredentialsInPrompt());
-        //assertTrue(AiTypeEnum.CLAUDE.includeSessionCredentialsInPrompt());
-        //assertTrue(AiTypeEnum.GROK.includeSessionCredentialsInPrompt());
-        //assertTrue(AiTypeEnum.GitHubCoPilot.includeSessionCredentialsInPrompt());
+    //assertFalse(AiTypeEnum.OLLAMA_LOCAL.includeSessionCredentialsInPrompt());
+    //assertTrue(AiTypeEnum.CLAUDE.includeSessionCredentialsInPrompt());
+    //assertTrue(AiTypeEnum.GROK.includeSessionCredentialsInPrompt());
+    //assertTrue(AiTypeEnum.GitHubCoPilot.includeSessionCredentialsInPrompt());
     }
 
     @Test
@@ -90,4 +90,5 @@ class AiTypeEnumSettingsTest {
                     + " extend OpenAiClientSessionSettings — the flag and the class hierarchy disagree");
         }
     }
+
 }

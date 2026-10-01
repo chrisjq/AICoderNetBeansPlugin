@@ -128,7 +128,7 @@ class SchemaToolCallsTest {
              "tool_arguments": {"targetSessionId": "abc", "subject": "s", "message": "m"}}
             """);
 
-        SchemaToolCalls.Reply reply = SchemaToolCalls.parse(result, Set.of("SendAiMessage"));
+        SchemaToolCalls.Reply reply = SchemaToolCalls.parse(result, Set.of("PeerMessageSend"));
 
         assertTrue(reply.calls().isEmpty());
         assertNotNull(reply.toolCallError());
@@ -145,7 +145,7 @@ class SchemaToolCallsTest {
             {"message": "Hello.", "tool_name": "", "tool_arguments": {}}
             """);
 
-        SchemaToolCalls.Reply reply = SchemaToolCalls.parse(result, Set.of("SendAiMessage"));
+        SchemaToolCalls.Reply reply = SchemaToolCalls.parse(result, Set.of("PeerMessageSend"));
 
         assertEquals("Hello.", reply.message());
         assertTrue(reply.calls().isEmpty());
@@ -164,7 +164,7 @@ class SchemaToolCallsTest {
              "tool_arguments": "{\\"targetSessionId\\": \\"abc\\", \\"subject\\": \\"s\\"}"}
             """);
 
-        SchemaToolCalls.Reply reply = SchemaToolCalls.parse(result, Set.of("SendAiMessage"));
+        SchemaToolCalls.Reply reply = SchemaToolCalls.parse(result, Set.of("PeerMessageSend"));
 
         assertTrue(reply.calls().isEmpty());
         assertNotNull(reply.toolCallError());
@@ -181,7 +181,7 @@ class SchemaToolCallsTest {
             ChatResult result = text(
                     "{\"message\": \"Hi.\", \"tool_name\": \"\", \"tool_arguments\": " + args + "}");
 
-            SchemaToolCalls.Reply reply = SchemaToolCalls.parse(result, Set.of("SendAiMessage"));
+            SchemaToolCalls.Reply reply = SchemaToolCalls.parse(result, Set.of("PeerMessageSend"));
 
             assertNull(reply.toolCallError(), "tool_arguments=" + args);
             assertTrue(reply.calls().isEmpty(), "tool_arguments=" + args);

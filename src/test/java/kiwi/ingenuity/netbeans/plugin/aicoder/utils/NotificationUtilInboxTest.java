@@ -10,60 +10,61 @@ import org.junit.jupiter.api.Test;
  * Covers the text a session is given when a peer message arrives.
  *
  * <p>
- * This string is load-bearing for peer behaviour, which is why it is pinned. The notification is the ONLY thing a
- * recipient sees on delivery — the body exists only after {@code ReadAiMessage} — so anything the sender wrote is
- * invisible until that call is made. Three separate sessions received a notification that merely announced a message,
- * answered "I am ready to execute it" in their own chat, and ended the turn without ever fetching the body. The task
- * was lost, and the sender's instructions were never read.
+ * This string is load-bearing for peer behaviour, which is why it is pinned. The notification is the ONLY
+ * thing a recipient sees on delivery — the body exists only after {@code PeerMessageRead} — so anything the
+ * sender wrote is invisible until that call is made. Three separate sessions received a notification that
+ * merely announced a message, answered "I am ready to execute it" in their own chat, and ended the turn
+ * without ever fetching the body. The task was lost, and the sender's instructions were never read.
  *
  * <p>
- * Naming the tools in the notification fixed it: given nothing but {@code Subject=Follow-up}, a session that had
- * previously stalled twice called {@code ReadAiMessage}, carried out the task in the body, and replied. These tests
- * exist so that behaviour is not quietly removed by a later tidy-up of the wording.
+ * Naming the tools in the notification fixed it: given nothing but {@code Subject=Follow-up}, a session that
+ * had previously stalled twice called {@code PeerMessageRead}, carried out the task in the body, and replied.
+ * These tests exist so that behaviour is not quietly removed by a later tidy-up of the wording.
  */
 class NotificationUtilInboxTest {
 
     private static AiInboxMessage message(String subject, boolean expectsReply, String replyToId) {
         return new AiInboxMessage("msg-1", "from-session", "to-session",
-                                  subject, "the body, which the recipient cannot see until ReadAiMessage",
-                                  replyToId, false, expectsReply, false,
-                                  Instant.now(), null, null);
+                subject, "the body, which the recipient cannot see until PeerMessageRead",
+                replyToId, false, expectsReply, false,
+                Instant.now(), null, null);
     }
 
     // ---- the instruction that makes a recipient fetch the body ----
     @Test
-    void namesReadAiMessageSoTheRecipientKnowsHowToGetTheBody() {
+    void namesPeerMessageReadSoTheRecipientKnowsHowToGetTheBody() {
         String text = NotificationUtil.formatInboxNotification(message("Follow-up", false, null), "Planner");
-        assertTrue(text.contains("ReadAiMessage"),
-                   "the body is unreachable without this tool, so the notification must name it: " + text);
+        assertTrue(text.contains("PeerMessageRead"),
+                "the body is unreachable without this tool, so the notification must name it: " + text);
     }
 
     @Test
-    void namesReadAiMessageEvenWhenTheSubjectIsMissing() {
+    void namesPeerMessageReadEvenWhenTheSubjectIsMissing() {
         // A blank subject is the worst case: the recipient has nothing at all to act
         // on unless it is told how to fetch the body.
         String text = NotificationUtil.formatInboxNotification(message(null, false, null), "Planner");
-        assertTrue(text.contains("ReadAiMessage"), text);
+        assertTrue(text.contains("PeerMessageRead"), text);
     }
 
     // ---- reply obligation ----
     /**
-     * The notification states whether a reply is expected but must NOT tell the recipient to send one, even when it is.
+     * The notification states whether a reply is expected but must NOT tell the recipient to send one, even
+     * when it is.
      * <p>
-     * Naming the tool here invited a reply to the notification itself: sessions answered "I am reviewing it" without
-     * ever fetching the body, which is an acknowledgement rather than the answer that was asked for. The obligation
-     * belongs with the content, so it is appended on first read instead - see
+     * Naming the tool here invited a reply to the notification itself: sessions answered "I am reviewing it"
+     * without ever fetching the body, which is an acknowledgement rather than the answer that was asked for.
+     * The obligation belongs with the content, so it is appended on first read instead - see
      * {@link NotificationUtil#formatReplyExpectedInstruction(String)}, asserted below.
      */
     @Test
     void statesWhetherAReplyIsExpectedWithoutInvitingOneBeforeTheBodyIsRead() {
         String expecting = NotificationUtil.formatInboxNotification(message("Q", true, null), "Planner");
         assertTrue(expecting.contains("replyExpected=Yes"), expecting);
-        assertFalse(expecting.contains("SendAiMessage"),
-                    "the reply instruction belongs on first read, not on the notification: " + expecting);
+        assertFalse(expecting.contains("PeerMessageSend"),
+                "the reply instruction belongs on first read, not on the notification: " + expecting);
 
         String notExpecting = NotificationUtil.formatInboxNotification(message("FYI", false, null), "Planner");
-        assertFalse(notExpecting.contains("SendAiMessage"), notExpecting);
+        assertFalse(notExpecting.contains("PeerMessageSend"), notExpecting);
         assertTrue(notExpecting.contains("replyExpected=No"), notExpecting);
     }
 
@@ -71,36 +72,37 @@ class NotificationUtilInboxTest {
      * The instruction still has to exist and still has to name the tool - it moved, it was not dropped.
      */
     @Test
-    void theReplyInstructionNamesSendAiMessageForTheReadPath() {
-        assertTrue(NotificationUtil.formatReplyExpectedInstruction("msg-1").contains("SendAiMessage"),
-                   NotificationUtil.formatReplyExpectedInstruction("msg-1"));
+    void theReplyInstructionNamesPeerMessageSendForTheReadPath() {
+        assertTrue(NotificationUtil.formatReplyExpectedInstruction("msg-1").contains("PeerMessageSend"),
+                NotificationUtil.formatReplyExpectedInstruction("msg-1"));
     }
 
     /**
-     * Live-test-caught gap: the instruction used to say only "set to this message's id", leaving the reader to find the
-     * id elsewhere — the one hex-shaped token immediately above it in a delivered turn is the unrelated SYSTEM-block
-     * nonce, not the id, and the two are easy to confuse. The id-bearing overload states it literally.
+     * Live-test-caught gap: the instruction used to say only "set to this message's id", leaving the reader
+     * to find the id elsewhere — the one hex-shaped token immediately above it in a delivered turn is the
+     * unrelated SYSTEM-block nonce, not the id, and the two are easy to confuse. The id-bearing overload
+     * states it literally.
      */
     @Test
     void theReplyInstructionWithAnIdStatesItLiterally() {
         String instruction = NotificationUtil.formatReplyExpectedInstruction("msg-42");
 
-        assertTrue(instruction.contains("SendAiMessage"), instruction);
+        assertTrue(instruction.contains("PeerMessageSend"), instruction);
         assertTrue(instruction.contains("\"msg-42\""), instruction);
         assertFalse(instruction.contains("this message's id"), instruction);
     }
 
     @Test
     void theMissingSpaceBeforeWithTheIsFixed() {
-        assertTrue(NotificationUtil.formatReplyExpectedInstruction("msg-42").contains("SendAiMessage with the"),
-                   NotificationUtil.formatReplyExpectedInstruction("msg-42"));
+        assertTrue(NotificationUtil.formatReplyExpectedInstruction("msg-42").contains("PeerMessageSend with the"),
+                NotificationUtil.formatReplyExpectedInstruction("msg-42"));
     }
 
     // ---- the identifying fields the recipient needs ----
     @Test
     void carriesTheMessageIdSenderAndSubject() {
         String text = NotificationUtil.formatInboxNotification(message("Deploy the thing", false, null), "Planner");
-        assertTrue(text.contains("msg-1"), "the id is what ReadAiMessage needs: " + text);
+        assertTrue(text.contains("msg-1"), "the id is what PeerMessageRead needs: " + text);
         assertTrue(text.contains("Planner"), text);
         assertTrue(text.contains("from-session"), text);
         assertTrue(text.contains("Deploy the thing"), text);
@@ -122,8 +124,9 @@ class NotificationUtilInboxTest {
         // formatInboxMessage is what the human sees in the transcript; the tool
         // instructions belong only in the text sent to the model.
         String chat = NotificationUtil.formatInboxMessage("Planner", "Follow-up");
-        assertFalse(chat.contains("ReadAiMessage"), "user-facing text must not read like an AI instruction: " + chat);
-        assertFalse(chat.contains("SendAiMessage"), chat);
+        assertFalse(chat.contains("PeerMessageRead"), "user-facing text must not read like an AI instruction: " + chat);
+        assertFalse(chat.contains("PeerMessageSend"), chat);
         assertTrue(chat.contains("Planner") && chat.contains("Follow-up"), chat);
     }
+
 }

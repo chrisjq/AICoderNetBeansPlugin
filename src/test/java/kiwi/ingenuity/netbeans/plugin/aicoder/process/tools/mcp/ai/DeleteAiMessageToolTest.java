@@ -12,10 +12,11 @@ class DeleteAiMessageToolTest {
 
     @Test
     void idsThatMatchNothingAreReported() {
-        // Live v1.4.15: DeleteAiMessage with a wrong ID returned "Deleted 0 message(s)." as a success.
+        // Live v1.4.15: PeerMessageDelete with a wrong ID returned "Deleted 0 message(s)." as a success.
         assertEquals("Error: nothing deleted. 1 ID(s) matched no message — the ID is incorrect or the message has expired"
-                + " or was already deleted.", DeleteAiMessageTool.deleteResultMessage(0, 1));
+                     + " or was already deleted.", DeleteAiMessageTool.deleteResultMessage(0, 1));
         assertEquals("Deleted 1 of 3 message(s). 2 ID(s) matched no message — the ID is incorrect or the message has"
-                + " expired or was already deleted.", DeleteAiMessageTool.deleteResultMessage(1, 3));
+                     + " expired or was already deleted.", DeleteAiMessageTool.deleteResultMessage(1, 3));
     }
+
 }
