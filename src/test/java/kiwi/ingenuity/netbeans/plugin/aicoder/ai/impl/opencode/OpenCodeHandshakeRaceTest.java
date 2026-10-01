@@ -150,6 +150,45 @@ class OpenCodeHandshakeRaceTest {
     }
 
     /**
+     * The agent crashes right after answering, and the handshake reaches its publish point after the process
+     * is dead and its output ended but before the process's exit callback has run. That is a crash, not a
+     * hang: it must be reported once as EXITED with the exit code, not as a FAILED "stopped responding". The
+     * exit callback is held back so this ordering happens every run.
+     */
+    @Test
+    void crashSeenByTheHandshakeBeforeItsExitCallback_isReportedOnceAsExited() throws Exception {
+        CopyOnWriteArrayList<AiProcessEvent> events = new CopyOnWriteArrayList<>();
+        HeldHandshakeManager manager = new HeldHandshakeManager(events::add);
+        manager.exitCallbackGate = new CountDownLatch(1);
+        manager.setCurrentSession(new AiSession("s1", "Test", null, AiTypeEnum.OPENCODE, null,
+                new OpenCodeSessionSettings(), Instant.now(), Instant.now()));
+        manager.start(fakeAgent("exit 7").getAbsolutePath(), null);
+        try {
+            manager.sendPrompt("hi", WORK_DIR, List.of());
+            manager.awaitHeld();
+            awaitTrue(() -> manager.connections.get(0).isStreamEnded()
+                            && manager.process() != null && !manager.process().isAlive(),
+                    "the agent to have died, its exit not yet handled");
+
+            manager.releaseAndJoinHeld();
+
+            assertEquals(1, statusCount(events, StatusEventTypeEnum.EXITED), "the crash is reported: " + events);
+            assertTrue(events.stream().anyMatch(e -> e instanceof StatusEvent se
+                                                     && se.type() == StatusEventTypeEnum.EXITED && se.text().contains("7")),
+                    "with its exit code: " + events);
+            assertEquals(0, statusCount(events, StatusEventTypeEnum.FAILED), "and only once: " + events);
+            assertNull(manager.connection, "no connection to the dead agent is published");
+            assertTrue(manager.connections.get(0).isClosed(), "and its connection is closed");
+            assertFalse(manager.isProcessing());
+        }
+        finally {
+            manager.exitCallbackGate.countDown();
+            manager.release.countDown();
+            manager.stopAndCloseConnections();
+        }
+    }
+
+    /**
      * The agent's output ends after it answers, before the publish, while the process stays alive — so there
      * is no exit to report anything. The handshake must not publish a connection nothing can be read from; it
      * must close it, kill and detach from the process, and report exactly one FAILED.
@@ -367,6 +406,26 @@ class OpenCodeHandshakeRaceTest {
                     Thread.currentThread().interrupt();
                 }
             }
+        }
+
+        /**
+         * When set, the process's own onExit callback waits for it, so a test can have the handshake see a
+         * crash before that callback has handled it. Calls made from a handshake thread are never held.
+         */
+        volatile CountDownLatch exitCallbackGate;
+
+        @Override
+        void handleProcessExit(Process dead) {
+            CountDownLatch gate = exitCallbackGate;
+            if (gate != null && !threads.contains(Thread.currentThread())) {
+                try {
+                    gate.await(10, TimeUnit.SECONDS);
+                }
+                catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                }
+            }
+            super.handleProcessExit(dead);
         }
 
         Process process() {

@@ -20,25 +20,25 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
 /**
- * Live finding (Boss 2026-09-19): the extension registers pi's plugin tools inside {@code pi.on("session_start")},
- * which does a real MCP handshake (initialize / notifications/initialized / tools/list) before any
- * {@code pi.registerTool} call — pi does not await that handler, so a prompt arriving during the window sees zero
- * plugin tools. Reproduced deterministically: ~150ms after spawn loses every tool, ~3s after spawn is clean. Verifies
- * {@link PiAiProcessManager#sendPrompt} holds the FIRST prompt after a spawn until
- * {@code aicoder-pi-extension.ts.template}'s {@code registerMcpTools} readiness notify arrives (or a bound elapses),
- * and that only that first prompt ever waits. Captured via the fake process's stdin echoed to a file (mirrors
- * {@code PiMailDeliveryTest}/{@code PiCancelNoticeTest}'s harness); the readiness notify itself is written to the fake
- * process's STDOUT, since that is the event-stream channel {@code PiStreamJsonParser}/{@code
+ * Live finding (Boss 2026-09-19): the extension registers pi's plugin tools inside
+ * {@code pi.on("session_start")}, which does a real MCP handshake (initialize / notifications/initialized /
+ * tools/list) before any {@code pi.registerTool} call — pi does not await that handler, so a prompt arriving
+ * during the window sees zero plugin tools. Reproduced deterministically: ~150ms after spawn loses every
+ * tool, ~3s after spawn is clean. Verifies {@link PiAiProcessManager#sendPrompt} holds the FIRST prompt after
+ * a spawn until {@code aicoder-pi-extension.ts.template}'s {@code registerMcpTools} readiness notify arrives
+ * (or a bound elapses), and that only that first prompt ever waits. Captured via the fake process's stdin
+ * echoed to a file (mirrors {@code PiMailDeliveryTest}/{@code PiCancelNoticeTest}'s harness); the readiness
+ * notify itself is written to the fake process's STDOUT, since that is the event-stream channel {@code PiStreamJsonParser}/{@code
  * buildParserListener} actually observes it on.
  */
 class PiToolsRegisteredWaitTest {
 
     private static final String REGISTERED_NOTIFY_LINE
-            = "{\"type\":\"extension_ui_request\",\"method\":\"notify\","
-            + "\"message\":\"AI Coder MCP tools registered: 5\"}";
+                                = "{\"type\":\"extension_ui_request\",\"method\":\"notify\","
+                                  + "\"message\":\"AI Coder MCP tools registered: 5\"}";
     private static final String UNAVAILABLE_NOTIFY_LINE
-            = "{\"type\":\"extension_ui_request\",\"method\":\"notify\","
-            + "\"message\":\"AI Coder MCP tools unavailable: connection refused\"}";
+                                = "{\"type\":\"extension_ui_request\",\"method\":\"notify\","
+                                  + "\"message\":\"AI Coder MCP tools unavailable: connection refused\"}";
 
     private RecordingEventListener events;
     private TestablePiAiProcessManager manager;
@@ -86,7 +86,7 @@ class PiToolsRegisteredWaitTest {
     void firstPromptWaitsForTheReadySignalThenSends() throws Exception {
         manager.toolsRegisteredWaitMillis = 5000;
         manager.scriptOverride = "( sleep 0.3; printf '%s\\n' '" + REGISTERED_NOTIFY_LINE + "' ) &\n"
-                + "cat >> '" + capturedStdinFile.getAbsolutePath() + "'\n";
+                                 + "cat >> '" + capturedStdinFile.getAbsolutePath() + "'\n";
 
         long start = System.currentTimeMillis();
         Thread sendThread = new Thread(() -> manager.sendPrompt("hello", workDir, List.of()));
@@ -99,7 +99,7 @@ class PiToolsRegisteredWaitTest {
         long elapsed = System.currentTimeMillis() - start;
         assertTrue(stdinContains("hello"), "the prompt must be sent once the ready signal arrives");
         assertTrue(elapsed < 2000,
-                   "must be released by the signal (~300ms), not by waiting out the full bound: took " + elapsed + "ms");
+                "must be released by the signal (~300ms), not by waiting out the full bound: took " + elapsed + "ms");
     }
 
     @Test
@@ -108,7 +108,7 @@ class PiToolsRegisteredWaitTest {
         // Emitted the instant the process starts, before it even reads a line — races ahead of sendPrompt's own
         // await() call, proving an already-counted-down latch never blocks regardless of arrival order.
         manager.scriptOverride = "printf '%s\\n' '" + REGISTERED_NOTIFY_LINE + "'\n"
-                + "cat >> '" + capturedStdinFile.getAbsolutePath() + "'\n";
+                                 + "cat >> '" + capturedStdinFile.getAbsolutePath() + "'\n";
 
         long start = System.currentTimeMillis();
         manager.sendPrompt("hello", workDir, List.of());
@@ -127,7 +127,9 @@ class PiToolsRegisteredWaitTest {
         manager.sendPrompt("hello", workDir, List.of());
         long elapsed = System.currentTimeMillis() - start;
 
-        assertTrue(stdinContains("hello"), "the prompt must still be sent once the bound elapses");
+        // sendPrompt returns once the prompt is written to pi's stdin; the fake's `cat` copies it into the file on its
+        // own schedule, so wait for it like the other tests do rather than reading the file at once.
+        awaitTrue(() -> stdinContains("hello"), "the prompt must still be sent once the bound elapses");
         assertTrue(elapsed >= 300, "must actually wait out the bound rather than skip it: took " + elapsed + "ms");
     }
 
@@ -135,7 +137,7 @@ class PiToolsRegisteredWaitTest {
     void failureNoticeReleasesTheWaitImmediatelyToo() throws Exception {
         manager.toolsRegisteredWaitMillis = 5000;
         manager.scriptOverride = "( sleep 0.3; printf '%s\\n' '" + UNAVAILABLE_NOTIFY_LINE + "' ) &\n"
-                + "cat >> '" + capturedStdinFile.getAbsolutePath() + "'\n";
+                                 + "cat >> '" + capturedStdinFile.getAbsolutePath() + "'\n";
 
         long start = System.currentTimeMillis();
         Thread sendThread = new Thread(() -> manager.sendPrompt("hello", workDir, List.of()));
@@ -154,9 +156,9 @@ class PiToolsRegisteredWaitTest {
         // above) specifically to prove that even an EARLY notify that doesn't match either prefix changes nothing.
         manager.toolsRegisteredWaitMillis = 300;
         String unrelatedNotifyLine = "{\"type\":\"extension_ui_request\",\"method\":\"notify\","
-                + "\"message\":\"Something else entirely\"}";
+                                     + "\"message\":\"Something else entirely\"}";
         manager.scriptOverride = "printf '%s\\n' '" + unrelatedNotifyLine + "'\n"
-                + "cat >> '" + capturedStdinFile.getAbsolutePath() + "'\n";
+                                 + "cat >> '" + capturedStdinFile.getAbsolutePath() + "'\n";
 
         long start = System.currentTimeMillis();
         manager.sendPrompt("hello", workDir, List.of());
@@ -165,9 +167,9 @@ class PiToolsRegisteredWaitTest {
         assertTrue(stdinContains("hello"), "the prompt must still be sent once the bound elapses");
         assertTrue(elapsed >= 300, "an unrelated notify must not release the wait early: took " + elapsed + "ms");
         assertTrue(events.hasEvent(e -> e instanceof StatusEvent se
-                && se.type() == StatusEventTypeEnum.INFO
-                && "Something else entirely".equals(se.text())),
-                   "the unrelated notify must still surface to the user normally — the release check is additive, not a filter");
+                                        && se.type() == StatusEventTypeEnum.INFO
+                                        && "Something else entirely".equals(se.text())),
+                "the unrelated notify must still surface to the user normally — the release check is additive, not a filter");
     }
 
     @Test

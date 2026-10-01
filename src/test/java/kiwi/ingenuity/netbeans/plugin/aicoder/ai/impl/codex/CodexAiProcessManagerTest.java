@@ -997,9 +997,9 @@ class CodexAiProcessManagerTest {
 
     /**
      * The session was stopped and restarted, and a new prompt is in flight, while the first prompt's
-     * handshake was still running. When that stale handshake finally fails it must report nothing — its
-     * turn ended with the stop — and must not clear the new turn's processing flag, which would let a
-     * third prompt in while the second is still running.
+     * handshake was still running. When that stale handshake finally fails it must report nothing — its turn
+     * ended with the stop — and must not clear the new turn's processing flag, which would let a third prompt
+     * in while the second is still running.
      */
     @Test
     void staleHandshakeAfterRestart_reportsNothing_andLeavesTheNewTurnProcessing() throws Exception {
@@ -1091,6 +1091,46 @@ class CodexAiProcessManagerTest {
     }
 
     /**
+     * Codex crashes right after answering, and the handshake reaches its publish point after the process is
+     * dead and its output ended but before the process's exit callback has run. That is a crash, not a hang:
+     * it must be reported once as EXITED, with the exit code, not as a FAILED "stopped responding" that hides
+     * the exit and leaves its later callback stale. The exit callback is held back so this ordering happens
+     * every run.
+     */
+    @Test
+    void crashSeenByTheHandshakeBeforeItsExitCallback_isReportedOnceAsExited() throws Exception {
+        File script = fakeCodexThatExitsAfterHandshake(7);
+        CopyOnWriteArrayList<AiProcessEvent> events = new CopyOnWriteArrayList<>();
+        HeldHandshakeManager manager = new HeldHandshakeManager(events::add);
+        manager.exitCallbackGate = new CountDownLatch(1);
+        manager.setCurrentSession(newSession("s1", new CodexSessionSettings()));
+        manager.start(script.getAbsolutePath(), "fake-model");
+        try {
+            manager.sendPrompt("hi", new File(System.getProperty("java.io.tmpdir")), List.of());
+            manager.awaitHeld();
+            awaitTrue(() -> manager.clients.get(0).isStreamEnded()
+                            && manager.process() != null && !manager.process().isAlive(),
+                    "the process to have died, its exit not yet handled");
+
+            manager.releaseAndJoinHeld();
+
+            assertEquals(1, statusCount(events, StatusEventTypeEnum.EXITED), "the crash is reported: " + events);
+            assertTrue(events.stream().anyMatch(e -> e instanceof StatusEvent se
+                                                     && se.type() == StatusEventTypeEnum.EXITED && se.text().contains("7")),
+                    "with its exit code: " + events);
+            assertEquals(0, statusCount(events, StatusEventTypeEnum.FAILED), "and only once: " + events);
+            assertNull(manager.client(), "no connection to the dead process is published");
+            assertTrue(manager.clients.get(0).isClosed(), "and its connection is closed");
+            assertFalse(manager.isProcessing());
+        }
+        finally {
+            manager.exitCallbackGate.countDown();
+            manager.release.countDown();
+            manager.stop();
+        }
+    }
+
+    /**
      * Holds the FIRST handshake at the publish point until released, so a test can make an exit, a Stop or a
      * restart happen in exactly that window; later handshakes run straight through.
      */
@@ -1118,6 +1158,26 @@ class CodexAiProcessManagerTest {
                     Thread.currentThread().interrupt();
                 }
             }
+        }
+
+        /**
+         * When set, the process's own onExit callback waits for it, so a test can have the handshake see a
+         * crash before that callback has handled it. Calls made from a handshake thread are never held.
+         */
+        volatile CountDownLatch exitCallbackGate;
+
+        @Override
+        void handleProcessExit(Process dead) {
+            CountDownLatch gate = exitCallbackGate;
+            if (gate != null && !threads.contains(Thread.currentThread())) {
+                try {
+                    gate.await(10, TimeUnit.SECONDS);
+                }
+                catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                }
+            }
+            super.handleProcessExit(dead);
         }
 
         Process process() {

@@ -515,12 +515,12 @@ public class CodexAiProcessManager extends AiProcessManager {
      */
     private Process workClosedByDisconnectOf;
     /**
-     * The turn a handshake in flight was started for: set by {@link #submitPrompt} when it hands the
-     * prompt to the handshake thread, cleared by whatever ends that turn first — Stop, {@link #stop()},
-     * or an exit that reports EXITED. The handshake only sends the prompt, reports FAILED or clears
-     * {@code processing} while its turn is still this one, so a handshake that outlived its turn can
-     * neither start a turn the user stopped, add a second closing status, nor clear the
-     * {@code processing} of a newer turn. Compared by identity; guarded by {@code this}.
+     * The turn a handshake in flight was started for: set by {@link #submitPrompt} when it hands the prompt
+     * to the handshake thread, cleared by whatever ends that turn first — Stop, {@link #stop()}, or an exit
+     * that reports EXITED. The handshake only sends the prompt, reports FAILED or clears {@code processing}
+     * while its turn is still this one, so a handshake that outlived its turn can neither start a turn the
+     * user stopped, add a second closing status, nor clear the {@code processing} of a newer turn. Compared
+     * by identity; guarded by {@code this}.
      */
     Object handshakeTurn;
     /**
@@ -699,6 +699,13 @@ public class CodexAiProcessManager extends AiProcessManager {
         }
 
         beforeHandshakePublish(c);
+        if (c.isStreamEnded()) {
+            // Codex's output has ended: either it crashed (it closes its output as it dies, so the exit is
+            // moments away) or it is hung. Give a crash the chance to show as one before deciding, outside the
+            // lock, which handleProcessExit needs.
+            awaitExit(p);
+        }
+        boolean exitedUnreported = false;
         synchronized (this) {
             if (!running) {
                 c.close();
@@ -718,22 +725,38 @@ public class CodexAiProcessManager extends AiProcessManager {
                 throw new IOException("Codex exited during start-up");
             }
             if (c.isStreamEnded()) {
-                // Codex's output ended after answering thread/start but before this publish, and its exit (if
-                // it exits at all) has not been handled yet. Nothing more can ever be read from c, so a turn
-                // sent on it would never get a response. Kill the process and detach from it first, so its exit
-                // arrives as stale and adds no EXITED: the handshake's own FAILED is the turn's one closer.
-                currentProcess = null;
-                c.close();
-                p.destroyForcibly();
-                throw new IOException("Codex stopped responding during start-up");
+                if (!p.isAlive()) {
+                    // It crashed, and its exit has not been handled yet. Report it as the crash it is — EXITED with
+                    // its code and stderr — by running the exit handling now, below, rather than a FAILED.
+                    exitedUnreported = true;
+                }
+                else {
+                    // Hung: output gone, process still running, so nothing can ever be read from c and no exit
+                    // will come to say so. Kill it and detach first, so its exit arrives as stale and adds no
+                    // EXITED: the handshake's own FAILED is the turn's one closer.
+                    currentProcess = null;
+                    c.close();
+                    p.destroyForcibly();
+                    throw new IOException("Codex stopped responding during start-up");
+                }
             }
-            threadId = id;
-            pendingResumeThreadId = null;
-            if (currentSession != null && currentSession.settings() instanceof CodexSessionSettings cs) {
-                cs.setThreadId(id);
+            if (!exitedUnreported) {
+                threadId = id;
+                pendingResumeThreadId = null;
+                if (currentSession != null && currentSession.settings() instanceof CodexSessionSettings cs) {
+                    cs.setThreadId(id);
+                }
+                appServerHandler = handler;
+                client = c;
             }
-            appServerHandler = handler;
-            client = c;
+        }
+        if (exitedUnreported) {
+            // handleProcessExit reports the crash once and ends the turn (clearing handshakeTurn when it reports
+            // EXITED), so the catch this throw reaches adds nothing. Its own onExit callback, when it runs, finds the
+            // process no longer current and does nothing.
+            c.close();
+            handleProcessExit(p);
+            throw new IOException("Codex exited during start-up");
         }
         String actualModel = extractModel(threadResult);
         if (model != null && !model.isBlank() && actualModel != null && !actualModel.equals(model)) {
@@ -765,9 +788,25 @@ public class CodexAiProcessManager extends AiProcessManager {
     }
 
     /**
+     * How long a handshake whose connection lost its stream waits for the process to exit before treating it
+     * as hung. A crashing process closes its output as it dies, so its exit follows within milliseconds; this
+     * only has to outlast that.
+     */
+    private static final long STREAM_END_EXIT_GRACE_MILLIS = 2_000L;
+
+    private static void awaitExit(Process p) {
+        try {
+            p.waitFor(STREAM_END_EXIT_GRACE_MILLIS, TimeUnit.MILLISECONDS);
+        }
+        catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+        }
+    }
+
+    /**
      * Runs on the handshake thread after the thread id is known and before the connection is published.
-     * No-op; the window it marks is the one the process can die in, so a test can hold the handshake here
-     * and let the exit win deterministically.
+     * No-op; the window it marks is the one the process can die in, so a test can hold the handshake here and
+     * let the exit win deterministically.
      */
     void beforeHandshakePublish(CodexJsonRpcClient c) {
     }

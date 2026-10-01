@@ -572,6 +572,18 @@ public class OpenCodeAiProcessManager extends AiProcessManager {
 
             // ---- Publish results under the lock; bail if stop() ran during the waits ----
             beforeHandshakePublish(conn);
+            if (conn.isStreamEnded()) {
+                // OpenCode's output has ended: either it crashed (it closes its output as it dies, so the exit is
+                // moments away) or it is hung. Give a crash the chance to show as one before deciding, outside the
+                // lock, which handleProcessExit needs.
+                try {
+                    process.waitFor(DISCONNECT_EXIT_GRACE_MILLIS, TimeUnit.MILLISECONDS);
+                }
+                catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                }
+            }
+            boolean exitedUnreported = false;
             synchronized (this) {
                 if (!running) {
                     conn.close();
@@ -590,28 +602,43 @@ public class OpenCodeAiProcessManager extends AiProcessManager {
                     throw new IOException("OpenCode exited during start-up");
                 }
                 if (conn.isStreamEnded()) {
-                    // OpenCode's output ended after answering, before this publish, and its exit (if it exits at all)
-                    // has not been handled yet. Nothing more can be read from conn, so a turn sent on it would never
-                    // complete. Detach first so the process's exit arrives as stale and adds no EXITED: the
-                    // handshake's own FAILED is the turn's one closer.
-                    currentProcess = null;
-                    conn.close();
-                    process.destroyForcibly();
-                    throw new IOException("OpenCode stopped responding during start-up");
-                }
-                acpSessionId = sid;
-                pendingAcpResumeId = null;
-                if (currentSession != null) {
-                    if (currentSession.settings() instanceof OpenCodeSessionSettings) {
-                        ((OpenCodeSessionSettings) currentSession.settings()).setAcpSessionId(sid);
+                    if (!process.isAlive()) {
+                        // It crashed, and its exit has not been handled yet. Report it as the crash it is —
+                        // EXITED with its code and stderr — by running the exit handling now, below.
+                        exitedUnreported = true;
                     }
-                    currentSession.putExtra("opencode_acp_session_id", sid);
+                    else {
+                        // Hung: output gone, process still running, so nothing can be read from conn and no exit
+                        // will come to say so. Detach first so the process's exit arrives as stale and adds no
+                        // EXITED: the handshake's own FAILED is the turn's one closer.
+                        currentProcess = null;
+                        conn.close();
+                        process.destroyForcibly();
+                        throw new IOException("OpenCode stopped responding during start-up");
+                    }
                 }
-                if (sessionResult.has(AcpJsonKeyEnum.CONFIG_OPTIONS.key()) && sessionResult.get(AcpJsonKeyEnum.CONFIG_OPTIONS.key()).isJsonArray()) {
-                    sessionConfigOptions = sessionResult.getAsJsonArray(AcpJsonKeyEnum.CONFIG_OPTIONS.key());
+                if (!exitedUnreported) {
+                    acpSessionId = sid;
+                    pendingAcpResumeId = null;
+                    if (currentSession != null) {
+                        if (currentSession.settings() instanceof OpenCodeSessionSettings) {
+                            ((OpenCodeSessionSettings) currentSession.settings()).setAcpSessionId(sid);
+                        }
+                        currentSession.putExtra("opencode_acp_session_id", sid);
+                    }
+                    if (sessionResult.has(AcpJsonKeyEnum.CONFIG_OPTIONS.key()) && sessionResult.get(AcpJsonKeyEnum.CONFIG_OPTIONS.key()).isJsonArray()) {
+                        sessionConfigOptions = sessionResult.getAsJsonArray(AcpJsonKeyEnum.CONFIG_OPTIONS.key());
+                    }
+                    activeHandler = handler;
+                    this.connection = conn;
                 }
-                activeHandler = handler;
-                this.connection = conn;
+            }
+            if (exitedUnreported) {
+                // handleProcessExit reports the crash once and ends the turn, so the catch this throw reaches adds
+                // nothing. Its own onExit callback, when it runs, finds the process no longer current.
+                conn.close();
+                handleProcessExit(process);
+                throw new IOException("OpenCode exited during start-up");
             }
             startupCoordinator.recordSuccessfulStart();
             if (resumed) {
