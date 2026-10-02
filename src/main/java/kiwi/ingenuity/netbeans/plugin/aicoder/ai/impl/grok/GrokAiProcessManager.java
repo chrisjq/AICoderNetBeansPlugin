@@ -9,8 +9,6 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.CompletionException;
 import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.TimeUnit;
 import java.util.function.Predicate;
@@ -23,13 +21,10 @@ import kiwi.ingenuity.netbeans.plugin.aicoder.ai.AiTypeEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.acp.AbstractAcpClientHandler;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.acp.AbstractAcpProcessManager;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.acp.AcpConnection;
-import kiwi.ingenuity.netbeans.plugin.aicoder.ai.acp.AcpErrorCodeEnum;
-import kiwi.ingenuity.netbeans.plugin.aicoder.ai.acp.AcpException;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.acp.AcpJsonKeyEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.acp.AcpMethodEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.events.StatusEvent;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.events.StatusEventTypeEnum;
-import kiwi.ingenuity.netbeans.plugin.aicoder.ai.events.TurnCompleteEvent;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.grok.events.GrokTokenUsageEvent;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.grok.session.GrokAiSession;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.events.AiProcessEventListener;
@@ -113,20 +108,10 @@ public class GrokAiProcessManager extends AbstractAcpProcessManager {
         return acpSessionId;
     }
 
-    @Override
-    protected void cancelPendingPermissionsOnActiveHandler() {
-        GrokAcpClientHandler h = activeHandler;
-        if (h != null) {
-            h.cancelPendingPermissions();
-        }
-    }
-
     /**
-     * Grok's original {@code interrupt} never captured the handler under the lock (it relied on
-     * {@link #cancelPendingPermissionsOnActiveHandler} after unlock, same as this would without an override)
-     * — using the capture-under-lock form here anyway is strictly stronger, not a behaviour change back to
-     * anything Grok actually depended on: it just closes the same race OpenCode's baseline was already
-     * guarding against.
+     * Grok's original {@code interrupt} never captured the handler under the lock — using the
+     * capture-under-lock form here anyway is strictly stronger, not a behaviour change back to anything Grok
+     * actually depended on: it just closes the same race OpenCode's baseline was already guarding against.
      */
     @Override
     protected Runnable capturePermissionCancellerUnderLock() {
@@ -303,32 +288,8 @@ public class GrokAiProcessManager extends AbstractAcpProcessManager {
     }
 
     @Override
-    public synchronized void sendPrompt(String text, File workingDir, List<File> projectDirs) {
-        if (pendingDiff || !running || processing) {
-            // AiTopComponent has already locked the UI for this submit; a silent return would leave the tab
-            // locked forever (cross-cutting rule, mirrors OpenCodeAiProcessManager.sendPrompt). INFO says
-            // why, TurnCompleteEvent releases the lock; this refusal has no closer of its own.
-            listener.onAiProcessEvent(new StatusEvent(StatusEventTypeEnum.INFO, sendRefusalReason()));
-            listener.onAiProcessEvent(new TurnCompleteEvent());
-            return;
-        }
-        cancelledByUser = false;
+    protected void onSendAccepted() {
         processing = true;
-
-        if (sessionWorkingDir == null && workingDir != null && workingDir.isDirectory()) {
-            sessionWorkingDir = workingDir;
-        }
-        File effectiveWorkDir = sessionWorkingDir != null ? sessionWorkingDir : workingDir;
-
-        if (connection != null) {
-            sendTurn(text);
-            return;
-        }
-        Object turn = new Object();
-        beginHandshakeTurn(turn);
-        Thread t = new Thread(() -> handshakeAndSend(text, effectiveWorkDir, turn), "grok-handshake");
-        t.setDaemon(true);
-        t.start();
     }
 
     /**
@@ -614,67 +575,28 @@ public class GrokAiProcessManager extends AbstractAcpProcessManager {
         return true;
     }
 
+    /**
+     * Safety net: a load whose ordered clear never ran (e.g. the connection it belonged to closed before
+     * acp-notify got to it) must never silence a real turn — mirrors
+     * OpenCodeAcpClientHandler.clearTextSuppression's role for the compaction route.
+     */
     @Override
-    protected synchronized void sendTurn(String text) {
-        JsonObject promptItem = new JsonObject();
-        promptItem.addProperty(AcpJsonKeyEnum.TYPE.key(), "text");
-        promptItem.addProperty(AcpJsonKeyEnum.TEXT.key(), text);
-        JsonArray promptArray = new JsonArray();
-        promptArray.add(promptItem);
-
-        JsonObject params = new JsonObject();
-        params.addProperty(AcpJsonKeyEnum.SESSION_ID.key(), acpSessionId);
-        params.add(AcpJsonKeyEnum.PROMPT.key(), promptArray);
-
-        if (PluginSettings.isDebugJson()) {
-            LOG.log(Level.INFO, "grok prompt [{0}]: {1}", new Object[]{acpSessionId, text});
-        }
+    protected void clearTurnStartState() {
         GrokAcpClientHandler handler = activeHandler;
         if (handler != null) {
             handler.clearTurnRefusals();
-            // Safety net: a load whose ordered clear never ran (e.g. the connection it belonged to closed
-            // before acp-notify got to it) must never silence a real turn — mirrors
-            // OpenCodeAcpClientHandler.clearTextSuppression's role for the compaction route.
             handler.clearSuppressingSessionUpdatesForLoad();
         }
-        // A new turn starts with no in-flight tool calls and no held mail interrupt. Stale state could only
-        // have survived a teardown path that failed to clear it; resetting here keeps the next turn clean
-        // regardless.
-        resetMailInterruptHold();
-        processing = true;
-        lastPromptSentAtMillis = System.currentTimeMillis();
-        Object turn = new Object();
-        beginActiveTurn(turn);
-        CompletableFuture<JsonObject> promptFuture = connection.sendRequest(AcpMethodEnum.SESSION_PROMPT, params);
-        promptFuture
-                .thenAccept(result -> {
-                    if (claimTurn(turn)) {
-                        handleTurnComplete(result);
-                    }
-                })
-                .exceptionally(ex -> {
-                    if (claimTurn(turn)) {
-                        handleTurnError(ex);
-                    }
-                    return null;
-                });
     }
 
-    void handleTurnComplete(JsonObject result) {
-        boolean wasRunning;
-        synchronized (this) {
-            processing = false;
-            // Turn over: nothing left mid-turn to interrupt, so clear any HELD mail interrupt WITHOUT
-            // sending — the mail was already delivered by the broker and is visible in the session's own
-            // context on its next turn either way (mirrors OpenCode/Claude).
-            resetMailInterruptHold();
-            wasRunning = running;
-            cancelledByUser = false;
-        }
+    @Override
+    protected void onNewTurnStarting() {
+        lastPromptSentAtMillis = System.currentTimeMillis();
+    }
+
+    @Override
+    protected void onTurnComplete(JsonObject result) {
         reportUsage(result);
-        if (wasRunning) {
-            listener.onAiProcessEvent(new TurnCompleteEvent());
-        }
     }
 
     /**
@@ -746,23 +668,6 @@ public class GrokAiProcessManager extends AbstractAcpProcessManager {
             }
         }
         return null;
-    }
-
-    void handleTurnError(Throwable ex) {
-        Throwable cause = ex instanceof CompletionException ? ex.getCause() : ex;
-        synchronized (this) {
-            processing = false;
-            // Same turn-end clearing as handleTurnComplete — a cancelled/errored turn has no in-flight tool
-            // calls left to interrupt.
-            resetMailInterruptHold();
-            cancelledByUser = false;
-        }
-        if (cause instanceof AcpException ae && ae.code() == AcpErrorCodeEnum.REQUEST_CANCELLED.code()) {
-            listener.onAiProcessEvent(new TurnCompleteEvent());
-            return;
-        }
-        listener.onAiProcessEvent(new StatusEvent(StatusEventTypeEnum.FAILED,
-                StatusMessageUtil.formatSendFailed(cause != null ? cause.getMessage() : ex.getMessage())));
     }
 
     /**

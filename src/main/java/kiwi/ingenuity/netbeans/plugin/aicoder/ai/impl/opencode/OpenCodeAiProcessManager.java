@@ -11,7 +11,6 @@ import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.CompletionException;
 import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
@@ -33,7 +32,6 @@ import kiwi.ingenuity.netbeans.plugin.aicoder.ai.events.PolicyRefusalEvent;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.events.StatusEvent;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.events.StatusEventTypeEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.events.TextDeltaEvent;
-import kiwi.ingenuity.netbeans.plugin.aicoder.ai.events.TurnCompleteEvent;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.opencode.settings.OpenCodePluginSettings;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.opencode.settings.OpenCodeSessionSettings;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.events.AiProcessEventListener;
@@ -239,19 +237,11 @@ public class OpenCodeAiProcessManager extends AbstractAcpProcessManager {
         return acpSessionId;
     }
 
-    @Override
-    protected void cancelPendingPermissionsOnActiveHandler() {
-        OpenCodeAcpClientHandler h = activeHandler;
-        if (h != null) {
-            h.cancelPendingPermissions();
-        }
-    }
-
     /**
-     * Mirrors OpenCode's pre-Stage-1 {@code interrupt}, which captured {@code h = activeHandler} inside
+     * Mirrors OpenCode's original {@code interrupt}, which captured {@code h = activeHandler} inside
      * {@code synchronized(this)} before calling {@code h.cancelPendingPermissions()} after unlock — reading
-     * the field here, under the lock {@link #interrupt} calls this from, and binding the method reference to
-     * that local rather than to the field itself.
+     * the field here, under the lock, and binding the method reference to that local rather than to the field
+     * itself.
      */
     @Override
     protected Runnable capturePermissionCancellerUnderLock() {
@@ -760,46 +750,6 @@ public class OpenCodeAiProcessManager extends AbstractAcpProcessManager {
         return false;
     }
 
-    @Override
-    public synchronized void sendPrompt(String text, File workingDir, List<File> projectDirs) {
-        if (processing) {
-            // Every refusal reports its reason and returns control to the user; the in-flight turn's later completion
-            // is stale and is ignored by the UI busy/ready contract.
-            listener.onAiProcessEvent(new StatusEvent(StatusEventTypeEnum.INFO, sendRefusalReason()));
-            listener.onAiProcessEvent(new TurnCompleteEvent());
-
-            return;
-        }
-        if (pendingDiff || !running || isWorkInFlight()) {
-            // A submit AiTopComponent has already locked the UI for must never return silently, or the tab
-            // would stay locked forever (cross-cutting rule found in the Copilot and Codex backends). None of
-            // these refusals has a closer of its own, so INFO says why and TurnCompleteEvent releases the lock.
-            listener.onAiProcessEvent(new StatusEvent(StatusEventTypeEnum.INFO, sendRefusalReason()));
-            listener.onAiProcessEvent(new TurnCompleteEvent());
-            return;
-        }
-        cancelledByUser = false;
-
-        if (sessionWorkingDir == null && workingDir != null && workingDir.isDirectory()) {
-            sessionWorkingDir = workingDir;
-        }
-        File effectiveWorkDir = sessionWorkingDir != null ? sessionWorkingDir : workingDir;
-
-        if (connection == null) {
-            // spawnAndHandshake blocks for up to 60 s; sendPrompt runs on the EDT.
-            // Hand off to a background thread and return immediately so the UI stays responsive.
-            // processing=true prevents a second submit from racing the handshake.
-            processing = true;
-            Object turn = new Object();
-            beginHandshakeTurn(turn);
-            final File wd = effectiveWorkDir;
-            new Thread(() -> handshakeAndSend(text, wd, turn), "opencode-handshake").start();
-            return;
-        }
-
-        sendTurn(text);
-    }
-
     /**
      * The reason a send was refused, for the INFO a refused send must post before its TurnCompleteEvent. Each
      * call runs under the manager monitor (sendPrompt and deliverAfterHandshake are both synchronized).
@@ -819,79 +769,39 @@ public class OpenCodeAiProcessManager extends AbstractAcpProcessManager {
     }
 
     @Override
-    protected synchronized void sendTurn(String text) {
-        JsonObject promptItem = new JsonObject();
-        promptItem.addProperty(AcpJsonKeyEnum.TYPE.key(), "text");
-        promptItem.addProperty(AcpJsonKeyEnum.TEXT.key(), MCP_TOOL_PREFERENCE + "\n\n" + text);
-        JsonArray promptArray = new JsonArray();
-        promptArray.add(promptItem);
+    protected String decoratePromptText(String text) {
+        return MCP_TOOL_PREFERENCE + "\n\n" + text;
+    }
 
-        JsonObject params = new JsonObject();
-        params.addProperty(AcpJsonKeyEnum.SESSION_ID.key(), acpSessionId);
-        params.add(AcpJsonKeyEnum.PROMPT.key(), promptArray);
-
-        if (PluginSettings.isDebugJson()) {
-            LOG.log(Level.INFO, "opencode prompt [{0}]: {1}", new Object[]{acpSessionId, text});
-        }
-        // A new turn starts with no in-flight tool calls and no held mail interrupt. Stale state
-        // could only have survived a teardown path that failed to clear it; resetting here keeps
-        // the next turn clean regardless.
-        resetMailInterruptHold();
-        // Same reasoning for refusals: none can belong to this turn yet, and one left over must never be reported as
-        // this turn's.
+    /**
+     * A compaction that stalled past its timeout (or was raced by an exit) may have left the suppression flag
+     * set; a real turn must never be silenced by one. Each turn re-enters here, which is why this is the
+     * safety net and not only sendCompactPrompt's own completion. Same reasoning for turn refusals: none can
+     * belong to this turn yet, and one left over must never be reported as this turn's.
+     */
+    @Override
+    protected void clearTurnStartState() {
         OpenCodeAcpClientHandler handler = activeHandler;
         if (handler != null) {
             handler.clearTurnRefusals();
-            // A compaction that stalled past its timeout (or was raced by an exit) may have left the
-            // suppression flag set; a real turn must never be silenced by one. Each turn re-enters here,
-            // which is why this is the safety net and not only sendCompactPrompt's own completion.
             handler.clearTextSuppression();
-            // Same safety net for a resume whose ordered clear never ran.
             handler.clearSuppressingSessionUpdatesForLoad();
         }
-        processing = true;
-        Object turn = new Object();
-        beginActiveTurn(turn); // before the send: a write to a dead agent fails it synchronously
-        CompletableFuture<JsonObject> promptFuture = connection.sendRequest(AcpMethodEnum.SESSION_PROMPT, params);
-        promptFuture
-                .thenAccept(result -> {
-                    if (claimTurn(turn)) {
-                        handleTurnComplete(result);
-                    }
-                })
-                .exceptionally(ex -> {
-                    if (claimTurn(turn)) {
-                        handleTurnError(ex);
-                    }
-                    return null;
-                });
     }
 
-    void handleTurnComplete(JsonObject result) {
-        boolean wasRunning;
-        boolean stoppedByUser;
-        synchronized (this) {
-            processing = false;
-            // Turn over: nothing left mid-turn to interrupt, so clear any HELD mail interrupt
-            // WITHOUT sending — the mail was already delivered by the broker and is visible in
-            // the session's own context on its next turn either way (mirrors Claude).
-            resetMailInterruptHold();
-            wasRunning = running;
-            // Read BEFORE it is cleared: it is the only thing that tells a turn the user stopped from one a refusal
-            // ended, and both come back as stopReason "cancelled".
-            stoppedByUser = cancelledByUser;
-            cancelledByUser = false;
-        }
-        if (wasRunning) {
-            // BEFORE the turn-complete event, never after: the UI handles that event by deciding whether the session
-            // carries straight on or goes idle, and it can only take the refusal into account if it has already been
-            // told of it. Events reach the UI in the order they are posted here.
-            reportPolicyRefusals(endedByCancellation(result), stoppedByUser);
-            listener.onAiProcessEvent(new TurnCompleteEvent());
-        }
-        else {
-            discardTurnRefusals();
-        }
+    /**
+     * BEFORE the turn-complete event, never after: the UI handles that event by deciding whether the session
+     * carries straight on or goes idle, and it can only take the refusal into account if it has already been
+     * told of it.
+     */
+    @Override
+    protected void onTurnCompleteWhileRunning(JsonObject result, boolean stoppedByUser) {
+        reportPolicyRefusals(endedByCancellation(result), stoppedByUser);
+    }
+
+    @Override
+    protected void onTurnCompleteWhileNotRunning() {
+        discardTurnRefusals();
     }
 
     /**
@@ -961,44 +871,33 @@ public class OpenCodeAiProcessManager extends AbstractAcpProcessManager {
         }
     }
 
-    void handleTurnError(Throwable ex) {
-        Throwable cause = ex instanceof CompletionException ? ex.getCause() : ex;
-        boolean stoppedByUser;
-        synchronized (this) {
-            processing = false;
-            // Same turn-end clearing as handleTurnComplete — a cancelled/errored turn has no
-            // in-flight tool calls left to interrupt (mirrors Claude).
-            resetMailInterruptHold();
-            stoppedByUser = cancelledByUser;
-            cancelledByUser = false;
+    /**
+     * A turn that failed for any other reason is not one a refusal ended, and its refusals must not be
+     * carried into a later turn.
+     */
+    @Override
+    protected void onTurnErrorDiscardingRefusals() {
+        discardTurnRefusals();
+    }
+
+    /**
+     * A cancellation the ERROR channel reports is the same cancelled turn {@code handleTurnComplete} sees, so
+     * the same refusal report applies, before the turn-complete event for the same reason — there is no
+     * stopReason here, -32800 itself says "cancelled".
+     */
+    @Override
+    protected void onTurnErrorCancelled(boolean stoppedByUser) {
+        reportPolicyRefusals(true, stoppedByUser);
+    }
+
+    @Override
+    protected boolean onTurnError(Throwable cause) {
+        if (cause instanceof AcpException ae && ae.code() == AcpErrorCodeEnum.AUTH_REQUIRED.code()) {
+            listener.onAiProcessEvent(new StatusEvent(StatusEventTypeEnum.FAILED,
+                    "Run `opencode auth login` in the terminal"));
+            return true;
         }
-        boolean cancelledReply = cause instanceof AcpException cancelEx
-                                 && cancelEx.code() == AcpErrorCodeEnum.REQUEST_CANCELLED.code();
-        if (!cancelledReply) {
-            // A turn that failed for any other reason is not one a refusal ended, and its refusals must not be carried
-            // into a later turn.
-            discardTurnRefusals();
-        }
-        if (cause instanceof AcpException) {
-            AcpException ae = (AcpException) cause;
-            if (ae.code() == AcpErrorCodeEnum.REQUEST_CANCELLED.code()) {
-                // -32800: session/cancel was acknowledged; treat as normal cancel completion
-                //
-                // A cancellation the ERROR channel reports is the same cancelled turn handleTurnComplete sees, so the
-                // same refusal report applies, before the turn-complete event for the same reason. There is no
-                // stopReason here; -32800 itself says "cancelled".
-                reportPolicyRefusals(true, stoppedByUser);
-                listener.onAiProcessEvent(new TurnCompleteEvent());
-                return;
-            }
-            if (ae.code() == AcpErrorCodeEnum.AUTH_REQUIRED.code()) {
-                listener.onAiProcessEvent(new StatusEvent(StatusEventTypeEnum.FAILED,
-                        "Run `opencode auth login` in the terminal"));
-                return;
-            }
-        }
-        listener.onAiProcessEvent(new StatusEvent(StatusEventTypeEnum.FAILED,
-                StatusMessageUtil.formatSendFailed(cause != null ? cause.getMessage() : ex.getMessage())));
+        return false;
     }
 
     @Override
@@ -1135,17 +1034,6 @@ public class OpenCodeAiProcessManager extends AbstractAcpProcessManager {
     protected void onConnectionDetached() {
         activeHandler = null;
         steerCapable = false;
-    }
-
-    /**
-     * OpenCode's copy of {@code handleProcessExit} did not reset {@code cancelledByUser} after reading it
-     * into the suppress-EXITED decision — its flag is instead cleared by the next {@code sendPrompt}. Kept
-     * exactly as found rather than silently unified with Grok's (which does reset it here), since nothing
-     * confirms which is intentional.
-     */
-    @Override
-    protected boolean resetCancelledByUserOnProcessExit() {
-        return false;
     }
 
     /**

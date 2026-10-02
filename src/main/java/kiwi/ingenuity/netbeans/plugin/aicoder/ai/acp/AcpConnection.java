@@ -250,18 +250,29 @@ public class AcpConnection {
                 CompletableFuture<JsonObject> future = pending.remove(id);
                 if (future != null) {
                     if (msg.has(AcpJsonKeyEnum.ERROR.key())) {
-                        JsonObject error = msg.getAsJsonObject(AcpJsonKeyEnum.ERROR.key());
-                        int code = error.has(AcpJsonKeyEnum.CODE.key()) ? error.get(AcpJsonKeyEnum.CODE.key()).getAsInt() : 0;
-                        String message = error.has(AcpJsonKeyEnum.MESSAGE.key())
-                                         ? redactAndBound(error.get(AcpJsonKeyEnum.MESSAGE.key()).getAsString()) : "unknown";
-                        // A bare "Internal error" hides the real cause (e.g. Grok's "402 Payment Required: usage
-                        // balance exhausted"), which agents put in error.data.message — show it to the user too.
-                        String detail = errorDataMessage(error);
-                        if (detail != null && !detail.equals(message)) {
-                            message = message + " — " + detail;
+                        // Whatever happens while parsing the error object, the future removed above must still
+                        // complete — a malformed field (e.g. a non-numeric "code") previously threw out of this
+                        // block entirely, leaving the future neither completed nor completed exceptionally, so
+                        // the turn it belonged to hung until its own caller-side timeout (review finding).
+                        AcpException ex;
+                        try {
+                            JsonObject error = msg.getAsJsonObject(AcpJsonKeyEnum.ERROR.key());
+                            int code = error.has(AcpJsonKeyEnum.CODE.key()) ? error.get(AcpJsonKeyEnum.CODE.key()).getAsInt() : 0;
+                            String message = error.has(AcpJsonKeyEnum.MESSAGE.key())
+                                             ? redactAndBound(error.get(AcpJsonKeyEnum.MESSAGE.key()).getAsString()) : "unknown";
+                            // A bare "Internal error" hides the real cause (e.g. Grok's "402 Payment Required: usage
+                            // balance exhausted"), which agents put in error.data.message — show it to the user too.
+                            String detail = errorDataMessage(error);
+                            if (detail != null && !detail.equals(message)) {
+                                message = message + " — " + detail;
+                            }
+                            ex = new AcpException(code, message);
                         }
-                        AcpException ex = new AcpException(code, message);
-                        dispatchExecutor.execute(() -> future.completeExceptionally(ex));
+                        catch (RuntimeException parseError) {
+                            ex = new AcpException(0, redactAndBound("malformed error response: " + parseError.getMessage()));
+                        }
+                        AcpException finalEx = ex;
+                        dispatchExecutor.execute(() -> future.completeExceptionally(finalEx));
                     }
                     else {
                         JsonObject result = msg.has(AcpJsonKeyEnum.RESULT.key()) ? msg.getAsJsonObject(AcpJsonKeyEnum.RESULT.key()) : new JsonObject();

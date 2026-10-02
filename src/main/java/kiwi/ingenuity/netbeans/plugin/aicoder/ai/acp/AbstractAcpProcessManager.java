@@ -13,6 +13,7 @@ import java.util.List;
 import java.util.Set;
 import java.util.concurrent.Callable;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.CompletionException;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
@@ -213,13 +214,6 @@ public abstract class AbstractAcpProcessManager extends AiProcessManager {
     protected abstract String currentAcpSessionId();
 
     /**
-     * Cancels any pending permission dialog on the currently active handler, or does nothing if there is
-     * none. Called before a cancel notification is sent, so a dialog left open by the cancelled turn is never
-     * left waiting for a decision that can no longer matter.
-     */
-    protected abstract void cancelPendingPermissionsOnActiveHandler();
-
-    /**
      * Short backend name for the debug-JSON log lines this class writes — e.g. {@code "OpenCode"},
      * {@code "Grok"}. Purely cosmetic: never parsed, never sent on the wire.
      */
@@ -252,6 +246,7 @@ public abstract class AbstractAcpProcessManager extends AiProcessManager {
         boolean hold;
         boolean alreadyPending;
         int inFlightCount;
+        Runnable permissionCanceller;
         synchronized (this) {
             if (!processing) {
                 if (PluginSettings.isDebugJson()) {
@@ -267,6 +262,10 @@ public abstract class AbstractAcpProcessManager extends AiProcessManager {
             if (hold) {
                 pendingMailInterrupt = true;
             }
+            // Captured here, under the lock, so a concurrent handleProcessExit/onHandlerDisconnected/stop()
+            // clearing the active handler in the window below can never leave a pending permission dialog
+            // undismissed — same pattern as interrupt()'s capture-under-lock fix.
+            permissionCanceller = hold ? null : capturePermissionCancellerUnderLock();
         }
         if (hold) {
             if (PluginSettings.isDebugJson()) {
@@ -278,7 +277,9 @@ public abstract class AbstractAcpProcessManager extends AiProcessManager {
             }
             return;
         }
-        cancelPendingPermissionsOnActiveHandler();
+        if (permissionCanceller != null) {
+            permissionCanceller.run();
+        }
         if (conn != null && sid != null) {
             sendCancelNotification(conn, sid);
             if (PluginSettings.isDebugJson()) {
@@ -311,6 +312,7 @@ public abstract class AbstractAcpProcessManager extends AiProcessManager {
         boolean flush;
         AcpConnection conn;
         String sid;
+        Runnable permissionCanceller;
         synchronized (this) {
             if (s.isTerminal()) {
                 if (inFlightToolCallIds.remove(toolCallId)) {
@@ -328,13 +330,17 @@ public abstract class AbstractAcpProcessManager extends AiProcessManager {
             }
             conn = currentAcpConnection();
             sid = currentAcpSessionId();
+            // Captured here, under the lock — see interruptMail's identical reasoning.
+            permissionCanceller = flush ? capturePermissionCancellerUnderLock() : null;
         }
         if (flush) {
             if (PluginSettings.isDebugJson()) {
                 LOG.log(Level.INFO, "{0} interrupt: Mail flushed — in-flight tool call completed (session={1})",
                         new Object[]{backendDisplayNameForLogging(), sid});
             }
-            cancelPendingPermissionsOnActiveHandler();
+            if (permissionCanceller != null) {
+                permissionCanceller.run();
+            }
             if (conn != null && sid != null) {
                 sendCancelNotification(conn, sid);
             }
@@ -364,6 +370,7 @@ public abstract class AbstractAcpProcessManager extends AiProcessManager {
             boolean flush;
             AcpConnection conn;
             String sid;
+            Runnable permissionCanceller;
             synchronized (this) {
                 flush = pendingMailInterrupt && currentAcpConnection() == connAtHold;
                 if (flush) {
@@ -372,6 +379,8 @@ public abstract class AbstractAcpProcessManager extends AiProcessManager {
                     inFlightToolCallIds.clear();
                     conn = currentAcpConnection();
                     sid = currentAcpSessionId();
+                    // Captured here, under the lock — see interruptMail's identical reasoning.
+                    permissionCanceller = capturePermissionCancellerUnderLock();
                 }
                 else {
                     return;
@@ -383,7 +392,9 @@ public abstract class AbstractAcpProcessManager extends AiProcessManager {
                         + "delivering anyway (session={2})",
                         new Object[]{backendDisplayNameForLogging(), mailInterruptSafetyValveMillis, sid});
             }
-            cancelPendingPermissionsOnActiveHandler();
+            if (permissionCanceller != null) {
+                permissionCanceller.run();
+            }
             if (conn != null && sid != null) {
                 sendCancelNotification(conn, sid);
             }
@@ -644,9 +655,9 @@ public abstract class AbstractAcpProcessManager extends AiProcessManager {
     }
 
     // ---- Items below this point moved here from GrokAiProcessManager/OpenCodeAiProcessManager, each
-    // previously an identical (or near-identical) copy. Abstract methods are declared here only because a
-    // method that IS moving needs to call them; their own bodies live in each subclass exactly as before and
-    // are not touched by this refactor (spawnAndHandshake, sendTurn). ----
+    // previously an identical (or near-identical) copy. spawnAndHandshake is declared abstract here only
+    // because a method that IS moving (handshakeAndSend) needs to call it; its own body stays in each
+    // subclass, untouched by this refactor. ----
     /**
      * Spawns the agent process and performs the ACP handshake. Always called on a background thread. Not
      * moved here — each backend's launch command, env vars and port/debug-file handling are its own — but
@@ -655,18 +666,267 @@ public abstract class AbstractAcpProcessManager extends AiProcessManager {
     protected abstract void spawnAndHandshake(File workDir) throws Exception;
 
     /**
-     * Sends one turn's prompt over the live connection. Not moved here — the prompt text each backend sends
-     * (e.g. OpenCode's MCP-tool-preference prefix) and the suppression flags it clears first are its own —
-     * but declared abstract so {@link #deliverAfterHandshake} (which IS shared) can call it.
-     */
-    protected abstract void sendTurn(String text);
-
-    /**
      * The reason a send was refused, for the INFO a refused send must post before its TurnCompleteEvent. Each
      * backend has its own set of reasons (e.g. OpenCode's compaction-in-progress case, which Grok has no
      * equivalent of), so this stays abstract rather than a shared list of reasons.
      */
     protected abstract String sendRefusalReason();
+
+    /**
+     * Runs right after {@link #sendPrompt} accepts a send (refusal checks passed, {@code cancelledByUser}
+     * cleared), before the handshake-or-sendTurn branch. No-op by default (OpenCode's original sendPrompt set
+     * {@code processing} only inside the handshake branch below, never here); Grok's original set
+     * {@code processing = true} unconditionally at this point instead — kept exactly as found rather than
+     * unified, though the two are provably equivalent in effect since {@link #sendTurn} (shared) always sets
+     * {@code processing = true} itself on every path that reaches it.
+     */
+    protected void onSendAccepted() {
+    }
+
+    /**
+     * Decorates the prompt text sent in a turn. Identity by default (Grok's original {@code sendTurn} sent
+     * {@code text} verbatim); OpenCode overrides to prepend its {@code MCP_TOOL_PREFERENCE} reminder to every
+     * turn.
+     */
+    protected String decoratePromptText(String text) {
+        return text;
+    }
+
+    /**
+     * Clears per-turn state on the active handler just before a new turn's prompt is sent — turn refusals for
+     * every backend, plus whatever else that backend's handler type needs cleared. Abstract (not a hook with
+     * a no-op default) because the handler field's type and the extra clears differ per backend: Grok's
+     * handler has only the session/load-replay suppression; OpenCode's also clears its compaction
+     * text-suppression flag, which Grok's handler has no equivalent of (no compaction feature at all).
+     */
+    protected abstract void clearTurnStartState();
+
+    /**
+     * Runs after {@link #resetMailInterruptHold} and {@code processing = true}, right before a turn's prompt
+     * is actually sent. No-op by default; Grok overrides to stamp {@code lastPromptSentAtMillis} for its
+     * exit-diagnostics log.
+     */
+    protected void onNewTurnStarting() {
+    }
+
+    /**
+     * Sends one turn's prompt over the live connection. Previously an identical copy in both backends apart
+     * from {@link #decoratePromptText}, {@link #clearTurnStartState} and {@link #onNewTurnStarting} (see
+     * their javadoc for the difference each preserves). Not final:
+     * {@code OpenCodeAiProcessManagerHandshakeTest} subclasses the process manager and overrides this (and
+     * {@link #sendPrompt}) to record the prompt text instead of actually sending it, so a real
+     * handshake/connection is never needed to test the hand-off from {@link #deliverAfterHandshake}.
+     */
+    public synchronized void sendTurn(String text) {
+        String decoratedText = decoratePromptText(text);
+        JsonObject promptItem = new JsonObject();
+        promptItem.addProperty(AcpJsonKeyEnum.TYPE.key(), "text");
+        promptItem.addProperty(AcpJsonKeyEnum.TEXT.key(), decoratedText);
+        JsonArray promptArray = new JsonArray();
+        promptArray.add(promptItem);
+
+        JsonObject params = new JsonObject();
+        params.addProperty(AcpJsonKeyEnum.SESSION_ID.key(), currentAcpSessionId());
+        params.add(AcpJsonKeyEnum.PROMPT.key(), promptArray);
+
+        if (PluginSettings.isDebugJson()) {
+            LOG.log(Level.INFO, "{0} prompt [{1}]: {2}",
+                    new Object[]{backendDisplayNameForLogging().toLowerCase(), currentAcpSessionId(), text});
+        }
+        clearTurnStartState();
+        // A new turn starts with no in-flight tool calls and no held mail interrupt. Stale state could only
+        // have survived a teardown path that failed to clear it; resetting here keeps the next turn clean
+        // regardless.
+        resetMailInterruptHold();
+        processing = true;
+        onNewTurnStarting();
+        Object turn = new Object();
+        beginActiveTurn(turn); // before the send: a write to a dead agent fails it synchronously
+        CompletableFuture<JsonObject> promptFuture = currentAcpConnection().sendRequest(AcpMethodEnum.SESSION_PROMPT, params);
+        promptFuture
+                .thenAccept(result -> {
+                    if (claimTurn(turn)) {
+                        handleTurnComplete(result);
+                    }
+                })
+                .exceptionally(ex -> {
+                    if (claimTurn(turn)) {
+                        handleTurnError(ex);
+                    }
+                    return null;
+                });
+    }
+
+    /**
+     * Background-thread entry point when no ACP connection exists yet, handing the prompt off once the
+     * connection is live. Previously an identical copy in both backends apart from {@link #onSendAccepted}
+     * (see its javadoc). The handshake thread is a daemon, so a handshake still waiting cannot keep the JVM
+     * alive for the handshake timeout. Not final: {@code OpenCodeAiProcessManagerHandshakeTest} overrides
+     * this (and {@link #sendTurn}) to record delivery instead of actually sending.
+     */
+    public synchronized void sendPrompt(String text, File workingDir, List<File> projectDirs) {
+        // isBusy() includes isWorkInFlight(), which is always false for Grok today (it never calls runWork).
+        // If Grok ever gains runWork it inherits this refusal, and its sendRefusalReason should then name
+        // work-in-flight.
+        if (isBusy() || pendingDiff || !running) {
+            // A submit AiTopComponent has already locked the UI for must never return silently, or the tab
+            // would stay locked forever (cross-cutting rule found in the Copilot and Codex backends). None of
+            // these refusals has a closer of its own, so INFO says why and TurnCompleteEvent releases the lock.
+            listener.onAiProcessEvent(new StatusEvent(StatusEventTypeEnum.INFO, sendRefusalReason()));
+            listener.onAiProcessEvent(new TurnCompleteEvent());
+            return;
+        }
+        cancelledByUser = false;
+        onSendAccepted();
+
+        if (sessionWorkingDir == null && workingDir != null && workingDir.isDirectory()) {
+            sessionWorkingDir = workingDir;
+        }
+        File effectiveWorkDir = sessionWorkingDir != null ? sessionWorkingDir : workingDir;
+
+        if (currentAcpConnection() == null) {
+            // spawnAndHandshake blocks for up to 60 s; sendPrompt runs on the EDT. Hand off to a background
+            // thread and return immediately so the UI stays responsive. processing=true prevents a second
+            // submit from racing the handshake.
+            processing = true;
+            Object turn = new Object();
+            beginHandshakeTurn(turn);
+            Thread t = new Thread(() -> handshakeAndSend(text, effectiveWorkDir, turn),
+                    backendDisplayNameForLogging().toLowerCase() + "-handshake");
+            t.setDaemon(true);
+            t.start();
+            return;
+        }
+
+        sendTurn(text);
+    }
+
+    /**
+     * Runs unconditionally right after a turn completes, before the wasRunning branch below. No-op by default
+     * (OpenCode has no equivalent); Grok overrides to call {@code reportUsage(result)}.
+     */
+    protected void onTurnComplete(JsonObject result) {
+    }
+
+    /**
+     * Runs just before the TurnCompleteEvent a completed turn posts, when the session is still running. No-op
+     * by default — Grok's original {@code handleTurnComplete} had no refusal-reporting concept at all (its
+     * handler exposes no such events); OpenCode overrides to tell the UI a policy refusal ended this turn (so
+     * the agent can be woken for it).
+     */
+    protected void onTurnCompleteWhileRunning(JsonObject result, boolean stoppedByUser) {
+    }
+
+    /**
+     * Runs instead of the above when the turn completed but the session was no longer running (so no
+     * TurnCompleteEvent is posted). No-op by default — Grok's original {@code handleTurnComplete} did nothing
+     * in this case either, so ANY turn refusals its handler might have recorded while not running would
+     * survive into the next turn (asymmetry flagged to Boss, not fixed); OpenCode overrides to discard its
+     * turn's refusals so they are never carried into a later turn.
+     */
+    protected void onTurnCompleteWhileNotRunning() {
+    }
+
+    /**
+     * Reacts to the {@code session/prompt} response. Previously an identical copy in both backends apart from
+     * {@link #onTurnComplete}, {@link #onTurnCompleteWhileRunning} and {@link #onTurnCompleteWhileNotRunning}
+     * (see their javadoc for the difference each preserves). Public final: called directly by each backend's
+     * own test suite, from a class in that backend's package rather than a subclass of this one, with no test
+     * fixture needing to override it.
+     */
+    public final void handleTurnComplete(JsonObject result) {
+        boolean wasRunning;
+        boolean stoppedByUser;
+        synchronized (this) {
+            processing = false;
+            // Turn over: nothing left mid-turn to interrupt, so clear any HELD mail interrupt WITHOUT
+            // sending — the mail was already delivered by the broker and is visible in the session's own
+            // context on its next turn either way (mirrors OpenCode/Claude/Grok).
+            resetMailInterruptHold();
+            wasRunning = running;
+            // Read BEFORE it is cleared: the only thing that tells a turn the user stopped from one a refusal
+            // ended, and both come back as stopReason "cancelled".
+            stoppedByUser = cancelledByUser;
+            cancelledByUser = false;
+        }
+        onTurnComplete(result);
+        if (wasRunning) {
+            // BEFORE the turn-complete event, never after: the UI handles that event by deciding whether the
+            // session carries straight on or goes idle, and it can only take a refusal into account if it has
+            // already been told of it. Events reach the UI in the order they are posted here.
+            onTurnCompleteWhileRunning(result, stoppedByUser);
+            listener.onAiProcessEvent(new TurnCompleteEvent());
+        }
+        else {
+            onTurnCompleteWhileNotRunning();
+        }
+    }
+
+    /**
+     * Runs when a turn error is anything other than a cancellation, before the generic FAILED fallback below.
+     * No-op by default (Grok's original {@code handleTurnError} had no refusal-discarding concept at all);
+     * OpenCode overrides to discard its turn's refusals, since a turn that failed for any other reason is not
+     * one a refusal ended and its refusals must not be carried into a later turn.
+     */
+    protected void onTurnErrorDiscardingRefusals() {
+    }
+
+    /**
+     * Runs when the turn error IS a cancellation (ACP's -32800 REQUEST_CANCELLED), right before the shared
+     * TurnCompleteEvent it closes with. No-op by default; OpenCode overrides to tell the UI a policy refusal
+     * ended this turn, the same as {@link #onTurnCompleteWhileRunning} does for the non-error path.
+     */
+    protected void onTurnErrorCancelled(boolean stoppedByUser) {
+    }
+
+    /**
+     * Gives a backend the chance to handle a terminal turn error specially, before the generic FAILED
+     * fallback. Returns true if it already posted its own closing status (the shared {@link #handleTurnError}
+     * then does nothing more). False by default (Grok's original {@code handleTurnError} had no special-case
+     * beyond REQUEST_CANCELLED, which the shared method already handles); OpenCode overrides to map
+     * AUTH_REQUIRED to its fixed "run opencode auth login" message.
+     */
+    protected boolean onTurnError(Throwable cause) {
+        return false;
+    }
+
+    /**
+     * Reacts to a failed {@code session/prompt} request. Previously an identical copy in both backends apart
+     * from {@link #onTurnErrorDiscardingRefusals}, {@link #onTurnErrorCancelled} and {@link #onTurnError}
+     * (see their javadoc for the difference each preserves). Public final: called directly by each backend's
+     * own test suite, from a class in that backend's package rather than a subclass of this one, with no test
+     * fixture needing to override it.
+     */
+    public final void handleTurnError(Throwable ex) {
+        Throwable cause = ex instanceof CompletionException ? ex.getCause() : ex;
+        boolean stoppedByUser;
+        synchronized (this) {
+            processing = false;
+            // Same turn-end clearing as handleTurnComplete — a cancelled/errored turn has no in-flight tool
+            // calls left to interrupt.
+            resetMailInterruptHold();
+            stoppedByUser = cancelledByUser;
+            cancelledByUser = false;
+        }
+        boolean cancelledReply = cause instanceof AcpException cancelEx
+                                 && cancelEx.code() == AcpErrorCodeEnum.REQUEST_CANCELLED.code();
+        if (cancelledReply) {
+            // -32800: session/cancel was acknowledged; treat as normal cancel completion. The same refusal
+            // report as a cancelled handleTurnComplete applies, before the turn-complete event for the same
+            // reason; there is no stopReason here, -32800 itself says "cancelled".
+            onTurnErrorCancelled(stoppedByUser);
+            listener.onAiProcessEvent(new TurnCompleteEvent());
+            return;
+        }
+        // A turn that failed for any other reason is not one a refusal ended, and its refusals must not be
+        // carried into a later turn.
+        onTurnErrorDiscardingRefusals();
+        if (onTurnError(cause)) {
+            return;
+        }
+        listener.onAiProcessEvent(new StatusEvent(StatusEventTypeEnum.FAILED,
+                StatusMessageUtil.formatSendFailed(cause != null ? cause.getMessage() : ex.getMessage())));
+    }
 
     /**
      * Sets the live ACP connection, or clears it ({@code null}). A setter rather than a hoisted field: the
@@ -706,16 +966,6 @@ public abstract class AbstractAcpProcessManager extends AiProcessManager {
      * steer capability, ...). No-op by default.
      */
     protected void onConnectionDetached() {
-    }
-
-    /**
-     * Whether {@link #handleProcessExit} resets {@code cancelledByUser} after reading it into the
-     * suppress-EXITED decision. True (the default) matches Grok's original copy of this method; OpenCode's
-     * copy did not reset it, so its flag is instead cleared by the next {@code sendPrompt} — kept exactly as
-     * found rather than silently unified, since nothing confirms which is intentional.
-     */
-    protected boolean resetCancelledByUserOnProcessExit() {
-        return true;
     }
 
     /**
@@ -759,15 +1009,15 @@ public abstract class AbstractAcpProcessManager extends AiProcessManager {
 
     /**
      * Captures, under the caller's lock, a canceller bound to whatever permission handler is active AT THIS
-     * MOMENT — not a lazy reference that re-reads the field later. {@link #interrupt} calls this while still
-     * holding the monitor, then runs the returned canceller only after releasing it, so a concurrent
+     * MOMENT — not a lazy reference that re-reads the field later. {@link #interrupt}, {@link #interruptMail},
+     * {@link #trackToolCallLifecycle} and {@link #startMailInterruptSafetyValve} all call this while still
+     * holding the monitor, then run the returned canceller only after releasing it, so a concurrent
      * {@link #handleProcessExit}/{@link #onHandlerDisconnected}/{@code stop()} clearing the active handler in
-     * that window can never leave a pending permission dialog undismissed (review finding: OpenCode's
-     * baseline {@code interrupt} captured its handler inside the lock for exactly this reason; the first cut
-     * of the shared version lost that by calling {@link #cancelPendingPermissionsOnActiveHandler} — which
-     * re-reads the field — only after the unlock). Implementations must evaluate the active handler eagerly
-     * (e.g. {@code handler::cancelPendingPermissions} bound to a local already read from the field) and
-     * return null when there is none to cancel.
+     * that window can never leave a pending permission dialog undismissed (review finding against
+     * {@code interrupt}'s first cut, which read the active handler again only after the unlock — OpenCode's
+     * pre-Stage-1 baseline had always captured it inside the lock for exactly this reason). Implementations
+     * must evaluate the active handler eagerly (e.g. {@code handler::cancelPendingPermissions} bound to a
+     * local already read from the field) and return null when there is none to cancel.
      */
     protected abstract Runnable capturePermissionCancellerUnderLock();
 
@@ -879,12 +1129,15 @@ public abstract class AbstractAcpProcessManager extends AiProcessManager {
      * Reports a crashed (or otherwise unexpectedly exited) process as EXITED, exactly once, and ends any turn
      * in flight. A process that exits as part of an orderly {@code stop()} has already had
      * {@code currentProcess} cleared, so this finds nothing current and does nothing. Previously an identical
-     * copy in both backends apart from {@link #resetCancelledByUserOnProcessExit} and
-     * {@link #logProcessExitDiagnostics} (see their javadoc for the difference each preserves). Public (not
-     * the package-private visibility this had in each backend before the move) and NOT final: several
-     * existing test fixtures in each backend's own package call it directly, or subclass the process manager
-     * and override it (wrapping with {@code super.handleProcessExit(...)}) to observe or gate a simulated
-     * exit — both need it to stay overridable and visible across packages.
+     * copy in both backends apart from {@link #logProcessExitDiagnostics} (see its javadoc for the difference
+     * it preserves) and the {@code cancelledByUser} reset below, now unconditional for both. The reset
+     * happens in the same synchronized block as {@link #clearActiveTurn()}, and {@code orphaned.close()}
+     * (which fails the pending prompt future) runs after it, so {@code claimTurn()} fails and
+     * {@link #handleTurnError} never reads the reset flag. Public (not the package-private visibility this
+     * had in each backend before the move) and NOT final: several existing test fixtures in each backend's
+     * own package call it directly, or subclass the process manager and override it (wrapping with
+     * {@code super.handleProcessExit(...)}) to observe or gate a simulated exit — both need it to stay
+     * overridable and visible across packages.
      */
     public void handleProcessExit(Process process) {
         boolean suppress;
@@ -897,9 +1150,7 @@ public abstract class AbstractAcpProcessManager extends AiProcessManager {
             resetMailInterruptHold();
             currentProcess = null;
             suppress = cancelledByUser;
-            if (resetCancelledByUserOnProcessExit()) {
-                cancelledByUser = false;
-            }
+            cancelledByUser = false;
             orphaned = detachDeadConnection();
             if (suppress || process.exitValue() != 0) {
                 // The turn already has its closing status — the EXITED below, or the STOPPED the user's Stop

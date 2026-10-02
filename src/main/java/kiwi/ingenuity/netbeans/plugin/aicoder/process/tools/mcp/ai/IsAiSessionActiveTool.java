@@ -33,7 +33,7 @@ public class IsAiSessionActiveTool extends AbstractActionTool {
         JsonObject props = new JsonObject();
         JsonObject tid = new JsonObject();
         tid.addProperty(ToolSchemaKeyEnum.TYPE.key(), "string");
-        tid.addProperty(ToolSchemaKeyEnum.DESCRIPTION.key(), "Target session ID from " + McpToolEnum.PEER_SESSION_LIST.toolName() + " or your session identity.");
+        tid.addProperty(ToolSchemaKeyEnum.DESCRIPTION.key(), "Target session ID or unique session name from " + McpToolEnum.PEER_SESSION_LIST.toolName() + " or your session identity.");
         props.add(IsAiSessionActiveParamEnum.TARGET_SESSION_ID.key(), tid);
         schema.add(ToolSchemaKeyEnum.PROPERTIES.key(), props);
         JsonArray required = new JsonArray();
@@ -54,6 +54,11 @@ public class IsAiSessionActiveTool extends AbstractActionTool {
         if (targetSessionId == null || targetSessionId.isBlank()) {
             return "Error: " + IsAiSessionActiveParamEnum.TARGET_SESSION_ID.key() + " is required";
         }
+        IdleWatcherTools.Resolution resolution = IdleWatcherTools.resolveTargetSessionId(targetSessionId);
+        if (resolution.error() != null) {
+            return resolution.error();
+        }
+        targetSessionId = resolution.sessionId();
         AiSessionInboxBroker broker = AiSessionInboxBroker.getInstance();
         boolean open = broker.isActive(targetSessionId);
         if (!open) {

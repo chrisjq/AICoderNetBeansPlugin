@@ -258,6 +258,70 @@ class AcpConnectionTest {
         assertTrue(acp.getMessage().contains("usage balance exhausted"), acp.getMessage());
     }
 
+    /**
+     * Review finding: {@code error.code} is normally a number, but a non-numeric value (e.g. an agent bug)
+     * threw out of the error branch entirely — after {@code pending.remove(id)} had already taken the future
+     * out of the map, so it was never completed either way, and the turn waiting on it hung until its own
+     * caller-side timeout rather than failing immediately.
+     */
+    @Test
+    void errorResponseWithNonNumericCodeStillCompletesTheFuture() throws Exception {
+        CompletableFuture<JsonObject> future = connection.sendRequest(AcpMethodEnum.SESSION_NEW, new JsonObject());
+        long id = agentRead().get("id").getAsLong();
+
+        JsonObject error = new JsonObject();
+        error.addProperty("code", "n/a");
+        error.addProperty("message", "something went wrong");
+        JsonObject errorResp = new JsonObject();
+        errorResp.addProperty("jsonrpc", "2.0");
+        errorResp.addProperty("id", id);
+        errorResp.add("error", error);
+        agentSend(errorResp);
+
+        ExecutionException thrown = assertThrows(ExecutionException.class,
+                () -> future.get(5, TimeUnit.SECONDS),
+                "a malformed error.code must still fail the future, not leave it hanging forever");
+        AcpException acp = assertInstanceOf(AcpException.class, thrown.getCause());
+        assertEquals(0, acp.code());
+        assertTrue(acp.getMessage().contains("malformed error response"), acp.getMessage());
+    }
+
+    /**
+     * {@code NumberFormatException} embeds the raw non-numeric {@code error.code}. That text must go through
+     * {@link AcpConnection#redactAndBound} before it reaches the UI or the log.
+     */
+    @Test
+    void malformedErrorCodeIsRedactedAndBounded() throws Exception {
+        CompletableFuture<JsonObject> future = connection.sendRequest(AcpMethodEnum.SESSION_NEW, new JsonObject());
+        long id = agentRead().get("id").getAsLong();
+
+        String secretShaped = "{\"secretKey\":\"leaked-123\"}";
+        String huge = secretShaped + "x".repeat(5000) + "ENDMARKER";
+        JsonObject error = new JsonObject();
+        error.addProperty("code", huge);
+        error.addProperty("message", "something went wrong");
+        JsonObject errorResp = new JsonObject();
+        errorResp.addProperty("jsonrpc", "2.0");
+        errorResp.addProperty("id", id);
+        errorResp.add("error", error);
+        agentSend(errorResp);
+
+        ExecutionException thrown = assertThrows(ExecutionException.class,
+                () -> future.get(5, TimeUnit.SECONDS));
+        AcpException acp = assertInstanceOf(AcpException.class, thrown.getCause());
+        assertEquals(0, acp.code());
+        String message = acp.getMessage();
+        assertTrue(message.contains("malformed error response"), message);
+        assertFalse(message.contains("leaked-123"), message);
+        assertTrue(message.contains("***"), message);
+        assertFalse(message.contains("ENDMARKER"), message);
+        String prefix = "ACP error 0: ";
+        assertTrue(message.startsWith(prefix), message);
+        assertTrue(message.length() <= prefix.length() + AcpConnection.MAX_ERROR_DETAIL_CHARS + 1,
+                message.length() + " " + message);
+        assertTrue(message.endsWith("\u2026"), message);
+    }
+
     @Test
     void errorDataMessageIgnoresMissingOrNonObjectData() {
         JsonObject noData = new JsonObject();

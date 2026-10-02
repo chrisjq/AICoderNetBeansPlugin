@@ -36,7 +36,7 @@ class OpenCodeAiProcessManagerHandshakeTest {
         }
 
         @Override
-        protected synchronized void sendTurn(String text) {
+        public synchronized void sendTurn(String text) {
             directTurns.add(text);
         }
 
