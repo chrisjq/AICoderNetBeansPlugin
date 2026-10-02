@@ -73,16 +73,17 @@ public class DiagnosticsProvider {
             try {
                 js.runUserActionTask(cc -> {
                     cc.toPhase(JavaSource.Phase.RESOLVED);
-                    // Iterate as Object to avoid javax.tools.Diagnostic class loader conflict;
-                    // use reflection to extract kind/line/message safely.
+                    // Iterate as Object to avoid javax.tools.Diagnostic class loader conflict, and call
+                    // through the public Diagnostic interface: the concrete class is not public.
                     for (Object diag : cc.getDiagnostics()) {
                         try {
-                            String kind = diag.getClass().getMethod("getKind")
+                            String kind = HeadlessImportFixer.publicMethod(diag, "javax.tools.Diagnostic", "getKind")
                                     .invoke(diag).toString();
-                            long line = (Long) diag.getClass().getMethod("getLineNumber")
+                            long line = (Long) HeadlessImportFixer.publicMethod(diag, "javax.tools.Diagnostic",
+                                    "getLineNumber")
                                     .invoke(diag);
-                            String msg = (String) diag.getClass()
-                                    .getMethod("getMessage", Locale.class)
+                            String msg = (String) HeadlessImportFixer.publicMethod(diag, "javax.tools.Diagnostic",
+                                    "getMessage", Locale.class)
                                     .invoke(diag, Locale.ENGLISH);
                             sb.append("[").append(kind).append("] ")
                                     .append(path).append(":").append(line)

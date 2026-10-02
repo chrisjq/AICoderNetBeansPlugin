@@ -3,11 +3,12 @@ package kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.ui.source;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.McpToolPropertyEnum;
 
 /**
- * Parameter-name keys for the FixImportsTool MCP tool, shared between its
- * schema() definition and handle() argument extraction so the two cannot drift.
+ * Parameter-name keys for the FixImportsTool MCP tool, shared between its schema() definition and handle()
+ * argument extraction so the two cannot drift.
  */
 public enum FixImportsParamEnum {
-    FILE_PATH(McpToolPropertyEnum.FILE_PATH);
+    FILE_PATH(McpToolPropertyEnum.FILE_PATH),
+    PICK_BEST(McpToolPropertyEnum.PICK_BEST);
 
     private final McpToolPropertyEnum property;
 

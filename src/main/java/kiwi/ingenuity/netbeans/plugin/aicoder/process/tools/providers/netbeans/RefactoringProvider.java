@@ -76,8 +76,6 @@ public class RefactoringProvider {
 
     private static final String RUN_INSPECT_ACTION
                                 = "Actions/Source/org-netbeans-modules-analysis-RunAnalysisAction.instance";
-    private static final String FIX_IMPORTS_ACTION
-                                = "Editors/text/x-java/Actions/fix-imports.instance";
     private static final String ORGANISE_IMPORTS_ACTION
                                 = "Editors/text/x-java/Actions/organize-imports.instance";
     private static final String ORGANISE_MEMBERS_ACTION
@@ -553,7 +551,50 @@ public class RefactoringProvider {
     }
 
     public static String fixImports(String filePath) {
-        return runSourceAction(filePath, FIX_IMPORTS_ACTION, McpToolEnum.FIX_IMPORTS.toolName());
+        return fixImports(filePath, false);
+    }
+
+    /**
+     * Adds imports for unresolved types without opening a dialog. {@code pickBest} imports the unique
+     * top-ranked candidate when a name is still ambiguous; a tie is left alone. Names that resolve are
+     * written even when other names in the same file stay ambiguous or unresolved. Unused imports are left in
+     * place.
+     */
+    public static String fixImports(String filePath, boolean pickBest) {
+        FileObject fo = resolveFileObject(filePath);
+        if (fo == null) {
+            return filePath != null && !filePath.isBlank()
+                   ? "File not found: " + filePath
+                   : McpToolPropertyEnum.FILE_PATH.key() + " is required";
+        }
+        HeadlessImportFixer.Outcome outcome = HeadlessImportFixer.fix(fo, pickBest);
+        if (!outcome.changed()) {
+            return outcome.message();
+        }
+        String saveError = saveAfterFixImports(fo);
+        if (saveError != null) {
+            return outcome.message() + " Save failed: " + saveError;
+        }
+        return outcome.message();
+    }
+
+    private static String saveAfterFixImports(FileObject fo) {
+        if (SwingUtilities.isEventDispatchThread()) {
+            return saveFo(fo);
+        }
+        AtomicReference<String> error = new AtomicReference<>();
+        try {
+            SwingUtilities.invokeAndWait(() -> error.set(saveFo(fo)));
+        }
+        catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            return "Interrupted";
+        }
+        catch (Exception e) {
+            String message = e.getMessage();
+            return message != null ? message : e.getClass().getName();
+        }
+        return error.get();
     }
 
     public static String organiseImports(String filePath) {

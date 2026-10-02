@@ -31,14 +31,17 @@ import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.ui.source.Organi
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.ui.source.ReformatFileParamEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.ui.source.ReformatFileTool;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
 
 /**
- * AUDIT 7: every parameter a ui tool's schema advertises must be a key its handler actually reads, and every parameter
- * the handler reads must be advertised. Proves the schema/handler contract headless for all 15 ui tools by comparing
- * the emitted properties/required arrays against the key sets each handler extracts via its ParamEnum. Behavioural
- * effect of each parameter (EDT/window-system bound) is covered per-path outside this class.
+ * AUDIT 7: every parameter a ui tool's schema advertises must be a key its handler actually reads, and every
+ * parameter the handler reads must be advertised. Proves the schema/handler contract headless for all 15 ui
+ * tools by comparing the emitted properties/required arrays against the key sets each handler extracts via
+ * its ParamEnum. Behavioural effect of each parameter (EDT/window-system bound) is covered per-path outside
+ * this class.
  */
 class UiToolsParamContractTest {
 
@@ -74,7 +77,7 @@ class UiToolsParamContractTest {
             // They go through the build queue like every other build, so they offer async too — optional, never
             // required: an IDE action with no async is an ordinary inline build that waits its turn.
             assertEquals(Set.of(GitCommonParamEnum.PROJECT_PATH.key(), McpToolPropertyEnum.ASYNC.key()),
-                         propertyKeys(tool));
+                    propertyKeys(tool));
             assertEquals(Set.of(GitCommonParamEnum.PROJECT_PATH.key()), requiredKeys(tool));
         }
         assertNoParameters(List.of(new RunInspectTool()));
@@ -93,9 +96,8 @@ class UiToolsParamContractTest {
     }
 
     @Test
-    void fourSourceToolsAdvertiseAndRequireExactlyTheFilePathTheirHandlersRead() {
+    void threeSourceToolsAdvertiseAndRequireExactlyTheFilePathTheirHandlersRead() {
         List<McpToolInterface> tools = List.of(
-                new FixImportsTool(),
                 new OrganiseImportsTool(),
                 new OrganiseMembersTool(),
                 new ReformatFileTool());
@@ -104,6 +106,18 @@ class UiToolsParamContractTest {
             assertEquals(Set.of(expected), propertyKeys(tool), toolName(tool) + " property set mismatch");
             assertEquals(Set.of(expected), requiredKeys(tool), toolName(tool) + " required set mismatch");
         }
+    }
+
+    @Test
+    void fixImportsAdvertisesRequiredFilePathAndOptionalPickBest() {
+        FixImportsTool tool = new FixImportsTool();
+        assertEquals(Set.of(FixImportsParamEnum.FILE_PATH.key(), FixImportsParamEnum.PICK_BEST.key()), propertyKeys(tool));
+        assertEquals(Set.of(FixImportsParamEnum.FILE_PATH.key()), requiredKeys(tool));
+        String description = tool.schema(Set.of()).get(ToolSchemaKeyEnum.DESCRIPTION.key()).getAsString();
+        assertTrue(description.contains("pickBest"), description);
+        assertTrue(description.contains("dialog"), description);
+        assertTrue(description.contains("Does not remove unused imports"), description);
+        assertFalse(description.contains("removes unused and adds"), description);
     }
 
     @Disabled("user request: Editor/Window tool group tests disabled")
@@ -133,9 +147,6 @@ class UiToolsParamContractTest {
     private static String filePathKey(McpToolInterface tool) {
         if (tool instanceof CloseFileTool) {
             return CloseFileParamEnum.FILE_PATH.key();
-        }
-        if (tool instanceof FixImportsTool) {
-            return FixImportsParamEnum.FILE_PATH.key();
         }
         if (tool instanceof OrganiseImportsTool) {
             return OrganiseImportsParamEnum.FILE_PATH.key();

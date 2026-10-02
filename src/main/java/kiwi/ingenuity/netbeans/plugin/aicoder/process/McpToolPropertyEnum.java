@@ -306,6 +306,11 @@ public enum McpToolPropertyEnum {
      */
     PATTERN("pattern"),
     /**
+     * When true, FixImports imports the unique top-ranked candidate for an ambiguous name and reports the
+     * choice. Default false. A tie is not imported.
+     */
+    PICK_BEST("pickBest"),
+    /**
      * Maven -P: profiles to activate.
      */
     PROFILES("profiles"),

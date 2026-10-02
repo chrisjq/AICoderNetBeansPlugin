@@ -7,11 +7,12 @@ import org.junit.jupiter.api.Test;
 
 /**
  * AUDIT 7: the filePath parameter of the five ui/file+source tools (CloseFile, FixImports, OrganiseImports,
- * OrganiseMembers, ReformatFile) is read and changes behaviour. Proves the headless-testable branches: a null/blank
- * value is rejected with "is required" (provider does not fall back to the focused editor), and a value pointing at a
- * nonexistent file reports "File not found". The third branch — an existing file, which opens the editor and runs the
- * source action on the EDT — needs the NetBeans window system and is deliberately not stubbed; it is traced at
- * RefactoringProvider.runSourceAction (RefactoringProvider.java:835) and reformatFile (RefactoringProvider.java:346).
+ * OrganiseMembers, ReformatFile) is read and changes behaviour. Proves the headless-testable branches: a
+ * null/blank value is rejected with "is required" (provider does not fall back to the focused editor), and a
+ * value pointing at a nonexistent file reports "File not found". FixImports no longer runs the editor action:
+ * an existing file is handled by HeadlessImportFixer, and the candidate decision is covered by
+ * ImportCandidatePlannerTest. OrganiseImports, OrganiseMembers and ReformatFile still open an editor on the
+ * EDT for a file that exists, which a plain unit test does not stub.
  */
 class UiToolsFilePathParamTest {
 
