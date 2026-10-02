@@ -6,15 +6,14 @@ import org.openide.util.NbPreferences;
 
 public final class GrokPluginSettings {
 
-    // Known model ids for the "grok" CLI's -m/--model flag, confirmed against
-    // xAI's published model/pricing list (https://docs.x.ai/developers/models)
-    // rather than guessed. grok-4.5 is xAI's current recommendation for both
-    // code and chat use cases. The combo box in GrokAiSettingsTab is editable,
-    // so any model id accepted by the CLI can still be typed in even if it is
-    // not listed here — and GrokModelDiscovery replaces this list at runtime
-    // with the account's real available models via `grok models` when that
-    // succeeds.
+    // Known model ids for the "grok" CLI, as grok itself reports them (`grok models` and the ACP session's
+    // model list). Highest first: the default is the first entry, so refreshing this list keeps the default
+    // at the newest model. The combo box in GrokAiSettingsTab is editable, so any model id accepted by the
+    // CLI can still be typed in even if it is not listed here — and GrokModelDiscovery replaces this list at
+    // runtime with the account's real available models via `grok models` when that succeeds.
     public static final String[] KNOWN_MODELS = {
+        "grok-4.7",
+        "grok-4.6",
         "grok-4.5"
     };
     public static final String DEFAULT_MODEL = KNOWN_MODELS[0];

@@ -24,6 +24,13 @@ class GrokAiSettingsTabTest {
     }
 
     @Test
+    void theBuiltInDefaultModelIsTheFirstEntryOfTheBuiltInList() {
+        assertEquals(GrokPluginSettings.KNOWN_MODELS[0], GrokPluginSettings.DEFAULT_MODEL,
+                     "the built-in list is ordered highest first, so the default must be its first entry");
+        assertEquals(GrokPluginSettings.DEFAULT_MODEL, GrokPluginSettings.getKnownModels()[0]);
+    }
+
+    @Test
     void getTabTitleAndAiType() {
         GrokAiSettingsTab tab = new GrokAiSettingsTab();
         assertEquals(AiTypeEnum.GROK.displayName(), tab.getTabTitle());

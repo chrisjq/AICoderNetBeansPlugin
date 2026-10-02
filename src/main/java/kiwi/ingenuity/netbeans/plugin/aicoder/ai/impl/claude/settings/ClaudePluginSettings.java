@@ -6,15 +6,17 @@ import org.openide.util.NbPreferences;
 
 public final class ClaudePluginSettings {
 
+    // Highest first: the default is the first entry, so refreshing this list keeps the default at the top model.
+    // Used until discovery replaces it; the model combo is editable, so any other id can still be typed.
     public static final String[] KNOWN_MODELS = {
-        "claude-opus-4-8",
-        "claude-sonnet-4-6",
+        "claude-opus-5-5",
+        "claude-sonnet-5-5",
         "claude-haiku-4-5"
     };
-    public static final String DEFAULT_MODEL = KNOWN_MODELS[1];
+    public static final String DEFAULT_MODEL = KNOWN_MODELS[0];
     /**
-     * An empty effort means "use Claude's own default", not "unset" — the launch command omits {@code --effort} in that
-     * case.
+     * An empty effort means "use Claude's own default", not "unset" — the launch command omits
+     * {@code --effort} in that case.
      */
     public static final String DEFAULT_EFFORT = "";
 

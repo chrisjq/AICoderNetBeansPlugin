@@ -36,6 +36,13 @@ class ClaudeSettingsTest {
     }
 
     @Test
+    void theBuiltInDefaultModelIsTheFirstEntryOfTheBuiltInList() {
+        assertEquals(ClaudePluginSettings.KNOWN_MODELS[0], ClaudePluginSettings.DEFAULT_MODEL,
+                     "the built-in list is ordered highest first, so the default must be its first entry");
+        assertEquals(ClaudePluginSettings.DEFAULT_MODEL, ClaudePluginSettings.getKnownModels()[0]);
+    }
+
+    @Test
     void emptyMeansClaudeOwnDefaultForModelAndEffort() {
         ClaudePluginSettings.setModel("");
         assertEquals("", ClaudePluginSettings.getModel());
