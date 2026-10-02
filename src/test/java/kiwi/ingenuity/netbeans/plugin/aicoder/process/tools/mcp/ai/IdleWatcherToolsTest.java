@@ -8,6 +8,7 @@ import java.util.Locale;
 import java.util.Map;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.AiTypeEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.idlewatch.IdleWatcherRegistry;
+import kiwi.ingenuity.netbeans.plugin.aicoder.ai.mail.AiSessionInboxBroker;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.session.AiSession;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.settings.AiSessionSettings;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.SessionRegistry;
@@ -40,6 +41,7 @@ class IdleWatcherToolsTest {
             IdleWatcherRegistry.getInstance().cancel(watcher[0], watcher[1]);
         }
         for (String id : registeredSessionIds) {
+            AiSessionInboxBroker.getInstance().unregister(id);
             SessionRegistry.unregister(id);
         }
     }
@@ -190,6 +192,77 @@ class IdleWatcherToolsTest {
 
         assertTrue(result.startsWith("Error:"), result);
         assertTrue(result.contains("not open"), result);
+    }
+
+    /**
+     * Boss's fix: PeerIdleWatcherCreate must resolve a session NAME the same way PeerMessageSend does,
+     * instead of rejecting it with "Target session is not open" because it is not an id.
+     */
+    @Test
+    void createByUniqueSessionName_resolvesToTheTargetId() {
+        AbstractAiSession watcher = session("idlewatch-tool-byname-watcher", true);
+        AbstractAiSession target = session("idlewatch-tool-byname-target", true);
+        AiSessionInboxBroker.getInstance().register(target.getAiSession());
+
+        String result = new CreateIdleWatcherTool().handle(
+                args(CreateIdleWatcherParamEnum.TARGET_SESSION_ID.key(), target.getSessionName()), watcher);
+
+        assertFalse(result.startsWith("Error:"), result);
+        rememberLatestWatcher(watcher.getId());
+        String resolvedTargetId = IdleWatcherRegistry.getInstance().list(watcher.getId()).get(0)
+                .watcher().targetSessionId();
+        assertEquals(target.getId(), resolvedTargetId, "the watcher must be armed against the resolved id, not the name");
+    }
+
+    /**
+     * Two targets sharing a name must refuse with the same ambiguous-name error PeerMessageSend gives,
+     * listing both matches, rather than guessing or silently picking one.
+     */
+    @Test
+    void createByAmbiguousSessionName_isRefusedListingTheMatches() {
+        AbstractAiSession watcher = session("idlewatch-tool-ambiguous-watcher", true);
+        AiSessionSettings settings = new AiSessionSettings();
+        settings.setAllowIdleWatcherTimer(true);
+        AiSession dup1 = new AiSession("idlewatch-tool-ambiguous-target-1", "SameName", null, AiTypeEnum.CLAUDE, null,
+                settings, Instant.now(), Instant.now());
+        AiSession dup2 = new AiSession("idlewatch-tool-ambiguous-target-2", "SameName", null, AiTypeEnum.CLAUDE, null,
+                settings, Instant.now(), Instant.now());
+        registerDuplicate(dup1);
+        registerDuplicate(dup2);
+
+        String result = new CreateIdleWatcherTool().handle(
+                args(CreateIdleWatcherParamEnum.TARGET_SESSION_ID.key(), "SameName"), watcher);
+
+        assertTrue(result.startsWith("Error:"), result);
+        assertTrue(result.contains("ambiguous"), result);
+        assertTrue(result.contains(dup1.id()) && result.contains(dup2.id()), result);
+    }
+
+    private void registerDuplicate(AiSession aiSession) {
+        AbstractAiSession wrapper = new AbstractAiSession(aiSession) {
+            @Override
+            public String getId() {
+                return aiSession.id();
+            }
+
+            @Override
+            public String getSessionName() {
+                return aiSession.name();
+            }
+
+            @Override
+            public Map getMcpToolHandlers() {
+                return Map.of();
+            }
+
+            @Override
+            public AiProcessEventListener getAiProcessEventListener() {
+                return null;
+            }
+        };
+        SessionRegistry.register(wrapper);
+        registeredSessionIds.add(aiSession.id());
+        AiSessionInboxBroker.getInstance().register(aiSession);
     }
 
     @Test

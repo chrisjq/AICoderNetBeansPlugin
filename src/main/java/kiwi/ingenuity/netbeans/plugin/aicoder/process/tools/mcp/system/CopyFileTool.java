@@ -2,6 +2,7 @@ package kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.system;
 
 import com.google.gson.JsonArray;
 import com.google.gson.JsonObject;
+import java.util.List;
 import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
@@ -118,13 +119,13 @@ public class CopyFileTool implements McpToolInterface {
         FileUtils.FileSnapshot approvedSource = FileUtils.FileSnapshot.capture(sourcePath);
         boolean targetExistedAtApproval = new java.io.File(targetPath).exists();
         if (!new java.io.File(sourcePath).exists()) {
-            return McpToolInvoker.withFileMutation(sessionId, java.util.List.of(sourcePath, targetPath),
+            return McpToolInvoker.withFileMutation(sessionId, List.of(sourcePath, targetPath),
                     () -> copyFileAfterRecheck(sourcePath, targetDir, newName, targetPath,
                             approvedSource, targetExistedAtApproval));
         }
         AiProcessEventListener listener = session.getAiProcessEventListener();
         if (listener == null) {
-            return McpToolInvoker.withFileMutation(sessionId, java.util.List.of(sourcePath, targetPath),
+            return McpToolInvoker.withFileMutation(sessionId, List.of(sourcePath, targetPath),
                     () -> copyFileAfterRecheck(sourcePath, targetDir, newName, targetPath,
                             approvedSource, targetExistedAtApproval));
         }
@@ -148,7 +149,7 @@ public class CopyFileTool implements McpToolInterface {
         if (decision == null || !decision.allow()) {
             return "User declined the copy — do not retry without asking.";
         }
-        return McpToolInvoker.withFileMutation(sessionId, java.util.List.of(sourcePath, targetPath),
+        return McpToolInvoker.withFileMutation(sessionId, List.of(sourcePath, targetPath),
                 () -> copyFileAfterRecheck(sourcePath, targetDir, newName, targetPath,
                         approvedSource, targetExistedAtApproval));
     }

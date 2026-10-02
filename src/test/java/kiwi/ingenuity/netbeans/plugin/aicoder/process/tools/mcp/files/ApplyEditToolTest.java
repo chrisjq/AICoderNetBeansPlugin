@@ -6,6 +6,7 @@ import java.nio.file.Path;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
@@ -339,8 +340,7 @@ class ApplyEditToolTest {
     private static final class BlockingListener implements AiProcessEventListener {
 
         final CountDownLatch shown = new CountDownLatch(1);
-        final java.util.concurrent.CompletableFuture<PermissionDecision> decision
-                                                                         = new java.util.concurrent.CompletableFuture<>();
+        final CompletableFuture<PermissionDecision> decision = new CompletableFuture<>();
 
         @Override
         public void onAiProcessEvent(AiProcessEvent event) {

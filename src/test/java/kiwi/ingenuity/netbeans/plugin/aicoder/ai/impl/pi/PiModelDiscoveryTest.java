@@ -2,6 +2,7 @@ package kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.pi;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.Arrays;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
@@ -64,7 +65,7 @@ class PiModelDiscoveryTest {
 
     @Test
     void parseModels_ignoresBlankLines() {
-        List<String> lines = java.util.Arrays.asList(
+        List<String> lines = Arrays.asList(
                 "", "   ", "github-copilot  claude-sonnet-5  1M  128K  yes  yes", ""
         );
         assertEquals(List.of("github-copilot/claude-sonnet-5"), PiModelDiscovery.parseModels(lines));

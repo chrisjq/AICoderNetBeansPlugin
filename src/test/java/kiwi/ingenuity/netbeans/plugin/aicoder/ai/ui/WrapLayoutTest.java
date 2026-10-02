@@ -3,6 +3,7 @@ package kiwi.ingenuity.netbeans.plugin.aicoder.ai.ui;
 import java.awt.Component;
 import java.awt.Dimension;
 import java.awt.FlowLayout;
+import java.util.concurrent.Callable;
 import java.util.concurrent.atomic.AtomicReference;
 import javax.swing.JLabel;
 import javax.swing.JPanel;
@@ -12,7 +13,7 @@ import org.junit.jupiter.api.Test;
 
 class WrapLayoutTest {
 
-    private static <T> T onEdt(java.util.concurrent.Callable<T> fn) throws Exception {
+    private static <T> T onEdt(Callable<T> fn) throws Exception {
         AtomicReference<T> result = new AtomicReference<>();
         AtomicReference<Exception> err = new AtomicReference<>();
         SwingUtilities.invokeAndWait(() -> {
@@ -38,12 +39,10 @@ class WrapLayoutTest {
     }
 
     /**
-     * Regression guard for the -(hgap + 1) shave that the widely-copied
-     * WrapLayout applied to derive minimumLayoutSize from preferredLayoutSize.
-     * With hgap == 0 that subtraction drove the width negative for any panel
-     * whose preferred width is 0. This version measures minimum independently
-     * from each child's getMinimumSize(), so both empty and zero-width-child
-     * panels must report width >= 0.
+     * Regression guard for the -(hgap + 1) shave that the widely-copied WrapLayout applied to derive
+     * minimumLayoutSize from preferredLayoutSize. With hgap == 0 that subtraction drove the width negative
+     * for any panel whose preferred width is 0. This version measures minimum independently from each child's
+     * getMinimumSize(), so both empty and zero-width-child panels must report width >= 0.
      *
      * Would have FAILED with the old code: old min.width = 0 - (0+1) = -1.
      */
@@ -66,12 +65,11 @@ class WrapLayoutTest {
     }
 
     /**
-     * When children's combined width exceeds the available width,
-     * preferredLayoutSize must report multi-row height, not the height of a
-     * single row.
+     * When children's combined width exceeds the available width, preferredLayoutSize must report multi-row
+     * height, not the height of a single row.
      *
-     * Would have been correct with the old code (this aspect wasn't broken),
-     * but guards against future regressions in the wrapping logic itself.
+     * Would have been correct with the old code (this aspect wasn't broken), but guards against future
+     * regressions in the wrapping logic itself.
      */
     @Test
     void preferredLayoutSize_narrowPanel_reportsMultipleRowsHeight() throws Exception {
@@ -88,8 +86,8 @@ class WrapLayoutTest {
     }
 
     /**
-     * When the panel is wide enough to hold all children in a single row,
-     * preferredLayoutSize must report that one row's height.
+     * When the panel is wide enough to hold all children in a single row, preferredLayoutSize must report
+     * that one row's height.
      *
      * Guards against always-wrapping regressions.
      */
@@ -134,9 +132,8 @@ class WrapLayoutTest {
     }
 
     /**
-     * A parentless panel with getWidth() == 0 exercises the Integer.MAX_VALUE
-     * fallback path in availableWidth(). The call must not throw and must
-     * return a sane size.
+     * A parentless panel with getWidth() == 0 exercises the Integer.MAX_VALUE fallback path in
+     * availableWidth(). The call must not throw and must return a sane size.
      */
     @Test
     void preferredLayoutSize_parentlessZeroWidthPanel_doesNotThrow() throws Exception {
@@ -151,10 +148,9 @@ class WrapLayoutTest {
     }
 
     /**
-     * The static factory wrappingRow() must attach a ComponentListener for
-     * revalidation on resize — the fix is the listener, and the realistic
-     * regression is constructing panel + layout separately, silently dropping
-     * it.
+     * The static factory wrappingRow() must attach a ComponentListener for revalidation on resize — the fix
+     * is the listener, and the realistic regression is constructing panel + layout separately, silently
+     * dropping it.
      *
      * Would FAIL without the addComponentListener() call inside wrappingRow().
      */

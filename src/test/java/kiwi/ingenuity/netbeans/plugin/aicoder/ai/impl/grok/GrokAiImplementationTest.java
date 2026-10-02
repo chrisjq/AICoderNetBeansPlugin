@@ -1,14 +1,16 @@
 package kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.grok;
 
 import java.io.File;
-import java.io.IOException;
-import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Instant;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicReference;
+import javax.swing.JComboBox;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.AiSessionHost;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.AiTypeEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.ExecutablePrompter;
@@ -27,13 +29,14 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
 /**
- * Regression test for the resume-session-lifecycle bug found in review: {@code grok -s <sessionId>} (create)
- * is rejected by the real CLI with {@code Error: Session ID <id> is already in use.} if that id already has
- * an on-disk session (empirically confirmed against a live installed grok CLI).
- * {@code GrokAiImplementation.afterStart()} now consults {@link #isStoredSessionValid} (delegating to
- * {@link GrokUsageSignalsReader#sessionExists}) before deciding whether to treat a start as "new" or "resume"
- * — mirroring {@code ClaudeAiImplementation}'s established pattern for the same failure mode. This locks in
- * the {@code isStoredSessionValid} half of that fix.
+ * Covers {@code GrokAiImplementation}'s session-lifecycle glue around the ACP-based
+ * {@code GrokAiProcessManager}: model/reasoning-effort scoping (session-scoped changes never touch the global
+ * default — {@link GrokPluginSettings}), {@code isStoredSessionValid}/{@code resumeSession} always trusting
+ * the stored ACP session id (ACP's {@code session/load} falls back to {@code session/new} itself, so a stale
+ * id never blocks the user — mirroring {@code OpenCodeAiImplementation}, not the old CLI's create-vs-resume
+ * problem this test used to guard), the effective-reasoning-effort precedence (session wins over the global
+ * default), and the callback path that clears a session-sourced effort the agent rejected — both in-memory
+ * and in the persisted {@link GrokSessionSettings}.
  */
 class GrokAiImplementationTest {
 
@@ -95,18 +98,12 @@ class GrokAiImplementationTest {
     }
 
     @Test
-    void isStoredSessionValid_noOnDiskSession_returnsFalse() {
+    void isStoredSessionValid_alwaysTrue_sessionLoadFallsBackToSessionNew() {
+        // session/load is attempted first with fallback to session/new (GrokAiProcessManager.spawnAndHandshake),
+        // so a stored session id is always safe to try resuming — mirrors OpenCodeAiImplementation.
         GrokAiImplementation impl = new GrokAiImplementation(noopListener(), noopPrompter());
-        assertFalse(impl.isStoredSessionValid(UUID.randomUUID().toString()));
-    }
-
-    @Test
-    void isStoredSessionValid_existingOnDiskSession_returnsTrue() throws IOException {
-        String sessionId = UUID.randomUUID().toString();
-        Files.createDirectories(tempHome.resolve(".grok").resolve("sessions")
-                .resolve("%2Fsome%2Fencoded%2Fcwd").resolve(sessionId));
-        GrokAiImplementation impl = new GrokAiImplementation(noopListener(), noopPrompter());
-        assertTrue(impl.isStoredSessionValid(sessionId));
+        assertTrue(impl.isStoredSessionValid(UUID.randomUUID().toString()));
+        assertTrue(impl.isStoredSessionValid("anything-at-all"));
     }
 
     @Test
@@ -141,9 +138,9 @@ class GrokAiImplementationTest {
 
         impl.afterStart();
 
-        assertEquals(List.of("--reasoning-effort", "high"),
-                impl.delegate().buildReasoningEffortArgs("grok-4.6"),
+        assertEquals("high", impl.delegate().reasoningEffort,
                 "the session's own reasoning effort must win over any global default");
+        assertTrue(impl.delegate().reasoningEffortFromSession);
     }
 
     @Test
@@ -157,8 +154,8 @@ class GrokAiImplementationTest {
 
             impl.afterStart();
 
-            assertEquals(List.of("--reasoning-effort", "medium"),
-                    impl.delegate().buildReasoningEffortArgs("grok-4.5"));
+            assertEquals("medium", impl.delegate().reasoningEffort);
+            assertFalse(impl.delegate().reasoningEffortFromSession);
         }
         finally {
             GrokPluginSettings.setReasoningEffort(globalBefore);
@@ -177,12 +174,37 @@ class GrokAiImplementationTest {
         impl.onStarted(stubHost(settings, updated));
 
         impl.delegate().configureReasoningEffort("xhigh", true);
-        impl.delegate().buildReasoningEffortArgs("grok-4.5");
+        impl.delegate().sessionConfigOptions = fakeConfigOptions("grok-4.5", "low", "medium", "high");
+        impl.delegate().applyInitialConfigOptionsIfNeeded();
 
         assertNull(settings.reasoningEffort(),
                 "a stored-unsupported value must end up null in the persisted session settings, not just the "
                 + "in-memory field");
         assertEquals(settings, updated.get(), "the cleared settings must actually be persisted through the host");
+    }
+
+    /**
+     * Builds a {@code configOptions} snapshot shaped like {@code session/new}'s response: a {@code model}
+     * option whose current value already matches {@code model} (so the model branch never needs to send
+     * anything), and a {@code reasoning_effort} option offering exactly {@code availableEfforts}.
+     */
+    private static com.google.gson.JsonArray fakeConfigOptions(String model, String... availableEfforts) {
+        com.google.gson.JsonArray options = new com.google.gson.JsonArray();
+        com.google.gson.JsonObject modelOpt = new com.google.gson.JsonObject();
+        modelOpt.addProperty("id", "model");
+        modelOpt.addProperty("currentValue", model);
+        options.add(modelOpt);
+        com.google.gson.JsonObject effortOpt = new com.google.gson.JsonObject();
+        effortOpt.addProperty("id", "reasoning_effort");
+        com.google.gson.JsonArray values = new com.google.gson.JsonArray();
+        for (String effort : availableEfforts) {
+            com.google.gson.JsonObject v = new com.google.gson.JsonObject();
+            v.addProperty("value", effort);
+            values.add(v);
+        }
+        effortOpt.add("options", values);
+        options.add(effortOpt);
+        return options;
     }
 
     @Test
@@ -238,7 +260,8 @@ class GrokAiImplementationTest {
             impl.onStarted(stubHost(settings, updated));
 
             impl.afterStart();
-            impl.delegate().buildReasoningEffortArgs("grok-4.5");
+            impl.delegate().sessionConfigOptions = fakeConfigOptions("grok-4.5", "low", "medium", "high");
+            impl.delegate().applyInitialConfigOptionsIfNeeded();
 
             assertNull(settings.reasoningEffort(), "the session's own unsupported value must be cleared");
             assertEquals("medium", GrokPluginSettings.getReasoningEffort(),
@@ -253,7 +276,7 @@ class GrokAiImplementationTest {
     void modelCatalogPublishUpdatesTheOpenBarsModelComboThroughAvailableModelsEvent() throws Exception {
         kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.grok.ui.GrokAiInfoBarExtension bar
                                                                                       = new kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.grok.ui.GrokAiInfoBarExtension();
-        java.util.concurrent.CountDownLatch delivered = new java.util.concurrent.CountDownLatch(1);
+        CountDownLatch delivered = new CountDownLatch(1);
         kiwi.ingenuity.netbeans.plugin.aicoder.ai.events.AiPropertyListener listener = event -> {
             // Mirrors AiTopComponent's own bus-listener forwarding: the bus dispatches off the EDT.
             javax.swing.SwingUtilities.invokeLater(() -> bar.onPropertyEvent(event));
@@ -270,13 +293,13 @@ class GrokAiImplementationTest {
             List<String> discovered = List.of("grok-catalog-test-1", "grok-catalog-test-2");
             GrokAiImplementation.modelCatalog().publish(discovered);
 
-            assertTrue(delivered.await(5, java.util.concurrent.TimeUnit.SECONDS),
+            assertTrue(delivered.await(5, TimeUnit.SECONDS),
                     "the type-wide property bus must deliver the discovered list to every open Grok bar");
             javax.swing.SwingUtilities.invokeAndWait(() -> {
             });
 
-            javax.swing.JComboBox<?> modelCombo = (javax.swing.JComboBox<?>) bar.createComponents().get(0);
-            List<Object> items = new java.util.ArrayList<>();
+            JComboBox<?> modelCombo = (JComboBox<?>) bar.createComponents().get(0);
+            List<Object> items = new ArrayList<>();
             for (int i = 0; i < modelCombo.getItemCount(); i++) {
                 items.add(modelCombo.getItemAt(i));
             }

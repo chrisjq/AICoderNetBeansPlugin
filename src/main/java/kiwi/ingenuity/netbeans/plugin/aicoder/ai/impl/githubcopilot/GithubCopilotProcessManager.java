@@ -15,6 +15,7 @@ import java.io.File;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
@@ -207,11 +208,11 @@ public class GithubCopilotProcessManager extends AiProcessManager {
     }
 
     /**
-     * Sets the reasoning effort together with its provenance. {@code fromSession} is true when the value
-     * came from the session's own settings, false when it was inherited from the global
-     * default: only a session-pinned value may be cleared, persisted and reported (INFO) when unsupported — a
-     * global-sourced one is silently omitted for this session instead, since the global belongs to the user
-     * and every other session.
+     * Sets the reasoning effort together with its provenance. {@code fromSession} is true when the value came
+     * from the session's own settings, false when it was inherited from the global default: only a
+     * session-pinned value may be cleared, persisted and reported (INFO) when unsupported — a global-sourced
+     * one is silently omitted for this session instead, since the global belongs to the user and every other
+     * session.
      */
     public void setReasoningEffort(String reasoningEffort, boolean fromSession) {
         this.reasoningEffort = reasoningEffort;
@@ -239,7 +240,7 @@ public class GithubCopilotProcessManager extends AiProcessManager {
         }
         sessionId = currentSession.id();
         if (sessionCorrupted) {
-            copilotSessionId = java.util.UUID.randomUUID().toString();
+            copilotSessionId = UUID.randomUUID().toString();
             sessionCorrupted = false;
         }
         else {
@@ -389,11 +390,9 @@ public class GithubCopilotProcessManager extends AiProcessManager {
 
     /**
      * A freshly opened session with the model and the stored reasoning effort in force when it was opened.
-     * The
-     * stored value is recorded rather than the validated one: it is what {@link #setReasoningEffort} changes,
-     * so comparing it detects exactly a user change, and a value the model does not support cannot look like
-     * a
-     * change on every turn.
+     * The stored value is recorded rather than the validated one: it is what {@link #setReasoningEffort}
+     * changes, so comparing it detects exactly a user change, and a value the model does not support cannot
+     * look like a change on every turn.
      */
     private record CreatedSession(CopilotSession session, String model, String effort) {
 
@@ -407,8 +406,8 @@ public class GithubCopilotProcessManager extends AiProcessManager {
 
     /**
      * True when the live session was opened with a different model or reasoning effort than the ones in force
-     * now. A session binds both when it is opened, so such a session must be replaced before the next turn.
-     * A session the manager never recorded a launch for (none is live in production) is never stale.
+     * now. A session binds both when it is opened, so such a session must be replaced before the next turn. A
+     * session the manager never recorded a launch for (none is live in production) is never stale.
      */
     boolean liveSessionIsStale() {
         if (!launchRecorded) {
@@ -432,7 +431,7 @@ public class GithubCopilotProcessManager extends AiProcessManager {
         catch (ExecutionException resumeFailure) {
             if (isCorruptedSessionFailure(resumeFailure)) {
                 sessionCorrupted = true;
-                copilotSessionId = java.util.UUID.randomUUID().toString();
+                copilotSessionId = UUID.randomUUID().toString();
             }
             else if (!isSessionNotFoundFailure(resumeFailure)) {
                 LOG.log(Level.INFO, "Resume failed for " + copilotSessionId + ", creating instead", resumeFailure);
@@ -464,9 +463,9 @@ public class GithubCopilotProcessManager extends AiProcessManager {
      * Validates {@link #reasoningEffort} against {@code forModel}'s live-discovered supported list before it
      * reaches {@link #buildCreateConfig}/{@link #buildResumeConfig}. Package-private for direct unit testing.
      * Mirrors the reference validate/clear/INFO implementation,
-     * {@code OpenCodeAiProcessManager.applyInitialEffortOption}, narrowed for Copilot: an unset
-     * value is left alone; a value not supported by the model (including an unknown model, which is treated
-     * as "no support") is never sent, and — only when it was pinned in the session
+     * {@code OpenCodeAiProcessManager.applyInitialEffortOption}, narrowed for Copilot: an unset value is left
+     * alone; a value not supported by the model (including an unknown model, which is treated as "no
+     * support") is never sent, and — only when it was pinned in the session
      * ({@link #reasoningEffortFromSession}) — is cleared with exactly one INFO event; a global-sourced value
      * is instead omitted with a FINE log, leaving the global and the session untouched; a supported value is
      * returned unchanged.

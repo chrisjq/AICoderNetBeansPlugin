@@ -5,6 +5,7 @@ import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.util.List;
+import java.util.UUID;
 import java.util.function.BooleanSupplier;
 import java.util.function.Consumer;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.pi.session.PiPersistentSession;
@@ -19,12 +20,13 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
 /**
- * Spec *Mail* (DURING_TURN): "the mail notice is sent as steer... pi delivers it once running tool calls finish... so
- * the interrupt hold built for Claude in F5 is not needed". Verifies {@code interrupt(Mail)} takes the {@code
+ * Spec *Mail* (DURING_TURN): "the mail notice is sent as steer... pi delivers it once running tool calls
+ * finish... so the interrupt hold built for Claude in F5 is not needed". Verifies {@code interrupt(Mail)}
+ * takes the {@code
  * steer} branch while a turn is running (captured via the fake process's stdin echoed to a file — see {@link
- * #capturedStdinFile}) and is a no-op while idle (the generic idle-delivery path calls {@code sendPrompt} itself, not
- * exercised here). Also pins the behavioural difference from Cancel: unlike {@code abort}, {@code steer} never ends the
- * turn — {@code processing} must stay {@code true} afterward.
+ * #capturedStdinFile}) and is a no-op while idle (the generic idle-delivery path calls {@code sendPrompt}
+ * itself, not exercised here). Also pins the behavioural difference from Cancel: unlike {@code abort},
+ * {@code steer} never ends the turn — {@code processing} must stay {@code true} afterward.
  */
 class PiMailDeliveryTest {
 
@@ -118,12 +120,12 @@ class PiMailDeliveryTest {
 
         void setupForTest() {
             running = true;
-            sessionId = java.util.UUID.randomUUID().toString();
+            sessionId = UUID.randomUUID().toString();
             model = "test-model";
             executablePath = "/bin/cat";
             toolsRegisteredWaitMillis = 50L;
             extensionPathForTests = "/tmp/aicoder-pi-test-extension.ts";
-            resumeSession(java.util.UUID.randomUUID().toString());
+            resumeSession(UUID.randomUUID().toString());
         }
 
         @Override

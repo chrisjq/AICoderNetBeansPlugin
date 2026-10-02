@@ -1,5 +1,6 @@
 package kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.ui.source;
 
+import java.util.Set;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.McpSectionEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.McpToolEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.server.McpHookServer;
@@ -38,7 +39,7 @@ public class FixImportsTool extends AbstractFileTool {
         if (fp == null || fp.isBlank()) {
             return RefactoringProvider.fixImports(fp);
         }
-        return McpToolInvoker.withFileMutation(session.getId(), java.util.Set.of(fp),
+        return McpToolInvoker.withFileMutation(session.getId(), Set.of(fp),
                 () -> RefactoringProvider.fixImports(fp));
     }
 }

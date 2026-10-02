@@ -1,12 +1,7 @@
 package kiwi.ingenuity.netbeans.plugin.aicoder.ai.permission;
 
-import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertFalse;
-import static org.junit.jupiter.api.Assertions.assertNotNull;
-import static org.junit.jupiter.api.Assertions.assertNull;
-import static org.junit.jupiter.api.Assertions.assertSame;
-import static org.junit.jupiter.api.Assertions.assertThrows;
-import static org.junit.jupiter.api.Assertions.assertTrue;
+import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.List;
 import java.util.concurrent.CancellationException;
 import java.util.concurrent.CompletableFuture;
@@ -14,23 +9,31 @@ import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.function.Consumer;
 import java.util.function.UnaryOperator;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.events.MultiPermissionEvent;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.events.MultiPermissionItem;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.events.PermissionDecision;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertSame;
+import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import org.junit.jupiter.api.Test;
 
 /**
- * The batch review is the part of the multi-file feature that must be provably correct: it decides what the AI is told,
- * and a mistake either blocks the AI process forever or silently loses a decision. These tests drive it headlessly —
- * there is no Swing here, and if any is ever needed the class has gone out of scope.
+ * The batch review is the part of the multi-file feature that must be provably correct: it decides what the
+ * AI is told, and a mistake either blocks the AI process forever or silently loses a decision. These tests
+ * drive it headlessly — there is no Swing here, and if any is ever needed the class has gone out of scope.
  */
 class MultiPermissionReviewTest {
 
     private static final UnaryOperator<String> RAW = UnaryOperator.identity();
 
     private static MultiPermissionEvent event(String... paths) {
-        List<MultiPermissionItem> items = java.util.Arrays.stream(paths)
+        List<MultiPermissionItem> items = Arrays.stream(paths)
                 .map(p -> new MultiPermissionItem(p, "content of " + p))
                 .toList();
         return new MultiPermissionEvent(items, new CompletableFuture<>());
@@ -45,7 +48,6 @@ class MultiPermissionReviewTest {
     }
 
     // ---------------------------------------------------------------- exit path 1: every file accepted
-
     @Test
     void acceptingEveryFileAllowsTheWholeSet() throws Exception {
         MultiPermissionEvent e = event("/p/a.java", "/p/b.java");
@@ -62,7 +64,6 @@ class MultiPermissionReviewTest {
     }
 
     // ---------------------------------------------------------------- exit path 2: a rejected file
-
     @Test
     void rejectingOneFileDeclinesTheWholeSetAndStopsEarly() throws Exception {
         MultiPermissionEvent e = event("/p/a.java", "/p/b.java", "/p/c.java");
@@ -82,9 +83,9 @@ class MultiPermissionReviewTest {
     }
 
     /**
-     * A click already in flight when the batch resolved must not change the outcome or resolve the future a second
-     * time. Ignoring it is deliberate: throwing here would surface an exception on the UI thread for a race the user
-     * cannot avoid.
+     * A click already in flight when the batch resolved must not change the outcome or resolve the future a
+     * second time. Ignoring it is deliberate: throwing here would surface an exception on the UI thread for a
+     * race the user cannot avoid.
      */
     @Test
     void decisionsAfterARejectionAreHarmless() throws Exception {
@@ -109,7 +110,6 @@ class MultiPermissionReviewTest {
     }
 
     // ---------------------------------------------------------------- exit path 3: main-panel reject
-
     @Test
     void rejectAllDeclinesWithoutReviewingAnything() throws Exception {
         MultiPermissionEvent e = event("/p/a.java", "/p/b.java");
@@ -129,7 +129,6 @@ class MultiPermissionReviewTest {
     }
 
     // ---------------------------------------------------------------- exit path 4: auto-accept
-
     @Test
     void autoAcceptApprovesEveryFileWithoutPrompting() throws Exception {
         MultiPermissionEvent e = event("/p/a.java", "/p/b.java", "/p/c.java");
@@ -144,7 +143,6 @@ class MultiPermissionReviewTest {
     }
 
     // ---------------------------------------------------------------- exit path 5: a diff that will not render
-
     @Test
     void aDiffThatWillNotRenderDeclinesTheWholeSetAndNamesTheFile() throws Exception {
         MultiPermissionEvent e = event("/p/a.java", "/p/b.java", "/p/c.java");
@@ -178,11 +176,10 @@ class MultiPermissionReviewTest {
     }
 
     // ---------------------------------------------------------------- exit path 6: the whole-set deadline
-
     /**
-     * Expiry declines everything, including files the user had already accepted — a timeout is another way of not
-     * approving everything. The log keeps it distinct from a rejection the user chose: the header says the deadline
-     * passed, and file 1 still reads "accepted" because that is what the user did to it.
+     * Expiry declines everything, including files the user had already accepted — a timeout is another way of
+     * not approving everything. The log keeps it distinct from a rejection the user chose: the header says
+     * the deadline passed, and file 1 still reads "accepted" because that is what the user did to it.
      */
     @Test
     void timeoutDeclinesTheWholeSetIncludingFilesAlreadyAccepted() throws Exception {
@@ -202,9 +199,9 @@ class MultiPermissionReviewTest {
     }
 
     /**
-     * The reason the outcome exists rather than reusing rejectAll(): both decline the set and both produce the same
-     * aggregate reply, but recording an expiry as "the user rejected the change set without reviewing" would attribute
-     * to the user something they never did.
+     * The reason the outcome exists rather than reusing rejectAll(): both decline the set and both produce
+     * the same aggregate reply, but recording an expiry as "the user rejected the change set without
+     * reviewing" would attribute to the user something they never did.
      */
     @Test
     void aTimeoutIsNotLoggedAsAUserRejection() {
@@ -222,10 +219,10 @@ class MultiPermissionReviewTest {
     }
 
     // ---------------------------------------------------------------- exit path 7: cancellation
-
     /**
-     * The backends tell an interruption from a deliberate "no" by exactly this: a denial lets the agent continue its
-     * turn, an exceptional completion interrupts it. Collapsing the two would change the AI's behaviour.
+     * The backends tell an interruption from a deliberate "no" by exactly this: a denial lets the agent
+     * continue its turn, an exceptional completion interrupts it. Collapsing the two would change the AI's
+     * behaviour.
      */
     @Test
     void cancellationCompletesTheFutureExceptionally() {
@@ -244,9 +241,9 @@ class MultiPermissionReviewTest {
 
     /**
      * With no cause supplied the review manufactures a {@link CancellationException}, which
-     * {@link CompletableFuture#get()} rethrows unwrapped rather than boxing in an {@code ExecutionException}. Either
-     * shape reaches the handlers as a non-null throwable, which is what makes this an interruption rather than a
-     * denial.
+     * {@link CompletableFuture#get()} rethrows unwrapped rather than boxing in an {@code ExecutionException}.
+     * Either shape reaches the handlers as a non-null throwable, which is what makes this an interruption
+     * rather than a denial.
      */
     @Test
     void cancellationWithNoCauseStillCompletesExceptionally() {
@@ -260,15 +257,14 @@ class MultiPermissionReviewTest {
     }
 
     // ---------------------------------------------------------------- exactly-once completion
-
     /**
-     * Every exit path must resolve the response — missing one leaves the AI process blocked forever — and none may
-     * resolve it twice, which would silently lose a decision. Driven through a completion counter rather than
-     * {@code isDone()}, since a second completion on an already-done future is a silent no-op.
+     * Every exit path must resolve the response — missing one leaves the AI process blocked forever — and
+     * none may resolve it twice, which would silently lose a decision. Driven through a completion counter
+     * rather than {@code isDone()}, since a second completion on an already-done future is a silent no-op.
      */
     @Test
     void everyExitPathCompletesTheResponseExactlyOnce() {
-        record Path(String name, java.util.function.Consumer<MultiPermissionReview> drive) {
+        record Path(String name, Consumer<MultiPermissionReview> drive) {
 
         }
         List<Path> paths = List.of(
@@ -300,18 +296,19 @@ class MultiPermissionReviewTest {
     }
 
     /**
-     * isFinished() reports that the OUTCOME IS SETTLED, not that the future is done — the two are ordered, not
-     * simultaneous, because the outcome is settled inside the lock and the future completed after it is released. This
-     * pins the ordering that matters to the UI: by the time anything can observe the response, the review already
-     * refuses to open another diff and the log is already final. The reverse window — isFinished() true while the future
-     * is not yet done — is real and documented, but observing it from a test would mean depending on exactly where
-     * inside the lock the renderer is invoked, so it is left to the javadoc rather than pinned to an internal detail.
+     * isFinished() reports that the OUTCOME IS SETTLED, not that the future is done — the two are ordered,
+     * not simultaneous, because the outcome is settled inside the lock and the future completed after it is
+     * released. This pins the ordering that matters to the UI: by the time anything can observe the response,
+     * the review already refuses to open another diff and the log is already final. The reverse window —
+     * isFinished() true while the future is not yet done — is real and documented, but observing it from a
+     * test would mean depending on exactly where inside the lock the renderer is invoked, so it is left to
+     * the javadoc rather than pinned to an internal detail.
      */
     @Test
     void theOutcomeIsSettledBeforeTheResponseIsObservable() {
         MultiPermissionEvent e = event("/p/a.java", "/p/b.java");
         MultiPermissionReview r = new MultiPermissionReview(e, RAW);
-        List<String> seen = new java.util.ArrayList<>();
+        List<String> seen = new ArrayList<>();
         e.response().whenComplete((d, t) -> seen.add(r.isFinished() + "/" + r.outcome() + "/" + r.log()));
 
         r.accept();
@@ -322,13 +319,16 @@ class MultiPermissionReviewTest {
     }
 
     /**
-     * The race this class exists to make safe: two exit paths arriving on different threads at once. Both controls are
-     * on screen together — the per-file diff's Accept and the main panel's Reject — so a user can genuinely trigger
-     * both, and the UI delivers them on whichever thread gets there first. Whoever wins, the response resolves exactly
-     * once, the two outcomes cannot both be recorded, and the decision agrees with the outcome that won.
+     * The race this class exists to make safe: two exit paths arriving on different threads at once. Both
+     * controls are on screen together — the per-file diff's Accept and the main panel's Reject — so a user
+     * can genuinely trigger both, and the UI delivers them on whichever thread gets there first. Whoever
+     * wins, the response resolves exactly once, the two outcomes cannot both be recorded, and the decision
+     * agrees with the outcome that won.
      *
-     * <p>This previously raced accept() against the review's own timedOut(). That path was removed when the batch's
-     * bound moved to the producer, so the pair changed; the lock it exercises, and the guarantee, did not.</p>
+     * <p>
+     * This previously raced accept() against the review's own timedOut(). That path was removed when the
+     * batch's bound moved to the producer, so the pair changed; the lock it exercises, and the guarantee, did
+     * not.</p>
      */
     @Test
     void twoExitPathsRacingResolveOnce() throws Exception {
@@ -357,7 +357,7 @@ class MultiPermissionReviewTest {
             assertEquals(1, completions.get(), "attempt " + attempt + " resolved the response more than once");
             MultiPermissionReview.Outcome outcome = r.outcome();
             assertTrue(outcome == MultiPermissionReview.Outcome.ACCEPTED
-                    || outcome == MultiPermissionReview.Outcome.REJECTED_ALL, "unexpected outcome " + outcome);
+                       || outcome == MultiPermissionReview.Outcome.REJECTED_ALL, "unexpected outcome " + outcome);
             assertEquals(outcome == MultiPermissionReview.Outcome.ACCEPTED, decisionOf(e).allow(),
                     "the decision must agree with the outcome that won the race");
         }
@@ -366,16 +366,16 @@ class MultiPermissionReviewTest {
     private static void await(CountDownLatch latch) {
         try {
             latch.await();
-        } catch (InterruptedException ex) {
+        }
+        catch (InterruptedException ex) {
             Thread.currentThread().interrupt();
         }
     }
 
     // ---------------------------------------------------------------- order
-
     /**
-     * Items are walked in the order the AI supplied. The paths below are deliberately non-alphabetical, so any sorting
-     * would show up as a different walk and a different log.
+     * Items are walked in the order the AI supplied. The paths below are deliberately non-alphabetical, so
+     * any sorting would show up as a different walk and a different log.
      */
     @Test
     void itemsAreWalkedInTheSuppliedOrder() {
@@ -401,7 +401,6 @@ class MultiPermissionReviewTest {
     }
 
     // ---------------------------------------------------------------- log text
-
     @Test
     void logForAUserAcceptedSet() {
         MultiPermissionReview r = review("/p/a.java", "/p/b.java", "/p/c.java");
@@ -471,10 +470,9 @@ class MultiPermissionReviewTest {
     }
 
     // ---------------------------------------------------------------- the injected path renderer
-
     /**
-     * The renderer must actually be applied, not accepted and ignored — a log showing raw paths where the rest of the
-     * message panel shows short ones is exactly the bug this shape invites.
+     * The renderer must actually be applied, not accepted and ignored — a log showing raw paths where the
+     * rest of the message panel shows short ones is exactly the bug this shape invites.
      */
     @Test
     void logPathsGoThroughTheInjectedRenderer() {
@@ -502,8 +500,8 @@ class MultiPermissionReviewTest {
     }
 
     /**
-     * The deny message goes back to the AI process, which supplied those paths and identifies its own files by them, so
-     * it keeps the raw path even when the log is shortened.
+     * The deny message goes back to the AI process, which supplied those paths and identifies its own files
+     * by them, so it keeps the raw path even when the log is shortened.
      */
     @Test
     void theDenyMessageKeepsTheRawPath() throws Exception {
@@ -526,7 +524,6 @@ class MultiPermissionReviewTest {
     }
 
     // ---------------------------------------------------------------- construction
-
     @Test
     void constructionRejectsAMissingEventOrRenderer() {
         assertThrows(IllegalArgumentException.class, () -> new MultiPermissionReview(null, RAW));

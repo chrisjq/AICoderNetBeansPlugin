@@ -159,7 +159,7 @@ class GithubCopilotProcessManagerTest {
         List<AiProcessEvent> events = new ArrayList<>();
         GithubCopilotProcessManager mgr = new GithubCopilotProcessManager(events::add);
         mgr.setReasoningEffort("high");
-        java.util.concurrent.atomic.AtomicInteger clearedCount = new java.util.concurrent.atomic.AtomicInteger();
+        AtomicInteger clearedCount = new AtomicInteger();
         mgr.setOnReasoningEffortCleared(clearedCount::incrementAndGet);
 
         mgr.resolveValidatedReasoningEffort("some-unknown-model");
@@ -203,7 +203,7 @@ class GithubCopilotProcessManagerTest {
         GithubCopilotProcessManager mgr = new GithubCopilotProcessManager(events::add);
         mgr.setReasoningEffort("high");
         GithubCopilotPluginSettings.setModelReasoningEffortInfo(Map.of("gpt-5.4", List.of("low", "high")), Map.of());
-        java.util.concurrent.atomic.AtomicInteger clearedCount = new java.util.concurrent.atomic.AtomicInteger();
+        AtomicInteger clearedCount = new AtomicInteger();
         mgr.setOnReasoningEffortCleared(clearedCount::incrementAndGet);
 
         try {

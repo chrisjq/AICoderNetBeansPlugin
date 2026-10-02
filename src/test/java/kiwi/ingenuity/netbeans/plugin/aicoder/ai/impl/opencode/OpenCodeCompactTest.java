@@ -11,15 +11,15 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
+import kiwi.ingenuity.netbeans.plugin.aicoder.ai.acp.AcpClientHandler;
+import kiwi.ingenuity.netbeans.plugin.aicoder.ai.acp.AcpConnection;
+import kiwi.ingenuity.netbeans.plugin.aicoder.ai.acp.AcpJsonKeyEnum;
+import kiwi.ingenuity.netbeans.plugin.aicoder.ai.acp.AcpMethodEnum;
+import kiwi.ingenuity.netbeans.plugin.aicoder.ai.acp.AcpSessionUpdateEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.events.StatusEvent;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.events.StatusEventTypeEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.events.TextDeltaEvent;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.events.TurnCompleteEvent;
-import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.opencode.acp.AcpClientHandler;
-import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.opencode.acp.AcpConnection;
-import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.opencode.acp.AcpJsonKeyEnum;
-import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.opencode.acp.AcpMethodEnum;
-import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.opencode.acp.AcpSessionUpdateEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.events.AiProcessEvent;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.events.AiProcessEventListener;
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -684,7 +684,7 @@ class OpenCodeCompactTest {
         List<AiProcessEvent> events = new ArrayList<>();
         OpenCodeAiProcessManager manager = new OpenCodeAiProcessManager(events::add);
         Object turn = new Object();
-        manager.handshakeTurn = turn; // the turn sendPrompt handed to the handshake
+        manager.setHandshakeTurnForTesting(turn); // the turn sendPrompt handed to the handshake
 
         manager.deliverAfterHandshake("hello", turn);
 
@@ -699,7 +699,7 @@ class OpenCodeCompactTest {
         OpenCodeAiProcessManager manager = new OpenCodeAiProcessManager(events::add);
         manager.setPendingDiff(true);
         Object turn = new Object();
-        manager.handshakeTurn = turn; // the turn sendPrompt handed to the handshake
+        manager.setHandshakeTurnForTesting(turn); // the turn sendPrompt handed to the handshake
         manager.deliverAfterHandshake("hello", turn);
 
         assertEquals(2, events.size(), "exactly INFO then TurnCompleteEvent");

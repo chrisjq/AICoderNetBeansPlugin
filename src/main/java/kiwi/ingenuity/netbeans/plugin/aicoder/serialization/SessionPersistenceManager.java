@@ -22,6 +22,7 @@ import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Set;
+import java.util.UUID;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 import java.util.stream.Collectors;
@@ -34,8 +35,8 @@ import kiwi.ingenuity.netbeans.plugin.aicoder.ai.settings.AiSessionSettingsCreat
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tempfile.TempFileRegistry;
 
 /**
- * Manages persistent storage and retrieval of AI session data. Handles JSON serialization of sessions to disk with
- * proper file locking and atomicity guarantees.
+ * Manages persistent storage and retrieval of AI session data. Handles JSON serialization of sessions to disk
+ * with proper file locking and atomicity guarantees.
  */
 public class SessionPersistenceManager {
 
@@ -48,9 +49,9 @@ public class SessionPersistenceManager {
      */
     private static final Gson GSON = new GsonBuilder().setPrettyPrinting().create();
     /**
-     * Serializes all instances in this JVM before acquiring the cross-process file lock. FileChannel.lock() throws
-     * OverlappingFileLockException if the same JVM holds it twice, so we need intra-JVM serialization independently of
-     * per-instance synchronized methods.
+     * Serializes all instances in this JVM before acquiring the cross-process file lock. FileChannel.lock()
+     * throws OverlappingFileLockException if the same JVM holds it twice, so we need intra-JVM serialization
+     * independently of per-instance synchronized methods.
      */
     private static final Object JVM_LOCK = new Object();
 
@@ -75,9 +76,9 @@ public class SessionPersistenceManager {
     }
 
     /**
-     * Renders a single JSON property for a log line without ever serialising its enclosing object, so a future
-     * sensitive field cannot start leaking through error logging. Absent or non-scalar values collapse to a placeholder
-     * that names the key instead.
+     * Renders a single JSON property for a log line without ever serialising its enclosing object, so a
+     * future sensitive field cannot start leaking through error logging. Absent or non-scalar values collapse
+     * to a placeholder that names the key instead.
      */
     private static String scalarOrPlaceholder(JsonObject o, String key) {
         if (o.has(key) && o.get(key).isJsonPrimitive()) {
@@ -159,10 +160,10 @@ public class SessionPersistenceManager {
     }
 
     /**
-     * Deletes every directory directly under {@code baseDir} that no remaining persisted session references. Only
-     * directories are considered — sessions.json, sessions.lock and temp files are regular files and are left alone.
-     * Runs while holding the JVM-wide and cross-process locks, so the referenced-id set matches exactly what was just
-     * persisted.
+     * Deletes every directory directly under {@code baseDir} that no remaining persisted session references.
+     * Only directories are considered — sessions.json, sessions.lock and temp files are regular files and are
+     * left alone. Runs while holding the JVM-wide and cross-process locks, so the referenced-id set matches
+     * exactly what was just persisted.
      */
     private void purgeOrphanHistoryDirsLocked(List<AiSession> keptSessions) throws IOException {
         Set<String> referencedIds = keptSessions.stream()
@@ -213,7 +214,7 @@ public class SessionPersistenceManager {
                     String aiTypeKey = SessionPersistenceKeyEnum.AI_TYPE.key();
                     String idKey = SessionPersistenceKeyEnum.ID.key();
                     String description = o.has(descriptionKey) && !o.get(descriptionKey).isJsonNull()
-                            ? o.get(descriptionKey).getAsString() : null;
+                                         ? o.get(descriptionKey).getAsString() : null;
                     AiTypeEnum aiType;
                     try {
                         aiType = o.has(aiTypeKey) ? AiTypeEnum.valueOf(o.get(aiTypeKey).getAsString()) : null;
@@ -241,9 +242,9 @@ public class SessionPersistenceManager {
                     }
                     List<String> missingKeys = new ArrayList<>();
                     for (String requiredKey : new String[]{idKey,
-                        SessionPersistenceKeyEnum.NAME.key(),
-                        SessionPersistenceKeyEnum.CREATED_AT.key(),
-                        SessionPersistenceKeyEnum.LAST_USED_AT.key()}) {
+                                                           SessionPersistenceKeyEnum.NAME.key(),
+                                                           SessionPersistenceKeyEnum.CREATED_AT.key(),
+                                                           SessionPersistenceKeyEnum.LAST_USED_AT.key()}) {
                         if (!o.has(requiredKey)) {
                             missingKeys.add(requiredKey);
                         }
@@ -343,7 +344,7 @@ public class SessionPersistenceManager {
             arr.add(o);
         }
         byte[] bytes = GSON.toJson(arr).getBytes(StandardCharsets.UTF_8);
-        Path tmp = sessionsFile.resolveSibling(sessionsFile.getFileName() + "." + java.util.UUID.randomUUID() + ".tmp");
+        Path tmp = sessionsFile.resolveSibling(sessionsFile.getFileName() + "." + UUID.randomUUID() + ".tmp");
         try {
             try (FileChannel fc = FileChannel.open(tmp, StandardOpenOption.CREATE_NEW, StandardOpenOption.WRITE)) {
                 fc.write(ByteBuffer.wrap(bytes));

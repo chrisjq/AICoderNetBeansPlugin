@@ -5,6 +5,7 @@ import com.github.copilot.rpc.PermissionRequest;
 import com.github.copilot.rpc.PermissionRequestResult;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.logging.Handler;
@@ -17,10 +18,12 @@ import kiwi.ingenuity.netbeans.plugin.aicoder.ai.events.ConfirmEvent;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.events.PermissionDecision;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.events.ToolUseEvent;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.session.AiSession;
+import kiwi.ingenuity.netbeans.plugin.aicoder.process.McpToolEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.SessionRegistry;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.events.AiProcessEvent;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.server.McpHookServerUtil;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.session.AbstractAiSession;
+import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.McpToolInterface;
 import org.junit.jupiter.api.AfterEach;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -55,7 +58,7 @@ class GithubCopilotPermissionHandlerTest {
         GithubCopilotPermissionHandler handler = new GithubCopilotPermissionHandler(raised::set, "session-1");
 
         CompletableFuture<PermissionRequestResult> future
-                = handler.handle(request("aicoder-nb-ki-plugin(GetFileContent)"), invocation());
+                                                   = handler.handle(request("aicoder-nb-ki-plugin(GetFileContent)"), invocation());
 
         assertTrue(future.isDone());
         assertEquals("approve-once", future.get().getKind());
@@ -246,9 +249,9 @@ class GithubCopilotPermissionHandlerTest {
             }
 
             @Override
-            public java.util.Map<kiwi.ingenuity.netbeans.plugin.aicoder.process.McpToolEnum, kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.McpToolInterface>
+            public Map<McpToolEnum, McpToolInterface>
                     getMcpToolHandlers() {
-                return java.util.Map.of();
+                return Map.of();
             }
         };
         SessionRegistry.register(wrapper);
@@ -307,7 +310,7 @@ class GithubCopilotPermissionHandlerTest {
         GithubCopilotPermissionHandler handler = new GithubCopilotPermissionHandler(raised::set, testSessionId);
 
         CompletableFuture<PermissionRequestResult> future
-                = handler.handle(request("aicoder-nb-ki-plugin(GetFileContent)"), invocation());
+                                                   = handler.handle(request("aicoder-nb-ki-plugin(GetFileContent)"), invocation());
 
         assertTrue(future.isDone());
         assertEquals("approve-once", future.get().getKind(),
@@ -381,9 +384,10 @@ class GithubCopilotPermissionHandlerTest {
             assertNull(raised.get(),
                     "the refusal is only a tool-use log line, never a chat event");
             assertEquals("MCP Steering refusal: backend=copilot, category=WRITE: "
-                    + GithubCopilotPermissionPolicy.describeRequest("write", null),
+                         + GithubCopilotPermissionPolicy.describeRequest("write", null),
                     captured.get(0), "the write refusal must log under category=WRITE");
-        } finally {
+        }
+        finally {
             logger.removeHandler(capture);
             PluginSettings.setLogToolUse(previous);
         }
@@ -451,7 +455,7 @@ class GithubCopilotPermissionHandlerTest {
                 assertNull(raised.get(),
                         "the refusal is only a log line, never an event");
                 assertEquals("MCP Steering refusal: backend=copilot, category=" + categories[i] + ": "
-                        + GithubCopilotPermissionPolicy.describeRequest(kind, null),
+                             + GithubCopilotPermissionPolicy.describeRequest(kind, null),
                         captured.get(i), "one line per refusal, naming its category and what was refused");
             }
             assertEquals(4, captured.size(),
@@ -464,10 +468,11 @@ class GithubCopilotPermissionHandlerTest {
             assertEquals("reject", result.getKind());
             assertNull(raised.get(), "the shell refusal is only a log line, never an event");
             assertEquals("MCP Steering refusal: backend=copilot, category=SHELL: "
-                    + GithubCopilotPermissionPolicy.describeRequest("commands(echo)", null),
+                         + GithubCopilotPermissionPolicy.describeRequest("commands(echo)", null),
                     captured.get(4), "the shell refusal logs one line, not a chat notification");
             assertEquals(5, captured.size());
-        } finally {
+        }
+        finally {
             logger.removeHandler(capture);
             PluginSettings.setLogToolUse(previous);
         }
@@ -506,7 +511,8 @@ class GithubCopilotPermissionHandlerTest {
 
             assertTrue(captured.isEmpty(),
                     "with tool-use logging off, a steering refusal must keep out of the log");
-        } finally {
+        }
+        finally {
             logger.removeHandler(capture);
             PluginSettings.setLogToolUse(previous);
         }

@@ -27,8 +27,10 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.ThreadLocalRandom;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.function.Consumer;
 import java.util.logging.Level;
 import java.util.logging.Logger;
+import java.util.stream.Collectors;
 import javax.swing.BorderFactory;
 import javax.swing.JButton;
 import javax.swing.JFileChooser;
@@ -730,7 +732,7 @@ public final class AiTopComponent extends TopComponent implements AiProcessEvent
         }
         List<AbstractNotification> deliverable = all.stream()
                 .filter(AbstractNotification::shouldDeliver)
-                .collect(java.util.stream.Collectors.toList());
+                .collect(Collectors.toList());
         // Build results are events, not something the user said, so they go into the conversation as SYSTEM messages
         // instead of riding in the prompt. Safe to touch the panel here: the isProcessing() guard above already
         // returned if a turn were in flight, so no assistant message can be mid-stream — which is addSystemMessage's
@@ -951,17 +953,29 @@ public final class AiTopComponent extends TopComponent implements AiProcessEvent
      * its own noise.</p>
      *
      * <p>
-     * Only for backends whose mail delivery actually aborts the turn. Codex steers, Copilot injects, Grok and
-     * Ollama drop it — none of them abort anything, so telling those sessions their turn was interrupted
-     * would be a plain falsehood about their own history, which is precisely the failure this notice exists
-     * to prevent. The flag is cleared for them too: the interrupt they did not have must not be reported on
-     * some later turn either.</p>
+     * Only for backends whose mail delivery actually aborts the turn. Codex steers, Copilot injects, Ollama
+     * drops it — none of those abort anything, so telling those sessions their turn was interrupted would be
+     * a plain falsehood about their own history, which is precisely the failure this notice exists to
+     * prevent. Grok's mail interrupt DOES abort the turn (the same shared session/cancel OpenCode's does), so
+     * it gets this explanation too — the flag is cleared for the non-aborting backends too: the interrupt
+     * they did not have must not be reported on some later turn either.</p>
+     *
+     * <p>
+     * Also null whenever {@code cancelledTurnJustCompleted} — the USER pressed Stop to end this turn. Reads
+     * it rather than clearing it: {@link #consumeMcpSteeringNotice}, called moments later for the same
+     * TurnCompleteEvent, owns clearing it and must still see the real value. Review finding: a mail interrupt
+     * earlier in the SAME turn that the user then separately stopped would otherwise still produce this
+     * explanation, wrongly telling the assistant mail is why its turn ended when the user's own Stop is what
+     * actually closed it.
      */
     private String consumeInboxInterruptExplanation() {
         if (!mailArrivedDuringTurn) {
             return null;
         }
         mailArrivedDuringTurn = false;
+        if (cancelledTurnJustCompleted) {
+            return null;
+        }
         var liveSession = SessionRegistry.get(session.id());
         if (liveSession == null || liveSession.getMailDeliveryTiming() != MailDeliveryTimingEnum.ABORTS_TURN) {
             return null;
@@ -1337,7 +1351,7 @@ public final class AiTopComponent extends TopComponent implements AiProcessEvent
         lifecycleListeners.add(listener);
     }
 
-    private void fireListenerEvent(java.util.function.Consumer<SessionLifecycleListener> event) {
+    private void fireListenerEvent(Consumer<SessionLifecycleListener> event) {
         lifecycleListeners.forEach(event);
     }
 
@@ -1688,7 +1702,7 @@ public final class AiTopComponent extends TopComponent implements AiProcessEvent
             case READY, FATAL ->
                 registry.onSessionIdle(session.id());
             case AWAITING_USER -> {
-            // Mid-turn approval is not idle: the target is still inside its turn, waiting on the user.
+                // Mid-turn approval is not idle: the target is still inside its turn, waiting on the user.
             }
         }
     }
@@ -2127,7 +2141,7 @@ public final class AiTopComponent extends TopComponent implements AiProcessEvent
                         // messages ran together here while the same pair arriving through the flush were spaced. The
                         // rule for this pair is that they agree — it is their disagreeing that hid the dropped
                         // notification hole once already.
-                        .collect(java.util.stream.Collectors.joining("\n\n"));
+                        .collect(Collectors.joining("\n\n"));
                 deferredNotifications.clear();
                 if (!deferred.isEmpty()) {
                     deferredForAgent = deferred;
@@ -2611,7 +2625,7 @@ public final class AiTopComponent extends TopComponent implements AiProcessEvent
                 return;
             }
             case SHOW_DIFF -> {
-            // fall through to open the panel
+                // fall through to open the panel
             }
         }
 

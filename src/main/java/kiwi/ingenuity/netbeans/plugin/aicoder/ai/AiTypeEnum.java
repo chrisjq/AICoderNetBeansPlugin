@@ -32,11 +32,17 @@ public enum AiTypeEnum {
     // Claude Code documents that reason as shown to the model (it is withheld for "allow"/"ask").
     // The call is blocked but the turn carries on, so no follow-up turn is owed.
     CLAUDE("Claude", "claude", true, true, false, MailDeliveryTimingEnum.ABORTS_TURN, McpSteeringSupportEnum.DENY_WITH_MESSAGE, new ClaudeSettingsCreator(), Set.of(HEADER, TOOL_INSTRUCTION, CREDENTIALS), null, null),
-    // GrokAiProcessManager:412 — "Mail IGNORED, no persistent session to inject into".
-    // NOT_INTERCEPTABLE, not NOT_APPLICABLE: Grok DOES write a Claude-shaped PreToolUse hook
-    // (GrokAiMcpRegistrar:80,87) so it is probably reachable — but it runs --always-approve and its
-    // deny-reason semantics have never been verified. Deferred, not impossible.
-    GROK("Grok", "grok", true, true, false, MailDeliveryTimingEnum.AFTER_TURN, McpSteeringSupportEnum.NOT_INTERCEPTABLE, new GrokSettingsCreator(), Set.of(HEADER, TOOL_INSTRUCTION, CREDENTIALS), null, null),
+    // Grok now runs on ACP (GrokAiProcessManager/GrokAcpClientHandler), the same protocol as
+    // OpenCode: session/request_permission is interceptable, and native tool calls are
+    // genuinely refusable through the shared permission bridge.
+    // DENY_NEEDS_FOLLOW_UP: the ACP reply is a bare optionId and nothing else — the same shape
+    // OpenCode's reply is — so steering text cannot ride the refusal and must arrive as an
+    // agent-only turn afterwards.
+    // ABORTS_TURN: a Mail interrupt delivers through the same shared AbstractAcpProcessManager
+    // .interruptMail() OpenCode uses — session/cancel ends the turn to deliver it (live-confirmed:
+    // an important mail interrupts Grok mid-turn). Not AFTER_TURN — that described the old `grok
+    // -p` CLI's one-process-per-turn shape, which had no persistent session to inject into at all.
+    GROK("Grok", "grok", true, true, false, MailDeliveryTimingEnum.ABORTS_TURN, McpSteeringSupportEnum.DENY_NEEDS_FOLLOW_UP, new GrokSettingsCreator(), Set.of(HEADER, TOOL_INSTRUCTION, CREDENTIALS), null, null),
     // GithubCopilotProcessManager:562 injects via immediate-mode setPrompt, described in its own
     // javadoc as "instead of killing anything".
     // DENY_WITH_MESSAGE: PermissionRequestResult.reject(feedback) carries our text and the handler
@@ -158,10 +164,10 @@ public enum AiTypeEnum {
     private final String confirmRejectTooltip;
 
     AiTypeEnum(String displayName, String key, boolean isImplemented, boolean enabledByDefault,
-            boolean openAiCompatible, MailDeliveryTimingEnum mailDeliveryTiming,
-            McpSteeringSupportEnum mcpSteeringSupport,
-            AiSessionSettingsCreator settingCreator, Set<McpInstructionOptionEnum> options,
-            String confirmAcceptTooltip, String confirmRejectTooltip) {
+               boolean openAiCompatible, MailDeliveryTimingEnum mailDeliveryTiming,
+               McpSteeringSupportEnum mcpSteeringSupport,
+               AiSessionSettingsCreator settingCreator, Set<McpInstructionOptionEnum> options,
+               String confirmAcceptTooltip, String confirmRejectTooltip) {
         this.displayName = displayName;
         this.key = key;
         this.implemented = isImplemented;

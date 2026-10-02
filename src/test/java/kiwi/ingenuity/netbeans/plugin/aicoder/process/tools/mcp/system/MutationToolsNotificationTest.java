@@ -11,6 +11,7 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
+import java.util.function.Supplier;
 import static kiwi.ingenuity.netbeans.plugin.aicoder.ai.AiTypeEnum.CLAUDE;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.events.ConfirmEvent;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.events.PermissionDecision;
@@ -409,7 +410,7 @@ class MutationToolsNotificationTest {
     }
 
     private static void assertPendingConfirmationDoesNotBlock(
-            BlockingConfirmSession session, java.util.function.Supplier<String> pendingOperation) throws Exception {
+            BlockingConfirmSession session, Supplier<String> pendingOperation) throws Exception {
         ExecutorService executor = Executors.newFixedThreadPool(4);
         try {
             Future<String> pending = executor.submit(pendingOperation::get);

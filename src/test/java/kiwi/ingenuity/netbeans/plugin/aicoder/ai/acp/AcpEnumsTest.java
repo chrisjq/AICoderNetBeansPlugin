@@ -1,4 +1,4 @@
-package kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.opencode.acp;
+package kiwi.ingenuity.netbeans.plugin.aicoder.ai.acp;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;
@@ -107,20 +107,4 @@ class AcpEnumsTest {
         assertEquals(-32800, AcpErrorCodeEnum.REQUEST_CANCELLED.code());
     }
 
-    @Test
-    void acpPermissionOptionAccessorsRoundTrip() {
-        AcpPermissionOption opt = new AcpPermissionOption("once", "Once", AcpPermissionKindEnum.ALLOW_ONCE);
-
-        assertEquals("once", opt.optionId());
-        assertEquals("Once", opt.name());
-        assertEquals(AcpPermissionKindEnum.ALLOW_ONCE, opt.kind());
-
-        opt.setOptionId("always");
-        opt.setName("Always");
-        opt.setKind(AcpPermissionKindEnum.ALLOW_ALWAYS);
-
-        assertEquals("always", opt.optionId());
-        assertEquals("Always", opt.name());
-        assertEquals(AcpPermissionKindEnum.ALLOW_ALWAYS, opt.kind());
-    }
 }

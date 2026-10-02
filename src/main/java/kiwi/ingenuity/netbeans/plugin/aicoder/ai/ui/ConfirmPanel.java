@@ -4,6 +4,8 @@ import java.awt.Color;
 import java.awt.Component;
 import java.awt.Dimension;
 import java.awt.FlowLayout;
+import java.util.List;
+import java.util.concurrent.CompletableFuture;
 import javax.swing.BorderFactory;
 import javax.swing.BoxLayout;
 import javax.swing.JButton;
@@ -24,17 +26,19 @@ class ConfirmPanel extends JPanel {
     /**
      * The question put to the user, as "Allow &lt;Tool&gt;: &lt;details&gt;".
      * <p>
-     * The tool name matters here more than anywhere else in the UI: this panel is the approval point, and the verb is
-     * the thing actually being approved. A shell confirm arrives with {@code displayText} set to the bare command —
-     * "opencode --help 2>&1" — which on its own does not say whether the AI wants to RUN that or merely read a file of
-     * that name. The outcome line already names the tool ("Execute: … — accepted"), so without this the question and
-     * its answer were formatted differently and only the answer said what happened.
+     * The tool name matters here more than anywhere else in the UI: this panel is the approval point, and the
+     * verb is the thing actually being approved. A shell confirm arrives with {@code displayText} set to the
+     * bare command — "opencode --help 2>&1" — which on its own does not say whether the AI wants to RUN that
+     * or merely read a file of that name. The outcome line already names the tool ("Execute: … — accepted"),
+     * so without this the question and its answer were formatted differently and only the answer said what
+     * happened.
      * <p>
-     * Pure so the wording can be tested without a running IDE, matching {@code AiTopComponent.buildConfirmLabel}.
+     * Pure so the wording can be tested without a running IDE, matching
+     * {@code AiTopComponent.buildConfirmLabel}.
      */
     static String buildConfirmPrompt(String toolName, String displayText) {
         String body = displayText != null && !displayText.isBlank()
-                ? displayText.trim() : "(no details)";
+                      ? displayText.trim() : "(no details)";
         // The colon is always present, so an unnamed confirm still reads as a prompt rather than
         // running the words together — "Allow: rm -rf /tmp/scratch", not "Allow rm -rf ...".
         String label = NotificationUtil.toolNameLabel(toolName);
@@ -42,14 +46,14 @@ class ConfirmPanel extends JPanel {
     }
 
     /**
-     * The prompt for a multi-file change set: a header naming how many files, then one line per file in the order the
-     * AI supplied. Every file is named individually rather than counted, because the count alone does not tell the user
-     * what they would be approving.
+     * The prompt for a multi-file change set: a header naming how many files, then one line per file in the
+     * order the AI supplied. Every file is named individually rather than counted, because the count alone
+     * does not tell the user what they would be approving.
      *
      * <p>
      * Pure so the wording can be tested without a running IDE, matching {@link #buildConfirmPrompt}.</p>
      */
-    static String buildMultiConfirmPrompt(java.util.List<String> renderedPaths) {
+    static String buildMultiConfirmPrompt(List<String> renderedPaths) {
         StringBuilder sb = new StringBuilder("Allow MultiEdit: ")
                 .append(renderedPaths.size())
                 .append(renderedPaths.size() == 1 ? " file" : " files");
@@ -69,8 +73,8 @@ class ConfirmPanel extends JPanel {
 
     /**
      * The tooltip variant: carries the backend's per-type tooltip text
-     * ({@code AiTypeEnum.confirmAcceptTooltip()/confirmRejectTooltip()}) onto the two buttons. A backend that supplies
-     * none passes {@code null} for both and the buttons carry no tooltip.
+     * ({@code AiTypeEnum.confirmAcceptTooltip()/confirmRejectTooltip()}) onto the two buttons. A backend that
+     * supplies none passes {@code null} for both and the buttons carry no tooltip.
      */
     ConfirmPanel(ConfirmEvent event, String acceptTooltip, String rejectTooltip) {
         this(buildConfirmPrompt(event.toolName(), event.displayText()), "Yes", "No", event.response(),
@@ -78,24 +82,25 @@ class ConfirmPanel extends JPanel {
     }
 
     /**
-     * The same inline confirm item, driven by a bare response future and explicit button labels, so a flow that has no
-     * {@link ConfirmEvent} can reuse this widget rather than growing a near-identical one. The multi-file review uses
-     * it for its main-panel affordance: "Accept Diffs" starts stepping through the per-file diffs, "Reject" declines
-     * the whole change set without opening any.
+     * The same inline confirm item, driven by a bare response future and explicit button labels, so a flow
+     * that has no {@link ConfirmEvent} can reuse this widget rather than growing a near-identical one. The
+     * multi-file review uses it for its main-panel affordance: "Accept Diffs" starts stepping through the
+     * per-file diffs, "Reject" declines the whole change set without opening any.
      */
     ConfirmPanel(String prompt, String acceptLabel, String rejectLabel,
-            java.util.concurrent.CompletableFuture<PermissionDecision> response) {
+                 CompletableFuture<PermissionDecision> response) {
         this(prompt, acceptLabel, rejectLabel, response, null, null);
     }
 
     /**
-     * Full form with per-backend tooltip text for the accept and reject buttons; {@code null} shows no tooltip. The
-     * tooltip-free constructor above delegates here with {@code null}, which is what keeps the multi-file batch gate
-     * ("Accept Diffs"/"Reject") free of backend tooltips that would not mean anything there.
+     * Full form with per-backend tooltip text for the accept and reject buttons; {@code null} shows no
+     * tooltip. The tooltip-free constructor above delegates here with {@code null}, which is what keeps the
+     * multi-file batch gate ("Accept Diffs"/"Reject") free of backend tooltips that would not mean anything
+     * there.
      */
     ConfirmPanel(String prompt, String acceptLabel, String rejectLabel,
-            java.util.concurrent.CompletableFuture<PermissionDecision> response,
-            String acceptTooltip, String rejectTooltip) {
+                 CompletableFuture<PermissionDecision> response,
+                 String acceptTooltip, String rejectTooltip) {
         setLayout(new BoxLayout(this, BoxLayout.Y_AXIS));
         setOpaque(false);
         // Align with the messages around us. Children are LEFT_ALIGNMENT below,
@@ -148,7 +153,7 @@ class ConfirmPanel extends JPanel {
         return new Dimension(Integer.MAX_VALUE, getPreferredSize().height);
     }
 
-    private void respond(java.util.concurrent.CompletableFuture<PermissionDecision> response, boolean allow) {
+    private void respond(CompletableFuture<PermissionDecision> response, boolean allow) {
         if (responded) {
             return;
         }

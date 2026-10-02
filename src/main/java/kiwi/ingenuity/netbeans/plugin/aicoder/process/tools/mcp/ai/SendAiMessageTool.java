@@ -4,6 +4,7 @@ import com.google.gson.JsonArray;
 import com.google.gson.JsonObject;
 import java.util.List;
 import java.util.Set;
+import java.util.stream.Collectors;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.mail.AiInboxMessage;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.mail.AiSessionInboxBroker;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.session.AiSession;
@@ -143,7 +144,7 @@ public class SendAiMessageTool extends AbstractActionTool {
             else if (nameMatches.size() > 1) {
                 String matches = nameMatches.stream()
                         .map(s -> s.name() + " (" + s.id() + ")")
-                        .collect(java.util.stream.Collectors.joining(", "));
+                        .collect(Collectors.joining(", "));
                 return "Error: session name '" + targetSessionId + "' is ambiguous; matching peers: " + matches;
             }
         }

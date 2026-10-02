@@ -5,7 +5,9 @@ import com.google.gson.JsonObject;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Instant;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import kiwi.ingenuity.netbeans.plugin.aicoder.DatabaseAccessOptionEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.GitAccessOptionEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.WebRequestAccessOptionEnum;
@@ -150,11 +152,11 @@ class TemplatePersistenceManagerTest {
     /**
      * Every built-in template pins EVERY web-request option explicitly, including the destination options.
      * <p>
-     * These templates hard-deny POST, HEADERS and BODY, so their intent is lockdown. An option left null does not mean
-     * "off" — it means "inherit the global default", so a user who switches the global "Allow localhost destinations"
-     * on would silently grant network access to every session created from a template that reads as locked down.
-     * Pinning them keeps the template self-describing: what it shows is what a session gets, whatever the global
-     * happens to be.
+     * These templates hard-deny POST, HEADERS and BODY, so their intent is lockdown. An option left null does
+     * not mean "off" — it means "inherit the global default", so a user who switches the global "Allow
+     * localhost destinations" on would silently grant network access to every session created from a template
+     * that reads as locked down. Pinning them keeps the template self-describing: what it shows is what a
+     * session gets, whatever the global happens to be.
      */
     @Test
     void builtInTemplatesPinEveryWebOptionIncludingDestinations() throws Exception {
@@ -180,7 +182,7 @@ class TemplatePersistenceManagerTest {
         TemplatePersistenceManager manager = new TemplatePersistenceManager(temp);
         manager.saveConfigDefaultsIfEmpty();
 
-        java.util.Map<String, ConfigTemplate> byName = new java.util.HashMap<>();
+        Map<String, ConfigTemplate> byName = new HashMap<>();
         for (ConfigTemplate template : manager.loadConfigTemplates()) {
             byName.put(template.name(), template);
         }

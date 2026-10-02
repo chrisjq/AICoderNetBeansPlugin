@@ -2,6 +2,7 @@ package kiwi.ingenuity.netbeans.plugin.aicoder.ai.ui;
 
 import com.google.gson.JsonArray;
 import com.google.gson.JsonObject;
+import java.util.concurrent.Callable;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.atomic.AtomicReference;
 import javax.swing.JButton;
@@ -15,7 +16,7 @@ import org.junit.jupiter.api.Test;
 
 class SkipTextFocusTraversalPolicyTest {
 
-    private static <T> T onEdt(java.util.concurrent.Callable<T> fn) throws Exception {
+    private static <T> T onEdt(Callable<T> fn) throws Exception {
         AtomicReference<T> result = new AtomicReference<>();
         AtomicReference<Exception> err = new AtomicReference<>();
         SwingUtilities.invokeAndWait(() -> {
@@ -33,11 +34,10 @@ class SkipTextFocusTraversalPolicyTest {
     }
 
     /**
-     * accept() must return false for a WrappingHtmlLabel (keeps it out of the
-     * Tab order while it remains focusable for click-to-copy) and true for a
-     * visible, enabled, focusable JButton. The JButton must be in a realized
-     * hierarchy so that LayoutFocusTraversalPolicy.super.accept() passes its
-     * isDisplayable() check.
+     * accept() must return false for a WrappingHtmlLabel (keeps it out of the Tab order while it remains
+     * focusable for click-to-copy) and true for a visible, enabled, focusable JButton. The JButton must be in
+     * a realized hierarchy so that LayoutFocusTraversalPolicy.super.accept() passes its isDisplayable()
+     * check.
      *
      * Would FAIL without the instanceof WrappingHtmlLabel guard in accept().
      */
@@ -71,13 +71,11 @@ class SkipTextFocusTraversalPolicyTest {
     }
 
     /**
-     * ConfirmPanel must set BOTH setFocusTraversalPolicyProvider(true) AND
-     * install a SkipTextFocusTraversalPolicy. The policy alone does nothing if
-     * the provider flag is absent — Tab would still traverse the parent's
-     * policy scope instead.
+     * ConfirmPanel must set BOTH setFocusTraversalPolicyProvider(true) AND install a
+     * SkipTextFocusTraversalPolicy. The policy alone does nothing if the provider flag is absent — Tab would
+     * still traverse the parent's policy scope instead.
      *
-     * Would FAIL without the setFocusTraversalPolicyProvider(true) call in
-     * ConfirmPanel.
+     * Would FAIL without the setFocusTraversalPolicyProvider(true) call in ConfirmPanel.
      */
     @Test
     void confirmPanel_hasFocusTraversalPolicy() throws Exception {
@@ -95,12 +93,10 @@ class SkipTextFocusTraversalPolicyTest {
     }
 
     /**
-     * QuestionPanel must set BOTH setFocusTraversalPolicyProvider(true) AND
-     * install a SkipTextFocusTraversalPolicy — same rationale as the
-     * ConfirmPanel test above.
+     * QuestionPanel must set BOTH setFocusTraversalPolicyProvider(true) AND install a
+     * SkipTextFocusTraversalPolicy — same rationale as the ConfirmPanel test above.
      *
-     * Would FAIL without the setFocusTraversalPolicyProvider(true) call in
-     * QuestionPanel.
+     * Would FAIL without the setFocusTraversalPolicyProvider(true) call in QuestionPanel.
      */
     @Test
     void questionPanel_hasFocusTraversalPolicy() throws Exception {

@@ -6,6 +6,7 @@ import kiwi.ingenuity.netbeans.plugin.aicoder.ai.settings.AiModelSessionSettings
 public class GrokSessionSettings extends AiModelSessionSettings {
 
     private volatile String reasoningEffort;
+    private volatile String acpSessionId;
 
     public GrokSessionSettings() {
         super();
@@ -23,11 +24,22 @@ public class GrokSessionSettings extends AiModelSessionSettings {
         this.reasoningEffort = reasoningEffort;
     }
 
+    public String acpSessionId() {
+        return acpSessionId;
+    }
+
+    public void setAcpSessionId(String acpSessionId) {
+        this.acpSessionId = acpSessionId;
+    }
+
     @Override
     public void populateJsonObject(JsonObject cfgObj) {
         super.populateJsonObject(cfgObj);
         if (reasoningEffort != null) {
             cfgObj.addProperty(GrokSessionSettingsKeyEnum.REASONING_EFFORT.key(), reasoningEffort);
+        }
+        if (acpSessionId != null) {
+            cfgObj.addProperty(GrokSessionSettingsKeyEnum.ACP_SESSION_ID.key(), acpSessionId);
         }
     }
 }

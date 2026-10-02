@@ -2,6 +2,7 @@ package kiwi.ingenuity.netbeans.plugin.aicoder.process.server;
 
 import com.google.gson.JsonObject;
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -135,20 +136,20 @@ class OllamaInstructionSurfaceTest {
             schemas.add(handler.schema(AiTypeEnum.OLLAMA_LOCAL.getMcpOptions()));
         }
         String rendered = kiwi.ingenuity.netbeans.plugin.aicoder.ai.http.SchemaToolCalls.renderToolList(schemas);
-        Set<String> renderedNames = new java.util.HashSet<>();
+        Set<String> renderedNames = new HashSet<>();
         for (String line : rendered.split("\\n")) {
             if (line.startsWith("- ")) {
                 renderedNames.add(line.substring(2, line.indexOf('(')));
             }
         }
-        Set<String> schemaNames = new java.util.HashSet<>();
+        Set<String> schemaNames = new HashSet<>();
         for (JsonObject schema : schemas) {
             String name = schema.get(ToolSchemaKeyEnum.NAME.key()).getAsString();
             schemaNames.add(name);
             assertTrue(renderedNames.contains(name), name);
             assertTrue(rendered.contains(schema.get(ToolSchemaKeyEnum.DESCRIPTION.key()).getAsString()), name);
             JsonObject input = schema.getAsJsonObject(ToolSchemaKeyEnum.INPUT_SCHEMA.key());
-            Set<String> required = new java.util.HashSet<>();
+            Set<String> required = new HashSet<>();
             if (input.has(ToolSchemaKeyEnum.REQUIRED.key())) {
                 input.getAsJsonArray(ToolSchemaKeyEnum.REQUIRED.key()).forEach(element -> required.add(element.getAsString()));
             }

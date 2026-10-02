@@ -1,6 +1,7 @@
 package kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.pi;
 
 import java.nio.file.Path;
+import java.util.Locale;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.AiImplementation;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.AiModelCatalog;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.AiSessionHost;
@@ -204,7 +205,7 @@ public class PiAiImplementation extends AiImplementation {
 
     private StatusEvent compactFailureStatus(Throwable error) {
         String detail = error.getMessage() != null ? error.getMessage() : "unknown error";
-        String normalized = detail.toLowerCase(java.util.Locale.ROOT);
+        String normalized = detail.toLowerCase(Locale.ROOT);
         if (normalized.contains("nothing to compact") || normalized.contains("already compacted")) {
             return new StatusEvent(StatusEventTypeEnum.READY, "Nothing to compact.");
         }

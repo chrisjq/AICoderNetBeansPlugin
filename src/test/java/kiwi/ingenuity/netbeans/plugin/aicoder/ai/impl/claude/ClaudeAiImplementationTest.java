@@ -2,8 +2,11 @@ package kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.claude;
 
 import java.io.File;
 import java.time.Instant;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 import javax.swing.JButton;
@@ -395,7 +398,7 @@ class ClaudeAiImplementationTest {
     @Test
     void modelCatalogPublishUpdatesTheOpenBarsModelComboThroughAvailableModelsEvent() throws Exception {
         ClaudeAiInfoBarExtension bar = new ClaudeAiInfoBarExtension();
-        java.util.concurrent.CountDownLatch delivered = new java.util.concurrent.CountDownLatch(1);
+        CountDownLatch delivered = new CountDownLatch(1);
         kiwi.ingenuity.netbeans.plugin.aicoder.ai.events.AiPropertyListener listener = event -> {
             // Mirrors AiTopComponent's own bus-listener forwarding: the bus dispatches off the EDT.
             SwingUtilities.invokeLater(() -> bar.onPropertyEvent(event));
@@ -412,13 +415,13 @@ class ClaudeAiImplementationTest {
             List<String> discovered = List.of("claude-catalog-test-1", "claude-catalog-test-2");
             ClaudeAiImplementation.modelCatalog().publish(discovered);
 
-            assertTrue(delivered.await(5, java.util.concurrent.TimeUnit.SECONDS),
+            assertTrue(delivered.await(5, TimeUnit.SECONDS),
                     "the type-wide property bus must deliver the discovered list to every open Claude bar");
             SwingUtilities.invokeAndWait(() -> {
             });
 
             JComboBox<?> modelCombo = (JComboBox<?>) bar.createComponents().get(0);
-            List<Object> items = new java.util.ArrayList<>();
+            List<Object> items = new ArrayList<>();
             for (int i = 0; i < modelCombo.getItemCount(); i++) {
                 items.add(modelCombo.getItemAt(i));
             }

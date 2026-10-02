@@ -11,6 +11,7 @@ import java.net.URI;
 import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -46,7 +47,7 @@ class WebRequestToolTest {
             // Destination options stay at their shipped default (off) so tests that use
             // loopback refusal as a signal keep working; grant them explicitly where needed.
             boolean destinationOption = option == WebRequestAccessOptionEnum.LOCALHOST
-                    || option == WebRequestAccessOptionEnum.PRIVATE_NETWORKS;
+                                        || option == WebRequestAccessOptionEnum.PRIVATE_NETWORKS;
             session.settings().setAllowWebRequestAccess(option, !destinationOption);
         }
         return session;
@@ -63,7 +64,7 @@ class WebRequestToolTest {
         args.addProperty(WebRequestParamEnum.URL.key(), "file:///tmp/test.txt");
 
         Exception ex = assertThrows(Exception.class,
-                                    () -> tool.handle(args(args), new FakeSession(sessionAllowingWebRequests(true))));
+                () -> tool.handle(args(args), new FakeSession(sessionAllowingWebRequests(true))));
         assertTrue(ex.getMessage().contains("Only http:// and https:// URLs are supported"));
     }
 
@@ -74,7 +75,7 @@ class WebRequestToolTest {
         args.addProperty(WebRequestParamEnum.URL.key(), SAMPLE_PUBLIC_URL);
 
         Exception ex = assertThrows(Exception.class,
-                                    () -> tool.handle(args(args), new FakeSession(sessionAllowingWebRequests(false))));
+                () -> tool.handle(args(args), new FakeSession(sessionAllowingWebRequests(false))));
         assertTrue(ex.getMessage().contains("Web requests are disabled for this session"));
     }
 
@@ -87,10 +88,10 @@ class WebRequestToolTest {
 
         AiSession session = sessionAllowingWebRequests(true);
         session.settings().setAllowWebRequestAccess(WebRequestAccessOptionEnum.POST,
-                                                    false);
+                false);
 
         Exception ex = assertThrows(Exception.class,
-                                    () -> tool.handle(args(args), new FakeSession(session)));
+                () -> tool.handle(args(args), new FakeSession(session)));
         assertTrue(ex.getMessage().contains("Allow POST"));
     }
 
@@ -108,7 +109,7 @@ class WebRequestToolTest {
                 WebRequestAccessOptionEnum.HEADERS, false);
 
         Exception ex = assertThrows(Exception.class,
-                                    () -> tool.handle(args(args), new FakeSession(session)));
+                () -> tool.handle(args(args), new FakeSession(session)));
         assertTrue(ex.getMessage().contains("Allow custom headers"));
     }
 
@@ -122,10 +123,10 @@ class WebRequestToolTest {
 
         AiSession session = sessionAllowingWebRequests(true);
         session.settings().setAllowWebRequestAccess(WebRequestAccessOptionEnum.BODY,
-                                                    false);
+                false);
 
         Exception ex = assertThrows(Exception.class,
-                                    () -> tool.handle(args(args), new FakeSession(session)));
+                () -> tool.handle(args(args), new FakeSession(session)));
         assertTrue(ex.getMessage().contains("Allow request bodies"));
     }
 
@@ -136,30 +137,30 @@ class WebRequestToolTest {
         WebRequestTool tool = new WebRequestTool();
         AiSession session = sessionAllowingWebRequests(true);
         session.settings().setAllowWebRequestAccess(WebRequestAccessOptionEnum.HEADERS,
-                                                    false);
+                false);
         session.settings().setAllowWebRequestAccess(WebRequestAccessOptionEnum.BODY,
-                                                    false);
+                false);
 
         JsonObject args = new JsonObject();
         args.addProperty(WebRequestParamEnum.URL.key(), "http://127.0.0.1/");
         args.addProperty(WebRequestParamEnum.METHOD.key(), "GET");
 
         Exception ex = assertThrows(Exception.class,
-                                    () -> tool.handle(args(args), new FakeSession(session)));
+                () -> tool.handle(args(args), new FakeSession(session)));
         assertTrue(ex.getMessage().contains("loopback"), ex.getMessage());
     }
 
     @Test
     void rejectsLoopbackDestination() {
         McpArgumentException ex = assertThrows(McpArgumentException.class,
-                                               () -> WebRequestTool.validateDestination(URI.create("http://127.0.0.1:8080/mcp")));
+                () -> WebRequestTool.validateDestination(URI.create("http://127.0.0.1:8080/mcp")));
         assertTrue(ex.getMessage().contains("loopback"), ex.getMessage());
     }
 
     @Test
     void rejectsLocalhostByName() {
         McpArgumentException ex = assertThrows(McpArgumentException.class,
-                                               () -> WebRequestTool.validateDestination(URI.create("http://localhost/")));
+                () -> WebRequestTool.validateDestination(URI.create("http://localhost/")));
         assertTrue(ex.getMessage().contains("loopback"), ex.getMessage());
     }
 
@@ -185,15 +186,15 @@ class WebRequestToolTest {
         // not just say "non-public" — otherwise the AI can't tell a policy refusal
         // from a network failure, and can't explain the refusal to the user.
         McpArgumentException loopback = assertThrows(McpArgumentException.class,
-                                                     () -> WebRequestTool.validateDestination(URI.create("http://127.0.0.1/")));
+                () -> WebRequestTool.validateDestination(URI.create("http://127.0.0.1/")));
         assertTrue(loopback.getMessage().contains("loopback address refused"), loopback.getMessage());
 
         McpArgumentException siteLocal = assertThrows(McpArgumentException.class,
-                                                      () -> WebRequestTool.validateDestination(URI.create("http://10.0.0.1/")));
+                () -> WebRequestTool.validateDestination(URI.create("http://10.0.0.1/")));
         assertTrue(siteLocal.getMessage().contains("private (site-local) address refused"), siteLocal.getMessage());
 
         McpArgumentException linkLocal = assertThrows(McpArgumentException.class,
-                                                      () -> WebRequestTool.validateDestination(URI.create("http://169.254.169.254/")));
+                () -> WebRequestTool.validateDestination(URI.create("http://169.254.169.254/")));
         assertTrue(linkLocal.getMessage().contains("link-local address refused"), linkLocal.getMessage());
     }
 
@@ -204,7 +205,7 @@ class WebRequestToolTest {
         args.addProperty(WebRequestParamEnum.URL.key(), "http://127.0.0.1/");
 
         Exception ex = assertThrows(Exception.class,
-                                    () -> tool.handle(args(args), new FakeSession(sessionAllowingWebRequests(true))));
+                () -> tool.handle(args(args), new FakeSession(sessionAllowingWebRequests(true))));
         assertTrue(ex.getMessage().contains("loopback"), ex.getMessage());
     }
 
@@ -220,8 +221,8 @@ class WebRequestToolTest {
                 try (Socket socket = server.accept()) {
                     socket.getInputStream().read(new byte[4096]);
                     socket.getOutputStream().write(("HTTP/1.1 200 OK\r\nContent-Length: "
-                            + responseBody.length() + "\r\nConnection: close\r\n\r\n"
-                            + responseBody).getBytes(StandardCharsets.UTF_8));
+                                                    + responseBody.length() + "\r\nConnection: close\r\n\r\n"
+                                                    + responseBody).getBytes(StandardCharsets.UTF_8));
                 }
                 catch (IOException handled) {
                     // A client-side failure surfaces in the assertions below.
@@ -232,7 +233,7 @@ class WebRequestToolTest {
 
             AiSession session = sessionAllowingWebRequests(true);
             session.settings().setAllowWebRequestAccess(WebRequestAccessOptionEnum.LOCALHOST,
-                                                        true);
+                    true);
             WebRequestTool tool = new WebRequestTool();
             JsonObject args = new JsonObject();
             args.addProperty(WebRequestParamEnum.URL.key(), "http://127.0.0.1:" + port + "/");
@@ -244,8 +245,8 @@ class WebRequestToolTest {
     }
 
     /**
-     * A public-looking entry URL must not launder a blocked redirect target past the policy: the hop that hands back a
-     * 302 is allowed (loopback), the target it names is not.
+     * A public-looking entry URL must not launder a blocked redirect target past the policy: the hop that
+     * hands back a 302 is allowed (loopback), the target it names is not.
      */
     @Test
     void redirectTargetIsRecheckedMidChainNotJustTheEntryUrl() throws Exception {
@@ -255,8 +256,8 @@ class WebRequestToolTest {
                 try (Socket socket = server.accept()) {
                     socket.getInputStream().read(new byte[4096]);
                     socket.getOutputStream().write(("HTTP/1.1 302 Found\r\n"
-                            + "Location: http://10.0.0.1/secret\r\nContent-Length: 0\r\n"
-                            + "Connection: close\r\n\r\n").getBytes(StandardCharsets.UTF_8));
+                                                    + "Location: http://10.0.0.1/secret\r\nContent-Length: 0\r\n"
+                                                    + "Connection: close\r\n\r\n").getBytes(StandardCharsets.UTF_8));
                 }
                 catch (IOException handled) {
                     // The refusal surfaces in the assertion below.
@@ -267,17 +268,17 @@ class WebRequestToolTest {
 
             AiSession session = sessionAllowingWebRequests(true);
             session.settings().setAllowWebRequestAccess(WebRequestAccessOptionEnum.LOCALHOST,
-                                                        true);
+                    true);
             WebRequestTool tool = new WebRequestTool();
             JsonObject args = new JsonObject();
             args.addProperty(WebRequestParamEnum.URL.key(), "http://127.0.0.1:" + port + "/");
 
             Exception ex = assertThrows(Exception.class,
-                                        () -> tool.handle(args(args), new FakeSession(session)));
+                    () -> tool.handle(args(args), new FakeSession(session)));
             assertTrue(ex.getMessage().contains("private (site-local) address refused"),
-                       ex.getMessage());
+                    ex.getMessage());
             assertTrue(ex.getMessage().contains("Allow private network destinations"),
-                       ex.getMessage());
+                    ex.getMessage());
         }
     }
 
@@ -285,15 +286,15 @@ class WebRequestToolTest {
      * A malformed {@code Location} must surface as a tool-level failure, not an unchecked crash.
      * <p>
      * {@code URI.resolve} throws {@link IllegalArgumentException}, which is not among the exception types
-     * {@code handle} catches — so before the fix a remote server could take the tool out with a header the caller never
-     * chose and cannot correct. The assistant needs a message it can report, not a stack trace.
+     * {@code handle} catches — so before the fix a remote server could take the tool out with a header the
+     * caller never chose and cannot correct. The assistant needs a message it can report, not a stack trace.
      */
     @Test
     void malformedRedirectLocationIsReportedNotThrownRaw() throws Exception {
         try (ServerSocket server = new ServerSocket(0, 1, InetAddress.getByName("127.0.0.1"))) {
             int port = server.getLocalPort();
             respondOnce(server, "HTTP/1.1 302 Found\r\n"
-                        + "Location: http://[bad\r\nContent-Length: 0\r\nConnection: close\r\n\r\n");
+                                + "Location: http://[bad\r\nContent-Length: 0\r\nConnection: close\r\n\r\n");
 
             AiSession session = sessionAllowingWebRequests(true);
             session.settings().setAllowWebRequestAccess(WebRequestAccessOptionEnum.LOCALHOST, true);
@@ -306,16 +307,16 @@ class WebRequestToolTest {
     }
 
     /**
-     * Only 301/302/303/307/308 are redirects. A 304 carrying a stale {@code Location} must NOT be followed: doing so
-     * issues a second request the caller never asked for, and — with a destination option granted — that request goes
-     * somewhere the caller never named.
+     * Only 301/302/303/307/308 are redirects. A 304 carrying a stale {@code Location} must NOT be followed:
+     * doing so issues a second request the caller never asked for, and — with a destination option granted —
+     * that request goes somewhere the caller never named.
      */
     @Test
     void nonRedirectThreeHundredStatusIsNotFollowedEvenWithLocation() throws Exception {
         try (ServerSocket server = new ServerSocket(0, 1, InetAddress.getByName("127.0.0.1"))) {
             int port = server.getLocalPort();
             respondOnce(server, "HTTP/1.1 304 Not Modified\r\n"
-                        + "Location: http://10.0.0.1/secret\r\nConnection: close\r\n\r\n");
+                                + "Location: http://10.0.0.1/secret\r\nConnection: close\r\n\r\n");
 
             AiSession session = sessionAllowingWebRequests(true);
             session.settings().setAllowWebRequestAccess(WebRequestAccessOptionEnum.LOCALHOST, true);
@@ -335,9 +336,10 @@ class WebRequestToolTest {
      * A failure carrying no message must never render as the bare word "null".
      * <p>
      * A refused TCP connection arrives as a ConnectException whose {@code getMessage()} is null, so
-     * string-concatenating it produced "Request failed for http://...: null" — which reads as a bug in the tool rather
-     * than a fact about the destination. Found by USING the feature, not by reading it: the case only became reachable
-     * once localhost destinations could be granted, because before that the gate refused first.
+     * string-concatenating it produced "Request failed for http://...: null" — which reads as a bug in the
+     * tool rather than a fact about the destination. Found by USING the feature, not by reading it: the case
+     * only became reachable once localhost destinations could be granted, because before that the gate
+     * refused first.
      */
     @Test
     void connectionFailureWithNoMessageStillDescribesItself() throws Exception {
@@ -377,8 +379,9 @@ class WebRequestToolTest {
     }
 
     /**
-     * null on the session means "inherit the plugin default"; a non-null value overrides it. Both directions matter: a
-     * user who turns localhost ON globally must still be able to turn it OFF for one session, and vice versa.
+     * null on the session means "inherit the plugin default"; a non-null value overrides it. Both directions
+     * matter: a user who turns localhost ON globally must still be able to turn it OFF for one session, and
+     * vice versa.
      */
     @Test
     void sessionOverrideBeatsPluginDefaultInBothDirections() {
@@ -387,15 +390,15 @@ class WebRequestToolTest {
 
         session.settings().setAllowWebRequestAccess(option, Boolean.TRUE);
         assertTrue(session.settings().effectiveAllowWebRequestAccess(option),
-                   "an explicit session TRUE must win regardless of the plugin default");
+                "an explicit session TRUE must win regardless of the plugin default");
 
         session.settings().setAllowWebRequestAccess(option, Boolean.FALSE);
         assertFalse(session.settings().effectiveAllowWebRequestAccess(option),
-                    "an explicit session FALSE must win regardless of the plugin default");
+                "an explicit session FALSE must win regardless of the plugin default");
 
         session.settings().setAllowWebRequestAccess(option, null);
         assertFalse(session.settings().effectiveAllowWebRequestAccess(option),
-                    "null must inherit the shipped plugin default, which is off");
+                "null must inherit the shipped plugin default, which is off");
     }
 
     @Test
@@ -408,13 +411,13 @@ class WebRequestToolTest {
         assertTrue(subscription.cancelled);
         WebRequestTool.BoundedBody bounded = subscriber.getBody().toCompletableFuture().getNow(null);
         assertTrue(bounded != null && bounded.truncatedByBytes(),
-                   "the body must already be complete when cancel() runs, or send() fails with 'Stream N cancelled'");
+                "the body must already be complete when cancel() runs, or send() fails with 'Stream N cancelled'");
         assertEquals("abcdefghij", new String(bounded.bytes(), StandardCharsets.UTF_8));
 
         subscriber.onNext(List.of(bytes("late")));
         subscriber.onError(new IOException("Stream 1 cancelled"));
         assertEquals(bounded, subscriber.getBody().toCompletableFuture().getNow(null),
-                     "the cancel-induced error must not replace the truncated body");
+                "the cancel-induced error must not replace the truncated body");
     }
 
     @Test
@@ -454,7 +457,7 @@ class WebRequestToolTest {
         subscriber.onError(new IOException("connection reset"));
 
         ExecutionException e = assertThrows(ExecutionException.class,
-                                            () -> subscriber.getBody().toCompletableFuture().get());
+                () -> subscriber.getBody().toCompletableFuture().get());
         assertEquals("connection reset", e.getCause().getMessage());
     }
 
@@ -557,12 +560,12 @@ class WebRequestToolTest {
 
     @Test
     void responsePreambleListsRequestStatusAndEveryHeaderValue() {
-        Map<String, List<String>> headers = new java.util.LinkedHashMap<>();
+        Map<String, List<String>> headers = new LinkedHashMap<>();
         headers.put("content-type", List.of("text/html"));
         headers.put("set-cookie", List.of("a=1", "b=2"));
 
         assertEquals("GET https://example.com/a\nHTTP 200\ncontent-type: text/html\nset-cookie: a=1\nset-cookie: b=2\n\n",
-                     WebRequestTool.responsePreamble("GET", URI.create("https://example.com/a"), 200, headers));
+                WebRequestTool.responsePreamble("GET", URI.create("https://example.com/a"), 200, headers));
     }
 
     @Test

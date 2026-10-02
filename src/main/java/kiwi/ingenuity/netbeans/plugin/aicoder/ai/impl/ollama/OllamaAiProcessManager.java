@@ -7,6 +7,7 @@ import com.google.gson.JsonParser;
 import java.io.File;
 import java.io.IOException;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
@@ -14,6 +15,7 @@ import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.function.Consumer;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 import kiwi.ingenuity.netbeans.plugin.aicoder.PluginSettings;
@@ -520,7 +522,7 @@ public class OllamaAiProcessManager extends AiProcessManager {
      * request, network/stream error) propagates unchanged.
      */
     private ChatResult chatWithReasoningEffortRetry(HttpAiClient client, ChatRequest request,
-                                                    java.util.function.Consumer<String> onTextDelta) throws IOException {
+                                                    Consumer<String> onTextDelta) throws IOException {
         if (reasoningEffortDisabledForSession && request.reasoningEffort() != null) {
             // Belt and braces: a caller-side mistake (e.g. a stale resolveEffectiveReasoningEffort snapshot taken
             // before an earlier retry in the same turn set the flag) must not put the field back on the wire once
@@ -830,7 +832,7 @@ public class OllamaAiProcessManager extends AiProcessManager {
                         }
                     }
                     catch (RuntimeException ex) {
-                    // A malformed synthetic completion request falls back to the schema envelope's message.
+                        // A malformed synthetic completion request falls back to the schema envelope's message.
                     }
                     if (finalText != null && !finalText.isBlank()) {
                         if (schemaMode || !streaming[0]) {
@@ -960,7 +962,7 @@ public class OllamaAiProcessManager extends AiProcessManager {
                     }
                     listener.onAiProcessEvent(new ToolUseEvent(call.name(), null, "", null,
                             ToolUseEvent.Kind.OTHER));
-                    Map<String, Integer> allDups = new java.util.HashMap<>(call.duplicateCounts() == null ? Map.of() : call.duplicateCounts());
+                    Map<String, Integer> allDups = new HashMap<>(call.duplicateCounts() == null ? Map.of() : call.duplicateCounts());
                     allDups.putAll(RawJsonArgumentScanner.duplicateTopLevelKeys(call.argumentsJson()));
                     String toolResult;
                     if (!allDups.isEmpty()) {
@@ -1267,10 +1269,10 @@ public class OllamaAiProcessManager extends AiProcessManager {
                     LOG.log(Level.INFO, "Ollama interrupt: turn thread interrupted (session={0})", sessionId);
                 }
             }
-        // STOPPED no longer fires here: the turn thread's own finally is the one closer, emitted only
-        // after processing is actually cleared, so a caller checking isBusy() when STOPPED arrives sees
-        // it already false — and Cancel is never a second closer alongside whatever the turn itself
-        // would otherwise have emitted.
+            // STOPPED no longer fires here: the turn thread's own finally is the one closer, emitted only
+            // after processing is actually cleared, so a caller checking isBusy() when STOPPED arrives sees
+            // it already false — and Cancel is never a second closer alongside whatever the turn itself
+            // would otherwise have emitted.
         }
         else if (type == InterruptTypeEnum.Mail) {
             // A Mail interrupt carries no payload — it only nudges the running turn to check the inbox.

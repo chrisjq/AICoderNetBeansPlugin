@@ -6,6 +6,7 @@ import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.ArrayList;
 import java.util.List;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.AiTypeEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.session.AiSession;
@@ -22,11 +23,12 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
 /**
- * Audit of the NON-MUTATING git MCP tools. Proves every schema-advertised parameter actually changes the tool's
- * behaviour by invoking {@code handle()} against throwaway repositories created with the real {@code git} CLI. Never
- * touches the plugin's own repository: {@code projectPath} always points at a per-test temp dir which is deleted by the
- * test harness. The mutating actions of branch/remote/tag (create/delete, add/remove) are covered by
- * {@code GitMutatingToolsAuditTest} — this class covers the read-only list modes and the read-only tools.
+ * Audit of the NON-MUTATING git MCP tools. Proves every schema-advertised parameter actually changes the
+ * tool's behaviour by invoking {@code handle()} against throwaway repositories created with the real
+ * {@code git} CLI. Never touches the plugin's own repository: {@code projectPath} always points at a per-test
+ * temp dir which is deleted by the test harness. The mutating actions of branch/remote/tag (create/delete,
+ * add/remove) are covered by {@code GitMutatingToolsAuditTest} — this class covers the read-only list modes
+ * and the read-only tools.
  */
 class GitReadToolsAuditTest {
 
@@ -99,7 +101,7 @@ class GitReadToolsAuditTest {
     @Test
     void getGitStatus_missingProjectPathThrows() {
         assertThrows(McpArgumentException.class,
-                     () -> new GetGitStatusTool().handle(new ToolRequestArguments(new JsonObject()), session));
+                () -> new GetGitStatusTool().handle(new ToolRequestArguments(new JsonObject()), session));
     }
 
     @Test
@@ -196,7 +198,7 @@ class GitReadToolsAuditTest {
         assertTrue(result.contains("second"), result);
         assertTrue(result.contains("initial"), result);
         assertFalse(result.contains("config change"),
-                    "log scoped to a.txt must exclude commits touching only b.txt: " + result);
+                "log scoped to a.txt must exclude commits touching only b.txt: " + result);
     }
 
     @Test
@@ -222,7 +224,7 @@ class GitReadToolsAuditTest {
 
         assertTrue(noFollow.contains("rename f"), noFollow);
         assertFalse(noFollow.contains("create f"),
-                    "without follow the pre-rename commit must stay hidden: " + noFollow);
+                "without follow the pre-rename commit must stay hidden: " + noFollow);
     }
 
     // ---- GitBlame: projectPath, file ----
@@ -251,7 +253,7 @@ class GitReadToolsAuditTest {
     @Test
     void gitBlame_missingFileThrows() {
         assertThrows(McpArgumentException.class,
-                     () -> new GitBlameTool().handle(new ToolRequestArguments(base()), session));
+                () -> new GitBlameTool().handle(new ToolRequestArguments(base()), session));
     }
 
     @Test
@@ -431,7 +433,7 @@ class GitReadToolsAuditTest {
     }
 
     private static String git(Path dir, String... args) throws Exception {
-        List<String> cmd = new java.util.ArrayList<>(List.of("git", "-C", dir.toString()));
+        List<String> cmd = new ArrayList<>(List.of("git", "-C", dir.toString()));
         cmd.addAll(List.of(args));
         Process p = new ProcessBuilder(cmd).redirectErrorStream(true).start();
         ByteArrayOutputStream bos = new ByteArrayOutputStream();
@@ -441,7 +443,7 @@ class GitReadToolsAuditTest {
         int code = p.waitFor();
         if (code != 0) {
             throw new IllegalStateException("git " + String.join(" ", args) + " failed (" + code + "): "
-                    + bos.toString(StandardCharsets.UTF_8));
+                                            + bos.toString(StandardCharsets.UTF_8));
         }
         return bos.toString(StandardCharsets.UTF_8).strip();
     }

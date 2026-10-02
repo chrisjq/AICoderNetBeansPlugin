@@ -9,7 +9,9 @@ import java.sql.ResultSetMetaData;
 import java.sql.SQLException;
 import java.sql.Statement;
 import java.util.Collections;
+import java.util.HashSet;
 import java.util.Map;
+import java.util.Set;
 import java.util.WeakHashMap;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.locks.ReentrantLock;
@@ -22,23 +24,23 @@ import org.netbeans.api.db.explorer.ConnectionManager;
 import org.netbeans.api.db.explorer.DatabaseConnection;
 
 /**
- * Read-only access to the IDE's registered Database Explorer connections (Services &gt; Databases). Deliberately
- * narrow: it only ever talks to connections the user has already registered and connected through the IDE — it never
- * accepts raw JDBC URLs/credentials from a tool call, and never silently establishes a new connection (see
- * {@link #jdbcConnection}).
+ * Read-only access to the IDE's registered Database Explorer connections (Services &gt; Databases).
+ * Deliberately narrow: it only ever talks to connections the user has already registered and connected
+ * through the IDE — it never accepts raw JDBC URLs/credentials from a tool call, and never silently
+ * establishes a new connection (see {@link #jdbcConnection}).
  *
  * <p>
- * {@link #executeSqlQuery} and {@link #getTableData} both enforce SELECT-only twice: a textual prefix check on the SQL
- * itself, and {@link Connection#setReadOnly(boolean)} on the JDBC connection so the driver rejects any write the prefix
- * check missed.
+ * {@link #executeSqlQuery} and {@link #getTableData} both enforce SELECT-only twice: a textual prefix check
+ * on the SQL itself, and {@link Connection#setReadOnly(boolean)} on the JDBC connection so the driver rejects
+ * any write the prefix check missed.
  */
 public class DatabaseProvider {
 
     private static final Logger LOG = Logger.getLogger(DatabaseProvider.class.getName());
 
     /**
-     * Ceiling on a single query, so one that never returns cannot pin the connection against every other session. Best
-     * effort — a driver may not support it.
+     * Ceiling on a single query, so one that never returns cannot pin the connection against every other
+     * session. Best effort — a driver may not support it.
      */
     private static final int QUERY_TIMEOUT_SECONDS = (int) (TimeoutEnum.DATABASE_QUERY_TIMEOUT_MILLIS.millis() / 1000);
 
@@ -46,36 +48,38 @@ public class DatabaseProvider {
      * How long to wait for another query on the same connection to finish.
      *
      * <p>
-     * Equal to {@link #QUERY_TIMEOUT_SECONDS} rather than longer, because tryLock returns the moment the lock frees
-     * rather than sleeping out its deadline: a waiter only gives up if the holder is still running after this long,
-     * which by then means the query timeout did not take effect — a driver that ignored it, or a connection wedged
-     * below the driver. Either way the caller gets an error it can act on instead of blocking forever.
+     * Equal to {@link #QUERY_TIMEOUT_SECONDS} rather than longer, because tryLock returns the moment the lock
+     * frees rather than sleeping out its deadline: a waiter only gives up if the holder is still running
+     * after this long, which by then means the query timeout did not take effect — a driver that ignored it,
+     * or a connection wedged below the driver. Either way the caller gets an error it can act on instead of
+     * blocking forever.
      */
     private static final int LOCK_WAIT_SECONDS = 300;
 
     /**
-     * Cap on a single cell's rendered length. {@link Statement#setMaxRows(int)} bounds rows only — one large CLOB/TEXT
-     * value can still exhaust the IDE heap.
+     * Cap on a single cell's rendered length. {@link Statement#setMaxRows(int)} bounds rows only — one large
+     * CLOB/TEXT value can still exhaust the IDE heap.
      */
     static final int MAX_VALUE_CHARS = 4_000;
 
     /**
-     * Cap on the entire formatted result. Enforced while appending so a wide result of many mid-sized cells cannot grow
-     * without bound either.
+     * Cap on the entire formatted result. Enforced while appending so a wide result of many mid-sized cells
+     * cannot grow without bound either.
      */
     static final int MAX_RESULT_CHARS = 200_000;
 
     /**
-     * One lock per JDBC connection. Weak keys so a closed or replaced connection does not keep its lock — and the
-     * connection itself — alive.
+     * One lock per JDBC connection. Weak keys so a closed or replaced connection does not keep its lock — and
+     * the connection itself — alive.
      *
      * <p>
-     * A plain {@code synchronized (conn)} would also be exception-safe, since the monitor is released when a throw
-     * unwinds the block. What it cannot do is give up: a waiter blocks with no bound, so a query that hangs takes every
-     * other session's database tools down with it. tryLock with a deadline turns that into a reportable error.
+     * A plain {@code synchronized (conn)} would also be exception-safe, since the monitor is released when a
+     * throw unwinds the block. What it cannot do is give up: a waiter blocks with no bound, so a query that
+     * hangs takes every other session's database tools down with it. tryLock with a deadline turns that into
+     * a reportable error.
      */
     private static final Map<Connection, ReentrantLock> CONNECTION_LOCKS
-            = Collections.synchronizedMap(new WeakHashMap<>());
+                                                        = Collections.synchronizedMap(new WeakHashMap<>());
 
     public static String listConnections() {
         DatabaseConnection[] conns = ConnectionManager.getDefault().getConnections();
@@ -142,7 +146,7 @@ public class DatabaseProvider {
             String schema = dc.getSchema();
             StringBuilder sb = new StringBuilder();
 
-            java.util.Set<String> primaryKeys = new java.util.HashSet<>();
+            Set<String> primaryKeys = new HashSet<>();
             try (ResultSet rs = md.getPrimaryKeys(null, schema, tableName)) {
                 while (rs.next()) {
                     primaryKeys.add(rs.getString("COLUMN_NAME"));
@@ -168,7 +172,7 @@ public class DatabaseProvider {
             }
             if (!found) {
                 return "Table not found: " + tableName
-                        + (schema != null ? " (schema " + schema + ")" : "");
+                       + (schema != null ? " (schema " + schema + ")" : "");
             }
             return sb.toString();
         }
@@ -186,8 +190,8 @@ public class DatabaseProvider {
     }
 
     /**
-     * Convenience overload for callers with no session-specific row limit (e.g. tests) — uses the plugin's globally
-     * configured default.
+     * Convenience overload for callers with no session-specific row limit (e.g. tests) — uses the plugin's
+     * globally configured default.
      */
     public static String executeSqlQuery(String connectionName, String sql) {
         return executeSqlQuery(connectionName, sql, PluginSettings.getDatabaseRowLimit());
@@ -203,18 +207,20 @@ public class DatabaseProvider {
     }
 
     /**
-     * Returns a rejection message if {@code sql} is anything other than one SELECT statement, or null when it may run.
+     * Returns a rejection message if {@code sql} is anything other than one SELECT statement, or null when it
+     * may run.
      *
      * <p>
      * The prefix test alone was not the "enforced twice" this class advertises. It passes
-     * {@code SELECT 1; DROP TABLE users} on any driver configured to allow multiple statements per call, because only
-     * the first six characters were ever examined. The read-only connection was supposed to be the second line of
-     * defence, but {@link Connection#setReadOnly(boolean)} is a hint that several drivers accept and ignore — so for
-     * those, "twice" was "not at all".
+     * {@code SELECT 1; DROP TABLE users} on any driver configured to allow multiple statements per call,
+     * because only the first six characters were ever examined. The read-only connection was supposed to be
+     * the second line of defence, but {@link Connection#setReadOnly(boolean)} is a hint that several drivers
+     * accept and ignore — so for those, "twice" was "not at all".
      *
      * <p>
-     * Rejecting an embedded statement separator closes that. A semicolon trailing the single statement is allowed since
-     * it terminates rather than chains, and only a semicolon that has something after it can begin a second statement.
+     * Rejecting an embedded statement separator closes that. A semicolon trailing the single statement is
+     * allowed since it terminates rather than chains, and only a semicolon that has something after it can
+     * begin a second statement.
      */
     static String rejectIfNotSingleSelect(String sql) {
         if (!sql.regionMatches(true, 0, "SELECT", 0, "SELECT".length())) {
@@ -223,7 +229,7 @@ public class DatabaseProvider {
         int semi = sql.indexOf(';');
         if (semi >= 0 && !sql.substring(semi + 1).isBlank()) {
             return "Rejected: only a single SELECT statement is allowed — "
-                    + "remove the ';' and anything following it.";
+                   + "remove the ';' and anything following it.";
         }
         return null;
     }
@@ -262,7 +268,7 @@ public class DatabaseProvider {
         }
         if (!acquired) {
             return "Timed out after " + LOCK_WAIT_SECONDS + "s waiting for another query on connection '"
-                    + connectionName + "' to finish. It may be hung; check the IDE's Services > Databases.";
+                   + connectionName + "' to finish. It may be hung; check the IDE's Services > Databases.";
         }
         try {
             boolean originalReadOnly;
@@ -398,7 +404,7 @@ public class DatabaseProvider {
                 return new String(buf, 0, n);
             }
             return new String(buf, 0, MAX_VALUE_CHARS)
-                    + "…[truncated at " + MAX_VALUE_CHARS + " chars]";
+                   + "…[truncated at " + MAX_VALUE_CHARS + " chars]";
         }
         catch (IOException e) {
             throw new SQLException("Failed reading column " + columnIndex + ": " + e.getMessage(), e);
@@ -414,8 +420,8 @@ public class DatabaseProvider {
     }
 
     /**
-     * Renders one already-fetched cell string, capping length and marking truncation. Used by tests and as the fallback
-     * when a driver cannot supply a character stream.
+     * Renders one already-fetched cell string, capping length and marking truncation. Used by tests and as
+     * the fallback when a driver cannot supply a character stream.
      */
     static String formatCellValue(String value) {
         if (value == null) {
@@ -425,12 +431,12 @@ public class DatabaseProvider {
             return value;
         }
         return value.substring(0, MAX_VALUE_CHARS)
-                + "…[truncated " + value.length() + " chars]";
+               + "…[truncated " + value.length() + " chars]";
     }
 
     /**
-     * Appends {@code text} without letting {@code sb} exceed {@link #MAX_RESULT_CHARS}. Returns {@code true} when the
-     * caller must stop adding further content (limit reached or hit by this append).
+     * Appends {@code text} without letting {@code sb} exceed {@link #MAX_RESULT_CHARS}. Returns {@code true}
+     * when the caller must stop adding further content (limit reached or hit by this append).
      */
     static boolean appendBounded(StringBuilder sb, String text) {
         if (text == null) {
@@ -451,8 +457,8 @@ public class DatabaseProvider {
     private static DatabaseConnection findConnection(String connectionName) {
         for (DatabaseConnection c : ConnectionManager.getDefault().getConnections()) {
             if (c.getDisplayName().equals(connectionName)
-                    || c.getName().equals(connectionName)
-                    || connectionName.equals(c.getDatabaseURL())) {
+                || c.getName().equals(connectionName)
+                || connectionName.equals(c.getDatabaseURL())) {
                 return c;
             }
         }
@@ -460,8 +466,8 @@ public class DatabaseProvider {
     }
 
     /**
-     * Never triggers a new connection attempt (no credential prompt, no silent auto-connect) — only returns a live JDBC
-     * connection if the user already connected this entry via the IDE.
+     * Never triggers a new connection attempt (no credential prompt, no silent auto-connect) — only returns a
+     * live JDBC connection if the user already connected this entry via the IDE.
      */
     private static Connection jdbcConnection(DatabaseConnection dc) {
         try {
@@ -483,7 +489,7 @@ public class DatabaseProvider {
 
     private static String connectionNotFoundError(String connectionName) {
         return "Database connection not found: " + connectionName
-                + ". Use ListDatabaseConnections to see registered connections.";
+               + ". Use ListDatabaseConnections to see registered connections.";
     }
 
     private static String notConnectedError(String connectionName) {

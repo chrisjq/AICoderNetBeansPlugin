@@ -7,6 +7,7 @@ import java.awt.Insets;
 import java.beans.PropertyChangeListener;
 import java.beans.PropertyChangeSupport;
 import java.io.File;
+import java.util.List;
 import java.util.concurrent.ExecutionException;
 import javax.swing.Box;
 import javax.swing.JButton;
@@ -217,12 +218,12 @@ public final class GithubCopilotAiSettingsTab implements SettingsTab {
     }
 
     /**
-     * Rebuilds {@link #reasoningEffortCombo}'s options from {@code model}'s live-discovered supported list — empty/
-     * absent means "no support": only {@link BlankSafeComboRenderer#DEFAULT_OPTION} is offered. Nothing about effort
-     * levels is hardcoded here.
+     * Rebuilds {@link #reasoningEffortCombo}'s options from {@code model}'s live-discovered supported list —
+     * empty/ absent means "no support": only {@link BlankSafeComboRenderer#DEFAULT_OPTION} is offered.
+     * Nothing about effort levels is hardcoded here.
      */
     private void refreshReasoningEffortOptions(String model, String preferredEffort) {
-        java.util.List<String> supported = GithubCopilotPluginSettings.getSupportedReasoningEfforts(model);
+        List<String> supported = GithubCopilotPluginSettings.getSupportedReasoningEfforts(model);
         Object currentSel = reasoningEffortCombo.getSelectedItem();
         String current = (currentSel == null || BlankSafeComboRenderer.DEFAULT_OPTION.equals(currentSel)) ? null : currentSel.toString();
         String toSelect = (preferredEffort != null && supported.contains(preferredEffort)) ? preferredEffort

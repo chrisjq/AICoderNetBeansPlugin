@@ -1,6 +1,7 @@
 package kiwi.ingenuity.netbeans.plugin.aicoder.ui;
 
 import java.nio.file.Path;
+import java.util.concurrent.Callable;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicReference;
 import javax.swing.SwingUtilities;
@@ -14,13 +15,14 @@ class TemplatePanelsTest {
     @TempDir
     Path tempDir;
 
-    private static <T> T onEdt(java.util.concurrent.Callable<T> action) throws Exception {
+    private static <T> T onEdt(Callable<T> action) throws Exception {
         AtomicReference<T> value = new AtomicReference<>();
         AtomicReference<Exception> failure = new AtomicReference<>();
         SwingUtilities.invokeAndWait(() -> {
             try {
                 value.set(action.call());
-            } catch (Exception e) {
+            }
+            catch (Exception e) {
                 failure.set(e);
             }
         });

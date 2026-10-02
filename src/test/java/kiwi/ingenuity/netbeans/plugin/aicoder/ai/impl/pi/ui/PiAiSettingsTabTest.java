@@ -2,6 +2,10 @@ package kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.pi.ui;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;
+import java.util.function.BooleanSupplier;
 import javax.swing.JPanel;
 import javax.swing.JTextField;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.AiTypeEnum;
@@ -64,7 +68,7 @@ class PiAiSettingsTabTest {
         PiPluginSettings.setModel("github-copilot/gpt-5-mini");
         PiPluginSettings.setThinkingLevel("high");
         PiAiSettingsTab tab = new PiAiSettingsTab();
-        java.util.concurrent.atomic.AtomicInteger fired = new java.util.concurrent.atomic.AtomicInteger();
+        AtomicInteger fired = new AtomicInteger();
         tab.addPropertyChangeListener(evt -> fired.incrementAndGet());
 
         tab.load();
@@ -77,7 +81,7 @@ class PiAiSettingsTabTest {
         PiAiSettingsTab tab = new PiAiSettingsTab();
         tab.load();
         JTextField executableField = firstFieldOfType(tab.getComponent(), JTextField.class);
-        java.util.concurrent.atomic.AtomicInteger fired = new java.util.concurrent.atomic.AtomicInteger();
+        AtomicInteger fired = new AtomicInteger();
         tab.addPropertyChangeListener(evt -> fired.incrementAndGet());
 
         executableField.setText("/opt/pi/bin/pi");
@@ -178,7 +182,7 @@ class PiAiSettingsTabTest {
         Files.writeString(slowExe, "#!/bin/sh\nsleep 1\nprintf 'provider model\\nprov1 modelA\\n'\n");
         slowExe.toFile().setExecutable(true);
 
-        java.util.concurrent.CountDownLatch slowDiscoveryDone = new java.util.concurrent.CountDownLatch(1);
+        CountDownLatch slowDiscoveryDone = new CountDownLatch(1);
         kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.pi.PiModelDiscovery.discoverAsync(slowExe.toString(),
                 models -> slowDiscoveryDone.countDown());
 
@@ -190,11 +194,11 @@ class PiAiSettingsTabTest {
         assertFalse(tab.refreshModelsButtonEnabledForTests(), "the button starts disabled the moment Refresh is clicked");
         waitUntil(tab::refreshModelsButtonEnabledForTests);
 
-        assertTrue(slowDiscoveryDone.await(5, java.util.concurrent.TimeUnit.SECONDS),
+        assertTrue(slowDiscoveryDone.await(5, TimeUnit.SECONDS),
                 "let the background slow discovery finish before the next test runs");
     }
 
-    private static void waitUntil(java.util.function.BooleanSupplier condition) throws InterruptedException {
+    private static void waitUntil(BooleanSupplier condition) throws InterruptedException {
         long deadline = System.nanoTime() + 5_000_000_000L;
         while (System.nanoTime() < deadline) {
             if (condition.getAsBoolean()) {

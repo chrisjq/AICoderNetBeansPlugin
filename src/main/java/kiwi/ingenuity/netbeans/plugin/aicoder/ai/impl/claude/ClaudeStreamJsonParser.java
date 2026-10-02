@@ -8,6 +8,7 @@ import java.nio.file.Files;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.Consumer;
+import java.util.function.Predicate;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.events.StatusEvent;
@@ -62,7 +63,7 @@ public class ClaudeStreamJsonParser {
     private long cachedContextWindow = 0;
     private volatile boolean compactBoundarySeen;
     private Consumer<String> onFirstSessionId;
-    private java.util.function.Predicate<String> fileAllowed;
+    private Predicate<String> fileAllowed;
 
     public ClaudeStreamJsonParser(AiProcessEventListener listener) {
         this.listener = listener;
@@ -72,7 +73,7 @@ public class ClaudeStreamJsonParser {
         this.onFirstSessionId = consumer;
     }
 
-    public void setFileAllowed(java.util.function.Predicate<String> pred) {
+    public void setFileAllowed(Predicate<String> pred) {
         this.fileAllowed = pred;
     }
 

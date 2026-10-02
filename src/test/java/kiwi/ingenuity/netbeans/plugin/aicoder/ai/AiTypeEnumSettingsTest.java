@@ -60,6 +60,17 @@ class AiTypeEnumSettingsTest {
         assertEquals(MailDeliveryTimingEnum.DURING_TURN, AiTypeEnum.OLLAMA_LOCAL.mailDeliveryTiming());
     }
 
+    /**
+     * Grok's mail interrupt delivers through the same shared AbstractAcpProcessManager.interruptMail()
+     * OpenCode uses — session/cancel ends the turn to deliver it (live-confirmed: an important mail
+     * interrupts Grok mid-turn). A regression back to AFTER_TURN would silently tell senders important=true
+     * does nothing for Grok, when it does.
+     */
+    @Test
+    void grokReportsAbortsTurnMailDelivery() {
+        assertEquals(MailDeliveryTimingEnum.ABORTS_TURN, AiTypeEnum.GROK.mailDeliveryTiming());
+    }
+
     @Test
     void openCodeCreatesOpenCodeSessionSettings() {
         assertTrue(AiTypeEnum.OPENCODE.createDefaultSettings() instanceof OpenCodeSessionSettings);
@@ -67,10 +78,10 @@ class AiTypeEnumSettingsTest {
 
     @Test
     void ollamaLocalUsesCredentialFreePromptPath() {
-    //assertFalse(AiTypeEnum.OLLAMA_LOCAL.includeSessionCredentialsInPrompt());
-    //assertTrue(AiTypeEnum.CLAUDE.includeSessionCredentialsInPrompt());
-    //assertTrue(AiTypeEnum.GROK.includeSessionCredentialsInPrompt());
-    //assertTrue(AiTypeEnum.GitHubCoPilot.includeSessionCredentialsInPrompt());
+        //assertFalse(AiTypeEnum.OLLAMA_LOCAL.includeSessionCredentialsInPrompt());
+        //assertTrue(AiTypeEnum.CLAUDE.includeSessionCredentialsInPrompt());
+        //assertTrue(AiTypeEnum.GROK.includeSessionCredentialsInPrompt());
+        //assertTrue(AiTypeEnum.GitHubCoPilot.includeSessionCredentialsInPrompt());
     }
 
     @Test

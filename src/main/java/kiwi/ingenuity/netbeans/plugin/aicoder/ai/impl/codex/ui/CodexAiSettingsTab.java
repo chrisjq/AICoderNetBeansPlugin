@@ -7,6 +7,7 @@ import java.awt.Insets;
 import java.beans.PropertyChangeListener;
 import java.beans.PropertyChangeSupport;
 import java.io.File;
+import java.util.List;
 import java.util.concurrent.ExecutionException;
 import javax.swing.Box;
 import javax.swing.JButton;
@@ -97,7 +98,7 @@ public final class CodexAiSettingsTab implements SettingsTab {
         effortCombo = new JComboBox<>(new String[]{BlankSafeComboRenderer.DEFAULT_OPTION});
         effortCombo.setEditable(true);
         effortCombo.setToolTipText("Default reasoning effort for new sessions — \"" + BlankSafeComboRenderer.DEFAULT_OPTION
-                + "\" omits the field, letting the model apply its own default (options from the model/list probe; editable)");
+                                   + "\" omits the field, letting the model apply its own default (options from the model/list probe; editable)");
         c.gridx = 1;
         c.weightx = 1;
         panel.add(effortCombo, c);
@@ -175,14 +176,14 @@ public final class CodexAiSettingsTab implements SettingsTab {
     }
 
     /**
-     * Rebuilds the effort combo's entries from {@link CodexReasoningEffortCatalog} for the currently selected model —
-     * {@code (model default)} first, then any supported efforts past sessions discovered. No-op-able on a model with no
-     * cached capability data (combo keeps {@code (model default)}).
+     * Rebuilds the effort combo's entries from {@link CodexReasoningEffortCatalog} for the currently selected
+     * model — {@code (model default)} first, then any supported efforts past sessions discovered. No-op-able
+     * on a model with no cached capability data (combo keeps {@code (model default)}).
      */
     private void refreshEffortOptions() {
         Object sel = modelCombo.getSelectedItem();
         String model = sel != null ? sel.toString().trim() : CodexPluginSettings.DEFAULT_MODEL;
-        java.util.List<String> supported = CodexReasoningEffortCatalog.supportedEffortsFor(model);
+        List<String> supported = CodexReasoningEffortCatalog.supportedEffortsFor(model);
         String[] items = new String[1 + supported.size()];
         items[0] = BlankSafeComboRenderer.DEFAULT_OPTION;
         for (int i = 0; i < supported.size(); i++) {

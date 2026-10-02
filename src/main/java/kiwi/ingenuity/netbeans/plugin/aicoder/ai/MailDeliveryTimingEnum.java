@@ -41,7 +41,9 @@ public enum MailDeliveryTimingEnum {
      * The message waits for the turn to finish on its own. There is no mid-turn channel, so marking a message
      * important has no effect on this backend.
      * <p>
-     * Grok has no persistent session to inject into; OpenCode has not implemented it.
+     * No current backend declares this: every implemented ACP/CLI integration has at least the
+     * {@link #ABORTS_TURN} channel (a cancel that ends the turn to deliver mail). It remains for a future
+     * backend with genuinely no way to interrupt a turn in flight.
      */
     AFTER_TURN("end of turn");
 

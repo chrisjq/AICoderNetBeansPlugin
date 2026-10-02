@@ -7,8 +7,8 @@ import kiwi.ingenuity.netbeans.plugin.aicoder.ai.settings.AiSessionCreateSetting
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.settings.AiSessionSettings;
 
 /**
- * Creates and updates Grok-specific AI session settings. Handles instantiation and configuration updates for Grok AI
- * implementation.
+ * Creates and updates Grok-specific AI session settings. Handles instantiation and configuration updates for
+ * Grok AI implementation.
  */
 public class GrokSettingsCreator extends AiModelSessionSettingsCreator<GrokSessionSettings> {
 
@@ -28,6 +28,10 @@ public class GrokSettingsCreator extends AiModelSessionSettingsCreator<GrokSessi
         String key = GrokSessionSettingsKeyEnum.REASONING_EFFORT.key();
         if (cfgObj.has(key) && cfgObj.get(key).isJsonPrimitive()) {
             settings.setReasoningEffort(cfgObj.get(key).getAsString());
+        }
+        String acpKey = GrokSessionSettingsKeyEnum.ACP_SESSION_ID.key();
+        if (cfgObj.has(acpKey) && cfgObj.get(acpKey).isJsonPrimitive()) {
+            settings.setAcpSessionId(cfgObj.get(acpKey).getAsString());
         }
     }
 

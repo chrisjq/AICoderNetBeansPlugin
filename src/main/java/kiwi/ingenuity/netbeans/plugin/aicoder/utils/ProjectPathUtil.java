@@ -7,6 +7,7 @@ import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Set;
 import org.netbeans.api.project.Project;
 import org.netbeans.api.project.ui.OpenProjects;
@@ -17,11 +18,12 @@ import org.openide.filesystems.FileUtil;
  * Shortens absolute paths for display.
  *
  * <p>
- * Confirm prompts and notifications show a path back to the user, and an absolute path is both long enough to dominate
- * the panel and mostly redundant — the leading directories are the same for every file in the project. This renders a
- * path inside an open project relative to that project but keeps the project directory name, so a prompt reads
- * {@code MyProject/target/scratch.txt} rather than {@code /home/user/code/MyProject/target/scratch.txt} — short, but
- * still saying which project it is when several are open.
+ * Confirm prompts and notifications show a path back to the user, and an absolute path is both long enough to
+ * dominate the panel and mostly redundant — the leading directories are the same for every file in the
+ * project. This renders a path inside an open project relative to that project but keeps the project
+ * directory name, so a prompt reads {@code MyProject/target/scratch.txt} rather than
+ * {@code /home/user/code/MyProject/target/scratch.txt} — short, but still saying which project it is when
+ * several are open.
  */
 public final class ProjectPathUtil {
 
@@ -31,9 +33,9 @@ public final class ProjectPathUtil {
     }
 
     /**
-     * Project directory name plus the path within it, or the unchanged absolute path when the file belongs to no open
-     * project. Long results are truncated from the left, keeping the end — the file name matters more than the
-     * directories above it.
+     * Project directory name plus the path within it, or the unchanged absolute path when the file belongs to
+     * no open project. Long results are truncated from the left, keeping the end — the file name matters more
+     * than the directories above it.
      *
      * @param fp absolute path; returned unchanged when null or blank
      */
@@ -42,8 +44,8 @@ public final class ProjectPathUtil {
     }
 
     /**
-     * Whether {@code path} identifies one of the projects currently open in NetBeans. Equivalent filesystem locations
-     * reached through different aliases or symlinks are treated as the same project.
+     * Whether {@code path} identifies one of the projects currently open in NetBeans. Equivalent filesystem
+     * locations reached through different aliases or symlinks are treated as the same project.
      */
     public static boolean isOpenProjectPath(String path) {
         return isOpenProjectPath(path, openProjectDirs());
@@ -54,7 +56,7 @@ public final class ProjectPathUtil {
      */
     static boolean isOpenProjectPath(String path, List<File> projectDirs) {
         return path != null && projectDirs.stream()
-                .filter(java.util.Objects::nonNull)
+                .filter(Objects::nonNull)
                 .map(File::getPath)
                 .anyMatch(projectPath -> samePath(path, projectPath));
     }
@@ -64,14 +66,14 @@ public final class ProjectPathUtil {
      */
     public static boolean samePath(String left, String right) {
         return left != null && !left.isBlank()
-                && right != null && !right.isBlank()
-                && canonical(left).equals(canonical(right));
+               && right != null && !right.isBlank()
+               && canonical(left).equals(canonical(right));
     }
 
     /**
-     * Removes duplicate spellings of the same filesystem location, retaining the shortest spelling for each location.
-     * This keeps a project that NetBeans exposes through a symlink or shared-folder alias from appearing twice in a
-     * selection list while ensuring new sessions persist the most concise usable path.
+     * Removes duplicate spellings of the same filesystem location, retaining the shortest spelling for each
+     * location. This keeps a project that NetBeans exposes through a symlink or shared-folder alias from
+     * appearing twice in a selection list while ensuring new sessions persist the most concise usable path.
      */
     public static List<String> distinctShortestPaths(List<String> paths) {
         Map<String, String> preferredPaths = new LinkedHashMap<>();
@@ -92,10 +94,10 @@ public final class ProjectPathUtil {
     }
 
     /**
-     * Pure form of {@link #shortPath(String)} with the open-project lookup lifted out, so the shortening rules can be
-     * tested without a running IDE.
+     * Pure form of {@link #shortPath(String)} with the open-project lookup lifted out, so the shortening
+     * rules can be tested without a running IDE.
      *
-     * @param fp absolute path; returned unchanged when null or blank
+     * @param fp          absolute path; returned unchanged when null or blank
      * @param projectDirs directories of the currently open projects
      */
     static String shortPath(String fp, List<File> projectDirs) {
@@ -134,8 +136,8 @@ public final class ProjectPathUtil {
     }
 
     /**
-     * Path of {@code fp} below {@code base}, {@code ""} when they are the same directory, or null when {@code fp} is
-     * not inside {@code base}.
+     * Path of {@code fp} below {@code base}, {@code ""} when they are the same directory, or null when
+     * {@code fp} is not inside {@code base}.
      */
     private static String relativise(String fp, String base) {
         if (fp == null || base == null || base.isEmpty()) {
@@ -152,12 +154,13 @@ public final class ProjectPathUtil {
     }
 
     /**
-     * Symlinks resolved. {@link File#getCanonicalPath()} also works for a file that does not exist yet (it resolves the
-     * part of the path that does), which matters because these prompts are shown before a create or a move happens.
+     * Symlinks resolved. {@link File#getCanonicalPath()} also works for a file that does not exist yet (it
+     * resolves the part of the path that does), which matters because these prompts are shown before a create
+     * or a move happens.
      * <p>
-     * Public so a caller can canonicalise once — for example a model precomputing an open-project membership set —
-     * instead of resolving the same paths on every render. The result is for comparison only, never for NetBeans
-     * {@code FileObject} or cache APIs.
+     * Public so a caller can canonicalise once — for example a model precomputing an open-project membership
+     * set — instead of resolving the same paths on every render. The result is for comparison only, never for
+     * NetBeans {@code FileObject} or cache APIs.
      */
     public static String canonical(String p) {
         try {
@@ -169,8 +172,9 @@ public final class ProjectPathUtil {
     }
 
     /**
-     * OS directories of the currently open projects, via the same {@code FileUtil.toFile} conversion the rest of the
-     * codebase uses. Empty when no project is open. Public so the open set can be computed once and reused.
+     * OS directories of the currently open projects, via the same {@code FileUtil.toFile} conversion the rest
+     * of the codebase uses. Empty when no project is open. Public so the open set can be computed once and
+     * reused.
      */
     public static List<File> openProjectDirs() {
         List<File> dirs = new ArrayList<>();
@@ -189,9 +193,10 @@ public final class ProjectPathUtil {
     }
 
     /**
-     * Canonical spellings of the supplied project directories. Computed once — by a model, for example, when the
-     * open-project set changes — so membership tests can run without resolving paths per session per render. The
-     * canonical value is for comparison only, never for NetBeans {@code FileObject} or cache APIs.
+     * Canonical spellings of the supplied project directories. Computed once — by a model, for example, when
+     * the open-project set changes — so membership tests can run without resolving paths per session per
+     * render. The canonical value is for comparison only, never for NetBeans {@code FileObject} or cache
+     * APIs.
      */
     public static Set<String> canonicalDirs(List<File> projectDirs) {
         Set<String> canonical = new HashSet<>();
@@ -206,8 +211,8 @@ public final class ProjectPathUtil {
     }
 
     /**
-     * Whether {@code path} canonicalises to one of the precomputed open-project spellings. The set must come from
-     * {@link #canonicalDirs(List)}; {@code path} is resolved here so both sides are canonical.
+     * Whether {@code path} canonicalises to one of the precomputed open-project spellings. The set must come
+     * from {@link #canonicalDirs(List)}; {@code path} is resolved here so both sides are canonical.
      */
     public static boolean matchesCanonicalDirs(Set<String> canonicalDirs, String path) {
         return path != null && !path.isBlank() && canonicalDirs.contains(canonical(path));

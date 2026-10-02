@@ -1,19 +1,21 @@
 package kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.providers.netbeans;
 
+import java.util.ArrayList;
 import java.util.List;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.providers.netbeans.FindUsagesProvider.RawUsage;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import org.junit.jupiter.api.Test;
 
 /**
- * {@link FindUsagesProvider#findUsages} itself needs a live NetBeans project index (JavaSource/RefactoringSession),
- * which a plain JUnit run does not have — the same nbplatform limitation documented in SearchProviderTest. These tests
- * instead drive the extracted, pure {@link FindUsagesProvider#dedupe} directly.
+ * {@link FindUsagesProvider#findUsages} itself needs a live NetBeans project index
+ * (JavaSource/RefactoringSession), which a plain JUnit run does not have — the same nbplatform limitation
+ * documented in SearchProviderTest. These tests instead drive the extracted, pure
+ * {@link FindUsagesProvider#dedupe} directly.
  *
  * <p>
- * Regression guard for the live-verification finding: with {@code findSubclasses=true}, WhereUsedQuery's plain
- * reference-finder pass and its FIND_SUBCLASSES subclass-enumeration pass both reported a direct subclass's own
- * {@code extends} clause — same file, same offset — as two separate elements, so
+ * Regression guard for the live-verification finding: with {@code findSubclasses=true}, WhereUsedQuery's
+ * plain reference-finder pass and its FIND_SUBCLASSES subclass-enumeration pass both reported a direct
+ * subclass's own {@code extends} clause — same file, same offset — as two separate elements, so
  * {@code AiModelSessionSettings.java:5 extends AiSessionSettings} was listed twice for one real occurrence.
  */
 class FindUsagesProviderTest {
@@ -33,7 +35,7 @@ class FindUsagesProviderTest {
 
         assertEquals(1, lines.size(), "two rendered copies of the same single target occurrence must collapse to one line");
         assertEquals("/project/AiModelSessionSettings.java:5  →  "
-                + "public class AiModelSessionSettings extends AiSessionSettings {", lines.get(0));
+                     + "public class AiModelSessionSettings extends AiSessionSettings {", lines.get(0));
     }
 
     @Test
@@ -72,7 +74,7 @@ class FindUsagesProviderTest {
 
     @Test
     void formatUsages_capsTheListingAndReportsTheTrueTotal() {
-        List<String> lines = new java.util.ArrayList<>();
+        List<String> lines = new ArrayList<>();
         for (int i = 1; i <= 5; i++) {
             lines.add("/project/A.java:" + i + "  →  Foo");
         }
@@ -80,8 +82,8 @@ class FindUsagesProviderTest {
         String capped = FindUsagesProvider.formatUsages("com.example.Foo", lines, 3);
 
         assertEquals("Found 5 usage(s) of com.example.Foo (showing first 3):\n\n"
-                + "/project/A.java:1  →  Foo\n/project/A.java:2  →  Foo\n/project/A.java:3  →  Foo\n", capped);
+                     + "/project/A.java:1  →  Foo\n/project/A.java:2  →  Foo\n/project/A.java:3  →  Foo\n", capped);
         assertEquals("Found 2 usage(s) of com.example.Foo:\n\n/project/A.java:1  →  Foo\n/project/A.java:2  →  Foo\n",
-                     FindUsagesProvider.formatUsages("com.example.Foo", lines.subList(0, 2), 3));
+                FindUsagesProvider.formatUsages("com.example.Foo", lines.subList(0, 2), 3));
     }
 }

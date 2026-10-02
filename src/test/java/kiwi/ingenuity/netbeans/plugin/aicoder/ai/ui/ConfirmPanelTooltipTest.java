@@ -4,6 +4,7 @@ import java.awt.Component;
 import java.awt.Container;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.concurrent.Callable;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.atomic.AtomicReference;
 import javax.swing.JButton;
@@ -15,10 +16,10 @@ import static org.junit.jupiter.api.Assertions.assertNull;
 import org.junit.jupiter.api.Test;
 
 /**
- * The confirm dialog's Yes/No buttons can carry per-backend tooltips supplied by {@code AiTypeEnum}. A backend that
- * supplies nothing must leave both buttons bare — an invented tooltip that says nothing useful trains the user to
- * ignore them all — and the multi-file batch gate must stay bare too, because the OpenCode hint is advice about a
- * single rejected tool call and a whole change set is not one tool call.
+ * The confirm dialog's Yes/No buttons can carry per-backend tooltips supplied by {@code AiTypeEnum}. A
+ * backend that supplies nothing must leave both buttons bare — an invented tooltip that says nothing useful
+ * trains the user to ignore them all — and the multi-file batch gate must stay bare too, because the OpenCode
+ * hint is advice about a single rejected tool call and a whole change set is not one tool call.
  */
 class ConfirmPanelTooltipTest {
 
@@ -27,9 +28,9 @@ class ConfirmPanelTooltipTest {
      */
     private static final String OPENCODE_ACCEPT = "Accept";
     private static final String OPENCODE_REJECT
-            = "Reject, you may need to remind it to use MCP tool manually.";
+                                = "Reject, you may need to remind it to use MCP tool manually.";
 
-    private static <T> T onEdt(java.util.concurrent.Callable<T> fn) throws Exception {
+    private static <T> T onEdt(Callable<T> fn) throws Exception {
         AtomicReference<T> result = new AtomicReference<>();
         AtomicReference<Exception> err = new AtomicReference<>();
         SwingUtilities.invokeAndWait(() -> {

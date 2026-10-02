@@ -4,6 +4,7 @@ import java.awt.Color;
 import java.awt.Dimension;
 import java.awt.Font;
 import java.awt.event.ComponentListener;
+import java.util.concurrent.Callable;
 import java.util.concurrent.atomic.AtomicReference;
 import javax.swing.JComponent;
 import javax.swing.KeyStroke;
@@ -14,7 +15,7 @@ import org.junit.jupiter.api.Test;
 
 class WrappingHtmlLabelTest {
 
-    private static <T> T onEdt(java.util.concurrent.Callable<T> fn) throws Exception {
+    private static <T> T onEdt(Callable<T> fn) throws Exception {
         AtomicReference<T> result = new AtomicReference<>();
         AtomicReference<Exception> err = new AtomicReference<>();
         SwingUtilities.invokeAndWait(() -> {
@@ -32,25 +33,22 @@ class WrappingHtmlLabelTest {
     }
 
     /**
-     * The document must carry an injected body stylesheet naming the look and
-     * feel's own font family and foreground colour, rather than letting the
-     * JEditorPane fall back to its built-in serif/black defaults. Those
-     * defaults ignore the theme entirely — unreadable on a dark one, and the
-     * wrong font on any of them — so this is a theme-fidelity guard, not a
-     * dark-specific one.
+     * The document must carry an injected body stylesheet naming the look and feel's own font family and
+     * foreground colour, rather than letting the JEditorPane fall back to its built-in serif/black defaults.
+     * Those defaults ignore the theme entirely — unreadable on a dark one, and the wrong font on any of them
+     * — so this is a theme-fidelity guard, not a dark-specific one.
      *
      * <p>
-     * This originally asserted HONOR_DISPLAY_PROPERTIES, which set the font and
-     * colour but left the renderer unable to break a long unbroken token (a
-     * file path) at its hyphens, so confirm prompts were clipped rather than
-     * wrapped. The stylesheet route is what MessagePanel uses for chat text and
-     * what wraps correctly, so the guard checks for that instead. The property
-     * must NOT come back: it is the configuration that failed to wrap.
+     * This originally asserted HONOR_DISPLAY_PROPERTIES, which set the font and colour but left the renderer
+     * unable to break a long unbroken token (a file path) at its hyphens, so confirm prompts were clipped
+     * rather than wrapped. The stylesheet route is what MessagePanel uses for chat text and what wraps
+     * correctly, so the guard checks for that instead. The property must NOT come back: it is the
+     * configuration that failed to wrap.
      *
      * <p>
-     * The LAF values are pinned to known ones for the duration of the test and
-     * restored afterwards, so the assertion holds under any theme the suite
-     * happens to run beneath rather than encoding whatever is installed today.
+     * The LAF values are pinned to known ones for the duration of the test and restored afterwards, so the
+     * assertion holds under any theme the suite happens to run beneath rather than encoding whatever is
+     * installed today.
      *
      * Would FAIL if the constructor stopped injecting the stylesheet.
      */
@@ -88,10 +86,9 @@ class WrappingHtmlLabelTest {
     }
 
     /**
-     * The reported preferred width must never exceed the width the component
-     * was measured in. An HTML-backed version returned the full natural width
-     * of an unbroken file path (1271px) regardless of the space available,
-     * which forced the panel wider than the viewport and clipped the text.
+     * The reported preferred width must never exceed the width the component was measured in. An HTML-backed
+     * version returned the full natural width of an unbroken file path (1271px) regardless of the space
+     * available, which forced the panel wider than the viewport and clipped the text.
      */
     @Test
     void preferredWidthNeverExceedsAvailableWidth() throws Exception {
@@ -108,10 +105,9 @@ class WrappingHtmlLabelTest {
     }
 
     /**
-     * The component must be focusable so that Ctrl+C / Cmd+C can fire, and the
-     * WHEN_FOCUSED input map must contain bindings for both copy and select-all
-     * so they work even inside NetBeans which can swallow those keys at a
-     * higher level.
+     * The component must be focusable so that Ctrl+C / Cmd+C can fire, and the WHEN_FOCUSED input map must
+     * contain bindings for both copy and select-all so they work even inside NetBeans which can swallow those
+     * keys at a higher level.
      *
      * Would FAIL without the setFocusable(true) and getInputMap() calls.
      */
@@ -140,9 +136,8 @@ class WrappingHtmlLabelTest {
     }
 
     /**
-     * The constructor must register a ComponentListener so that width changes
-     * after initial layout trigger a revalidate (forces the correct second
-     * layout pass and prevents clipped rows on resize).
+     * The constructor must register a ComponentListener so that width changes after initial layout trigger a
+     * revalidate (forces the correct second layout pass and prevents clipped rows on resize).
      *
      * Would FAIL without the addComponentListener() call in the constructor.
      */

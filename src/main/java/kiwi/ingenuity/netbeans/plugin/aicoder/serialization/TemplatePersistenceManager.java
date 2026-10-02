@@ -17,6 +17,7 @@ import java.nio.file.StandardCopyOption;
 import java.nio.file.StandardOpenOption;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.UUID;
 import java.util.function.Function;
 import java.util.logging.Level;
 import java.util.logging.Logger;
@@ -275,7 +276,7 @@ public final class TemplatePersistenceManager {
         JsonArray array = new JsonArray();
         entries.forEach(array::add);
         Path file = baseDir.resolve(filename);
-        Path temp = file.resolveSibling(file.getFileName() + "." + java.util.UUID.randomUUID() + ".tmp");
+        Path temp = file.resolveSibling(file.getFileName() + "." + UUID.randomUUID() + ".tmp");
         try {
             byte[] bytes = GSON.toJson(array).getBytes(StandardCharsets.UTF_8);
             try (FileChannel channel = FileChannel.open(temp, StandardOpenOption.CREATE_NEW, StandardOpenOption.WRITE)) {

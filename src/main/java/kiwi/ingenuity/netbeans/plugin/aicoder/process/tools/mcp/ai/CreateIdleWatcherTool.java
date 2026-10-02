@@ -45,7 +45,7 @@ public class CreateIdleWatcherTool extends AbstractActionTool {
         JsonObject tid = new JsonObject();
         tid.addProperty(ToolSchemaKeyEnum.TYPE.key(), "string");
         tid.addProperty(ToolSchemaKeyEnum.DESCRIPTION.key(),
-                "Target session ID from " + McpToolEnum.PEER_SESSION_LIST.toolName() + " (not your own).");
+                "Target session ID or unique session name from " + McpToolEnum.PEER_SESSION_LIST.toolName() + " (not your own).");
         props.add(CreateIdleWatcherParamEnum.TARGET_SESSION_ID.key(), tid);
         JsonObject timeout = new JsonObject();
         timeout.addProperty(ToolSchemaKeyEnum.TYPE.key(), "integer");
@@ -107,6 +107,11 @@ public class CreateIdleWatcherTool extends AbstractActionTool {
         if (targetSessionId == null || targetSessionId.isBlank()) {
             return "Error: " + CreateIdleWatcherParamEnum.TARGET_SESSION_ID.key() + " is required";
         }
+        IdleWatcherTools.Resolution resolution = IdleWatcherTools.resolveTargetSessionId(targetSessionId);
+        if (resolution.error() != null) {
+            return resolution.error();
+        }
+        targetSessionId = resolution.sessionId();
         String rawTimeout = args.str(CreateIdleWatcherParamEnum.TIMEOUT_MINUTES.key());
         int minutes;
         if (rawTimeout == null) {

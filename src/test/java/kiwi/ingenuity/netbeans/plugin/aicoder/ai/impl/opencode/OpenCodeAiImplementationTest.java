@@ -7,6 +7,8 @@ import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicReference;
 import javax.swing.JComboBox;
 import javax.swing.JPanel;
@@ -603,7 +605,7 @@ class OpenCodeAiImplementationTest {
         BarHarness secondBar = createBar(second, secondSession, hostFor(new AtomicReference<>()));
 
         AiTypePropertyBus bus = AiTypePropertyBus.getInstance();
-        java.util.concurrent.CountDownLatch delivered = new java.util.concurrent.CountDownLatch(2);
+        CountDownLatch delivered = new CountDownLatch(2);
         kiwi.ingenuity.netbeans.plugin.aicoder.ai.events.AiPropertyListener listener = event -> {
             // Mirrors AiTopComponent: the type-wide bus dispatches off the EDT, then each real bar is updated on it.
             SwingUtilities.invokeLater(() -> {
@@ -619,7 +621,7 @@ class OpenCodeAiImplementationTest {
             // A successful OpenCode handshake publishes its discovered model list to the real catalog/bus path.
             OpenCodeAiImplementation.modelCatalog().publish(
                     List.of("handshake-first", "handshake-second", "handshake-discovered"));
-            assertTrue(delivered.await(5, java.util.concurrent.TimeUnit.SECONDS),
+            assertTrue(delivered.await(5, TimeUnit.SECONDS),
                     "the handshake discovery must reach both open OpenCode bars through AiTypePropertyBus");
             SwingUtilities.invokeAndWait(() -> {
             });

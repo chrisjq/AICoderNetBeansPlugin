@@ -5,6 +5,7 @@ import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 import java.io.File;
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
@@ -12,6 +13,7 @@ import java.util.Set;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.concurrent.locks.ReentrantReadWriteLock;
+import java.util.function.Supplier;
 import javax.swing.SwingUtilities;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.McpArgumentException;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.McpSectionEnum;
@@ -277,7 +279,7 @@ public final class McpToolInvoker {
      * differs from the one it actually passed. Falls back to the key itself if, somehow, none of the original
      * paths normalise to it.
      */
-    private static String originalPathFor(LockManager lockManager, java.util.Collection<String> paths, String normalisedKey) {
+    private static String originalPathFor(LockManager lockManager, Collection<String> paths, String normalisedKey) {
         for (String original : paths) {
             if (lockManager.normalisePaths(Set.of(original)).iterator().next().equals(normalisedKey)) {
                 return original;
@@ -291,8 +293,8 @@ public final class McpToolInvoker {
      * must invoke this only after every confirmation/diff prompt has completed. Paths are sorted and
      * normalised by LockManager, avoiding A→B/B→A deadlocks for moves and copies.
      */
-    public static String withFileMutation(String sessionId, java.util.Collection<String> paths,
-                                          java.util.function.Supplier<String> action) {
+    public static String withFileMutation(String sessionId, Collection<String> paths,
+                                          Supplier<String> action) {
         if (SwingUtilities.isEventDispatchThread()) {
             return "Error: mutation lock cannot wait on the EDT.";
         }
@@ -339,8 +341,8 @@ public final class McpToolInvoker {
      * run concurrently alongside it. Deliberately does not enter the shared mutation gate either: reads must
      * remain available while an unrelated refactoring is exclusive.
      */
-    public static String withFileRead(String sessionId, java.util.Collection<String> paths,
-                                      java.util.function.Supplier<String> action) {
+    public static String withFileRead(String sessionId, Collection<String> paths,
+                                      Supplier<String> action) {
         LockManager lockManager = LockManager.getInstance();
         AtomicReference<String> contendedPath = new AtomicReference<>();
         ResourceLock lock = lockManager.acquireFileReadLocks(sessionId, paths, contendedPath);
@@ -360,7 +362,7 @@ public final class McpToolInvoker {
     /**
      * Runs a refactoring exclusively after any confirmation has completed.
      */
-    public static String withExclusiveMutation(java.util.function.Supplier<String> action) {
+    public static String withExclusiveMutation(Supplier<String> action) {
         if (SwingUtilities.isEventDispatchThread()) {
             return "Error: mutation lock cannot wait on the EDT.";
         }
@@ -388,7 +390,7 @@ public final class McpToolInvoker {
      * Runs an empty-directory operation under the shared mutation side and its path lock.
      */
     public static String withDirectoryMutation(String sessionId, String path,
-                                               java.util.function.Supplier<String> action) {
+                                               Supplier<String> action) {
         if (SwingUtilities.isEventDispatchThread()) {
             return "Error: mutation lock cannot wait on the EDT.";
         }

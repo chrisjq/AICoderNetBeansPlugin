@@ -1,4 +1,4 @@
-package kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.opencode.acp;
+package kiwi.ingenuity.netbeans.plugin.aicoder.ai.acp;
 
 public enum AcpPermissionKindEnum {
     ALLOW_ONCE("allow_once"),
@@ -7,9 +7,8 @@ public enum AcpPermissionKindEnum {
     REJECT_ALWAYS("reject_always");
 
     /**
-     * Resolve a wire string to its enum constant. Returns null if the string is
-     * not recognised — the protocol adds new values over time and must not fail
-     * on unknown kinds.
+     * Resolve a wire string to its enum constant. Returns null if the string is not recognised — the protocol
+     * adds new values over time and must not fail on unknown kinds.
      */
     public static AcpPermissionKindEnum fromWire(String wire) {
         if (wire == null) {

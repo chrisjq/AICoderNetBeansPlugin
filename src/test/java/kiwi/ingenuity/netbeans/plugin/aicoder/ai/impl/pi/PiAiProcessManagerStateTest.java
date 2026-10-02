@@ -10,8 +10,11 @@ import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.BooleanSupplier;
 import java.util.function.Consumer;
+import java.util.function.Predicate;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.events.StatusEvent;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.events.StatusEventTypeEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.pi.events.PiAvailableThinkingLevelsEvent;
@@ -69,8 +72,8 @@ class PiAiProcessManagerStateTest {
         manager.setupForTest();
     }
 
-    private java.util.concurrent.atomic.AtomicInteger recordDeleteExtensionFileCalls() {
-        java.util.concurrent.atomic.AtomicInteger calls = new java.util.concurrent.atomic.AtomicInteger();
+    private AtomicInteger recordDeleteExtensionFileCalls() {
+        AtomicInteger calls = new AtomicInteger();
         manager.deleteExtensionFile = reg -> calls.incrementAndGet();
         return calls;
     }
@@ -801,7 +804,7 @@ class PiAiProcessManagerStateTest {
             ExecutionException failure = assertThrows(ExecutionException.class,
                     () -> manager.setModel("providerA", "modelA").get(10, TimeUnit.SECONDS));
 
-            assertInstanceOf(java.util.concurrent.TimeoutException.class, failure.getCause());
+            assertInstanceOf(TimeoutException.class, failure.getCause());
             awaitTrue(() -> events.hasEvent(PiThinkingLevelChangedEvent.class, e -> "medium".equals(((PiThinkingLevelChangedEvent) e).level())),
                     "the level pi really reports after the resync");
             List<AiProcessEvent> seen = new ArrayList<>(events.events());
@@ -871,7 +874,7 @@ class PiAiProcessManagerStateTest {
             events.add(event);
         }
 
-        boolean hasEvent(Class<?> type, java.util.function.Predicate<Object> predicate) {
+        boolean hasEvent(Class<?> type, Predicate<Object> predicate) {
             return new ArrayList<>(events).stream()
                     .filter(type::isInstance)
                     .anyMatch(e -> predicate.test(e));

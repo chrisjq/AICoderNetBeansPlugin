@@ -2,6 +2,7 @@ package kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.pi.ui;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.concurrent.atomic.AtomicInteger;
 import javax.swing.JButton;
 import javax.swing.JComboBox;
 import javax.swing.JComponent;
@@ -465,7 +466,7 @@ class PiAiInfoBarExtensionTest {
     @Test
     void clickingCompactNotifiesListener() {
         PiAiInfoBarExtension ext = bar();
-        java.util.concurrent.atomic.AtomicInteger compactCount = new java.util.concurrent.atomic.AtomicInteger();
+        AtomicInteger compactCount = new AtomicInteger();
         ext.addListener(new PiInfoBarListener() {
             @Override
             public void onModelChanged(String providerSlashId) {
@@ -492,8 +493,8 @@ class PiAiInfoBarExtensionTest {
     @Test
     void addListenerReceivesModelAndThinkingLevelChanges() {
         PiAiInfoBarExtension ext = bar();
-        List<String> modelChanges = new java.util.ArrayList<>();
-        List<String> levelChanges = new java.util.ArrayList<>();
+        List<String> modelChanges = new ArrayList<>();
+        List<String> levelChanges = new ArrayList<>();
         ext.addListener(new PiInfoBarListener() {
             @Override
             public void onModelChanged(String providerSlashId) {

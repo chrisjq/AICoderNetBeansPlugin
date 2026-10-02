@@ -1,4 +1,4 @@
-package kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.opencode.acp;
+package kiwi.ingenuity.netbeans.plugin.aicoder.ai.acp;
 
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
@@ -11,6 +11,7 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
 import org.junit.jupiter.api.AfterEach;
 import static org.junit.jupiter.api.Assertions.*;
 import org.junit.jupiter.api.BeforeEach;
@@ -267,8 +268,8 @@ class AcpConnectionTest {
         PipedOutputStream localPluginOut = new PipedOutputStream(localAgentIn);
 
         AcpClientHandler orderHandler = new AcpClientHandler() {
-            private final java.util.concurrent.atomic.AtomicBoolean first
-                                                                    = new java.util.concurrent.atomic.AtomicBoolean(true);
+            private final AtomicBoolean first
+                                        = new AtomicBoolean(true);
 
             @Override
             public void onSessionUpdate(String sid, JsonObject update) {
@@ -361,8 +362,8 @@ class AcpConnectionTest {
                 new InputStreamReader(localAgentIn, StandardCharsets.UTF_8));
 
         AcpClientHandler combinedHandler = new AcpClientHandler() {
-            private final java.util.concurrent.atomic.AtomicBoolean first
-                                                                    = new java.util.concurrent.atomic.AtomicBoolean(true);
+            private final AtomicBoolean first
+                                        = new AtomicBoolean(true);
 
             @Override
             public void onSessionUpdate(String sid, JsonObject update) {

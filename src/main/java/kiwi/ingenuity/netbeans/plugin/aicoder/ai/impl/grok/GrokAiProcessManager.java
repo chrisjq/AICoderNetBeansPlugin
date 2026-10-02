@@ -1,18 +1,33 @@
 package kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.grok;
 
-import java.io.BufferedReader;
+import com.google.gson.JsonArray;
+import com.google.gson.JsonElement;
+import com.google.gson.JsonObject;
 import java.io.File;
 import java.io.IOException;
-import java.io.InputStreamReader;
-import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.CompletionException;
 import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.TimeUnit;
+import java.util.function.Predicate;
 import java.util.logging.Level;
 import java.util.logging.Logger;
+import kiwi.ingenuity.netbeans.plugin.aicoder.Installer;
 import kiwi.ingenuity.netbeans.plugin.aicoder.PluginSettings;
-import kiwi.ingenuity.netbeans.plugin.aicoder.ai.AiProcessManager;
+import kiwi.ingenuity.netbeans.plugin.aicoder.PluginUtil;
+import kiwi.ingenuity.netbeans.plugin.aicoder.ai.AiTypeEnum;
+import kiwi.ingenuity.netbeans.plugin.aicoder.ai.acp.AbstractAcpClientHandler;
+import kiwi.ingenuity.netbeans.plugin.aicoder.ai.acp.AbstractAcpProcessManager;
+import kiwi.ingenuity.netbeans.plugin.aicoder.ai.acp.AcpConnection;
+import kiwi.ingenuity.netbeans.plugin.aicoder.ai.acp.AcpErrorCodeEnum;
+import kiwi.ingenuity.netbeans.plugin.aicoder.ai.acp.AcpException;
+import kiwi.ingenuity.netbeans.plugin.aicoder.ai.acp.AcpJsonKeyEnum;
+import kiwi.ingenuity.netbeans.plugin.aicoder.ai.acp.AcpMethodEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.events.StatusEvent;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.events.StatusEventTypeEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.events.TurnCompleteEvent;
@@ -20,232 +35,210 @@ import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.grok.events.GrokTokenUsage
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.grok.session.GrokAiSession;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.session.InterruptTypeEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.events.AiProcessEventListener;
-import kiwi.ingenuity.netbeans.plugin.aicoder.process.server.McpHookServerUtil;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.server.McpServerRegistry;
-import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.TimeoutEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.utils.StatusMessageUtil;
 
 /**
- * Manages the {@code grok} CLI (xAI's Grok CLI, https://docs.x.ai/build/cli). Unlike Claude's persistent
- * {@code --input-format stream-json} conversation, grok's headless mode
- * (https://docs.x.ai/build/cli/headless-scripting) is a one-shot process per turn: each prompt spawns
- * {@code grok -p "<prompt>"} with either {@code -s <sessionId>} (first turn, creates the named headless
- * session) or
- * {@code -r <sessionId>} (subsequent turns, resumes it) so the grok-side session persists across turns even
- * though the
- * OS process does not. Output is captured with {@code --output-format json} and parsed by
- * {@link GrokResponseParser}
- * once the process exits.
+ * Manages Grok (xAI's CLI, https://docs.x.ai/build/cli) via one long-lived {@code grok agent stdio} process
+ * per plugin session, speaking the same Agent Client Protocol as OpenCode. Lifecycle, the handshake-turn/
+ * active-turn tokens, the protocol builders and the permission bridge are shared with OpenCode through
+ * {@link AbstractAcpProcessManager}/{@link AbstractAcpClientHandler}; this class supplies Grok's launch
+ * command, its model/reasoning-effort config options, and its usage/shutdown specifics.
+ *
+ * <p>
+ * Unlike the CLI's old headless {@code grok -p} mode (one process per turn), {@code agent stdio} is a single
+ * process for the whole session: {@link #start} only validates the executable and registers the MCP server;
+ * the process itself is spawned lazily on the first {@link #sendPrompt}, exactly as {@code
+ * OpenCodeAiProcessManager} does.
  */
-public class GrokAiProcessManager extends AiProcessManager {
+public class GrokAiProcessManager extends AbstractAcpProcessManager {
 
     private static final Logger LOG = Logger.getLogger(GrokAiProcessManager.class.getName());
 
     /**
-     * Ask the process to exit gracefully (SIGTERM-equivalent), give it up to 5 seconds to do so, and only
-     * escalate to a
-     * forced kill if it is still alive afterwards.
+     * How many of the agent's stderr lines are kept to show in an EXITED message — mirrors
+     * {@code OpenCodeAiProcessManager}'s identical constant.
      */
-    private static void terminateProcess(Process p) {
-        if (p == null) {
-            return;
-        }
-        p.destroy();
-        try {
-            if (!p.waitFor(5, TimeUnit.SECONDS)) {
-                p.destroyForcibly();
-            }
-        }
-        catch (InterruptedException e) {
-            Thread.currentThread().interrupt();
-            p.destroyForcibly();
-        }
+    private static final int MAX_STDERR_LINES = 100;
+
+    /**
+     * Grace period {@link #stop()} gives Grok to exit after its stdin is closed before escalating to a forced
+     * kill. Verified by live probe (Boss's handover): closing stdin alone does NOT make Grok exit.
+     */
+    private static final long SHUTDOWN_GRACE_MILLIS = 3_000L;
+
+    /**
+     * Test seam: overrides {@link #SHUTDOWN_GRACE_MILLIS} so a test proving the forced-kill escalation does
+     * not have to wait out the real grace period. Null in production.
+     */
+    static volatile Long shutdownGraceMillisForTests = null;
+
+    private static long shutdownGraceMillis() {
+        Long override = shutdownGraceMillisForTests;
+        return override != null ? override : SHUTDOWN_GRACE_MILLIS;
+    }
+
+    static List<String> buildAcpCommand(String executablePath) {
+        return buildAcpCommand(executablePath, null);
     }
 
     /**
-     * Same kill as {@link #terminateProcess}, but never blocks the caller: {@code destroy()} itself is a
-     * quick signal-only call, but the up-to-5s wait plus forced-kill escalation is not, and
-     * {@code interrupt()}/{@code stop()} can be reached directly from the EDT (AiImplementation delivers a
-     * Cancel immediately while the manager is busy) — nothing on that path may block for seconds. The
-     * escalation still runs, just on a background thread instead of the caller's.
+     * @param debugFilePath when non-null, appends {@code --debug --debug-file <debugFilePath>} — accepted by
+     *                      {@code grok agent} (per {@code grok agent --help}) — so a live failure that is
+     *                      hard to reproduce from this plugin's own debug-JSON log has Grok's own internal
+     *                      trace to check too. Null when {@link PluginSettings#isDebugJson()} is off, so a
+     *                      normal run never pays for a debug file nobody will read.
      */
-    private static void terminateProcessAsync(Process p) {
-        if (p == null) {
-            return;
+    static List<String> buildAcpCommand(String executablePath, String debugFilePath) {
+        List<String> args = new ArrayList<>(List.of("--no-auto-update", "agent", "stdio"));
+        if (debugFilePath != null) {
+            args.add("--debug");
+            args.add("--debug-file");
+            args.add(debugFilePath);
         }
-        p.destroy();
-        Thread escalate = new Thread(() -> {
-            try {
-                if (!p.waitFor(5, TimeUnit.SECONDS)) {
-                    p.destroyForcibly();
-                }
-            }
-            catch (InterruptedException e) {
-                Thread.currentThread().interrupt();
-                p.destroyForcibly();
-            }
-        }, "grok-kill-escalation");
-        escalate.setDaemon(true);
-        escalate.start();
+        return GrokExecutableLocator.buildHostCommand(executablePath, args.toArray(new String[0]));
     }
 
+    protected static JsonObject buildInitializeParams(String pluginVersion) {
+        return AbstractAcpProcessManager.buildInitializeParams(pluginVersion);
+    }
+
+    static JsonObject buildSessionNewParams(String absoluteCwd, String mcpEndpointUrl) {
+        return AbstractAcpProcessManager.buildSessionParams(absoluteCwd, mcpEndpointUrl, null);
+    }
+
+    static JsonObject buildSessionLoadParams(String grokSessionId, String absoluteCwd, String mcpEndpointUrl) {
+        return AbstractAcpProcessManager.buildSessionParams(absoluteCwd, mcpEndpointUrl, grokSessionId);
+    }
+
+    Predicate<String> ownSessionConfigFileCheck() {
+        return AbstractAcpClientHandler.ownSessionConfigFileCheck(sessionId);
+    }
+
+    @Override
+    protected AcpConnection currentAcpConnection() {
+        return connection;
+    }
+
+    @Override
+    protected String currentAcpSessionId() {
+        return acpSessionId;
+    }
+
+    @Override
+    protected void cancelPendingPermissionsOnActiveHandler() {
+        GrokAcpClientHandler h = activeHandler;
+        if (h != null) {
+            h.cancelPendingPermissions();
+        }
+    }
+
+    @Override
+    protected String backendDisplayNameForLogging() {
+        return "Grok";
+    }
+
+    // Package-private, mirroring OpenCodeAiProcessManager, so tests can inject a pipe-backed
+    // AcpConnection and assert wire ordering.
+    volatile AcpConnection connection = null;
+    volatile String acpSessionId = null;
+    volatile String pendingAcpResumeId = null;
+    volatile JsonArray sessionConfigOptions = null;
+    volatile GrokAcpClientHandler activeHandler = null;
     /**
-     * Grant the headless CLI access to every open NetBeans project, mirroring Claude's {@code --add-dir}
-     * loop.
-     *
-     * <p>
-     * Grok exposes no {@code --add-dir}. Instead:
-     * <ul>
-     * <li>{@code --cwd} pins the session working directory (also set on
-     * {@link ProcessBuilder#directory(File)} for
-     * child processes)</li>
-     * <li>path-scoped {@code --allow} rules grant native Read/Edit/Write/Grep under each project root
-     * (repeatable;
-     * works with headless mode)</li>
-     * </ul>
-     * MCP tools already receive the same list via {@code McpHookServer.updateSessionScope}; these flags cover
-     * the CLI's
-     * own filesystem tools.
+     * Per-model context-window size (total tokens), read once from {@code initialize}/{@code session/new}'s
+     * {@code models.availableModels[]._meta.totalContextTokens} and kept for the life of the connection —
+     * every known model's window, not just the one Grok started with, so a model switch via
+     * {@code set_config_option} picks up the new model's window on its next {@link #reportUsage} without a
+     * second round-trip. Empty (never null) when the agent's response carries no such data.
      */
-    static void appendProjectDirArgs(List<String> args, File workDir, List<File> projDirs) {
-        if (workDir != null && workDir.isDirectory()) {
-            args.add("--cwd");
-            args.add(canonicalPath(workDir));
-        }
-        if (projDirs == null || projDirs.isEmpty()) {
-            return;
-        }
-        for (File d : projDirs) {
-            if (d == null || !d.isDirectory()) {
-                continue;
-            }
-            String root = canonicalPath(d);
-            // Stable absolute globs: strip trailing separator so "/foo/**" is well-formed.
-            while (root.length() > 1 && (root.endsWith("/") || root.endsWith("\\"))) {
-                root = root.substring(0, root.length() - 1);
-            }
-            String glob = root + "/**";
-            args.add("--allow");
-            args.add("Read(" + glob + ")");
-            args.add("--allow");
-            args.add("Edit(" + glob + ")");
-            args.add("--allow");
-            args.add("Write(" + glob + ")");
-            args.add("--allow");
-            args.add("Grep(" + glob + ")");
-        }
-    }
+    volatile Map<String, Integer> modelContextWindows = Map.of();
+    private final List<String> recentStderr = new CopyOnWriteArrayList<>();
+    /**
+     * Wall-clock time of the last {@code session/prompt} send, or 0 if none has been sent yet — diagnostics
+     * only, read by {@link #handleProcessExit}'s exit log so an unexpected exit's log line says how long
+     * after the prompt it happened, without needing to cross-reference timestamps by hand.
+     */
+    private volatile long lastPromptSentAtMillis = 0L;
+    /**
+     * Grok's own {@code --debug-file} trace for the live connection, or null when debug-JSON is off (no file
+     * was requested). Contains unredacted prompts and secrets verbatim (Grok's own writer, not this
+     * plugin's), so it lives under the session's private config dir, never {@code java.io.tmpdir}, and is
+     * deleted in {@link #stop()}.
+     */
+    private volatile File grokDebugLogFile = null;
 
-    private static String canonicalPath(File f) {
-        try {
-            return f.getCanonicalPath();
-        }
-        catch (IOException e) {
-            return f.getAbsolutePath();
-        }
-    }
-
-    private volatile boolean firstMessage = true;
     private volatile GrokAiMcpRegistrar registrar = null;
     private GrokAiSession grokAiSession = null;
-    private volatile String reasoningEffort;
     /**
-     * Whether {@link #reasoningEffort} came from the session's own setting ({@code true}) or the global
-     * default
-     * ({@code false}) — set together with {@link #reasoningEffort} by every {@link #configureReasoningEffort}
-     * caller.
-     * The two are treated very differently on an unsupported value: only a session-sourced value is ever
-     * cleared; the
-     * global default is never modified automatically, since one session's model rejecting it says nothing
-     * about the
-     * other sessions (and other backends' sessions not yet created) that also use it.
+     * Package-private, not private: tests assert the stored effort directly rather than through a
+     * since-removed pure {@code buildReasoningEffortArgs(model)} seam (the CLI predecessor's approach) — ACP
+     * applies the configured effort as a side effect of the handshake, not a value a caller builds CLI flags
+     * from.
      */
-    private volatile boolean reasoningEffortFromSession;
+    volatile String reasoningEffort;
     /**
-     * Notified (no argument — the caller already knows it only fires for the session-sourced case, per rule
-     * 3a) when
-     * {@link #buildReasoningEffortArgs} clears an unsupported SESSION-sourced value, so the owning
-     * {@code GrokAiImplementation} can also clear the PERSISTED session setting — otherwise only this
-     * in-memory field
-     * is cleared, and the next session start (tab reopen, IDE restart) re-reads the same stale persisted
-     * value and
-     * fires the INFO again, forever. Never invoked for a global-sourced value — that case is never cleared
-     * anywhere,
-     * persisted or in-memory-only-until-corrected. Deliberately a plain callback rather than plumbing an
-     * {@code AiSessionHost} reference into this process-manager layer, which has no business knowing about
-     * session-settings persistence otherwise.
+     * Only a session-sourced effort is ever cleared on an unsupported value, never the global default.
      */
+    volatile boolean reasoningEffortFromSession;
     private volatile Runnable onReasoningEffortCleared;
+    volatile Runnable onSessionEstablished = null;
 
     public GrokAiProcessManager(AiProcessEventListener listener) {
         super(listener);
     }
 
-    /**
-     * Sets the reasoning-effort level to pass on the next {@code runTurn}, or clears it. {@code null}/blank
-     * means "pass
-     * nothing" — mirrors {@code PiAiProcessManager.configureThinkingLevel}. Since grok spawns a fresh process
-     * per turn
-     * (unlike pi's persistent one), this is also the live-update path: a later call — e.g. from the info
-     * bar's combo —
-     * simply changes what the NEXT turn launches with, no restart needed.
-     *
-     * @param fromSession whether {@code level} came from the session's own setting rather than the global
-     *                    default — see
-     *                    {@link #reasoningEffortFromSession}'s javadoc for why this matters
-     */
+    void setHandshakeTurnForTesting(Object turn) {
+        beginHandshakeTurn(turn);
+    }
+
+    void setOnSessionEstablished(Runnable r) {
+        this.onSessionEstablished = r;
+    }
+
     public void configureReasoningEffort(String level, boolean fromSession) {
         this.reasoningEffort = (level == null || level.isBlank()) ? null : level;
         this.reasoningEffortFromSession = fromSession;
     }
 
-    /**
-     * See {@link #onReasoningEffortCleared}'s javadoc.
-     */
     public void setOnReasoningEffortCleared(Runnable callback) {
         this.onReasoningEffortCleared = callback;
     }
 
+    public JsonArray configOptions() {
+        return sessionConfigOptions;
+    }
+
+    public boolean isSessionLive() {
+        return connection != null && acpSessionId != null;
+    }
+
     /**
-     * Package-private for direct unit testing (unset/set-supported/set-unsupported), without spawning a
-     * process —
-     * mirrors {@code PiAiProcessManager.buildLaunchCommand} being split out for the same reason. Returns
-     * {@code ["--reasoning-effort", level]} when {@code reasoningEffort} is set and {@code model} supports
-     * it, or an
-     * empty list otherwise. A configured level unsupported by {@code model} is handled so: a SESSION-sourced
-     * value is
-     * cleared (self-correcting: the next call for the same mismatch finds nothing to clear) and fires exactly
-     * one INFO
-     * status event; a GLOBAL-sourced value is left completely alone — not cleared, not written anywhere, no
-     * INFO — the
-     * level is simply omitted for this turn and the mismatch is logged at FINE only.
+     * Changes one session config option (model or reasoning_effort — the only two ids Grok's handover notes
+     * confirm). Completes with the complete configOptions snapshot from the response, mirroring {@code
+     * OpenCodeAiProcessManager.setConfigOption}: options can be interdependent and no config_option_update
+     * notification is guaranteed for a change this client itself requested, so the response is the only
+     * source of truth.
      */
-    List<String> buildReasoningEffortArgs(String model) {
-        String effort = reasoningEffort;
-        if (effort == null || effort.isBlank()) {
-            return List.of();
+    public CompletableFuture<JsonArray> setConfigOption(String configId, String value) {
+        AcpConnection conn = connection;
+        String sid = acpSessionId;
+        if (conn == null || sid == null) {
+            return CompletableFuture.failedFuture(new IllegalStateException("Grok session is not active"));
         }
-        if (GrokReasoningEffortSupport.supportedFor(model).contains(effort)) {
-            return List.of("--reasoning-effort", effort);
-        }
-        reasoningEffort = null;
-        if (reasoningEffortFromSession) {
-            listener.onAiProcessEvent(new StatusEvent(StatusEventTypeEnum.INFO,
-                    "Reasoning effort \"" + effort + "\" is not supported by model \"" + model + "\"; clearing it"));
-            Runnable cb = onReasoningEffortCleared;
-            if (cb != null) {
-                cb.run();
-            }
-        }
-        else {
-            // the global default belongs to the user and to every other session/backend — one
-            // session's model not supporting it says nothing about the rest, so it is never cleared or written
-            // anywhere. The combo already shows "(model default)" for a model that can't take it, so the UI
-            // communicates this without a warning the user can't dismiss.
-            LOG.log(Level.FINE, "Reasoning effort \"{0}\" (global default) is not supported by model \"{1}\"; omitting "
-                                + "it for this turn without touching the global default", new Object[]{effort, model});
-        }
-        return List.of();
+        JsonObject params = new JsonObject();
+        params.addProperty(AcpJsonKeyEnum.SESSION_ID.key(), sid);
+        params.addProperty(AcpJsonKeyEnum.CONFIG_ID.key(), configId);
+        params.addProperty(AcpJsonKeyEnum.VALUE.key(), value);
+        return conn.sendRequest(AcpMethodEnum.SESSION_SET_CONFIG_OPTION, params)
+                .thenApply(result -> {
+                    JsonArray options = result != null && result.has(AcpJsonKeyEnum.CONFIG_OPTIONS.key())
+                                        && result.get(AcpJsonKeyEnum.CONFIG_OPTIONS.key()).isJsonArray()
+                                        ? result.getAsJsonArray(AcpJsonKeyEnum.CONFIG_OPTIONS.key())
+                                        : new JsonArray();
+                    sessionConfigOptions = options;
+                    return options;
+                });
     }
 
     @Override
@@ -266,35 +259,25 @@ public class GrokAiProcessManager extends AiProcessManager {
             return;
         }
         sessionId = currentSession.id();
-        firstMessage = true;
 
-        if (registrar != null) {
-            McpServerRegistry.deregister(registrar);
-            registrar = null;
-        }
-
-        GrokAiMcpRegistrar reg = new GrokAiMcpRegistrar(sessionId, executablePath);
-        boolean mcpReady;
+        GrokAiMcpRegistrar reg = new GrokAiMcpRegistrar(sessionId);
         try {
-            mcpReady = McpServerRegistry.register(reg)
-                    .get(TimeoutEnum.MCP_REGISTRATION_WAIT_MILLIS.millis(), TimeUnit.MILLISECONDS);
-        }
-        catch (InterruptedException e) {
-            Thread.currentThread().interrupt();
-            mcpReady = false;
+            boolean ok = McpServerRegistry.register(reg).get(GrokTimeoutEnum.GROK_CLI_CONFIG_WRITE_MILLIS.millis(), TimeUnit.MILLISECONDS);
+            if (ok) {
+                registrar = reg;
+            }
+            else {
+                listener.onAiProcessEvent(new StatusEvent(StatusEventTypeEnum.INFO,
+                        "MCP server registration returned false — running without MCP tools"));
+            }
         }
         catch (Exception e) {
             LOG.log(Level.WARNING, "MCP registration failed for session " + sessionId, e);
-            mcpReady = false;
+            listener.onAiProcessEvent(new StatusEvent(StatusEventTypeEnum.INFO,
+                    "MCP server unavailable — running without MCP tools"));
         }
-        if (!mcpReady) {
-            listener.onAiProcessEvent(new StatusEvent(StatusEventTypeEnum.FAILED,
-                    StatusMessageUtil.formatMcpSetupFailed()));
-            return;
-        }
-        registrar = reg;
-        grokAiSession = new GrokAiSession(currentSession, listener);
 
+        grokAiSession = new GrokAiSession(currentSession, listener);
         running = true;
         listener.onAiProcessEvent(new StatusEvent(StatusEventTypeEnum.READY, StatusMessageUtil.formatReady("Grok")));
     }
@@ -302,6 +285,11 @@ public class GrokAiProcessManager extends AiProcessManager {
     @Override
     public synchronized void sendPrompt(String text, File workingDir, List<File> projectDirs) {
         if (pendingDiff || !running || processing) {
+            // AiTopComponent has already locked the UI for this submit; a silent return would leave the tab
+            // locked forever (cross-cutting rule, mirrors OpenCodeAiProcessManager.sendPrompt). INFO says
+            // why, TurnCompleteEvent releases the lock; this refusal has no closer of its own.
+            listener.onAiProcessEvent(new StatusEvent(StatusEventTypeEnum.INFO, sendRefusalReason()));
+            listener.onAiProcessEvent(new TurnCompleteEvent());
             return;
         }
         cancelledByUser = false;
@@ -311,327 +299,749 @@ public class GrokAiProcessManager extends AiProcessManager {
             sessionWorkingDir = workingDir;
         }
         File effectiveWorkDir = sessionWorkingDir != null ? sessionWorkingDir : workingDir;
-        String sid = sessionId;
-        // Do NOT clear firstMessage here. If the first turn fails before grok creates
-        // the session on disk, the next prompt must still use -s (create). Eagerly
-        // flipping to -r causes "session not found" on retry. firstMessage is cleared
-        // in runTurn only after a successful create, or when the session exists on disk
-        // after a failed/cancelled first attempt.
-        boolean isFirst = firstMessage;
-        List<File> projDirs = projectDirs != null ? projectDirs : List.of();
 
-        Thread t = new Thread(() -> runTurn(text, effectiveWorkDir, sid, isFirst, projDirs), "grok-turn");
+        if (connection != null) {
+            sendTurn(text);
+            return;
+        }
+        Object turn = new Object();
+        beginHandshakeTurn(turn);
+        Thread t = new Thread(() -> handshakeAndSend(text, effectiveWorkDir, turn), "grok-handshake");
         t.setDaemon(true);
         t.start();
     }
 
     /**
      * Seam for tests: overridden to return a controllable fake {@link Process} instead of actually spawning
-     * the grok CLI, so the Cancel/stop race conditions around it can be driven deterministically.
+     * the grok CLI.
+     *
+     * <p>
+     * Production spawns on a dedicated owner thread that outlives the handshake thread calling this, not on
+     * the calling thread itself — see {@link AbstractAcpProcessManager#startProcessOnOwnerThread}. {@code
+     * grok agent stdio} arms {@code prctl(PR_SET_PDEATHSIG, SIGTERM)}, a per-THREAD Linux kernel feature:
+     * without this, the handshake thread finishing (moments after the first prompt is sent) SIGTERMs grok the
+     * instant that thread exits, regardless of whether the JVM process itself is still running — a live
+     * failure confirmed from Grok's own source (exit 143, no stderr, right after the prompt).
      */
     Process startProcess(ProcessBuilder pb) throws IOException {
-        return pb.start();
+        return startProcessOnOwnerThread(pb);
     }
 
-    private void runTurn(String text, File workDir, String sid, boolean isFirst, List<File> projDirs) {
-        List<String> args = new ArrayList<>();
-        args.add("-p");
-        args.add(text);
-        args.add(isFirst ? "-s" : "-r");
-        args.add(sid);
-        args.add("--model");
-        args.add(model);
-        args.addAll(buildReasoningEffortArgs(model));
-        args.add("--output-format");
-        args.add("json");
-        args.add("--always-approve");
-        args.add("--no-alt-screen");
-        args.add("--no-auto-update");
-        // Disable grok's cross-session memory feature (https://docs.x.ai/build/cli/reference)
-        // so each plugin session starts fresh instead of pulling in context
-        // recalled from the user's other grok sessions/projects.
-        args.add("--no-memory");
-        // Multi-project access (Claude's --add-dir equivalent). Grok has no --add-dir;
-        // Claude settings additionalDirectories is parsed but "not supported" (CLI 0.2.93).
-        // Documented multi-path mechanism: explicit --cwd + path-scoped --allow rules
-        // (Read/Edit/Write/Grep globs) for every open NetBeans project directory.
-        appendProjectDirArgs(args, workDir, projDirs);
-
-        Process p = null;
-        StringBuilder stdout = new StringBuilder();
-        List<String> stderrLines = new CopyOnWriteArrayList<>();
-        boolean debugJson = PluginSettings.isDebugJson();
-
-        try {
-            List<String> cmd = GrokExecutableLocator.buildHostCommand(executablePath, args.toArray(String[]::new));
-            ProcessBuilder pb = new ProcessBuilder(cmd);
-            if (workDir != null && workDir.isDirectory()) {
-                pb.directory(workDir);
-            }
-            pb.redirectErrorStream(false);
-            p = startProcess(pb);
-            synchronized (this) {
-                if (!running) {
-                    // stop() arrived while the process was starting — kill it and leave
-                    // firstMessage alone (stop() already reset it when appropriate).
-                    terminateProcess(p);
-                    processing = false;
-                    return;
-                }
-                currentProcess = p;
-            }
-
-            if (debugJson) {
-                LOG.log(Level.INFO, "grok prompt [{0}]: {1}", new Object[]{sid, text});
-            }
-
-            final Process proc = p;
-            Thread stderrThread = new Thread(() -> {
-                try (BufferedReader r = new BufferedReader(
-                        new InputStreamReader(proc.getErrorStream(), StandardCharsets.UTF_8))) {
-                    String line;
-                    while ((line = r.readLine()) != null) {
-                        if (debugJson) {
-                            LOG.log(Level.WARNING, "grok stderr [{0}]: {1}", new Object[]{sid, McpHookServerUtil.redactAllSecrets(line)});
-                        }
-                        stderrLines.add(line);
-                    }
-                }
-                catch (IOException e) {
-                    LOG.log(Level.FINE, "grok stderr closed", e);
-                }
-            }, "grok-stderr");
-            stderrThread.setDaemon(true);
-            stderrThread.start();
-
-            try (BufferedReader r = new BufferedReader(new InputStreamReader(p.getInputStream(), StandardCharsets.UTF_8))) {
+    /**
+     * Drains the agent's stderr on its own thread so a chatty Grok can never fill the pipe and block —
+     * mirrors {@code OpenCodeAiProcessManager.startStderrDrainer} exactly. The last {@link #MAX_STDERR_LINES}
+     * lines are kept and shown in the EXITED message.
+     */
+    private void startStderrDrainer(Process process) {
+        Thread t = new Thread(() -> {
+            try (java.io.BufferedReader reader = new java.io.BufferedReader(
+                    new java.io.InputStreamReader(process.getErrorStream(), java.nio.charset.StandardCharsets.UTF_8))) {
                 String line;
-                while ((line = r.readLine()) != null) {
-                    if (debugJson) {
-                        LOG.log(Level.INFO, "grok json [{0}]: {1}", new Object[]{sid, McpHookServerUtil.redactSecrets(line)});
+                while ((line = reader.readLine()) != null) {
+                    if (PluginSettings.isDebugJson()) {
+                        LOG.log(Level.WARNING, "grok stderr: {0}", kiwi.ingenuity.netbeans.plugin.aicoder.process.server.McpHookServerUtil.redactAllSecrets(line));
                     }
-                    stdout.append(line).append('\n');
-                }
-            }
-            stderrThread.join(2000);
-
-            boolean exited = p.waitFor(30, TimeUnit.SECONDS);
-            if (!exited) {
-                terminateProcess(p);
-            }
-            int code = exited ? p.exitValue() : -1;
-
-            boolean shouldReport;
-            synchronized (this) {
-                shouldReport = (currentProcess == p) && !cancelledByUser;
-                if (currentProcess == p) {
-                    currentProcess = null;
-                }
-            }
-
-            if (shouldReport) {
-                if (code == 0) {
-                    // First turn succeeded: session is now on disk; subsequent turns use -r.
-                    markFirstMessageDone();
-                    AiProcessEventListener parserListener = event -> {
-                        boolean isTurnComplete = event instanceof TurnCompleteEvent;
-                        synchronized (GrokAiProcessManager.this) {
-                            if (isTurnComplete) {
-                                processing = false;
-                            }
-                            if (cancelledByUser) {
-                                return;
-                            }
-                        }
-                        listener.onAiProcessEvent(event);
-                    };
-                    GrokTokenUsageEvent usage = GrokUsageSignalsReader.read(workDir, sid, model);
-                    if (usage != null) {
-                        parserListener.onAiProcessEvent(usage);
+                    recentStderr.add(line);
+                    while (recentStderr.size() > MAX_STDERR_LINES) {
+                        recentStderr.remove(0);
                     }
-                    new GrokResponseParser(parserListener).parse(stdout.toString());
-                }
-                else {
-                    // Failed first create: only switch to -r if the CLI left a session on disk.
-                    resolveFirstMessageAfterAttempt(isFirst, sid);
-                    synchronized (this) {
-                        processing = false;
-                    }
-                    listener.onAiProcessEvent(new StatusEvent(StatusEventTypeEnum.EXITED,
-                            StatusMessageUtil.formatExited("Grok", code, stderrLines)));
                 }
             }
-            else {
-                // Cancelled (or process superseded): same create-vs-resume resolution.
-                resolveFirstMessageAfterAttempt(isFirst, sid);
-                boolean wasUserCancel;
-                boolean stillRunning;
-                synchronized (this) {
-                    processing = false;
-                    wasUserCancel = cancelledByUser;
-                    stillRunning = running;
-                }
-                // The turn's one closer, for the cancelled case: interrupt() marks cancelledByUser and
-                // leaves processing set so the gate stays shut, but deliberately emits nothing itself —
-                // emitting here instead, after processing is already false, means this can never be a
-                // second closer alongside whatever the turn itself would otherwise have reported. Gated on
-                // "running" too: a full stop() also sets cancelledByUser, but the session it would be
-                // closing no longer exists by the time this thread wakes from the terminated process.
-                if (wasUserCancel && stillRunning) {
-                    listener.onAiProcessEvent(new StatusEvent(StatusEventTypeEnum.STOPPED,
-                            StatusMessageUtil.formatStopped()));
-                }
+            catch (IOException e) {
+                LOG.log(Level.FINE, "grok stderr drainer ended", e);
             }
+        }, "grok-stderr");
+        t.setDaemon(true);
+        t.start();
+    }
+
+    private void handshakeAndSend(String text, File workDir, Object turn) {
+        try {
+            spawnAndHandshake(workDir);
         }
         catch (Exception e) {
-            if (e instanceof InterruptedException) {
-                Thread.currentThread().interrupt();
-            }
-            boolean wasUserCancel;
-            boolean stillRunning;
+            boolean stillOurTurn;
             synchronized (this) {
-                wasUserCancel = cancelledByUser;
-                stillRunning = running;
-                cancelledByUser = false;
-                processing = false;
-                currentProcess = null;
+                stillOurTurn = claimHandshakeTurn(turn);
+                if (stillOurTurn) {
+                    processing = false;
+                }
             }
-            resolveFirstMessageAfterAttempt(isFirst, sid);
-            if (p != null) {
-                terminateProcess(p);
-            }
-            if (!wasUserCancel) {
-                LOG.log(Level.WARNING, "Grok turn failed", e);
+            if (stillOurTurn) {
                 listener.onAiProcessEvent(new StatusEvent(StatusEventTypeEnum.FAILED,
                         StatusMessageUtil.formatSendFailed(e.getMessage())));
             }
-            else if (stillRunning) {
-                listener.onAiProcessEvent(new StatusEvent(StatusEventTypeEnum.STOPPED,
-                        StatusMessageUtil.formatStopped()));
+            return;
+        }
+        deliverAfterHandshake(text, turn);
+    }
+
+    synchronized void deliverAfterHandshake(String text, Object turn) {
+        if (!claimHandshakeTurn(turn)) {
+            return;
+        }
+        if (!running || pendingDiff) {
+            processing = false;
+            listener.onAiProcessEvent(new StatusEvent(StatusEventTypeEnum.INFO, sendRefusalReason()));
+            listener.onAiProcessEvent(new TurnCompleteEvent());
+            return;
+        }
+        sendTurn(text);
+    }
+
+    private String sendRefusalReason() {
+        if (processing) {
+            return "Grok is already processing a turn";
+        }
+        if (pendingDiff) {
+            return "Grok is waiting for a pending diff review";
+        }
+        return "Grok session is not running";
+    }
+
+    /**
+     * Spawns the {@code grok agent stdio} process and performs the ACP handshake. Always called on a
+     * background thread. The instance monitor is held only for brief state writes, never across the blocking
+     * waits.
+     */
+    protected void spawnAndHandshake(File workDir) throws Exception {
+        String debugFilePath = null;
+        if (PluginSettings.isDebugJson()) {
+            try {
+                // The session's own private config dir (~/.ai-coder/grok/{sessionId}/), never java.io.tmpdir:
+                // this file is Grok's own unredacted trace and can contain prompts and secrets verbatim
+                // (review finding). Deleted in stop().
+                File debugFile = PluginUtil.getPluginAiSessionConfigDir(AiTypeEnum.GROK, sessionId)
+                        .resolve("grok-acp-debug.log").toFile();
+                debugFilePath = debugFile.getAbsolutePath();
+                grokDebugLogFile = debugFile;
+                LOG.log(Level.INFO, "Grok debug log: {0}", debugFilePath);
+            }
+            catch (IOException e) {
+                LOG.log(Level.WARNING, "could not create Grok's debug log directory; starting without --debug-file", e);
+            }
+        }
+        List<String> cmd = buildAcpCommand(executablePath, debugFilePath);
+        ProcessBuilder pb = new ProcessBuilder(cmd);
+        if (workDir != null && workDir.isDirectory()) {
+            pb.directory(workDir);
+        }
+        recentStderr.clear();
+        Process process = startProcess(pb);
+        synchronized (this) {
+            if (!running) {
+                process.destroyForcibly();
+                throw new IOException("stop() called before handshake began");
+            }
+            currentProcess = process;
+        }
+        startStderrDrainer(process);
+
+        AcpConnection[] connHolder = new AcpConnection[1];
+        GrokAcpClientHandler handler = new GrokAcpClientHandler(listener,
+                () -> onHandlerDisconnected(connHolder[0]),
+                this::trackToolCallLifecycle, ownSessionConfigFileCheck(), null, sessionId);
+        AcpConnection conn = new AcpConnection(process.getOutputStream(), process.getInputStream(), handler, "Grok");
+        connHolder[0] = conn;
+
+        process.onExit().thenRun(() -> handleProcessExit(process));
+
+        JsonObject initResult;
+        try {
+            initResult = conn.sendRequest(AcpMethodEnum.INITIALIZE, buildInitializeParams(Installer.VERSION))
+                    .get(30, TimeUnit.SECONDS);
+        }
+        catch (Exception e) {
+            conn.close();
+            synchronized (this) {
+                if (currentProcess == process) {
+                    currentProcess = null;
+                }
+            }
+            process.destroyForcibly();
+            throw new IOException("ACP initialize failed: " + e.getMessage(), e);
+        }
+        int proto = initResult.has(AcpJsonKeyEnum.PROTOCOL_VERSION.key()) ? initResult.get(AcpJsonKeyEnum.PROTOCOL_VERSION.key()).getAsInt() : -1;
+        if (proto != 1) {
+            conn.close();
+            synchronized (this) {
+                if (currentProcess == process) {
+                    currentProcess = null;
+                }
+            }
+            process.destroyForcibly();
+            throw new IOException("Unsupported ACP protocol version: " + proto + " (expected 1)");
+        }
+
+        String mcpBaseUrl = McpServerRegistry.endpointUrlFor(AiTypeEnum.GROK);
+        String resumeId = pendingAcpResumeId;
+        JsonObject sessionResult = null;
+        boolean resumed = false;
+
+        if (resumeId != null) {
+            // Grok replays the whole prior conversation as session/update notifications between sending
+            // session/load and answering it; the plugin's own persisted history already shows it, so the
+            // replay must never reach the UI as new output (live-confirmed bug).
+            long loadSuppressionToken = handler.beginSuppressingSessionUpdatesForLoad();
+            try {
+                sessionResult = conn.sendRequest(AcpMethodEnum.SESSION_LOAD,
+                        buildSessionLoadParams(resumeId, workDir.getAbsolutePath(), mcpBaseUrl))
+                        .get(30, TimeUnit.SECONDS);
+                resumed = true;
+            }
+            catch (Exception e) {
+                LOG.log(Level.INFO, "session/load failed; falling back to session/new: {0}", e.getMessage());
+                listener.onAiProcessEvent(new StatusEvent(StatusEventTypeEnum.INFO,
+                        "Previous Grok session could not be resumed; starting fresh"));
+            }
+            finally {
+                // Clearing must be ordered AFTER every replay notification the reader already queued on
+                // acp-notify, not run synchronously the instant get() returns — review finding: the load's
+                // response and a queued replay chunk complete on different executors, so a synchronous clear
+                // here could race ahead of acp-notify and leak the replay's tail.
+                Runnable clearSuppression = () -> handler.endSuppressingSessionUpdatesForLoad(loadSuppressionToken);
+                try {
+                    conn.runOnNotifyThread(clearSuppression);
+                }
+                catch (RejectedExecutionException e) {
+                    clearSuppression.run();
+                }
+            }
+        }
+
+        if (!resumed) {
+            try {
+                sessionResult = conn.sendRequest(AcpMethodEnum.SESSION_NEW,
+                        buildSessionNewParams(workDir.getAbsolutePath(), mcpBaseUrl))
+                        .get(30, TimeUnit.SECONDS);
+            }
+            catch (Exception e) {
+                conn.close();
+                synchronized (this) {
+                    if (currentProcess == process) {
+                        currentProcess = null;
+                    }
+                }
+                process.destroyForcibly();
+                throw new IOException("ACP session/new failed: " + e.getMessage(), e);
+            }
+        }
+
+        String sid = resolveSessionId(resumed, resumeId, sessionResult);
+        if (sid == null || sid.isBlank()) {
+            conn.close();
+            synchronized (this) {
+                if (currentProcess == process) {
+                    currentProcess = null;
+                }
+            }
+            process.destroyForcibly();
+            throw new IOException("session/new returned no " + AcpJsonKeyEnum.SESSION_ID.key());
+        }
+
+        // ---- Publish results, or report a dead agent, under the lock shared by every ACP backend ----
+        final JsonObject resolvedSessionResult = sessionResult;
+        publishConnectionOrReportExit(conn, process,
+                () -> {
+                    acpSessionId = sid;
+                    pendingAcpResumeId = null;
+                    if (currentSession != null && currentSession.settings() instanceof kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.grok.settings.GrokSessionSettings gs) {
+                        gs.setAcpSessionId(sid);
+                    }
+                    if (resolvedSessionResult.has(AcpJsonKeyEnum.CONFIG_OPTIONS.key()) && resolvedSessionResult.get(AcpJsonKeyEnum.CONFIG_OPTIONS.key()).isJsonArray()) {
+                        sessionConfigOptions = resolvedSessionResult.getAsJsonArray(AcpJsonKeyEnum.CONFIG_OPTIONS.key());
+                    }
+                    modelContextWindows = parseModelContextWindows(initResult, resolvedSessionResult);
+                    activeHandler = handler;
+                    this.connection = conn;
+                },
+                () -> handleProcessExit(process));
+        if (resumed) {
+            LOG.log(Level.INFO, "Resumed Grok ACP session: {0}", acpSessionId);
+        }
+        else {
+            LOG.log(Level.INFO, "Started new Grok ACP session: {0}", acpSessionId);
+        }
+        Runnable cb = onSessionEstablished;
+        if (cb != null) {
+            cb.run();
+        }
+        applyInitialConfigOptionsIfNeeded();
+    }
+
+    /**
+     * Applies the session's stored model/reasoning-effort against what Grok actually started with, same shape
+     * as {@code OpenCodeAiProcessManager.applyInitialModelOption}: only ever sent when it differs from the
+     * agent's current value, and only when the agent actually offers it.
+     */
+    void applyInitialConfigOptionsIfNeeded() {
+        // Snapshotted once, not re-read from the volatile field per call: a crash can race in between this
+        // method's two config-option calls (model, then reasoning_effort) and null sessionConfigOptions via
+        // detachDeadConnection. Without a stable snapshot, the second call would see "no options" and
+        // mistake a dead connection for the agent rejecting reasoning_effort, wrongly clearing a
+        // session-sourced value the agent never actually got a chance to accept or reject.
+        JsonArray options = sessionConfigOptions;
+        if (options == null) {
+            return;
+        }
+        applyConfigOptionIfNeeded(options, "model", model);
+        String effort = reasoningEffort;
+        if (effort != null && !effort.isBlank()) {
+            boolean applied = applyConfigOptionIfNeeded(options, "reasoning_effort", effort);
+            if (!applied && reasoningEffortFromSession) {
+                reasoningEffort = null;
+                Runnable cb = onReasoningEffortCleared;
+                if (cb != null) {
+                    cb.run();
+                }
             }
         }
     }
 
     /**
-     * Clears {@code firstMessage} so the next prompt uses {@code -r}.
+     * @return true if {@code value} is (or already was) in effect for {@code configId} — false means either
+     *         the agent does not offer {@code configId} at all, or it does but does not accept {@code value}
+     *         for the current model, so the caller can decide whether a session-sourced value should be
+     *         cleared. {@code options} is the caller's own stable snapshot, not re-read here, so a session
+     *         going away mid-method can never be mistaken for the agent itself rejecting {@code value}.
      */
-    private synchronized void markFirstMessageDone() {
-        firstMessage = false;
+    private boolean applyConfigOptionIfNeeded(JsonArray options, String configId, String value) {
+        if (value == null || value.isBlank()) {
+            return false;
+        }
+        String agentCurrent = null;
+        List<String> available = new ArrayList<>();
+        boolean optionExists = false;
+        for (JsonElement el : options) {
+            if (!el.isJsonObject()) {
+                continue;
+            }
+            JsonObject opt = el.getAsJsonObject();
+            if (configId.equals(opt.has(AcpJsonKeyEnum.ID.key()) ? opt.get(AcpJsonKeyEnum.ID.key()).getAsString() : null)) {
+                optionExists = true;
+                if (opt.has(AcpJsonKeyEnum.CURRENT_VALUE.key())) {
+                    agentCurrent = opt.get(AcpJsonKeyEnum.CURRENT_VALUE.key()).getAsString();
+                }
+                if (opt.has(AcpJsonKeyEnum.OPTIONS.key()) && opt.get(AcpJsonKeyEnum.OPTIONS.key()).isJsonArray()) {
+                    for (JsonElement v : opt.getAsJsonArray(AcpJsonKeyEnum.OPTIONS.key())) {
+                        if (v.isJsonObject() && v.getAsJsonObject().has(AcpJsonKeyEnum.VALUE.key())) {
+                            available.add(v.getAsJsonObject().get(AcpJsonKeyEnum.VALUE.key()).getAsString());
+                        }
+                    }
+                }
+                break;
+            }
+        }
+        if (!optionExists) {
+            return false;
+        }
+        if (!available.isEmpty() && !available.contains(value)) {
+            listener.onAiProcessEvent(new StatusEvent(StatusEventTypeEnum.INFO,
+                    "\"" + value + "\" is not available for " + configId + "; using Grok's default"));
+            return false;
+        }
+        if (value.equals(agentCurrent)) {
+            return true;
+        }
+        try {
+            sessionConfigOptions = setConfigOption(configId, value).get(30, TimeUnit.SECONDS);
+        }
+        catch (Exception e) {
+            LOG.log(Level.WARNING, "Grok rejected {0}=\"{1}\": {2}", new Object[]{configId, value, e.getMessage()});
+            listener.onAiProcessEvent(new StatusEvent(StatusEventTypeEnum.INFO,
+                    "\"" + value + "\" was rejected by Grok for " + configId));
+        }
+        return true;
+    }
+
+    synchronized void sendTurn(String text) {
+        JsonObject promptItem = new JsonObject();
+        promptItem.addProperty(AcpJsonKeyEnum.TYPE.key(), "text");
+        promptItem.addProperty(AcpJsonKeyEnum.TEXT.key(), text);
+        JsonArray promptArray = new JsonArray();
+        promptArray.add(promptItem);
+
+        JsonObject params = new JsonObject();
+        params.addProperty(AcpJsonKeyEnum.SESSION_ID.key(), acpSessionId);
+        params.add(AcpJsonKeyEnum.PROMPT.key(), promptArray);
+
+        if (PluginSettings.isDebugJson()) {
+            LOG.log(Level.INFO, "grok prompt [{0}]: {1}", new Object[]{acpSessionId, text});
+        }
+        GrokAcpClientHandler handler = activeHandler;
+        if (handler != null) {
+            handler.clearTurnRefusals();
+            // Safety net: a load whose ordered clear never ran (e.g. the connection it belonged to closed
+            // before acp-notify got to it) must never silence a real turn — mirrors
+            // OpenCodeAcpClientHandler.clearTextSuppression's role for the compaction route.
+            handler.clearSuppressingSessionUpdatesForLoad();
+        }
+        // A new turn starts with no in-flight tool calls and no held mail interrupt. Stale state could only
+        // have survived a teardown path that failed to clear it; resetting here keeps the next turn clean
+        // regardless (F5).
+        resetMailInterruptHold();
+        processing = true;
+        lastPromptSentAtMillis = System.currentTimeMillis();
+        Object turn = new Object();
+        beginActiveTurn(turn);
+        CompletableFuture<JsonObject> promptFuture = connection.sendRequest(AcpMethodEnum.SESSION_PROMPT, params);
+        promptFuture
+                .thenAccept(result -> {
+                    if (claimTurn(turn)) {
+                        handleTurnComplete(result);
+                    }
+                })
+                .exceptionally(ex -> {
+                    if (claimTurn(turn)) {
+                        handleTurnError(ex);
+                    }
+                    return null;
+                });
+    }
+
+    void handleTurnComplete(JsonObject result) {
+        boolean wasRunning;
+        synchronized (this) {
+            processing = false;
+            // Turn over: nothing left mid-turn to interrupt, so clear any HELD mail interrupt WITHOUT
+            // sending — the mail was already delivered by the broker and is visible in the session's own
+            // context on its next turn either way (F5, mirrors OpenCode/Claude).
+            resetMailInterruptHold();
+            wasRunning = running;
+            cancelledByUser = false;
+        }
+        reportUsage(result);
+        if (wasRunning) {
+            listener.onAiProcessEvent(new TurnCompleteEvent());
+        }
     }
 
     /**
-     * After a non-success first-turn attempt, keep {@code -s} if grok never created the session; switch to
-     * {@code -r}
-     * only when the session directory already exists (e.g. CLI created it then exited non-zero, or user
-     * cancelled
-     * mid-create).
+     * Grok reports usage once, in the {@code session/prompt} result's {@code _meta} (no streamed
+     * {@code usage_update} session/update) — verified facts: {@code {inputTokens, outputTokens,
+     * cachedReadTokens, reasoningTokens, totalTokens, modelId}}. The context-WINDOW size is not in that
+     * payload; it comes from {@link #modelContextWindows}, read once at handshake time from
+     * {@code models.availableModels[]._meta.totalContextTokens} and looked up by the turn's own
+     * {@code modelId} so a model switch reports the new model's window, not the one Grok started with. 0 when
+     * the model is not in that map — the info bar already treats a non-positive max as "keep whatever window
+     * size I last knew", never as a reason to show zero.
      */
-    private void resolveFirstMessageAfterAttempt(boolean wasFirst, String sid) {
-        if (!wasFirst) {
+    void reportUsage(JsonObject result) {
+        if (result == null || !result.has("_meta") || !result.get("_meta").isJsonObject()) {
             return;
         }
-        if (GrokUsageSignalsReader.sessionExists(sid)) {
-            markFirstMessageDone();
+        JsonObject meta = result.getAsJsonObject("_meta");
+        int totalTokens = meta.has("totalTokens") && meta.get("totalTokens").isJsonPrimitive() ? meta.get("totalTokens").getAsInt() : -1;
+        if (totalTokens < 0) {
+            return;
         }
+        String modelId = meta.has("modelId") && meta.get("modelId").isJsonPrimitive() ? meta.get("modelId").getAsString() : model;
+        Integer maxTokens = modelContextWindows.get(modelId);
+        listener.onAiProcessEvent(new GrokTokenUsageEvent(totalTokens, maxTokens != null ? maxTokens : 0, modelId));
     }
 
     /**
-     * Grok headless mode has no documented mid-turn graceful-abort control message (unlike Claude's stdin
-     * control_request or Copilot's session.abort()), so Cancel hard-kills the OS process. Mail has nothing to
-     * inject
-     * into since there is no persistent session to interrupt.
+     * Reads every known model's context-window size from {@code initialize}/{@code session/new}'s
+     * {@code models.availableModels[]._meta.totalContextTokens} (Boss's handover: confirmed 256000 for
+     * grok-4.7 against a live probe). The model-identifying field inside each entry is tried under several
+     * plausible names ({@code id}, {@code modelId}, {@code model}, {@code name}) rather than one assumed
+     * name, since the exact field was not independently verifiable from this seat — the probe transcript this
+     * was specified from is outside this session's file-access scope. Returns an empty map, never null, when
+     * neither response carries recognisable model metadata — a missing window degrades to 0
+     * ({@link #reportUsage}), not an exception.
+     */
+    static Map<String, Integer> parseModelContextWindows(JsonObject... results) {
+        Map<String, Integer> windows = new HashMap<>();
+        for (JsonObject result : results) {
+            if (result == null || !result.has("models") || !result.get("models").isJsonObject()) {
+                continue;
+            }
+            JsonObject models = result.getAsJsonObject("models");
+            if (!models.has("availableModels") || !models.get("availableModels").isJsonArray()) {
+                continue;
+            }
+            for (JsonElement el : models.getAsJsonArray("availableModels")) {
+                if (!el.isJsonObject()) {
+                    continue;
+                }
+                JsonObject modelEntry = el.getAsJsonObject();
+                String id = firstStringField(modelEntry, "id", "modelId", "model", "name");
+                if (id == null || !modelEntry.has("_meta") || !modelEntry.get("_meta").isJsonObject()) {
+                    continue;
+                }
+                JsonObject meta = modelEntry.getAsJsonObject("_meta");
+                if (meta.has("totalContextTokens") && meta.get("totalContextTokens").isJsonPrimitive()) {
+                    windows.put(id, meta.get("totalContextTokens").getAsInt());
+                }
+            }
+        }
+        return windows;
+    }
+
+    private static String firstStringField(JsonObject obj, String... keys) {
+        for (String key : keys) {
+            if (obj.has(key) && obj.get(key).isJsonPrimitive() && obj.get(key).getAsJsonPrimitive().isString()) {
+                return obj.get(key).getAsString();
+            }
+        }
+        return null;
+    }
+
+    void handleTurnError(Throwable ex) {
+        Throwable cause = ex instanceof CompletionException ? ex.getCause() : ex;
+        synchronized (this) {
+            processing = false;
+            // Same turn-end clearing as handleTurnComplete — a cancelled/errored turn has no in-flight tool
+            // calls left to interrupt (F5).
+            resetMailInterruptHold();
+            cancelledByUser = false;
+        }
+        if (cause instanceof AcpException ae && ae.code() == AcpErrorCodeEnum.REQUEST_CANCELLED.code()) {
+            listener.onAiProcessEvent(new TurnCompleteEvent());
+            return;
+        }
+        listener.onAiProcessEvent(new StatusEvent(StatusEventTypeEnum.FAILED,
+                StatusMessageUtil.formatSendFailed(cause != null ? cause.getMessage() : ex.getMessage())));
+    }
+
+    /**
+     * Grok headless-agent mode has no separate mid-turn mail-injection channel (same as OpenCode with
+     * steering off): Mail is delivered by cancelling the turn so the next one flushes the inbox, same as
+     * Cancel — but through the shared {@link #interruptMail} (F5), which HOLDS the cancel while an MCP tool
+     * call this plugin is itself servicing is still in flight, exactly like OpenCode.
      */
     @Override
-    public synchronized void interrupt(InterruptTypeEnum type) {
-        if (type == InterruptTypeEnum.Cancel) {
-            // Gated on processing now, like every other AI type: with no turn in flight there is nothing to
-            // cancel, so this must do nothing and emit nothing (a Cancel arriving between turns used to
-            // report STOPPED unconditionally, a closer with no turn for it to close).
+    public void interrupt(InterruptTypeEnum type) {
+        if (type == InterruptTypeEnum.Mail) {
+            interruptMail();
+            return;
+        }
+        if (type != InterruptTypeEnum.Cancel) {
+            return;
+        }
+        AcpConnection conn;
+        String sid;
+        synchronized (this) {
             if (!processing) {
                 return;
             }
-            // Stamping the moment the user actually pressed Stop is the only way to
-            // measure the wind-down tail afterwards: without it, "it carried on
-            // after I stopped it" cannot be told apart from a normal wind-down, and
-            // the agent's own log gives no click time to compare against.
-            if (PluginSettings.isDebugJson()) {
-                LOG.log(Level.INFO, "Grok interrupt: user pressed Stop (session={0}, turnInFlight={1}, processAlive={2})",
-                        new Object[]{sessionId, processing, currentProcess != null});
-            }
             cancelledByUser = true;
-            // processing stays set: only the turn thread that owns it may clear it, once it has actually
-            // unwound — clearing it here would re-open the sendPrompt gate while that thread is still
-            // winding down, letting a second turn start underneath it.
-            if (currentProcess != null) {
-                terminateProcessAsync(currentProcess);
-                if (PluginSettings.isDebugJson()) {
-                    LOG.log(Level.INFO, "Grok interrupt: kill signal sent, escalation running in background (session={0})", sessionId);
-                }
-                currentProcess = null;
-            }
-            // STOPPED no longer fires here: the turn thread's own teardown (runTurn's cancelled branch or
-            // its exception catch) is the one closer, emitted only after processing is actually cleared —
-            // so a caller checking isBusy() when STOPPED arrives sees it already false, and this can never
-            // be a second closer alongside whatever the turn itself would otherwise have reported.
+            processing = false;
+            clearHandshakeTurn();
+            conn = connection;
+            sid = acpSessionId;
         }
-        else if (PluginSettings.isDebugJson()) {
-            // Legitimate no-op, not a bug: headless one-shot-process-per-prompt has no
-            // persistent session to inject a mid-turn notice into. Logged anyway — a
-            // silent no-op is what let Codex's equivalent Mail drop go unnoticed for
-            // so long.
-            LOG.log(Level.INFO, "Grok interrupt: Mail IGNORED, no persistent session to inject into (session={0})",
-                    sessionId);
+        cancelPendingPermissionsOnActiveHandler();
+        if (conn != null && sid != null) {
+            sendCancelNotification(conn, sid);
         }
+        listener.onAiProcessEvent(new StatusEvent(StatusEventTypeEnum.STOPPED, StatusMessageUtil.formatStopped()));
     }
 
+    /**
+     * Closes stdin (ending the ACP connection), waits {@link #SHUTDOWN_GRACE_MILLIS} for Grok to exit on its
+     * own, then kills it. Verified by live probe: closing stdin alone does not make Grok exit.
+     */
     @Override
     public synchronized void stop() {
-        // Logged before the state is torn down, so the record says what was
-        // actually in flight at the moment of the stop rather than the
-        // cleared-out aftermath.
         if (PluginSettings.isDebugJson()) {
-            LOG.log(Level.INFO, "Grok stop: shutting session down (session={0}, turnInFlight={1}, processAlive={2})",
-                    new Object[]{sessionId, processing, currentProcess != null});
+            LOG.log(Level.INFO, "Grok stop: shutting session down (session={0}, turnInFlight={1}, connected={2})",
+                    new Object[]{acpSessionId, processing, connection != null});
         }
         running = false;
         processing = false;
         cancelledByUser = true;
-        if (currentProcess != null) {
-            // Same EDT-safety reason as interrupt(): stop() can also be reached directly from the EDT
-            // (closing a session tab), so the kill escalation must not block it either.
-            terminateProcessAsync(currentProcess);
-            currentProcess = null;
+        resetMailInterruptHold();
+        clearHandshakeTurn();
+        clearActiveTurn();
+
+        GrokAcpClientHandler h = activeHandler;
+        activeHandler = null;
+        AcpConnection conn = connection;
+        connection = null;
+        String sid = acpSessionId;
+        acpSessionId = null;
+        pendingAcpResumeId = null;
+        Process proc = currentProcess;
+        currentProcess = null;
+
+        if (h != null) {
+            h.cancelPendingPermissions();
         }
+        if (conn != null && sid != null) {
+            sendCancelNotification(conn, sid);
+        }
+        if (conn != null) {
+            conn.close(); // closes stdin/stdout; Grok does not exit on this alone (verified by probe)
+        }
+        if (proc != null) {
+            Thread killer = new Thread(() -> {
+                try {
+                    if (!proc.waitFor(shutdownGraceMillis(), TimeUnit.MILLISECONDS)) {
+                        proc.destroyForcibly();
+                    }
+                }
+                catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                    proc.destroyForcibly();
+                }
+            }, "grok-stop-reaper");
+            killer.setDaemon(true);
+            killer.start();
+        }
+
         GrokAiSession sess = grokAiSession;
         grokAiSession = null;
+        GrokAiMcpRegistrar reg = registrar;
+        registrar = null;
         if (sess != null) {
             sess.dispose();
         }
-        GrokAiMcpRegistrar reg = registrar;
-        registrar = null;
         if (reg != null) {
             McpServerRegistry.deregister(reg);
+        }
+        File debugLog = grokDebugLogFile;
+        grokDebugLogFile = null;
+        if (debugLog != null) {
+            debugLog.delete();
         }
         sessionId = null;
         sessionWorkingDir = null;
         pendingDiff = false;
         sessionConfigDir = null;
+        sessionConfigOptions = null;
+        modelContextWindows = Map.of();
+        recentStderr.clear();
     }
 
-    // Called from the EDT (history load applies the stored session id; the
-    // diff/tool-use path checks MCP state). Deliberately NOT synchronized:
-    // start() holds this manager's monitor for seconds (CLI spawn + MCP
-    // registration), and sharing the monitor here froze the NetBeans UI
-    // whenever a tab opened while a start was in flight. All fields touched
-    // are volatile, so visibility is preserved without the lock.
+    /**
+     * Drops the published connection of an agent that has died, keeping its ACP session id as the one to
+     * resume, so the next prompt starts a fresh process that picks the conversation up again rather than
+     * writing to a dead pipe forever — mirrors {@code OpenCodeAiProcessManager.detachDeadConnection} exactly.
+     * Also drops config state scoped to the dead connection ({@code sessionConfigOptions},
+     * {@code modelContextWindows}): both are re-read fresh on the next handshake, and a stale model's context
+     * window surviving into a new process would be a silent lie. Caller holds the monitor and closes the
+     * returned connection outside it.
+     */
+    private AcpConnection detachDeadConnection() {
+        AcpConnection orphaned = connection;
+        connection = null;
+        activeHandler = null;
+        if (acpSessionId != null) {
+            pendingAcpResumeId = acpSessionId;
+        }
+        acpSessionId = null;
+        sessionConfigOptions = null;
+        modelContextWindows = Map.of();
+        return orphaned;
+    }
+
+    /**
+     * Handles the connection's read loop ending (crash or graceful exit) independently of {@link #stop()}:
+     * mirrors {@code OpenCodeAiProcessManager.onHandlerDisconnected} exactly, including the hang case. Only
+     * acts if {@code dead} is still the live connection — a disconnect callback from an abandoned connection
+     * (superseded by a later start) must never tear down the one that replaced it.
+     */
+    private void onHandlerDisconnected(AcpConnection dead) {
+        Process owner;
+        synchronized (this) {
+            if (dead == null || connection != dead) {
+                return;
+            }
+            owner = currentProcess;
+        }
+        // An agent that crashed closes its output as it dies, so its exit is normally only moments behind
+        // this callback. Leave that case to handleProcessExit (invoked by the process's own onExit callback),
+        // which reports it once as EXITED. Runs on the dead connection's own notify thread, so the short wait
+        // holds up nothing else.
+        if (owner != null) {
+            try {
+                if (owner.waitFor(DISCONNECT_EXIT_GRACE_MILLIS, TimeUnit.MILLISECONDS)) {
+                    return;
+                }
+            }
+            catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                return;
+            }
+        }
+        // Still running with its output gone (the hang case): it can never answer again, and no exit will
+        // come to say so. Kill it and detach from it, so its eventual exit is stale and adds no EXITED;
+        // closing the connection then fails the prompt in flight, which reports the turn's one FAILED.
+        AcpConnection orphaned;
+        synchronized (this) {
+            if (connection != dead) {
+                return; // handleProcessExit or stop() got there first
+            }
+            processing = false;
+            resetMailInterruptHold();
+            orphaned = detachDeadConnection();
+            if (currentProcess == owner) {
+                currentProcess = null;
+            }
+        }
+        if (owner != null) {
+            owner.destroyForcibly();
+        }
+        if (orphaned != null) {
+            orphaned.close();
+        }
+    }
+
+    /**
+     * Reports a crashed (or otherwise unexpectedly exited) process as EXITED, exactly once, and ends any turn
+     * in flight — mirrors {@code OpenCodeAiProcessManager.handleProcessExit} exactly. A process that exits as
+     * part of an orderly {@link #stop()} has already had {@code currentProcess} cleared, so this finds
+     * nothing current and does nothing.
+     */
+    void handleProcessExit(Process process) {
+        boolean suppress;
+        AcpConnection orphaned;
+        synchronized (this) {
+            if (currentProcess != process) {
+                return; // stale exit from a superseded process
+            }
+            processing = false;
+            resetMailInterruptHold();
+            currentProcess = null;
+            suppress = cancelledByUser;
+            cancelledByUser = false;
+            orphaned = detachDeadConnection();
+            if (suppress || process.exitValue() != 0) {
+                // The turn already has its closing status — the EXITED below, or the STOPPED the user's Stop
+                // already sent — whether its handshake or its prompt was in flight. Closing the orphaned
+                // connection below fails the pending request's future; without clearing these first,
+                // claimTurn/claimHandshakeTurn would still succeed for it and add a second closer (a FAILED
+                // from handleTurnError) on top of the one already reported. A clean exit (code 0, never
+                // user-initiated) reports nothing here, so the turn is left for that FAILED to close
+                // normally.
+                clearHandshakeTurn();
+                clearActiveTurn();
+            }
+        }
+        if (orphaned != null) {
+            orphaned.close();
+        }
+        int code = process.exitValue();
+        if (PluginSettings.isDebugJson()) {
+            long sincePrompt = lastPromptSentAtMillis == 0 ? -1 : System.currentTimeMillis() - lastPromptSentAtMillis;
+            LOG.log(Level.INFO,
+                    "Grok process exited: code={0} ({1}), stoppedByUs={2}, msSinceLastPromptSent={3}",
+                    new Object[]{code, code == 143 ? "SIGTERM" : code == 137 ? "SIGKILL" : "see exit code",
+                                 suppress, sincePrompt});
+        }
+        if (!suppress && code != 0) {
+            listener.onAiProcessEvent(new StatusEvent(StatusEventTypeEnum.EXITED,
+                    StatusMessageUtil.formatExited("Grok", code, new ArrayList<>(recentStderr))));
+        }
+    }
+
     @Override
     public void resumeSession(String existingSessionId) {
         if (existingSessionId == null || existingSessionId.isBlank()) {
             return;
         }
-        sessionId = existingSessionId;
-        firstMessage = false;
-        sessionWorkingDir = null;
+        pendingAcpResumeId = existingSessionId;
     }
 
     @Override

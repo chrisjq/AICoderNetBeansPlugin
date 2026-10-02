@@ -13,6 +13,7 @@ import com.github.copilot.generated.SessionUsageInfoEvent;
 import com.github.copilot.generated.ToolExecutionStartEvent;
 import com.google.gson.JsonObject;
 import java.util.HashSet;
+import java.util.Map;
 import java.util.Set;
 import java.util.function.Consumer;
 import java.util.function.Supplier;
@@ -26,28 +27,30 @@ import kiwi.ingenuity.netbeans.plugin.aicoder.process.events.AiProcessEventListe
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.server.McpHookServerUtil;
 
 /**
- * Registers typed SDK event listeners on a live CopilotSession and translates them into the plugin's AiProcessEvent
- * types. Replaces GithubCopilotStreamJsonParser (which parsed copilot -p's JSON-line stdout) — the SDK delivers typed
- * events directly over the persistent session, so there is no line parsing left to do. Registered once per session, not
- * per turn.
+ * Registers typed SDK event listeners on a live CopilotSession and translates them into the plugin's
+ * AiProcessEvent types. Replaces GithubCopilotStreamJsonParser (which parsed copilot -p's JSON-line stdout) —
+ * the SDK delivers typed events directly over the persistent session, so there is no line parsing left to do.
+ * Registered once per session, not per turn.
  */
 public final class GithubCopilotSessionEventBridge {
 
     private static final Logger LOG = Logger.getLogger(GithubCopilotSessionEventBridge.class.getName());
 
     /**
-     * Raw SDK-event logging, gated on the same debug flag Claude and Ollama use. The Copilot path had none, so a turn
-     * that produced no output left nothing to inspect. Logs the event type and its data on every event.
+     * Raw SDK-event logging, gated on the same debug flag Claude and Ollama use. The Copilot path had none,
+     * so a turn that produced no output left nothing to inspect. Logs the event type and its data on every
+     * event.
      */
     /**
-     * Expands a tool's arguments into one log property per key, so the line reads {@code path[/x/README.md]} like the
-     * MCP tools rather than a single {@code arguments[{path=...}]} blob. The SDK hands arguments back as an Object that
-     * is a String-keyed Map in practice; anything else is logged whole under a single key.
+     * Expands a tool's arguments into one log property per key, so the line reads {@code path[/x/README.md]}
+     * like the MCP tools rather than a single {@code arguments[{path=...}]} blob. The SDK hands arguments
+     * back as an Object that is a String-keyed Map in practice; anything else is logged whole under a single
+     * key.
      */
     private static JsonObject toArgsObject(Object arguments) {
         JsonObject obj = new JsonObject();
-        if (arguments instanceof java.util.Map<?, ?> map) {
-            for (java.util.Map.Entry<?, ?> entry : map.entrySet()) {
+        if (arguments instanceof Map<?, ?> map) {
+            for (Map.Entry<?, ?> entry : map.entrySet()) {
                 obj.addProperty(String.valueOf(entry.getKey()), String.valueOf(entry.getValue()));
             }
         }
@@ -80,8 +83,9 @@ public final class GithubCopilotSessionEventBridge {
     }
 
     /**
-     * Registers a callback for a human-readable error reported mid-session (e.g. quota exceeded, rate limited). The
-     * plugin surfaces this in the turn's exit message so the user sees why a turn produced no output.
+     * Registers a callback for a human-readable error reported mid-session (e.g. quota exceeded, rate
+     * limited). The plugin surfaces this in the turn's exit message so the user sees why a turn produced no
+     * output.
      */
     public void setOnError(Consumer<String> cb) {
         this.onError = cb;
@@ -128,7 +132,7 @@ public final class GithubCopilotSessionEventBridge {
             if (PluginSettings.isDebugJson()) {
                 LOG.log(Level.INFO, "copilot event [tool.start]: toolName={0} mcpServerName={1}",
                         new Object[]{data == null ? null : data.toolName(),
-                            data == null ? null : data.mcpServerName()});
+                                     data == null ? null : data.mcpServerName()});
             }
             if (data == null || !PluginSettings.isLogToolUse()) {
                 return;
@@ -182,7 +186,7 @@ public final class GithubCopilotSessionEventBridge {
             String content = data.content();
             String messageId = data.messageId();
             if (content == null || content.isBlank()
-                    || (messageId != null && streamedMessageIds.contains(messageId))) {
+                || (messageId != null && streamedMessageIds.contains(messageId))) {
                 return;
             }
             listener.onAiProcessEvent(new TextDeltaEvent(content, null));
@@ -256,8 +260,8 @@ public final class GithubCopilotSessionEventBridge {
             String msg = data.errorMessage();
             if (msg == null || msg.isBlank()) {
                 msg = "model call failed"
-                        + (data.failureKind() != null ? " (" + data.failureKind() + ")" : "")
-                        + (data.errorCode() != null ? " [" + data.errorCode() + "]" : "");
+                      + (data.failureKind() != null ? " (" + data.failureKind() + ")" : "")
+                      + (data.errorCode() != null ? " [" + data.errorCode() + "]" : "");
             }
             errorReportedThisTurn = true;
             onError.accept(msg);

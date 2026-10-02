@@ -1,6 +1,7 @@
 package kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.githubcopilot;
 
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.McpSteeringPolicy;
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -56,7 +57,7 @@ class GithubCopilotPermissionPolicyTest {
     void mcpServerNameMatchIsCaseInsensitive() {
         assertEquals(GithubCopilotPermissionPolicy.Category.MCP_OUR_SERVER,
                 GithubCopilotPermissionPolicy.classify("MCP", MCP_SERVER_NAME,
-                        mcpExtensionData(MCP_SERVER_NAME.toUpperCase(java.util.Locale.ROOT))));
+                        mcpExtensionData(MCP_SERVER_NAME.toUpperCase(Locale.ROOT))));
     }
 
     // ---- panel labelling and credential masking ----
@@ -145,7 +146,7 @@ class GithubCopilotPermissionPolicyTest {
     @Test
     void ourMcpServerMatchIsCaseInsensitive() {
         assertEquals(GithubCopilotPermissionPolicy.Category.MCP_OUR_SERVER,
-                GithubCopilotPermissionPolicy.classify(MCP_SERVER_NAME.toUpperCase(java.util.Locale.ROOT), MCP_SERVER_NAME, null));
+                GithubCopilotPermissionPolicy.classify(MCP_SERVER_NAME.toUpperCase(Locale.ROOT), MCP_SERVER_NAME, null));
     }
 
     @Test

@@ -3,6 +3,7 @@ package kiwi.ingenuity.netbeans.plugin.aicoder.process.locking;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
+import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
@@ -110,8 +111,8 @@ class LockManagerFileLockTest {
         String f1 = uniquePath();
         String f2 = uniquePath();
 
-        assertTrue(lm.acquireFileLocks("sessionM", java.util.Set.of(f1, f2)));
-        assertTrue(lm.acquireFileLocks("sessionM", java.util.Set.of(f1)));
+        assertTrue(lm.acquireFileLocks("sessionM", Set.of(f1, f2)));
+        assertTrue(lm.acquireFileLocks("sessionM", Set.of(f1)));
 
         lm.releaseFileLock("sessionM", f1);
 

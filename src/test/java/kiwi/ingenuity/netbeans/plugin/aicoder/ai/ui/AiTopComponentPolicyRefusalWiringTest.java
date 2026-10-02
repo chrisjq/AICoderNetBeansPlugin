@@ -4,6 +4,7 @@ import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
+import java.util.regex.Pattern;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.events.PolicyRefusalEvent;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -27,7 +28,7 @@ import org.junit.jupiter.api.Test;
 class AiTopComponentPolicyRefusalWiringTest {
 
     private static final String SOURCE_PATH
-            = "src/main/java/kiwi/ingenuity/netbeans/plugin/aicoder/ai/ui/AiTopComponent.java";
+                                = "src/main/java/kiwi/ingenuity/netbeans/plugin/aicoder/ai/ui/AiTopComponent.java";
 
     private static final List<String> USER_VISIBLE_CALLS = List.of("addSystemMessage", "addUserMessage",
             "setStatusMessage", "showMessage", "NotifyDescriptor",
@@ -39,7 +40,7 @@ class AiTopComponentPolicyRefusalWiringTest {
     }
 
     private static int countOf(String source, String needle) {
-        return source.split(java.util.regex.Pattern.quote(needle), -1).length - 1;
+        return source.split(Pattern.quote(needle), -1).length - 1;
     }
 
     /**

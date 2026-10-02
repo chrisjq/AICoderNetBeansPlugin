@@ -10,10 +10,10 @@ import java.util.List;
 import java.util.concurrent.CompletableFuture;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.AiTypeEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.ContextProvider;
-import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.opencode.acp.AcpClientHandler;
-import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.opencode.acp.AcpConnection;
-import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.opencode.acp.AcpJsonKeyEnum;
-import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.opencode.acp.AcpMethodEnum;
+import kiwi.ingenuity.netbeans.plugin.aicoder.ai.acp.AcpClientHandler;
+import kiwi.ingenuity.netbeans.plugin.aicoder.ai.acp.AcpConnection;
+import kiwi.ingenuity.netbeans.plugin.aicoder.ai.acp.AcpJsonKeyEnum;
+import kiwi.ingenuity.netbeans.plugin.aicoder.ai.acp.AcpMethodEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.session.AiSession;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -21,19 +21,20 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import org.junit.jupiter.api.Test;
 
 /**
- * The MCP tool-preference sentence is OpenCode management's own business, injected in {@code sendTurn} so it rides
- * EVERY turn by construction. These tests pin the user's verbatim wording and prove it precedes the user's own prompt
- * text on every turn, while never leaking into the shared preamble machinery other backends use.
+ * The MCP tool-preference sentence is OpenCode management's own business, injected in {@code sendTurn} so it
+ * rides EVERY turn by construction. These tests pin the user's verbatim wording and prove it precedes the
+ * user's own prompt text on every turn, while never leaking into the shared preamble machinery other backends
+ * use.
  */
 class OpenCodePerMessageToolPreferenceTest {
 
     private static final String EXPECTED = "Use the plugin's MCP tools over internal tools.";
 
     /**
-     * Blocks forever on read until the connection is closed. An EOF-input would make AcpConnection's reader submit
-     * {@code onDisconnected} and spawn an {@code acp-notify} thread that outlives this test — and
-     * {@code AcpConnectionTest.closeShutsBothExecutors} asserts (via the global thread list) that no such thread is
-     * alive anywhere in the JVM, so a leaked one would fail an unrelated suite.
+     * Blocks forever on read until the connection is closed. An EOF-input would make AcpConnection's reader
+     * submit {@code onDisconnected} and spawn an {@code acp-notify} thread that outlives this test — and
+     * {@code AcpConnectionTest.closeShutsBothExecutors} asserts (via the global thread list) that no such
+     * thread is alive anywhere in the JVM, so a leaked one would fail an unrelated suite.
      */
     private static final class BlockingInputStream extends InputStream {
 

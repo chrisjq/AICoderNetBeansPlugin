@@ -1,5 +1,6 @@
 package kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.system;
 
+import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
@@ -74,7 +75,7 @@ public class DeleteFileTool extends AbstractFileTool {
         // confirmation entirely.
         FileUtils.FileSnapshot approved = FileUtils.FileSnapshot.capture(effectivePath);
         if (effectivePath == null || !new java.io.File(effectivePath).exists()) {
-            return McpToolInvoker.withFileMutation(session.getId(), java.util.Set.of(effectivePath),
+            return McpToolInvoker.withFileMutation(session.getId(), Set.of(effectivePath),
                     () -> deleteFileAfterRecheck(effectivePath, approved));
         }
         if (new java.io.File(effectivePath).isDirectory()) {
@@ -86,7 +87,7 @@ public class DeleteFileTool extends AbstractFileTool {
         }
         AiProcessEventListener listener = session.getAiProcessEventListener();
         if (listener == null) {
-            return McpToolInvoker.withFileMutation(session.getId(), java.util.Set.of(effectivePath),
+            return McpToolInvoker.withFileMutation(session.getId(), Set.of(effectivePath),
                     () -> deleteFileAfterRecheck(effectivePath, approved));
         }
         CompletableFuture<PermissionDecision> future = new CompletableFuture<>();
@@ -109,7 +110,7 @@ public class DeleteFileTool extends AbstractFileTool {
         if (decision == null || !decision.allow()) {
             return "User declined the delete — do not retry without asking.";
         }
-        return McpToolInvoker.withFileMutation(session.getId(), java.util.Set.of(effectivePath),
+        return McpToolInvoker.withFileMutation(session.getId(), Set.of(effectivePath),
                 () -> deleteFileAfterRecheck(effectivePath, approved));
     }
 

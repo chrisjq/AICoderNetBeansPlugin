@@ -47,7 +47,7 @@ class AiTopComponentInboxInterruptWiringTest {
     }
 
     private static int countOf(String source, String needle) {
-        return source.split(java.util.regex.Pattern.quote(needle), -1).length - 1;
+        return source.split(Pattern.quote(needle), -1).length - 1;
     }
 
     /**
@@ -457,9 +457,32 @@ class AiTopComponentInboxInterruptWiringTest {
     }
 
     /**
-     * THE REGRESSION THAT WOULD MAKE THE NOTICE LIE. Codex steers, Copilot injects, Grok and Ollama drop the
-     * mail — none of them abort anything, so telling those sessions their turn was interrupted would be a
-     * plain falsehood about their own history.
+     * REVIEW FINDING: a mail interrupt earlier in the SAME turn that the user then separately pressed Stop to
+     * end must not produce this explanation — the user's own Stop is what actually closed the turn, not mail,
+     * so telling the assistant otherwise is the same false-belief failure this whole notice exists to
+     * prevent, just from the other direction. Checked, not cleared, here: {@code consumeMcpSteeringNotice},
+     * called moments later for the same TurnCompleteEvent, owns clearing {@code cancelledTurnJustCompleted}.
+     */
+    @Test
+    void userInitiatedStopSuppressesTheExplanationEvenIfMailAlsoArrived() throws IOException {
+        String source = readSource();
+
+        int declaration = source.indexOf("private String consumeInboxInterruptExplanation()");
+        int clearMailFlag = source.indexOf("mailArrivedDuringTurn = false", declaration);
+        int stopCheck = source.indexOf("cancelledTurnJustCompleted", declaration);
+        int returnExplanation = source.indexOf("return INBOX_INTERRUPT_EXPLANATION", declaration);
+
+        assertTrue(stopCheck > declaration && stopCheck < returnExplanation,
+                "the user-stop check must sit inside this method, before it can return the explanation");
+        assertTrue(stopCheck > clearMailFlag,
+                "the mail flag must already be cleared by the time the stop check runs, same as every other gate here");
+    }
+
+    /**
+     * THE REGRESSION THAT WOULD MAKE THE NOTICE LIE. Codex steers, Copilot injects, Ollama drops the mail —
+     * none of them abort anything, so telling those sessions their turn was interrupted would be a plain
+     * falsehood about their own history. Grok DOES abort the turn to deliver mail now (the same shared
+     * session/cancel OpenCode's does), so it is deliberately not in that list any more.
      *
      * <p>
      * The flag is cleared BEFORE that gate on purpose: an interrupt those backends never had must not be

@@ -3,6 +3,7 @@ package kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.opencode;
 import java.io.File;
 import java.util.ArrayList;
 import java.util.List;
+import kiwi.ingenuity.netbeans.plugin.aicoder.process.events.AiProcessEvent;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.events.AiProcessEventListener;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -70,7 +71,7 @@ class OpenCodeAiProcessManagerHandshakeTest {
 
         private Object openTurn() {
             Object turn = new Object();
-            handshakeTurn = turn;
+            beginHandshakeTurn(turn);
             return turn;
         }
 
@@ -128,7 +129,7 @@ class OpenCodeAiProcessManagerHandshakeTest {
      */
     @Test
     void turnEndedWhileHandshakeRan_sendsNothing_andLeavesTheNewerTurnsProcessingAlone() {
-        List<kiwi.ingenuity.netbeans.plugin.aicoder.process.events.AiProcessEvent> events = new ArrayList<>();
+        List<AiProcessEvent> events = new ArrayList<>();
         RecordingManager manager = new RecordingManager(events::add);
         Object stoppedTurn = manager.armDeliverable();
         manager.armDeliverable(); // a newer turn now owns the handshake slot and processing

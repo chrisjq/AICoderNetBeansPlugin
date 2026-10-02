@@ -3,6 +3,7 @@ package kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp;
 import com.google.gson.JsonArray;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
+import java.util.function.Predicate;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.McpArgumentException;
 
 public class ToolRequestArguments {
@@ -14,7 +15,8 @@ public class ToolRequestArguments {
     }
 
     /**
-     * A copy of the arguments without {@code keys}, e.g. to show a tool call without the caller's credentials.
+     * A copy of the arguments without {@code keys}, e.g. to show a tool call without the caller's
+     * credentials.
      */
     public JsonObject withoutKeys(String... keys) {
         JsonObject copy = raw.deepCopy();
@@ -93,7 +95,7 @@ public class ToolRequestArguments {
      */
     public String requireStringIfPresent(String key) {
         return typeError(key, "string", element -> element.isJsonPrimitive()
-                         && element.getAsJsonPrimitive().isString());
+                                                   && element.getAsJsonPrimitive().isString());
     }
 
     /**
@@ -101,7 +103,7 @@ public class ToolRequestArguments {
      */
     public String requireBooleanIfPresent(String key) {
         return typeError(key, "boolean", element -> element.isJsonPrimitive()
-                         && element.getAsJsonPrimitive().isBoolean());
+                                                    && element.getAsJsonPrimitive().isBoolean());
     }
 
     /**
@@ -115,7 +117,8 @@ public class ToolRequestArguments {
     }
 
     /**
-     * Returns a validation error when a present, non-null argument is not an array whose every entry is a string.
+     * Returns a validation error when a present, non-null argument is not an array whose every entry is a
+     * string.
      */
     public String requireStringArrayIfPresent(String key) {
         if (!has(key)) {
@@ -135,7 +138,7 @@ public class ToolRequestArguments {
         return null;
     }
 
-    private String typeError(String key, String expectedType, java.util.function.Predicate<JsonElement> expected) {
+    private String typeError(String key, String expectedType, Predicate<JsonElement> expected) {
         if (!has(key) || expected.test(raw.get(key))) {
             return null;
         }

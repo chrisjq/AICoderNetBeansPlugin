@@ -11,7 +11,7 @@ import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.function.BooleanSupplier;
-import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.opencode.acp.AcpConnection;
+import kiwi.ingenuity.netbeans.plugin.aicoder.ai.acp.AcpConnection;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.session.InterruptTypeEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.events.AiProcessEventListener;
 import org.junit.jupiter.api.AfterEach;
@@ -23,11 +23,12 @@ import org.junit.jupiter.api.Test;
 
 /**
  * F5: a Mail interrupt must never abort a tool call this plugin is itself servicing — OpenCode treats
- * {@code session/cancel} as "the user doesn't want to proceed" and cuts whatever the agent is waiting on, tool calls
- * included. These tests drive {@link OpenCodeAiProcessManager} like {@code OpenCodeAiProcessManagerTest} does: a
- * pipe-backed {@link AcpConnection} plus a {@link RecordingFakeAgent} stand in for the live process, and the in-flight
- * tool-call lifecycle is fed in through {@link OpenCodeAiProcessManager#trackToolCallLifecycle} (the same
- * package-private method the handler forwards to) — no real {@code opencode acp} is launched.
+ * {@code session/cancel} as "the user doesn't want to proceed" and cuts whatever the agent is waiting on,
+ * tool calls included. These tests drive {@link OpenCodeAiProcessManager} like
+ * {@code OpenCodeAiProcessManagerTest} does: a pipe-backed {@link AcpConnection} plus a
+ * {@link RecordingFakeAgent} stand in for the live process, and the in-flight tool-call lifecycle is fed in
+ * through {@link OpenCodeAiProcessManager#trackToolCallLifecycle} (the same package-private method the
+ * handler forwards to) — no real {@code opencode acp} is launched.
  */
 class OpenCodeMailInterruptHoldTest {
 
@@ -58,8 +59,8 @@ class OpenCodeMailInterruptHoldTest {
         agentThread.setDaemon(true);
         agentThread.start();
         conn = new AcpConnection(pluginOut, pluginIn, new OpenCodeAcpClientHandler(e -> {
-                         }, () -> {
-                                                                           }));
+        }, () -> {
+        }));
         manager = new TestableOpenCodeAiProcessManager(e -> {
         });
         manager.armTurn(true);
@@ -98,7 +99,7 @@ class OpenCodeMailInterruptHoldTest {
 
         Thread.sleep(100);
         assertEquals(0, agent.countMethod("session/cancel"),
-                     "no cancel when there is no turn to interrupt — the queued mail arrives via the normal inbox flush");
+                "no cancel when there is no turn to interrupt — the queued mail arrives via the normal inbox flush");
     }
 
     // ---- hold + flush on a terminal status ----
@@ -185,10 +186,10 @@ class OpenCodeMailInterruptHoldTest {
         manager.interrupt(InterruptTypeEnum.Mail);
         manager.interrupt(InterruptTypeEnum.Mail);
         assertEquals(1, manager.mailInterruptSafetyValveStarts,
-                     "a second Mail while one is held must not start a second watchdog");
+                "a second Mail while one is held must not start a second watchdog");
 
         awaitTrue(() -> agent.countMethod("session/cancel") == 1,
-                  "exactly one cancel resolves any number of queued messages");
+                "exactly one cancel resolves any number of queued messages");
         assertFalse(manager.isMailInterruptPending());
         assertEquals(0, manager.getInFlightToolCalls());
     }
@@ -248,7 +249,7 @@ class OpenCodeMailInterruptHoldTest {
         List<List<String>> tracked = new ArrayList<>();
         OpenCodeAcpClientHandler handler = new OpenCodeAcpClientHandler(e -> {
         }, () -> {
-                                                                }, (toolCallId, status) -> tracked.add(List.of(toolCallId, status)));
+        }, (toolCallId, status) -> tracked.add(List.of(toolCallId, status)));
 
         JsonObject toolCall = new JsonObject();
         toolCall.addProperty("sessionUpdate", "tool_call");
@@ -265,13 +266,13 @@ class OpenCodeMailInterruptHoldTest {
         handler.onSessionUpdate("ses_x", toolCallUpdate);
 
         assertEquals(List.of(List.of("call_1", "pending"), List.of("call_1", "in_progress")), tracked,
-                     "both update kinds must reach the tracker");
+                "both update kinds must reach the tracker");
     }
 
     /**
-     * Minimal fake ACP agent over piped streams: records every incoming message in arrival order and answers every
-     * request (a message carrying both id and method) with an empty success result — mirroring the identical harness in
-     * {@code OpenCodeAiProcessManagerTest}.
+     * Minimal fake ACP agent over piped streams: records every incoming message in arrival order and answers
+     * every request (a message carrying both id and method) with an empty success result — mirroring the
+     * identical harness in {@code OpenCodeAiProcessManagerTest}.
      */
     private static final class RecordingFakeAgent implements Runnable {
 
@@ -328,9 +329,9 @@ class OpenCodeMailInterruptHoldTest {
     }
 
     /**
-     * Wraps the protected AiProcessManager lifecycle fields (running/processing) in package-private setters, exactly
-     * like {@code OpenCodeAiProcessManagerHandshakeTest.RecordingManager} — the test class itself is not a subclass of
-     * {@code AiProcessManager}, so it cannot touch those fields directly.
+     * Wraps the protected AiProcessManager lifecycle fields (running/processing) in package-private setters,
+     * exactly like {@code OpenCodeAiProcessManagerHandshakeTest.RecordingManager} — the test class itself is
+     * not a subclass of {@code AiProcessManager}, so it cannot touch those fields directly.
      */
     private static class TestableOpenCodeAiProcessManager extends OpenCodeAiProcessManager {
 

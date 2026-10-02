@@ -3,11 +3,11 @@ package kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.grok.events;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.events.AiProcessImplEvent;
 
 /**
- * Fired after a grok CLI turn completes, carrying the real per-session context
- * usage read from the CLI's on-disk {@code signals.json} file (grok's
- * {@code --output-format json} stdout does not itself report usage — see
- * {@code GrokUsageSignalsReader}). Used to update the context usage progress
- * bar in the info bar (mirrors {@code GithubCopilotTokenUsageEvent}).
+ * Fired after a Grok ACP turn completes, carrying the token usage reported in the {@code session/prompt}
+ * result's {@code _meta}. {@code maxTokens} is 0 when Grok's {@code _meta} carries no context-window size for
+ * that turn — the info bar keeps whatever window size it last knew rather than treating 0 as the real window.
+ * Used to update the context usage progress bar in the info bar (mirrors
+ * {@code GithubCopilotTokenUsageEvent}).
  */
 public class GrokTokenUsageEvent implements AiProcessImplEvent {
 

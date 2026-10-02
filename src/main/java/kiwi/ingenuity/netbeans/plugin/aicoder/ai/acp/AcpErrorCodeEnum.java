@@ -1,4 +1,4 @@
-package kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.opencode.acp;
+package kiwi.ingenuity.netbeans.plugin.aicoder.ai.acp;
 
 /**
  * JSON-RPC error codes. These are integers, not strings.
@@ -14,9 +14,8 @@ public enum AcpErrorCodeEnum {
     RESOURCE_NOT_FOUND(-32002);
 
     /**
-     * Resolve an error code to its enum constant. Returns null if the code is
-     * not recognised — the protocol adds new codes over time and must not fail
-     * on unknown codes.
+     * Resolve an error code to its enum constant. Returns null if the code is not recognised — the protocol
+     * adds new codes over time and must not fail on unknown codes.
      */
     public static AcpErrorCodeEnum fromCode(int code) {
         for (AcpErrorCodeEnum v : values()) {

@@ -5,6 +5,7 @@ import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.util.List;
+import java.util.UUID;
 import java.util.function.BooleanSupplier;
 import java.util.function.Consumer;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.pi.session.PiPersistentSession;
@@ -20,12 +21,12 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
 /**
- * Live finding (Boss 2026-09-19): pi's {@code abort} produces plain tool-result text ("Command aborted") with nothing
- * distinguishing "the user cancelled this" from "this tool genuinely failed" — a real pi session confirmed it would
- * have retried an interrupted command without a notice explaining what happened. Verifies
- * {@link PiAiProcessManager#interrupt} arms a one-off notice that {@link PiAiProcessManager#sendPrompt} prepends to the
- * NEXT turn's message exactly once, captured via the fake process's stdin echoed to a file (mirrors
- * {@code PiMailDeliveryTest}'s harness).
+ * Live finding (Boss 2026-09-19): pi's {@code abort} produces plain tool-result text ("Command aborted") with
+ * nothing distinguishing "the user cancelled this" from "this tool genuinely failed" — a real pi session
+ * confirmed it would have retried an interrupted command without a notice explaining what happened. Verifies
+ * {@link PiAiProcessManager#interrupt} arms a one-off notice that {@link PiAiProcessManager#sendPrompt}
+ * prepends to the NEXT turn's message exactly once, captured via the fake process's stdin echoed to a file
+ * (mirrors {@code PiMailDeliveryTest}'s harness).
  */
 class PiCancelNoticeTest {
 
@@ -94,7 +95,7 @@ class PiCancelNoticeTest {
         }, "second prompt written to pi's stdin");
         String stdin = capturedStdin();
         assertEquals(1, countOccurrences(stdin, NOTICE_MARKER),
-                     "the notice must be prepended to the next turn exactly once");
+                "the notice must be prepended to the next turn exactly once");
     }
 
     @Test
@@ -110,7 +111,7 @@ class PiCancelNoticeTest {
             }
         }, "prompt written to pi's stdin");
         assertFalse(capturedStdin().contains(NOTICE_MARKER),
-                    "a turn with no preceding cancel must not carry the stopped-turn notice");
+                "a turn with no preceding cancel must not carry the stopped-turn notice");
     }
 
     @Test
@@ -131,7 +132,7 @@ class PiCancelNoticeTest {
             }
         }, "second prompt written to pi's stdin");
         assertEquals(1, countOccurrences(capturedStdin(), NOTICE_MARKER),
-                     "two cancels before the notice is consumed must still collapse into exactly one");
+                "two cancels before the notice is consumed must still collapse into exactly one");
     }
 
     private static class RecordingEventListener implements AiProcessEventListener {
@@ -152,12 +153,12 @@ class PiCancelNoticeTest {
 
         void setupForTest() {
             running = true;
-            sessionId = java.util.UUID.randomUUID().toString();
+            sessionId = UUID.randomUUID().toString();
             model = "test-model";
             executablePath = "/bin/cat";
             toolsRegisteredWaitMillis = 50L;
             extensionPathForTests = "/tmp/aicoder-pi-test-extension.ts";
-            resumeSession(java.util.UUID.randomUUID().toString());
+            resumeSession(UUID.randomUUID().toString());
         }
 
         @Override

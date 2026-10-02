@@ -2,10 +2,13 @@ package kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.system;
 
 import com.google.gson.JsonArray;
 import com.google.gson.JsonObject;
+import java.util.List;
+import java.util.Locale;
 import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
+import java.util.function.Supplier;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.events.ConfirmEvent;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.events.PermissionDecision;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.McpArgumentException;
@@ -170,11 +173,11 @@ public class MoveFileTool implements McpToolInterface {
     private static String moveWithAppropriateLock(String sessionId, String sourcePath, String targetPath,
                                                   String targetDir, boolean commitWithWarning, FileUtils.FileSnapshot approvedSource,
                                                   boolean targetExistedAtApproval) {
-        java.util.function.Supplier<String> action = () -> moveFileAfterRecheck(sourcePath, targetDir, targetPath,
+        Supplier<String> action = () -> moveFileAfterRecheck(sourcePath, targetDir, targetPath,
                 commitWithWarning, approvedSource, targetExistedAtApproval);
-        return sourcePath.toLowerCase(java.util.Locale.ROOT).endsWith(".java")
+        return sourcePath.toLowerCase(Locale.ROOT).endsWith(".java")
                ? McpToolInvoker.withExclusiveMutation(action)
-               : McpToolInvoker.withFileMutation(sessionId, java.util.List.of(sourcePath, targetPath), action);
+               : McpToolInvoker.withFileMutation(sessionId, List.of(sourcePath, targetPath), action);
     }
 
     private static String moveFileAfterRecheck(String sourcePath, String targetDir, String targetPath,

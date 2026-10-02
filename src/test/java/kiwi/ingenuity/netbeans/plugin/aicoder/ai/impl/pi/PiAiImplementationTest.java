@@ -15,8 +15,11 @@ import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.Semaphore;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicReference;
+import java.util.function.BooleanSupplier;
+import java.util.function.Predicate;
 import javax.swing.JButton;
 import javax.swing.JComboBox;
+import javax.swing.JProgressBar;
 import javax.swing.SwingUtilities;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.AiSessionHost;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.AiTypeEnum;
@@ -226,7 +229,7 @@ class PiAiImplementationTest {
             AiInfoBarExtension bar = impl.createInfoBarExtension(session, new FakeHost());
 
             @SuppressWarnings("unchecked")
-            javax.swing.JComboBox<String> modelCombo = (javax.swing.JComboBox<String>) bar.createComponents().get(0);
+            JComboBox<String> modelCombo = (JComboBox<String>) bar.createComponents().get(0);
             List<String> shown = new ArrayList<>();
             for (int i = 0; i < modelCombo.getItemCount(); i++) {
                 shown.add(modelCombo.getItemAt(i));
@@ -243,7 +246,7 @@ class PiAiImplementationTest {
     void modelDiscoveryPublishFiresAnAvailableModelsEventOnThePiPropertyBus() throws Exception {
         String[] knownBefore = PiPluginSettings.getKnownModels();
         List<String> catalogBefore = PiAiImplementation.modelCatalog().getCachedModels();
-        java.util.concurrent.BlockingQueue<AvailableModelsEvent> received = new java.util.concurrent.LinkedBlockingQueue<>();
+        BlockingQueue<AvailableModelsEvent> received = new LinkedBlockingQueue<>();
         AiPropertyListener busListener = event -> {
             if (event instanceof AvailableModelsEvent available) {
                 received.add(available);
@@ -253,7 +256,7 @@ class PiAiImplementationTest {
         try {
             PiModelDiscovery.publish(List.of("bus-p/alpha", "bus-p/beta"));
 
-            AvailableModelsEvent event = received.poll(10, java.util.concurrent.TimeUnit.SECONDS);
+            AvailableModelsEvent event = received.poll(10, TimeUnit.SECONDS);
             assertEquals(List.of("bus-p/alpha", "bus-p/beta"), event == null ? null : event.models(),
                     "discovery must publish the list as an AvailableModelsEvent on the pi type's property bus");
         }
@@ -286,9 +289,9 @@ class PiAiImplementationTest {
         });
 
         List<javax.swing.JComponent> components = bar.createComponents();
-        javax.swing.JComboBox<String> modelCombo = (javax.swing.JComboBox<String>) components.get(0);
-        javax.swing.JComboBox<String> levelCombo = (javax.swing.JComboBox<String>) components.get(1);
-        javax.swing.JProgressBar gauge = (javax.swing.JProgressBar) components.get(2);
+        JComboBox<String> modelCombo = (JComboBox<String>) components.get(0);
+        JComboBox<String> levelCombo = (JComboBox<String>) components.get(1);
+        JProgressBar gauge = (javax.swing.JProgressBar) components.get(2);
         List<String> models = new ArrayList<>();
         for (int i = 0; i < modelCombo.getItemCount(); i++) {
             models.add(modelCombo.getItemAt(i));
@@ -404,7 +407,7 @@ class PiAiImplementationTest {
             SwingUtilities.invokeAndWait(() -> levelCombo.setSelectedItem(level));
         }
 
-        void awaitEvent(java.util.function.Predicate<AiProcessEvent> wanted) throws Exception {
+        void awaitEvent(Predicate<AiProcessEvent> wanted) throws Exception {
             while (true) {
                 AiProcessEvent next = pendingEvents.poll(10, TimeUnit.SECONDS);
                 if (next == null) {
@@ -1056,7 +1059,7 @@ class PiAiImplementationTest {
                 .toList();
     }
 
-    private static void awaitTrue(java.util.function.BooleanSupplier cond, String desc) throws InterruptedException {
+    private static void awaitTrue(BooleanSupplier cond, String desc) throws InterruptedException {
         long deadline = System.currentTimeMillis() + 5000;
         while (!cond.getAsBoolean()) {
             if (System.currentTimeMillis() > deadline) {

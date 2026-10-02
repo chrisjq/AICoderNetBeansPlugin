@@ -22,9 +22,9 @@ import org.junit.jupiter.api.Test;
 
 /**
  * {@link SessionBuildNotifier}'s delivery decisions, driven against a stub session registered in {@link
- * SessionRegistry} the same way {@code AiSessionInboxBrokerNotifierTest.stubSession} does it. The listener itself is
- * exercised directly rather than through a real {@link BuildQueue} run, since only its branching on job type, cancel
- * reason and session lookup is under test here.
+ * SessionRegistry} the same way {@code AiSessionInboxBrokerNotifierTest.stubSession} does it. The listener
+ * itself is exercised directly rather than through a real {@link BuildQueue} run, since only its branching on
+ * job type, cancel reason and session lookup is under test here.
  */
 class SessionBuildNotifierTest {
 
@@ -47,7 +47,7 @@ class SessionBuildNotifierTest {
                                   AtomicReference<AbstractNotification> deliveredNotification) {
         AiSessionSettings settings = new AiSessionSettings(null, null, true, null, allowImportant, null, null, null);
         AiSession session = new AiSession(id, "Name-" + id, null, AiTypeEnum.CLAUDE, null, settings, Instant.now(),
-                                          Instant.now());
+                Instant.now());
         session.setAiSessionCallback(new AiSessionCallback() {
             @Override
             public boolean isRunning() {
@@ -101,7 +101,7 @@ class SessionBuildNotifierTest {
 
     private BuildJob job(String sessionId, BuildTypeEnum type) {
         BuildRequest request = new BuildRequest("BuildMavenProject", "/proj", "/proj", sessionId, "Caller", type,
-                                                60_000L, true, control -> null);
+                60_000L, true, control -> null);
         BuildJob job = new BuildJob("job-1", request, Instant.now());
         job.markFinished(BuildStatusEnum.SUCCESS, "OK", null, Instant.now());
         return job;
@@ -176,8 +176,8 @@ class SessionBuildNotifierTest {
         AtomicInteger requesterInterrupts = new AtomicInteger();
         AtomicInteger listenerDeliveries = new AtomicInteger();
         AtomicInteger listenerInterrupts = new AtomicInteger();
-        java.util.concurrent.atomic.AtomicReference<AbstractNotification> listenerNotification
-                = new AtomicReference<>();
+        AtomicReference<AbstractNotification> listenerNotification
+                                              = new AtomicReference<>();
         stubSession("requester", true, true, requesterDeliveries, requesterInterrupts);
         stubSession("listener", true, true, listenerDeliveries, listenerInterrupts, listenerNotification);
         BuildJob job = job("requester", BuildTypeEnum.ASYNC);
@@ -191,8 +191,8 @@ class SessionBuildNotifierTest {
         // This fixture has no log-path line, so copying deliberately leaves its result unchanged. The discriminating
         // regression guard for forwarded listener text is BuildCompletionNotificationTest's explicit-text case.
         assertEquals(SpooledLogCopier.copyForSession("listener", BuildReportFormatter.aiResult(job)),
-                     listenerNotification.get().agentOnlyText(),
-                     "the listener's delivered notification must contain the text produced for it");
+                listenerNotification.get().agentOnlyText(),
+                "the listener's delivered notification must contain the text produced for it");
         assertEquals(1, listenerInterrupts.get(), "a listener is interrupted like any important message");
     }
 

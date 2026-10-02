@@ -5,6 +5,7 @@ import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.util.List;
+import java.util.UUID;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.function.BooleanSupplier;
 import java.util.function.Consumer;
@@ -225,11 +226,11 @@ class PiToolsRegisteredWaitTest {
 
         void setupForTest() {
             running = true;
-            sessionId = java.util.UUID.randomUUID().toString();
+            sessionId = UUID.randomUUID().toString();
             model = "test-model";
             executablePath = "/bin/cat";
             extensionPathForTests = "/tmp/aicoder-pi-test-extension.ts";
-            resumeSession(java.util.UUID.randomUUID().toString());
+            resumeSession(UUID.randomUUID().toString());
         }
 
         @Override

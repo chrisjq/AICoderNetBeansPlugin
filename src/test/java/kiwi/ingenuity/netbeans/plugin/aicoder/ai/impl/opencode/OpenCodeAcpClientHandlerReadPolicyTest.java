@@ -10,6 +10,7 @@ import java.util.List;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.function.Function;
 import java.util.function.Predicate;
 import java.util.logging.Handler;
 import java.util.logging.Level;
@@ -19,6 +20,7 @@ import java.util.logging.SimpleFormatter;
 import kiwi.ingenuity.netbeans.plugin.aicoder.PluginSettings;
 import kiwi.ingenuity.netbeans.plugin.aicoder.PluginUtil;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.AiTypeEnum;
+import kiwi.ingenuity.netbeans.plugin.aicoder.ai.acp.AbstractAcpClientHandler;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.events.ConfirmEvent;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.events.PermissionDecision;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.events.PermissionEvent;
@@ -38,13 +40,14 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
 /**
- * A read is a policy decision, not a conversation: OpenCode's request to read a path is allowed or refused by the rule
- * {@code GetFileContent} applies, with no event raised and nothing shown to the user. Anything not confidently a read
- * keeps asking, and a mutation keeps its diff review.
+ * A read is a policy decision, not a conversation: OpenCode's request to read a path is allowed or refused by
+ * the rule {@code GetFileContent} applies, with no event raised and nothing shown to the user. Anything not
+ * confidently a read keeps asking, and a mutation keeps its diff review.
  *
  * <p>
- * The {@code external_directory} ask arrives as {@code kind:"other"} and names no tool, so it is only treated as a read
- * when its {@code toolCallId} traces back to an earlier {@code tool_call} of kind {@code read}/{@code search}.
+ * The {@code external_directory} ask arrives as {@code kind:"other"} and names no tool, so it is only treated
+ * as a read when its {@code toolCallId} traces back to an earlier {@code tool_call} of kind
+ * {@code read}/{@code search}.
  */
 class OpenCodeAcpClientHandlerReadPolicyTest {
 
@@ -54,11 +57,12 @@ class OpenCodeAcpClientHandlerReadPolicyTest {
     private static OpenCodeAcpClientHandler handler(List<AiProcessEvent> fired, Predicate<String> own,
                                                     Predicate<String> read) {
         return new OpenCodeAcpClientHandler(fired::add, () -> {
-                                    }, null, new OpenCodeAcpClientHandler.SessionFileScope(own, read));
+        }, null, new AbstractAcpClientHandler.SessionFileScope(own, read));
     }
 
     /**
-     * The {@code tool_call} update OpenCode sends when a tool starts, which is where the kind of a call id is learned.
+     * The {@code tool_call} update OpenCode sends when a tool starts, which is where the kind of a call id is
+     * learned.
      */
     private static void announceToolCall(OpenCodeAcpClientHandler handler, String callId, String kind, String status) {
         JsonObject update = new JsonObject();
@@ -81,8 +85,9 @@ class OpenCodeAcpClientHandlerReadPolicyTest {
     }
 
     /**
-     * What OpenCode's ACP agent sends for an {@code external_directory} permission: kind "other", parentDir as title,
-     * file and directory as locations, the metadata as rawInput, the id of the tool call that raised it.
+     * What OpenCode's ACP agent sends for an {@code external_directory} permission: kind "other", parentDir
+     * as title, file and directory as locations, the metadata as rawInput, the id of the tool call that
+     * raised it.
      */
     private static JsonObject externalDirectory(String callId, String filepath, String parentDir) {
         JsonObject rawInput = new JsonObject();
@@ -200,9 +205,9 @@ class OpenCodeAcpClientHandlerReadPolicyTest {
         List<AiProcessEvent> fired = new ArrayList<>();
         AtomicInteger consulted = new AtomicInteger();
         OpenCodeAcpClientHandler handler = handler(fired, p -> false, p -> {
-                                               consulted.incrementAndGet();
-                                               return true;
-                                           });
+            consulted.incrementAndGet();
+            return true;
+        });
         if (announcedKind != null) {
             announceToolCall(handler, "call-x", announcedKind, "pending");
             fired.removeIf(e -> e instanceof ToolUseEvent);
@@ -236,9 +241,9 @@ class OpenCodeAcpClientHandlerReadPolicyTest {
         List<AiProcessEvent> fired = new ArrayList<>();
         AtomicInteger consulted = new AtomicInteger();
         OpenCodeAcpClientHandler handler = handler(fired, p -> false, p -> {
-                                               consulted.incrementAndGet();
-                                               return true;
-                                           });
+            consulted.incrementAndGet();
+            return true;
+        });
         announceToolCall(handler, "call-x", "read", "pending");
         JsonObject done = new JsonObject();
         done.addProperty("sessionUpdate", "tool_call_update");
@@ -258,8 +263,8 @@ class OpenCodeAcpClientHandlerReadPolicyTest {
     void aReadTheScopeCannotDecideBecauseItFailsFallsBackToAsking() {
         List<AiProcessEvent> fired = new ArrayList<>();
         OpenCodeAcpClientHandler handler = handler(fired, p -> false, p -> {
-                                               throw new IllegalStateException("registry unavailable");
-                                           });
+            throw new IllegalStateException("registry unavailable");
+        });
         announceToolCall(handler, "call-r", "read", "pending");
         fired.removeIf(e -> e instanceof ToolUseEvent);
 
@@ -274,7 +279,7 @@ class OpenCodeAcpClientHandlerReadPolicyTest {
     void aPlainPredicateCarriesNoReadPolicySoAReadIsStillPutToTheUser() {
         List<AiProcessEvent> fired = new ArrayList<>();
         OpenCodeAcpClientHandler handler = new OpenCodeAcpClientHandler(fired::add, () -> {
-                                                                }, null, path -> false);
+        }, null, path -> false);
         announceToolCall(handler, "call-r", "read", "pending");
         fired.removeIf(e -> e instanceof ToolUseEvent);
 
@@ -291,9 +296,9 @@ class OpenCodeAcpClientHandlerReadPolicyTest {
         List<AiProcessEvent> fired = new ArrayList<>();
         AtomicInteger consulted = new AtomicInteger();
         OpenCodeAcpClientHandler handler = handler(fired, p -> false, p -> {
-                                               consulted.incrementAndGet();
-                                               return true;
-                                           });
+            consulted.incrementAndGet();
+            return true;
+        });
         JsonObject content = new JsonObject();
         content.addProperty("type", "diff");
         content.addProperty("path", "/proj/Foo.java");
@@ -321,9 +326,9 @@ class OpenCodeAcpClientHandlerReadPolicyTest {
         List<AiProcessEvent> fired = new ArrayList<>();
         AtomicInteger consulted = new AtomicInteger();
         OpenCodeAcpClientHandler handler = handler(fired, p -> false, p -> {
-                                               consulted.incrementAndGet();
-                                               return true;
-                                           });
+            consulted.incrementAndGet();
+            return true;
+        });
         announceToolCall(handler, "call-r", "read", "pending");
         fired.removeIf(e -> e instanceof ToolUseEvent);
         JsonObject toolCall = externalDirectory("call-r", "/proj/Foo.java", "/proj");
@@ -337,10 +342,10 @@ class OpenCodeAcpClientHandlerReadPolicyTest {
 
     // ---- A read never enters the approval gate, so auto-accept plays no part in it ----
     /**
-     * Stands in for the UI end of the approval gate (AiTopComponent): every approval-type event that reaches it is
-     * recorded and counts as the gate having consulted the auto-accept setting, and with auto-accept on it answers
-     * automatically exactly as the real gate does for an event that does not demand explicit approval. If a read
-     * touched the gate at all, this would see it.
+     * Stands in for the UI end of the approval gate (AiTopComponent): every approval-type event that reaches
+     * it is recorded and counts as the gate having consulted the auto-accept setting, and with auto-accept on
+     * it answers automatically exactly as the real gate does for an event that does not demand explicit
+     * approval. If a read touched the gate at all, this would see it.
      */
     private static final class FakeApprovalGate implements AiProcessEventListener {
 
@@ -373,8 +378,8 @@ class OpenCodeAcpClientHandlerReadPolicyTest {
 
     private static CompletableFuture<JsonObject> requestReadThrough(FakeApprovalGate gate, boolean inScope) {
         OpenCodeAcpClientHandler handler = new OpenCodeAcpClientHandler(gate, () -> {
-                                                                }, null,
-                                                                        new OpenCodeAcpClientHandler.SessionFileScope(p -> false, p -> inScope));
+        }, null,
+                new AbstractAcpClientHandler.SessionFileScope(p -> false, p -> inScope));
         announceToolCall(handler, "call-r", "read", "pending");
         return handler.onRequestPermission(params(externalDirectory("call-r", OUTSIDE_FILE, OUTSIDE_DIR)));
     }
@@ -393,7 +398,7 @@ class OpenCodeAcpClientHandlerReadPolicyTest {
                 assertEquals(expected, outcome(future.get()), "the outcome is the scope's alone: " + where);
                 assertTrue(gate.approvalEvents.isEmpty(), "no approval event may be raised: " + where);
                 assertEquals(0, gate.autoAcceptConsulted.get(),
-                             "the auto-accept setting must never be consulted for a read: " + where);
+                        "the auto-accept setting must never be consulted for a read: " + where);
             }
         }
     }
@@ -406,8 +411,8 @@ class OpenCodeAcpClientHandlerReadPolicyTest {
         for (boolean autoAccept : new boolean[]{true, false}) {
             FakeApprovalGate gate = new FakeApprovalGate(autoAccept);
             OpenCodeAcpClientHandler handler = new OpenCodeAcpClientHandler(gate, () -> {
-                                                                    }, null,
-                                                                            new OpenCodeAcpClientHandler.SessionFileScope(p -> false, p -> true));
+            }, null,
+                    new AbstractAcpClientHandler.SessionFileScope(p -> false, p -> true));
 
             // Never announced as a read, so it cannot be traced to one.
             CompletableFuture<JsonObject> future = handler.onRequestPermission(
@@ -416,7 +421,7 @@ class OpenCodeAcpClientHandlerReadPolicyTest {
             assertEquals(1, gate.approvalEvents.size(), "autoAccept=" + autoAccept);
             assertEquals(1, gate.autoAcceptConsulted.get());
             assertEquals(autoAccept, future.isDone(),
-                         "auto-accept answers it; with auto-accept off it waits for the user");
+                    "auto-accept answers it; with auto-accept off it waits for the user");
         }
     }
 
@@ -428,8 +433,8 @@ class OpenCodeAcpClientHandlerReadPolicyTest {
     }
 
     /**
-     * Runs {@code action} with the handler's logger captured and the JSON debug setting forced, restoring both, and
-     * returns every message the handler logged, formatted.
+     * Runs {@code action} with the handler's logger captured and the JSON debug setting forced, restoring
+     * both, and returns every message the handler logged, formatted.
      */
     private static List<String> handlerLogDuring(boolean debugJson, ThrowingRunnable action) throws Exception {
         Logger logger = Logger.getLogger(OpenCodeAcpClientHandler.class.getName());
@@ -477,7 +482,7 @@ class OpenCodeAcpClientHandlerReadPolicyTest {
         server.init();
         try {
             server.registerSession(sessionId, AiTypeEnum.OPENCODE, List.<File>of(projectDir.toFile()), true);
-            OpenCodeAcpClientHandler.SessionFileScope scope = OpenCodeAcpClientHandler.sessionFileScope(() -> server, sessionId);
+            AbstractAcpClientHandler.SessionFileScope scope = AbstractAcpClientHandler.sessionFileScope(() -> server, sessionId);
 
             // The source itself: identical to what GetFileContentTool.handle returns for the same path, and not one fixed
             // string — the conversation-history tree has its own wording.
@@ -490,20 +495,20 @@ class OpenCodeAcpClientHandlerReadPolicyTest {
             for (String[] refused : new String[][]{{OUTSIDE_FILE, outsideReason}, {history.toString(), historyReason}}) {
                 List<AiProcessEvent> fired = new ArrayList<>();
                 OpenCodeAcpClientHandler handler = new OpenCodeAcpClientHandler(fired::add, () -> {
-                                                                        }, null, scope);
+                }, null, scope);
                 announceToolCall(handler, "call-r", "read", "pending");
                 fired.removeIf(e -> e instanceof ToolUseEvent);
                 JsonObject[] reply = new JsonObject[1];
 
                 List<String> log = handlerLogDuring(true, () -> reply[0] = handler.onRequestPermission(
-                                                    params(externalDirectory("call-r", refused[0], OUTSIDE_DIR))).get());
+                        params(externalDirectory("call-r", refused[0], OUTSIDE_DIR))).get());
 
                 assertEquals("reject", outcome(reply[0]), "the outcome we return is unchanged");
                 assertNothingRaised(fired);
                 String line = readRequestLine(log);
                 assertTrue(line != null && line.contains("denied"), "the refusal is logged: " + log);
                 assertTrue(line.contains(refused[1]),
-                           "the logged reason must be the shared source's text for that path: " + line);
+                        "the logged reason must be the shared source's text for that path: " + line);
             }
         }
         finally {
@@ -515,16 +520,16 @@ class OpenCodeAcpClientHandlerReadPolicyTest {
     void aFailingReasonSourceStillRefusesCleanlyAndLogsThePlainLine() throws Exception {
         List<AiProcessEvent> fired = new ArrayList<>();
         OpenCodeAcpClientHandler handler = new OpenCodeAcpClientHandler(fired::add, () -> {
-                                                                }, null,
-                                                                        new OpenCodeAcpClientHandler.SessionFileScope(p -> false, p -> false, p -> {
-                                                                                                                  throw new IllegalStateException("reason unavailable");
-                                                                                                              }));
+        }, null,
+                new AbstractAcpClientHandler.SessionFileScope(p -> false, p -> false, p -> {
+                    throw new IllegalStateException("reason unavailable");
+                }));
         announceToolCall(handler, "call-r", "read", "pending");
         fired.removeIf(e -> e instanceof ToolUseEvent);
         JsonObject[] reply = new JsonObject[1];
 
         List<String> log = handlerLogDuring(true, () -> reply[0] = handler.onRequestPermission(
-                                            params(externalDirectory("call-r", OUTSIDE_FILE, OUTSIDE_DIR))).get());
+                params(externalDirectory("call-r", OUTSIDE_FILE, OUTSIDE_DIR))).get());
 
         assertEquals("reject", outcome(reply[0]), "building the reason must never break the refusal");
         assertNothingRaised(fired);
@@ -540,17 +545,17 @@ class OpenCodeAcpClientHandlerReadPolicyTest {
             for (boolean inScope : new boolean[]{true, false}) {
                 List<AiProcessEvent> fired = new ArrayList<>();
                 OpenCodeAcpClientHandler handler = new OpenCodeAcpClientHandler(fired::add, () -> {
-                                                                        }, null,
-                                                                                new OpenCodeAcpClientHandler.SessionFileScope(p -> false, p -> inScope, p -> {
-                                                                                                                          reasonsBuilt.incrementAndGet();
-                                                                                                                          return "the reason";
-                                                                                                                      }));
+                }, null,
+                        new AbstractAcpClientHandler.SessionFileScope(p -> false, p -> inScope, p -> {
+                            reasonsBuilt.incrementAndGet();
+                            return "the reason";
+                        }));
                 announceToolCall(handler, "call-r", "read", "pending");
                 fired.removeIf(e -> e instanceof ToolUseEvent);
                 JsonObject[] reply = new JsonObject[1];
 
                 List<String> log = handlerLogDuring(debug, () -> reply[0] = handler.onRequestPermission(
-                                                    params(externalDirectory("call-r", OUTSIDE_FILE, OUTSIDE_DIR))).get());
+                        params(externalDirectory("call-r", OUTSIDE_FILE, OUTSIDE_DIR))).get());
 
                 assertEquals(inScope ? "once" : "reject", outcome(reply[0]), "the outcome never depends on logging");
                 String line = readRequestLine(log);
@@ -568,14 +573,14 @@ class OpenCodeAcpClientHandlerReadPolicyTest {
         // Built once per REFUSAL (two of the four cases), never for an allowed read, and shared by the log line and the
         // end-of-turn notice. It used to be built only when the line would be written; the notice needs it always.
         assertEquals(2, reasonsBuilt.get(),
-                     "the reason is built once per refusal, whether or not it is logged, and never for an allowed read");
+                "the reason is built once per refusal, whether or not it is logged, and never for an allowed read");
     }
 
     // ---- Refusals are remembered for the end of the turn, verbatim ----
     private static OpenCodeAcpClientHandler handlerWithReason(List<AiProcessEvent> fired, boolean allowed,
-                                                              java.util.function.Function<String, String> reason) {
+                                                              Function<String, String> reason) {
         return new OpenCodeAcpClientHandler(fired::add, () -> {
-                                    }, null, new OpenCodeAcpClientHandler.SessionFileScope(p -> false, p -> allowed, reason));
+        }, null, new AbstractAcpClientHandler.SessionFileScope(p -> false, p -> allowed, reason));
     }
 
     private static void requestRead(OpenCodeAcpClientHandler handler, String callId, String file) throws Exception {
@@ -590,7 +595,7 @@ class OpenCodeAcpClientHandlerReadPolicyTest {
         requestRead(refusing, "call-1", OUTSIDE_FILE);
 
         assertEquals(List.of(new Refusal(OUTSIDE_FILE, "Access denied: " + OUTSIDE_FILE + " (shared text)")),
-                     refusing.consumeTurnRefusals(), "the path is recorded with the text, not left to the text to echo");
+                refusing.consumeTurnRefusals(), "the path is recorded with the text, not left to the text to echo");
 
         OpenCodeAcpClientHandler allowing = handlerWithReason(fired, true, p -> "never used");
         requestRead(allowing, "call-2", OUTSIDE_FILE);
@@ -618,7 +623,7 @@ class OpenCodeAcpClientHandlerReadPolicyTest {
             requestRead(handler, "same-" + i, OUTSIDE_FILE);
         }
         assertEquals(List.of(new Refusal(OUTSIDE_FILE, "refused " + OUTSIDE_FILE)), handler.consumeTurnRefusals(),
-                     "a repeat of the same refusal collapses into one entry");
+                "a repeat of the same refusal collapses into one entry");
 
         for (int i = 0; i < 20; i++) {
             requestRead(handler, "distinct-" + i, OUTSIDE_FILE + "." + i);
@@ -626,17 +631,17 @@ class OpenCodeAcpClientHandlerReadPolicyTest {
         List<Refusal> kept = handler.consumeTurnRefusals();
         assertEquals(8, kept.size(), "a burst cannot grow the notice without limit");
         assertEquals(new Refusal(OUTSIDE_FILE + ".0", "refused " + OUTSIDE_FILE + ".0"), kept.get(0),
-                     "the first refusals are the ones kept, in order");
+                "the first refusals are the ones kept, in order");
     }
 
     @Test
     void aRefusalWhoseTextCannotBeBuiltIsStillRefusedButHasNothingToReport() throws Exception {
         OpenCodeAcpClientHandler failing = handlerWithReason(new ArrayList<>(), false, p -> {
-                                                         throw new IllegalStateException("reason unavailable");
-                                                     });
+            throw new IllegalStateException("reason unavailable");
+        });
         OpenCodeAcpClientHandler blank = handlerWithReason(new ArrayList<>(), false, p -> "  ");
         OpenCodeAcpClientHandler none = new OpenCodeAcpClientHandler(new ArrayList<AiProcessEvent>()::add, () -> {
-                                                             }, null, new OpenCodeAcpClientHandler.SessionFileScope(p -> false, p -> false));
+        }, null, new AbstractAcpClientHandler.SessionFileScope(p -> false, p -> false));
 
         for (OpenCodeAcpClientHandler handler : List.of(failing, blank, none)) {
             announceToolCall(handler, "call-r", "read", "pending");
@@ -644,7 +649,7 @@ class OpenCodeAcpClientHandlerReadPolicyTest {
 
             assertEquals("reject", outcome(reply), "the refusal itself is unaffected");
             assertTrue(handler.consumeTurnRefusals().isEmpty(),
-                       "the notice quotes the shared text and has nothing else to say without it");
+                    "the notice quotes the shared text and has nothing else to say without it");
         }
     }
 
@@ -659,9 +664,9 @@ class OpenCodeAcpClientHandlerReadPolicyTest {
     }
 
     /**
-     * The parity guarantee: what the notice quotes is EXACTLY what GetFileContent returns for that path, from the same
-     * shared builder, and it is path-specific rather than one fixed string. A later change to the refusal wording moves
-     * both paths together or fails here.
+     * The parity guarantee: what the notice quotes is EXACTLY what GetFileContent returns for that path, from
+     * the same shared builder, and it is path-specific rather than one fixed string. A later change to the
+     * refusal wording moves both paths together or fails here.
      */
     @Test
     void theNoticeQuotesExactlyWhatGetFileContentReturnsForThatPath(@TempDir Path projectDir) throws Exception {
@@ -671,26 +676,26 @@ class OpenCodeAcpClientHandlerReadPolicyTest {
         server.init();
         try {
             server.registerSession(sessionId, AiTypeEnum.OPENCODE, List.<File>of(projectDir.toFile()), true);
-            OpenCodeAcpClientHandler.SessionFileScope scope = OpenCodeAcpClientHandler.sessionFileScope(() -> server, sessionId);
+            AbstractAcpClientHandler.SessionFileScope scope = AbstractAcpClientHandler.sessionFileScope(() -> server, sessionId);
             String outside = McpHookServer.fileAccessDeniedMessage(server, sessionId, OUTSIDE_FILE);
             String historyText = McpHookServer.fileAccessDeniedMessage(server, sessionId, history.toString());
             assertFalse(outside.equals(historyText), "the shared builder gives a path-specific message");
 
             OpenCodeAcpClientHandler handler = new OpenCodeAcpClientHandler(new ArrayList<AiProcessEvent>()::add, () -> {
-                                                                    }, null, scope);
+            }, null, scope);
             requestRead(handler, "call-1", OUTSIDE_FILE);
             requestRead(handler, "call-2", history.toString());
             List<Refusal> refusals = handler.consumeTurnRefusals();
 
             // Two refused paths in one turn: each recorded with ITS path and ITS text, verbatim, in the order refused.
             assertEquals(List.of(new Refusal(OUTSIDE_FILE, outside), new Refusal(history.toString(), historyText)),
-                         refusals, "recorded verbatim, one per refused path, in order");
+                    refusals, "recorded verbatim, one per refused path, in order");
             String[] lines = PolicyRefusalEvent.compose(refusals).split("\n");
             assertEquals(PolicyRefusalEvent.entry(new Refusal(OUTSIDE_FILE, outside)), lines[0]);
             assertEquals(PolicyRefusalEvent.entry(new Refusal(history.toString(), historyText)), lines[1]);
             assertTrue(lines[0].contains(OUTSIDE_FILE) && lines[0].contains(outside), "the first file with its own reason");
             assertTrue(lines[1].contains(history.toString()) && lines[1].contains(historyText),
-                       "the second file with its own reason");
+                    "the second file with its own reason");
             assertFalse(lines[0].contains(historyText) || lines[1].contains(outside), "and the reasons never cross");
         }
         finally {
@@ -712,19 +717,19 @@ class OpenCodeAcpClientHandlerReadPolicyTest {
         Path history = new SessionPersistenceManager().historyPath(sessionId);
         String ownSpool = pluginConfigTree(sessionId) + "/tmp/tool_results/git-diff-x.log";
         List<String> paths = List.of(inside.toString(), outside.toString(), ownSpool, history.toString(),
-                                     "/etc/hostname", projectDir.toString());
+                "/etc/hostname", projectDir.toString());
 
         McpHookServer server = new McpHookServer(0);
         server.init();
         try {
             for (boolean restrict : new boolean[]{true, false}) {
                 server.registerSession(sessionId, AiTypeEnum.OPENCODE, List.<File>of(projectDir.toFile()), restrict);
-                OpenCodeAcpClientHandler.SessionFileScope scope
-                        = OpenCodeAcpClientHandler.sessionFileScope(() -> server, sessionId);
+                AbstractAcpClientHandler.SessionFileScope scope
+                                                          = AbstractAcpClientHandler.sessionFileScope(() -> server, sessionId);
                 for (String path : paths) {
                     // GetFileContentTool.handle serves the file iff server.isFileAccessible(sessionId, path).
                     assertEquals(server.isFileAccessible(sessionId, path), scope.isReadAllowed(path),
-                                 "must agree with GetFileContent for " + path + " (restrict=" + restrict + ")");
+                            "must agree with GetFileContent for " + path + " (restrict=" + restrict + ")");
                 }
             }
         }
@@ -742,35 +747,35 @@ class OpenCodeAcpClientHandlerReadPolicyTest {
         McpHookServer server = new McpHookServer(0);
         server.init();
         try {
-            OpenCodeAcpClientHandler.SessionFileScope scope
-                    = OpenCodeAcpClientHandler.sessionFileScope(() -> server, sessionId);
+            AbstractAcpClientHandler.SessionFileScope scope
+                                                      = AbstractAcpClientHandler.sessionFileScope(() -> server, sessionId);
 
             server.registerSession(sessionId, AiTypeEnum.OPENCODE, List.<File>of(projectDir.toFile()), true);
             assertEquals("reject", readOf(scope, OUTSIDE_FILE, OUTSIDE_DIR),
-                         "restrict ON: a file outside the project is refused, as GetFileContent refuses it");
+                    "restrict ON: a file outside the project is refused, as GetFileContent refuses it");
             assertEquals("once", readOf(scope, projectDir.resolve("A.java").toString(), projectDir.toString()),
-                         "restrict ON: a project file is still readable");
+                    "restrict ON: a project file is still readable");
             assertEquals("once", readOf(scope, ownSpool, pluginConfigTree(sessionId) + "/tmp/tool_results"),
-                         "restrict ON: the session's own tree is readable — the shared rule already covers what the own-tree "
-                         + "exemption used to");
+                    "restrict ON: the session's own tree is readable — the shared rule already covers what the own-tree "
+                    + "exemption used to");
             assertEquals("reject", readOf(scope, history.toString(), history.getParent().toString()),
-                         "the conversation-history tree is vetoed for reads whatever the setting");
+                    "the conversation-history tree is vetoed for reads whatever the setting");
 
             server.registerSession(sessionId, AiTypeEnum.OPENCODE, List.<File>of(projectDir.toFile()), false);
             assertEquals("once", readOf(scope, OUTSIDE_FILE, OUTSIDE_DIR),
-                         "restrict OFF: an external file is readable, as GetFileContent reads it");
+                    "restrict OFF: an external file is readable, as GetFileContent reads it");
             assertEquals("reject", readOf(scope, history.toString(), history.getParent().toString()),
-                         "restrict OFF does not lift the conversation-history veto");
+                    "restrict OFF does not lift the conversation-history veto");
         }
         finally {
             server.stop();
         }
     }
 
-    private static String readOf(OpenCodeAcpClientHandler.SessionFileScope scope, String file, String dir) throws Exception {
+    private static String readOf(AbstractAcpClientHandler.SessionFileScope scope, String file, String dir) throws Exception {
         List<AiProcessEvent> fired = new ArrayList<>();
         OpenCodeAcpClientHandler handler = new OpenCodeAcpClientHandler(fired::add, () -> {
-                                                                }, null, scope);
+        }, null, scope);
         announceToolCall(handler, "call-r", "read", "pending");
         fired.removeIf(e -> e instanceof ToolUseEvent);
         CompletableFuture<JsonObject> future = handler.onRequestPermission(params(externalDirectory("call-r", file, dir)));

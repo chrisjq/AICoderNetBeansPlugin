@@ -11,12 +11,13 @@ import java.util.logging.LogRecord;
 import java.util.logging.Logger;
 import java.util.logging.SimpleFormatter;
 import kiwi.ingenuity.netbeans.plugin.aicoder.PluginSettings;
+import kiwi.ingenuity.netbeans.plugin.aicoder.ai.acp.AbstractAcpClientHandler;
+import kiwi.ingenuity.netbeans.plugin.aicoder.ai.acp.AcpException;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.events.McpSteeringRefusalEvent;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.events.PolicyRefusalEvent;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.events.PolicyRefusalEvent.Refusal;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.events.StatusEvent;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.events.TurnCompleteEvent;
-import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.opencode.acp.AcpException;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.events.AiProcessEvent;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
@@ -48,7 +49,7 @@ class OpenCodeAiProcessManagerPolicyRefusalTest {
         final OpenCodeAcpClientHandler handler = new OpenCodeAcpClientHandler(e -> {
         }, () -> {
         }, null,
-                new OpenCodeAcpClientHandler.SessionFileScope(
+                new AbstractAcpClientHandler.SessionFileScope(
                         p -> false, p -> false, p -> "refused: " + p));
         final OpenCodeAiProcessManager manager;
 
@@ -58,9 +59,9 @@ class OpenCodeAiProcessManagerPolicyRefusalTest {
             manager = new OpenCodeAiProcessManager(e -> {
                 events.add(e);
                 timeline.add(e instanceof TurnCompleteEvent ? "turn-complete"
-                        : e instanceof McpSteeringRefusalEvent ? "mcp-steering-refusal"
-                                : e instanceof PolicyRefusalEvent ? "policy-refusal"
-                                        : e instanceof StatusEvent ? "status" : e.getClass().getSimpleName());
+                             : e instanceof McpSteeringRefusalEvent ? "mcp-steering-refusal"
+                               : e instanceof PolicyRefusalEvent ? "policy-refusal"
+                                 : e instanceof StatusEvent ? "status" : e.getClass().getSimpleName());
             }) {
                 {
                     this.running = startRunning;
@@ -282,7 +283,7 @@ class OpenCodeAiProcessManagerPolicyRefusalTest {
     @Test
     void aTurnThatFailedForAnyOtherReasonIsNotOneARefusalEndedAndForgetsItsRefusals() throws Exception {
         for (Throwable failure : new Throwable[]{new AcpException(-32000, "auth required"),
-            new RuntimeException("unexpected failure")}) {
+                                                 new RuntimeException("unexpected failure")}) {
             Rig rig = new Rig();
             rig.refuse(FILE);
 
@@ -338,7 +339,8 @@ class OpenCodeAiProcessManagerPolicyRefusalTest {
         PluginSettings.setDebugJson(debugJson);
         try {
             action.run();
-        } finally {
+        }
+        finally {
             PluginSettings.setDebugJson(previousDebug);
             logger.setLevel(previousLevel);
             logger.removeHandler(capture);

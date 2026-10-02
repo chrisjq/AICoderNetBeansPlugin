@@ -1,4 +1,4 @@
-package kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.opencode.acp;
+package kiwi.ingenuity.netbeans.plugin.aicoder.ai.acp;
 
 import com.google.gson.Gson;
 import com.google.gson.JsonObject;
@@ -18,6 +18,10 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.locks.ReentrantLock;
+import java.util.logging.Level;
+import java.util.logging.Logger;
+import kiwi.ingenuity.netbeans.plugin.aicoder.PluginSettings;
+import kiwi.ingenuity.netbeans.plugin.aicoder.process.server.McpHookServerUtil;
 
 /**
  * Bidirectional nd-JSON JSON-RPC 2.0 transport for the Agent Client Protocol.
@@ -38,11 +42,14 @@ import java.util.concurrent.locks.ReentrantLock;
  */
 public class AcpConnection {
 
+    private static final Logger LOG = Logger.getLogger(AcpConnection.class.getName());
+
     private static final Gson GSON = new Gson();
 
     private final PrintWriter writer;
     private final InputStream inputStream;
     private final AcpClientHandler handler;
+    private final String label;
     private final AtomicLong nextId = new AtomicLong(1);
     private final ConcurrentHashMap<Long, CompletableFuture<JsonObject>> pending = new ConcurrentHashMap<>();
     private final ReentrantLock writeLock = new ReentrantLock();
@@ -53,9 +60,20 @@ public class AcpConnection {
     private volatile boolean streamEnded;
 
     public AcpConnection(OutputStream out, InputStream in, AcpClientHandler handler) {
+        this(out, in, handler, "ACP");
+    }
+
+    /**
+     * @param label backend name for the raw wire log ({@code "Grok"}, {@code "OpenCode"}) — purely cosmetic,
+     *              never parsed, never sent on the wire. Every line in both directions is logged under this
+     *              label, secrets redacted, when {@link PluginSettings#isDebugJson()} is set — the same gate
+     *              every other ACP debug line in this plugin uses.
+     */
+    public AcpConnection(OutputStream out, InputStream in, AcpClientHandler handler, String label) {
         this.writer = new PrintWriter(new OutputStreamWriter(out, StandardCharsets.UTF_8), false);
         this.inputStream = in;
         this.handler = handler;
+        this.label = label != null ? label : "ACP";
         this.notifyExecutor = Executors.newSingleThreadExecutor(r -> {
             Thread t = new Thread(r, "acp-notify");
             t.setDaemon(true);
@@ -163,6 +181,9 @@ public class AcpConnection {
      */
     private boolean writeMessage(JsonObject message) {
         String line = GSON.toJson(message);
+        if (PluginSettings.isDebugJson()) {
+            LOG.log(Level.INFO, "{0} >> {1}", new Object[]{label, McpHookServerUtil.redactAllSecrets(line)});
+        }
         writeLock.lock();
         try {
             writer.print(line);
@@ -181,6 +202,9 @@ public class AcpConnection {
             while (!closed.get() && (line = reader.readLine()) != null) {
                 String trimmed = line.trim();
                 if (!trimmed.isEmpty()) {
+                    if (PluginSettings.isDebugJson()) {
+                        LOG.log(Level.INFO, "{0} << {1}", new Object[]{label, McpHookServerUtil.redactAllSecrets(trimmed)});
+                    }
                     handleLine(trimmed);
                 }
             }

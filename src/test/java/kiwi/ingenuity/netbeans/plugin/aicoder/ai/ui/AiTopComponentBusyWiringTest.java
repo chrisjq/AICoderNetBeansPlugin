@@ -3,6 +3,7 @@ package kiwi.ingenuity.netbeans.plugin.aicoder.ai.ui;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.regex.Pattern;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import org.junit.jupiter.api.Test;
@@ -24,7 +25,7 @@ class AiTopComponentBusyWiringTest {
     }
 
     private static int countOf(String source, String needle) {
-        return source.split(java.util.regex.Pattern.quote(needle), -1).length - 1;
+        return source.split(Pattern.quote(needle), -1).length - 1;
     }
 
     private static String method(String source, String signature, String nextSignature) {

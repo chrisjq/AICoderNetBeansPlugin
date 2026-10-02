@@ -483,7 +483,7 @@ public final class McpHookServerUtil {
             }
         }
         Logger.getLogger(McpHookServerUtil.class.getName())
-                .log(java.util.logging.Level.INFO, sb.toString());
+                .log(Level.INFO, sb.toString());
     }
 
     /**

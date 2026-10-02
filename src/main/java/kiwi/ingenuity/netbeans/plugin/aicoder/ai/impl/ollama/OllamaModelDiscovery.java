@@ -11,6 +11,8 @@ import java.net.http.HttpResponse;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
@@ -24,10 +26,11 @@ public final class OllamaModelDiscovery {
             .build();
     private static final Map<String, List<String>> MODEL_CACHE = new ConcurrentHashMap<>();
     /**
-     * Per-server, per-model {@code capabilities} arrays from the native {@code GET /api/tags} (verified live : a
-     * thinking-capable model's entry includes {@code "thinking"}; {@code qwen2.5-coder:14b} reported
-     * {@code ["completion","tools","insert"]} — no thinking support). Keyed the same way as {@link #MODEL_CACHE}
-     * (normalized base URL), since different sessions can point at different Ollama servers.
+     * Per-server, per-model {@code capabilities} arrays from the native {@code GET /api/tags} (verified live
+     * : a thinking-capable model's entry includes {@code "thinking"}; {@code qwen2.5-coder:14b} reported
+     * {@code ["completion","tools","insert"]} — no thinking support). Keyed the same way as
+     * {@link #MODEL_CACHE} (normalized base URL), since different sessions can point at different Ollama
+     * servers.
      */
     private static final Map<String, Map<String, List<String>>> CAPABILITY_CACHE = new ConcurrentHashMap<>();
 
@@ -59,11 +62,12 @@ public final class OllamaModelDiscovery {
     }
 
     /**
-     * Parses the native {@code GET /api/tags} response into a per-model capabilities map. Unknown/malformed entries are
-     * skipped rather than failing the whole batch — one bad entry must not lose every other model's data.
+     * Parses the native {@code GET /api/tags} response into a per-model capabilities map. Unknown/malformed
+     * entries are skipped rather than failing the whole batch — one bad entry must not lose every other
+     * model's data.
      */
     static Map<String, List<String>> parseModelCapabilities(String responseBody) {
-        Map<String, List<String>> out = new java.util.LinkedHashMap<>();
+        Map<String, List<String>> out = new LinkedHashMap<>();
         JsonObject root = JsonParser.parseString(responseBody).getAsJsonObject();
         JsonElement models = root.get(OllamaJsonKeyEnum.MODELS.key());
         if (models == null || !models.isJsonArray()) {
@@ -93,9 +97,9 @@ public final class OllamaModelDiscovery {
     }
 
     /**
-     * The raw {@code capabilities} array the last successful {@code GET /api/tags} reported for {@code model} on
-     * {@code baseUrl}'s server, or empty if that model has not (yet) been reported — either discovery has not completed
-     * for this server, or its {@code /api/tags} does not list this exact model string.
+     * The raw {@code capabilities} array the last successful {@code GET /api/tags} reported for {@code model}
+     * on {@code baseUrl}'s server, or empty if that model has not (yet) been reported — either discovery has
+     * not completed for this server, or its {@code /api/tags} does not list this exact model string.
      */
     public static List<String> capabilitiesFor(String baseUrl, String model) {
         if (model == null || model.isBlank()) {
@@ -106,20 +110,20 @@ public final class OllamaModelDiscovery {
     }
 
     /**
-     * Whether discovery has POSITIVELY confirmed {@code model} supports thinking (its {@code /api/tags} entry's
-     * {@code capabilities} includes {@code "thinking"}). False both when the model genuinely cannot think and when
-     * discovery has not reported on it yet — see {@link #isModelKnown} to tell those two apart, which matters because
-     * only the former is safe grounds to clear a user's stored value.
+     * Whether discovery has POSITIVELY confirmed {@code model} supports thinking (its {@code /api/tags}
+     * entry's {@code capabilities} includes {@code "thinking"}). False both when the model genuinely cannot
+     * think and when discovery has not reported on it yet — see {@link #isModelKnown} to tell those two
+     * apart, which matters because only the former is safe grounds to clear a user's stored value.
      */
     public static boolean modelSupportsThinking(String baseUrl, String model) {
         return capabilitiesFor(baseUrl, model).contains("thinking");
     }
 
     /**
-     * Whether {@code model} appeared at all in the last successful {@code /api/tags} response for {@code baseUrl} —
-     * i.e. whether {@link #modelSupportsThinking}'s answer is a confirmed fact rather than "no data yet". Callers must
-     * not clear a stored reasoning-effort value on the strength of an unknown model; the 4xx retry
-     * ({@code OllamaAiProcessManager}) is the backstop for that case instead.
+     * Whether {@code model} appeared at all in the last successful {@code /api/tags} response for
+     * {@code baseUrl} — i.e. whether {@link #modelSupportsThinking}'s answer is a confirmed fact rather than
+     * "no data yet". Callers must not clear a stored reasoning-effort value on the strength of an unknown
+     * model; the 4xx retry ({@code OllamaAiProcessManager}) is the backstop for that case instead.
      */
     public static boolean isModelKnown(String baseUrl, String model) {
         if (model == null || model.isBlank()) {
@@ -135,7 +139,7 @@ public final class OllamaModelDiscovery {
         if (capabilities != null && capabilities.isJsonArray()) {
             for (JsonElement element : capabilities.getAsJsonArray()) {
                 if (element.isJsonPrimitive()
-                        && "tools".equalsIgnoreCase(element.getAsString())) {
+                    && "tools".equalsIgnoreCase(element.getAsString())) {
                     return null;
                 }
             }
@@ -202,11 +206,11 @@ public final class OllamaModelDiscovery {
                 .GET()
                 .build();
         HttpResponse<String> response = HTTP_CLIENT.send(request,
-                                                         HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8));
+                HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8));
         if (response.statusCode() < 200 || response.statusCode() >= 300) {
             throw new IOException("HTTP " + response.statusCode());
         }
-        return java.util.Arrays.asList(assembleModelList(parseModelIds(response.body())));
+        return Arrays.asList(assembleModelList(parseModelIds(response.body())));
     }
 
     private static Map<String, List<String>> fetchModelCapabilities(String baseUrl) throws IOException, InterruptedException {
@@ -215,7 +219,7 @@ public final class OllamaModelDiscovery {
                 .GET()
                 .build();
         HttpResponse<String> response = HTTP_CLIENT.send(request,
-                                                         HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8));
+                HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8));
         if (response.statusCode() < 200 || response.statusCode() >= 300) {
             throw new IOException("HTTP " + response.statusCode());
         }
@@ -232,7 +236,7 @@ public final class OllamaModelDiscovery {
                 .POST(HttpRequest.BodyPublishers.ofString(body.toString(), StandardCharsets.UTF_8))
                 .build();
         HttpResponse<String> response = HTTP_CLIENT.send(request,
-                                                         HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8));
+                HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8));
         if (response.statusCode() < 200 || response.statusCode() >= 300) {
             return null;
         }

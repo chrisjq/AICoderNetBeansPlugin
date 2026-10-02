@@ -9,6 +9,7 @@ import java.time.Instant;
 import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
 import java.util.List;
+import java.util.concurrent.Callable;
 import java.util.concurrent.atomic.AtomicReference;
 import javax.swing.JCheckBox;
 import javax.swing.JPanel;
@@ -81,7 +82,7 @@ class AiManagerModelTest {
         }
     }
 
-    private static <T> T onEdt(java.util.concurrent.Callable<T> action) throws Exception {
+    private static <T> T onEdt(Callable<T> action) throws Exception {
         AtomicReference<T> value = new AtomicReference<>();
         AtomicReference<Exception> failure = new AtomicReference<>();
         SwingUtilities.invokeAndWait(() -> {

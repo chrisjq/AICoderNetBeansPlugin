@@ -67,7 +67,7 @@ class GithubCopilotAiImplementationTest {
         private final CompletableFuture<SessionHistoryCompactResult> compactResult;
         private int compactCalls;
         private final java.util.concurrent.atomic.AtomicInteger aborts = new java.util.concurrent.atomic.AtomicInteger();
-        private final List<String> prompts = new java.util.ArrayList<>();
+        private final List<String> prompts = new ArrayList<>();
 
         CompactManager(AiProcessEventListener listener, CompletableFuture<SessionHistoryCompactResult> compactResult) {
             super(listener);
@@ -644,7 +644,7 @@ class GithubCopilotAiImplementationTest {
 
     @Test
     void compact_callsRpcExactlyOnceAndNeverSendsPrompt() {
-        List<AiProcessEvent> events = new java.util.ArrayList<>();
+        List<AiProcessEvent> events = new ArrayList<>();
         CompactManager manager = new CompactManager(events::add, CompletableFuture.completedFuture(
                 new SessionHistoryCompactResult(true, 40L, 2L, null, null)));
         manager.setState(true, false);
@@ -671,7 +671,7 @@ class GithubCopilotAiImplementationTest {
         // SDK's "Compaction already in progress" rejection, which used to surface as a JsonRpcException stack
         // trace and a FAILED status instead of a plain "already waiting" notice. The never-completed future is
         // what holds the first compact in flight across the second click.
-        List<AiProcessEvent> events = new java.util.ArrayList<>();
+        List<AiProcessEvent> events = new ArrayList<>();
         CompactManager manager = new CompactManager(events::add, new CompletableFuture<>());
         manager.setState(true, false);
         GithubCopilotSessionSettings settings = new GithubCopilotSessionSettings();
@@ -697,7 +697,7 @@ class GithubCopilotAiImplementationTest {
         // when it ends. While the RPC is in flight there must be no closing status yet — a session whose compact
         // is still running is locked (isBusy()) against input and further compacts. The never-completed future
         // holds the compact open while the assertions on the in-flight state run.
-        List<AiProcessEvent> events = new java.util.ArrayList<>();
+        List<AiProcessEvent> events = new ArrayList<>();
         CompletableFuture<SessionHistoryCompactResult> pending = new CompletableFuture<>();
         CompactManager manager = new CompactManager(events::add, pending);
         manager.setState(true, false);
@@ -719,7 +719,7 @@ class GithubCopilotAiImplementationTest {
     void compact_busyWhileInFlightThenExactlyOneFailedOnError() {
         // The case that matters most: a compact that errors must still close its BUSY — never leave the session
         // holding an open BUSY (an un-closable state once the RPC is gone) — and report FAILED with the detail.
-        List<AiProcessEvent> events = new java.util.ArrayList<>();
+        List<AiProcessEvent> events = new ArrayList<>();
         CompletableFuture<SessionHistoryCompactResult> pending = new CompletableFuture<>();
         CompactManager manager = new CompactManager(events::add, pending);
         manager.setState(true, false);
@@ -739,7 +739,7 @@ class GithubCopilotAiImplementationTest {
     void compact_refusedByTheBusyGuardEmitsNoBusyAndDoesNotCallRpc() {
         // Refused by the guard before any RPC or runWork, so nothing is busy and nothing is in flight — no BUSY
         // is ever emitted, no closing status (there is no completion to close with), and no RPC is issued.
-        List<AiProcessEvent> events = new java.util.ArrayList<>();
+        List<AiProcessEvent> events = new ArrayList<>();
         CompactManager manager = new CompactManager(events::add, new CompletableFuture<>());
         manager.setState(true, true);
         GithubCopilotSessionSettings settings = new GithubCopilotSessionSettings();
@@ -755,7 +755,7 @@ class GithubCopilotAiImplementationTest {
 
     @Test
     void compact_falseSuccessReportsFailedAndNotCompacted() {
-        List<AiProcessEvent> events = new java.util.ArrayList<>();
+        List<AiProcessEvent> events = new ArrayList<>();
         CompactManager manager = new CompactManager(events::add, CompletableFuture.completedFuture(
                 new SessionHistoryCompactResult(false, null, null, null, null)));
         manager.setState(true, false);
@@ -773,7 +773,7 @@ class GithubCopilotAiImplementationTest {
 
     @Test
     void compactRpcFailureReportsFailedWithErrorDetail() {
-        List<AiProcessEvent> events = new java.util.ArrayList<>();
+        List<AiProcessEvent> events = new ArrayList<>();
         CompactManager manager = new CompactManager(events::add, CompletableFuture.failedFuture(new IllegalStateException("rpc exploded")));
         manager.setState(true, false);
         GithubCopilotSessionSettings settings = new GithubCopilotSessionSettings();
@@ -788,7 +788,7 @@ class GithubCopilotAiImplementationTest {
     void compact_nothingToCompactIsReadyNotFailed() {
         // The SDK's "Nothing to compact." is a harmless outcome, not an error — it must surface as READY
         // (never FAILED), and the BUSY it opened must still close exactly once: no FAILED, no stuck BUSY.
-        List<AiProcessEvent> events = new java.util.ArrayList<>();
+        List<AiProcessEvent> events = new ArrayList<>();
         CompactManager manager = new CompactManager(events::add,
                 CompletableFuture.failedFuture(new IllegalStateException("Nothing to compact.")));
         manager.setState(true, false);
@@ -808,7 +808,7 @@ class GithubCopilotAiImplementationTest {
     void compact_nullResultReportsFailedNotCompacted() {
         // Fix #4: a null compact result (the RPC resolved but reported nothing) is not a success — the BUSY must
         // close exactly once, as FAILED, not left hanging and never as READY.
-        List<AiProcessEvent> events = new java.util.ArrayList<>();
+        List<AiProcessEvent> events = new ArrayList<>();
         CompactManager manager = new CompactManager(events::add, CompletableFuture.completedFuture(null));
         manager.setState(true, false);
         GithubCopilotSessionSettings settings = new GithubCopilotSessionSettings();
@@ -828,7 +828,7 @@ class GithubCopilotAiImplementationTest {
         // plain-language message (not "Compact failed: java.util.concurrent.TimeoutException"), and must abort the
         // still-running RPC through the SDK's public abortManualCompaction. The short timeout is injected via the
         // overridable seam so the test does not wait the production five minutes.
-        List<AiProcessEvent> events = new java.util.ArrayList<>();
+        List<AiProcessEvent> events = new ArrayList<>();
         CountDownLatch closed = new CountDownLatch(1);
         AtomicReference<StatusEvent> closing = new AtomicReference<>();
         AiProcessEventListener listener = event -> {
@@ -862,7 +862,7 @@ class GithubCopilotAiImplementationTest {
     void stopWhileCompactionInFlight_closesItAsFailedExactlyOnce() {
         // Fix #4: the stop path is proven against compact() itself, not a generic runWork lambda, so the real
         // non-turn work the plugin starts is the work being closed.
-        List<AiProcessEvent> events = new java.util.ArrayList<>();
+        List<AiProcessEvent> events = new ArrayList<>();
         CompletableFuture<SessionHistoryCompactResult> pending = new CompletableFuture<>();
         CompactManager manager = new CompactManager(events::add, pending);
         manager.setState(true, false);
@@ -889,7 +889,7 @@ class GithubCopilotAiImplementationTest {
                 if (running && !processing) {
                     continue;
                 }
-                List<AiProcessEvent> events = new java.util.ArrayList<>();
+                List<AiProcessEvent> events = new ArrayList<>();
                 CompactManager manager = new CompactManager(events::add, CompletableFuture.completedFuture(null));
                 manager.setState(running, processing);
                 GithubCopilotSessionSettings settings = new GithubCopilotSessionSettings();

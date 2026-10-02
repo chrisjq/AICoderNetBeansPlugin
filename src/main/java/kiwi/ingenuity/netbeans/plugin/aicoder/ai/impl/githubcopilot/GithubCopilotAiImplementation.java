@@ -3,6 +3,8 @@ package kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.githubcopilot;
 import com.github.copilot.generated.rpc.SessionHistoryCompactResult;
 import java.util.Arrays;
 import java.util.List;
+import java.util.Map;
+import java.util.Objects;
 import java.util.concurrent.Executor;
 import java.util.concurrent.TimeoutException;
 import java.util.logging.Level;
@@ -67,7 +69,7 @@ public class GithubCopilotAiImplementation extends AiImplementation {
 
     public static GithubCopilotReasoningEffortsEvent cachedReasoningEfforts() {
         GithubCopilotReasoningEffortsEvent cached = cachedReasoningEffortsEvent;
-        return cached != null ? cached : new GithubCopilotReasoningEffortsEvent(java.util.Map.of(), java.util.Map.of());
+        return cached != null ? cached : new GithubCopilotReasoningEffortsEvent(Map.of(), Map.of());
     }
 
     /**
@@ -232,7 +234,7 @@ public class GithubCopilotAiImplementation extends AiImplementation {
         processManager.setReasoningEffort(effort);
         recycleInBackground();
         if (currentSession != null && currentSession.settings() instanceof GithubCopilotSessionSettings settings
-            && !java.util.Objects.equals(effort, settings.reasoningEffort())) {
+            && !Objects.equals(effort, settings.reasoningEffort())) {
             settings.setReasoningEffort(effort);
         }
     }
@@ -265,7 +267,7 @@ public class GithubCopilotAiImplementation extends AiImplementation {
                 setReasoningEffort(effort);
                 AiSessionSettings cfg = host.getSessionSettings();
                 if (cfg instanceof GithubCopilotSessionSettings ghSettings) {
-                    if (!java.util.Objects.equals(effort, ghSettings.reasoningEffort())) {
+                    if (!Objects.equals(effort, ghSettings.reasoningEffort())) {
                         ghSettings.setReasoningEffort(effort);
                     }
                     processManager.setCurrentSession(currentSession);
@@ -456,12 +458,12 @@ public class GithubCopilotAiImplementation extends AiImplementation {
         // Retain the host so applyModelFallback can persist session settings
         // even if the info bar has not been created or has been recreated.
         this.sessionHost = session;
-    // Nothing else to do here. Copilot is driven exclusively in prompt mode (`copilot -p`),
-    // where memory is disabled by default (the only switch is the opt-in
-    // `--enable-memory`, which GithubCopilotProcessManager never passes).
-    // The user's ~/.copilot/settings.json also persists "memory": false.
-    // So there is nothing to do on start or resume — a previous "/memory off"
-    // turn here was redundant and cost a startup round-trip every session.
+        // Nothing else to do here. Copilot is driven exclusively in prompt mode (`copilot -p`),
+        // where memory is disabled by default (the only switch is the opt-in
+        // `--enable-memory`, which GithubCopilotProcessManager never passes).
+        // The user's ~/.copilot/settings.json also persists "memory": false.
+        // So there is nothing to do on start or resume — a previous "/memory off"
+        // turn here was redundant and cost a startup round-trip every session.
     }
 
     @Override

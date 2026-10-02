@@ -109,6 +109,18 @@ public class GrokAiImplementation extends AiImplementation {
     }
 
     @Override
+    public void resumeSession(String sessionId) {
+        // AiTopComponent.loadHistory() passes the PLUGIN session id, which is meaningless to Grok — the
+        // agent mints its own session id, persisted in GrokSessionSettings.acpSessionId. Ignore the argument
+        // and always resume from the stored ACP id (or not at all). Mirrors OpenCodeAiImplementation.
+        String stored = currentSession != null && currentSession.settings() instanceof GrokSessionSettings gs
+                        ? gs.acpSessionId() : null;
+        if (stored != null && !stored.isBlank()) {
+            delegate.resumeSession(stored);
+        }
+    }
+
+    @Override
     public void setModel(String model) {
         // Session-scoped change — deliberately does not write the global default.
         // The global default (Tools → Options) is owned solely by the settings panel.
@@ -116,6 +128,9 @@ public class GrokAiImplementation extends AiImplementation {
             mc.setModel(model);
         }
         delegate.setModel(model);
+        if (delegate.isSessionLive() && model != null && !model.isBlank()) {
+            delegate.setConfigOption("model", model);
+        }
     }
 
     public List<String> getDefaultModels() {
@@ -236,13 +251,16 @@ public class GrokAiImplementation extends AiImplementation {
     protected void afterStart() {
         EffectiveReasoningEffort effort = effectiveReasoningEffort();
         delegate.configureReasoningEffort(effort.value(), effort.fromSession());
-        if (currentSession != null && isStoredSessionValid(currentSession.id())) {
-            delegate.resumeSession(currentSession.id());
+        if (currentSession != null && currentSession.settings() instanceof GrokSessionSettings gs
+            && gs.acpSessionId() != null && !gs.acpSessionId().isBlank()) {
+            delegate.resumeSession(gs.acpSessionId());
         }
     }
 
     @Override
     public boolean isStoredSessionValid(String sessionId) {
-        return GrokUsageSignalsReader.sessionExists(sessionId);
+        // session/load is attempted first with fallback to session/new, so a stored session is always safe
+        // to resume from — a stale ACP id never blocks the user. Mirrors OpenCodeAiImplementation.
+        return true;
     }
 }

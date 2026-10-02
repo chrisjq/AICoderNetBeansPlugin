@@ -1,5 +1,6 @@
 package kiwi.ingenuity.netbeans.plugin.aicoder.ai.http.context;
 
+import java.util.List;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.Function;
@@ -19,7 +20,8 @@ class OllamaChatContextBrokerTest {
             broker.startContextDiscovery("http://ollama.example:11434/v1/");
             await(() -> broker.limitForTest() == 131072);
             assertEquals(131072, broker.limitForTest());
-        } finally {
+        }
+        finally {
             broker.close();
         }
     }
@@ -36,7 +38,8 @@ class OllamaChatContextBrokerTest {
             await(() -> calls.get() == 1);
             assertEquals(0, broker.limitForTest());
             assertEquals(12000, broker.trimThresholdForTest());
-        } finally {
+        }
+        finally {
             broker.close();
         }
     }
@@ -51,7 +54,8 @@ class OllamaChatContextBrokerTest {
             unreachable.startContextDiscovery("http://ollama.example:11434/v1");
             assertEquals(0, malformed.limitForTest());
             assertEquals(0, unreachable.limitForTest());
-        } finally {
+        }
+        finally {
             malformed.close();
             unreachable.close();
         }
@@ -71,11 +75,12 @@ class OllamaChatContextBrokerTest {
             broker.startContextDiscovery("http://ollama.example:11434/v1");
             await(() -> broker.limitForTest() == 100);
             assertEquals(80, broker.trimThresholdForTest());
-            broker.append(new ChatMessage(ChatRole.USER, "x".repeat(240), java.util.List.of(), null));
+            broker.append(new ChatMessage(ChatRole.USER, "x".repeat(240), List.of(), null));
             broker.trimIfNeeded();
             assertEquals(1, broker.entryCount());
             assertEquals(1, calls.get());
-        } finally {
+        }
+        finally {
             broker.close();
         }
     }
@@ -90,7 +95,8 @@ class OllamaChatContextBrokerTest {
             broker.startContextDiscovery("http://ollama.example:11434/v1", "model-a");
             await(() -> broker.limitForTest() == 100);
             assertEquals(50, broker.trimThresholdForTest());
-        } finally {
+        }
+        finally {
             broker.close();
         }
     }
@@ -105,7 +111,8 @@ class OllamaChatContextBrokerTest {
             broker.startContextDiscovery("http://ollama.example:11434/v1", "model-a");
             await(() -> broker.limitForTest() == 32768);
             assertEquals(32768, broker.limitForTest());
-        } finally {
+        }
+        finally {
             broker.close();
         }
     }
@@ -122,7 +129,8 @@ class OllamaChatContextBrokerTest {
             broker.startContextDiscovery("http://ollama.example:11434/v1", "my-model");
             await(() -> calls.get() == 1);
             assertEquals(0, broker.limitForTest());
-        } finally {
+        }
+        finally {
             broker.close();
         }
     }
@@ -154,7 +162,7 @@ class OllamaChatContextBrokerTest {
     private static final class TestBroker extends OllamaChatContextBroker {
 
         TestBroker(ContextBrokerSettings settings,
-                Function<String, CompletableFuture<String>> api) {
+                   Function<String, CompletableFuture<String>> api) {
             super("test-session", settings, api);
         }
 

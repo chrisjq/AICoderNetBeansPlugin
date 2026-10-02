@@ -17,6 +17,8 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.AiTypeEnum;
+import kiwi.ingenuity.netbeans.plugin.aicoder.ai.acp.AcpClientHandler;
+import kiwi.ingenuity.netbeans.plugin.aicoder.ai.acp.AcpConnection;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.events.ConfirmEvent;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.events.PermissionDecision;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.events.PermissionEvent;
@@ -25,8 +27,6 @@ import kiwi.ingenuity.netbeans.plugin.aicoder.ai.events.StatusEventTypeEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.events.TextDeltaEvent;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.events.ToolUseEvent;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.events.TurnCompleteEvent;
-import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.opencode.acp.AcpClientHandler;
-import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.opencode.acp.AcpConnection;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.opencode.settings.OpenCodeSessionSettings;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.session.AiSession;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.session.InterruptTypeEnum;
@@ -48,7 +48,7 @@ class OpenCodeAiProcessManagerTest {
         };
 
         assertNotNull(manager.ownSessionConfigFileCheck(),
-                      "the manager must provide the ACP handler a predicate for its own session configuration files");
+                "the manager must provide the ACP handler a predicate for its own session configuration files");
     }
 
     @Test
@@ -61,10 +61,10 @@ class OpenCodeAiProcessManagerTest {
         assertFalse(command.contains("--cwd"));
         assertEquals(workDir, builder.directory());
         assertEquals(workDir.getAbsolutePath(),
-                     OpenCodeAiProcessManager.buildSessionNewParams(workDir.getAbsolutePath()).get("cwd").getAsString());
+                OpenCodeAiProcessManager.buildSessionNewParams(workDir.getAbsolutePath()).get("cwd").getAsString());
         assertEquals(workDir.getAbsolutePath(),
-                     OpenCodeAiProcessManager.buildSessionResumeParams("ses_test", workDir.getAbsolutePath(), null)
-                             .get("cwd").getAsString());
+                OpenCodeAiProcessManager.buildSessionResumeParams("ses_test", workDir.getAbsolutePath(), null)
+                        .get("cwd").getAsString());
     }
 
     // ---- Permission routing tests (Part B / Slice 4) ----
@@ -174,7 +174,7 @@ class OpenCodeAiProcessManagerTest {
         // invisibly in its own session, and a silent death there strands the
         // parent turn with no way for the user to see or interrupt it.
         assertEquals("deny", permission.get("task").getAsString(),
-                     "sub-agent spawning must be denied for every session the plugin launches");
+                "sub-agent spawning must be denied for every session the plugin launches");
         // No extra fields — this is a safety control
         assertEquals(4, permission.entrySet().size(), "permission must have exactly 4 keys");
         assertEquals(1, parsed.entrySet().size(), "config must have exactly 1 top-level key");
@@ -204,7 +204,7 @@ class OpenCodeAiProcessManagerTest {
         // Uses the verbatim sample shape
         List<AiProcessEvent> fired = new ArrayList<>();
         OpenCodeAcpClientHandler handler = new OpenCodeAcpClientHandler(e -> fired.add(e), () -> {
-                                                                });
+        });
 
         JsonObject content = new JsonObject();
         content.addProperty("type", "text");
@@ -227,7 +227,7 @@ class OpenCodeAiProcessManagerTest {
     void unknownSessionUpdateIsIgnoredAndDoesNotThrow() {
         List<AiProcessEvent> fired = new ArrayList<>();
         OpenCodeAcpClientHandler handler = new OpenCodeAcpClientHandler(e -> fired.add(e), () -> {
-                                                                });
+        });
 
         JsonObject update = new JsonObject();
         update.addProperty("sessionUpdate", "completely_unknown_future_type_xyz");
@@ -242,7 +242,7 @@ class OpenCodeAiProcessManagerTest {
         // Uses the verbatim tool_call shape (locations and rawInput are empty on announcement)
         List<AiProcessEvent> fired = new ArrayList<>();
         OpenCodeAcpClientHandler handler = new OpenCodeAcpClientHandler(e -> fired.add(e), () -> {
-                                                                });
+        });
 
         JsonObject update = new JsonObject();
         update.addProperty("sessionUpdate", "tool_call");
@@ -295,7 +295,7 @@ class OpenCodeAiProcessManagerTest {
         // Uses the verbatim sample payload shape
         List<AiProcessEvent> fired = new ArrayList<>();
         OpenCodeAcpClientHandler handler = new OpenCodeAcpClientHandler(fired::add, () -> {
-                                                                });
+        });
 
         JsonObject content = new JsonObject();
         content.addProperty("type", "diff");
@@ -345,7 +345,7 @@ class OpenCodeAiProcessManagerTest {
         {
             List<AiProcessEvent> fired = new ArrayList<>();
             OpenCodeAcpClientHandler handler = new OpenCodeAcpClientHandler(fired::add, () -> {
-                                                                    });
+            });
             CompletableFuture<JsonObject> future = handler.onRequestPermission(buildMinimalPermissionParams());
             ((PermissionEvent) fired.get(0)).response().complete(PermissionDecision.allowed());
             JsonObject result = future.get(1, TimeUnit.SECONDS);
@@ -356,7 +356,7 @@ class OpenCodeAiProcessManagerTest {
         {
             List<AiProcessEvent> fired = new ArrayList<>();
             OpenCodeAcpClientHandler handler = new OpenCodeAcpClientHandler(fired::add, () -> {
-                                                                    });
+            });
             CompletableFuture<JsonObject> future = handler.onRequestPermission(buildMinimalPermissionParams());
             ((PermissionEvent) fired.get(0)).response().complete(PermissionDecision.denied("user rejected"));
             JsonObject result = future.get(1, TimeUnit.SECONDS);
@@ -369,7 +369,7 @@ class OpenCodeAiProcessManagerTest {
     void permissionWithNoContentButLocationsResolvesPath() {
         List<AiProcessEvent> fired = new ArrayList<>();
         OpenCodeAcpClientHandler handler = new OpenCodeAcpClientHandler(fired::add, () -> {
-                                                                });
+        });
 
         JsonObject location = new JsonObject();
         location.addProperty("path", "/some/path.txt");
@@ -400,7 +400,7 @@ class OpenCodeAiProcessManagerTest {
         // oldText/newText), not path resolution, which is covered separately below.
         List<AiProcessEvent> fired = new ArrayList<>();
         OpenCodeAcpClientHandler handler = new OpenCodeAcpClientHandler(fired::add, () -> {
-                                                                });
+        });
 
         JsonObject content = new JsonObject();
         content.addProperty("type", "bash"); // non-diff — no oldText/newText
@@ -438,7 +438,7 @@ class OpenCodeAiProcessManagerTest {
     void cancelPendingPermissionsProducesOutcomeCancelled() throws Exception {
         List<AiProcessEvent> fired = new ArrayList<>();
         OpenCodeAcpClientHandler handler = new OpenCodeAcpClientHandler(fired::add, () -> {
-                                                                });
+        });
 
         CompletableFuture<JsonObject> future = handler.onRequestPermission(buildMinimalPermissionParams());
         assertFalse(future.isDone());
@@ -458,7 +458,7 @@ class OpenCodeAiProcessManagerTest {
         // — an arbitrary shell command mislabelled and auto-approved as a file write.
         List<AiProcessEvent> fired = new ArrayList<>();
         OpenCodeAcpClientHandler handler = new OpenCodeAcpClientHandler(fired::add, () -> {
-                                                                });
+        });
 
         JsonObject rawInput = new JsonObject();
         rawInput.addProperty("command", "echo hi");
@@ -479,7 +479,7 @@ class OpenCodeAiProcessManagerTest {
 
         assertEquals(1, fired.size());
         assertInstanceOf(ConfirmEvent.class, fired.get(0),
-                         "a shell command must raise ConfirmEvent, not PermissionEvent — there is no diff to render");
+                "a shell command must raise ConfirmEvent, not PermissionEvent — there is no diff to render");
         ConfirmEvent ce = (ConfirmEvent) fired.get(0);
         assertEquals("Execute", ce.toolName());
         assertEquals("echo hi", ce.displayText());
@@ -494,7 +494,7 @@ class OpenCodeAiProcessManagerTest {
     void executeKindWithNoCommandFallsBackToTitleThenPlaceholder() {
         List<AiProcessEvent> fired = new ArrayList<>();
         OpenCodeAcpClientHandler handler = new OpenCodeAcpClientHandler(fired::add, () -> {
-                                                                });
+        });
 
         JsonObject toolCall = new JsonObject();
         toolCall.addProperty("title", "run the build");
@@ -518,7 +518,7 @@ class OpenCodeAiProcessManagerTest {
         // and with auto-accept on, an unidentified action was approved sight unseen.
         List<AiProcessEvent> fired = new ArrayList<>();
         OpenCodeAcpClientHandler handler = new OpenCodeAcpClientHandler(fired::add, () -> {
-                                                                });
+        });
 
         JsonObject toolCall = new JsonObject();
         toolCall.addProperty("title", "list directory contents");
@@ -533,7 +533,7 @@ class OpenCodeAiProcessManagerTest {
 
         assertEquals(1, fired.size());
         assertInstanceOf(ConfirmEvent.class, fired.get(0),
-                         "no path and not execute must raise ConfirmEvent, not a null-path PermissionEvent");
+                "no path and not execute must raise ConfirmEvent, not a null-path PermissionEvent");
         ConfirmEvent ce = (ConfirmEvent) fired.get(0);
         assertEquals("read", ce.toolName(), "toolName must show the real kind, not be hard-coded to \"Write\"");
         assertEquals("list directory contents", ce.displayText(), "must show the title so there is something real to see");
@@ -548,7 +548,7 @@ class OpenCodeAiProcessManagerTest {
     void unidentifiedActionWithNoTitleUsesPlaceholderDisplayText() {
         List<AiProcessEvent> fired = new ArrayList<>();
         OpenCodeAcpClientHandler handler = new OpenCodeAcpClientHandler(fired::add, () -> {
-                                                                });
+        });
 
         JsonObject toolCall = new JsonObject();
         toolCall.addProperty("kind", "mystery");
@@ -592,9 +592,9 @@ class OpenCodeAiProcessManagerTest {
         long elapsedMs = (System.nanoTime() - t0) / 1_000_000;
 
         assertTrue(handshakeStarted.await(2, TimeUnit.SECONDS),
-                   "handshake thread did not start within 2 s");
+                "handshake thread did not start within 2 s");
         assertTrue(elapsedMs < 500,
-                   "sendPrompt blocked for " + elapsedMs + " ms — would freeze the EDT");
+                "sendPrompt blocked for " + elapsedMs + " ms — would freeze the EDT");
 
         handshakeGate.countDown(); // let the thread exit cleanly
     }
@@ -607,7 +607,7 @@ class OpenCodeAiProcessManagerTest {
         // that is not "Write" or "Edit", and the bug passes the file path as toolName.
         List<AiProcessEvent> fired = new ArrayList<>();
         OpenCodeAcpClientHandler handler = new OpenCodeAcpClientHandler(fired::add, () -> {
-                                                                });
+        });
 
         String originalContent = "original line one\noriginal line two\n";
         String proposedContent = "edited line one\nedited line two\n";
@@ -648,8 +648,8 @@ class OpenCodeAiProcessManagerTest {
                 pe.oldString(), pe.newString(), pe.writeContent());
 
         assertEquals(PermissionDiffPolicy.Outcome.SHOW_DIFF, decision.outcome(),
-                     "Policy must return SHOW_DIFF; actual outcome=" + decision.outcome()
-                     + " reason=" + decision.reason() + " toolName passed=" + pe.toolName());
+                "Policy must return SHOW_DIFF; actual outcome=" + decision.outcome()
+                + " reason=" + decision.reason() + " toolName passed=" + pe.toolName());
         assertEquals(proposedContent, decision.proposedContent());
     }
 
@@ -658,7 +658,7 @@ class OpenCodeAiProcessManagerTest {
         // New-file scenario: oldText absent, original="" — must reach SHOW_DIFF, not DENY.
         List<AiProcessEvent> fired = new ArrayList<>();
         OpenCodeAcpClientHandler handler = new OpenCodeAcpClientHandler(fired::add, () -> {
-                                                                });
+        });
 
         String newFileContent = "brand new content\n";
 
@@ -686,7 +686,7 @@ class OpenCodeAiProcessManagerTest {
                 pe.oldString(), pe.newString(), pe.writeContent());
 
         assertEquals(PermissionDiffPolicy.Outcome.SHOW_DIFF, decision.outcome(),
-                     "New file must yield SHOW_DIFF; got " + decision.outcome() + ": " + decision.reason());
+                "New file must yield SHOW_DIFF; got " + decision.outcome() + ": " + decision.reason());
         assertEquals(newFileContent, decision.proposedContent());
     }
 
@@ -695,7 +695,7 @@ class OpenCodeAiProcessManagerTest {
         // If the AI proposes the same content that is on disk, no diff panel is needed.
         List<AiProcessEvent> fired = new ArrayList<>();
         OpenCodeAcpClientHandler handler = new OpenCodeAcpClientHandler(fired::add, () -> {
-                                                                });
+        });
 
         String existingContent = "same content on both sides\n";
 
@@ -724,7 +724,7 @@ class OpenCodeAiProcessManagerTest {
                 pe.oldString(), pe.newString(), pe.writeContent());
 
         assertEquals(PermissionDiffPolicy.Outcome.ALLOW_SILENT, decision.outcome(),
-                     "Unchanged content must allow silently; got: " + decision.outcome());
+                "Unchanged content must allow silently; got: " + decision.outcome());
     }
 
     // ---- MCP wiring tests ----
@@ -772,15 +772,15 @@ class OpenCodeAiProcessManagerTest {
                 Instant.now(), Instant.now());
 
         OpenCodeAiSession session = new OpenCodeAiSession(aiSession, e -> {
-                                                  });
+        });
 
         assertNotNull(SessionRegistry.get("test-opencode-mcp-session"),
-                      "Session must be registered after construction");
+                "Session must be registered after construction");
 
         session.dispose();
 
         assertNull(SessionRegistry.get("test-opencode-mcp-session"),
-                   "Session must be removed from registry after dispose");
+                "Session must be removed from registry after dispose");
     }
 
     // ---- Mode-at-startup tests (Slice 6b) ----
@@ -807,7 +807,7 @@ class OpenCodeAiProcessManagerTest {
         OpenCodeSessionSettings settings = new OpenCodeSessionSettings();
         settings.setMode("plan");
         AiSession session = new AiSession("test-mode-diff", "Test", null,
-                                          AiTypeEnum.OPENCODE, null, settings, Instant.now(), Instant.now());
+                AiTypeEnum.OPENCODE, null, settings, Instant.now(), Instant.now());
         manager.setCurrentSession(session);
 
         manager.applyInitialModeIfNeeded();
@@ -840,7 +840,7 @@ class OpenCodeAiProcessManagerTest {
         OpenCodeSessionSettings settings = new OpenCodeSessionSettings();
         settings.setMode("build");
         AiSession session = new AiSession("test-mode-match", "Test", null,
-                                          AiTypeEnum.OPENCODE, null, settings, Instant.now(), Instant.now());
+                AiTypeEnum.OPENCODE, null, settings, Instant.now(), Instant.now());
         manager.setCurrentSession(session);
 
         manager.applyInitialModeIfNeeded();
@@ -886,7 +886,7 @@ class OpenCodeAiProcessManagerTest {
         manager.spawnAndHandshake(new File(System.getProperty("java.io.tmpdir")));
 
         assertEquals(List.of("resume-attempted", "new-attempted"), calls,
-                     "resume must be attempted before new when pendingAcpResumeId is set");
+                "resume must be attempted before new when pendingAcpResumeId is set");
         long infoCount = events.stream()
                 .filter(e -> e instanceof StatusEvent se && se.type() == StatusEventTypeEnum.INFO)
                 .count();
@@ -909,7 +909,7 @@ class OpenCodeAiProcessManagerTest {
 
         assertEquals(1, events.size(), "exactly one event must be fired");
         assertInstanceOf(TurnCompleteEvent.class, events.get(0),
-                         "stopReason=cancelled must produce TurnCompleteEvent, not FAILED");
+                "stopReason=cancelled must produce TurnCompleteEvent, not FAILED");
     }
 
     @Test
@@ -922,12 +922,11 @@ class OpenCodeAiProcessManagerTest {
             }
         };
 
-        manager.handleTurnError(
-                new kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.opencode.acp.AcpException(-32800, "cancelled"));
+        manager.handleTurnError(new kiwi.ingenuity.netbeans.plugin.aicoder.ai.acp.AcpException(-32800, "cancelled"));
 
         assertEquals(1, events.size(), "exactly one event must be fired");
         assertInstanceOf(TurnCompleteEvent.class, events.get(0),
-                         "ACP -32800 must produce TurnCompleteEvent, not StatusEvent(FAILED)");
+                "ACP -32800 must produce TurnCompleteEvent, not StatusEvent(FAILED)");
         assertFalse(manager.isProcessing(), "processing must be cleared after -32800");
     }
 
@@ -941,15 +940,14 @@ class OpenCodeAiProcessManagerTest {
             }
         };
 
-        manager.handleTurnError(
-                new kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.opencode.acp.AcpException(-32000, "auth required"));
+        manager.handleTurnError(new kiwi.ingenuity.netbeans.plugin.aicoder.ai.acp.AcpException(-32000, "auth required"));
 
         assertEquals(1, events.size(), "exactly one event must be fired");
         assertInstanceOf(StatusEvent.class, events.get(0));
         StatusEvent se = (StatusEvent) events.get(0);
         assertEquals(StatusEventTypeEnum.FAILED, se.type());
         assertTrue(se.text().contains("opencode auth login"),
-                   "FAILED message must hint at auth login command; got: " + se.text());
+                "FAILED message must hint at auth login command; got: " + se.text());
     }
 
     @Test
@@ -984,12 +982,12 @@ class OpenCodeAiProcessManagerTest {
 
     /**
      * Fix B regression guard: stop() used to block the calling thread on session/close's response for up to
-     * {@link OpenCodeTimeoutEnum#SESSION_CLOSE_WAIT_MILLIS} (5 s) via a synchronous {@code .get(5, SECONDS)} — reached
-     * directly from {@code AiTopComponent.componentClosed()} on the EDT. An agent that reads every message but never
-     * answers session/close reproduces exactly the hang that used to freeze the IDE: before the fix this test took
-     * roughly 5 s to reach the elapsed-time assertion below; after the fix stop() must return almost immediately
-     * regardless of whether a response ever arrives, and the graceful close/teardown must still complete on its own
-     * once the background wait elapses.
+     * {@link OpenCodeTimeoutEnum#SESSION_CLOSE_WAIT_MILLIS} (5 s) via a synchronous {@code .get(5, SECONDS)}
+     * — reached directly from {@code AiTopComponent.componentClosed()} on the EDT. An agent that reads every
+     * message but never answers session/close reproduces exactly the hang that used to freeze the IDE: before
+     * the fix this test took roughly 5 s to reach the elapsed-time assertion below; after the fix stop() must
+     * return almost immediately regardless of whether a response ever arrives, and the graceful
+     * close/teardown must still complete on its own once the background wait elapses.
      */
     @Test
     void stopReturnsPromptlyEvenWhenAgentNeverAnswersSessionClose() throws Exception {
@@ -1032,7 +1030,7 @@ class OpenCodeAiProcessManagerTest {
             long elapsedMs = (System.nanoTime() - t0) / 1_000_000;
 
             assertTrue(elapsedMs < 500,
-                       "stop() blocked for " + elapsedMs + " ms waiting on session/close — would freeze the EDT");
+                    "stop() blocked for " + elapsedMs + " ms waiting on session/close — would freeze the EDT");
             assertFalse(manager.isRunning(), "running must be false immediately after stop() returns");
 
             // The background reaper's bounded wait (SESSION_CLOSE_WAIT_MILLIS = 5 s) must still
@@ -1040,7 +1038,7 @@ class OpenCodeAiProcessManagerTest {
             // to the hung agent, which is the only way its read loop above can exit.
             agentThread.join(TimeUnit.SECONDS.toMillis(10));
             assertFalse(agentThread.isAlive(),
-                        "the hung agent must see EOF once the background reaper's wait times out and closes the connection");
+                    "the hung agent must see EOF once the background reaper's wait times out and closes the connection");
         }
         finally {
             agentOut.close();
@@ -1082,19 +1080,19 @@ class OpenCodeAiProcessManagerTest {
             assertTrue(agent.reachedEof(), "fake agent must see clean EOF, not a torn pipe");
 
             assertEquals(List.of("session/cancel", "session/close"), agent.methodOrder(),
-                         "stop() must put session/cancel on the wire before session/close");
+                    "stop() must put session/cancel on the wire before session/close");
 
             JsonObject cancelMsg = agent.messageWithMethod("session/cancel");
             assertNotNull(cancelMsg, "cancel must be on the wire");
             assertFalse(cancelMsg.has("id"), "session/cancel must be a notification, not a request");
             assertEquals("ses_stoptest",
-                         cancelMsg.getAsJsonObject("params").get("sessionId").getAsString());
+                    cancelMsg.getAsJsonObject("params").get("sessionId").getAsString());
 
             JsonObject closeMsg = agent.messageWithMethod("session/close");
             assertNotNull(closeMsg, "close request must be on the wire");
             assertTrue(closeMsg.has("id"), "session/close must be a request expecting a response");
             assertEquals("ses_stoptest",
-                         closeMsg.getAsJsonObject("params").get("sessionId").getAsString());
+                    closeMsg.getAsJsonObject("params").get("sessionId").getAsString());
 
             assertFalse(manager.isRunning(), "running must be false after stop");
         }
@@ -1150,7 +1148,7 @@ class OpenCodeAiProcessManagerTest {
             assertTrue(agent.reachedEof(), "fake agent must see clean EOF, not a torn pipe");
 
             assertEquals(List.of("session/cancel", "session/close"), agent.methodOrder(),
-                         "idle stop() must still cancel before closing");
+                    "idle stop() must still cancel before closing");
         }
         finally {
             conn.close();
@@ -1196,13 +1194,13 @@ class OpenCodeAiProcessManagerTest {
             }
 
             assertEquals(List.of("session/cancel"), agent.methodOrder(),
-                         "interrupt(Cancel) must send exactly one notification, unchanged");
+                    "interrupt(Cancel) must send exactly one notification, unchanged");
 
             JsonObject cancelMsg = agent.messageWithMethod("session/cancel");
             assertNotNull(cancelMsg);
             assertFalse(cancelMsg.has("id"), "must remain a notification, not a request");
             assertEquals("ses_interrupttest",
-                         cancelMsg.getAsJsonObject("params").get("sessionId").getAsString());
+                    cancelMsg.getAsJsonObject("params").get("sessionId").getAsString());
 
             assertFalse(manager.isProcessing(), "interrupt must clear processing");
             assertEquals(1, events.size(), "exactly one event must fire");
@@ -1245,9 +1243,9 @@ class OpenCodeAiProcessManagerTest {
         manager.spawnAndHandshake(new File(System.getProperty("java.io.tmpdir")));
 
         assertEquals("acp-handshake-id", settings.acpSessionId(),
-                     "spawnAndHandshake must write acpSessionId to session settings");
+                "spawnAndHandshake must write acpSessionId to session settings");
         assertEquals(List.of("acp-handshake-id"), callbackValues,
-                     "onSessionEstablished callback must fire after acpSessionId is written to settings");
+                "onSessionEstablished callback must fire after acpSessionId is written to settings");
     }
 
     @Test
@@ -1271,7 +1269,7 @@ class OpenCodeAiProcessManagerTest {
         settings.setMode("build");
         settings.setEffort("high");
         AiSession session = new AiSession("test-effort-send", "Test", null,
-                                          AiTypeEnum.OPENCODE, null, settings, java.time.Instant.now(), java.time.Instant.now());
+                AiTypeEnum.OPENCODE, null, settings, java.time.Instant.now(), java.time.Instant.now());
         manager.setCurrentSession(session);
 
         manager.applyInitialModeIfNeeded();
@@ -1300,7 +1298,7 @@ class OpenCodeAiProcessManagerTest {
         settings.setMode("build");
         settings.setEffort("low");
         AiSession session = new AiSession("test-effort-no-option", "Test", null,
-                                          AiTypeEnum.OPENCODE, null, settings, java.time.Instant.now(), java.time.Instant.now());
+                AiTypeEnum.OPENCODE, null, settings, java.time.Instant.now(), java.time.Instant.now());
         manager.setCurrentSession(session);
 
         boolean changed = manager.applyInitialModeIfNeeded();
@@ -1332,7 +1330,7 @@ class OpenCodeAiProcessManagerTest {
         settings.setMode("build");
         settings.setEffort("medium");  // not in ["low", "high"]
         AiSession session = new AiSession("test-effort-invalid", "Test", null,
-                                          AiTypeEnum.OPENCODE, null, settings, java.time.Instant.now(), java.time.Instant.now());
+                AiTypeEnum.OPENCODE, null, settings, java.time.Instant.now(), java.time.Instant.now());
         manager.setCurrentSession(session);
 
         boolean changed = manager.applyInitialModeIfNeeded();
@@ -1364,20 +1362,20 @@ class OpenCodeAiProcessManagerTest {
         OpenCodeSessionSettings settings = new OpenCodeSessionSettings();
         settings.setMode("custom-agent");  // not in ["build", "plan"]
         AiSession session = new AiSession("test-mode-invalid", "Test", null,
-                                          AiTypeEnum.OPENCODE, null, settings, java.time.Instant.now(), java.time.Instant.now());
+                AiTypeEnum.OPENCODE, null, settings, java.time.Instant.now(), java.time.Instant.now());
         manager.setCurrentSession(session);
 
         boolean changed = manager.applyInitialModeIfNeeded();
 
         assertEquals("build", settings.mode(),
-                     "invalid stored mode must be replaced with the agent's currentValue");
+                "invalid stored mode must be replaced with the agent's currentValue");
         assertTrue(changed, "applyInitialModeIfNeeded must return true when mode was replaced");
         long infoCount = events.stream()
                 .filter(e -> e instanceof StatusEvent se && se.type() == StatusEventTypeEnum.INFO)
                 .count();
         assertEquals(1, infoCount, "exactly one INFO event must fire for the replaced mode");
         assertTrue(calls.isEmpty(),
-                   "setConfigOption must NOT be called when effectiveMode == agentCurrentMode after replacement");
+                "setConfigOption must NOT be called when effectiveMode == agentCurrentMode after replacement");
     }
 
     @Test
@@ -1401,7 +1399,7 @@ class OpenCodeAiProcessManagerTest {
         settings.setMode("build");   // matches agent current
         settings.setEffort("low");   // matches agent current
         AiSession session = new AiSession("test-both-valid", "Test", null,
-                                          AiTypeEnum.OPENCODE, null, settings, java.time.Instant.now(), java.time.Instant.now());
+                AiTypeEnum.OPENCODE, null, settings, java.time.Instant.now(), java.time.Instant.now());
         manager.setCurrentSession(session);
 
         boolean changed = manager.applyInitialModeIfNeeded();
@@ -1431,7 +1429,7 @@ class OpenCodeAiProcessManagerTest {
         OpenCodeSessionSettings settings = new OpenCodeSessionSettings();
         settings.setModel("opencode/deepseek-v4-flash-free");
         AiSession session = new AiSession("test-model-diff", "Test", null,
-                                          AiTypeEnum.OPENCODE, null, settings, Instant.now(), Instant.now());
+                AiTypeEnum.OPENCODE, null, settings, Instant.now(), Instant.now());
         manager.setCurrentSession(session);
 
         manager.applyInitialModeIfNeeded();
@@ -1439,7 +1437,7 @@ class OpenCodeAiProcessManagerTest {
         long modelCalls = calls.stream().filter(c -> "model".equals(c[0])).count();
         assertEquals(1, modelCalls, "setConfigOption(model) must fire when session model differs from the agent's");
         assertEquals("opencode/deepseek-v4-flash-free",
-                     calls.stream().filter(c -> "model".equals(c[0])).findFirst().get()[1]);
+                calls.stream().filter(c -> "model".equals(c[0])).findFirst().get()[1]);
     }
 
     @Test
@@ -1456,19 +1454,19 @@ class OpenCodeAiProcessManagerTest {
 
         JsonArray cfgOpts = new JsonArray();
         cfgOpts.add(buildModelOption("opencode/deepseek-v4-flash-free",
-                                     "opencode/big-pickle", "opencode/deepseek-v4-flash-free"));
+                "opencode/big-pickle", "opencode/deepseek-v4-flash-free"));
         manager.sessionConfigOptions = cfgOpts;
 
         OpenCodeSessionSettings settings = new OpenCodeSessionSettings();
         settings.setModel("opencode/deepseek-v4-flash-free");
         AiSession session = new AiSession("test-model-match", "Test", null,
-                                          AiTypeEnum.OPENCODE, null, settings, Instant.now(), Instant.now());
+                AiTypeEnum.OPENCODE, null, settings, Instant.now(), Instant.now());
         manager.setCurrentSession(session);
 
         manager.applyInitialModeIfNeeded();
 
         assertTrue(calls.stream().noneMatch(c -> "model".equals(c[0])),
-                   "setConfigOption(model) must NOT fire when session model already matches the agent's");
+                "setConfigOption(model) must NOT fire when session model already matches the agent's");
     }
 
     @Test
@@ -1490,21 +1488,21 @@ class OpenCodeAiProcessManagerTest {
         OpenCodeSessionSettings settings = new OpenCodeSessionSettings();
         settings.setModel("opencode/not-offered-by-agent");
         AiSession session = new AiSession("test-model-unavailable", "Test", null,
-                                          AiTypeEnum.OPENCODE, null, settings, Instant.now(), Instant.now());
+                AiTypeEnum.OPENCODE, null, settings, Instant.now(), Instant.now());
         manager.setCurrentSession(session);
 
         boolean changed = manager.applyInitialModeIfNeeded();
 
         assertFalse(changed, "an unavailable model must not be recorded as a settings change");
         assertEquals("opencode/not-offered-by-agent", settings.model(),
-                     "the session's chosen model must NOT be silently overwritten — unlike mode, "
-                     + "an unavailable model is surfaced, not replaced");
+                "the session's chosen model must NOT be silently overwritten — unlike mode, "
+                + "an unavailable model is surfaced, not replaced");
         assertTrue(calls.stream().noneMatch(c -> "model".equals(c[0])),
-                   "setConfigOption(model) must NOT be called for a model the agent does not offer");
+                "setConfigOption(model) must NOT be called for a model the agent does not offer");
         assertTrue(events.stream().anyMatch(e -> e instanceof StatusEvent se
-                && se.type() == StatusEventTypeEnum.INFO
-                && se.text().contains("opencode/not-offered-by-agent")),
-                   "an INFO status event naming the requested model must be surfaced to the user");
+                                                 && se.type() == StatusEventTypeEnum.INFO
+                                                 && se.text().contains("opencode/not-offered-by-agent")),
+                "an INFO status event naming the requested model must be surfaced to the user");
     }
 
     @Test
@@ -1526,13 +1524,13 @@ class OpenCodeAiProcessManagerTest {
         OpenCodeSessionSettings settings = new OpenCodeSessionSettings();
         // settings.setModel(...) never called — no session preference recorded.
         AiSession session = new AiSession("test-model-unset", "Test", null,
-                                          AiTypeEnum.OPENCODE, null, settings, Instant.now(), Instant.now());
+                AiTypeEnum.OPENCODE, null, settings, Instant.now(), Instant.now());
         manager.setCurrentSession(session);
 
         manager.applyInitialModeIfNeeded();
 
         assertTrue(calls.stream().noneMatch(c -> "model".equals(c[0])),
-                   "no model preference means nothing to reconcile against the agent");
+                "no model preference means nothing to reconcile against the agent");
     }
 
     @Test
@@ -1555,7 +1553,7 @@ class OpenCodeAiProcessManagerTest {
         impl.start("non-existent-opencode-executable", "model");
 
         assertEquals("ses_persisted", impl.exposedDelegate().pendingAcpResumeId,
-                     "afterStart must call resumeSession with the acpSessionId from settings");
+                "afterStart must call resumeSession with the acpSessionId from settings");
     }
 
     @Test
@@ -1568,7 +1566,7 @@ class OpenCodeAiProcessManagerTest {
         manager.resumeSession("e6523570-b545-4136-ac6b-3bd9d7fce668");
 
         assertNull(manager.pendingAcpResumeId,
-                   "resumeSession must ignore ids that do not start with ses_");
+                "resumeSession must ignore ids that do not start with ses_");
     }
 
     // ---- Bug 2 fix: session/resume returns only configOptions, no sessionId ----
@@ -1585,7 +1583,7 @@ class OpenCodeAiProcessManagerTest {
         String resolved = OpenCodeAiProcessManager.resolveSessionId(true, "ses_abc123", resumeResponse);
 
         assertEquals("ses_abc123", resolved,
-                     "resolveSessionId with resumed=true must return the requested id, not look for sessionId in response");
+                "resolveSessionId with resumed=true must return the requested id, not look for sessionId in response");
     }
 
     @Test
@@ -1598,7 +1596,7 @@ class OpenCodeAiProcessManagerTest {
         String resolved = OpenCodeAiProcessManager.resolveSessionId(false, null, newResponse);
 
         assertEquals("ses_from-new", resolved,
-                     "resolveSessionId with resumed=false must return sessionId from the session/new response");
+                "resolveSessionId with resumed=false must return sessionId from the session/new response");
     }
 
     @Test
@@ -1610,7 +1608,7 @@ class OpenCodeAiProcessManagerTest {
         String resolved = OpenCodeAiProcessManager.resolveSessionId(false, null, emptyNewResponse);
 
         assertNull(resolved,
-                   "resolveSessionId must return null when session/new response has no sessionId");
+                "resolveSessionId must return null when session/new response has no sessionId");
     }
 
     @Test
@@ -1643,7 +1641,7 @@ class OpenCodeAiProcessManagerTest {
         assertNotNull(manager.configOptions(), "configOptions from resume response must be stashed");
         assertEquals(1, manager.configOptions().size());
         assertEquals("claude-sonnet-4-5",
-                     manager.configOptions().get(0).getAsJsonObject().get("currentValue").getAsString());
+                manager.configOptions().get(0).getAsJsonObject().get("currentValue").getAsString());
     }
 
     @Test
@@ -1655,7 +1653,7 @@ class OpenCodeAiProcessManagerTest {
         OpenCodeSessionSettings settings = new OpenCodeSessionSettings();
         settings.setAcpSessionId("ses_must-survive");
         AiSession session = new AiSession("s-preserve3", "Test", null,
-                                          AiTypeEnum.OPENCODE, null, settings, Instant.now(), Instant.now());
+                AiTypeEnum.OPENCODE, null, settings, Instant.now(), Instant.now());
 
         JsonObject resumeResponse = new JsonObject();
         resumeResponse.add("configOptions", new JsonArray()); // real opencode: no sessionId
@@ -1686,14 +1684,14 @@ class OpenCodeAiProcessManagerTest {
         manager.spawnAndHandshake(new File(System.getProperty("java.io.tmpdir")));
 
         assertEquals("ses_must-survive", settings.acpSessionId(),
-                     "after successful resume, settings.acpSessionId must be the requested resume id, not a new one");
+                "after successful resume, settings.acpSessionId must be the requested resume id, not a new one");
     }
 
     // ---- I2: stop() must cancel in-flight work before session/close ----
     /**
-     * Minimal fake ACP agent over piped streams: records every incoming message in arrival order and answers every
-     * request — a message carrying both id and method, per JSON-RPC 2.0 — with an empty success result, so callers'
-     * bounded .get() waits complete promptly instead of burning their whole timeout budget.
+     * Minimal fake ACP agent over piped streams: records every incoming message in arrival order and answers
+     * every request — a message carrying both id and method, per JSON-RPC 2.0 — with an empty success result,
+     * so callers' bounded .get() waits complete promptly instead of burning their whole timeout budget.
      */
     private static final class RecordingFakeAgent implements Runnable {
 

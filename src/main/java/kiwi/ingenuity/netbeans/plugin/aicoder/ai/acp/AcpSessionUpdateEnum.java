@@ -1,8 +1,8 @@
-package kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.opencode.acp;
+package kiwi.ingenuity.netbeans.plugin.aicoder.ai.acp;
 
 /**
- * Discriminator for update types inside a session/update notification. Do not
- * confuse the field name sessionUpdate with the method name session/update.
+ * Discriminator for update types inside a session/update notification. Do not confuse the field name
+ * sessionUpdate with the method name session/update.
  */
 public enum AcpSessionUpdateEnum {
     USER_MESSAGE_CHUNK("user_message_chunk"),
@@ -18,9 +18,8 @@ public enum AcpSessionUpdateEnum {
     USAGE_UPDATE("usage_update");
 
     /**
-     * Resolve a wire string to its enum constant. Returns null if the string is
-     * not recognised — the protocol adds new values over time and must not fail
-     * on unknown update types.
+     * Resolve a wire string to its enum constant. Returns null if the string is not recognised — the protocol
+     * adds new values over time and must not fail on unknown update types.
      */
     public static AcpSessionUpdateEnum fromWire(String wire) {
         if (wire == null) {
