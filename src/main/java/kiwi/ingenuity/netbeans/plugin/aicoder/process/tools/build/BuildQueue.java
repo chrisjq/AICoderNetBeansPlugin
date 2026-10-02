@@ -22,40 +22,42 @@ import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.TimeoutEnum;
  * Rules:
  * <ul>
  * <li>First come, first served; one build runs at a time across all projects.</li>
- * <li>At most one build per project may be queued or running, whichever AI asked.</li>
+ * <li>Up to {@link #MAX_ACTIVE_BUILDS_PER_PROJECT} builds per project may be queued or running, whichever AI
+ * asked; they run one at a time in the order they were queued, and a further one is refused.</li>
  * <li>Only the AI that queued an async build can stop it; inline builds cannot be stopped.</li>
- * <li>Closing an AI session cancels its queued and running builds — but only once no other AI is still listening to
- * them; a running IDE action is left to finish rather than marked cancelled.</li>
- * <li>IDE build actions ({@code BuildProject}, {@code CleanProject}, {@code CleanAndBuildProject}) go through this same
- * queue; a queued one can be stopped like any other, but a running one cannot, and they report
- * {@code COMPLETED}/{@code UNKNOWN} rather than {@code SUCCESS}, since NetBeans reports only that the action ran, not
- * that the build actually succeeded.</li>
- * <li>The last {@link #RECENT_BUILD_LIMIT} finished builds are kept, cancelled ones included, newest first.</li>
+ * <li>Closing an AI session cancels its queued and running builds — but only once no other AI is still
+ * listening to them; a running IDE action is left to finish rather than marked cancelled.</li>
+ * <li>IDE build actions ({@code BuildProject}, {@code CleanProject}, {@code CleanAndBuildProject}) go through
+ * this same queue; a queued one can be stopped like any other, but a running one cannot, and they report
+ * {@code COMPLETED}/{@code UNKNOWN} rather than {@code SUCCESS}, since NetBeans reports only that the action
+ * ran, not that the build actually succeeded.</li>
+ * <li>The last {@link #RECENT_BUILD_LIMIT} finished builds are kept, cancelled ones included, newest
+ * first.</li>
  * </ul>
  */
 public final class BuildQueue {
 
     public static final int RECENT_BUILD_LIMIT = 5;
     /**
-     * How many builds one project may have queued or running at once. One today; raise it if a project ever needs to
-     * run more than one build concurrently.
+     * How many builds one project may have queued or running at once. They still run one at a time across the
+     * whole queue; this only bounds how many may wait, so one project cannot fill the queue.
      */
-    public static final int MAX_ACTIVE_BUILDS_PER_PROJECT = 1;
+    public static final int MAX_ACTIVE_BUILDS_PER_PROJECT = 8;
 
     private static final Logger LOG = Logger.getLogger(BuildQueue.class.getName());
     private static final BuildQueue INSTANCE = new BuildQueue(Clock.systemUTC());
 
     /**
-     * Headroom added to a project's longest observed successful build when sizing its inline limit, so a build that has
-     * crept a little slower than last time is not cut off at exactly its previous duration.
+     * Headroom added to a project's longest observed successful build when sizing its inline limit, so a
+     * build that has crept a little slower than last time is not cut off at exactly its previous duration.
      */
     private static final double OBSERVED_TIME_MARGIN = 1.2;
 
     private final Clock clock;
     private final Object lock = new Object();
     /**
-     * Longest SUCCESSFUL run per project, in memory only — it rebuilds itself from ordinary use after a restart, and a
-     * remembered time is never worth persisting across one.
+     * Longest SUCCESSFUL run per project, in memory only — it rebuilds itself from ordinary use after a
+     * restart, and a remembered time is never worth persisting across one.
      */
     private final Map<String, Duration> longestSuccessByProject = new HashMap<>();
     private final Deque<BuildJob> queued = new ArrayDeque<>();
@@ -75,8 +77,8 @@ public final class BuildQueue {
     }
 
     /**
-     * Sets who is told when a build finishes. The plugin registers the notifier that delivers async results to the
-     * calling AI session.
+     * Sets who is told when a build finishes. The plugin registers the notifier that delivers async results
+     * to the calling AI session.
      */
     public void setCompletionListener(BuildCompletionListener listener) {
         completionListener = listener != null ? listener : job -> {
@@ -86,10 +88,11 @@ public final class BuildQueue {
     /**
      * Queues a validated build, or joins the caller to the identical build that is already queued or running.
      *
-     * @return the caller's own new build, or the existing job it joined — {@code job.request() != request} identifies a
-     * join, and the joining session is added to {@link BuildJob#listeners()}
+     * @return the caller's own new build, or the existing job it joined — {@code job.request() != request}
+     *         identifies a join, and the joining session is added to {@link BuildJob#listeners()}
      *
-     * @throws BuildQueueException when a DIFFERENT build for the same project is already queued or running
+     * @throws BuildQueueException when the project already has {@link #MAX_ACTIVE_BUILDS_PER_PROJECT} builds
+     *                             queued or running and this is not an identical one to join
      */
     public BuildJob submit(BuildRequest request) throws BuildQueueException {
         synchronized (lock) {
@@ -104,10 +107,11 @@ public final class BuildQueue {
             }
             BuildJob existing = activeJobForProject(request.projectKey());
             if (existing != null) {
-                throw new BuildQueueException("A build for " + request.projectPath() + " is already "
-                        + existing.status().name().toLowerCase() + " (" + existing.request().toolCall() + ", queued by "
-                        + existing.request().callerName() + "). Only one build per project can be queued or running;"
-                        + " use ListBuilds to see the queue.");
+                throw new BuildQueueException("The project " + request.projectPath() + " already has "
+                                              + MAX_ACTIVE_BUILDS_PER_PROJECT + " builds queued or running (the oldest is "
+                                              + existing.status().name().toLowerCase() + ": " + existing.request().toolCall() + ", queued by "
+                                              + existing.request().callerName() + "). At most " + MAX_ACTIVE_BUILDS_PER_PROJECT
+                                              + " builds per project can be queued or running; use ListBuilds to see the queue.");
             }
             BuildJob job = new BuildJob("build-" + nextId.getAndIncrement(), request, clock.instant());
             queued.addLast(job);
@@ -116,22 +120,22 @@ public final class BuildQueue {
             if (PluginSettings.isDebugJson()) {
                 LOG.log(Level.INFO, "Build queue: queued {0} ({1}, {2}) for {3} by {4}; {5} ahead",
                         new Object[]{job.id(), request.type(), request.toolCall(), request.projectPath(),
-                            request.callerName(), queued.size() - 1 + (running != null ? 1 : 0)});
+                                     request.callerName(), queued.size() - 1 + (running != null ? 1 : 0)});
             }
             return job;
         }
     }
 
     /**
-     * Stops an async build queued by {@code sessionId}. A queued build is removed at once, whatever kind it is. A
-     * running one has its process killed and finishes as {@link BuildStatusEnum#CANCELLED} — unless it is not
-     * {@link BuildRequest#stoppableWhileRunning()}, in which case stopping is refused rather than reported as a
-     * cancellation that did not happen.
+     * Stops an async build queued by {@code sessionId}. A queued build is removed at once, whatever kind it
+     * is. A running one has its process killed and finishes as {@link BuildStatusEnum#CANCELLED} — unless it
+     * is not {@link BuildRequest#stoppableWhileRunning()}, in which case stopping is refused rather than
+     * reported as a cancellation that did not happen.
      * <p>
-     * Only the build's own requester may stop it. A caller naming an id that belongs to someone else's queued or
-     * running async build is told who requested it and that only that AI can stop it — and, if the caller is one of its
-     * listeners, that it will still receive the result — rather than the generic "belongs to you" refusal, which is
-     * kept verbatim for an id that matches nothing or a non-async build.
+     * Only the build's own requester may stop it. A caller naming an id that belongs to someone else's queued
+     * or running async build is told who requested it and that only that AI can stop it — and, if the caller
+     * is one of its listeners, that it will still receive the result — rather than the generic "belongs to
+     * you" refusal, which is kept verbatim for an id that matches nothing or a non-async build.
      *
      * @return what happened, for the calling AI
      */
@@ -141,21 +145,21 @@ public final class BuildQueue {
             BuildJob job = findActive(buildId);
             if (job == null || job.request().type() != BuildTypeEnum.ASYNC) {
                 return "No queued or running async build with id " + buildId + " belongs to you. Use ListBuilds to see"
-                        + " the ids of your async builds.";
+                       + " the ids of your async builds.";
             }
             if (!job.request().sessionId().equals(sessionId)) {
                 return "Build " + buildId + " was requested by " + job.request().callerName() + "; only the AI that"
-                        + " requested a build can stop it."
-                        + (job.listeners().contains(sessionId)
-                           ? " You are listening to it, so you will still receive its result." : "");
+                       + " requested a build can stop it."
+                       + (job.listeners().contains(sessionId)
+                          ? " You are listening to it, so you will still receive its result." : "");
             }
             if (queued.remove(job)) {
                 removed = job;
             }
             else if (!job.request().stoppableWhileRunning()) {
                 return "Build " + buildId + " has already started and cannot be stopped from here: it is one of the"
-                        + " user's IDE build actions, and NetBeans gives us no way to cancel one once it is running."
-                        + " Stop it in the IDE if you need to; either way its result will reach you when it finishes.";
+                       + " user's IDE build actions, and NetBeans gives us no way to cancel one once it is running."
+                       + " Stop it in the IDE if you need to; either way its result will reach you when it finishes.";
             }
             else {
                 job.requestCancel(BuildCancelReasonEnum.STOPPED_BY_OWNER);
@@ -163,17 +167,18 @@ public final class BuildQueue {
             }
         }
         finish(removed, BuildStatusEnum.CANCELLED, cancelledText(BuildCancelReasonEnum.STOPPED_BY_OWNER),
-               BuildCancelReasonEnum.STOPPED_BY_OWNER);
+                BuildCancelReasonEnum.STOPPED_BY_OWNER);
         return "Cancelled queued build " + buildId + " before it started.";
     }
 
     /**
-     * Handles a closing AI session. A build it only listened to simply loses that listener; a build it requested is
-     * remembered as having lost its requester. Either way the build is cancelled only once nobody is left waiting on it
-     * at all — the other AIs asked for exactly this build, so finishing it still serves them.
+     * Handles a closing AI session. A build it only listened to simply loses that listener; a build it
+     * requested is remembered as having lost its requester. Either way the build is cancelled only once
+     * nobody is left waiting on it at all — the other AIs asked for exactly this build, so finishing it still
+     * serves them.
      * <p>
-     * A running build that cannot be stopped (an IDE action) is left to finish instead: flagging it cancelled would
-     * report a cancellation while the build carried on regardless.
+     * A running build that cannot be stopped (an IDE action) is left to finish instead: flagging it cancelled
+     * would report a cancellation while the build carried on regardless.
      */
     public void cancelForSession(String sessionId) {
         List<BuildJob> removed = new ArrayList<>();
@@ -192,14 +197,14 @@ public final class BuildQueue {
         }
         for (BuildJob job : removed) {
             finish(job, BuildStatusEnum.CANCELLED, cancelledText(BuildCancelReasonEnum.SESSION_CLOSED),
-                   BuildCancelReasonEnum.SESSION_CLOSED);
+                    BuildCancelReasonEnum.SESSION_CLOSED);
         }
     }
 
     /**
-     * Applies one session's departure to {@code job} and reports whether nobody is left waiting on it — its requester
-     * has closed AND every listener has too. Evaluated on every close rather than only the requester's, so a build
-     * whose requester left first is still cancelled when its last listener goes.
+     * Applies one session's departure to {@code job} and reports whether nobody is left waiting on it — its
+     * requester has closed AND every listener has too. Evaluated on every close rather than only the
+     * requester's, so a build whose requester left first is still cancelled when its last listener goes.
      */
     private static boolean abandonedBy(BuildJob job, String sessionId) {
         job.removeListener(sessionId);
@@ -210,8 +215,8 @@ public final class BuildQueue {
     }
 
     /**
-     * Waits for an inline build to start. When it has not started in time it is removed from the queue as cancelled and
-     * false is returned; if it started meanwhile, true.
+     * Waits for an inline build to start. When it has not started in time it is removed from the queue as
+     * cancelled and false is returned; if it started meanwhile, true.
      */
     public boolean awaitStart(BuildJob job, long waitMillis) throws InterruptedException {
         if (job.started().await(waitMillis, TimeUnit.MILLISECONDS)) {
@@ -223,7 +228,7 @@ public final class BuildQueue {
             }
         }
         finish(job, BuildStatusEnum.CANCELLED, cancelledText(BuildCancelReasonEnum.START_WAIT_EXPIRED),
-               BuildCancelReasonEnum.START_WAIT_EXPIRED);
+                BuildCancelReasonEnum.START_WAIT_EXPIRED);
         return false;
     }
 
@@ -240,7 +245,8 @@ public final class BuildQueue {
     }
 
     /**
-     * The current builds (the running one first, then the queue in order) and the recent finished builds, newest first.
+     * The current builds (the running one first, then the queue in order) and the recent finished builds,
+     * newest first.
      */
     public BuildQueueSnapshot snapshot() {
         synchronized (lock) {
@@ -250,13 +256,13 @@ public final class BuildQueue {
             }
             current.addAll(queued);
             return new BuildQueueSnapshot(clock.instant(), List.copyOf(current), List.copyOf(recent),
-                                          Map.copyOf(longestSuccessByProject));
+                    Map.copyOf(longestSuccessByProject));
         }
     }
 
     /**
-     * Whether any build is queued or running. The IDE build actions refuse to run while this is true, so they cannot
-     * disturb a build in progress.
+     * Whether any build is queued or running. The IDE build actions refuse to run while this is true, so they
+     * cannot disturb a build in progress.
      */
     public boolean hasActiveBuilds() {
         synchronized (lock) {
@@ -293,10 +299,11 @@ public final class BuildQueue {
     }
 
     /**
-     * Remembers how long a build took when — and only when — it ran to completion successfully AND is one its requester
-     * marked as counting toward this record ({@link BuildRequest#countsTowardLongestSuccess}). A failed, timed-out or
-     * cancelled run never finished the work, and a dependency download is not a build at all, so neither's duration
-     * says anything about how long the project's own build needs. Caller holds the lock.
+     * Remembers how long a build took when — and only when — it ran to completion successfully AND is one its
+     * requester marked as counting toward this record ({@link BuildRequest#countsTowardLongestSuccess}). A
+     * failed, timed-out or cancelled run never finished the work, and a dependency download is not a build at
+     * all, so neither's duration says anything about how long the project's own build needs. Caller holds the
+     * lock.
      */
     private void recordIfLongestSuccess(BuildJob job, BuildStatusEnum status) {
         if (status != BuildStatusEnum.SUCCESS || job.duration() == null || !job.request().countsTowardLongestSuccess()) {
@@ -314,10 +321,10 @@ public final class BuildQueue {
     }
 
     /**
-     * The identical build — same project, same canonical tool call — already queued or running, or null. An AI asking
-     * for exactly the build someone else already asked for listens to that one instead of running it a second time. The
-     * tool call is canonicalised by {@code BuildSubmitter.toolCall}, so the same options in a different key order still
-     * match.
+     * The identical build — same project, same canonical tool call — already queued or running, or null. An
+     * AI asking for exactly the build someone else already asked for listens to that one instead of running
+     * it a second time. The tool call is canonicalised by {@code BuildSubmitter.toolCall}, so the same
+     * options in a different key order still match.
      */
     private BuildJob activeJobWithSameCall(BuildRequest request) {
         if (running != null && sameCall(running, request)) {
@@ -328,13 +335,13 @@ public final class BuildQueue {
 
     private static boolean sameCall(BuildJob job, BuildRequest request) {
         return job.request().projectKey().equals(request.projectKey())
-                && job.request().toolCall().equals(request.toolCall());
+               && job.request().toolCall().equals(request.toolCall());
     }
 
     /**
-     * The active build a new one for {@code projectKey} would collide with, or null while the project is still under
-     * {@link #MAX_ACTIVE_BUILDS_PER_PROJECT}. The oldest is returned, so a refusal names the build that has held the
-     * project longest.
+     * The active build a new one for {@code projectKey} would collide with, or null while the project is
+     * still under {@link #MAX_ACTIVE_BUILDS_PER_PROJECT}. The oldest is returned, so a refusal names the
+     * build that has held the project longest.
      */
     private BuildJob activeJobForProject(String projectKey) {
         List<BuildJob> active = new ArrayList<>();
@@ -409,9 +416,9 @@ public final class BuildQueue {
     }
 
     /**
-     * The longest a build of {@code projectKey} has actually taken to run successfully, or null when none has. Only
-     * successful runs count, so a build that failed, timed out or was cancelled — none of which ran to completion — can
-     * never inflate it.
+     * The longest a build of {@code projectKey} has actually taken to run successfully, or null when none
+     * has. Only successful runs count, so a build that failed, timed out or was cancelled — none of which ran
+     * to completion — can never inflate it.
      */
     public Duration longestSuccessFor(String projectKey) {
         synchronized (lock) {
@@ -420,13 +427,14 @@ public final class BuildQueue {
     }
 
     /**
-     * How long an inline build of {@code projectKey} may run: {@link TimeoutEnum#BUILD_LOCK_LIFETIME_MILLIS} as a
-     * floor, or this project's longest successful build plus {@link #OBSERVED_TIME_MARGIN} when that is longer, so a
-     * genuinely slow project stops failing inline once it has proved how long it needs (decision 29).
+     * How long an inline build of {@code projectKey} may run: {@link TimeoutEnum#BUILD_LOCK_LIFETIME_MILLIS}
+     * as a floor, or this project's longest successful build plus {@link #OBSERVED_TIME_MARGIN} when that is
+     * longer, so a genuinely slow project stops failing inline once it has proved how long it needs (decision
+     * 29).
      * <p>
-     * Fed by every success, async included — deliberately. A project slower than the floor could never succeed inline,
-     * so if only inline runs counted it could never record a time and the limit could never grow: one async success is
-     * what lifts it.
+     * Fed by every success, async included — deliberately. A project slower than the floor could never
+     * succeed inline, so if only inline runs counted it could never record a time and the limit could never
+     * grow: one async success is what lifts it.
      */
     public long inlineTimeoutMillisFor(String projectKey) {
         long floor = TimeoutEnum.BUILD_LOCK_LIFETIME_MILLIS.millis();

@@ -45,34 +45,34 @@ class BuildQueueTest {
     @Test
     void inlineLimitIsTheFloorUntilTheProjectHasSucceededOnce() {
         assertEquals(TimeoutEnum.BUILD_LOCK_LIFETIME_MILLIS.millis(), queue.inlineTimeoutMillisFor("/p/unknown"),
-                     "a project with no successful build yet gets the plain floor");
+                "a project with no successful build yet gets the plain floor");
         assertNull(queue.longestSuccessFor("/p/unknown"));
     }
 
     @Test
     void aSuccessfulRunRaisesTheInlineLimitForThatProjectWithAMargin() throws Exception {
         BuildJob job = queue.submit(request("/p/slow", "session-1", BuildTypeEnum.INLINE, control -> {
-                                        clock.advance(Duration.ofMinutes(6));
-                                        return BuildOutcome.completed(true, "BUILD SUCCESS");
-                                    }));
+            clock.advance(Duration.ofMinutes(6));
+            return BuildOutcome.completed(true, "BUILD SUCCESS");
+        }));
         queue.awaitFinish(job);
 
         assertEquals(Duration.ofMinutes(6), queue.longestSuccessFor("/p/slow"));
         assertEquals(Duration.ofMinutes(6).toMillis() * 12 / 10, queue.inlineTimeoutMillisFor("/p/slow"),
-                     "six minutes observed plus the 20% margin");
+                "six minutes observed plus the 20% margin");
     }
 
     @Test
     void onlySuccessfulRunsCountSoAFailureOrTimeoutNeverRaisesTheLimit() throws Exception {
         BuildJob failed = queue.submit(request("/p/broken", "session-1", BuildTypeEnum.INLINE, control -> {
-                                           clock.advance(Duration.ofMinutes(9));
-                                           return BuildOutcome.completed(false, "BUILD FAILED");
-                                       }));
+            clock.advance(Duration.ofMinutes(9));
+            return BuildOutcome.completed(false, "BUILD FAILED");
+        }));
         queue.awaitFinish(failed);
         BuildJob timedOut = queue.submit(request("/p/hung", "session-1", BuildTypeEnum.ASYNC, control -> {
-                                             clock.advance(Duration.ofMinutes(30));
-                                             return BuildOutcome.timedOut("Timed out");
-                                         }));
+            clock.advance(Duration.ofMinutes(30));
+            return BuildOutcome.timedOut("Timed out");
+        }));
         queue.awaitFinish(timedOut);
 
         assertNull(queue.longestSuccessFor("/p/broken"), "a build that failed never ran the work to completion");
@@ -83,17 +83,17 @@ class BuildQueueTest {
     @Test
     void completedIdeActionDoesNotChangeLongestSuccessButSuccessfulBuildDoes() throws Exception {
         BuildJob ide = queue.submit(unstoppableRequest("/p/ide", "session-1", control -> {
-                                                   clock.advance(Duration.ofMinutes(7));
-                                                   return new BuildOutcome(BuildStatusEnum.COMPLETED,
-                                                                           "COMPLETED (result unknown)");
-                                               }));
+            clock.advance(Duration.ofMinutes(7));
+            return new BuildOutcome(BuildStatusEnum.COMPLETED,
+                    "COMPLETED (result unknown)");
+        }));
         queue.awaitFinish(ide);
         assertNull(queue.longestSuccessFor("/p/ide"));
 
         BuildJob normal = queue.submit(request("/p/ide", "session-1", BuildTypeEnum.ASYNC, control -> {
-                                           clock.advance(Duration.ofMinutes(3));
-                                           return BuildOutcome.completed(true, "BUILD SUCCESS");
-                                       }));
+            clock.advance(Duration.ofMinutes(3));
+            return BuildOutcome.completed(true, "BUILD SUCCESS");
+        }));
         queue.awaitFinish(normal);
         assertEquals(Duration.ofMinutes(3), queue.longestSuccessFor("/p/ide"));
     }
@@ -101,16 +101,16 @@ class BuildQueueTest {
     @Test
     void aSuccessfulDownloadDoesNotChangeLongestSuccessButASuccessfulBuildDoes() throws Exception {
         BuildJob download = queue.submit(nonCountingRequest("/p/download", "session-1", control -> {
-                                                        clock.advance(Duration.ofMinutes(5));
-                                                        return BuildOutcome.completed(true, "BUILD SUCCESS");
-                                                    }));
+            clock.advance(Duration.ofMinutes(5));
+            return BuildOutcome.completed(true, "BUILD SUCCESS");
+        }));
         queue.awaitFinish(download);
         assertNull(queue.longestSuccessFor("/p/download"));
 
         BuildJob normal = queue.submit(request("/p/download", "session-1", BuildTypeEnum.ASYNC, control -> {
-                                           clock.advance(Duration.ofMinutes(2));
-                                           return BuildOutcome.completed(true, "BUILD SUCCESS");
-                                       }));
+            clock.advance(Duration.ofMinutes(2));
+            return BuildOutcome.completed(true, "BUILD SUCCESS");
+        }));
         queue.awaitFinish(normal);
         assertEquals(Duration.ofMinutes(2), queue.longestSuccessFor("/p/download"));
     }
@@ -120,13 +120,13 @@ class BuildQueueTest {
         // The point of feeding the record from async runs too: a project slower than the floor could never succeed
         // inline, so if only inline runs counted it could never record a time and the limit could never grow.
         BuildJob async = queue.submit(request("/p/big", "session-1", BuildTypeEnum.ASYNC, control -> {
-                                          clock.advance(Duration.ofMinutes(20));
-                                          return BuildOutcome.completed(true, "BUILD SUCCESS");
-                                      }));
+            clock.advance(Duration.ofMinutes(20));
+            return BuildOutcome.completed(true, "BUILD SUCCESS");
+        }));
         queue.awaitFinish(async);
 
         assertEquals(Duration.ofMinutes(20).toMillis() * 12 / 10, queue.inlineTimeoutMillisFor("/p/big"),
-                     "an inline build of this project now gets the time it has actually proved it needs");
+                "an inline build of this project now gets the time it has actually proved it needs");
     }
 
     @Test
@@ -169,24 +169,72 @@ class BuildQueueTest {
     }
 
     @Test
-    void refusesASecondBuildForAProjectAlreadyQueuedOrRunningWhoeverAsks() throws Exception {
+    void aSecondDifferentBuildForAProjectQueuesBehindTheFirstWhoeverAsks() throws Exception {
         BlockingWork running = new BlockingWork("running", new CopyOnWriteArrayList<>());
-        queue.submit(request("/p/a", "session-1", BuildTypeEnum.ASYNC, running));
+        BuildJob first = queue.submit(request("/p/a", "session-1", BuildTypeEnum.ASYNC, running));
         assertTrue(running.started.await(WAIT_SECONDS, TimeUnit.SECONDS));
-        queue.submit(request("/p/b", "session-1", BuildTypeEnum.ASYNC, succeeding()));
 
-        // A DIFFERENT build of the same project is what collides. An identical call is shared with the caller instead
-        // of being refused — see asecondAiAskingForTheSameBuildListensToItInsteadOfQueueingItTwice.
-        BuildQueueException whileRunning = assertThrows(BuildQueueException.class,
-                                                        () -> queue.submit(request("/p/a", "session-2", BuildTypeEnum.INLINE,
-                                                                                   "RunMavenTests {}", succeeding())));
-        assertTrue(whileRunning.getMessage().contains("already running"), whileRunning.getMessage());
-        BuildQueueException whileQueued = assertThrows(BuildQueueException.class,
-                                                       () -> queue.submit(request("/p/b", "session-2", BuildTypeEnum.ASYNC,
-                                                                                  "RunMavenTests {}", succeeding())));
-        assertTrue(whileQueued.getMessage().contains("already queued"), whileQueued.getMessage());
+        // A DIFFERENT build of the same project waits its turn. An identical call is shared with the caller instead of
+        // queued — see asecondAiAskingForTheSameBuildListensToItInsteadOfQueueingItTwice.
+        BuildJob behindWhileRunning = queue.submit(request("/p/a", "session-2", BuildTypeEnum.INLINE,
+                "RunMavenTests {}", succeeding()));
+        BuildJob behindAgain = queue.submit(request("/p/a", "session-1", BuildTypeEnum.ASYNC,
+                "BuildMavenProject {\"goals\":[\"verify\"]}", succeeding()));
+
+        assertEquals(BuildStatusEnum.QUEUED, behindWhileRunning.status());
+        assertEquals(1, queue.positionOf(behindWhileRunning));
+        assertEquals(2, queue.positionOf(behindAgain));
+        assertEquals(List.of(first, behindWhileRunning, behindAgain), queue.snapshot().current());
 
         running.release.countDown();
+        queue.awaitFinish(behindAgain);
+    }
+
+    @Test
+    void aProjectMayHaveEightBuildsQueuedOrRunningAndTheNinthIsRefused() throws Exception {
+        BlockingWork running = new BlockingWork("running", new CopyOnWriteArrayList<>());
+        queue.submit(request("/p/a", "session-1", BuildTypeEnum.ASYNC, "RunMavenTests {\"n\":0}", running));
+        assertTrue(running.started.await(WAIT_SECONDS, TimeUnit.SECONDS));
+        for (int n = 1; n < BuildQueue.MAX_ACTIVE_BUILDS_PER_PROJECT; n++) {
+            queue.submit(request("/p/a", "session-1", BuildTypeEnum.ASYNC, "RunMavenTests {\"n\":" + n + "}", succeeding()));
+        }
+        assertEquals(8, queue.snapshot().current().size(), "eight builds for one project may be queued or running");
+
+        BuildQueueException ninth = assertThrows(BuildQueueException.class,
+                () -> queue.submit(request("/p/a", "session-2", BuildTypeEnum.INLINE,
+                        "RunMavenTests {\"n\":9}", succeeding())));
+        assertTrue(ninth.getMessage().contains("already has 8 builds queued or running"), ninth.getMessage());
+        assertTrue(ninth.getMessage().contains("At most 8 builds per project"), ninth.getMessage());
+        assertEquals(8, queue.snapshot().current().size(), "the refused build must not have been queued");
+
+        // The limit is per project: another project still queues, and an identical call still joins.
+        BuildJob otherProject = queue.submit(request("/p/b", "session-2", BuildTypeEnum.ASYNC, succeeding()));
+        assertEquals(BuildStatusEnum.QUEUED, otherProject.status());
+        BuildJob joined = queue.submit(request("/p/a", "session-2", BuildTypeEnum.INLINE, "RunMavenTests {\"n\":3}",
+                succeeding()));
+        assertEquals("RunMavenTests {\"n\":3}", joined.request().toolCall());
+        assertTrue(joined.listeners().contains("session-2"));
+
+        running.release.countDown();
+        queue.awaitFinish(otherProject);
+    }
+
+    @Test
+    void queuedBuildsForOneProjectRunInTheOrderTheyWereQueued() throws Exception {
+        List<String> ran = new CopyOnWriteArrayList<>();
+        BlockingWork first = new BlockingWork("first", ran);
+        queue.submit(request("/p/a", "session-1", BuildTypeEnum.ASYNC, "RunMavenTests {\"n\":0}", first));
+        assertTrue(first.started.await(WAIT_SECONDS, TimeUnit.SECONDS));
+        BuildJob last = null;
+        for (int n = 1; n <= 4; n++) {
+            last = queue.submit(request("/p/a", "session-1", BuildTypeEnum.ASYNC, "RunMavenTests {\"n\":" + n + "}",
+                    recording("build-" + n, ran)));
+        }
+
+        first.release.countDown();
+        queue.awaitFinish(last);
+
+        assertEquals(List.of("first", "build-1", "build-2", "build-3", "build-4"), ran);
     }
 
     @Test
@@ -216,7 +264,7 @@ class BuildQueueTest {
 
         assertTrue(stopped.startsWith("Cancelled queued build"), stopped);
         assertEquals(BuildStatusEnum.CANCELLED, queuedIde.status(),
-                     "removing a build from the queue needs nothing from the build system");
+                "removing a build from the queue needs nothing from the build system");
         assertEquals(BuildCancelReasonEnum.STOPPED_BY_OWNER, queuedIde.cancelReason());
 
         running.release.countDown();
@@ -281,7 +329,7 @@ class BuildQueueTest {
 
         String refused = queue.stop(queuedJob.id(), "session-2");
         assertEquals("Build " + queuedJob.id() + " was requested by AI session-1; only the AI that requested a build"
-                + " can stop it.", refused);
+                     + " can stop it.", refused);
         assertEquals(BuildStatusEnum.QUEUED, queuedJob.status());
 
         String stopped = queue.stop(queuedJob.id(), "session-1");
@@ -305,7 +353,7 @@ class BuildQueueTest {
         String refused = queue.stop(job.id(), "listener");
 
         assertEquals("Build " + job.id() + " was requested by AI requester; only the AI that requested a build can"
-                + " stop it. You are listening to it, so you will still receive its result.", refused);
+                     + " stop it. You are listening to it, so you will still receive its result.", refused);
         assertEquals(BuildStatusEnum.RUNNING, job.status(), "a refusal must not stop the build");
         assertNull(job.cancelReason());
 
@@ -390,17 +438,17 @@ class BuildQueueTest {
     @Test
     void resultsTimingsAndFailuresAreRecorded() throws Exception {
         BuildJob ok = queue.submit(request("/p/a", "session-1", BuildTypeEnum.INLINE, control -> {
-                                       clock.advance(Duration.ofSeconds(90));
-                                       return BuildOutcome.completed(true, "BUILD SUCCESS");
-                                   }));
+            clock.advance(Duration.ofSeconds(90));
+            return BuildOutcome.completed(true, "BUILD SUCCESS");
+        }));
         assertTrue(queue.awaitStart(ok, TimeUnit.SECONDS.toMillis(WAIT_SECONDS)));
         queue.awaitFinish(ok);
         BuildJob timedOut = queue.submit(request("/p/b", "session-1", BuildTypeEnum.ASYNC,
-                                                 control -> BuildOutcome.timedOut("Timed out after 3600s")));
+                control -> BuildOutcome.timedOut("Timed out after 3600s")));
         queue.awaitFinish(timedOut);
         BuildJob broken = queue.submit(request("/p/c", "session-1", BuildTypeEnum.ASYNC, control -> {
-                                           throw new IllegalStateException("boom");
-                                       }));
+            throw new IllegalStateException("boom");
+        }));
         queue.awaitFinish(broken);
 
         assertEquals(BuildStatusEnum.SUCCESS, ok.status());
@@ -418,8 +466,9 @@ class BuildQueueTest {
     }
 
     /**
-     * A build with an explicit tool call, for tests that need two DIFFERENT builds of one project. The queue shares an
-     * identical call between callers rather than refusing it, so only a differing call still collides.
+     * A build with an explicit tool call, for tests that need two DIFFERENT builds of one project. The queue
+     * shares an identical call between callers rather than refusing it, so only a differing call still
+     * collides.
      */
     private static BuildRequest request(String project, String sessionId, BuildTypeEnum type, String toolCall,
                                         BuildWork work) {
@@ -427,21 +476,21 @@ class BuildQueueTest {
     }
 
     /**
-     * A build that cannot be stopped once running, as an IDE build action cannot: NetBeans gives the caller of
-     * {@code ActionProvider.invokeAction} no way to cancel it.
+     * A build that cannot be stopped once running, as an IDE build action cannot: NetBeans gives the caller
+     * of {@code ActionProvider.invokeAction} no way to cancel it.
      */
     private static BuildRequest unstoppableRequest(String project, String sessionId, BuildWork work) {
         return new BuildRequest("BuildProject {}", project, project, sessionId, "AI " + sessionId,
-                                BuildTypeEnum.ASYNC, 60_000, false, work);
+                BuildTypeEnum.ASYNC, 60_000, false, work);
     }
 
     /**
-     * A build that must not feed Longest OK run, as a Maven dependency download does not: it is not a build, so how
-     * long it takes says nothing about how long this project's own build needs.
+     * A build that must not feed Longest OK run, as a Maven dependency download does not: it is not a build,
+     * so how long it takes says nothing about how long this project's own build needs.
      */
     private static BuildRequest nonCountingRequest(String project, String sessionId, BuildWork work) {
         return new BuildRequest("DownloadMavenSources {}", project, project, sessionId, "AI " + sessionId,
-                                BuildTypeEnum.ASYNC, 60_000, true, false, work);
+                BuildTypeEnum.ASYNC, 60_000, true, false, work);
     }
 
     private static BuildWork succeeding() {

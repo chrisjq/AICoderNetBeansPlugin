@@ -32,8 +32,8 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
 /**
- * Drives the real plugin-wide {@link BuildQueue} with trivial builds; every test uses its own temporary project
- * directory, so the one-build-per-project rule never links tests together.
+ * Drives the real plugin-wide {@link BuildQueue} with trivial builds; every test uses its own temporary
+ * project directory, so the one-build-per-project rule never links tests together.
  */
 class BuildSubmitterTest {
 
@@ -42,8 +42,8 @@ class BuildSubmitterTest {
     @Test
     void aPreparedErrorIsReturnedAndNothingIsQueued(@TempDir Path project) {
         String result = BuildSubmitter.submit(QUEUE, PreparedBuild.error("Error: goals must not be empty"), "BuildMavenProject {}",
-                                              project.toString(), session(), false,
-                                              control -> BuildOutcome.completed(true, "never runs"));
+                project.toString(), session(), false,
+                control -> BuildOutcome.completed(true, "never runs"));
 
         assertEquals("Error: goals must not be empty", result);
         assertTrue(QUEUE.snapshot().current().stream()
@@ -55,10 +55,10 @@ class BuildSubmitterTest {
         CountDownLatch release = new CountDownLatch(1);
 
         String reply = BuildSubmitter.submit(QUEUE, prepared(project), "BuildMavenProject {\"goals\":[\"install\"]}",
-                                             project.toString(), session(), true, control -> {
-                                         await(release);
-                                         return BuildOutcome.completed(true, "BUILD SUCCESS");
-                                     });
+                project.toString(), session(), true, control -> {
+            await(release);
+            return BuildOutcome.completed(true, "BUILD SUCCESS");
+        });
 
         assertTrue(reply.startsWith("Queued async build build-"), reply);
         assertTrue(reply.contains("Project: " + project), reply);
@@ -78,7 +78,7 @@ class BuildSubmitterTest {
     @Test
     void anInlineBuildReturnsItsResultTimingsAndTheOptionsFooter(@TempDir Path project) {
         String result = BuildSubmitter.submit(QUEUE, prepared(project), "BuildMavenProject {}", project.toString(), session(),
-                                              false, control -> BuildOutcome.completed(true, "BUILD SUCCESS"));
+                false, control -> BuildOutcome.completed(true, "BUILD SUCCESS"));
 
         assertTrue(result.startsWith("Build build-"), result);
         assertTrue(result.contains("Status: SUCCESS"), result);
@@ -90,7 +90,7 @@ class BuildSubmitterTest {
     @Test
     void anInlineTimeoutLeadsWithTheAsyncHint(@TempDir Path project) {
         String result = BuildSubmitter.submit(QUEUE, prepared(project), "RunMavenTests {}", project.toString(), session(),
-                                              false, control -> BuildOutcome.timedOut("Timed out after 600s"));
+                false, control -> BuildOutcome.timedOut("Timed out after 600s"));
 
         assertTrue(result.startsWith(BuildSubmitter.TIMED_OUT_HINT), result);
         assertTrue(result.contains("Status: TIMED_OUT"), result);
@@ -98,24 +98,50 @@ class BuildSubmitterTest {
     }
 
     @Test
-    void aSecondBuildForTheSameProjectIsRefused(@TempDir Path project) throws Exception {
+    void aSecondDifferentBuildForTheSameProjectQueuesBehindTheFirst(@TempDir Path project) throws Exception {
         CountDownLatch release = new CountDownLatch(1);
         BuildSubmitter.submit(QUEUE, prepared(project), "BuildMavenProject {}", project.toString(), session(), true,
-                              control -> {
-                                  await(release);
-                                  return BuildOutcome.completed(true, "BUILD SUCCESS");
-                              });
+                control -> {
+                    await(release);
+                    return BuildOutcome.completed(true, "BUILD SUCCESS");
+                });
 
-        // Captured while it is still blocked: once released it can finish and leave the current list before a lookup.
-        BuildJob first = activeJobFor(project);
-        assertNotNull(first);
+        String queued = BuildSubmitter.submit(QUEUE, prepared(project), "RunMavenTests {}", project.toString(), session(),
+                true, control -> BuildOutcome.completed(true, "BUILD SUCCESS"));
 
-        String refused = BuildSubmitter.submit(QUEUE, prepared(project), "RunMavenTests {}", project.toString(), session(),
-                                               false, control -> BuildOutcome.completed(true, "never runs"));
-
-        assertTrue(refused.startsWith("A build for " + project + " is already"), refused);
+        assertTrue(queued.startsWith("Queued async build build-"), queued);
+        assertTrue(queued.contains("Position: 1 build(s) ahead of it"), queued);
+        // Captured while the first is still blocked: once released it can finish and leave the current list.
+        List<BuildJob> jobs = activeJobsFor(project);
+        assertEquals(2, jobs.size());
         release.countDown();
-        QUEUE.awaitFinish(first);
+        for (BuildJob job : jobs) {
+            assertEquals(BuildStatusEnum.SUCCESS, QUEUE.awaitFinish(job).status());
+        }
+    }
+
+    @Test
+    void theNinthBuildForTheSameProjectIsRefused(@TempDir Path project) throws Exception {
+        CountDownLatch release = new CountDownLatch(1);
+        for (int n = 0; n < BuildQueue.MAX_ACTIVE_BUILDS_PER_PROJECT; n++) {
+            BuildSubmitter.submit(QUEUE, prepared(project), "RunMavenTests {\"n\":" + n + "}", project.toString(), session(),
+                    true, control -> {
+                        await(release);
+                        return BuildOutcome.completed(true, "BUILD SUCCESS");
+                    });
+        }
+        List<BuildJob> jobs = activeJobsFor(project);
+        assertEquals(8, jobs.size());
+
+        String refused = BuildSubmitter.submit(QUEUE, prepared(project), "RunMavenTests {\"n\":9}", project.toString(),
+                session(), false, control -> BuildOutcome.completed(true, "never runs"));
+
+        assertTrue(refused.startsWith("The project " + project + " already has 8 builds queued or running"), refused);
+        assertEquals(8, activeJobsFor(project).size(), "the refused build must not have been queued");
+        release.countDown();
+        for (BuildJob job : jobs) {
+            QUEUE.awaitFinish(job);
+        }
     }
 
     @Test
@@ -123,22 +149,22 @@ class BuildSubmitterTest {
         CountDownLatch release = new CountDownLatch(1);
         String sameCall = "BuildMavenProject {\"projectPath\":\"" + project + "\"}";
         BuildSubmitter.submit(QUEUE, prepared(project), sameCall, project.toString(), session(), true, control -> {
-                          await(release);
-                          return BuildOutcome.completed(true, "BUILD SUCCESS");
-                      });
+            await(release);
+            return BuildOutcome.completed(true, "BUILD SUCCESS");
+        });
         // Captured while it is still blocked, so the lookup cannot race its completion.
         BuildJob first = activeJobFor(project);
         assertNotNull(first);
 
         String joined = BuildSubmitter.submit(QUEUE, prepared(project), sameCall, project.toString(), session(), true,
-                                              control -> BuildOutcome.completed(true, "never runs"));
+                control -> BuildOutcome.completed(true, "never runs"));
 
         assertTrue(joined.startsWith("Already "), joined);
         assertTrue(joined.contains(first.id()), joined);
         assertTrue(joined.contains("added as a listener"), joined);
         assertEquals(1, QUEUE.snapshot().current().stream()
-                     .filter(job -> job.request().projectPath().equals(project.toString())).count(),
-                     "the identical build must not be queued a second time");
+                .filter(job -> job.request().projectPath().equals(project.toString())).count(),
+                "the identical build must not be queued a second time");
 
         release.countDown();
         QUEUE.awaitFinish(first);
@@ -154,19 +180,19 @@ class BuildSubmitterTest {
         // but going through QUEUE.submit lets awaitStart pin the job to RUNNING before the repeat call, so the
         // assertion below is not racing the worker thread for "queued" vs "running" wording.
         BuildJob first = QUEUE.submit(new BuildRequest(sameCall, pb.root().getAbsolutePath(), project.toString(),
-                                                       requester.getId(), requester.getSessionName(),
-                                                       BuildTypeEnum.ASYNC, 60_000, true, control -> {
-                                                           await(release);
-                                                           return BuildOutcome.completed(true, "BUILD SUCCESS");
-                                                       }));
+                requester.getId(), requester.getSessionName(),
+                BuildTypeEnum.ASYNC, 60_000, true, control -> {
+                    await(release);
+                    return BuildOutcome.completed(true, "BUILD SUCCESS");
+                }));
         assertTrue(QUEUE.awaitStart(first, TimeUnit.SECONDS.toMillis(10)));
 
         String repeat = BuildSubmitter.submit(QUEUE, pb, sameCall, project.toString(), requester, true,
-                                              control -> BuildOutcome.completed(true, "never runs"));
+                control -> BuildOutcome.completed(true, "never runs"));
 
         assertEquals("You already have this build running as " + first.id() + " — it was not queued again. Its"
-                + " result will be delivered to you once, when it finishes. Use StopAsyncBuild with buildId "
-                + first.id() + " to cancel it.", repeat);
+                     + " result will be delivered to you once, when it finishes. Use StopAsyncBuild with buildId "
+                     + first.id() + " to cancel it.", repeat);
         assertFalse(repeat.contains("added as a listener"), "the requester is not told about itself in the third person");
         assertFalse(repeat.contains("Requested by"), repeat);
 
@@ -184,19 +210,19 @@ class BuildSubmitterTest {
         // Built and submitted directly via QUEUE.submit — an INLINE call through BuildSubmitter.submit blocks its
         // caller until the build finishes, which this test's own CountDownLatch would then deadlock against.
         BuildJob first = QUEUE.submit(new BuildRequest(sameCall, pb.root().getAbsolutePath(), project.toString(),
-                                                       requester.getId(), requester.getSessionName(),
-                                                       BuildTypeEnum.INLINE, 60_000, true, control -> {
-                                                           await(release);
-                                                           return BuildOutcome.completed(true, "BUILD SUCCESS");
-                                                       }));
+                requester.getId(), requester.getSessionName(),
+                BuildTypeEnum.INLINE, 60_000, true, control -> {
+                    await(release);
+                    return BuildOutcome.completed(true, "BUILD SUCCESS");
+                }));
         assertTrue(QUEUE.awaitStart(first, TimeUnit.SECONDS.toMillis(10)));
 
         String repeat = BuildSubmitter.submit(QUEUE, pb, sameCall, project.toString(), requester, true,
-                                              control -> BuildOutcome.completed(true, "never runs"));
+                control -> BuildOutcome.completed(true, "never runs"));
 
         assertEquals("You already have this build running as " + first.id() + " — it was not queued again. Its"
-                + " result will be delivered to you once, when it finishes.", repeat,
-                     "an inline build cannot be stopped, so no StopAsyncBuild hint");
+                     + " result will be delivered to you once, when it finishes.", repeat,
+                "an inline build cannot be stopped, so no StopAsyncBuild hint");
 
         release.countDown();
         QUEUE.awaitFinish(first);
@@ -241,13 +267,19 @@ class BuildSubmitterTest {
             throw new IllegalStateException(e);
         }
         return new PreparedBuild(null, "submitter-test", project.toFile(), List.of("mvn", "package"),
-                                 BuildOutputFormatter.Backend.MAVEN);
+                BuildOutputFormatter.Backend.MAVEN);
     }
 
     private static BuildJob activeJobFor(Path project) {
         return QUEUE.snapshot().current().stream()
                 .filter(job -> job.request().projectPath().equals(project.toString()))
                 .findFirst().orElse(null);
+    }
+
+    private static List<BuildJob> activeJobsFor(Path project) {
+        return QUEUE.snapshot().current().stream()
+                .filter(job -> job.request().projectPath().equals(project.toString()))
+                .toList();
     }
 
     private static void await(CountDownLatch latch) {
