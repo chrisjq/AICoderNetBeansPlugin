@@ -64,10 +64,19 @@ public class GrokAiImplementation extends AiImplementation {
      * {@code createInfoBarExtension}'s own call).
      */
     private volatile AiSessionHost sessionHost;
+    /**
+     * Makes a pick (stored in the manager and persisted) and the clearing of a rejected level (check, then
+     * persist) atomic with respect to each other, so a clear can never wipe a pick made while it was running.
+     */
+    private final Object persistedEffortLock = new Object();
 
     public GrokAiImplementation(AiProcessEventListener listener, ExecutablePrompter prompter) {
+        this(listener, prompter, new GrokAiProcessManager(listener));
+    }
+
+    GrokAiImplementation(AiProcessEventListener listener, ExecutablePrompter prompter, GrokAiProcessManager delegate) {
         super(AiTypeEnum.GROK, listener, prompter);
-        this.delegate = new GrokAiProcessManager(listener);
+        this.delegate = delegate;
         this.delegate.setOnReasoningEffortCleared(this::clearInvalidPersistedReasoningEffort);
     }
 
@@ -129,7 +138,10 @@ public class GrokAiImplementation extends AiImplementation {
         }
         delegate.setModel(model);
         if (delegate.isSessionLive() && model != null && !model.isBlank()) {
-            delegate.setConfigOption("model", model);
+            // Queued behind any earlier model/effort change, then followed by an effort check against the options
+            // this change returned: the levels a model accepts depend on the model, and the agent may reset the
+            // effort when it changes. Same model-then-effort order as session start (see the manager).
+            delegate.changeModelOnLiveSessionAsync(model);
         }
     }
 
@@ -164,11 +176,18 @@ public class GrokAiImplementation extends AiImplementation {
      * Package-private for direct unit testing.
      */
     void clearInvalidPersistedReasoningEffort() {
-        if (currentSession != null && currentSession.settings() instanceof GrokSessionSettings gs) {
-            gs.setReasoningEffort(null);
-            AiSessionHost host = sessionHost;
-            if (host != null) {
-                host.updateSessionSettings(gs);
+        synchronized (persistedEffortLock) {
+            // The manager has already cleared the rejected value; if it holds one again, the user picked a new
+            // level in the meantime and that pick, not the rejected one, is what is persisted now.
+            if (delegate.reasoningEffort != null) {
+                return;
+            }
+            if (currentSession != null && currentSession.settings() instanceof GrokSessionSettings gs) {
+                gs.setReasoningEffort(null);
+                AiSessionHost host = sessionHost;
+                if (host != null) {
+                    host.updateSessionSettings(gs);
+                }
             }
         }
     }
@@ -217,10 +236,19 @@ public class GrokAiImplementation extends AiImplementation {
             // Always session-scoped: a live pick here is persisted straight into the session's own settings below,
             // never the global default (that stays the Options tab's job) — so this is never the global-sourced case
             // configureReasoningEffort's fromSession=false branch exists for.
-            delegate.configureReasoningEffort(effort, true);
-            if (currentSession != null && currentSession.settings() instanceof GrokSessionSettings grokCfg) {
-                grokCfg.setReasoningEffort(effort);
-                host.updateSessionSettings(grokCfg);
+            synchronized (persistedEffortLock) {
+                delegate.configureReasoningEffort(effort, true);
+                if (currentSession != null && currentSession.settings() instanceof GrokSessionSettings grokCfg) {
+                    grokCfg.setReasoningEffort(effort);
+                    host.updateSessionSettings(grokCfg);
+                }
+            }
+            // configureReasoningEffort only stores the value, which the manager otherwise sends once, when the
+            // session is established — so a pick on a running session has to be pushed here. Picking the
+            // "don't set it" entry stores null and sends nothing: there is no level to send, so the agent keeps
+            // its current one until the session restarts.
+            if (delegate.isSessionLive()) {
+                delegate.applyReasoningEffortToLiveSessionAsync();
             }
         });
 
@@ -240,12 +268,11 @@ public class GrokAiImplementation extends AiImplementation {
     }
 
     /**
-     * Run after every {@code delegate.start()}. grok's {@code -s} flag (create a new headless session) is
-     * rejected by the CLI if the id already exists on disk ({@code Error: Session ID <id> is already in
-     * use.}, empirically confirmed) — but {@code start()} always defaults to create mode. If this session id
-     * already exists in grok's on-disk store, switch the freshly started manager to resume it instead, so an
-     * in-place restart or reopen of an existing session (e.g. on IDE restart, or reopening the chat tab)
-     * behaves like a resume rather than failing outright on the next message.
+     * Run after every {@code delegate.start()}: hands the manager the effective reasoning effort, which it
+     * sends once the ACP session is established, and — when the session settings hold a stored ACP session id
+     * — switches the freshly started manager to resume that session rather than create a new one, so an
+     * in-place restart or reopen of an existing session (IDE restart, reopening the chat tab) continues the
+     * same conversation.
      */
     @Override
     protected void afterStart() {

@@ -9,8 +9,11 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.RejectedExecutionException;
+import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
+import java.util.function.BooleanSupplier;
 import java.util.function.Predicate;
 import java.util.logging.Level;
 import java.util.logging.Logger;
@@ -166,6 +169,16 @@ public class GrokAiProcessManager extends AbstractAcpProcessManager {
      */
     volatile boolean reasoningEffortFromSession;
     private volatile Runnable onReasoningEffortCleared;
+    /**
+     * Serial queue for config changes made on a running session (model, then the effort check that depends on
+     * it). One thread, so they apply in the order they were made; it exits when idle.
+     */
+    private final ThreadPoolExecutor configOperations = newConfigOperationQueue();
+    /**
+     * Guards the stored effort and its scope flag, so a rejected level is only cleared while the field still
+     * holds the level that was judged, never over a newer pick.
+     */
+    private final Object effortFieldLock = new Object();
     volatile Runnable onSessionEstablished = null;
 
     public GrokAiProcessManager(AiProcessEventListener listener) {
@@ -181,8 +194,10 @@ public class GrokAiProcessManager extends AbstractAcpProcessManager {
     }
 
     public void configureReasoningEffort(String level, boolean fromSession) {
-        this.reasoningEffort = (level == null || level.isBlank()) ? null : level;
-        this.reasoningEffortFromSession = fromSession;
+        synchronized (effortFieldLock) {
+            this.reasoningEffort = (level == null || level.isBlank()) ? null : level;
+            this.reasoningEffortFromSession = fromSession;
+        }
     }
 
     public void setOnReasoningEffortCleared(Runnable callback) {
@@ -487,7 +502,32 @@ public class GrokAiProcessManager extends AbstractAcpProcessManager {
         if (cb != null) {
             cb.run();
         }
-        applyInitialConfigOptionsIfNeeded();
+        applyInitialConfigOptionsOnQueue();
+    }
+
+    /**
+     * Runs the start-up model/effort apply on the config-operation queue and waits for it, so a pick made on
+     * the session as soon as it is published is queued behind it rather than sent alongside it: otherwise the
+     * start-up response could land last and leave the agent on the pre-pick value. Waiting keeps the first
+     * turn from being sent before the start-up values are in place, as before. If the wait times out the
+     * handshake carries on and the task keeps running, but only against the session it was queued for: it is
+     * dropped the moment that session is replaced, so it can never apply to a later one.
+     */
+    void applyInitialConfigOptionsOnQueue() {
+        try {
+            BooleanSupplier current = sessionGuard();
+            configOperations.submit(() -> {
+                if (current.getAsBoolean()) {
+                    applyInitialConfigOptionsIfNeeded(current);
+                }
+            }).get(2, TimeUnit.MINUTES);
+        }
+        catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+        }
+        catch (Exception e) {
+            LOG.log(Level.WARNING, "Applying Grok's start-up config options failed: {0}", e.getMessage());
+        }
     }
 
     /**
@@ -496,6 +536,10 @@ public class GrokAiProcessManager extends AbstractAcpProcessManager {
      * agent's current value, and only when the agent actually offers it.
      */
     void applyInitialConfigOptionsIfNeeded() {
+        applyInitialConfigOptionsIfNeeded(ALWAYS_CURRENT);
+    }
+
+    private void applyInitialConfigOptionsIfNeeded(BooleanSupplier current) {
         // Snapshotted once, not re-read from the volatile field per call: a crash can race in between this
         // method's two config-option calls (model, then reasoning_effort) and null sessionConfigOptions via
         // detachDeadConnection. Without a stable snapshot, the second call would see "no options" and
@@ -505,18 +549,189 @@ public class GrokAiProcessManager extends AbstractAcpProcessManager {
         if (options == null) {
             return;
         }
-        applyConfigOptionIfNeeded(options, "model", model);
-        String effort = reasoningEffort;
-        if (effort != null && !effort.isBlank()) {
-            boolean applied = applyConfigOptionIfNeeded(options, "reasoning_effort", effort);
-            if (!applied && reasoningEffortFromSession) {
-                reasoningEffort = null;
-                Runnable cb = onReasoningEffortCleared;
-                if (cb != null) {
-                    cb.run();
-                }
+        applyConfigOptionIfNeeded(options, "model", model, current);
+        // The effort is judged against what the model request left, not the pre-model snapshot: the levels a
+        // model accepts depend on the model, so the old snapshot would reject an effort only the new model has.
+        // The snapshot is still the fallback when the session went away meanwhile (nothing newer to read).
+        JsonArray confirmed = sessionConfigOptions;
+        reconcileReasoningEffort(confirmed != null ? confirmed : options, current);
+    }
+
+    /**
+     * The effort half shared by start-up and every live change: applies the stored effort against
+     * {@code options}, which must be the latest confirmed ones, and clears a session-sourced value the agent
+     * rejects only when the agent is on the model that was asked for.
+     */
+    private void reconcileReasoningEffort(JsonArray options, BooleanSupplier current) {
+        applyReasoningEffortIfNeeded(options, agentIsOnRequestedModel(options), current);
+    }
+
+    /**
+     * Pushes the stored reasoning effort to a session that is already running — the live counterpart of the
+     * effort half of {@link #applyInitialConfigOptionsIfNeeded}, which otherwise only runs once, when the
+     * session is established. Same per-model support check and same clearing of a rejected session-sourced
+     * value. Blocks until the agent answers, so it only ever runs on the config-operation queue
+     * ({@link #applyReasoningEffortToLiveSessionAsync}, {@link #changeModelOnLiveSessionAsync}), where it
+     * sees the options left by the latest confirmed model change. A session-sourced effort is cleared only
+     * when the agent's model is the one that was asked for: if a model change failed, the options describe a
+     * model the user did not pick, and judging the effort against them would discard a value the chosen model
+     * may accept.
+     */
+    void applyReasoningEffortToLiveSession() {
+        applyReasoningEffortToLiveSession(ALWAYS_CURRENT);
+    }
+
+    private void applyReasoningEffortToLiveSession(BooleanSupplier current) {
+        JsonArray options = sessionConfigOptions;
+        if (options == null) {
+            return;
+        }
+        reconcileReasoningEffort(options, current);
+    }
+
+    /**
+     * Identifies the running ACP session: the connection plus its session id. A task queued for one session
+     * must not act on the next, so the queue captures this when a task is queued and compares it before the
+     * task runs and after every request it makes. Package-private so a test can stand in for a real
+     * connection.
+     */
+    Object currentSessionToken() {
+        AcpConnection conn = connection;
+        String sid = acpSessionId;
+        return conn == null || sid == null ? null : new SessionToken(conn, sid);
+    }
+
+    private record SessionToken(AcpConnection connection, String acpSessionId) {
+
+    }
+
+    /**
+     * True while the session that was running when this was created is still the running one. A task queued
+     * when there was no session never runs.
+     */
+    private BooleanSupplier sessionGuard() {
+        Object token = currentSessionToken();
+        return () -> token != null && token.equals(currentSessionToken());
+    }
+
+    private static final BooleanSupplier ALWAYS_CURRENT = () -> true;
+
+    /**
+     * True when the agent's current model is the one this manager was asked to use, or when that cannot be
+     * told (no requested model, or the agent reports no model option).
+     */
+    private boolean agentIsOnRequestedModel(JsonArray options) {
+        String requested = model;
+        if (requested == null || requested.isBlank()) {
+            return true;
+        }
+        for (JsonElement el : options) {
+            if (el.isJsonObject() && "model".equals(optionId(el.getAsJsonObject()))
+                && el.getAsJsonObject().has(AcpJsonKeyEnum.CURRENT_VALUE.key())) {
+                return requested.equals(el.getAsJsonObject().get(AcpJsonKeyEnum.CURRENT_VALUE.key()).getAsString());
             }
         }
+        return true;
+    }
+
+    private static String optionId(JsonObject option) {
+        return option.has(AcpJsonKeyEnum.ID.key()) ? option.get(AcpJsonKeyEnum.ID.key()).getAsString() : null;
+    }
+
+    /**
+     * Queues {@link #applyReasoningEffortToLiveSession}. The effort pick comes from the EDT and the check
+     * blocks on the agent, so it runs on the config-operation queue, behind any model change already waiting
+     * for the agent: effort and model changes are applied strictly in the order they were made, and the
+     * effort is judged against the options the agent returned for the model it ended up on.
+     */
+    public void applyReasoningEffortToLiveSessionAsync() {
+        BooleanSupplier current = sessionGuard();
+        configOperations.execute(() -> {
+            if (current.getAsBoolean()) {
+                applyReasoningEffortToLiveSession(current);
+            }
+        });
+    }
+
+    /**
+     * Queues a model change on the running session followed by the effort check against the options that
+     * change returned. Queued rather than sent directly so the two can never interleave with another effort
+     * or model change. The wait happens on the queue's own thread: this is called from the EDT, and a model
+     * switch's completion is delivered on the ACP connection's dispatch thread, where waiting for a second
+     * response could never be answered.
+     */
+    public void changeModelOnLiveSessionAsync(String newModel) {
+        BooleanSupplier current = sessionGuard();
+        configOperations.execute(() -> {
+            if (!current.getAsBoolean()) {
+                return;
+            }
+            try {
+                setConfigOption("model", newModel).get(30, TimeUnit.SECONDS);
+            }
+            catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                return;
+            }
+            catch (Exception e) {
+                if (!current.getAsBoolean()) {
+                    return;
+                }
+                LOG.log(Level.WARNING, "Grok rejected model=\"{0}\": {1}", new Object[]{newModel, e.getMessage()});
+                listener.onAiProcessEvent(new StatusEvent(StatusEventTypeEnum.INFO,
+                        "\"" + newModel + "\" was rejected by Grok for model"));
+            }
+            if (current.getAsBoolean()) {
+                applyReasoningEffortToLiveSession(current);
+            }
+        });
+    }
+
+    /**
+     * Returns once every config operation queued so far has finished, so tests can assert on the outcome
+     * without sleeping.
+     */
+    void awaitConfigOperationsForTesting() throws Exception {
+        configOperations.submit(() -> {
+        }).get(10, TimeUnit.SECONDS);
+    }
+
+    private static ThreadPoolExecutor newConfigOperationQueue() {
+        ThreadPoolExecutor queue = new ThreadPoolExecutor(1, 1, 5, TimeUnit.SECONDS, new LinkedBlockingQueue<>(), runnable -> {
+            Thread thread = new Thread(runnable, "grok-config-operations");
+            thread.setDaemon(true);
+            return thread;
+        });
+        queue.allowCoreThreadTimeOut(true);
+        return queue;
+    }
+
+    private void applyReasoningEffortIfNeeded(JsonArray options, boolean mayClear, BooleanSupplier current) {
+        String effort = reasoningEffort;
+        if (effort != null && !effort.isBlank()) {
+            boolean applied = applyConfigOptionIfNeeded(options, "reasoning_effort", effort, current);
+            if (!applied && mayClear && current.getAsBoolean()) {
+                clearRejectedReasoningEffort(effort);
+            }
+        }
+    }
+
+    /**
+     * Clears {@code rejected} when it is a session-sourced value and is still what is stored; a newer pick
+     * made while the agent was being asked is left alone. Returns whether it cleared.
+     */
+    boolean clearRejectedReasoningEffort(String rejected) {
+        synchronized (effortFieldLock) {
+            if (!reasoningEffortFromSession || !rejected.equals(reasoningEffort)) {
+                return false;
+            }
+            reasoningEffort = null;
+        }
+        Runnable cb = onReasoningEffortCleared;
+        if (cb != null) {
+            cb.run();
+        }
+        return true;
     }
 
     /**
@@ -526,9 +741,12 @@ public class GrokAiProcessManager extends AbstractAcpProcessManager {
      *         cleared. {@code options} is the caller's own stable snapshot, not re-read here, so a session
      *         going away mid-method can never be mistaken for the agent itself rejecting {@code value}.
      */
-    private boolean applyConfigOptionIfNeeded(JsonArray options, String configId, String value) {
+    private boolean applyConfigOptionIfNeeded(JsonArray options, String configId, String value, BooleanSupplier current) {
         if (value == null || value.isBlank()) {
             return false;
+        }
+        if (!current.getAsBoolean()) {
+            return true;
         }
         String agentCurrent = null;
         List<String> available = new ArrayList<>();
@@ -565,12 +783,17 @@ public class GrokAiProcessManager extends AbstractAcpProcessManager {
             return true;
         }
         try {
-            sessionConfigOptions = setConfigOption(configId, value).get(30, TimeUnit.SECONDS);
+            JsonArray confirmed = setConfigOption(configId, value).get(30, TimeUnit.SECONDS);
+            if (current.getAsBoolean()) {
+                sessionConfigOptions = confirmed;
+            }
         }
         catch (Exception e) {
-            LOG.log(Level.WARNING, "Grok rejected {0}=\"{1}\": {2}", new Object[]{configId, value, e.getMessage()});
-            listener.onAiProcessEvent(new StatusEvent(StatusEventTypeEnum.INFO,
-                    "\"" + value + "\" was rejected by Grok for " + configId));
+            if (current.getAsBoolean()) {
+                LOG.log(Level.WARNING, "Grok rejected {0}=\"{1}\": {2}", new Object[]{configId, value, e.getMessage()});
+                listener.onAiProcessEvent(new StatusEvent(StatusEventTypeEnum.INFO,
+                        "\"" + value + "\" was rejected by Grok for " + configId));
+            }
         }
         return true;
     }

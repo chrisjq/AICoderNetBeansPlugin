@@ -25,11 +25,11 @@ import kiwi.ingenuity.netbeans.plugin.aicoder.ui.UIConstants;
 /**
  * Grok info bar: model selector, reasoning-effort selector + context-window usage progress bar. Mirrors
  * {@code ClaudeAiInfoBarExtension} / {@code GithubCopilotAiInfoBarExtension} but omits the compact button and
- * rate-limit bars — grok's headless CLI has no documented context-compaction command or 5-hour/7-day
- * rate-limit query, unlike Claude. Grok spawns a fresh {@code grok -p} per turn (see
- * {@code GrokAiProcessManager}), so a reasoning-effort change simply applies to the next turn — no restart
- * path is needed and, unlike pi's live-RPC picker, this combo does not need any disabling behaviour beyond
- * whatever the model combo already has.
+ * rate-limit bars — the Grok agent exposes no context-compaction command or 5-hour/7-day rate-limit query,
+ * unlike Claude. Grok runs as one long-lived ACP agent (see {@code GrokAiProcessManager}); a model or
+ * reasoning-effort pick on a running session is sent to it as a {@code session/set_config_option} request
+ * ({@code GrokAiImplementation} does the sending), so neither needs a restart. Both combos are disabled while
+ * a turn is running, so a change never arrives mid-turn.
  */
 public class GrokAiInfoBarExtension implements AiInfoBarExtension {
 

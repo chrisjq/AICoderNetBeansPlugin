@@ -6,10 +6,16 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import org.junit.jupiter.api.Test;
 
 /**
- * Pins the static per-model reasoning-effort table against the spec: {@code grok-4.6} supports
- * low/medium/high/xhigh, {@code grok-4.5} supports low/medium/high, and any other/unknown model supports none.
+ * Pins the static per-model reasoning-effort table against the spec: {@code grok-4.7} and {@code grok-4.6}
+ * support low/medium/high/xhigh, {@code grok-4.5} supports low/medium/high, and any other/unknown model
+ * supports none.
  */
 class GrokReasoningEffortSupportTest {
+
+    @Test
+    void grok47SupportsAllFourLevels() {
+        assertEquals(List.of("low", "medium", "high", "xhigh"), GrokReasoningEffortSupport.supportedFor("grok-4.7"));
+    }
 
     @Test
     void grok46SupportsAllFourLevels() {
