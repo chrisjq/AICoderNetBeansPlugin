@@ -76,8 +76,6 @@ public class RefactoringProvider {
 
     private static final String RUN_INSPECT_ACTION
                                 = "Actions/Source/org-netbeans-modules-analysis-RunAnalysisAction.instance";
-    private static final String ORGANISE_IMPORTS_ACTION
-                                = "Editors/text/x-java/Actions/organize-imports.instance";
     private static final String ORGANISE_MEMBERS_ACTION
                                 = "Editors/text/x-java/Actions/organize-members.instance";
 
@@ -571,14 +569,14 @@ public class RefactoringProvider {
         if (!outcome.changed()) {
             return outcome.message();
         }
-        String saveError = saveAfterFixImports(fo);
+        String saveError = saveAfterHeadlessEdit(fo);
         if (saveError != null) {
             return outcome.message() + " Save failed: " + saveError;
         }
         return outcome.message();
     }
 
-    private static String saveAfterFixImports(FileObject fo) {
+    private static String saveAfterHeadlessEdit(FileObject fo) {
         if (SwingUtilities.isEventDispatchThread()) {
             return saveFo(fo);
         }
@@ -597,8 +595,27 @@ public class RefactoringProvider {
         return error.get();
     }
 
+    /**
+     * Removes unused imports and sorts the rest per the file's code style, without opening an editor or a
+     * dialog. Imports are never added. A file with compile errors loses only imports that are provably
+     * unused.
+     */
     public static String organiseImports(String filePath) {
-        return runSourceAction(filePath, ORGANISE_IMPORTS_ACTION, McpToolEnum.ORGANISE_IMPORTS.toolName());
+        FileObject fo = resolveFileObject(filePath);
+        if (fo == null) {
+            return filePath != null && !filePath.isBlank()
+                   ? "File not found: " + filePath
+                   : McpToolPropertyEnum.FILE_PATH.key() + " is required";
+        }
+        HeadlessImportOrganiser.Outcome outcome = HeadlessImportOrganiser.organise(fo);
+        if (!outcome.changed()) {
+            return outcome.message();
+        }
+        String saveError = saveAfterHeadlessEdit(fo);
+        if (saveError != null) {
+            return outcome.message() + " Save failed: " + saveError;
+        }
+        return outcome.message();
     }
 
     public static String organiseMembers(String filePath) {

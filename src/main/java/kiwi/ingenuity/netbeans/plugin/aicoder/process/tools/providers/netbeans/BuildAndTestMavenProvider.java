@@ -10,7 +10,7 @@ import kiwi.ingenuity.netbeans.plugin.aicoder.process.McpToolPropertyEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.server.McpServerRegistry;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.TimeoutEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.build.BuildControl;
-import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.git.GitCommonParamEnum;
+import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.ProjectPathParamEnum;
 
 public class BuildAndTestMavenProvider {
 
@@ -18,16 +18,13 @@ public class BuildAndTestMavenProvider {
     private static final int MAX_OUTPUT_BYTES = 2 * 1024 * 1024;
 
     /**
-     * Options shared by BuildMavenProject, CleanAndBuildMavenProject and
-     * RunMavenTests. Every field arrives already resolved by the calling tool —
-     * {@code goals} carries that tool's own default ({@code package},
-     * {@code clean package}, or {@code test}) when the caller omitted it, and
-     * {@code skipTests} carries that tool's own default (true for the two build
-     * tools, preserving today's {@code -DskipTests}; false for RunMavenTests,
-     * which has never passed it — skipping tests on the tool whose entire
-     * purpose is running them would be a confusing default). This record makes
-     * no decisions of its own; {@link #argsFor} only translates already-
-     * resolved values into CLI flags, and {@link #validate} checks them.
+     * Options shared by BuildMavenProject, CleanAndBuildMavenProject and RunMavenTests. Every field arrives
+     * already resolved by the calling tool — {@code goals} carries that tool's own default ({@code package},
+     * {@code clean package}, or {@code test}) when the caller omitted it, and {@code skipTests} carries that
+     * tool's own default (true for the two build tools, preserving today's {@code -DskipTests}; false for
+     * RunMavenTests, which has never passed it — skipping tests on the tool whose entire purpose is running
+     * them would be a confusing default). This record makes no decisions of its own; {@link #argsFor} only
+     * translates already- resolved values into CLI flags, and {@link #validate} checks them.
      */
     public record MavenBuildOptions(
             List<String> goals, List<String> projectList, boolean alsoMake, String resumeFrom,
@@ -57,13 +54,13 @@ public class BuildAndTestMavenProvider {
     public static PreparedBuild prepareDownloadSources(String sessionId, String projectPath) {
         RootResult resolved = resolveRoot(sessionId, projectPath);
         return resolved.error() != null ? PreparedBuild.error(resolved.error())
-                : prepareDownload(sessionId, resolved.root(), List.of("dependency:sources"));
+               : prepareDownload(sessionId, resolved.root(), List.of("dependency:sources"));
     }
 
     public static PreparedBuild prepareDownloadJavadoc(String sessionId, String projectPath) {
         RootResult resolved = resolveRoot(sessionId, projectPath);
         return resolved.error() != null ? PreparedBuild.error(resolved.error())
-                : prepareDownload(sessionId, resolved.root(), List.of("dependency:resolve", "-Dclassifier=javadoc"));
+               : prepareDownload(sessionId, resolved.root(), List.of("dependency:resolve", "-Dclassifier=javadoc"));
     }
 
     public static String runTests(String sessionId, String testClass, String projectPath, MavenBuildOptions opts) {
@@ -98,8 +95,8 @@ public class BuildAndTestMavenProvider {
     }
 
     /**
-     * Validates every option BEFORE any file resolution or process launch — a
-     * malformed argument must not be masked by a later, unrelated failure.
+     * Validates every option BEFORE any file resolution or process launch — a malformed argument must not be
+     * masked by a later, unrelated failure.
      */
     private static String validate(MavenBuildOptions opts) {
         if (opts.goals() == null || opts.goals().isEmpty()) {
@@ -192,7 +189,7 @@ public class BuildAndTestMavenProvider {
 
     private static RootResult resolveRoot(String sessionId, String projectPath) {
         if (projectPath == null || projectPath.isBlank()) {
-            return new RootResult(null, GitCommonParamEnum.PROJECT_PATH.key() + " is required");
+            return new RootResult(null, ProjectPathParamEnum.PROJECT_PATH.key() + " is required");
         }
         File dir = new File(projectPath);
         if (!dir.isDirectory()) {

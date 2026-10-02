@@ -82,6 +82,10 @@ public enum McpToolPropertyEnum {
      */
     CREATE("create"),
     /**
+     * Whether to run the IDE's Debug Project action instead of Run Project.
+     */
+    DEBUG("debug"),
+    /**
      * Default value for a new parameter.
      */
     DEFAULT_VALUE("defaultValue"),

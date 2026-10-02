@@ -93,6 +93,7 @@ public enum McpToolEnum {
     BUILD_PROJECT("BuildProject"),
     CLEAN_PROJECT("CleanProject"),
     CLEAN_AND_BUILD_PROJECT("CleanAndBuildProject"),
+    RUN_PROJECT("RunProject"),
     // UI_FILES
     GET_CURRENT_FILE("GetCurrentFile"),
     GET_CURRENT_FILE_CONTENT("GetCurrentFileContent"),

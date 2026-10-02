@@ -12,6 +12,7 @@ import kiwi.ingenuity.netbeans.plugin.aicoder.process.tempfile.TempFileDirEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tempfile.TempFileSpooler;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.McpToolInterface;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.McpToolSchemas;
+import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.ProjectPathParamEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.ToolRequestArguments;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.ToolSchemaKeyEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.providers.netbeans.GitProvider;
@@ -30,10 +31,10 @@ public class GetGitDiffTool implements McpToolInterface {
         }
         if (options.contains(McpInstructionOptionEnum.ONLY_MCP_TOOL_ACCESS)) {
             return McpToolEnum.GET_GIT_DIFF.toolName() + " - shows unstaged or staged changes. "
-                    + "Requires " + GitCommonParamEnum.PROJECT_PATH.key() + " to select the target git repository or project root.";
+                   + "Requires " + ProjectPathParamEnum.PROJECT_PATH.key() + " to select the target git repository or project root.";
         }
         return McpToolEnum.GET_GIT_DIFF.toolName() + " -> INSTEAD OF Bash git diff - shows unstaged or staged changes. "
-                + "Requires " + GitCommonParamEnum.PROJECT_PATH.key() + " to select the target git repository or project root.";
+               + "Requires " + ProjectPathParamEnum.PROJECT_PATH.key() + " to select the target git repository or project root.";
     }
 
     @Override
@@ -53,10 +54,10 @@ public class GetGitDiffTool implements McpToolInterface {
         projectPath.addProperty(ToolSchemaKeyEnum.TYPE.key(), "string");
         projectPath.addProperty(ToolSchemaKeyEnum.DESCRIPTION.key(),
                 "Target git repository or project root; relative paths resolve against the default project.");
-        props.add(GitCommonParamEnum.PROJECT_PATH.key(), projectPath);
+        props.add(ProjectPathParamEnum.PROJECT_PATH.key(), projectPath);
         schema.add(ToolSchemaKeyEnum.PROPERTIES.key(), props);
         JsonArray required = new JsonArray();
-        required.add(GitCommonParamEnum.PROJECT_PATH.key());
+        required.add(ProjectPathParamEnum.PROJECT_PATH.key());
         schema.add(ToolSchemaKeyEnum.REQUIRED.key(), required);
         tool.add(ToolSchemaKeyEnum.INPUT_SCHEMA.key(), schema);
         return McpToolSchemas.applyCredentialsIfRequested(tool, options);
@@ -69,7 +70,7 @@ public class GetGitDiffTool implements McpToolInterface {
 
     @Override
     public String handle(ToolRequestArguments args, AbstractAiSession session) throws McpArgumentException {
-        String output = GitProvider.getGitDiff(args.require(GitCommonParamEnum.PROJECT_PATH.key()),
+        String output = GitProvider.getGitDiff(args.require(ProjectPathParamEnum.PROJECT_PATH.key()),
                 args.bool(GetGitDiffParamEnum.STAGED.key()));
         return TempFileSpooler.spoolIfLarge(session.getId(), TempFileDirEnum.TOOL_RESULTS, "git-diff", ".log", output,
                 TempFileSpooler.DEFAULT_RESULT_SPOOL_THRESHOLD_CHARS);

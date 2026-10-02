@@ -87,6 +87,7 @@ import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.system.WebReques
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.ui.build.BuildProjectTool;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.ui.build.CleanAndBuildProjectTool;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.ui.build.CleanProjectTool;
+import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.ui.build.RunProjectTool;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.ui.diag.RunInspectTool;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.ui.file.CloseFileTool;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.ui.file.GetCurrentFileContentTool;
@@ -125,6 +126,7 @@ public final class ToolHandlerFactory {
         map.put(McpToolEnum.CLEAN_PROJECT, new CleanProjectTool());
         map.put(McpToolEnum.BUILD_PROJECT, new BuildProjectTool());
         map.put(McpToolEnum.CLEAN_AND_BUILD_PROJECT, new CleanAndBuildProjectTool());
+        map.put(McpToolEnum.RUN_PROJECT, new RunProjectTool());
         map.put(McpToolEnum.RUN_MAVEN_TESTS, new RunMavenTestsTool());
         map.put(McpToolEnum.GET_GIT_STATUS, new GetGitStatusTool());
         map.put(McpToolEnum.GET_GIT_DIFF, new GetGitDiffTool());

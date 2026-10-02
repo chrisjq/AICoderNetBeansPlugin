@@ -14,6 +14,7 @@ import kiwi.ingenuity.netbeans.plugin.aicoder.process.locking.RequiresLock;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.session.AbstractAiSession;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.McpToolInterface;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.McpToolSchemas;
+import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.ProjectPathParamEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.ToolRequestArguments;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.ToolSchemaKeyEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.providers.netbeans.GitProvider;
@@ -35,10 +36,10 @@ public class GitCherryPickTool implements McpToolInterface {
         }
         if (options.contains(McpInstructionOptionEnum.ONLY_MCP_TOOL_ACCESS)) {
             return McpToolEnum.GIT_CHERRY_PICK.toolName() + " - applies commits onto current branch; supports BEGIN/CONTINUE/QUIT/ABORT. "
-                    + "Requires " + GitCommonParamEnum.PROJECT_PATH.key() + " to select the target git repository or project root.";
+                   + "Requires " + ProjectPathParamEnum.PROJECT_PATH.key() + " to select the target git repository or project root.";
         }
         return McpToolEnum.GIT_CHERRY_PICK.toolName() + " -> INSTEAD OF Bash git cherry-pick - applies commits onto current branch; supports BEGIN/CONTINUE/QUIT/ABORT. "
-                + "Requires " + GitCommonParamEnum.PROJECT_PATH.key() + " to select the target git repository or project root.";
+               + "Requires " + ProjectPathParamEnum.PROJECT_PATH.key() + " to select the target git repository or project root.";
     }
 
     @Override
@@ -65,10 +66,10 @@ public class GitCherryPickTool implements McpToolInterface {
         projectPath.addProperty(ToolSchemaKeyEnum.TYPE.key(), "string");
         projectPath.addProperty(ToolSchemaKeyEnum.DESCRIPTION.key(),
                 "Target git repository or project root; relative paths resolve against the default project.");
-        props.add(GitCommonParamEnum.PROJECT_PATH.key(), projectPath);
+        props.add(ProjectPathParamEnum.PROJECT_PATH.key(), projectPath);
         schema.add(ToolSchemaKeyEnum.PROPERTIES.key(), props);
         JsonArray required = new JsonArray();
-        required.add(GitCommonParamEnum.PROJECT_PATH.key());
+        required.add(ProjectPathParamEnum.PROJECT_PATH.key());
         schema.add(ToolSchemaKeyEnum.REQUIRED.key(), required);
         tool.add(ToolSchemaKeyEnum.INPUT_SCHEMA.key(), schema);
         return McpToolSchemas.applyCredentialsIfRequested(tool, options);
@@ -98,6 +99,6 @@ public class GitCherryPickTool implements McpToolInterface {
             return "Error: " + GitCherryPickParamEnum.REVISIONS.key() + " are required for " + GitCherryPickParamEnum.OPERATION.key() + "=BEGIN";
         }
 
-        return GitProvider.gitCherryPick(args.require(GitCommonParamEnum.PROJECT_PATH.key()), operation, revisions);
+        return GitProvider.gitCherryPick(args.require(ProjectPathParamEnum.PROJECT_PATH.key()), operation, revisions);
     }
 }

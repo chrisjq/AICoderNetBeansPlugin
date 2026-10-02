@@ -10,7 +10,7 @@ import kiwi.ingenuity.netbeans.plugin.aicoder.process.McpToolPropertyEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.server.McpServerRegistry;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.TimeoutEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.build.BuildControl;
-import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.git.GitCommonParamEnum;
+import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.ProjectPathParamEnum;
 import org.openide.modules.InstalledFileLocator;
 
 public class BuildAndTestAntProvider {
@@ -19,9 +19,10 @@ public class BuildAndTestAntProvider {
     private static final int MAX_OUTPUT_BYTES = 2 * 1024 * 1024;
 
     /**
-     * Options shared by BuildAntProject, CleanAndBuildAntProject and RunAntTests. {@code targets} carries the calling
-     * tool's own default ({@code jar}, {@code clean jar}, or {@code test}) when the caller omitted it — see
-     * {@link BuildAndTestMavenProvider.MavenBuildOptions} for why defaulting lives in the tool, not here.
+     * Options shared by BuildAntProject, CleanAndBuildAntProject and RunAntTests. {@code targets} carries the
+     * calling tool's own default ({@code jar}, {@code clean jar}, or {@code test}) when the caller omitted it
+     * — see {@link BuildAndTestMavenProvider.MavenBuildOptions} for why defaulting lives in the tool, not
+     * here.
      */
     public record AntBuildOptions(List<String> targets, JsonObject properties, boolean keepGoing) {
 
@@ -29,17 +30,17 @@ public class BuildAndTestAntProvider {
 
     public static String buildProject(String sessionId, String projectPath, AntBuildOptions opts) {
         return BuildProcessRunner.run(prepareBuildProject(sessionId, projectPath, opts),
-                                      new BuildControl(TimeoutEnum.BUILD_PROCESS_MILLIS.millis())).result();
+                new BuildControl(TimeoutEnum.BUILD_PROCESS_MILLIS.millis())).result();
     }
 
     public static String cleanAndBuildProject(String sessionId, String projectPath, AntBuildOptions opts) {
         return BuildProcessRunner.run(prepareCleanAndBuildProject(sessionId, projectPath, opts),
-                                      new kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.build.BuildControl(TimeoutEnum.BUILD_PROCESS_MILLIS.millis())).result();
+                new kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.build.BuildControl(TimeoutEnum.BUILD_PROCESS_MILLIS.millis())).result();
     }
 
     public static String runTests(String sessionId, String testClass, String projectPath, AntBuildOptions opts) {
         return BuildProcessRunner.run(prepareRunTests(sessionId, testClass, projectPath, opts),
-                                      new kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.build.BuildControl(TimeoutEnum.BUILD_PROCESS_MILLIS.millis())).result();
+                new kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.build.BuildControl(TimeoutEnum.BUILD_PROCESS_MILLIS.millis())).result();
     }
 
     public static PreparedBuild prepareBuildProject(String sessionId, String projectPath, AntBuildOptions opts) {
@@ -105,7 +106,7 @@ public class BuildAndTestAntProvider {
 
     private static RootResult resolveRoot(String sessionId, String projectPath) {
         if (projectPath == null || projectPath.isBlank()) {
-            return new RootResult(null, GitCommonParamEnum.PROJECT_PATH.key() + " is required");
+            return new RootResult(null, ProjectPathParamEnum.PROJECT_PATH.key() + " is required");
         }
         File dir = new File(projectPath);
         if (!dir.isDirectory()) {

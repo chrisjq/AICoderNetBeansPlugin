@@ -7,11 +7,12 @@ import java.util.List;
 import java.util.Set;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.McpToolPropertyEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.McpToolInterface;
+import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.ProjectPathParamEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.ToolSchemaKeyEnum;
-import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.git.GitCommonParamEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.ui.build.BuildProjectTool;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.ui.build.CleanAndBuildProjectTool;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.ui.build.CleanProjectTool;
+import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.ui.build.RunProjectTool;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.ui.diag.RunInspectTool;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.ui.file.CloseFileParamEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.ui.file.CloseFileTool;
@@ -76,11 +77,23 @@ class UiToolsParamContractTest {
         for (McpToolInterface tool : tools) {
             // They go through the build queue like every other build, so they offer async too — optional, never
             // required: an IDE action with no async is an ordinary inline build that waits its turn.
-            assertEquals(Set.of(GitCommonParamEnum.PROJECT_PATH.key(), McpToolPropertyEnum.ASYNC.key()),
+            assertEquals(Set.of(ProjectPathParamEnum.PROJECT_PATH.key(), McpToolPropertyEnum.ASYNC.key()),
                     propertyKeys(tool));
-            assertEquals(Set.of(GitCommonParamEnum.PROJECT_PATH.key()), requiredKeys(tool));
+            assertEquals(Set.of(ProjectPathParamEnum.PROJECT_PATH.key()), requiredKeys(tool));
         }
         assertNoParameters(List.of(new RunInspectTool()));
+    }
+
+    /**
+     * RunProject does NOT go through the build queue (a run may never finish), so unlike the three queued IDE
+     * action tools above it takes no {@code async} option — only {@code projectPath} (required) and
+     * {@code debug} (optional).
+     */
+    @Test
+    void runProjectAdvertisesProjectPathRequiredAndDebugOptional() {
+        RunProjectTool tool = new RunProjectTool();
+        assertEquals(Set.of(ProjectPathParamEnum.PROJECT_PATH.key(), McpToolPropertyEnum.DEBUG.key()), propertyKeys(tool));
+        assertEquals(Set.of(ProjectPathParamEnum.PROJECT_PATH.key()), requiredKeys(tool));
     }
 
     @Disabled("user request: Editor/Window tool group tests disabled")

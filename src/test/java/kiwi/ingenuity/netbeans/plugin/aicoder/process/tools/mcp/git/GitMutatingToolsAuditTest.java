@@ -19,6 +19,7 @@ import kiwi.ingenuity.netbeans.plugin.aicoder.process.server.AiMcpRegistrar;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.server.McpServerRegistry;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.session.AbstractAiSession;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.McpToolInterface;
+import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.ProjectPathParamEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.ToolRequestArguments;
 import org.junit.jupiter.api.AfterEach;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -843,7 +844,7 @@ class GitMutatingToolsAuditTest {
     // ---- helpers ----
     private JsonObject base() {
         JsonObject o = new JsonObject();
-        o.addProperty(GitCommonParamEnum.PROJECT_PATH.key(), projectPath);
+        o.addProperty(ProjectPathParamEnum.PROJECT_PATH.key(), projectPath);
         return o;
     }
 

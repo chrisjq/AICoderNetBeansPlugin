@@ -10,7 +10,7 @@ import kiwi.ingenuity.netbeans.plugin.aicoder.process.McpToolPropertyEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.server.McpServerRegistry;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.TimeoutEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.build.BuildControl;
-import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.git.GitCommonParamEnum;
+import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.ProjectPathParamEnum;
 
 public class BuildAndTestGradleProvider {
 
@@ -18,12 +18,10 @@ public class BuildAndTestGradleProvider {
     private static final int MAX_OUTPUT_BYTES = 2 * 1024 * 1024;
 
     /**
-     * Options shared by BuildGradleProject, CleanAndBuildGradleProject and
-     * RunGradleTests. {@code tasks} carries the calling tool's own default
-     * ({@code build -x test}, {@code clean build -x test}, or {@code test})
-     * when the caller omitted it — see
-     * {@link BuildAndTestMavenProvider.MavenBuildOptions} for why defaulting
-     * lives in the tool, not here.
+     * Options shared by BuildGradleProject, CleanAndBuildGradleProject and RunGradleTests. {@code tasks}
+     * carries the calling tool's own default ({@code build -x test}, {@code clean build -x test}, or
+     * {@code test}) when the caller omitted it — see {@link BuildAndTestMavenProvider.MavenBuildOptions} for
+     * why defaulting lives in the tool, not here.
      */
     public record GradleBuildOptions(
             List<String> tasks, boolean skipTests, boolean offline, boolean refreshDependencies,
@@ -131,7 +129,7 @@ public class BuildAndTestGradleProvider {
 
     private static RootResult resolveRoot(String sessionId, String projectPath) {
         if (projectPath == null || projectPath.isBlank()) {
-            return new RootResult(null, GitCommonParamEnum.PROJECT_PATH.key() + " is required");
+            return new RootResult(null, ProjectPathParamEnum.PROJECT_PATH.key() + " is required");
         }
         File dir = new File(projectPath);
         if (!dir.isDirectory()) {

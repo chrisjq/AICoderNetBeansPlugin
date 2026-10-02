@@ -12,6 +12,7 @@ import kiwi.ingenuity.netbeans.plugin.aicoder.process.locking.RequiresLock;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.session.AbstractAiSession;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.McpToolInterface;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.McpToolSchemas;
+import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.ProjectPathParamEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.ToolRequestArguments;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.ToolSchemaKeyEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.providers.netbeans.GitProvider;
@@ -31,10 +32,10 @@ public class GitCheckoutTool implements McpToolInterface {
         }
         if (options.contains(McpInstructionOptionEnum.ONLY_MCP_TOOL_ACCESS)) {
             return McpToolEnum.GIT_CHECKOUT.toolName() + " - switches to a branch or revision. "
-                    + "Requires " + GitCommonParamEnum.PROJECT_PATH.key() + " to select the target git repository or project root.";
+                   + "Requires " + ProjectPathParamEnum.PROJECT_PATH.key() + " to select the target git repository or project root.";
         }
         return McpToolEnum.GIT_CHECKOUT.toolName() + " -> INSTEAD OF Bash git checkout/switch - switches to a branch or revision. "
-                + "Requires " + GitCommonParamEnum.PROJECT_PATH.key() + " to select the target git repository or project root.";
+               + "Requires " + ProjectPathParamEnum.PROJECT_PATH.key() + " to select the target git repository or project root.";
     }
 
     @Override
@@ -58,11 +59,11 @@ public class GitCheckoutTool implements McpToolInterface {
         projectPath.addProperty(ToolSchemaKeyEnum.TYPE.key(), "string");
         projectPath.addProperty(ToolSchemaKeyEnum.DESCRIPTION.key(),
                 "Target git repository or project root; relative paths resolve against the default project.");
-        props.add(GitCommonParamEnum.PROJECT_PATH.key(), projectPath);
+        props.add(ProjectPathParamEnum.PROJECT_PATH.key(), projectPath);
         schema.add(ToolSchemaKeyEnum.PROPERTIES.key(), props);
         JsonArray required = new JsonArray();
         required.add(GitCheckoutParamEnum.BRANCH.key());
-        required.add(GitCommonParamEnum.PROJECT_PATH.key());
+        required.add(ProjectPathParamEnum.PROJECT_PATH.key());
         schema.add(ToolSchemaKeyEnum.REQUIRED.key(), required);
         tool.add(ToolSchemaKeyEnum.INPUT_SCHEMA.key(), schema);
         return McpToolSchemas.applyCredentialsIfRequested(tool, options);
@@ -77,6 +78,6 @@ public class GitCheckoutTool implements McpToolInterface {
     public String handle(ToolRequestArguments args, AbstractAiSession session) throws McpArgumentException {
         String branch = args.require(GitCheckoutParamEnum.BRANCH.key());
         boolean create = args.bool(GitCheckoutParamEnum.CREATE.key());
-        return GitProvider.gitCheckout(args.require(GitCommonParamEnum.PROJECT_PATH.key()), branch, create);
+        return GitProvider.gitCheckout(args.require(ProjectPathParamEnum.PROJECT_PATH.key()), branch, create);
     }
 }

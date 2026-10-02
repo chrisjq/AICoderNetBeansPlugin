@@ -12,6 +12,7 @@ import kiwi.ingenuity.netbeans.plugin.aicoder.process.locking.RequiresLock;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.session.AbstractAiSession;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.McpToolInterface;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.McpToolSchemas;
+import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.ProjectPathParamEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.ToolRequestArguments;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.ToolSchemaKeyEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.providers.netbeans.GitProvider;
@@ -31,10 +32,10 @@ public class GitDeleteBranchTool implements McpToolInterface {
         }
         if (options.contains(McpInstructionOptionEnum.ONLY_MCP_TOOL_ACCESS)) {
             return McpToolEnum.GIT_DELETE_BRANCH.toolName() + " - deletes a local branch. "
-                    + "Requires " + GitCommonParamEnum.PROJECT_PATH.key() + " to select the target git repository or project root.";
+                   + "Requires " + ProjectPathParamEnum.PROJECT_PATH.key() + " to select the target git repository or project root.";
         }
         return McpToolEnum.GIT_DELETE_BRANCH.toolName() + " -> INSTEAD OF Bash git branch -d/-D - deletes a local branch. "
-                + "Requires " + GitCommonParamEnum.PROJECT_PATH.key() + " to select the target git repository or project root.";
+               + "Requires " + ProjectPathParamEnum.PROJECT_PATH.key() + " to select the target git repository or project root.";
     }
 
     @Override
@@ -57,11 +58,11 @@ public class GitDeleteBranchTool implements McpToolInterface {
         projectPath.addProperty(ToolSchemaKeyEnum.TYPE.key(), "string");
         projectPath.addProperty(ToolSchemaKeyEnum.DESCRIPTION.key(),
                 "Target git repository or project root; relative paths resolve against the default project.");
-        props.add(GitCommonParamEnum.PROJECT_PATH.key(), projectPath);
+        props.add(ProjectPathParamEnum.PROJECT_PATH.key(), projectPath);
         schema.add(ToolSchemaKeyEnum.PROPERTIES.key(), props);
         JsonArray req = new JsonArray();
         req.add(GitDeleteBranchParamEnum.BRANCH.key());
-        req.add(GitCommonParamEnum.PROJECT_PATH.key());
+        req.add(ProjectPathParamEnum.PROJECT_PATH.key());
         schema.add(ToolSchemaKeyEnum.REQUIRED.key(), req);
         tool.add(ToolSchemaKeyEnum.INPUT_SCHEMA.key(), schema);
         return McpToolSchemas.applyCredentialsIfRequested(tool, options);
@@ -76,6 +77,6 @@ public class GitDeleteBranchTool implements McpToolInterface {
     public String handle(ToolRequestArguments args, AbstractAiSession session) throws McpArgumentException {
         String branch = args.require(GitDeleteBranchParamEnum.BRANCH.key());
         boolean force = args.bool(GitDeleteBranchParamEnum.FORCE.key());
-        return GitProvider.gitDeleteBranch(args.require(GitCommonParamEnum.PROJECT_PATH.key()), branch, force);
+        return GitProvider.gitDeleteBranch(args.require(ProjectPathParamEnum.PROJECT_PATH.key()), branch, force);
     }
 }

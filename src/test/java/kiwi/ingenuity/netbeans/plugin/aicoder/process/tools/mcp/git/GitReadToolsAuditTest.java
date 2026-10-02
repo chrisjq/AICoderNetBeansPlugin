@@ -13,6 +13,7 @@ import kiwi.ingenuity.netbeans.plugin.aicoder.ai.session.AiSession;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.McpArgumentException;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.events.AiProcessEventListener;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.session.AbstractAiSession;
+import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.ProjectPathParamEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.ToolRequestArguments;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -91,7 +92,7 @@ class GitReadToolsAuditTest {
         Path empty = Files.createDirectory(tempDir.resolve("empty"));
         git(empty, "init", "-b", "master");
         JsonObject args = new JsonObject();
-        args.addProperty(GitCommonParamEnum.PROJECT_PATH.key(), empty.toString());
+        args.addProperty(ProjectPathParamEnum.PROJECT_PATH.key(), empty.toString());
 
         String result = new GetGitStatusTool().handle(new ToolRequestArguments(args), session);
 
@@ -108,7 +109,7 @@ class GitReadToolsAuditTest {
     void getGitStatus_plainDirectoryIsNotARepository() throws Exception {
         Path plain = Files.createDirectory(tempDir.resolve("plain"));
         JsonObject args = new JsonObject();
-        args.addProperty(GitCommonParamEnum.PROJECT_PATH.key(), plain.toString());
+        args.addProperty(ProjectPathParamEnum.PROJECT_PATH.key(), plain.toString());
 
         String result = new GetGitStatusTool().handle(new ToolRequestArguments(args), session);
 
@@ -428,7 +429,7 @@ class GitReadToolsAuditTest {
     // ---- helpers ----
     private JsonObject base() {
         JsonObject o = new JsonObject();
-        o.addProperty(GitCommonParamEnum.PROJECT_PATH.key(), projectPath);
+        o.addProperty(ProjectPathParamEnum.PROJECT_PATH.key(), projectPath);
         return o;
     }
 

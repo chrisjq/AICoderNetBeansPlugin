@@ -7,7 +7,6 @@ import kiwi.ingenuity.netbeans.plugin.aicoder.process.McpInstructionOptionEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.McpSectionEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.McpToolPropertyEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.devops.BuildSubmitter;
-import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.git.GitCommonParamEnum;
 
 public abstract class AbstractBuildTool implements McpToolInterface {
 
@@ -53,15 +52,15 @@ public abstract class AbstractBuildTool implements McpToolInterface {
         JsonObject pp = new JsonObject();
         pp.addProperty(ToolSchemaKeyEnum.TYPE.key(), "string");
         pp.addProperty(ToolSchemaKeyEnum.DESCRIPTION.key(), "Required absolute path to the open project root.");
-        props.add(GitCommonParamEnum.PROJECT_PATH.key(), pp);
+        props.add(ProjectPathParamEnum.PROJECT_PATH.key(), pp);
         JsonArray required = new JsonArray();
-        required.add(GitCommonParamEnum.PROJECT_PATH.key());
+        required.add(ProjectPathParamEnum.PROJECT_PATH.key());
         JsonObject async = new JsonObject();
         async.addProperty(ToolSchemaKeyEnum.TYPE.key(), "boolean");
         async.addProperty(ToolSchemaKeyEnum.DESCRIPTION.key(),
-                          "Queues the build and returns its id immediately; its result arrives later as a message (up to "
-                          + BuildSubmitter.ASYNC_LIMIT_TEXT
-                          + "). Otherwise this call waits for its turn and returns the result, as today. Default: false.");
+                "Queues the build and returns its id immediately; its result arrives later as a message (up to "
+                + BuildSubmitter.ASYNC_LIMIT_TEXT
+                + "). Otherwise this call waits for its turn and returns the result, as today. Default: false.");
         props.add(McpToolPropertyEnum.ASYNC.key(), async);
         addOptionProperties(props, required);
         schema.add(ToolSchemaKeyEnum.PROPERTIES.key(), props);
@@ -78,10 +77,10 @@ public abstract class AbstractBuildTool implements McpToolInterface {
 
     /**
      * Hook for a build-system-specific tool (Maven/Gradle/Ant) to add its own build options beyond the shared
-     * {@code projectPath} — each build system's option set is different (Maven has profiles and threads, Gradle has
-     * parallel, Ant has neither), so there is no single shared list to centralise here. Default no-op: tools with
-     * nothing extra to configure (DownloadMavenSourcesTool, DownloadMavenJavadocTool) don't override this and keep
-     * exactly today's {@code projectPath}-only schema.
+     * {@code projectPath} — each build system's option set is different (Maven has profiles and threads,
+     * Gradle has parallel, Ant has neither), so there is no single shared list to centralise here. Default
+     * no-op: tools with nothing extra to configure (DownloadMavenSourcesTool, DownloadMavenJavadocTool) don't
+     * override this and keep exactly today's {@code projectPath}-only schema.
      */
     protected void addOptionProperties(JsonObject props, JsonArray required) {
     }

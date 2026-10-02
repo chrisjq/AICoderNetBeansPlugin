@@ -198,9 +198,9 @@ public final class McpToolInvoker {
      * is allowed to be, and the upward walk then lands wherever it lands.
      * <p>
      * Two arguments are checked. {@code projectPath} is documented as required on every git tool
-     * ({@code GitCommonParamEnum}), so it is the primary gate. {@code file} is checked too, but only when it
-     * is absolute: GitBlame is the one tool that lets {@code projectPath} be omitted when {@code file} is an
-     * absolute path, which would otherwise leave a per-line-authorship read of any file on disk completely
+     * ({@code ProjectPathParamEnum}), so it is the primary gate. {@code file} is checked too, but only when
+     * it is absolute: GitBlame is the one tool that lets {@code projectPath} be omitted when {@code file} is
+     * an absolute path, which would otherwise leave a per-line-authorship read of any file on disk completely
      * ungated. A RELATIVE {@code file} is deliberately left alone — GitAdd/GitReset take repo-relative paths
      * that {@code
      * GitProvider#resolveFiles} already confines with its own within-repository check, and resolving them

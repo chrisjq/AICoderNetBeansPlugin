@@ -16,9 +16,9 @@ import kiwi.ingenuity.netbeans.plugin.aicoder.process.McpToolEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.events.AiProcessEventListener;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.session.AbstractAiSession;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.McpToolInterface;
+import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.ProjectPathParamEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.ToolRequestArguments;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.ToolSchemaKeyEnum;
-import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.git.GitCommonParamEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.help.GetClassMembersParamEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.help.GetClassMembersTool;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.help.GetJavadocParamEnum;
@@ -39,21 +39,21 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import org.junit.jupiter.api.Test;
 
 /**
- * AUDIT 10 (help / plugin / userinput packages): proves every advertised parameter is honoured where it can be,
- * headless, without ever raising a real dialog.
+ * AUDIT 10 (help / plugin / userinput packages): proves every advertised parameter is honoured where it can
+ * be, headless, without ever raising a real dialog.
  *
- * The three {@code help/} class-analysis tools (GetTypeHierarchyTool / GetClassMembersTool / GetJavadocTool) delegate
- * to providers that need the live NetBeans project index ({@code GlobalPathRegistry} + {@code JavaSource} +
- * {@code ClassIndex}), which does not exist on the plain surefire classpath — so their CONTENT (the "does
- * className/memberName change the output" proof) is untestable headless. What IS provable headless is that the required
- * parameter is actually read and validated (blank/absentclassName throws -32602), and that the tool degrades to a
- * graceful string rather than crashing when no source is available.
+ * The three {@code help/} class-analysis tools (GetTypeHierarchyTool / GetClassMembersTool / GetJavadocTool)
+ * delegate to providers that need the live NetBeans project index ({@code GlobalPathRegistry} +
+ * {@code JavaSource} + {@code ClassIndex}), which does not exist on the plain surefire classpath — so their
+ * CONTENT (the "does className/memberName change the output" proof) is untestable headless. What IS provable
+ * headless is that the required parameter is actually read and validated (blank/absentclassName throws
+ * -32602), and that the tool degrades to a graceful string rather than crashing when no source is available.
  *
- * AskUserQuestionTool is the only one that would raise a live UI dialog and block. handle() is constructor-injected
- * with a {@code Supplier<AiProcessEventListener>} (the designed testability seam); we supply a fake listener that
- * captures the {@code AskUserQuestionEvent} and completes its response future with a canned answer. This proves the
- * event carries the parsed questions and that handle() returns the listener's answer — with NO user prompted and no
- * real block.
+ * AskUserQuestionTool is the only one that would raise a live UI dialog and block. handle() is
+ * constructor-injected with a {@code Supplier<AiProcessEventListener>} (the designed testability seam); we
+ * supply a fake listener that captures the {@code AskUserQuestionEvent} and completes its response future
+ * with a canned answer. This proves the event carries the parsed questions and that handle() returns the
+ * listener's answer — with NO user prompted and no real block.
  */
 class HelpPluginUserInputAuditTest {
 
@@ -157,12 +157,12 @@ class HelpPluginUserInputAuditTest {
         // No params at all -> projectPath is reported first (its require() runs first).
         McpArgumentException noParam = assertThrows(McpArgumentException.class,
                 () -> tool.handle(args(empty()), session));
-        assertTrue(noParam.getMessage().contains(GitCommonParamEnum.PROJECT_PATH.key()), noParam.getMessage());
+        assertTrue(noParam.getMessage().contains(ProjectPathParamEnum.PROJECT_PATH.key()), noParam.getMessage());
         assertEquals(-32602, noParam.getCode());
 
         // projectPath present, className missing -> className is required.
         JsonObject noClass = new JsonObject();
-        noClass.addProperty(GitCommonParamEnum.PROJECT_PATH.key(), "/some/project");
+        noClass.addProperty(ProjectPathParamEnum.PROJECT_PATH.key(), "/some/project");
         McpArgumentException noClassEx = assertThrows(McpArgumentException.class,
                 () -> tool.handle(args(noClass), session));
         assertTrue(noClassEx.getMessage().contains(GetJavadocParamEnum.CLASS_NAME.key()), noClassEx.getMessage());
@@ -170,7 +170,7 @@ class HelpPluginUserInputAuditTest {
 
         // blank className is rejected too.
         JsonObject blankClass = new JsonObject();
-        blankClass.addProperty(GitCommonParamEnum.PROJECT_PATH.key(), "/some/project");
+        blankClass.addProperty(ProjectPathParamEnum.PROJECT_PATH.key(), "/some/project");
         blankClass.addProperty(GetJavadocParamEnum.CLASS_NAME.key(), "  ");
         assertThrows(McpArgumentException.class, () -> tool.handle(args(blankClass), session));
     }
@@ -179,7 +179,7 @@ class HelpPluginUserInputAuditTest {
     void javadocRejectsUnresolvableProjectPath() throws Exception {
         GetJavadocTool tool = new GetJavadocTool();
         JsonObject o = new JsonObject();
-        o.addProperty(GitCommonParamEnum.PROJECT_PATH.key(), "/definitely/not/an/open/project");
+        o.addProperty(ProjectPathParamEnum.PROJECT_PATH.key(), "/definitely/not/an/open/project");
         o.addProperty(GetJavadocParamEnum.CLASS_NAME.key(), "java.lang.String");
         String result = tool.handle(args(o), session);
         assertNotNull(result);
@@ -192,7 +192,7 @@ class HelpPluginUserInputAuditTest {
     void javadocWithProjectPathAndMemberNameIsAcceptedAndForwarded() throws Exception {
         GetJavadocTool tool = new GetJavadocTool();
         JsonObject o = new JsonObject();
-        o.addProperty(GitCommonParamEnum.PROJECT_PATH.key(), "/some/project");
+        o.addProperty(ProjectPathParamEnum.PROJECT_PATH.key(), "/some/project");
         o.addProperty(GetJavadocParamEnum.CLASS_NAME.key(), "java.lang.String");
         // memberName is optional; supplying it along with both required params must not be
         // rejected — the arguments are forwarded to the provider, which headless refuses the
@@ -209,7 +209,7 @@ class HelpPluginUserInputAuditTest {
         JsonObject schema = tool.schema(Set.of());
         JsonObject input = schema.getAsJsonObject(ToolSchemaKeyEnum.INPUT_SCHEMA.key());
         JsonArray required = input.getAsJsonArray(ToolSchemaKeyEnum.REQUIRED.key());
-        assertTrue(required.contains(new JsonPrimitive(GitCommonParamEnum.PROJECT_PATH.key())),
+        assertTrue(required.contains(new JsonPrimitive(ProjectPathParamEnum.PROJECT_PATH.key())),
                 "projectPath must be required");
         assertTrue(required.contains(new JsonPrimitive(GetJavadocParamEnum.CLASS_NAME.key())),
                 "className must be required");

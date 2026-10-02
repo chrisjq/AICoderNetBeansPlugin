@@ -19,6 +19,7 @@ import kiwi.ingenuity.netbeans.plugin.aicoder.process.server.AiMcpRegistrar;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.server.McpServerRegistry;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.session.AbstractAiSession;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.McpToolInterface;
+import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.ProjectPathParamEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.ToolRequestArguments;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.ToolSchemaKeyEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.devops.build.BuildAntProjectParamEnum;
@@ -43,7 +44,6 @@ import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.devops.test.RunG
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.devops.test.RunGradleTestsTool;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.devops.test.RunMavenTestsParamEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.devops.test.RunMavenTestsTool;
-import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.git.GitCommonParamEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.providers.netbeans.BuildAndTestMavenProvider;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.providers.netbeans.BuildOutputFormatter;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.providers.netbeans.PreparedBuild;
@@ -348,9 +348,9 @@ class DevOpsToolAuditTest {
             JsonObject schema = tool.schema(java.util.Set.of())
                     .getAsJsonObject(ToolSchemaKeyEnum.INPUT_SCHEMA.key());
             JsonObject props = schema.getAsJsonObject(ToolSchemaKeyEnum.PROPERTIES.key());
-            assertTrue(props.has(GitCommonParamEnum.PROJECT_PATH.key()));
+            assertTrue(props.has(ProjectPathParamEnum.PROJECT_PATH.key()));
             assertEquals(1, schema.getAsJsonArray(ToolSchemaKeyEnum.REQUIRED.key()).size());
-            assertEquals(GitCommonParamEnum.PROJECT_PATH.key(),
+            assertEquals(ProjectPathParamEnum.PROJECT_PATH.key(),
                     schema.getAsJsonArray(ToolSchemaKeyEnum.REQUIRED.key()).get(0).getAsString());
         }
     }

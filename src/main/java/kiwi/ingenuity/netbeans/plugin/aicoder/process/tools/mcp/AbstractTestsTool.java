@@ -7,7 +7,6 @@ import kiwi.ingenuity.netbeans.plugin.aicoder.process.McpInstructionOptionEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.McpSectionEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.McpToolPropertyEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.devops.BuildSubmitter;
-import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.git.GitCommonParamEnum;
 
 public abstract class AbstractTestsTool implements McpToolInterface {
 
@@ -53,21 +52,21 @@ public abstract class AbstractTestsTool implements McpToolInterface {
         JsonObject tc = new JsonObject();
         tc.addProperty(ToolSchemaKeyEnum.TYPE.key(), "string");
         tc.addProperty(ToolSchemaKeyEnum.DESCRIPTION.key(),
-                       "Optional test class name (e.g. MyServiceTest or com.example.MyServiceTest). "
-                       + "Omit to run all tests.");
+                "Optional test class name (e.g. MyServiceTest or com.example.MyServiceTest). "
+                + "Omit to run all tests.");
         props.add(McpToolPropertyEnum.TEST_CLASS.key(), tc);
         JsonObject pp = new JsonObject();
         pp.addProperty(ToolSchemaKeyEnum.TYPE.key(), "string");
         pp.addProperty(ToolSchemaKeyEnum.DESCRIPTION.key(), "Required absolute path to the open project root.");
-        props.add(GitCommonParamEnum.PROJECT_PATH.key(), pp);
+        props.add(ProjectPathParamEnum.PROJECT_PATH.key(), pp);
         JsonArray required = new JsonArray();
-        required.add(GitCommonParamEnum.PROJECT_PATH.key());
+        required.add(ProjectPathParamEnum.PROJECT_PATH.key());
         JsonObject async = new JsonObject();
         async.addProperty(ToolSchemaKeyEnum.TYPE.key(), "boolean");
         async.addProperty(ToolSchemaKeyEnum.DESCRIPTION.key(),
-                          "Queues the build and returns its id immediately; its result arrives later as a message (up to "
-                          + BuildSubmitter.ASYNC_LIMIT_TEXT
-                          + "). Otherwise this call waits for its turn and returns the result, as today. Default: false.");
+                "Queues the build and returns its id immediately; its result arrives later as a message (up to "
+                + BuildSubmitter.ASYNC_LIMIT_TEXT
+                + "). Otherwise this call waits for its turn and returns the result, as today. Default: false.");
         props.add(McpToolPropertyEnum.ASYNC.key(), async);
         addOptionProperties(props, required);
         schema.add(ToolSchemaKeyEnum.PROPERTIES.key(), props);
@@ -83,10 +82,10 @@ public abstract class AbstractTestsTool implements McpToolInterface {
     }
 
     /**
-     * Hook for a build-system-specific test tool (RunMavenTests/RunGradleTests/RunAntTests) to add its own build
-     * options beyond the shared {@code projectPath}/{@code testClass} — see
-     * {@link AbstractBuildTool#addOptionProperties} for why there is no shared option list to centralise here. Default
-     * no-op.
+     * Hook for a build-system-specific test tool (RunMavenTests/RunGradleTests/RunAntTests) to add its own
+     * build options beyond the shared {@code projectPath}/{@code testClass} — see
+     * {@link AbstractBuildTool#addOptionProperties} for why there is no shared option list to centralise
+     * here. Default no-op.
      */
     protected void addOptionProperties(JsonObject props, JsonArray required) {
     }

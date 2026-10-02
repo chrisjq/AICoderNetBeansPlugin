@@ -9,10 +9,10 @@ import kiwi.ingenuity.netbeans.plugin.aicoder.process.McpToolEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.McpToolPropertyEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.session.AbstractAiSession;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.AbstractActionTool;
+import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.ProjectPathParamEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.ToolRequestArguments;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.ToolSchemaKeyEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.devops.BuildSubmitter;
-import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.git.GitCommonParamEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.providers.netbeans.ProjectActionProvider;
 import org.netbeans.spi.project.ActionProvider;
 
@@ -20,19 +20,19 @@ public class BuildProjectTool extends AbstractActionTool {
 
     public BuildProjectTool() {
         super(McpSectionEnum.UI_BUILD,
-              McpToolEnum.BUILD_PROJECT.toolName(),
-              "Triggers the user's IDE Build action for the required " + GitCommonParamEnum.PROJECT_PATH.key()
-              + " and shows results in the Output window. Waits for the build to finish and returns its result where "
-              + "the project reports progress; otherwise returns as soon as it is triggered, saying so. Takes NO "
-              + "build options — it runs the project's generic IDE action, which has no argument channel. Use "
-              + McpToolEnum.BUILD_MAVEN_PROJECT.toolName()
-              + " / " + McpToolEnum.BUILD_GRADLE_PROJECT.toolName() + " / " + McpToolEnum.BUILD_ANT_PROJECT.toolName()
-              + " instead for goals/tasks/targets, skip-tests, profiles, and an AI-readable result summary and log.",
-              McpToolEnum.BUILD_PROJECT.toolName() + " -> INSTEAD OF Bash build commands - requires "
-              + GitCommonParamEnum.PROJECT_PATH.key() + "; triggers the user's IDE Build action"
-              + BuildSubmitter.QUEUE_INSTRUCTION,
-              McpToolEnum.BUILD_PROJECT.toolName() + " - requires " + GitCommonParamEnum.PROJECT_PATH.key()
-              + "; triggers the user's IDE Build action" + BuildSubmitter.QUEUE_INSTRUCTION);
+                McpToolEnum.BUILD_PROJECT.toolName(),
+                "Triggers the user's IDE Build action for the required " + ProjectPathParamEnum.PROJECT_PATH.key()
+                + " and shows results in the Output window. Waits for the build to finish and returns its result where "
+                + "the project reports progress; otherwise returns as soon as it is triggered, saying so. Takes NO "
+                + "build options — it runs the project's generic IDE action, which has no argument channel. Use "
+                + McpToolEnum.BUILD_MAVEN_PROJECT.toolName()
+                + " / " + McpToolEnum.BUILD_GRADLE_PROJECT.toolName() + " / " + McpToolEnum.BUILD_ANT_PROJECT.toolName()
+                + " instead for goals/tasks/targets, skip-tests, profiles, and an AI-readable result summary and log.",
+                McpToolEnum.BUILD_PROJECT.toolName() + " -> INSTEAD OF Bash build commands - requires "
+                + ProjectPathParamEnum.PROJECT_PATH.key() + "; triggers the user's IDE Build action"
+                + BuildSubmitter.QUEUE_INSTRUCTION,
+                McpToolEnum.BUILD_PROJECT.toolName() + " - requires " + ProjectPathParamEnum.PROJECT_PATH.key()
+                + "; triggers the user's IDE Build action" + BuildSubmitter.QUEUE_INSTRUCTION);
     }
 
     @Override
@@ -43,11 +43,11 @@ public class BuildProjectTool extends AbstractActionTool {
         JsonObject projectPath = new JsonObject();
         projectPath.addProperty(ToolSchemaKeyEnum.TYPE.key(), "string");
         projectPath.addProperty(ToolSchemaKeyEnum.DESCRIPTION.key(),
-                                "Required absolute path to the open project root.");
-        props.add(GitCommonParamEnum.PROJECT_PATH.key(), projectPath);
+                "Required absolute path to the open project root.");
+        props.add(ProjectPathParamEnum.PROJECT_PATH.key(), projectPath);
         props.add(McpToolPropertyEnum.ASYNC.key(), IdeActionSchema.asyncProperty());
         JsonArray required = new JsonArray();
-        required.add(GitCommonParamEnum.PROJECT_PATH.key());
+        required.add(ProjectPathParamEnum.PROJECT_PATH.key());
         schema.add(ToolSchemaKeyEnum.REQUIRED.key(), required);
         return tool;
     }
@@ -60,7 +60,7 @@ public class BuildProjectTool extends AbstractActionTool {
 
     @Override
     public String handle(ToolRequestArguments args, AbstractAiSession session) {
-        String projectPath = args.str(GitCommonParamEnum.PROJECT_PATH.key());
+        String projectPath = args.str(ProjectPathParamEnum.PROJECT_PATH.key());
         return BuildSubmitter.submitIdeAction(
                 McpToolEnum.BUILD_PROJECT.toolName(), args, projectPath,
                 ProjectActionProvider.prepareAction(session.getId(), projectPath, ActionProvider.COMMAND_BUILD),

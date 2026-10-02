@@ -407,7 +407,7 @@ public final class HeadlessImportFixer {
         }
     }
 
-    private static boolean isError(Object diagnostic) {
+    static boolean isError(Object diagnostic) {
         try {
             Object kind = publicMethod(diagnostic, DIAGNOSTIC_INTERFACE, "getKind").invoke(diagnostic);
             return kind != null && "ERROR".equals(kind.toString());

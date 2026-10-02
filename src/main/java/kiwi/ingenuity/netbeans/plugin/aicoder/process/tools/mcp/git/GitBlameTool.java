@@ -12,6 +12,7 @@ import kiwi.ingenuity.netbeans.plugin.aicoder.process.tempfile.TempFileDirEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tempfile.TempFileSpooler;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.McpToolInterface;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.McpToolSchemas;
+import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.ProjectPathParamEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.ToolRequestArguments;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.ToolSchemaKeyEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.providers.netbeans.GitProvider;
@@ -30,12 +31,12 @@ public class GitBlameTool implements McpToolInterface {
         }
         if (options.contains(McpInstructionOptionEnum.ONLY_MCP_TOOL_ACCESS)) {
             return McpToolEnum.GIT_BLAME.toolName() + " - shows per-line authorship and commit for a file. "
-                    + GitCommonParamEnum.PROJECT_PATH.key() + " is optional when file is an absolute path — the owning project is inferred "
-                    + "from the file; pass " + GitCommonParamEnum.PROJECT_PATH.key() + " to disambiguate otherwise.";
+                   + ProjectPathParamEnum.PROJECT_PATH.key() + " is optional when file is an absolute path — the owning project is inferred "
+                   + "from the file; pass " + ProjectPathParamEnum.PROJECT_PATH.key() + " to disambiguate otherwise.";
         }
         return McpToolEnum.GIT_BLAME.toolName() + " -> INSTEAD OF Bash git blame - shows per-line authorship and commit for a file. "
-                + GitCommonParamEnum.PROJECT_PATH.key() + " is optional when file is an absolute path — the owning project is inferred "
-                + "from the file; pass " + GitCommonParamEnum.PROJECT_PATH.key() + " to disambiguate otherwise.";
+               + ProjectPathParamEnum.PROJECT_PATH.key() + " is optional when file is an absolute path — the owning project is inferred "
+               + "from the file; pass " + ProjectPathParamEnum.PROJECT_PATH.key() + " to disambiguate otherwise.";
     }
 
     @Override
@@ -55,7 +56,7 @@ public class GitBlameTool implements McpToolInterface {
         projectPath.addProperty(ToolSchemaKeyEnum.TYPE.key(), "string");
         projectPath.addProperty(ToolSchemaKeyEnum.DESCRIPTION.key(),
                 "Target git repository or project root; relative paths resolve against the default project. Optional when file is an absolute path.");
-        props.add(GitCommonParamEnum.PROJECT_PATH.key(), projectPath);
+        props.add(ProjectPathParamEnum.PROJECT_PATH.key(), projectPath);
         schema.add(ToolSchemaKeyEnum.PROPERTIES.key(), props);
         JsonArray req = new JsonArray();
         req.add(GitBlameParamEnum.FILE.key());
@@ -71,7 +72,7 @@ public class GitBlameTool implements McpToolInterface {
 
     @Override
     public String handle(ToolRequestArguments args, AbstractAiSession session) throws McpArgumentException {
-        String output = GitProvider.gitBlame(args.str(GitCommonParamEnum.PROJECT_PATH.key()),
+        String output = GitProvider.gitBlame(args.str(ProjectPathParamEnum.PROJECT_PATH.key()),
                 args.require(GitBlameParamEnum.FILE.key()));
         return TempFileSpooler.spoolIfLarge(session.getId(), TempFileDirEnum.TOOL_RESULTS, "git-blame", ".log", output,
                 TempFileSpooler.DEFAULT_RESULT_SPOOL_THRESHOLD_CHARS);

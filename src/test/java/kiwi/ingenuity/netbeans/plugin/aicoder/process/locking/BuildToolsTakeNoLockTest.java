@@ -18,18 +18,20 @@ import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.devops.test.RunM
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.ui.build.BuildProjectTool;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.ui.build.CleanAndBuildProjectTool;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.ui.build.CleanProjectTool;
+import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.ui.build.RunProjectTool;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import org.junit.jupiter.api.Test;
 
 /**
- * Every build tool must resolve to NO lock: the build queue is the one thing that serialises builds, and a tool that
- * also took {@code BUILD_LOCK} would hold it across its wait in the queue and its whole run.
+ * Every build tool must resolve to NO lock: the build queue is the one thing that serialises builds, and a
+ * tool that also took {@code BUILD_LOCK} would hold it across its wait in the queue and its whole run.
  * <p>
  * This exists because that went wrong unnoticed. When the IDE build actions were moved into the queue their
- * {@code @RequiresLock} annotations were removed, but {@link ToolLockRegistry}'s fallback map still mapped them to
- * {@code BUILD_LOCK} — and {@link ToolLockRegistry#getLockType} falls through to that map when there is no annotation.
- * Nothing asserted the mappings, so the tools kept taking the lock and the suite stayed green. The assertion is made
- * through the registry's real entry point, so an annotation and a fallback entry are both covered.
+ * {@code @RequiresLock} annotations were removed, but {@link ToolLockRegistry}'s fallback map still mapped
+ * them to {@code BUILD_LOCK} — and {@link ToolLockRegistry#getLockType} falls through to that map when there
+ * is no annotation. Nothing asserted the mappings, so the tools kept taking the lock and the suite stayed
+ * green. The assertion is made through the registry's real entry point, so an annotation and a fallback entry
+ * are both covered.
  */
 class BuildToolsTakeNoLockTest {
 
@@ -37,13 +39,13 @@ class BuildToolsTakeNoLockTest {
     void noBuildToolResolvesToALockBecauseTheQueueSerialisesThemInstead() {
         everyBuildTool().forEach((tool, handler)
                 -> assertNull(ToolLockRegistry.getLockType(tool, handler),
-                              tool.toolName() + " must take no lock — the build queue serialises it. A lock here is"
-                              + " held across its queue wait and its entire run."));
+                        tool.toolName() + " must take no lock — the build queue serialises it. A lock here is"
+                        + " held across its queue wait and its entire run."));
     }
 
     /**
-     * All fourteen: the nine Maven/Gradle/Ant build, clean-and-build and test tools, the two Maven download tools, and
-     * the three IDE build actions.
+     * All fifteen: the nine Maven/Gradle/Ant build, clean-and-build and test tools, the two Maven download
+     * tools, and the four IDE build/run actions.
      */
     private static Map<McpToolEnum, McpToolInterface> everyBuildTool() {
         Map<McpToolEnum, McpToolInterface> tools = new LinkedHashMap<>();
@@ -61,6 +63,7 @@ class BuildToolsTakeNoLockTest {
         tools.put(McpToolEnum.BUILD_PROJECT, new BuildProjectTool());
         tools.put(McpToolEnum.CLEAN_PROJECT, new CleanProjectTool());
         tools.put(McpToolEnum.CLEAN_AND_BUILD_PROJECT, new CleanAndBuildProjectTool());
+        tools.put(McpToolEnum.RUN_PROJECT, new RunProjectTool());
         return tools;
     }
 }

@@ -1,8 +1,8 @@
 # AI Coder for NetBeans
 
-> **Version compatibility:** Version 1.2.21 supports Claude, GitHub Copilot, and Grok only. Version 1.4.0 added support for Ollama (Local), Codex and OpenCode. Version 1.4.32 added the pi backend. If you are running a released version review the documentation at that git tag for its capabilities.
-
 AI Coder is a NetBeans IDE plugin that provides dockable, multi-session AI coding chats with IDE-aware context, project-scoped tools, configurable permissions, and reviewable file changes. It can work with local, CLI-based, SDK-based, ACP, app-server, and OpenAI-compatible backends through one shared chat and tool experience.
+
+Use it as a simple coding assistant or create AI teams that can to implement projects with you and between themselves, code, review each others work and run through implementation plans, you are in control as to how you can manage your robot team to accomplish you tasks.
 
 ## Supported backends
 
@@ -180,6 +180,7 @@ The local MCP server exposes the following NetBeans-aware capabilities to compat
 | Tool | Description |
 |---|---|
 | [`BuildProject`](REFERENCE.md#buildproject), [`CleanProject`](REFERENCE.md#cleanproject), [`CleanAndBuildProject`](REFERENCE.md#cleanandbuildproject) | Invoke NetBeans build actions for the active project type; queued like every other build |
+| [`RunProject`](REFERENCE.md#runproject) | Invokes the IDE's Run Project action (or Debug Project) to launch the app for the user; fire-and-forget, not queued, cannot be stopped by the AI |
 | [`BuildMavenProject`](REFERENCE.md#buildmavenproject), [`CleanAndBuildMavenProject`](REFERENCE.md#cleanandbuildmavenproject), [`RunMavenTests`](REFERENCE.md#runmaventests) | Maven package/clean/test operations |
 | [`BuildGradleProject`](REFERENCE.md#buildgradleproject), [`CleanAndBuildGradleProject`](REFERENCE.md#cleanandbuildgradleproject), [`RunGradleTests`](REFERENCE.md#rungradletests) | Gradle build, clean-and-build, and test operations |
 | [`BuildAntProject`](REFERENCE.md#buildantproject), [`CleanAndBuildAntProject`](REFERENCE.md#cleanandbuildantproject), [`RunAntTests`](REFERENCE.md#runanttests) | Ant build, clean-and-build, and test operations |

@@ -15,11 +15,11 @@ import kiwi.ingenuity.netbeans.plugin.aicoder.process.McpToolPropertyEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.events.AiProcessEventListener;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.session.AbstractAiSession;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.McpToolInterface;
+import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.ProjectPathParamEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.ToolHandlerFactory;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.git.GetGitStatusTool;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.git.GitBlameParamEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.git.GitBlameTool;
-import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.git.GitCommonParamEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.plugin.GetPluginVersionTool;
 import org.junit.jupiter.api.AfterEach;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -32,24 +32,24 @@ import org.junit.jupiter.api.io.TempDir;
 
 /**
  * Pins that a git tool's caller-supplied path is checked against the calling session's file scope, so
- * restrict-to-project actually restricts git the way it restricts every other file tool. Before this, every git tool
- * except GitCommit took an arbitrary absolute {@code projectPath} straight to {@code GitProvider#resolveRoot} with no
- * scope check at all — a session locked to one project could GitReset --hard, GitCheckout or GetGitDiff any repository
- * on the machine.
+ * restrict-to-project actually restricts git the way it restricts every other file tool. Before this, every
+ * git tool except GitCommit took an arbitrary absolute {@code projectPath} straight to
+ * {@code GitProvider#resolveRoot} with no scope check at all — a session locked to one project could GitReset
+ * --hard, GitCheckout or GetGitDiff any repository on the machine.
  * <p>
- * The check deliberately validates the SUPPLIED path and not the resolved repository root: a {@code .git} directory
- * frequently sits above the NetBeans project directory, and scoping the resolved root would break that ordinary layout.
- * Every assertion here is therefore about the argument the caller passed, never about where the upward walk for
- * {@code .git} eventually lands.
+ * The check deliberately validates the SUPPLIED path and not the resolved repository root: a {@code .git}
+ * directory frequently sits above the NetBeans project directory, and scoping the resolved root would break
+ * that ordinary layout. Every assertion here is therefore about the argument the caller passed, never about
+ * where the upward walk for {@code .git} eventually lands.
  * <p>
- * Every tool used here is read-only and every path points at an empty temp directory that is not a repository, so a
- * regression that lets a call through mutates nothing — it only fails an assertion.
+ * Every tool used here is read-only and every path points at an empty temp directory that is not a
+ * repository, so a regression that lets a call through mutates nothing — it only fails an assertion.
  */
 class GitProjectPathScopeTest {
 
     private static JsonObject projectPathArgs(Path path) {
         JsonObject o = new JsonObject();
-        o.addProperty(GitCommonParamEnum.PROJECT_PATH.key(), path.toString());
+        o.addProperty(ProjectPathParamEnum.PROJECT_PATH.key(), path.toString());
         return o;
     }
 

@@ -40,7 +40,7 @@ import javax.lang.model.type.TypeMirror;
 import javax.lang.model.util.Elements;
 import kiwi.ingenuity.netbeans.plugin.aicoder.PluginSettings;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.McpToolPropertyEnum;
-import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.git.GitCommonParamEnum;
+import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.ProjectPathParamEnum;
 import org.netbeans.api.java.classpath.ClassPath;
 import org.netbeans.api.java.project.JavaProjectConstants;
 import org.netbeans.api.java.queries.JavadocForBinaryQuery;
@@ -86,7 +86,7 @@ public class JavadocProvider {
 
     public static String getJavadoc(String projectPath, String className, String memberName) {
         if (projectPath == null || projectPath.isBlank()) {
-            return GitCommonParamEnum.PROJECT_PATH.key() + " is required";
+            return ProjectPathParamEnum.PROJECT_PATH.key() + " is required";
         }
         if (className == null || className.isBlank()) {
             return McpToolPropertyEnum.CLASS_NAME.key() + " is required";

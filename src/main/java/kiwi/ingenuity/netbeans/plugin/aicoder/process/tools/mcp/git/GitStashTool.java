@@ -12,6 +12,7 @@ import kiwi.ingenuity.netbeans.plugin.aicoder.process.locking.RequiresLock;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.session.AbstractAiSession;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.McpToolInterface;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.McpToolSchemas;
+import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.ProjectPathParamEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.ToolRequestArguments;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.ToolSchemaKeyEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.providers.netbeans.GitProvider;
@@ -32,10 +33,10 @@ public class GitStashTool implements McpToolInterface {
         }
         if (options.contains(McpInstructionOptionEnum.ONLY_MCP_TOOL_ACCESS)) {
             return McpToolEnum.GIT_STASH.toolName() + " - stash, list, pop, apply, or drop stashed changes. "
-                    + "Requires " + GitCommonParamEnum.PROJECT_PATH.key() + " to select the target git repository or project root.";
+                   + "Requires " + ProjectPathParamEnum.PROJECT_PATH.key() + " to select the target git repository or project root.";
         }
         return McpToolEnum.GIT_STASH.toolName() + " -> INSTEAD OF Bash git stash - stash, list, pop, apply, or drop stashed changes. "
-                + "Requires " + GitCommonParamEnum.PROJECT_PATH.key() + " to select the target git repository or project root.";
+               + "Requires " + ProjectPathParamEnum.PROJECT_PATH.key() + " to select the target git repository or project root.";
     }
 
     @Override
@@ -68,10 +69,10 @@ public class GitStashTool implements McpToolInterface {
         projectPath.addProperty(ToolSchemaKeyEnum.TYPE.key(), "string");
         projectPath.addProperty(ToolSchemaKeyEnum.DESCRIPTION.key(),
                 "Target git repository or project root; relative paths resolve against the default project.");
-        props.add(GitCommonParamEnum.PROJECT_PATH.key(), projectPath);
+        props.add(ProjectPathParamEnum.PROJECT_PATH.key(), projectPath);
         schema.add(ToolSchemaKeyEnum.PROPERTIES.key(), props);
         JsonArray required = new JsonArray();
-        required.add(GitCommonParamEnum.PROJECT_PATH.key());
+        required.add(ProjectPathParamEnum.PROJECT_PATH.key());
         schema.add(ToolSchemaKeyEnum.REQUIRED.key(), required);
         tool.add(ToolSchemaKeyEnum.INPUT_SCHEMA.key(), schema);
         return McpToolSchemas.applyCredentialsIfRequested(tool, options);
@@ -88,13 +89,13 @@ public class GitStashTool implements McpToolInterface {
         GitStashActionEnum action = GitStashActionEnum.from(rawAction);
         if (action == null) {
             return "Invalid action '" + rawAction + "'. Must be one of: "
-                    + GitStashActionEnum.actionList();
+                   + GitStashActionEnum.actionList();
         }
         int index = args.intOr(GitStashParamEnum.INDEX.key(), 0, 0, Integer.MAX_VALUE);
         String message = args.str(GitStashParamEnum.MESSAGE.key());
         boolean includeUntracked = args.bool(GitStashParamEnum.INCLUDE_UNTRACKED.key());
         // Passing the enum, not the raw string, so the provider cannot be
         // handed a value the tool never validated.
-        return GitProvider.gitStash(args.require(GitCommonParamEnum.PROJECT_PATH.key()), action, index, message, includeUntracked);
+        return GitProvider.gitStash(args.require(ProjectPathParamEnum.PROJECT_PATH.key()), action, index, message, includeUntracked);
     }
 }

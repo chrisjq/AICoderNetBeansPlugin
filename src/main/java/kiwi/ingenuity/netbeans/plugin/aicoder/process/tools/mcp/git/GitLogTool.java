@@ -12,6 +12,7 @@ import kiwi.ingenuity.netbeans.plugin.aicoder.process.tempfile.TempFileDirEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tempfile.TempFileSpooler;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.McpToolInterface;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.McpToolSchemas;
+import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.ProjectPathParamEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.ToolRequestArguments;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.ToolSchemaKeyEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.providers.netbeans.GitProvider;
@@ -30,12 +31,12 @@ public class GitLogTool implements McpToolInterface {
         }
         if (options.contains(McpInstructionOptionEnum.ONLY_MCP_TOOL_ACCESS)) {
             return McpToolEnum.GIT_LOG.toolName() + " - shows recent commit history (short hash + message). "
-                    + "Requires " + GitCommonParamEnum.PROJECT_PATH.key() + " to select the target git repository or project root. "
-                    + "Optionally pass " + GitLogParamEnum.FILE.key() + " to scope history to a single path (with " + GitLogParamEnum.FOLLOW.key() + "=true to track it across renames).";
+                   + "Requires " + ProjectPathParamEnum.PROJECT_PATH.key() + " to select the target git repository or project root. "
+                   + "Optionally pass " + GitLogParamEnum.FILE.key() + " to scope history to a single path (with " + GitLogParamEnum.FOLLOW.key() + "=true to track it across renames).";
         }
         return McpToolEnum.GIT_LOG.toolName() + " -> INSTEAD OF Bash git log - shows recent commit history (short hash + message). "
-                + "Requires " + GitCommonParamEnum.PROJECT_PATH.key() + " to select the target git repository or project root. "
-                + "Optionally pass " + GitLogParamEnum.FILE.key() + " to scope history to a single path (with " + GitLogParamEnum.FOLLOW.key() + "=true to track it across renames).";
+               + "Requires " + ProjectPathParamEnum.PROJECT_PATH.key() + " to select the target git repository or project root. "
+               + "Optionally pass " + GitLogParamEnum.FILE.key() + " to scope history to a single path (with " + GitLogParamEnum.FOLLOW.key() + "=true to track it across renames).";
     }
 
     @Override
@@ -55,7 +56,7 @@ public class GitLogTool implements McpToolInterface {
         projectPath.addProperty(ToolSchemaKeyEnum.TYPE.key(), "string");
         projectPath.addProperty(ToolSchemaKeyEnum.DESCRIPTION.key(),
                 "Target git repository or project root; relative paths resolve against the default project.");
-        props.add(GitCommonParamEnum.PROJECT_PATH.key(), projectPath);
+        props.add(ProjectPathParamEnum.PROJECT_PATH.key(), projectPath);
         JsonObject file = new JsonObject();
         file.addProperty(ToolSchemaKeyEnum.TYPE.key(), "string");
         file.addProperty(ToolSchemaKeyEnum.DESCRIPTION.key(),
@@ -68,7 +69,7 @@ public class GitLogTool implements McpToolInterface {
         props.add(GitLogParamEnum.FOLLOW.key(), follow);
         schema.add(ToolSchemaKeyEnum.PROPERTIES.key(), props);
         JsonArray required = new JsonArray();
-        required.add(GitCommonParamEnum.PROJECT_PATH.key());
+        required.add(ProjectPathParamEnum.PROJECT_PATH.key());
         schema.add(ToolSchemaKeyEnum.REQUIRED.key(), required);
         tool.add(ToolSchemaKeyEnum.INPUT_SCHEMA.key(), schema);
         return McpToolSchemas.applyCredentialsIfRequested(tool, options);
@@ -82,7 +83,7 @@ public class GitLogTool implements McpToolInterface {
     @Override
     public String handle(ToolRequestArguments args, AbstractAiSession session) throws McpArgumentException {
         String output = GitProvider.gitLog(
-                args.require(GitCommonParamEnum.PROJECT_PATH.key()),
+                args.require(ProjectPathParamEnum.PROJECT_PATH.key()),
                 args.intOr(GitLogParamEnum.LIMIT.key(), 20, 1, 1000),
                 args.str(GitLogParamEnum.FILE.key()),
                 args.bool(GitLogParamEnum.FOLLOW.key()));
