@@ -86,11 +86,12 @@ public class AiInfoBar extends JPanel {
         // Initial state is false; AiTopComponent sets the per-session value after construction.
         autoAcceptCheck = new JCheckBox("Auto-Accept", false);
         autoAcceptCheck.setFont(autoAcceptCheck.getFont().deriveFont(11f));
-        // Deliberately not "file changes": the same flag also auto-approves
-        // ConfirmEvent, which is how shell commands and other non-file actions ask.
+        // Not just "file changes": the same flag also auto-approves a ConfirmEvent, which is how some backends
+        // ask for commands. Requests flagged requireExplicitApproval still ask, and with MCP steering on a
+        // backend's own shell commands are refused before any confirm is raised.
         autoAcceptCheck.setToolTipText(
-                "Approve every request automatically, without asking — file changes, "
-                + "file actions, and shell commands");
+                "Approve file changes and file actions automatically, without asking. "
+                + "Shell commands are refused while \"Auto-deny unsupported tool calls\" is on.");
         autoAcceptCheck.addActionListener(e -> listeners.forEach(l -> l.onAutoAcceptChanged(autoAcceptCheck.isSelected())));
         rightPanel.add(autoAcceptCheck, compGbc);
 

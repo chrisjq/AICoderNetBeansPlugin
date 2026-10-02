@@ -2,7 +2,7 @@
 
 AI Coder is a NetBeans IDE plugin that provides dockable, multi-session AI coding chats with IDE-aware context, project-scoped tools, configurable permissions, and reviewable file changes. It can work with local, CLI-based, SDK-based, ACP, app-server, and OpenAI-compatible backends through one shared chat and tool experience.
 
-Use it as a simple coding assistant or create AI teams that can to implement projects with you and between themselves, code, review each others work and run through implementation plans, you are in control as to how you can manage your robot team to accomplish you tasks.
+Use it as a simple coding assistant or create AI teams that can implement projects with you and with each other, code, review each other's work, and work through implementation plans, while you stay in control of how the team is managed.
 
 ## Supported backends
 
@@ -10,13 +10,13 @@ Use it as a simple coding assistant or create AI teams that can to implement pro
 |---|---|---|---|
 | [**Claude**](https://code.claude.com/docs/en/overview) | Long-lived `claude` CLI stream session | Executable, model, and effort level | Enabled |
 | [**GitHub Copilot**](https://docs.github.com/en/copilot/how-tos/copilot-cli/cli-getting-started) | Copilot SDK session | Executable, model, and per-model reasoning effort | Enabled |
-| [**Grok**](https://docs.x.ai/build/overview) | Headless `grok` CLI prompt sessions | Executable, model, and per-model reasoning effort | Enabled |
+| [**Grok**](https://docs.x.ai/build/overview) | Long-lived `grok agent stdio` ACP session; streams each turn, and an important message cancels it | Executable, model, and per-model reasoning effort | Enabled |
 | [**OpenCode**](https://opencode.ai/docs) | Long-lived `opencode acp` session | Executable, editable/discovered model, effort, and Build or Plan agent mode | Enabled |
 | [**Codex**](https://developers.openai.com/codex/cli/) | Long-lived Codex app-server session | Executable, editable model, per-turn reasoning effort, and sandbox/approval options | Enabled |
-| [**pi**](https://pi.dev/docs/latest) | Long-lived `pi --mode rpc` session | Executable, live model and thinking-level pickers, and version-verification status | Enabled |
-| [**Ollama (Local)**](https://docs.ollama.com/cli) | OpenAI-compatible HTTP API | Base URL, editable/discovered model, thinking, and context-management options | Implemented; enable in Options. Note: Not as live tested as the other implementations, feel free to send me some hardware I can use to live test it well :) |
+| [**Pi**](https://pi.dev/docs/latest) | Long-lived `pi --mode rpc` session | Executable, live model and thinking-level pickers, and version-verification status | Enabled |
+| [**Ollama (Local)**](https://docs.ollama.com/cli) | OpenAI-compatible HTTP API | Base URL, editable/discovered model, thinking, and context-management options | Enabled. Note: Not as live tested as the other implementations, feel free to send me some hardware I can use to live test it well :) |
 
-Each session has its own backend, model, settings, working project, chat history, session instructions, and optional persisted backend session/thread state. Multiple sessions and backends can run at the same time, though their file-, build- and Git-changing work is serialised across the whole plugin — see [Concurrency and limits](REFERENCE.md#concurrency-and-limits).
+Each session has its own backend, model, settings, working project, chat history, session instructions, and optional persisted backend session/thread state. Multiple sessions and backends can run at the same time. Builds are queued one at a time for the whole plugin and Git operations take one Git lock, while ordinary file changes on different paths run concurrently; only exclusive refactors take a plugin-wide gate — see [Concurrency and limits](REFERENCE.md#concurrency-and-limits).
 
 ## What it provides
 
@@ -43,14 +43,14 @@ Each session has its own backend, model, settings, working project, chat history
   - **Grok:** the `grok` CLI, authenticated with `grok login`.
   - **OpenCode:** the `opencode` CLI. Raise OpenCode's MCP execution timeout before using long-running tools — see the note below.
   - **Codex:** the `codex` CLI/app-server, authenticated with `codex login`.
-  - **pi:** the `pi` CLI, logged in to a provider with pi's own `/login` command (tested with pi 0.85.x).
+  - **Pi:** the `pi` CLI, logged in to a provider with Pi's own `/login` command (tested with pi 0.85.x).
   - **Ollama (Local):** a reachable OpenAI-compatible Ollama endpoint; no CLI is required by the plugin.
 
 > NetBeans must be able to launch configured CLIs and use loopback networking. Sandboxed installations that block process creation, the host `PATH`, or local HTTP connections can prevent CLI/ACP/app-server backends and the MCP tool server from working.
 
 ### OpenCode: raising the MCP tool timeout
 
-OpenCode applies its own timeout to MCP tool calls and ends longer ones with `MCP error -32001: Request timed out`. Tools that legitimately run for minutes — full test runs, clean builds (the plugin allows a build up to 10 minutes), or any prompt that waits on your approval — will fail against the default.
+OpenCode applies its own timeout to MCP tool calls and ends longer ones with `MCP error -32001: Request timed out`. Tools that legitimately run for minutes — full test runs, clean builds (an inline build runs for at least 5 minutes, or the project's longest successful build plus 20% when that is longer; an async build may run up to 2 hours), or any prompt that waits on your approval — will fail against the default.
 
 The plugin cannot set this for you. Add it to your own OpenCode config (`~/.config/opencode/opencode.json` or a project `opencode.json`):
 
@@ -128,7 +128,7 @@ Backend tabs supply executable locations and default backend settings. Session s
 | Grok | CLI executable, discovered/fallback model list, and per-model reasoning effort |
 | OpenCode | CLI executable, model, effort, and ACP-provided agent/mode configuration |
 | Codex | CLI executable, model, per-turn reasoning effort discovered from the running app-server, and app-server session options |
-| pi | CLI executable, live-discovered model and thinking-level pickers, and a version-verification status |
+| Pi | CLI executable, live-discovered model and thinking-level pickers, and a version-verification status |
 | Ollama (Local) | OpenAI-compatible base URL (default `http://localhost:11434`), model, thinking level, context window, and context-management settings |
 
 ### Ollama tool-calling modes
@@ -142,18 +142,18 @@ Changing this setting in an existing session resets that session's conversation 
 
 ### Thinking and reasoning effort
 
-Every backend that supports it exposes a thinking/reasoning-effort picker in its info bar, its session-create dialog, and its Options tab, using that backend's own terminology — Claude calls it *effort*, Codex, Grok and Copilot *reasoning effort*, pi and Ollama *thinking*. Two rules are common to all of them:
+Every backend that supports it exposes a thinking/reasoning-effort picker in its info bar, its session-create dialog, and its Options tab, using that backend's own terminology — Claude and OpenCode call it *effort*, Codex, Grok and Copilot *reasoning effort*, Pi and Ollama *thinking*; OpenCode offers it in the info bar only, with the levels the agent reports for the selected model. Two rules are common to all of them:
 
-- **The first entry means "don't set it".** It is never a level name, and choosing it omits the setting entirely so the model or CLI applies its own default. For pi this is distinct from its `off` level, which actively tells the provider not to reason.
-- **A level is never sent to a model that doesn't support it.** Codex, Copilot and Ollama read the supported list live from the backend, Grok uses a per-model table, and Claude relies on the CLI's own silent clamping. A stored level that the selected model doesn't advertise is cleared, reported once as an INFO message, and not sent — so switching to a model with fewer levels can never turn into an error.
+- **The first entry means "don't set it".** It is never a level name, and choosing it omits the setting entirely so the model or CLI applies its own default. For Pi this is distinct from its `off` level, which actively tells the provider not to reason.
+- **A level is never sent to a model that doesn't support it.** Codex, Copilot and Ollama read the supported list live from the backend; Grok and OpenCode check it against the levels the running agent offers for the current model (Grok's pickers use a built-in per-model table until then); and Claude relies on the CLI's own silent clamping. A stored level that the selected model doesn't advertise is cleared, reported once as an INFO message, and not sent — so switching to a model with fewer levels can never turn into an error.
 - **A level you pinned to a session is only cleared once discovery has actually said the model can't take it** — never merely because the answer hasn't arrived yet. Where the list is fetched asynchronously, the level is sent optimistically until the backend says otherwise, so a session's pinned choice survives a slow or unavailable discovery instead of being silently wiped at startup.
 - **The global default is never modified automatically.** If the selected model can't take the level you set as the global default, that session quietly runs without it; the default itself stays put for every other session, and no warning repeats on each start.
 
-Where the level is fixed at launch (Claude, Copilot), changing it reuses the same session restart a model change already performs. Codex applies it per turn, Grok on the next prompt, and Ollama on the next request, so those take effect without a restart.
+Where the level is fixed at launch (Claude, Copilot), changing it reuses the same session restart a model change already performs. Codex applies it per turn, Ollama on the next request, and Grok and OpenCode immediately on the running session, so those take effect without a restart.
 
-OpenCode’s mode is **Build** for normal agent work or **Plan** for read-only planning. Codex provides known model choices including `gpt-5.6-terra`, `gpt-5.6-luna`, `gpt-5.5`, and `gpt-5.4-mini`, while keeping the model field editable. pi's model and thinking-level lists are discovered live from the running session, or from `pi --list-models` before one exists; an untested pi version shows a warning button in the tab and in Options until you verify it. Ollama needs no API key; its model and base URL can be changed for an individual session.
+OpenCode’s mode is **Build** for normal agent work or **Plan** for read-only planning. Codex provides known model choices including `gpt-5.6-terra`, `gpt-5.6-luna`, `gpt-5.5`, and `gpt-5.4-mini`, while keeping the model field editable. Pi's model and thinking-level lists are discovered live from the running session, or from `pi --list-models` before one exists; an untested Pi version shows a warning button in the tab and in Options until you verify it. Ollama needs no API key; its model and base URL can be changed for an individual session.
 
-pi's own `edit` and `write` tools go through the same NetBeans diff-panel review as the plugin's file tools; `bash` is not gated. A `pi` process started outside NetBeans does not see the plugin's MCP tools. Mail sent to a busy pi session is delivered as a `steer` once its current tool calls finish, rather than interrupting mid-tool.
+Pi's own `edit` and `write` tools go through the same NetBeans diff-panel review as the plugin's file tools; `bash` is not gated. A `pi` process started outside NetBeans does not see the plugin's MCP tools. Mail sent to a busy Pi session is delivered as a `steer` once its current tool calls finish, rather than interrupting mid-tool.
 
 For OpenAI-compatible sessions, context management can trim by message count, estimated tokens, or reported tokens. Available strategies are no trimming, dropping older messages, dropping marked messages, or summarising; configure the trigger threshold, post-trim target, message limit, and context persistence in the Ollama/OpenAI context settings.
 
@@ -187,9 +187,9 @@ The local MCP server exposes the following NetBeans-aware capabilities to compat
 | [`DownloadMavenSources`](REFERENCE.md#downloadmavensources), [`DownloadMavenJavadoc`](REFERENCE.md#downloadmavenjavadoc) | Download dependency sources or Javadoc; queued like every other build |
 | [`ListBuilds`](REFERENCE.md#listbuilds), [`StopAsyncBuild`](REFERENCE.md#stopasyncbuild) | Inspect the shared build queue and cancel one of your own async builds |
 
-**Every** build tool runs through a single plugin-wide build queue — the Maven, Gradle and Ant build, clean-and-build and test tools, the two Maven download tools, and the three IDE actions alike: first come first served, one build running at a time, and at most one build per project queued or running. Each accepts `async` (default `false`). With `async: true` the call returns the build's id immediately and the full result is delivered as a message when it finishes (up to 2 hours once started); without it the call waits up to 120 seconds for its turn to begin and then returns the result. The two are separate clocks: the 120 seconds is only the wait for a free slot, and never counts against the build's own time. An inline build's own limit adapts to the project — 5 minutes, or the longest it has previously taken to build *successfully* plus 20% — so a slow project stops being cut off once it has proved how long it needs. `ListBuilds` shows that figure per project. IDE actions report COMPLETED (result unknown) when NetBeans says the action ran; the API flag does not confirm the build result. Use Maven, Gradle or Ant tools for an authoritative build result. Present build options with wrong types are refused before queueing; full results include the exact command run, and Maven downloads do not count toward Longest OK run.
+**Every** build tool runs through a single plugin-wide build queue — the Maven, Gradle and Ant build, clean-and-build and test tools, the two Maven download tools, and the three IDE actions alike: first come first served, one build running at a time, and up to eight builds per project queued or running (a ninth is refused). Each accepts `async` (default `false`). With `async: true` the call returns the build's id immediately and the full result is delivered as a message when it finishes (up to 2 hours once started); without it the call waits up to 120 seconds for its turn to begin and then returns the result. The two are separate clocks: the 120 seconds is only the wait for a free slot, and never counts against the build's own time. An inline build's own limit adapts to the project — 5 minutes, or the longest it has previously taken to build *successfully* plus 20% — so a slow project stops being cut off once it has proved how long it needs. `ListBuilds` shows that figure per project. IDE actions report COMPLETED (result unknown) when NetBeans says the action ran; the API flag does not confirm the build result. Use Maven, Gradle or Ant tools for an authoritative build result. Present build options with wrong types are refused before queueing; full results include the exact command run, and Maven downloads do not count toward Longest OK run.
 
-Asking for a build that is already queued or running with the same options — in any order — does not start it twice. The caller is told it already exists and is added as a listener, receiving the same result when it finishes, with the log copied where it can read it. Only the AI that requested a build may stop it, and a build outlives its requester as long as someone is still waiting on it. `ListBuilds` shows the queue and recent results; `StopAsyncBuild` cancels one of your own async builds, except a *running* IDE action, which NetBeans gives us no way to cancel.
+Asking for a build that is already queued or running with the same options does not start it twice. The order of option keys does not matter, but the order of goals, tasks, targets and profiles does, because a different order is a different build. The caller is told it already exists and is added as a listener, receiving the same result when it finishes, with the log copied where it can read it. Only the AI that requested a build may stop it, and a build outlives its requester as long as someone is still waiting on it. `ListBuilds` shows the queue and recent results; `StopAsyncBuild` cancels one of your own async builds, except a *running* IDE action, which NetBeans gives us no way to cancel.
 
 ### Search, code intelligence, and refactoring
 
@@ -201,7 +201,7 @@ Asking for a build that is already queued or running with the same options — i
 | [`FindDeclaration`](REFERENCE.md#finddeclaration), [`FindImplementations`](REFERENCE.md#findimplementations), [`FindUsages`](REFERENCE.md#findusages) | Navigate relationships in Java source |
 | [`GetProjectStructure`](REFERENCE.md#getprojectstructure), [`GetClassMembers`](REFERENCE.md#getclassmembers), [`GetTypeHierarchy`](REFERENCE.md#gettypehierarchy), [`GetJavadoc`](REFERENCE.md#getjavadoc) | Inspect project and classpath information |
 | [`RenameSymbol`](REFERENCE.md#renamesymbol), [`MoveClass`](REFERENCE.md#moveclass), [`MoveFile`](REFERENCE.md#movefile), [`InlineVariable`](REFERENCE.md#inlinevariable), [`ChangeMethodSignature`](REFERENCE.md#changemethodsignature) | IDE refactorings that update references where applicable |
-| [`GetDiagnostics`](REFERENCE.md#getdiagnostics), [`NavigateToLine`](REFERENCE.md#navigatetoline), [`FixImports`](REFERENCE.md#fiximports), [`OrganiseImports`](REFERENCE.md#organiseimports), [`OrganiseMembers`](REFERENCE.md#organisemembers), [`ReformatFile`](REFERENCE.md#reformatfile) | Diagnostics, navigation, and source maintenance |
+| [`GetDiagnostics`](REFERENCE.md#getdiagnostics), [`NavigateToLine`](REFERENCE.md#navigatetoline), [`FixImports`](REFERENCE.md#fiximports), [`OrganiseImports`](REFERENCE.md#organiseimports), [`OrganiseMembers`](REFERENCE.md#organisemembers), [`ReformatFile`](REFERENCE.md#reformatfile) | Diagnostics, navigation, and source maintenance; `FixImports`, `OrganiseImports` and `ReformatFile` edit and save without opening an editor or dialog |
 
 ### Files, VCS, and system access
 
@@ -212,7 +212,7 @@ Asking for a build that is already queued or running with the same options — i
 | [`CopyFile`](REFERENCE.md#copyfile), [`MoveFile`](REFERENCE.md#movefile), [`DeleteFile`](REFERENCE.md#deletefile) | Copy, relocate, or remove files with explicit confirmation |
 | [`CreateDirectory`](REFERENCE.md#createdirectory), [`DeleteDirectory`](REFERENCE.md#deletedirectory) | Create an empty directory tree, or remove one with explicit confirmation if it holds no files |
 | [`CloseFile`](REFERENCE.md#closefile), [`RefreshFileStatus`](REFERENCE.md#refreshfilestatus) | Manage open files and refresh NetBeans/VCS state |
-| [`GetGitStatus`](REFERENCE.md#getgitstatus), [`GetGitDiff`](REFERENCE.md#getgitdiff), [`GitAdd`](REFERENCE.md#gitadd), [`GitCommit`](REFERENCE.md#gitcommit), [`GitLog`](REFERENCE.md#gitlog), [`GitPush`](REFERENCE.md#gitpush), [`GitPull`](REFERENCE.md#gitpull), [`GitCheckout`](REFERENCE.md#gitcheckout), [`GitBranch`](REFERENCE.md#gitbranch), [`GitDeleteBranch`](REFERENCE.md#gitdeletebranch), [`GitStash`](REFERENCE.md#gitstash), [`GitFetch`](REFERENCE.md#gitfetch), [`GitReset`](REFERENCE.md#gitreset), [`GitMerge`](REFERENCE.md#gitmerge), [`GitShow`](REFERENCE.md#gitshow), [`GitBlame`](REFERENCE.md#gitblame), [`GitRebase`](REFERENCE.md#gitrebase), [`GitCherryPick`](REFERENCE.md#gitcherrypick), [`GitTag`](REFERENCE.md#gittag), [`GitRemote`](REFERENCE.md#gitremote), [`GitRevert`](REFERENCE.md#gitrevert) | Git inspection and repository operations |
+| [`GetGitStatus`](REFERENCE.md#getgitstatus), [`GetGitDiff`](REFERENCE.md#getgitdiff), [`GitAdd`](REFERENCE.md#gitadd), [`GitCommit`](REFERENCE.md#gitcommit), [`GitLog`](REFERENCE.md#gitlog), [`GitPush`](REFERENCE.md#gitpush), [`GitPull`](REFERENCE.md#gitpull), [`GitCheckout`](REFERENCE.md#gitcheckout), [`GitBranch`](REFERENCE.md#gitbranch), [`GitDeleteBranch`](REFERENCE.md#gitdeletebranch), [`GitStash`](REFERENCE.md#gitstash), [`GitFetch`](REFERENCE.md#gitfetch), [`GitReset`](REFERENCE.md#gitreset), [`GitMerge`](REFERENCE.md#gitmerge), [`GitShow`](REFERENCE.md#gitshow), [`GitBlame`](REFERENCE.md#gitblame), [`GitRebase`](REFERENCE.md#gitrebase), [`GitCherryPick`](REFERENCE.md#gitcherrypick), [`GitTag`](REFERENCE.md#gittag), [`GitRemote`](REFERENCE.md#gitremote), [`GitRevert`](REFERENCE.md#gitrevert) | Git inspection and repository operations; `GetGitDiff`, `GitShow` and `GitLog` accept `filePaths` to limit their output |
 | [`GetClipboard`](REFERENCE.md#getclipboard) | Read clipboard text when clipboard access is enabled |
 | [`WebRequest`](REFERENCE.md#webrequest) | Make permitted HTTP/HTTPS requests |
 
@@ -223,7 +223,7 @@ Asking for a build that is already queued or running with the same options — i
 | [`ListDatabaseConnections`](REFERENCE.md#listdatabaseconnections), [`ListTables`](REFERENCE.md#listtables), [`GetTableSchema`](REFERENCE.md#gettableschema), [`GetTableData`](REFERENCE.md#gettabledata), [`ExecuteSqlQuery`](REFERENCE.md#executesqlquery) | Read-only Database Explorer access |
 | [`PeerSessionList`](REFERENCE.md#peersessionlist), [`PeerMessageSend`](REFERENCE.md#peermessagesend), [`PeerMessageList`](REFERENCE.md#peermessagelist), [`PeerMessageRead`](REFERENCE.md#peermessageread), [`PeerMessageDelete`](REFERENCE.md#peermessagedelete), [`PeerMessageMarkReplied`](REFERENCE.md#peermessagemarkreplied), [`PeerSessionIsActive`](REFERENCE.md#peersessionisactive), [`PeerSessionDescribe`](REFERENCE.md#peersessiondescribe) | Inter-AI session discovery and messaging |
 | [`PeerIdleWatcherCreate`](REFERENCE.md#peeridlewatchercreate), [`PeerIdleWatcherCancel`](REFERENCE.md#peeridlewatchercancel), [`PeerIdleWatcherList`](REFERENCE.md#peeridlewatcherlist) | Notifies a session when a peer has gone idle |
-| [`GetPluginVersion`](REFERENCE.md#getpluginversion), [`GetInstructions`](REFERENCE.md#getinstructions), [`AskUserQuestion`](REFERENCE.md#askuserquestion), [`RunInspect`](REFERENCE.md#runinspect) | Plugin guidance, user input, and static-analysis entry points |
+| [`GetPluginVersion`](REFERENCE.md#getpluginversion), [`GetInstructions`](REFERENCE.md#getinstructions), [`AskUserQuestion`](REFERENCE.md#askuserquestion), [`RunInspect`](REFERENCE.md#runinspect) | Plugin guidance, user input (`AskUserQuestion` is available only on some backends), and static-analysis entry points |
 
 ## Change review and safety
 
@@ -233,7 +233,7 @@ Content-changing operations such as `WriteFile`, `ApplyEdit`, and content-bearin
 
 `CopyFile`, `MoveFile`, `DeleteFile`, and `DeleteDirectory` have no content diff, so they are confirmed as actions before proceeding. Shell commands proposed by a backend are confirmed the same way, showing the command that would run. Refactorings use NetBeans refactoring APIs so project references are updated consistently.
 
-**Auto-accept removes the review step by design.** With it enabled, content writes and file actions are approved automatically and reported to the transcript after the fact rather than before. It does not extend to everything: shell commands, and any request whose subject the plugin could not identify, are still prompted every time regardless of the setting — approving those unseen is the one thing the gate exists to prevent. Auto-accept is off by default, can be set globally or per session, and is worth leaving off for anything you would not want applied unseen.
+**Auto-accept removes the review step by design.** With it enabled, content writes and file actions are approved automatically and reported to the transcript after the fact rather than before. Shell commands depend on MCP tool steering (the **Auto-deny unsupported tool calls** option, on by default): while it is on, a backend's own shell commands are refused in favour of the plugin's tools and are never auto-approved. With it off, GitHub Copilot, OpenCode and Grok always ask, as they do for any request whose subject the plugin could not identify; Codex command approvals are auto-approved; Claude and Pi do not prompt for shell commands at all; Ollama has no shell. Auto-accept is off by default, can be set globally or per session, and is worth leaving off for anything you would not want applied unseen.
 
 The local tool server binds only to loopback addresses. Every call is authenticated with the caller's session ID and per-session secret, and sessions cannot act as each other. Project scoping, database access, clipboard access, web permissions, inter-AI messaging, and auto-accept are all separately configurable.
 
@@ -242,11 +242,12 @@ The local tool server binds only to loopback addresses. Every call is authentica
 ```text
 NetBeans IDE
   └── AI Coder dockable sessions
-        ├── Claude / Grok CLI sessions
+        ├── Claude CLI session
+        ├── Grok ACP session (grok agent stdio)
         ├── GitHub Copilot SDK session
         ├── OpenCode ACP session
         ├── Codex app-server session
-        ├── pi CLI session
+        ├── Pi CLI session
         ├── Ollama OpenAI-compatible HTTP client
         └── Local MCP/IDE tool server and review bridge
 ```
