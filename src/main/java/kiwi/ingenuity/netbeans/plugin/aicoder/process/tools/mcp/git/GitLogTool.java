@@ -32,11 +32,13 @@ public class GitLogTool implements McpToolInterface {
         if (options.contains(McpInstructionOptionEnum.ONLY_MCP_TOOL_ACCESS)) {
             return McpToolEnum.GIT_LOG.toolName() + " - shows recent commit history (short hash + message). "
                    + "Requires " + ProjectPathParamEnum.PROJECT_PATH.key() + " to select the target git repository or project root. "
-                   + "Optionally pass " + GitLogParamEnum.FILE.key() + " to scope history to a single path (with " + GitLogParamEnum.FOLLOW.key() + "=true to track it across renames).";
+                   + "Optionally pass " + GitLogParamEnum.FILE.key() + " or " + GitLogParamEnum.FILE_PATHS.key()
+                   + " to scope history to specific path(s) (" + GitLogParamEnum.FOLLOW.key() + "=true tracks a single path across renames).";
         }
         return McpToolEnum.GIT_LOG.toolName() + " -> INSTEAD OF Bash git log - shows recent commit history (short hash + message). "
                + "Requires " + ProjectPathParamEnum.PROJECT_PATH.key() + " to select the target git repository or project root. "
-               + "Optionally pass " + GitLogParamEnum.FILE.key() + " to scope history to a single path (with " + GitLogParamEnum.FOLLOW.key() + "=true to track it across renames).";
+               + "Optionally pass " + GitLogParamEnum.FILE.key() + " or " + GitLogParamEnum.FILE_PATHS.key()
+               + " to scope history to specific path(s) (" + GitLogParamEnum.FOLLOW.key() + "=true tracks a single path across renames).";
     }
 
     @Override
@@ -50,7 +52,7 @@ public class GitLogTool implements McpToolInterface {
         JsonObject props = new JsonObject();
         JsonObject limit = new JsonObject();
         limit.addProperty(ToolSchemaKeyEnum.TYPE.key(), "integer");
-        limit.addProperty(ToolSchemaKeyEnum.DESCRIPTION.key(), "Maximum number of commits to return. Default: 20.");
+        limit.addProperty(ToolSchemaKeyEnum.DESCRIPTION.key(), "Maximum number of commits to return. Default 20, max 1000.");
         props.add(GitLogParamEnum.LIMIT.key(), limit);
         JsonObject projectPath = new JsonObject();
         projectPath.addProperty(ToolSchemaKeyEnum.TYPE.key(), "string");
@@ -60,12 +62,21 @@ public class GitLogTool implements McpToolInterface {
         JsonObject file = new JsonObject();
         file.addProperty(ToolSchemaKeyEnum.TYPE.key(), "string");
         file.addProperty(ToolSchemaKeyEnum.DESCRIPTION.key(),
-                "Scope history to single file (absolute or project-relative). Omit to log entire repo.");
+                "Single path to log (legacy; don't combine with " + GitLogParamEnum.FILE_PATHS.key() + ").");
         props.add(GitLogParamEnum.FILE.key(), file);
+        JsonObject filePaths = new JsonObject();
+        filePaths.addProperty(ToolSchemaKeyEnum.TYPE.key(), "array");
+        filePaths.addProperty(ToolSchemaKeyEnum.DESCRIPTION.key(),
+                "Paths to limit the log to; don't combine with " + GitLogParamEnum.FILE.key() + ". Omit both for the whole repository.");
+        JsonObject filePathItems = new JsonObject();
+        filePathItems.addProperty(ToolSchemaKeyEnum.TYPE.key(), "string");
+        filePaths.add(ToolSchemaKeyEnum.ITEMS.key(), filePathItems);
+        props.add(GitLogParamEnum.FILE_PATHS.key(), filePaths);
         JsonObject follow = new JsonObject();
         follow.addProperty(ToolSchemaKeyEnum.TYPE.key(), "boolean");
         follow.addProperty(ToolSchemaKeyEnum.DESCRIPTION.key(),
-                "Follow file across renames (git log --" + GitLogParamEnum.FOLLOW.key() + "). Default: false. Ignored without file.");
+                "Follow a single path across renames (git log --" + GitLogParamEnum.FOLLOW.key()
+                + "). Default: false. Ignored without paths; rejected for multiple paths.");
         props.add(GitLogParamEnum.FOLLOW.key(), follow);
         schema.add(ToolSchemaKeyEnum.PROPERTIES.key(), props);
         JsonArray required = new JsonArray();
@@ -86,7 +97,8 @@ public class GitLogTool implements McpToolInterface {
                 args.require(ProjectPathParamEnum.PROJECT_PATH.key()),
                 args.intOr(GitLogParamEnum.LIMIT.key(), 20, 1, 1000),
                 args.str(GitLogParamEnum.FILE.key()),
-                args.bool(GitLogParamEnum.FOLLOW.key()));
+                GitReadFilePaths.optional(args, GitLogParamEnum.FILE_PATHS.key()),
+                args.bool(GitLogParamEnum.FOLLOW.key()), session.getId());
         return TempFileSpooler.spoolIfLarge(session.getId(), TempFileDirEnum.TOOL_RESULTS, "git-log", ".log", output,
                 TempFileSpooler.DEFAULT_RESULT_SPOOL_THRESHOLD_CHARS);
     }

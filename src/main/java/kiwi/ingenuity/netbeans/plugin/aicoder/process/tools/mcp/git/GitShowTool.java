@@ -50,6 +50,14 @@ public class GitShowTool implements McpToolInterface {
         revision.addProperty(ToolSchemaKeyEnum.TYPE.key(), "string");
         revision.addProperty(ToolSchemaKeyEnum.DESCRIPTION.key(), "Commit hash or ref to show. Default: HEAD.");
         props.add(GitShowParamEnum.REVISION.key(), revision);
+        JsonObject filePaths = new JsonObject();
+        filePaths.addProperty(ToolSchemaKeyEnum.TYPE.key(), "array");
+        filePaths.addProperty(ToolSchemaKeyEnum.DESCRIPTION.key(),
+                "Optional paths to include (absolute or project-relative). Omit or pass an empty array for the whole commit.");
+        JsonObject filePathItems = new JsonObject();
+        filePathItems.addProperty(ToolSchemaKeyEnum.TYPE.key(), "string");
+        filePaths.add(ToolSchemaKeyEnum.ITEMS.key(), filePathItems);
+        props.add(GitShowParamEnum.FILE_PATHS.key(), filePaths);
         JsonObject projectPath = new JsonObject();
         projectPath.addProperty(ToolSchemaKeyEnum.TYPE.key(), "string");
         projectPath.addProperty(ToolSchemaKeyEnum.DESCRIPTION.key(),
@@ -74,7 +82,8 @@ public class GitShowTool implements McpToolInterface {
         if (revision == null) {
             revision = "HEAD";
         }
-        String output = GitProvider.gitShow(args.require(ProjectPathParamEnum.PROJECT_PATH.key()), revision);
+        String output = GitProvider.gitShow(args.require(ProjectPathParamEnum.PROJECT_PATH.key()), revision,
+                GitReadFilePaths.optional(args, GitShowParamEnum.FILE_PATHS.key()), session.getId());
         return TempFileSpooler.spoolIfLarge(session.getId(), TempFileDirEnum.TOOL_RESULTS, "git-show", ".log", output,
                 TempFileSpooler.DEFAULT_RESULT_SPOOL_THRESHOLD_CHARS);
     }

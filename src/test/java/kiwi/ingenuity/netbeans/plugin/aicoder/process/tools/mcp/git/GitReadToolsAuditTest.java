@@ -1,5 +1,6 @@
 package kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.git;
 
+import com.google.gson.JsonArray;
 import com.google.gson.JsonObject;
 import java.io.ByteArrayOutputStream;
 import java.io.InputStream;
@@ -8,13 +9,18 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.concurrent.TimeUnit;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.AiTypeEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.session.AiSession;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.McpArgumentException;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.events.AiProcessEventListener;
+import kiwi.ingenuity.netbeans.plugin.aicoder.process.server.AiMcpRegistrar;
+import kiwi.ingenuity.netbeans.plugin.aicoder.process.server.McpServerRegistry;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.session.AbstractAiSession;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.ProjectPathParamEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.ToolRequestArguments;
+import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.providers.netbeans.GitProvider;
+import org.junit.jupiter.api.AfterEach;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
@@ -38,6 +44,7 @@ class GitReadToolsAuditTest {
 
     private Path repo;
     private String projectPath;
+    private boolean serverStarted;
     private final AbstractAiSession session = newSession();
 
     @BeforeEach
@@ -52,6 +59,29 @@ class GitReadToolsAuditTest {
         git(repo, "add", ".");
         git(repo, "commit", "-m", "initial");
         projectPath = repo.toString();
+    }
+
+    /**
+     * Restricts {@link #session} to {@code allowedDir} only. An in-repo path outside that directory must then
+     * fail closed. Mirrors {@code GitMutatingToolsAuditTest#startServerScopedToRepo}.
+     */
+    private void startServerScopedTo(Path allowedDir) throws Exception {
+        McpServerRegistry.stopAll();
+        McpServerRegistry.portOverride = 0;
+        serverStarted = true;
+        boolean ok = McpServerRegistry.register(new NoopRegistrar("git-read-audit-boot")).get(5, TimeUnit.SECONDS);
+        assertTrue(ok, "test server must start");
+        McpServerRegistry.getServer().registerSession(session.getId(), AiTypeEnum.CLAUDE,
+                List.of(allowedDir.toFile()), true);
+    }
+
+    @AfterEach
+    void stopServerIfStarted() {
+        if (serverStarted) {
+            McpServerRegistry.stopAll();
+            McpServerRegistry.portOverride = null;
+            serverStarted = false;
+        }
     }
 
     // ---- GetGitStatus: projectPath ----
@@ -321,6 +351,85 @@ class GitReadToolsAuditTest {
         assertFalse(result.contains("commit " + head), result);
     }
 
+    @Test
+    void gitShow_filePathsIncludesRootCommitChanges() {
+        String result = GitProvider.gitShow(projectPath, "HEAD", List.of("a.txt"), null);
+
+        assertTrue(result.contains("alpha"), result);
+        assertTrue(result.contains("a.txt"), result);
+        assertFalse(result.contains("b.txt"), result);
+    }
+
+    @Test
+    void gitShow_filePathsDoesNotMatchPatchBodyText() throws Exception {
+        Files.writeString(repo.resolve("public.txt"), "public");
+        Files.writeString(repo.resolve("secret.txt"), "safe");
+        git(repo, "add", ".");
+        git(repo, "commit", "-m", "add files");
+        Files.writeString(repo.resolve("secret.txt"), "secret body a/public.txt marker");
+        git(repo, "commit", "-am", "secret change");
+
+        String result = GitProvider.gitShow(projectPath, "HEAD", List.of("public.txt"), null);
+
+        assertFalse(result.contains("secret body"), result);
+        assertFalse(result.contains("secret.txt"), result);
+    }
+
+    @Test
+    void gitShow_filePathsMatchesExactHeaderPathNotPrefix() throws Exception {
+        Files.writeString(repo.resolve("foo"), "foo");
+        Files.writeString(repo.resolve("foo bar"), "foo bar");
+        git(repo, "add", ".");
+        git(repo, "commit", "-m", "add foo files");
+        Files.writeString(repo.resolve("foo bar"), "changed foo bar");
+        git(repo, "commit", "-am", "change second file");
+
+        String result = GitProvider.gitShow(projectPath, "HEAD", List.of("foo"), null);
+
+        assertFalse(result.contains("changed foo bar"), result);
+        assertFalse(result.contains("foo bar"), result);
+    }
+
+    @Test
+    void gitShow_filePathsHandlesQuotedAndRenamedPaths() throws Exception {
+        Path oldName = repo.resolve("old name\\\".txt");
+        Path newName = repo.resolve("new name\\\".txt");
+        Files.writeString(oldName, "content");
+        git(repo, "add", ".");
+        git(repo, "commit", "-m", "add quoted name");
+        Files.move(oldName, newName);
+        git(repo, "add", "-A");
+        git(repo, "commit", "-m", "rename quoted name");
+
+        String oldResult = GitProvider.gitShow(projectPath, "HEAD", List.of(oldName.getFileName().toString()), null);
+        String newResult = GitProvider.gitShow(projectPath, "HEAD", List.of(newName.getFileName().toString()), null);
+
+        assertTrue(oldResult.contains("rename from"), oldResult);
+        assertTrue(newResult.contains("rename to"), newResult);
+    }
+
+    @Test
+    void gitReadFilePaths_rejectsOutsideRepository() throws Exception {
+        Path outside = Files.writeString(tempDir.resolve("outside.txt"), "outside");
+
+        String diff = GitProvider.getGitDiff(projectPath, false, List.of(outside.toString()), null);
+        String log = GitProvider.gitLog(projectPath, 20, null, List.of(outside.toString()), false, null);
+        String show = GitProvider.gitShow(projectPath, "HEAD", List.of(outside.toString()), null);
+
+        assertTrue(diff.contains("outside repository"), diff);
+        assertTrue(log.contains("outside repository"), log);
+        assertTrue(show.contains("outside repository"), show);
+    }
+
+    @Test
+    void gitReadFilePaths_rejectsInvalidArgumentShape() {
+        JsonObject args = base();
+        args.addProperty(GetGitDiffParamEnum.FILE_PATHS.key(), "a.txt");
+
+        assertThrows(McpArgumentException.class,
+                () -> new GetGitDiffTool().handle(new ToolRequestArguments(args), session));
+    }
+
     // ---- GitBranch (list mode): projectPath, all ----
     @Test
     void gitBranch_listMarksCurrentBranch() throws Exception {
@@ -426,11 +535,257 @@ class GitReadToolsAuditTest {
         assertEquals("No tags", result);
     }
 
+    // ---- filePaths: session scope, escapes, rename, follow, directories ----
+    @Test
+    void filePathsSessionScopeDeniesGetGitDiff() throws Exception {
+        commitScopedPair();
+        Files.writeString(repo.resolve("secret/hidden.txt"), "HIDDEN-TOKEN-DIFF");
+        JsonObject hidden = base();
+        hidden.add(GetGitDiffParamEnum.FILE_PATHS.key(), arr("secret/hidden.txt"));
+
+        String unscoped = new GetGitDiffTool().handle(new ToolRequestArguments(hidden), session);
+
+        assertTrue(unscoped.contains("HIDDEN-TOKEN-DIFF"), unscoped);
+
+        startServerScopedTo(repo.resolve("allowed"));
+        String denied = new GetGitDiffTool().handle(new ToolRequestArguments(hidden), session);
+
+        assertTrue(denied.contains("Invalid filePaths:"), denied);
+        assertTrue(denied.contains("not accessible"), denied);
+        assertFalse(denied.contains("HIDDEN-TOKEN-DIFF"), denied);
+
+        Files.writeString(repo.resolve("allowed/ok.txt"), "visible-ok-edited");
+        JsonObject visible = base();
+        visible.add(GetGitDiffParamEnum.FILE_PATHS.key(), arr("allowed/ok.txt"));
+        String allowed = new GetGitDiffTool().handle(new ToolRequestArguments(visible), session);
+
+        assertTrue(allowed.contains("visible-ok-edited"), allowed);
+        assertFalse(allowed.contains("not accessible"), allowed);
+    }
+
+    @Test
+    void filePathsSessionScopeDeniesGitShow() throws Exception {
+        commitScopedPair();
+        JsonObject args = base();
+        args.add(GitShowParamEnum.FILE_PATHS.key(), arr("secret/hidden.txt"));
+
+        String unscoped = new GitShowTool().handle(new ToolRequestArguments(args), session);
+
+        assertTrue(unscoped.contains("HIDDEN-TOKEN"), unscoped);
+
+        startServerScopedTo(repo.resolve("allowed"));
+        String denied = new GitShowTool().handle(new ToolRequestArguments(args), session);
+
+        assertTrue(denied.contains("Invalid filePaths:"), denied);
+        assertTrue(denied.contains("not accessible"), denied);
+        assertFalse(denied.contains("HIDDEN-TOKEN"), denied);
+    }
+
+    @Test
+    void filePathsSessionScopeDeniesGitLog() throws Exception {
+        commitScopedPair();
+        JsonObject args = base();
+        args.add(GitLogParamEnum.FILE_PATHS.key(), arr("secret/hidden.txt"));
+
+        String unscoped = new GitLogTool().handle(new ToolRequestArguments(args), session);
+
+        assertTrue(unscoped.contains("secret-only-commit"), unscoped);
+
+        startServerScopedTo(repo.resolve("allowed"));
+        String denied = new GitLogTool().handle(new ToolRequestArguments(args), session);
+
+        assertTrue(denied.contains("Invalid filePaths:"), denied);
+        assertTrue(denied.contains("not accessible"), denied);
+        assertFalse(denied.contains("secret-only-commit"), denied);
+    }
+
+    @Test
+    void gitLogLegacyFileSessionScopeDeniesInRepoPath() throws Exception {
+        commitScopedPair();
+        JsonObject args = base();
+        args.addProperty(GitLogParamEnum.FILE.key(), "secret/hidden.txt");
+
+        String unscoped = new GitLogTool().handle(new ToolRequestArguments(args), session);
+
+        assertTrue(unscoped.contains("secret-only-commit"), unscoped);
+
+        startServerScopedTo(repo.resolve("allowed"));
+        String denied = new GitLogTool().handle(new ToolRequestArguments(args), session);
+
+        assertTrue(denied.startsWith("Invalid file:"), denied);
+        assertTrue(denied.contains("not accessible"), denied);
+        assertFalse(denied.contains("Invalid filePaths:"), denied);
+        assertFalse(denied.contains("secret-only-commit"), denied);
+    }
+
+    @Test
+    void gitShowDropsRenameWhenOtherSideIsOutOfScope() throws Exception {
+        Files.createDirectories(repo.resolve("allowed"));
+        Files.createDirectories(repo.resolve("secret"));
+        Files.writeString(repo.resolve("allowed/keep.txt"), "keep-before");
+        Files.writeString(repo.resolve("secret/creds.txt"), "SECRET-CREDS-BODY");
+        git(repo, "add", ".");
+        git(repo, "commit", "-m", "add creds");
+        Files.move(repo.resolve("secret/creds.txt"), repo.resolve("allowed/moved.txt"));
+        Files.writeString(repo.resolve("allowed/keep.txt"), "keep-still-visible");
+        git(repo, "add", "-A");
+        git(repo, "commit", "-m", "rename creds");
+
+        String unscoped = GitProvider.gitShow(projectPath, "HEAD", List.of("allowed/moved.txt"), null);
+
+        assertTrue(unscoped.contains("rename from secret/creds.txt"), unscoped);
+
+        startServerScopedTo(repo.resolve("allowed"));
+        JsonObject moved = base();
+        moved.add(GitShowParamEnum.FILE_PATHS.key(), arr("allowed/moved.txt"));
+        String scoped = new GitShowTool().handle(new ToolRequestArguments(moved), session);
+
+        assertTrue(scoped.contains("rename creds"), scoped);
+        assertFalse(scoped.contains("SECRET-CREDS-BODY"), scoped);
+        assertFalse(scoped.contains("secret/creds.txt"), scoped);
+
+        JsonObject keep = base();
+        keep.add(GitShowParamEnum.FILE_PATHS.key(), arr("allowed/keep.txt"));
+        String keepResult = new GitShowTool().handle(new ToolRequestArguments(keep), session);
+
+        assertTrue(keepResult.contains("keep-still-visible"), keepResult);
+        assertFalse(keepResult.contains("SECRET-CREDS-BODY"), keepResult);
+    }
+
+    @Test
+    void dotDotAndSymlinkOutsideRepositoryAreRefused() throws Exception {
+        Path outside = tempDir.resolve("outside.txt");
+        Files.writeString(outside, "OUTSIDE-SECRET");
+        Files.createSymbolicLink(repo.resolve("leak.txt"), outside);
+
+        for (String escaped : new String[]{"../outside.txt", "leak.txt"}) {
+            JsonObject diffArgs = base();
+            diffArgs.add(GetGitDiffParamEnum.FILE_PATHS.key(), arr(escaped));
+            String diff = new GetGitDiffTool().handle(new ToolRequestArguments(diffArgs), session);
+            assertTrue(diff.contains("outside repository"), escaped + " -> " + diff);
+            assertFalse(diff.contains("OUTSIDE-SECRET"), diff);
+
+            JsonObject showArgs = base();
+            showArgs.add(GitShowParamEnum.FILE_PATHS.key(), arr(escaped));
+            String show = new GitShowTool().handle(new ToolRequestArguments(showArgs), session);
+            assertTrue(show.contains("outside repository"), escaped + " -> " + show);
+            assertFalse(show.contains("OUTSIDE-SECRET"), show);
+
+            JsonObject logArgs = base();
+            logArgs.add(GitLogParamEnum.FILE_PATHS.key(), arr(escaped));
+            String log = new GitLogTool().handle(new ToolRequestArguments(logArgs), session);
+            assertTrue(log.contains("outside repository"), escaped + " -> " + log);
+            assertFalse(log.contains("OUTSIDE-SECRET"), log);
+        }
+    }
+
+    @Test
+    void gitLogRejectsFileTogetherWithFilePaths() throws Exception {
+        JsonObject args = base();
+        args.addProperty(GitLogParamEnum.FILE.key(), "a.txt");
+        args.add(GitLogParamEnum.FILE_PATHS.key(), arr("b.txt"));
+
+        String result = new GitLogTool().handle(new ToolRequestArguments(args), session);
+
+        assertTrue(result.contains("Specify either file or filePaths, not both"), result);
+    }
+
+    @Test
+    void gitLogFollowWithTwoPathsIsRejected() throws Exception {
+        JsonObject args = base();
+        args.add(GitLogParamEnum.FILE_PATHS.key(), arr("a.txt", "b.txt"));
+        args.addProperty(GitLogParamEnum.FOLLOW.key(), true);
+
+        String result = new GitLogTool().handle(new ToolRequestArguments(args), session);
+
+        assertTrue(result.contains("follow=true requires exactly one file path"), result);
+    }
+
+    @Test
+    void gitLogFollowWithZeroPathsIsIgnored() throws Exception {
+        Files.writeString(repo.resolve("a.txt"), "second");
+        git(repo, "commit", "-am", "touch a");
+        Files.writeString(repo.resolve("b.txt"), "beta changed");
+        git(repo, "commit", "-am", "touch b");
+
+        String plain = new GitLogTool().handle(new ToolRequestArguments(base()), session);
+        JsonObject followOmitted = base();
+        followOmitted.addProperty(GitLogParamEnum.FOLLOW.key(), true);
+        String omitted = new GitLogTool().handle(new ToolRequestArguments(followOmitted), session);
+        JsonObject followEmpty = base();
+        followEmpty.add(GitLogParamEnum.FILE_PATHS.key(), new JsonArray());
+        followEmpty.addProperty(GitLogParamEnum.FOLLOW.key(), true);
+        String empty = new GitLogTool().handle(new ToolRequestArguments(followEmpty), session);
+
+        assertEquals(plain, omitted);
+        assertEquals(plain, empty);
+        assertTrue(plain.contains("touch a"), plain);
+        assertTrue(plain.contains("touch b"), plain);
+        assertFalse(plain.contains("requires exactly one"), plain);
+    }
+
+    @Test
+    void gitShowDirectoryTargetIncludesChildrenButNotPrefix() throws Exception {
+        Files.createDirectories(repo.resolve("src"));
+        Files.createDirectories(repo.resolve("srcx"));
+        Files.writeString(repo.resolve("src/Foo.java"), "from-src-tree");
+        Files.writeString(repo.resolve("srcx/Bar.java"), "from-srcx-tree");
+        git(repo, "add", ".");
+        git(repo, "commit", "-m", "add src trees");
+        JsonObject args = base();
+        args.add(GitShowParamEnum.FILE_PATHS.key(), arr("src"));
+
+        String result = new GitShowTool().handle(new ToolRequestArguments(args), session);
+
+        assertTrue(result.contains("from-src-tree"), result);
+        assertTrue(result.contains("src/Foo.java"), result);
+        assertFalse(result.contains("from-srcx-tree"), result);
+        assertFalse(result.contains("srcx/"), result);
+    }
+
+    @Test
+    void gitShowSymlinkedProjectPathStillMatches() throws Exception {
+        Path link = tempDir.resolve("repo-link");
+        Files.createSymbolicLink(link, repo);
+        JsonObject args = new JsonObject();
+        args.addProperty(ProjectPathParamEnum.PROJECT_PATH.key(), link.toString());
+        args.add(GitShowParamEnum.FILE_PATHS.key(), arr("a.txt"));
+
+        String result = new GitShowTool().handle(new ToolRequestArguments(args), session);
+
+        assertTrue(result.contains("alpha"), result);
+        assertTrue(result.contains("a.txt"), result);
+        assertFalse(result.contains("beta"), result);
+    }
+
     // ---- helpers ----
     private JsonObject base() {
         JsonObject o = new JsonObject();
         o.addProperty(ProjectPathParamEnum.PROJECT_PATH.key(), projectPath);
         return o;
+    }
+
+    private static JsonArray arr(String... values) {
+        JsonArray array = new JsonArray();
+        for (String value : values) {
+            array.add(value);
+        }
+        return array;
+    }
+
+    /**
+     * Two commits: {@code allowed/ok.txt} then a later commit that touches only {@code secret/hidden.txt}. A
+     * scope limited to {@code allowed/} must refuse the secret path while the unscoped call still sees it.
+     */
+    private void commitScopedPair() throws Exception {
+        Files.createDirectories(repo.resolve("allowed"));
+        Files.createDirectories(repo.resolve("secret"));
+        Files.writeString(repo.resolve("allowed/ok.txt"), "visible-ok");
+        git(repo, "add", "allowed/ok.txt");
+        git(repo, "commit", "-m", "add allowed");
+        Files.writeString(repo.resolve("secret/hidden.txt"), "HIDDEN-TOKEN");
+        git(repo, "add", "secret/hidden.txt");
+        git(repo, "commit", "-m", "secret-only-commit");
     }
 
     private static String git(Path dir, String... args) throws Exception {
@@ -466,5 +821,29 @@ class GitReadToolsAuditTest {
                 return java.util.Map.of();
             }
         };
+    }
+
+    private static final class NoopRegistrar extends AiMcpRegistrar {
+
+        NoopRegistrar(String sessionId) {
+            super(sessionId, AiTypeEnum.CLAUDE);
+        }
+
+        @Override
+        public void addMcpEndpoint(String endpointUrl) {
+        }
+
+        @Override
+        public void removeMcpEndpoint() {
+        }
+
+        @Override
+        public boolean registerHooks(String serverBaseUrl) {
+            return true;
+        }
+
+        @Override
+        public void unregisterHooks() {
+        }
     }
 }

@@ -50,6 +50,14 @@ public class GetGitDiffTool implements McpToolInterface {
         staged.addProperty(ToolSchemaKeyEnum.TYPE.key(), "boolean");
         staged.addProperty(ToolSchemaKeyEnum.DESCRIPTION.key(), "Show staged diff instead of unstaged. Default: false.");
         props.add(GetGitDiffParamEnum.STAGED.key(), staged);
+        JsonObject filePaths = new JsonObject();
+        filePaths.addProperty(ToolSchemaKeyEnum.TYPE.key(), "array");
+        filePaths.addProperty(ToolSchemaKeyEnum.DESCRIPTION.key(),
+                "Optional paths to include (absolute or project-relative). Omit or pass an empty array for the whole repository.");
+        JsonObject filePathItems = new JsonObject();
+        filePathItems.addProperty(ToolSchemaKeyEnum.TYPE.key(), "string");
+        filePaths.add(ToolSchemaKeyEnum.ITEMS.key(), filePathItems);
+        props.add(GetGitDiffParamEnum.FILE_PATHS.key(), filePaths);
         JsonObject projectPath = new JsonObject();
         projectPath.addProperty(ToolSchemaKeyEnum.TYPE.key(), "string");
         projectPath.addProperty(ToolSchemaKeyEnum.DESCRIPTION.key(),
@@ -71,7 +79,8 @@ public class GetGitDiffTool implements McpToolInterface {
     @Override
     public String handle(ToolRequestArguments args, AbstractAiSession session) throws McpArgumentException {
         String output = GitProvider.getGitDiff(args.require(ProjectPathParamEnum.PROJECT_PATH.key()),
-                args.bool(GetGitDiffParamEnum.STAGED.key()));
+                args.bool(GetGitDiffParamEnum.STAGED.key()),
+                GitReadFilePaths.optional(args, GetGitDiffParamEnum.FILE_PATHS.key()), session.getId());
         return TempFileSpooler.spoolIfLarge(session.getId(), TempFileDirEnum.TOOL_RESULTS, "git-diff", ".log", output,
                 TempFileSpooler.DEFAULT_RESULT_SPOOL_THRESHOLD_CHARS);
     }

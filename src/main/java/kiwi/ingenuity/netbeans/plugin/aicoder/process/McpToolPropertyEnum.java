@@ -127,7 +127,7 @@ public enum McpToolPropertyEnum {
      */
     FILE_PATH("filePath"),
     /**
-     * Absolute paths of several files to act on together.
+     * Absolute or project-relative paths of several files to act on together.
      */
     FILE_PATHS("filePaths"),
     /**

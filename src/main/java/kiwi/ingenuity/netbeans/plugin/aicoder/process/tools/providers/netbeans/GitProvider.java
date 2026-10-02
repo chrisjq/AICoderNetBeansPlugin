@@ -185,6 +185,10 @@ public class GitProvider {
     }
 
     public static String getGitDiff(String projectPath, boolean staged) {
+        return getGitDiff(projectPath, staged, List.of(), null);
+    }
+
+    public static String getGitDiff(String projectPath, boolean staged, List<String> filePaths, String sessionId) {
         File root = resolveRoot(projectPath);
         if (root == null) {
             return noRepoError(projectPath);
@@ -198,9 +202,13 @@ public class GitProvider {
             GitClient.DiffMode mode = staged
                                       ? GitClient.DiffMode.HEAD_VS_INDEX
                                       : GitClient.DiffMode.INDEX_VS_WORKINGTREE;
-            client.exportDiff(new File[]{root}, mode, baos, NULL_PM);
+            File[] targets = resolveReadFiles(root, gitRoot, filePaths, sessionId);
+            client.exportDiff(targets, mode, baos, NULL_PM);
             String result = baos.toString(StandardCharsets.UTF_8);
             return result.isBlank() ? "(no changes)" : result;
+        }
+        catch (IOException e) {
+            return "Invalid filePaths: " + e.getMessage();
         }
         catch (Exception e) {
             logGitError("getGitDiff", e);
@@ -286,6 +294,14 @@ public class GitProvider {
     }
 
     public static String gitLog(String projectPath, int limit, String file, boolean follow) {
+        return gitLog(projectPath, limit, file, List.of(), follow, null);
+    }
+
+    public static String gitLog(String projectPath, int limit, String file, List<String> filePaths,
+                                boolean follow, String sessionId) {
+        if (file != null && !file.isBlank() && filePaths != null && !filePaths.isEmpty()) {
+            return "Specify either file or filePaths, not both";
+        }
         File root = resolveRoot(projectPath);
         if (root == null) {
             return noRepoError(projectPath);
@@ -294,25 +310,19 @@ public class GitProvider {
         if (gitRoot == null) {
             return "Not a git repository: " + root;
         }
-        // When a file is given, scope the log to it (relative paths resolve against
-        // the project root). setFollowRenames mirrors `git log --follow`, which is
-        // only meaningful for a single path, so it is applied only alongside a file.
-        File target = null;
-        if (file != null && !file.isBlank()) {
-            File f = new File(file);
-            target = f.isAbsolute() ? f : new File(root, file);
-        }
-        if (target != null && !isWithinRepository(gitRoot, target)) {
-            return "File is outside repository: " + file;
-        }
+        List<String> paths = file != null && !file.isBlank() ? List.of(file) : filePaths;
         try (GitClient client = GitRepository.getInstance(gitRoot).createClient()) {
+            File[] targets = resolveReadFiles(root, gitRoot, paths, sessionId);
+            if (follow && targets.length != 1) {
+                return "follow=true requires exactly one file path";
+            }
             SearchCriteria criteria = new SearchCriteria();
             // Start at HEAD, as `git log` does. Without a start revision libs.git walks every local branch newest first,
             // so a newer commit on another branch was listed as if it were on the checked-out one.
             criteria.setRevisionTo("HEAD");
             criteria.setLimit(limit > 0 ? limit : 20);
-            if (target != null) {
-                criteria.setFiles(new File[]{target});
+            if (paths != null && !paths.isEmpty()) {
+                criteria.setFiles(targets);
                 criteria.setFollowRenames(follow);
             }
             GitRevisionInfo[] revisions = client.log(criteria, NULL_PM);
@@ -326,6 +336,9 @@ public class GitProvider {
                         .append(' ').append(rev.getShortMessage()).append('\n');
             }
             return sb.toString().strip();
+        }
+        catch (IOException e) {
+            return (file != null && !file.isBlank() ? "Invalid file: " : "Invalid filePaths: ") + e.getMessage();
         }
         catch (GitException.MissingObjectException e) {
             // A repository with no commits yet has no HEAD commit to start from.
@@ -686,6 +699,162 @@ public class GitProvider {
         return result.toArray(File[]::new);
     }
 
+    private static String filterCommitDiff(String diff, File gitRoot, File[] targets, String sessionId)
+            throws IOException {
+        File canonicalGitRoot = gitRoot.getCanonicalFile();
+        List<String> targetPaths = new ArrayList<>();
+        for (File target : targets) {
+            String relative = canonicalGitRoot.toPath().relativize(target.toPath()).toString()
+                    .replace(File.separatorChar, '/');
+            targetPaths.add(target.isDirectory() && !relative.isEmpty() ? relative + "/" : relative);
+        }
+        StringBuilder filtered = new StringBuilder();
+        int sectionStart = diff.indexOf("diff --git ");
+        while (sectionStart >= 0) {
+            int nextSection = diff.indexOf("diff --git ", sectionStart + 1);
+            String section = diff.substring(sectionStart, nextSection >= 0 ? nextSection : diff.length());
+            if (commitDiffHeaderMatches(section, targetPaths, canonicalGitRoot, sessionId)) {
+                filtered.append(section);
+            }
+            sectionStart = nextSection;
+        }
+        return filtered.toString();
+    }
+
+    private static boolean commitDiffHeaderMatches(String section, List<String> targetPaths, File gitRoot,
+                                                   String sessionId) {
+        int lineEnd = section.indexOf('\n');
+        String header = lineEnd >= 0 ? section.substring(0, lineEnd) : section;
+        if (!header.startsWith("diff --git ")) {
+            return false;
+        }
+        int index = "diff --git ".length();
+        GitDiffPath oldPath;
+        GitDiffPath newPath;
+        if (header.charAt(index) == '"') {
+            oldPath = readGitDiffPath(header, index);
+            newPath = oldPath == null ? null : readGitDiffPath(header, oldPath.nextIndex());
+        }
+        else {
+            int separator = header.indexOf(" b/", index);
+            oldPath = separator < 0 ? null : new GitDiffPath(header.substring(index, separator), separator + 1);
+            newPath = separator < 0 ? null : new GitDiffPath(header.substring(separator + 1), header.length());
+        }
+        if (oldPath == null) {
+            return false;
+        }
+        if (newPath == null) {
+            return false;
+        }
+        String oldRelative = stripDiffPrefix(oldPath.value());
+        String newRelative = stripDiffPrefix(newPath.value());
+        return (matchesDiffTarget(oldRelative, targetPaths) || matchesDiffTarget(newRelative, targetPaths))
+               && isDiffPathAccessible(gitRoot, oldRelative, sessionId)
+               && isDiffPathAccessible(gitRoot, newRelative, sessionId);
+    }
+
+    private static String stripDiffPrefix(String path) {
+        return path.length() >= 2 && path.charAt(1) == '/' ? path.substring(2) : path;
+    }
+
+    private static boolean matchesDiffTarget(String path, List<String> targetPaths) {
+        for (String target : targetPaths) {
+            if (path.equals(target) || (target.endsWith("/") && path.startsWith(target)) || target.isEmpty()) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private static boolean isDiffPathAccessible(File gitRoot, String relativePath, String sessionId) {
+        try {
+            File path = new File(gitRoot, relativePath).getCanonicalFile();
+            if (!isWithinRepository(gitRoot, path)) {
+                return false;
+            }
+            // A missing server has no session scope to enforce. resolveReadFiles uses the same rule; treating
+            // isFileAccessible's false (null server) as a denial here dropped every GitShow patch.
+            if (sessionId == null || McpServerRegistry.getServer() == null) {
+                return true;
+            }
+            return McpHookServer.isFileAccessible(McpServerRegistry.getServer(), sessionId, path.getPath());
+        }
+        catch (IOException ex) {
+            return false;
+        }
+    }
+
+    private static GitDiffPath readGitDiffPath(String header, int index) {
+        while (index < header.length() && header.charAt(index) == ' ') {
+            index++;
+        }
+        if (index >= header.length()) {
+            return null;
+        }
+        if (header.charAt(index) != '"') {
+            int end = header.indexOf(' ', index);
+            return new GitDiffPath(header.substring(index, end >= 0 ? end : header.length()),
+                    end >= 0 ? end + 1 : header.length());
+        }
+        ByteArrayOutputStream bytes = new ByteArrayOutputStream();
+        for (int cursor = index + 1; cursor < header.length(); cursor++) {
+            char ch = header.charAt(cursor);
+            if (ch == '"') {
+                return new GitDiffPath(bytes.toString(StandardCharsets.UTF_8), cursor + 1);
+            }
+            if (ch != '\\' || cursor + 1 >= header.length()) {
+                bytes.writeBytes(String.valueOf(ch).getBytes(StandardCharsets.UTF_8));
+                continue;
+            }
+            char escaped = header.charAt(++cursor);
+            if (escaped >= '0' && escaped <= '7' && cursor + 2 < header.length()
+                && header.charAt(cursor + 1) >= '0' && header.charAt(cursor + 1) <= '7'
+                && header.charAt(cursor + 2) >= '0' && header.charAt(cursor + 2) <= '7') {
+                bytes.write((escaped - '0') * 64 + (header.charAt(++cursor) - '0') * 8
+                            + (header.charAt(++cursor) - '0'));
+            }
+            else {
+                bytes.write(switch (escaped) {
+                    case 'n' ->
+                        '\n';
+                    case 't' ->
+                        '\t';
+                    default ->
+                        escaped;
+                });
+            }
+        }
+        return null;
+    }
+
+    private record GitDiffPath(String value, int nextIndex) {
+
+    }
+
+    private static File[] resolveReadFiles(File root, File gitRoot, List<String> paths, String sessionId)
+            throws IOException {
+        if (paths == null || paths.isEmpty()) {
+            return new File[]{root};
+        }
+        List<File> result = new ArrayList<>();
+        for (String path : paths) {
+            if (path == null || path.isBlank()) {
+                throw new IOException("filePaths contains a blank path");
+            }
+            File file = new File(path);
+            file = (file.isAbsolute() ? file : new File(root, path)).getCanonicalFile();
+            if (!isWithinRepository(gitRoot, file)) {
+                throw new IOException("Path is outside repository: " + path);
+            }
+            if (sessionId != null && McpServerRegistry.getServer() != null
+                && !McpHookServer.isFileAccessible(McpServerRegistry.getServer(), sessionId, file.getPath())) {
+                throw new IOException("Path is not accessible in this session: " + path);
+            }
+            result.add(file);
+        }
+        return result.toArray(File[]::new);
+    }
+
     /**
      * Stages normal changes and removes tracked files which disappeared from the working tree. GitClient.add
      * alone does not stage those removals.
@@ -1042,6 +1211,10 @@ public class GitProvider {
     }
 
     public static String gitShow(String projectPath, String revision) {
+        return gitShow(projectPath, revision, List.of(), null);
+    }
+
+    public static String gitShow(String projectPath, String revision, List<String> filePaths, String sessionId) {
         File root = resolveRoot(projectPath);
         if (root == null) {
             return noRepoError(projectPath);
@@ -1056,6 +1229,9 @@ public class GitProvider {
             ByteArrayOutputStream baos = new ByteArrayOutputStream();
             client.exportCommit(info.getRevision(), baos, NULL_PM);
             String diff = baos.toString(StandardCharsets.UTF_8);
+            if (filePaths != null && !filePaths.isEmpty()) {
+                diff = filterCommitDiff(diff, gitRoot, resolveReadFiles(root, gitRoot, filePaths, sessionId), sessionId);
+            }
             StringBuilder sb = new StringBuilder();
             sb.append("commit ").append(info.getRevision()).append('\n');
             GitUser author = info.getAuthor();
@@ -1068,6 +1244,9 @@ public class GitProvider {
                 sb.append('\n').append(diff);
             }
             return sb.toString().strip();
+        }
+        catch (IOException e) {
+            return "Invalid filePaths: " + e.getMessage();
         }
         catch (GitException e) {
             logGitError("gitShow", e);
