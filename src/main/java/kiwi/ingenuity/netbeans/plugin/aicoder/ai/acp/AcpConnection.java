@@ -46,6 +46,12 @@ public class AcpConnection {
 
     private static final Gson GSON = new Gson();
 
+    /**
+     * Upper bound on each piece of agent-supplied error text (the error message and its detail) carried into
+     * an {@link AcpException} message.
+     */
+    static final int MAX_ERROR_DETAIL_CHARS = 500;
+
     private final PrintWriter writer;
     private final InputStream inputStream;
     private final AcpClientHandler handler;
@@ -246,7 +252,14 @@ public class AcpConnection {
                     if (msg.has(AcpJsonKeyEnum.ERROR.key())) {
                         JsonObject error = msg.getAsJsonObject(AcpJsonKeyEnum.ERROR.key());
                         int code = error.has(AcpJsonKeyEnum.CODE.key()) ? error.get(AcpJsonKeyEnum.CODE.key()).getAsInt() : 0;
-                        String message = error.has(AcpJsonKeyEnum.MESSAGE.key()) ? error.get(AcpJsonKeyEnum.MESSAGE.key()).getAsString() : "unknown";
+                        String message = error.has(AcpJsonKeyEnum.MESSAGE.key())
+                                         ? redactAndBound(error.get(AcpJsonKeyEnum.MESSAGE.key()).getAsString()) : "unknown";
+                        // A bare "Internal error" hides the real cause (e.g. Grok's "402 Payment Required: usage
+                        // balance exhausted"), which agents put in error.data.message — show it to the user too.
+                        String detail = errorDataMessage(error);
+                        if (detail != null && !detail.equals(message)) {
+                            message = message + " — " + detail;
+                        }
                         AcpException ex = new AcpException(code, message);
                         dispatchExecutor.execute(() -> future.completeExceptionally(ex));
                     }
@@ -260,6 +273,29 @@ public class AcpConnection {
         catch (Exception e) {
             // Malformed or unexpected message — drop silently
         }
+    }
+
+    static String errorDataMessage(JsonObject error) {
+        if (!error.has(AcpJsonKeyEnum.DATA.key()) || !error.get(AcpJsonKeyEnum.DATA.key()).isJsonObject()) {
+            return null;
+        }
+        JsonObject data = error.getAsJsonObject(AcpJsonKeyEnum.DATA.key());
+        if (!data.has(AcpJsonKeyEnum.MESSAGE.key()) || !data.get(AcpJsonKeyEnum.MESSAGE.key()).isJsonPrimitive()) {
+            return null;
+        }
+        String detail = data.get(AcpJsonKeyEnum.MESSAGE.key()).getAsString();
+        return detail.isBlank() ? null : redactAndBound(detail);
+    }
+
+    /**
+     * Agent-supplied error text reaches the UI and the log, so the plugin's own session secrets are masked
+     * and its size is bounded — an upstream error body can be arbitrarily large.
+     */
+    static String redactAndBound(String text) {
+        String redacted = McpHookServerUtil.redactAllSecrets(text);
+        return redacted.length() > MAX_ERROR_DETAIL_CHARS
+               ? redacted.substring(0, MAX_ERROR_DETAIL_CHARS) + "…"
+               : redacted;
     }
 
     private void handleInboundRequest(long id, String method, JsonObject params) {

@@ -533,9 +533,9 @@ class AiTopComponentInboxInterruptWiringTest {
     }
 
     /**
-     * F5: the hold makes a completed call the NORMAL case now, not the exception — Claude and OpenCode both
-     * wait for an in-flight tool call before delivering the interrupt (safety-valve backstopped), so the
-     * wording must lead with that rather than opening on the residual abort case.
+     * The Mail interrupt hold makes a completed call the NORMAL case now, not the exception — Claude and
+     * OpenCode both wait for an in-flight tool call before delivering the interrupt (safety-valve
+     * backstopped), so the wording must lead with that rather than opening on the residual abort case.
      */
     @Test
     void theWordingLeadsWithTheCompletedCallBeingTheNormalCase() throws IOException {

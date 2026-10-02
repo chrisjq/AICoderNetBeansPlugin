@@ -22,7 +22,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
 /**
- * F5: a Mail interrupt must never abort a tool call this plugin is itself servicing — OpenCode treats
+ * A Mail interrupt must never abort a tool call this plugin is itself servicing — OpenCode treats
  * {@code session/cancel} as "the user doesn't want to proceed" and cuts whatever the agent is waiting on,
  * tool calls included. These tests drive {@link OpenCodeAiProcessManager} like
  * {@code OpenCodeAiProcessManagerTest} does: a pipe-backed {@link AcpConnection} plus a

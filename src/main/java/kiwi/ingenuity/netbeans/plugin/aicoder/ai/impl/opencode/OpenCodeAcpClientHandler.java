@@ -165,9 +165,9 @@ class OpenCodeAcpClientHandler extends AbstractAcpClientHandler {
     /**
      * @param toolCallTracker receives {@code (toolCallId, status)} for every {@code tool_call} and
      *                        {@code tool_call_update} session/update so the process manager can track
-     *                        in-flight tool calls (F5) without reaching into the handler's internals. May be
-     *                        null when the caller is not a manager (e.g. tests wiring a handler to a bare
-     *                        connection).
+     *                        in-flight tool calls (for the Mail interrupt hold) without reaching into the
+     *                        handler's internals. May be null when the caller is not a manager (e.g. tests
+     *                        wiring a handler to a bare connection).
      */
     OpenCodeAcpClientHandler(AiProcessEventListener listener, Runnable disconnectCallback,
                              BiConsumer<String, String> toolCallTracker) {
@@ -266,7 +266,7 @@ class OpenCodeAcpClientHandler extends AbstractAcpClientHandler {
         String toolCallId = stringOrNull(update, AcpJsonKeyEnum.TOOL_CALL_ID.key());
         String status = stringOrNull(update, AcpJsonKeyEnum.STATUS.key());
         rememberToolKind(toolCallId, kind, status);
-        // F5: forward the lifecycle signal so the manager can hold a Mail interrupt while a call
+        // Forward the lifecycle signal so the manager can hold a Mail interrupt while a call
         // is in flight. The status is null only when the field is absent, in which case the
         // manager treats the update as not changing the count.
         if (toolCallTracker != null && toolCallId != null) {

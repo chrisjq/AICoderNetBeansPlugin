@@ -11,7 +11,6 @@ import java.util.List;
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CompletionException;
-import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.TimeUnit;
 import java.util.function.Predicate;
@@ -33,7 +32,6 @@ import kiwi.ingenuity.netbeans.plugin.aicoder.ai.events.StatusEventTypeEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.events.TurnCompleteEvent;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.grok.events.GrokTokenUsageEvent;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.grok.session.GrokAiSession;
-import kiwi.ingenuity.netbeans.plugin.aicoder.ai.session.InterruptTypeEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.events.AiProcessEventListener;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.server.McpServerRegistry;
 import kiwi.ingenuity.netbeans.plugin.aicoder.utils.StatusMessageUtil;
@@ -54,12 +52,6 @@ import kiwi.ingenuity.netbeans.plugin.aicoder.utils.StatusMessageUtil;
 public class GrokAiProcessManager extends AbstractAcpProcessManager {
 
     private static final Logger LOG = Logger.getLogger(GrokAiProcessManager.class.getName());
-
-    /**
-     * How many of the agent's stderr lines are kept to show in an EXITED message — mirrors
-     * {@code OpenCodeAiProcessManager}'s identical constant.
-     */
-    private static final int MAX_STDERR_LINES = 100;
 
     /**
      * Grace period {@link #stop()} gives Grok to exit after its stdin is closed before escalating to a forced
@@ -99,10 +91,6 @@ public class GrokAiProcessManager extends AbstractAcpProcessManager {
         return GrokExecutableLocator.buildHostCommand(executablePath, args.toArray(new String[0]));
     }
 
-    protected static JsonObject buildInitializeParams(String pluginVersion) {
-        return AbstractAcpProcessManager.buildInitializeParams(pluginVersion);
-    }
-
     static JsonObject buildSessionNewParams(String absoluteCwd, String mcpEndpointUrl) {
         return AbstractAcpProcessManager.buildSessionParams(absoluteCwd, mcpEndpointUrl, null);
     }
@@ -133,6 +121,19 @@ public class GrokAiProcessManager extends AbstractAcpProcessManager {
         }
     }
 
+    /**
+     * Grok's original {@code interrupt} never captured the handler under the lock (it relied on
+     * {@link #cancelPendingPermissionsOnActiveHandler} after unlock, same as this would without an override)
+     * — using the capture-under-lock form here anyway is strictly stronger, not a behaviour change back to
+     * anything Grok actually depended on: it just closes the same race OpenCode's baseline was already
+     * guarding against.
+     */
+    @Override
+    protected Runnable capturePermissionCancellerUnderLock() {
+        GrokAcpClientHandler h = activeHandler;
+        return h != null ? h::cancelPendingPermissions : null;
+    }
+
     @Override
     protected String backendDisplayNameForLogging() {
         return "Grok";
@@ -153,7 +154,6 @@ public class GrokAiProcessManager extends AbstractAcpProcessManager {
      * second round-trip. Empty (never null) when the agent's response carries no such data.
      */
     volatile Map<String, Integer> modelContextWindows = Map.of();
-    private final List<String> recentStderr = new CopyOnWriteArrayList<>();
     /**
      * Wall-clock time of the last {@code session/prompt} send, or 0 if none has been sent yet — diagnostics
      * only, read by {@link #handleProcessExit}'s exit log so an unexpected exit's log line says how long
@@ -168,7 +168,6 @@ public class GrokAiProcessManager extends AbstractAcpProcessManager {
      */
     private volatile File grokDebugLogFile = null;
 
-    private volatile GrokAiMcpRegistrar registrar = null;
     private GrokAiSession grokAiSession = null;
     /**
      * Package-private, not private: tests assert the stored effort directly rather than through a
@@ -205,40 +204,61 @@ public class GrokAiProcessManager extends AbstractAcpProcessManager {
         this.onReasoningEffortCleared = callback;
     }
 
-    public JsonArray configOptions() {
-        return sessionConfigOptions;
-    }
-
     public boolean isSessionLive() {
         return connection != null && acpSessionId != null;
     }
 
+    @Override
+    protected void setAcpConnection(AcpConnection conn) {
+        connection = conn;
+    }
+
+    @Override
+    protected void setAcpSessionId(String sid) {
+        acpSessionId = sid;
+    }
+
+    @Override
+    protected void setPendingAcpResumeId(String resumeId) {
+        pendingAcpResumeId = resumeId;
+    }
+
+    @Override
+    protected JsonArray currentConfigOptions() {
+        return sessionConfigOptions;
+    }
+
+    @Override
+    protected void setCurrentConfigOptions(JsonArray options) {
+        sessionConfigOptions = options;
+    }
+
     /**
-     * Changes one session config option (model or reasoning_effort — the only two ids Grok's handover notes
-     * confirm). Completes with the complete configOptions snapshot from the response, mirroring {@code
-     * OpenCodeAiProcessManager.setConfigOption}: options can be interdependent and no config_option_update
-     * notification is guaranteed for a change this client itself requested, so the response is the only
-     * source of truth.
+     * Also drops config state scoped to the dead connection ({@code sessionConfigOptions},
+     * {@code modelContextWindows}): both are re-read fresh on the next handshake, and a stale model's context
+     * window surviving into a new process would be a silent lie.
      */
-    public CompletableFuture<JsonArray> setConfigOption(String configId, String value) {
-        AcpConnection conn = connection;
-        String sid = acpSessionId;
-        if (conn == null || sid == null) {
-            return CompletableFuture.failedFuture(new IllegalStateException("Grok session is not active"));
+    @Override
+    protected void onConnectionDetached() {
+        activeHandler = null;
+        sessionConfigOptions = null;
+        modelContextWindows = Map.of();
+    }
+
+    /**
+     * Confirmed root cause of a live Grok failure (exit 143, SIGTERM, right after the first prompt, no
+     * stderr) — see {@link AbstractAcpProcessManager#startProcessOnOwnerThread}. Kept so a regression of that
+     * fix shows up here again, with the time since the last prompt to judge how far into a turn it happened.
+     */
+    @Override
+    protected void logProcessExitDiagnostics(int code, boolean suppress) {
+        if (PluginSettings.isDebugJson()) {
+            long sincePrompt = lastPromptSentAtMillis == 0 ? -1 : System.currentTimeMillis() - lastPromptSentAtMillis;
+            LOG.log(Level.INFO,
+                    "Grok process exited: code={0} ({1}), stoppedByUs={2}, msSinceLastPromptSent={3}",
+                    new Object[]{code, code == 143 ? "SIGTERM" : code == 137 ? "SIGKILL" : "see exit code",
+                                 suppress, sincePrompt});
         }
-        JsonObject params = new JsonObject();
-        params.addProperty(AcpJsonKeyEnum.SESSION_ID.key(), sid);
-        params.addProperty(AcpJsonKeyEnum.CONFIG_ID.key(), configId);
-        params.addProperty(AcpJsonKeyEnum.VALUE.key(), value);
-        return conn.sendRequest(AcpMethodEnum.SESSION_SET_CONFIG_OPTION, params)
-                .thenApply(result -> {
-                    JsonArray options = result != null && result.has(AcpJsonKeyEnum.CONFIG_OPTIONS.key())
-                                        && result.get(AcpJsonKeyEnum.CONFIG_OPTIONS.key()).isJsonArray()
-                                        ? result.getAsJsonArray(AcpJsonKeyEnum.CONFIG_OPTIONS.key())
-                                        : new JsonArray();
-                    sessionConfigOptions = options;
-                    return options;
-                });
     }
 
     @Override
@@ -327,69 +347,8 @@ public class GrokAiProcessManager extends AbstractAcpProcessManager {
         return startProcessOnOwnerThread(pb);
     }
 
-    /**
-     * Drains the agent's stderr on its own thread so a chatty Grok can never fill the pipe and block —
-     * mirrors {@code OpenCodeAiProcessManager.startStderrDrainer} exactly. The last {@link #MAX_STDERR_LINES}
-     * lines are kept and shown in the EXITED message.
-     */
-    private void startStderrDrainer(Process process) {
-        Thread t = new Thread(() -> {
-            try (java.io.BufferedReader reader = new java.io.BufferedReader(
-                    new java.io.InputStreamReader(process.getErrorStream(), java.nio.charset.StandardCharsets.UTF_8))) {
-                String line;
-                while ((line = reader.readLine()) != null) {
-                    if (PluginSettings.isDebugJson()) {
-                        LOG.log(Level.WARNING, "grok stderr: {0}", kiwi.ingenuity.netbeans.plugin.aicoder.process.server.McpHookServerUtil.redactAllSecrets(line));
-                    }
-                    recentStderr.add(line);
-                    while (recentStderr.size() > MAX_STDERR_LINES) {
-                        recentStderr.remove(0);
-                    }
-                }
-            }
-            catch (IOException e) {
-                LOG.log(Level.FINE, "grok stderr drainer ended", e);
-            }
-        }, "grok-stderr");
-        t.setDaemon(true);
-        t.start();
-    }
-
-    private void handshakeAndSend(String text, File workDir, Object turn) {
-        try {
-            spawnAndHandshake(workDir);
-        }
-        catch (Exception e) {
-            boolean stillOurTurn;
-            synchronized (this) {
-                stillOurTurn = claimHandshakeTurn(turn);
-                if (stillOurTurn) {
-                    processing = false;
-                }
-            }
-            if (stillOurTurn) {
-                listener.onAiProcessEvent(new StatusEvent(StatusEventTypeEnum.FAILED,
-                        StatusMessageUtil.formatSendFailed(e.getMessage())));
-            }
-            return;
-        }
-        deliverAfterHandshake(text, turn);
-    }
-
-    synchronized void deliverAfterHandshake(String text, Object turn) {
-        if (!claimHandshakeTurn(turn)) {
-            return;
-        }
-        if (!running || pendingDiff) {
-            processing = false;
-            listener.onAiProcessEvent(new StatusEvent(StatusEventTypeEnum.INFO, sendRefusalReason()));
-            listener.onAiProcessEvent(new TurnCompleteEvent());
-            return;
-        }
-        sendTurn(text);
-    }
-
-    private String sendRefusalReason() {
+    @Override
+    protected String sendRefusalReason() {
         if (processing) {
             return "Grok is already processing a turn";
         }
@@ -404,6 +363,7 @@ public class GrokAiProcessManager extends AbstractAcpProcessManager {
      * background thread. The instance monitor is held only for brief state writes, never across the blocking
      * waits.
      */
+    @Override
     protected void spawnAndHandshake(File workDir) throws Exception {
         String debugFilePath = null;
         if (PluginSettings.isDebugJson()) {
@@ -654,7 +614,8 @@ public class GrokAiProcessManager extends AbstractAcpProcessManager {
         return true;
     }
 
-    synchronized void sendTurn(String text) {
+    @Override
+    protected synchronized void sendTurn(String text) {
         JsonObject promptItem = new JsonObject();
         promptItem.addProperty(AcpJsonKeyEnum.TYPE.key(), "text");
         promptItem.addProperty(AcpJsonKeyEnum.TEXT.key(), text);
@@ -678,7 +639,7 @@ public class GrokAiProcessManager extends AbstractAcpProcessManager {
         }
         // A new turn starts with no in-flight tool calls and no held mail interrupt. Stale state could only
         // have survived a teardown path that failed to clear it; resetting here keeps the next turn clean
-        // regardless (F5).
+        // regardless.
         resetMailInterruptHold();
         processing = true;
         lastPromptSentAtMillis = System.currentTimeMillis();
@@ -705,7 +666,7 @@ public class GrokAiProcessManager extends AbstractAcpProcessManager {
             processing = false;
             // Turn over: nothing left mid-turn to interrupt, so clear any HELD mail interrupt WITHOUT
             // sending — the mail was already delivered by the broker and is visible in the session's own
-            // context on its next turn either way (F5, mirrors OpenCode/Claude).
+            // context on its next turn either way (mirrors OpenCode/Claude).
             resetMailInterruptHold();
             wasRunning = running;
             cancelledByUser = false;
@@ -792,7 +753,7 @@ public class GrokAiProcessManager extends AbstractAcpProcessManager {
         synchronized (this) {
             processing = false;
             // Same turn-end clearing as handleTurnComplete — a cancelled/errored turn has no in-flight tool
-            // calls left to interrupt (F5).
+            // calls left to interrupt.
             resetMailInterruptHold();
             cancelledByUser = false;
         }
@@ -802,40 +763,6 @@ public class GrokAiProcessManager extends AbstractAcpProcessManager {
         }
         listener.onAiProcessEvent(new StatusEvent(StatusEventTypeEnum.FAILED,
                 StatusMessageUtil.formatSendFailed(cause != null ? cause.getMessage() : ex.getMessage())));
-    }
-
-    /**
-     * Grok headless-agent mode has no separate mid-turn mail-injection channel (same as OpenCode with
-     * steering off): Mail is delivered by cancelling the turn so the next one flushes the inbox, same as
-     * Cancel — but through the shared {@link #interruptMail} (F5), which HOLDS the cancel while an MCP tool
-     * call this plugin is itself servicing is still in flight, exactly like OpenCode.
-     */
-    @Override
-    public void interrupt(InterruptTypeEnum type) {
-        if (type == InterruptTypeEnum.Mail) {
-            interruptMail();
-            return;
-        }
-        if (type != InterruptTypeEnum.Cancel) {
-            return;
-        }
-        AcpConnection conn;
-        String sid;
-        synchronized (this) {
-            if (!processing) {
-                return;
-            }
-            cancelledByUser = true;
-            processing = false;
-            clearHandshakeTurn();
-            conn = connection;
-            sid = acpSessionId;
-        }
-        cancelPendingPermissionsOnActiveHandler();
-        if (conn != null && sid != null) {
-            sendCancelNotification(conn, sid);
-        }
-        listener.onAiProcessEvent(new StatusEvent(StatusEventTypeEnum.STOPPED, StatusMessageUtil.formatStopped()));
     }
 
     /**
@@ -892,7 +819,7 @@ public class GrokAiProcessManager extends AbstractAcpProcessManager {
 
         GrokAiSession sess = grokAiSession;
         grokAiSession = null;
-        GrokAiMcpRegistrar reg = registrar;
+        var reg = registrar;
         registrar = null;
         if (sess != null) {
             sess.dispose();
@@ -914,138 +841,4 @@ public class GrokAiProcessManager extends AbstractAcpProcessManager {
         recentStderr.clear();
     }
 
-    /**
-     * Drops the published connection of an agent that has died, keeping its ACP session id as the one to
-     * resume, so the next prompt starts a fresh process that picks the conversation up again rather than
-     * writing to a dead pipe forever — mirrors {@code OpenCodeAiProcessManager.detachDeadConnection} exactly.
-     * Also drops config state scoped to the dead connection ({@code sessionConfigOptions},
-     * {@code modelContextWindows}): both are re-read fresh on the next handshake, and a stale model's context
-     * window surviving into a new process would be a silent lie. Caller holds the monitor and closes the
-     * returned connection outside it.
-     */
-    private AcpConnection detachDeadConnection() {
-        AcpConnection orphaned = connection;
-        connection = null;
-        activeHandler = null;
-        if (acpSessionId != null) {
-            pendingAcpResumeId = acpSessionId;
-        }
-        acpSessionId = null;
-        sessionConfigOptions = null;
-        modelContextWindows = Map.of();
-        return orphaned;
-    }
-
-    /**
-     * Handles the connection's read loop ending (crash or graceful exit) independently of {@link #stop()}:
-     * mirrors {@code OpenCodeAiProcessManager.onHandlerDisconnected} exactly, including the hang case. Only
-     * acts if {@code dead} is still the live connection — a disconnect callback from an abandoned connection
-     * (superseded by a later start) must never tear down the one that replaced it.
-     */
-    private void onHandlerDisconnected(AcpConnection dead) {
-        Process owner;
-        synchronized (this) {
-            if (dead == null || connection != dead) {
-                return;
-            }
-            owner = currentProcess;
-        }
-        // An agent that crashed closes its output as it dies, so its exit is normally only moments behind
-        // this callback. Leave that case to handleProcessExit (invoked by the process's own onExit callback),
-        // which reports it once as EXITED. Runs on the dead connection's own notify thread, so the short wait
-        // holds up nothing else.
-        if (owner != null) {
-            try {
-                if (owner.waitFor(DISCONNECT_EXIT_GRACE_MILLIS, TimeUnit.MILLISECONDS)) {
-                    return;
-                }
-            }
-            catch (InterruptedException e) {
-                Thread.currentThread().interrupt();
-                return;
-            }
-        }
-        // Still running with its output gone (the hang case): it can never answer again, and no exit will
-        // come to say so. Kill it and detach from it, so its eventual exit is stale and adds no EXITED;
-        // closing the connection then fails the prompt in flight, which reports the turn's one FAILED.
-        AcpConnection orphaned;
-        synchronized (this) {
-            if (connection != dead) {
-                return; // handleProcessExit or stop() got there first
-            }
-            processing = false;
-            resetMailInterruptHold();
-            orphaned = detachDeadConnection();
-            if (currentProcess == owner) {
-                currentProcess = null;
-            }
-        }
-        if (owner != null) {
-            owner.destroyForcibly();
-        }
-        if (orphaned != null) {
-            orphaned.close();
-        }
-    }
-
-    /**
-     * Reports a crashed (or otherwise unexpectedly exited) process as EXITED, exactly once, and ends any turn
-     * in flight — mirrors {@code OpenCodeAiProcessManager.handleProcessExit} exactly. A process that exits as
-     * part of an orderly {@link #stop()} has already had {@code currentProcess} cleared, so this finds
-     * nothing current and does nothing.
-     */
-    void handleProcessExit(Process process) {
-        boolean suppress;
-        AcpConnection orphaned;
-        synchronized (this) {
-            if (currentProcess != process) {
-                return; // stale exit from a superseded process
-            }
-            processing = false;
-            resetMailInterruptHold();
-            currentProcess = null;
-            suppress = cancelledByUser;
-            cancelledByUser = false;
-            orphaned = detachDeadConnection();
-            if (suppress || process.exitValue() != 0) {
-                // The turn already has its closing status — the EXITED below, or the STOPPED the user's Stop
-                // already sent — whether its handshake or its prompt was in flight. Closing the orphaned
-                // connection below fails the pending request's future; without clearing these first,
-                // claimTurn/claimHandshakeTurn would still succeed for it and add a second closer (a FAILED
-                // from handleTurnError) on top of the one already reported. A clean exit (code 0, never
-                // user-initiated) reports nothing here, so the turn is left for that FAILED to close
-                // normally.
-                clearHandshakeTurn();
-                clearActiveTurn();
-            }
-        }
-        if (orphaned != null) {
-            orphaned.close();
-        }
-        int code = process.exitValue();
-        if (PluginSettings.isDebugJson()) {
-            long sincePrompt = lastPromptSentAtMillis == 0 ? -1 : System.currentTimeMillis() - lastPromptSentAtMillis;
-            LOG.log(Level.INFO,
-                    "Grok process exited: code={0} ({1}), stoppedByUs={2}, msSinceLastPromptSent={3}",
-                    new Object[]{code, code == 143 ? "SIGTERM" : code == 137 ? "SIGKILL" : "see exit code",
-                                 suppress, sincePrompt});
-        }
-        if (!suppress && code != 0) {
-            listener.onAiProcessEvent(new StatusEvent(StatusEventTypeEnum.EXITED,
-                    StatusMessageUtil.formatExited("Grok", code, new ArrayList<>(recentStderr))));
-        }
-    }
-
-    @Override
-    public void resumeSession(String existingSessionId) {
-        if (existingSessionId == null || existingSessionId.isBlank()) {
-            return;
-        }
-        pendingAcpResumeId = existingSessionId;
-    }
-
-    @Override
-    public boolean isMcpActive() {
-        return registrar != null;
-    }
 }

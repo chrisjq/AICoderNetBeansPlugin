@@ -22,9 +22,10 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
 /**
- * F5 for Grok: a Mail interrupt must never abort an MCP tool call this plugin is itself servicing — Grok,
- * like OpenCode, treats {@code session/cancel} as "the user doesn't want to proceed" and cuts whatever the
- * agent is waiting on, tool calls included. The hold itself lives on {@code AbstractAcpProcessManager} null ({@link kiwi.ingenuity.netbeans.plugin.aicoder.ai.acp.AbstractAcpProcessManager#interruptMail}/
+ * The Mail interrupt hold for Grok: a Mail interrupt must never abort an MCP tool call this plugin is itself
+ * servicing — Grok, like OpenCode, treats {@code session/cancel} as "the user doesn't want to proceed" and
+ * cuts whatever the agent is waiting on, tool calls included. The hold itself lives on
+ * {@code AbstractAcpProcessManager} ({@link kiwi.ingenuity.netbeans.plugin.aicoder.ai.acp.AbstractAcpProcessManager#interruptMail}/
  * {@code trackToolCallLifecycle}), shared verbatim with OpenCode (see {@code OpenCodeMailInterruptHoldTest},
  * whose tests this mirrors) — this file proves Grok's own wiring (its handler's tool-call tracker, its
  * {@code interrupt(Mail)} delegating to the shared hold) actually reaches that shared machinery, not that the

@@ -21,8 +21,7 @@ import org.junit.jupiter.api.Test;
 
 /**
  * Spec *Mail* (DURING_TURN): "the mail notice is sent as steer... pi delivers it once running tool calls
- * finish... so the interrupt hold built for Claude in F5 is not needed". Verifies {@code interrupt(Mail)}
- * takes the {@code
+ * finish... so the interrupt hold built for Claude is not needed". Verifies {@code interrupt(Mail)} takes the {@code
  * steer} branch while a turn is running (captured via the fake process's stdin echoed to a file — see {@link
  * #capturedStdinFile}) and is a no-op while idle (the generic idle-delivery path calls {@code sendPrompt}
  * itself, not exercised here). Also pins the behavioural difference from Cancel: unlike {@code abort},

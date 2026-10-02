@@ -12,6 +12,7 @@ public enum AcpJsonKeyEnum {
     ERROR("error", "JSON-RPC error object"),
     CODE("code", "JSON-RPC error code"),
     MESSAGE("message", "Error or message field"),
+    DATA("data", "JSON-RPC error data object"),
     RESULT("result", "JSON-RPC result object"),
     SESSION_ID("sessionId", "ACP session identifier"),
     UPDATE("update", "Session update object"),

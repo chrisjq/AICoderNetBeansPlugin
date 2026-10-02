@@ -178,7 +178,7 @@ class OllamaAiInfoBarExtensionTest {
         SwingUtilities.invokeAndWait(() -> ext.onBusyChanged(true));
         assertFalse(compactBtn.isEnabled(), "compact must disable while busy");
         assertFalse(clearBtn.isEnabled(), "clear must disable while busy");
-        assertFalse(modelCombo.isEnabled(), "model combo must disable while busy (A2)");
+        assertFalse(modelCombo.isEnabled(), "model combo must disable while busy");
 
         SwingUtilities.invokeAndWait(() -> ext.onBusyChanged(false));
         assertTrue(compactBtn.isEnabled(), "compact must re-enable once ready again");
@@ -203,10 +203,9 @@ class OllamaAiInfoBarExtensionTest {
     }
 
     /**
-     * A1 fix: the gauge must flip to "summarising" only once a listener confirms the compaction actually
-     * started, never optimistically before asking — a refusal (not running, already busy, or runWork
-     * declining) fires no onBusyChanged, so nothing would ever clear an optimistic flip made before the
-     * refusal was known.
+     * The gauge must flip to "summarising" only once a listener confirms the compaction actually started,
+     * never optimistically before asking — a refusal (not running, already busy, or runWork declining) fires
+     * no onBusyChanged, so nothing would ever clear an optimistic flip made before the refusal was known.
      */
     @Test
     void gaugeStaysNotSummarisingWhenCompactIsRefused() throws Exception {

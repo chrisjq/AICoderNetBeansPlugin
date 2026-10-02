@@ -171,8 +171,8 @@ public final class AiTopComponent extends TopComponent implements AiProcessEvent
      * and this sentence has to be true in both.</p>
      *
      * <p>
-     * F5: Claude and OpenCode now HOLD a Mail interrupt while a tool call is in flight and deliver it once
-     * the call returns — a 180 s safety valve backstops a call that never reports a terminal status —
+     * Claude and OpenCode now HOLD a Mail interrupt while a tool call is in flight and deliver it once the
+     * call returns — a 180 s safety valve backstops a call that never reports a terminal status —
      * live-verified for both. A completed call with a real result is therefore the NORMAL case, not the
      * exception, and the notice leads with that. An abort can still happen (the safety valve, or the host's
      * own cancellation), so the second paragraph keeps the outcome as UNKNOWN for that residual case rather

@@ -449,6 +449,45 @@ class OpenCodeAiProcessManagerTest {
         assertEquals("cancelled", result.getAsJsonObject("outcome").get("outcome").getAsString());
     }
 
+    // ---- review: interrupt() must capture the permission canceller UNDER THE LOCK, not re-read
+    // activeHandler after releasing it, or a concurrent handleProcessExit/onHandlerDisconnected/stop()
+    // clearing that field in the gap would leave a pending permission dialog undismissed ----
+    @Test
+    void interruptCapturesThePermissionCancellerUnderTheLock_soAConcurrentHandlerClearCannotLeaveADialogUndismissed() throws Exception {
+        List<AiProcessEvent> fired = new ArrayList<>();
+        OpenCodeAcpClientHandler handler = new OpenCodeAcpClientHandler(fired::add, () -> {
+        });
+        CompletableFuture<JsonObject> pending = handler.onRequestPermission(buildMinimalPermissionParams());
+        assertFalse(pending.isDone());
+
+        OpenCodeAiProcessManager manager = new OpenCodeAiProcessManager(e -> {
+        }) {
+            {
+                running = true;
+                processing = true;
+                activeHandler = handler;
+            }
+
+            @Override
+            protected Runnable capturePermissionCancellerUnderLock() {
+                // Simulates a concurrent handleProcessExit/onHandlerDisconnected/stop() clearing
+                // activeHandler in the window between this capture (still under interrupt()'s lock) and the
+                // later call to the returned canceller (after the lock is released) — the exact race the fix
+                // must survive.
+                Runnable canceller = super.capturePermissionCancellerUnderLock();
+                activeHandler = null;
+                return canceller;
+            }
+        };
+
+        manager.interrupt(InterruptTypeEnum.Cancel);
+
+        JsonObject result = pending.get(1, TimeUnit.SECONDS);
+        assertEquals("cancelled", result.getAsJsonObject("outcome").get("outcome").getAsString(),
+                "the handler captured under the lock must still have its pending permission cancelled, even "
+                + "though activeHandler was already cleared before the canceller ran");
+    }
+
     // ---- "Write: null" defect: shell commands must not surface as a file write ----
     @Test
     void executeKindPermissionRaisesConfirmEventWithCommandAsDisplayText() throws Exception {

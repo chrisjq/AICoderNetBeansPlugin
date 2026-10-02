@@ -1052,7 +1052,7 @@ class GrokAiProcessManagerAcpTest {
         volatile CountDownLatch exitCallbackGate;
 
         @Override
-        void handleProcessExit(Process dead) {
+        public void handleProcessExit(Process dead) {
             CountDownLatch gate = exitCallbackGate;
             if (gate != null && !threads.contains(Thread.currentThread())) {
                 try {

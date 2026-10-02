@@ -21,22 +21,22 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
 /**
- * #9 / F5: a Mail interrupt must never abort a tool call this plugin is itself servicing over the MCP HTTP endpoint —
- * the CLI treats {@code control_request(interrupt)} as "the user doesn't want to proceed" and cancels whatever it's
- * waiting on. These tests drive {@link ClaudeAiProcessManager} exactly like {@link ClaudeAiProcessManagerStateTest}
- * does: a real {@code /bin/cat} subprocess stands in for the CLI, and synthetic stream-json lines are fed to it via
- * {@link ClaudePersistentSession#sendRawLine}, which cat echoes straight back out as if the CLI had sent it — the same
- * line-consumer path (including {@code trackToolCallLifecycle}) that real CLI output would take. No real CLI is
- * launched.
+ * A Mail interrupt must never abort a tool call this plugin is itself servicing over the MCP HTTP endpoint —
+ * the CLI treats {@code control_request(interrupt)} as "the user doesn't want to proceed" and cancels
+ * whatever it's waiting on. These tests drive {@link ClaudeAiProcessManager} exactly like
+ * {@link ClaudeAiProcessManagerStateTest} does: a real {@code /bin/cat} subprocess stands in for the CLI, and
+ * synthetic stream-json lines are fed to it via {@link ClaudePersistentSession#sendRawLine}, which cat echoes
+ * straight back out as if the CLI had sent it — the same line-consumer path (including
+ * {@code trackToolCallLifecycle}) that real CLI output would take. No real CLI is launched.
  */
 class ClaudeAiProcessManagerMailInterruptHoldTest {
 
     private static final String TOOL_USE_LINE
-            = "{\"type\":\"assistant\",\"message\":{\"role\":\"assistant\",\"content\":"
-            + "[{\"type\":\"tool_use\",\"id\":\"toolu_1\",\"name\":\"Read\",\"input\":{}}]}}";
+                                = "{\"type\":\"assistant\",\"message\":{\"role\":\"assistant\",\"content\":"
+                                  + "[{\"type\":\"tool_use\",\"id\":\"toolu_1\",\"name\":\"Read\",\"input\":{}}]}}";
     private static final String TOOL_RESULT_LINE
-            = "{\"type\":\"user\",\"message\":{\"role\":\"user\",\"content\":"
-            + "[{\"type\":\"tool_result\",\"tool_use_id\":\"toolu_1\",\"content\":\"ok\"}]}}";
+                                = "{\"type\":\"user\",\"message\":{\"role\":\"user\",\"content\":"
+                                  + "[{\"type\":\"tool_result\",\"tool_use_id\":\"toolu_1\",\"content\":\"ok\"}]}}";
     private static final String RESULT_LINE = "{\"type\":\"result\",\"subtype\":\"success\"}";
 
     private TestableClaudeAiProcessManager manager;
@@ -68,9 +68,9 @@ class ClaudeAiProcessManagerMailInterruptHoldTest {
     @Test
     void countToolUseStartsCountsEachBlockInAnAssistantMessage() {
         String twoToolUses = "{\"type\":\"assistant\",\"message\":{\"role\":\"assistant\",\"content\":"
-                + "[{\"type\":\"tool_use\",\"id\":\"a\",\"name\":\"Read\",\"input\":{}},"
-                + "{\"type\":\"text\",\"text\":\"thinking\"},"
-                + "{\"type\":\"tool_use\",\"id\":\"b\",\"name\":\"Read\",\"input\":{}}]}}";
+                             + "[{\"type\":\"tool_use\",\"id\":\"a\",\"name\":\"Read\",\"input\":{}},"
+                             + "{\"type\":\"text\",\"text\":\"thinking\"},"
+                             + "{\"type\":\"tool_use\",\"id\":\"b\",\"name\":\"Read\",\"input\":{}}]}}";
         assertEquals(2, ClaudeAiProcessManager.countToolUseStarts(twoToolUses));
         assertEquals(0, ClaudeAiProcessManager.countToolUseStarts(TOOL_RESULT_LINE), "wrong event type");
         assertEquals(0, ClaudeAiProcessManager.countToolUseStarts("not json"), "malformed line must not throw");

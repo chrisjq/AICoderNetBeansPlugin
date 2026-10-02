@@ -232,9 +232,9 @@ class ContextProviderPreambleTest {
     }
 
     /**
-     * The gap found while investigating F4: buildIdentityBlock() is unconditionally prepended on every
-     * buildPreamble() call (ContextProvider.java's stateful-type branch), unlike the project baseline, which
-     * is delta-only. Nothing previously asserted that directly.
+     * The gap found while investigating the awaiting-reply section: buildIdentityBlock() is unconditionally
+     * prepended on every buildPreamble() call (ContextProvider.java's stateful-type branch), unlike the
+     * project baseline, which is delta-only. Nothing previously asserted that directly.
      */
     @Test
     void identityBlockIsResentOnSendTwoForAStatefulType() {
@@ -247,7 +247,7 @@ class ContextProviderPreambleTest {
                 "identity is resent every turn even though the project baseline is delta-only");
     }
 
-    // ---- F4: "## Messages awaiting your reply" ----
+    // ---- "## Messages awaiting your reply" ----
     private static AiSession registeredSession(AiTypeEnum type) {
         AiSession session = AiSession.create(null, type);
         session.settings().setAllowInterAiComms(Boolean.TRUE);

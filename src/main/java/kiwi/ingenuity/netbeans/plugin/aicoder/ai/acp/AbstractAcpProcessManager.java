@@ -2,11 +2,18 @@ package kiwi.ingenuity.netbeans.plugin.aicoder.ai.acp;
 
 import com.google.gson.JsonArray;
 import com.google.gson.JsonObject;
+import java.io.BufferedReader;
+import java.io.File;
 import java.io.IOException;
+import java.io.InputStreamReader;
+import java.nio.charset.StandardCharsets;
+import java.util.ArrayList;
 import java.util.HashSet;
+import java.util.List;
 import java.util.Set;
 import java.util.concurrent.Callable;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
@@ -16,7 +23,14 @@ import java.util.logging.Logger;
 import kiwi.ingenuity.netbeans.plugin.aicoder.PluginSettings;
 import kiwi.ingenuity.netbeans.plugin.aicoder.StringConst;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.AiProcessManager;
+import kiwi.ingenuity.netbeans.plugin.aicoder.ai.events.StatusEvent;
+import kiwi.ingenuity.netbeans.plugin.aicoder.ai.events.StatusEventTypeEnum;
+import kiwi.ingenuity.netbeans.plugin.aicoder.ai.events.TurnCompleteEvent;
+import kiwi.ingenuity.netbeans.plugin.aicoder.ai.session.InterruptTypeEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.events.AiProcessEventListener;
+import kiwi.ingenuity.netbeans.plugin.aicoder.process.server.AiMcpRegistrar;
+import kiwi.ingenuity.netbeans.plugin.aicoder.process.server.McpHookServerUtil;
+import kiwi.ingenuity.netbeans.plugin.aicoder.utils.StatusMessageUtil;
 
 /**
  * Shared turn ownership for ACP-backed process managers.
@@ -31,8 +45,8 @@ public abstract class AbstractAcpProcessManager extends AiProcessManager {
     private static final Logger LOG = Logger.getLogger(AbstractAcpProcessManager.class.getName());
 
     /**
-     * Backstop wait for a HELD Mail interrupt (F5): if an in-flight tool call never reports a terminal
-     * status, the safety valve delivers {@code session/cancel} anyway after this long.
+     * Backstop wait for a HELD Mail interrupt: if an in-flight tool call never reports a terminal status, the
+     * safety valve delivers {@code session/cancel} anyway after this long.
      */
     public static final long MAIL_INTERRUPT_HOLD_MILLIS = 180_000L;
 
@@ -55,6 +69,26 @@ public abstract class AbstractAcpProcessManager extends AiProcessManager {
     private Object handshakeTurn;
 
     private Object activeTurn;
+
+    /**
+     * How many of the agent's stderr lines are kept to show in an EXITED message. Shared by every ACP
+     * backend's {@link #startStderrDrainer}/{@link #handleProcessExit}.
+     */
+    protected static final int MAX_STDERR_LINES = 100;
+
+    /**
+     * The agent's most recent stderr lines, drained by {@link #startStderrDrainer} on its own thread so a
+     * chatty agent can never fill the pipe and block. Never private: each backend's own {@code stop()} clears
+     * it (not moved here — stop() is explicitly backend-specific), so subclasses need direct access.
+     */
+    protected final List<String> recentStderr = new CopyOnWriteArrayList<>();
+
+    /**
+     * The registered MCP server for this session, or null if none is active — shared storage for
+     * {@link #isMcpActive}. Every ACP backend registers an {@link AiMcpRegistrar} the same way; only its
+     * construction (in each backend's own {@code start()}) differs.
+     */
+    protected volatile AiMcpRegistrar registrar = null;
 
     protected AbstractAcpProcessManager(AiProcessEventListener listener) {
         super(listener);
@@ -102,7 +136,7 @@ public abstract class AbstractAcpProcessManager extends AiProcessManager {
         activeTurn = null;
     }
 
-    // ---- F5: Mail interrupt must never abort an MCP tool call this plugin is itself servicing ----
+    // ---- Mail interrupt must never abort an MCP tool call this plugin is itself servicing ----
     // ACP backends treat session/cancel as "the user doesn't want to proceed" and cut whatever the agent is
     // waiting on, including a tool call this plugin is itself servicing over the MCP HTTP endpoint. Cutting
     // that call loses work for a message that is already queued in the inbox anyway, so a Mail interrupt is
@@ -204,9 +238,9 @@ public abstract class AbstractAcpProcessManager extends AiProcessManager {
 
     /**
      * Delivers an inbox notification by cancelling the running turn, so the agent reads its mail on the next
-     * turn, through {@link #sendCancelNotification}, with the F5 hold described above. ACP has no separate
-     * mail-injection method; {@code session/cancel} ends the turn and cuts any in-flight tool call with it.
-     * The queued inbox message is delivered on the next turn through the normal inbox flush.
+     * turn, through {@link #sendCancelNotification}, with the in-flight-tool-call hold described above. ACP
+     * has no separate mail-injection method; {@code session/cancel} ends the turn and cuts any in-flight tool
+     * call with it. The queued inbox message is delivered on the next turn through the normal inbox flush.
      *
      * <p>
      * Every failure path is a silent no-op by design: the message is already queued in the inbox and will be
@@ -308,7 +342,7 @@ public abstract class AbstractAcpProcessManager extends AiProcessManager {
     }
 
     /**
-     * Backstop for a HELD Mail interrupt (F5): if {@link #inFlightToolCalls} never returns to zero — a lost
+     * Backstop for a HELD Mail interrupt: if {@link #inFlightToolCalls} never returns to zero — a lost
      * update, an unknown status, or the agent itself hanging — {@link #trackToolCallLifecycle} would
      * otherwise never flush it and the interrupt would wait forever. Delivers the cancel anyway after
      * {@link #mailInterruptSafetyValveMillis}. Guards on {@code currentAcpConnection() == connAtHold} (the
@@ -607,5 +641,458 @@ public abstract class AbstractAcpProcessManager extends AiProcessManager {
             reportCrashExit.run();
             throw new IOException(backendDisplayNameForLogging() + " exited during start-up");
         }
+    }
+
+    // ---- Items below this point moved here from GrokAiProcessManager/OpenCodeAiProcessManager, each
+    // previously an identical (or near-identical) copy. Abstract methods are declared here only because a
+    // method that IS moving needs to call them; their own bodies live in each subclass exactly as before and
+    // are not touched by this refactor (spawnAndHandshake, sendTurn). ----
+    /**
+     * Spawns the agent process and performs the ACP handshake. Always called on a background thread. Not
+     * moved here — each backend's launch command, env vars and port/debug-file handling are its own — but
+     * declared abstract so {@link #handshakeAndSend} (which IS shared) can call it.
+     */
+    protected abstract void spawnAndHandshake(File workDir) throws Exception;
+
+    /**
+     * Sends one turn's prompt over the live connection. Not moved here — the prompt text each backend sends
+     * (e.g. OpenCode's MCP-tool-preference prefix) and the suppression flags it clears first are its own —
+     * but declared abstract so {@link #deliverAfterHandshake} (which IS shared) can call it.
+     */
+    protected abstract void sendTurn(String text);
+
+    /**
+     * The reason a send was refused, for the INFO a refused send must post before its TurnCompleteEvent. Each
+     * backend has its own set of reasons (e.g. OpenCode's compaction-in-progress case, which Grok has no
+     * equivalent of), so this stays abstract rather than a shared list of reasons.
+     */
+    protected abstract String sendRefusalReason();
+
+    /**
+     * Sets the live ACP connection, or clears it ({@code null}). A setter rather than a hoisted field: the
+     * field itself stays in each backend's own package-private storage, because existing tests in each
+     * backend's own package read and write it directly by name.
+     */
+    protected abstract void setAcpConnection(AcpConnection conn);
+
+    /**
+     * Sets the live ACP session id, or clears it ({@code null}). See {@link #setAcpConnection} for why this
+     * is a setter rather than a hoisted field.
+     */
+    protected abstract void setAcpSessionId(String sid);
+
+    /**
+     * Sets the session id the next handshake should resume, or clears it ({@code null}). See
+     * {@link #setAcpConnection} for why this is a setter rather than a hoisted field.
+     */
+    protected abstract void setPendingAcpResumeId(String resumeId);
+
+    /**
+     * The configOptions array captured from the last session/new, session/load (or session/resume), or
+     * set_config_option response. See {@link #setAcpConnection} for why this is an accessor rather than a
+     * hoisted field.
+     */
+    protected abstract JsonArray currentConfigOptions();
+
+    /**
+     * Stores the configOptions array. See {@link #setAcpConnection} for why this is a setter rather than a
+     * hoisted field.
+     */
+    protected abstract void setCurrentConfigOptions(JsonArray options);
+
+    /**
+     * Runs after {@link #detachDeadConnection} clears the connection/session/resume fields above, for state
+     * scoped to one backend's own connection (its active permission handler, cached config or model data,
+     * steer capability, ...). No-op by default.
+     */
+    protected void onConnectionDetached() {
+    }
+
+    /**
+     * Whether {@link #handleProcessExit} resets {@code cancelledByUser} after reading it into the
+     * suppress-EXITED decision. True (the default) matches Grok's original copy of this method; OpenCode's
+     * copy did not reset it, so its flag is instead cleared by the next {@code sendPrompt} — kept exactly as
+     * found rather than silently unified, since nothing confirms which is intentional.
+     */
+    protected boolean resetCancelledByUserOnProcessExit() {
+        return true;
+    }
+
+    /**
+     * Backend-specific diagnostics logged right after a process exit, before the EXITED status (if any) is
+     * reported. No-op by default (OpenCode's original copy logged nothing here); Grok overrides to log its
+     * exit-code annotation and time since the last prompt.
+     */
+    protected void logProcessExitDiagnostics(int code, boolean suppress) {
+    }
+
+    /**
+     * Whether {@code candidateId} looks like this backend's own session id, before {@link #resumeSession}
+     * accepts it as the next handshake's resume target. True by default (Grok's original copy of this method
+     * accepted anything non-blank); OpenCode overrides to require its {@code ses_} prefix, guarding against a
+     * stray plugin-level UUID reaching the resume slot.
+     */
+    protected boolean isPlausibleResumeId(String candidateId) {
+        return true;
+    }
+
+    /**
+     * Diagnostic hook for {@link #interrupt}: a Cancel arrived with no turn in flight. No-op by default
+     * (Grok's original copy of this method logged nothing here); OpenCode overrides to log it.
+     */
+    protected void onCancelIgnored() {
+    }
+
+    /**
+     * Diagnostic hook for {@link #interrupt}: a Cancel was accepted and the turn is winding down. No-op by
+     * default; OpenCode overrides to log it.
+     */
+    protected void onCancelAccepted(String sid, boolean connected) {
+    }
+
+    /**
+     * Diagnostic hook for {@link #interrupt}: {@code session/cancel} was actually sent. No-op by default;
+     * OpenCode overrides to log it.
+     */
+    protected void onCancelNotificationSent(String sid) {
+    }
+
+    /**
+     * Captures, under the caller's lock, a canceller bound to whatever permission handler is active AT THIS
+     * MOMENT — not a lazy reference that re-reads the field later. {@link #interrupt} calls this while still
+     * holding the monitor, then runs the returned canceller only after releasing it, so a concurrent
+     * {@link #handleProcessExit}/{@link #onHandlerDisconnected}/{@code stop()} clearing the active handler in
+     * that window can never leave a pending permission dialog undismissed (review finding: OpenCode's
+     * baseline {@code interrupt} captured its handler inside the lock for exactly this reason; the first cut
+     * of the shared version lost that by calling {@link #cancelPendingPermissionsOnActiveHandler} — which
+     * re-reads the field — only after the unlock). Implementations must evaluate the active handler eagerly
+     * (e.g. {@code handler::cancelPendingPermissions} bound to a local already read from the field) and
+     * return null when there is none to cancel.
+     */
+    protected abstract Runnable capturePermissionCancellerUnderLock();
+
+    /**
+     * Drains the agent's stderr on its own thread so a chatty agent can never fill the pipe and block. The
+     * last {@link #MAX_STDERR_LINES} lines are kept and shown in the EXITED message. Previously an identical
+     * copy in both {@code GrokAiProcessManager} and {@code OpenCodeAiProcessManager}, differing only in the
+     * backend name baked into the log text and thread name — now read from
+     * {@link #backendDisplayNameForLogging}.
+     */
+    protected final void startStderrDrainer(Process process) {
+        String name = backendDisplayNameForLogging().toLowerCase();
+        Thread t = new Thread(() -> {
+            try (BufferedReader reader = new BufferedReader(
+                    new InputStreamReader(process.getErrorStream(), StandardCharsets.UTF_8))) {
+                String line;
+                while ((line = reader.readLine()) != null) {
+                    if (PluginSettings.isDebugJson()) {
+                        LOG.log(Level.WARNING, "{0} stderr: {1}", new Object[]{name, McpHookServerUtil.redactAllSecrets(line)});
+                    }
+                    recentStderr.add(line);
+                    while (recentStderr.size() > MAX_STDERR_LINES) {
+                        recentStderr.remove(0);
+                    }
+                }
+            }
+            catch (IOException e) {
+                LOG.log(Level.FINE, name + " stderr drainer ended", e);
+            }
+        }, name + "-stderr");
+        t.setDaemon(true);
+        t.start();
+    }
+
+    /**
+     * {@code dead}'s reader lost its stream. {@link #handleProcessExit} handles exit reporting; this drops
+     * the dead connection so the next prompt re-handshakes instead of writing to it. Only for the connection
+     * actually published: a handshake still in flight owns its own (see
+     * {@link #publishConnectionOrReportExit}'s stream-ended check), and a late callback from a connection
+     * already replaced must not touch the one that replaced it. Previously an identical copy in both
+     * backends.
+     */
+    protected final void onHandlerDisconnected(AcpConnection dead) {
+        Process owner;
+        synchronized (this) {
+            if (dead == null || currentAcpConnection() != dead) {
+                return;
+            }
+            owner = currentProcess;
+        }
+        // An agent that crashed closes its output as it dies, so its exit is normally only moments behind
+        // this callback. Leave that case to handleProcessExit, which reports it once as EXITED (with the exit
+        // code and stderr) and drops the connection itself. Runs on the dead connection's own notify thread,
+        // so the short wait holds up nothing else.
+        if (owner != null) {
+            try {
+                if (owner.waitFor(DISCONNECT_EXIT_GRACE_MILLIS, TimeUnit.MILLISECONDS)) {
+                    return;
+                }
+            }
+            catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                return;
+            }
+        }
+        // Still running with its output gone: it can never answer again, and no exit will come to say so.
+        // Kill it and detach from it, so its eventual exit is stale and adds no EXITED; closing the connection
+        // then fails the prompt in flight, which reports the turn's one FAILED.
+        AcpConnection orphaned;
+        synchronized (this) {
+            if (currentAcpConnection() != dead) {
+                return; // handleProcessExit or stop() got there first
+            }
+            processing = false;
+            resetMailInterruptHold();
+            orphaned = detachDeadConnection();
+            if (currentProcess == owner) {
+                currentProcess = null;
+            }
+        }
+        if (owner != null) {
+            owner.destroyForcibly();
+        }
+        if (orphaned != null) {
+            orphaned.close();
+        }
+    }
+
+    /**
+     * Drops the published connection of an agent that has died, keeping its ACP session id as the one to
+     * resume, so the next prompt starts a fresh process that picks the conversation up again rather than
+     * writing to a dead pipe forever. Caller holds the monitor and closes the returned connection outside it.
+     * Previously an identical copy in both backends, apart from the backend-specific resets now in
+     * {@link #onConnectionDetached}.
+     */
+    protected final AcpConnection detachDeadConnection() {
+        AcpConnection orphaned = currentAcpConnection();
+        String sidToKeep = currentAcpSessionId();
+        setAcpConnection(null);
+        if (sidToKeep != null) {
+            setPendingAcpResumeId(sidToKeep);
+        }
+        setAcpSessionId(null);
+        onConnectionDetached();
+        return orphaned;
+    }
+
+    /**
+     * Reports a crashed (or otherwise unexpectedly exited) process as EXITED, exactly once, and ends any turn
+     * in flight. A process that exits as part of an orderly {@code stop()} has already had
+     * {@code currentProcess} cleared, so this finds nothing current and does nothing. Previously an identical
+     * copy in both backends apart from {@link #resetCancelledByUserOnProcessExit} and
+     * {@link #logProcessExitDiagnostics} (see their javadoc for the difference each preserves). Public (not
+     * the package-private visibility this had in each backend before the move) and NOT final: several
+     * existing test fixtures in each backend's own package call it directly, or subclass the process manager
+     * and override it (wrapping with {@code super.handleProcessExit(...)}) to observe or gate a simulated
+     * exit — both need it to stay overridable and visible across packages.
+     */
+    public void handleProcessExit(Process process) {
+        boolean suppress;
+        AcpConnection orphaned;
+        synchronized (this) {
+            if (currentProcess != process) {
+                return; // stale exit from a superseded process
+            }
+            processing = false;
+            resetMailInterruptHold();
+            currentProcess = null;
+            suppress = cancelledByUser;
+            if (resetCancelledByUserOnProcessExit()) {
+                cancelledByUser = false;
+            }
+            orphaned = detachDeadConnection();
+            if (suppress || process.exitValue() != 0) {
+                // The turn already has its closing status — the EXITED below, or the STOPPED the user's Stop
+                // already sent — whether its handshake or its prompt was in flight. Closing the orphaned
+                // connection below fails the pending request's future; without clearing these first,
+                // claimTurn/claimHandshakeTurn would still succeed for it and add a second closer (a FAILED
+                // from handleTurnError) on top of the one already reported. A clean exit (code 0, never
+                // user-initiated) reports nothing here, so the turn is left for that FAILED to close
+                // normally.
+                clearHandshakeTurn();
+                clearActiveTurn();
+            }
+        }
+        if (orphaned != null) {
+            orphaned.close();
+        }
+        int code = process.exitValue();
+        logProcessExitDiagnostics(code, suppress);
+        // A compaction (or other non-turn work) whose process died must not be left locking the UI: its
+        // closing FAILED comes from here, not from a response that will never arrive. Harmless — and always a
+        // no-op — for a backend that never starts non-turn work through runWork() in the first place.
+        if (!failWorkInFlight(backendDisplayNameForLogging() + " exited (code " + code + ") while work was in progress")
+            && !suppress && code != 0) {
+            listener.onAiProcessEvent(new StatusEvent(StatusEventTypeEnum.EXITED,
+                    StatusMessageUtil.formatExited(backendDisplayNameForLogging(), code, new ArrayList<>(recentStderr))));
+        }
+    }
+
+    /**
+     * Background-thread entry point when no ACP connection exists yet. Calls {@link #spawnAndHandshake}
+     * (which blocks up to 60 s), then hands the prompt to {@link #deliverAfterHandshake} once the connection
+     * is live. Previously an identical copy in both backends.
+     */
+    protected final void handshakeAndSend(String text, File workDir, Object turn) {
+        try {
+            spawnAndHandshake(workDir);
+        }
+        catch (Exception e) {
+            boolean stillOurTurn;
+            synchronized (this) {
+                stillOurTurn = claimHandshakeTurn(turn);
+                if (stillOurTurn) {
+                    processing = false;
+                }
+            }
+            // Not our turn any more: Stop, stop() or the exit already ended it, and processing may now
+            // belong to a newer turn — report nothing and leave it alone.
+            if (stillOurTurn) {
+                listener.onAiProcessEvent(new StatusEvent(StatusEventTypeEnum.FAILED,
+                        StatusMessageUtil.formatSendFailed(e.getMessage())));
+            }
+            return;
+        }
+        deliverAfterHandshake(text, turn);
+    }
+
+    /**
+     * Post-handshake delivery of the prompt queued by {@code sendPrompt}. Public (not the package-private
+     * visibility this had in each backend before the move): each backend's own test suite calls it directly
+     * by name, from a class in that backend's package rather than a subclass of this one, so it must be
+     * visible across packages. Keeps {@code processing} true through the hand-off: {@code sendTurn} rearms
+     * it, so only paths that never reach sendTurn clear it — exactly once, under the monitor. Runs entirely
+     * under the monitor so a Stop cannot land between the turn check and {@code sendTurn}. Previously an
+     * identical copy in both backends.
+     */
+    public final synchronized void deliverAfterHandshake(String text, Object turn) {
+        if (!claimHandshakeTurn(turn)) {
+            // The turn ended while the handshake ran — Stop, stop() or an exit already gave it its closing
+            // status. Sending it now would start a turn the user stopped.
+            return;
+        }
+        if (!running || pendingDiff) {
+            processing = false; // stop()/diff panel won the race; nobody else will rearm
+            listener.onAiProcessEvent(new StatusEvent(StatusEventTypeEnum.INFO, sendRefusalReason()));
+            listener.onAiProcessEvent(new TurnCompleteEvent());
+            return;
+        }
+        // Connection is now established; deliver through the normal turn path. Deliberately sendTurn(), not
+        // sendPrompt(): with processing still held true, sendPrompt's own guard would reject the re-entry and
+        // silently drop the prompt.
+        sendTurn(text);
+    }
+
+    /**
+     * Cancels the in-flight turn (Cancel) or delivers mail by cancelling it (Mail, via
+     * {@link #interruptMail}). Previously an identical copy in both backends apart from OpenCode's extra
+     * debug-JSON logging, now in {@link #onCancelIgnored}/{@link #onCancelAccepted}/
+     * {@link #onCancelNotificationSent}.
+     *
+     * <p>
+     * Mail DOES reach the agent mid-turn for both backends (live-confirmed) — it just has no NON-CANCELLING
+     * injection channel to do it with, unlike Codex's turn/steer, Copilot's immediate setPrompt, or Pi's
+     * steer. Instead it travels over the same {@code session/cancel} notification, with the same in-flight
+     * tool-call hold in {@link #interruptMail}, that Cancel uses here: the running turn is aborted and the
+     * mail is delivered as the next one (ABORTS_TURN).
+     *
+     * <p>
+     * The permission canceller is captured under the lock ({@link #capturePermissionCancellerUnderLock}), not
+     * read from the active-handler field again after releasing it: a concurrent
+     * {@link #handleProcessExit}/{@link #onHandlerDisconnected}/{@code stop()} clearing that field in the gap
+     * between unlock and the cancel would otherwise leave a pending permission dialog undismissed (review
+     * finding against OpenCode's baseline, which captured its handler inside the lock for the same reason).
+     */
+    public final void interrupt(InterruptTypeEnum type) {
+        if (type == InterruptTypeEnum.Mail) {
+            interruptMail();
+            return;
+        }
+        if (type != InterruptTypeEnum.Cancel) {
+            return;
+        }
+        AcpConnection conn;
+        String sid;
+        Runnable permissionCanceller;
+        synchronized (this) {
+            if (!processing) {
+                onCancelIgnored();
+                return;
+            }
+            cancelledByUser = true;
+            processing = false;
+            clearHandshakeTurn(); // STOPPED below closes it; a handshake still running must not send it
+            conn = currentAcpConnection();
+            sid = currentAcpSessionId();
+            permissionCanceller = capturePermissionCancellerUnderLock();
+        }
+        onCancelAccepted(sid, conn != null);
+        if (permissionCanceller != null) {
+            permissionCanceller.run();
+        }
+        if (conn != null && sid != null) {
+            sendCancelNotification(conn, sid);
+            onCancelNotificationSent(sid);
+        }
+        listener.onAiProcessEvent(new StatusEvent(StatusEventTypeEnum.STOPPED, StatusMessageUtil.formatStopped()));
+    }
+
+    /**
+     * Accepts {@code existingSessionId} as the id the next handshake should resume, unless it is blank or
+     * fails {@link #isPlausibleResumeId}. Previously an identical copy in both backends apart from that
+     * guard.
+     */
+    public final void resumeSession(String existingSessionId) {
+        if (existingSessionId == null || existingSessionId.isBlank()) {
+            return;
+        }
+        if (!isPlausibleResumeId(existingSessionId)) {
+            return;
+        }
+        setPendingAcpResumeId(existingSessionId);
+    }
+
+    public final boolean isMcpActive() {
+        return registrar != null;
+    }
+
+    /**
+     * The configOptions array captured from the session/new, session/load (or session/resume), or
+     * set_config_option response. Null before the ACP handshake completes. Not final: several existing test
+     * fixtures subclass the process manager and override this (and {@link #setConfigOption}) to fake
+     * configOptions without a real connection.
+     */
+    public JsonArray configOptions() {
+        return currentConfigOptions();
+    }
+
+    /**
+     * Changes one session config option. Completes with the COMPLETE configOptions snapshot from the
+     * response, not just the changed entry — options are interdependent (e.g. effort depends on the selected
+     * model), and no config_option_update notification is sent for a change this client itself requested, so
+     * the response is the only source of truth. Previously an identical copy in both backends apart from the
+     * backend name in the "session is not active" message, now read from
+     * {@link #backendDisplayNameForLogging}. Not final — see {@link #configOptions} for why.
+     */
+    public CompletableFuture<JsonArray> setConfigOption(String configId, String value) {
+        AcpConnection conn = currentAcpConnection();
+        String sid = currentAcpSessionId();
+        if (conn == null || sid == null) {
+            return CompletableFuture.failedFuture(
+                    new IllegalStateException(backendDisplayNameForLogging() + " session is not active"));
+        }
+        JsonObject params = new JsonObject();
+        params.addProperty(AcpJsonKeyEnum.SESSION_ID.key(), sid);
+        params.addProperty(AcpJsonKeyEnum.CONFIG_ID.key(), configId);
+        params.addProperty(AcpJsonKeyEnum.VALUE.key(), value);
+        return conn.sendRequest(AcpMethodEnum.SESSION_SET_CONFIG_OPTION, params)
+                .thenApply(result -> {
+                    JsonArray options = result != null && result.has(AcpJsonKeyEnum.CONFIG_OPTIONS.key())
+                                        && result.get(AcpJsonKeyEnum.CONFIG_OPTIONS.key()).isJsonArray()
+                                        ? result.getAsJsonArray(AcpJsonKeyEnum.CONFIG_OPTIONS.key())
+                                        : new JsonArray();
+                    setCurrentConfigOptions(options);
+                    return options;
+                });
     }
 }

@@ -87,8 +87,8 @@ import kiwi.ingenuity.netbeans.plugin.aicoder.utils.StatusMessageUtil;
  * change needed there).
  *
  * <p>
- * <b>No F5 mail-interrupt hold.</b> Claude and OpenCode both hold a Mail interrupt while a plugin tool call
- * is in flight, because their own interrupt mechanism would otherwise abort that call. pi's {@code steer}
+ * <b>No mail-interrupt hold.</b> Claude and OpenCode both hold a Mail interrupt while a plugin tool call is
+ * in flight, because their own interrupt mechanism would otherwise abort that call. pi's {@code steer}
  * command is queued natively by pi itself and never touches a running tool call (spec, verified live: "the
  * running tool is not interrupted; the steered text arrives as a new user message at the start of the next
  * turn") — so {@link #interrupt(InterruptTypeEnum)}'s {@code Mail} case below needs none of that machinery.
@@ -918,7 +918,7 @@ public class PiAiProcessManager extends AiProcessManager {
                     s = persistentSession;
                     if (s == null || !processing) {
                         // Idle: the generic idle-delivery path calls sendPrompt() itself, same as every backend —
-                        // nothing to do here. See the class javadoc: pi needs no F5 hold, since steer is queued
+                        // nothing to do here. See the class javadoc: pi needs no mail-interrupt hold, since steer is queued
                         // natively by pi and never touches a running tool call.
                         if (PluginSettings.isDebugJson()) {
                             LOG.log(Level.INFO, "Pi interrupt: Mail IGNORED (session={0}, sessionAlive={1}, turnInFlight={2})",
@@ -1141,10 +1141,10 @@ public class PiAiProcessManager extends AiProcessManager {
      * A timed-out set_model/set_thinking_level says nothing about what pi did: its answer may still be in
      * flight (and is dropped once the local timeout fired), so pi may really have switched. Ask pi what it is
      * running and adopt that — the launch fields too, so a later relaunch starts from the real model/level.
-     * Best effort: if get_state also fails, the revert already emitted stands.
-     * Known limitation: this only updates memory and the bar. PiSessionSettings is persisted solely by
-     * PiAiImplementation's confirm-success continuation, so if pi really switched after the timeout the saved
-     * setting lags until the next confirmed pick.
+     * Best effort: if get_state also fails, the revert already emitted stands. Known limitation: this only
+     * updates memory and the bar. PiSessionSettings is persisted solely by PiAiImplementation's
+     * confirm-success continuation, so if pi really switched after the timeout the saved setting lags until
+     * the next confirmed pick.
      */
     private void resyncFromState(PiPersistentSession s) {
         long modelSeqAtSend;

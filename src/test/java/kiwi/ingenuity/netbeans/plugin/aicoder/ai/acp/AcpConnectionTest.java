@@ -1,5 +1,6 @@
 package kiwi.ingenuity.netbeans.plugin.aicoder.ai.acp;
 
+import com.google.gson.JsonNull;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
 import java.io.BufferedReader;
@@ -9,6 +10,7 @@ import java.io.PipedOutputStream;
 import java.nio.charset.StandardCharsets;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutionException;
 import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -224,6 +226,138 @@ class AcpConnectionTest {
         agentSend(errorResp);
 
         assertThrows(Exception.class, () -> future.get(5, TimeUnit.SECONDS));
+    }
+
+    /**
+     * Grok answers an exhausted balance with a bare -32603 "Internal error" and puts the real cause in
+     * error.data.message; the user must see that cause, not just "Internal error".
+     */
+    @Test
+    void errorResponseCarriesTheDataMessageDetail() throws Exception {
+        CompletableFuture<JsonObject> future = connection.sendRequest(AcpMethodEnum.SESSION_NEW, new JsonObject());
+        long id = agentRead().get("id").getAsLong();
+
+        JsonObject data = new JsonObject();
+        data.addProperty("message", "API error (status 402 Payment Required): Grok Build usage balance exhausted");
+        data.addProperty("http_status", 402);
+        JsonObject error = new JsonObject();
+        error.addProperty("code", -32603);
+        error.addProperty("message", "Internal error");
+        error.add("data", data);
+        JsonObject errorResp = new JsonObject();
+        errorResp.addProperty("jsonrpc", "2.0");
+        errorResp.addProperty("id", id);
+        errorResp.add("error", error);
+        agentSend(errorResp);
+
+        ExecutionException thrown = assertThrows(ExecutionException.class,
+                () -> future.get(5, TimeUnit.SECONDS));
+        AcpException acp = assertInstanceOf(AcpException.class, thrown.getCause());
+        assertEquals(-32603, acp.code());
+        assertTrue(acp.getMessage().contains("Internal error"), acp.getMessage());
+        assertTrue(acp.getMessage().contains("usage balance exhausted"), acp.getMessage());
+    }
+
+    @Test
+    void errorDataMessageIgnoresMissingOrNonObjectData() {
+        JsonObject noData = new JsonObject();
+        noData.addProperty("message", "Internal error");
+        assertNull(AcpConnection.errorDataMessage(noData));
+
+        JsonObject stringData = new JsonObject();
+        stringData.addProperty("data", "just a string");
+        assertNull(AcpConnection.errorDataMessage(stringData));
+
+        JsonObject dataWithoutMessage = new JsonObject();
+        dataWithoutMessage.add("data", new JsonObject());
+        assertNull(AcpConnection.errorDataMessage(dataWithoutMessage));
+
+        JsonObject nullData = new JsonObject();
+        nullData.add("data", JsonNull.INSTANCE);
+        assertNull(AcpConnection.errorDataMessage(nullData));
+
+        JsonObject nullMessage = new JsonObject();
+        JsonObject dataNullMessage = new JsonObject();
+        dataNullMessage.add("message", JsonNull.INSTANCE);
+        nullMessage.add("data", dataNullMessage);
+        assertNull(AcpConnection.errorDataMessage(nullMessage));
+    }
+
+    @Test
+    void errorDataMessageIsBoundedInLength() {
+        JsonObject data = new JsonObject();
+        data.addProperty("message", "x".repeat(AcpConnection.MAX_ERROR_DETAIL_CHARS * 10));
+        JsonObject error = new JsonObject();
+        error.add("data", data);
+
+        String detail = AcpConnection.errorDataMessage(error);
+
+        assertNotNull(detail);
+        assertEquals(AcpConnection.MAX_ERROR_DETAIL_CHARS + 1, detail.length(), "bounded, plus the ellipsis");
+    }
+
+    @Test
+    void errorDataMessageMasksPluginSecrets() {
+        JsonObject data = new JsonObject();
+        data.addProperty("message", "bad request {\"secretKey\":\"c2aeacf6-leaked\"}");
+        JsonObject error = new JsonObject();
+        error.add("data", data);
+
+        String detail = AcpConnection.errorDataMessage(error);
+
+        assertFalse(detail.contains("c2aeacf6-leaked"), detail);
+        assertTrue(detail.contains("\"secretKey\":\"***\""), detail);
+    }
+
+    @Test
+    void blankDataMessageIsIgnored() {
+        JsonObject data = new JsonObject();
+        data.addProperty("message", "   ");
+        JsonObject error = new JsonObject();
+        error.add("data", data);
+
+        assertNull(AcpConnection.errorDataMessage(error));
+    }
+
+    @Test
+    void detailIdenticalToTheMessageIsNotRepeated() throws Exception {
+        CompletableFuture<JsonObject> future = connection.sendRequest(AcpMethodEnum.SESSION_NEW, new JsonObject());
+        long id = agentRead().get("id").getAsLong();
+
+        JsonObject data = new JsonObject();
+        data.addProperty("message", "Internal error");
+        JsonObject error = new JsonObject();
+        error.addProperty("code", -32603);
+        error.addProperty("message", "Internal error");
+        error.add("data", data);
+        JsonObject errorResp = new JsonObject();
+        errorResp.addProperty("jsonrpc", "2.0");
+        errorResp.addProperty("id", id);
+        errorResp.add("error", error);
+        agentSend(errorResp);
+
+        ExecutionException thrown = assertThrows(ExecutionException.class, () -> future.get(5, TimeUnit.SECONDS));
+        assertEquals("ACP error -32603: Internal error", thrown.getCause().getMessage());
+    }
+
+    @Test
+    void topLevelErrorMessageIsAlsoMaskedAndBounded() throws Exception {
+        CompletableFuture<JsonObject> future = connection.sendRequest(AcpMethodEnum.SESSION_NEW, new JsonObject());
+        long id = agentRead().get("id").getAsLong();
+
+        JsonObject error = new JsonObject();
+        error.addProperty("code", -32603);
+        error.addProperty("message", "{\"secretKey\":\"c2aeacf6-leaked\"} " + "y".repeat(5_000));
+        JsonObject errorResp = new JsonObject();
+        errorResp.addProperty("jsonrpc", "2.0");
+        errorResp.addProperty("id", id);
+        errorResp.add("error", error);
+        agentSend(errorResp);
+
+        ExecutionException thrown = assertThrows(ExecutionException.class, () -> future.get(5, TimeUnit.SECONDS));
+        String message = thrown.getCause().getMessage();
+        assertFalse(message.contains("c2aeacf6-leaked"), message);
+        assertTrue(message.length() < 600, "bounded, was " + message.length());
     }
 
     @Test

@@ -5,17 +5,13 @@ import com.google.gson.GsonBuilder;
 import com.google.gson.JsonArray;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
-import java.io.BufferedReader;
 import java.io.File;
 import java.io.IOException;
-import java.io.InputStreamReader;
-import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CompletionException;
-import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
@@ -40,9 +36,7 @@ import kiwi.ingenuity.netbeans.plugin.aicoder.ai.events.TextDeltaEvent;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.events.TurnCompleteEvent;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.opencode.settings.OpenCodePluginSettings;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.opencode.settings.OpenCodeSessionSettings;
-import kiwi.ingenuity.netbeans.plugin.aicoder.ai.session.InterruptTypeEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.events.AiProcessEventListener;
-import kiwi.ingenuity.netbeans.plugin.aicoder.process.server.McpHookServerUtil;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.server.McpServerRegistry;
 import kiwi.ingenuity.netbeans.plugin.aicoder.utils.StatusMessageUtil;
 
@@ -60,7 +54,6 @@ public class OpenCodeAiProcessManager extends AbstractAcpProcessManager {
 
     private static final Logger LOG = Logger.getLogger(OpenCodeAiProcessManager.class.getName());
     private static final Gson GSON = new GsonBuilder().disableHtmlEscaping().create();
-    private static final int MAX_STDERR_LINES = 100;
     /**
      * Developer switch for mid-turn mail steering. NOT a user setting and deliberately not surfaced in the UI
      * — flip it here in source if you are working on it.
@@ -194,9 +187,7 @@ public class OpenCodeAiProcessManager extends AbstractAcpProcessManager {
     volatile JsonArray sessionConfigOptions = null;
     // Package-private so tests can hand the manager a handler that has recorded refusals.
     volatile OpenCodeAcpClientHandler activeHandler = null;
-    private final List<String> recentStderr = new CopyOnWriteArrayList<>();
 
-    private volatile OpenCodeAiMcpRegistrar registrar = null;
     /**
      * Port handed to {@code opencode acp --port}. The agent starts an HTTP server alongside the stdio ACP
      * channel, and that server is the only way to deliver mail mid-turn (ACP itself has no injection method —
@@ -254,6 +245,18 @@ public class OpenCodeAiProcessManager extends AbstractAcpProcessManager {
         if (h != null) {
             h.cancelPendingPermissions();
         }
+    }
+
+    /**
+     * Mirrors OpenCode's pre-Stage-1 {@code interrupt}, which captured {@code h = activeHandler} inside
+     * {@code synchronized(this)} before calling {@code h.cancelPendingPermissions()} after unlock — reading
+     * the field here, under the lock {@link #interrupt} calls this from, and binding the method reference to
+     * that local rather than to the field itself.
+     */
+    @Override
+    protected Runnable capturePermissionCancellerUnderLock() {
+        OpenCodeAcpClientHandler h = activeHandler;
+        return h != null ? h::cancelPendingPermissions : null;
     }
 
     @Override
@@ -326,6 +329,7 @@ public class OpenCodeAiProcessManager extends AbstractAcpProcessManager {
      * is held only for brief state writes, never across the blocking waits, so other synchronized methods
      * (stop(), cancel via interrupt()) can run concurrently.
      */
+    @Override
     protected void spawnAndHandshake(File workDir) throws Exception {
         // --port is what makes the agent's embedded HTTP server reachable, and that server is the only channel for
         // mid-turn mail. Left to itself opencode binds 4096 or an ephemeral port and announces neither, so we choose.
@@ -756,138 +760,6 @@ public class OpenCodeAiProcessManager extends AbstractAcpProcessManager {
         return false;
     }
 
-    private void startStderrDrainer(Process process) {
-        Thread t = new Thread(() -> {
-            try (BufferedReader reader = new BufferedReader(
-                    new InputStreamReader(process.getErrorStream(), StandardCharsets.UTF_8))) {
-                String line;
-                while ((line = reader.readLine()) != null) {
-                    if (PluginSettings.isDebugJson()) {
-                        LOG.log(Level.WARNING, "opencode stderr: {0}", McpHookServerUtil.redactAllSecrets(line));
-                    }
-                    recentStderr.add(line);
-                    while (recentStderr.size() > MAX_STDERR_LINES) {
-                        recentStderr.remove(0);
-                    }
-                }
-            }
-            catch (IOException e) {
-                LOG.log(Level.FINE, "opencode stderr drainer ended", e);
-            }
-        }, "opencode-stderr");
-        t.setDaemon(true);
-        t.start();
-    }
-
-    void handleProcessExit(Process dead) {
-        boolean suppress;
-        AcpConnection orphaned;
-        synchronized (this) {
-            if (currentProcess != dead) {
-                return; // stale exit from a superseded process
-            }
-            processing = false;
-            resetMailInterruptHold();
-            currentProcess = null;
-            suppress = cancelledByUser;
-            orphaned = detachDeadConnection();
-            if (suppress || dead.exitValue() != 0) {
-                // The turn already has its closing status — the EXITED below, or the STOPPED the user's Stop
-                // sent — whether its handshake or its prompt was in flight. Closing the connection then fails
-                // the prompt's response; that must not add a FAILED. A clean exit reports nothing, so there the
-                // turn is left for that FAILED to close.
-                clearHandshakeTurn();
-                clearActiveTurn();
-            }
-        }
-        if (orphaned != null) {
-            orphaned.close();
-        }
-        // A compaction whose process died must not be left locking the UI: its closing FAILED comes from
-        // here, not from a response that will never arrive (mirrors PiAiProcessManager.handleProcessExit).
-        // Placed after the stale-exit guard so a superseded process's exit cannot fail new work. When that
-        // FAILED did close the work, the exit is folded into its message and no separate EXITED is reported —
-        // one closing status per work unit (review).
-        int code = dead.exitValue();
-        if (!failWorkInFlight("OpenCode exited (code " + code + ") while work was in progress")
-            && !suppress && code != 0) {
-            listener.onAiProcessEvent(new StatusEvent(StatusEventTypeEnum.EXITED,
-                    StatusMessageUtil.formatExited("OpenCode", code, new ArrayList<>(recentStderr))));
-        }
-    }
-
-    /**
-     * {@code dead}'s reader lost its stream. handleProcessExit handles exit reporting; this drops the dead
-     * connection so the next prompt re-handshakes instead of writing to it. Only for the connection actually
-     * published: a handshake still in flight owns its own (see the publish block's stream-ended check), and a
-     * late callback from a connection already replaced must not touch the new one.
-     */
-    private void onHandlerDisconnected(AcpConnection dead) {
-        Process owner;
-        synchronized (this) {
-            if (dead == null || connection != dead) {
-                return;
-            }
-            owner = currentProcess;
-        }
-        // An agent that crashed closes its output as it dies, so its exit is normally only moments behind this
-        // callback. Leave that case to handleProcessExit, which reports it once as EXITED (with the exit code
-        // and stderr) and drops the connection itself. Runs on the dead connection's own notify thread, so
-        // the short wait holds up nothing else.
-        if (owner != null) {
-            try {
-                if (owner.waitFor(DISCONNECT_EXIT_GRACE_MILLIS, TimeUnit.MILLISECONDS)) {
-                    return;
-                }
-            }
-            catch (InterruptedException e) {
-                Thread.currentThread().interrupt();
-                return;
-            }
-        }
-        // Still running with its output gone: it can never answer again, and no exit will come to say so.
-        // Kill it and detach from it, so its eventual exit is stale and adds no EXITED; closing the connection
-        // then fails the prompt in flight, which reports the turn's one FAILED.
-        AcpConnection orphaned;
-        synchronized (this) {
-            if (connection != dead) {
-                return; // handleProcessExit or stop() got there first
-            }
-            processing = false;
-            resetMailInterruptHold();
-            orphaned = detachDeadConnection();
-            if (currentProcess == owner) {
-                currentProcess = null;
-            }
-        }
-        if (owner != null) {
-            owner.destroyForcibly();
-        }
-        if (orphaned != null) {
-            orphaned.close();
-        }
-    }
-
-    /**
-     * Drops the published connection of an agent that has died, keeping its ACP session id as the one to
-     * resume, so the next prompt starts a fresh process that picks the conversation up again rather than
-     * writing to a dead pipe forever. Before this, {@code connection} was only ever cleared by stop(), and a
-     * crashed session stayed wedged until its tab was closed. Caller holds the monitor and closes the
-     * returned connection outside it.
-     */
-    private AcpConnection detachDeadConnection() {
-        AcpConnection orphaned = connection;
-        connection = null;
-        activeHandler = null;
-        // No live agent means no HTTP endpoint to steer: PeerSessionList must not keep offering mid-turn mail.
-        steerCapable = false;
-        if (acpSessionId != null) {
-            pendingAcpResumeId = acpSessionId;
-        }
-        acpSessionId = null;
-        return orphaned;
-    }
-
     @Override
     public synchronized void sendPrompt(String text, File workingDir, List<File> projectDirs) {
         if (processing) {
@@ -932,7 +804,8 @@ public class OpenCodeAiProcessManager extends AbstractAcpProcessManager {
      * The reason a send was refused, for the INFO a refused send must post before its TurnCompleteEvent. Each
      * call runs under the manager monitor (sendPrompt and deliverAfterHandshake are both synchronized).
      */
-    private String sendRefusalReason() {
+    @Override
+    protected String sendRefusalReason() {
         if (processing) {
             return "OpenCode is already processing a turn";
         }
@@ -945,66 +818,8 @@ public class OpenCodeAiProcessManager extends AbstractAcpProcessManager {
         return "OpenCode session is not running";
     }
 
-    /**
-     * Background-thread entry point when no ACP connection exists yet. Calls {@link #spawnAndHandshake}
-     * (which blocks up to 60 s), then hands the prompt to {@link #sendTurn} once the connection is live —
-     * holding {@code processing} true across the hand-off so an EDT {@link #sendPrompt} landing in between
-     * cannot slip past its guard and start a duplicate turn/handshake. Runs entirely outside the instance
-     * monitor during the blocking wait.
-     */
-    private void handshakeAndSend(String text, File workDir, Object turn) {
-        try {
-            spawnAndHandshake(workDir);
-        }
-        catch (Exception e) {
-            boolean stillOurTurn;
-            synchronized (this) {
-                stillOurTurn = claimHandshakeTurn(turn);
-                if (stillOurTurn) {
-                    processing = false;
-                }
-            }
-            // Not our turn any more: Stop, stop() or the exit already ended it, and processing may now
-            // belong to a newer turn — report nothing and leave it alone.
-            if (stillOurTurn) {
-                listener.onAiProcessEvent(new StatusEvent(StatusEventTypeEnum.FAILED,
-                        StatusMessageUtil.formatSendFailed(e.getMessage())));
-            }
-            return;
-        }
-        deliverAfterHandshake(text, turn);
-    }
-
-    /**
-     * Post-handshake delivery of the prompt queued by {@link #sendPrompt}, extracted from
-     * {@link #handshakeAndSend} so tests can drive the hand-off without spawning a real CLI. Keep
-     * {@code processing} true through the hand-off below: sendTurn rearms it, so only paths that never reach
-     * sendTurn clear it — exactly once, under the monitor. Clearing it unconditionally here reopened a window
-     * in which an EDT sendPrompt saw !processing and raced this thread with a second submit.
-     * <p>
-     * Runs entirely under the monitor so a Stop cannot land between the turn check and {@code sendTurn}.
-     */
-    synchronized void deliverAfterHandshake(String text, Object turn) {
-        if (!claimHandshakeTurn(turn)) {
-            // The turn ended while the handshake ran — Stop, stop() or an exit already gave it its closing
-            // status. Sending it now would start a turn the user stopped.
-            return;
-        }
-        if (!running || pendingDiff) {
-            processing = false; // stop()/diff panel won the race; nobody else will rearm
-            // Same contract as sendPrompt's guard: the UI locked for this submit before it was queued, so a
-            // silent drop would leave the tab locked. Say why and end the turn it is waiting on.
-            listener.onAiProcessEvent(new StatusEvent(StatusEventTypeEnum.INFO, sendRefusalReason()));
-            listener.onAiProcessEvent(new TurnCompleteEvent());
-            return;
-        }
-        // Connection is now established; deliver through the normal turn path. Deliberately
-        // sendTurn(), not sendPrompt(): with processing still held true, sendPrompt's own
-        // guard would reject the re-entry and silently drop the prompt.
-        sendTurn(text);
-    }
-
-    synchronized void sendTurn(String text) {
+    @Override
+    protected synchronized void sendTurn(String text) {
         JsonObject promptItem = new JsonObject();
         promptItem.addProperty(AcpJsonKeyEnum.TYPE.key(), "text");
         promptItem.addProperty(AcpJsonKeyEnum.TEXT.key(), MCP_TOOL_PREFERENCE + "\n\n" + text);
@@ -1020,7 +835,7 @@ public class OpenCodeAiProcessManager extends AbstractAcpProcessManager {
         }
         // A new turn starts with no in-flight tool calls and no held mail interrupt. Stale state
         // could only have survived a teardown path that failed to clear it; resetting here keeps
-        // the next turn clean regardless (F5).
+        // the next turn clean regardless.
         resetMailInterruptHold();
         // Same reasoning for refusals: none can belong to this turn yet, and one left over must never be reported as
         // this turn's.
@@ -1059,7 +874,7 @@ public class OpenCodeAiProcessManager extends AbstractAcpProcessManager {
             processing = false;
             // Turn over: nothing left mid-turn to interrupt, so clear any HELD mail interrupt
             // WITHOUT sending — the mail was already delivered by the broker and is visible in
-            // the session's own context on its next turn either way (F5, mirrors Claude).
+            // the session's own context on its next turn either way (mirrors Claude).
             resetMailInterruptHold();
             wasRunning = running;
             // Read BEFORE it is cleared: it is the only thing that tells a turn the user stopped from one a refusal
@@ -1152,7 +967,7 @@ public class OpenCodeAiProcessManager extends AbstractAcpProcessManager {
         synchronized (this) {
             processing = false;
             // Same turn-end clearing as handleTurnComplete — a cancelled/errored turn has no
-            // in-flight tool calls left to interrupt (F5, mirrors Claude).
+            // in-flight tool calls left to interrupt (mirrors Claude).
             resetMailInterruptHold();
             stoppedByUser = cancelledByUser;
             cancelledByUser = false;
@@ -1184,56 +999,6 @@ public class OpenCodeAiProcessManager extends AbstractAcpProcessManager {
         }
         listener.onAiProcessEvent(new StatusEvent(StatusEventTypeEnum.FAILED,
                 StatusMessageUtil.formatSendFailed(cause != null ? cause.getMessage() : ex.getMessage())));
-    }
-
-    @Override
-    public void interrupt(InterruptTypeEnum type) {
-        if (type == InterruptTypeEnum.Mail) {
-            interruptMail();
-            return;
-        }
-        if (type != InterruptTypeEnum.Cancel) {
-            return;
-        }
-        AcpConnection conn;
-        String sid;
-        OpenCodeAcpClientHandler h;
-        synchronized (this) {
-            if (!processing) {
-                // Worth recording: "I pressed Stop and nothing happened" and "I
-                // pressed Stop and it kept talking" look identical afterwards, and
-                // this branch is the first of those.
-                if (PluginSettings.isDebugJson()) {
-                    LOG.log(Level.INFO, "OpenCode interrupt: IGNORED, no turn in flight (session={0})", acpSessionId);
-                }
-                return;
-            }
-            cancelledByUser = true;
-            processing = false;
-            clearHandshakeTurn(); // STOPPED below closes it; a handshake still running must not send it
-            conn = connection;
-            sid = acpSessionId;
-            h = activeHandler;
-        }
-        // session/cancel is a notification, so OpenCode winds the turn down at its
-        // own pace and updates can still arrive afterwards. Stamping the moment the
-        // user actually pressed Stop is the only way to measure that tail: without
-        // it, "it carried on after I stopped it" cannot be told apart from a normal
-        // wind-down, and the agent's own log gives no click time to compare against.
-        if (PluginSettings.isDebugJson()) {
-            LOG.log(Level.INFO, "OpenCode interrupt: user pressed Stop, cancelling turn (session={0}, connected={1})",
-                    new Object[]{sid, conn != null});
-        }
-        if (h != null) {
-            h.cancelPendingPermissions();
-        }
-        if (conn != null && sid != null) {
-            sendCancelNotification(conn, sid);
-            if (PluginSettings.isDebugJson()) {
-                LOG.log(Level.INFO, "OpenCode interrupt: session/cancel sent (session={0})", sid);
-            }
-        }
-        listener.onAiProcessEvent(new StatusEvent(StatusEventTypeEnum.STOPPED, StatusMessageUtil.formatStopped()));
     }
 
     @Override
@@ -1317,7 +1082,7 @@ public class OpenCodeAiProcessManager extends AbstractAcpProcessManager {
 
         OpenCodeAiSession sess = openCodeAiSession;
         openCodeAiSession = null;
-        OpenCodeAiMcpRegistrar reg = registrar;
+        var reg = registrar;
         registrar = null;
 
         if (sess != null) {
@@ -1334,29 +1099,96 @@ public class OpenCodeAiProcessManager extends AbstractAcpProcessManager {
         recentStderr.clear();
     }
 
-    @Override
-    public void resumeSession(String existingSessionId) {
-        if (existingSessionId == null || existingSessionId.isBlank()) {
-            return;
-        }
-        if (!existingSessionId.startsWith("ses_")) {
-            // Guard against plugin-level UUIDs; OpenCode session ids always start with ses_.
-            // AiTopComponent.loadHistory() passes the plugin UUID here — the override in
-            // OpenCodeAiImplementation.resumeSession() is the primary defence, but this
-            // ensures no stray caller can ever poison the pending resume slot.
-            LOG.log(Level.FINE, "resumeSession: ignoring non-ACP id ''{0}''", existingSessionId);
-            return;
-        }
-        pendingAcpResumeId = existingSessionId;
-    }
-
     public synchronized boolean isSessionLive() {
         return acpSessionId != null;
     }
 
     @Override
-    public boolean isMcpActive() {
-        return registrar != null;
+    protected void setAcpConnection(AcpConnection conn) {
+        connection = conn;
+    }
+
+    @Override
+    protected void setAcpSessionId(String sid) {
+        acpSessionId = sid;
+    }
+
+    @Override
+    protected void setPendingAcpResumeId(String resumeId) {
+        pendingAcpResumeId = resumeId;
+    }
+
+    @Override
+    protected JsonArray currentConfigOptions() {
+        return sessionConfigOptions;
+    }
+
+    @Override
+    protected void setCurrentConfigOptions(JsonArray options) {
+        sessionConfigOptions = options;
+    }
+
+    /**
+     * No live agent means no HTTP endpoint to steer: PeerSessionList must not keep offering mid-turn mail.
+     */
+    @Override
+    protected void onConnectionDetached() {
+        activeHandler = null;
+        steerCapable = false;
+    }
+
+    /**
+     * OpenCode's copy of {@code handleProcessExit} did not reset {@code cancelledByUser} after reading it
+     * into the suppress-EXITED decision — its flag is instead cleared by the next {@code sendPrompt}. Kept
+     * exactly as found rather than silently unified with Grok's (which does reset it here), since nothing
+     * confirms which is intentional.
+     */
+    @Override
+    protected boolean resetCancelledByUserOnProcessExit() {
+        return false;
+    }
+
+    /**
+     * OpenCode session ids always start with {@code ses_}; guards against a stray plugin-level UUID reaching
+     * the resume slot. {@code AiTopComponent.loadHistory()} passes the plugin UUID here — the override in
+     * {@code OpenCodeAiImplementation.resumeSession()} is the primary defence, but this ensures no stray
+     * caller can ever poison the pending resume slot.
+     */
+    @Override
+    protected boolean isPlausibleResumeId(String candidateId) {
+        if (!candidateId.startsWith("ses_")) {
+            LOG.log(Level.FINE, "resumeSession: ignoring non-ACP id ''{0}''", candidateId);
+            return false;
+        }
+        return true;
+    }
+
+    @Override
+    protected void onCancelIgnored() {
+        // Worth recording: "I pressed Stop and nothing happened" and "I pressed Stop and it kept talking"
+        // look identical afterwards, and this branch is the first of those.
+        if (PluginSettings.isDebugJson()) {
+            LOG.log(Level.INFO, "OpenCode interrupt: IGNORED, no turn in flight (session={0})", acpSessionId);
+        }
+    }
+
+    @Override
+    protected void onCancelAccepted(String sid, boolean connected) {
+        // session/cancel is a notification, so OpenCode winds the turn down at its own pace and updates can
+        // still arrive afterwards. Stamping the moment the user actually pressed Stop is the only way to
+        // measure that tail: without it, "it carried on after I stopped it" cannot be told apart from a
+        // normal wind-down, and the agent's own log gives no click time to compare against.
+        if (PluginSettings.isDebugJson()) {
+            LOG.log(Level.INFO, "OpenCode interrupt: user pressed Stop, cancelling turn (session={0}, connected={1})",
+                    new Object[]{sid, connected});
+        }
+    }
+
+    @Override
+    protected void onCancelNotificationSent(String sid) {
+        if (PluginSettings.isDebugJson()) {
+            LOG.log(Level.INFO, "OpenCode interrupt: session/cancel sent (session={0})", sid);
+        }
     }
 
     private void cacheDiscoveredModels(JsonArray configOptions) {
@@ -1386,44 +1218,6 @@ public class OpenCodeAiProcessManager extends AbstractAcpProcessManager {
             }
             return;
         }
-    }
-
-    /**
-     * The configOptions array captured from the session/new response. Null before the ACP handshake
-     * completes.
-     */
-    public JsonArray configOptions() {
-        return sessionConfigOptions;
-    }
-
-    /**
-     * Changes one session config option (model, effort, or mode — the only three ids OpenCode accepts;
-     * anything else fails server-side with InvalidConfigOptionError). Completes with the COMPLETE
-     * configOptions snapshot from the response, not just the changed entry — options are interdependent (e.g.
-     * effort depends on the selected model), and no config_option_update notification is sent for this
-     * change, so the response is the only source of truth. This is the only reliable snapshot of the changed
-     * state.
-     */
-    public CompletableFuture<JsonArray> setConfigOption(String configId, String value) {
-        AcpConnection conn = connection;
-        String sid = acpSessionId;
-        if (conn == null || sid == null) {
-            return CompletableFuture.failedFuture(
-                    new IllegalStateException("OpenCode session is not active"));
-        }
-        JsonObject params = new JsonObject();
-        params.addProperty(AcpJsonKeyEnum.SESSION_ID.key(), sid);
-        params.addProperty(AcpJsonKeyEnum.CONFIG_ID.key(), configId);
-        params.addProperty(AcpJsonKeyEnum.VALUE.key(), value);
-        return conn.sendRequest(AcpMethodEnum.SESSION_SET_CONFIG_OPTION, params)
-                .thenApply(result -> {
-                    JsonArray options = result != null && result.has(AcpJsonKeyEnum.CONFIG_OPTIONS.key())
-                                        && result.get(AcpJsonKeyEnum.CONFIG_OPTIONS.key()).isJsonArray()
-                                        ? result.getAsJsonArray(AcpJsonKeyEnum.CONFIG_OPTIONS.key())
-                                        : new JsonArray();
-                    sessionConfigOptions = options;
-                    return options;
-                });
     }
 
     /**

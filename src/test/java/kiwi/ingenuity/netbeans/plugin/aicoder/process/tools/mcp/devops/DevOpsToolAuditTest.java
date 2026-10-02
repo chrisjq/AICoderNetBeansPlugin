@@ -617,7 +617,7 @@ class DevOpsToolAuditTest {
         }
     }
 
-    // ---- #5 / F2: option coverage ----
+    // ---- option coverage ----
     @Test
     void mavenBuild_customGoalsReplaceDefaultEntirely() throws Exception {
         JsonObject o = new JsonObject();
@@ -760,7 +760,7 @@ class DevOpsToolAuditTest {
         assertFalse(result.startsWith("Error:"), result);
     }
 
-    // ---- #5 / F2: the two new clean-and-build tools ----
+    // ---- the two new clean-and-build tools ----
     @Test
     void cleanAndBuildGradle_runsGradlewWithCleanBuildGoals() throws Exception {
         String result = new CleanAndBuildGradleProjectTool().handle(
