@@ -13,6 +13,7 @@ import java.awt.event.ActionEvent;
 import java.io.File;
 import java.io.IOException;
 import java.io.OutputStream;
+import java.lang.reflect.InvocationTargetException;
 import java.nio.charset.Charset;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
@@ -635,19 +636,24 @@ public class RefactoringProvider {
         if (diskFile == null) {
             return "Cannot reformat non-disk file: " + fo.getPath();
         }
-        String navResult = EditorContextProvider.openFile(diskFile.getPath(), false);
-        if (navResult.startsWith("File not found") || navResult.startsWith("Error")) {
-            return navResult;
+        // The document is loaded without opening an editor. A file the user already has open yields that
+        // editor's own document, so the change shows there and is one undo step.
+        Document doc;
+        try {
+            EditorCookie cookie = DataObject.find(fo).getLookup().lookup(EditorCookie.class);
+            doc = cookie == null ? null : cookie.openDocument();
+        }
+        catch (IOException e) {
+            return "Error: " + (e.getMessage() != null ? e.getMessage() : e.getClass().getSimpleName());
+        }
+        if (doc == null) {
+            return "Cannot reformat, no document for file: " + fo.getPath();
         }
         AtomicReference<String> result = new AtomicReference<>("File reformatted");
         try {
+            // Reformat runs on the EDT, outside any document lock: lock() must not be taken while the
+            // document lock is held.
             SwingUtilities.invokeAndWait(() -> {
-                JTextComponent editor = getEditorFor(fo);
-                if (editor == null) {
-                    result.set("No editor opened for file");
-                    return;
-                }
-                Document doc = editor.getDocument();
                 Reformat reformat = Reformat.get(doc);
                 reformat.lock();
                 try {
@@ -675,15 +681,23 @@ public class RefactoringProvider {
                 finally {
                     reformat.unlock();
                 }
-                saveFo(fo);
+                // Saved in the same EDT turn as the reformat, so edits a user types into an open editor
+                // between the two cannot be saved with it.
+                if ("File reformatted".equals(result.get())) {
+                    String saveError = saveFo(fo);
+                    if (saveError != null) {
+                        result.set("File reformatted. Save failed: " + saveError);
+                    }
+                }
             });
         }
         catch (InterruptedException e) {
             Thread.currentThread().interrupt();
             return "Interrupted";
         }
-        catch (Exception e) {
-            return "Error: " + e.getMessage();
+        catch (InvocationTargetException e) {
+            Throwable cause = e.getCause() != null ? e.getCause() : e;
+            return "Error: " + (cause.getMessage() != null ? cause.getMessage() : cause.getClass().getSimpleName());
         }
         return result.get();
     }

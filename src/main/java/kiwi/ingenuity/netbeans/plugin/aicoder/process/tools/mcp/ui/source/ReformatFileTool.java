@@ -16,7 +16,7 @@ public class ReformatFileTool extends AbstractFileTool {
     public ReformatFileTool() {
         super(McpSectionEnum.UI_SOURCE,
                 McpToolEnum.REFORMAT_FILE.toolName(),
-                "Reformats the specified file using its code-style settings in the user's editor, then saves it.",
+                "Reformats the specified file using the project's code-style settings, then saves it. Does not open an editor tab.",
                 "" + McpToolEnum.REFORMAT_FILE.toolName() + " -> INSTEAD OF manual formatting - applies project code style to a file",
                 "" + McpToolEnum.REFORMAT_FILE.toolName() + " - applies project code style to a file");
     }

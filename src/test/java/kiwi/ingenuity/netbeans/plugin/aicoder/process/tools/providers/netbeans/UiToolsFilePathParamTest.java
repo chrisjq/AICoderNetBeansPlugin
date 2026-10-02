@@ -11,8 +11,9 @@ import org.junit.jupiter.api.Test;
  * null/blank value is rejected with "is required" (provider does not fall back to the focused editor), and a
  * value pointing at a nonexistent file reports "File not found". FixImports and OrganiseImports no longer run
  * an editor action: an existing file is handled by HeadlessImportFixer and HeadlessImportOrganiser, and their
- * decisions are covered by ImportCandidatePlannerTest and ImportOrganisePlannerTest. OrganiseMembers and
- * ReformatFile still open an editor on the EDT for a file that exists, which a plain unit test does not stub.
+ * decisions are covered by ImportCandidatePlannerTest and ImportOrganisePlannerTest. ReformatFile loads the
+ * document without an editor and reformats it on the EDT, and OrganiseMembers still opens an editor on the EDT;
+ * a plain unit test does not stub either for a file that exists.
  */
 class UiToolsFilePathParamTest {
 
