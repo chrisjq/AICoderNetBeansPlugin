@@ -106,7 +106,7 @@ public class CodexAiInfoBarExtension implements AiInfoBarExtension {
 
     @Override
     public List<JComponent> createComponents() {
-        return List.of(modelCombo, effortCombo, compactBtn, contextBar, rateLimitBar);
+        return List.of(modelCombo, effortCombo, contextBar, rateLimitBar, compactBtn);
     }
 
     /**

@@ -240,7 +240,7 @@ class GithubCopilotSessionControlTest {
             }
         };
         GithubCopilotAiInfoBarExtension bar = compactImpl.createInfoBarExtension(session, host);
-        JButton compact = (JButton) bar.createComponents().get(2);
+        JButton compact = (JButton) bar.createComponents().get(4);
 
         CountDownLatch holding = new CountDownLatch(1);
         CountDownLatch release = new CountDownLatch(1);
@@ -310,8 +310,7 @@ class GithubCopilotSessionControlTest {
 
     /**
      * Opens "sessions" through the manager's create hook, recording the model and effort each was opened
-     * with,
-     * and reports when a background re-establish has finished its trailing send.
+     * with, and reports when a background re-establish has finished its trailing send.
      */
     private static class ScriptedManager extends GithubCopilotProcessManager {
 

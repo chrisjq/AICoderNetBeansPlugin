@@ -271,7 +271,7 @@ class ClaudeAiImplementationTest {
         try {
             ClaudeAiInfoBarExtension bar = (ClaudeAiInfoBarExtension) impl.createInfoBarExtension(
                     session, stubHost(settings, new AtomicReference<>()));
-            ((JButton) bar.createComponents().get(2)).doClick();
+            ((JButton) bar.createComponents().get(5)).doClick();
 
             assertEquals(1, events.stream().filter(StatusEvent.class::isInstance)
                     .filter(e -> ((StatusEvent) e).type() == StatusEventTypeEnum.INFO).count());
@@ -313,7 +313,7 @@ class ClaudeAiImplementationTest {
 
             ClaudeAiInfoBarExtension bar = (ClaudeAiInfoBarExtension) impl.createInfoBarExtension(
                     session, stubHost(settings, new AtomicReference<>()));
-            ((JButton) bar.createComponents().get(2)).doClick();
+            ((JButton) bar.createComponents().get(5)).doClick();
 
             assertEquals(1, events.stream().filter(StatusEvent.class::isInstance)
                     .filter(e -> ((StatusEvent) e).type() == StatusEventTypeEnum.INFO).count());

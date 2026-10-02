@@ -195,7 +195,7 @@ public class OllamaAiInfoBarExtension implements AiInfoBarExtension {
 
     @Override
     public List<JComponent> createComponents() {
-        return List.of(modelCombo, reasoningEffortCombo, compactBtn, clearBtn, gauge.component(), hintLabel);
+        return List.of(modelCombo, reasoningEffortCombo, gauge.component(), compactBtn, clearBtn, hintLabel);
     }
 
     @Override

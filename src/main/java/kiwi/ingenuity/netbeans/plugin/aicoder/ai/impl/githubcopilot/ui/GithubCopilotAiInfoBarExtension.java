@@ -211,7 +211,7 @@ public class GithubCopilotAiInfoBarExtension implements AiInfoBarExtension {
 
     @Override
     public List<javax.swing.JComponent> createComponents() {
-        return List.of(modelCombo, reasoningEffortCombo, compactBtn, contextBar, quotaBar, errorLabel);
+        return List.of(modelCombo, reasoningEffortCombo, contextBar, quotaBar, compactBtn, errorLabel);
     }
 
     /**

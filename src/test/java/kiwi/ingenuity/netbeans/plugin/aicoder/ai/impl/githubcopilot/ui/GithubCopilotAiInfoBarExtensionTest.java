@@ -33,7 +33,10 @@ class GithubCopilotAiInfoBarExtensionTest {
         // in-flight compaction or turn.
         GithubCopilotAiInfoBarExtension ext = new GithubCopilotAiInfoBarExtension(
                 newSession("gh-ext-busy", new GithubCopilotSessionSettings()), null);
-        List<javax.swing.JComponent> actions = ext.createComponents().subList(0, 3);
+        List<javax.swing.JComponent> components = ext.createComponents();
+        // model (0), reasoning-effort (1) and Compact (4, after the context and quota bars)
+        List<javax.swing.JComponent> actions = List.of(components.get(0), components.get(1), components.get(4));
+        assertTrue(components.get(4) instanceof javax.swing.JButton, "Compact follows the context and quota bars");
         assertTrue(actions.stream().allMatch(javax.swing.JComponent::isEnabled), "all action controls start enabled");
 
         SwingUtilities.invokeAndWait(() -> ext.onBusyChanged(true));

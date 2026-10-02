@@ -167,8 +167,8 @@ class OllamaAiInfoBarExtensionTest {
         OllamaAiInfoBarExtension ext = new OllamaAiInfoBarExtension();
         List<JComponent> components = ext.createComponents();
         JComboBox<?> modelCombo = (JComboBox<?>) components.get(0);
-        JButton compactBtn = (JButton) components.get(2);
-        JButton clearBtn = (JButton) components.get(3);
+        JButton compactBtn = (JButton) components.get(3);
+        JButton clearBtn = (JButton) components.get(4);
 
         SwingUtilities.invokeAndWait(() -> ext.onAiProcessImplEvent(new OllamaTokenUsageEvent(100, 1000)));
         assertTrue(compactBtn.isEnabled(), "precondition: enabled once there is content and nothing is busy");
@@ -222,8 +222,8 @@ class OllamaAiInfoBarExtensionTest {
             }
         });
         List<JComponent> components = ext.createComponents();
-        JProgressBar gauge = (JProgressBar) components.get(4);
-        JButton compactBtn = (JButton) components.get(2);
+        JProgressBar gauge = (JProgressBar) components.get(2);
+        JButton compactBtn = (JButton) components.get(3);
         SwingUtilities.invokeAndWait(() -> ext.onAiProcessImplEvent(new OllamaTokenUsageEvent(100, 1000)));
         assertTrue(compactBtn.isEnabled(), "precondition: content present, nothing busy");
 

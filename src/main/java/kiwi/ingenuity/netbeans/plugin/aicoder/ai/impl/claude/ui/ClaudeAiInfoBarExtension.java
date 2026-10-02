@@ -110,7 +110,7 @@ public class ClaudeAiInfoBarExtension implements AiInfoBarExtension {
 
     @Override
     public List<JComponent> createComponents() {
-        return List.of(modelCombo, effortCombo, compactBtn, sessionBar, fiveHourBar, sevenDayBar);
+        return List.of(modelCombo, effortCombo, sessionBar, fiveHourBar, sevenDayBar, compactBtn);
     }
 
     @Override

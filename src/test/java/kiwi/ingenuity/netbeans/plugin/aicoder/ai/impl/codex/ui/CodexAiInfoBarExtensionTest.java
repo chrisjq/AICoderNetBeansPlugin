@@ -5,6 +5,7 @@ import java.util.concurrent.atomic.AtomicInteger;
 import javax.swing.JButton;
 import javax.swing.JComboBox;
 import javax.swing.JComponent;
+import javax.swing.JProgressBar;
 import javax.swing.SwingUtilities;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -14,14 +15,16 @@ import org.junit.jupiter.api.Test;
 class CodexAiInfoBarExtensionTest {
 
     @Test
-    void createComponentsHasModelEffortCompactContextAndRateLimit() {
+    void createComponentsHasModelEffortContextRateLimitAndCompactLast() {
         List<JComponent> components = new CodexAiInfoBarExtension("gpt-5.5").createComponents();
 
         assertEquals(5, components.size());
         assertTrue(components.get(0) instanceof JComboBox, "model combo first");
         assertTrue(components.get(1) instanceof JComboBox, "effort combo second");
-        assertTrue(components.get(2) instanceof JButton, "Compact third");
-        assertTrue(((JButton) components.get(2)).getText().contains("Compact"));
+        assertTrue(components.get(2) instanceof JProgressBar, "context bar third");
+        assertTrue(components.get(3) instanceof JProgressBar, "rate-limit bar fourth");
+        assertTrue(components.get(4) instanceof JButton, "Compact last");
+        assertTrue(((JButton) components.get(4)).getText().contains("Compact"));
     }
 
     @Test
@@ -32,12 +35,12 @@ class CodexAiInfoBarExtensionTest {
         SwingUtilities.invokeAndWait(() -> ext.onBusyChanged(true));
         assertFalse(components.get(0).isEnabled(), "busy must disable the model combo");
         assertFalse(components.get(1).isEnabled(), "busy must disable the effort combo");
-        assertFalse(components.get(2).isEnabled(), "busy must disable Compact");
+        assertFalse(components.get(4).isEnabled(), "busy must disable Compact");
 
         SwingUtilities.invokeAndWait(() -> ext.onBusyChanged(false));
         assertTrue(components.get(0).isEnabled(), "ready must re-enable the model combo");
         assertTrue(components.get(1).isEnabled(), "ready must re-enable the effort combo");
-        assertTrue(components.get(2).isEnabled(), "ready must re-enable Compact");
+        assertTrue(components.get(4).isEnabled(), "ready must re-enable Compact");
     }
 
     @Test
@@ -45,7 +48,7 @@ class CodexAiInfoBarExtensionTest {
         CodexAiInfoBarExtension ext = new CodexAiInfoBarExtension("gpt-5.5");
         AtomicInteger runs = new AtomicInteger();
         ext.addCompactListener(runs::incrementAndGet);
-        JButton compact = (JButton) ext.createComponents().get(2);
+        JButton compact = (JButton) ext.createComponents().get(4);
 
         SwingUtilities.invokeAndWait(compact::doClick);
 
@@ -57,7 +60,7 @@ class CodexAiInfoBarExtensionTest {
         CodexAiInfoBarExtension ext = new CodexAiInfoBarExtension("gpt-5.5");
         AtomicInteger runs = new AtomicInteger();
         ext.addCompactListener(runs::incrementAndGet);
-        JButton compact = (JButton) ext.createComponents().get(2);
+        JButton compact = (JButton) ext.createComponents().get(4);
 
         SwingUtilities.invokeAndWait(() -> {
             ext.onBusyChanged(true);

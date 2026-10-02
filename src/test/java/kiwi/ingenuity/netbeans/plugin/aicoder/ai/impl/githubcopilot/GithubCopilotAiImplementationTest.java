@@ -98,7 +98,7 @@ class GithubCopilotAiImplementationTest {
 
     private static void clickCompact(GithubCopilotAiImplementation impl, AiSession session, AiSessionHost host) {
         GithubCopilotAiInfoBarExtension bar = impl.createInfoBarExtension(session, host);
-        JButton compact = (JButton) bar.createComponents().get(2);
+        JButton compact = (JButton) bar.createComponents().get(4);
         compact.doClick();
     }
 
@@ -201,7 +201,7 @@ class GithubCopilotAiImplementationTest {
         SwingUtilities.invokeAndWait(() -> lateBar.set(
                 impl.createInfoBarExtension(newSession("gh-late-tab", settings), host)));
 
-        JProgressBar quotaBar = (JProgressBar) lateBar.get().createComponents().get(4);
+        JProgressBar quotaBar = (JProgressBar) lateBar.get().createComponents().get(3);
         assertTrue(quotaBar.isVisible(), "a late tab must replay the cached quota");
         assertEquals("4%", quotaBar.getString(),
                 "the cached quota's remaining percentage (96%) must reach the late bar as 4% used");

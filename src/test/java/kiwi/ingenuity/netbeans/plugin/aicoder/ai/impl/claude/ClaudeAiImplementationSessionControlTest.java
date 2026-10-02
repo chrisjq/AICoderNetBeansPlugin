@@ -216,7 +216,7 @@ class ClaudeAiImplementationSessionControlTest {
         };
         ClaudeAiInfoBarExtension bar = (ClaudeAiInfoBarExtension) impl.createInfoBarExtension(session, host);
 
-        ((JButton) bar.createComponents().get(2)).doClick();
+        ((JButton) bar.createComponents().get(5)).doClick();
 
         assertEquals(1, held.size(), "Compact must be queued, not run on the click thread");
         assertEquals(0, manager.getLaunchCount(), "nothing may have launched on the click thread");

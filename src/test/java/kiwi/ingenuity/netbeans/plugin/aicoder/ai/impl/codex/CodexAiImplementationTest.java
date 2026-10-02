@@ -403,7 +403,7 @@ class CodexAiImplementationTest {
         List<AiProcessEvent> events = new CopyOnWriteArrayList<>();
         CodexAiImplementation impl = new CodexAiImplementation(events::add, null);
         AiInfoBarExtension ext = impl.createInfoBarExtension(null, null);
-        JButton compact = (JButton) ext.createComponents().get(2);
+        JButton compact = (JButton) ext.createComponents().get(4);
 
         SwingUtilities.invokeAndWait(compact::doClick);
 
@@ -438,9 +438,9 @@ class CodexAiImplementationTest {
                     "The type-wide property bus must deliver the account rate limit to every open Codex bar");
             SwingUtilities.invokeAndWait(() -> {
             });
-            assertEquals("51%", ((JProgressBar) firstOpenBar.createComponents().get(4)).getString(),
+            assertEquals("51%", ((JProgressBar) firstOpenBar.createComponents().get(3)).getString(),
                     "The first open Codex bar must show the account-wide rate limit");
-            assertEquals("51%", ((JProgressBar) secondOpenBar.createComponents().get(4)).getString(),
+            assertEquals("51%", ((JProgressBar) secondOpenBar.createComponents().get(3)).getString(),
                     "The second open Codex bar must show the account-wide rate limit");
 
             AtomicReference<CodexAiInfoBarExtension> lateCreatedBar = new AtomicReference<>();
@@ -449,7 +449,7 @@ class CodexAiImplementationTest {
             SwingUtilities.invokeAndWait(() -> lateCreatedBar.set(
                     (CodexAiInfoBarExtension) impl.createInfoBarExtension(null, null)));
 
-            assertEquals("51%", ((JProgressBar) lateCreatedBar.get().createComponents().get(4)).getString(),
+            assertEquals("51%", ((JProgressBar) lateCreatedBar.get().createComponents().get(3)).getString(),
                     "A Codex bar opened after the rate-limit event must replay the cached account-wide fact");
         }
         finally {
