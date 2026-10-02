@@ -19,7 +19,7 @@ public class IsAiSessionActiveTool extends AbstractActionTool {
     public IsAiSessionActiveTool() {
         super(McpSectionEnum.PLUGIN,
                 McpToolEnum.PEER_SESSION_IS_ACTIVE.toolName(),
-                "Check whether another AI session in this IDE (not an internal subagent) is open and whether it is idle, busy, or awaiting approval. Open sessions can receive messages regardless of state; awaiting approval is reported separately from active.",
+                "Reports whether another AI session in this IDE is open, whether it is busy or idle, and whether its user is being asked to approve something.",
                 McpToolEnum.PEER_SESSION_IS_ACTIVE.toolName() + " -> check before " + McpToolEnum.PEER_MESSAGE_SEND.toolName() + " if you need the session to respond promptly; active=false means idle (can still receive), active=true means busy");
     }
 
@@ -27,7 +27,7 @@ public class IsAiSessionActiveTool extends AbstractActionTool {
     public JsonObject schema(Set<McpInstructionOptionEnum> options) {
         JsonObject tool = new JsonObject();
         tool.addProperty(ToolSchemaKeyEnum.NAME.key(), McpToolEnum.PEER_SESSION_IS_ACTIVE.toolName());
-        tool.addProperty(ToolSchemaKeyEnum.DESCRIPTION.key(), "Check whether another AI session in this IDE (not an internal subagent) is open and whether it is idle, busy, or awaiting approval. Open sessions can receive messages regardless of state; awaiting approval is reported separately from active.");
+        tool.addProperty(ToolSchemaKeyEnum.DESCRIPTION.key(), "Reports whether another AI session in this IDE is open, whether it is busy or idle, and whether its user is being asked to approve something.");
         JsonObject schema = new JsonObject();
         schema.addProperty(ToolSchemaKeyEnum.TYPE.key(), "object");
         JsonObject props = new JsonObject();

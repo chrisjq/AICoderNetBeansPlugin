@@ -24,7 +24,7 @@ public class DeleteAiMessageTool extends AbstractActionTool {
     public DeleteAiMessageTool() {
         super(McpSectionEnum.PLUGIN,
                 McpToolEnum.PEER_MESSAGE_DELETE.toolName(),
-                "Delete one or more inbox messages by id. Pass " + DeleteAiMessageParamEnum.MESSAGE_ID.key() + " for a single message or " + DeleteAiMessageParamEnum.MESSAGE_IDS.key() + " array for bulk delete. At least one of the two is required; if both are given they are combined and all are deleted.",
+                "Delete one or more inbox messages by id. Pass " + DeleteAiMessageParamEnum.MESSAGE_ID.key() + " for a single message or " + DeleteAiMessageParamEnum.MESSAGE_IDS.key() + " array for bulk delete; both are combined if given together.",
                 McpToolEnum.PEER_MESSAGE_DELETE.toolName() + " -> delete one or more inbox messages once processed; pass " + DeleteAiMessageParamEnum.MESSAGE_IDS.key() + " array for bulk delete");
     }
 

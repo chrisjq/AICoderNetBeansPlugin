@@ -17,8 +17,7 @@ public class CreateDirectoryTool extends AbstractFileTool {
         super(McpSectionEnum.SYSTEM,
                 McpToolEnum.CREATE_DIRECTORY.toolName(),
                 "Create a directory and any missing parent directories. " + McpToolEnum.WRITE_FILE.toolName()
-                + " already creates parent folders for a new file, so use this only to create an empty folder. "
-                + "Returns success if the directory already existed.",
+                + " already creates parent folders for a new file, so use this only to create an empty folder.",
                 McpToolEnum.CREATE_DIRECTORY.toolName() + " -> creates an empty directory (and missing parents); "
                 + "only needed for an empty folder, since " + McpToolEnum.WRITE_FILE.toolName()
                 + " already creates parent folders for a new file");

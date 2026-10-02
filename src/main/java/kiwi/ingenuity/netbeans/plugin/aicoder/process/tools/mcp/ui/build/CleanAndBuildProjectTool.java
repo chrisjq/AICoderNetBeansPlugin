@@ -21,13 +21,10 @@ public class CleanAndBuildProjectTool extends AbstractActionTool {
     public CleanAndBuildProjectTool() {
         super(McpSectionEnum.UI_BUILD,
                 McpToolEnum.CLEAN_AND_BUILD_PROJECT.toolName(),
-                "Triggers the user's IDE Clean and Build action for the required " + ProjectPathParamEnum.PROJECT_PATH.key()
-                + " and shows results in the Output window. Waits for the clean and build to finish and returns its "
-                + "result where the project reports progress; otherwise returns as soon as it is triggered, saying so. "
-                + "Takes NO options — it runs the project's generic IDE action, which has no argument channel. Use "
+                "Triggers the IDE's Clean and Build action for the project; output goes to the Output window. Waits "
+                + "for completion when possible, otherwise reports that it was triggered. No options; use "
                 + McpToolEnum.CLEAN_AND_BUILD_MAVEN_PROJECT.toolName() + " / " + McpToolEnum.CLEAN_AND_BUILD_GRADLE_PROJECT.toolName()
-                + " / " + McpToolEnum.CLEAN_AND_BUILD_ANT_PROJECT.toolName()
-                + " instead for options and an AI-readable result summary and log.",
+                + " / " + McpToolEnum.CLEAN_AND_BUILD_ANT_PROJECT.toolName() + " for those.",
                 McpToolEnum.CLEAN_AND_BUILD_PROJECT.toolName() + " -> INSTEAD OF Bash clean then build - requires "
                 + ProjectPathParamEnum.PROJECT_PATH.key() + "; triggers the user's IDE Clean and Build action"
                 + BuildSubmitter.QUEUE_INSTRUCTION,

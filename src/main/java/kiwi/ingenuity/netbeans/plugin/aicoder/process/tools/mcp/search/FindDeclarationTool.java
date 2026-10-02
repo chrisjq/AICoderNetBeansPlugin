@@ -45,7 +45,7 @@ public class FindDeclarationTool implements McpToolInterface {
         JsonObject props = new JsonObject();
         JsonObject fp = new JsonObject();
         fp.addProperty(ToolSchemaKeyEnum.TYPE.key(), "string");
-        fp.addProperty(ToolSchemaKeyEnum.DESCRIPTION.key(), "Absolute path to the file containing the reference. Omit to use the first open project's source root.");
+        fp.addProperty(ToolSchemaKeyEnum.DESCRIPTION.key(), "Absolute path to the file containing the reference.");
         props.add(FindDeclarationParamEnum.FILE_PATH.key(), fp);
         JsonObject ln = new JsonObject();
         ln.addProperty(ToolSchemaKeyEnum.TYPE.key(), "integer");
@@ -57,6 +57,7 @@ public class FindDeclarationTool implements McpToolInterface {
         props.add(FindDeclarationParamEnum.COLUMN.key(), col);
         schema.add(ToolSchemaKeyEnum.PROPERTIES.key(), props);
         JsonArray required = new JsonArray();
+        required.add(FindDeclarationParamEnum.FILE_PATH.key());
         required.add(FindDeclarationParamEnum.LINE.key());
         schema.add(ToolSchemaKeyEnum.REQUIRED.key(), required);
         tool.add(ToolSchemaKeyEnum.INPUT_SCHEMA.key(), schema);

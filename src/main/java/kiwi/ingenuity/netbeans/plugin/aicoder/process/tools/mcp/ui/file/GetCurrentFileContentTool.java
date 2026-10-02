@@ -17,10 +17,9 @@ public class GetCurrentFileContentTool extends AbstractActionTool {
     public GetCurrentFileContentTool() {
         super(McpSectionEnum.UI_FILES,
                 McpToolEnum.GET_CURRENT_FILE_CONTENT.toolName(),
-                "Returns the active editor's full content, prefixed with its absolute path; truncates after "
-                + "200,000 characters with a marker. The default output must not be written back as file "
-                + "content; pass " + GetCurrentFileContentParamEnum.RAW.key()
-                + "=true for the exact file text (decoded with the file's encoding).",
+                "Returns the active editor's content, prefixed with its absolute path; truncates after 200,000 "
+                + "characters with a marker. Pass " + GetCurrentFileContentParamEnum.RAW.key()
+                + "=true for the exact file text with no header.",
                 McpToolEnum.GET_CURRENT_FILE_CONTENT.toolName() + " -> INSTEAD OF Read tool when you need the active editor's full text",
                 "" + McpToolEnum.GET_CURRENT_FILE_CONTENT.toolName() + " - get the active editor's full text");
     }
@@ -29,10 +28,10 @@ public class GetCurrentFileContentTool extends AbstractActionTool {
     public JsonObject schema(Set<McpInstructionOptionEnum> options) {
         JsonObject tool = new JsonObject();
         tool.addProperty(ToolSchemaKeyEnum.NAME.key(), McpToolEnum.GET_CURRENT_FILE_CONTENT.toolName());
-        tool.addProperty(ToolSchemaKeyEnum.DESCRIPTION.key(), "Returns the active editor's full content, prefixed "
+        tool.addProperty(ToolSchemaKeyEnum.DESCRIPTION.key(), "Returns the active editor's content, prefixed "
                                                               + "with its absolute path; truncates after 200,000 characters with a marker. Pass "
                                                               + GetCurrentFileContentParamEnum.RAW.key()
-                                                              + "=true for the exact file text (decoded with the file's encoding) with no header.");
+                                                              + "=true for the exact file text with no header.");
         JsonObject schema = new JsonObject();
         schema.addProperty(ToolSchemaKeyEnum.TYPE.key(), "object");
         JsonObject props = new JsonObject();

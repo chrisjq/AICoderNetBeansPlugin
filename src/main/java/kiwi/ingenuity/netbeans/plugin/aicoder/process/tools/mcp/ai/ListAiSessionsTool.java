@@ -28,18 +28,9 @@ public class ListAiSessionsTool extends AbstractActionTool {
      * apart.
      */
     private static final String TOOL_DESCRIPTION
-                                = "List the other AI sessions open in this IDE — not internal subagents. Each entry includes active=true if"
-                                  + " the session is busy processing a turn, active=false if idle. awaitingApproval=true"
-                                  + " means an interactive approval prompt is awaiting that session's user; active keeps"
-                                  + " its independent busy/idle meaning. Both idle and busy sessions can receive "
-                                  + McpToolEnum.PEER_MESSAGE_SEND.toolName() + "."
-                                  + " Each entry also reports mailDelivery: when that peer will actually read your"
-                                  + " message, and whether " + SendAiMessageParamEnum.IMPORTANT.key() + "=true changes"
-                                  + " it. Where mailDelivery says the peer reads at end of turn, it cannot be reached"
-                                  + " sooner and " + SendAiMessageParamEnum.IMPORTANT.key() + "=true is silently"
-                                  + " ignored for it — either that backend has no mid-turn channel, or the peer's"
-                                  + " session does not permit interruption. Read mailDelivery before setting "
-                                  + SendAiMessageParamEnum.IMPORTANT.key() + ".";
+                                = "Lists the other AI sessions open in this IDE. Each entry reports busy/idle, whether its user is being"
+                                  + " asked to approve something, and mailDelivery: when it will next read your message, and whether "
+                                  + SendAiMessageParamEnum.IMPORTANT.key() + "=true changes that.";
 
     public ListAiSessionsTool() {
         super(McpSectionEnum.PLUGIN,

@@ -37,7 +37,7 @@ public class ChangeMethodSignatureTool implements McpToolInterface {
                 // with no way to tell which entry was dropped. Rejecting reports exactly which entry was malformed and
                 // matches how the other malformed-entry cases below are handled.
                 throw new McpArgumentException(-32602,
-                                               "parameters[" + i + "]: each entry must be an object, got: " + paramEl);
+                        "parameters[" + i + "]: each entry must be an object, got: " + paramEl);
             }
             JsonObject p = paramEl.getAsJsonObject();
             String origIdxKey = ChangeMethodSignatureParamEnum.ORIGINAL_INDEX.key();
@@ -54,12 +54,12 @@ public class ChangeMethodSignatureTool implements McpToolInterface {
                               ? p.get(defaultKey).getAsString() : null;
             if (origIdx == -1 && (pName == null || pType == null)) {
                 throw new McpArgumentException(-32602,
-                                               "parameters[" + i + "]: new parameters (originalIndex=-1) require both name and type");
+                        "parameters[" + i + "]: new parameters (originalIndex=-1) require both name and type");
             }
             if (origIdx == -1 && pDefault == null) {
                 throw new McpArgumentException(-32602,
-                                               "parameters[" + i + "]: new parameters (originalIndex=-1) require defaultValue — "
-                                               + "it is inserted at every existing call site");
+                        "parameters[" + i + "]: new parameters (originalIndex=-1) require defaultValue — "
+                        + "it is inserted at every existing call site");
             }
             // Carry whatever was supplied, even if only one of name/type is present. The four-arg constructor takes
             // nulls for the fields the caller omitted, and RefactoringProvider.mergeParameterInfos restores each null
@@ -94,8 +94,8 @@ public class ChangeMethodSignatureTool implements McpToolInterface {
         JsonObject tool = new JsonObject();
         tool.addProperty(ToolSchemaKeyEnum.NAME.key(), McpToolEnum.CHANGE_METHOD_SIGNATURE.toolName());
         tool.addProperty(ToolSchemaKeyEnum.DESCRIPTION.key(),
-                         "Changes a method's parameter list, name, return type, or adds an overload; all existing call sites are updated. "
-                         + ChangeMethodSignatureParamEnum.PARAMETERS.key() + ": the complete desired list, or [] to remove every parameter; see per-parameter rules below.");
+                "Changes a method's parameters, name, or return type (or adds an overload) and updates all call sites. "
+                + ChangeMethodSignatureParamEnum.PARAMETERS.key() + " is the complete desired list, or [] to remove them all.");
         JsonObject schema = new JsonObject();
         schema.addProperty(ToolSchemaKeyEnum.TYPE.key(), "object");
         JsonObject props = new JsonObject();
@@ -103,8 +103,8 @@ public class ChangeMethodSignatureTool implements McpToolInterface {
         JsonObject paramsArr = new JsonObject();
         paramsArr.addProperty(ToolSchemaKeyEnum.TYPE.key(), "array");
         paramsArr.addProperty(ToolSchemaKeyEnum.DESCRIPTION.key(),
-                              "The complete desired parameter list. Omit to keep existing params, or [] to remove every parameter. "
-                              + "Example: [{\"originalIndex\":0},{\"originalIndex\":1,\"name\":\"newName\"},{\"originalIndex\":-1,\"name\":\"extra\",\"type\":\"String\",\"defaultValue\":\"\\\"\\\"\"}]");
+                "The complete desired parameter list. Omit to keep existing params, or [] to remove every parameter. "
+                + "Example: [{\"originalIndex\":0},{\"originalIndex\":1,\"name\":\"newName\"},{\"originalIndex\":-1,\"name\":\"extra\",\"type\":\"String\",\"defaultValue\":\"\\\"\\\"\"}]");
         JsonObject paramItem = new JsonObject();
         paramItem.addProperty(ToolSchemaKeyEnum.TYPE.key(), "object");
         JsonObject paramProps = new JsonObject();
@@ -119,13 +119,13 @@ public class ChangeMethodSignatureTool implements McpToolInterface {
         JsonObject origIdx = new JsonObject();
         origIdx.addProperty(ToolSchemaKeyEnum.TYPE.key(), "integer");
         origIdx.addProperty(ToolSchemaKeyEnum.DESCRIPTION.key(),
-                            "0-based index in the original method; -1 for a new parameter. Default: this param's position in the array.");
+                "0-based index in the original method; -1 for a new parameter. Default: this param's position in the array.");
         paramProps.add(ChangeMethodSignatureParamEnum.ORIGINAL_INDEX.key(), origIdx);
         JsonObject defProp = new JsonObject();
         defProp.addProperty(ToolSchemaKeyEnum.TYPE.key(), "string");
         defProp.addProperty(ToolSchemaKeyEnum.DESCRIPTION.key(),
-                            "Value inserted at existing call sites for new params (e.g. null, 0). "
-                            + "Required when " + ChangeMethodSignatureParamEnum.ORIGINAL_INDEX.key() + " is -1.");
+                "Value inserted at existing call sites for new params (e.g. null, 0). "
+                + "Required when " + ChangeMethodSignatureParamEnum.ORIGINAL_INDEX.key() + " is -1.");
         paramProps.add(ChangeMethodSignatureParamEnum.DEFAULT_VALUE.key(), defProp);
         paramItem.add(ToolSchemaKeyEnum.PROPERTIES.key(), paramProps);
         paramsArr.add(ToolSchemaKeyEnum.ITEMS.key(), paramItem);
@@ -133,12 +133,11 @@ public class ChangeMethodSignatureTool implements McpToolInterface {
 
         JsonObject fp = new JsonObject();
         fp.addProperty(ToolSchemaKeyEnum.TYPE.key(), "string");
-        fp.addProperty(ToolSchemaKeyEnum.DESCRIPTION.key(), "Absolute path to the file. Required — this tool does not fall back to the focused editor. Call " + McpToolEnum.GET_CURRENT_FILE.toolName() + " if you want the file the user is looking at.");
+        fp.addProperty(ToolSchemaKeyEnum.DESCRIPTION.key(), "Absolute path to the file. No fallback to the focused editor.");
         props.add(ChangeMethodSignatureParamEnum.FILE_PATH.key(), fp);
         JsonObject ln = new JsonObject();
         ln.addProperty(ToolSchemaKeyEnum.TYPE.key(), "integer");
-        ln.addProperty(ToolSchemaKeyEnum.DESCRIPTION.key(),
-                       "1-based line of the method declaration. Required — this tool does not follow the user's cursor.");
+        ln.addProperty(ToolSchemaKeyEnum.DESCRIPTION.key(), "1-based line of the method declaration.");
         props.add(ChangeMethodSignatureParamEnum.LINE.key(), ln);
         JsonObject mName = new JsonObject();
         mName.addProperty(ToolSchemaKeyEnum.TYPE.key(), "string");
@@ -154,7 +153,7 @@ public class ChangeMethodSignatureTool implements McpToolInterface {
         props.add(ChangeMethodSignatureParamEnum.OVERLOAD_METHOD.key(), overload);
         JsonObject cw = new JsonObject();
         cw.addProperty(ToolSchemaKeyEnum.TYPE.key(), "boolean");
-        cw.addProperty(ToolSchemaKeyEnum.DESCRIPTION.key(), "When a refactoring reports only non-fatal warnings, apply it anyway and report the warnings alongside the result instead of refusing. Fatal problems always refuse regardless of this flag — these tools apply changes immediately with no diff panel to review them in, so a fatal problem (the engine's own signal that the result would be broken) is never applied unreviewed. Default: false.");
+        cw.addProperty(ToolSchemaKeyEnum.DESCRIPTION.key(), RefactorToolText.COMMIT_WITH_WARNING_DESCRIPTION);
         props.add(ChangeMethodSignatureParamEnum.COMMIT_WITH_WARNING.key(), cw);
         schema.add(ToolSchemaKeyEnum.PROPERTIES.key(), props);
         JsonArray required = new JsonArray();

@@ -17,8 +17,8 @@ public class OrganiseImportsTool extends AbstractFileTool {
         super(McpSectionEnum.UI_SOURCE,
                 McpToolEnum.ORGANISE_IMPORTS.toolName(),
                 "Removes unused imports, sorts the rest by the code-style import groups, and saves the file, without opening an editor. "
-                + "An import used only in a javadoc reference is kept. If the file has compile errors, only imports that are provably unused are removed. "
-                + "Does not add missing imports \u2014 FixImports does that.",
+                + "A javadoc-only reference keeps its import; with compile errors, only provably-unused imports are removed. "
+                + "Does not add missing imports; FixImports does that.",
                 McpToolEnum.ORGANISE_IMPORTS.toolName() + " -> INSTEAD OF manual import sorting - removes unused imports and sorts the rest, headless; does not add missing ones",
                 McpToolEnum.ORGANISE_IMPORTS.toolName() + " - removes unused imports and sorts the rest, headless; does not add missing ones");
     }

@@ -45,7 +45,7 @@ public class FindImplementationsTool implements McpToolInterface {
         JsonObject props = new JsonObject();
         JsonObject fp = new JsonObject();
         fp.addProperty(ToolSchemaKeyEnum.TYPE.key(), "string");
-        fp.addProperty(ToolSchemaKeyEnum.DESCRIPTION.key(), "Absolute path to the file containing the type declaration. Omit to use the first open project's source root.");
+        fp.addProperty(ToolSchemaKeyEnum.DESCRIPTION.key(), "Absolute path to the file containing the type declaration.");
         props.add(FindImplementationsParamEnum.FILE_PATH.key(), fp);
         JsonObject ln = new JsonObject();
         ln.addProperty(ToolSchemaKeyEnum.TYPE.key(), "integer");
@@ -53,6 +53,7 @@ public class FindImplementationsTool implements McpToolInterface {
         props.add(FindImplementationsParamEnum.LINE.key(), ln);
         schema.add(ToolSchemaKeyEnum.PROPERTIES.key(), props);
         JsonArray required = new JsonArray();
+        required.add(FindImplementationsParamEnum.FILE_PATH.key());
         required.add(FindImplementationsParamEnum.LINE.key());
         schema.add(ToolSchemaKeyEnum.REQUIRED.key(), required);
         tool.add(ToolSchemaKeyEnum.INPUT_SCHEMA.key(), schema);

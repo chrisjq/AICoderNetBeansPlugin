@@ -24,6 +24,7 @@ import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.McpToolInterface
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.McpToolSchemas;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.ToolRequestArguments;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.ToolSchemaKeyEnum;
+import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.refactor.RefactorToolText;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.providers.netbeans.FileUtils;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.providers.netbeans.RefactoringProvider;
 import kiwi.ingenuity.netbeans.plugin.aicoder.utils.ProjectPathUtil;
@@ -52,8 +53,7 @@ public class MoveFileTool implements McpToolInterface {
         if (!options.contains(McpInstructionOptionEnum.TOOL_INSTRUCTION)) {
             return null;
         }
-        return McpToolEnum.MOVE_FILE.toolName() + " -> moves a file; Java files use MoveRefactoring (updates package declaration "
-               + "and all import references); other files use FileUtil.moveFile()";
+        return McpToolEnum.MOVE_FILE.toolName() + " -> moves a file; Java files get their package declaration and imports updated too";
     }
 
     @Override
@@ -61,10 +61,7 @@ public class MoveFileTool implements McpToolInterface {
         JsonObject tool = new JsonObject();
         tool.addProperty(ToolSchemaKeyEnum.NAME.key(), McpToolEnum.MOVE_FILE.toolName());
         tool.addProperty(ToolSchemaKeyEnum.DESCRIPTION.key(),
-                "Move a file to a target directory. Java files are moved via MoveRefactoring so the "
-                + "package declaration and all import references are updated automatically. "
-                + "Other file types are moved with FileUtil.moveFile(). "
-                + "Refreshes VCS status in both source and target directories after the operation.");
+                "Moves a file to a target directory. Java files have their package declaration and all imports updated automatically.");
         JsonObject schema = new JsonObject();
         schema.addProperty(ToolSchemaKeyEnum.TYPE.key(), "object");
         JsonObject props = new JsonObject();
@@ -79,14 +76,12 @@ public class MoveFileTool implements McpToolInterface {
         props.add(MoveFileParamEnum.TARGET_DIRECTORY.key(), dir);
         JsonObject tpp = new JsonObject();
         tpp.addProperty(ToolSchemaKeyEnum.TYPE.key(), "string");
-        tpp.addProperty(ToolSchemaKeyEnum.DESCRIPTION.key(), "Optional absolute path of the OPEN project the file should end up in — omit to keep the move inside the source file's own project (default). "
-                                                             + "When given, " + MoveFileParamEnum.TARGET_DIRECTORY.key() + " may be relative to it (e.g. " + MoveFileParamEnum.TARGET_PROJECT_PATH.key()
-                                                             + "=/path/to/app-platform-rest, " + MoveFileParamEnum.TARGET_DIRECTORY.key() + "=src/main/java/kiwi/ingenuity/platform/rest/oauth); "
-                                                             + "an absolute " + MoveFileParamEnum.TARGET_DIRECTORY.key() + " not under it is refused.");
+        tpp.addProperty(ToolSchemaKeyEnum.DESCRIPTION.key(), "Absolute path of the OPEN project the file should end up in. Omit to keep the move inside the source file's own project. "
+                                                             + "When given, " + MoveFileParamEnum.TARGET_DIRECTORY.key() + " may be relative to it.");
         props.add(MoveFileParamEnum.TARGET_PROJECT_PATH.key(), tpp);
         JsonObject cw = new JsonObject();
         cw.addProperty(ToolSchemaKeyEnum.TYPE.key(), "boolean");
-        cw.addProperty(ToolSchemaKeyEnum.DESCRIPTION.key(), "When a Java move reports only non-fatal warnings (e.g. a cross-module move whose target lacks a dependency on the source module), apply it anyway and report the warnings alongside the result instead of refusing. Fatal problems always refuse regardless of this flag. Default: false.");
+        cw.addProperty(ToolSchemaKeyEnum.DESCRIPTION.key(), RefactorToolText.COMMIT_WITH_WARNING_DESCRIPTION);
         props.add(MoveFileParamEnum.COMMIT_WITH_WARNING.key(), cw);
         schema.add(ToolSchemaKeyEnum.PROPERTIES.key(), props);
         JsonArray required = new JsonArray();

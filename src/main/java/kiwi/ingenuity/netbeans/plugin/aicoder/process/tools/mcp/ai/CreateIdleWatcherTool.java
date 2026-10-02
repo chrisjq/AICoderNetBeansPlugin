@@ -20,11 +20,8 @@ public class CreateIdleWatcherTool extends AbstractActionTool {
 
     private static final int NOTE_MAX_LENGTH = 500;
     private static final String DESCRIPTION
-                                = "Watch another AI session open in this IDE (not an internal subagent) and be told when it has been idle (between turns) for timeoutMinutes. "
-                                  + "The clock starts when its turn ends and resets whenever it starts another turn. oneshot (default) fires "
-                                  + "once and is removed; recurring fires once per idle period and re-arms after the target's next turn. "
-                                  + "The notice says when the target became idle. Use it while waiting on another AI so you wake up if it "
-                                  + "stops. It never interrupts your turn by default.";
+                                = "Watches another AI session in this IDE and notifies you when it has been idle between turns for"
+                                  + " timeoutMinutes. Use it while waiting on another AI so you wake up if it stops.";
 
     public CreateIdleWatcherTool() {
         super(McpSectionEnum.PLUGIN,

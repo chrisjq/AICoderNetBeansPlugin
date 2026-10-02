@@ -24,10 +24,9 @@ public class GetFileContentTool implements McpToolInterface {
      * comparison against it is omitted rather than pointing them at something they cannot call.
      */
     private static String description(Set<McpInstructionOptionEnum> options) {
-        return "Read file content with unsaved editor changes flushed first. Output includes a line-number gutter; strip it before using in "
-               + McpToolEnum.APPLY_EDIT.toolName() + " " + McpToolPropertyEnum.OLD_STRING.key() + ". Omit " + GetFileContentParamEnum.START_LINE.key() + "/" + GetFileContentParamEnum.END_LINE.key() + " for full file. "
-               + "The default output's line-number gutter means it must not be written back as file content; pass "
-               + GetFileContentParamEnum.RAW.key() + "=true for the exact file text (decoded with the file's encoding) instead.";
+        return "Reads a file, first flushing any unsaved editor changes. Output has a line-number gutter; pass "
+               + GetFileContentParamEnum.RAW.key() + "=true for the exact file text, or " + GetFileContentParamEnum.START_LINE.key()
+               + "/" + GetFileContentParamEnum.END_LINE.key() + " for a range.";
     }
 
     private final McpHookServer server;

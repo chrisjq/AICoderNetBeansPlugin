@@ -21,13 +21,11 @@ public class BuildProjectTool extends AbstractActionTool {
     public BuildProjectTool() {
         super(McpSectionEnum.UI_BUILD,
                 McpToolEnum.BUILD_PROJECT.toolName(),
-                "Triggers the user's IDE Build action for the required " + ProjectPathParamEnum.PROJECT_PATH.key()
-                + " and shows results in the Output window. Waits for the build to finish and returns its result where "
-                + "the project reports progress; otherwise returns as soon as it is triggered, saying so. Takes NO "
-                + "build options — it runs the project's generic IDE action, which has no argument channel. Use "
+                "Triggers the IDE's Build action for the project; output goes to the Output window. Waits for "
+                + "completion when possible, otherwise reports that it was triggered. No options; use "
                 + McpToolEnum.BUILD_MAVEN_PROJECT.toolName()
                 + " / " + McpToolEnum.BUILD_GRADLE_PROJECT.toolName() + " / " + McpToolEnum.BUILD_ANT_PROJECT.toolName()
-                + " instead for goals/tasks/targets, skip-tests, profiles, and an AI-readable result summary and log.",
+                + " for goals/tasks/targets, skip-tests, and profiles.",
                 McpToolEnum.BUILD_PROJECT.toolName() + " -> INSTEAD OF Bash build commands - requires "
                 + ProjectPathParamEnum.PROJECT_PATH.key() + "; triggers the user's IDE Build action"
                 + BuildSubmitter.QUEUE_INSTRUCTION,

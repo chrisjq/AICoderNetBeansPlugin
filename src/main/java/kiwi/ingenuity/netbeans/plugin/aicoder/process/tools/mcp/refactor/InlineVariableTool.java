@@ -42,24 +42,21 @@ public class InlineVariableTool implements McpToolInterface {
         JsonObject tool = new JsonObject();
         tool.addProperty(ToolSchemaKeyEnum.NAME.key(), McpToolEnum.INLINE_VARIABLE.toolName());
         tool.addProperty(ToolSchemaKeyEnum.DESCRIPTION.key(),
-                "Inlines a variable - replaces all usages with the variable's initializer expression "
-                + "and removes the declaration. " + InlineVariableParamEnum.FILE_PATH.key() + " and " + InlineVariableParamEnum.LINE.key() + " are both required — this tool does not "
-                + "act on the user's cursor position; call " + McpToolEnum.GET_CURRENT_FILE.toolName() + " first if that is what you want.");
+                "Inlines a variable: replaces all usages with its initializer expression and removes the declaration.");
         JsonObject schema = new JsonObject();
         schema.addProperty(ToolSchemaKeyEnum.TYPE.key(), "object");
         JsonObject props = new JsonObject();
         JsonObject fp = new JsonObject();
         fp.addProperty(ToolSchemaKeyEnum.TYPE.key(), "string");
-        fp.addProperty(ToolSchemaKeyEnum.DESCRIPTION.key(), "Absolute path to the file. Required — this tool does not fall back to the focused editor. Call " + McpToolEnum.GET_CURRENT_FILE.toolName() + " if you want the file the user is looking at.");
+        fp.addProperty(ToolSchemaKeyEnum.DESCRIPTION.key(), "Absolute path to the file. No fallback to the focused editor.");
         props.add(InlineVariableParamEnum.FILE_PATH.key(), fp);
         JsonObject ln = new JsonObject();
         ln.addProperty(ToolSchemaKeyEnum.TYPE.key(), "integer");
-        ln.addProperty(ToolSchemaKeyEnum.DESCRIPTION.key(),
-                "1-based line of the variable declaration or usage. Required — this tool does not follow the user's cursor.");
+        ln.addProperty(ToolSchemaKeyEnum.DESCRIPTION.key(), "1-based line of the variable declaration or usage.");
         props.add(InlineVariableParamEnum.LINE.key(), ln);
         JsonObject cw = new JsonObject();
         cw.addProperty(ToolSchemaKeyEnum.TYPE.key(), "boolean");
-        cw.addProperty(ToolSchemaKeyEnum.DESCRIPTION.key(), "When a refactoring reports only non-fatal warnings, apply it anyway and report the warnings alongside the result instead of refusing. Fatal problems always refuse regardless of this flag — these tools apply changes immediately with no diff panel to review them in, so a fatal problem (the engine's own signal that the result would be broken) is never applied unreviewed. Default: false.");
+        cw.addProperty(ToolSchemaKeyEnum.DESCRIPTION.key(), RefactorToolText.COMMIT_WITH_WARNING_DESCRIPTION);
         props.add(InlineVariableParamEnum.COMMIT_WITH_WARNING.key(), cw);
         schema.add(ToolSchemaKeyEnum.PROPERTIES.key(), props);
         JsonArray required = new JsonArray();

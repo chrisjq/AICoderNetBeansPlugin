@@ -1,5 +1,6 @@
 package kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.search;
 
+import com.google.gson.JsonArray;
 import com.google.gson.JsonObject;
 import java.io.PrintWriter;
 import java.io.StringWriter;
@@ -50,7 +51,7 @@ public class FindUsagesTool implements McpToolInterface {
         JsonObject cn = new JsonObject();
         cn.addProperty(ToolSchemaKeyEnum.TYPE.key(), "string");
         cn.addProperty(ToolSchemaKeyEnum.DESCRIPTION.key(),
-                "Fully qualified class name (e.g. com.example.MyService). Required — use " + McpToolEnum.SEARCH_TYPES.toolName()
+                "Fully qualified class name (e.g. com.example.MyService). Use " + McpToolEnum.SEARCH_TYPES.toolName()
                 + " to find the class if needed.");
         props.add(FindUsagesParamEnum.CLASS_NAME.key(), cn);
 
@@ -76,6 +77,9 @@ public class FindUsagesTool implements McpToolInterface {
         props.add(FindUsagesParamEnum.SEARCH_IN_COMMENTS.key(), sc);
 
         schema.add(ToolSchemaKeyEnum.PROPERTIES.key(), props);
+        JsonArray required = new JsonArray();
+        required.add(FindUsagesParamEnum.CLASS_NAME.key());
+        schema.add(ToolSchemaKeyEnum.REQUIRED.key(), required);
         tool.add(ToolSchemaKeyEnum.INPUT_SCHEMA.key(), schema);
         return McpToolSchemas.applyCredentialsIfRequested(tool, options);
     }

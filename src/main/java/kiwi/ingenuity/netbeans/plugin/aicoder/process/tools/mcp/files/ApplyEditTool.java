@@ -43,15 +43,15 @@ public class ApplyEditTool extends AbstractActionTool {
     public ApplyEditTool() {
         super(McpSectionEnum.UI_FILES,
                 McpToolEnum.APPLY_EDIT.toolName(),
-                "Replace an exact string in a file. " + McpToolPropertyEnum.OLD_STRING.key() + " must match the source byte-for-byte including indentation; strip the line-number gutter if text was copied from " + McpToolEnum.GET_FILE_CONTENT.toolName() + ". The user approves the change in the NetBeans Accept/Reject diff panel.",
-                McpToolEnum.APPLY_EDIT.toolName() + " -> replace " + McpToolPropertyEnum.OLD_STRING.key() + " with " + McpToolPropertyEnum.NEW_STRING.key() + " in a file; " + McpToolPropertyEnum.OLD_STRING.key() + " must be byte-for-byte exact (strip " + McpToolEnum.GET_FILE_CONTENT.toolName() + " gutter if copying from there); user approves via the NetBeans diff panel; " + McpToolPropertyEnum.REPLACE_ALL.key() + " replaces every occurrence");
+                "Replaces an exact string in a file, showing the change in the user's Accept/Reject diff panel. " + McpToolPropertyEnum.OLD_STRING.key() + " must match the source exactly, including indentation and without the line-number gutter that " + McpToolEnum.GET_FILE_CONTENT.toolName() + " adds.",
+                McpToolEnum.APPLY_EDIT.toolName() + " -> replaces " + McpToolPropertyEnum.OLD_STRING.key() + " with " + McpToolPropertyEnum.NEW_STRING.key() + " in a file via the diff panel; " + McpToolPropertyEnum.OLD_STRING.key() + " must match exactly");
     }
 
     @Override
     public JsonObject schema(Set<McpInstructionOptionEnum> options) {
         JsonObject tool = new JsonObject();
         tool.addProperty(ToolSchemaKeyEnum.NAME.key(), McpToolEnum.APPLY_EDIT.toolName());
-        tool.addProperty(ToolSchemaKeyEnum.DESCRIPTION.key(), "Replace an exact string in a file, routing edits through the user's Accept/Reject diff panel. " + McpToolPropertyEnum.OLD_STRING.key() + " must match the source byte-for-byte including indentation; strip the line-number gutter if text was copied from " + McpToolEnum.GET_FILE_CONTENT.toolName() + ". Any unsaved editor changes are saved first, so " + McpToolPropertyEnum.OLD_STRING.key() + " is matched against what the user has on screen. Replaces only the first occurrence unless " + McpToolPropertyEnum.REPLACE_ALL.key() + " is true — make " + McpToolPropertyEnum.OLD_STRING.key() + " unique enough to identify the intended site otherwise. " + McpToolPropertyEnum.EXPECTED_COUNT.key() + " asserts the exact number of occurrences; a mismatch changes nothing and reports the actual count.");
+        tool.addProperty(ToolSchemaKeyEnum.DESCRIPTION.key(), "Replaces an exact string in a file, showing the change in the user's Accept/Reject diff panel. " + McpToolPropertyEnum.OLD_STRING.key() + " must match the source exactly, including indentation and without the line-number gutter that " + McpToolEnum.GET_FILE_CONTENT.toolName() + " adds.");
         JsonObject schema = new JsonObject();
         schema.addProperty(ToolSchemaKeyEnum.TYPE.key(), "object");
         JsonObject props = new JsonObject();
@@ -75,10 +75,8 @@ public class ApplyEditTool extends AbstractActionTool {
         JsonObject ec = new JsonObject();
         ec.addProperty(ToolSchemaKeyEnum.TYPE.key(), "integer");
         ec.addProperty(ToolSchemaKeyEnum.MINIMUM.key(), 0);
-        ec.addProperty(ToolSchemaKeyEnum.DESCRIPTION.key(), "Asserted number of occurrences of " + McpToolPropertyEnum.OLD_STRING.key()
-                                                            + ". If the actual count differs, nothing is changed and an error reports the actual count. Works with or "
-                                                            + "without " + McpToolPropertyEnum.REPLACE_ALL.key() + " — without it, this still replaces only the first "
-                                                            + "occurrence, but first asserts the total number of matches is exactly this many. Omit for no assertion.");
+        ec.addProperty(ToolSchemaKeyEnum.DESCRIPTION.key(), "Assert that " + McpToolPropertyEnum.OLD_STRING.key()
+                                                            + " occurs exactly this many times; if not, nothing is changed and the actual count is reported. Omit for no assertion.");
         props.add(McpToolPropertyEnum.EXPECTED_COUNT.key(), ec);
         schema.add(ToolSchemaKeyEnum.PROPERTIES.key(), props);
         JsonArray req = new JsonArray();

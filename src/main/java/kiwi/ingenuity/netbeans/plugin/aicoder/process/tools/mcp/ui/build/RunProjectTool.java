@@ -19,17 +19,10 @@ public class RunProjectTool extends AbstractActionTool {
     public RunProjectTool() {
         super(McpSectionEnum.UI_BUILD,
                 McpToolEnum.RUN_PROJECT.toolName(),
-                "Triggers the user's IDE Run Project action for the required " + ProjectPathParamEnum.PROJECT_PATH.key()
-                + " (Debug Project when " + McpToolPropertyEnum.DEBUG.key() + " is true) — the same thing the user "
-                + "gets from the project's Run/Debug menu. This LAUNCHES THE APPLICATION for the user; it is "
-                + "fire-and-forget: the call returns as soon as the action is triggered, without waiting for the run "
-                + "to finish (a GUI app or server may run indefinitely) and without capturing its output. Output "
-                + "appears in the IDE's Output window. The AI CANNOT stop a run or debug session once started — "
-                + "only the user can, from the Output window (Run) or the debugger's Finish/Kill (Debug). Takes no "
-                + "other options — it runs the project's generic IDE action, which has no argument channel.",
-                McpToolEnum.RUN_PROJECT.toolName() + " -> requires " + ProjectPathParamEnum.PROJECT_PATH.key()
-                + "; triggers the user's IDE Run Project (or Debug Project) action; fire-and-forget, cannot be"
-                + " stopped by the AI");
+                "Triggers the IDE's Run Project action (Debug Project when " + McpToolPropertyEnum.DEBUG.key() + "=true), the same as the "
+                + "user's Run menu. Fire-and-forget: returns at once, no output capture, and the AI cannot stop it.",
+                McpToolEnum.RUN_PROJECT.toolName() + " -> triggers the IDE's Run Project (or Debug Project) action; fire-and-forget,"
+                + " cannot be stopped by the AI");
     }
 
     @Override

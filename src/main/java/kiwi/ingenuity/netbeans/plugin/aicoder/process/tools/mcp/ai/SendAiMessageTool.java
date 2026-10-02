@@ -57,12 +57,12 @@ public class SendAiMessageTool extends AbstractActionTool {
 
         JsonObject replyTo = new JsonObject();
         replyTo.addProperty(ToolSchemaKeyEnum.TYPE.key(), "string");
-        replyTo.addProperty(ToolSchemaKeyEnum.DESCRIPTION.key(), "ID of a message addressed to you that you are answering (the id= UUID from PeerMessageList/PeerMessageRead). Setting it marks that message replied. An ID that does not qualify is reported in the send result and the message is delivered without a reply link.");
+        replyTo.addProperty(ToolSchemaKeyEnum.DESCRIPTION.key(), "ID of a message addressed to you that you are answering (the id= UUID from PeerMessageList/PeerMessageRead). Setting it marks that message replied.");
         props.add(SendAiMessageParamEnum.REPLY_TO_MESSAGE_ID.key(), replyTo);
 
         JsonObject important = new JsonObject();
         important.addProperty(ToolSchemaKeyEnum.TYPE.key(), "boolean");
-        important.addProperty(ToolSchemaKeyEnum.DESCRIPTION.key(), "If true, request prompt delivery; it interrupts a running target only when mailDelivery supports mid-turn delivery and the target allows important messages. Check mailDelivery in " + McpToolEnum.PEER_SESSION_LIST.toolName() + " first.");
+        important.addProperty(ToolSchemaKeyEnum.DESCRIPTION.key(), "Request prompt delivery, interrupting if target allows. Check mailDelivery in " + McpToolEnum.PEER_SESSION_LIST.toolName() + " first: where a peer only reads at end of turn, important is ignored for it.");
         props.add(SendAiMessageParamEnum.IMPORTANT.key(), important);
 
         JsonObject expectsReply = new JsonObject();

@@ -10,37 +10,36 @@ import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.providers.netbeans.B
 
 /**
  * Shared schema-building and argument-extraction for the three Maven devops tools (BuildMavenProjectTool,
- * CleanAndBuildMavenProjectTool, RunMavenTestsTool). All three expose the identical option set under the identical
- * {@link McpToolPropertyEnum} wire keys (each tool's own {@code *ParamEnum} just curates that same set for its schema),
- * so the property-building and arg-extraction logic is genuinely shared rather than duplicated three times with drift
- * risk. Only each tool's OWN default for {@code goals}/{@code skipTests} differs, which is why those two are still
- * parameters here rather than baked in.
+ * CleanAndBuildMavenProjectTool, RunMavenTestsTool). All three expose the identical option set under the
+ * identical {@link McpToolPropertyEnum} wire keys (each tool's own {@code *ParamEnum} just curates that same
+ * set for its schema), so the property-building and arg-extraction logic is genuinely shared rather than
+ * duplicated three times with drift risk. Only each tool's OWN default for {@code goals}/{@code skipTests}
+ * differs, which is why those two are still parameters here rather than baked in.
  */
 public final class MavenToolSchema {
 
     public static void addProperties(JsonObject props, String goalsDefaultDescription, boolean skipTestsDefault) {
         addStringArray(props, McpToolPropertyEnum.GOALS.key(),
-                       "Maven goals to run, each array entry exactly one goal — never put more than one goal in a single "
-                       + "entry (e.g. [\"clean\", \"install\"], not [\"clean install\"]; also \"package\", \"verify\"). "
-                       + "Replaces the default entirely when given — it is not merged with it. Default: " + goalsDefaultDescription + ".");
+                "Maven goals to run; each array entry is exactly one goal (e.g. [\"clean\", \"install\"], not "
+                + "[\"clean install\"]). Replaces the default entirely. Default: " + goalsDefaultDescription + ".");
         addStringArray(props, McpToolPropertyEnum.PROJECT_LIST.key(),
-                       "Maven -pl: module subset to build, each entry a module path or Maven coordinate (e.g. \":my-module\").");
+                "Maven -pl: module subset to build, each entry a module path or Maven coordinate (e.g. \":my-module\").");
         addBoolean(props, McpToolPropertyEnum.ALSO_MAKE.key(),
-                   "Maven -am: also build the dependencies of the modules named in " + McpToolPropertyEnum.PROJECT_LIST.key() + ". Default: false.");
+                "Maven -am: also build the dependencies of the modules named in " + McpToolPropertyEnum.PROJECT_LIST.key() + ". Default: false.");
         addString(props, McpToolPropertyEnum.RESUME_FROM.key(),
-                  "Maven -rf: resume a reactor build from this module (e.g. \":my-module\").");
+                "Maven -rf: resume a reactor build from this module (e.g. \":my-module\").");
         addBoolean(props, McpToolPropertyEnum.SKIP_TESTS.key(),
-                   "Maven -DskipTests. Default: " + skipTestsDefault + ".");
+                "Maven -DskipTests. Default: " + skipTestsDefault + ".");
         addBoolean(props, McpToolPropertyEnum.OFFLINE.key(),
-                   "Maven -o: resolve only from the local repository, without contacting remote repositories. Default: false.");
+                "Maven -o: resolve only from the local repository, without contacting remote repositories. Default: false.");
         addBoolean(props, McpToolPropertyEnum.UPDATE_SNAPSHOTS.key(),
-                   "Maven -U: force a check for updated snapshots/releases. Default: false.");
+                "Maven -U: force a check for updated snapshots/releases. Default: false.");
         addStringArray(props, McpToolPropertyEnum.PROFILES.key(), "Maven -P: profiles to activate.");
         addObject(props, McpToolPropertyEnum.PROPERTIES.key(),
-                  "Maven -Dk=v system/project properties, as a key/value map (never a raw string).");
+                "Maven -Dk=v system/project properties, as a key/value map (never a raw string).");
         addString(props, McpToolPropertyEnum.THREADS.key(), "Maven -T: thread/module parallelism (e.g. \"4\" or \"1C\").");
         addBoolean(props, McpToolPropertyEnum.FAIL_AT_END.key(),
-                   "Maven -fae: attempt every module before failing, reporting all failures at the end. Default: false.");
+                "Maven -fae: attempt every module before failing, reporting all failures at the end. Default: false.");
     }
 
     public static MavenBuildOptions optionsFrom(ToolRequestArguments args, List<String> goals, boolean skipTests) {

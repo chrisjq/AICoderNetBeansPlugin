@@ -25,9 +25,8 @@ public class DeleteDirectoryTool extends AbstractFileTool {
     public DeleteDirectoryTool(McpHookServer server) {
         super(McpSectionEnum.SYSTEM,
                 McpToolEnum.DELETE_DIRECTORY.toolName(),
-                "Permanently delete a directory whose whole tree holds no files — only empty subdirectories, at "
-                + "any depth. Refuses otherwise, naming up to 5 of the files it found and their total count. "
-                + "Refuses an open project's root directory.",
+                "Permanently deletes a directory containing only empty subdirectories, at any depth. Refuses if "
+                + "the tree holds any file.",
                 McpToolEnum.DELETE_DIRECTORY.toolName() + " -> permanently removes an empty directory tree; "
                 + "refuses if it contains any file or is an open project's root");
         this.server = server;

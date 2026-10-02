@@ -33,11 +33,9 @@ public class RefreshFileStatusTool implements McpToolInterface {
         JsonObject tool = new JsonObject();
         tool.addProperty(ToolSchemaKeyEnum.NAME.key(), McpToolEnum.REFRESH_NB_FILE_STATUS.toolName());
         tool.addProperty(ToolSchemaKeyEnum.DESCRIPTION.key(),
-                "Refreshes NetBeans' view of the filesystem and VCS (git) status. "
-                + "Call this after every git commit, and after creating or modifying files outside the IDE "
-                + "(e.g. files written directly by AI Coder), so NetBeans detects new files and updates git decorations immediately. "
-                + "Omit " + McpToolPropertyEnum.FILE_PATH.key()
-                + " to refresh all open projects; provide a file path to refresh only that file's project.");
+                "Refreshes NetBeans' view of the filesystem and git status. Call after a git commit or after "
+                + "creating/modifying files outside the IDE. Omit " + McpToolPropertyEnum.FILE_PATH.key()
+                + " to refresh all open projects, or give a file to refresh just its project.");
         JsonObject schema = new JsonObject();
         schema.addProperty(ToolSchemaKeyEnum.TYPE.key(), "object");
         JsonObject props = new JsonObject();

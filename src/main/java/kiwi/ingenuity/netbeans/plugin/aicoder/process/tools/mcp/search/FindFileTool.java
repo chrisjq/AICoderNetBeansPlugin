@@ -57,8 +57,8 @@ public class FindFileTool implements McpToolInterface {
     @Override
     public String instruction(Set<McpInstructionOptionEnum> options) {
         return options.contains(McpInstructionOptionEnum.TOOL_INSTRUCTION)
-                ? McpToolEnum.FIND_FILE.toolName() + " -> INSTEAD OF Bash find - locate files or directories by name under a permitted directory"
-                : null;
+               ? McpToolEnum.FIND_FILE.toolName() + " -> INSTEAD OF Bash find - locate files or directories by name under a permitted directory"
+               : null;
     }
 
     @Override
@@ -66,29 +66,29 @@ public class FindFileTool implements McpToolInterface {
         JsonObject tool = new JsonObject();
         tool.addProperty(ToolSchemaKeyEnum.NAME.key(), McpToolEnum.FIND_FILE.toolName());
         tool.addProperty(ToolSchemaKeyEnum.DESCRIPTION.key(), "Finds files or directories by name below a directory or across open projects. "
-                + "Default: literal text, results capped (header reports true total). Depth capped at 100 levels.");
+                                                              + "Default: literal text, results capped (header reports true total). Depth capped at 100 levels.");
         JsonObject schema = new JsonObject();
         schema.addProperty(ToolSchemaKeyEnum.TYPE.key(), "object");
         JsonObject props = new JsonObject();
         addStringProperty(props, FindFileParamEnum.DIRECTORY_PATH, "Absolute project or parent directory to search recursively. Omit to search accessible open projects.");
         addStringProperty(props, FindFileParamEnum.PATTERN, "Optional literal text or regex pattern matched against each entry's leaf name; omit to list everything of the requested type.");
         addBooleanProperty(props, FindFileParamEnum.IS_REGEX, "Treat " + FindFileParamEnum.PATTERN.key()
-                + " as regex. Default: false (literal text).");
+                                                              + " as regex. Default: false (literal text).");
         addBooleanProperty(props, FindFileParamEnum.CASE_SENSITIVE, "Case-sensitive match. Default: false.");
         addBooleanProperty(props, FindFileParamEnum.IGNORE_HIDDEN, "Skip hidden files and directories. Default: true. Leading-dot names are hidden on all platforms.");
         addStringProperty(props, FindFileParamEnum.TYPE, "What to match: " + FindFileTypeEnum.typeList()
-                + ". Use " + FindFileTypeEnum.DIR.type()
-                + " to find directory names, including empty directories. The starting directory is never returned as a match.");
+                                                         + ". Use " + FindFileTypeEnum.DIR.type()
+                                                         + " to find directory names, including empty directories. The starting directory is never returned as a match.");
         JsonObject maxDepth = new JsonObject();
         maxDepth.addProperty(ToolSchemaKeyEnum.TYPE.key(), "integer");
-        maxDepth.addProperty(ToolSchemaKeyEnum.DESCRIPTION.key(), "How many directory levels below the starting directory to search: 0 is the starting directory only, 1 adds one level below it, 2 two levels, and so on. Omit or pass a negative value for the deepest search available. Any value is capped at " + FindFileProvider.MAX_DEPTH_CEILING + " levels, which is far beyond any real source tree and guarantees the walk terminates. This is the parameter that limits how much work the search does.");
+        maxDepth.addProperty(ToolSchemaKeyEnum.DESCRIPTION.key(), "Directory levels below the starting directory to search (0 = starting directory only). Omit or negative for the deepest search available. Capped at " + FindFileProvider.MAX_DEPTH_CEILING + " levels.");
         props.add(FindFileParamEnum.MAX_DEPTH.key(), maxDepth);
         JsonObject maxMatches = new JsonObject();
         maxMatches.addProperty(ToolSchemaKeyEnum.TYPE.key(), "integer");
         maxMatches.addProperty(ToolSchemaKeyEnum.DESCRIPTION.key(), "Maximum entries to show. Default: 200; maximum: "
-                + "5000. This caps the LISTING only — the walk still visits everything within "
-                + FindFileParamEnum.MAX_DEPTH.key() + ", and the header reports the true total when capped. Use "
-                + FindFileParamEnum.MAX_DEPTH.key() + " to limit the work itself.");
+                                                                    + "5000. This caps the LISTING only — the walk still visits everything within "
+                                                                    + FindFileParamEnum.MAX_DEPTH.key() + ", and the header reports the true total when capped. Use "
+                                                                    + FindFileParamEnum.MAX_DEPTH.key() + " to limit the work itself.");
         props.add(FindFileParamEnum.MAX_MATCHES.key(), maxMatches);
         schema.add(ToolSchemaKeyEnum.PROPERTIES.key(), props);
         tool.add(ToolSchemaKeyEnum.INPUT_SCHEMA.key(), schema);
@@ -118,7 +118,7 @@ public class FindFileTool implements McpToolInterface {
                 FileObject directory = project.getProjectDirectory();
                 File directoryFile = directory != null ? FileUtil.toFile(directory) : null;
                 if (directoryFile != null && sessionId != null
-                        && server.isFileAccessible(sessionId, directoryFile.getPath())) {
+                    && server.isFileAccessible(sessionId, directoryFile.getPath())) {
                     roots.add(directoryFile.toPath());
                 }
             }
@@ -127,14 +127,14 @@ public class FindFileTool implements McpToolInterface {
         // bool() returns false for an absent key, so a flag that defaults to TRUE has to test has() first — reading it
         // with bool() alone would silently invert the documented default for every caller that omits it.
         boolean ignoreHidden = !args.has(FindFileParamEnum.IGNORE_HIDDEN.key())
-                || args.bool(FindFileParamEnum.IGNORE_HIDDEN.key());
+                               || args.bool(FindFileParamEnum.IGNORE_HIDDEN.key());
         // A misspelled type must be refused, not quietly defaulted: falling back to "file" would answer a directory
         // search with a confident empty result and no indication the argument was ignored.
         String rawType = args.str(FindFileParamEnum.TYPE.key());
         FindFileTypeEnum type = FindFileTypeEnum.from(rawType);
         if (type == null) {
             throw new McpArgumentException(-32602, FindFileParamEnum.TYPE.key() + " must be one of: "
-                    + FindFileTypeEnum.typeList() + " — received: " + rawType);
+                                                   + FindFileTypeEnum.typeList() + " — received: " + rawType);
         }
         return FindFileProvider.findFiles(directories, pattern,
                 args.bool(FindFileParamEnum.IS_REGEX.key()),

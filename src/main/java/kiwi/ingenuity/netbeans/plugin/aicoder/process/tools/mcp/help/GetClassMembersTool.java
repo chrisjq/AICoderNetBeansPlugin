@@ -13,7 +13,7 @@ public class GetClassMembersTool extends AbstractClassNameTool {
     public GetClassMembersTool() {
         super(McpSectionEnum.HELP,
                 McpToolEnum.GET_CLASS_MEMBERS.toolName(),
-                "Returns the methods and fields declared in a class. "
+                "Returns the fields, methods and constructors declared in a class. "
                 + "Provide a fully qualified class name; it is required, and is not resolved from the user's cursor.",
                 McpToolEnum.GET_CLASS_MEMBERS.toolName() + " -> INSTEAD OF Read + manual parsing - lists fields, methods and constructors of a class",
                 McpToolEnum.GET_CLASS_MEMBERS.toolName() + " - lists fields, methods and constructors of a class");
