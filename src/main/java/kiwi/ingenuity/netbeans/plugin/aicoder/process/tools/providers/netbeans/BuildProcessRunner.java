@@ -32,12 +32,13 @@ public final class BuildProcessRunner {
         try {
             ProcessBuilder pb = new ProcessBuilder(prepared.command());
             pb.directory(prepared.root());
+            pb.environment().putAll(prepared.environment());
             pb.redirectErrorStream(true);
             process = pb.start();
             control.attach(process);
             final Process running = process;
             reader = new Thread(() -> readOutput(running, output, readerFailure),
-                                prepared.backend().logTag() + "-output-reader");
+                    prepared.backend().logTag() + "-output-reader");
             reader.setDaemon(true);
             reader.start();
             boolean finished = process.waitFor(control.timeoutMillis(), TimeUnit.MILLISECONDS);
@@ -48,15 +49,15 @@ public final class BuildProcessRunner {
             String text = output.get();
             if (readerFailure.get() != null) {
                 return BuildOutcome.failed(BuildOutputFormatter.attachLog(prepared.sessionId(), prepared.backend(),
-                                                                          "Error reading " + label(prepared) + " output: " + readerFailure.get().getMessage(), prepared.command(), text));
+                        "Error reading " + label(prepared) + " output: " + readerFailure.get().getMessage(), prepared.displayCommand(), text));
             }
             if (!finished) {
                 return BuildOutcome.timedOut(BuildOutputFormatter.attachLog(prepared.sessionId(), prepared.backend(),
-                                                                            "Timed out after " + TimeUnit.MILLISECONDS.toSeconds(control.timeoutMillis()) + "s", prepared.command(), text));
+                        "Timed out after " + TimeUnit.MILLISECONDS.toSeconds(control.timeoutMillis()) + "s", prepared.displayCommand(), text));
             }
             int exit = process.exitValue();
             return BuildOutcome.completed(exit == 0, BuildOutputFormatter.formatResult(prepared.sessionId(),
-                                                                                       prepared.backend(), exit == 0, exit, prepared.command(), text));
+                    prepared.backend(), exit == 0, exit, prepared.displayCommand(), text));
         }
         catch (InterruptedException e) {
             Thread.currentThread().interrupt();
@@ -105,7 +106,7 @@ public final class BuildProcessRunner {
 
     private static String label(PreparedBuild prepared) {
         return prepared.backend() == null ? "build" : prepared.backend().name().charAt(0)
-                + prepared.backend().name().substring(1).toLowerCase();
+                                                      + prepared.backend().name().substring(1).toLowerCase();
     }
 
     private BuildProcessRunner() {

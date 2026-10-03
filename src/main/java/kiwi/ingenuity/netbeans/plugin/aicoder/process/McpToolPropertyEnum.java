@@ -401,8 +401,9 @@ public enum McpToolPropertyEnum {
      */
     SESSION_ID("sessionId"),
     /**
-     * Maven -DskipTests / Gradle -x test: skip running tests as part of the build. Default differs by tool —
-     * see each tool's own description for what it preserves from before this option existed.
+     * Maven -DskipTests / Gradle -x check (-x test for the Gradle test run): skip tests, and for a Gradle
+     * build the whole check lifecycle. Default differs by tool — see each tool's own description for what it
+     * preserves from before this option existed.
      */
     SKIP_TESTS("skipTests"),
     /**

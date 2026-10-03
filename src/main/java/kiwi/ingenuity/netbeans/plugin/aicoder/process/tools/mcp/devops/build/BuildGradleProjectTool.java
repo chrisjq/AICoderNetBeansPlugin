@@ -16,13 +16,13 @@ public class BuildGradleProjectTool extends AbstractBuildTool {
 
     public BuildGradleProjectTool() {
         super(McpSectionEnum.DEVOPS_BUILD,
-              McpToolEnum.BUILD_GRADLE_PROJECT.toolName(),
-              "Builds the Gradle project at " + BuildGradleProjectParamEnum.PROJECT_PATH.key() + " (default: ./gradlew build -x test; "
-              + BuildGradleProjectParamEnum.TASKS.key() + " and the other options below override this). "
-              + "Gradle projects only - do not use for Maven or Ant projects. "
-              + "Returns a summary; the full log is written to a file.",
-              McpToolEnum.BUILD_GRADLE_PROJECT.toolName() + " -> INSTEAD OF Bash gradlew build - requires " + BuildGradleProjectParamEnum.PROJECT_PATH.key() + "; builds Gradle project (default: build, tests skipped, overridable) and returns a result summary (complete log written to a file)" + BuildSubmitter.QUEUE_INSTRUCTION,
-              McpToolEnum.BUILD_GRADLE_PROJECT.toolName() + " - requires " + BuildGradleProjectParamEnum.PROJECT_PATH.key() + "; builds Gradle project (default: build, tests skipped, overridable) and returns a result summary (complete log written to a file)" + BuildSubmitter.QUEUE_INSTRUCTION);
+                McpToolEnum.BUILD_GRADLE_PROJECT.toolName(),
+                "Builds the Gradle project at " + BuildGradleProjectParamEnum.PROJECT_PATH.key() + " (default: ./gradlew build -x check; "
+                + BuildGradleProjectParamEnum.TASKS.key() + " and the other options below override this). "
+                + "Gradle projects only - do not use for Maven or Ant projects. "
+                + "Returns a summary; the full log is written to a file.",
+                McpToolEnum.BUILD_GRADLE_PROJECT.toolName() + " -> INSTEAD OF Bash gradlew build - requires " + BuildGradleProjectParamEnum.PROJECT_PATH.key() + "; builds Gradle project (default: build, verification (check) skipped, overridable) and returns a result summary (complete log written to a file)" + BuildSubmitter.QUEUE_INSTRUCTION,
+                McpToolEnum.BUILD_GRADLE_PROJECT.toolName() + " - requires " + BuildGradleProjectParamEnum.PROJECT_PATH.key() + "; builds Gradle project (default: build, verification (check) skipped, overridable) and returns a result summary (complete log written to a file)" + BuildSubmitter.QUEUE_INSTRUCTION);
     }
 
     @Override
@@ -38,6 +38,6 @@ public class BuildGradleProjectTool extends AbstractBuildTool {
         GradleBuildOptions opts = GradleToolSchema.optionsFrom(args, tasks, skipTests);
         String projectPath = args.str(BuildGradleProjectParamEnum.PROJECT_PATH.key());
         return BuildSubmitter.submit(McpToolEnum.BUILD_GRADLE_PROJECT.toolName(), args, projectPath,
-                                     BuildAndTestGradleProvider.prepareBuildProject(session.getId(), projectPath, opts), session);
+                BuildAndTestGradleProvider.prepareBuildProject(session.getId(), projectPath, opts), session);
     }
 }

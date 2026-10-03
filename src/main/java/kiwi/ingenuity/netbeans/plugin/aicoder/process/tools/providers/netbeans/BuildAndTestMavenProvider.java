@@ -91,7 +91,8 @@ public class BuildAndTestMavenProvider {
         command.add(BuildToolLocator.forProject(resolved.root(), BuildToolLocator.Tool.MAVEN));
         command.addAll(List.of(argsFor(opts, testClass)));
         command.add("--no-transfer-progress");
-        return new PreparedBuild(null, sessionId, resolved.root(), command, BuildOutputFormatter.Backend.MAVEN);
+        return new PreparedBuild(null, sessionId, resolved.root(), command, BuildOutputFormatter.Backend.MAVEN)
+                .withEnvironment(ProjectJavaPlatform.environmentFor(resolved.root()));
     }
 
     /**
@@ -184,7 +185,8 @@ public class BuildAndTestMavenProvider {
         command.addAll(goals);
         command.add("--no-transfer-progress");
         // A download is not a build: it must not raise the project's inline time limit.
-        return new PreparedBuild(null, sessionId, root, command, BuildOutputFormatter.Backend.MAVEN, false);
+        return new PreparedBuild(null, sessionId, root, command, BuildOutputFormatter.Backend.MAVEN, false)
+                .withEnvironment(ProjectJavaPlatform.environmentFor(root));
     }
 
     private static RootResult resolveRoot(String sessionId, String projectPath) {

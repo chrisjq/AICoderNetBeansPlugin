@@ -17,11 +17,11 @@ public class CleanAndBuildGradleProjectTool extends AbstractBuildTool {
     public CleanAndBuildGradleProjectTool() {
         super(McpSectionEnum.DEVOPS_BUILD,
                 McpToolEnum.CLEAN_AND_BUILD_GRADLE_PROJECT.toolName(),
-                "Cleans and builds the Gradle project at " + CleanAndBuildGradleProjectParamEnum.PROJECT_PATH.key() + " (default: ./gradlew clean build -x test; "
+                "Cleans and builds the Gradle project at " + CleanAndBuildGradleProjectParamEnum.PROJECT_PATH.key() + " (default: ./gradlew clean build -x check; "
                 + CleanAndBuildGradleProjectParamEnum.TASKS.key() + " replaces the default entirely, so include \"clean\" yourself for custom tasks). "
                 + "Gradle projects only. Returns a summary; the full log is written to a file.",
-                McpToolEnum.CLEAN_AND_BUILD_GRADLE_PROJECT.toolName() + " -> INSTEAD OF Bash gradlew clean build - requires " + CleanAndBuildGradleProjectParamEnum.PROJECT_PATH.key() + "; cleans and builds Gradle project (default: clean build, tests skipped, overridable) and returns a result summary (complete log written to a file)" + BuildSubmitter.QUEUE_INSTRUCTION,
-                McpToolEnum.CLEAN_AND_BUILD_GRADLE_PROJECT.toolName() + " - requires " + CleanAndBuildGradleProjectParamEnum.PROJECT_PATH.key() + "; cleans and builds Gradle project (default: clean build, tests skipped, overridable) and returns a result summary (complete log written to a file)" + BuildSubmitter.QUEUE_INSTRUCTION);
+                McpToolEnum.CLEAN_AND_BUILD_GRADLE_PROJECT.toolName() + " -> INSTEAD OF Bash gradlew clean build - requires " + CleanAndBuildGradleProjectParamEnum.PROJECT_PATH.key() + "; cleans and builds Gradle project (default: clean build, verification (check) skipped, overridable) and returns a result summary (complete log written to a file)" + BuildSubmitter.QUEUE_INSTRUCTION,
+                McpToolEnum.CLEAN_AND_BUILD_GRADLE_PROJECT.toolName() + " - requires " + CleanAndBuildGradleProjectParamEnum.PROJECT_PATH.key() + "; cleans and builds Gradle project (default: clean build, verification (check) skipped, overridable) and returns a result summary (complete log written to a file)" + BuildSubmitter.QUEUE_INSTRUCTION);
     }
 
     @Override

@@ -3,12 +3,14 @@ package kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.providers.netbeans;
 import java.io.File;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.TimeUnit;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.build.BuildControl;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.build.BuildOutcome;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.build.BuildStatusEnum;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import org.junit.jupiter.api.Test;
 
@@ -52,10 +54,33 @@ class BuildProcessRunnerTest {
         assertEquals(BuildStatusEnum.FAILED, outcome.status());
     }
 
+    @Test
+    void theBuildProcessGetsTheEnvironmentAndTheCommandLineShowsIt() {
+        PreparedBuild withJdk = prepared(BuildProcessRunnerTest.class.getName() + "$EnvEcho")
+                .withEnvironment(Map.of("JAVA_HOME", "/test/jdk-17"));
+
+        BuildOutcome outcome = BuildProcessRunner.run(withJdk, new BuildControl(10_000));
+
+        assertEquals(BuildStatusEnum.SUCCESS, outcome.status());
+        assertTrue(outcome.result().contains("java-home-seen=/test/jdk-17"),
+                "the child process must see JAVA_HOME as set: " + outcome.result());
+        assertTrue(outcome.result().contains("Command: JAVA_HOME=/test/jdk-17 "),
+                "the Command line must show the variable ahead of the executable: " + outcome.result());
+    }
+
+    @Test
+    void withoutAnEnvironmentTheCommandLineIsUnchanged() {
+        BuildOutcome outcome = BuildProcessRunner.run(prepared(BuildProcessRunnerTest.class.getName() + "$EnvEcho"),
+                new BuildControl(10_000));
+
+        assertEquals(BuildStatusEnum.SUCCESS, outcome.status());
+        assertFalse(outcome.result().contains("Command: JAVA_HOME="), outcome.result());
+    }
+
     private static PreparedBuild prepared(String... args) {
         List<String> command = javaCommand(args);
         return new PreparedBuild(null, "runner-test-" + UUID.randomUUID(), new File("."), command,
-                                 BuildOutputFormatter.Backend.MAVEN);
+                BuildOutputFormatter.Backend.MAVEN);
     }
 
     private static PreparedBuild sleeper(long millis) {
@@ -64,7 +89,7 @@ class BuildProcessRunnerTest {
 
     private static List<String> javaCommand(String... args) {
         String executable = System.getProperty("java.home") + File.separator + "bin" + File.separator
-                + (System.getProperty("os.name", "").toLowerCase().contains("win") ? "java.exe" : "java");
+                            + (System.getProperty("os.name", "").toLowerCase().contains("win") ? "java.exe" : "java");
         List<String> command = new ArrayList<>();
         command.add(executable);
         command.add("-cp");
@@ -73,6 +98,13 @@ class BuildProcessRunnerTest {
             command.add(arg);
         }
         return command;
+    }
+
+    public static final class EnvEcho {
+
+        public static void main(String[] args) {
+            System.out.println("java-home-seen=" + System.getenv("JAVA_HOME"));
+        }
     }
 
     public static final class Sleeper {

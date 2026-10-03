@@ -19,13 +19,14 @@ public class BuildAndTestGradleProvider {
 
     /**
      * Options shared by BuildGradleProject, CleanAndBuildGradleProject and RunGradleTests. {@code tasks}
-     * carries the calling tool's own default ({@code build -x test}, {@code clean build -x test}, or
+     * carries the calling tool's own default ({@code build -x check}, {@code clean build -x check}, or
      * {@code test}) when the caller omitted it — see {@link BuildAndTestMavenProvider.MavenBuildOptions} for
      * why defaulting lives in the tool, not here.
      */
     public record GradleBuildOptions(
             List<String> tasks, boolean skipTests, boolean offline, boolean refreshDependencies,
-            JsonObject properties, JsonObject systemProperties, boolean parallel, boolean continueOnFailure) {
+            JsonObject properties, JsonObject systemProperties, boolean parallel, boolean continueOnFailure,
+            boolean customTasks) {
 
     }
 
@@ -44,19 +45,30 @@ public class BuildAndTestGradleProvider {
                 new kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.build.BuildControl(TimeoutEnum.BUILD_PROCESS_MILLIS.millis())).result();
     }
 
+    /**
+     * The task a build excludes when skipTests is set: the whole verification lifecycle, as NetBeans does.
+     */
+    public static final String BUILD_EXCLUDED_TASK = "check";
+
+    /**
+     * The task a test run excludes when skipTests is set.
+     */
+    public static final String TEST_EXCLUDED_TASK = "test";
+
     public static PreparedBuild prepareBuildProject(String sessionId, String projectPath, GradleBuildOptions opts) {
-        return prepareBuild(sessionId, projectPath, opts, null);
+        return prepareBuild(sessionId, projectPath, opts, null, BUILD_EXCLUDED_TASK);
     }
 
     public static PreparedBuild prepareCleanAndBuildProject(String sessionId, String projectPath, GradleBuildOptions opts) {
-        return prepareBuild(sessionId, projectPath, opts, null);
+        return prepareBuild(sessionId, projectPath, opts, null, BUILD_EXCLUDED_TASK);
     }
 
     public static PreparedBuild prepareRunTests(String sessionId, String testClass, String projectPath, GradleBuildOptions opts) {
-        return prepareBuild(sessionId, projectPath, opts, testClass);
+        return prepareBuild(sessionId, projectPath, opts, testClass, TEST_EXCLUDED_TASK);
     }
 
-    private static PreparedBuild prepareBuild(String sessionId, String projectPath, GradleBuildOptions opts, String testClass) {
+    private static PreparedBuild prepareBuild(String sessionId, String projectPath, GradleBuildOptions opts, String testClass,
+                                              String excludedTask) {
         String error = validate(opts);
         if (error != null) {
             return PreparedBuild.error("Error: " + error);
@@ -71,11 +83,16 @@ public class BuildAndTestGradleProvider {
         if (resolved.error() != null) {
             return PreparedBuild.error(resolved.error());
         }
+        // The build runs in the requested directory, as NetBeans does; the wrapper is the build root's, which is
+        // where it lives when that directory is a subproject. Gradle finds the settings file by searching upward
+        // and runs the tasks against the project in the working directory.
+        File runIn = resolved.root();
         List<String> command = new ArrayList<>();
-        command.add(BuildToolLocator.forProject(resolved.root(), BuildToolLocator.Tool.GRADLE));
-        command.addAll(List.of(argsFor(opts, testClass)));
+        command.add(BuildToolLocator.forProject(GradleBuildRoot.wrapperDir(runIn), BuildToolLocator.Tool.GRADLE));
+        command.addAll(List.of(argsFor(opts, testClass, opts.tasks(), excludedTask)));
         command.add("--no-daemon");
-        return new PreparedBuild(null, sessionId, resolved.root(), command, BuildOutputFormatter.Backend.GRADLE);
+        return new PreparedBuild(null, sessionId, runIn, command, BuildOutputFormatter.Backend.GRADLE)
+                .withEnvironment(ProjectJavaPlatform.environmentFor(runIn));
     }
 
     private static String validate(GradleBuildOptions opts) {
@@ -95,11 +112,16 @@ public class BuildAndTestGradleProvider {
         return errorOut[0];
     }
 
-    private static String[] argsFor(GradleBuildOptions opts, String testClass) {
-        List<String> args = new ArrayList<>(opts.tasks());
+    private static String[] argsFor(GradleBuildOptions opts, String testClass, List<String> tasks, String excludedTask) {
+        List<String> args = new ArrayList<>(tasks);
         if (opts.skipTests()) {
             args.add("-x");
-            args.add("test");
+            args.add(excludedTask);
+            // Excluding check leaves a test task that was asked for by name, so custom tasks also exclude test.
+            if (opts.customTasks() && BUILD_EXCLUDED_TASK.equals(excludedTask)) {
+                args.add("-x");
+                args.add(TEST_EXCLUDED_TASK);
+            }
         }
         if (opts.offline()) {
             args.add("--offline");

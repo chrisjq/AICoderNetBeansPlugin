@@ -10,7 +10,7 @@ class BuildProviderPrepareTest {
     @Test
     void mavenRejectsBadOptionsBeforeResolvingProject() {
         var options = new BuildAndTestMavenProvider.MavenBuildOptions(List.of(), List.of(), false, null, true, false,
-                                                                  false, List.of(), null, null, false);
+                false, List.of(), null, null, false);
         PreparedBuild prepared = BuildAndTestMavenProvider.prepareBuildProject("s", "/does/not/exist", options);
         assertEquals("Error: goals must not be empty", prepared.error());
         assertNotNull(prepared.command());
@@ -18,7 +18,7 @@ class BuildProviderPrepareTest {
 
     @Test
     void gradleRejectsBadOptionsBeforeResolvingProject() {
-        var options = new BuildAndTestGradleProvider.GradleBuildOptions(List.of(), true, false, false, null, null, false, false);
+        var options = new BuildAndTestGradleProvider.GradleBuildOptions(List.of(), true, false, false, null, null, false, false, false);
         PreparedBuild prepared = BuildAndTestGradleProvider.prepareBuildProject("s", "/does/not/exist", options);
         assertEquals("Error: tasks must not be empty", prepared.error());
     }

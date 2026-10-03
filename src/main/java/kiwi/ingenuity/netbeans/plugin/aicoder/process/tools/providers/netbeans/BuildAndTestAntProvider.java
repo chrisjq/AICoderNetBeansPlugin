@@ -73,7 +73,8 @@ public class BuildAndTestAntProvider {
         List<String> command = new ArrayList<>();
         command.add(resolveAnt());
         command.addAll(List.of(argsFor(opts, testClass)));
-        return new PreparedBuild(null, sessionId, resolved.root(), command, BuildOutputFormatter.Backend.ANT);
+        return new PreparedBuild(null, sessionId, resolved.root(), command, BuildOutputFormatter.Backend.ANT)
+                .withEnvironment(ProjectJavaPlatform.environmentFor(resolved.root()));
     }
 
     private static String validate(AntBuildOptions opts) {

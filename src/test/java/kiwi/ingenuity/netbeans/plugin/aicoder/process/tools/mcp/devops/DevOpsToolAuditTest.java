@@ -78,6 +78,9 @@ class DevOpsToolAuditTest {
     private Path gradleRoot;
     private Path antRoot;
     private Path outsideDir;
+    private Path multiBuildRoot;
+    private Path multiBuildApp;
+    private Path multiBuildCapture;
     private final AbstractAiSession session = newSession();
 
     @BeforeEach
@@ -88,12 +91,23 @@ class DevOpsToolAuditTest {
         outsideDir = Files.createDirectories(tempDir.resolve("outside"));
         fakeWrapper(mavenRoot, "mvnw");
         fakeWrapper(gradleRoot, "gradlew");
+        multiBuildRoot = Files.createDirectories(tempDir.resolve("multi-build"));
+        multiBuildApp = Files.createDirectories(multiBuildRoot.resolve("app"));
+        Files.writeString(multiBuildRoot.resolve("settings.gradle"), "include 'app'\n");
+        multiBuildCapture = tempDir.resolve("multi-build-capture.txt");
+        Path rootWrapper = multiBuildRoot.resolve("gradlew");
+        Files.writeString(rootWrapper, "#!/bin/sh\nprintf '%s\\n%s\\n%s\\n' \"$0\" \"$PWD\" \"$*\" > '" + multiBuildCapture + "'\n");
+        try {
+            Files.setPosixFilePermissions(rootWrapper, PosixFilePermissions.fromString("rwxr-xr-x"));
+        }
+        catch (UnsupportedOperationException ignored) {
+        }
         McpServerRegistry.stopAll();
         McpServerRegistry.portOverride = 0;
         boolean ok = McpServerRegistry.register(new NoopRegistrar("devops-audit-boot")).get(5, TimeUnit.SECONDS);
         assertTrue(ok, "test server must start");
         McpServerRegistry.getServer().registerSession(SESSION_ID, AiTypeEnum.CLAUDE,
-                List.of(mavenRoot.toFile(), gradleRoot.toFile(), antRoot.toFile()), true);
+                List.of(mavenRoot.toFile(), gradleRoot.toFile(), antRoot.toFile(), multiBuildApp.toFile()), true);
     }
 
     @AfterEach
@@ -225,14 +239,14 @@ class DevOpsToolAuditTest {
                 "testClass must be forwarded as -Dtest=<class>");
     }
 
-    // ---- BuildAndTestGradleProvider (projectPath -> "build -x test"; testClass -> "--tests") ----
+    // ---- BuildAndTestGradleProvider (projectPath -> "build -x check"; testClass -> "--tests") ----
     @Test
     void gradleBuild_withInScopeProjectPathRunsGradlew() throws Exception {
         String result = new BuildGradleProjectTool().handle(
                 args(BuildGradleProjectParamEnum.PROJECT_PATH.key(), gradleRoot.toString()), session);
 
         assertQueuedBuildResult(result);
-        assertEquals("build -x test --no-daemon", recordedArgs(gradleRoot),
+        assertEquals("build -x check --no-daemon", recordedArgs(gradleRoot),
                 "BuildGradleProject must run the gradle wrapper with the build task excluding tests");
     }
 
@@ -722,7 +736,7 @@ class DevOpsToolAuditTest {
         String result = new BuildGradleProjectTool().handle(new ToolRequestArguments(o), session);
 
         assertQueuedBuildResult(result);
-        assertEquals("build -x test --offline --refresh-dependencies -Penv=ci -Dfile.encoding=UTF-8 --parallel --continue --no-daemon",
+        assertEquals("build -x check --offline --refresh-dependencies -Penv=ci -Dfile.encoding=UTF-8 --parallel --continue --no-daemon",
                 recordedArgs(gradleRoot), "every Gradle option must translate to its documented flag, in order");
     }
 
@@ -767,7 +781,7 @@ class DevOpsToolAuditTest {
                 args(CleanAndBuildGradleProjectParamEnum.PROJECT_PATH.key(), gradleRoot.toString()), session);
 
         assertQueuedBuildResult(result);
-        assertEquals("clean build -x test --no-daemon", recordedArgs(gradleRoot),
+        assertEquals("clean build -x check --no-daemon", recordedArgs(gradleRoot),
                 "CleanAndBuildGradleProject must differ from BuildGradleProject by the leading clean task");
     }
 
@@ -784,6 +798,87 @@ class DevOpsToolAuditTest {
     void newCleanAndBuildToolsAreRegisteredWithMcpToolEnum() {
         assertTrue(McpToolEnum.of(McpToolEnum.CLEAN_AND_BUILD_GRADLE_PROJECT.toolName()) != null);
         assertTrue(McpToolEnum.of(McpToolEnum.CLEAN_AND_BUILD_ANT_PROJECT.toolName()) != null);
+    }
+
+    @Test
+    void gradleTestRunExcludesTheTestTaskNotTheWholeCheckWhenAskedToSkipTests() throws Exception {
+        JsonObject o = new JsonObject();
+        o.addProperty(RunGradleTestsParamEnum.PROJECT_PATH.key(), gradleRoot.toString());
+        o.addProperty(RunGradleTestsParamEnum.SKIP_TESTS.key(), true);
+
+        assertQueuedBuildResult(new RunGradleTestsTool().handle(new ToolRequestArguments(o), session));
+
+        assertEquals("test -x test --no-daemon", recordedArgs(gradleRoot));
+    }
+
+    @Test
+    void gradleBuildToolsWithCustomTasksAndSkipTestsAlsoExcludeTheTestTask() throws Exception {
+        for (List<String> custom : List.of(List.of("test"), List.of("check", "test"))) {
+            JsonObject build = new JsonObject();
+            build.addProperty(BuildGradleProjectParamEnum.PROJECT_PATH.key(), gradleRoot.toString());
+            build.add(BuildGradleProjectParamEnum.TASKS.key(), stringArray(custom.toArray(String[]::new)));
+            assertQueuedBuildResult(new BuildGradleProjectTool().handle(new ToolRequestArguments(build), session));
+            assertEquals(String.join(" ", custom) + " -x check -x test --no-daemon", recordedArgs(gradleRoot));
+
+            JsonObject clean = new JsonObject();
+            clean.addProperty(CleanAndBuildGradleProjectParamEnum.PROJECT_PATH.key(), gradleRoot.toString());
+            clean.add(CleanAndBuildGradleProjectParamEnum.TASKS.key(), stringArray(custom.toArray(String[]::new)));
+            assertQueuedBuildResult(new CleanAndBuildGradleProjectTool().handle(new ToolRequestArguments(clean), session));
+            assertEquals(String.join(" ", custom) + " -x check -x test --no-daemon", recordedArgs(gradleRoot));
+        }
+    }
+
+    // ---- a Gradle build asked for on a subproject: the build root's wrapper, run in the subproject ----
+    @Test
+    void gradleSubprojectBuildRunsTheRootsWrapperInTheSubprojectWithTheDefaultTasks() throws Exception {
+        assertQueuedBuildResult(new BuildGradleProjectTool().handle(
+                args(BuildGradleProjectParamEnum.PROJECT_PATH.key(), multiBuildApp.toString()), session));
+        assertSubprojectRun("build -x check --no-daemon");
+    }
+
+    @Test
+    void gradleSubprojectCleanAndBuildRunsTheRootsWrapperInTheSubprojectWithTheDefaultTasks() throws Exception {
+        assertQueuedBuildResult(new CleanAndBuildGradleProjectTool().handle(
+                args(CleanAndBuildGradleProjectParamEnum.PROJECT_PATH.key(), multiBuildApp.toString()), session));
+        assertSubprojectRun("clean build -x check --no-daemon");
+    }
+
+    @Test
+    void gradleSubprojectTestsRunTheRootsWrapperInTheSubprojectWithTheTestFilter() throws Exception {
+        assertQueuedBuildResult(new RunGradleTestsTool().handle(args(
+                RunGradleTestsParamEnum.PROJECT_PATH.key(), multiBuildApp.toString(),
+                RunGradleTestsParamEnum.TEST_CLASS.key(), "Outer$Inner"), session));
+        assertSubprojectRun("test --tests Outer$Inner --no-daemon");
+    }
+
+    @Test
+    void gradleSubprojectCustomTasksAndTheTestFilterReachTheWrapperUnchanged() throws Exception {
+        JsonObject clean = new JsonObject();
+        clean.addProperty(CleanAndBuildGradleProjectParamEnum.PROJECT_PATH.key(), multiBuildApp.toString());
+        clean.add(CleanAndBuildGradleProjectParamEnum.TASKS.key(), stringArray("clean", "assemble", ":lib:check"));
+        assertQueuedBuildResult(new CleanAndBuildGradleProjectTool().handle(new ToolRequestArguments(clean), session));
+        assertSubprojectRun("clean assemble :lib:check -x check -x test --no-daemon");
+
+        JsonObject tests = new JsonObject();
+        tests.addProperty(RunGradleTestsParamEnum.PROJECT_PATH.key(), multiBuildApp.toString());
+        tests.add(RunGradleTestsParamEnum.TASKS.key(), stringArray("integrationTest"));
+        tests.addProperty(RunGradleTestsParamEnum.TEST_CLASS.key(), "com.acme.*IT");
+        assertQueuedBuildResult(new RunGradleTestsTool().handle(new ToolRequestArguments(tests), session));
+        assertSubprojectRun("integrationTest --tests com.acme.*IT --no-daemon");
+    }
+
+    /**
+     * What the fake root wrapper recorded: its own path as invoked, the directory it ran in and its
+     * arguments. The wrapper is the build root's, found above the subproject, and the build runs in the
+     * subproject.
+     */
+    private void assertSubprojectRun(String expectedArgs) throws Exception {
+        List<String> recorded = Files.readAllLines(multiBuildCapture);
+        assertEquals(multiBuildRoot.toRealPath().resolve("gradlew").toString(), Path.of(recorded.get(0)).toRealPath().toString(),
+                "the build root's wrapper is what ran");
+        assertEquals(multiBuildApp.toRealPath().toString(), recorded.get(1), "the build runs in the requested subproject");
+        assertEquals(expectedArgs, recorded.get(2), "the tasks and options reach the wrapper unchanged");
+        Files.delete(multiBuildCapture);
     }
 
     private static JsonArray stringArray(String... values) {
