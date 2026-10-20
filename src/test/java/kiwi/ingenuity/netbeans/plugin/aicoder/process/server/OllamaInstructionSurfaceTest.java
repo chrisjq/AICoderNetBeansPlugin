@@ -21,14 +21,14 @@ import org.junit.jupiter.api.Test;
  * End-to-end guard on everything an OLLAMA_LOCAL session can see.
  *
  * <p>
- * Ollama has no built-in Read/Write/Bash/Grep tools, and reaches the plugin through OllamaMcpBridge which
- * injects sessionId/secretKey server-side. So the assembled instruction text and every tool schema must be
- * free of both built-in-tool directives and credential parameters.
+ * Ollama has no built-in Read/Write/Bash/Grep tools, and reaches the plugin through OllamaMcpBridge which injects
+ * sessionId/secretKey server-side. So the assembled instruction text and every tool schema must be free of both
+ * built-in-tool directives and credential parameters.
  *
  * <p>
- * The per-tool unit tests check each tool in isolation; this checks the fully assembled surface, which is
- * where a leak actually reaches the model. The schema half of this test is what catches a leak that lives in
- * a tool's schema description rather than its instruction() line.
+ * The per-tool unit tests check each tool in isolation; this checks the fully assembled surface, which is where a leak
+ * actually reaches the model. The schema half of this test is what catches a leak that lives in a tool's schema
+ * description rather than its instruction() line.
  */
 class OllamaInstructionSurfaceTest {
 
@@ -54,8 +54,8 @@ class OllamaInstructionSurfaceTest {
 
     /**
      * Declared parameter names for one tool. Checked structurally rather than by scanning the JSON text:
-     * "targetSessionId" is a legitimate argument naming the peer to act on, and a substring search for
-     * "sessionId" would flag it.
+     * "targetSessionId" is a legitimate argument naming the peer to act on, and a substring search for "sessionId"
+     * would flag it.
      */
     private static Set<String> paramNames(McpToolInterface handler, AiTypeEnum type) {
         JsonObject input = handler.schema(type.getMcpOptions())
@@ -70,27 +70,27 @@ class OllamaInstructionSurfaceTest {
     void ollamaInstructionsNameNoBuiltInTools() {
         String text = ollamaInstructions();
         assertFalse(text.contains("INSTEAD OF"),
-                "Ollama instructions must not redirect to built-in tools it does not have");
+                    "Ollama instructions must not redirect to built-in tools it does not have");
         assertFalse(text.contains("Bash"),
-                "Ollama instructions must not reference Bash");
+                    "Ollama instructions must not reference Bash");
     }
 
     @Test
     void ollamaInstructionsCarryNoCredentialProse() {
         String text = ollamaInstructions();
         assertFalse(text.contains("sessionId"),
-                "credentials are injected by the bridge; Ollama must not be told about them");
+                    "credentials are injected by the bridge; Ollama must not be told about them");
         assertFalse(text.contains("secretKey"),
-                "credentials are injected by the bridge; Ollama must not be told about them");
+                    "credentials are injected by the bridge; Ollama must not be told about them");
     }
 
     @Test
     void ollamaToolSchemasNameNoBuiltInTools() {
         String json = ollamaSchemaJson();
         assertFalse(json.contains("INSTEAD OF"),
-                "a tool description is redirecting Ollama to a built-in tool it does not have");
+                    "a tool description is redirecting Ollama to a built-in tool it does not have");
         assertFalse(json.contains("Bash"),
-                "a tool description references Bash");
+                    "a tool description references Bash");
     }
 
     @Test
@@ -98,15 +98,15 @@ class OllamaInstructionSurfaceTest {
         for (Map.Entry<McpToolEnum, McpToolInterface> e : ollamaHandlers().entrySet()) {
             Set<String> params = paramNames(e.getValue(), AiTypeEnum.OLLAMA_LOCAL);
             assertFalse(params.contains("sessionId"),
-                    e.getKey() + " must not declare sessionId — the bridge injects it");
+                        e.getKey() + " must not declare sessionId — the bridge injects it");
             assertFalse(params.contains("secretKey"),
-                    e.getKey() + " must not declare secretKey — the bridge injects it");
+                        e.getKey() + " must not declare secretKey — the bridge injects it");
         }
     }
 
     /**
-     * Under TOOL_CALLS_VIA_SCHEMA the tools array is not sent and the tool list is rendered from the schemas
-     * by SchemaToolCalls — which carries parameter names the per-tool instruction lines never had. Enabling
+     * Under TOOL_CALLS_VIA_SCHEMA the tools array is not sent and the tool list is rendered from the schemas by
+     * SchemaToolCalls — which carries parameter names the per-tool instruction lines never had. Enabling
      * TOOL_INSTRUCTION as well would describe all 83 tools twice, ~9k characters of duplication.
      */
     @Test
@@ -115,7 +115,7 @@ class OllamaInstructionSurfaceTest {
         String text = ollamaInstructions();
 
         assertFalse(text.contains("### "),
-                "the rendered tool list is the description channel, not the per-tool sections");
+                    "the rendered tool list is the description channel, not the per-tool sections");
         assertTrue(text.contains("## Policy"), "the policy header must survive");
 
         int named = 0;
@@ -161,24 +161,23 @@ class OllamaInstructionSurfaceTest {
                 String detail = "    " + entry.getKey() + " (" + type + ", " + requiredness + ")";
                 assertTrue(rendered.contains(detail), name + " / " + entry.getKey());
                 assertTrue(rendered.contains(property.get(ToolSchemaKeyEnum.DESCRIPTION.key()).getAsString()),
-                        name + " / " + entry.getKey());
+                           name + " / " + entry.getKey());
             }
         }
         assertEquals(schemaNames, renderedNames);
     }
 
     /**
-     * SOFTEN_TOOL_DIRECTIVES exists because qwen2.5-coder:14b answered "hi" by calling a tool: the prompt
-     * told it to "call at session start" and to make an inter-AI call its "first action", and it complied
-     * literally.
+     * SOFTEN_TOOL_DIRECTIVES exists because qwen2.5-coder:14b answered "hi" by calling a tool: the prompt told it to
+     * "call at session start" and to make an inter-AI call its "first action", and it complied literally.
      */
     @Test
     void ollamaInstructionsCarryNoProactiveCallDirectives() {
         String text = ollamaInstructions();
         assertFalse(text.contains("call at session start"),
-                "a session-start directive makes small models fire a tool on the user's first message");
+                    "a session-start directive makes small models fire a tool on the user's first message");
         assertFalse(text.contains("first action"),
-                "an unconditional 'first action is to call X' reads as an order to act on turn one");
+                    "an unconditional 'first action is to call X' reads as an order to act on turn one");
     }
 
     /**
@@ -189,20 +188,20 @@ class OllamaInstructionSurfaceTest {
         String text = McpInstructionRegistry.buildFullInstructions(
                 AiTypeEnum.CLAUDE, ClaudeToolHandlerFactory.build(() -> null, null));
         assertTrue(text.contains("call at session start"),
-                "Claude follows the conditional correctly and should keep the stronger wording");
+                   "Claude follows the conditional correctly and should keep the stronger wording");
     }
 
     /**
-     * The inter-AI tools declare caller credentials by hand rather than through applyCredentialsIfRequested,
-     * so they need their own check that the CLI path still gets them.
+     * The inter-AI tools declare caller credentials by hand rather than through applyCredentialsIfRequested, so they
+     * need their own check that the CLI path still gets them.
      */
     @Test
     void claudeInterAiToolsStillDeclareCallerCredentials() {
         Map<McpToolEnum, McpToolInterface> handlers
-                                           = ClaudeToolHandlerFactory.build(() -> null, null);
+                = ClaudeToolHandlerFactory.build(() -> null, null);
         for (McpToolEnum tool : new McpToolEnum[]{McpToolEnum.PEER_MESSAGE_SEND,
-                                                  McpToolEnum.PEER_MESSAGE_LIST, McpToolEnum.PEER_MESSAGE_READ,
-                                                  McpToolEnum.PEER_MESSAGE_DELETE, McpToolEnum.PEER_SESSION_DESCRIBE}) {
+            McpToolEnum.PEER_MESSAGE_LIST, McpToolEnum.PEER_MESSAGE_READ,
+            McpToolEnum.PEER_MESSAGE_DELETE, McpToolEnum.PEER_SESSION_DESCRIBE}) {
             McpToolInterface handler = handlers.get(tool);
             if (handler == null) {
                 continue;
@@ -214,13 +213,13 @@ class OllamaInstructionSurfaceTest {
     }
 
     /**
-     * Control: the same builders must still emit the full text for a CLI type. Without this the assertions
-     * above would pass if the text vanished for everyone, or if the handler map were simply empty.
+     * Control: the same builders must still emit the full text for a CLI type. Without this the assertions above would
+     * pass if the text vanished for everyone, or if the handler map were simply empty.
      */
     @Test
     void claudeStillReceivesBuiltInToolDirectivesAndCredentials() {
         Map<McpToolEnum, McpToolInterface> handlers
-                                           = ClaudeToolHandlerFactory.build(() -> null, null);
+                = ClaudeToolHandlerFactory.build(() -> null, null);
         assertFalse(handlers.isEmpty(), "handler map must be populated for the control to mean anything");
 
         String text = McpInstructionRegistry.buildFullInstructions(

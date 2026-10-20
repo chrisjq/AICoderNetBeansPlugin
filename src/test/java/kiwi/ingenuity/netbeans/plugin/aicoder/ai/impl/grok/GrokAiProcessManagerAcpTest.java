@@ -45,8 +45,8 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Timeout;
 
 /**
- * Grok's ACP lifecycle driven against a real fake-agent subprocess (a tiny shell script speaking line-
- * delimited JSON-RPC on stdio, the same technique {@code OpenCodeHandshakeRaceTest} uses) and against a stub
+ * Grok's ACP lifecycle driven against a real fake-agent subprocess (a tiny shell script speaking line- delimited
+ * JSON-RPC on stdio, the same technique {@code OpenCodeHandshakeRaceTest} uses) and against a stub
  * {@link AcpConnection} for wire-shape assertions that do not need a live process.
  */
 @Timeout(15)
@@ -69,7 +69,7 @@ class GrokAiProcessManagerAcpTest {
     private static TestableGrokAiProcessManager startManager(File script, List<AiProcessEvent> events) {
         TestableGrokAiProcessManager manager = new TestableGrokAiProcessManager(events::add);
         manager.setCurrentSession(new AiSession("s1", "Test", null, AiTypeEnum.GROK, null,
-                new GrokSessionSettings(), Instant.now(), Instant.now()));
+                                                new GrokSessionSettings(), Instant.now(), Instant.now()));
         manager.start(script.getAbsolutePath(), "grok-4.5");
         assertTrue(manager.isRunning(), "the fake agent session must start: " + events);
         return manager;
@@ -110,7 +110,7 @@ class GrokAiProcessManagerAcpTest {
             JsonArray mcpServers = sessionNewParams.getAsJsonArray("mcpServers");
             assertTrue(mcpServers.size() > 0, "the plugin's MCP server must be advertised in session/new");
             assertEquals(StringConst.PLUGIN_ID, mcpServers.get(0).getAsJsonObject().get("name").getAsString(),
-                    "the MCP server name must be the plugin's id, not a dead literal");
+                         "the MCP server name must be the plugin's id, not a dead literal");
 
             awaitTrue(() -> statusCount(events, StatusEventTypeEnum.READY) >= 1, "READY");
             awaitTrue(() -> events.stream().anyMatch(e -> e instanceof TurnCompleteEvent), "TurnComplete");
@@ -135,7 +135,7 @@ class GrokAiProcessManagerAcpTest {
         try {
             manager.sendPrompt("hello", WORK_DIR, List.of());
             awaitTrue(() -> events.stream().anyMatch(e -> e instanceof TextDeltaEvent te && "hi there".equals(te.text())),
-                    "the streamed chunk to arrive as a TextDeltaEvent: " + events);
+                      "the streamed chunk to arrive as a TextDeltaEvent: " + events);
         }
         finally {
             manager.stopAndCloseConnections();
@@ -171,7 +171,7 @@ class GrokAiProcessManagerAcpTest {
             awaitTrue(() -> !readCaptureFile(capture).isEmpty(), "the agent to receive a notification after Cancel");
             JsonObject received = JsonParser.parseString(readCaptureFile(capture).get(0)).getAsJsonObject();
             assertEquals("session/cancel", received.get("method").getAsString(),
-                    "Cancel must actually send session/cancel to the agent, not just report STOPPED locally");
+                         "Cancel must actually send session/cancel to the agent, not just report STOPPED locally");
         }
         finally {
             marker.delete();
@@ -235,10 +235,10 @@ class GrokAiProcessManagerAcpTest {
 
     /**
      * Boss's handover: {@code initialize}/{@code session/new}'s result carries
-     * {@code models.availableModels[]._meta.totalContextTokens} per model (256000 for grok-4.7). This must be
-     * used as {@code maxTokens} instead of 0, and kept PER MODEL so a model switch mid-session (via {@code
-     * set_config_option}) reports the new model's window on its very next turn, not the window of whichever
-     * model Grok started with.
+     * {@code models.availableModels[]._meta.totalContextTokens} per model (256000 for grok-4.7). This must be used as
+     * {@code maxTokens} instead of 0, and kept PER MODEL so a model switch mid-session (via {@code
+     * set_config_option}) reports the new model's window on its very next turn, not the window of whichever model Grok
+     * started with.
      */
     @Test
     void contextWindowFromHandshake_isUsedAsMaxTokens_andUpdatesPerModelOnASwitch() {
@@ -318,11 +318,11 @@ class GrokAiProcessManagerAcpTest {
 
     /**
      * Live-confirmed Grok bug: {@code session/load} replays the WHOLE prior conversation as session/update
-     * notifications (agent_message_chunk etc.) between sending the request and answering it. The plugin's own
-     * persisted history already shows that conversation, so the replay must never reach the UI as a new
-     * TextDeltaEvent — only the real turn's own chunks may. No sleep before answering session/load: the fix
-     * orders the suppression's clear onto the connection's notify executor itself (behind whatever replay it
-     * already queued), so the correctness does not depend on winning a race against real scheduling.
+     * notifications (agent_message_chunk etc.) between sending the request and answering it. The plugin's own persisted
+     * history already shows that conversation, so the replay must never reach the UI as a new TextDeltaEvent — only the
+     * real turn's own chunks may. No sleep before answering session/load: the fix orders the suppression's clear onto
+     * the connection's notify executor itself (behind whatever replay it already queued), so the correctness does not
+     * depend on winning a race against real scheduling.
      */
     @Test
     void sessionLoadReplay_neverProducesTextDeltaEvents_onlyThePromptsOwnChunkDoes() throws Exception {
@@ -342,9 +342,9 @@ class GrokAiProcessManagerAcpTest {
             manager.sendPrompt("hello", WORK_DIR, List.of());
 
             awaitTrue(() -> events.stream().anyMatch(e -> e instanceof TextDeltaEvent te && "real answer".equals(te.text())),
-                    "the real turn's own chunk must still arrive: " + events);
+                      "the real turn's own chunk must still arrive: " + events);
             assertTrue(events.stream().noneMatch(e -> e instanceof TextDeltaEvent te && te.text().contains("REPLAYED")),
-                    "the session/load replay must never produce a TextDeltaEvent: " + events);
+                       "the session/load replay must never produce a TextDeltaEvent: " + events);
         }
         finally {
             manager.stopAndCloseConnections();
@@ -353,18 +353,17 @@ class GrokAiProcessManagerAcpTest {
 
     /**
      * Coder_1's review finding, pinned deterministically rather than by timing: the load's response and an
-     * already-queued replay chunk complete on different paths, so clearing suppression must be ordered onto
-     * the SAME single-thread notify executor the replay chunk was queued on — never run synchronously the
-     * instant the load's future completes. This blocks that executor first, queues a replay chunk and the
-     * ordered clear behind the block, then a real chunk behind the clear, and releases — proving the clear
-     * can never run ahead of a chunk that was queued before it, however the wire response happens to
-     * schedule.
+     * already-queued replay chunk complete on different paths, so clearing suppression must be ordered onto the SAME
+     * single-thread notify executor the replay chunk was queued on — never run synchronously the instant the load's
+     * future completes. This blocks that executor first, queues a replay chunk and the ordered clear behind the block,
+     * then a real chunk behind the clear, and releases — proving the clear can never run ahead of a chunk that was
+     * queued before it, however the wire response happens to schedule.
      */
     @Test
     void loadSuppressionClear_isOrderedOnNotifyThread_neverRunsAheadOfAQueuedReplayChunk() throws Exception {
         List<AiProcessEvent> fired = new CopyOnWriteArrayList<>();
         GrokAcpClientHandler handler = new GrokAcpClientHandler(fired::add, () -> {
-        });
+                                                        });
         AcpConnection conn = new AcpConnection(new ByteArrayOutputStream(), InputStream.nullInputStream(), handler);
         try {
             CountDownLatch block = new CountDownLatch(1);
@@ -389,9 +388,9 @@ class GrokAiProcessManagerAcpTest {
             block.countDown();
 
             awaitTrue(() -> fired.stream().anyMatch(e -> e instanceof TextDeltaEvent te && "real answer".equals(te.text())),
-                    "the chunk queued after the clear must still arrive: " + fired);
+                      "the chunk queued after the clear must still arrive: " + fired);
             assertTrue(fired.stream().noneMatch(e -> e instanceof TextDeltaEvent te && te.text().contains("REPLAYED")),
-                    "the chunk queued BEFORE the clear must never render, however the executor schedules it: " + fired);
+                       "the chunk queued BEFORE the clear must never render, however the executor schedules it: " + fired);
         }
         finally {
             conn.close();
@@ -462,22 +461,22 @@ class GrokAiProcessManagerAcpTest {
 
     // ---- 9. Session identity reaches Grok on EVERY turn, not just the first ----
     /**
-     * {@code ContextProvider.buildIdentityBlock()} prepends the sessionId/secretKey block unconditionally on
-     * every {@code buildPreamble} call for any CREDENTIALS-gated type (confirmed by reading
-     * ContextProvider.java directly: unlike the project/file baseline, which is only sent in full on the
-     * first turn, the identity block has no {@code isFirstSend} gate). Grok is explicitly named in that
-     * code's own comment as a type this covers. This test proves {@code GrokAiProcessManager} does not
-     * accidentally break that guarantee on its side — it must forward the given text to {@code
-     * session/prompt} byte-for-byte, with nothing of its own that could cache or drop the identity block on a
-     * later turn — by driving a real {@link kiwi.ingenuity.netbeans.plugin.aicoder.ai.ContextProvider}
-     * against a real session and checking what actually reached the wire for TWO turns.
+     * {@code ContextProvider.buildIdentityBlock()} prepends the sessionId/secretKey block unconditionally on every
+     * {@code buildPreamble} call for any CREDENTIALS-gated type (confirmed by reading ContextProvider.java directly:
+     * unlike the project/file baseline, which is only sent in full on the first turn, the identity block has no
+     * {@code isFirstSend} gate). Grok is explicitly named in that code's own comment as a type this covers. This test
+     * proves {@code GrokAiProcessManager} does not accidentally break that guarantee on its side — it must forward the
+     * given text to {@code
+     * session/prompt} byte-for-byte, with nothing of its own that could cache or drop the identity block on a later
+     * turn — by driving a real {@link kiwi.ingenuity.netbeans.plugin.aicoder.ai.ContextProvider} against a real session
+     * and checking what actually reached the wire for TWO turns.
      */
     @Test
     void sessionIdentityBlockReachesGrokOnTheFirstAndASecondTurn() throws Exception {
         kiwi.ingenuity.netbeans.plugin.aicoder.ai.session.AiSession aiSession
-                                                                    = kiwi.ingenuity.netbeans.plugin.aicoder.ai.session.AiSession.create(null, AiTypeEnum.GROK);
+                = kiwi.ingenuity.netbeans.plugin.aicoder.ai.session.AiSession.create(null, AiTypeEnum.GROK);
         kiwi.ingenuity.netbeans.plugin.aicoder.ai.ContextProvider contextProvider
-                                                                  = new kiwi.ingenuity.netbeans.plugin.aicoder.ai.ContextProvider(fo -> {
+                = new kiwi.ingenuity.netbeans.plugin.aicoder.ai.ContextProvider(fo -> {
                 });
         contextProvider.setSession(aiSession);
 
@@ -504,7 +503,7 @@ class GrokAiProcessManagerAcpTest {
             String secondPrompt = contextProvider.buildPreamble("second message", null);
             manager.sendPrompt(secondPrompt, WORK_DIR, List.of());
             awaitTrue(() -> events.stream().filter(e -> e instanceof TurnCompleteEvent).count() == 2,
-                    "the second turn to complete");
+                      "the second turn to complete");
 
             List<String> captured = readCaptureFile(capture);
             assertEquals(2, captured.size(), "both turns must have reached the fake agent");
@@ -512,9 +511,9 @@ class GrokAiProcessManagerAcpTest {
                 JsonObject params = JsonParser.parseString(captured.get(i)).getAsJsonObject().getAsJsonObject("params");
                 String sentText = params.getAsJsonArray("prompt").get(0).getAsJsonObject().get("text").getAsString();
                 assertTrue(sentText.contains("sessionId: " + aiSession.id()),
-                        "turn " + (i + 1) + " must carry the session identity block: " + sentText);
+                           "turn " + (i + 1) + " must carry the session identity block: " + sentText);
                 assertTrue(sentText.contains("secretKey: " + aiSession.secret()),
-                        "turn " + (i + 1) + " must carry the plugin credentials, not just the first turn: " + sentText);
+                           "turn " + (i + 1) + " must carry the plugin credentials, not just the first turn: " + sentText);
             }
         }
         finally {
@@ -542,7 +541,7 @@ class GrokAiProcessManagerAcpTest {
             // that is still alive — it must detach, destroyForcibly, and let the pending prompt's own
             // failed future be the turn's one closer.
             awaitTrue(() -> statusCount(events, StatusEventTypeEnum.FAILED) == 1,
-                    "the hung prompt's future to fail once stdout closes and the grace period elapses: " + events);
+                      "the hung prompt's future to fail once stdout closes and the grace period elapses: " + events);
             Thread.sleep(200);
             assertEquals(1, statusCount(events, StatusEventTypeEnum.FAILED), events.toString());
             assertEquals(0, statusCount(events, StatusEventTypeEnum.EXITED), events.toString());
@@ -555,12 +554,12 @@ class GrokAiProcessManagerAcpTest {
     }
 
     /**
-     * The agent crashes right after answering, and the handshake reaches its publish point after the process
-     * is dead and its output ended but before the process's exit callback has run. That is a crash, not a
-     * hang: it must be reported once as EXITED with the exit code, not as a FAILED "stopped responding". The
-     * exit callback is held back so this ordering happens every run — same shape, same technique, as
-     * {@code OpenCodeHandshakeRaceTest.crashSeenByTheHandshakeBeforeItsExitCallback_isReportedOnceAsExited},
-     * now exercising the logic both backends share through {@code AbstractAcpProcessManager
+     * The agent crashes right after answering, and the handshake reaches its publish point after the process is dead
+     * and its output ended but before the process's exit callback has run. That is a crash, not a hang: it must be
+     * reported once as EXITED with the exit code, not as a FAILED "stopped responding". The exit callback is held back
+     * so this ordering happens every run — same shape, same technique, as
+     * {@code OpenCodeHandshakeRaceTest.crashSeenByTheHandshakeBeforeItsExitCallback_isReportedOnceAsExited}, now
+     * exercising the logic both backends share through {@code AbstractAcpProcessManager
      * .publishConnectionOrReportExit}.
      */
     @Test
@@ -569,23 +568,23 @@ class GrokAiProcessManagerAcpTest {
         HeldHandshakeManager manager = new HeldHandshakeManager(events::add);
         manager.exitCallbackGate = new CountDownLatch(1);
         manager.setCurrentSession(new AiSession("s1", "Test", null, AiTypeEnum.GROK, null,
-                new GrokSessionSettings(), Instant.now(), Instant.now()));
+                                                new GrokSessionSettings(), Instant.now(), Instant.now()));
         manager.start(fakeAgent("read -r _session\n"
-                                + "printf '{\"jsonrpc\":\"2.0\",\"id\":2,\"result\":{\"sessionId\":\"ses_fake\"}}\\n'\n"
-                                + "exit 7\n").getAbsolutePath(), "grok-4.5");
+                + "printf '{\"jsonrpc\":\"2.0\",\"id\":2,\"result\":{\"sessionId\":\"ses_fake\"}}\\n'\n"
+                + "exit 7\n").getAbsolutePath(), "grok-4.5");
         try {
             manager.sendPrompt("hi", WORK_DIR, List.of());
             manager.awaitHeld();
             awaitTrue(() -> manager.connections.get(0).isStreamEnded()
-                            && manager.process() != null && !manager.process().isAlive(),
-                    "the agent to have died, its exit not yet handled");
+                    && manager.process() != null && !manager.process().isAlive(),
+                      "the agent to have died, its exit not yet handled");
 
             manager.releaseAndJoinHeld();
 
             assertEquals(1, statusCount(events, StatusEventTypeEnum.EXITED), "the crash is reported: " + events);
             assertTrue(events.stream().anyMatch(e -> e instanceof StatusEvent se
-                                                     && se.type() == StatusEventTypeEnum.EXITED && se.text().contains("7")),
-                    "with its exit code: " + events);
+                    && se.type() == StatusEventTypeEnum.EXITED && se.text().contains("7")),
+                       "with its exit code: " + events);
             assertEquals(0, statusCount(events, StatusEventTypeEnum.FAILED), "and only once: " + events);
             assertNull(manager.connection, "no connection to the dead agent is published");
             assertTrue(manager.connections.get(0).isClosed(), "and its connection is closed");
@@ -620,7 +619,7 @@ class GrokAiProcessManagerAcpTest {
             Thread.sleep(1500);
             assertEquals(null, manager.connection, "a session stopped mid-handshake must never publish a connection");
             assertTrue(events.stream().noneMatch(e -> e instanceof StatusEvent),
-                    "stop() during a handshake must stay silent — its own READY/FAILED close the turn, not this: " + events);
+                       "stop() during a handshake must stay silent — its own READY/FAILED close the turn, not this: " + events);
         }
         finally {
             manager.stopAndCloseConnections();
@@ -707,7 +706,7 @@ class GrokAiProcessManagerAcpTest {
         try {
             manager.sendPrompt("hello", WORK_DIR, List.of());
             awaitTrue(() -> statusCount(events, StatusEventTypeEnum.EXITED) == 1,
-                    "the stderr flood must not block the exit from being reported: " + events);
+                      "the stderr flood must not block the exit from being reported: " + events);
             StatusEvent exited = events.stream().filter(e -> e instanceof StatusEvent se && se.type() == StatusEventTypeEnum.EXITED)
                     .map(e -> (StatusEvent) e).findFirst().orElseThrow();
             assertTrue(exited.text().contains("stderr line 4999"), "the tail of stderr must be shown in the EXITED message: " + exited.text());
@@ -735,9 +734,9 @@ class GrokAiProcessManagerAcpTest {
             manager.sendPrompt("second", WORK_DIR, List.of());
 
             awaitTrue(() -> events.stream().anyMatch(e -> e instanceof TurnCompleteEvent),
-                    "the refused second prompt must still post TurnComplete, or the UI stays locked: " + events);
+                      "the refused second prompt must still post TurnComplete, or the UI stays locked: " + events);
             assertTrue(events.stream().anyMatch(e -> e instanceof StatusEvent se && se.type() == StatusEventTypeEnum.INFO),
-                    "the refusal must say why: " + events);
+                       "the refusal must say why: " + events);
         }
         finally {
             manager.stopAndCloseConnections();
@@ -810,10 +809,10 @@ class GrokAiProcessManagerAcpTest {
     }
 
     /**
-     * Review finding (LOW): Grok's own {@code --debug-file} trace contains unredacted prompts and secrets
-     * verbatim (it is Grok's own writer, not this plugin's redacted log). It must live under the session's
-     * private config dir ({@code ~/.ai-coder/grok/{sessionId}/}), never {@code java.io.tmpdir} where any
-     * local user/process could read it, and must be deleted when the session stops.
+     * Review finding (LOW): Grok's own {@code --debug-file} trace contains unredacted prompts and secrets verbatim (it
+     * is Grok's own writer, not this plugin's redacted log). It must live under the session's private config dir
+     * ({@code ~/.ai-coder/grok/{sessionId}/}), never {@code java.io.tmpdir} where any local user/process could read it,
+     * and must be deleted when the session stops.
      */
     @Test
     void debugFile_livesUnderTheSessionsPrivateConfigDir_andIsDeletedOnStop() throws Exception {
@@ -833,7 +832,7 @@ class GrokAiProcessManagerAcpTest {
 
             String tmpDir = System.getProperty("java.io.tmpdir");
             assertFalse(debugFile.getAbsolutePath().startsWith(tmpDir),
-                    "the debug file must never be under java.io.tmpdir: " + debugFile);
+                        "the debug file must never be under java.io.tmpdir: " + debugFile);
             assertTrue(debugFile.getParentFile().isDirectory(), "the session's own config dir must have been created");
 
             // The fake agent (a plain shell script) never actually writes the file Grok's real binary would;
@@ -866,7 +865,7 @@ class GrokAiProcessManagerAcpTest {
         manager.applyInitialConfigOptionsIfNeeded();
 
         assertEquals("high", manager.reasoningEffort,
-                "a dead connection must not be mistaken for the agent rejecting the session's stored effort");
+                     "a dead connection must not be mistaken for the agent rejecting the session's stored effort");
         assertFalse(clearedCallbackFired[0], "onReasoningEffortCleared must not fire for a connection that never asked Grok anything");
     }
 
@@ -899,8 +898,8 @@ class GrokAiProcessManagerAcpTest {
     }
 
     /**
-     * Captures each request's future without completing it, so a test decides when and how each response
-     * arrives — mirrors {@code OpenCodeHandshakeRaceTest.StubConnection}.
+     * Captures each request's future without completing it, so a test decides when and how each response arrives —
+     * mirrors {@code OpenCodeHandshakeRaceTest.StubConnection}.
      */
     private static final class CapturingStubConnection extends AcpConnection {
 
@@ -908,9 +907,9 @@ class GrokAiProcessManagerAcpTest {
 
         CapturingStubConnection() {
             super(new ByteArrayOutputStream(), InputStream.nullInputStream(),
-                    new GrokAcpClientHandler(e -> {
-                    }, () -> {
-                    }));
+                  new GrokAcpClientHandler(e -> {
+                  }, () -> {
+                                   }));
         }
 
         @Override
@@ -922,8 +921,8 @@ class GrokAiProcessManagerAcpTest {
     }
 
     /**
-     * Captures each request's future instead of writing it, so a test decides when and how each response
-     * arrives — mirrors {@code OpenCodeHandshakeRaceTest.StubConnection}.
+     * Captures each request's future instead of writing it, so a test decides when and how each response arrives —
+     * mirrors {@code OpenCodeHandshakeRaceTest.StubConnection}.
      */
     private static final class StubConnection extends AcpConnection {
 
@@ -932,9 +931,9 @@ class GrokAiProcessManagerAcpTest {
 
         StubConnection() {
             super(new ByteArrayOutputStream(), InputStream.nullInputStream(),
-                    new GrokAcpClientHandler(e -> {
-                    }, () -> {
-                    }));
+                  new GrokAcpClientHandler(e -> {
+                  }, () -> {
+                                   }));
         }
 
         @Override
@@ -948,17 +947,17 @@ class GrokAiProcessManagerAcpTest {
     }
 
     /**
-     * A fake {@code grok agent stdio}: answers {@code initialize} (id 1) the way the real agent does, then
-     * runs {@code after} — which is responsible for answering (or not) session/new|session/load and
-     * session/prompt as each test needs.
+     * A fake {@code grok agent stdio}: answers {@code initialize} (id 1) the way the real agent does, then runs
+     * {@code after} — which is responsible for answering (or not) session/new|session/load and session/prompt as each
+     * test needs.
      */
     private static File fakeAgent(String after) throws IOException {
         File script = File.createTempFile("fake-grok-", ".sh");
         script.deleteOnExit();
         String body = "#!/bin/sh\n"
-                      + "read -r _init\n"
-                      + "printf '{\"jsonrpc\":\"2.0\",\"id\":1,\"result\":{\"protocolVersion\":1}}\\n'\n"
-                      + after;
+                + "read -r _init\n"
+                + "printf '{\"jsonrpc\":\"2.0\",\"id\":1,\"result\":{\"protocolVersion\":1}}\\n'\n"
+                + after;
         Files.writeString(script.toPath(), body, StandardCharsets.UTF_8);
         script.setExecutable(true);
         return script;
@@ -984,8 +983,8 @@ class GrokAiProcessManagerAcpTest {
     }
 
     /**
-     * Routes process creation through a queue of real fake-agent scripts (spawned as real processes — the
-     * script itself stands in for the grok CLI).
+     * Routes process creation through a queue of real fake-agent scripts (spawned as real processes — the script itself
+     * stands in for the grok CLI).
      */
     private static final class TestableGrokAiProcessManager extends GrokAiProcessManager {
 
@@ -1016,8 +1015,8 @@ class GrokAiProcessManagerAcpTest {
     /**
      * Holds the handshake at the publish point ({@code beforeHandshakePublish}, inherited from
      * {@code AbstractAcpProcessManager}) until released, mirroring {@code
-     * OpenCodeHandshakeRaceTest.HeldHandshakeManager} — the race it pins is the one the two backends now
-     * share one implementation for.
+     * OpenCodeHandshakeRaceTest.HeldHandshakeManager} — the race it pins is the one the two backends now share one
+     * implementation for.
      */
     private static class HeldHandshakeManager extends GrokAiProcessManager {
 
@@ -1046,8 +1045,8 @@ class GrokAiProcessManagerAcpTest {
         }
 
         /**
-         * When set, the process's own onExit callback waits for it, so a test can have the handshake see a
-         * crash before that callback has handled it. Calls made from a handshake thread are never held.
+         * When set, the process's own onExit callback waits for it, so a test can have the handshake see a crash before
+         * that callback has handled it. Calls made from a handshake thread are never held.
          */
         volatile CountDownLatch exitCallbackGate;
 
@@ -1072,8 +1071,8 @@ class GrokAiProcessManagerAcpTest {
         }
 
         /**
-         * stop() closes a published connection only after waiting, on a background thread, for the agent to
-         * answer a shutdown it never will. Closing every connection here (close is idempotent) keeps their
+         * stop() closes a published connection only after waiting, on a background thread, for the agent to answer a
+         * shutdown it never will. Closing every connection here (close is idempotent) keeps their
          * acp-notify/acp-dispatch threads from outliving the test.
          */
         void stopAndCloseConnections() {

@@ -259,9 +259,9 @@ public class SessionPickerDialog extends JDialog {
     }
 
     /**
-     * Plugin identity, every value taken from the one place that already defines it rather than restated
-     * here: the version and homepage are filtered into version.properties from the pom, and the name is the
-     * bundle key the Plugin Manager displays. A literal copy in this panel would be the copy that goes stale.
+     * Plugin identity, every value taken from the one place that already defines it rather than restated here: the
+     * version and homepage are filtered into version.properties from the pom, and the name is the bundle key the Plugin
+     * Manager displays. A literal copy in this panel would be the copy that goes stale.
      */
     private Component buildAboutTab() {
         JPanel form = new JPanel(new GridBagLayout());
@@ -280,8 +280,8 @@ public class SessionPickerDialog extends JDialog {
     }
 
     /**
-     * A URL as a clickable link, or plain text when there is nothing to open - an underlined label that did
-     * nothing on click would be worse than an honest label.
+     * A URL as a clickable link, or plain text when there is nothing to open - an underlined label that did nothing on
+     * click would be worse than an honest label.
      */
     private Component buildLink(String url) {
         if (url == null || url.isBlank()) {
@@ -365,14 +365,14 @@ public class SessionPickerDialog extends JDialog {
     }
 
     /**
-     * SessionPersistenceManager.loadAll takes a cross-process file lock with no timeout, so it must not run
-     * on the EDT: another IDE instance holding the lock would freeze this one for as long as the picker
-     * stayed open. Returns at once — the dialog shows a loading state immediately, then the table populates
-     * (or an error is reported) once the background load completes.
+     * SessionPersistenceManager.loadAll takes a cross-process file lock with no timeout, so it must not run on the EDT:
+     * another IDE instance holding the lock would freeze this one for as long as the picker stayed open. Returns at
+     * once — the dialog shows a loading state immediately, then the table populates (or an error is reported) once the
+     * background load completes.
      *
-     * @param pendingMessage a message to keep showing once the load succeeds (e.g. a delete failure this
-     *                       reload is following up on) instead of clearing the status label — a load failure still overrides it,
-     *                       since that is the more current problem
+     * @param pendingMessage a message to keep showing once the load succeeds (e.g. a delete failure this reload is
+     * following up on) instead of clearing the status label — a load failure still overrides it, since that is the more
+     * current problem
      */
     private void loadSessions(String pendingMessage) {
         long epoch = loadEpoch.next();
@@ -515,10 +515,9 @@ public class SessionPickerDialog extends JDialog {
     }
 
     /**
-     * Confirms on the EDT, then hands the actual deletes to {@link #operations}, which runs them off it: for
-     * a session with no open tab, {@code SessionDeletion.delete} falls through to
-     * {@code SessionPersistenceManager.delete}, which takes the same untimed cross-process file lock as
-     * loadSessions.
+     * Confirms on the EDT, then hands the actual deletes to {@link #operations}, which runs them off it: for a session
+     * with no open tab, {@code SessionDeletion.delete} falls through to {@code SessionPersistenceManager.delete}, which
+     * takes the same untimed cross-process file lock as loadSessions.
      */
     private void onDelete() {
         List<AiSession> selected = selectedSessions();
@@ -549,11 +548,11 @@ public class SessionPickerDialog extends JDialog {
     }
 
     /**
-     * Called off the EDT (from {@link #operations}' delete task). The TopComponent lookup and, if found, the
-     * tab close must themselves run on the EDT, so this hops there and back rather than running on the
-     * caller's thread — the same reason {@link AiTopComponent#closeAndDelete} must be called on the EDT.
-     * Nothing on the EDT ever blocks waiting for this method's caller (the delete task's future is only ever
-     * consumed via whenComplete, never get()), so this cannot deadlock against it.
+     * Called off the EDT (from {@link #operations}' delete task). The TopComponent lookup and, if found, the tab close
+     * must themselves run on the EDT, so this hops there and back rather than running on the caller's thread — the same
+     * reason {@link AiTopComponent#closeAndDelete} must be called on the EDT. Nothing on the EDT ever blocks waiting
+     * for this method's caller (the delete task's future is only ever consumed via whenComplete, never get()), so this
+     * cannot deadlock against it.
      */
     private CompletableFuture<Void> closeAndDeleteTab(String id) {
         AtomicReference<CompletableFuture<Void>> result = new AtomicReference<>();

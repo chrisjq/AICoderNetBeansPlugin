@@ -56,18 +56,18 @@ class AiSessionSettingsCreatorTest {
         assertEquals(true, settings.autoAccept());
         assertEquals(false, settings.allowWebRequests());
         assertEquals(true,
-                settings.allowWebRequestAccess(WebRequestAccessOptionEnum.GET));
+                     settings.allowWebRequestAccess(WebRequestAccessOptionEnum.GET));
         assertEquals(false,
-                settings.allowWebRequestAccess(WebRequestAccessOptionEnum.POST));
+                     settings.allowWebRequestAccess(WebRequestAccessOptionEnum.POST));
         assertEquals(false,
-                settings.allowWebRequestAccess(WebRequestAccessOptionEnum.HEADERS));
+                     settings.allowWebRequestAccess(WebRequestAccessOptionEnum.HEADERS));
         assertEquals(true,
-                settings.allowWebRequestAccess(WebRequestAccessOptionEnum.BODY));
+                     settings.allowWebRequestAccess(WebRequestAccessOptionEnum.BODY));
         assertEquals(false, settings.allowGitAccess());
         assertEquals(true,
-                settings.allowGitAccessOption(GitAccessOptionEnum.READ));
+                     settings.allowGitAccessOption(GitAccessOptionEnum.READ));
         assertEquals(false,
-                settings.allowGitAccessOption(GitAccessOptionEnum.WRITE));
+                     settings.allowGitAccessOption(GitAccessOptionEnum.WRITE));
     }
 
     @Test
@@ -114,7 +114,7 @@ class AiSessionSettingsCreatorTest {
     @Test
     void populateJsonObjectThenUpdateRoundTrips() {
         AiSessionSettings original = new AiSessionSettings(7, true, false, true,
-                false, "round trip", true, false);
+                                                           false, "round trip", true, false);
         original.setAllowWebRequestAccess(WebRequestAccessOptionEnum.GET, true);
         original.setAllowWebRequestAccess(WebRequestAccessOptionEnum.POST, false);
         original.setAllowWebRequestAccess(WebRequestAccessOptionEnum.HEADERS, false);
@@ -139,12 +139,12 @@ class AiSessionSettingsCreatorTest {
         assertEquals(original.allowWebRequests(), loaded.allowWebRequests());
         for (WebRequestAccessOptionEnum option : WebRequestAccessOptionEnum.values()) {
             assertEquals(original.allowWebRequestAccess(option),
-                    loaded.allowWebRequestAccess(option));
+                         loaded.allowWebRequestAccess(option));
         }
         assertEquals(original.allowGitAccess(), loaded.allowGitAccess());
         for (GitAccessOptionEnum option : GitAccessOptionEnum.values()) {
             assertEquals(original.allowGitAccessOption(option),
-                    loaded.allowGitAccessOption(option));
+                         loaded.allowGitAccessOption(option));
         }
     }
 

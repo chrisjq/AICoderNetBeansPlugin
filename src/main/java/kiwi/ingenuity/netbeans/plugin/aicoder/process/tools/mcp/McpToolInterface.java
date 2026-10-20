@@ -29,20 +29,18 @@ public interface McpToolInterface {
     }
 
     /**
-     * True if this tool acquires and releases its own fine-grained lock(s) inside handle() — e.g. a per-file
-     * lock taken only around the actual write, after any diff approval or confirmation prompt has already
-     * completed, never while one is open. When true, {@code McpToolInvoker} skips wrapping handle() in its
-     * own global mutation lock — the tool is fully responsible for guarding against concurrent mutation
-     * itself.
+     * True if this tool acquires and releases its own fine-grained lock(s) inside handle() — e.g. a per-file lock taken
+     * only around the actual write, after any diff approval or confirmation prompt has already completed, never while
+     * one is open. When true, {@code McpToolInvoker} skips wrapping handle() in its own global mutation lock — the tool
+     * is fully responsible for guarding against concurrent mutation itself.
      */
     default boolean usesOwnFileLocking() {
         return false;
     }
 
     /**
-     * Whether this handler requires {@code McpToolInvoker}'s process-wide mutation lock. This controls only
-     * that lock; {@link #isMutating()} retains its independent read-versus-write meaning, including for Git
-     * access control.
+     * Whether this handler requires {@code McpToolInvoker}'s process-wide mutation lock. This controls only that lock;
+     * {@link #isMutating()} retains its independent read-versus-write meaning, including for Git access control.
      */
     default boolean requiresGlobalMutationLock() {
         return isMutating() && !usesOwnFileLocking();

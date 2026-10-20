@@ -42,7 +42,7 @@ class GitAccessGuardTest {
         session.getSettings().setAllowGitAccessOption(GitAccessOptionEnum.WRITE, Boolean.FALSE);
 
         assertNull(GitAccessGuard.denialOrNull(new GetGitStatusTool(), session),
-                "a read-only tool must survive WRITE being off");
+                   "a read-only tool must survive WRITE being off");
         assertNotNull(GitAccessGuard.denialOrNull(new GitCommitTool(), session));
     }
 
@@ -53,7 +53,7 @@ class GitAccessGuardTest {
 
         assertNotNull(GitAccessGuard.denialOrNull(new GetGitStatusTool(), session));
         assertNull(GitAccessGuard.denialOrNull(new GitCommitTool(), session),
-                "READ and WRITE must be independent, not one flag read twice");
+                   "READ and WRITE must be independent, not one flag read twice");
     }
 
     @Test

@@ -66,7 +66,7 @@ class TemplatePersistenceManagerTest {
         assertEquals(expected.allowGitAccess(), actual.allowGitAccess(), "allowGitAccess");
         for (GitAccessOptionEnum option : GitAccessOptionEnum.values()) {
             assertEquals(expected.allowGitAccessOption(option),
-                    actual.allowGitAccessOption(option), option.name());
+                         actual.allowGitAccessOption(option), option.name());
         }
         assertEquals(expected.enableClipboardAccess(), actual.enableClipboardAccess());
     }
@@ -145,7 +145,7 @@ class TemplatePersistenceManagerTest {
 
         var instructionDefaults = manager.saveSpecialInstructionDefaultsIfEmpty();
         assertEquals(List.of("Coordinator", "CoderPeer", "ReviewerPeer"),
-                instructionDefaults.stream().map(SpecialInstructionTemplate::name).toList());
+                     instructionDefaults.stream().map(SpecialInstructionTemplate::name).toList());
         assertEquals(instructionDefaults, manager.saveSpecialInstructionDefaultsIfEmpty());
     }
 
@@ -169,11 +169,11 @@ class TemplatePersistenceManagerTest {
                         + " unpinned, so it inherits the global default instead of the template's own value");
             }
             assertEquals(Boolean.FALSE,
-                    template.settings().allowWebRequestAccess(WebRequestAccessOptionEnum.LOCALHOST),
-                    template.name() + " must deny localhost destinations");
+                         template.settings().allowWebRequestAccess(WebRequestAccessOptionEnum.LOCALHOST),
+                         template.name() + " must deny localhost destinations");
             assertEquals(Boolean.FALSE,
-                    template.settings().allowWebRequestAccess(WebRequestAccessOptionEnum.PRIVATE_NETWORKS),
-                    template.name() + " must deny private-network destinations");
+                         template.settings().allowWebRequestAccess(WebRequestAccessOptionEnum.PRIVATE_NETWORKS),
+                         template.name() + " must deny private-network destinations");
         }
     }
 
@@ -190,14 +190,14 @@ class TemplatePersistenceManagerTest {
         for (ConfigTemplate template : byName.values()) {
             assertEquals(Boolean.TRUE, template.settings().allowGitAccess(), template.name());
             assertEquals(Boolean.TRUE,
-                    template.settings().allowGitAccessOption(GitAccessOptionEnum.READ),
-                    template.name());
+                         template.settings().allowGitAccessOption(GitAccessOptionEnum.READ),
+                         template.name());
         }
 
         assertEquals(Boolean.TRUE,
-                byName.get("Coordinator").settings().allowGitAccessOption(GitAccessOptionEnum.WRITE));
+                     byName.get("Coordinator").settings().allowGitAccessOption(GitAccessOptionEnum.WRITE));
         assertEquals(Boolean.TRUE,
-                byName.get("CoderPeer").settings().allowGitAccessOption(GitAccessOptionEnum.WRITE));
+                     byName.get("CoderPeer").settings().allowGitAccessOption(GitAccessOptionEnum.WRITE));
         assertEquals(Boolean.FALSE,
                 byName.get("ReviewerPeer").settings().allowGitAccessOption(GitAccessOptionEnum.WRITE),
                 "reviewer templates must not be able to mutate the repository");
@@ -210,7 +210,7 @@ class TemplatePersistenceManagerTest {
         SpecialInstructionTemplate saved = SpecialInstructionTemplate.create("Review", "Review carefully.");
         manager.save(saved);
         assertEquals("Review carefully.", manager.loadSpecialInstructionTemplates().stream()
-                .filter(template -> template.id().equals(saved.id())).findFirst().orElseThrow().body());
+                     .filter(template -> template.id().equals(saved.id())).findFirst().orElseThrow().body());
         manager.deleteSpecialInstructionTemplate(saved.id());
         assertEquals(3, manager.loadSpecialInstructionTemplates().size());
     }

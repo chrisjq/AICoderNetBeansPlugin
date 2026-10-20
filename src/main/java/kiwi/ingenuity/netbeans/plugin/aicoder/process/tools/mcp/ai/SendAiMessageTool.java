@@ -22,9 +22,9 @@ public class SendAiMessageTool extends AbstractActionTool {
 
     public SendAiMessageTool() {
         super(McpSectionEnum.PLUGIN,
-                McpToolEnum.PEER_MESSAGE_SEND.toolName(),
-                "Send a message to the inbox of another AI session open in this IDE — not an internal subagent. Use " + McpToolEnum.PEER_SESSION_LIST.toolName() + " to find peer sessionIds.",
-                McpToolEnum.PEER_MESSAGE_SEND.toolName() + " -> send to a peer AI session's inbox; use " + SendAiMessageParamEnum.EXPECTS_REPLY.key() + "+" + SendAiMessageParamEnum.REPLY_IMPORTANT.key() + " to be interrupted when they reply");
+              McpToolEnum.PEER_MESSAGE_SEND.toolName(),
+              "Send a message to the inbox of another AI session open in this IDE — not an internal subagent. Use " + McpToolEnum.PEER_SESSION_LIST.toolName() + " to find peer sessionIds.",
+              McpToolEnum.PEER_MESSAGE_SEND.toolName() + " -> send to a peer AI session's inbox; use " + SendAiMessageParamEnum.EXPECTS_REPLY.key() + "+" + SendAiMessageParamEnum.REPLY_IMPORTANT.key() + " to be interrupted when they reply");
     }
 
     @Override
@@ -32,7 +32,7 @@ public class SendAiMessageTool extends AbstractActionTool {
         JsonObject tool = new JsonObject();
         tool.addProperty(ToolSchemaKeyEnum.NAME.key(), McpToolEnum.PEER_MESSAGE_SEND.toolName());
         tool.addProperty(ToolSchemaKeyEnum.DESCRIPTION.key(), "Send a message to another AI session open in this IDE — not an internal subagent. Use " + McpToolEnum.PEER_SESSION_LIST.toolName()
-                                                              + " to find a target session ID or unique name.");
+                         + " to find a target session ID or unique name.");
         JsonObject schema = new JsonObject();
         schema.addProperty(ToolSchemaKeyEnum.TYPE.key(), "object");
         JsonObject props = new JsonObject();
@@ -40,14 +40,14 @@ public class SendAiMessageTool extends AbstractActionTool {
         JsonObject tid = new JsonObject();
         tid.addProperty(ToolSchemaKeyEnum.TYPE.key(), "string");
         tid.addProperty(ToolSchemaKeyEnum.DESCRIPTION.key(), "Required target session ID or unique session name from "
-                                                             + McpToolEnum.PEER_SESSION_LIST.toolName() + " (not your own).");
+                        + McpToolEnum.PEER_SESSION_LIST.toolName() + " (not your own).");
         props.add(SendAiMessageParamEnum.TARGET_SESSION_ID.key(), tid);
 
         JsonObject subj = new JsonObject();
         subj.addProperty(ToolSchemaKeyEnum.TYPE.key(), "string");
         subj.addProperty(ToolSchemaKeyEnum.DESCRIPTION.key(), "Short subject line (max "
-                                                              + AiInboxMessage.MAX_SUBJECT_LENGTH + " chars). The recipient sees only this, not the body, "
-                                                              + "when the message is delivered — make it state what you want done.");
+                         + AiInboxMessage.MAX_SUBJECT_LENGTH + " chars). The recipient sees only this, not the body, "
+                         + "when the message is delivered — make it state what you want done.");
         props.add(SendAiMessageParamEnum.SUBJECT.key(), subj);
 
         JsonObject msg = new JsonObject();
@@ -152,8 +152,8 @@ public class SendAiMessageTool extends AbstractActionTool {
         // anything is written so it cannot leave an inbox entry or a pending-reply expectation against itself.
         if (senderId.equals(targetSessionId)) {
             return "Error: cannot send a message to your own session '" + senderId + "'. Call "
-                   + McpToolEnum.PEER_SESSION_LIST.toolName() + " and pick a different "
-                   + SendAiMessageParamEnum.TARGET_SESSION_ID.key() + ".";
+                    + McpToolEnum.PEER_SESSION_LIST.toolName() + " and pick a different "
+                    + SendAiMessageParamEnum.TARGET_SESSION_ID.key() + ".";
         }
         if (subject == null || subject.isBlank()) {
             return "Error: " + SendAiMessageParamEnum.SUBJECT.key() + " is required";
@@ -178,7 +178,7 @@ public class SendAiMessageTool extends AbstractActionTool {
             // shared "is not active" gave the mistyped case the wrong one.
             if (!broker.isKnownSession(targetSessionId)) {
                 return "Error: no active AI session has the id or name '" + targetSessionId + "'. Call "
-                       + McpToolEnum.PEER_SESSION_LIST.toolName() + " and use a listed id or unique name.";
+                        + McpToolEnum.PEER_SESSION_LIST.toolName() + " and use a listed id or unique name.";
             }
             // A comms-disabled session is never handed an inbox: AiTopComponent registers a session only when
             // effectiveAllowInterAiComms() is on and unregisters it when comms is toggled off, so such a target
@@ -205,7 +205,7 @@ public class SendAiMessageTool extends AbstractActionTool {
         // The broker only creates the pending-reply bookkeeping this flag rides on when a reply is expected, so
         // carrying it alone would set a flag that nothing could ever act on.
         boolean replyImportant = expectsReply
-                                 && args.bool(SendAiMessageParamEnum.REPLY_IMPORTANT.key());
+                && args.bool(SendAiMessageParamEnum.REPLY_IMPORTANT.key());
         boolean targetRunning = broker.isSessionRunning(targetSessionId);
         boolean targetAllowsImportant = broker.isImportantMessagesAllowed(targetSessionId);
         AiSessionInboxBroker.SendResult sendResult = broker.sendMessageWithResult(
@@ -217,7 +217,7 @@ public class SendAiMessageTool extends AbstractActionTool {
             // session restart in the gap). Distinct from the "not active" refusal up front: that one means the
             // recipient was GONE when we asked; this one means it was HERE and then left mid-send.
             return "Error: session '" + targetSessionId + "' stopped before the message could be delivered — "
-                   + "retry once it has finished processing.";
+                    + "retry once it has finished processing.";
         }
         boolean tryInterruptEnabled = targetAllowsImportant && important;
         String result = "Message sent to session " + targetSessionId + " (id=" + messageId + ")";
@@ -243,13 +243,12 @@ public class SendAiMessageTool extends AbstractActionTool {
     }
 
     /**
-     * "You still owe replies to:" reminder appended after every successful send, so the reply obligation
-     * stays visible right when the sender is already in the mail tool rather than only on the next turn's
-     * preamble (see ContextProvider.appendOwedReplies, the equivalent per-turn section). Only messages
-     * already read are listed — an unread one has not been seen yet, so surfacing it here would be the same
-     * premature-reply nudge NotificationUtilInboxTest guards the auto-delivered notification against. The
-     * message just answered by this very call is excluded, though listOwedReplies would already drop it once
-     * its respondedAt is set.
+     * "You still owe replies to:" reminder appended after every successful send, so the reply obligation stays visible
+     * right when the sender is already in the mail tool rather than only on the next turn's preamble (see
+     * ContextProvider.appendOwedReplies, the equivalent per-turn section). Only messages already read are listed — an
+     * unread one has not been seen yet, so surfacing it here would be the same premature-reply nudge
+     * NotificationUtilInboxTest guards the auto-delivered notification against. The message just answered by this very
+     * call is excluded, though listOwedReplies would already drop it once its respondedAt is set.
      */
     private static String owedRepliesBlock(String senderId, String justAnsweredId) {
         List<AiInboxMessage> owed = AiSessionInboxBroker.getInstance().listOwedReplies(senderId).stream()
@@ -272,8 +271,8 @@ public class SendAiMessageTool extends AbstractActionTool {
     }
 
     /**
-     * The sender's display name, falling back to its session id when that session has since closed — same
-     * resolution and fallback ContextProvider.senderName() uses for the equivalent case.
+     * The sender's display name, falling back to its session id when that session has since closed — same resolution
+     * and fallback ContextProvider.senderName() uses for the equivalent case.
      */
     private static String senderName(String sessionId) {
         var abs = SessionRegistry.get(sessionId);

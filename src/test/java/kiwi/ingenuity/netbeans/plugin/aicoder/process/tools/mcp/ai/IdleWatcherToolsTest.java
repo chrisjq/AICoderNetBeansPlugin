@@ -22,9 +22,9 @@ import org.junit.jupiter.api.Test;
 /**
  * Drives CreateIdleWatcherTool/CancelIdleWatcherTool/ListIdleWatchersTool end to end against the real {@link
  * IdleWatcherRegistry#getInstance()} singleton and a real {@link SessionRegistry} registration, the way {@code
- * BuildSubmitterTest} drives the real {@code BuildQueue}. Every session this test registers and every watcher
- * it creates is torn down in {@link #tearDown()} so no clock is left running on the singleton's real
- * scheduler thread after the suite moves on.
+ * BuildSubmitterTest} drives the real {@code BuildQueue}. Every session this test registers and every watcher it
+ * creates is torn down in {@link #tearDown()} so no clock is left running on the singleton's real scheduler thread
+ * after the suite moves on.
  */
 class IdleWatcherToolsTest {
 
@@ -50,7 +50,7 @@ class IdleWatcherToolsTest {
         AiSessionSettings settings = new AiSessionSettings();
         settings.setAllowIdleWatcherTimer(allowIdleWatcherTimer);
         AiSession aiSession = new AiSession(id, "Name-" + id, null, AiTypeEnum.CLAUDE, null, settings, Instant.now(),
-                Instant.now());
+                                            Instant.now());
         AbstractAiSession wrapper = new AbstractAiSession(aiSession) {
             @Override
             public String getId() {
@@ -79,7 +79,7 @@ class IdleWatcherToolsTest {
 
     private void rememberLatestWatcher(String watcherSessionId) {
         List<kiwi.ingenuity.netbeans.plugin.aicoder.ai.idlewatch.IdleWatcherStatus> statuses
-                                                                                    = IdleWatcherRegistry.getInstance().list(watcherSessionId);
+                = IdleWatcherRegistry.getInstance().list(watcherSessionId);
         String id = statuses.get(statuses.size() - 1).watcher().id();
         createdWatchers.add(new String[]{watcherSessionId, id});
     }
@@ -113,9 +113,9 @@ class IdleWatcherToolsTest {
         AbstractAiSession target = session("idlewatch-tool-disabled-target", true);
 
         assertEquals(DISABLED, new CreateIdleWatcherTool().handle(
-                args(CreateIdleWatcherParamEnum.TARGET_SESSION_ID.key(), target.getId()), watcher));
+                     args(CreateIdleWatcherParamEnum.TARGET_SESSION_ID.key(), target.getId()), watcher));
         assertEquals(DISABLED, new CancelIdleWatcherTool().handle(
-                args(CancelIdleWatcherParamEnum.WATCHER_ID.key(), "idle-watch-1"), watcher));
+                     args(CancelIdleWatcherParamEnum.WATCHER_ID.key(), "idle-watch-1"), watcher));
         assertEquals(DISABLED, new ListIdleWatchersTool().handle(args(), watcher));
     }
 
@@ -145,8 +145,8 @@ class IdleWatcherToolsTest {
     }
 
     /**
-     * Explicit JSON-type validation for timeoutMinutes: a non-integer number, a string, a boolean, and
-     * overflow must all be refused cleanly rather than silently coerced or thrown as an uncaught exception.
+     * Explicit JSON-type validation for timeoutMinutes: a non-integer number, a string, a boolean, and overflow must
+     * all be refused cleanly rather than silently coerced or thrown as an uncaught exception.
      */
     @Test
     void timeoutMinutesWithTheWrongJsonShapeIsRefused() {
@@ -195,8 +195,8 @@ class IdleWatcherToolsTest {
     }
 
     /**
-     * Boss's fix: PeerIdleWatcherCreate must resolve a session NAME the same way PeerMessageSend does,
-     * instead of rejecting it with "Target session is not open" because it is not an id.
+     * Boss's fix: PeerIdleWatcherCreate must resolve a session NAME the same way PeerMessageSend does, instead of
+     * rejecting it with "Target session is not open" because it is not an id.
      */
     @Test
     void createByUniqueSessionName_resolvesToTheTargetId() {
@@ -215,8 +215,8 @@ class IdleWatcherToolsTest {
     }
 
     /**
-     * Two targets sharing a name must refuse with the same ambiguous-name error PeerMessageSend gives,
-     * listing both matches, rather than guessing or silently picking one.
+     * Two targets sharing a name must refuse with the same ambiguous-name error PeerMessageSend gives, listing both
+     * matches, rather than guessing or silently picking one.
      */
     @Test
     void createByAmbiguousSessionName_isRefusedListingTheMatches() {
@@ -224,9 +224,9 @@ class IdleWatcherToolsTest {
         AiSessionSettings settings = new AiSessionSettings();
         settings.setAllowIdleWatcherTimer(true);
         AiSession dup1 = new AiSession("idlewatch-tool-ambiguous-target-1", "SameName", null, AiTypeEnum.CLAUDE, null,
-                settings, Instant.now(), Instant.now());
+                                       settings, Instant.now(), Instant.now());
         AiSession dup2 = new AiSession("idlewatch-tool-ambiguous-target-2", "SameName", null, AiTypeEnum.CLAUDE, null,
-                settings, Instant.now(), Instant.now());
+                                       settings, Instant.now(), Instant.now());
         registerDuplicate(dup1);
         registerDuplicate(dup2);
 

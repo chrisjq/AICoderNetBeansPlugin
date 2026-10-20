@@ -12,16 +12,14 @@ import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.McpToolInterface
 /**
  * Static registry for the layered MCP instruction architecture.
  * <p>
- * Layer 1 (global static):
- * {@link McpHookServerUtil#getGlobalInstructionsHeader(Set)}
+ * Layer 1 (global static): {@link McpHookServerUtil#getGlobalInstructionsHeader(Set)}
  * <p>
- * Layer 2 (AI-type static): registered per {@link AiTypeEnum} via
- * {@link #register}. Includes per-tool instruction additions.
+ * Layer 2 (AI-type static): registered per {@link AiTypeEnum} via {@link #register}. Includes per-tool instruction
+ * additions.
  * <p>
- * Both layers honour the caller's {@link McpInstructionOptionEnum} set: Layer-2
- * header text is emitted only when HEADER is present, and Layer-2 per-tool
- * additions only when TOOL_INSTRUCTION is present. Without those checks a
- * registered addition could reintroduce text the options were meant to suppress.
+ * Both layers honour the caller's {@link McpInstructionOptionEnum} set: Layer-2 header text is emitted only when HEADER
+ * is present, and Layer-2 per-tool additions only when TOOL_INSTRUCTION is present. Without those checks a registered
+ * addition could reintroduce text the options were meant to suppress.
  */
 public final class McpInstructionRegistry {
 
@@ -30,8 +28,8 @@ public final class McpInstructionRegistry {
     private static final Map<AiTypeEnum, Map<McpToolEnum, McpToolInterface>> handlerRegistry = new ConcurrentHashMap<>();
 
     /**
-     * Register Layer-2 header and per-tool instruction additions for an AI
-     * type. Later calls overwrite earlier ones for the same type.
+     * Register Layer-2 header and per-tool instruction additions for an AI type. Later calls overwrite earlier ones for
+     * the same type.
      */
     public static void register(AiTypeEnum type, String header, Map<McpToolEnum, String> toolInstructions) {
         if (header != null && !header.isBlank()) {
@@ -43,8 +41,8 @@ public final class McpInstructionRegistry {
     }
 
     /**
-     * Returns the combined Layer 1 + Layer 2 header for the given AI type. If
-     * no Layer-2 header is registered the global header is returned unchanged.
+     * Returns the combined Layer 1 + Layer 2 header for the given AI type. If no Layer-2 header is registered the
+     * global header is returned unchanged.
      */
     public static String buildHeader(AiTypeEnum type) {
         Set<McpInstructionOptionEnum> options = type.getMcpOptions();
@@ -120,8 +118,7 @@ public final class McpInstructionRegistry {
     }
 
     /**
-     * Returns the cached handler map for an AI type, or an empty map if not yet
-     * registered.
+     * Returns the cached handler map for an AI type, or an empty map if not yet registered.
      */
     public static Map<McpToolEnum, McpToolInterface> getHandlers(AiTypeEnum type) {
         if (type == null) {

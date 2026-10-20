@@ -35,16 +35,16 @@ import kiwi.ingenuity.netbeans.plugin.aicoder.process.server.McpServerRegistry;
 import kiwi.ingenuity.netbeans.plugin.aicoder.utils.StatusMessageUtil;
 
 /**
- * Manages Grok (xAI's CLI, https://docs.x.ai/build/cli) via one long-lived {@code grok agent stdio} process
- * per plugin session, speaking the same Agent Client Protocol as OpenCode. Lifecycle, the handshake-turn/
- * active-turn tokens, the protocol builders and the permission bridge are shared with OpenCode through
- * {@link AbstractAcpProcessManager}/{@link AbstractAcpClientHandler}; this class supplies Grok's launch
- * command, its model/reasoning-effort config options, and its usage/shutdown specifics.
+ * Manages Grok (xAI's CLI, https://docs.x.ai/build/cli) via one long-lived {@code grok agent stdio} process per plugin
+ * session, speaking the same Agent Client Protocol as OpenCode. Lifecycle, the handshake-turn/ active-turn tokens, the
+ * protocol builders and the permission bridge are shared with OpenCode through
+ * {@link AbstractAcpProcessManager}/{@link AbstractAcpClientHandler}; this class supplies Grok's launch command, its
+ * model/reasoning-effort config options, and its usage/shutdown specifics.
  *
  * <p>
- * Unlike the CLI's old headless {@code grok -p} mode (one process per turn), {@code agent stdio} is a single
- * process for the whole session: {@link #start} only validates the executable and registers the MCP server;
- * the process itself is spawned lazily on the first {@link #sendPrompt}, exactly as {@code
+ * Unlike the CLI's old headless {@code grok -p} mode (one process per turn), {@code agent stdio} is a single process
+ * for the whole session: {@link #start} only validates the executable and registers the MCP server; the process itself
+ * is spawned lazily on the first {@link #sendPrompt}, exactly as {@code
  * OpenCodeAiProcessManager} does.
  */
 public class GrokAiProcessManager extends AbstractAcpProcessManager {
@@ -52,14 +52,14 @@ public class GrokAiProcessManager extends AbstractAcpProcessManager {
     private static final Logger LOG = Logger.getLogger(GrokAiProcessManager.class.getName());
 
     /**
-     * Grace period {@link #stop()} gives Grok to exit after its stdin is closed before escalating to a forced
-     * kill. Verified by live probe (Boss's handover): closing stdin alone does NOT make Grok exit.
+     * Grace period {@link #stop()} gives Grok to exit after its stdin is closed before escalating to a forced kill.
+     * Verified by live probe (Boss's handover): closing stdin alone does NOT make Grok exit.
      */
     private static final long SHUTDOWN_GRACE_MILLIS = 3_000L;
 
     /**
-     * Test seam: overrides {@link #SHUTDOWN_GRACE_MILLIS} so a test proving the forced-kill escalation does
-     * not have to wait out the real grace period. Null in production.
+     * Test seam: overrides {@link #SHUTDOWN_GRACE_MILLIS} so a test proving the forced-kill escalation does not have to
+     * wait out the real grace period. Null in production.
      */
     static volatile Long shutdownGraceMillisForTests = null;
 
@@ -74,10 +74,9 @@ public class GrokAiProcessManager extends AbstractAcpProcessManager {
 
     /**
      * @param debugFilePath when non-null, appends {@code --debug --debug-file <debugFilePath>} — accepted by
-     *                      {@code grok agent} (per {@code grok agent --help}) — so a live failure that is
-     *                      hard to reproduce from this plugin's own debug-JSON log has Grok's own internal
-     *                      trace to check too. Null when {@link PluginSettings#isDebugJson()} is off, so a
-     *                      normal run never pays for a debug file nobody will read.
+     * {@code grok agent} (per {@code grok agent --help}) — so a live failure that is hard to reproduce from this
+     * plugin's own debug-JSON log has Grok's own internal trace to check too. Null when
+     * {@link PluginSettings#isDebugJson()} is off, so a normal run never pays for a debug file nobody will read.
      */
     static List<String> buildAcpCommand(String executablePath, String debugFilePath) {
         List<String> args = new ArrayList<>(List.of("--no-auto-update", "agent", "stdio"));
@@ -112,9 +111,9 @@ public class GrokAiProcessManager extends AbstractAcpProcessManager {
     }
 
     /**
-     * Grok's original {@code interrupt} never captured the handler under the lock — using the
-     * capture-under-lock form here anyway is strictly stronger, not a behaviour change back to anything Grok
-     * actually depended on: it just closes the same race OpenCode's baseline was already guarding against.
+     * Grok's original {@code interrupt} never captured the handler under the lock — using the capture-under-lock form
+     * here anyway is strictly stronger, not a behaviour change back to anything Grok actually depended on: it just
+     * closes the same race OpenCode's baseline was already guarding against.
      */
     @Override
     protected Runnable capturePermissionCancellerUnderLock() {
@@ -136,32 +135,30 @@ public class GrokAiProcessManager extends AbstractAcpProcessManager {
     volatile GrokAcpClientHandler activeHandler = null;
     /**
      * Per-model context-window size (total tokens), read once from {@code initialize}/{@code session/new}'s
-     * {@code models.availableModels[]._meta.totalContextTokens} and kept for the life of the connection —
-     * every known model's window, not just the one Grok started with, so a model switch via
-     * {@code set_config_option} picks up the new model's window on its next {@link #reportUsage} without a
-     * second round-trip. Empty (never null) when the agent's response carries no such data.
+     * {@code models.availableModels[]._meta.totalContextTokens} and kept for the life of the connection — every known
+     * model's window, not just the one Grok started with, so a model switch via {@code set_config_option} picks up the
+     * new model's window on its next {@link #reportUsage} without a second round-trip. Empty (never null) when the
+     * agent's response carries no such data.
      */
     volatile Map<String, Integer> modelContextWindows = Map.of();
     /**
-     * Wall-clock time of the last {@code session/prompt} send, or 0 if none has been sent yet — diagnostics
-     * only, read by {@link #handleProcessExit}'s exit log so an unexpected exit's log line says how long
-     * after the prompt it happened, without needing to cross-reference timestamps by hand.
+     * Wall-clock time of the last {@code session/prompt} send, or 0 if none has been sent yet — diagnostics only, read
+     * by {@link #handleProcessExit}'s exit log so an unexpected exit's log line says how long after the prompt it
+     * happened, without needing to cross-reference timestamps by hand.
      */
     private volatile long lastPromptSentAtMillis = 0L;
     /**
-     * Grok's own {@code --debug-file} trace for the live connection, or null when debug-JSON is off (no file
-     * was requested). Contains unredacted prompts and secrets verbatim (Grok's own writer, not this
-     * plugin's), so it lives under the session's private config dir, never {@code java.io.tmpdir}, and is
-     * deleted in {@link #stop()}.
+     * Grok's own {@code --debug-file} trace for the live connection, or null when debug-JSON is off (no file was
+     * requested). Contains unredacted prompts and secrets verbatim (Grok's own writer, not this plugin's), so it lives
+     * under the session's private config dir, never {@code java.io.tmpdir}, and is deleted in {@link #stop()}.
      */
     private volatile File grokDebugLogFile = null;
 
     private GrokAiSession grokAiSession = null;
     /**
-     * Package-private, not private: tests assert the stored effort directly rather than through a
-     * since-removed pure {@code buildReasoningEffortArgs(model)} seam (the CLI predecessor's approach) — ACP
-     * applies the configured effort as a side effect of the handshake, not a value a caller builds CLI flags
-     * from.
+     * Package-private, not private: tests assert the stored effort directly rather than through a since-removed pure
+     * {@code buildReasoningEffortArgs(model)} seam (the CLI predecessor's approach) — ACP applies the configured effort
+     * as a side effect of the handshake, not a value a caller builds CLI flags from.
      */
     volatile String reasoningEffort;
     /**
@@ -170,13 +167,13 @@ public class GrokAiProcessManager extends AbstractAcpProcessManager {
     volatile boolean reasoningEffortFromSession;
     private volatile Runnable onReasoningEffortCleared;
     /**
-     * Serial queue for config changes made on a running session (model, then the effort check that depends on
-     * it). One thread, so they apply in the order they were made; it exits when idle.
+     * Serial queue for config changes made on a running session (model, then the effort check that depends on it). One
+     * thread, so they apply in the order they were made; it exits when idle.
      */
     private final ThreadPoolExecutor configOperations = newConfigOperationQueue();
     /**
-     * Guards the stored effort and its scope flag, so a rejected level is only cleared while the field still
-     * holds the level that was judged, never over a newer pick.
+     * Guards the stored effort and its scope flag, so a rejected level is only cleared while the field still holds the
+     * level that was judged, never over a newer pick.
      */
     private final Object effortFieldLock = new Object();
     volatile Runnable onSessionEstablished = null;
@@ -235,8 +232,8 @@ public class GrokAiProcessManager extends AbstractAcpProcessManager {
 
     /**
      * Also drops config state scoped to the dead connection ({@code sessionConfigOptions},
-     * {@code modelContextWindows}): both are re-read fresh on the next handshake, and a stale model's context
-     * window surviving into a new process would be a silent lie.
+     * {@code modelContextWindows}): both are re-read fresh on the next handshake, and a stale model's context window
+     * surviving into a new process would be a silent lie.
      */
     @Override
     protected void onConnectionDetached() {
@@ -246,9 +243,9 @@ public class GrokAiProcessManager extends AbstractAcpProcessManager {
     }
 
     /**
-     * Confirmed root cause of a live Grok failure (exit 143, SIGTERM, right after the first prompt, no
-     * stderr) — see {@link AbstractAcpProcessManager#startProcessOnOwnerThread}. Kept so a regression of that
-     * fix shows up here again, with the time since the last prompt to judge how far into a turn it happened.
+     * Confirmed root cause of a live Grok failure (exit 143, SIGTERM, right after the first prompt, no stderr) — see
+     * {@link AbstractAcpProcessManager#startProcessOnOwnerThread}. Kept so a regression of that fix shows up here
+     * again, with the time since the last prompt to judge how far into a turn it happened.
      */
     @Override
     protected void logProcessExitDiagnostics(int code, boolean suppress) {
@@ -257,7 +254,7 @@ public class GrokAiProcessManager extends AbstractAcpProcessManager {
             LOG.log(Level.INFO,
                     "Grok process exited: code={0} ({1}), stoppedByUs={2}, msSinceLastPromptSent={3}",
                     new Object[]{code, code == 143 ? "SIGTERM" : code == 137 ? "SIGKILL" : "see exit code",
-                                 suppress, sincePrompt});
+                        suppress, sincePrompt});
         }
     }
 
@@ -270,12 +267,12 @@ public class GrokAiProcessManager extends AbstractAcpProcessManager {
         if (!GrokExecutableLocator.isExecutableFile(executablePath)) {
             running = false;
             listener.onAiProcessEvent(new StatusEvent(StatusEventTypeEnum.FAILED,
-                    StatusMessageUtil.formatStartFailed("grok executable not found at " + executablePath)));
+                                                      StatusMessageUtil.formatStartFailed("grok executable not found at " + executablePath)));
             return;
         }
         if (currentSession == null) {
             listener.onAiProcessEvent(new StatusEvent(StatusEventTypeEnum.FAILED,
-                    StatusMessageUtil.formatSessionNotConfigured()));
+                                                      StatusMessageUtil.formatSessionNotConfigured()));
             return;
         }
         sessionId = currentSession.id();
@@ -308,16 +305,16 @@ public class GrokAiProcessManager extends AbstractAcpProcessManager {
     }
 
     /**
-     * Seam for tests: overridden to return a controllable fake {@link Process} instead of actually spawning
-     * the grok CLI.
+     * Seam for tests: overridden to return a controllable fake {@link Process} instead of actually spawning the grok
+     * CLI.
      *
      * <p>
-     * Production spawns on a dedicated owner thread that outlives the handshake thread calling this, not on
-     * the calling thread itself — see {@link AbstractAcpProcessManager#startProcessOnOwnerThread}. {@code
-     * grok agent stdio} arms {@code prctl(PR_SET_PDEATHSIG, SIGTERM)}, a per-THREAD Linux kernel feature:
-     * without this, the handshake thread finishing (moments after the first prompt is sent) SIGTERMs grok the
-     * instant that thread exits, regardless of whether the JVM process itself is still running — a live
-     * failure confirmed from Grok's own source (exit 143, no stderr, right after the prompt).
+     * Production spawns on a dedicated owner thread that outlives the handshake thread calling this, not on the calling
+     * thread itself — see {@link AbstractAcpProcessManager#startProcessOnOwnerThread}. {@code
+     * grok agent stdio} arms {@code prctl(PR_SET_PDEATHSIG, SIGTERM)}, a per-THREAD Linux kernel feature: without this,
+     * the handshake thread finishing (moments after the first prompt is sent) SIGTERMs grok the instant that thread
+     * exits, regardless of whether the JVM process itself is still running — a live failure confirmed from Grok's own
+     * source (exit 143, no stderr, right after the prompt).
      */
     Process startProcess(ProcessBuilder pb) throws IOException {
         return startProcessOnOwnerThread(pb);
@@ -335,9 +332,8 @@ public class GrokAiProcessManager extends AbstractAcpProcessManager {
     }
 
     /**
-     * Spawns the {@code grok agent stdio} process and performs the ACP handshake. Always called on a
-     * background thread. The instance monitor is held only for brief state writes, never across the blocking
-     * waits.
+     * Spawns the {@code grok agent stdio} process and performs the ACP handshake. Always called on a background thread.
+     * The instance monitor is held only for brief state writes, never across the blocking waits.
      */
     @Override
     protected void spawnAndHandshake(File workDir) throws Exception {
@@ -375,8 +371,8 @@ public class GrokAiProcessManager extends AbstractAcpProcessManager {
 
         AcpConnection[] connHolder = new AcpConnection[1];
         GrokAcpClientHandler handler = new GrokAcpClientHandler(listener,
-                () -> onHandlerDisconnected(connHolder[0]),
-                this::trackToolCallLifecycle, ownSessionConfigFileCheck(), null, sessionId);
+                                                                () -> onHandlerDisconnected(connHolder[0]),
+                                                                this::trackToolCallLifecycle, ownSessionConfigFileCheck(), null, sessionId);
         AcpConnection conn = new AcpConnection(process.getOutputStream(), process.getInputStream(), handler, "Grok");
         connHolder[0] = conn;
 
@@ -421,14 +417,14 @@ public class GrokAiProcessManager extends AbstractAcpProcessManager {
             long loadSuppressionToken = handler.beginSuppressingSessionUpdatesForLoad();
             try {
                 sessionResult = conn.sendRequest(AcpMethodEnum.SESSION_LOAD,
-                        buildSessionLoadParams(resumeId, workDir.getAbsolutePath(), mcpBaseUrl))
+                                                 buildSessionLoadParams(resumeId, workDir.getAbsolutePath(), mcpBaseUrl))
                         .get(30, TimeUnit.SECONDS);
                 resumed = true;
             }
             catch (Exception e) {
                 LOG.log(Level.INFO, "session/load failed; falling back to session/new: {0}", e.getMessage());
                 listener.onAiProcessEvent(new StatusEvent(StatusEventTypeEnum.INFO,
-                        "Previous Grok session could not be resumed; starting fresh"));
+                                                          "Previous Grok session could not be resumed; starting fresh"));
             }
             finally {
                 // Clearing must be ordered AFTER every replay notification the reader already queued on
@@ -448,7 +444,7 @@ public class GrokAiProcessManager extends AbstractAcpProcessManager {
         if (!resumed) {
             try {
                 sessionResult = conn.sendRequest(AcpMethodEnum.SESSION_NEW,
-                        buildSessionNewParams(workDir.getAbsolutePath(), mcpBaseUrl))
+                                                 buildSessionNewParams(workDir.getAbsolutePath(), mcpBaseUrl))
                         .get(30, TimeUnit.SECONDS);
             }
             catch (Exception e) {
@@ -478,20 +474,20 @@ public class GrokAiProcessManager extends AbstractAcpProcessManager {
         // ---- Publish results, or report a dead agent, under the lock shared by every ACP backend ----
         final JsonObject resolvedSessionResult = sessionResult;
         publishConnectionOrReportExit(conn, process,
-                () -> {
-                    acpSessionId = sid;
-                    pendingAcpResumeId = null;
-                    if (currentSession != null && currentSession.settings() instanceof kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.grok.settings.GrokSessionSettings gs) {
-                        gs.setAcpSessionId(sid);
-                    }
-                    if (resolvedSessionResult.has(AcpJsonKeyEnum.CONFIG_OPTIONS.key()) && resolvedSessionResult.get(AcpJsonKeyEnum.CONFIG_OPTIONS.key()).isJsonArray()) {
-                        sessionConfigOptions = resolvedSessionResult.getAsJsonArray(AcpJsonKeyEnum.CONFIG_OPTIONS.key());
-                    }
-                    modelContextWindows = parseModelContextWindows(initResult, resolvedSessionResult);
-                    activeHandler = handler;
-                    this.connection = conn;
-                },
-                () -> handleProcessExit(process));
+                                      () -> {
+                                          acpSessionId = sid;
+                                          pendingAcpResumeId = null;
+                                          if (currentSession != null && currentSession.settings() instanceof kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.grok.settings.GrokSessionSettings gs) {
+                                              gs.setAcpSessionId(sid);
+                                          }
+                                          if (resolvedSessionResult.has(AcpJsonKeyEnum.CONFIG_OPTIONS.key()) && resolvedSessionResult.get(AcpJsonKeyEnum.CONFIG_OPTIONS.key()).isJsonArray()) {
+                                              sessionConfigOptions = resolvedSessionResult.getAsJsonArray(AcpJsonKeyEnum.CONFIG_OPTIONS.key());
+                                          }
+                                          modelContextWindows = parseModelContextWindows(initResult, resolvedSessionResult);
+                                          activeHandler = handler;
+                                          this.connection = conn;
+                                      },
+                                      () -> handleProcessExit(process));
         if (resumed) {
             LOG.log(Level.INFO, "Resumed Grok ACP session: {0}", acpSessionId);
         }
@@ -506,12 +502,12 @@ public class GrokAiProcessManager extends AbstractAcpProcessManager {
     }
 
     /**
-     * Runs the start-up model/effort apply on the config-operation queue and waits for it, so a pick made on
-     * the session as soon as it is published is queued behind it rather than sent alongside it: otherwise the
-     * start-up response could land last and leave the agent on the pre-pick value. Waiting keeps the first
-     * turn from being sent before the start-up values are in place, as before. If the wait times out the
-     * handshake carries on and the task keeps running, but only against the session it was queued for: it is
-     * dropped the moment that session is replaced, so it can never apply to a later one.
+     * Runs the start-up model/effort apply on the config-operation queue and waits for it, so a pick made on the
+     * session as soon as it is published is queued behind it rather than sent alongside it: otherwise the start-up
+     * response could land last and leave the agent on the pre-pick value. Waiting keeps the first turn from being sent
+     * before the start-up values are in place, as before. If the wait times out the handshake carries on and the task
+     * keeps running, but only against the session it was queued for: it is dropped the moment that session is replaced,
+     * so it can never apply to a later one.
      */
     void applyInitialConfigOptionsOnQueue() {
         try {
@@ -531,9 +527,9 @@ public class GrokAiProcessManager extends AbstractAcpProcessManager {
     }
 
     /**
-     * Applies the session's stored model/reasoning-effort against what Grok actually started with, same shape
-     * as {@code OpenCodeAiProcessManager.applyInitialModelOption}: only ever sent when it differs from the
-     * agent's current value, and only when the agent actually offers it.
+     * Applies the session's stored model/reasoning-effort against what Grok actually started with, same shape as
+     * {@code OpenCodeAiProcessManager.applyInitialModelOption}: only ever sent when it differs from the agent's current
+     * value, and only when the agent actually offers it.
      */
     void applyInitialConfigOptionsIfNeeded() {
         applyInitialConfigOptionsIfNeeded(ALWAYS_CURRENT);
@@ -558,24 +554,23 @@ public class GrokAiProcessManager extends AbstractAcpProcessManager {
     }
 
     /**
-     * The effort half shared by start-up and every live change: applies the stored effort against
-     * {@code options}, which must be the latest confirmed ones, and clears a session-sourced value the agent
-     * rejects only when the agent is on the model that was asked for.
+     * The effort half shared by start-up and every live change: applies the stored effort against {@code options},
+     * which must be the latest confirmed ones, and clears a session-sourced value the agent rejects only when the agent
+     * is on the model that was asked for.
      */
     private void reconcileReasoningEffort(JsonArray options, BooleanSupplier current) {
         applyReasoningEffortIfNeeded(options, agentIsOnRequestedModel(options), current);
     }
 
     /**
-     * Pushes the stored reasoning effort to a session that is already running — the live counterpart of the
-     * effort half of {@link #applyInitialConfigOptionsIfNeeded}, which otherwise only runs once, when the
-     * session is established. Same per-model support check and same clearing of a rejected session-sourced
-     * value. Blocks until the agent answers, so it only ever runs on the config-operation queue
-     * ({@link #applyReasoningEffortToLiveSessionAsync}, {@link #changeModelOnLiveSessionAsync}), where it
-     * sees the options left by the latest confirmed model change. A session-sourced effort is cleared only
-     * when the agent's model is the one that was asked for: if a model change failed, the options describe a
-     * model the user did not pick, and judging the effort against them would discard a value the chosen model
-     * may accept.
+     * Pushes the stored reasoning effort to a session that is already running — the live counterpart of the effort half
+     * of {@link #applyInitialConfigOptionsIfNeeded}, which otherwise only runs once, when the session is established.
+     * Same per-model support check and same clearing of a rejected session-sourced value. Blocks until the agent
+     * answers, so it only ever runs on the config-operation queue
+     * ({@link #applyReasoningEffortToLiveSessionAsync}, {@link #changeModelOnLiveSessionAsync}), where it sees the
+     * options left by the latest confirmed model change. A session-sourced effort is cleared only when the agent's
+     * model is the one that was asked for: if a model change failed, the options describe a model the user did not
+     * pick, and judging the effort against them would discard a value the chosen model may accept.
      */
     void applyReasoningEffortToLiveSession() {
         applyReasoningEffortToLiveSession(ALWAYS_CURRENT);
@@ -590,10 +585,9 @@ public class GrokAiProcessManager extends AbstractAcpProcessManager {
     }
 
     /**
-     * Identifies the running ACP session: the connection plus its session id. A task queued for one session
-     * must not act on the next, so the queue captures this when a task is queued and compares it before the
-     * task runs and after every request it makes. Package-private so a test can stand in for a real
-     * connection.
+     * Identifies the running ACP session: the connection plus its session id. A task queued for one session must not
+     * act on the next, so the queue captures this when a task is queued and compares it before the task runs and after
+     * every request it makes. Package-private so a test can stand in for a real connection.
      */
     Object currentSessionToken() {
         AcpConnection conn = connection;
@@ -606,8 +600,8 @@ public class GrokAiProcessManager extends AbstractAcpProcessManager {
     }
 
     /**
-     * True while the session that was running when this was created is still the running one. A task queued
-     * when there was no session never runs.
+     * True while the session that was running when this was created is still the running one. A task queued when there
+     * was no session never runs.
      */
     private BooleanSupplier sessionGuard() {
         Object token = currentSessionToken();
@@ -617,8 +611,8 @@ public class GrokAiProcessManager extends AbstractAcpProcessManager {
     private static final BooleanSupplier ALWAYS_CURRENT = () -> true;
 
     /**
-     * True when the agent's current model is the one this manager was asked to use, or when that cannot be
-     * told (no requested model, or the agent reports no model option).
+     * True when the agent's current model is the one this manager was asked to use, or when that cannot be told (no
+     * requested model, or the agent reports no model option).
      */
     private boolean agentIsOnRequestedModel(JsonArray options) {
         String requested = model;
@@ -627,7 +621,7 @@ public class GrokAiProcessManager extends AbstractAcpProcessManager {
         }
         for (JsonElement el : options) {
             if (el.isJsonObject() && "model".equals(optionId(el.getAsJsonObject()))
-                && el.getAsJsonObject().has(AcpJsonKeyEnum.CURRENT_VALUE.key())) {
+                    && el.getAsJsonObject().has(AcpJsonKeyEnum.CURRENT_VALUE.key())) {
                 return requested.equals(el.getAsJsonObject().get(AcpJsonKeyEnum.CURRENT_VALUE.key()).getAsString());
             }
         }
@@ -639,10 +633,10 @@ public class GrokAiProcessManager extends AbstractAcpProcessManager {
     }
 
     /**
-     * Queues {@link #applyReasoningEffortToLiveSession}. The effort pick comes from the EDT and the check
-     * blocks on the agent, so it runs on the config-operation queue, behind any model change already waiting
-     * for the agent: effort and model changes are applied strictly in the order they were made, and the
-     * effort is judged against the options the agent returned for the model it ended up on.
+     * Queues {@link #applyReasoningEffortToLiveSession}. The effort pick comes from the EDT and the check blocks on the
+     * agent, so it runs on the config-operation queue, behind any model change already waiting for the agent: effort
+     * and model changes are applied strictly in the order they were made, and the effort is judged against the options
+     * the agent returned for the model it ended up on.
      */
     public void applyReasoningEffortToLiveSessionAsync() {
         BooleanSupplier current = sessionGuard();
@@ -654,11 +648,10 @@ public class GrokAiProcessManager extends AbstractAcpProcessManager {
     }
 
     /**
-     * Queues a model change on the running session followed by the effort check against the options that
-     * change returned. Queued rather than sent directly so the two can never interleave with another effort
-     * or model change. The wait happens on the queue's own thread: this is called from the EDT, and a model
-     * switch's completion is delivered on the ACP connection's dispatch thread, where waiting for a second
-     * response could never be answered.
+     * Queues a model change on the running session followed by the effort check against the options that change
+     * returned. Queued rather than sent directly so the two can never interleave with another effort or model change.
+     * The wait happens on the queue's own thread: this is called from the EDT, and a model switch's completion is
+     * delivered on the ACP connection's dispatch thread, where waiting for a second response could never be answered.
      */
     public void changeModelOnLiveSessionAsync(String newModel) {
         BooleanSupplier current = sessionGuard();
@@ -679,7 +672,7 @@ public class GrokAiProcessManager extends AbstractAcpProcessManager {
                 }
                 LOG.log(Level.WARNING, "Grok rejected model=\"{0}\": {1}", new Object[]{newModel, e.getMessage()});
                 listener.onAiProcessEvent(new StatusEvent(StatusEventTypeEnum.INFO,
-                        "\"" + newModel + "\" was rejected by Grok for model"));
+                                                          "\"" + newModel + "\" was rejected by Grok for model"));
             }
             if (current.getAsBoolean()) {
                 applyReasoningEffortToLiveSession(current);
@@ -688,8 +681,8 @@ public class GrokAiProcessManager extends AbstractAcpProcessManager {
     }
 
     /**
-     * Returns once every config operation queued so far has finished, so tests can assert on the outcome
-     * without sleeping.
+     * Returns once every config operation queued so far has finished, so tests can assert on the outcome without
+     * sleeping.
      */
     void awaitConfigOperationsForTesting() throws Exception {
         configOperations.submit(() -> {
@@ -698,10 +691,10 @@ public class GrokAiProcessManager extends AbstractAcpProcessManager {
 
     private static ThreadPoolExecutor newConfigOperationQueue() {
         ThreadPoolExecutor queue = new ThreadPoolExecutor(1, 1, 5, TimeUnit.SECONDS, new LinkedBlockingQueue<>(), runnable -> {
-            Thread thread = new Thread(runnable, "grok-config-operations");
-            thread.setDaemon(true);
-            return thread;
-        });
+                                                      Thread thread = new Thread(runnable, "grok-config-operations");
+                                                      thread.setDaemon(true);
+                                                      return thread;
+                                                  });
         queue.allowCoreThreadTimeOut(true);
         return queue;
     }
@@ -717,8 +710,8 @@ public class GrokAiProcessManager extends AbstractAcpProcessManager {
     }
 
     /**
-     * Clears {@code rejected} when it is a session-sourced value and is still what is stored; a newer pick
-     * made while the agent was being asked is left alone. Returns whether it cleared.
+     * Clears {@code rejected} when it is a session-sourced value and is still what is stored; a newer pick made while
+     * the agent was being asked is left alone. Returns whether it cleared.
      */
     boolean clearRejectedReasoningEffort(String rejected) {
         synchronized (effortFieldLock) {
@@ -735,11 +728,11 @@ public class GrokAiProcessManager extends AbstractAcpProcessManager {
     }
 
     /**
-     * @return true if {@code value} is (or already was) in effect for {@code configId} — false means either
-     *         the agent does not offer {@code configId} at all, or it does but does not accept {@code value}
-     *         for the current model, so the caller can decide whether a session-sourced value should be
-     *         cleared. {@code options} is the caller's own stable snapshot, not re-read here, so a session
-     *         going away mid-method can never be mistaken for the agent itself rejecting {@code value}.
+     * @return true if {@code value} is (or already was) in effect for {@code configId} — false means either the agent
+     * does not offer {@code configId} at all, or it does but does not accept {@code value} for the current model, so
+     * the caller can decide whether a session-sourced value should be cleared. {@code options} is the caller's own
+     * stable snapshot, not re-read here, so a session going away mid-method can never be mistaken for the agent itself
+     * rejecting {@code value}.
      */
     private boolean applyConfigOptionIfNeeded(JsonArray options, String configId, String value, BooleanSupplier current) {
         if (value == null || value.isBlank()) {
@@ -776,7 +769,7 @@ public class GrokAiProcessManager extends AbstractAcpProcessManager {
         }
         if (!available.isEmpty() && !available.contains(value)) {
             listener.onAiProcessEvent(new StatusEvent(StatusEventTypeEnum.INFO,
-                    "\"" + value + "\" is not available for " + configId + "; using Grok's default"));
+                                                      "\"" + value + "\" is not available for " + configId + "; using Grok's default"));
             return false;
         }
         if (value.equals(agentCurrent)) {
@@ -792,16 +785,16 @@ public class GrokAiProcessManager extends AbstractAcpProcessManager {
             if (current.getAsBoolean()) {
                 LOG.log(Level.WARNING, "Grok rejected {0}=\"{1}\": {2}", new Object[]{configId, value, e.getMessage()});
                 listener.onAiProcessEvent(new StatusEvent(StatusEventTypeEnum.INFO,
-                        "\"" + value + "\" was rejected by Grok for " + configId));
+                                                          "\"" + value + "\" was rejected by Grok for " + configId));
             }
         }
         return true;
     }
 
     /**
-     * Safety net: a load whose ordered clear never ran (e.g. the connection it belonged to closed before
-     * acp-notify got to it) must never silence a real turn — mirrors
-     * OpenCodeAcpClientHandler.clearTextSuppression's role for the compaction route.
+     * Safety net: a load whose ordered clear never ran (e.g. the connection it belonged to closed before acp-notify got
+     * to it) must never silence a real turn — mirrors OpenCodeAcpClientHandler.clearTextSuppression's role for the
+     * compaction route.
      */
     @Override
     protected void clearTurnStartState() {
@@ -848,13 +841,12 @@ public class GrokAiProcessManager extends AbstractAcpProcessManager {
 
     /**
      * Reads every known model's context-window size from {@code initialize}/{@code session/new}'s
-     * {@code models.availableModels[]._meta.totalContextTokens} (Boss's handover: confirmed 256000 for
-     * grok-4.7 against a live probe). The model-identifying field inside each entry is tried under several
-     * plausible names ({@code id}, {@code modelId}, {@code model}, {@code name}) rather than one assumed
-     * name, since the exact field was not independently verifiable from this seat — the probe transcript this
-     * was specified from is outside this session's file-access scope. Returns an empty map, never null, when
-     * neither response carries recognisable model metadata — a missing window degrades to 0
-     * ({@link #reportUsage}), not an exception.
+     * {@code models.availableModels[]._meta.totalContextTokens} (Boss's handover: confirmed 256000 for grok-4.7 against
+     * a live probe). The model-identifying field inside each entry is tried under several plausible names ({@code id},
+     * {@code modelId}, {@code model}, {@code name}) rather than one assumed name, since the exact field was not
+     * independently verifiable from this seat — the probe transcript this was specified from is outside this session's
+     * file-access scope. Returns an empty map, never null, when neither response carries recognisable model metadata —
+     * a missing window degrades to 0 ({@link #reportUsage}), not an exception.
      */
     static Map<String, Integer> parseModelContextWindows(JsonObject... results) {
         Map<String, Integer> windows = new HashMap<>();
@@ -894,8 +886,8 @@ public class GrokAiProcessManager extends AbstractAcpProcessManager {
     }
 
     /**
-     * Closes stdin (ending the ACP connection), waits {@link #SHUTDOWN_GRACE_MILLIS} for Grok to exit on its
-     * own, then kills it. Verified by live probe: closing stdin alone does not make Grok exit.
+     * Closes stdin (ending the ACP connection), waits {@link #SHUTDOWN_GRACE_MILLIS} for Grok to exit on its own, then
+     * kills it. Verified by live probe: closing stdin alone does not make Grok exit.
      */
     @Override
     public synchronized void stop() {

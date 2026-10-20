@@ -19,12 +19,10 @@ import kiwi.ingenuity.netbeans.plugin.aicoder.DatabaseAccessOptionEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.PluginSettings;
 
 /**
- * Mirrors {@link WebRequestAccessSettingsPanel}'s master + sub-option
- * structure for database access, plus a row-limit spinner (no equivalent in
- * the web-request panel). {@link DatabaseAccessOptionEnum#READ_ONLY} is
- * rendered checked and disabled: this plugin has no write-capable database
- * tools, so there's nothing meaningful to toggle off yet — the checkbox
- * exists to make that constraint visible rather than to be interactive.
+ * Mirrors {@link WebRequestAccessSettingsPanel}'s master + sub-option structure for database access, plus a row-limit
+ * spinner (no equivalent in the web-request panel). {@link DatabaseAccessOptionEnum#READ_ONLY} is rendered checked and
+ * disabled: this plugin has no write-capable database tools, so there's nothing meaningful to toggle off yet — the
+ * checkbox exists to make that constraint visible rather than to be interactive.
  */
 public final class DatabaseAccessSettingsPanel extends JPanel {
 

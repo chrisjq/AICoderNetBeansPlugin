@@ -44,10 +44,10 @@ import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.TimeoutEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.utils.StatusMessageUtil;
 
 /**
- * Drives GitHub Copilot via a persistent SDK session (one CopilotClient + CopilotSession per plugin AI
- * session), replacing the previous one-shot `copilot -p ... --output-format json` process-per-turn model. The
- * persistent session is what makes graceful mid-turn interrupt (session.abort()) and live context-window
- * usage (session.usage_info) possible — neither is exposed by one-shot -p mode in CLI 1.0.70.
+ * Drives GitHub Copilot via a persistent SDK session (one CopilotClient + CopilotSession per plugin AI session),
+ * replacing the previous one-shot `copilot -p ... --output-format json` process-per-turn model. The persistent session
+ * is what makes graceful mid-turn interrupt (session.abort()) and live context-window usage (session.usage_info)
+ * possible — neither is exposed by one-shot -p mode in CLI 1.0.70.
  */
 public class GithubCopilotProcessManager extends AiProcessManager {
 
@@ -58,10 +58,9 @@ public class GithubCopilotProcessManager extends AiProcessManager {
     private static final boolean ENABLE_RESET_DATE = false;
 
     /**
-     * Copilot's own tools that this plugin withholds, because an IDE-aware equivalent exists and routes
-     * through NetBeans' view of the code: {@code edit}/{@code create} are covered by ApplyEdit/WriteFile via
-     * the diff panel, {@code glob} by SearchTypes/SearchInFiles/GetProjectStructure, and {@code view} by
-     * GetFileContent.
+     * Copilot's own tools that this plugin withholds, because an IDE-aware equivalent exists and routes through
+     * NetBeans' view of the code: {@code edit}/{@code create} are covered by ApplyEdit/WriteFile via the diff panel,
+     * {@code glob} by SearchTypes/SearchInFiles/GetProjectStructure, and {@code view} by GetFileContent.
      *
      * <p>
      * Withholding beats denying at the permission gate. The gate still refuses these (kind {@code read}), but
@@ -70,8 +69,8 @@ public class GithubCopilotProcessManager extends AiProcessManager {
      * announce, and the "Internal Command" notice stays rare enough to be worth reading.
      *
      * <p>
-     * {@code bash} is deliberately NOT excluded: running commands is the one capability the plugin's tools do
-     * not cover, so it stays available and is gated by an explicit confirmation instead (kind {@code shell}).
+     * {@code bash} is deliberately NOT excluded: running commands is the one capability the plugin's tools do not
+     * cover, so it stays available and is gated by an explicit confirmation instead (kind {@code shell}).
      */
     private static final List<String> EXCLUDED_NATIVE_TOOLS = List.of("edit", "create", "glob", "view");
 
@@ -146,10 +145,10 @@ public class GithubCopilotProcessManager extends AiProcessManager {
     private GithubCopilotAiSession copilotAiSession = null;
     private GithubCopilotSessionEventBridge eventBridge = null;
     /**
-     * Set when {@link #handleRuntimeError} closes a running turn as FAILED. The SDK still emits that turn's
-     * trailing {@code session.idle}, which would otherwise surface as a {@link TurnCompleteEvent} and
-     * re-green the tab — and, if the user sent again in between, unlock the NEW turn. Consumed by exactly one
-     * idle and re-armed only by the next {@link #sendPrompt} that actually starts a turn.
+     * Set when {@link #handleRuntimeError} closes a running turn as FAILED. The SDK still emits that turn's trailing
+     * {@code session.idle}, which would otherwise surface as a {@link TurnCompleteEvent} and re-green the tab — and, if
+     * the user sent again in between, unlock the NEW turn. Consumed by exactly one idle and re-armed only by the next
+     * {@link #sendPrompt} that actually starts a turn.
      */
     private volatile boolean turnClosedByFailure = false;
 
@@ -158,33 +157,32 @@ public class GithubCopilotProcessManager extends AiProcessManager {
     private volatile GithubCopilotPermissionHandler permissionHandler = null;
     private volatile Consumer<String> onModelFallback;
     /**
-     * {@code null} means "omit the setting — use the model's own default". Applied where the session is
-     * constructed (eagerly, inside {@link #start}, unlike pi's lazily-spawned session) — see
+     * {@code null} means "omit the setting — use the model's own default". Applied where the session is constructed
+     * (eagerly, inside {@link #start}, unlike pi's lazily-spawned session) — see
      * {@link #resolveValidatedReasoningEffort}.
      */
     private volatile String reasoningEffort = null;
     /**
-     * Whether {@link #reasoningEffort} is a value pinned in the session's own settings (true) or one
-     * inherited from the global default at session start (false). Only a session-pinned value may be cleared,
-     * persisted as cleared, and reported with an INFO event when the model does not support it; a
-     * global-sourced value must be silently omitted for this session (global untouched, nothing written into
-     * the session, no INFO), and kept in place so a later model that does support it still receives it.
+     * Whether {@link #reasoningEffort} is a value pinned in the session's own settings (true) or one inherited from the
+     * global default at session start (false). Only a session-pinned value may be cleared, persisted as cleared, and
+     * reported with an INFO event when the model does not support it; a global-sourced value must be silently omitted
+     * for this session (global untouched, nothing written into the session, no INFO), and kept in place so a later
+     * model that does support it still receives it.
      */
     private volatile boolean reasoningEffortFromSession = true;
     /**
-     * Notified when {@link #resolveValidatedReasoningEffort} clears {@link #reasoningEffort} because the
-     * model does not support it. This manager has no session-settings/host reference of its own (only
-     * {@code GithubCopilotAiImplementation} does), so clearing the in-memory field here is not enough —
-     * without this callback the stored session value would never be persisted-cleared, and every subsequent
-     * start would re-read the same stale value and fire the INFO event again. Mirrors
-     * {@link #onModelFallback}'s callback shape. Invoked only for session-pinned values (rule 3a); never for
-     * a global-sourced value.
+     * Notified when {@link #resolveValidatedReasoningEffort} clears {@link #reasoningEffort} because the model does not
+     * support it. This manager has no session-settings/host reference of its own (only
+     * {@code GithubCopilotAiImplementation} does), so clearing the in-memory field here is not enough — without this
+     * callback the stored session value would never be persisted-cleared, and every subsequent start would re-read the
+     * same stale value and fire the INFO event again. Mirrors {@link #onModelFallback}'s callback shape. Invoked only
+     * for session-pinned values (rule 3a); never for a global-sourced value.
      */
     private volatile Runnable onReasoningEffortCleared;
     /**
      * The model and stored effort the live {@link #copilotSession} was opened with, valid only while
-     * {@link #launchRecorded}. {@link #sendPrompt} compares them with the current ones, so a model or effort
-     * change made after the session opened takes effect on the next turn whether or not the background
+     * {@link #launchRecorded}. {@link #sendPrompt} compares them with the current ones, so a model or effort change
+     * made after the session opened takes effect on the next turn whether or not the background
      * {@link #recycleForModelChange} got there first.
      */
     private volatile String launchedModel;
@@ -208,11 +206,10 @@ public class GithubCopilotProcessManager extends AiProcessManager {
     }
 
     /**
-     * Sets the reasoning effort together with its provenance. {@code fromSession} is true when the value came
-     * from the session's own settings, false when it was inherited from the global default: only a
-     * session-pinned value may be cleared, persisted and reported (INFO) when unsupported — a global-sourced
-     * one is silently omitted for this session instead, since the global belongs to the user and every other
-     * session.
+     * Sets the reasoning effort together with its provenance. {@code fromSession} is true when the value came from the
+     * session's own settings, false when it was inherited from the global default: only a session-pinned value may be
+     * cleared, persisted and reported (INFO) when unsupported — a global-sourced one is silently omitted for this
+     * session instead, since the global belongs to the user and every other session.
      */
     public void setReasoningEffort(String reasoningEffort, boolean fromSession) {
         this.reasoningEffort = reasoningEffort;
@@ -228,14 +225,14 @@ public class GithubCopilotProcessManager extends AiProcessManager {
         if (!GithubCopilotExecutableLocator.isExecutableFile(executablePath)) {
             running = false;
             listener.onAiProcessEvent(new StatusEvent(StatusEventTypeEnum.FAILED,
-                    StatusMessageUtil.formatStartFailed("copilot executable not found at " + executablePath)));
+                                                      StatusMessageUtil.formatStartFailed("copilot executable not found at " + executablePath)));
             listener.onAiProcessEvent(new GithubCopilotFatalErrorEvent(
                     "EXECUTABLE_NOT_FOUND", "GitHub Copilot CLI not found"));
             return;
         }
         if (currentSession == null) {
             listener.onAiProcessEvent(new StatusEvent(StatusEventTypeEnum.FAILED,
-                    StatusMessageUtil.formatSessionNotConfigured()));
+                                                      StatusMessageUtil.formatSessionNotConfigured()));
             return;
         }
         sessionId = currentSession.id();
@@ -266,7 +263,7 @@ public class GithubCopilotProcessManager extends AiProcessManager {
         }
         if (!mcpReady) {
             listener.onAiProcessEvent(new StatusEvent(StatusEventTypeEnum.FAILED,
-                    StatusMessageUtil.formatMcpSetupFailed()));
+                                                      StatusMessageUtil.formatMcpSetupFailed()));
             return;
         }
         registrar = reg;
@@ -299,26 +296,25 @@ public class GithubCopilotProcessManager extends AiProcessManager {
         listener.onAiProcessEvent(new StatusEvent(StatusEventTypeEnum.READY, StatusMessageUtil.formatReady("GitHub Copilot")));
         listener.onAiProcessEvent(new GithubCopilotFatalErrorEvent(null, null));
         GithubCopilotQuotaService.getQuotaAsync(executablePath, quota -> {
-            if (quota != null) {
-                GithubCopilotQuotaEvent quotaEvent = new GithubCopilotQuotaEvent(
-                        quota.unlimited(), quota.usedRequests(), quota.entitlementRequests(),
-                        quota.remainingPercentage(), quota.resetDate(), false);
-                GithubCopilotAiImplementation.publishQuota(quotaEvent);
-            }
-        });
+                                            if (quota != null) {
+                                                GithubCopilotQuotaEvent quotaEvent = new GithubCopilotQuotaEvent(
+                                                        quota.unlimited(), quota.usedRequests(), quota.entitlementRequests(),
+                                                        quota.remainingPercentage(), quota.resetDate(), false);
+                                                GithubCopilotAiImplementation.publishQuota(quotaEvent);
+                                            }
+                                        });
     }
 
     /**
-     * The listener the session bridge forwards through: it owns the turn bookkeeping the raw {@code listener}
-     * must not see — clearing {@code processing} on the SDK's end-of-turn signal, and deciding whether a
+     * The listener the session bridge forwards through: it owns the turn bookkeeping the raw {@code listener} must not
+     * see — clearing {@code processing} on the SDK's end-of-turn signal, and deciding whether a
      * {@link TurnCompleteEvent} is a real completion or must be swallowed.
      *
      * <p>
-     * Two idles are swallowed: the trailing idle of a turn already closed by a runtime FAILURE (#2 —
-     * otherwise it re-greens the tab, and unlocks a new turn the user has since sent), and any idle a manual
-     * compaction emits while it is in flight (#6 — a compaction is non-turn work, so its idle is not a turn
-     * completion). Extracted from {@code start()} so both rules can be unit-tested without a live CLI.
-     * Package-private: production callers only.
+     * Two idles are swallowed: the trailing idle of a turn already closed by a runtime FAILURE (#2 — otherwise it
+     * re-greens the tab, and unlocks a new turn the user has since sent), and any idle a manual compaction emits while
+     * it is in flight (#6 — a compaction is non-turn work, so its idle is not a turn completion). Extracted from
+     * {@code start()} so both rules can be unit-tested without a live CLI. Package-private: production callers only.
      */
     AiProcessEventListener createTurnAwareListener() {
         return event -> {
@@ -344,22 +340,22 @@ public class GithubCopilotProcessManager extends AiProcessManager {
             }
             if (isTurnComplete && !swallowedIdle) {
                 GithubCopilotQuotaService.getQuotaAsync(executablePath, quota -> {
-                    if (quota != null) {
-                        GithubCopilotQuotaEvent quotaEvent = new GithubCopilotQuotaEvent(
-                                quota.unlimited(), quota.usedRequests(), quota.entitlementRequests(),
-                                quota.remainingPercentage(), quota.resetDate(), ENABLE_RESET_DATE);
-                        GithubCopilotAiImplementation.publishQuota(quotaEvent);
-                    }
-                });
+                                                    if (quota != null) {
+                                                        GithubCopilotQuotaEvent quotaEvent = new GithubCopilotQuotaEvent(
+                                                                quota.unlimited(), quota.usedRequests(), quota.entitlementRequests(),
+                                                                quota.remainingPercentage(), quota.resetDate(), ENABLE_RESET_DATE);
+                                                        GithubCopilotAiImplementation.publishQuota(quotaEvent);
+                                                    }
+                                                });
             }
         };
     }
 
     /**
-     * Builds and wires the session bridge for a turn-aware listener. Extracted from {@code start()} so a unit
-     * test can drive a real SDK event through {@code bridge.onError -> handleRuntimeError} and verify the
-     * wiring, rather than calling {@code handleRuntimeError} directly (which would pass even with the wiring
-     * reverted). Package-private: production callers only.
+     * Builds and wires the session bridge for a turn-aware listener. Extracted from {@code start()} so a unit test can
+     * drive a real SDK event through {@code bridge.onError -> handleRuntimeError} and verify the wiring, rather than
+     * calling {@code handleRuntimeError} directly (which would pass even with the wiring reverted). Package-private:
+     * production callers only.
      */
     GithubCopilotSessionEventBridge createEventBridge(AiProcessEventListener turnAwareListener) {
         GithubCopilotSessionEventBridge bridge = new GithubCopilotSessionEventBridge(turnAwareListener);
@@ -389,10 +385,9 @@ public class GithubCopilotProcessManager extends AiProcessManager {
     }
 
     /**
-     * A freshly opened session with the model and the stored reasoning effort in force when it was opened.
-     * The stored value is recorded rather than the validated one: it is what {@link #setReasoningEffort}
-     * changes, so comparing it detects exactly a user change, and a value the model does not support cannot
-     * look like a change on every turn.
+     * A freshly opened session with the model and the stored reasoning effort in force when it was opened. The stored
+     * value is recorded rather than the validated one: it is what {@link #setReasoningEffort} changes, so comparing it
+     * detects exactly a user change, and a value the model does not support cannot look like a change on every turn.
      */
     private record CreatedSession(CopilotSession session, String model, String effort) {
 
@@ -405,9 +400,9 @@ public class GithubCopilotProcessManager extends AiProcessManager {
     }
 
     /**
-     * True when the live session was opened with a different model or reasoning effort than the ones in force
-     * now. A session binds both when it is opened, so such a session must be replaced before the next turn. A
-     * session the manager never recorded a launch for (none is live in production) is never stale.
+     * True when the live session was opened with a different model or reasoning effort than the ones in force now. A
+     * session binds both when it is opened, so such a session must be replaced before the next turn. A session the
+     * manager never recorded a launch for (none is live in production) is never stale.
      */
     boolean liveSessionIsStale() {
         if (!launchRecorded) {
@@ -441,11 +436,10 @@ public class GithubCopilotProcessManager extends AiProcessManager {
     }
 
     /**
-     * Overridable delegation seam for the SDK's resumable-session RPC calls. {@code CopilotClient} is final,
-     * so a unit test cannot subclass it; these three hooks let a test subclass this manager and script the
-     * exact resume-failure / create fall-through without a real CLI process. They are deliberately
-     * package-private and non-final: production behaviour is identical (plain delegation), only the seam is
-     * exposed.
+     * Overridable delegation seam for the SDK's resumable-session RPC calls. {@code CopilotClient} is final, so a unit
+     * test cannot subclass it; these three hooks let a test subclass this manager and script the exact resume-failure /
+     * create fall-through without a real CLI process. They are deliberately package-private and non-final: production
+     * behaviour is identical (plain delegation), only the seam is exposed.
      */
     CompletableFuture<List<SessionMetadata>> listSessionsHook(CopilotClient client) {
         return client.listSessions();
@@ -484,11 +478,11 @@ public class GithubCopilotProcessManager extends AiProcessManager {
             // FINE, and do NOT clear the global, do NOT write into the session, do NOT fire an INFO. The value stays
             // in place so a later model that does support it still receives it.
             LOG.log(Level.FINE, "Reasoning effort \"" + stored + "\" is not available for model \"" + forModel
-                                + "\"; omitting it for this session (global default left untouched)");
+                    + "\"; omitting it for this session (global default left untouched)");
             return null;
         }
         listener.onAiProcessEvent(new StatusEvent(StatusEventTypeEnum.INFO,
-                "Reasoning effort \"" + stored + "\" is not available for model \"" + forModel + "\"; clearing it"));
+                                                  "Reasoning effort \"" + stored + "\" is not available for model \"" + forModel + "\"; clearing it"));
         reasoningEffort = null;
         Runnable cleared = onReasoningEffortCleared;
         if (cleared != null) {
@@ -536,10 +530,10 @@ public class GithubCopilotProcessManager extends AiProcessManager {
     }
 
     /**
-     * Maps a session-start failure to the same fatal-error events the old process-based flow reported after a
-     * nonzero exit + stderr grep — now read directly off the failed future's message instead of joined stderr
-     * lines. Message text confirmed live against the real CLI (not guessed): "Not authenticated..." and
-     * "...is not available." respectively.
+     * Maps a session-start failure to the same fatal-error events the old process-based flow reported after a nonzero
+     * exit + stderr grep — now read directly off the failed future's message instead of joined stderr lines. Message
+     * text confirmed live against the real CLI (not guessed): "Not authenticated..." and "...is not available."
+     * respectively.
      */
     private void handleSessionStartFailure(Exception e) {
         running = false;
@@ -623,16 +617,16 @@ public class GithubCopilotProcessManager extends AiProcessManager {
             }
             listener.onAiProcessEvent(new GithubCopilotModelFallbackEvent(model));
             listener.onAiProcessEvent(new StatusEvent(StatusEventTypeEnum.INFO,
-                    "Model was not available for your account — switched to 'auto'. Please resend your message."));
+                                                      "Model was not available for your account — switched to 'auto'. Please resend your message."));
         }
         listener.onAiProcessEvent(new StatusEvent(StatusEventTypeEnum.FAILED,
-                StatusMessageUtil.formatSendFailed(msg)));
+                                                  StatusMessageUtil.formatSendFailed(msg)));
         LOG.log(Level.WARNING, "GitHub Copilot session start failed", e);
     }
 
     /**
-     * Requests Copilot's server-side history compaction. This is an RPC operation, not a model turn, so
-     * callers must not add a synthetic prompt: no response turn follows.
+     * Requests Copilot's server-side history compaction. This is an RPC operation, not a model turn, so callers must
+     * not add a synthetic prompt: no response turn follows.
      */
     CompletableFuture<SessionHistoryCompactResult> compactHistory(String customInstructions) {
         CopilotSession session = copilotSession;
@@ -646,10 +640,10 @@ public class GithubCopilotProcessManager extends AiProcessManager {
     }
 
     /**
-     * Best-effort abort of a manual compaction the plugin has already reported as timed out, so it does not
-     * keep running server-side. The SDK exposes this as public API
-     * ({@code SessionHistoryApi#abortManualCompaction()}), so it is safe to call. Guarded: abort needs a live
-     * session, and a failure here must never mask the timeout the caller is reporting.
+     * Best-effort abort of a manual compaction the plugin has already reported as timed out, so it does not keep
+     * running server-side. The SDK exposes this as public API ({@code SessionHistoryApi#abortManualCompaction()}), so
+     * it is safe to call. Guarded: abort needs a live session, and a failure here must never mask the timeout the
+     * caller is reporting.
      */
     void abortManualCompaction() {
         CopilotSession session = copilotSession;
@@ -665,11 +659,10 @@ public class GithubCopilotProcessManager extends AiProcessManager {
     }
 
     /**
-     * The runtime-error processor the session bridge's onError callback runs. A mid-turn
-     * {@code SessionErrorEvent} / {@code ModelCallFailureEvent} (quota, rate limit, network) is a runtime
-     * FAILURE, not a process death: exactly one FAILED, never EXITED — EXITED is reserved for the process
-     * actually dying, and this SDK-based backend owns no OS process, so nothing here ever emits it — and
-     * {@code processing} is cleared so the next turn can start.
+     * The runtime-error processor the session bridge's onError callback runs. A mid-turn {@code SessionErrorEvent} /
+     * {@code ModelCallFailureEvent} (quota, rate limit, network) is a runtime FAILURE, not a process death: exactly one
+     * FAILED, never EXITED — EXITED is reserved for the process actually dying, and this SDK-based backend owns no OS
+     * process, so nothing here ever emits it — and {@code processing} is cleared so the next turn can start.
      */
     void handleRuntimeError(String msg) {
         boolean turnInFlight;
@@ -692,9 +685,9 @@ public class GithubCopilotProcessManager extends AiProcessManager {
     }
 
     /**
-     * Maps a runtime failure (a mid-turn {@code SessionErrorEvent} / {@code ModelCallFailureEvent}) to its
-     * status. FAILED, not EXITED: EXITED is reserved for the process actually dying, so this SDK-based
-     * backend never emits EXITED.
+     * Maps a runtime failure (a mid-turn {@code SessionErrorEvent} / {@code ModelCallFailureEvent}) to its status.
+     * FAILED, not EXITED: EXITED is reserved for the process actually dying, so this SDK-based backend never emits
+     * EXITED.
      */
     static StatusEvent runtimeFailureStatus(String msg) {
         return new StatusEvent(StatusEventTypeEnum.FAILED, runtimeFailureMessage(msg));
@@ -705,8 +698,8 @@ public class GithubCopilotProcessManager extends AiProcessManager {
     }
 
     /**
-     * Why a {@link #sendPrompt} cannot start a turn right now, or {@code null} when it can. Checked in the
-     * same order as the guards it replaces, so the INFO names the actual blocker.
+     * Why a {@link #sendPrompt} cannot start a turn right now, or {@code null} when it can. Checked in the same order
+     * as the guards it replaces, so the INFO names the actual blocker.
      */
     private Refusal sendRefusal() {
         if (pendingDiff) {
@@ -726,8 +719,8 @@ public class GithubCopilotProcessManager extends AiProcessManager {
     }
 
     /**
-     * A refused {@link #sendPrompt}: the message to show, and whether this refusal is also what has to
-     * release the UI lock that {@code handleSubmit} took before calling in.
+     * A refused {@link #sendPrompt}: the message to show, and whether this refusal is also what has to release the UI
+     * lock that {@code handleSubmit} took before calling in.
      */
     private record Refusal(String reason, boolean releasesUi) {
 
@@ -797,18 +790,17 @@ public class GithubCopilotProcessManager extends AiProcessManager {
                 if (!cancelledByUser) {
                     LOG.log(Level.WARNING, "GitHub Copilot send failed", err);
                     listener.onAiProcessEvent(new StatusEvent(StatusEventTypeEnum.FAILED,
-                            StatusMessageUtil.formatSendFailed(err.getMessage())));
+                                                              StatusMessageUtil.formatSendFailed(err.getMessage())));
                 }
             }
         });
     }
 
     /**
-     * Re-establishes the CopilotSession after a model change and then sends the queued prompt. Runs on a
-     * background thread: createOrResumeSession() blocks on RPC for up to two minutes per call, and every
-     * sendPrompt() caller is on the EDT. The RPC deliberately happens OUTSIDE the monitor so a concurrent
-     * stop() (e.g. the user closing the tab mid-recycle) is not blocked by it; only publishing the new
-     * session takes the lock.
+     * Re-establishes the CopilotSession after a model change and then sends the queued prompt. Runs on a background
+     * thread: createOrResumeSession() blocks on RPC for up to two minutes per call, and every sendPrompt() caller is on
+     * the EDT. The RPC deliberately happens OUTSIDE the monitor so a concurrent stop() (e.g. the user closing the tab
+     * mid-recycle) is not blocked by it; only publishing the new session takes the lock.
      */
     private void reestablishAndSend(String text, File workingDir, List<File> projectDirs) {
         CopilotSession created = null;
@@ -827,8 +819,8 @@ public class GithubCopilotProcessManager extends AiProcessManager {
                     created.close();
                 }
                 listener.onAiProcessEvent(new StatusEvent(StatusEventTypeEnum.FAILED,
-                        StatusMessageUtil.formatSendFailed(
-                                "could not re-establish the session after the model change")));
+                                                          StatusMessageUtil.formatSendFailed(
+                                                                  "could not re-establish the session after the model change")));
                 return;
             }
             copilotSession = created;
@@ -857,9 +849,9 @@ public class GithubCopilotProcessManager extends AiProcessManager {
 
     /**
      * Graceful interrupt: Cancel aborts the current turn without tearing down the session (session.abort()) —
-     * previously this had to kill the whole OS process since one-shot -p had no in-band signal. Mail
-     * interjects the inter-AI mail notification into the running turn via immediate-mode send instead of
-     * killing anything — Mail was always meant to interrupt and inject, never to kill (confirmed with Chris).
+     * previously this had to kill the whole OS process since one-shot -p had no in-band signal. Mail interjects the
+     * inter-AI mail notification into the running turn via immediate-mode send instead of killing anything — Mail was
+     * always meant to interrupt and inject, never to kill (confirmed with Chris).
      */
     @Override
     public void interrupt(InterruptTypeEnum type) {

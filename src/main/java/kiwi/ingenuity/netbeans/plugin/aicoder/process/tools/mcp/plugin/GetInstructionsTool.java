@@ -11,21 +11,20 @@ import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.McpToolInterface
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.ToolRequestArguments;
 
 /**
- * Returns the full plugin usage guide on demand and marks the conversation as
- * having loaded instructions. The MCP server gates all other tools until this
- * has been called once per conversation, so the slim initialize stub can point
+ * Returns the full plugin usage guide on demand and marks the conversation as having loaded instructions. The MCP
+ * server gates all other tools until this has been called once per conversation, so the slim initialize stub can point
  * the AI here instead of shipping the whole guide on every connect.
  */
 public class GetInstructionsTool extends AbstractActionTool {
 
     public GetInstructionsTool() {
         super(McpSectionEnum.PLUGIN,
-                McpToolEnum.GET_INSTRUCTIONS.toolName(),
-                "Returns the full NetBeans plugin usage guide (tool policies, the "
-                + "diff-panel edit flow, refactoring and inter-AI messaging guidance). "
-                + "You MUST call this once before using any other plugin tool — other "
-                + "tools are rejected until you do.",
-                null);
+              McpToolEnum.GET_INSTRUCTIONS.toolName(),
+              "Returns the full NetBeans plugin usage guide (tool policies, the "
+              + "diff-panel edit flow, refactoring and inter-AI messaging guidance). "
+              + "You MUST call this once before using any other plugin tool — other "
+              + "tools are rejected until you do.",
+              null);
     }
 
     @Override

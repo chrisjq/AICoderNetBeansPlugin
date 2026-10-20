@@ -128,7 +128,7 @@ class GithubCopilotProcessManagerTest {
             assertEquals(2, events.size());
             assertEquals(StatusEventTypeEnum.INFO, ((StatusEvent) events.get(0)).type());
             assertTrue(events.get(1) instanceof GithubCopilotReasoningEffortClearedEvent,
-                    "the clear must reach the property channel after the INFO event");
+                       "the clear must reach the property channel after the INFO event");
             // Second call must not fire another event: the value is already cleared.
             assertNull(mgr.resolveValidatedReasoningEffort("gpt-5.4"));
             assertEquals(2, events.size());
@@ -179,7 +179,7 @@ class GithubCopilotProcessManagerTest {
         assertNull(mgr.resolveValidatedReasoningEffort("some-unknown-model"));
 
         assertTrue(events.stream().anyMatch(GithubCopilotReasoningEffortClearedEvent.class::isInstance),
-                "the manager must emit the clear event even when no persistence callback is installed");
+                   "the manager must emit the clear event even when no persistence callback is installed");
     }
 
     @Test
@@ -194,7 +194,7 @@ class GithubCopilotProcessManagerTest {
         assertNull(mgr.resolveValidatedReasoningEffort("some-unknown-model"));
 
         assertTrue(events.stream().anyMatch(GithubCopilotReasoningEffortClearedEvent.class::isInstance),
-                "a persistence callback failure must not suppress the clear event");
+                   "a persistence callback failure must not suppress the clear event");
     }
 
     @Test
@@ -236,7 +236,7 @@ class GithubCopilotProcessManagerTest {
             GithubCopilotPluginSettings.setModelReasoningEffortInfo(
                     Map.of("gpt-5.4", List.of("low", "medium"), "gpt-6", List.of("high")), Map.of());
             assertEquals("high", mgr.resolveValidatedReasoningEffort("gpt-6"),
-                    "a global-sourced value must still be applied for a model that supports it");
+                         "a global-sourced value must still be applied for a model that supports it");
             assertTrue(events.isEmpty(), "a supported global-sourced value must fire no events");
         }
         finally {
@@ -275,9 +275,9 @@ class GithubCopilotProcessManagerTest {
             assertNotNull(scripted.resumeConfig, "resume attempt must have been made");
             assertNotNull(scripted.createConfig, "fall-through must have created after the resume failure");
             assertNull(scripted.resumeConfig.getReasoningEffort(),
-                    "cleared session-pinned value must not be sent on resume");
+                       "cleared session-pinned value must not be sent on resume");
             assertNull(scripted.createConfig.getReasoningEffort(),
-                    "cleared session-pinned value must not be sent on create");
+                       "cleared session-pinned value must not be sent on create");
         }
         finally {
             GithubCopilotPluginSettings.setModelReasoningEffortInfo(Map.of(), Map.of());
@@ -327,7 +327,7 @@ class GithubCopilotProcessManagerTest {
         assertEquals(1, events.size(), "a runtime failure must report exactly one status");
         StatusEvent status = (StatusEvent) events.get(0);
         assertEquals(StatusEventTypeEnum.FAILED, status.type(),
-                "a runtime failure must be FAILED, never EXITED");
+                     "a runtime failure must be FAILED, never EXITED");
         assertEquals("GitHub Copilot: rate limited", status.text());
     }
 
@@ -340,23 +340,23 @@ class GithubCopilotProcessManagerTest {
         GithubCopilotProcessManager mgr = new GithubCopilotProcessManager(events::add);
         CompletableFuture<String> pending = new CompletableFuture<>();
         assertTrue(mgr.runWork("Compacting conversation...", false, 60_000L,
-                () -> pending,
-                r -> new StatusEvent(StatusEventTypeEnum.READY, "done"),
-                err -> new StatusEvent(StatusEventTypeEnum.FAILED, "boom")),
-                "runWork must accept the compact while nothing else is in flight");
+                               () -> pending,
+                               r -> new StatusEvent(StatusEventTypeEnum.READY, "done"),
+                               err -> new StatusEvent(StatusEventTypeEnum.FAILED, "boom")),
+                   "runWork must accept the compact while nothing else is in flight");
         assertEquals(1, countStatuses(events, StatusEventTypeEnum.BUSY));
 
         mgr.handleRuntimeError("rate limited");
 
         assertFalse(mgr.isWorkInFlight(), "the runtime failure must close the in-flight work");
         assertEquals(1, countStatuses(events, StatusEventTypeEnum.FAILED),
-                "a mid-compaction failure must report exactly one FAILED");
+                     "a mid-compaction failure must report exactly one FAILED");
         assertEquals("GitHub Copilot: rate limited", status(events, StatusEventTypeEnum.FAILED).text());
         assertEquals(1, closingStatusCount(events), "the work must be closed exactly once");
 
         pending.complete("late");
         assertEquals(1, closingStatusCount(events),
-                "a late completion of the failed work must not close it a second time");
+                     "a late completion of the failed work must not close it a second time");
     }
 
     @Test
@@ -373,7 +373,7 @@ class GithubCopilotProcessManagerTest {
 
         assertEquals(1, countStatuses(events, StatusEventTypeEnum.FAILED));
         assertEquals(0, countTurnCompletes(events),
-                "the trailing idle after a FAILED close must not re-green the tab");
+                     "the trailing idle after a FAILED close must not re-green the tab");
 
         // The drop is one-shot: a genuinely later turn completion is still delivered.
         wire.onAiProcessEvent(new TurnCompleteEvent());
@@ -388,15 +388,15 @@ class GithubCopilotProcessManagerTest {
         GithubCopilotProcessManager mgr = new GithubCopilotProcessManager(events::add);
         CompletableFuture<String> pending = new CompletableFuture<>();
         assertTrue(mgr.runWork("Compacting conversation...", false, 60_000L,
-                () -> pending,
-                r -> new StatusEvent(StatusEventTypeEnum.READY, "done"),
-                err -> new StatusEvent(StatusEventTypeEnum.FAILED, "boom")));
+                               () -> pending,
+                               r -> new StatusEvent(StatusEventTypeEnum.READY, "done"),
+                               err -> new StatusEvent(StatusEventTypeEnum.FAILED, "boom")));
         AiProcessEventListener wire = mgr.createTurnAwareListener();
 
         wire.onAiProcessEvent(new TurnCompleteEvent());
 
         assertEquals(0, countTurnCompletes(events),
-                "an idle emitted while a compaction is in flight must not surface as a turn complete");
+                     "an idle emitted while a compaction is in flight must not surface as a turn complete");
         pending.completeExceptionally(new IllegalStateException("cleanup"));
     }
 
@@ -413,7 +413,7 @@ class GithubCopilotProcessManagerTest {
 
         assertEquals(1, countStatuses(events, StatusEventTypeEnum.INFO));
         assertEquals("Wait for the pending changes to be resolved before sending another message",
-                status(events, StatusEventTypeEnum.INFO).text());
+                     status(events, StatusEventTypeEnum.INFO).text());
         assertEquals(1, countTurnCompletes(events), "nothing else closes this lock, so a turn-complete is required");
         assertEquals(0, countStatuses(events, StatusEventTypeEnum.BUSY), "a refusal must not start a turn");
     }
@@ -428,7 +428,7 @@ class GithubCopilotProcessManagerTest {
 
         assertEquals(1, countStatuses(events, StatusEventTypeEnum.INFO));
         assertEquals("GitHub Copilot is not ready — wait for it to finish starting",
-                status(events, StatusEventTypeEnum.INFO).text());
+                     status(events, StatusEventTypeEnum.INFO).text());
         assertEquals(1, countTurnCompletes(events));
         assertEquals(0, countStatuses(events, StatusEventTypeEnum.BUSY));
     }
@@ -441,15 +441,15 @@ class GithubCopilotProcessManagerTest {
         set(mgr, "running", true);
         CompletableFuture<String> pending = new CompletableFuture<>();
         assertTrue(mgr.runWork("Compacting conversation...", false, 60_000L,
-                () -> pending,
-                r -> new StatusEvent(StatusEventTypeEnum.READY, "done"),
-                err -> new StatusEvent(StatusEventTypeEnum.FAILED, "boom")));
+                               () -> pending,
+                               r -> new StatusEvent(StatusEventTypeEnum.READY, "done"),
+                               err -> new StatusEvent(StatusEventTypeEnum.FAILED, "boom")));
 
         mgr.sendPrompt("hello", null, List.of());
 
         assertEquals(1, countStatuses(events, StatusEventTypeEnum.INFO));
         assertEquals("Wait for the current compaction to finish before sending another message",
-                status(events, StatusEventTypeEnum.INFO).text());
+                     status(events, StatusEventTypeEnum.INFO).text());
         assertEquals(1, countTurnCompletes(events));
         pending.completeExceptionally(new IllegalStateException("cleanup"));
     }
@@ -467,7 +467,7 @@ class GithubCopilotProcessManagerTest {
 
         assertEquals(1, countStatuses(events, StatusEventTypeEnum.INFO));
         assertEquals("Wait for GitHub Copilot to finish before sending another message",
-                status(events, StatusEventTypeEnum.INFO).text());
+                     status(events, StatusEventTypeEnum.INFO).text());
         assertEquals(1, countTurnCompletes(events), "every refusal must release the submit lock");
         assertTrue(mgr.isBusy(), "the in-flight turn must not be released by a refused second send");
     }
@@ -519,8 +519,8 @@ class GithubCopilotProcessManagerTest {
                 .filter(StatusEvent.class::isInstance)
                 .map(StatusEvent.class::cast)
                 .filter(event -> event.type() == StatusEventTypeEnum.READY
-                                 || event.type() == StatusEventTypeEnum.FAILED
-                                 || event.type() == StatusEventTypeEnum.EXITED)
+                        || event.type() == StatusEventTypeEnum.FAILED
+                        || event.type() == StatusEventTypeEnum.EXITED)
                 .count();
     }
 
@@ -537,31 +537,31 @@ class GithubCopilotProcessManagerTest {
         GithubCopilotProcessManager mgr = new GithubCopilotProcessManager(events::add);
         CompletableFuture<String> pending = new CompletableFuture<>();
         assertTrue(mgr.runWork("Compacting conversation...", false, 60_000L,
-                () -> pending,
-                r -> new StatusEvent(StatusEventTypeEnum.READY, "done"),
-                err -> new StatusEvent(StatusEventTypeEnum.FAILED, "boom")),
-                "runWork must accept the compact while nothing else is in flight");
+                               () -> pending,
+                               r -> new StatusEvent(StatusEventTypeEnum.READY, "done"),
+                               err -> new StatusEvent(StatusEventTypeEnum.FAILED, "boom")),
+                   "runWork must accept the compact while nothing else is in flight");
         assertEquals(1, events.stream()
-                .filter(e -> e instanceof StatusEvent s && s.type() == StatusEventTypeEnum.BUSY)
-                .count(), "a running compact reports one BUSY");
+                     .filter(e -> e instanceof StatusEvent s && s.type() == StatusEventTypeEnum.BUSY)
+                     .count(), "a running compact reports one BUSY");
         assertTrue(mgr.isWorkInFlight());
 
         mgr.stop();
 
         assertFalse(mgr.isWorkInFlight(), "stop must close the in-flight work");
         assertEquals(1, events.stream()
-                .filter(e -> e instanceof StatusEvent s && s.type() == StatusEventTypeEnum.FAILED)
-                .count(), "stop must report exactly one FAILED");
+                     .filter(e -> e instanceof StatusEvent s && s.type() == StatusEventTypeEnum.FAILED)
+                     .count(), "stop must report exactly one FAILED");
         assertEquals(1, events.stream()
-                .filter(e -> e instanceof StatusEvent s && (s.type() == StatusEventTypeEnum.READY
-                                                            || s.type() == StatusEventTypeEnum.FAILED
-                                                            || s.type() == StatusEventTypeEnum.EXITED))
-                .count(), "BUSY must be closed by exactly one closing status");
+                     .filter(e -> e instanceof StatusEvent s && (s.type() == StatusEventTypeEnum.READY
+                             || s.type() == StatusEventTypeEnum.FAILED
+                             || s.type() == StatusEventTypeEnum.EXITED))
+                     .count(), "BUSY must be closed by exactly one closing status");
 
         pending.complete("late");
         assertEquals(1, events.stream()
-                .filter(e -> e instanceof StatusEvent s && s.type() == StatusEventTypeEnum.FAILED)
-                .count(), "a late completion must not emit a second closing status");
+                     .filter(e -> e instanceof StatusEvent s && s.type() == StatusEventTypeEnum.FAILED)
+                     .count(), "a late completion must not emit a second closing status");
     }
 
     private static void set(Object target, String fieldName, Object value) throws Exception {
@@ -580,12 +580,12 @@ class GithubCopilotProcessManagerTest {
     }
 
     /**
-     * A {@link GithubCopilotProcessManager} that never touches a real CLI process: its
-     * {@code listSessionsHook} reports the one session id the test drives, and its
-     * {@code resumeSessionHook}/{@code createSessionHook} capture the config they received (so the test can
-     * assert nothing unsupported was ever sent) and script the exact outcome the scenario needs. Subclassing
-     * the manager instead of mocking {@link CopilotClient} because that SDK class is final and the plugin's
-     * test classpath has no mocking library — the manager's three delegation hooks exist precisely for this.
+     * A {@link GithubCopilotProcessManager} that never touches a real CLI process: its {@code listSessionsHook} reports
+     * the one session id the test drives, and its {@code resumeSessionHook}/{@code createSessionHook} capture the
+     * config they received (so the test can assert nothing unsupported was ever sent) and script the exact outcome the
+     * scenario needs. Subclassing the manager instead of mocking {@link CopilotClient} because that SDK class is final
+     * and the plugin's test classpath has no mocking library — the manager's three delegation hooks exist precisely for
+     * this.
      */
     private static final class ScriptedGithubCopilotProcessManager extends GithubCopilotProcessManager {
 
@@ -612,7 +612,7 @@ class GithubCopilotProcessManagerTest {
             // fall-through guard was written for.
             return CompletableFuture.failedFuture(new ExecutionException(
                     new IllegalStateException("Request session.resume failed with message: Session not found: "
-                                              + knownSessionId)));
+                            + knownSessionId)));
         }
 
         @Override

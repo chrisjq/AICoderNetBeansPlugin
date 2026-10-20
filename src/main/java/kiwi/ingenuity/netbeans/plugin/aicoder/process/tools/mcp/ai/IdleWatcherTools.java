@@ -24,12 +24,11 @@ final class IdleWatcherTools {
     }
 
     /**
-     * Resolves {@code targetSessionId} exactly as {@link SendAiMessageTool} does for PeerMessageSend: if it
-     * already names a known session, used as is; otherwise treated as a session NAME and resolved via the
-     * broker's active-session name index. A unique match resolves silently; an ambiguous one reports an error
-     * listing the matches, the same way PeerMessageSend does. No match at all (neither a known id nor any
-     * name) is returned unchanged, so the caller's own "not open"/"not found" error fires against exactly
-     * what was typed.
+     * Resolves {@code targetSessionId} exactly as {@link SendAiMessageTool} does for PeerMessageSend: if it already
+     * names a known session, used as is; otherwise treated as a session NAME and resolved via the broker's
+     * active-session name index. A unique match resolves silently; an ambiguous one reports an error listing the
+     * matches, the same way PeerMessageSend does. No match at all (neither a known id nor any name) is returned
+     * unchanged, so the caller's own "not open"/"not found" error fires against exactly what was typed.
      */
     record Resolution(String sessionId, String error) {
 

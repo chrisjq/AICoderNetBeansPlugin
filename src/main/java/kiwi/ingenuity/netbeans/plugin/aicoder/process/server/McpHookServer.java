@@ -76,9 +76,8 @@ public class McpHookServer {
     private static final int MAX_RSP_TIME_SECONDS = -1;        // JDK default -1 — max time to write a response (off)
 
     /**
-     * Gate predicate: while a conversation has not loaded the full instruction guide, every tool except
-     * GetInstructions is blocked. An unknown tool (null) is also blocked so the AI is steered to
-     * GetInstructions first.
+     * Gate predicate: while a conversation has not loaded the full instruction guide, every tool except GetInstructions
+     * is blocked. An unknown tool (null) is also blocked so the AI is steered to GetInstructions first.
      */
     static boolean isToolGated(boolean instructionsLoaded, McpToolEnum tool) {
         if (instructionsLoaded) {
@@ -88,9 +87,8 @@ public class McpHookServer {
     }
 
     /**
-     * Applies the HTTP connection-management settings above as JDK system properties. Must run before the
-     * first HttpServer is created in the JVM, since com.sun.net.httpserver reads them once at ServerConfig
-     * init.
+     * Applies the HTTP connection-management settings above as JDK system properties. Must run before the first
+     * HttpServer is created in the JVM, since com.sun.net.httpserver reads them once at ServerConfig init.
      */
     private static void applyConnectionSettings() {
         System.setProperty("sun.net.httpserver.idleInterval", Integer.toString(IDLE_INTERVAL_SECONDS));
@@ -103,11 +101,11 @@ public class McpHookServer {
     public static String fileAccessDeniedMessage(McpHookServer server, String sessionId, String filePath) {
         if (sessionId == null || sessionId.isBlank()) {
             return "Access denied: file access scope is unavailable because this tool call has no "
-                   + McpToolPropertyEnum.SESSION_ID.key() + ". Retry with a valid session identity.";
+                    + McpToolPropertyEnum.SESSION_ID.key() + ". Retry with a valid session identity.";
         }
         if (server == null) {
             return "Access denied: file access scope is unavailable because the MCP server is not running. "
-                   + "Retry after MCP session setup completes.";
+                    + "Retry after MCP session setup completes.";
         }
         // A path the filesystem cannot represent is refused for a completely different reason than one that is simply
         // out of scope, and saying "outside the allowed project scope" for it is misleading: a caller reads that as a
@@ -116,56 +114,54 @@ public class McpHookServer {
         // tell them apart.
         if (SessionFileScopeRegistry.isMalformedPath(filePath)) {
             return "Malformed path: the supplied path contains characters the filesystem cannot represent, so it "
-                   + "cannot refer to any file. Check the path for stray control characters and resend it.";
+                    + "cannot refer to any file. Check the path for stray control characters and resend it.";
         }
         return server.fileScope.fileAccessDeniedMessage(sessionId, filePath);
     }
 
     /**
-     * Static, null-tolerant form of {@link #isFileAccessible(String, String)} — see
-     * {@link #isProjectFileAllowed} for why a static overload exists (the
-     * {@code server == null || sessionId == null || ...} guard repeated at each call site collapses into one
-     * call). This is the rule for the fourteen plain-scope tools (Delete/Copy/Move/Close/NavigateToLine,
-     * Reformat, the refactor tools, and organise-imports/fix-imports): a session may operate on its own
-     * config directory with any of them, the same as it may operate on a project file.
+     * Static, null-tolerant form of {@link #isFileAccessible(String, String)} — see {@link #isProjectFileAllowed} for
+     * why a static overload exists (the {@code server == null || sessionId == null || ...} guard repeated at each call
+     * site collapses into one call). This is the rule for the fourteen plain-scope tools
+     * (Delete/Copy/Move/Close/NavigateToLine, Reformat, the refactor tools, and organise-imports/fix-imports): a
+     * session may operate on its own config directory with any of them, the same as it may operate on a project file.
      */
     public static boolean isFileAccessible(McpHookServer server, String sessionId, String filePath) {
         return server != null && sessionId != null && server.isFileAccessible(sessionId, filePath);
     }
 
     /**
-     * May this session access {@code filePath} under the plain project-scope rule ONLY —
-     * {@link #isFileAllowed}, with no config-dir exemption. This is deliberately narrower than
-     * {@link #isFileAccessible}: it exists for the write tools (ApplyEdit, WriteFile, SaveFile), which check {@link
-     * #isOwnSessionConfigFile} explicitly first — that branch bypasses review entirely, so once it has been
-     * ruled out, the remaining gate must NOT grant the config-dir exemption a second time.
+     * May this session access {@code filePath} under the plain project-scope rule ONLY — {@link #isFileAllowed}, with
+     * no config-dir exemption. This is deliberately narrower than {@link #isFileAccessible}: it exists for the write
+     * tools (ApplyEdit, WriteFile, SaveFile), which check {@link
+     * #isOwnSessionConfigFile} explicitly first — that branch bypasses review entirely, so once it has been ruled out,
+     * the remaining gate must NOT grant the config-dir exemption a second time.
      * <p>
-     * Static and tolerant of a null {@code server} (unlike the instance methods above, which assume a live
-     * server) so that the {@code server == null || sessionId == null || !server.isFileAllowed(...)} guard
-     * repeated verbatim at each call site collapses into one call:
-     * {@code if (!McpHookServer.isProjectFileAllowed(server, sessionId, fp))}.
+     * Static and tolerant of a null {@code server} (unlike the instance methods above, which assume a live server) so
+     * that the {@code server == null || sessionId == null || !server.isFileAllowed(...)} guard repeated verbatim at
+     * each call site collapses into one call: {@code if (!McpHookServer.isProjectFileAllowed(server, sessionId, fp))}.
      */
     public static boolean isProjectFileAllowed(McpHookServer server, String sessionId, String filePath) {
         return server != null && sessionId != null
-               && !server.isSessionPersistenceWriteDenied(filePath)
-               && server.isFileAllowed(sessionId, filePath);
+                && !server.isSessionPersistenceWriteDenied(filePath)
+                && server.isFileAllowed(sessionId, filePath);
     }
 
     /**
-     * May this session WRITE {@code filePath} under the plain-scope rule — {@link #isFileAccessible}, minus
-     * anything {@link SessionFileScopeRegistry#isSessionPersistenceWriteDenied} refuses. The write
-     * counterpart of {@link #isFileAccessible}, for the mutating members of that tool group (Delete, Move,
-     * and Copy's destination): those three share the config-dir exemption with the read tools, so they cannot
-     * use {@link #isProjectFileAllowed}, but they must not inherit the read exemption granted to
-     * {@code sessions.json} and the template files at the persistence base's root.
+     * May this session WRITE {@code filePath} under the plain-scope rule — {@link #isFileAccessible}, minus anything
+     * {@link SessionFileScopeRegistry#isSessionPersistenceWriteDenied} refuses. The write counterpart of
+     * {@link #isFileAccessible}, for the mutating members of that tool group (Delete, Move, and Copy's destination):
+     * those three share the config-dir exemption with the read tools, so they cannot use {@link #isProjectFileAllowed},
+     * but they must not inherit the read exemption granted to {@code sessions.json} and the template files at the
+     * persistence base's root.
      * <p>
-     * Copy's SOURCE deliberately keeps using {@link #isFileAccessible}: reading a file out is a read, and
-     * denying it there would take away an access the read tools still grant. Move's source does not — moving
-     * a file away deletes it from where it was.
+     * Copy's SOURCE deliberately keeps using {@link #isFileAccessible}: reading a file out is a read, and denying it
+     * there would take away an access the read tools still grant. Move's source does not — moving a file away deletes
+     * it from where it was.
      */
     public static boolean isFileWritable(McpHookServer server, String sessionId, String filePath) {
         return isFileAccessible(server, sessionId, filePath)
-               && !server.isSessionPersistenceWriteDenied(filePath);
+                && !server.isSessionPersistenceWriteDenied(filePath);
     }
 
     private HttpServer httpServer;
@@ -183,20 +179,19 @@ public class McpHookServer {
     private volatile String baseUrl = null;
 
     /**
-     * Standalone constructor: this instance owns a fresh, private {@link SessionFileScopeRegistry}. Used only
-     * by tests that construct a server directly and don't need to share scope with anything else — production
-     * always goes through {@link #McpHookServer(int, SessionFileScopeRegistry)} via
-     * {@link McpServerRegistry}, so a health-tick replacement never starts a session's scope from empty.
+     * Standalone constructor: this instance owns a fresh, private {@link SessionFileScopeRegistry}. Used only by tests
+     * that construct a server directly and don't need to share scope with anything else — production always goes
+     * through {@link #McpHookServer(int, SessionFileScopeRegistry)} via {@link McpServerRegistry}, so a health-tick
+     * replacement never starts a session's scope from empty.
      */
     public McpHookServer(int port) {
         this(port, new SessionFileScopeRegistry());
     }
 
     /**
-     * @param fileScope the scope registry this server delegates every access check to.
-     *                  {@link McpServerRegistry} passes its own single, long-lived instance so a server
-     *                  replacement (see {@code reconcile}) carries every session's scope forward instead of
-     *                  starting empty.
+     * @param fileScope the scope registry this server delegates every access check to. {@link McpServerRegistry} passes
+     * its own single, long-lived instance so a server replacement (see {@code reconcile}) carries every session's scope
+     * forward instead of starting empty.
      */
     public McpHookServer(int port, SessionFileScopeRegistry fileScope) {
         this.port = port;
@@ -286,11 +281,11 @@ public class McpHookServer {
     }
 
     /**
-     * Refreshes a registered session's file-access scope (project dirs + restrict flag). If the session is
-     * not currently tracked (hook-server restart, or a lost/startup-race registration), re-registers it
-     * rather than no-oping — a silently untracked session would bypass the diff panel indefinitely. Only open
-     * sessions call this (handleSubmit + the open-projects listener), and componentClosed removes that
-     * listener and calls unregisterSession, so this cannot resurrect a closed session.
+     * Refreshes a registered session's file-access scope (project dirs + restrict flag). If the session is not
+     * currently tracked (hook-server restart, or a lost/startup-race registration), re-registers it rather than
+     * no-oping — a silently untracked session would bypass the diff panel indefinitely. Only open sessions call this
+     * (handleSubmit + the open-projects listener), and componentClosed removes that listener and calls
+     * unregisterSession, so this cannot resurrect a closed session.
      */
     public void updateSessionScope(String sessionId, AiTypeEnum aiType,
                                    List<File> projectDirs, boolean restrictToProjectFiles) {
@@ -304,21 +299,19 @@ public class McpHookServer {
     }
 
     /**
-     * Re-establishes this session's per-instance bookkeeping ({@code hookLocks}/{@code activeSessions}) after
-     * a health-tick server swap ({@link McpServerRegistry#reconcile}) replaces the shared server with a fresh
-     * instance. The fresh instance's {@code fileScope} already carries this session's file-access scope
-     * forward — it is the SAME shared {@link SessionFileScopeRegistry} instance, see the {@link #McpHookServer(int,
-     * SessionFileScopeRegistry)} javadoc — but {@code hookLocks}/{@code activeSessions} are per-instance
-     * fields that start empty on the fresh server. Without this, the next gated Edit/Write for a session that
-     * survived the swap finds no hook lock and is answered "defer" forever: the session becomes permanently
-     * edit-incapable until it is reopened or an unrelated open-projects change happens to re-drive
-     * {@link #updateSessionScope}.
+     * Re-establishes this session's per-instance bookkeeping ({@code hookLocks}/{@code activeSessions}) after a
+     * health-tick server swap ({@link McpServerRegistry#reconcile}) replaces the shared server with a fresh instance.
+     * The fresh instance's {@code fileScope} already carries this session's file-access scope forward — it is the SAME
+     * shared {@link SessionFileScopeRegistry} instance, see the {@link #McpHookServer(int,
+     * SessionFileScopeRegistry)} javadoc — but {@code hookLocks}/{@code activeSessions} are per-instance fields that
+     * start empty on the fresh server. Without this, the next gated Edit/Write for a session that survived the swap
+     * finds no hook lock and is answered "defer" forever: the session becomes permanently edit-incapable until it is
+     * reopened or an unrelated open-projects change happens to re-drive {@link #updateSessionScope}.
      * <p>
      * Deliberately does NOT call {@link #registerSession}/{@link #updateSessionScope}: those also write to
      * {@code fileScope}, which is already correct here and must not be touched — {@link McpServerRegistry}'s
-     * {@code registrations} map (a session id keyed by its {@link AiMcpRegistrar}) carries no
-     * project-dirs/restrict data to pass them anyway. This restores only the bookkeeping the swap actually
-     * lost.
+     * {@code registrations} map (a session id keyed by its {@link AiMcpRegistrar}) carries no project-dirs/restrict
+     * data to pass them anyway. This restores only the bookkeeping the swap actually lost.
      */
     void rehydrateSession(String sessionId) {
         if (sessionId == null) {
@@ -350,9 +343,9 @@ public class McpHookServer {
     /**
      * True when {@code filePath} is ANY session's serialized-conversation history/context file — see
      * {@link SessionFileScopeRegistry}'s class javadoc for the full rationale (a directory tree distinct from {@link
-     * #isOwnSessionConfigFile}'s, vetoed for every session rather than exempted for the caller's own). The
-     * native Claude Edit/Write hook does not call {@link #isFileAllowed} (it inlines the equivalent checks),
-     * so it re-checks this directly instead of inheriting it — see the hook dispatch below.
+     * #isOwnSessionConfigFile}'s, vetoed for every session rather than exempted for the caller's own). The native
+     * Claude Edit/Write hook does not call {@link #isFileAllowed} (it inlines the equivalent checks), so it re-checks
+     * this directly instead of inheriting it — see the hook dispatch below.
      */
     private boolean isSessionPersistenceDirFile(String filePath) {
         return fileScope.isSessionPersistenceDirFile(filePath);
@@ -376,9 +369,9 @@ public class McpHookServer {
     }
 
     /**
-     * True if {@code filePath} resolves to a location inside one of the session's registered project roots.
-     * Independent of the restrict-to-project flag, so a caller can ask "is this a project file?" directly.
-     * Fails closed when the session has no registered roots.
+     * True if {@code filePath} resolves to a location inside one of the session's registered project roots. Independent
+     * of the restrict-to-project flag, so a caller can ask "is this a project file?" directly. Fails closed when the
+     * session has no registered roots.
      */
     boolean isWithinProjectDirs(String sessionId, String filePath) {
         return fileScope.isWithinProjectDirs(sessionId, filePath);
@@ -390,44 +383,42 @@ public class McpHookServer {
 
     /**
      * True if {@code filePath} is inside this session's own per-session config directory
-     * ({@code ~/.ai-coder/{type}/{sessionId}/}), where the AI keeps its memory and logs. These live outside
-     * every open project, so no diff panel can be built for them; they pass straight through to the built-in
-     * tool. Scoped to the requesting session, so one session can never write into another session's memory.
+     * ({@code ~/.ai-coder/{type}/{sessionId}/}), where the AI keeps its memory and logs. These live outside every open
+     * project, so no diff panel can be built for them; they pass straight through to the built-in tool. Scoped to the
+     * requesting session, so one session can never write into another session's memory.
      */
     public boolean isOwnSessionConfigFile(String sessionId, String filePath) {
         return fileScope.isOwnSessionConfigFile(sessionId, filePath);
     }
 
     /**
-     * May this session access {@code filePath} at all — for a plain read/query/action gate, not a write that
-     * needs the diff-panel routing decision below. True when either {@link #isFileAllowed} (in project scope)
-     * or {@link #isOwnSessionConfigFile} (this session's own memory/logs/tool_results, exempt from
-     * restrict-to-project) holds.
+     * May this session access {@code filePath} at all — for a plain read/query/action gate, not a write that needs the
+     * diff-panel routing decision below. True when either {@link #isFileAllowed} (in project scope) or
+     * {@link #isOwnSessionConfigFile} (this session's own memory/logs/tool_results, exempt from restrict-to-project)
+     * holds.
      * <p>
-     * This is the single source of truth for that OR — it was previously written out at each read-style call
-     * site, and one of them (GetFileContentTool) was found with only the first half, so a session could write
-     * its own log via a tool that already used both checks and then be refused reading it back through one
-     * that had only {@link
+     * This is the single source of truth for that OR — it was previously written out at each read-style call site, and
+     * one of them (GetFileContentTool) was found with only the first half, so a session could write its own log via a
+     * tool that already used both checks and then be refused reading it back through one that had only {@link
      * #isFileAllowed}. Confirmed by the user to be the correct rule for every plain-scope tool —
-     * Delete/Copy/Move/Close/NavigateToLine/Reformat, the refactor tools, and organise-imports/fix-imports
-     * included: a session's own config directory follows the same rule as a project file for the session that
-     * owns it, for all of these.
+     * Delete/Copy/Move/Close/NavigateToLine/Reformat, the refactor tools, and organise-imports/fix-imports included: a
+     * session's own config directory follows the same rule as a project file for the session that owns it, for all of
+     * these.
      * <p>
-     * Do NOT use this for the write tools (ApplyEdit, WriteFile, SaveFile) or the native Claude Edit/Write
-     * hook: those need the two predicates evaluated as a routing decision, not flattened into one boolean.
-     * Own-config-dir writes bypass the diff panel and fire no notification because that data belongs to the
-     * session itself and is auto-accepted by design — not because a panel could not be built for it — so
-     * collapsing the two checks would let an ordinary project file take the no-review/no-notification branch
-     * too.
+     * Do NOT use this for the write tools (ApplyEdit, WriteFile, SaveFile) or the native Claude Edit/Write hook: those
+     * need the two predicates evaluated as a routing decision, not flattened into one boolean. Own-config-dir writes
+     * bypass the diff panel and fire no notification because that data belongs to the session itself and is
+     * auto-accepted by design — not because a panel could not be built for it — so collapsing the two checks would let
+     * an ordinary project file take the no-review/no-notification branch too.
      */
     public boolean isFileAccessible(String sessionId, String filePath) {
         return fileScope.isFileAccessible(sessionId, filePath);
     }
 
     /**
-     * Resolves this session's own per-session config directory ({@code ~/.ai-coder/{type}/{sessionId}/}), or
-     * null when the session type is unknown. The build/test providers park complete build logs there so the
-     * session can read them back via {@link #isOwnSessionConfigFile} even under restrict-to-project.
+     * Resolves this session's own per-session config directory ({@code ~/.ai-coder/{type}/{sessionId}/}), or null when
+     * the session type is unknown. The build/test providers park complete build logs there so the session can read them
+     * back via {@link #isOwnSessionConfigFile} even under restrict-to-project.
      */
     public Path sessionConfigDirOrNull(String sessionId) {
         return fileScope.sessionConfigDirOrNull(sessionId);
@@ -438,8 +429,8 @@ public class McpHookServer {
     }
 
     /**
-     * The server's base URL (e.g. {@code http://127.0.0.1:PORT}). Captured at {@link #init()} so it remains
-     * valid after {@link #stop()} nulls the underlying httpServer. Null only if init() never ran.
+     * The server's base URL (e.g. {@code http://127.0.0.1:PORT}). Captured at {@link #init()} so it remains valid after
+     * {@link #stop()} nulls the underlying httpServer. Null only if init() never ran.
      */
     public String getBaseUrl() {
         return baseUrl;
@@ -519,7 +510,7 @@ public class McpHookServer {
         catch (RuntimeException e) {
             LOG.log(Level.WARNING, "Hook request processing failed", e);
             McpHookServerUtil.sendJson(ex, 200, McpHookServerUtil.hookDeny(
-                    "The IDE could not process this tool request. Retry using the IDE's MCP tools."));
+                                       "The IDE could not process this tool request. Retry using the IDE's MCP tools."));
         }
     }
 
@@ -579,7 +570,7 @@ public class McpHookServer {
             }
             McpHookServerUtil.sendJson(ex, 200, steered
                                                 ? McpHookServerUtil.hookDeny(McpSteeringPolicy.steeringFeedbackFor(
-                            steeringCategoryForSteeredClaudeTool(toolName)))
+                                               steeringCategoryForSteeredClaudeTool(toolName)))
                                                 : McpHookServerUtil.hookAllow());
             return;
         }
@@ -591,7 +582,7 @@ public class McpHookServer {
             // hook, so telling it "missing filePath" would name a field it never
             // sends. This is why the two vocabularies have separate enums.
             McpHookServerUtil.sendJson(ex, 200, McpHookServerUtil.hookDeny(
-                    "Access denied: missing " + ClaudeHookKeyEnum.FILE_PATH.key()));
+                                       "Access denied: missing " + ClaudeHookKeyEnum.FILE_PATH.key()));
             return;
         }
         String oldString = McpHookServerUtil.str(input, ClaudeHookKeyEnum.OLD_STRING.key());
@@ -601,8 +592,8 @@ public class McpHookServer {
         // applied ONE replacement while answering "File updated and saved" — a partial edit reported as complete,
         // with nothing to alert the caller. Threaded to both the preview and the apply, which must agree exactly.
         boolean replaceAll = input.has(ClaudeHookKeyEnum.REPLACE_ALL.key())
-                             && input.get(ClaudeHookKeyEnum.REPLACE_ALL.key()).getAsJsonPrimitive().isBoolean()
-                             && input.get(ClaudeHookKeyEnum.REPLACE_ALL.key()).getAsBoolean();
+                && input.get(ClaudeHookKeyEnum.REPLACE_ALL.key()).getAsJsonPrimitive().isBoolean()
+                && input.get(ClaudeHookKeyEnum.REPLACE_ALL.key()).getAsBoolean();
 
         // 0. ANY session's serialized-conversation directory (history.json, context.json,
         //    and their siblings) is never accessible to any tool, including this native
@@ -685,7 +676,7 @@ public class McpHookServer {
         // the lock, which is a stronger check than a snapshot.
         if ("Write".equals(toolName)) {
             RefactoringProvider.FlushResult preFlush
-                                            = RefactoringProvider.flushUnsavedEditorChanges(FileUtils.resolveByPath(filePath));
+                    = RefactoringProvider.flushUnsavedEditorChanges(FileUtils.resolveByPath(filePath));
             if (preFlush.error() != null) {
                 McpHookServerUtil.sendJson(ex, 200, McpHookServerUtil.hookDeny(preFlush.error()));
                 return;
@@ -723,9 +714,9 @@ public class McpHookServer {
             String applyResult;
             try {
                 applyResult = McpToolInvoker.withFileMutation(sessionId, Set.of(filePath),
-                        () -> "Write".equals(toolName)
-                              ? writeFileContentAfterRecheck(filePath, writeContent, approvedWriteSnapshot)
-                              : RefactoringProvider.applyEdit(filePath, oldString, newString, replaceAll));
+                                                              () -> "Write".equals(toolName)
+                                                                    ? writeFileContentAfterRecheck(filePath, writeContent, approvedWriteSnapshot)
+                                                                    : RefactoringProvider.applyEdit(filePath, oldString, newString, replaceAll));
             }
             finally {
                 sessionHookLock.unlock();
@@ -751,9 +742,9 @@ public class McpHookServer {
     }
 
     /**
-     * Native hook counterpart of {@code WriteFileTool}'s own recheck: {@code approved}, captured right after
-     * the pre-diff flush, must still match once the lock is actually held, or the write is refused rather
-     * than silently overwriting a change made while the diff panel was open.
+     * Native hook counterpart of {@code WriteFileTool}'s own recheck: {@code approved}, captured right after the
+     * pre-diff flush, must still match once the lock is actually held, or the write is refused rather than silently
+     * overwriting a change made while the diff panel was open.
      */
     private static String writeFileContentAfterRecheck(String filePath, String content, FileUtils.FileSnapshot approved) {
         if (approved != null && !approved.matches(filePath)) {
@@ -764,7 +755,7 @@ public class McpHookServer {
 
     private static boolean steeringIsActive(AbstractAiSession session) {
         return session.getSettings().effectiveMcpSteering()
-               && session.getType().mcpSteeringSupport().supported();
+                && session.getType().mcpSteeringSupport().supported();
     }
 
     static boolean isSteeredClaudeNativeTool(String toolName) {
@@ -875,7 +866,7 @@ public class McpHookServer {
                     JsonObject result = new JsonObject();
                     String clientProto = McpHookServerUtil.str(params, McpProtocolKeyEnum.PROTOCOL_VERSION.key());
                     result.addProperty(McpProtocolKeyEnum.PROTOCOL_VERSION.key(),
-                            clientProto != null && !clientProto.isBlank() ? clientProto : "2024-11-05");
+                                       clientProto != null && !clientProto.isBlank() ? clientProto : "2024-11-05");
                     JsonObject caps = new JsonObject();
                     caps.add(McpProtocolKeyEnum.TOOLS.key(), new JsonObject());
                     result.add(McpProtocolKeyEnum.CAPABILITIES.key(), caps);
@@ -890,7 +881,7 @@ public class McpHookServer {
                     Map<McpToolEnum, McpToolInterface> handlers
                                                        = aiType != null ? McpInstructionRegistry.getHandlers(aiType) : Map.of();
                     Set<McpInstructionOptionEnum> toolOptions
-                                                  = aiType != null ? aiType.getMcpOptions() : Set.of();
+                            = aiType != null ? aiType.getMcpOptions() : Set.of();
                     JsonObject result = new JsonObject();
                     JsonArray tools = new JsonArray();
                     for (McpToolInterface h : handlers.values()) {
@@ -914,19 +905,19 @@ public class McpHookServer {
                     // instead of retrying the same broken arguments.
                     if (sessionId == null || secretKey == null) {
                         McpHookServerUtil.sendJson(ex, 200, McpHookServerUtil.mcpError(id, -32600,
-                                "Authentication failed: "
-                                + McpToolPropertyEnum.SESSION_ID.key() + " and "
-                                + McpToolPropertyEnum.SECRET_KEY.key()
-                                + " are both required on every tool call. Copy them verbatim from your session identity block."));
+                                                                                       "Authentication failed: "
+                                                                                       + McpToolPropertyEnum.SESSION_ID.key() + " and "
+                                                                                       + McpToolPropertyEnum.SECRET_KEY.key()
+                                                                                       + " are both required on every tool call. Copy them verbatim from your session identity block."));
                         return;
                     }
 
                     if (!AiSessionInboxBroker.getInstance().validateSecret(sessionId, secretKey)) {
                         McpHookServerUtil.sendJson(ex, 200, McpHookServerUtil.mcpError(id, -32600,
-                                "Authentication failed: no session matches that "
-                                + McpToolPropertyEnum.SESSION_ID.key() + "/"
-                                + McpToolPropertyEnum.SECRET_KEY.key()
-                                + " pair. Re-read your session identity block and copy both values exactly, character for character."));
+                                                                                       "Authentication failed: no session matches that "
+                                                                                       + McpToolPropertyEnum.SESSION_ID.key() + "/"
+                                                                                       + McpToolPropertyEnum.SECRET_KEY.key()
+                                                                                       + " pair. Re-read your session identity block and copy both values exactly, character for character."));
                         return;
                     }
 
@@ -942,20 +933,20 @@ public class McpHookServer {
                     McpToolEnum requestedTool = McpToolEnum.of(requestedName);
                     if (isToolGated(session.getAiSession().isInstructionsLoaded(), requestedTool)) {
                         McpHookServerUtil.sendJson(ex, 200, McpHookServerUtil.mcpTextResult(id,
-                                "BLOCKED: call GetInstructions before using "
-                                + (requestedName != null ? requestedName : "this tool")
-                                + ". It returns the plugin usage guide and unlocks the other tools. "
-                                + "Call GetInstructions now, then retry."));
+                                                                                            "BLOCKED: call GetInstructions before using "
+                                                                                            + (requestedName != null ? requestedName : "this tool")
+                                                                                            + ". It returns the plugin usage guide and unlocks the other tools. "
+                                                                                            + "Call GetInstructions now, then retry."));
                         return;
                     }
 
                     handleMcpToolCall(ex, req, id, session,
-                            RawJsonArgumentScanner.duplicateKeys(body, McpProtocolKeyEnum.PARAMS.key(),
-                                    McpProtocolKeyEnum.ARGUMENTS.key()));
+                                      RawJsonArgumentScanner.duplicateKeys(body, McpProtocolKeyEnum.PARAMS.key(),
+                                                                           McpProtocolKeyEnum.ARGUMENTS.key()));
                 }
                 default ->
                     McpHookServerUtil.sendJson(ex, 200,
-                            McpHookServerUtil.mcpError(id, -32601, "Method not found: " + rpcMethod));
+                                               McpHookServerUtil.mcpError(id, -32601, "Method not found: " + rpcMethod));
             }
         }
         finally {
@@ -976,13 +967,13 @@ public class McpHookServer {
         McpToolEnum tool = McpToolEnum.of(toolName);
         if (tool == null) {
             McpHookServerUtil.sendJson(ex, 200,
-                    McpHookServerUtil.mcpError(id, -32601, "Unknown tool: " + toolName));
+                                       McpHookServerUtil.mcpError(id, -32601, "Unknown tool: " + toolName));
             return;
         }
         McpToolInterface handler = session.getMcpToolHandlers().get(tool);
         if (handler == null) {
             McpHookServerUtil.sendJson(ex, 200,
-                    McpHookServerUtil.mcpError(id, -32601, "Unhandled tool: " + toolName));
+                                       McpHookServerUtil.mcpError(id, -32601, "Unhandled tool: " + toolName));
             return;
         }
         try {
@@ -992,7 +983,7 @@ public class McpHookServer {
         }
         catch (McpArgumentException e) {
             McpHookServerUtil.sendJson(ex, 200,
-                    McpHookServerUtil.mcpError(id, e.getCode(), e.getMessage()));
+                                       McpHookServerUtil.mcpError(id, e.getCode(), e.getMessage()));
         }
         catch (IOException e) {
             throw e;
@@ -1005,7 +996,7 @@ public class McpHookServer {
                 LOG.log(Level.FINE, "Tool failure: " + toolName, e);
             }
             McpHookServerUtil.sendJson(ex, 200,
-                    McpHookServerUtil.mcpError(id, -32603, "Internal error: " + e.getMessage()));
+                                       McpHookServerUtil.mcpError(id, -32603, "Internal error: " + e.getMessage()));
         }
     }
 }

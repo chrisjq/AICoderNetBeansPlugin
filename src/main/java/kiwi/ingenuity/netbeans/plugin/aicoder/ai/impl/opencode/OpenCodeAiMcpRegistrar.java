@@ -4,10 +4,9 @@ import kiwi.ingenuity.netbeans.plugin.aicoder.ai.AiTypeEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.server.AiMcpRegistrar;
 
 /**
- * MCP registrar for OpenCode. Unlike Claude/Grok which configure the AI CLI via
- * settings files or CLI commands, OpenCode receives MCP servers inline in the
- * {@code session/new} ACP request. No external config is written and no CLI is
- * invoked.
+ * MCP registrar for OpenCode. Unlike Claude/Grok which configure the AI CLI via settings files or CLI commands,
+ * OpenCode receives MCP servers inline in the {@code session/new} ACP request. No external config is written and no CLI
+ * is invoked.
  *
  * <p>
  * {@link #addMcpEndpoint} captures the URL that {@code McpServerRegistry}

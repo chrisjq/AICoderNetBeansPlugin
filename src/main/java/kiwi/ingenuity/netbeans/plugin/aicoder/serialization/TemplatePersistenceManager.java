@@ -85,23 +85,23 @@ public final class TemplatePersistenceManager {
     public void save(SpecialInstructionTemplate template) throws IOException {
         synchronized (INSTRUCTION_JVM_LOCK) {
             withLock("instruction-templates.json", () -> {
-                List<SpecialInstructionTemplate> all = load("instruction-templates.json", SpecialInstructionTemplate::fromJson);
-                all.removeIf(t -> t.id().equals(template.id()));
-                all.add(template);
-                persist("instruction-templates.json", all.stream().map(SpecialInstructionTemplate::toJson).toList());
-                return null;
-            });
+                 List<SpecialInstructionTemplate> all = load("instruction-templates.json", SpecialInstructionTemplate::fromJson);
+                 all.removeIf(t -> t.id().equals(template.id()));
+                 all.add(template);
+                 persist("instruction-templates.json", all.stream().map(SpecialInstructionTemplate::toJson).toList());
+                 return null;
+             });
         }
     }
 
     public void deleteSpecialInstructionTemplate(String id) throws IOException {
         synchronized (INSTRUCTION_JVM_LOCK) {
             withLock("instruction-templates.json", () -> {
-                List<SpecialInstructionTemplate> all = load("instruction-templates.json", SpecialInstructionTemplate::fromJson);
-                all.removeIf(t -> t.id().equals(id));
-                persist("instruction-templates.json", all.stream().map(SpecialInstructionTemplate::toJson).toList());
-                return null;
-            });
+                 List<SpecialInstructionTemplate> all = load("instruction-templates.json", SpecialInstructionTemplate::fromJson);
+                 all.removeIf(t -> t.id().equals(id));
+                 persist("instruction-templates.json", all.stream().map(SpecialInstructionTemplate::toJson).toList());
+                 return null;
+             });
         }
     }
 
@@ -226,8 +226,8 @@ public final class TemplatePersistenceManager {
         reviewerPeer.setEnableClipboardAccess(false);
 
         return List.of(ConfigTemplate.create("Coordinator", coordinator),
-                ConfigTemplate.create("CoderPeer", coderPeer),
-                ConfigTemplate.create("ReviewerPeer", reviewerPeer));
+                       ConfigTemplate.create("CoderPeer", coderPeer),
+                       ConfigTemplate.create("ReviewerPeer", reviewerPeer));
     }
 
     private List<SpecialInstructionTemplate> createDefaultSpecialInstructionTemplates() throws IOException {

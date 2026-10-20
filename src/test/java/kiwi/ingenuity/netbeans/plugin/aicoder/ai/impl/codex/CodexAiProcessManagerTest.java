@@ -33,11 +33,11 @@ import org.junit.jupiter.api.Test;
 class CodexAiProcessManagerTest {
 
     /**
-     * Bind the MCP hook server on an ephemeral port instead of the configured one, as every other test that
-     * starts a manager does. Without this the registration in {@code start()} tries to bind the real port,
-     * which a running NetBeans with this plugin installed already holds — the bind fails and start() reports
-     * it with a StatusEvent INFO. The effort-validation tests below count INFO events, so that stray one made
-     * them fail on any developer machine with the IDE open while passing everywhere the IDE was not running.
+     * Bind the MCP hook server on an ephemeral port instead of the configured one, as every other test that starts a
+     * manager does. Without this the registration in {@code start()} tries to bind the real port, which a running
+     * NetBeans with this plugin installed already holds — the bind fails and start() reports it with a StatusEvent
+     * INFO. The effort-validation tests below count INFO events, so that stray one made them fail on any developer
+     * machine with the IDE open while passing everywhere the IDE was not running.
      */
     @BeforeEach
     void useEphemeralMcpPort() {
@@ -70,22 +70,21 @@ class CodexAiProcessManagerTest {
     }
 
     /**
-     * A minimal real {@code sh} process speaking just enough of the handshake to satisfy
-     * {@code spawnAndHandshake}: replies to {@code initialize} (id 1) then {@code thread/start} (id 2), then
-     * exits with {@code exitCode} — simulating a crash immediately after a successful handshake. Ids are
-     * deterministic because each spawn gets a fresh {@code CodexJsonRpcClient} whose id counter always starts
-     * at 1.
+     * A minimal real {@code sh} process speaking just enough of the handshake to satisfy {@code spawnAndHandshake}:
+     * replies to {@code initialize} (id 1) then {@code thread/start} (id 2), then exits with {@code exitCode} —
+     * simulating a crash immediately after a successful handshake. Ids are deterministic because each spawn gets a
+     * fresh {@code CodexJsonRpcClient} whose id counter always starts at 1.
      */
     private static File fakeCodexThatExitsAfterHandshake(int exitCode) throws IOException {
         File script = File.createTempFile("fake-codex-", ".sh");
         script.deleteOnExit();
         String body = "#!/bin/sh\n"
-                      + "read -r _req1\n"
-                      + "printf '{\"jsonrpc\":\"2.0\",\"id\":1,\"result\":{\"userAgent\":\"fake\",\"codexHome\":\"/tmp\"}}\\n'\n"
-                      + "read -r _notif\n"
-                      + "read -r _req2\n"
-                      + "printf '{\"jsonrpc\":\"2.0\",\"id\":2,\"result\":{\"thread\":{\"id\":\"fake-thread-id\"},\"model\":\"fake-model\"}}\\n'\n"
-                      + "exit " + exitCode + "\n";
+                + "read -r _req1\n"
+                + "printf '{\"jsonrpc\":\"2.0\",\"id\":1,\"result\":{\"userAgent\":\"fake\",\"codexHome\":\"/tmp\"}}\\n'\n"
+                + "read -r _notif\n"
+                + "read -r _req2\n"
+                + "printf '{\"jsonrpc\":\"2.0\",\"id\":2,\"result\":{\"thread\":{\"id\":\"fake-thread-id\"},\"model\":\"fake-model\"}}\\n'\n"
+                + "exit " + exitCode + "\n";
         Files.writeString(script.toPath(), body, StandardCharsets.UTF_8);
         script.setExecutable(true);
         return script;
@@ -100,53 +99,51 @@ class CodexAiProcessManagerTest {
     // ActiveTurnNotSteerable) can only arrive as a genuine JSON-RPC error, never a
     // "successful" body. ----
     /**
-     * Handshake identical to {@link #fakeCodexThatExitsAfterHandshake} plus the reasoning-effort
-     * {@code model/list} probe (id 3, answered empty), then answers {@code turn/start} (id 4) so a turn is
-     * genuinely in flight, {@code touch}es {@code markerFile} the instant {@code turn/steer} (id 5) actually
-     * arrives — proving the request was sent, not just that no exception was thrown — then answers it with
-     * {@code steerResponseLine} and sleeps so the connection stays up for the rest of the test instead of
-     * triggering a crash/EXITED event.
+     * Handshake identical to {@link #fakeCodexThatExitsAfterHandshake} plus the reasoning-effort {@code model/list}
+     * probe (id 3, answered empty), then answers {@code turn/start} (id 4) so a turn is genuinely in flight,
+     * {@code touch}es {@code markerFile} the instant {@code turn/steer} (id 5) actually arrives — proving the request
+     * was sent, not just that no exception was thrown — then answers it with {@code steerResponseLine} and sleeps so
+     * the connection stays up for the rest of the test instead of triggering a crash/EXITED event.
      */
     private static File fakeCodexHandshakeTurnThenSteer(File markerFile, String steerResponseLine) throws IOException {
         File script = File.createTempFile("fake-codex-", ".sh");
         script.deleteOnExit();
         String body = "#!/bin/sh\n"
-                      + "read -r _req1\n"
-                      + "printf '{\"jsonrpc\":\"2.0\",\"id\":1,\"result\":{\"userAgent\":\"fake\",\"codexHome\":\"/tmp\"}}\\n'\n"
-                      + "read -r _notif\n"
-                      + "read -r _req2\n"
-                      + "printf '{\"jsonrpc\":\"2.0\",\"id\":2,\"result\":{\"thread\":{\"id\":\"fake-thread-id\"},\"model\":\"fake-model\"}}\\n'\n"
-                      + "read -r _req3\n"
-                      + "printf '{\"jsonrpc\":\"2.0\",\"id\":3,\"result\":{\"data\":[]}}\\n'\n"
-                      + "read -r _req4\n"
-                      + "printf '{\"jsonrpc\":\"2.0\",\"id\":4,\"result\":{\"turn\":{\"id\":\"fake-turn-id\",\"items\":[],\"status\":\"inProgress\"}}}\\n'\n"
-                      + "read -r _req5\n"
-                      + "touch '" + markerFile.getAbsolutePath() + "'\n"
-                      + "printf '" + steerResponseLine + "\\n'\n"
-                      + "sleep 5\n";
+                + "read -r _req1\n"
+                + "printf '{\"jsonrpc\":\"2.0\",\"id\":1,\"result\":{\"userAgent\":\"fake\",\"codexHome\":\"/tmp\"}}\\n'\n"
+                + "read -r _notif\n"
+                + "read -r _req2\n"
+                + "printf '{\"jsonrpc\":\"2.0\",\"id\":2,\"result\":{\"thread\":{\"id\":\"fake-thread-id\"},\"model\":\"fake-model\"}}\\n'\n"
+                + "read -r _req3\n"
+                + "printf '{\"jsonrpc\":\"2.0\",\"id\":3,\"result\":{\"data\":[]}}\\n'\n"
+                + "read -r _req4\n"
+                + "printf '{\"jsonrpc\":\"2.0\",\"id\":4,\"result\":{\"turn\":{\"id\":\"fake-turn-id\",\"items\":[],\"status\":\"inProgress\"}}}\\n'\n"
+                + "read -r _req5\n"
+                + "touch '" + markerFile.getAbsolutePath() + "'\n"
+                + "printf '" + steerResponseLine + "\\n'\n"
+                + "sleep 5\n";
         Files.writeString(script.toPath(), body, StandardCharsets.UTF_8);
         script.setExecutable(true);
         return script;
     }
 
     /**
-     * Handshake identical to {@link #fakeCodexThatExitsAfterHandshake} plus the reasoning-effort
-     * {@code model/list} probe (id 3, answered empty), but sleeps afterward instead of exiting — a real,
-     * connected, idle (never-processing) session with no turn started, for testing the Mail-while-idle no-op
-     * path.
+     * Handshake identical to {@link #fakeCodexThatExitsAfterHandshake} plus the reasoning-effort {@code model/list}
+     * probe (id 3, answered empty), but sleeps afterward instead of exiting — a real, connected, idle
+     * (never-processing) session with no turn started, for testing the Mail-while-idle no-op path.
      */
     private static File fakeCodexHandshakeThenSleep() throws IOException {
         File script = File.createTempFile("fake-codex-", ".sh");
         script.deleteOnExit();
         String body = "#!/bin/sh\n"
-                      + "read -r _req1\n"
-                      + "printf '{\"jsonrpc\":\"2.0\",\"id\":1,\"result\":{\"userAgent\":\"fake\",\"codexHome\":\"/tmp\"}}\\n'\n"
-                      + "read -r _notif\n"
-                      + "read -r _req2\n"
-                      + "printf '{\"jsonrpc\":\"2.0\",\"id\":2,\"result\":{\"thread\":{\"id\":\"fake-thread-id\"},\"model\":\"fake-model\"}}\\n'\n"
-                      + "read -r _req3\n"
-                      + "printf '{\"jsonrpc\":\"2.0\",\"id\":3,\"result\":{\"data\":[]}}\\n'\n"
-                      + "sleep 5\n";
+                + "read -r _req1\n"
+                + "printf '{\"jsonrpc\":\"2.0\",\"id\":1,\"result\":{\"userAgent\":\"fake\",\"codexHome\":\"/tmp\"}}\\n'\n"
+                + "read -r _notif\n"
+                + "read -r _req2\n"
+                + "printf '{\"jsonrpc\":\"2.0\",\"id\":2,\"result\":{\"thread\":{\"id\":\"fake-thread-id\"},\"model\":\"fake-model\"}}\\n'\n"
+                + "read -r _req3\n"
+                + "printf '{\"jsonrpc\":\"2.0\",\"id\":3,\"result\":{\"data\":[]}}\\n'\n"
+                + "sleep 5\n";
         Files.writeString(script.toPath(), body, StandardCharsets.UTF_8);
         script.setExecutable(true);
         return script;
@@ -154,7 +151,7 @@ class CodexAiProcessManagerTest {
 
     private static boolean noStoppedOrFailedEvent(List<AiProcessEvent> events) {
         return events.stream().noneMatch(e -> e instanceof StatusEvent se
-                                              && (se.type() == StatusEventTypeEnum.STOPPED || se.type() == StatusEventTypeEnum.FAILED));
+                && (se.type() == StatusEventTypeEnum.STOPPED || se.type() == StatusEventTypeEnum.FAILED));
     }
 
     // ---- buildInitializeParams: shape confirmed by live probe against codex-cli 0.147.0 ----
@@ -335,7 +332,7 @@ class CodexAiProcessManagerTest {
         JsonObject result = json(
                 "{\"data\":[{\"id\":\"gpt-5.6-terra\",\"b\":1},{\"model\":\"mini\"}]}");
         assertEquals("gpt-5.6-terra",
-                CodexAiProcessManager.findModelObject(result, "gpt-5.6-terra").get("id").getAsString());
+                     CodexAiProcessManager.findModelObject(result, "gpt-5.6-terra").get("id").getAsString());
         assertNotNull(CodexAiProcessManager.findModelObject(result, "mini"));
         assertNull(CodexAiProcessManager.findModelObject(result, "nope"));
         assertNull(CodexAiProcessManager.findModelObject(json("{\"data\":\"oops\"}"), "mini"));
@@ -349,17 +346,17 @@ class CodexAiProcessManagerTest {
                 + "{\"id\":\"gpt-5.6-terra\"},"
                 + "{\"id\":\"another\",\"model\":{\"unexpected\":\"object\"}}]}");
         assertNotNull(CodexAiProcessManager.findModelObject(result, "gpt-5.6-terra"),
-                "an object-valued id must be skipped rather than throwing, and must not shadow a later valid entry");
+                      "an object-valued id must be skipped rather than throwing, and must not shadow a later valid entry");
         assertNull(CodexAiProcessManager.findModelObject(result, "ghost"),
-                "an object-valued deprecated model key must be skipped rather than throwing");
+                   "an object-valued deprecated model key must be skipped rather than throwing");
         assertNull(CodexAiProcessManager.findModelObject(result, "no-such-model"));
     }
 
     @Test
     void extractSupportedReasoningEffortsReadsAndDedupes() {
         JsonObject m = json("{\"supportedReasoningEfforts\":["
-                            + "{\"reasoningEffort\":\"high\",\"description\":\"thorough\"},"
-                            + "{\"reasoningEffort\":\"high\"},{\"reasoningEffort\":\"low\"}]}");
+                + "{\"reasoningEffort\":\"high\",\"description\":\"thorough\"},"
+                + "{\"reasoningEffort\":\"high\"},{\"reasoningEffort\":\"low\"}]}");
         assertEquals(List.of("high", "low"), CodexAiProcessManager.extractSupportedReasoningEfforts(m));
         assertTrue(CodexAiProcessManager.extractSupportedReasoningEfforts(json("{}")).isEmpty());
         assertTrue(CodexAiProcessManager.extractSupportedReasoningEfforts(json("{\"supportedReasoningEfforts\":\"oops\"}")).isEmpty());
@@ -368,7 +365,7 @@ class CodexAiProcessManagerTest {
     @Test
     void extractDefaultReasoningEffortReadsModelDefault() {
         assertEquals("high",
-                CodexAiProcessManager.extractDefaultReasoningEffort(json("{\"defaultReasoningEffort\":\"high\"}")));
+                     CodexAiProcessManager.extractDefaultReasoningEffort(json("{\"defaultReasoningEffort\":\"high\"}")));
         assertNull(CodexAiProcessManager.extractDefaultReasoningEffort(json("{}")));
         assertNull(CodexAiProcessManager.extractDefaultReasoningEffort(null));
     }
@@ -443,7 +440,7 @@ class CodexAiProcessManagerTest {
         assertDoesNotThrow(() -> manager.sendPrompt("hello", new File(System.getProperty("java.io.tmpdir")), List.of()));
         assertEquals(2, events.size(), "a refusal is exactly INFO then TurnComplete: " + events);
         assertTrue(events.get(0) instanceof StatusEvent info && info.type() == StatusEventTypeEnum.INFO
-                   && !info.text().isBlank(), "first the INFO carrying the reason: " + events.get(0));
+                && !info.text().isBlank(), "first the INFO carrying the reason: " + events.get(0));
         assertTrue(events.get(1) instanceof TurnCompleteEvent, "then the TurnCompleteEvent closing the UI's turn");
         assertFalse(manager.isProcessing());
     }
@@ -495,7 +492,7 @@ class CodexAiProcessManagerTest {
         File marker = File.createTempFile("codex-steer-marker-", "");
         assertTrue(marker.delete());
         File script = fakeCodexHandshakeTurnThenSteer(marker,
-                "{\"jsonrpc\":\"2.0\",\"id\":5,\"result\":{\"turnId\":\"fake-turn-id\"}}");
+                                                      "{\"jsonrpc\":\"2.0\",\"id\":5,\"result\":{\"turnId\":\"fake-turn-id\"}}");
         CopyOnWriteArrayList<AiProcessEvent> events = new CopyOnWriteArrayList<>();
         CodexAiProcessManager manager = new CodexAiProcessManager(events::add);
         manager.setCurrentSession(newSession("s1", new CodexSessionSettings()));
@@ -526,7 +523,7 @@ class CodexAiProcessManagerTest {
         // CodexJsonRpcClient does not parse `error.data` at all, so every refusal
         // reason is handled identically here.
         File script = fakeCodexHandshakeTurnThenSteer(marker,
-                "{\"jsonrpc\":\"2.0\",\"id\":5,\"error\":{\"code\":-32000,\"message\":\"active turn not steerable\"}}");
+                                                      "{\"jsonrpc\":\"2.0\",\"id\":5,\"error\":{\"code\":-32000,\"message\":\"active turn not steerable\"}}");
         CopyOnWriteArrayList<AiProcessEvent> events = new CopyOnWriteArrayList<>();
         CodexAiProcessManager manager = new CodexAiProcessManager(events::add);
         manager.setCurrentSession(newSession("s1", new CodexSessionSettings()));
@@ -541,7 +538,7 @@ class CodexAiProcessManagerTest {
         awaitTrue(marker::exists, "turn/steer was attempted despite the eventual refusal");
         Thread.sleep(100);
         assertTrue(noStoppedOrFailedEvent(events),
-                "a refused steer must not cancel or fail the turn — the message is left for the normal inbox flush");
+                   "a refused steer must not cancel or fail the turn — the message is left for the normal inbox flush");
         assertTrue(manager.isProcessing(), "a refused steer must leave the turn running, never escalate to Cancel");
 
         manager.stop();
@@ -562,7 +559,7 @@ class CodexAiProcessManagerTest {
         manager.interrupt(InterruptTypeEnum.Cancel);
 
         awaitTrue(() -> events.stream().anyMatch(e -> e instanceof StatusEvent se && se.type() == StatusEventTypeEnum.STOPPED),
-                "Cancel must still fire STOPPED exactly as before this change");
+                  "Cancel must still fire STOPPED exactly as before this change");
         assertFalse(manager.isProcessing(), "Cancel must still clear processing immediately, unlike Mail");
 
         manager.stop();
@@ -622,7 +619,7 @@ class CodexAiProcessManagerTest {
 
         assertNull(settings.effort(), "no capability info means a stored effort cannot be honoured");
         assertEquals(1, events.stream()
-                .filter(e -> e instanceof StatusEvent se && se.type() == StatusEventTypeEnum.INFO).count());
+                     .filter(e -> e instanceof StatusEvent se && se.type() == StatusEventTypeEnum.INFO).count());
     }
 
     @Test
@@ -657,14 +654,14 @@ class CodexAiProcessManagerTest {
         File script = File.createTempFile("fake-codex-reasoning-", ".sh");
         script.deleteOnExit();
         String body = "#!/bin/sh\n"
-                      + "read -r _req1\n"
-                      + "printf '{\"jsonrpc\":\"2.0\",\"id\":1,\"result\":{\"userAgent\":\"fake\",\"codexHome\":\"/tmp\"}}\\n'\n"
-                      + "read -r _notif\n"
-                      + "read -r _req2\n"
-                      + "printf '{\"jsonrpc\":\"2.0\",\"id\":2,\"result\":{\"thread\":{\"id\":\"fake-thread-id\"},\"model\":\"fake-model\",\"reasoningEffort\":\"medium\"}}\\n'\n"
-                      + "read -r _req3\n"
-                      + "printf '{\"jsonrpc\":\"2.0\",\"id\":3,\"result\":{\"data\":[{\"id\":\"fake-model\",\"supportedReasoningEfforts\":[{\"reasoningEffort\":\"high\"},{\"reasoningEffort\":\"low\"}],\"defaultReasoningEffort\":\"high\"}]}}\\n'\n"
-                      + "sleep 5\n";
+                + "read -r _req1\n"
+                + "printf '{\"jsonrpc\":\"2.0\",\"id\":1,\"result\":{\"userAgent\":\"fake\",\"codexHome\":\"/tmp\"}}\\n'\n"
+                + "read -r _notif\n"
+                + "read -r _req2\n"
+                + "printf '{\"jsonrpc\":\"2.0\",\"id\":2,\"result\":{\"thread\":{\"id\":\"fake-thread-id\"},\"model\":\"fake-model\",\"reasoningEffort\":\"medium\"}}\\n'\n"
+                + "read -r _req3\n"
+                + "printf '{\"jsonrpc\":\"2.0\",\"id\":3,\"result\":{\"data\":[{\"id\":\"fake-model\",\"supportedReasoningEfforts\":[{\"reasoningEffort\":\"high\"},{\"reasoningEffort\":\"low\"}],\"defaultReasoningEffort\":\"high\"}]}}\\n'\n"
+                + "sleep 5\n";
         Files.writeString(script.toPath(), body, StandardCharsets.UTF_8);
         script.setExecutable(true);
 
@@ -676,7 +673,7 @@ class CodexAiProcessManagerTest {
             manager.spawnAndHandshake(new File(System.getProperty("java.io.tmpdir")));
 
             awaitTrue(() -> events.stream().anyMatch(e -> e instanceof CodexReasoningEffortEvent),
-                    "reasoning-effort event after handshake");
+                      "reasoning-effort event after handshake");
             CodexReasoningEffortEvent ev = (CodexReasoningEffortEvent) events.stream()
                     .filter(e -> e instanceof CodexReasoningEffortEvent)
                     .findFirst().orElseThrow();
@@ -687,7 +684,7 @@ class CodexAiProcessManagerTest {
 
             assertEquals(List.of("high", "low"), CodexReasoningEffortCatalog.supportedEffortsFor("fake-model"));
             assertTrue(events.stream().noneMatch(e -> e instanceof StatusEvent se
-                                                      && se.type() == StatusEventTypeEnum.INFO), "unset stored effort must not fire validation INFO");
+                    && se.type() == StatusEventTypeEnum.INFO), "unset stored effort must not fire validation INFO");
         }
         finally {
             CodexReasoningEffortCatalog.clear();
@@ -703,14 +700,14 @@ class CodexAiProcessManagerTest {
         File script = File.createTempFile("fake-codex-clear-persist-", ".sh");
         script.deleteOnExit();
         String body = "#!/bin/sh\n"
-                      + "read -r _req1\n"
-                      + "printf '{\"jsonrpc\":\"2.0\",\"id\":1,\"result\":{\"userAgent\":\"fake\",\"codexHome\":\"/tmp\"}}\\n'\n"
-                      + "read -r _notif\n"
-                      + "read -r _req2\n"
-                      + "printf '{\"jsonrpc\":\"2.0\",\"id\":2,\"result\":{\"thread\":{\"id\":\"fake-thread-id\"},\"model\":\"fake-model\"}}\\n'\n"
-                      + "read -r _req3\n"
-                      + "printf '{\"jsonrpc\":\"2.0\",\"id\":3,\"result\":{\"data\":[]}}\\n'\n"
-                      + "sleep 5\n";
+                + "read -r _req1\n"
+                + "printf '{\"jsonrpc\":\"2.0\",\"id\":1,\"result\":{\"userAgent\":\"fake\",\"codexHome\":\"/tmp\"}}\\n'\n"
+                + "read -r _notif\n"
+                + "read -r _req2\n"
+                + "printf '{\"jsonrpc\":\"2.0\",\"id\":2,\"result\":{\"thread\":{\"id\":\"fake-thread-id\"},\"model\":\"fake-model\"}}\\n'\n"
+                + "read -r _req3\n"
+                + "printf '{\"jsonrpc\":\"2.0\",\"id\":3,\"result\":{\"data\":[]}}\\n'\n"
+                + "sleep 5\n";
         Files.writeString(script.toPath(), body, StandardCharsets.UTF_8);
         script.setExecutable(true);
 
@@ -726,11 +723,11 @@ class CodexAiProcessManagerTest {
             manager.spawnAndHandshake(new File(System.getProperty("java.io.tmpdir")));
 
             awaitTrue(() -> !persistedEffort.isEmpty(),
-                    "session-established callback ran after the handshake");
+                      "session-established callback ran after the handshake");
             assertNull(persistedEffort.get(0),
-                    "the session-established callback (host.updateSessionSettings) must observe the "
-                    + "CLEARED effort — otherwise the clear is lost on restart and the INFO repeats "
-                    + "every session");
+                       "the session-established callback (host.updateSessionSettings) must observe the "
+                       + "CLEARED effort — otherwise the clear is lost on restart and the INFO repeats "
+                       + "every session");
             assertNull(settings.effort(), "stored effort must be cleared in the live settings");
         }
         finally {
@@ -748,14 +745,14 @@ class CodexAiProcessManagerTest {
         File script = File.createTempFile("fake-codex-two-handshake-", ".sh");
         script.deleteOnExit();
         String body = "#!/bin/sh\n"
-                      + "read -r _req1\n"
-                      + "printf '{\"jsonrpc\":\"2.0\",\"id\":1,\"result\":{\"userAgent\":\"fake\",\"codexHome\":\"/tmp\"}}\\n'\n"
-                      + "read -r _notif\n"
-                      + "read -r _req2\n"
-                      + "printf '{\"jsonrpc\":\"2.0\",\"id\":2,\"result\":{\"thread\":{\"id\":\"fake-thread-id\"},\"model\":\"fake-model\"}}\\n'\n"
-                      + "read -r _req3\n"
-                      + "printf '{\"jsonrpc\":\"2.0\",\"id\":3,\"result\":{\"data\":[]}}\\n'\n"
-                      + "sleep 5\n";
+                + "read -r _req1\n"
+                + "printf '{\"jsonrpc\":\"2.0\",\"id\":1,\"result\":{\"userAgent\":\"fake\",\"codexHome\":\"/tmp\"}}\\n'\n"
+                + "read -r _notif\n"
+                + "read -r _req2\n"
+                + "printf '{\"jsonrpc\":\"2.0\",\"id\":2,\"result\":{\"thread\":{\"id\":\"fake-thread-id\"},\"model\":\"fake-model\"}}\\n'\n"
+                + "read -r _req3\n"
+                + "printf '{\"jsonrpc\":\"2.0\",\"id\":3,\"result\":{\"data\":[]}}\\n'\n"
+                + "sleep 5\n";
         Files.writeString(script.toPath(), body, StandardCharsets.UTF_8);
         script.setExecutable(true);
 
@@ -770,11 +767,11 @@ class CodexAiProcessManagerTest {
             manager.spawnAndHandshake(new File(System.getProperty("java.io.tmpdir")));
 
             awaitTrue(() -> events.stream().filter(e -> e instanceof CodexReasoningEffortEvent).count() == 2,
-                    "both handshakes' reasoning-effort probes");
+                      "both handshakes' reasoning-effort probes");
             assertEquals(1, events.stream()
-                    .filter(e -> e instanceof StatusEvent se && se.type() == StatusEventTypeEnum.INFO).count(),
-                    "exactly one INFO across two back-to-back handshakes — the clear is read-and-done "
-                    + "synchronously, so the second handshake sees effort already null");
+                         .filter(e -> e instanceof StatusEvent se && se.type() == StatusEventTypeEnum.INFO).count(),
+                         "exactly one INFO across two back-to-back handshakes — the clear is read-and-done "
+                         + "synchronously, so the second handshake sees effort already null");
             assertNull(settings.effort(), "the stored effort stays cleared across both handshakes");
         }
         finally {
@@ -791,17 +788,17 @@ class CodexAiProcessManagerTest {
         File script = File.createTempFile("fake-codex-effort-delivery-", ".sh");
         script.deleteOnExit();
         String body = "#!/bin/sh\n"
-                      + "read -r _req1\n"
-                      + "printf '{\"jsonrpc\":\"2.0\",\"id\":1,\"result\":{\"userAgent\":\"fake\",\"codexHome\":\"/tmp\"}}\\n'\n"
-                      + "read -r _notif\n"
-                      + "read -r _req2\n"
-                      + "printf '{\"jsonrpc\":\"2.0\",\"id\":2,\"result\":{\"thread\":{\"id\":\"fake-thread-id\"},\"model\":\"fake-model\"}}\\n'\n"
-                      + "read -r _req3\n"
-                      + "printf '{\"jsonrpc\":\"2.0\",\"id\":3,\"result\":{\"data\":[{\"id\":\"fake-model\",\"supportedReasoningEfforts\":[{\"reasoningEffort\":\"high\"},{\"reasoningEffort\":\"low\"}],\"defaultReasoningEffort\":\"high\"}]}}\\n'\n"
-                      + "read -r _req4\n"
-                      + "printf '%s\\n' \"$_req4\" >> '" + marker.getAbsolutePath() + "'\n"
-                      + "printf '{\"jsonrpc\":\"2.0\",\"id\":4,\"result\":{\"turn\":{\"id\":\"fake-turn-id\",\"items\":[],\"status\":\"inProgress\"}}}\\n'\n"
-                      + "sleep 5\n";
+                + "read -r _req1\n"
+                + "printf '{\"jsonrpc\":\"2.0\",\"id\":1,\"result\":{\"userAgent\":\"fake\",\"codexHome\":\"/tmp\"}}\\n'\n"
+                + "read -r _notif\n"
+                + "read -r _req2\n"
+                + "printf '{\"jsonrpc\":\"2.0\",\"id\":2,\"result\":{\"thread\":{\"id\":\"fake-thread-id\"},\"model\":\"fake-model\"}}\\n'\n"
+                + "read -r _req3\n"
+                + "printf '{\"jsonrpc\":\"2.0\",\"id\":3,\"result\":{\"data\":[{\"id\":\"fake-model\",\"supportedReasoningEfforts\":[{\"reasoningEffort\":\"high\"},{\"reasoningEffort\":\"low\"}],\"defaultReasoningEffort\":\"high\"}]}}\\n'\n"
+                + "read -r _req4\n"
+                + "printf '%s\\n' \"$_req4\" >> '" + marker.getAbsolutePath() + "'\n"
+                + "printf '{\"jsonrpc\":\"2.0\",\"id\":4,\"result\":{\"turn\":{\"id\":\"fake-turn-id\",\"items\":[],\"status\":\"inProgress\"}}}\\n'\n"
+                + "sleep 5\n";
         Files.writeString(script.toPath(), body, StandardCharsets.UTF_8);
         script.setExecutable(true);
 
@@ -818,7 +815,7 @@ class CodexAiProcessManagerTest {
             awaitTrue(() -> marker.length() > 0, "real turn/start request captured");
             String request = Files.readString(marker.toPath(), StandardCharsets.UTF_8);
             assertTrue(request.contains("\"effort\":\"high\""),
-                    "the session's stored effort must reach the actual turn/start params, got: " + request);
+                       "the session's stored effort must reach the actual turn/start params, got: " + request);
         }
         finally {
             CodexReasoningEffortCatalog.clear();
@@ -851,16 +848,16 @@ class CodexAiProcessManagerTest {
         assertEquals(6, args.size(), "three -c flag/value pairs");
         assertEquals("-c", args.get(0));
         assertEquals("mcp_servers." + CodexAiProcessManager.MCP_SERVER_NAME + ".url=\"http://127.0.0.1:1234/mcp/codex\"",
-                args.get(1));
+                     args.get(1));
         assertEquals("-c", args.get(2));
         // "approve", not "auto": with "auto" a live run prompted for every tool call,
         // including read-only ones, because these tools carry no annotations for it to
         // decide from. Valid values are auto/prompt/writes/approve.
         assertEquals("mcp_servers." + CodexAiProcessManager.MCP_SERVER_NAME + ".default_tools_approval_mode=\"approve\"",
-                args.get(3));
+                     args.get(3));
         assertEquals("-c", args.get(4));
         assertEquals("mcp_servers." + CodexAiProcessManager.MCP_SERVER_NAME + ".tool_timeout_sec="
-                     + TimeUnit.MILLISECONDS.toSeconds(CodexTimeoutEnum.MCP_TOOL_TIMEOUT_MILLIS.millis()), args.get(5));
+                + TimeUnit.MILLISECONDS.toSeconds(CodexTimeoutEnum.MCP_TOOL_TIMEOUT_MILLIS.millis()), args.get(5));
     }
 
     // ---- extractModel: thread/start echoes the applied model back as a top-level
@@ -908,7 +905,7 @@ class CodexAiProcessManagerTest {
         manager.sendPrompt("hi", new File(System.getProperty("java.io.tmpdir")), List.of());
 
         awaitTrue(() -> events.stream().anyMatch(e -> e instanceof StatusEvent se && se.type() == StatusEventTypeEnum.EXITED),
-                "EXITED status event after the fake process exits nonzero");
+                  "EXITED status event after the fake process exits nonzero");
         StatusEvent exited = (StatusEvent) events.stream()
                 .filter(e -> e instanceof StatusEvent se && se.type() == StatusEventTypeEnum.EXITED)
                 .findFirst().orElseThrow();
@@ -925,12 +922,12 @@ class CodexAiProcessManagerTest {
     }
 
     /**
-     * Codex dying in the instant between answering {@code thread/start} and the handshake publishing its
-     * connection. The exit callback runs first — reports EXITED and clears state while the connection is not
-     * yet published — so the handshake must not then publish a connection to the dead process: that leaked
-     * its executor threads, sent the queued prompt down a dead pipe (a second closing status, FAILED after
-     * EXITED) and made every later prompt reuse the dead connection instead of re-handshaking. The handshake
-     * is held at the publish point so the exit wins every time, not just under load.
+     * Codex dying in the instant between answering {@code thread/start} and the handshake publishing its connection.
+     * The exit callback runs first — reports EXITED and clears state while the connection is not yet published — so the
+     * handshake must not then publish a connection to the dead process: that leaked its executor threads, sent the
+     * queued prompt down a dead pipe (a second closing status, FAILED after EXITED) and made every later prompt reuse
+     * the dead connection instead of re-handshaking. The handshake is held at the publish point so the exit wins every
+     * time, not just under load.
      */
     @Test
     void processExitBeforeHandshakePublishes_deadConnectionIsClosedNotPublished() throws Exception {
@@ -943,7 +940,7 @@ class CodexAiProcessManagerTest {
             manager.sendPrompt("hi", new File(System.getProperty("java.io.tmpdir")), List.of());
             manager.awaitHeld();
             awaitTrue(() -> statusCount(events, StatusEventTypeEnum.EXITED) == 1,
-                    "EXITED from the exit callback while the handshake is held");
+                      "EXITED from the exit callback while the handshake is held");
 
             manager.releaseAndJoinHeld();
 
@@ -952,10 +949,10 @@ class CodexAiProcessManagerTest {
             assertNull(manager.threadId());
             assertFalse(manager.isProcessing(), "the turn must not stay processing");
             assertTrue(manager.clients.get(0).isClosed(),
-                    "the unpublished connection must be closed, or its executor threads leak");
+                       "the unpublished connection must be closed, or its executor threads leak");
             assertEquals(1, statusCount(events, StatusEventTypeEnum.EXITED));
             assertEquals(0, statusCount(events, StatusEventTypeEnum.FAILED),
-                    "EXITED already closed the turn; a FAILED as well would be a second closing status: " + events);
+                         "EXITED already closed the turn; a FAILED as well would be a second closing status: " + events);
         }
         finally {
             manager.release.countDown();
@@ -964,10 +961,9 @@ class CodexAiProcessManagerTest {
     }
 
     /**
-     * Stop pressed while the first prompt's handshake is still running, the process staying alive. STOPPED
-     * closes the turn, so the handshake must not then send the prompt as a turn anyway — it used to, starting
-     * work the user had just stopped. The live connection is still published: the session stays usable for
-     * the next prompt.
+     * Stop pressed while the first prompt's handshake is still running, the process staying alive. STOPPED closes the
+     * turn, so the handshake must not then send the prompt as a turn anyway — it used to, starting work the user had
+     * just stopped. The live connection is still published: the session stays usable for the next prompt.
      */
     @Test
     void stopDuringHandshake_keepsTheConnection_butNeverSendsTheStoppedPrompt() throws Exception {
@@ -996,10 +992,10 @@ class CodexAiProcessManagerTest {
     }
 
     /**
-     * The session was stopped and restarted, and a new prompt is in flight, while the first prompt's
-     * handshake was still running. When that stale handshake finally fails it must report nothing — its turn
-     * ended with the stop — and must not clear the new turn's processing flag, which would let a third prompt
-     * in while the second is still running.
+     * The session was stopped and restarted, and a new prompt is in flight, while the first prompt's handshake was
+     * still running. When that stale handshake finally fails it must report nothing — its turn ended with the stop —
+     * and must not clear the new turn's processing flag, which would let a third prompt in while the second is still
+     * running.
      */
     @Test
     void staleHandshakeAfterRestart_reportsNothing_andLeavesTheNewTurnProcessing() throws Exception {
@@ -1023,7 +1019,7 @@ class CodexAiProcessManagerTest {
             manager.releaseAndJoinHeld();
 
             assertEquals(0, statusCount(events, StatusEventTypeEnum.FAILED),
-                    "the first turn ended with the stop; a FAILED now would close the second turn: " + events);
+                         "the first turn ended with the stop; a FAILED now would close the second turn: " + events);
             assertTrue(manager.isProcessing(), "the stale handshake must not clear the second turn's processing");
             assertTrue(manager.clients.get(0).isClosed(), "the stale connection must be closed");
             assertSame(manager.clients.get(1), manager.client(), "the second prompt's connection stays published");
@@ -1035,11 +1031,10 @@ class CodexAiProcessManagerTest {
     }
 
     /**
-     * Codex's output ends after it answers {@code thread/start}, before the handshake publishes, while the
-     * process itself stays alive — so there is no exit to report anything. The handshake must not publish a
-     * connection nothing can ever be read from: a turn sent on it never gets a response, leaving the session
-     * processing forever with no closing status. It must close the connection, kill and detach from the
-     * process, and report exactly one FAILED.
+     * Codex's output ends after it answers {@code thread/start}, before the handshake publishes, while the process
+     * itself stays alive — so there is no exit to report anything. The handshake must not publish a connection nothing
+     * can ever be read from: a turn sent on it never gets a response, leaving the session processing forever with no
+     * closing status. It must close the connection, kill and detach from the process, and report exactly one FAILED.
      */
     @Test
     void outputEndsBeforeHandshakePublishes_processAlive_failsOnceAndPublishesNothing() throws Exception {
@@ -1069,33 +1064,32 @@ class CodexAiProcessManagerTest {
     }
 
     /**
-     * Answers the handshake like {@link #fakeCodexThatExitsAfterHandshake}, then closes its stdout but keeps
-     * running — Codex's output ends with no process exit to report it.
+     * Answers the handshake like {@link #fakeCodexThatExitsAfterHandshake}, then closes its stdout but keeps running —
+     * Codex's output ends with no process exit to report it.
      */
     private static File fakeCodexThatClosesOutputAfterHandshake() throws IOException {
         File script = File.createTempFile("fake-codex-", ".sh");
         script.deleteOnExit();
         String body = "#!/bin/sh\n"
-                      + "read -r _req1\n"
-                      + "printf '{\"jsonrpc\":\"2.0\",\"id\":1,\"result\":{\"userAgent\":\"fake\",\"codexHome\":\"/tmp\"}}\\n'\n"
-                      + "read -r _notif\n"
-                      + "read -r _req2\n"
-                      + "printf '{\"jsonrpc\":\"2.0\",\"id\":2,\"result\":{\"thread\":{\"id\":\"fake-thread-id\"},\"model\":\"fake-model\"}}\\n'\n"
-                      + "exec 1>&-\n"
-                      // Long enough to outlast the test: an early exit would clean up after a wrongly published
-                      // connection and let the test pass without the fix.
-                      + "sleep 60\n";
+                + "read -r _req1\n"
+                + "printf '{\"jsonrpc\":\"2.0\",\"id\":1,\"result\":{\"userAgent\":\"fake\",\"codexHome\":\"/tmp\"}}\\n'\n"
+                + "read -r _notif\n"
+                + "read -r _req2\n"
+                + "printf '{\"jsonrpc\":\"2.0\",\"id\":2,\"result\":{\"thread\":{\"id\":\"fake-thread-id\"},\"model\":\"fake-model\"}}\\n'\n"
+                + "exec 1>&-\n"
+                // Long enough to outlast the test: an early exit would clean up after a wrongly published
+                // connection and let the test pass without the fix.
+                + "sleep 60\n";
         Files.writeString(script.toPath(), body, StandardCharsets.UTF_8);
         script.setExecutable(true);
         return script;
     }
 
     /**
-     * Codex crashes right after answering, and the handshake reaches its publish point after the process is
-     * dead and its output ended but before the process's exit callback has run. That is a crash, not a hang:
-     * it must be reported once as EXITED, with the exit code, not as a FAILED "stopped responding" that hides
-     * the exit and leaves its later callback stale. The exit callback is held back so this ordering happens
-     * every run.
+     * Codex crashes right after answering, and the handshake reaches its publish point after the process is dead and
+     * its output ended but before the process's exit callback has run. That is a crash, not a hang: it must be reported
+     * once as EXITED, with the exit code, not as a FAILED "stopped responding" that hides the exit and leaves its later
+     * callback stale. The exit callback is held back so this ordering happens every run.
      */
     @Test
     void crashSeenByTheHandshakeBeforeItsExitCallback_isReportedOnceAsExited() throws Exception {
@@ -1109,15 +1103,15 @@ class CodexAiProcessManagerTest {
             manager.sendPrompt("hi", new File(System.getProperty("java.io.tmpdir")), List.of());
             manager.awaitHeld();
             awaitTrue(() -> manager.clients.get(0).isStreamEnded()
-                            && manager.process() != null && !manager.process().isAlive(),
-                    "the process to have died, its exit not yet handled");
+                    && manager.process() != null && !manager.process().isAlive(),
+                      "the process to have died, its exit not yet handled");
 
             manager.releaseAndJoinHeld();
 
             assertEquals(1, statusCount(events, StatusEventTypeEnum.EXITED), "the crash is reported: " + events);
             assertTrue(events.stream().anyMatch(e -> e instanceof StatusEvent se
-                                                     && se.type() == StatusEventTypeEnum.EXITED && se.text().contains("7")),
-                    "with its exit code: " + events);
+                    && se.type() == StatusEventTypeEnum.EXITED && se.text().contains("7")),
+                       "with its exit code: " + events);
             assertEquals(0, statusCount(events, StatusEventTypeEnum.FAILED), "and only once: " + events);
             assertNull(manager.client(), "no connection to the dead process is published");
             assertTrue(manager.clients.get(0).isClosed(), "and its connection is closed");
@@ -1131,8 +1125,8 @@ class CodexAiProcessManagerTest {
     }
 
     /**
-     * Holds the FIRST handshake at the publish point until released, so a test can make an exit, a Stop or a
-     * restart happen in exactly that window; later handshakes run straight through.
+     * Holds the FIRST handshake at the publish point until released, so a test can make an exit, a Stop or a restart
+     * happen in exactly that window; later handshakes run straight through.
      */
     private static final class HeldHandshakeManager extends CodexAiProcessManager {
 
@@ -1161,8 +1155,8 @@ class CodexAiProcessManagerTest {
         }
 
         /**
-         * When set, the process's own onExit callback waits for it, so a test can have the handshake see a
-         * crash before that callback has handled it. Calls made from a handshake thread are never held.
+         * When set, the process's own onExit callback waits for it, so a test can have the handshake see a crash before
+         * that callback has handled it. Calls made from a handshake thread are never held.
          */
         volatile CountDownLatch exitCallbackGate;
 

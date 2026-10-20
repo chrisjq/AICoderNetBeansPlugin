@@ -20,10 +20,10 @@ import kiwi.ingenuity.netbeans.plugin.aicoder.Installer;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.pi.PiTimeoutEnum;
 
 /**
- * Renders {@code aicoder-pi-extension.ts.template} into one session's extension file, replacing a single
- * placeholder with a generated {@code const AICODER_CONFIG = <json>;} block written with Gson so every value
- * is safely escaped. No {@code secretKey} is ever written here; credentials travel as MCP tool arguments from
- * the per-turn identity block, exactly as for the other backends.
+ * Renders {@code aicoder-pi-extension.ts.template} into one session's extension file, replacing a single placeholder
+ * with a generated {@code const AICODER_CONFIG = <json>;} block written with Gson so every value is safely escaped. No
+ * {@code secretKey} is ever written here; credentials travel as MCP tool arguments from the per-turn identity block,
+ * exactly as for the other backends.
  */
 public final class PiExtensionGenerator {
 
@@ -33,8 +33,8 @@ public final class PiExtensionGenerator {
             = "/kiwi/ingenuity/netbeans/plugin/aicoder/ai/impl/pi/aicoder-pi-extension.ts.template";
 
     /**
-     * Must appear in the template exactly once; replaced with the generated
-     * {@code const AICODER_CONFIG = ...;} statement.
+     * Must appear in the template exactly once; replaced with the generated {@code const AICODER_CONFIG = ...;}
+     * statement.
      */
     static final String CONFIG_PLACEHOLDER = "/*__AICODER_CONFIG__*/";
 
@@ -57,8 +57,8 @@ public final class PiExtensionGenerator {
     }
 
     /**
-     * Package-private so {@code PiExtensionGeneratorTest} can assert on the exact field set/escaping without
-     * writing a file.
+     * Package-private so {@code PiExtensionGeneratorTest} can assert on the exact field set/escaping without writing a
+     * file.
      */
     static JsonObject buildConfig(String sessionId, String mcpUrl, String hookUrl) {
         JsonObject config = new JsonObject();
@@ -107,10 +107,12 @@ public final class PiExtensionGenerator {
             trySetOwnerOnlyPermissions(tmp);
             try {
                 Files.move(tmp, target, StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE);
-            } catch (AtomicMoveNotSupportedException e) {
+            }
+            catch (AtomicMoveNotSupportedException e) {
                 Files.move(tmp, target, StandardCopyOption.REPLACE_EXISTING);
             }
-        } catch (IOException e) {
+        }
+        catch (IOException e) {
             Files.deleteIfExists(tmp);
             throw e;
         }
@@ -122,7 +124,8 @@ public final class PiExtensionGenerator {
                 Set<PosixFilePermission> perms = EnumSet.of(PosixFilePermission.OWNER_READ, PosixFilePermission.OWNER_WRITE);
                 Files.setPosixFilePermissions(path, perms);
             }
-        } catch (IOException e) {
+        }
+        catch (IOException e) {
             LOG.log(Level.FINE, "Could not restrict pi extension file permissions", e);
         }
     }

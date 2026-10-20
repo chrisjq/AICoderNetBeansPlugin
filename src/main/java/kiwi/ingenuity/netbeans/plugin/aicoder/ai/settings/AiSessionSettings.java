@@ -50,24 +50,24 @@ public class AiSessionSettings {
     }
 
     public AiSessionSettings(Integer maxHistory, Boolean restrictToProjectFiles,
-            Boolean allowInterAiComms, Boolean autoNotifyInbox,
-            Boolean allowImportantMessages, String sessionInstructions,
-            Boolean autoAccept, Boolean allowWebRequests) {
+                             Boolean allowInterAiComms, Boolean autoNotifyInbox,
+                             Boolean allowImportantMessages, String sessionInstructions,
+                             Boolean autoAccept, Boolean allowWebRequests) {
         this(maxHistory, restrictToProjectFiles, allowInterAiComms, autoNotifyInbox,
-                allowImportantMessages, sessionInstructions, autoAccept,
-                allowWebRequests, null, null, null, null, null, null, null, null,
-                null);
+             allowImportantMessages, sessionInstructions, autoAccept,
+             allowWebRequests, null, null, null, null, null, null, null, null,
+             null);
     }
 
     public AiSessionSettings(Integer maxHistory, Boolean restrictToProjectFiles,
-            Boolean allowInterAiComms, Boolean autoNotifyInbox,
-            Boolean allowImportantMessages, String sessionInstructions,
-            Boolean autoAccept, Boolean allowWebRequests,
-            Boolean allowWebRequestGet, Boolean allowWebRequestPost,
-            Boolean allowWebRequestPut, Boolean allowWebRequestPatch,
-            Boolean allowWebRequestDelete, Boolean allowWebRequestHead,
-            Boolean allowWebRequestOptions, Boolean allowWebRequestHeaders,
-            Boolean allowWebRequestBody) {
+                             Boolean allowInterAiComms, Boolean autoNotifyInbox,
+                             Boolean allowImportantMessages, String sessionInstructions,
+                             Boolean autoAccept, Boolean allowWebRequests,
+                             Boolean allowWebRequestGet, Boolean allowWebRequestPost,
+                             Boolean allowWebRequestPut, Boolean allowWebRequestPatch,
+                             Boolean allowWebRequestDelete, Boolean allowWebRequestHead,
+                             Boolean allowWebRequestOptions, Boolean allowWebRequestHeaders,
+                             Boolean allowWebRequestBody) {
         this.maxHistory = maxHistory;
         this.restrictToProjectFiles = restrictToProjectFiles;
         this.allowInterAiComms = allowInterAiComms;
@@ -446,8 +446,7 @@ public class AiSessionSettings {
     }
 
     /**
-     * Populates a JSON object with this settings' configuration. Only non-null values are added to the JSON
-     * object.
+     * Populates a JSON object with this settings' configuration. Only non-null values are added to the JSON object.
      */
     public void populateJsonObject(JsonObject cfgObj) {
         if (maxHistory != null) {

@@ -33,23 +33,22 @@ public class ContextProvider {
     private static final Logger LOG = Logger.getLogger(ContextProvider.class.getName());
 
     /**
-     * Cap on how many owed-reply lines {@link #buildIdentityBlock()} lists individually before collapsing the
-     * rest into a single "…and N more" line. Sent every turn (see {@link #buildIdentityBlock()}'s own doc),
-     * so an inbox with dozens of outstanding replies must not turn into dozens of lines on every single turn.
+     * Cap on how many owed-reply lines {@link #buildIdentityBlock()} lists individually before collapsing the rest into
+     * a single "…and N more" line. Sent every turn (see {@link #buildIdentityBlock()}'s own doc), so an inbox with
+     * dozens of outstanding replies must not turn into dozens of lines on every single turn.
      */
     private static final int OWED_REPLIES_DISPLAY_CAP = 10;
 
     private static final DateTimeFormatter OWED_REPLY_TIME_FORMATTER
-                                           = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm", Locale.ROOT).withZone(ZoneId.systemDefault());
+            = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm", Locale.ROOT).withZone(ZoneId.systemDefault());
 
     /**
      * Caret position as {@code " (cursor at line:col)"}, or an empty string when there is no readable caret.
      *
      * <p>
-     * Reported because the caller may legitimately want to know where the user is looking — but no tool acts
-     * on the caret by itself, so this is the only way that information reaches a decision. The position is a
-     * snapshot taken when the turn was built; the user may have moved since, and {@code GetCurrentFile}
-     * returns the live value.
+     * Reported because the caller may legitimately want to know where the user is looking — but no tool acts on the
+     * caret by itself, so this is the only way that information reaches a decision. The position is a snapshot taken
+     * when the turn was built; the user may have moved since, and {@code GetCurrentFile} returns the live value.
      */
     private static String caretSuffix() {
         String caret = EditorContextProvider.getCaretLineColumn();
@@ -119,8 +118,8 @@ public class ContextProvider {
     }
 
     /**
-     * Reset context tracking so the next buildPreamble() call always sends the full context. Call when
-     * starting a new session or resuming from saved history.
+     * Reset context tracking so the next buildPreamble() call always sends the full context. Call when starting a new
+     * session or resuming from saved history.
      */
     public void resetSentContext() {
         lastSentProjects = null;
@@ -143,8 +142,8 @@ public class ContextProvider {
     }
 
     /**
-     * Puts back a state captured before {@link #buildPreamble}, so the baseline and instructions that prompt
-     * carried are offered again by the next one.
+     * Puts back a state captured before {@link #buildPreamble}, so the baseline and instructions that prompt carried
+     * are offered again by the next one.
      */
     public void restoreSentContext(SentContext state) {
         lastSentProjects = state.projects();
@@ -219,11 +218,11 @@ public class ContextProvider {
     }
 
     /**
-     * Lists every message owed a reply by this session as its own "## Messages awaiting your reply" section —
-     * one line per message, never the body, so a stale reply obligation stays visible without the recipient
-     * re-reading anything. Gated on {@code allowsInterAiComms()} the same way the inter-AI capability blurb
-     * is, since a session that cannot use the inter-AI tools has nothing to reply with. Silently does nothing
-     * when there is nothing owed, so the section never appears empty.
+     * Lists every message owed a reply by this session as its own "## Messages awaiting your reply" section — one line
+     * per message, never the body, so a stale reply obligation stays visible without the recipient re-reading anything.
+     * Gated on {@code allowsInterAiComms()} the same way the inter-AI capability blurb is, since a session that cannot
+     * use the inter-AI tools has nothing to reply with. Silently does nothing when there is nothing owed, so the
+     * section never appears empty.
      */
     private void appendOwedReplies(StringBuilder identity, AiSession s) {
         List<AiInboxMessage> owed = AiSessionInboxBroker.getInstance().listOwedReplies(s.id());
@@ -249,8 +248,8 @@ public class ContextProvider {
     }
 
     /**
-     * The sender's display name, falling back to its session id when that session has since closed — same
-     * fallback DeliverIncomingMessageNotification uses for the equivalent case.
+     * The sender's display name, falling back to its session id when that session has since closed — same fallback
+     * DeliverIncomingMessageNotification uses for the equivalent case.
      */
     private static String senderName(String sessionId) {
         var abs = SessionRegistry.get(sessionId);
@@ -258,8 +257,8 @@ public class ContextProvider {
     }
 
     /**
-     * The project baseline — plugin banner, open project paths, current file. Always returns the full current
-     * baseline without delta logic.
+     * The project baseline — plugin banner, open project paths, current file. Always returns the full current baseline
+     * without delta logic.
      */
     public String buildProjectBaseline() {
         List<String> currentProjects = getOpenProjectPaths();
@@ -298,9 +297,9 @@ public class ContextProvider {
             // Signal delivery so the UI notice still fires, but do not inject —
             // the pinned slot already carries them.
             if (sessionInstructions != null && !sessionInstructions.isBlank()
-                && (s.sessionInstructionsDelivery() != SessionInstructionsDeliveryEnum.ON_START
+                    && (s.sessionInstructionsDelivery() != SessionInstructionsDeliveryEnum.ON_START
                     || !s.isStartupInstructionsInjected())
-                && instructionsStillNeedSending(s, sessionInstructions, isFirstSend)) {
+                    && instructionsStillNeedSending(s, sessionInstructions, isFirstSend)) {
                 lastInjectedSessionInstructions = sessionInstructions;
                 sessionInstructionsInjectedInLastPreamble = true;
             }
@@ -389,10 +388,10 @@ public class ContextProvider {
         // send can observe it, and failing open costs nothing. Do not "harden" this to
         // fail closed without first re-checking that gate.
         if (sessionInstructions != null && !sessionInstructions.isBlank()
-            && (s == null
+                && (s == null
                 || s.sessionInstructionsDelivery() != SessionInstructionsDeliveryEnum.ON_START
                 || !s.isStartupInstructionsInjected())
-            && instructionsStillNeedSending(s, sessionInstructions, isFirstSend)) {
+                && instructionsStillNeedSending(s, sessionInstructions, isFirstSend)) {
             ctx.append("\n## Session Instructions\n").append(sessionInstructions).append("\n");
             lastInjectedSessionInstructions = sessionInstructions;
             sessionInstructionsInjectedInLastPreamble = true;
@@ -418,11 +417,10 @@ public class ContextProvider {
      * True when {@code sessionInstructions} still needs delivering.
      *
      * <p>
-     * Checks the session's persisted record as well as this provider's in-memory one. The in-memory copy is
-     * recreated every time the session is opened, so on its own it made an ON_FIRST_REQUEST session
-     * re-deliver its instructions on the first message after every IDE restart — while ON_START did not,
-     * because its guard was already persisted. Comparing the text rather than a flag keeps edited
-     * instructions being re-delivered.
+     * Checks the session's persisted record as well as this provider's in-memory one. The in-memory copy is recreated
+     * every time the session is opened, so on its own it made an ON_FIRST_REQUEST session re-deliver its instructions
+     * on the first message after every IDE restart — while ON_START did not, because its guard was already persisted.
+     * Comparing the text rather than a flag keeps edited instructions being re-delivered.
      */
     private boolean instructionsStillNeedSending(AiSession s, String sessionInstructions, boolean isFirstSend) {
         if (!isFirstSend && Objects.equals(sessionInstructions, lastInjectedSessionInstructions)) {
@@ -432,10 +430,10 @@ public class ContextProvider {
     }
 
     /**
-     * Returns the best working directory for a new AI session. Priority: single project → NetBeans main
-     * project → project containing active file → first open project → user home. Never returns null. Call
-     * {@link #isWorkingDirectoryAmbiguous()} to detect when no automatic rule applied and the user should be
-     * prompted to choose.
+     * Returns the best working directory for a new AI session. Priority: single project → NetBeans main project →
+     * project containing active file → first open project → user home. Never returns null. Call
+     * {@link #isWorkingDirectoryAmbiguous()} to detect when no automatic rule applied and the user should be prompted
+     * to choose.
      */
     public File resolveWorkingDirectory() {
         Project[] projects = OpenProjects.getDefault().getOpenProjects();
@@ -466,8 +464,8 @@ public class ContextProvider {
     }
 
     /**
-     * Returns true when multiple projects are open and no automatic rule (main project, active file) picked a
-     * winner. When true, the caller should prompt the user to choose.
+     * Returns true when multiple projects are open and no automatic rule (main project, active file) picked a winner.
+     * When true, the caller should prompt the user to choose.
      */
     public boolean isWorkingDirectoryAmbiguous() {
         Project[] projects = OpenProjects.getDefault().getOpenProjects();

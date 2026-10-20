@@ -42,9 +42,8 @@ public class StatusMessageUtil {
     }
 
     /**
-     * Formats a notice for a turn that ended abnormally before completing (e.g.
-     * the CLI runtime aborted the stream mid-response). The process is still
-     * alive, so this is informational, not fatal — the user can simply retry.
+     * Formats a notice for a turn that ended abnormally before completing (e.g. the CLI runtime aborted the stream
+     * mid-response). The process is still alive, so this is informational, not fatal — the user can simply retry.
      */
     public static String formatTurnInterrupted(String subtype) {
         String reason = (subtype == null || subtype.isBlank()) ? "an unexpected runtime error" : subtype;
@@ -53,9 +52,8 @@ public class StatusMessageUtil {
     }
 
     /**
-     * Formats an unexpected-process-exit status message, appending captured
-     * stderr (if any) so the user has something to act on instead of a bare
-     * exit code.
+     * Formats an unexpected-process-exit status message, appending captured stderr (if any) so the user has something
+     * to act on instead of a bare exit code.
      */
     public static String formatExited(String aiName, int code, List<String> stderrLines) {
         String errText = stderrLines == null ? "" : String.join("\n", stderrLines).strip();

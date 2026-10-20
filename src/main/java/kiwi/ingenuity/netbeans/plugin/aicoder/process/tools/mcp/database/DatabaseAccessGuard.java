@@ -5,9 +5,8 @@ import kiwi.ingenuity.netbeans.plugin.aicoder.process.McpArgumentException;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.session.AbstractAiSession;
 
 /**
- * Shared enforcement for the database MCP tools' access settings — mirrors
- * {@code WebRequestTool}'s inline checks, factored out here since four
- * separate tool classes need the same master + per-option gating.
+ * Shared enforcement for the database MCP tools' access settings — mirrors {@code WebRequestTool}'s inline checks,
+ * factored out here since four separate tool classes need the same master + per-option gating.
  */
 final class DatabaseAccessGuard {
 

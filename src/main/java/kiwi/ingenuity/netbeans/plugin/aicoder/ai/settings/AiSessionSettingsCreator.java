@@ -8,9 +8,9 @@ import kiwi.ingenuity.netbeans.plugin.aicoder.GitAccessOptionEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.WebRequestAccessOptionEnum;
 
 /**
- * Base class for creating and updating AI session settings. Implements a chain of responsibility pattern
- * where subclasses handle specific setting types. Handles deserialization of JSON configuration into mutable
- * settings objects.
+ * Base class for creating and updating AI session settings. Implements a chain of responsibility pattern where
+ * subclasses handle specific setting types. Handles deserialization of JSON configuration into mutable settings
+ * objects.
  */
 public abstract class AiSessionSettingsCreator<E extends AiSessionSettings> {
 

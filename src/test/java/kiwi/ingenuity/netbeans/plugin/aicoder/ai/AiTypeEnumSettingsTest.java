@@ -33,16 +33,16 @@ class AiTypeEnumSettingsTest {
         for (AiTypeEnum type : AiTypeEnum.values()) {
             AiSessionSettings settings = type.createDefaultSettings();
             assertTrue(settings instanceof AiModelSessionSettings,
-                    type + " should create model-capable settings");
+                       type + " should create model-capable settings");
             assertNull(((AiModelSessionSettings) settings).model(),
-                    type + " default settings should not pre-pick a model");
+                       type + " default settings should not pre-pick a model");
         }
     }
 
     @Test
     void eachCallCreatesAFreshInstance() {
         assertNotSame(AiTypeEnum.CLAUDE.createDefaultSettings(),
-                AiTypeEnum.CLAUDE.createDefaultSettings());
+                      AiTypeEnum.CLAUDE.createDefaultSettings());
     }
 
     @Test
@@ -51,9 +51,9 @@ class AiTypeEnumSettingsTest {
     }
 
     /**
-     * The tool-loop injection in OllamaAiProcessManager makes Ollama a mid-turn mail backend, so it must
-     * advertise DURING_TURN — this is the value senders see in PeerSessionList' mailDelivery. A regression
-     * back to AFTER_TURN would silently tell them an important message cannot be read mid-turn.
+     * The tool-loop injection in OllamaAiProcessManager makes Ollama a mid-turn mail backend, so it must advertise
+     * DURING_TURN — this is the value senders see in PeerSessionList' mailDelivery. A regression back to AFTER_TURN
+     * would silently tell them an important message cannot be read mid-turn.
      */
     @Test
     void ollamaLocalReportsDuringTurnMailDelivery() {
@@ -61,10 +61,9 @@ class AiTypeEnumSettingsTest {
     }
 
     /**
-     * Grok's mail interrupt delivers through the same shared AbstractAcpProcessManager.interruptMail()
-     * OpenCode uses — session/cancel ends the turn to deliver it (live-confirmed: an important mail
-     * interrupts Grok mid-turn). A regression back to AFTER_TURN would silently tell senders important=true
-     * does nothing for Grok, when it does.
+     * Grok's mail interrupt delivers through the same shared AbstractAcpProcessManager.interruptMail() OpenCode uses —
+     * session/cancel ends the turn to deliver it (live-confirmed: an important mail interrupts Grok mid-turn). A
+     * regression back to AFTER_TURN would silently tell senders important=true does nothing for Grok, when it does.
      */
     @Test
     void grokReportsAbortsTurnMailDelivery() {
@@ -95,10 +94,10 @@ class AiTypeEnumSettingsTest {
             AiSessionSettings settings = type.createDefaultSettings();
             boolean settingsAreOpenAi = settings instanceof OpenAiClientSessionSettings;
             assertEquals(settingsAreOpenAi, type.isOpenAiCompatible(),
-                    type + ": isOpenAiCompatible() is " + type.isOpenAiCompatible()
-                    + " but its settings class " + settings.getClass().getSimpleName()
-                    + (settingsAreOpenAi ? " DOES" : " does NOT")
-                    + " extend OpenAiClientSessionSettings — the flag and the class hierarchy disagree");
+                         type + ": isOpenAiCompatible() is " + type.isOpenAiCompatible()
+                         + " but its settings class " + settings.getClass().getSimpleName()
+                         + (settingsAreOpenAi ? " DOES" : " does NOT")
+                         + " extend OpenAiClientSessionSettings — the flag and the class hierarchy disagree");
         }
     }
 

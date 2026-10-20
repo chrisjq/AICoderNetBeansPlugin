@@ -17,10 +17,10 @@ public class CancelIdleWatcherTool extends AbstractActionTool {
 
     public CancelIdleWatcherTool() {
         super(McpSectionEnum.PLUGIN,
-                McpToolEnum.PEER_IDLE_WATCHER_CANCEL.toolName(),
-                "Cancel one of this session's idle watcher timers.",
-                McpToolEnum.PEER_IDLE_WATCHER_CANCEL.toolName()
-                + " -> cancels the named idle watcher owned by this session");
+              McpToolEnum.PEER_IDLE_WATCHER_CANCEL.toolName(),
+              "Cancel one of this session's idle watcher timers.",
+              McpToolEnum.PEER_IDLE_WATCHER_CANCEL.toolName()
+              + " -> cancels the named idle watcher owned by this session");
     }
 
     @Override
@@ -34,8 +34,8 @@ public class CancelIdleWatcherTool extends AbstractActionTool {
         JsonObject wid = new JsonObject();
         wid.addProperty(ToolSchemaKeyEnum.TYPE.key(), "string");
         wid.addProperty(ToolSchemaKeyEnum.DESCRIPTION.key(),
-                "Idle watcher ID from " + McpToolEnum.PEER_IDLE_WATCHER_LIST.toolName()
-                + " or the reply to " + McpToolEnum.PEER_IDLE_WATCHER_CREATE.toolName() + ".");
+                        "Idle watcher ID from " + McpToolEnum.PEER_IDLE_WATCHER_LIST.toolName()
+                        + " or the reply to " + McpToolEnum.PEER_IDLE_WATCHER_CREATE.toolName() + ".");
         props.add(CancelIdleWatcherParamEnum.WATCHER_ID.key(), wid);
         schema.add(ToolSchemaKeyEnum.PROPERTIES.key(), props);
         JsonArray required = new JsonArray();
@@ -66,7 +66,7 @@ public class CancelIdleWatcherTool extends AbstractActionTool {
         boolean cancelled = IdleWatcherRegistry.getInstance().cancel(session.getId(), watcherId);
         if (!cancelled) {
             return "No idle watcher " + watcherId
-                   + " belongs to you (it may have already fired as a oneshot, been cancelled, or its target session closed).";
+                    + " belongs to you (it may have already fired as a oneshot, been cancelled, or its target session closed).";
         }
         return "Idle watcher " + watcherId + " cancelled.";
     }

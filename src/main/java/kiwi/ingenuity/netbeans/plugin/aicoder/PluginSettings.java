@@ -29,7 +29,8 @@ public final class PluginSettings {
             if (cachedPrefs == null) {
                 try {
                     cachedPrefs = NbPreferences.forModule(PluginSettings.class);
-                } catch (Throwable t) {
+                }
+                catch (Throwable t) {
                     // NetBeans preference storage genuinely unavailable — fall
                     // back to a plain JDK node so callers get defaults instead of
                     // an exception. Logged once.
@@ -350,8 +351,8 @@ public final class PluginSettings {
     }
 
     /**
-     * Floor of 1 so a corrupt or zero preference can never disable the cap — an uncapped tool loop is an
-     * unbounded allocation, not merely a long one.
+     * Floor of 1 so a corrupt or zero preference can never disable the cap — an uncapped tool loop is an unbounded
+     * allocation, not merely a long one.
      */
     public static int getOllamaMaxToolIterations() {
         return Math.max(1, getInt(PluginSettingsKeyEnum.OLLAMA_MAX_TOOL_ITERATIONS));

@@ -18,10 +18,10 @@ public final class ConfigTemplatesPanel extends TemplatePanel<ConfigTemplate> {
 
     private ConfigTemplatesPanel(AiSessionConfigPanel config, TemplatePersistenceManager templates, Runnable onTemplateChanged) {
         super(config, templates, onTemplateChanged,
-                new String[]{"Name", "Updated", "Created"},
-                ConfigTemplate::name,
-                ConfigTemplate::updatedAt,
-                ConfigTemplate::createdAt);
+              new String[]{"Name", "Updated", "Created"},
+              ConfigTemplate::name,
+              ConfigTemplate::updatedAt,
+              ConfigTemplate::createdAt);
         this.config = config;
         initPanel();
     }

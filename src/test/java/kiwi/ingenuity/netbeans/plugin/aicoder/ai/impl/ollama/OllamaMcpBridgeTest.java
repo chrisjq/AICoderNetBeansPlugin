@@ -85,7 +85,7 @@ class OllamaMcpBridgeTest {
                 "sid-1", "s", null, AiTypeEnum.OLLAMA_LOCAL, null,
                 AiTypeEnum.OLLAMA_LOCAL.createDefaultSettings(), Instant.now(), Instant.now());
         FakeSession fakeSession = new FakeSession(session,
-                Map.of(McpToolEnum.GET_PLUGIN_VERSION, new FakeTool()));
+                                                  Map.of(McpToolEnum.GET_PLUGIN_VERSION, new FakeTool()));
         OllamaMcpBridge bridge = new OllamaMcpBridge(fakeSession);
         bridge.setSessionCredentials("real-session", "real-secret");
         JsonObject args = new JsonObject();

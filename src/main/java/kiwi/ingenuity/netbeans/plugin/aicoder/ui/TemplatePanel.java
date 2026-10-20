@@ -4,11 +4,11 @@ import java.awt.BorderLayout;
 import java.awt.Component;
 import java.awt.Dimension;
 import java.awt.FlowLayout;
-import java.awt.event.ComponentAdapter;
-import java.awt.event.ComponentEvent;
 import java.awt.GridBagConstraints;
 import java.awt.GridBagLayout;
 import java.awt.Insets;
+import java.awt.event.ComponentAdapter;
+import java.awt.event.ComponentEvent;
 import java.io.IOException;
 import java.time.Instant;
 import java.util.List;
@@ -45,12 +45,12 @@ public abstract class TemplatePanel<T> extends JPanel {
     private boolean draft;
 
     protected TemplatePanel(Component editorContent,
-            TemplatePersistenceManager templates,
-            Runnable onTemplateChanged,
-            String[] columns,
-            Function<T, String> name,
-            Function<T, Instant> updated,
-            Function<T, Instant> created) {
+                            TemplatePersistenceManager templates,
+                            Runnable onTemplateChanged,
+                            String[] columns,
+                            Function<T, String> name,
+                            Function<T, Instant> updated,
+                            Function<T, Instant> created) {
         super(new BorderLayout(6, 6));
         this.editorContent = editorContent;
         this.templates = templates;

@@ -24,19 +24,18 @@ import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.ToolSchemaKeyEnu
 public class ListAiSessionsTool extends AbstractActionTool {
 
     /**
-     * Shared by the constructor and {@link #schema}, which both publish it, so the two copies cannot drift
-     * apart.
+     * Shared by the constructor and {@link #schema}, which both publish it, so the two copies cannot drift apart.
      */
     private static final String TOOL_DESCRIPTION
-                                = "Lists the other AI sessions open in this IDE. Each entry reports busy/idle, whether its user is being"
-                                  + " asked to approve something, and mailDelivery: when it will next read your message, and whether "
-                                  + SendAiMessageParamEnum.IMPORTANT.key() + "=true changes that.";
+            = "Lists the other AI sessions open in this IDE. Each entry reports busy/idle, whether its user is being"
+            + " asked to approve something, and mailDelivery: when it will next read your message, and whether "
+            + SendAiMessageParamEnum.IMPORTANT.key() + "=true changes that.";
 
     public ListAiSessionsTool() {
         super(McpSectionEnum.PLUGIN,
-                McpToolEnum.PEER_SESSION_LIST.toolName(),
-                TOOL_DESCRIPTION,
-                McpToolEnum.PEER_SESSION_LIST.toolName() + " -> discover peer AI sessions; call before " + McpToolEnum.PEER_MESSAGE_SEND.toolName() + " to find session IDs and to see when each peer will read your message");
+              McpToolEnum.PEER_SESSION_LIST.toolName(),
+              TOOL_DESCRIPTION,
+              McpToolEnum.PEER_SESSION_LIST.toolName() + " -> discover peer AI sessions; call before " + McpToolEnum.PEER_MESSAGE_SEND.toolName() + " to find session IDs and to see when each peer will read your message");
     }
 
     @Override
@@ -113,13 +112,13 @@ public class ListAiSessionsTool extends AbstractActionTool {
                                                 : aiType.mailDeliveryTiming();
                 if (s.allowsImportantMessages() && timing != AFTER_TURN) {
                     obj.addProperty(ToolResponseKeyEnum.MAIL_DELIVERY.key(),
-                            "Read " + timing.description() + " when "
-                            + SendAiMessageParamEnum.IMPORTANT.key() + "=true, otherwise at "
-                            + AFTER_TURN.description() + ".");
+                                    "Read " + timing.description() + " when "
+                                    + SendAiMessageParamEnum.IMPORTANT.key() + "=true, otherwise at "
+                                    + AFTER_TURN.description() + ".");
                 }
                 else {
                     obj.addProperty(ToolResponseKeyEnum.MAIL_DELIVERY.key(),
-                            "Read at " + AFTER_TURN.description() + ".");
+                                    "Read at " + AFTER_TURN.description() + ".");
                 }
             }
             if (abstractSession != null) {
@@ -128,7 +127,7 @@ public class ListAiSessionsTool extends AbstractActionTool {
                 }
             }
             obj.addProperty(ToolResponseKeyEnum.AWAITING_APPROVAL.key(), abstractSession != null
-                                                                         && abstractSession.getAiSession().isAwaitingApproval());
+                            && abstractSession.getAiSession().isAwaitingApproval());
             obj.addProperty(ToolResponseKeyEnum.ACTIVE.key(), s.isRunning());
             arr.add(obj);
         }

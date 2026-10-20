@@ -87,13 +87,13 @@ class DatabaseProviderTest {
     @Test
     void getTableSchema_rejectsInvalidTableIdentifier() {
         assertEquals("Invalid tableName: users; DROP TABLE x",
-                DatabaseProvider.getTableSchema("any", "users; DROP TABLE x"));
+                     DatabaseProvider.getTableSchema("any", "users; DROP TABLE x"));
     }
 
     @Test
     void getTableData_rejectsInvalidTableIdentifier() {
         assertEquals("Invalid tableName: users; DROP TABLE x",
-                DatabaseProvider.getTableData("any", "users; DROP TABLE x", 10));
+                     DatabaseProvider.getTableData("any", "users; DROP TABLE x", 10));
     }
 
     @Test

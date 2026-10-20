@@ -30,12 +30,10 @@ import kiwi.ingenuity.netbeans.plugin.aicoder.ui.SettingsTab;
 import org.openide.util.Lookup;
 
 /**
- * Options panel for the AI Coder plugin. Shown in Tools > Options > AI Coder
- * Code.
+ * Options panel for the AI Coder plugin. Shown in Tools > Options > AI Coder Code.
  *
- * Structured with a General tab (shared across AIs) followed by per-AI tabs.
- * Per-AI tabs are discovered via Lookup ({@link SettingsTab}), so each AI
- * implementation contributes its own settings tab.
+ * Structured with a General tab (shared across AIs) followed by per-AI tabs. Per-AI tabs are discovered via Lookup
+ * ({@link SettingsTab}), so each AI implementation contributes its own settings tab.
  */
 public class PluginSettingsPanel extends JPanel implements Scrollable {
 

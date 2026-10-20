@@ -40,8 +40,8 @@ class GetClipboardToolTest {
         GetClipboardTool tool = new GetClipboardTool();
 
         McpArgumentException ex = assertThrows(McpArgumentException.class,
-                () -> tool.handle(new ToolRequestArguments(new JsonObject()),
-                        new FakeSession(SESSION_ID, settings)));
+                                               () -> tool.handle(new ToolRequestArguments(new JsonObject()),
+                                                                 new FakeSession(SESSION_ID, settings)));
         assertEquals(-32602, ex.getCode(), "a disabled clipboard must be an invalid-argument refusal");
         assertTrue(ex.getMessage().contains("disabled"), ex.getMessage());
     }
@@ -53,7 +53,7 @@ class GetClipboardToolTest {
 
         FakeSession(String id, AiSessionSettings settings) {
             super(new AiSession(id, "Test", null, AiTypeEnum.CLAUDE, null, settings,
-                    Instant.EPOCH, Instant.EPOCH));
+                                Instant.EPOCH, Instant.EPOCH));
             this.id = id;
             this.settings = settings;
         }
