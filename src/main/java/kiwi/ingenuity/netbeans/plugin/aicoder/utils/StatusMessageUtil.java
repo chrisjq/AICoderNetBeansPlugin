@@ -12,6 +12,15 @@ import java.util.List;
  */
 public class StatusMessageUtil {
 
+    /**
+     * Notice emitted when an AI backend starts without the plugin MCP endpoint.
+     */
+    public static String formatMcpToolsUnavailable(String aiName) {
+        String name = (aiName == null || aiName.isBlank()) ? "The AI backend" : aiName;
+        return "Warning: plugin MCP tools unavailable - the plugin's MCP server is not running. " + name
+                + " is running without the IDE tools; restart the session once the server is back.";
+    }
+
     // Status event messages
     public static String formatStartFailed(String reason) {
         return "Failed to start AI: " + reason;

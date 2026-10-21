@@ -1,7 +1,17 @@
 package kiwi.ingenuity.netbeans.plugin.aicoder;
 
 public enum PluginSettingsKeyEnum {
+    /**
+     * Legacy fallback only: read for existing sessions' unset values and when seeding the Default config/MCP templates.
+     * New sessions take this from the Default config template (Decision 11).
+     */
+    @Deprecated
     MAX_HISTORY("ai.maxHistory", 200),
+    /**
+     * Legacy fallback only: read for existing sessions' unset values and when seeding the Default config/MCP templates.
+     * New sessions take this from the Default config template (Decision 11).
+     */
+    @Deprecated
     SAVE_HISTORY("ai.saveHistory", true),
     SAVE_SESSION_ON_CLOSE_IF_TICKED("ai.saveSessionOnCloseIfTicked", false),
     DEBUG_JSON("ai.debugJson", false),
@@ -9,41 +19,191 @@ public enum PluginSettingsKeyEnum {
     MCP_SERVER_PORT("ai.mcpPort", 49167),
     DIFF_CONTEXT_LINES("ai.diffContextLines", 3),
     CHAT_FONT_SIZE("ai.chatFontSize", 13),
+    /**
+     * Legacy fallback only: read for existing sessions' unset values and when seeding the Default config/MCP templates.
+     * New sessions take this from the Default config template (Decision 11).
+     */
+    @Deprecated
     AUTO_ACCEPT("ai.autoAccept", false),
     LOG_TOOL_USE("ai.logToolUse", false),
     AI_ENABLED_PREFIX("ai.enabled."),
     AI_MODEL_PREFIX("ai.model."),
+    /**
+     * Legacy fallback only: read for existing sessions' unset values and when seeding the Default config/MCP templates.
+     * New sessions take this from the Default config template (Decision 11).
+     */
+    @Deprecated
     RESTRICT_TO_PROJECT("ai.session.restrictToProjectFiles", true),
+    /**
+     * Legacy fallback only: read for existing sessions' unset values and when seeding the Default config/MCP templates.
+     * New sessions take this from the Default config template (Decision 11).
+     */
+    @Deprecated
     ALLOW_INTER_AI_COMMS("ai.session.allowInterAiComms", false),
+    /**
+     * Legacy fallback only: read for existing sessions' unset values and when seeding the Default config/MCP templates.
+     * New sessions take this from the Default config template (Decision 11).
+     */
+    @Deprecated
     ALLOW_WEB_REQUESTS("ai.session.allowWebRequests", true),
+    /**
+     * Legacy fallback only: read for existing sessions' unset values and when seeding the Default config/MCP templates.
+     * New sessions take this from the Default config template (Decision 11).
+     */
+    @Deprecated
     ALLOW_WEB_REQUEST_GET("ai.session.allowWebRequests.get", true),
+    /**
+     * Legacy fallback only: read for existing sessions' unset values and when seeding the Default config/MCP templates.
+     * New sessions take this from the Default config template (Decision 11).
+     */
+    @Deprecated
     ALLOW_WEB_REQUEST_POST("ai.session.allowWebRequests.post", false),
+    /**
+     * Legacy fallback only: read for existing sessions' unset values and when seeding the Default config/MCP templates.
+     * New sessions take this from the Default config template (Decision 11).
+     */
+    @Deprecated
     ALLOW_WEB_REQUEST_PUT("ai.session.allowWebRequests.put", false),
+    /**
+     * Legacy fallback only: read for existing sessions' unset values and when seeding the Default config/MCP templates.
+     * New sessions take this from the Default config template (Decision 11).
+     */
+    @Deprecated
     ALLOW_WEB_REQUEST_PATCH("ai.session.allowWebRequests.patch", false),
+    /**
+     * Legacy fallback only: read for existing sessions' unset values and when seeding the Default config/MCP templates.
+     * New sessions take this from the Default config template (Decision 11).
+     */
+    @Deprecated
     ALLOW_WEB_REQUEST_DELETE("ai.session.allowWebRequests.delete", false),
+    /**
+     * Legacy fallback only: read for existing sessions' unset values and when seeding the Default config/MCP templates.
+     * New sessions take this from the Default config template (Decision 11).
+     */
+    @Deprecated
     ALLOW_WEB_REQUEST_HEAD("ai.session.allowWebRequests.head", false),
+    /**
+     * Legacy fallback only: read for existing sessions' unset values and when seeding the Default config/MCP templates.
+     * New sessions take this from the Default config template (Decision 11).
+     */
+    @Deprecated
     ALLOW_WEB_REQUEST_OPTIONS("ai.session.allowWebRequests.options", false),
+    /**
+     * Legacy fallback only: read for existing sessions' unset values and when seeding the Default config/MCP templates.
+     * New sessions take this from the Default config template (Decision 11).
+     */
+    @Deprecated
     ALLOW_WEB_REQUEST_HEADERS("ai.session.allowWebRequests.headers", false),
+    /**
+     * Legacy fallback only: read for existing sessions' unset values and when seeding the Default config/MCP templates.
+     * New sessions take this from the Default config template (Decision 11).
+     */
+    @Deprecated
     ALLOW_WEB_REQUEST_BODY("ai.session.allowWebRequests.body", false),
+    /**
+     * Legacy fallback only: read for existing sessions' unset values and when seeding the Default config/MCP templates.
+     * New sessions take this from the Default config template (Decision 11).
+     */
+    @Deprecated
     ALLOW_WEB_REQUEST_LOCALHOST("ai.session.allowWebRequests.localhost", false),
+    /**
+     * Legacy fallback only: read for existing sessions' unset values and when seeding the Default config/MCP templates.
+     * New sessions take this from the Default config template (Decision 11).
+     */
+    @Deprecated
     ALLOW_WEB_REQUEST_PRIVATE_NETWORKS("ai.session.allowWebRequests.privateNetworks", false),
+    /**
+     * Legacy fallback only: read for existing sessions' unset values and when seeding the Default config/MCP templates.
+     * New sessions take this from the Default config template (Decision 11).
+     */
+    @Deprecated
     AUTO_NOTIFY_INBOX("ai.session.autoNotifyInbox", false),
+    /**
+     * Legacy fallback only: read for existing sessions' unset values and when seeding the Default config/MCP templates.
+     * New sessions take this from the Default config template (Decision 11).
+     */
+    @Deprecated
     ALLOW_IMPORTANT_MESSAGES("ai.session.allowImportantMessages", true),
+    /**
+     * Legacy fallback only: read for existing sessions' unset values and when seeding the Default config/MCP templates.
+     * New sessions take this from the Default config template (Decision 11).
+     */
+    @Deprecated
     ALLOW_IDLE_WATCHER_TIMER("ai.session.allowIdleWatcherTimer", true),
+    /**
+     * Legacy fallback only: read for existing sessions' unset values and when seeding the Default config/MCP templates.
+     * New sessions take this from the Default config template (Decision 11).
+     */
+    @Deprecated
     MCP_STEERING("ai.session.mcpSteering", true),
     INBOX_RETENTION_MINUTES("ai.inbox.retentionMinutes", 60),
     INBOX_MAX_SIZE("ai.inbox.maxSize", 1000),
     LAST_SESSION_AI_TYPE("ai.session.lastAiType", null),
+    /**
+     * Legacy fallback only: read for existing sessions' unset values and when seeding the Default config/MCP templates.
+     * New sessions take this from the Default config template (Decision 11).
+     */
+    @Deprecated
     ALLOW_DATABASE_ACCESS("ai.session.allowDatabaseAccess", false),
+    /**
+     * Legacy fallback only: read for existing sessions' unset values and when seeding the Default config/MCP templates.
+     * New sessions take this from the Default config template (Decision 11).
+     */
+    @Deprecated
     ALLOW_DATABASE_READ_ONLY("ai.session.allowDatabaseAccess.readOnly", true),
+    /**
+     * Legacy fallback only: read for existing sessions' unset values and when seeding the Default config/MCP templates.
+     * New sessions take this from the Default config template (Decision 11).
+     */
+    @Deprecated
     ALLOW_DATABASE_LIST_TABLES("ai.session.allowDatabaseAccess.listTables", false),
+    /**
+     * Legacy fallback only: read for existing sessions' unset values and when seeding the Default config/MCP templates.
+     * New sessions take this from the Default config template (Decision 11).
+     */
+    @Deprecated
     ALLOW_DATABASE_SCHEMA("ai.session.allowDatabaseAccess.schema", false),
+    /**
+     * Legacy fallback only: read for existing sessions' unset values and when seeding the Default config/MCP templates.
+     * New sessions take this from the Default config template (Decision 11).
+     */
+    @Deprecated
     ALLOW_DATABASE_SELECT("ai.session.allowDatabaseAccess.select", false),
+    /**
+     * Legacy fallback only: read for existing sessions' unset values and when seeding the Default config/MCP templates.
+     * New sessions take this from the Default config template (Decision 11).
+     */
+    @Deprecated
     ALLOW_DATABASE_EXECUTE_SQL("ai.session.allowDatabaseAccess.executeSql", false),
+    /**
+     * Legacy fallback only: read for existing sessions' unset values and when seeding the Default config/MCP templates.
+     * New sessions take this from the Default config template (Decision 11).
+     */
+    @Deprecated
     ALLOW_GIT_ACCESS("ai.session.allowGitAccess", true),
+    /**
+     * Legacy fallback only: read for existing sessions' unset values and when seeding the Default config/MCP templates.
+     * New sessions take this from the Default config template (Decision 11).
+     */
+    @Deprecated
     ALLOW_GIT_READ("ai.session.allowGitAccess.read", true),
+    /**
+     * Legacy fallback only: read for existing sessions' unset values and when seeding the Default config/MCP templates.
+     * New sessions take this from the Default config template (Decision 11).
+     */
+    @Deprecated
     ALLOW_GIT_WRITE("ai.session.allowGitAccess.write", true),
+    /**
+     * Legacy fallback only: read for existing sessions' unset values and when seeding the Default config/MCP templates.
+     * New sessions take this from the Default config template (Decision 11).
+     */
+    @Deprecated
     DATABASE_ROW_LIMIT("ai.session.databaseRowLimit", 25),
+    /**
+     * Legacy fallback only: read for existing sessions' unset values and when seeding the Default config/MCP templates.
+     * New sessions take this from the Default config template (Decision 11).
+     */
+    @Deprecated
     ENABLE_CLIPBOARD_ACCESS("ai.session.enableClipboardAccess", false),
     CONTEXT_TRIM_TRIGGER("ai.contextTrimTrigger", "ESTIMATED_TOKENS"),
     CONTEXT_TRIM_STRATEGY("ai.contextTrimStrategy", "DROP_MARKED"),

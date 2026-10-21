@@ -48,10 +48,10 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
 /**
- * Pins the requirement that a session's own serialized conversation history (history.json / context.json,
- * under SessionPersistenceManager's per-session directory) is invisible to every file tool — read or write —
- * even though the rest of the session's own data (memory, tool_results, under the unrelated
- * ~/.ai-coder/{type}/{sessionId}/ tree) is freely accessible.
+ * Pins the requirement that a session's own serialized conversation history (history.json / context.json, under
+ * SessionPersistenceManager's per-session directory) is invisible to every file tool — read or write — even though the
+ * rest of the session's own data (memory, tool_results, under the unrelated ~/.ai-coder/{type}/{sessionId}/ tree) is
+ * freely accessible.
  */
 class SessionHistoryFileProtectionTest {
 
@@ -101,7 +101,7 @@ class SessionHistoryFileProtectionTest {
         // explains the whole-directory rule, AND separately quotes the path back — the
         // latter used to be the only reason a bare contains("history") check passed.
         assertTrue(result.contains("protected in its entirety"),
-                "must explain the whole-directory rule, not just confirm denial: " + result);
+                   "must explain the whole-directory rule, not just confirm denial: " + result);
         assertTrue(result.contains(historyFile.toString()), "must quote the denied path back: " + result);
     }
 
@@ -141,7 +141,7 @@ class SessionHistoryFileProtectionTest {
         RecordingListener listener = new RecordingListener();
         String result = tool.handle(new ToolRequestArguments(o), new FakeSession(sessionId, listener));
         assertTrue(result.contains("protected in its entirety"),
-                "must explain the whole-directory rule, not just confirm denial: " + result);
+                   "must explain the whole-directory rule, not just confirm denial: " + result);
         assertTrue(result.contains(historyFile.toString()), "must quote the denied path back: " + result);
         assertTrue(listener.events.isEmpty(), "must never reach the diff panel for the history file");
     }
@@ -155,7 +155,7 @@ class SessionHistoryFileProtectionTest {
         RecordingListener listener = new RecordingListener();
         String result = tool.handle(new ToolRequestArguments(o), new FakeSession(sessionId, listener));
         assertTrue(result.contains("protected in its entirety"),
-                "must explain the whole-directory rule, not just confirm denial: " + result);
+                   "must explain the whole-directory rule, not just confirm denial: " + result);
         assertTrue(result.contains(historyFile.toString()), "must quote the denied path back: " + result);
         assertTrue(listener.events.isEmpty(), "must never reach the diff panel for the history file");
     }
@@ -231,7 +231,7 @@ class SessionHistoryFileProtectionTest {
             o.addProperty(McpToolPropertyEnum.CONTENT.key(), "a fact");
             String result = tool.handle(new ToolRequestArguments(o), new FakeSession(sessionId));
             assertTrue(result.toLowerCase().contains("saved"),
-                    "the OTHER own-config tree (memory/tool_results) must remain writable: " + result);
+                       "the OTHER own-config tree (memory/tool_results) must remain writable: " + result);
         }
         finally {
             PluginUtil.deleteAiSessionConfigDir(CLAUDE, sessionId);
@@ -269,7 +269,7 @@ class SessionHistoryFileProtectionTest {
         RecordingListener listener = new RecordingListener();
         String result = tool.handle(new ToolRequestArguments(o), new FakeSession(otherSessionId, listener));
         assertTrue(result.contains("protected in its entirety"),
-                "must explain the whole-directory rule, not just confirm denial: " + result);
+                   "must explain the whole-directory rule, not just confirm denial: " + result);
         assertTrue(result.contains(historyFile.toString()), "must quote the denied path back: " + result);
         assertTrue(listener.events.isEmpty(), "must never reach the diff panel for another session's history file");
         assertEquals("{\"messages\":[]}", Files.readString(historyFile), "original content must be untouched");
@@ -317,10 +317,6 @@ class SessionHistoryFileProtectionTest {
 
         NoopRegistrar(String sessionId) {
             super(sessionId, AiTypeEnum.CLAUDE);
-        }
-
-        @Override
-        public void addMcpEndpoint(String endpointUrl) {
         }
 
         @Override

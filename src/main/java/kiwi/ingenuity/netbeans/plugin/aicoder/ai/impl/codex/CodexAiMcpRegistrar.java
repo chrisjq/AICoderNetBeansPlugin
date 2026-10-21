@@ -12,31 +12,18 @@ import kiwi.ingenuity.netbeans.plugin.aicoder.process.server.AiMcpRegistrar;
  *
  * <p>
  * This registrar's only real job is triggering {@code McpServerRegistry}'s start/stop of the shared HTTP server — same
- * division of labour as {@link kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.opencode.OpenCodeAiMcpRegistrar}.
- * {@link #getEndpointUrl()} is populated only for the first session of this AI type (see that class's javadoc for why);
- * {@code CodexAiProcessManager} therefore sources the URL from {@code McpServerRegistry.endpointUrlFor} rather than
- * from this accessor.
+ * division of labour as {@link kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.opencode.OpenCodeAiMcpRegistrar}. Each
+ * session's URL comes from {@code McpServerRegistry.endpointUrlFor(AiTypeEnum.CODEX, routingId)} at spawn.
  */
 public final class CodexAiMcpRegistrar extends AiMcpRegistrar {
-
-    private volatile String endpointUrl = null;
 
     public CodexAiMcpRegistrar(String sessionId) {
         super(sessionId, AiTypeEnum.CODEX);
     }
 
-    public String getEndpointUrl() {
-        return endpointUrl;
-    }
-
-    @Override
-    public void addMcpEndpoint(String url) {
-        this.endpointUrl = url;
-    }
-
     @Override
     public void removeMcpEndpoint() {
-        this.endpointUrl = null;
+        // Nothing to remove: no global Codex entry is written.
     }
 
     @Override

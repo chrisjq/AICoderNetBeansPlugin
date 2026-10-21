@@ -121,13 +121,13 @@ class FileScopeSymlinkTraversalTest {
         Path secret = writeSecretOutside();
         Path leak = linkOrAbort(projectDir.resolve("leak.txt"), secret, "escaping file link");
         assertTrue(leak.toRealPath().toString().startsWith(outsideDir.toRealPath().toString()),
-                "fixture sanity: the link must really resolve outside the project");
+                   "fixture sanity: the link must really resolve outside the project");
         writeInScope("legit.txt");
 
         assertFalse(server.isFileAccessible(sessionId, leak.toString()),
-                "a link inside the project whose target is outside must be denied");
+                    "a link inside the project whose target is outside must be denied");
         assertTrue(server.isFileAccessible(sessionId, projectDir.resolve("legit.txt").toString()),
-                "control: a genuinely in-scope file must still be allowed");
+                   "control: a genuinely in-scope file must still be allowed");
     }
 
     // The same boundary through GetFileInfoTool's own gate — a regression in EITHER call site (here the tool's
@@ -141,9 +141,9 @@ class FileScopeSymlinkTraversalTest {
         GetFileInfoTool tool = new GetFileInfoTool(server);
         String denied = tool.handle(fileInfoArgs(leak.toString()), new FakeSession(sessionId));
         assertTrue(denied.startsWith("Access denied"),
-                "GetFileInfoTool must refuse the escaping link before reporting any metadata: " + denied);
+                   "GetFileInfoTool must refuse the escaping link before reporting any metadata: " + denied);
         assertTrue(denied.contains(leak.toString()),
-                "the denial must quote the link the caller asked for, never its (outside) target: " + denied);
+                   "the denial must quote the link the caller asked for, never its (outside) target: " + denied);
 
         String ok = tool.handle(fileInfoArgs(projectDir.resolve("legit.txt").toString()), new FakeSession(sessionId));
         assertFalse(ok.startsWith("Access denied"), "control: in-scope file must report metadata: " + ok);
@@ -157,10 +157,10 @@ class FileScopeSymlinkTraversalTest {
         Path target = writeInScope("target.txt");
         Path linkIn = linkOrAbort(projectDir.resolve("link-in.txt"), target, "in-scope file link");
         assertTrue(linkIn.toRealPath().toString().startsWith(projectDir.toRealPath().toString()),
-                "fixture sanity: the link must really resolve inside the project");
+                   "fixture sanity: the link must really resolve inside the project");
 
         assertTrue(server.isFileAccessible(sessionId, linkIn.toString()),
-                "a link whose target is inside the project must stay allowed");
+                   "a link whose target is inside the project must stay allowed");
     }
 
     @Test
@@ -173,7 +173,7 @@ class FileScopeSymlinkTraversalTest {
         assertFalse(result.startsWith("Access denied"), result);
         assertTrue(result.contains("(symbolic link)"), "link status must be reported: " + result);
         assertTrue(result.contains(target.toRealPath().toString()),
-                "the resolved in-scope target must be shown: " + result);
+                   "the resolved in-scope target must be shown: " + result);
         assertTrue(result.contains("bytes"), result);
     }
 
@@ -189,13 +189,13 @@ class FileScopeSymlinkTraversalTest {
         String escape = projectDir.resolve("sub").resolve("..").resolve("..")
                 .resolve(outsideDir.getFileName()).resolve("secret.txt").toString();
         assertFalse(server.isFileAllowed(sessionId, escape),
-                "a `..` spelling that resolves outside must be denied: " + escape);
+                    "a `..` spelling that resolves outside must be denied: " + escape);
         assertFalse(server.isFileAccessible(sessionId, escape),
-                "isFileAccessible must agree with isFileAllowed on the `..` escape: " + escape);
+                    "isFileAccessible must agree with isFileAllowed on the `..` escape: " + escape);
 
         String inside = projectDir.resolve("sub").resolve("..").resolve("legit.txt").toString();
         assertTrue(server.isFileAccessible(sessionId, inside),
-                "a `..` spelling that resolves back inside must be allowed: " + inside);
+                   "a `..` spelling that resolves back inside must be allowed: " + inside);
     }
 
     // Dual-path identity: the same real file reached through two spellings is treated identically. The project scope is
@@ -211,9 +211,9 @@ class FileScopeSymlinkTraversalTest {
         String aliasSpelling = alias.resolve(real.getFileName()).toString();
 
         assertTrue(server.isFileAccessible(sessionId, realSpelling),
-                "real spelling must be allowed when the scope root is itself a symlink");
+                   "real spelling must be allowed when the scope root is itself a symlink");
         assertTrue(server.isFileAccessible(sessionId, aliasSpelling),
-                "alias spelling must be allowed — same real file, same verdict");
+                   "alias spelling must be allowed — same real file, same verdict");
 
         GetFileInfoTool tool = new GetFileInfoTool(server);
         String realInfo = tool.handle(fileInfoArgs(realSpelling), new FakeSession(sessionId));
@@ -221,7 +221,7 @@ class FileScopeSymlinkTraversalTest {
         assertFalse(realInfo.startsWith("Access denied"), realInfo);
         assertFalse(aliasInfo.startsWith("Access denied"), aliasInfo);
         assertEquals(realInfo.substring(realInfo.indexOf(':')), aliasInfo.substring(aliasInfo.indexOf(':')),
-                "both spellings must report identical metadata for the same real file");
+                     "both spellings must report identical metadata for the same real file");
     }
 
     // FindFile's per-candidate gate on a link — the case the existing FindFile tests skip by passing path -> true.
@@ -234,20 +234,20 @@ class FileScopeSymlinkTraversalTest {
         writeInScope("legit.txt");
         writeInScope("target.txt");
         assertTrue(leak.toRealPath().toString().startsWith(outsideDir.toRealPath().toString()),
-                "fixture sanity: the escaping link must really point outside");
+                   "fixture sanity: the escaping link must really point outside");
 
         Predicate<Path> scope = p -> server.isFileAccessible(sessionId, p.toString());
         String unfiltered = FindFileProvider.findFiles(List.of(projectDir), "txt", false, false,
-                0, true, -1, p -> true);
+                                                       0, true, -1, p -> true);
         String gated = FindFileProvider.findFiles(List.of(projectDir), "txt", false, false,
-                0, true, -1, scope);
+                                                  0, true, -1, scope);
 
         assertTrue(unfiltered.contains("leak.txt"),
-                "fixture sanity: without a scope predicate the escaping link IS a walk candidate: " + unfiltered);
+                   "fixture sanity: without a scope predicate the escaping link IS a walk candidate: " + unfiltered);
         assertFalse(gated.contains("leak.txt"),
-                "the per-candidate scope predicate must drop the link whose target is outside: " + gated);
+                    "the per-candidate scope predicate must drop the link whose target is outside: " + gated);
         assertTrue(gated.contains("legit.txt") && gated.contains("target.txt"),
-                "in-scope matches must survive the same gate: " + gated);
+                   "in-scope matches must survive the same gate: " + gated);
         assertTrue(gated.startsWith("Found 2 file(s):"), gated);
     }
 
@@ -265,9 +265,9 @@ class FileScopeSymlinkTraversalTest {
 
         assertFalse(result.startsWith("Access denied"), "the project root itself is in scope: " + result);
         assertFalse(result.contains("leak.txt"),
-                "the escaping link must not appear in results: " + result);
+                    "the escaping link must not appear in results: " + result);
         assertTrue(result.contains("legit.txt") && result.contains("target.txt"),
-                "in-scope matches must still appear: " + result);
+                   "in-scope matches must still appear: " + result);
         assertTrue(result.startsWith("Found 2 file(s):"), result);
     }
 
@@ -275,10 +275,6 @@ class FileScopeSymlinkTraversalTest {
 
         NoopRegistrar(String sessionId) {
             super(sessionId, AiTypeEnum.CLAUDE);
-        }
-
-        @Override
-        public void addMcpEndpoint(String endpointUrl) {
         }
 
         @Override

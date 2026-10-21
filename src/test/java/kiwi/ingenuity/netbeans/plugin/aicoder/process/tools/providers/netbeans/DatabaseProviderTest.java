@@ -15,17 +15,17 @@ class DatabaseProviderTest {
     @Test
     void executeSqlQuery_rejectsNonSelectStatements() {
         assertEquals("Rejected: only SELECT queries are allowed.",
-                DatabaseProvider.executeSqlQuery("any", "DROP TABLE users"));
+                     DatabaseProvider.executeSqlQuery("any", "DROP TABLE users", 10));
         assertEquals("Rejected: only SELECT queries are allowed.",
-                DatabaseProvider.executeSqlQuery("any", "DELETE FROM users"));
+                     DatabaseProvider.executeSqlQuery("any", "DELETE FROM users", 10));
         assertEquals("Rejected: only SELECT queries are allowed.",
-                DatabaseProvider.executeSqlQuery("any", "UPDATE users SET name='x'"));
+                     DatabaseProvider.executeSqlQuery("any", "UPDATE users SET name='x'", 10));
         assertEquals("Rejected: only SELECT queries are allowed.",
-                DatabaseProvider.executeSqlQuery("any", "INSERT INTO users VALUES (1)"));
+                     DatabaseProvider.executeSqlQuery("any", "INSERT INTO users VALUES (1)", 10));
         assertEquals("Rejected: only SELECT queries are allowed.",
-                DatabaseProvider.executeSqlQuery("any", ""));
+                     DatabaseProvider.executeSqlQuery("any", "", 10));
         assertEquals("Rejected: only SELECT queries are allowed.",
-                DatabaseProvider.executeSqlQuery("any", null));
+                     DatabaseProvider.executeSqlQuery("any", null, 10));
     }
 
     @Test
@@ -33,13 +33,13 @@ class DatabaseProviderTest {
         // "select" itself is accepted case-insensitively (see the acceptance test below);
         // this just confirms a lowercase non-SELECT statement is still rejected.
         assertEquals("Rejected: only SELECT queries are allowed.",
-                DatabaseProvider.executeSqlQuery("any", "drop table users"));
+                     DatabaseProvider.executeSqlQuery("any", "drop table users", 10));
     }
 
     @Test
     void executeSqlQuery_toleratesLeadingWhitespaceBeforeRejectedKeyword() {
         assertEquals("Rejected: only SELECT queries are allowed.",
-                DatabaseProvider.executeSqlQuery("any", "   DROP TABLE users"));
+                     DatabaseProvider.executeSqlQuery("any", "   DROP TABLE users", 10));
     }
 
     @Test
@@ -48,10 +48,10 @@ class DatabaseProviderTest {
         // connection registered in a plain unit test environment, that lookup
         // fails with the connection-not-found error, proving the query text
         // itself was accepted rather than rejected by the guard.
-        String result = DatabaseProvider.executeSqlQuery("nonexistent-connection", "select * from users");
+        String result = DatabaseProvider.executeSqlQuery("nonexistent-connection", "select * from users", 10);
         assertTrue(result.startsWith("Database connection not found: nonexistent-connection"), result);
 
-        result = DatabaseProvider.executeSqlQuery("nonexistent-connection", "SELECT * FROM users");
+        result = DatabaseProvider.executeSqlQuery("nonexistent-connection", "SELECT * FROM users", 10);
         assertTrue(result.startsWith("Database connection not found: nonexistent-connection"), result);
     }
 
@@ -65,10 +65,10 @@ class DatabaseProviderTest {
     void executeSqlQuery_rejectsAStatementChainedAfterTheSelect() {
         assertEquals("Rejected: only a single SELECT statement is allowed — "
                 + "remove the ';' and anything following it.",
-                DatabaseProvider.executeSqlQuery("any", "SELECT 1; DROP TABLE users"));
+                     DatabaseProvider.executeSqlQuery("any", "SELECT 1; DROP TABLE users", 10));
         assertEquals("Rejected: only a single SELECT statement is allowed — "
                 + "remove the ';' and anything following it.",
-                DatabaseProvider.executeSqlQuery("any", "SELECT * FROM users;DELETE FROM users"));
+                     DatabaseProvider.executeSqlQuery("any", "SELECT * FROM users;DELETE FROM users", 10));
     }
 
     /**
@@ -77,10 +77,10 @@ class DatabaseProviderTest {
      */
     @Test
     void executeSqlQuery_allowsATrailingSemicolonWithNothingAfterIt() {
-        String result = DatabaseProvider.executeSqlQuery("nonexistent-connection", "SELECT * FROM users;");
+        String result = DatabaseProvider.executeSqlQuery("nonexistent-connection", "SELECT * FROM users;", 10);
         assertTrue(result.startsWith("Database connection not found: nonexistent-connection"), result);
 
-        result = DatabaseProvider.executeSqlQuery("nonexistent-connection", "SELECT * FROM users;   ");
+        result = DatabaseProvider.executeSqlQuery("nonexistent-connection", "SELECT * FROM users;   ", 10);
         assertTrue(result.startsWith("Database connection not found: nonexistent-connection"), result);
     }
 

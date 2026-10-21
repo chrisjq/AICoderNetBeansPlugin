@@ -6,6 +6,8 @@ import com.google.gson.JsonParser;
 import java.util.Collection;
 import java.util.Set;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.AiTypeEnum;
+import kiwi.ingenuity.netbeans.plugin.aicoder.process.McpToolEnum;
+import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.exposure.HiddenToolTextFilter;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.McpToolInterface;
 
 public abstract class AbstractMcpBridge {
@@ -41,13 +43,19 @@ public abstract class AbstractMcpBridge {
     }
 
     public final JsonArray listToolsForModel(Collection<? extends McpToolInterface> handlers) {
+        return listToolsForModel(handlers, Set.of());
+    }
+
+    public final JsonArray listToolsForModel(Collection<? extends McpToolInterface> handlers,
+                                             Set<McpToolEnum> hiddenTools) {
         JsonArray tools = new JsonArray();
         if (handlers == null) {
             return tools;
         }
         for (McpToolInterface handler : handlers) {
             if (handler != null) {
-                tools.add(handler.schema(aiType.getMcpOptions()));
+                JsonObject schema = handler.schema(aiType.getMcpOptions());
+                tools.add(HiddenToolTextFilter.omitHiddenReferencesInDescriptions(schema, hiddenTools));
             }
         }
         return tools;

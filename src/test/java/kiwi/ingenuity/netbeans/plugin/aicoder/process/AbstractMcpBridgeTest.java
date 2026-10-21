@@ -62,6 +62,7 @@ class AbstractMcpBridgeTest {
         public JsonObject schema(Set<McpInstructionOptionEnum> options) {
             JsonObject tool = new JsonObject();
             tool.addProperty("name", "FakeTool");
+            tool.addProperty("description", "Use BuildMavenProject when needed.");
             JsonObject inputSchema = new JsonObject();
             inputSchema.addProperty("type", "object");
             inputSchema.add("properties", new JsonObject());
@@ -86,6 +87,15 @@ class AbstractMcpBridgeTest {
 
         assertFalse(properties.has("sessionId"));
         assertFalse(properties.has("secretKey"));
+    }
+
+    @Test
+    void hiddenToolReferencesAreRemovedFromModelSchemas() {
+        EchoBridge bridge = new EchoBridge(OLLAMA_LOCAL);
+
+        JsonArray tools = bridge.listToolsForModel(List.of(new FakeTool()), Set.of(McpToolEnum.BUILD_MAVEN_PROJECT));
+
+        assertFalse(tools.get(0).getAsJsonObject().get("description").getAsString().contains("BuildMavenProject"));
     }
 
     @Test

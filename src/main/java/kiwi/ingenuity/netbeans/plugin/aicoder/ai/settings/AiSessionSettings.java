@@ -1,12 +1,16 @@
 package kiwi.ingenuity.netbeans.plugin.aicoder.ai.settings;
 
 import com.google.gson.JsonObject;
+import java.util.regex.Pattern;
 import kiwi.ingenuity.netbeans.plugin.aicoder.DatabaseAccessOptionEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.GitAccessOptionEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.PluginSettings;
 import kiwi.ingenuity.netbeans.plugin.aicoder.WebRequestAccessOptionEnum;
+import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.exposure.McpToolConfig;
 
 public class AiSessionSettings {
+
+    private static final Pattern MCP_ROUTING_ID = Pattern.compile("[A-Za-z0-9-]{8,64}");
 
     // volatile: this object is shared by reference across the EDT, broker and
     // message-delivery threads and is mutated in place, so each field needs
@@ -45,6 +49,9 @@ public class AiSessionSettings {
     private volatile Boolean allowGitRead;
     private volatile Boolean allowGitWrite;
     private volatile Boolean enableClipboardAccess;
+    private volatile McpToolConfig mcpToolConfig;
+    private volatile String mcpRoutingId;
+    private final Object mcpRoutingIdLock = new Object();
 
     public AiSessionSettings() {
     }
@@ -243,6 +250,34 @@ public class AiSessionSettings {
         return enableClipboardAccess;
     }
 
+    public McpToolConfig mcpToolConfig() {
+        return mcpToolConfig;
+    }
+
+    /**
+     * The address of this session's MCP endpoint, or null if none has been generated yet. An address, not a credential:
+     * it is written into backend configuration and process arguments.
+     */
+    public String mcpRoutingId() {
+        return mcpRoutingId;
+    }
+
+    /**
+     * Returns the routing id, generating and storing a random one if this session has none. Stable once generated.
+     */
+    public String ensureMcpRoutingId() {
+        String existing = mcpRoutingId;
+        if (existing != null) {
+            return existing;
+        }
+        synchronized (mcpRoutingIdLock) {
+            if (mcpRoutingId == null) {
+                mcpRoutingId = java.util.UUID.randomUUID().toString();
+            }
+            return mcpRoutingId;
+        }
+    }
+
     public boolean effectiveAllowDatabaseAccess() {
         return allowDatabaseAccess != null ? allowDatabaseAccess : PluginSettings.isAllowDatabaseAccess();
     }
@@ -380,6 +415,27 @@ public class AiSessionSettings {
         this.enableClipboardAccess = newEnableClipboardAccess;
     }
 
+    public void setMcpToolConfig(McpToolConfig newMcpToolConfig) {
+        this.mcpToolConfig = newMcpToolConfig;
+    }
+
+    public static boolean isValidMcpRoutingId(String id) {
+        return id != null && MCP_ROUTING_ID.matcher(id).matches();
+    }
+
+    /**
+     * Sets the session routing id. Null clears it; malformed values are ignored so persisted/user-provided data cannot
+     * escape the session URL path (valid ids contain only ASCII letters, digits and hyphens and are 8-64 characters).
+     */
+    public void setMcpRoutingId(String newMcpRoutingId) {
+        if (newMcpRoutingId != null && !isValidMcpRoutingId(newMcpRoutingId)) {
+            return;
+        }
+        synchronized (mcpRoutingIdLock) {
+            this.mcpRoutingId = newMcpRoutingId;
+        }
+    }
+
     public void applyDefaultSettingsFromGlobal() {
         if (maxHistory == null) {
             maxHistory = PluginSettings.getMaxHistory();
@@ -511,6 +567,12 @@ public class AiSessionSettings {
         }
         if (enableClipboardAccess != null) {
             cfgObj.addProperty(AiSessionSettingsKeyEnum.ENABLE_CLIPBOARD_ACCESS.key(), enableClipboardAccess);
+        }
+        if (mcpToolConfig != null) {
+            cfgObj.add(AiSessionSettingsKeyEnum.MCP_TOOL_CONFIG.key(), mcpToolConfig.toJson());
+        }
+        if (mcpRoutingId != null) {
+            cfgObj.addProperty(AiSessionSettingsKeyEnum.MCP_ROUTING_ID.key(), mcpRoutingId);
         }
     }
 }

@@ -8,20 +8,24 @@ import java.nio.file.Path;
 import java.time.Instant;
 import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.Callable;
 import java.util.concurrent.atomic.AtomicReference;
 import javax.swing.JCheckBox;
+import javax.swing.JLabel;
 import javax.swing.JPanel;
 import javax.swing.SwingUtilities;
 import javax.swing.border.TitledBorder;
 import javax.swing.table.TableModel;
 import javax.swing.table.TableRowSorter;
+import kiwi.ingenuity.netbeans.plugin.aicoder.AccessControlLabelEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.DatabaseAccessOptionEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.GitAccessOptionEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.PluginSettings;
 import kiwi.ingenuity.netbeans.plugin.aicoder.WebRequestAccessOptionEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.AiTypeEnum;
+import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.claude.settings.ClaudeSessionSettings;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.session.AiSession;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.settings.AiSessionSettings;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.settings.ConfigTemplate;
@@ -31,6 +35,7 @@ import kiwi.ingenuity.netbeans.plugin.aicoder.ui.settings.AiSessionConfigPanelMo
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import org.junit.jupiter.api.Test;
@@ -212,56 +217,6 @@ class AiManagerModelTest {
         assertEquals(1, sorter.convertRowIndexToModel(0));
     }
 
-    /**
-     * applyGlobal is the Tools &gt; Options "Apply" path — the only way the plugin-wide git defaults are ever
-     * written. It is NOT covered by the session/template test below, which deliberately asserts that global
-     * mode REJECTS loadSession/applySession.
-     * <p>
-     * Note the shape: the stored values are moved AWAY from what the panel holds before applyGlobal is
-     * called. Loading and re-applying the same values would pass whether or not applyGlobal writes the git
-     * settings at all, because PluginSettings would already hold them.
-     */
-    @Test
-    void applyGlobalWritesGitAccessBackToPluginSettings() throws Exception {
-        boolean savedMaster = PluginSettings.isAllowGitAccess();
-        boolean savedRead = PluginSettings.isAllowGitAccessOption(GitAccessOptionEnum.READ);
-        boolean savedWrite = PluginSettings.isAllowGitAccessOption(GitAccessOptionEnum.WRITE);
-        try {
-            PluginSettings.setAllowGitAccess(true);
-            PluginSettings.setAllowGitAccessOption(GitAccessOptionEnum.READ, true);
-            PluginSettings.setAllowGitAccessOption(GitAccessOptionEnum.WRITE, false);
-
-            AiSessionConfigPanel panel
-                                 = onEdt(() -> new AiSessionConfigPanel(AiSessionConfigPanelMode.GLOBAL));
-            onEdt(() -> {
-                panel.loadGlobal();
-                return null;
-            });
-            // Panel now holds true/true/false. Move the store to the opposite of each so a
-            // no-op applyGlobal cannot be mistaken for a working one.
-            PluginSettings.setAllowGitAccess(false);
-            PluginSettings.setAllowGitAccessOption(GitAccessOptionEnum.READ, false);
-            PluginSettings.setAllowGitAccessOption(GitAccessOptionEnum.WRITE, true);
-
-            onEdt(() -> {
-                panel.applyGlobal();
-                return null;
-            });
-
-            assertTrue(PluginSettings.isAllowGitAccess(),
-                    "master flag not written — its line is missing from applyGlobal");
-            assertTrue(PluginSettings.isAllowGitAccessOption(GitAccessOptionEnum.READ),
-                    "READ not written by applyGlobal");
-            assertFalse(PluginSettings.isAllowGitAccessOption(GitAccessOptionEnum.WRITE),
-                    "WRITE not written by applyGlobal");
-        }
-        finally {
-            PluginSettings.setAllowGitAccess(savedMaster);
-            PluginSettings.setAllowGitAccessOption(GitAccessOptionEnum.READ, savedRead);
-            PluginSettings.setAllowGitAccessOption(GitAccessOptionEnum.WRITE, savedWrite);
-        }
-    }
-
     @Test
     void sessionAndTemplateModesBindGenericSettingsButGlobalModeRejectsThem() throws Exception {
         AiSessionSettings values = configuredSettings();
@@ -354,7 +309,158 @@ class AiManagerModelTest {
         assertTrue(steering.isVisible(),
                    "MCP steering checkbox must stay visible in TEMPLATE mode after loadSession(new AiSessionSettings())");
         assertTrue(steering.isEnabled(),
-                "MCP steering checkbox must stay enabled in TEMPLATE mode after loadSession(new AiSessionSettings())");
+                   "MCP steering checkbox must stay enabled in TEMPLATE mode after loadSession(new AiSessionSettings())");
+    }
+
+    @Test
+    void sessionModeShowsTheMcpSteeringSwitchForATypeThatSupportsItAndRoundTripsIt() throws Exception {
+        AiSessionConfigPanel panel = onEdt(() -> new AiSessionConfigPanel(AiSessionConfigPanelMode.SESSION));
+        JCheckBox steering = onEdt(() -> findMcpSteeringCheckBox(panel));
+        JPanel steeringPanel = onEdt(() -> findTitledPanel(panel, "MCP steering"));
+        assertNotNull(steering, "the switch is part of the SESSION General group again");
+        assertFalse(steeringPanel.isVisible(), "hidden until an AI type that supports steering is loaded");
+
+        ClaudeSessionSettings settings = new ClaudeSessionSettings();
+        settings.setMcpSteering(true);
+        assertTrue(AiTypeEnum.CLAUDE.mcpSteeringSupport().supported(), "premise: Claude supports steering");
+        onEdt(() -> {
+            panel.loadSession(settings, AiTypeEnum.CLAUDE);
+            return null;
+        });
+        assertTrue(steeringPanel.isVisible());
+        assertTrue(steeringPanel.isEnabled());
+        assertTrue(steering.isSelected(), "the session's stored value is shown");
+
+        onEdt(() -> {
+            steering.setSelected(false);
+            return null;
+        });
+        AiSessionSettings target = new AiSessionSettings();
+        onEdt(() -> {
+            panel.applySession(target);
+            return null;
+        });
+        assertFalse(target.mcpSteering(), "a change made in the session dialog is saved");
+    }
+
+    @Test
+    void sessionModeHidesTheMcpSteeringSwitchWhenNoAiTypeIsKnown() throws Exception {
+        AiSessionConfigPanel panel = onEdt(() -> new AiSessionConfigPanel(AiSessionConfigPanelMode.SESSION));
+        JPanel steeringPanel = onEdt(() -> findTitledPanel(panel, "MCP steering"));
+
+        onEdt(() -> {
+            panel.loadSession(new AiSessionSettings());
+            return null;
+        });
+
+        assertFalse(steeringPanel.isVisible());
+        assertFalse(steeringPanel.isEnabled());
+    }
+
+    @Test
+    void globalModeHoldsNoSessionDefaultsAndNoDuplicateOfTheOptionsBannerNote() throws Exception {
+        AiSessionConfigPanel global = onEdt(() -> new AiSessionConfigPanel(AiSessionConfigPanelMode.GLOBAL));
+
+        assertTrue(onEdt(() -> labelTexts(global)).stream().noneMatch(text -> text.contains("Default config template")),
+                   "the 'defaults moved' note is shown once, by the Options panel banner");
+        assertFalse(onEdt(() -> containsCheckBoxText(global, "Automatically accept file changes")),
+                    "auto-accept is a session default now and must not be editable in GLOBAL mode");
+        assertFalse(onEdt(() -> containsCheckBoxText(global,
+                                                     AccessControlLabelEnum.RESTRICT_TO_PROJECT_FILES.displayLabel())),
+                    "restrict-to-project is a session default now and must not be editable in GLOBAL mode");
+        assertNull(onEdt(() -> findMcpSteeringCheckBox(global)),
+                   "MCP steering is a session default now and must not be editable in GLOBAL mode");
+
+        for (AiSessionConfigPanelMode mode : List.of(AiSessionConfigPanelMode.SESSION,
+                                                     AiSessionConfigPanelMode.TEMPLATE)) {
+            AiSessionConfigPanel panel = onEdt(() -> new AiSessionConfigPanel(mode));
+            assertTrue(onEdt(() -> containsCheckBoxText(panel, "Automatically accept file changes")),
+                       mode + " must keep exposing the generic session settings GLOBAL mode dropped");
+        }
+    }
+
+    @Test
+    void applyGlobalStopsWritingTheSessionDefaultsThatMovedToTheDefaultTemplate() throws Exception {
+        int previous = PluginSettings.getMaxHistory();
+        AiSessionConfigPanel global = onEdt(() -> new AiSessionConfigPanel(AiSessionConfigPanelMode.GLOBAL));
+        try {
+            onEdt(() -> {
+                global.loadGlobal();
+                return null;
+            });
+            PluginSettings.setMaxHistory(previous + 1);
+            onEdt(() -> {
+                global.applyGlobal();
+                return null;
+            });
+            assertEquals(previous + 1, PluginSettings.getMaxHistory(),
+                         "applyGlobal must leave the stored session defaults alone; they belong to the Default config template now");
+        }
+        finally {
+            PluginSettings.setMaxHistory(previous);
+        }
+    }
+
+    @Test
+    void mcpToolsPanelIsBuiltOnlyForSessionMode() throws Exception {
+        for (AiSessionConfigPanelMode mode : List.of(AiSessionConfigPanelMode.GLOBAL,
+                                                     AiSessionConfigPanelMode.TEMPLATE)) {
+            AiSessionConfigPanel panel = onEdt(() -> new AiSessionConfigPanel(mode));
+            assertNull(onEdt(() -> findTitledPanel(panel, "MCP Tools")),
+                       mode + " must not build the MCP tools panel");
+        }
+
+        AiSessionConfigPanel session = onEdt(() -> new AiSessionConfigPanel(AiSessionConfigPanelMode.SESSION));
+        assertNotNull(onEdt(() -> findTitledPanel(session, "MCP Tools")),
+                      "SESSION mode owns the MCP tools panel");
+    }
+
+    private static List<String> labelTexts(Component root) {
+        List<String> texts = new ArrayList<>();
+        collectLabelTexts(root, texts);
+        return texts;
+    }
+
+    private static void collectLabelTexts(Component component, List<String> texts) {
+        if (component instanceof JLabel label && label.getText() != null) {
+            texts.add(label.getText());
+        }
+        if (component instanceof Container container) {
+            for (Component child : container.getComponents()) {
+                collectLabelTexts(child, texts);
+            }
+        }
+    }
+
+    private static boolean containsCheckBoxText(Component root, String wanted) {
+        if (root instanceof JCheckBox box && wanted.equals(box.getText())) {
+            return true;
+        }
+        if (root instanceof Container container) {
+            for (Component child : container.getComponents()) {
+                if (containsCheckBoxText(child, wanted)) {
+                    return true;
+                }
+            }
+        }
+        return false;
+    }
+
+    private static JPanel findTitledPanel(Component root, String title) {
+        if (root instanceof JPanel panel
+                && panel.getBorder() instanceof TitledBorder border
+                && title.equals(border.getTitle())) {
+            return panel;
+        }
+        if (root instanceof Container container) {
+            for (Component child : container.getComponents()) {
+                JPanel result = findTitledPanel(child, title);
+                if (result != null) {
+                    return result;
+                }
+            }
+        }
+        return null;
     }
 
     private static JCheckBox findMcpSteeringCheckBox(Component root) {

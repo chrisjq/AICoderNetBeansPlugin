@@ -3,6 +3,7 @@ package kiwi.ingenuity.netbeans.plugin.aicoder.ai.idlewatch;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.atomic.AtomicInteger;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.AiTypeEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.notification.AbstractNotification;
@@ -13,6 +14,8 @@ import kiwi.ingenuity.netbeans.plugin.aicoder.ai.settings.AiSessionSettings;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.SessionRegistry;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.events.AiProcessEventListener;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.session.AbstractAiSession;
+import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.exposure.McpToolConfig;
+import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.exposure.McpToolGroupEnum;
 import org.junit.jupiter.api.AfterEach;
 import static org.junit.jupiter.api.Assertions.*;
 import org.junit.jupiter.api.Test;
@@ -151,5 +154,19 @@ class SessionIdleWatchNotifierTest {
 
         assertTrue(delivered);
         assertEquals(0, interrupts.get(), "must respect the session's own allow-important-messages setting");
+    }
+
+    @Test
+    void aWatcherWhoseIdleWatchersMcpGroupIsSwitchedOffIsNeitherNotifiedNorInterruptedEvenWithTheTimerSettingOn() {
+        AtomicInteger interrupts = new AtomicInteger();
+        AiSession session = session("notifier-group-off", true, true, interrupts);
+        assertTrue(session.settings().effectiveAllowIdleWatcherTimer(), "the behaviour setting itself is still on");
+        session.settings().setMcpToolConfig(McpToolConfig.withDisabled(Set.of(McpToolGroupEnum.IDLE_WATCHERS)));
+
+        boolean delivered = notifier.deliver(watcher(session.id(), true), IdleWatchEventEnum.IDLE, Instant.now(),
+                                             "Target");
+
+        assertFalse(delivered, "switching the group off is enforced at once, for existing watchers too");
+        assertEquals(0, interrupts.get());
     }
 }

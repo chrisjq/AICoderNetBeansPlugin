@@ -4,6 +4,8 @@ import kiwi.ingenuity.netbeans.plugin.aicoder.process.McpArgumentException;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.McpSectionEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.McpToolEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.session.AbstractAiSession;
+import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.exposure.McpToolAccess;
+import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.exposure.McpToolGroupEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.AbstractActionTool;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.ToolRequestArguments;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.providers.netbeans.EditorContextProvider;
@@ -25,8 +27,9 @@ public class GetClipboardTool extends AbstractActionTool {
 
     @Override
     public String handle(ToolRequestArguments args, AbstractAiSession session) throws McpArgumentException {
-        if (!session.getSettings().effectiveEnableClipboardAccess()) {
-            throw new McpArgumentException(-32602, "Clipboard access is disabled. Enable it in session settings or global options.");
+        String refusal = McpToolAccess.refusalMessage(session.getSettings(), McpToolGroupEnum.CLIPBOARD);
+        if (refusal != null) {
+            throw new McpArgumentException(-32602, refusal);
         }
         return EditorContextProvider.getClipboard();
     }

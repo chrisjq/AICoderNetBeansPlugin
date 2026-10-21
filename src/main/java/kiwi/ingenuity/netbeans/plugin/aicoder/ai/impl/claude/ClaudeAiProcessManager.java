@@ -8,6 +8,7 @@ import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
 import java.io.File;
 import java.io.IOException;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
@@ -21,13 +22,16 @@ import java.util.function.Consumer;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 import kiwi.ingenuity.netbeans.plugin.aicoder.PluginSettings;
+import kiwi.ingenuity.netbeans.plugin.aicoder.StringConst;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.AiProcessManager;
+import kiwi.ingenuity.netbeans.plugin.aicoder.ai.AiTypeEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.events.StatusEvent;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.events.StatusEventTypeEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.events.TurnCompleteEvent;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.claude.events.ClaudeSessionInfoEvent;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.claude.session.ClaudeAiSession;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.claude.session.ClaudePersistentSession;
+import kiwi.ingenuity.netbeans.plugin.aicoder.ai.session.AiSession;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.session.InterruptTypeEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.McpToolEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.events.AiProcessEventListener;
@@ -47,6 +51,10 @@ public class ClaudeAiProcessManager extends AiProcessManager {
 
     private static final Logger LOG = Logger.getLogger(ClaudeAiProcessManager.class.getName());
     private static final Gson GSON = new GsonBuilder().disableHtmlEscaping().create();
+    private static final String MCP_CONFIG_SERVERS_KEY = "mcpServers";
+    private static final String MCP_CONFIG_URL_KEY = "url";
+    private static final String MCP_CONFIG_FILE_NAME = "mcp-config.json";
+    static final String MCP_UNAVAILABLE_NOTICE = StatusMessageUtil.formatMcpToolsUnavailable("Claude");
     private static final int MAX_STDERR_LINES = 100;
     /**
      * Master switch for logging {@code input_json_delta} tool-input fragments to "ai json". Default OFF.
@@ -116,12 +124,11 @@ public class ClaudeAiProcessManager extends AiProcessManager {
     }
 
     /**
-     * Number of {@code tool_use} content blocks in an {@code assistant} stream-json line — usually 0 or 1,
-     * but Claude can request more than one tool in the same turn (parallel tool calls), so this counts rather
-     * than flags. Used by {@link #trackToolCallLifecycle} to hold a Mail interrupt while a call is in flight.
-     * Parses defensively: 0 for anything unparseable, the wrong event type, or with no content array — the
-     * failure mode is "an interrupt is held a little longer than strictly necessary", never a crash on a
-     * malformed line.
+     * Number of {@code tool_use} content blocks in an {@code assistant} stream-json line — usually 0 or 1, but Claude
+     * can request more than one tool in the same turn (parallel tool calls), so this counts rather than flags. Used by
+     * {@link #trackToolCallLifecycle} to hold a Mail interrupt while a call is in flight. Parses defensively: 0 for
+     * anything unparseable, the wrong event type, or with no content array — the failure mode is "an interrupt is held
+     * a little longer than strictly necessary", never a crash on a malformed line.
      */
     static int countToolUseStarts(String line) {
         return countContentBlocksOfType(line, "assistant", "tool_use");
@@ -278,12 +285,11 @@ public class ClaudeAiProcessManager extends AiProcessManager {
     }
 
     /**
-     * Configures the effort level for the next spawn (and only the next spawn — the level is fixed at launch
-     * time and a change after that goes through {@link #recycleForModelChange}, which drops the process so
-     * {@link #ensureSession} relaunches on the next turn). An empty or null level means "omit
-     * {@code --effort}" (Claude's own default). A value that is not one of the five known levels is dropped
-     * the same way, with exactly one INFO event — so a corrupted or hand-edited stored value can never break
-     * the session at spawn.
+     * Configures the effort level for the next spawn (and only the next spawn — the level is fixed at launch time and a
+     * change after that goes through {@link #recycleForModelChange}, which drops the process so {@link #ensureSession}
+     * relaunches on the next turn). An empty or null level means "omit {@code --effort}" (Claude's own default). A
+     * value that is not one of the five known levels is dropped the same way, with exactly one INFO event — so a
+     * corrupted or hand-edited stored value can never break the session at spawn.
      */
     public void configureEffort(String level) {
         if (level == null || level.isBlank()) {
@@ -366,6 +372,81 @@ public class ClaudeAiProcessManager extends AiProcessManager {
         listener.onAiProcessEvent(new StatusEvent(StatusEventTypeEnum.READY, StatusMessageUtil.formatReady("Claude")));
     }
 
+    /**
+     * This session's own MCP endpoint, {@code /mcp/claude/<routingId>}, or null when the MCP server is not running or
+     * there is no session. Overridable so tests need not stand up the shared server.
+     */
+    protected String sessionMcpEndpointUrl() {
+        AiSession session = currentSession;
+        if (session == null || session.settings() == null) {
+            return null;
+        }
+        return McpServerRegistry.endpointUrlFor(AiTypeEnum.CLAUDE, session.settings().ensureMcpRoutingId());
+    }
+
+    /**
+     * The MCP config registering the plugin's server under its usual name, so for this process it replaces the global
+     * entry of the same name.
+     */
+    static String mcpConfigJson(String url) {
+        JsonObject server = new JsonObject();
+        server.addProperty(ClaudeJsonKeyEnum.TYPE.key(), "http");
+        server.addProperty(MCP_CONFIG_URL_KEY, url);
+        JsonObject servers = new JsonObject();
+        servers.add(StringConst.PLUGIN_ID, server);
+        JsonObject config = new JsonObject();
+        config.add(MCP_CONFIG_SERVERS_KEY, servers);
+        return GSON.toJson(config);
+    }
+
+    /**
+     * {@code --mcp-config=<json>}, the config inline. Used only when there is no session config dir to hold a file, or
+     * the file cannot be written. One argument in the {@code =} form: the flag is variadic and the space form would
+     * swallow whatever argument follows as a further config path. {@code --strict-mcp-config} is deliberately not used,
+     * so the user's other MCP servers still load.
+     */
+    static String mcpConfigArgument(String url) {
+        return "--mcp-config=" + mcpConfigJson(url);
+    }
+
+    /**
+     * {@code --mcp-config=<absolute path>} to a file holding the config, rewritten on every launch. A file rather than
+     * inline JSON because embedded double quotes do not survive every host's command-line quoting (Windows,
+     * {@code .cmd} shims), and it keeps the URL out of the process list. Falls back to the inline form when there is no
+     * config dir or the file cannot be written.
+     */
+    static String mcpConfigArgument(String url, Path configDir) {
+        if (configDir == null) {
+            return mcpConfigArgument(url);
+        }
+        try {
+            Files.createDirectories(configDir);
+            Path file = configDir.resolve(MCP_CONFIG_FILE_NAME).toAbsolutePath();
+            Files.writeString(file, mcpConfigJson(url), StandardCharsets.UTF_8);
+            return "--mcp-config=" + file;
+        }
+        catch (IOException e) {
+            LOG.log(Level.WARNING, "Could not write the MCP config file; passing it inline: {0}", e.getMessage());
+            return mcpConfigArgument(url);
+        }
+    }
+
+    /**
+     * Removes only this process's generated MCP configuration, retaining the per-session directory and its other
+     * persisted state (history, memory and credentials).
+     */
+    private void deleteSessionMcpConfigFile() {
+        if (sessionConfigDir == null) {
+            return;
+        }
+        try {
+            Files.deleteIfExists(sessionConfigDir.resolve(MCP_CONFIG_FILE_NAME));
+        }
+        catch (IOException e) {
+            LOG.log(Level.FINE, "Could not remove the session MCP config file", e);
+        }
+    }
+
     private List<String> buildLaunchCommand(String sid, boolean resume, List<File> projDirs, Path configDir) {
         List<String> args = new ArrayList<>();
         args.add("-p");
@@ -396,6 +477,15 @@ public class ClaudeAiProcessManager extends AiProcessManager {
         }
         args.add("--allowedTools");
         args.add("Read,Edit,Write,Bash,Glob,Grep," + McpToolEnum.allMcpNames());
+        String sessionMcpUrl = sessionMcpEndpointUrl();
+        if (sessionMcpUrl != null) {
+            args.add(mcpConfigArgument(sessionMcpUrl, configDir));
+        }
+        else {
+            LOG.log(Level.WARNING, "No session MCP endpoint available (MCP server not running?); launching Claude "
+                    + "without the plugin MCP server");
+            listener.onAiProcessEvent(new StatusEvent(StatusEventTypeEnum.INFO, MCP_UNAVAILABLE_NOTICE));
+        }
         for (File d : projDirs) {
             if (d != null && d.isDirectory()) {
                 args.add("--add-dir");
@@ -972,6 +1062,7 @@ public class ClaudeAiProcessManager extends AiProcessManager {
             McpServerRegistry.deregister(reg);
         }
 
+        deleteSessionMcpConfigFile();
         sessionId = null;
         sessionWorkingDir = null;
         pendingDiff = false;

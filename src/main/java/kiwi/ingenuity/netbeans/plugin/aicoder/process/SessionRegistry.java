@@ -33,7 +33,7 @@ public final class SessionRegistry implements Registry {
     }
 
     public static AbstractAiSession get(String sessionId) {
-        return SESSIONS.get(sessionId);
+        return sessionId == null ? null : SESSIONS.get(sessionId);
     }
 
     /**

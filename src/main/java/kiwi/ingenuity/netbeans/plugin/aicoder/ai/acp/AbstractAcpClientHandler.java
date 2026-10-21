@@ -35,12 +35,11 @@ import kiwi.ingenuity.netbeans.plugin.aicoder.process.session.AbstractAiSession;
 
 /**
  * Backend-neutral ACP client: the {@code session/request_permission} → {@link PermissionEvent}/
- * {@link ConfirmEvent} bridge and the {@code session/update} dispatch skeleton, plus the wire decoding both
- * of those need. Concrete handlers supply backend-specific event mapping (how an agent-message chunk, a tool
- * call or a usage update becomes a plugin event) through the {@code onXxx} hooks below; everything about
- * turning a permission request into a diff-panel prompt and a reply is shared, because the policy it encodes
- * (own-session-tree exemption, read-scope, MCP steering, one-decision-per-request) is a plugin rule, not an
- * agent's.
+ * {@link ConfirmEvent} bridge and the {@code session/update} dispatch skeleton, plus the wire decoding both of those
+ * need. Concrete handlers supply backend-specific event mapping (how an agent-message chunk, a tool call or a usage
+ * update becomes a plugin event) through the {@code onXxx} hooks below; everything about turning a permission request
+ * into a diff-panel prompt and a reply is shared, because the policy it encodes (own-session-tree exemption,
+ * read-scope, MCP steering, one-decision-per-request) is a plugin rule, not an agent's.
  */
 public abstract class AbstractAcpClientHandler implements AcpClientHandler {
 
@@ -49,24 +48,23 @@ public abstract class AbstractAcpClientHandler implements AcpClientHandler {
     private static final Set<String> OUR_MCP_TOOL_NAMES = Set.of(McpToolEnum.allMcpNames().split(","));
 
     /**
-     * How many in-flight tool calls' kinds are remembered before the map is dropped and rebuilt. A tool call
-     * is forgotten as soon as it completes, so this only bounds a leak from calls that never report a
-     * terminal status. A lookup that misses is safe by design — it means "ask", never "allow".
+     * How many in-flight tool calls' kinds are remembered before the map is dropped and rebuilt. A tool call is
+     * forgotten as soon as it completes, so this only bounds a leak from calls that never report a terminal status. A
+     * lookup that misses is safe by design — it means "ask", never "allow".
      */
     private static final int MAX_TRACKED_TOOL_CALLS = 256;
 
     /**
-     * How many distinct refusals one turn keeps for {@link #consumeTurnRefusals}. A turn that ends on a
-     * refusal has normally made one; the bound only stops a pathological burst from growing the notice
-     * without limit.
+     * How many distinct refusals one turn keeps for {@link #consumeTurnRefusals}. A turn that ends on a refusal has
+     * normally made one; the bound only stops a pathological burst from growing the notice without limit.
      */
     private static final int MAX_TURN_REFUSALS = 8;
 
     protected final AiProcessEventListener listener;
     /**
-     * The backend's own logger, passed in rather than shared, so each backend's debug-JSON trail keeps
-     * appearing under its own class name — including for a test that attaches a
-     * {@link java.util.logging.Handler} to that specific logger.
+     * The backend's own logger, passed in rather than shared, so each backend's debug-JSON trail keeps appearing under
+     * its own class name — including for a test that attaches a {@link java.util.logging.Handler} to that specific
+     * logger.
      */
     protected final Logger log;
     private final Runnable disconnectCallback;
@@ -80,22 +78,19 @@ public abstract class AbstractAcpClientHandler implements AcpClientHandler {
     private volatile CompletableFuture<PermissionDecision> pendingPermission;
 
     /**
-     * @param log                   the concrete backend's own logger (e.g.
-     *                              {@code Logger.getLogger(OpenCodeAcpClientHandler.class.getName())}), so
-     *                              log lines keep the backend's class name rather than the base's.
-     * @param ownSessionConfigFile  true for a path inside this plugin session's own
-     *                              {@code ~/.ai-coder/{type}/{sessionId}/} tree — see
-     *                              {@link #sessionFileScope}. A permission request whose every path passes is
-     *                              answered "allow once" without asking the user. Null means "nothing is
-     *                              exempt": every path-bearing request is put to the user.
+     * @param log the concrete backend's own logger (e.g.
+     * {@code Logger.getLogger(OpenCodeAcpClientHandler.class.getName())}), so log lines keep the backend's class name
+     * rather than the base's.
+     * @param ownSessionConfigFile true for a path inside this plugin session's own
+     * {@code ~/.ai-coder/{type}/{sessionId}/} tree — see {@link #sessionFileScope}. A permission request whose every
+     * path passes is answered "allow once" without asking the user. Null means "nothing is exempt": every path-bearing
+     * request is put to the user.
      * @param steeringIsActiveCheck optional check for whether MCP steering is active for a session (by plugin
-     *                              sessionId). If null, steering is determined via {@link SessionRegistry} at
-     *                              runtime, under {@code pluginSessionId}.
-     * @param pluginSessionId       the PLUGIN session UUID this session is registered under in
-     *                              {@link SessionRegistry} — never the agent's own ACP session id, which the
-     *                              registry does not know. Null for callers with no plugin session (tests);
-     *                              steering then resolves through {@code steeringIsActiveCheck} if given,
-     *                              else off.
+     * sessionId). If null, steering is determined via {@link SessionRegistry} at runtime, under
+     * {@code pluginSessionId}.
+     * @param pluginSessionId the PLUGIN session UUID this session is registered under in {@link SessionRegistry} —
+     * never the agent's own ACP session id, which the registry does not know. Null for callers with no plugin session
+     * (tests); steering then resolves through {@code steeringIsActiveCheck} if given, else off.
      */
     protected AbstractAcpClientHandler(AiProcessEventListener listener, Runnable disconnectCallback, Logger log,
                                        Predicate<String> ownSessionConfigFile, Predicate<String> steeringIsActiveCheck, String pluginSessionId) {
@@ -113,9 +108,8 @@ public abstract class AbstractAcpClientHandler implements AcpClientHandler {
     }
 
     /**
-     * One plugin session's file policy as the ACP handler needs it: the own-tree exemption (as a
-     * {@link Predicate}, so it stays drop-in for the {@code ownSessionConfigFile} constructor parameter) plus
-     * the read-access decision.
+     * One plugin session's file policy as the ACP handler needs it: the own-tree exemption (as a {@link Predicate}, so
+     * it stays drop-in for the {@code ownSessionConfigFile} constructor parameter) plus the read-access decision.
      */
     public static final class SessionFileScope implements Predicate<String> {
 
@@ -135,8 +129,8 @@ public abstract class AbstractAcpClientHandler implements AcpClientHandler {
         }
 
         /**
-         * Why {@code GetFileContent} would refuse {@code path}, in its own words, or null when no source is
-         * wired. For the log only — nothing that reaches the agent or the user.
+         * Why {@code GetFileContent} would refuse {@code path}, in its own words, or null when no source is wired. For
+         * the log only — nothing that reaches the agent or the user.
          */
         public String refusalReason(String path) {
             return refusalReason == null ? null : refusalReason.apply(path);
@@ -159,20 +153,19 @@ public abstract class AbstractAcpClientHandler implements AcpClientHandler {
     }
 
     /**
-     * The file policy for one plugin session, resolved against the live shared MCP server on every call. Both
-     * halves defer to {@link McpHookServer} rather than restating a rule:
+     * The file policy for one plugin session, resolved against the live shared MCP server on every call. Both halves
+     * defer to {@link McpHookServer} rather than restating a rule:
      * <ul>
-     * <li>own tree — {@link McpHookServer#isOwnSessionConfigFile}, the helper {@code WriteFile},
-     * {@code ApplyEdit}, {@code SaveFile} and the Claude/Pi hook use. False when the server is down or the
-     * session unregistered: an exemption that cannot be verified is never granted.</li>
-     * <li>read — {@link McpHookServer#isFileAccessible(McpHookServer, String, String)}, the static
-     * null-tolerant form of the instance method {@code GetFileContentTool.handle} calls to decide whether to
-     * serve a file. Calling that same method is what makes a native read and a {@code GetFileContent} read
-     * obey one policy by construction. It is false for a null server or session, so it fails toward denial
-     * rather than approval.</li>
+     * <li>own tree — {@link McpHookServer#isOwnSessionConfigFile}, the helper {@code WriteFile}, {@code ApplyEdit},
+     * {@code SaveFile} and the Claude/Pi hook use. False when the server is down or the session unregistered: an
+     * exemption that cannot be verified is never granted.</li>
+     * <li>read — {@link McpHookServer#isFileAccessible(McpHookServer, String, String)}, the static null-tolerant form
+     * of the instance method {@code GetFileContentTool.handle} calls to decide whether to serve a file. Calling that
+     * same method is what makes a native read and a {@code GetFileContent} read obey one policy by construction. It is
+     * false for a null server or session, so it fails toward denial rather than approval.</li>
      * </ul>
-     * Needs the PLUGIN session id (the one the MCP server registered), not the agent's own ACP session id,
-     * which is why the process manager that knows it supplies this.
+     * Needs the PLUGIN session id (the one the MCP server registered), not the agent's own ACP session id, which is why
+     * the process manager that knows it supplies this.
      */
     public static SessionFileScope sessionFileScope(Supplier<McpHookServer> server, String pluginSessionId) {
         return new SessionFileScope(
@@ -186,8 +179,8 @@ public abstract class AbstractAcpClientHandler implements AcpClientHandler {
     }
 
     /**
-     * {@link #sessionFileScope} against the shared server, typed as the {@link Predicate} the constructor
-     * takes. The returned object is a {@link SessionFileScope}, which is how the read policy gets in.
+     * {@link #sessionFileScope} against the shared server, typed as the {@link Predicate} the constructor takes. The
+     * returned object is a {@link SessionFileScope}, which is how the read policy gets in.
      */
     public static Predicate<String> ownSessionConfigFileCheck(String pluginSessionId) {
         return sessionFileScope(kiwi.ingenuity.netbeans.plugin.aicoder.process.server.McpServerRegistry::getServer, pluginSessionId);
@@ -195,7 +188,7 @@ public abstract class AbstractAcpClientHandler implements AcpClientHandler {
 
     public static String extractFirstLocationPath(JsonObject update) {
         if (update == null || !update.has(AcpJsonKeyEnum.LOCATIONS.key())
-            || !update.get(AcpJsonKeyEnum.LOCATIONS.key()).isJsonArray()) {
+                || !update.get(AcpJsonKeyEnum.LOCATIONS.key()).isJsonArray()) {
             return null;
         }
         JsonArray locations = update.getAsJsonArray(AcpJsonKeyEnum.LOCATIONS.key());
@@ -249,7 +242,7 @@ public abstract class AbstractAcpClientHandler implements AcpClientHandler {
 
     public static String extractRawInputCommand(JsonObject toolCall) {
         if (toolCall == null || !toolCall.has(AcpJsonKeyEnum.RAW_INPUT.key())
-            || !toolCall.get(AcpJsonKeyEnum.RAW_INPUT.key()).isJsonObject()) {
+                || !toolCall.get(AcpJsonKeyEnum.RAW_INPUT.key()).isJsonObject()) {
             return null;
         }
         JsonObject rawInput = toolCall.getAsJsonObject(AcpJsonKeyEnum.RAW_INPUT.key());
@@ -267,7 +260,7 @@ public abstract class AbstractAcpClientHandler implements AcpClientHandler {
                 JsonObject first = content.get(0).getAsJsonObject();
                 if ("diff".equals(first.has(AcpJsonKeyEnum.TYPE.key())
                                   ? first.get(AcpJsonKeyEnum.TYPE.key()).getAsString() : null)
-                    && first.has(AcpJsonKeyEnum.NEW_TEXT.key()) && !first.get(AcpJsonKeyEnum.NEW_TEXT.key()).isJsonNull()) {
+                        && first.has(AcpJsonKeyEnum.NEW_TEXT.key()) && !first.get(AcpJsonKeyEnum.NEW_TEXT.key()).isJsonNull()) {
                     return first.get(AcpJsonKeyEnum.NEW_TEXT.key()).getAsString();
                 }
             }
@@ -277,7 +270,7 @@ public abstract class AbstractAcpClientHandler implements AcpClientHandler {
         if (toolCall.has(AcpJsonKeyEnum.RAW_INPUT.key()) && toolCall.get(AcpJsonKeyEnum.RAW_INPUT.key()).isJsonObject()) {
             JsonObject rawInput = toolCall.getAsJsonObject(AcpJsonKeyEnum.RAW_INPUT.key());
             if (rawInput.has(AcpJsonKeyEnum.CONTENT.key()) && rawInput.get(AcpJsonKeyEnum.CONTENT.key()).isJsonPrimitive()
-                && rawInput.get(AcpJsonKeyEnum.CONTENT.key()).getAsJsonPrimitive().isString()) {
+                    && rawInput.get(AcpJsonKeyEnum.CONTENT.key()).getAsJsonPrimitive().isString()) {
                 return rawInput.get(AcpJsonKeyEnum.CONTENT.key()).getAsString();
             }
         }
@@ -288,9 +281,8 @@ public abstract class AbstractAcpClientHandler implements AcpClientHandler {
      * Returns every path named by a permission request, in order and without duplicates.
      *
      * <p>
-     * Callers must check all paths before silently exempting a request: an external-directory request can
-     * name a session spool file and another directory, and the first safe path must not allow the second one
-     * through unasked.
+     * Callers must check all paths before silently exempting a request: an external-directory request can name a
+     * session spool file and another directory, and the first safe path must not allow the second one through unasked.
      */
     public static List<String> extractAllPermissionPaths(JsonObject toolCall) {
         Set<String> paths = new LinkedHashSet<>();
@@ -307,7 +299,7 @@ public abstract class AbstractAcpClientHandler implements AcpClientHandler {
             if (rawInput.has("directories") && rawInput.get("directories").isJsonArray()) {
                 for (var directory : rawInput.getAsJsonArray("directories")) {
                     if (directory.isJsonPrimitive() && directory.getAsJsonPrimitive().isString()
-                        && !directory.getAsString().isBlank()) {
+                            && !directory.getAsString().isBlank()) {
                         paths.add(directory.getAsString());
                     }
                 }
@@ -334,7 +326,7 @@ public abstract class AbstractAcpClientHandler implements AcpClientHandler {
         if (toolCall.has(AcpJsonKeyEnum.CONTENT.key()) && toolCall.get(AcpJsonKeyEnum.CONTENT.key()).isJsonArray()) {
             for (var element : toolCall.getAsJsonArray(AcpJsonKeyEnum.CONTENT.key())) {
                 if (element.isJsonObject() && element.getAsJsonObject().has(AcpJsonKeyEnum.TYPE.key())
-                    && "diff".equals(element.getAsJsonObject().get(AcpJsonKeyEnum.TYPE.key()).getAsString())) {
+                        && "diff".equals(element.getAsJsonObject().get(AcpJsonKeyEnum.TYPE.key()).getAsString())) {
                     return true;
                 }
             }
@@ -351,10 +343,10 @@ public abstract class AbstractAcpClientHandler implements AcpClientHandler {
         // ask carrying this shape is still a write, and must not be let through the look-only ConfirmEvent
         // path without the diff panel).
         boolean hasStringContent = rawInput.has(AcpJsonKeyEnum.CONTENT.key())
-                                   && rawInput.get(AcpJsonKeyEnum.CONTENT.key()).isJsonPrimitive()
-                                   && rawInput.get(AcpJsonKeyEnum.CONTENT.key()).getAsJsonPrimitive().isString();
+                && rawInput.get(AcpJsonKeyEnum.CONTENT.key()).isJsonPrimitive()
+                && rawInput.get(AcpJsonKeyEnum.CONTENT.key()).getAsJsonPrimitive().isString();
         boolean hasPath = (rawInput.has(AcpJsonKeyEnum.FILEPATH.key()) && !rawInput.get(AcpJsonKeyEnum.FILEPATH.key()).isJsonNull())
-                          || (rawInput.has(AcpJsonKeyEnum.FILE_PATH.key()) && !rawInput.get(AcpJsonKeyEnum.FILE_PATH.key()).isJsonNull());
+                || (rawInput.has(AcpJsonKeyEnum.FILE_PATH.key()) && !rawInput.get(AcpJsonKeyEnum.FILE_PATH.key()).isJsonNull());
         return hasStringContent && hasPath;
     }
 
@@ -394,24 +386,23 @@ public abstract class AbstractAcpClientHandler implements AcpClientHandler {
 
     private static void addIfString(JsonObject object, String key, Set<String> into) {
         if (object.has(key) && object.get(key).isJsonPrimitive() && object.get(key).getAsJsonPrimitive().isString()
-            && !object.get(key).getAsString().isBlank()) {
+                && !object.get(key).getAsString().isBlank()) {
             into.add(object.get(key).getAsString());
         }
     }
 
     // ---- Permission bridge: session/request_permission -> PermissionEvent/ConfirmEvent ----
     /**
-     * A well-formed {@code selected} reply naming {@code optionId}, or — when {@code optionId} is null — a
-     * clean {@code cancelled} outcome instead. Built without touching {@link #pendingPermission}: a request
-     * decided by policy never became pending, and clearing the field here could drop a genuinely open
-     * dialog's future.
+     * A well-formed {@code selected} reply naming {@code optionId}, or — when {@code optionId} is null — a clean
+     * {@code cancelled} outcome instead. Built without touching {@link #pendingPermission}: a request decided by policy
+     * never became pending, and clearing the field here could drop a genuinely open dialog's future.
      *
      * <p>
-     * The null case is the fail-closed path: {@link #resolveOptionIds} leaves an id null rather than invent
-     * one the agent never offered, and replying with a fabricated id risks the agent treating an invented
-     * "allow" as a real approval (or an invented "reject" as a no-op it ignores) instead of the refusal we
-     * mean. {@code cancelled} is the one reply every ACP agent must already understand — the same outcome a
-     * turn-level cancel produces — so this is always safe, never a guess.
+     * The null case is the fail-closed path: {@link #resolveOptionIds} leaves an id null rather than invent one the
+     * agent never offered, and replying with a fabricated id risks the agent treating an invented "allow" as a real
+     * approval (or an invented "reject" as a no-op it ignores) instead of the refusal we mean. {@code cancelled} is the
+     * one reply every ACP agent must already understand — the same outcome a turn-level cancel produces — so this is
+     * always safe, never a guess.
      */
     private static JsonObject selectedResult(String optionId) {
         JsonObject outcome = new JsonObject();
@@ -428,34 +419,32 @@ public abstract class AbstractAcpClientHandler implements AcpClientHandler {
     }
 
     /**
-     * The optionId to send back for "allow once" and for "reject", resolved per-request from
-     * {@code params.options} rather than hardcoded: backends spell these differently — OpenCode's optionIds
-     * are literally {@code "once"}/{@code "reject"}, Grok's are {@code "allow-once"}/{@code "allow-edits-session"}/
+     * The optionId to send back for "allow once" and for "reject", resolved per-request from {@code params.options}
+     * rather than hardcoded: backends spell these differently — OpenCode's optionIds are literally
+     * {@code "once"}/{@code "reject"}, Grok's are {@code "allow-once"}/{@code "allow-edits-session"}/
      * {@code "reject"}-shaped strings — but every backend's options array carries the standard {@code kind} (
-     * {@link AcpPermissionKindEnum#ALLOW_ONCE}, {@code REJECT_ONCE}, {@code REJECT_ALWAYS}) alongside its own
-     * optionId (confirmed against a live Grok probe), so matching on kind works for all of them without a
-     * per-backend table.
+     * {@link AcpPermissionKindEnum#ALLOW_ONCE}, {@code REJECT_ONCE}, {@code REJECT_ALWAYS}) alongside its own optionId
+     * (confirmed against a live Grok probe), so matching on kind works for all of them without a per-backend table.
      *
      * <p>
-     * We always resolve to an ALLOW_ONCE id, never ALLOW_ALWAYS: see {@link #mapDecisionToAcpResult}'s note
-     * on why "always" is never sent. Reject accepts either REJECT_ONCE or REJECT_ALWAYS, whichever appears
-     * FIRST in the array — the same first-wins rule the allow search uses, so neither search is favoured by
-     * array order.
+     * We always resolve to an ALLOW_ONCE id, never ALLOW_ALWAYS: see {@link #mapDecisionToAcpResult}'s note on why
+     * "always" is never sent. Reject accepts either REJECT_ONCE or REJECT_ALWAYS, whichever appears FIRST in the array
+     * — the same first-wins rule the allow search uses, so neither search is favoured by array order.
      *
      * <p>
-     * FAILS CLOSED: an options array that was genuinely sent but carries no recognised allow/reject kind must
-     * never fall back to an invented literal — the agent might not have that id at all. The fallback instead
-     * looks at each option's own {@code optionId} text for an "allow"/"reject"-shaped word (this is
-     * deliberately keyed on optionId, not kind: a backend that reaches this fallback has already failed to
-     * supply a kind we recognise, so its optionId is the only text left to go on), EXCLUDING any option whose
-     * id or kind also says "always" or "session" — "allow-edits-session" contains "allow" too, and picking it
-     * for the ALLOW_ONCE slot would grant a standing approval for a single click the user never asked to make
-     * standing. If that finds nothing either, leaves the slot {@code null} — {@link
-     * #selectedResult} turns a null id into a clean {@code cancelled} reply, never a guess at which broader
-     * grant was meant. Only the complete ABSENCE of an options field in the request (no array at all — an
-     * older probe, or a caller, including most of this handler's own tests, that never populated one) falls
-     * back to the original literal {@code "once"}/{@code "reject"} strings; those are real OpenCode
-     * optionIds, not a guess, and this is the one case existing behaviour must stay unchanged.
+     * FAILS CLOSED: an options array that was genuinely sent but carries no recognised allow/reject kind must never
+     * fall back to an invented literal — the agent might not have that id at all. The fallback instead looks at each
+     * option's own {@code optionId} text for an "allow"/"reject"-shaped word (this is deliberately keyed on optionId,
+     * not kind: a backend that reaches this fallback has already failed to supply a kind we recognise, so its optionId
+     * is the only text left to go on), EXCLUDING any option whose id or kind also says "always" or "session" —
+     * "allow-edits-session" contains "allow" too, and picking it for the ALLOW_ONCE slot would grant a standing
+     * approval for a single click the user never asked to make standing. If that finds nothing either, leaves the slot
+     * {@code null} — {@link
+     * #selectedResult} turns a null id into a clean {@code cancelled} reply, never a guess at which broader grant was
+     * meant. Only the complete ABSENCE of an options field in the request (no array at all — an older probe, or a
+     * caller, including most of this handler's own tests, that never populated one) falls back to the original literal
+     * {@code "once"}/{@code "reject"} strings; those are real OpenCode optionIds, not a guess, and this is the one case
+     * existing behaviour must stay unchanged.
      */
     private record PermissionOptionIds(String allowOnceId, String rejectId) {
 
@@ -463,7 +452,7 @@ public abstract class AbstractAcpClientHandler implements AcpClientHandler {
 
     private PermissionOptionIds resolveOptionIds(JsonObject params) {
         boolean hasOptionsArray = params != null && params.has(AcpJsonKeyEnum.OPTIONS.key())
-                                  && params.get(AcpJsonKeyEnum.OPTIONS.key()).isJsonArray();
+                && params.get(AcpJsonKeyEnum.OPTIONS.key()).isJsonArray();
         if (!hasOptionsArray) {
             return new PermissionOptionIds("once", "reject");
         }
@@ -498,7 +487,7 @@ public abstract class AbstractAcpClientHandler implements AcpClientHandler {
             // asked for. If nothing allow-once-shaped survives this exclusion, the slot stays null and
             // selectedResult turns that into "cancelled", never a guess at which broader grant was meant.
             boolean scopedWiderThanOnce = optionIdLower.contains("always") || optionIdLower.contains("session")
-                                          || kindLower.contains("always") || kindLower.contains("session");
+                    || kindLower.contains("always") || kindLower.contains("session");
             if (!scopedWiderThanOnce) {
                 if (allowLike == null && optionIdLower.contains("allow")) {
                     allowLike = optionId;
@@ -523,9 +512,8 @@ public abstract class AbstractAcpClientHandler implements AcpClientHandler {
     }
 
     /**
-     * True when the exemption is wired AND every path the request names is inside this session's own config
-     * tree. Fails closed: no predicate, no paths, one outside path, or a predicate that throws all mean
-     * "ask".
+     * True when the exemption is wired AND every path the request names is inside this session's own config tree. Fails
+     * closed: no predicate, no paths, one outside path, or a predicate that throws all mean "ask".
      */
     private boolean isEntirelyInsideOwnSessionTree(JsonObject toolCall) {
         Predicate<String> check = ownSessionConfigFile;
@@ -552,11 +540,10 @@ public abstract class AbstractAcpClientHandler implements AcpClientHandler {
 
     /**
      * Remembers which kind of tool a call id belongs to, until it reports a terminal status. An {@code
-     * external_directory} permission can arrive as a kind that does not say which tool wanted the directory;
-     * the only thing linking it to a read is that its {@code toolCallId} is the id of an earlier
-     * {@code tool_call} whose kind was {@code read}. An update without a kind leaves the remembered one
-     * alone. Call this from your {@code onToolEvent} override for every {@code tool_call}/
-     * {@code tool_call_update}.
+     * external_directory} permission can arrive as a kind that does not say which tool wanted the directory; the only
+     * thing linking it to a read is that its {@code toolCallId} is the id of an earlier {@code tool_call} whose kind
+     * was {@code read}. An update without a kind leaves the remembered one alone. Call this from your
+     * {@code onToolEvent} override for every {@code tool_call}/ {@code tool_call_update}.
      */
     protected final void rememberToolKind(String toolCallId, String kind, String status) {
         if (toolCallId == null) {
@@ -576,9 +563,9 @@ public abstract class AbstractAcpClientHandler implements AcpClientHandler {
     }
 
     /**
-     * The kind of the tool that raised this permission request, taken from the {@code tool_call} that
-     * announced it (see {@link #rememberToolKind}), or null when that call was never seen (or has completed).
-     * Null is never treated as a read.
+     * The kind of the tool that raised this permission request, taken from the {@code tool_call} that announced it (see
+     * {@link #rememberToolKind}), or null when that call was never seen (or has completed). Null is never treated as a
+     * read.
      */
     private String originatingToolKind(JsonObject toolCall) {
         String toolCallId = toolCall == null ? null
@@ -589,10 +576,10 @@ public abstract class AbstractAcpClientHandler implements AcpClientHandler {
 
     /**
      * True only when the request is CONFIDENTLY a read: not a mutation, and either its own kind is
-     * {@code read}/{@code search}, or it is an {@code other}-kind request (an external-directory-style ask)
-     * whose originating tool call was a {@code read}/{@code search}. An {@code other} request that cannot be
-     * traced to a read is not a read, because that ask precedes every kind of access and treating it as one
-     * would silently decide an edit or a shell command on a read's rules.
+     * {@code read}/{@code search}, or it is an {@code other}-kind request (an external-directory-style ask) whose
+     * originating tool call was a {@code read}/{@code search}. An {@code other} request that cannot be traced to a read
+     * is not a read, because that ask precedes every kind of access and treating it as one would silently decide an
+     * edit or a shell command on a read's rules.
      */
     private boolean isConfidentRead(String kind, JsonObject toolCall) {
         if (isMutationRequest(kind, toolCall)) {
@@ -603,17 +590,17 @@ public abstract class AbstractAcpClientHandler implements AcpClientHandler {
     }
 
     /**
-     * The outcome of the read-scope rule: allowed, or refused with the first path it refused (kept so the log
-     * can say why, in GetFileContent's words).
+     * The outcome of the read-scope rule: allowed, or refused with the first path it refused (kept so the log can say
+     * why, in GetFileContent's words).
      */
     private record ReadDecision(boolean allowed, String refusedPath) {
 
     }
 
     /**
-     * The read-scope decision for a request that is confidently a read, or null when it could not be made (no
-     * read policy wired, no paths, or the policy failed), in which case the caller falls back to asking.
-     * Every path the request names must pass; one that GetFileContent would refuse refuses the whole request.
+     * The read-scope decision for a request that is confidently a read, or null when it could not be made (no read
+     * policy wired, no paths, or the policy failed), in which case the caller falls back to asking. Every path the
+     * request names must pass; one that GetFileContent would refuse refuses the whole request.
      */
     private ReadDecision decideRead(JsonObject toolCall) {
         Predicate<String> policy = readPolicy;
@@ -640,9 +627,9 @@ public abstract class AbstractAcpClientHandler implements AcpClientHandler {
 
     /**
      * The refusal {@code GetFileContent} returns for {@code refusedPath}, from the same
-     * {@link McpHookServer#fileAccessDeniedMessage}, or null when there is no source, it yields nothing, or
-     * it fails. Never allowed to throw: it runs on the refusal path, and neither a log line nor a notice may
-     * be able to break the reply to the agent.
+     * {@link McpHookServer#fileAccessDeniedMessage}, or null when there is no source, it yields nothing, or it fails.
+     * Never allowed to throw: it runs on the refusal path, and neither a log line nor a notice may be able to break the
+     * reply to the agent.
      */
     private String refusalMessage(String refusedPath) {
         Function<String, String> reason = readRefusalReason;
@@ -659,9 +646,9 @@ public abstract class AbstractAcpClientHandler implements AcpClientHandler {
     }
 
     /**
-     * Remembers a refusal, path and text, for the end of the turn, when the process manager decides whether
-     * the agent needs telling. A refusal whose text cannot be produced is not remembered: the notice quotes
-     * the shared text and has nothing else to say.
+     * Remembers a refusal, path and text, for the end of the turn, when the process manager decides whether the agent
+     * needs telling. A refusal whose text cannot be produced is not remembered: the notice quotes the shared text and
+     * has nothing else to say.
      */
     private void recordRefusal(String refusedPath, String refusalMessage) {
         if (refusedPath == null || refusalMessage == null) {
@@ -676,12 +663,12 @@ public abstract class AbstractAcpClientHandler implements AcpClientHandler {
     }
 
     /**
-     * Takes, and forgets, every read refused since the last call: each refused path with its refusal text,
-     * exactly as {@code GetFileContent} would have returned it, in the order refused.
+     * Takes, and forgets, every read refused since the last call: each refused path with its refusal text, exactly as
+     * {@code GetFileContent} would have returned it, in the order refused.
      *
      * <p>
-     * Called once at the end of every turn, so a refusal can never be reported on a later turn. Costs one
-     * monitor acquisition and an emptiness check when nothing was refused.
+     * Called once at the end of every turn, so a refusal can never be reported on a later turn. Costs one monitor
+     * acquisition and an emptiness check when nothing was refused.
      *
      * @return an empty list when nothing was refused
      */
@@ -706,11 +693,10 @@ public abstract class AbstractAcpClientHandler implements AcpClientHandler {
     }
 
     /**
-     * Checks if MCP steering is enabled for the plugin session this handler serves. Steering is resolved
-     * under the constructor's {@code pluginSessionId} — the PLUGIN session UUID the session is registered
-     * under in {@link SessionRegistry} — never under the agent's own ACP session id, which the registry does
-     * not know. When a {@code steeringIsActiveCheck} is injected (tests), it decides; in production the
-     * registry lookup decides.
+     * Checks if MCP steering is enabled for the plugin session this handler serves. Steering is resolved under the
+     * constructor's {@code pluginSessionId} — the PLUGIN session UUID the session is registered under in
+     * {@link SessionRegistry} — never under the agent's own ACP session id, which the registry does not know. When a
+     * {@code steeringIsActiveCheck} is injected (tests), it decides; in production the registry lookup decides.
      */
     private boolean steeringIsActive() {
         if (steeringIsActiveCheck != null) {
@@ -724,39 +710,39 @@ public abstract class AbstractAcpClientHandler implements AcpClientHandler {
             return false;
         }
         return session.getSettings().effectiveMcpSteering()
-               && session.getType().mcpSteeringSupport().supported();
+                && session.getType().mcpSteeringSupport().supported();
     }
 
     /**
      * TIER 1 — fully verified: the tool call is auto-allowed with no prompt at all (see the early-return in
-     * {@link #handlePermissionRequest}) and never steered away. Stricter than {@link #namesOurTool} (tier 2)
-     * on purpose, since this tier skips the diff panel entirely rather than just skipping steering.
+     * {@link #handlePermissionRequest}) and never steered away. Stricter than {@link #namesOurTool} (tier 2) on
+     * purpose, since this tier skips the diff panel entirely rather than just skipping steering.
      *
      * <p>
-     * SECURITY (Coder_1 HIGH + BigP_1 independently rated it HIGH — a consent AND steering bypass, since it
-     * runs before every other branch): this used to also accept a bare {@code title}/{@code kind} match, and
-     * read the tool name from whichever of {@code rawInput.tool_name}/{@code toolName}/{@code tool}/
-     * {@code name} existed. All of those are attacker-controlled strings an agent's OWN native tool call can
-     * populate — a native {@code edit}/{@code write}/{@code execute} call whose {@code rawInput.name} (or
-     * bare {@code title}) happened to equal one of our tool names would have been auto-allowed straight past
-     * the diff panel. Now ALL of these must hold:
+     * SECURITY (Coder_1 HIGH + BigP_1 independently rated it HIGH — a consent AND steering bypass, since it runs before
+     * every other branch): this used to also accept a bare {@code title}/{@code kind} match, and read the tool name
+     * from whichever of {@code rawInput.tool_name}/{@code toolName}/{@code tool}/ {@code name} existed. All of those
+     * are attacker-controlled strings an agent's OWN native tool call can populate — a native
+     * {@code edit}/{@code write}/{@code execute} call whose {@code rawInput.name} (or bare {@code title}) happened to
+     * equal one of our tool names would have been auto-allowed straight past the diff panel. Now ALL of these must
+     * hold:
      * <ol>
      * <li>the request is STRUCTURALLY Grok's own {@code use_tool} meta-tool wrapper — {@code
      * rawInput.variant == "UseTool"}, or {@code title == "use_tool"}, or {@code _meta["x.ai/tool"].name ==
-     * "use_tool"} (verified live shapes) — never a bare title/kind match, and {@code kind} is never consulted
-     * at all: it is ACP's type discriminator, not a place a tool name legitimately appears;</li>
-     * <li>the tool name comes ONLY from {@code rawInput.tool_name} (not {@code toolName}/{@code tool}/
-     * {@code name} — those were never confirmed live and only widened the attack surface), resolved by
-     * {@link #matchesOurTool}'s strict prefix rule to a real {@link McpToolEnum};</li>
-     * <li>the call carries no resolvable path ({@link #extractPermissionFilePath}) and is not itself a
-     * mutation ({@link #isMutationRequest}) — belt-and-suspenders in case a genuine wrapper call ever carries
-     * either, since a real use_tool call's actual arguments live nested under {@code rawInput.tool_input},
-     * never at these top-level fields.</li>
+     * "use_tool"} (verified live shapes) — never a bare title/kind match, and {@code kind} is never consulted at all:
+     * it is ACP's type discriminator, not a place a tool name legitimately appears;</li>
+     * <li>the tool name comes ONLY from {@code rawInput.tool_name} (not {@code toolName}/{@code tool}/ {@code name} —
+     * those were never confirmed live and only widened the attack surface), resolved by {@link #matchesOurTool}'s
+     * strict prefix rule to a real {@link McpToolEnum};</li>
+     * <li>the call carries no resolvable path ({@link #extractPermissionFilePath}) and is not itself a mutation
+     * ({@link #isMutationRequest}) — belt-and-suspenders in case a genuine wrapper call ever carries either, since a
+     * real use_tool call's actual arguments live nested under {@code rawInput.tool_input}, never at these top-level
+     * fields.</li>
      * </ol>
      */
     private boolean isVerifiedOurToolWrapper(JsonObject toolCall) {
         if (toolCall == null || !toolCall.has(AcpJsonKeyEnum.RAW_INPUT.key())
-            || !toolCall.get(AcpJsonKeyEnum.RAW_INPUT.key()).isJsonObject()) {
+                || !toolCall.get(AcpJsonKeyEnum.RAW_INPUT.key()).isJsonObject()) {
             return false;
         }
         JsonObject rawInput = toolCall.getAsJsonObject(AcpJsonKeyEnum.RAW_INPUT.key());
@@ -772,59 +758,59 @@ public abstract class AbstractAcpClientHandler implements AcpClientHandler {
     }
 
     /**
-     * TIER 2 — name-only match, restoring OpenCode's original behaviour: EXEMPT FROM STEERING, never
-     * auto-allowed. OpenCode can call one of our tools directly (no {@code use_tool}-style wrapper at all),
-     * and its permission request's own {@code title}/{@code rawInput.tool_name} then names the tool plainly —
-     * unlike Grok, this is not spoofable-with-impunity the way {@link #isVerifiedOurToolWrapper}'s bare match
-     * used to be, because a hit here only lifts the STEERING refusal; the call still falls through to the
-     * normal diff panel / confirm dialog afterwards. Checked from {@code title} and {@code
-     * rawInput.tool_name} only, by {@link #matchesOurTool}'s same strict prefix rule — never {@code kind}
-     * (ACP's type discriminator, not a tool-name field) and never the wider {@code toolName}/{@code tool}/
-     * {@code name} rawInput keys tier 1 also dropped.
+     * TIER 2 — name-only match, restoring OpenCode's original behaviour: EXEMPT FROM STEERING, never auto-allowed.
+     * OpenCode can call one of our tools directly (no {@code use_tool}-style wrapper at all), and its permission
+     * request's own {@code title}/{@code rawInput.tool_name} then names the tool plainly — unlike Grok, this is not
+     * spoofable-with-impunity the way {@link #isVerifiedOurToolWrapper}'s bare match used to be, because a hit here
+     * only lifts the STEERING refusal; the call still falls through to the normal diff panel / confirm dialog
+     * afterwards. Checked from {@code title} and {@code
+     * rawInput.tool_name} only, by {@link #matchesOurTool}'s same strict prefix rule — never {@code kind} (ACP's type
+     * discriminator, not a tool-name field) and never the wider {@code toolName}/{@code tool}/ {@code name} rawInput
+     * keys tier 1 also dropped.
      */
     private boolean namesOurTool(JsonObject toolCall) {
         if (toolCall == null) {
             return false;
         }
         if (toolCall.has(AcpJsonKeyEnum.TITLE.key()) && !toolCall.get(AcpJsonKeyEnum.TITLE.key()).isJsonNull()
-            && matchesOurTool(toolCall.get(AcpJsonKeyEnum.TITLE.key()).getAsString())) {
+                && matchesOurTool(toolCall.get(AcpJsonKeyEnum.TITLE.key()).getAsString())) {
             return true;
         }
         if (toolCall.has(AcpJsonKeyEnum.RAW_INPUT.key()) && toolCall.get(AcpJsonKeyEnum.RAW_INPUT.key()).isJsonObject()
-            && matchesOurTool(firstStringField(toolCall.getAsJsonObject(AcpJsonKeyEnum.RAW_INPUT.key()), "tool_name"))) {
+                && matchesOurTool(firstStringField(toolCall.getAsJsonObject(AcpJsonKeyEnum.RAW_INPUT.key()), "tool_name"))) {
             return true;
         }
         return false;
     }
 
     /**
-     * Exempt from MCP steering — either tier qualifies. Tier 1 ({@link #isVerifiedOurToolWrapper}) never
-     * reaches the steering checks below at all (the early-return in {@link #handlePermissionRequest} answers
-     * it first), so in practice this is tier 2 ({@link #namesOurTool}) alone; kept as the sum of both so the
-     * steering checks read as "exempt", not "tier 2", and stay correct if that early-return ever changes.
+     * Exempt from MCP steering — either tier qualifies. Tier 1 ({@link #isVerifiedOurToolWrapper}) never reaches the
+     * steering checks below at all (the early-return in {@link #handlePermissionRequest} answers it first), so in
+     * practice this is tier 2 ({@link #namesOurTool}) alone; kept as the sum of both so the steering checks read as
+     * "exempt", not "tier 2", and stay correct if that early-return ever changes.
      */
     private boolean isExemptFromSteering(JsonObject toolCall) {
         return isVerifiedOurToolWrapper(toolCall) || namesOurTool(toolCall);
     }
 
     /**
-     * True when {@code toolCall} is structurally Grok's own {@code use_tool} meta-tool wrapper — verified
-     * live shapes only, checked independently of any tool name: {@code rawInput.variant == "UseTool"},
-     * {@code title == "use_tool"}, or {@code _meta["x.ai/tool"].name == "use_tool"}. A native call (edit,
-     * write, execute, ...) is never shaped like this, however its other fields are spoofed.
+     * True when {@code toolCall} is structurally Grok's own {@code use_tool} meta-tool wrapper — verified live shapes
+     * only, checked independently of any tool name: {@code rawInput.variant == "UseTool"},
+     * {@code title == "use_tool"}, or {@code _meta["x.ai/tool"].name == "use_tool"}. A native call (edit, write,
+     * execute, ...) is never shaped like this, however its other fields are spoofed.
      */
     private static boolean isGrokUseToolWrapper(JsonObject toolCall, JsonObject rawInput) {
         if ("UseTool".equals(firstStringField(rawInput, "variant"))) {
             return true;
         }
         if (toolCall.has(AcpJsonKeyEnum.TITLE.key()) && !toolCall.get(AcpJsonKeyEnum.TITLE.key()).isJsonNull()
-            && "use_tool".equals(toolCall.get(AcpJsonKeyEnum.TITLE.key()).getAsString())) {
+                && "use_tool".equals(toolCall.get(AcpJsonKeyEnum.TITLE.key()).getAsString())) {
             return true;
         }
         if (toolCall.has("_meta") && toolCall.get("_meta").isJsonObject()) {
             JsonObject meta = toolCall.getAsJsonObject("_meta");
             if (meta.has("x.ai/tool") && meta.get("x.ai/tool").isJsonObject()
-                && "use_tool".equals(firstStringField(meta.getAsJsonObject("x.ai/tool"), "name"))) {
+                    && "use_tool".equals(firstStringField(meta.getAsJsonObject("x.ai/tool"), "name"))) {
                 return true;
             }
         }
@@ -832,19 +818,18 @@ public abstract class AbstractAcpClientHandler implements AcpClientHandler {
     }
 
     /**
-     * Prefix grok-4.6 uses for its own {@code use_tool} wrapping of one of OUR tools: the plugin's bare
-     * server name plus "__" — e.g. {@code "aicoder-nb-ki-plugin__GetInstructions"}, NOT the full
+     * Prefix grok-4.6 uses for its own {@code use_tool} wrapping of one of OUR tools: the plugin's bare server name
+     * plus "__" — e.g. {@code "aicoder-nb-ki-plugin__GetInstructions"}, NOT the full
      * {@code "mcp__aicoder-nb-ki-plugin__"} form {@link #OUR_MCP_TOOL_NAMES} holds (verified live fact).
      */
     private static final String GROK_SERVER_PREFIX = StringConst.PLUGIN_ID + "__";
 
     /**
      * True when {@code candidate} names one of our own MCP tools — in the full qualified form
-     * {@link #OUR_MCP_TOOL_NAMES} holds, or grok's bare-server-name form ({@link #GROK_SERVER_PREFIX}).
-     * SECURITY: only these two specific, known-ours prefixes are ever stripped — never an arbitrary
-     * {@code "<anything>__"}, since a user's OTHER MCP server could easily have one of our tools' bare names
-     * too (e.g. {@code "othersrv__ApplyEdit"}), and treating that as ours would exempt a foreign tool from
-     * steering.
+     * {@link #OUR_MCP_TOOL_NAMES} holds, or grok's bare-server-name form ({@link #GROK_SERVER_PREFIX}). SECURITY: only
+     * these two specific, known-ours prefixes are ever stripped — never an arbitrary {@code "<anything>__"}, since a
+     * user's OTHER MCP server could easily have one of our tools' bare names too (e.g. {@code "othersrv__ApplyEdit"}),
+     * and treating that as ours would exempt a foreign tool from steering.
      */
     private static boolean matchesOurTool(String candidate) {
         if (candidate == null || candidate.isBlank()) {
@@ -870,39 +855,37 @@ public abstract class AbstractAcpClientHandler implements AcpClientHandler {
     }
 
     /**
-     * Routes {@code session/request_permission} by {@code toolCall.kind}, not by whether a file path happened
-     * to resolve:
+     * Routes {@code session/request_permission} by {@code toolCall.kind}, not by whether a file path happened to
+     * resolve:
      * <ul>
-     * <li>one of OUR OWN MCP tools, fully verified ({@link #isVerifiedOurToolWrapper}, tier 1) — answered
-     * "allow once" immediately, no event, no prompt, REGARDLESS of steering, kind or path. Our tools carry
-     * their own gating already (write tools through the diff panel, deletes through their own confirmation,
-     * and so on); asking again here would put a yes/no dialog in front of every single plugin-tool call an
-     * agent makes through {@code use_tool} — unusable. Checked first, before every other branch below. A
-     * request that merely NAMES one of our tools without the wrapper shape ({@link #namesOurTool}, tier 2)
-     * does not qualify here — it only skips the steering checks further down, via
+     * <li>one of OUR OWN MCP tools, fully verified ({@link #isVerifiedOurToolWrapper}, tier 1) — answered "allow once"
+     * immediately, no event, no prompt, REGARDLESS of steering, kind or path. Our tools carry their own gating already
+     * (write tools through the diff panel, deletes through their own confirmation, and so on); asking again here would
+     * put a yes/no dialog in front of every single plugin-tool call an agent makes through {@code use_tool} — unusable.
+     * Checked first, before every other branch below. A request that merely NAMES one of our tools without the wrapper
+     * shape ({@link #namesOurTool}, tier 2) does not qualify here — it only skips the steering checks further down, via
      * {@link #isExemptFromSteering}, and still falls through to the normal diff panel / confirm dialog.</li>
-     * <li>{@code execute} — a shell command. There is no diff to render, so this raises {@link ConfirmEvent}
-     * (yes/no), not {@link PermissionEvent}.</li>
-     * <li>a request that is CONFIDENTLY a read ({@link #isConfidentRead}) — a policy decision, made with no
-     * event and nothing shown: allowed if {@code GetFileContent} would be allowed to read every path it
-     * names, refused (a clean {@code reject} reply) if not. Undecidable — no policy wired, no paths, or the
-     * policy failing — falls through to asking.</li>
-     * <li>every path named is inside this session's own config tree — answered "allow once" with no event and
-     * no prompt, the same exemption the plugin's own file tools and the Claude/Pi hook give that tree.</li>
+     * <li>{@code execute} — a shell command. There is no diff to render, so this raises {@link ConfirmEvent} (yes/no),
+     * not {@link PermissionEvent}.</li>
+     * <li>a request that is CONFIDENTLY a read ({@link #isConfidentRead}) — a policy decision, made with no event and
+     * nothing shown: allowed if {@code GetFileContent} would be allowed to read every path it names, refused (a clean
+     * {@code reject} reply) if not. Undecidable — no policy wired, no paths, or the policy failing — falls through to
+     * asking.</li>
+     * <li>every path named is inside this session's own config tree — answered "allow once" with no event and no
+     * prompt, the same exemption the plugin's own file tools and the Claude/Pi hook give that tree.</li>
      * <li>a resolvable path on a request that proposes a change ({@link #isMutationRequest}) —
      * {@link PermissionEvent} "Write", the only path that renders a diff.</li>
-     * <li>a resolvable path on a read/search/fetch/think/other-shaped request — a request to ACCESS that
-     * path, raised as a yes/no {@link ConfirmEvent} named for what it is. It carries no diff, so it must not
-     * go through the "Write" path.</li>
-     * <li>a resolvable path on an unrecognised or absent kind — {@link PermissionEvent} "Write", rather than
-     * a guess.</li>
-     * <li>no path at all — the subject could not be identified. Raise {@link ConfirmEvent} instead, showing
-     * the kind and title so there is at least something real to see, and never treat it as silently
-     * approvable.</li>
+     * <li>a resolvable path on a read/search/fetch/think/other-shaped request — a request to ACCESS that path, raised
+     * as a yes/no {@link ConfirmEvent} named for what it is. It carries no diff, so it must not go through the "Write"
+     * path.</li>
+     * <li>a resolvable path on an unrecognised or absent kind — {@link PermissionEvent} "Write", rather than a
+     * guess.</li>
+     * <li>no path at all — the subject could not be identified. Raise {@link ConfirmEvent} instead, showing the kind
+     * and title so there is at least something real to see, and never treat it as silently approvable.</li>
      * </ul>
      *
-     * @param accessKinds kinds this backend's agent sends for a look-only request (read/search/fetch/think
-     *                    and whatever else it maps an external-directory-style ask to)
+     * @param accessKinds kinds this backend's agent sends for a look-only request (read/search/fetch/think and whatever
+     * else it maps an external-directory-style ask to)
      */
     protected final CompletableFuture<JsonObject> handlePermissionRequest(JsonObject params, Set<String> accessKinds) {
         JsonObject toolCall = params.has(AcpJsonKeyEnum.TOOL_CALL.key()) && params.get(AcpJsonKeyEnum.TOOL_CALL.key()).isJsonObject()
@@ -917,7 +900,7 @@ public abstract class AbstractAcpClientHandler implements AcpClientHandler {
         if (isVerifiedOurToolWrapper(toolCall)) {
             if (PluginSettings.isDebugJson()) {
                 log.log(Level.INFO, "{0} permission request for one of our own MCP tools (kind={1}, title={2}) "
-                                    + "-> allow-once, no prompt", new Object[]{backendDisplayName(), kind, title});
+                        + "-> allow-once, no prompt", new Object[]{backendDisplayName(), kind, title});
             }
             return CompletableFuture.completedFuture(selectedResult(optionIds.allowOnceId()));
         }
@@ -927,7 +910,7 @@ public abstract class AbstractAcpClientHandler implements AcpClientHandler {
             String displayText = command != null ? command : title != null ? title : "(unknown command)";
             if (steeringIsActive() && !isExemptFromSteering(toolCall)) {
                 McpHookServerUtil.logMcpSteeringRefusal(backendSteeringLogName(), McpSteeringPolicy.Category.SHELL, displayText);
-                String steeringText = McpSteeringPolicy.steeringFeedbackFor(McpSteeringPolicy.Category.SHELL);
+                String steeringText = McpSteeringPolicy.steeringFeedbackFor(McpSteeringPolicy.Category.SHELL, SessionRegistry.get(pluginSessionId));
                 listener.onAiProcessEvent(new McpSteeringRefusalEvent(List.of(
                         new McpSteeringRefusalEvent.Refusal("Execute", steeringText))));
                 return CompletableFuture.completedFuture(selectedResult(optionIds.rejectId()));
@@ -946,9 +929,9 @@ public abstract class AbstractAcpClientHandler implements AcpClientHandler {
                 recordRefusal(decision.refusedPath(), refusal);
                 if (PluginSettings.isDebugJson()) {
                     log.log(Level.INFO, "{0} read request: path={1} toolCall.kind={2} originatingKind={3} -> {4} by "
-                                        + "the read-scope rule, no prompt{5}", new Object[]{backendDisplayName(), filePath, kind,
-                                                                                            originatingToolKind(toolCall), decision.allowed() ? "allowed" : "denied",
-                                                                                            refusal == null ? "" : ". Reason: " + refusal});
+                            + "the read-scope rule, no prompt{5}", new Object[]{backendDisplayName(), filePath, kind,
+                                originatingToolKind(toolCall), decision.allowed() ? "allowed" : "denied",
+                                refusal == null ? "" : ". Reason: " + refusal});
                 }
                 return CompletableFuture.completedFuture(selectedResult(decision.allowed() ? optionIds.allowOnceId() : optionIds.rejectId()));
             }
@@ -957,7 +940,7 @@ public abstract class AbstractAcpClientHandler implements AcpClientHandler {
         if (filePath != null && isEntirelyInsideOwnSessionTree(toolCall)) {
             if (PluginSettings.isDebugJson()) {
                 log.log(Level.INFO, "{0} permission request: path={1} toolCall.kind={2} title={3} is inside this "
-                                    + "session's own config tree -> allowed once, no prompt", new Object[]{backendDisplayName(), filePath, kind, title});
+                        + "session's own config tree -> allowed once, no prompt", new Object[]{backendDisplayName(), filePath, kind, title});
             }
             return CompletableFuture.completedFuture(selectedResult(optionIds.allowOnceId()));
         }
@@ -965,8 +948,8 @@ public abstract class AbstractAcpClientHandler implements AcpClientHandler {
         if (filePath != null && !isMutationRequest(kind, toolCall) && kind != null && accessKinds.contains(kind)) {
             if (steeringIsActive() && !isExemptFromSteering(toolCall)) {
                 McpHookServerUtil.logMcpSteeringRefusal(backendSteeringLogName(), McpSteeringPolicy.Category.READ,
-                        accessDisplayText(kind, title, filePath));
-                String steeringText = McpSteeringPolicy.steeringFeedbackFor(McpSteeringPolicy.Category.READ);
+                                                        accessDisplayText(kind, title, filePath));
+                String steeringText = McpSteeringPolicy.steeringFeedbackFor(McpSteeringPolicy.Category.READ, SessionRegistry.get(pluginSessionId));
                 listener.onAiProcessEvent(new McpSteeringRefusalEvent(List.of(
                         new McpSteeringRefusalEvent.Refusal(accessToolName(kind), steeringText))));
                 return CompletableFuture.completedFuture(selectedResult(optionIds.rejectId()));
@@ -981,7 +964,7 @@ public abstract class AbstractAcpClientHandler implements AcpClientHandler {
         if (filePath != null) {
             if (steeringIsActive() && !isExemptFromSteering(toolCall)) {
                 McpHookServerUtil.logMcpSteeringRefusal(backendSteeringLogName(), McpSteeringPolicy.Category.WRITE, "Write " + filePath);
-                String steeringText = McpSteeringPolicy.steeringFeedbackFor(McpSteeringPolicy.Category.WRITE);
+                String steeringText = McpSteeringPolicy.steeringFeedbackFor(McpSteeringPolicy.Category.WRITE, SessionRegistry.get(pluginSessionId));
                 listener.onAiProcessEvent(new McpSteeringRefusalEvent(List.of(
                         new McpSteeringRefusalEvent.Refusal("Write", steeringText))));
                 return CompletableFuture.completedFuture(selectedResult(optionIds.rejectId()));
@@ -1008,7 +991,7 @@ public abstract class AbstractAcpClientHandler implements AcpClientHandler {
                              ? title : "(unidentified " + backendDisplayName() + " action, kind=" + toolName + ")";
         if (steeringIsActive() && !isExemptFromSteering(toolCall)) {
             McpHookServerUtil.logMcpSteeringRefusal(backendSteeringLogName(), McpSteeringPolicy.Category.UNKNOWN, displayText);
-            String steeringText = McpSteeringPolicy.steeringFeedbackFor(McpSteeringPolicy.Category.UNKNOWN);
+            String steeringText = McpSteeringPolicy.steeringFeedbackFor(McpSteeringPolicy.Category.UNKNOWN, SessionRegistry.get(pluginSessionId));
             listener.onAiProcessEvent(new McpSteeringRefusalEvent(List.of(
                     new McpSteeringRefusalEvent.Refusal(toolName, steeringText))));
             return CompletableFuture.completedFuture(selectedResult(optionIds.rejectId()));
@@ -1023,14 +1006,14 @@ public abstract class AbstractAcpClientHandler implements AcpClientHandler {
     protected abstract String backendSteeringLogName();
 
     /**
-     * Human-readable backend name for the debug-JSON log lines and the "(unidentified X action...)" fallback
-     * text — e.g. {@code "OpenCode"}, {@code "Grok"}. Purely cosmetic: never parsed, never sent on the wire.
+     * Human-readable backend name for the debug-JSON log lines and the "(unidentified X action...)" fallback text —
+     * e.g. {@code "OpenCode"}, {@code "Grok"}. Purely cosmetic: never parsed, never sent on the wire.
      */
     protected abstract String backendDisplayName();
 
     /**
-     * Raises a {@link ConfirmEvent} (yes/no, no diff to render) and maps the eventual
-     * {@link PermissionDecision} to the ACP wire reply via {@link #mapDecisionToAcpResult}.
+     * Raises a {@link ConfirmEvent} (yes/no, no diff to render) and maps the eventual {@link PermissionDecision} to the
+     * ACP wire reply via {@link #mapDecisionToAcpResult}.
      */
     private CompletableFuture<JsonObject> raiseConfirmAndReply(
             String toolName, String displayText, String filePath, String targetPath,
@@ -1038,25 +1021,24 @@ public abstract class AbstractAcpClientHandler implements AcpClientHandler {
         CompletableFuture<PermissionDecision> decisionFuture = new CompletableFuture<>();
         pendingPermission = decisionFuture;
         listener.onAiProcessEvent(new ConfirmEvent(toolName, displayText, filePath, targetPath,
-                decisionFuture, requireExplicitApproval));
+                                                   decisionFuture, requireExplicitApproval));
         return decisionFuture.handle((decision, ex) -> mapDecisionToAcpResult(decision, ex, optionIds));
     }
 
     /**
-     * Maps a completed {@link PermissionDecision} future to the ACP {@code session/request_permission} wire
-     * response. Shared by every {@link #handlePermissionRequest} branch so the decision→outcome mapping lives
-     * in one place.
+     * Maps a completed {@link PermissionDecision} future to the ACP {@code session/request_permission} wire response.
+     * Shared by every {@link #handlePermissionRequest} branch so the decision→outcome mapping lives in one place.
      *
      * <p>
      * NOTE: We always reply "once" for an allow, never "always". The diff panel's auto-accept path calls
-     * {@code PermissionDecision.allowed()} directly, so we cannot distinguish it from an explicit user click.
-     * Replying "always" would configure the agent to skip future permission requests permanently — a
-     * side-effect the user did not request from the auto-accept toggle.
+     * {@code PermissionDecision.allowed()} directly, so we cannot distinguish it from an explicit user click. Replying
+     * "always" would configure the agent to skip future permission requests permanently — a side-effect the user did
+     * not request from the auto-accept toggle.
      *
      * <p>
-     * NOTE: unlike the Claude/MCP native-hook path (which applies the edit itself and then sends "deny" to
-     * prevent a double-write), here answering "once" lets the agent perform the write/command itself. We MUST
-     * NOT apply the edit ourselves — doing so would double-apply it.
+     * NOTE: unlike the Claude/MCP native-hook path (which applies the edit itself and then sends "deny" to prevent a
+     * double-write), here answering "once" lets the agent perform the write/command itself. We MUST NOT apply the edit
+     * ourselves — doing so would double-apply it.
      */
     private JsonObject mapDecisionToAcpResult(PermissionDecision decision, Throwable ex, PermissionOptionIds optionIds) {
         pendingPermission = null;
@@ -1070,8 +1052,8 @@ public abstract class AbstractAcpClientHandler implements AcpClientHandler {
     }
 
     /**
-     * Cancels any in-flight permission dialog by completing its future exceptionally. Called by the process
-     * manager on turn cancel and stop. The {@code handle} in {@link #handlePermissionRequest} maps this to
+     * Cancels any in-flight permission dialog by completing its future exceptionally. Called by the process manager on
+     * turn cancel and stop. The {@code handle} in {@link #handlePermissionRequest} maps this to
      * {@code {"outcome":{"outcome":"cancelled"}}} back to the agent.
      */
     public final void cancelPendingPermissions() {
@@ -1098,22 +1080,21 @@ public abstract class AbstractAcpClientHandler implements AcpClientHandler {
     }
 
     /**
-     * Non-zero while a session/load-or-resume request is in flight, so replayed {@code session/update}
-     * notifications for the conversation being loaded are dropped rather than rendered as new output —
-     * live-confirmed Grok behaviour: it replays the WHOLE prior turn sequence (agent_message_chunk, tool
-     * calls, even config changes) as notifications between sending {@code session/load} and answering it, and
-     * the plugin's own persisted history already shows that conversation, so re-rendering it ahead of the
-     * real reply duplicated the whole tab. Guarded generically — "while a load/resume call is in flight", not
-     * hardcoded to Grok's method name — so a backend whose resume carries no such replay (OpenCode's
-     * {@code session/resume}: confirmed live, and its response shape carries only {@code configOptions},
-     * nothing streamed) is simply never affected: the flag is set and cleared around its own resume call the
-     * same way, but nothing ever arrives while it is up.
+     * Non-zero while a session/load-or-resume request is in flight, so replayed {@code session/update} notifications
+     * for the conversation being loaded are dropped rather than rendered as new output — live-confirmed Grok behaviour:
+     * it replays the WHOLE prior turn sequence (agent_message_chunk, tool calls, even config changes) as notifications
+     * between sending {@code session/load} and answering it, and the plugin's own persisted history already shows that
+     * conversation, so re-rendering it ahead of the real reply duplicated the whole tab. Guarded generically — "while a
+     * load/resume call is in flight", not hardcoded to Grok's method name — so a backend whose resume carries no such
+     * replay (OpenCode's {@code session/resume}: confirmed live, and its response shape carries only
+     * {@code configOptions}, nothing streamed) is simply never affected: the flag is set and cleared around its own
+     * resume call the same way, but nothing ever arrives while it is up.
      *
      * <p>
-     * Owned by a token, not a plain boolean, mirroring {@code OpenCodeAcpClientHandler}'s compaction
-     * suppression: a stale load's late clear can then never disarm a newer one's suppression. {@link
-     * #beginSuppressingSessionUpdatesForLoad} arms a fresh token;
-     * {@link #endSuppressingSessionUpdatesForLoad} clears only while it still matches.
+     * Owned by a token, not a plain boolean, mirroring {@code OpenCodeAcpClientHandler}'s compaction suppression: a
+     * stale load's late clear can then never disarm a newer one's suppression. {@link
+     * #beginSuppressingSessionUpdatesForLoad} arms a fresh token; {@link #endSuppressingSessionUpdatesForLoad} clears
+     * only while it still matches.
      */
     private volatile long loadSuppressionToken;
 
@@ -1124,26 +1105,25 @@ public abstract class AbstractAcpClientHandler implements AcpClientHandler {
      * {@link #endSuppressingSessionUpdatesForLoad}.
      *
      * <p>
-     * REVIEW FINDING (race): the load's wire response completes on {@code AcpConnection}'s dispatch executor
-     * (or the reader thread directly), but any replay notification that precedes it is queued on the
-     * single-thread {@code acp-notify} executor. Clearing suppression synchronously in the caller's own
-     * {@code finally} the instant {@code get()} returns can therefore run BEFORE acp-notify has worked
-     * through replay chunks it already queued, leaking the tail of the replay as real output and letting
-     * {@code trackToolCallLifecycle} count a replayed tool call into the next turn. The caller MUST clear via
+     * REVIEW FINDING (race): the load's wire response completes on {@code AcpConnection}'s dispatch executor (or the
+     * reader thread directly), but any replay notification that precedes it is queued on the single-thread
+     * {@code acp-notify} executor. Clearing suppression synchronously in the caller's own {@code finally} the instant
+     * {@code get()} returns can therefore run BEFORE acp-notify has worked through replay chunks it already queued,
+     * leaking the tail of the replay as real output and letting {@code trackToolCallLifecycle} count a replayed tool
+     * call into the next turn. The caller MUST clear via
      * {@code conn.runOnNotifyThread(() -> endSuppressingSessionUpdatesForLoad(token))} (inline on {@link
-     * java.util.concurrent.RejectedExecutionException} — the connection is already closed, so nothing is
-     * queued behind it), exactly as {@code OpenCodeAiProcessManager.sendCompactPrompt} sequences its own
-     * suppression's end onto the same executor for the same reason. Never call this overload — the one taking
-     * a {@link Runnable} fencepost is for the connection-already-closed inline fallback ONLY — directly from
-     * the thread that called {@code get()}.
+     * java.util.concurrent.RejectedExecutionException} — the connection is already closed, so nothing is queued behind
+     * it), exactly as {@code OpenCodeAiProcessManager.sendCompactPrompt} sequences its own suppression's end onto the
+     * same executor for the same reason. Never call this overload — the one taking a {@link Runnable} fencepost is for
+     * the connection-already-closed inline fallback ONLY — directly from the thread that called {@code get()}.
      */
     public final long beginSuppressingSessionUpdatesForLoad() {
         return loadSuppressionToken = loadSuppressionTokens.incrementAndGet();
     }
 
     /**
-     * Disarms suppression owned by {@code token}, if it is still current. A stale token (a newer load already
-     * re-armed it) leaves the newer suppression untouched. Call ONLY from {@code acp-notify} (via {@code
+     * Disarms suppression owned by {@code token}, if it is still current. A stale token (a newer load already re-armed
+     * it) leaves the newer suppression untouched. Call ONLY from {@code acp-notify} (via {@code
      * conn.runOnNotifyThread}) or its inline fallback — see {@link #beginSuppressingSessionUpdatesForLoad}.
      */
     public final void endSuppressingSessionUpdatesForLoad(long token) {
@@ -1153,9 +1133,9 @@ public abstract class AbstractAcpClientHandler implements AcpClientHandler {
     }
 
     /**
-     * Disarms load suppression unconditionally — the safety net {@code sendTurn} calls so a load that timed
-     * out, or whose ordered clear never ran because the connection it belonged to is gone, can never silence
-     * a real turn that starts afterwards. Mirrors {@code OpenCodeAcpClientHandler.clearTextSuppression}.
+     * Disarms load suppression unconditionally — the safety net {@code sendTurn} calls so a load that timed out, or
+     * whose ordered clear never ran because the connection it belonged to is gone, can never silence a real turn that
+     * starts afterwards. Mirrors {@code OpenCodeAcpClientHandler.clearTextSuppression}.
      */
     public final void clearSuppressingSessionUpdatesForLoad() {
         loadSuppressionToken = 0;
@@ -1163,8 +1143,8 @@ public abstract class AbstractAcpClientHandler implements AcpClientHandler {
 
     // ---- session/update dispatch skeleton ----
     /**
-     * Dispatches by {@code sessionUpdate} kind to the {@code onXxx} hooks below. An unrecognised value is
-     * ignored silently, never thrown on — the protocol adds new update kinds over time.
+     * Dispatches by {@code sessionUpdate} kind to the {@code onXxx} hooks below. An unrecognised value is ignored
+     * silently, never thrown on — the protocol adds new update kinds over time.
      */
     @Override
     public final void onSessionUpdate(String sessionId, JsonObject update) {
@@ -1205,8 +1185,8 @@ public abstract class AbstractAcpClientHandler implements AcpClientHandler {
     protected abstract void onAgentThoughtChunk(JsonObject update);
 
     /**
-     * A {@code tool_call} or {@code tool_call_update}. Overrides calling {@link #rememberToolKind} keep the
-     * permission bridge's external-directory heuristic working.
+     * A {@code tool_call} or {@code tool_call_update}. Overrides calling {@link #rememberToolKind} keep the permission
+     * bridge's external-directory heuristic working.
      */
     protected abstract void onToolEvent(JsonObject update);
 

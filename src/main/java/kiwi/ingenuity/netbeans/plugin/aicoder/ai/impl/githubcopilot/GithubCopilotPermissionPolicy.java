@@ -13,10 +13,10 @@ import kiwi.ingenuity.netbeans.plugin.aicoder.process.McpToolPropertyEnum;
  * {@code PermissionDiffPolicy} is kept free of Swing.
  *
  * <p>
- * <b>Confirmed live.</b> {@code getKind()} returns the bare kind, and for an MCP tool that kind is the
- * literal string {@code "mcp"} — not the server name, and not the {@code <mcp-server-name>(tool-name?)}
- * pattern that {@code copilot help permissions} documents for the CLI's own rule syntax. The server name
- * arrives separately, as {@link GithubCopilotJsonKeyEnum#SERVER_NAME} in {@code extensionData}:
+ * <b>Confirmed live.</b> {@code getKind()} returns the bare kind, and for an MCP tool that kind is the literal string
+ * {@code "mcp"} — not the server name, and not the {@code <mcp-server-name>(tool-name?)} pattern that
+ * {@code copilot help permissions} documents for the CLI's own rule syntax. The server name arrives separately, as
+ * {@link GithubCopilotJsonKeyEnum#SERVER_NAME} in {@code extensionData}:
  *
  * <pre>
  * kind=mcp
@@ -25,19 +25,17 @@ import kiwi.ingenuity.netbeans.plugin.aicoder.process.McpToolPropertyEnum;
  *                toolTitle=GetFileContent, args={...}, readOnly=false}
  * </pre>
  *
- * The first version matched the server name against the kind string, which could never hit, so every one of
- * this plugin's own tool calls fell through to {@link Category#UNKNOWN} and prompted. That was the intended
- * failure direction — fail closed, not fail silent — and the logged {@code kind} identified the real shape in
- * a single run.
+ * The first version matched the server name against the kind string, which could never hit, so every one of this
+ * plugin's own tool calls fell through to {@link Category#UNKNOWN} and prompted. That was the intended failure
+ * direction — fail closed, not fail silent — and the logged {@code kind} identified the real shape in a single run.
  *
  * <p>
- * A tool from some <em>other</em> MCP server still prompts: this plugin only gates its own tools, so it can
- * only vouch for its own.
+ * A tool from some <em>other</em> MCP server still prompts: this plugin only gates its own tools, so it can only vouch
+ * for its own.
  *
  * <p>
- * Substring matching is kept for the remaining categories so they work whether a build returns
- * {@code "shell"} or {@code "shell(echo)"}. Anything unrecognised falls through to {@link Category#UNKNOWN}
- * and prompts.
+ * Substring matching is kept for the remaining categories so they work whether a build returns {@code "shell"} or
+ * {@code "shell(echo)"}. Anything unrecognised falls through to {@link Category#UNKNOWN} and prompts.
  */
 final class GithubCopilotPermissionPolicy {
 
@@ -53,10 +51,10 @@ final class GithubCopilotPermissionPolicy {
             // another MCP server is deliberately not auto-approved — this plugin
             // gates its own tools and can vouch for nothing else.
             Object server = extensionData == null ? null
-                    : extensionData.get(GithubCopilotJsonKeyEnum.SERVER_NAME.key());
+                            : extensionData.get(GithubCopilotJsonKeyEnum.SERVER_NAME.key());
             return server != null && mcpServerName != null
                     && server.toString().equalsIgnoreCase(mcpServerName)
-                    ? Category.MCP_OUR_SERVER : Category.UNKNOWN;
+                   ? Category.MCP_OUR_SERVER : Category.UNKNOWN;
         }
         if (mcpServerName != null && !mcpServerName.isBlank() && k.contains(mcpServerName.toLowerCase(Locale.ROOT))) {
             return Category.MCP_OUR_SERVER;
@@ -84,14 +82,14 @@ final class GithubCopilotPermissionPolicy {
     }
 
     /**
-     * Label for the confirm panel's tool-name slot. The category alone reads badly — an MCP call showed up as
-     * literally "Unknown" even though its {@link GithubCopilotJsonKeyEnum#TOOL_TITLE} was right there in
-     * {@code extensionData}. Prefer the most specific thing actually known: the tool's title, then the raw
-     * kind, and only "Unknown" when there is genuinely nothing to show.
+     * Label for the confirm panel's tool-name slot. The category alone reads badly — an MCP call showed up as literally
+     * "Unknown" even though its {@link GithubCopilotJsonKeyEnum#TOOL_TITLE} was right there in {@code extensionData}.
+     * Prefer the most specific thing actually known: the tool's title, then the raw kind, and only "Unknown" when there
+     * is genuinely nothing to show.
      */
     static String describeToolName(Category category, String rawKind, Map<String, Object> extensionData) {
         Object title = extensionData == null ? null
-                : extensionData.get(GithubCopilotJsonKeyEnum.TOOL_TITLE.key());
+                       : extensionData.get(GithubCopilotJsonKeyEnum.TOOL_TITLE.key());
         if (title != null && !title.toString().isBlank()) {
             return title.toString();
         }
@@ -104,20 +102,19 @@ final class GithubCopilotPermissionPolicy {
         // admitting we do not recognise it. The raw kind is still shown in full in
         // the display text, so nothing is hidden.
         return category == null || category == Category.UNKNOWN || category == Category.INTERNAL
-                ? Category.UNKNOWN.label() : category.label();
+               ? Category.UNKNOWN.label() : category.label();
     }
 
     /**
      * Builds the confirm-panel display text. The key names Copilot uses inside {@code extensionData} for the
-     * human-relevant detail (e.g. the shell command text) are only partly known, so rather than guess a key
-     * and risk silently dropping the one piece of information the user needs, every entry is rendered —
-     * generous, not exact.
+     * human-relevant detail (e.g. the shell command text) are only partly known, so rather than guess a key and risk
+     * silently dropping the one piece of information the user needs, every entry is rendered — generous, not exact.
      *
      * <p>
      * Two exceptions. Anything whose key looks like a credential is masked: the inter-AI tools pass a session
-     * {@link McpToolPropertyEnum#SECRET_KEY} as a normal argument, and a live run rendered one in full into
-     * both the confirm panel and the log. Long values are truncated so one large argument cannot push the
-     * rest of the request off the panel.
+     * {@link McpToolPropertyEnum#SECRET_KEY} as a normal argument, and a live run rendered one in full into both the
+     * confirm panel and the log. Long values are truncated so one large argument cannot push the rest of the request
+     * off the panel.
      */
     static String describeRequest(String rawKind, Map<String, Object> extensionData) {
         StringBuilder sb = new StringBuilder("GitHub Copilot requests permission: ")
@@ -137,34 +134,38 @@ final class GithubCopilotPermissionPolicy {
     }
 
     /**
-     * The steering category to apply to a Copilot permission request. Shared by the refusal feedback and the
-     * refusal log line, so the user-visible text and the tool-use log can never disagree about what was
-     * steered away from. Native Copilot actions (INTERNAL) map onto the MCP-tool categories whose equivalents
-     * the steering policy insists on; native writes (WRITE) map onto the same {@code Category#WRITE} the
-     * OpenCode/Codex write paths steer with; anything unrecognised stays
-     * {@link McpSteeringPolicy.Category#UNKNOWN}.
+     * The steering category to apply to a Copilot permission request. Shared by the refusal feedback and the refusal
+     * log line, so the user-visible text and the tool-use log can never disagree about what was steered away from.
+     * Native Copilot actions (INTERNAL) map onto the MCP-tool categories whose equivalents the steering policy insists
+     * on; native writes (WRITE) map onto the same {@code Category#WRITE} the OpenCode/Codex write paths steer with;
+     * anything unrecognised stays {@link McpSteeringPolicy.Category#UNKNOWN}.
      */
     static McpSteeringPolicy.Category steeringCategoryFor(Category category, String rawKind) {
         String kind = rawKind == null ? "" : rawKind.toLowerCase(Locale.ROOT);
         if (category == Category.INTERNAL) {
             if (kind.contains("read")) {
                 return McpSteeringPolicy.Category.READ;
-            } else if (kind.contains("path")) {
+            }
+            else if (kind.contains("path")) {
                 return McpSteeringPolicy.Category.PATH;
-            } else if (kind.contains("url")) {
+            }
+            else if (kind.contains("url")) {
                 return McpSteeringPolicy.Category.URL;
             }
             return McpSteeringPolicy.Category.UNKNOWN;
-        } else if (category == Category.SHELL) {
+        }
+        else if (category == Category.SHELL) {
             return McpSteeringPolicy.Category.SHELL;
-        } else if (category == Category.WRITE) {
+        }
+        else if (category == Category.WRITE) {
             return McpSteeringPolicy.Category.WRITE;
         }
         return McpSteeringPolicy.Category.UNKNOWN;
     }
 
-    static String rejectFeedbackFor(Category category, String rawKind) {
-        return McpSteeringPolicy.steeringFeedbackFor(steeringCategoryFor(category, rawKind));
+    static String rejectFeedbackFor(Category category, String rawKind,
+                                    kiwi.ingenuity.netbeans.plugin.aicoder.process.session.AbstractAiSession session) {
+        return McpSteeringPolicy.steeringFeedbackFor(steeringCategoryFor(category, rawKind), session);
     }
 
     private static String redact(String key, Object value) {
@@ -179,7 +180,7 @@ final class GithubCopilotPermissionPolicy {
         String secretKey = McpToolPropertyEnum.SECRET_KEY.key();
         if (v.contains(secretKey + "=")) {
             v = v.replaceAll(Pattern.quote(secretKey) + "=[^,}\\s]+",
-                    Matcher.quoteReplacement(secretKey) + "=***");
+                             Matcher.quoteReplacement(secretKey) + "=***");
         }
         return v.length() > MAX_VALUE_CHARS ? v.substring(0, MAX_VALUE_CHARS) + "…" : v;
     }
@@ -198,9 +199,9 @@ final class GithubCopilotPermissionPolicy {
          */
         INTERNAL,
         /**
-         * Native Copilot file writes (apply_patch). Steerable in both directions like {@link #SHELL}: refused
-         * with the WRITE steer when MCP steering is on, left to the user confirm prompt when it is off —
-         * never non-optional like INTERNAL.
+         * Native Copilot file writes (apply_patch). Steerable in both directions like {@link #SHELL}: refused with the
+         * WRITE steer when MCP steering is on, left to the user confirm prompt when it is off — never non-optional like
+         * INTERNAL.
          */
         WRITE,
         /**

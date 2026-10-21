@@ -117,12 +117,12 @@ public class PiAiProcessManager extends AiProcessManager {
 
     /**
      * Set by {@code interrupt(Cancel)} when the user stops a turn; consumed exactly once by the next {@link
-     * #sendPrompt} — never anywhere else, so it cannot be lost by a stray sendPrompt() guard failure or
-     * burned by a launch that never actually reaches pi (live finding). pi's own {@code abort} produces plain
-     * tool-result text ("Command aborted") with no signal distinguishing "the user cancelled this" from "this
-     * tool genuinely failed" — verified live: a real pi session read that text as an error and said it would
-     * have retried the command without the notice. A boolean, not a counter/queue: two cancels before either
-     * is ever consumed collapse into one notice, matching every other cancel-related flag on this class.
+     * #sendPrompt} — never anywhere else, so it cannot be lost by a stray sendPrompt() guard failure or burned by a
+     * launch that never actually reaches pi (live finding). pi's own {@code abort} produces plain tool-result text
+     * ("Command aborted") with no signal distinguishing "the user cancelled this" from "this tool genuinely failed" —
+     * verified live: a real pi session read that text as an error and said it would have retried the command without
+     * the notice. A boolean, not a counter/queue: two cancels before either is ever consumed collapse into one notice,
+     * matching every other cancel-related flag on this class.
      */
     private volatile boolean pendingCancelNotice = false;
 
@@ -157,12 +157,11 @@ public class PiAiProcessManager extends AiProcessManager {
     long toolsRegisteredWaitMillis = 5_000L;
 
     /**
-     * The two {@code ctx.ui.notify} prefixes {@code aicoder-pi-extension.ts.template}'s
-     * {@code registerMcpTools} emits at the end of EVERY path, success or failure — see that function's own
-     * javadoc ("KEEP BOTH STRINGS EXACTLY AS WRITTEN — the Java side matches on them verbatim"). Each is
-     * followed by a dynamic suffix (a tool count, or an error message), hence a prefix match rather than
-     * equality. Both count as "registration is done, stop waiting" — a failure means no tools are coming, not
-     * that some are.
+     * The two {@code ctx.ui.notify} prefixes {@code aicoder-pi-extension.ts.template}'s {@code registerMcpTools} emits
+     * at the end of EVERY path, success or failure — see that function's own javadoc ("KEEP BOTH STRINGS EXACTLY AS
+     * WRITTEN — the Java side matches on them verbatim"). Each is followed by a dynamic suffix (a tool count, or an
+     * error message), hence a prefix match rather than equality. Both count as "registration is done, stop waiting" — a
+     * failure means no tools are coming, not that some are.
      */
     private static final String TOOLS_REGISTERED_PREFIX = "AI Coder MCP tools registered: ";
     private static final String TOOLS_UNAVAILABLE_PREFIX = "AI Coder MCP tools unavailable: ";
@@ -347,7 +346,8 @@ public class PiAiProcessManager extends AiProcessManager {
             McpServerRegistry.deregister(registrar);
             registrar = null;
         }
-        PiAiMcpRegistrar reg = new PiAiMcpRegistrar(sessionId, executablePath);
+        PiAiMcpRegistrar reg = new PiAiMcpRegistrar(sessionId, executablePath,
+                                                    currentSession.settings().ensureMcpRoutingId());
         boolean mcpReady;
         try {
             mcpReady = McpServerRegistry.register(reg).get(TimeoutEnum.MCP_REGISTRATION_WAIT_MILLIS.millis(), TimeUnit.MILLISECONDS);

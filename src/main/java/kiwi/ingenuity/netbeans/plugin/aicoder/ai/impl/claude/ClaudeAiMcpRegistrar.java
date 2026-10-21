@@ -19,9 +19,10 @@ import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.McpConfigKeyEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.server.AiMcpRegistrar;
 
 /**
- * Claude-specific MCP registration strategy. Uses {@code claude mcp add/remove} to manage per-session
- * endpoints, and writes the {@link McpConfigKeyEnum#PRE_TOOL_USE} HTTP hook to ~/.claude/settings.json for
- * the diff-intercept feature.
+ * Claude-specific MCP registration strategy. The plugin-launched Claude process receives its session endpoint via
+ * per-process {@code --mcp-config}; no global MCP entry is written. The {@link McpConfigKeyEnum#PRE_TOOL_USE} HTTP hook
+ * remains in ~/.claude/settings.json for the diff-intercept feature. The remove operation still cleans a global plugin
+ * entry left by older plugin versions.
  */
 public class ClaudeAiMcpRegistrar extends AiMcpRegistrar {
 
@@ -164,19 +165,14 @@ public class ClaudeAiMcpRegistrar extends AiMcpRegistrar {
     }
 
     @Override
-    public void addMcpEndpoint(String endpointUrl) {
-        runCommand(5, "mcp", "add", "--transport", "http", "--scope", "user",
-                StringConst.PLUGIN_ID, endpointUrl);
-    }
-
-    @Override
     public void removeMcpEndpoint() {
         runCommand(3, "mcp", "remove", "--scope", "user", StringConst.PLUGIN_ID);
     }
 
     @Override
     public boolean registerHooks(String serverBaseUrl) {
-        runCommand(3, "mcp", "remove", "--scope", "user", StringConst.PLUGIN_ID);
+        // The legacy global entry is removed by McpServerRegistry's explicit removeMcpEndpoint call right after this
+        // returns; removing it here too would spawn the CLI a second time on every first registration.
         return writePreToolHook(serverBaseUrl);
     }
 

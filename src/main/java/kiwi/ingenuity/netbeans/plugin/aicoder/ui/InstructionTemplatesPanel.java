@@ -33,10 +33,10 @@ public final class InstructionTemplatesPanel extends TemplatePanel<SpecialInstru
 
     private InstructionTemplatesPanel(JTextArea body, TemplatePersistenceManager templates, Runnable onTemplateChanged) {
         super(createBodyScrollPane(body), templates, onTemplateChanged,
-                new String[]{"Name", "Updated", "Created"},
-                SpecialInstructionTemplate::name,
-                SpecialInstructionTemplate::updatedAt,
-                SpecialInstructionTemplate::createdAt);
+              new String[]{"Name", "Updated", "Created"},
+              SpecialInstructionTemplate::name,
+              SpecialInstructionTemplate::updatedAt,
+              SpecialInstructionTemplate::createdAt);
         this.body = body;
         initPanel();
     }
@@ -48,9 +48,16 @@ public final class InstructionTemplatesPanel extends TemplatePanel<SpecialInstru
 
     @Override
     protected void saveData(SpecialInstructionTemplate old, String name) throws IOException {
-        templates.save(old == null
-                ? SpecialInstructionTemplate.create(name, body.getText().trim())
-                : old.withNameAndBody(name, body.getText().trim()));
+        prepareSave(old, name).run();
+    }
+
+    @Override
+    protected StoreWrite prepareSave(SpecialInstructionTemplate old, String name) {
+        String text = body.getText().trim();
+        SpecialInstructionTemplate value = old == null
+                                           ? SpecialInstructionTemplate.create(name, text)
+                                           : old.withNameAndBody(name, text);
+        return () -> templates.save(value);
     }
 
     @Override

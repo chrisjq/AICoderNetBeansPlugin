@@ -169,7 +169,7 @@ class PiAiProcessManagerStateTest {
 
     @Test
     void cancelWatchdogForceClosesWhenPiNeverAnswersAbort() throws InterruptedException {
-        manager.setRegistrarForTests(new PiAiMcpRegistrar("test-session", "/bin/cat"));
+        manager.setRegistrarForTests(new PiAiMcpRegistrar("test-session", "/bin/cat", "test-routing"));
         var calls = recordDeleteExtensionFileCalls();
         manager.cancelWatchdogMillis = 50;
         manager.sendPrompt("first prompt", workDir, List.of());
@@ -251,7 +251,7 @@ class PiAiProcessManagerStateTest {
 
     @Test
     void stopCallsDeleteExtensionFileWhenARegistrarIsPresent() {
-        manager.setRegistrarForTests(new PiAiMcpRegistrar("test-session", "/bin/cat"));
+        manager.setRegistrarForTests(new PiAiMcpRegistrar("test-session", "/bin/cat", "test-routing"));
         var calls = recordDeleteExtensionFileCalls();
 
         manager.stop();
@@ -285,7 +285,7 @@ class PiAiProcessManagerStateTest {
 
     @Test
     void unexpectedProcessExitCallsDeleteExtensionFile() throws InterruptedException {
-        manager.setRegistrarForTests(new PiAiMcpRegistrar("test-session", "/bin/cat"));
+        manager.setRegistrarForTests(new PiAiMcpRegistrar("test-session", "/bin/cat", "test-routing"));
         var calls = recordDeleteExtensionFileCalls();
 
         manager.sendPrompt("hello", workDir, List.of());
@@ -297,7 +297,7 @@ class PiAiProcessManagerStateTest {
 
     @Test
     void launchThrowingAfterExtensionFileGenerationDeletesTheFileAndReportsFailed() {
-        manager.setRegistrarForTests(new PiAiMcpRegistrar("test-session", "/bin/cat"));
+        manager.setRegistrarForTests(new PiAiMcpRegistrar("test-session", "/bin/cat", "test-routing"));
         var calls = recordDeleteExtensionFileCalls();
         manager.throwOnLaunch = true;
 

@@ -18,6 +18,7 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CompletionException;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.atomic.AtomicInteger;
+import kiwi.ingenuity.netbeans.plugin.aicoder.ai.AiTypeEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.events.StatusEvent;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.events.StatusEventTypeEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.events.TurnCompleteEvent;
@@ -25,6 +26,8 @@ import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.githubcopilot.events.Githu
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.githubcopilot.settings.GithubCopilotPluginSettings;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.events.AiProcessEvent;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.events.AiProcessEventListener;
+import kiwi.ingenuity.netbeans.plugin.aicoder.process.server.McpServerRegistry;
+import kiwi.ingenuity.netbeans.plugin.aicoder.utils.StatusMessageUtil;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
@@ -33,6 +36,21 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import org.junit.jupiter.api.Test;
 
 class GithubCopilotProcessManagerTest {
+
+    @Test
+    void sessionMcpUrlUsesRoutingIdForCopilot() throws Exception {
+        McpServerRegistry.portOverride = 0;
+        assertTrue(McpServerRegistry.register(new GithubCopilotMcpRegistrar("copilot-url-test")).get(5, java.util.concurrent.TimeUnit.SECONDS));
+        try {
+            String endpoint = McpServerRegistry.endpointUrlFor(AiTypeEnum.GitHubCoPilot, "route-1234");
+            assertNotNull(endpoint);
+            assertTrue(endpoint.endsWith("/mcp/github_copilot/route-1234"), endpoint);
+        }
+        finally {
+            McpServerRegistry.stopAll();
+            McpServerRegistry.portOverride = null;
+        }
+    }
 
     @Test
     void buildCreateConfigPinsStableSessionId() {
@@ -266,10 +284,19 @@ class GithubCopilotProcessManagerTest {
             // the manager, not the SDK class.
             createOrResume.invoke(mgr, null, "gpt-5.4");
 
+            // This manager has no session and no MCP server running, so buildMcpServers also reports that the plugin
+            // tools are unavailable. That notice is about something else; the guarantee under test is about the
+            // reasoning-effort INFO, so it is excluded from the count (and asserted separately, once).
+            String mcpUnavailable = StatusMessageUtil.formatMcpToolsUnavailable("GitHub Copilot");
             assertEquals(1, events.stream()
-                    .filter(e -> e instanceof StatusEvent && ((StatusEvent) e).type() == StatusEventTypeEnum.INFO)
-                    .count(),
-                    () -> "exactly one INFO event expected, but got: " + events);
+                         .filter(e -> e instanceof StatusEvent && ((StatusEvent) e).type() == StatusEventTypeEnum.INFO)
+                         .filter(e -> !mcpUnavailable.equals(((StatusEvent) e).text()))
+                         .count(),
+                         () -> "exactly one reasoning-effort INFO event expected, but got: " + events);
+            assertEquals(1, events.stream()
+                         .filter(e -> e instanceof StatusEvent && mcpUnavailable.equals(((StatusEvent) e).text()))
+                         .count(),
+                         () -> "the MCP-unavailable notice is emitted once per createOrResumeSession: " + events);
             assertEquals(1, clearedCount.get());
             ScriptedGithubCopilotProcessManager scripted = (ScriptedGithubCopilotProcessManager) mgr;
             assertNotNull(scripted.resumeConfig, "resume attempt must have been made");

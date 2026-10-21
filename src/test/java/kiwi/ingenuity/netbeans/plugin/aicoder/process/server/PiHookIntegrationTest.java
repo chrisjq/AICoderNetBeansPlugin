@@ -42,21 +42,20 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
 /**
- * Proves end-to-end that a Claude-shaped {@code PreToolUse} hook POST carrying a pi session's OWN PLUGIN UUID
- * — exactly what {@code aicoder-pi-extension.ts.template}'s {@code AICODER_CONFIG.sessionId} bakes in at
- * generation time, per {@code PiExtensionGenerator} — resolves that session in {@link McpHookServer} and
- * reaches a {@link PermissionEvent}, without any {@link SessionRegistry#registerAlias} step. Unlike Claude
- * (whose own CLI-internal session id is discovered from its stream and mapped onto the plugin session as a
- * SEPARATE alias — see {@code ClaudeAiSession#registerClaudeSessionAlias}), pi needs no alias at all: the id
- * the hook POST carries and the id the session is registered under are the SAME plugin UUID, so only the
- * primary {@link SessionRegistry#register} ever runs for a pi session — this test never calls
- * {@code registerAlias}.
+ * Proves end-to-end that a Claude-shaped {@code PreToolUse} hook POST carrying a pi session's OWN PLUGIN UUID — exactly
+ * what {@code aicoder-pi-extension.ts.template}'s {@code AICODER_CONFIG.sessionId} bakes in at generation time, per
+ * {@code PiExtensionGenerator} — resolves that session in {@link McpHookServer} and reaches a {@link PermissionEvent},
+ * without any {@link SessionRegistry#registerAlias} step. Unlike Claude (whose own CLI-internal session id is
+ * discovered from its stream and mapped onto the plugin session as a SEPARATE alias — see
+ * {@code ClaudeAiSession#registerClaudeSessionAlias}), pi needs no alias at all: the id the hook POST carries and the
+ * id the session is registered under are the SAME plugin UUID, so only the primary {@link SessionRegistry#register}
+ * ever runs for a pi session — this test never calls {@code registerAlias}.
  *
  * <p>
  * Drives the real HTTP endpoint (an actual {@link McpHookServer} bound to an OS-assigned port via
- * {@link McpServerRegistry#portOverride}, POSTed to with {@link HttpClient}) rather than reflecting into the
- * private {@code handle}/{@code handleRequest} methods, since a real request/response round trip is the more
- * direct proof of "resolves end-to-end" the review asked for.
+ * {@link McpServerRegistry#portOverride}, POSTed to with {@link HttpClient}) rather than reflecting into the private
+ * {@code handle}/{@code handleRequest} methods, since a real request/response round trip is the more direct proof of
+ * "resolves end-to-end" the review asked for.
  */
 class PiHookIntegrationTest {
 
@@ -187,7 +186,7 @@ class PiHookIntegrationTest {
 
         JsonObject output = response.getAsJsonObject(ClaudeHookKeyEnum.HOOK_SPECIFIC_OUTPUT.key());
         assertEquals("allow", output.get(ClaudeHookKeyEnum.PERMISSION_DECISION.key()).getAsString(),
-                "a wrong session ID must not inherit the registered session's steering policy");
+                     "a wrong session ID must not inherit the registered session's steering policy");
         assertTrue(listener.events.isEmpty());
     }
 
@@ -208,14 +207,15 @@ class PiHookIntegrationTest {
             JsonObject offResponse = postHook(toolHookBody(offSessionId, "Read"));
 
             assertEquals("deny",
-                    onResponse.getAsJsonObject(ClaudeHookKeyEnum.HOOK_SPECIFIC_OUTPUT.key())
-                            .get(ClaudeHookKeyEnum.PERMISSION_DECISION.key()).getAsString());
+                         onResponse.getAsJsonObject(ClaudeHookKeyEnum.HOOK_SPECIFIC_OUTPUT.key())
+                                 .get(ClaudeHookKeyEnum.PERMISSION_DECISION.key()).getAsString());
             assertEquals("allow",
-                    offResponse.getAsJsonObject(ClaudeHookKeyEnum.HOOK_SPECIFIC_OUTPUT.key())
-                            .get(ClaudeHookKeyEnum.PERMISSION_DECISION.key()).getAsString());
+                         offResponse.getAsJsonObject(ClaudeHookKeyEnum.HOOK_SPECIFIC_OUTPUT.key())
+                                 .get(ClaudeHookKeyEnum.PERMISSION_DECISION.key()).getAsString());
             assertTrue(onListener.events.isEmpty());
             assertTrue(offListener.events.isEmpty());
-        } finally {
+        }
+        finally {
             SessionRegistry.unregister(offSessionId);
         }
     }
@@ -246,17 +246,17 @@ class PiHookIntegrationTest {
         knownSession.getSettings().setMcpSteering(false);
         JsonObject offRead = postHook(toolHookBody(sessionId, "Read"));
         assertEquals("allow", offRead.getAsJsonObject(ClaudeHookKeyEnum.HOOK_SPECIFIC_OUTPUT.key())
-                .get(ClaudeHookKeyEnum.PERMISSION_DECISION.key()).getAsString());
+                     .get(ClaudeHookKeyEnum.PERMISSION_DECISION.key()).getAsString());
 
         knownSession.getSettings().setMcpSteering(true);
         JsonObject onRead = postHook(toolHookBody(sessionId, "Read"));
         assertEquals("deny", onRead.getAsJsonObject(ClaudeHookKeyEnum.HOOK_SPECIFIC_OUTPUT.key())
-                .get(ClaudeHookKeyEnum.PERMISSION_DECISION.key()).getAsString());
+                     .get(ClaudeHookKeyEnum.PERMISSION_DECISION.key()).getAsString());
 
         knownSession.getSettings().setMcpSteering(false);
         JsonObject offWrite = postHook(writeHookBody(sessionId, target.toString(), "changed"));
         assertEquals("deny", offWrite.getAsJsonObject(ClaudeHookKeyEnum.HOOK_SPECIFIC_OUTPUT.key())
-                .get(ClaudeHookKeyEnum.PERMISSION_DECISION.key()).getAsString());
+                     .get(ClaudeHookKeyEnum.PERMISSION_DECISION.key()).getAsString());
         assertEquals(1, listener.events.size(), "steering OFF must retain the write review event");
         assertEquals("original", Files.readString(target));
     }
@@ -345,7 +345,7 @@ class PiHookIntegrationTest {
         JsonObject output = response.getAsJsonObject(ClaudeHookKeyEnum.HOOK_SPECIFIC_OUTPUT.key());
         assertEquals("deny", output.get(ClaudeHookKeyEnum.PERMISSION_DECISION.key()).getAsString());
         assertEquals("review denied",
-                output.get(ClaudeHookKeyEnum.PERMISSION_DECISION_REASON.key()).getAsString());
+                     output.get(ClaudeHookKeyEnum.PERMISSION_DECISION_REASON.key()).getAsString());
         assertEquals(1, listener.events.size(), "native write must retain the existing review gate");
         assertEquals("original", Files.readString(target));
     }
@@ -364,7 +364,7 @@ class PiHookIntegrationTest {
         JsonObject output = response.getAsJsonObject(ClaudeHookKeyEnum.HOOK_SPECIFIC_OUTPUT.key());
         assertEquals("deny", output.get(ClaudeHookKeyEnum.PERMISSION_DECISION.key()).getAsString());
         assertEquals("review denied",
-                output.get(ClaudeHookKeyEnum.PERMISSION_DECISION_REASON.key()).getAsString());
+                     output.get(ClaudeHookKeyEnum.PERMISSION_DECISION_REASON.key()).getAsString());
         assertEquals(1, listener.events.size(), "native edit must retain the existing review gate");
         assertEquals("original", Files.readString(target));
     }
@@ -383,15 +383,15 @@ class PiHookIntegrationTest {
         JsonObject notebookResponse = postHook(toolHookBody(sessionId, "NotebookEdit"));
 
         assertEquals("deny", writeResponse.getAsJsonObject(ClaudeHookKeyEnum.HOOK_SPECIFIC_OUTPUT.key())
-                .get(ClaudeHookKeyEnum.PERMISSION_DECISION.key()).getAsString());
+                     .get(ClaudeHookKeyEnum.PERMISSION_DECISION.key()).getAsString());
         assertEquals("review denied", writeResponse.getAsJsonObject(ClaudeHookKeyEnum.HOOK_SPECIFIC_OUTPUT.key())
-                .get(ClaudeHookKeyEnum.PERMISSION_DECISION_REASON.key()).getAsString());
+                     .get(ClaudeHookKeyEnum.PERMISSION_DECISION_REASON.key()).getAsString());
         assertEquals("deny", editResponse.getAsJsonObject(ClaudeHookKeyEnum.HOOK_SPECIFIC_OUTPUT.key())
-                .get(ClaudeHookKeyEnum.PERMISSION_DECISION.key()).getAsString());
+                     .get(ClaudeHookKeyEnum.PERMISSION_DECISION.key()).getAsString());
         assertEquals("review denied", editResponse.getAsJsonObject(ClaudeHookKeyEnum.HOOK_SPECIFIC_OUTPUT.key())
-                .get(ClaudeHookKeyEnum.PERMISSION_DECISION_REASON.key()).getAsString());
+                     .get(ClaudeHookKeyEnum.PERMISSION_DECISION_REASON.key()).getAsString());
         assertEquals("deny", notebookResponse.getAsJsonObject(ClaudeHookKeyEnum.HOOK_SPECIFIC_OUTPUT.key())
-                .get(ClaudeHookKeyEnum.PERMISSION_DECISION.key()).getAsString());
+                     .get(ClaudeHookKeyEnum.PERMISSION_DECISION.key()).getAsString());
         assertEquals(2, listener.events.size(), "only Edit and Write reach the diff review gate");
         assertEquals("original", Files.readString(target));
     }
@@ -424,7 +424,7 @@ class PiHookIntegrationTest {
             knownSession.getSettings().setMcpSteering(false);
             JsonObject allowed = postHook(toolHookBody(sessionId, "Read"));
             assertEquals("allow", allowed.getAsJsonObject(ClaudeHookKeyEnum.HOOK_SPECIFIC_OUTPUT.key())
-                    .get(ClaudeHookKeyEnum.PERMISSION_DECISION.key()).getAsString());
+                         .get(ClaudeHookKeyEnum.PERMISSION_DECISION.key()).getAsString());
             assertEquals(1, captured.size());
             assertTrue(captured.get(0).contains("Tool Used: Read"));
 
@@ -432,9 +432,10 @@ class PiHookIntegrationTest {
             knownSession.getSettings().setMcpSteering(true);
             JsonObject refused = postHook(toolHookBody(sessionId, "Read"));
             assertEquals("deny", refused.getAsJsonObject(ClaudeHookKeyEnum.HOOK_SPECIFIC_OUTPUT.key())
-                    .get(ClaudeHookKeyEnum.PERMISSION_DECISION.key()).getAsString());
+                         .get(ClaudeHookKeyEnum.PERMISSION_DECISION.key()).getAsString());
             assertTrue(captured.isEmpty(), "a steered refusal must not be logged as a successful tool use");
-        } finally {
+        }
+        finally {
             logger.removeHandler(capture);
             PluginSettings.setLogToolUse(previous);
         }
@@ -465,17 +466,18 @@ class PiHookIntegrationTest {
             Path target = projectDir.resolve("Foo.txt");
             Files.writeString(target, "original");
             SessionRegistry.register(new FakeSession(sessionId,
-                    new RecordingListener(PermissionDecision.allowed())));
+                                                     new RecordingListener(PermissionDecision.allowed())));
             server.registerSession(sessionId, AiTypeEnum.PI, List.of(projectDir.toFile()), true);
 
             JsonObject response = postHook(writeHookBody(sessionId, target.toString(), "changed"));
 
             assertEquals("deny", response.getAsJsonObject(ClaudeHookKeyEnum.HOOK_SPECIFIC_OUTPUT.key())
-                    .get(ClaudeHookKeyEnum.PERMISSION_DECISION.key()).getAsString());
+                         .get(ClaudeHookKeyEnum.PERMISSION_DECISION.key()).getAsString());
             assertEquals("changed", Files.readString(target));
             assertEquals(1, captured.size());
             assertTrue(captured.get(0).contains("Tool Used: Write"));
-        } finally {
+        }
+        finally {
             logger.removeHandler(capture);
             PluginSettings.setLogToolUse(previous);
         }
@@ -545,7 +547,7 @@ class PiHookIntegrationTest {
         JsonObject output = response.getAsJsonObject(ClaudeHookKeyEnum.HOOK_SPECIFIC_OUTPUT.key());
         assertEquals("deny", output.get(ClaudeHookKeyEnum.PERMISSION_DECISION.key()).getAsString());
         assertEquals(target + " is outside the allowed project scope for this session.",
-                stripAccessDeniedPrefix(output.get(ClaudeHookKeyEnum.PERMISSION_DECISION_REASON.key()).getAsString()));
+                     stripAccessDeniedPrefix(output.get(ClaudeHookKeyEnum.PERMISSION_DECISION_REASON.key()).getAsString()));
         assertEquals("original", Files.readString(target));
     }
 
@@ -578,10 +580,10 @@ class PiHookIntegrationTest {
         JsonObject response = postHook(writeHookBody(sessionId, target.toString(), "changed"));
 
         assertEquals(1, listener.events.size(),
-                "a session registered before the swap must still reach PermissionEvent, not defer forever");
+                     "a session registered before the swap must still reach PermissionEvent, not defer forever");
         JsonObject output = response.getAsJsonObject(ClaudeHookKeyEnum.HOOK_SPECIFIC_OUTPUT.key());
         assertNotEquals("defer", output.get(ClaudeHookKeyEnum.PERMISSION_DECISION.key()).getAsString(),
-                "the rehydrated hook lock must let this request reach a real allow/deny decision");
+                        "the rehydrated hook lock must let this request reach a real allow/deny decision");
         assertEquals("changed", Files.readString(target), "an allowed write must actually land on disk");
     }
 
@@ -616,8 +618,7 @@ class PiHookIntegrationTest {
 
     /**
      * A pi {@code write} translated into Claude's hook vocabulary exactly as {@code reviewGatedCall} in
-     * aicoder-pi-extension.ts.template builds it — {@code session_id} is the plugin UUID, not anything
-     * pi-internal.
+     * aicoder-pi-extension.ts.template builds it — {@code session_id} is the plugin UUID, not anything pi-internal.
      */
     private static JsonObject writeHookBody(String sessionId, String filePath, String content) {
         JsonObject body = toolHookBody(sessionId, "Write");
@@ -661,10 +662,6 @@ class PiHookIntegrationTest {
 
         NoopRegistrar(String sessionId) {
             super(sessionId, AiTypeEnum.PI);
-        }
-
-        @Override
-        public void addMcpEndpoint(String endpointUrl) {
         }
 
         @Override

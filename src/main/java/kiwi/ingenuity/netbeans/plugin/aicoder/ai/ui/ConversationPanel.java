@@ -8,6 +8,7 @@ import java.awt.event.ComponentEvent;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
+import java.util.function.IntSupplier;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 import java.util.prefs.PreferenceChangeListener;
@@ -264,10 +265,21 @@ public class ConversationPanel extends JScrollPane {
     }
 
     /**
+     * Where the transcript cap comes from. Defaults to the legacy global so a panel nobody has wired (tests, previews)
+     * behaves as before; a session tab replaces it with its own {@code effectiveMaxHistory()}, read on every use so a
+     * settings change applies to the next message.
+     */
+    private volatile IntSupplier historyCap = PluginSettings::getMaxHistory;
+
+    public void setHistoryCap(IntSupplier historyCap) {
+        this.historyCap = historyCap == null ? PluginSettings::getMaxHistory : historyCap;
+    }
+
+    /**
      * Remove oldest messages beyond the cap.
      */
     private void enforceHistoryCap() {
-        int cap = PluginSettings.getMaxHistory();
+        int cap = historyCap.getAsInt();
         if (cap <= 0) {
             return;
         }

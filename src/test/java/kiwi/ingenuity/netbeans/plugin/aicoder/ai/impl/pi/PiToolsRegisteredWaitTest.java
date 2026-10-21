@@ -146,7 +146,7 @@ class PiToolsRegisteredWaitTest {
         sendThread.join(5000);
         long elapsed = System.currentTimeMillis() - start;
 
-        assertTrue(stdinContains("hello"));
+        awaitTrue(() -> stdinContains("hello"), "the prompt must still be sent once the failure notice releases the wait");
         assertTrue(elapsed < 2000, "the failure notice must release the wait immediately too: took " + elapsed + "ms");
     }
 
@@ -165,7 +165,7 @@ class PiToolsRegisteredWaitTest {
         manager.sendPrompt("hello", workDir, List.of());
         long elapsed = System.currentTimeMillis() - start;
 
-        assertTrue(stdinContains("hello"), "the prompt must still be sent once the bound elapses");
+        awaitTrue(() -> stdinContains("hello"), "the prompt must still be sent once the bound elapses");
         assertTrue(elapsed >= 300, "an unrelated notify must not release the wait early: took " + elapsed + "ms");
         assertTrue(events.hasEvent(e -> e instanceof StatusEvent se
                 && se.type() == StatusEventTypeEnum.INFO

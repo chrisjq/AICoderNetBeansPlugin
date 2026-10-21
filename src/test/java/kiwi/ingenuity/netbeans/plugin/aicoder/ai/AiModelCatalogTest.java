@@ -23,6 +23,8 @@ class AiModelCatalogTest {
         return (AvailableModelsEvent) event;
     }
 
+    // FLAKY (seen 2026-10-20/22): fails intermittently in the full suite but passes when run alone.
+    // Observed: "unchanged publish must not fire, so the next event is the changed list", expected [model-c] but was [model-a, model-b] (line 39). Likely cause: an event from earlier state (another test's or the first publish) is still on the shared bus when the test reads its next event. Re-run alone before treating a failure as real.
     @Test
     void publishFiresAvailableModelsOnTheBusOnlyWhenTheListChanged() throws Exception {
         AiModelCatalog catalog = new AiModelCatalog(TYPE);
@@ -35,9 +37,9 @@ class AiModelCatalogTest {
             assertTrue(catalog.publish(List.of("model-c")));
 
             assertEquals(List.of("model-a", "model-b"), next(received).models(),
-                    "first publish must reach the bus");
+                         "first publish must reach the bus");
             assertEquals(List.of("model-c"), next(received).models(),
-                    "unchanged publish must not fire, so the next event is the changed list");
+                         "unchanged publish must not fire, so the next event is the changed list");
         }
         finally {
             AiTypePropertyBus.getInstance().removeListener(TYPE, listener);

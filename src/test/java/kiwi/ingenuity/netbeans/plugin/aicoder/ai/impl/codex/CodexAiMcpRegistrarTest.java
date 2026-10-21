@@ -13,19 +13,6 @@ class CodexAiMcpRegistrarTest {
         assertEquals(AiTypeEnum.CODEX, reg.getAiType());
     }
 
-    @Test
-    void addMcpEndpointCapturesUrlAndRemoveClearsIt() {
-        CodexAiMcpRegistrar reg = new CodexAiMcpRegistrar("cap-test-session");
-        assertNull(reg.getEndpointUrl(), "endpoint must be null before addMcpEndpoint is called");
-
-        String endpoint = "http://127.0.0.1:1234/mcp/codex";
-        reg.addMcpEndpoint(endpoint);
-        assertEquals(endpoint, reg.getEndpointUrl(), "addMcpEndpoint must capture the URL verbatim");
-
-        reg.removeMcpEndpoint();
-        assertNull(reg.getEndpointUrl(), "removeMcpEndpoint must clear the captured URL");
-    }
-
     // ---- Codex has no PreToolUse-style hook mechanism — registerHooks/unregisterHooks
     // are no-ops; actual MCP wiring happens per-spawn via -c in CodexAiProcessManager ----
     @Test

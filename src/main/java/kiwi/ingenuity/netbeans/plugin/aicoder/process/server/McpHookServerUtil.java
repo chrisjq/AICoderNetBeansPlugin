@@ -32,6 +32,7 @@ import kiwi.ingenuity.netbeans.plugin.aicoder.process.McpToolEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.McpToolPropertyEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.SessionRegistry;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.session.AbstractAiSession;
+import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.exposure.McpToolGroupEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.McpToolInterface;
 import kiwi.ingenuity.netbeans.plugin.aicoder.utils.OperatingSystemEnum;
 
@@ -128,6 +129,17 @@ public final class McpHookServerUtil {
     }
 
     public static String getGlobalInstructionsHeader(Set<McpInstructionOptionEnum> options) {
+        return getGlobalInstructionsHeader(options, Set.of());
+    }
+
+    /**
+     * The global header for a session that cannot see {@code hiddenTools}. Sentences that LIST several tools name only
+     * the visible ones and are dropped when none is visible; with nothing hidden the text is identical to
+     * {@link #getGlobalInstructionsHeader(Set)}.
+     */
+    public static String getGlobalInstructionsHeader(Set<McpInstructionOptionEnum> options,
+                                                     Set<McpToolEnum> hiddenTools) {
+        Set<McpToolEnum> hidden = hiddenTools == null ? Set.of() : hiddenTools;
         if (!options.contains(McpInstructionOptionEnum.HEADER)) {
             return "";
         }
@@ -165,14 +177,36 @@ public final class McpHookServerUtil {
         if (hasCreds) {
             sb.append("\n- Your session ID and secret key are in the \"Your session identity\" block each turn.");
         }
-        sb.append("\n\n## Refactoring\nPrefer semantic refactors (RenameSymbol, MoveClass, ChangeMethodSignature, InlineVariable) over raw text edits — they update all references project-wide.");
-        sb.append("\n\n## UI Actions\nAction tools (" + McpToolEnum.NAVIGATE_TO_LINE.toolName() + ", " + McpToolEnum.REFORMAT_FILE.toolName() + ", " + McpToolEnum.BUILD_PROJECT.toolName() + ", etc.) are fire-and-forget — follow up with a query tool (" + McpToolEnum.GET_DIAGNOSTICS.toolName() + ", " + McpToolEnum.GET_CURRENT_FILE_CONTENT.toolName() + ", etc.) to read resulting state.");
-        sb.append("\n\n## Inter-AI Messaging\nThe Peer* tools talk to other AI sessions open in this IDE — not internal subagents. "
-                  + McpToolEnum.PEER_SESSION_LIST.toolName() + ", " + McpToolEnum.PEER_MESSAGE_SEND.toolName() + ", "
-                  + McpToolEnum.PEER_MESSAGE_LIST.toolName() + ", " + McpToolEnum.PEER_MESSAGE_READ.toolName() + ", "
-                  + McpToolEnum.PEER_MESSAGE_DELETE.toolName() + ", " + McpToolEnum.PEER_SESSION_DESCRIBE.toolName()
-                  + " are pre-authorized internal IDE actions — use them directly without asking permission.");
-        if (!mcpOnly) {
+        List<String> refactors = visibleNames(hidden, McpToolEnum.RENAME_SYMBOL, McpToolEnum.MOVE_CLASS,
+                                              McpToolEnum.CHANGE_METHOD_SIGNATURE, McpToolEnum.INLINE_VARIABLE);
+        if (!refactors.isEmpty()) {
+            sb.append("\n\n## Refactoring\nPrefer semantic refactors (").append(String.join(", ", refactors))
+                    .append(") over raw text edits — they update all references project-wide.");
+        }
+        List<String> actionTools = visibleNames(hidden, McpToolEnum.NAVIGATE_TO_LINE, McpToolEnum.REFORMAT_FILE,
+                                                McpToolEnum.BUILD_PROJECT);
+        if (!actionTools.isEmpty()) {
+            sb.append("\n\n## UI Actions\nAction tools (").append(String.join(", ", actionTools))
+                    .append(", etc.) are fire-and-forget");
+            List<String> queryTools = visibleNames(hidden, McpToolEnum.GET_DIAGNOSTICS,
+                                                   McpToolEnum.GET_CURRENT_FILE_CONTENT);
+            if (!queryTools.isEmpty()) {
+                sb.append(" — follow up with a query tool (").append(String.join(", ", queryTools))
+                        .append(", etc.) to read resulting state");
+            }
+            sb.append('.');
+        }
+        List<String> peerTools = visibleNames(hidden, McpToolEnum.PEER_SESSION_LIST, McpToolEnum.PEER_MESSAGE_SEND,
+                                              McpToolEnum.PEER_MESSAGE_LIST, McpToolEnum.PEER_MESSAGE_READ,
+                                              McpToolEnum.PEER_MESSAGE_DELETE, McpToolEnum.PEER_SESSION_DESCRIBE);
+        if (!peerTools.isEmpty()) {
+            sb.append("\n\n## Inter-AI Messaging\nThe Peer* tools talk to other AI sessions open in this IDE — not internal subagents. ")
+                    .append(String.join(", ", peerTools))
+                    .append(peerTools.size() == 1
+                            ? " is a pre-authorized internal IDE action — use it directly without asking permission."
+                            : " are pre-authorized internal IDE actions — use them directly without asking permission.");
+        }
+        if (!mcpOnly && !hidden.contains(McpToolEnum.PEER_SESSION_LIST) && !hidden.contains(McpToolEnum.PEER_MESSAGE_SEND)) {
             sb.append("\nWhen a task needs a sub-agent/background agent — a parallel investigation, research, or any self-contained unit of work you would otherwise hand to a spawned sub-agent/background agent — delegate it to an idle peer AI session instead: call PeerSessionList to find one, then PeerMessageSend with expectsReply=true (and replyImportant=true so their reply interrupts you). Peers run in their own context and report back, so prefer them over spawning your own subagents whenever inter-AI comms is available.");
         }
         // Trailing newline so the first "### <section>" heading appended by
@@ -182,6 +216,16 @@ public final class McpHookServerUtil {
     }
 
     public static String getInitializeStub(Set<McpInstructionOptionEnum> options) {
+        return getInitializeStub(options, Set.of());
+    }
+
+    /**
+     * The initialize stub for a session that cannot see {@code hiddenTools}: each "use X / Y / Z instead of ..." line
+     * names only the visible tools and is dropped when none is visible. With nothing hidden the text is identical to
+     * {@link #getInitializeStub(Set)}.
+     */
+    public static String getInitializeStub(Set<McpInstructionOptionEnum> options, Set<McpToolEnum> hiddenTools) {
+        Set<McpToolEnum> hidden = hiddenTools == null ? Set.of() : hiddenTools;
         if (!options.contains(McpInstructionOptionEnum.HEADER)) {
             return "";
         }
@@ -196,12 +240,7 @@ public final class McpHookServerUtil {
                     + "built-in tools.\n\n");
         }
         sb.append("You are connected to the NetBeans IDE plugin (").append(StringConst.PLUGIN_ID).append("). ");
-        if (mcpOnly) {
-            sb.append("It exposes a full set of tools for working in the live IDE: file edits, semantic refactors, build & test, full git, project-wide search, and inter-AI messaging.");
-        }
-        else {
-            sb.append("It exposes a full set of tools for working in the live IDE: file edits applied through the NetBeans Accept/Reject diff panel, semantic refactors (rename/move/inline/change-signature), build & test, full git, project-wide search, and inter-AI messaging.");
-        }
+        sb.append(exposureSentence(mcpOnly, hidden));
         sb.append("\n\nIMPORTANT: Call ").append(McpToolEnum.GET_INSTRUCTIONS.toolName()).append(" FIRST — before you read, open, search, or edit any file, run a build or any git command, or take any other action to do with the open project. This comes before your very first such action, not after.");
         if (!mcpOnly) {
             sb.append(" Do it even when you would normally reach for your own built-in Read/Edit/Search tools: this project has IDE-aware equivalents that ").append(McpToolEnum.GET_INSTRUCTIONS.toolName()).append(" explains, and using your built-in tools on project files bypasses the review panel and the IDE's own view of the code.");
@@ -209,20 +248,139 @@ public final class McpHookServerUtil {
         sb.append(" ").append(McpToolEnum.GET_INSTRUCTIONS.toolName()).append(" returns the full usage guide and unlocks the remaining tools — the other plugin tools are rejected until you call it. Call ").append(McpToolEnum.GET_INSTRUCTIONS.toolName()).append(" now.");
         if (!mcpOnly) {
             sb.append("\n\nOnce you have, for everything inside the open project use the plugin tools INSTEAD OF the built-in Read/Edit/Write/Bash/Grep tools — never shell out to mvn, git, grep, sed, or cat for project files:\n");
-            sb.append("- Build/test: ").append(McpToolEnum.BUILD_MAVEN_PROJECT.toolName()).append(" (default: mvn package -DskipTests, options override this) / ").append(McpToolEnum.RUN_MAVEN_TESTS.toolName()).append(" (default: mvn test) — or the Gradle/Ant equivalents, or ").append(McpToolEnum.BUILD_PROJECT.toolName()).append(" (fire-and-forget, no options) — NOT Bash mvn\n");
-            sb.append("- Read/search: ").append(McpToolEnum.GET_FILE_CONTENT.toolName()).append(" / ").append(McpToolEnum.SEARCH_IN_FILES.toolName()).append(" / ").append(McpToolEnum.SEARCH_SYMBOLS.toolName()).append(" — NOT the Read tool or Bash grep/rg\n");
-            sb.append("- Edit: ").append(McpToolEnum.APPLY_EDIT.toolName()).append(" / ").append(McpToolEnum.WRITE_FILE.toolName()).append(" (or Edit/Write) — these route through the Accept/Reject diff panel; NEVER edit project files with Bash\n");
-            sb.append("- Git: ").append(McpToolEnum.GET_GIT_STATUS.toolName()).append(" / ").append(McpToolEnum.GET_GIT_DIFF.toolName()).append(" / ").append(McpToolEnum.GIT_ADD.toolName()).append(" / ").append(McpToolEnum.GIT_COMMIT.toolName()).append(" — NOT Bash git\n");
+            appendBuildTestLine(sb, hidden);
+            List<String> readSearch = visibleNames(hidden, McpToolEnum.GET_FILE_CONTENT, McpToolEnum.SEARCH_IN_FILES,
+                                                   McpToolEnum.SEARCH_SYMBOLS);
+            if (!readSearch.isEmpty()) {
+                sb.append("- Read/search: ").append(String.join(" / ", readSearch))
+                        .append(" — NOT the Read tool or Bash grep/rg\n");
+            }
+            List<String> edit = visibleNames(hidden, McpToolEnum.APPLY_EDIT, McpToolEnum.WRITE_FILE);
+            if (!edit.isEmpty()) {
+                sb.append("- Edit: ").append(String.join(" / ", edit))
+                        .append(" (or Edit/Write) — these route through the Accept/Reject diff panel; NEVER edit project files with Bash\n");
+            }
+            List<String> git = visibleNames(hidden, McpToolEnum.GET_GIT_STATUS, McpToolEnum.GET_GIT_DIFF,
+                                            McpToolEnum.GIT_ADD, McpToolEnum.GIT_COMMIT);
+            if (!git.isEmpty()) {
+                sb.append("- Git: ").append(String.join(" / ", git)).append(" — NOT Bash git\n");
+            }
             sb.append("Built-in tools are only for files outside the project tree (e.g. memory, system config).");
         }
-        sb.append("\n\nAlways use MCP Toolsdescribed in ").append(McpToolEnum.GET_INSTRUCTIONS.toolName()).append(" over other tool calls you have access to.");
+        sb.append("\n\nAlways use MCP Tools described in ").append(McpToolEnum.GET_INSTRUCTIONS.toolName()).append(" over other tool calls you have access to.");
         return sb.toString();
     }
 
     /**
-     * Builds the MCP instructions string from a handler map and per-tool overrides. Section grouping comes
-     * from handler.section(); instruction text comes from overrides map if present, else
-     * handler.instruction().
+     * "It exposes a full set of tools …" — the stub's opening sentence. Each clause stands for a family of tools and is
+     * kept only while at least one tool of that family is visible, so the sentence never advertises a capability the
+     * session does not have. With every family visible it is the original sentence, word for word.
+     */
+    private static String exposureSentence(boolean mcpOnly, Set<McpToolEnum> hidden) {
+        List<String> clauses = new ArrayList<>();
+        if (anyVisible(hidden, McpToolEnum.APPLY_EDIT, McpToolEnum.WRITE_FILE, McpToolEnum.SAVE_FILE)) {
+            clauses.add(mcpOnly ? "file edits" : "file edits applied through the NetBeans Accept/Reject diff panel");
+        }
+        if (anyVisible(hidden, McpToolEnum.RENAME_SYMBOL, McpToolEnum.MOVE_CLASS, McpToolEnum.INLINE_VARIABLE,
+                       McpToolEnum.CHANGE_METHOD_SIGNATURE)) {
+            clauses.add(mcpOnly ? "semantic refactors" : "semantic refactors (rename/move/inline/change-signature)");
+        }
+        if (anyVisible(hidden, McpToolEnum.BUILD_MAVEN_PROJECT, McpToolEnum.CLEAN_AND_BUILD_MAVEN_PROJECT,
+                       McpToolEnum.RUN_MAVEN_TESTS, McpToolEnum.BUILD_GRADLE_PROJECT,
+                       McpToolEnum.CLEAN_AND_BUILD_GRADLE_PROJECT, McpToolEnum.RUN_GRADLE_TESTS,
+                       McpToolEnum.BUILD_ANT_PROJECT, McpToolEnum.CLEAN_AND_BUILD_ANT_PROJECT,
+                       McpToolEnum.RUN_ANT_TESTS, McpToolEnum.BUILD_PROJECT, McpToolEnum.CLEAN_AND_BUILD_PROJECT,
+                       McpToolEnum.CLEAN_PROJECT, McpToolEnum.RUN_PROJECT)) {
+            clauses.add("build & test");
+        }
+        if (anyVisible(hidden, McpToolGroupEnum.GIT_TOOLS.toArray(McpToolEnum[]::new))) {
+            clauses.add("full git");
+        }
+        if (anyVisible(hidden, McpToolEnum.SEARCH_IN_FILES, McpToolEnum.FIND_FILE, McpToolEnum.SEARCH_SYMBOLS,
+                       McpToolEnum.SEARCH_TYPES)) {
+            clauses.add("project-wide search");
+        }
+        if (anyVisible(hidden, McpToolEnum.PEER_SESSION_LIST, McpToolEnum.PEER_MESSAGE_SEND,
+                       McpToolEnum.PEER_MESSAGE_LIST, McpToolEnum.PEER_MESSAGE_READ,
+                       McpToolEnum.PEER_MESSAGE_DELETE, McpToolEnum.PEER_SESSION_DESCRIBE)) {
+            clauses.add("inter-AI messaging");
+        }
+        if (clauses.isEmpty()) {
+            return "It exposes a set of tools for working in the live IDE.";
+        }
+        String lead = clauses.size() == EXPOSURE_CLAUSE_COUNT
+                      ? "It exposes a full set of tools for working in the live IDE: "
+                      : "It exposes a set of tools for working in the live IDE: ";
+        String list;
+        if (clauses.size() == 1) {
+            list = clauses.get(0);
+        }
+        else if (clauses.size() == 2) {
+            list = clauses.get(0) + " and " + clauses.get(1);
+        }
+        else {
+            list = String.join(", ", clauses.subList(0, clauses.size() - 1)) + ", and " + clauses.get(clauses.size() - 1);
+        }
+        return lead + list + ".";
+    }
+
+    private static final int EXPOSURE_CLAUSE_COUNT = 6;
+
+    private static boolean anyVisible(Set<McpToolEnum> hidden, McpToolEnum... tools) {
+        return !visibleNames(hidden, tools).isEmpty();
+    }
+
+    /**
+     * The names of {@code tools} that are not in {@code hidden}, in the order given.
+     */
+    private static List<String> visibleNames(Set<McpToolEnum> hidden, McpToolEnum... tools) {
+        List<String> names = new ArrayList<>();
+        for (McpToolEnum tool : tools) {
+            if (!hidden.contains(tool)) {
+                names.add(tool.toolName());
+            }
+        }
+        return names;
+    }
+
+    /**
+     * The "Build/test" line of the initialize stub. Its three parts — the Maven tools, "the Gradle/Ant equivalents" and
+     * the generic build tool — appear only while at least one tool each stands for is visible; the whole line goes when
+     * none is. All visible, the text is the original line.
+     */
+    private static void appendBuildTestLine(StringBuilder sb, Set<McpToolEnum> hidden) {
+        List<String> maven = new ArrayList<>();
+        if (!hidden.contains(McpToolEnum.BUILD_MAVEN_PROJECT)) {
+            maven.add(McpToolEnum.BUILD_MAVEN_PROJECT.toolName() + " (default: mvn package -DskipTests, options override this)");
+        }
+        if (!hidden.contains(McpToolEnum.RUN_MAVEN_TESTS)) {
+            maven.add(McpToolEnum.RUN_MAVEN_TESTS.toolName() + " (default: mvn test)");
+        }
+        List<String> alternatives = new ArrayList<>();
+        if (!visibleNames(hidden, McpToolEnum.BUILD_GRADLE_PROJECT, McpToolEnum.CLEAN_AND_BUILD_GRADLE_PROJECT,
+                          McpToolEnum.RUN_GRADLE_TESTS, McpToolEnum.BUILD_ANT_PROJECT,
+                          McpToolEnum.CLEAN_AND_BUILD_ANT_PROJECT, McpToolEnum.RUN_ANT_TESTS).isEmpty()) {
+            alternatives.add("the Gradle/Ant equivalents");
+        }
+        if (!hidden.contains(McpToolEnum.BUILD_PROJECT)) {
+            alternatives.add(McpToolEnum.BUILD_PROJECT.toolName() + " (fire-and-forget, no options)");
+        }
+        if (maven.isEmpty() && alternatives.isEmpty()) {
+            return;
+        }
+        sb.append("- Build/test: ");
+        if (!maven.isEmpty()) {
+            sb.append(String.join(" / ", maven));
+            if (!alternatives.isEmpty()) {
+                sb.append(" — or ");
+            }
+        }
+        sb.append(String.join(", or ", alternatives)).append(" — NOT Bash mvn\n");
+    }
+
+    /**
+     * Builds the MCP instructions string from a handler map and per-tool overrides. Section grouping comes from
+     * handler.section(); instruction text comes from overrides map if present, else handler.instruction().
      */
     public static String buildInstructions(AiTypeEnum type, String overrideInstructionsHeader, Map<McpToolEnum, McpToolInterface> handlers,
                                            Map<McpToolEnum, String> overrides) {

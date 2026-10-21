@@ -420,6 +420,17 @@ public abstract class AbstractAcpProcessManager extends AiProcessManager {
     }
 
     /**
+     * Emits the shared, actionable notice when an ACP session is launched without a live plugin MCP endpoint.
+     */
+    protected final void reportMcpUnavailableIfNeeded(String mcpEndpointUrl, String aiName) {
+        if (mcpEndpointUrl == null || mcpEndpointUrl.isBlank()) {
+            LOG.log(Level.WARNING, "MCP server unavailable; running {0} without plugin tools", aiName);
+            listener.onAiProcessEvent(new StatusEvent(StatusEventTypeEnum.INFO,
+                                                      StatusMessageUtil.formatMcpToolsUnavailable(aiName)));
+        }
+    }
+
+    /**
      * Builds the common session/new or session/load MCP-server envelope.
      */
     protected static JsonObject buildSessionParams(String cwd, String mcpEndpointUrl, String sessionId) {
@@ -1299,12 +1310,12 @@ public abstract class AbstractAcpProcessManager extends AiProcessManager {
     }
 
     /**
-     * Changes one session config option. Completes with the COMPLETE configOptions snapshot from the
-     * response, not just the changed entry — options are interdependent (e.g. effort depends on the selected
-     * model), and no config_option_update notification is sent for a change this client itself requested, so
-     * the response is the only source of truth. Previously an identical copy in both backends apart from the
-     * backend name in the "session is not active" message, now read from
-     * {@link #backendDisplayNameForLogging}. Not final — see {@link #configOptions} for why.
+     * Changes one session config option. Completes with the COMPLETE configOptions snapshot from the response, not just
+     * the changed entry — options are interdependent (e.g. effort depends on the selected model), and no
+     * config_option_update notification is sent for a change this client itself requested, so the response is the only
+     * source of truth. Previously an identical copy in both backends apart from the backend name in the "session is not
+     * active" message, now read from {@link #backendDisplayNameForLogging}. Not final — see {@link #configOptions} for
+     * why.
      */
     public CompletableFuture<JsonArray> setConfigOption(String configId, String value) {
         AcpConnection conn = currentAcpConnection();

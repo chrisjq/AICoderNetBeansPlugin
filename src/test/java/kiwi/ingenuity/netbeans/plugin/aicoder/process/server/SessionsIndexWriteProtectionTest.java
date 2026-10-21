@@ -77,17 +77,17 @@ class SessionsIndexWriteProtectionTest {
     @Test
     void sessionsIndexRemainsReadable() {
         assertTrue(server.isFileAllowed(sessionId, sessionsIndex.toString()),
-                "the read exemption must survive: removing a granted read is not what this fix is for");
+                   "the read exemption must survive: removing a granted read is not what this fix is for");
         assertTrue(McpHookServer.isFileAccessible(server, sessionId, sessionsIndex.toString()),
-                "the plain-scope read gate must still admit the session index");
+                   "the plain-scope read gate must still admit the session index");
     }
 
     @Test
     void sessionsIndexIsNotWritable() {
         assertFalse(McpHookServer.isProjectFileAllowed(server, sessionId, sessionsIndex.toString()),
-                "the write gate used by ApplyEdit/WriteFile/SaveFile must refuse the session index");
+                    "the write gate used by ApplyEdit/WriteFile/SaveFile must refuse the session index");
         assertFalse(McpHookServer.isFileWritable(server, sessionId, sessionsIndex.toString()),
-                "the write gate used by Delete/Move/Copy-destination must refuse the session index");
+                    "the write gate used by Delete/Move/Copy-destination must refuse the session index");
     }
 
     @Test
@@ -96,9 +96,9 @@ class SessionsIndexWriteProtectionTest {
             String path = baseDir.resolve(name).toString();
             assertTrue(server.isFileAllowed(sessionId, path), name + " must stay readable");
             assertFalse(McpHookServer.isProjectFileAllowed(server, sessionId, path),
-                    name + " must not be writable");
+                        name + " must not be writable");
             assertFalse(McpHookServer.isFileWritable(server, sessionId, path),
-                    name + " must not be deletable or move-able");
+                        name + " must not be deletable or move-able");
         }
     }
 
@@ -108,7 +108,7 @@ class SessionsIndexWriteProtectionTest {
         // veto at all. Deleting or moving it destroys every session's history at once,
         // which is strictly worse than the single-file tampering the veto already blocks.
         assertFalse(McpHookServer.isFileWritable(server, sessionId, baseDir.toString()),
-                "the persistence base directory must not be a legal delete/move/copy target");
+                    "the persistence base directory must not be a legal delete/move/copy target");
     }
 
     @Test
@@ -118,12 +118,12 @@ class SessionsIndexWriteProtectionTest {
         o.addProperty(McpToolPropertyEnum.FILE_PATH.key(), sessionsIndex.toString());
         o.addProperty(McpToolPropertyEnum.CONTENT.key(), "[]");
         String result = new WriteFileTool().handle(new ToolRequestArguments(o),
-                new FakeSession(sessionId, listener));
+                                                   new FakeSession(sessionId, listener));
         assertTrue(result.startsWith("Access denied"), result);
         assertTrue(result.contains("never writable"),
-                "the denial must say why, not just refuse: " + result);
+                   "the denial must say why, not just refuse: " + result);
         assertTrue(listener.events.isEmpty(),
-                "must be refused outright, never offered to the user as a reviewable diff");
+                   "must be refused outright, never offered to the user as a reviewable diff");
     }
 
     @Test
@@ -133,10 +133,10 @@ class SessionsIndexWriteProtectionTest {
         o.addProperty(SaveFileParamEnum.FILE_PATH.key(), sessionsIndex.toString());
         o.addProperty(SaveFileParamEnum.CONTENT.key(), "[]");
         String result = new SaveFileTool(server).handle(new ToolRequestArguments(o),
-                new FakeSession(sessionId, listener));
+                                                        new FakeSession(sessionId, listener));
         assertTrue(result.startsWith("Access denied"), result);
         assertTrue(listener.events.isEmpty(),
-                "must be refused outright, never offered to the user as a reviewable diff");
+                   "must be refused outright, never offered to the user as a reviewable diff");
     }
 
     @Test
@@ -152,10 +152,6 @@ class SessionsIndexWriteProtectionTest {
 
         NoopRegistrar(String sessionId) {
             super(sessionId, AiTypeEnum.CLAUDE);
-        }
-
-        @Override
-        public void addMcpEndpoint(String endpointUrl) {
         }
 
         @Override

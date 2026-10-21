@@ -54,12 +54,16 @@ public final class PluginSettings {
         return prefs().get(key.key(), key.defaultString());
     }
 
+    // The legacy session-default keys are @Deprecated in PluginSettingsKeyEnum. The accessors below are their sanctioned
+    // readers (AiSessionSettings.effective*(), LegacyToolGroups, template seeding), so each carries a narrow
+    // @SuppressWarnings("deprecation") instead of the whole class doing so.
+    /**
+     * Legacy fallback only: read for existing sessions' unset values and when seeding the Default config/MCP templates.
+     * New sessions take this from the Default config template (Decision 11).
+     */
+    @SuppressWarnings("deprecation")
     public static boolean isSaveHistory() {
         return getBoolean(PluginSettingsKeyEnum.SAVE_HISTORY);
-    }
-
-    public static void setSaveHistory(boolean v) {
-        prefs().putBoolean(PluginSettingsKeyEnum.SAVE_HISTORY.key(), v);
     }
 
     public static boolean isSaveSessionOnCloseIfTicked() {
@@ -86,12 +90,13 @@ public final class PluginSettings {
         prefs().putInt(PluginSettingsKeyEnum.CHAT_FONT_SIZE.key(), v);
     }
 
+    /**
+     * Legacy fallback only: read for existing sessions' unset values and when seeding the Default config/MCP templates.
+     * New sessions take this from the Default config template (Decision 11).
+     */
+    @SuppressWarnings("deprecation")
     public static boolean isAutoAccept() {
         return getBoolean(PluginSettingsKeyEnum.AUTO_ACCEPT);
-    }
-
-    public static void setAutoAccept(boolean v) {
-        prefs().putBoolean(PluginSettingsKeyEnum.AUTO_ACCEPT.key(), v);
     }
 
     // ---- Per-AI type ----
@@ -105,122 +110,205 @@ public final class PluginSettings {
     }
 
     // ---- Global session defaults ----
+    /**
+     * Legacy fallback only: read for existing sessions' unset values and when seeding the Default config/MCP templates.
+     * New sessions take this from the Default config template (Decision 11).
+     */
+    @SuppressWarnings("deprecation")
     public static boolean isRestrictToProjectFiles() {
         return getBoolean(PluginSettingsKeyEnum.RESTRICT_TO_PROJECT);
     }
 
-    public static void setRestrictToProjectFiles(boolean v) {
-        prefs().putBoolean(PluginSettingsKeyEnum.RESTRICT_TO_PROJECT.key(), v);
-    }
-
+    /**
+     * Legacy fallback only: read for existing sessions' unset values and when seeding the Default config/MCP templates.
+     * New sessions take this from the Default config template (Decision 11).
+     */
+    @SuppressWarnings("deprecation")
     public static boolean isAllowWebRequests() {
         return getBoolean(PluginSettingsKeyEnum.ALLOW_WEB_REQUESTS);
     }
 
+    /**
+     * Legacy fallback only: read for existing sessions' unset values and when seeding the Default config/MCP templates.
+     * New sessions take this from the Default config template (Decision 11). Kept only so tests can seed the global.
+     *
+     * @deprecated no production code writes the global any more.
+     */
+    @Deprecated
+    @SuppressWarnings("deprecation")
     public static void setAllowWebRequests(boolean v) {
         prefs().putBoolean(PluginSettingsKeyEnum.ALLOW_WEB_REQUESTS.key(), v);
     }
 
+    /**
+     * Legacy fallback only: read for existing sessions' unset values and when seeding the Default config/MCP templates.
+     * New sessions take this from the Default config template (Decision 11).
+     */
     public static boolean isAllowWebRequestAccess(WebRequestAccessOptionEnum option) {
         return getBoolean(PluginSettingsKeyEnum.forWebRequestAccessOption(option));
     }
 
-    public static void setAllowWebRequestAccess(WebRequestAccessOptionEnum option, boolean v) {
-        prefs().putBoolean(PluginSettingsKeyEnum.forWebRequestAccessOption(option).key(), v);
-    }
-
+    /**
+     * Legacy fallback only: read for existing sessions' unset values and when seeding the Default config/MCP templates.
+     * New sessions take this from the Default config template (Decision 11).
+     */
+    @SuppressWarnings("deprecation")
     public static boolean isAllowDatabaseAccess() {
         return getBoolean(PluginSettingsKeyEnum.ALLOW_DATABASE_ACCESS);
     }
 
+    /**
+     * Legacy fallback only: read for existing sessions' unset values and when seeding the Default config/MCP templates.
+     * New sessions take this from the Default config template (Decision 11). Kept only so tests can seed the global.
+     *
+     * @deprecated no production code writes the global any more.
+     */
+    @Deprecated
+    @SuppressWarnings("deprecation")
     public static void setAllowDatabaseAccess(boolean v) {
         prefs().putBoolean(PluginSettingsKeyEnum.ALLOW_DATABASE_ACCESS.key(), v);
     }
 
+    /**
+     * Legacy fallback only: read for existing sessions' unset values and when seeding the Default config/MCP templates.
+     * New sessions take this from the Default config template (Decision 11).
+     */
+    @SuppressWarnings("deprecation")
     public static boolean isAllowGitAccess() {
         return getBoolean(PluginSettingsKeyEnum.ALLOW_GIT_ACCESS);
     }
 
+    /**
+     * Legacy fallback only: read for existing sessions' unset values and when seeding the Default config/MCP templates.
+     * New sessions take this from the Default config template (Decision 11). Kept only so tests can seed the global.
+     *
+     * @deprecated no production code writes the global any more.
+     */
+    @Deprecated
+    @SuppressWarnings("deprecation")
     public static void setAllowGitAccess(boolean v) {
         prefs().putBoolean(PluginSettingsKeyEnum.ALLOW_GIT_ACCESS.key(), v);
     }
 
+    /**
+     * Legacy fallback only: read for existing sessions' unset values and when seeding the Default config/MCP templates.
+     * New sessions take this from the Default config template (Decision 11).
+     */
     public static boolean isAllowGitAccessOption(GitAccessOptionEnum option) {
         return getBoolean(PluginSettingsKeyEnum.forGitAccessOption(option));
     }
 
+    /**
+     * Legacy fallback only: read for existing sessions' unset values and when seeding the Default config/MCP templates.
+     * New sessions take this from the Default config template (Decision 11). Kept only so tests can seed the global.
+     *
+     * @deprecated no production code writes the global any more.
+     */
+    @Deprecated
     public static void setAllowGitAccessOption(GitAccessOptionEnum option, boolean v) {
         prefs().putBoolean(PluginSettingsKeyEnum.forGitAccessOption(option).key(), v);
     }
 
+    /**
+     * Legacy fallback only: read for existing sessions' unset values and when seeding the Default config/MCP templates.
+     * New sessions take this from the Default config template (Decision 11).
+     */
+    @SuppressWarnings("deprecation")
     public static boolean isEnableClipboardAccess() {
         return getBoolean(PluginSettingsKeyEnum.ENABLE_CLIPBOARD_ACCESS);
     }
 
+    /**
+     * Legacy fallback only: read for existing sessions' unset values and when seeding the Default config/MCP templates.
+     * New sessions take this from the Default config template (Decision 11). Kept only so tests can seed the global.
+     *
+     * @deprecated no production code writes the global any more.
+     */
+    @Deprecated
+    @SuppressWarnings("deprecation")
     public static void setEnableClipboardAccess(boolean v) {
         prefs().putBoolean(PluginSettingsKeyEnum.ENABLE_CLIPBOARD_ACCESS.key(), v);
     }
 
+    /**
+     * Legacy fallback only: read for existing sessions' unset values and when seeding the Default config/MCP templates.
+     * New sessions take this from the Default config template (Decision 11).
+     */
     public static boolean isAllowDatabaseAccessOption(DatabaseAccessOptionEnum option) {
         return getBoolean(PluginSettingsKeyEnum.forDatabaseAccessOption(option));
     }
 
-    public static void setAllowDatabaseAccessOption(DatabaseAccessOptionEnum option, boolean v) {
-        prefs().putBoolean(PluginSettingsKeyEnum.forDatabaseAccessOption(option).key(), v);
-    }
-
+    /**
+     * Legacy fallback only: read for existing sessions' unset values and when seeding the Default config/MCP templates.
+     * New sessions take this from the Default config template (Decision 11).
+     */
+    @SuppressWarnings("deprecation")
     public static int getDatabaseRowLimit() {
         return getInt(PluginSettingsKeyEnum.DATABASE_ROW_LIMIT);
     }
 
-    public static void setDatabaseRowLimit(int v) {
-        prefs().putInt(PluginSettingsKeyEnum.DATABASE_ROW_LIMIT.key(), Math.max(1, v));
-    }
-
+    /**
+     * Legacy fallback only: read for existing sessions' unset values and when seeding the Default config/MCP templates.
+     * New sessions take this from the Default config template (Decision 11).
+     */
+    @SuppressWarnings("deprecation")
     public static boolean isAllowInterAiComms() {
         return getBoolean(PluginSettingsKeyEnum.ALLOW_INTER_AI_COMMS);
     }
 
-    public static void setAllowInterAiComms(boolean v) {
-        prefs().putBoolean(PluginSettingsKeyEnum.ALLOW_INTER_AI_COMMS.key(), v);
-    }
-
+    /**
+     * Legacy fallback only: read for existing sessions' unset values and when seeding the Default config/MCP templates.
+     * New sessions take this from the Default config template (Decision 11).
+     */
+    @SuppressWarnings("deprecation")
     public static boolean isAutoNotifyInbox() {
         return getBoolean(PluginSettingsKeyEnum.AUTO_NOTIFY_INBOX);
     }
 
-    public static void setAutoNotifyInbox(boolean v) {
-        prefs().putBoolean(PluginSettingsKeyEnum.AUTO_NOTIFY_INBOX.key(), v);
-    }
-
+    /**
+     * Legacy fallback only: read for existing sessions' unset values and when seeding the Default config/MCP templates.
+     * New sessions take this from the Default config template (Decision 11).
+     */
+    @SuppressWarnings("deprecation")
     public static boolean isAllowImportantMessages() {
         return getBoolean(PluginSettingsKeyEnum.ALLOW_IMPORTANT_MESSAGES);
     }
 
-    public static void setAllowImportantMessages(boolean v) {
-        prefs().putBoolean(PluginSettingsKeyEnum.ALLOW_IMPORTANT_MESSAGES.key(), v);
-    }
-
+    /**
+     * Legacy fallback only: read for existing sessions' unset values and when seeding the Default config/MCP templates.
+     * New sessions take this from the Default config template (Decision 11).
+     */
+    @SuppressWarnings("deprecation")
     public static boolean isAllowIdleWatcherTimer() {
         return getBoolean(PluginSettingsKeyEnum.ALLOW_IDLE_WATCHER_TIMER);
     }
 
-    public static void setAllowIdleWatcherTimer(boolean v) {
-        prefs().putBoolean(PluginSettingsKeyEnum.ALLOW_IDLE_WATCHER_TIMER.key(), v);
-    }
-
+    /**
+     * Legacy fallback only: read for existing sessions' unset values and when seeding the Default config/MCP templates.
+     * New sessions take this from the Default config template (Decision 11).
+     */
+    @SuppressWarnings("deprecation")
     public static boolean isMcpSteering() {
         return getBoolean(PluginSettingsKeyEnum.MCP_STEERING);
     }
 
-    public static void setMcpSteering(boolean v) {
-        prefs().putBoolean(PluginSettingsKeyEnum.MCP_STEERING.key(), v);
-    }
-
+    /**
+     * Legacy fallback only: read for existing sessions' unset values and when seeding the Default config/MCP templates.
+     * New sessions take this from the Default config template (Decision 11).
+     */
+    @SuppressWarnings("deprecation")
     public static int getMaxHistory() {
         return getInt(PluginSettingsKeyEnum.MAX_HISTORY);
     }
 
+    /**
+     * Legacy fallback only: read for existing sessions' unset values and when seeding the Default config/MCP templates.
+     * New sessions take this from the Default config template (Decision 11). Kept only so tests can seed the global.
+     *
+     * @deprecated no production code writes the global any more.
+     */
+    @Deprecated
+    @SuppressWarnings("deprecation")
     public static void setMaxHistory(int v) {
         prefs().putInt(PluginSettingsKeyEnum.MAX_HISTORY.key(), v);
     }

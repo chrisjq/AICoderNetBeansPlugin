@@ -41,9 +41,8 @@ public final class PiExtensionGenerator {
     /**
      * Generates and atomically writes this session's extension file, returning its path.
      *
-     * @param sessionId the plugin session UUID (the id {@code McpHookServer} resolves through
-     * {@code SessionRegistry})
-     * @param mcpUrl {@code McpServerRegistry.endpointUrlFor(AiTypeEnum.PI)} — must already be non-null (the
+     * @param sessionId the plugin session UUID (the id {@code McpHookServer} resolves through {@code SessionRegistry})
+     * @param mcpUrl {@code McpServerRegistry.endpointUrlFor(AiTypeEnum.PI, routingId)} — must already be non-null (the
      * shared server must be running)
      * @param hookUrl the hook server base URL plus {@code "/"}
      */

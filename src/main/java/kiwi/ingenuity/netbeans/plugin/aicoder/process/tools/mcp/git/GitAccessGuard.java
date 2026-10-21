@@ -1,9 +1,10 @@
 package kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.git;
 
-import kiwi.ingenuity.netbeans.plugin.aicoder.GitAccessOptionEnum;
-import kiwi.ingenuity.netbeans.plugin.aicoder.PluginSettings;
+import kiwi.ingenuity.netbeans.plugin.aicoder.ai.settings.AiSessionSettings;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.McpSectionEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.session.AbstractAiSession;
+import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.exposure.McpToolAccess;
+import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.exposure.McpToolGroupEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.McpToolInterface;
 
 /**
@@ -23,25 +24,11 @@ public final class GitAccessGuard {
         }
         // A read-only tool can be invoked without a session (see McpToolInvoker#invoke), so the
         // plugin defaults are the fallback rather than an NPE or a silent allow.
-        boolean master = session == null
-                ? PluginSettings.isAllowGitAccess()
-                : session.getSettings().effectiveAllowGitAccess();
-        if (!master) {
-            return "Git access is disabled for this session. Ask the user to enable "
-                    + "'Allow git access' in this session's settings or in the plugin's "
-                    + "global settings (Tools > Options > AI Coder Code) before retrying.";
-        }
-        GitAccessOptionEnum option = GitAccessOptionEnum.forMutating(handler.isMutating());
-        boolean allowed = session == null
-                ? PluginSettings.isAllowGitAccessOption(option)
-                : session.getSettings().effectiveAllowGitAccessOption(option);
-        if (!allowed) {
-            return "'" + option.label().displayLabel() + "' is disabled for this session. "
-                    + "Ask the user to enable it in this session's settings or in the "
-                    + "plugin's global settings (Tools > Options > AI Coder Code) before "
-                    + "retrying.";
-        }
-        return null;
+        AiSessionSettings settings = session == null ? new AiSessionSettings() : session.getSettings();
+        McpToolGroupEnum group = handler.isMutating() ? McpToolGroupEnum.GIT_WRITE : McpToolGroupEnum.GIT_READ;
+        // Worded for the layer that refuses: the MCP group switch, or — master off first, then the read/write option —
+        // the config setting beneath it.
+        return McpToolAccess.refusalMessage(settings, group);
     }
 
     private GitAccessGuard() {

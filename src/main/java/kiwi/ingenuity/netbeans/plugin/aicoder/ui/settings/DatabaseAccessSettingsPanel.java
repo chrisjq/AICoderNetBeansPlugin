@@ -16,7 +16,7 @@ import javax.swing.SpinnerNumberModel;
 import javax.swing.event.ChangeListener;
 import kiwi.ingenuity.netbeans.plugin.aicoder.AccessControlLabelEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.DatabaseAccessOptionEnum;
-import kiwi.ingenuity.netbeans.plugin.aicoder.PluginSettings;
+import kiwi.ingenuity.netbeans.plugin.aicoder.PluginSettingsKeyEnum;
 
 /**
  * Mirrors {@link WebRequestAccessSettingsPanel}'s master + sub-option structure for database access, plus a row-limit
@@ -26,25 +26,21 @@ import kiwi.ingenuity.netbeans.plugin.aicoder.PluginSettings;
  */
 public final class DatabaseAccessSettingsPanel extends JPanel {
 
-    private static String label(AccessControlLabelEnum label, boolean sessionMode) {
-        return sessionMode ? label.displayLabel() : label.globalLabel();
-    }
-
     private final JCheckBox allowDatabaseAccessCheckBox = new JCheckBox();
     private final Map<DatabaseAccessOptionEnum, JCheckBox> optionCheckBoxes
             = new EnumMap<>(DatabaseAccessOptionEnum.class);
     private final JSpinner rowLimitSpinner;
 
-    public DatabaseAccessSettingsPanel(boolean sessionMode) {
+    public DatabaseAccessSettingsPanel() {
         setBorder(BorderFactory.createTitledBorder("Database Access (read-only)"));
         setLayout(new GridBagLayout());
 
-        allowDatabaseAccessCheckBox.setText(label(AccessControlLabelEnum.ALLOW_DATABASE_ACCESS, sessionMode));
-        addRow(allowDatabaseAccessCheckBox, 0, 0);
-
-        int row = 1;
+        int row = 0;
+        allowDatabaseAccessCheckBox.setText(AccessControlLabelEnum.ALLOW_DATABASE_ACCESS.displayLabel());
+        addRow(allowDatabaseAccessCheckBox, row++, 0);
+        allowDatabaseAccessCheckBox.addActionListener(e -> updateDependentState());
         for (DatabaseAccessOptionEnum option : DatabaseAccessOptionEnum.values()) {
-            JCheckBox checkBox = new JCheckBox(label(option.label(), sessionMode));
+            JCheckBox checkBox = new JCheckBox(option.label().displayLabel());
             if (option == DatabaseAccessOptionEnum.READ_ONLY) {
                 checkBox.setSelected(true);
                 checkBox.setEnabled(false);
@@ -53,12 +49,12 @@ public final class DatabaseAccessSettingsPanel extends JPanel {
             addRow(checkBox, row++, 20);
         }
 
-        rowLimitSpinner = new JSpinner(new SpinnerNumberModel(PluginSettings.getDatabaseRowLimit(), 1, 5000, 10));
+        rowLimitSpinner = new JSpinner(new SpinnerNumberModel(PluginSettingsKeyEnum.DATABASE_ROW_LIMIT.defaultInt(), 1, 5000, 10));
         GridBagConstraints c = new GridBagConstraints();
         c.gridx = 0;
         c.gridy = row;
         c.anchor = GridBagConstraints.WEST;
-        c.insets = new Insets(4, 24, 4, 4);
+        c.insets = new Insets(4, 4 + 20 + 4, 4, 4);
         add(new JLabel("Row limit:"), c);
         c.gridx = 1;
         c.weightx = 1;
@@ -66,7 +62,6 @@ public final class DatabaseAccessSettingsPanel extends JPanel {
         c.insets = new Insets(4, 4, 4, 4);
         add(rowLimitSpinner, c);
 
-        allowDatabaseAccessCheckBox.addActionListener(e -> updateDependentState());
         updateDependentState();
     }
 
@@ -108,7 +103,7 @@ public final class DatabaseAccessSettingsPanel extends JPanel {
     }
 
     public void setRowLimitValue(int value) {
-        rowLimitSpinner.setValue(value);
+        rowLimitSpinner.setValue(Math.max(1, Math.min(5000, value)));
     }
 
     private void updateDependentState() {

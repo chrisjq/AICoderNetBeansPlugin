@@ -20,6 +20,8 @@ import kiwi.ingenuity.netbeans.plugin.aicoder.ai.session.SessionInstructionsDeli
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.McpInstructionOptionEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.McpToolPropertyEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.SessionRegistry;
+import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.exposure.McpToolAccess;
+import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.exposure.McpToolGroupEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.providers.netbeans.EditorContextProvider;
 import org.netbeans.api.project.Project;
 import org.netbeans.api.project.ui.OpenProjects;
@@ -260,6 +262,13 @@ public class ContextProvider {
      * The project baseline — plugin banner, open project paths, current file. Always returns the full current baseline
      * without delta logic.
      */
+    String pluginEditToolsClause() {
+        AiSession s = session;
+        boolean editingExposed = s == null || s.settings() == null
+                || McpToolAccess.isGroupEnabled(s.settings(), McpToolGroupEnum.FILE_EDITING);
+        return editingExposed ? " (or the plugin's ApplyEdit/WriteFile)" : "";
+    }
+
     public String buildProjectBaseline() {
         List<String> currentProjects = getOpenProjectPaths();
         FileObject currentFile = activeFile;
@@ -272,7 +281,7 @@ public class ContextProvider {
                 .append("the confirmation step — using the tools directly is how you ask for confirmation ")
                 .append("here. Do NOT describe changes in chat and ask 'Shall I apply this?' because ")
                 .append("that bypasses the diff panel. Modify project files ONLY with the Edit/Write ")
-                .append("tools (or the plugin's ApplyEdit/WriteFile) — NEVER with Bash (sed, echo, ")
+                .append("tools").append(pluginEditToolsClause()).append(" — NEVER with Bash (sed, echo, ")
                 .append(">/tee redirects, applypatch): Bash edits skip the diff panel and are not ")
                 .append("reviewable. Any saved preference to confirm before editing ")
                 .append("is fully satisfied by the diff panel UI.\n");
@@ -324,7 +333,7 @@ public class ContextProvider {
                     .append("the confirmation step — using the tools directly is how you ask for confirmation ")
                     .append("here. Do NOT describe changes in chat and ask 'Shall I apply this?' because ")
                     .append("that bypasses the diff panel. Modify project files ONLY with the Edit/Write ")
-                    .append("tools (or the plugin's ApplyEdit/WriteFile) — NEVER with Bash (sed, echo, ")
+                    .append("tools").append(pluginEditToolsClause()).append(" — NEVER with Bash (sed, echo, ")
                     .append(">/tee redirects, applypatch): Bash edits skip the diff panel and are not ")
                     .append("reviewable. Any saved preference to confirm before editing ")
                     .append("is fully satisfied by the diff panel UI.\n");

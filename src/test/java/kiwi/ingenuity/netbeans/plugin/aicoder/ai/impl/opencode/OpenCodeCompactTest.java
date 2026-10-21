@@ -28,19 +28,18 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import org.junit.jupiter.api.Test;
 
 /**
- * The OpenCode backend's compaction contract (Boss task "OpenCode backend — busy/ready contract + new
- * Compact"): runs through {@code runWork} as non-cancellable backend work, never leaks a TurnCompleteEvent or
- * the streamed-back summary, guards a busy backend with INFO, and fails in-flight work from process-exit and
- * stop.
+ * The OpenCode backend's compaction contract (Boss task "OpenCode backend — busy/ready contract + new Compact"): runs
+ * through {@code runWork} as non-cancellable backend work, never leaks a TurnCompleteEvent or the streamed-back
+ * summary, guards a busy backend with INFO, and fails in-flight work from process-exit and stop.
  */
 class OpenCodeCompactTest {
 
     private static final String PREFERENCE = "Use the plugin's MCP tools over internal tools.";
 
     /**
-     * Blocks forever on read until the connection is closed (see {@code OpenCodePerMessageToolPreferenceTest}
-     * for why: an EOF-input would make AcpConnection's reader submit {@code onDisconnected} and spawn an
-     * {@code acp-notify} thread that outlives this test).
+     * Blocks forever on read until the connection is closed (see {@code OpenCodePerMessageToolPreferenceTest} for why:
+     * an EOF-input would make AcpConnection's reader submit {@code onDisconnected} and spawn an {@code acp-notify}
+     * thread that outlives this test).
      */
     private static final class BlockingInputStream extends InputStream {
 
@@ -57,8 +56,8 @@ class OpenCodeCompactTest {
     }
 
     /**
-     * Records every request sent and hands back a fresh future the test completes or fails itself, so turn
-     * and compaction timing is fully deterministic.
+     * Records every request sent and hands back a fresh future the test completes or fails itself, so turn and
+     * compaction timing is fully deterministic.
      */
     private static final class CapturingConnection extends AcpConnection {
 
@@ -67,29 +66,29 @@ class OpenCodeCompactTest {
 
         CapturingConnection() {
             super(new ByteArrayOutputStream(), new BlockingInputStream(), new AcpClientHandler() {
-                @Override
-                public void onSessionUpdate(String sessionId, JsonObject update) {
-                }
+              @Override
+              public void onSessionUpdate(String sessionId, JsonObject update) {
+              }
 
-                @Override
-                public CompletableFuture<JsonObject> onRequestPermission(JsonObject params) {
-                    return CompletableFuture.completedFuture(new JsonObject());
-                }
+              @Override
+              public CompletableFuture<JsonObject> onRequestPermission(JsonObject params) {
+                  return CompletableFuture.completedFuture(new JsonObject());
+              }
 
-                @Override
-                public CompletableFuture<JsonObject> onWriteTextFile(JsonObject params) {
-                    return CompletableFuture.completedFuture(new JsonObject());
-                }
+              @Override
+              public CompletableFuture<JsonObject> onWriteTextFile(JsonObject params) {
+                  return CompletableFuture.completedFuture(new JsonObject());
+              }
 
-                @Override
-                public CompletableFuture<JsonObject> onReadTextFile(JsonObject params) {
-                    return CompletableFuture.completedFuture(new JsonObject());
-                }
+              @Override
+              public CompletableFuture<JsonObject> onReadTextFile(JsonObject params) {
+                  return CompletableFuture.completedFuture(new JsonObject());
+              }
 
-                @Override
-                public void onDisconnected(Exception cause) {
-                }
-            });
+              @Override
+              public void onDisconnected(Exception cause) {
+              }
+          });
         }
 
         @Override
@@ -100,8 +99,8 @@ class OpenCodeCompactTest {
         }
 
         /**
-         * Blocks until everything already enqueued on the acp-notify executor (and sent before this call) has
-         * run, so tests can assert on the full aftermath of a compacted/stopped sequence deterministically.
+         * Blocks until everything already enqueued on the acp-notify executor (and sent before this call) has run, so
+         * tests can assert on the full aftermath of a compacted/stopped sequence deterministically.
          */
         void awaitNotifyDrained() throws InterruptedException {
             if (isClosed()) {
@@ -128,10 +127,9 @@ class OpenCodeCompactTest {
     }
 
     /**
-     * Like {@link #managerOver}, but on a live session ({@code running = true}): the state in which
-     * compaction actually happens. Needed because {@code handleTurnComplete} closes a turn with a
-     * TurnCompleteEvent only while the session is {@code running} - a real backend never compacts an idle
-     * (stopped) session.
+     * Like {@link #managerOver}, but on a live session ({@code running = true}): the state in which compaction actually
+     * happens. Needed because {@code handleTurnComplete} closes a turn with a TurnCompleteEvent only while the session
+     * is {@code running} - a real backend never compacts an idle (stopped) session.
      */
     private static OpenCodeAiProcessManager runningManagerOver(CapturingConnection conn, List<AiProcessEvent> events) {
         return new OpenCodeAiProcessManager(events::add) {
@@ -144,8 +142,8 @@ class OpenCodeCompactTest {
     }
 
     /**
-     * Like {@link #managerOver}, but with {@code activeHandler} wired so suppression observation and the
-     * sequencing of the handler's chunk delivery can be driven end-to-end.
+     * Like {@link #managerOver}, but with {@code activeHandler} wired so suppression observation and the sequencing of
+     * the handler's chunk delivery can be driven end-to-end.
      */
     private static OpenCodeAiProcessManager managerOverWithHandler(CapturingConnection conn, List<AiProcessEvent> events,
                                                                    OpenCodeAcpClientHandler handler) {
@@ -184,7 +182,7 @@ class OpenCodeCompactTest {
             assertEquals(1, conn.sentParams.size(), "one session/prompt for the compaction");
             assertEquals("ses_compact", conn.sentParams.get(0).get(AcpJsonKeyEnum.SESSION_ID.key()).getAsString());
             assertEquals("/compact", promptTextOf(conn.sentParams.get(0)),
-                    "the compaction prompt must be EXACTLY /compact — no MCP-tool preference, no extra text");
+                         "the compaction prompt must be EXACTLY /compact — no MCP-tool preference, no extra text");
             StatusEvent busy = lastStatus(events);
             assertEquals(StatusEventTypeEnum.BUSY, busy.type(), "runWork opens with one BUSY");
             assertEquals("Compacting conversation…", busy.text());
@@ -195,7 +193,7 @@ class OpenCodeCompactTest {
             conn.awaitNotifyDrained();
 
             assertTrue(events.stream().noneMatch(e -> e instanceof TurnCompleteEvent),
-                    "a compaction is not a turn and must never leak a TurnCompleteEvent");
+                       "a compaction is not a turn and must never leak a TurnCompleteEvent");
             StatusEvent closing = lastStatus(events);
             assertEquals(StatusEventTypeEnum.READY, closing.type(), "a normal /compact answer closes READY");
             assertEquals("Conversation compacted", closing.text());
@@ -241,11 +239,11 @@ class OpenCodeCompactTest {
             manager.compact();
 
             assertEquals(sentBefore, conn.sentParams.size(),
-                    "a guard-refused compaction must not put a second prompt on the wire");
+                         "a guard-refused compaction must not put a second prompt on the wire");
             assertTrue(events.stream().anyMatch(e -> e instanceof StatusEvent se
-                                                     && se.type() == StatusEventTypeEnum.INFO
-                                                     && "Wait for OpenCode to finish before compacting".equals(se.text())),
-                    "must say why the compaction was refused");
+                    && se.type() == StatusEventTypeEnum.INFO
+                    && "Wait for OpenCode to finish before compacting".equals(se.text())),
+                       "must say why the compaction was refused");
 
             conn.lastRequest.complete(new JsonObject());
         }
@@ -267,9 +265,9 @@ class OpenCodeCompactTest {
             manager.compact();
 
             assertTrue(events.stream().anyMatch(e -> e instanceof StatusEvent se
-                                                     && se.type() == StatusEventTypeEnum.INFO
-                                                     && "Wait for OpenCode to finish before compacting".equals(se.text())),
-                    "a second compaction is refused with the same wait message");
+                    && se.type() == StatusEventTypeEnum.INFO
+                    && "Wait for OpenCode to finish before compacting".equals(se.text())),
+                       "a second compaction is refused with the same wait message");
             assertEquals(1, conn.sentParams.size(), "only one compaction prompt goes out");
 
             conn.lastRequest.complete(new JsonObject());
@@ -300,9 +298,9 @@ class OpenCodeCompactTest {
             manager.compact();
 
             assertTrue(events.stream().anyMatch(e -> e instanceof StatusEvent se
-                                                     && se.type() == StatusEventTypeEnum.INFO
-                                                     && "Compaction already in progress".equals(se.text())),
-                    "when runWork refuses, the caller must say so");
+                    && se.type() == StatusEventTypeEnum.INFO
+                    && "Compaction already in progress".equals(se.text())),
+                       "when runWork refuses, the caller must say so");
             assertEquals(1, conn.sentParams.size(), "only the first compaction may send");
 
             conn.lastRequest.complete(new JsonObject());
@@ -327,7 +325,7 @@ class OpenCodeCompactTest {
             StatusEvent closing = lastStatus(events);
             assertEquals(StatusEventTypeEnum.FAILED, closing.type());
             assertEquals("OpenCode session stopped while work was in progress", closing.text(),
-                    "stop() must fail in-flight work so the UI cannot stay locked");
+                         "stop() must fail in-flight work so the UI cannot stay locked");
             assertFalse(manager.isBusy(), "stop must leave no busy marker behind");
         }
         finally {
@@ -348,11 +346,11 @@ class OpenCodeCompactTest {
             manager.sendTurn("read pom.xml");
             assertEquals("/compact", promptTextOf(conn.sentParams.get(0)));
             assertEquals(PREFERENCE + "\n\nread pom.xml", promptTextOf(conn.sentParams.get(1)),
-                    "a user turn after a compaction must still ride the standing MCP-tool preference");
+                         "a user turn after a compaction must still ride the standing MCP-tool preference");
 
             conn.lastRequest.complete(new JsonObject());
             assertTrue(events.stream().anyMatch(e -> e instanceof TurnCompleteEvent),
-                    "the turn after a compaction must complete as a normal turn");
+                       "the turn after a compaction must complete as a normal turn");
         }
         finally {
             conn.close();
@@ -402,7 +400,7 @@ class OpenCodeCompactTest {
         List<AiProcessEvent> events = new ArrayList<>();
         List<String> toolTracking = new ArrayList<>();
         OpenCodeAcpClientHandler handler = new OpenCodeAcpClientHandler(events::add, () -> {
-        }, (id, status) -> toolTracking.add(id));
+                                                                }, (id, status) -> toolTracking.add(id));
 
         long token = handler.beginTextSuppression();
         handler.onSessionUpdate("ses", textChunk("## Objective"));
@@ -410,7 +408,7 @@ class OpenCodeCompactTest {
         handler.onSessionUpdate("ses", toolCall());
         handler.onSessionUpdate("ses", usage());
         assertEquals(1, events.size(),
-                "text/thought/tool chunks are dropped but usage_update still flows so the context gauge tracks the shrink");
+                     "text/thought/tool chunks are dropped but usage_update still flows so the context gauge tracks the shrink");
         assertTrue(events.get(0) instanceof OpenCodeUsageEvent, "the surviving event must be the usage update");
         assertTrue(toolTracking.isEmpty(), "a dropped tool_call must not reach the tool-call tracker either");
 
@@ -421,16 +419,16 @@ class OpenCodeCompactTest {
         handler.onSessionUpdate("ses", textChunk("hello"));
         handler.onSessionUpdate("ses", thoughtChunk());
         assertTrue(events.stream().anyMatch(e -> e instanceof TextDeltaEvent),
-                "text chunks must flow once suppression is lifted");
+                   "text chunks must flow once suppression is lifted");
         assertTrue(events.stream().anyMatch(e -> e instanceof StatusEvent se
-                                                 && se.type() == StatusEventTypeEnum.THINKING), "thought chunks must flow once suppression is lifted");
+                && se.type() == StatusEventTypeEnum.THINKING), "thought chunks must flow once suppression is lifted");
     }
 
     @Test
     void aStaleSuppressionTokenCannotClearNewerSuppression() {
         List<AiProcessEvent> events = new ArrayList<>();
         OpenCodeAcpClientHandler handler = new OpenCodeAcpClientHandler(events::add, () -> {
-        });
+                                                                });
 
         long first = handler.beginTextSuppression();
         handler.clearTextSuppression(); // e.g. a stalling compaction whose timeout released the flag
@@ -438,7 +436,7 @@ class OpenCodeCompactTest {
         handler.endTextSuppression(first); // that stall's late response arrives after the newer compaction armed
 
         assertTrue(handler.isSuppressingSessionText(),
-                "a stale compaction's end must not clear the newer compaction's suppression");
+                   "a stale compaction's end must not clear the newer compaction's suppression");
         handler.endTextSuppression(second);
         assertFalse(handler.isSuppressingSessionText());
     }
@@ -466,8 +464,8 @@ class OpenCodeCompactTest {
                     .findFirst().orElse(null);
             assertEquals("OpenCode is already processing a turn", info.text(), "INFO must carry the reason");
             assertTrue(events.stream().anyMatch(e -> e instanceof TurnCompleteEvent),
-                    "every refusal reports INFO then TurnComplete so the user can prompt again "
-                    + "unlocks the tab, and a spare TurnCompleteEvent would end it early");
+                       "every refusal reports INFO then TurnComplete so the user can prompt again "
+                       + "unlocks the tab, and a spare TurnCompleteEvent would end it early");
 
             conn.lastRequest.complete(new JsonObject());
         }
@@ -494,10 +492,10 @@ class OpenCodeCompactTest {
                     .map(e -> (StatusEvent) e)
                     .findFirst().orElse(null);
             assertEquals("OpenCode is compacting the conversation", info.text(),
-                    "a send refused for in-flight non-turn work must say so");
+                         "a send refused for in-flight non-turn work must say so");
             assertTrue(events.stream().anyMatch(e -> e instanceof TurnCompleteEvent),
-                    "a send refused while only non-turn work is in flight ends with a TurnCompleteEvent, because "
-                    + "no turn of its own is running to unlock the tab (information-first, then the unlock)");
+                       "a send refused while only non-turn work is in flight ends with a TurnCompleteEvent, because "
+                       + "no turn of its own is running to unlock the tab (information-first, then the unlock)");
 
             conn.lastRequest.complete(new JsonObject());
         }
@@ -547,7 +545,7 @@ class OpenCodeCompactTest {
         CapturingConnection conn = new CapturingConnection();
         List<AiProcessEvent> events = new ArrayList<>();
         OpenCodeAcpClientHandler handler = new OpenCodeAcpClientHandler(events::add, () -> {
-        });
+                                                                });
         try {
             OpenCodeAiProcessManager manager = managerOverWithHandler(conn, events, handler);
 
@@ -565,9 +563,9 @@ class OpenCodeCompactTest {
 
             assertFalse(handler.isSuppressingSessionText(), "the sequenced finish must have cleared suppression");
             assertEquals(2, events.size(),
-                    "BUSY then READY — the queued summary chunk must be dropped, never a TextDeltaEvent");
+                         "BUSY then READY — the queued summary chunk must be dropped, never a TextDeltaEvent");
             assertTrue(events.get(0) instanceof StatusEvent se
-                       && se.type() == StatusEventTypeEnum.BUSY, "BUSY first");
+                    && se.type() == StatusEventTypeEnum.BUSY, "BUSY first");
             StatusEvent ready = lastStatus(events);
             assertEquals(StatusEventTypeEnum.READY, ready.type());
             assertEquals("Conversation compacted", ready.text());
@@ -580,12 +578,14 @@ class OpenCodeCompactTest {
         }
     }
 
+    // FLAKY (seen 2026-10-20/22): fails intermittently in the full suite but passes when run alone.
+    // Observed: RejectedExecutionException at line 600, task rejected from an already-terminated ThreadPoolExecutor. Likely cause: the response is posted to an executor that another test or stop path has already shut down (ordering/shared-executor race). Re-run alone before treating a failure as real.
     @Test
     void aLateCompactionResponseAfterProcessStopAddsNoSecondCloser() throws Exception {
         CapturingConnection conn = new CapturingConnection();
         List<AiProcessEvent> events = new ArrayList<>();
         OpenCodeAcpClientHandler handler = new OpenCodeAcpClientHandler(events::add, () -> {
-        });
+                                                                });
         try {
             OpenCodeAiProcessManager manager = managerOverWithHandler(conn, events, handler);
 
@@ -615,7 +615,7 @@ class OpenCodeCompactTest {
         CapturingConnection conn = new CapturingConnection();
         List<AiProcessEvent> events = new ArrayList<>();
         OpenCodeAcpClientHandler handler = new OpenCodeAcpClientHandler(events::add, () -> {
-        });
+                                                                });
         try {
             OpenCodeAiProcessManager manager = managerOverWithHandler(conn, events, handler);
 
@@ -629,7 +629,7 @@ class OpenCodeCompactTest {
             assertTrue(handler.isSuppressingSessionText(), "a second compaction arms suppression again");
             manager.sendTurn("read pom.xml");
             assertFalse(handler.isSuppressingSessionText(),
-                    "sendTurn clears suppression as a safety net — a real turn must never be silenced");
+                        "sendTurn clears suppression as a safety net — a real turn must never be silenced");
             conn.lastRequest.complete(new JsonObject());
         }
         finally {
@@ -642,7 +642,7 @@ class OpenCodeCompactTest {
         CapturingConnection conn = new CapturingConnection();
         List<AiProcessEvent> events = new ArrayList<>();
         OpenCodeAcpClientHandler handler = new OpenCodeAcpClientHandler(events::add, () -> {
-        });
+                                                                });
         try {
             OpenCodeAiProcessManager manager = managerOverWithHandler(conn, events, handler);
 
@@ -656,7 +656,7 @@ class OpenCodeCompactTest {
             StatusEvent closing = lastStatus(events);
             assertEquals(StatusEventTypeEnum.FAILED, closing.type());
             assertEquals("Compact timed out", closing.text(),
-                    "a timeout must be reported as a timeout, not an unknown error (review)");
+                         "a timeout must be reported as a timeout, not an unknown error (review)");
             assertFalse(handler.isSuppressingSessionText(), "a timed-out compaction must release the suppression flag");
             assertNone(events, TurnCompleteEvent.class, "a timed-out compaction must never report a TurnCompleteEvent");
         }
@@ -724,7 +724,7 @@ class OpenCodeCompactTest {
             manager.handleProcessExit(dead);
 
             assertEquals(2, events.size(),
-                    "BUSY plus exactly one FAILED — the exit must be folded into the closer, not reported twice");
+                         "BUSY plus exactly one FAILED — the exit must be folded into the closer, not reported twice");
             StatusEvent closing = lastStatus(events);
             assertEquals(StatusEventTypeEnum.FAILED, closing.type());
             assertTrue(closing.text().contains("exited (code 137)"), "the single closer must carry the exit, was: " + closing.text());
@@ -741,10 +741,9 @@ class OpenCodeCompactTest {
     }
 
     /**
-     * Mirrors {@code CodexAiProcessManagerTest}'s testable subclass:
-     * {@code processing}/{@code cancelledByUser}/ {@code currentProcess} are {@code protected} on the base in
-     * a different package, so only a test-only subclass can set them. Used to drive {@code handleProcessExit}
-     * without a real agent.
+     * Mirrors {@code CodexAiProcessManagerTest}'s testable subclass: {@code processing}/{@code cancelledByUser}/
+     * {@code currentProcess} are {@code protected} on the base in a different package, so only a test-only subclass can
+     * set them. Used to drive {@code handleProcessExit} without a real agent.
      */
     private static final class TestableOpenCodeAiProcessManager extends OpenCodeAiProcessManager {
 

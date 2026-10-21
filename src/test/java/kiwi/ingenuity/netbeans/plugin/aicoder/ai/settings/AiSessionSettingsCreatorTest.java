@@ -154,4 +154,115 @@ class AiSessionSettingsCreatorTest {
         new AiSessionSettings().populateJsonObject(cfg);
         assertTrue(cfg.entrySet().isEmpty());
     }
+
+    @Test
+    void mcpToolConfigRoundTripsAndIsOmittedWhenNull() {
+        AiSessionSettings original = new AiSessionSettings();
+        original.setMcpToolConfig(kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.exposure.McpToolConfig
+                .withDisabled(java.util.Set.of(
+                        kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.exposure.McpToolGroupEnum.WEB)));
+
+        JsonObject cfg = new JsonObject();
+        original.populateJsonObject(cfg);
+
+        AiSessionSettings loaded = baseCreator().create();
+        baseCreator().update(loaded, cfg);
+
+        assertEquals(original.mcpToolConfig(), loaded.mcpToolConfig());
+        assertTrue(cfg.has("mcpToolConfig"));
+    }
+
+    @Test
+    void malformedMcpToolConfigLeavesTheFieldNullSoLegacyTogglesStillApply() {
+        JsonObject withoutGroups = new JsonObject();
+        withoutGroups.add("mcpToolConfig", new JsonObject());
+        AiSessionSettings fromObject = baseCreator().create();
+        baseCreator().update(fromObject, withoutGroups);
+        assertNull(fromObject.mcpToolConfig());
+
+        JsonObject notAnObject = new JsonObject();
+        notAnObject.addProperty("mcpToolConfig", "nonsense");
+        AiSessionSettings fromPrimitive = baseCreator().create();
+        baseCreator().update(fromPrimitive, notAnObject);
+        assertNull(fromPrimitive.mcpToolConfig());
+    }
+
+    @Test
+    void mcpRoutingIdIsAbsentUntilEnsuredThenStable() {
+        AiSessionSettings settings = new AiSessionSettings();
+        assertNull(settings.mcpRoutingId());
+
+        String first = settings.ensureMcpRoutingId();
+
+        assertNotNull(first);
+        assertFalse(first.isBlank());
+        assertEquals(first, settings.mcpRoutingId());
+        assertEquals(first, settings.ensureMcpRoutingId(), "once generated it never changes");
+        assertNotEquals(first, new AiSessionSettings().ensureMcpRoutingId(), "each session gets its own id");
+    }
+
+    @Test
+    void malformedPersistedMcpRoutingIdIsIgnoredAndRegenerated() {
+        JsonObject cfg = new JsonObject();
+        cfg.addProperty("mcpRoutingId", "bad/id%value");
+        AiSessionSettings loaded = baseCreator().create();
+        baseCreator().update(loaded, cfg);
+
+        assertNull(loaded.mcpRoutingId());
+        assertTrue(loaded.ensureMcpRoutingId().matches("[A-Za-z0-9-]{8,64}"));
+    }
+
+    @Test
+    void setterRejectsMalformedMcpRoutingIdButAllowsClearing() {
+        AiSessionSettings settings = new AiSessionSettings();
+        settings.setMcpRoutingId("route-1234");
+        settings.setMcpRoutingId("bad/id%value");
+        assertEquals("route-1234", settings.mcpRoutingId());
+        settings.setMcpRoutingId(null);
+        assertNull(settings.mcpRoutingId());
+    }
+
+    @Test
+    void mcpRoutingIdSurvivesAJsonRoundTrip() {
+        AiSessionSettings original = new AiSessionSettings();
+        String id = original.ensureMcpRoutingId();
+
+        JsonObject cfg = new JsonObject();
+        original.populateJsonObject(cfg);
+        AiSessionSettings loaded = baseCreator().create();
+        baseCreator().update(loaded, cfg);
+
+        assertEquals("mcpRoutingId", AiSessionSettingsKeyEnum.MCP_ROUTING_ID.key());
+        assertEquals(id, cfg.get("mcpRoutingId").getAsString());
+        assertEquals(id, loaded.mcpRoutingId());
+        assertEquals(id, loaded.ensureMcpRoutingId(), "a restored session keeps its address");
+    }
+
+    @Test
+    void mcpRoutingIdIsOmittedFromJsonUntilGenerated() {
+        JsonObject cfg = new JsonObject();
+        new AiSessionSettings().populateJsonObject(cfg);
+        assertFalse(cfg.has("mcpRoutingId"));
+    }
+
+    @Test
+    void aBlankPersistedRoutingIdIsIgnoredAndRegeneratedOnDemand() {
+        JsonObject cfg = new JsonObject();
+        cfg.addProperty("mcpRoutingId", " ");
+        AiSessionSettings loaded = baseCreator().create();
+        baseCreator().update(loaded, cfg);
+
+        assertNull(loaded.mcpRoutingId());
+        assertFalse(loaded.ensureMcpRoutingId().isBlank());
+    }
+
+    @Test
+    void configTemplatesDoNotCopyTheRoutingId() {
+        AiSessionSettings settings = new AiSessionSettings();
+        settings.ensureMcpRoutingId();
+
+        ConfigTemplate template = ConfigTemplate.create("t", settings);
+
+        assertNull(template.settings().mcpRoutingId());
+    }
 }

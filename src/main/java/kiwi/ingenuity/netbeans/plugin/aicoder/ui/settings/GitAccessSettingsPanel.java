@@ -15,24 +15,20 @@ import kiwi.ingenuity.netbeans.plugin.aicoder.GitAccessOptionEnum;
 
 public final class GitAccessSettingsPanel extends JPanel {
 
-    private static String label(AccessControlLabelEnum label, boolean sessionMode) {
-        return sessionMode ? label.displayLabel() : label.globalLabel();
-    }
-
     private final JCheckBox allowGitAccessCheckBox = new JCheckBox();
     private final Map<GitAccessOptionEnum, JCheckBox> optionCheckBoxes
             = new EnumMap<>(GitAccessOptionEnum.class);
 
-    public GitAccessSettingsPanel(boolean sessionMode) {
+    public GitAccessSettingsPanel() {
         setBorder(BorderFactory.createTitledBorder("Git"));
         setLayout(new GridBagLayout());
 
-        allowGitAccessCheckBox.setText(label(AccessControlLabelEnum.ALLOW_GIT_ACCESS, sessionMode));
+        allowGitAccessCheckBox.setText(AccessControlLabelEnum.ALLOW_GIT_ACCESS.displayLabel());
         addRow(allowGitAccessCheckBox, 0, 0);
 
         int row = 1;
         for (GitAccessOptionEnum option : GitAccessOptionEnum.values()) {
-            JCheckBox checkBox = new JCheckBox(label(option.label(), sessionMode));
+            JCheckBox checkBox = new JCheckBox(option.label().displayLabel());
             optionCheckBoxes.put(option, checkBox);
             addRow(checkBox, row++, 20);
         }

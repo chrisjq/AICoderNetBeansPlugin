@@ -11,6 +11,8 @@ import kiwi.ingenuity.netbeans.plugin.aicoder.ai.AiTypeEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.notification.AbstractNotification;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.settings.AiModelSessionSettings;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.settings.AiSessionSettings;
+import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.exposure.McpToolAccess;
+import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.exposure.McpToolGroupEnum;
 
 /**
  * Mutable session state shared by reference across AiTopComponent, ContextProvider, and the MCP session layer. All
@@ -30,7 +32,6 @@ public class AiSession {
                         : aiType.displayName();
         Instant now = Instant.now();
         AiSessionSettings settings = aiType.createDefaultSettings();
-        settings.applyDefaultSettingsFromGlobal();
         aiType.getSettingsCreator().applyDefaultSettingsFromGlobal(settings);
         return new AiSession(
                 UUID.randomUUID().toString(),
@@ -248,11 +249,14 @@ public class AiSession {
     }
 
     /**
-     * Derived from settings — reads PluginSettings default when not overridden per-session.
+     * Whether other sessions may message this one and see it listed, and whether it may use the peer tools. The
+     * combined answer: the behaviour setting AND the Peer messaging MCP group, because a session that cannot call the
+     * peer tools can neither read nor answer what it is sent. Reads the PluginSettings default when the setting is not
+     * overridden per-session.
      */
     public boolean allowsInterAiComms() {
         AiSessionSettings s = settings;
-        return s != null && s.effectiveAllowInterAiComms();
+        return s != null && McpToolAccess.isGroupEnabled(s, McpToolGroupEnum.PEER_MESSAGING);
     }
 
     public boolean allowsImportantMessages() {
@@ -260,9 +264,13 @@ public class AiSession {
         return s != null && s.effectiveAllowImportantMessages();
     }
 
+    /**
+     * Whether this session may use idle watchers and be notified by them: the timer setting AND the Idle watchers MCP
+     * group, so switching the group off stops existing watchers firing as well as hiding the tools.
+     */
     public boolean allowsIdleWatcherTimer() {
         AiSessionSettings s = settings;
-        return s != null && s.effectiveAllowIdleWatcherTimer();
+        return s != null && McpToolAccess.isGroupEnabled(s, McpToolGroupEnum.IDLE_WATCHERS);
     }
 
     // ---- Legacy with*() API — mutate in place, return this ----

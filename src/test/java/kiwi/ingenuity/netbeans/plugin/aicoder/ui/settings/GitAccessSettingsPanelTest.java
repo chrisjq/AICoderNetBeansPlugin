@@ -9,7 +9,7 @@ class GitAccessSettingsPanelTest {
 
     @Test
     void everyOptionRoundTripsThroughItsCheckBox() {
-        GitAccessSettingsPanel panel = new GitAccessSettingsPanel(true);
+        GitAccessSettingsPanel panel = new GitAccessSettingsPanel();
         panel.setAllowGitAccessSelected(true);
         for (GitAccessOptionEnum option : GitAccessOptionEnum.values()) {
             panel.setOptionSelected(option, true);
@@ -21,7 +21,7 @@ class GitAccessSettingsPanelTest {
 
     @Test
     void subOptionsAreGreyedOutWhenTheMasterIsOff() {
-        GitAccessSettingsPanel panel = new GitAccessSettingsPanel(true);
+        GitAccessSettingsPanel panel = new GitAccessSettingsPanel();
 
         panel.setAllowGitAccessSelected(false);
         for (GitAccessOptionEnum option : GitAccessOptionEnum.values()) {

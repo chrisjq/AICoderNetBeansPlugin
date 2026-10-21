@@ -823,12 +823,75 @@ class CodexAiProcessManagerTest {
         }
     }
 
+    @Test
+    @org.junit.jupiter.api.Timeout(30)
+    void spawnWithoutRegisteredRegistrarEmitsOneNoticeForNewAndResumedThreads() throws Exception {
+        String notice = kiwi.ingenuity.netbeans.plugin.aicoder.utils.StatusMessageUtil.formatMcpToolsUnavailable("Codex");
+        File script = fakeCodexHandshakeThenSleep();
+
+        for (String resumeId : java.util.Arrays.asList(null, "th_previous")) {
+            List<AiProcessEvent> events = new CopyOnWriteArrayList<>();
+            TestableCodexAiProcessManager manager = new TestableCodexAiProcessManager(events::add);
+            manager.setCurrentSession(newSession("notice-" + (resumeId == null ? "new" : "resume"),
+                                                 new CodexSessionSettings()));
+            manager.start(script.getAbsolutePath(), "fake-model");
+            CodexAiMcpRegistrar savedRegistrar = manager.suspendRegistrarForTest();
+            manager.pendingResumeThreadId = resumeId;
+            try {
+                manager.spawnAndHandshake(new File(System.getProperty("java.io.tmpdir")));
+                assertEquals(1, events.stream()
+                             .filter(e -> e instanceof StatusEvent se && notice.equals(se.text()))
+                             .count(), "one unavailable notice for " + (resumeId == null ? "thread/start" : "thread/resume"));
+            }
+            finally {
+                manager.restoreRegistrarForTest(savedRegistrar);
+                manager.stop();
+            }
+        }
+    }
+
+    @Test
+    @org.junit.jupiter.api.Timeout(30)
+    void spawnWithRegisteredRegistrarDoesNotEmitUnavailableNotice() throws Exception {
+        List<AiProcessEvent> events = new CopyOnWriteArrayList<>();
+        TestableCodexAiProcessManager manager = new TestableCodexAiProcessManager(events::add);
+        manager.setCurrentSession(newSession("notice-live-endpoint", new CodexSessionSettings()));
+        manager.start(fakeCodexHandshakeThenSleep().getAbsolutePath(), "fake-model");
+        try {
+            manager.spawnAndHandshake(new File(System.getProperty("java.io.tmpdir")));
+            String notice = kiwi.ingenuity.netbeans.plugin.aicoder.utils.StatusMessageUtil.formatMcpToolsUnavailable("Codex");
+            assertEquals(0, events.stream()
+                         .filter(e -> e instanceof StatusEvent se && notice.equals(se.text()))
+                         .count(), events.toString());
+        }
+        finally {
+            manager.stop();
+        }
+    }
+
     // ---- isMcpActive: false until start() successfully registers a CodexAiMcpRegistrar ----
     @Test
     void isMcpActiveIsFalseBeforeStart() {
         CodexAiProcessManager manager = new CodexAiProcessManager(e -> {
         });
         assertFalse(manager.isMcpActive());
+    }
+
+    @Test
+    void sessionMcpUrlUsesRoutingIdForCodex() throws Exception {
+        CodexSessionSettings settings = new CodexSessionSettings();
+        settings.setMcpRoutingId("route-1234");
+        assertTrue(McpServerRegistry.register(new CodexAiMcpRegistrar("codex-url-test")).get(5, TimeUnit.SECONDS));
+        try {
+            String endpoint = McpServerRegistry.endpointUrlFor(AiTypeEnum.CODEX, settings.ensureMcpRoutingId());
+            assertNotNull(endpoint);
+            assertTrue(endpoint.endsWith("/mcp/codex/route-1234"), endpoint);
+            assertTrue(CodexAiProcessManager.buildMcpConfigArgs(endpoint).stream()
+                    .anyMatch(arg -> arg.contains(endpoint)), "Codex launch args must carry the session URL");
+        }
+        finally {
+            McpServerRegistry.stopAll();
+        }
     }
 
     // ---- buildMcpConfigArgs: per-invocation -c overrides, never written to config.toml
@@ -1238,11 +1301,10 @@ class CodexAiProcessManagerTest {
     }
 
     /**
-     * {@code processing}/{@code cancelledByUser}/{@code currentProcess} are {@code protected} on the base
-     * class in a different package — a subclass (even a test-only one) can set them from its own code, a
-     * plain top-level test class cannot. Exists purely to simulate "a turn was in flight" / "the user pressed
-     * stop" without driving a real handshake for tests that only care about
-     * {@code handleProcessExit}/{@code onHandlerDisconnected}'s own logic.
+     * {@code processing}/{@code cancelledByUser}/{@code currentProcess} are {@code protected} on the base class in a
+     * different package — a subclass (even a test-only one) can set them from its own code, a plain top-level test
+     * class cannot. Exists purely to simulate "a turn was in flight" / "the user pressed stop" without driving a real
+     * handshake for tests that only care about {@code handleProcessExit}/{@code onHandlerDisconnected}'s own logic.
      */
     private static final class TestableCodexAiProcessManager extends CodexAiProcessManager {
 
@@ -1255,5 +1317,6 @@ class CodexAiProcessManagerTest {
             cancelledByUser = cancelledVal;
             currentProcess = proc;
         }
+
     }
 }

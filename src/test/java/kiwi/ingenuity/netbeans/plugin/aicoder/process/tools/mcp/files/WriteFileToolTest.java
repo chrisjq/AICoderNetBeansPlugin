@@ -144,7 +144,7 @@ class WriteFileToolTest {
             String result = pending.get(5, TimeUnit.SECONDS);
             assertTrue(result.contains("changed while the diff was open"), result);
             assertEquals("changed-while-diff-was-open", Files.readString(file),
-                    "the change made during review must survive — the approved write must not overwrite it");
+                         "the change made during review must survive — the approved write must not overwrite it");
         }
         finally {
             listener.decision.complete(PermissionDecision.denied("cleanup"));
@@ -154,11 +154,10 @@ class WriteFileToolTest {
     }
 
     /**
-     * N1: GetFileContent's own flush must not make an unrelated, genuinely-unchanged write look like it
-     * changed. This environment has no live NetBeans editor document for an arbitrary temp file, so the flush
-     * GetFileContent performs is itself a no-op here — the assertion that matters is that routing a read
-     * through the exact path WriteFile's recheck depends on, while its diff is open, still lets the approved
-     * write through afterward.
+     * N1: GetFileContent's own flush must not make an unrelated, genuinely-unchanged write look like it changed. This
+     * environment has no live NetBeans editor document for an arbitrary temp file, so the flush GetFileContent performs
+     * is itself a no-op here — the assertion that matters is that routing a read through the exact path WriteFile's
+     * recheck depends on, while its diff is open, still lets the approved write through afterward.
      */
     @Test
     void getFileContentReadWhileDiffIsOpenDoesNotCauseAFalseRefusal() throws Exception {
@@ -181,7 +180,7 @@ class WriteFileToolTest {
             listener.decision.complete(PermissionDecision.allowed());
             String writeResult = pending.get(5, TimeUnit.SECONDS);
             assertTrue(writeResult.toLowerCase().contains("saved"),
-                    "a read racing the diff must not cause a false 'changed' refusal: " + writeResult);
+                       "a read racing the diff must not cause a false 'changed' refusal: " + writeResult);
             assertEquals("updated", Files.readString(file));
         }
         finally {
@@ -210,10 +209,6 @@ class WriteFileToolTest {
 
         NoopRegistrar(String sessionId) {
             super(sessionId, AiTypeEnum.CLAUDE);
-        }
-
-        @Override
-        public void addMcpEndpoint(String endpointUrl) {
         }
 
         @Override

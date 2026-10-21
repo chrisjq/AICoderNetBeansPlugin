@@ -76,8 +76,10 @@ public class ListAiSessionsTool extends AbstractActionTool {
             return "Error: " + ListAiSessionsParamEnum.SESSION_ID.key() + " is required (pass your own session ID from the session identity block)";
         }
         AiSessionInboxBroker broker = AiSessionInboxBroker.getInstance();
-        if (broker.isActive(callerId) && !broker.isInterAiCommsAllowed(callerId)) {
-            return "Error: inter-AI communication is disabled for this session";
+        // Asked of the session, not its inbox: a session with comms off has no inbox at all.
+        String callerRefusal = SendAiMessageTool.callerCommsRefusal(callerId);
+        if (callerRefusal != null) {
+            return "Error: " + callerRefusal;
         }
         List<AiSession> sessions = broker.listActive(callerId);
         if (sessions.isEmpty()) {

@@ -30,12 +30,11 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
 /**
- * Audit of the NON-MUTATING git MCP tools. Proves every schema-advertised parameter actually changes the
- * tool's behaviour by invoking {@code handle()} against throwaway repositories created with the real
- * {@code git} CLI. Never touches the plugin's own repository: {@code projectPath} always points at a per-test
- * temp dir which is deleted by the test harness. The mutating actions of branch/remote/tag (create/delete,
- * add/remove) are covered by {@code GitMutatingToolsAuditTest} — this class covers the read-only list modes
- * and the read-only tools.
+ * Audit of the NON-MUTATING git MCP tools. Proves every schema-advertised parameter actually changes the tool's
+ * behaviour by invoking {@code handle()} against throwaway repositories created with the real {@code git} CLI. Never
+ * touches the plugin's own repository: {@code projectPath} always points at a per-test temp dir which is deleted by the
+ * test harness. The mutating actions of branch/remote/tag (create/delete, add/remove) are covered by
+ * {@code GitMutatingToolsAuditTest} — this class covers the read-only list modes and the read-only tools.
  */
 class GitReadToolsAuditTest {
 
@@ -62,8 +61,8 @@ class GitReadToolsAuditTest {
     }
 
     /**
-     * Restricts {@link #session} to {@code allowedDir} only. An in-repo path outside that directory must then
-     * fail closed. Mirrors {@code GitMutatingToolsAuditTest#startServerScopedToRepo}.
+     * Restricts {@link #session} to {@code allowedDir} only. An in-repo path outside that directory must then fail
+     * closed. Mirrors {@code GitMutatingToolsAuditTest#startServerScopedToRepo}.
      */
     private void startServerScopedTo(Path allowedDir) throws Exception {
         McpServerRegistry.stopAll();
@@ -72,7 +71,7 @@ class GitReadToolsAuditTest {
         boolean ok = McpServerRegistry.register(new NoopRegistrar("git-read-audit-boot")).get(5, TimeUnit.SECONDS);
         assertTrue(ok, "test server must start");
         McpServerRegistry.getServer().registerSession(session.getId(), AiTypeEnum.CLAUDE,
-                List.of(allowedDir.toFile()), true);
+                                                      List.of(allowedDir.toFile()), true);
     }
 
     @AfterEach
@@ -132,7 +131,7 @@ class GitReadToolsAuditTest {
     @Test
     void getGitStatus_missingProjectPathThrows() {
         assertThrows(McpArgumentException.class,
-                () -> new GetGitStatusTool().handle(new ToolRequestArguments(new JsonObject()), session));
+                     () -> new GetGitStatusTool().handle(new ToolRequestArguments(new JsonObject()), session));
     }
 
     @Test
@@ -229,7 +228,7 @@ class GitReadToolsAuditTest {
         assertTrue(result.contains("second"), result);
         assertTrue(result.contains("initial"), result);
         assertFalse(result.contains("config change"),
-                "log scoped to a.txt must exclude commits touching only b.txt: " + result);
+                    "log scoped to a.txt must exclude commits touching only b.txt: " + result);
     }
 
     @Test
@@ -255,7 +254,7 @@ class GitReadToolsAuditTest {
 
         assertTrue(noFollow.contains("rename f"), noFollow);
         assertFalse(noFollow.contains("create f"),
-                "without follow the pre-rename commit must stay hidden: " + noFollow);
+                    "without follow the pre-rename commit must stay hidden: " + noFollow);
     }
 
     // ---- GitBlame: projectPath, file ----
@@ -284,7 +283,7 @@ class GitReadToolsAuditTest {
     @Test
     void gitBlame_missingFileThrows() {
         assertThrows(McpArgumentException.class,
-                () -> new GitBlameTool().handle(new ToolRequestArguments(base()), session));
+                     () -> new GitBlameTool().handle(new ToolRequestArguments(base()), session));
     }
 
     @Test
@@ -427,7 +426,7 @@ class GitReadToolsAuditTest {
         args.addProperty(GetGitDiffParamEnum.FILE_PATHS.key(), "a.txt");
 
         assertThrows(McpArgumentException.class,
-                () -> new GetGitDiffTool().handle(new ToolRequestArguments(args), session));
+                     () -> new GetGitDiffTool().handle(new ToolRequestArguments(args), session));
     }
 
     // ---- GitBranch (list mode): projectPath, all ----
@@ -774,8 +773,8 @@ class GitReadToolsAuditTest {
     }
 
     /**
-     * Two commits: {@code allowed/ok.txt} then a later commit that touches only {@code secret/hidden.txt}. A
-     * scope limited to {@code allowed/} must refuse the secret path while the unscoped call still sees it.
+     * Two commits: {@code allowed/ok.txt} then a later commit that touches only {@code secret/hidden.txt}. A scope
+     * limited to {@code allowed/} must refuse the secret path while the unscoped call still sees it.
      */
     private void commitScopedPair() throws Exception {
         Files.createDirectories(repo.resolve("allowed"));
@@ -799,7 +798,7 @@ class GitReadToolsAuditTest {
         int code = p.waitFor();
         if (code != 0) {
             throw new IllegalStateException("git " + String.join(" ", args) + " failed (" + code + "): "
-                                            + bos.toString(StandardCharsets.UTF_8));
+                    + bos.toString(StandardCharsets.UTF_8));
         }
         return bos.toString(StandardCharsets.UTF_8).strip();
     }
@@ -827,10 +826,6 @@ class GitReadToolsAuditTest {
 
         NoopRegistrar(String sessionId) {
             super(sessionId, AiTypeEnum.CLAUDE);
-        }
-
-        @Override
-        public void addMcpEndpoint(String endpointUrl) {
         }
 
         @Override

@@ -15,6 +15,7 @@ import java.util.logging.Level;
 import java.util.logging.Logger;
 import kiwi.ingenuity.netbeans.plugin.aicoder.PluginSettings;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.AiTypeEnum;
+import kiwi.ingenuity.netbeans.plugin.aicoder.ai.settings.AiSessionSettings;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.TimeoutEnum;
 
 /**
@@ -211,6 +212,19 @@ public final class McpServerRegistry {
         return s.getBaseUrl() + "/mcp/" + type.key();
     }
 
+    /**
+     * The session-addressed MCP endpoint URL, {@code {base}/mcp/{key}/{routingId}}, or null when the shared server is
+     * not running or the type or routing id is missing. The server answers {@code tools/list} for this URL from that
+     * session's own tool set.
+     */
+    public static String endpointUrlFor(AiTypeEnum type, String routingId) {
+        if (!AiSessionSettings.isValidMcpRoutingId(routingId)) {
+            return null;
+        }
+        String typeUrl = endpointUrlFor(type);
+        return typeUrl == null ? null : typeUrl + "/" + routingId;
+    }
+
     // ---- Enqueue helper (never a silent drop) ----
     private static boolean enqueue(McpRegistryEvent event) {
         if (!QUEUE.offer(event)) {
@@ -276,9 +290,9 @@ public final class McpServerRegistry {
     /**
      * Undoes each still-registered type's external CLI state (user-scope MCP endpoint + hooks) exactly once as the
      * supervisor exits. On IDE shutdown / plugin uninstall the closing tabs' DEREGISTER events are still queued and are
-     * discarded once the shutdown flag is set, so without this the endpoint and hook written by
-     * {@code registerHooks}/{@code addMcpEndpoint} would outlive the plugin in the user's CLI config, pointing at a
-     * dead port — permanently on uninstall. Types whose last session already deregistered in-run are no longer in
+     * discarded once the shutdown flag is set, so without this the endpoint and hook written by {@code registerHooks}
+     * (and any legacy endpoint) would outlive the plugin in the user's CLI config, pointing at a dead port —
+     * permanently on uninstall. Types whose last session already deregistered in-run are no longer in
      * {@code registrations} and are not touched again. Each registrar call is internally bounded (the CLI commands
      * self-cap at a few seconds), keeping shutdown cost bounded and typically sub-second. Supervisor thread only.
      */
@@ -343,7 +357,7 @@ public final class McpServerRegistry {
             return;
         }
 
-        // First session of this AI type installs its hooks + shared endpoint. Hooks
+        // First session of this AI type installs its hooks and clears any legacy global endpoint. Hooks
         // are per-type (Claude writes a PreToolUse diff hook, Copilot is a no-op).
         // These are ~5 s subprocess calls, now on the supervisor thread — accepted.
         if (typeCount(type) == 1) {
@@ -352,7 +366,6 @@ public final class McpServerRegistry {
                 ok = event.registrar().registerHooks(server.getBaseUrl());
                 if (ok) {
                     event.registrar().removeMcpEndpoint();
-                    event.registrar().addMcpEndpoint(endpointUrlFor(type));
                 }
             }
             catch (Exception e) {

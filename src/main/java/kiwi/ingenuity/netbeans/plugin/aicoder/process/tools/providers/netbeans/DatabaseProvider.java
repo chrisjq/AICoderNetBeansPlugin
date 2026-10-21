@@ -17,7 +17,6 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.locks.ReentrantLock;
 import java.util.logging.Level;
 import java.util.logging.Logger;
-import kiwi.ingenuity.netbeans.plugin.aicoder.PluginSettings;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.McpToolPropertyEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.TimeoutEnum;
 import org.netbeans.api.db.explorer.ConnectionManager;
@@ -185,14 +184,6 @@ public class DatabaseProvider {
             return "Invalid tableName: " + tableName;
         }
         return runReadOnlyQuery(connectionName, "SELECT * FROM " + tableName, limit);
-    }
-
-    /**
-     * Convenience overload for callers with no session-specific row limit (e.g. tests) — uses the plugin's
-     * globally configured default.
-     */
-    public static String executeSqlQuery(String connectionName, String sql) {
-        return executeSqlQuery(connectionName, sql, PluginSettings.getDatabaseRowLimit());
     }
 
     public static String executeSqlQuery(String connectionName, String sql, int maxRows) {

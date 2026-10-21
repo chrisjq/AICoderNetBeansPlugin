@@ -11,8 +11,8 @@ class InstructionNoCacheTest {
     @Test
     void buildFullInstructionsIsStableAndUncached() {
         var handlers = McpInstructionRegistry.getHandlers(AiTypeEnum.CLAUDE);
-        String a = McpInstructionRegistry.buildFullInstructions(AiTypeEnum.CLAUDE, handlers);
-        String b = McpInstructionRegistry.buildFullInstructions(AiTypeEnum.CLAUDE, handlers);
+        String a = McpInstructionRegistry.buildFullInstructions(AiTypeEnum.CLAUDE, handlers, null);
+        String b = McpInstructionRegistry.buildFullInstructions(AiTypeEnum.CLAUDE, handlers, null);
         assertEquals(a, b);
         assertTrue(a.contains("## Policy"));
     }

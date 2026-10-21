@@ -52,6 +52,7 @@ import kiwi.ingenuity.netbeans.plugin.aicoder.process.events.AiProcessEvent;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.events.AiProcessEventListener;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.McpToolInterface;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.ToolRequestArguments;
+import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.ToolSchemaKeyEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.serialization.ContextPersistenceManager;
 import org.junit.jupiter.api.AfterEach;
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -1020,9 +1021,9 @@ class OllamaAiProcessManagerTest {
     }
 
     /**
-     * The regression the split exists for: VARIED narration must never trip counter A. A is "no new
-     * information"; different prose every round resets it, regardless of how A is pinned. The turn ends only
-     * when the scripted EndTurn arrives.
+     * The regression the split exists for: VARIED narration must never trip counter A. A is "no new information";
+     * different prose every round resets it, regardless of how A is pinned. The turn ends only when the scripted
+     * EndTurn arrives.
      */
     @Test
     void varyingProseNeverTripsTheUnproductiveRoundsBound() throws Exception {
@@ -2781,6 +2782,8 @@ class OllamaAiProcessManagerTest {
         assertEquals("high", fakeClient.requests.get(0).reasoningEffort());
     }
 
+    // FLAKY (seen 2026-10-20/22): fails intermittently in the full suite but passes when run alone.
+    // Observed: expected 3 requests but was 2 (line 2817). Likely cause: the request count is read before the retried request has been recorded (async timing under load). Re-run alone before treating a failure as real.
     /**
      * The spec's Ollama section is explicit that the field name is unverified against a real server: a 4xx carrying
      * reasoning_effort must be retried exactly once without it, the user told exactly once, and the field must never be
@@ -2819,12 +2822,11 @@ class OllamaAiProcessManagerTest {
     }
 
     /**
-     * Regression test for a review finding: the barren-rounds exit (two consecutive tool-call rounds that
-     * make no progress) used to pass a STALE per-iteration reasoning-effort snapshot into answerWithoutTools
-     * instead of re-resolving it. A 4xx rejection earlier in the SAME turn sets the sticky disabled flag
-     * mid-loop, so that stale snapshot could put the field back on the wire for the fallback no-tools request
-     * — a second failed request and a second INFO event in the same turn, breaking both "never resend once
-     * disabled" and "exactly one INFO".
+     * Regression test for a review finding: the barren-rounds exit (two consecutive tool-call rounds that make no
+     * progress) used to pass a STALE per-iteration reasoning-effort snapshot into answerWithoutTools instead of
+     * re-resolving it. A 4xx rejection earlier in the SAME turn sets the sticky disabled flag mid-loop, so that stale
+     * snapshot could put the field back on the wire for the fallback no-tools request — a second failed request and a
+     * second INFO event in the same turn, breaking both "never resend once disabled" and "exactly one INFO".
      *
      * <p>
      * Expected request sequence (0-based indices into {@link RejectReasoningEffortThenBarrenLoopHttpClient#requests},
@@ -3260,39 +3262,142 @@ class OllamaAiProcessManagerTest {
 
         @Override
         Map<McpToolEnum, McpToolInterface> buildToolHandlers(OllamaAiSession session) {
-            return Map.of(McpToolEnum.GET_PLUGIN_VERSION, new McpToolInterface() {
-                @Override
-                public McpSectionEnum section() {
-                    return McpSectionEnum.SYSTEM;
-                }
+            return Map.of(McpToolEnum.GET_PLUGIN_VERSION, new FakeGatedTool(McpToolEnum.GET_PLUGIN_VERSION),
+                          McpToolEnum.PEER_MESSAGE_SEND, new FakeGatedTool(McpToolEnum.PEER_MESSAGE_SEND));
+        }
+    }
 
-                @Override
-                public String instruction(Set<McpInstructionOptionEnum> options) {
-                    return "GetPluginVersion -> fake";
-                }
+    private static List<String> toolNames(ChatRequest request) {
+        List<String> names = new ArrayList<>();
+        for (JsonObject tool : request.toolSchemas()) {
+            if (tool.has(ToolSchemaKeyEnum.NAME.key())) {
+                names.add(tool.get(ToolSchemaKeyEnum.NAME.key()).getAsString());
+            }
+        }
+        return names;
+    }
 
-                @Override
-                public boolean isMutating() {
-                    return false;
-                }
+    private static List<ChatRequest> captureToolRequests(AiSession session) throws Exception {
+        List<ChatRequest> requests = new CopyOnWriteArrayList<>();
+        HttpAiClient client = (ChatRequest request, Consumer<String> onTextDelta) -> {
+            requests.add(request);
+            return new ChatResult("done", List.of(), "stop");
+        };
+        TestOllamaProcessManager manager = new TestOllamaProcessManager(event -> {
+        }, client);
+        manager.setCurrentSession(session);
+        manager.start(null, "qwen2.5-coder:7b");
+        manager.sendPrompt("hello", new File(System.getProperty("user.home")), List.of());
+        awaitIdle(manager);
+        return requests;
+    }
 
-                @Override
-                public JsonObject schema(Set<McpInstructionOptionEnum> options) {
-                    JsonObject tool = new JsonObject();
-                    tool.addProperty("name", McpToolEnum.GET_PLUGIN_VERSION.toolName());
-                    JsonObject inputSchema = new JsonObject();
-                    inputSchema.addProperty("type", "object");
-                    inputSchema.add("properties", new JsonObject());
-                    tool.add("inputSchema", inputSchema);
-                    return tool;
-                }
+    @Test
+    void toolDefinitionsOmitAGroupTheSessionHasDisabled() throws Exception {
+        AiSession session = newSession("sid-tools-off", "tools-off");
+        ((OllamaSessionSettings) session.settings()).setUseNativeToolCalling(true);
 
-                @Override
-                public String handle(ToolRequestArguments args,
-                                     kiwi.ingenuity.netbeans.plugin.aicoder.process.session.AbstractAiSession session) {
-                    return "ok";
-                }
-            });
+        List<String> names = toolNames(captureToolRequests(session).get(0));
+
+        assertTrue(names.contains(McpToolEnum.GET_PLUGIN_VERSION.toolName()));
+        assertFalse(names.contains(McpToolEnum.PEER_MESSAGE_SEND.toolName()),
+                    "inter-AI messaging is off for this session, so its tool must not be offered to the model");
+    }
+
+    @Test
+    void toolDefinitionsOfferAGroupOnceTheSessionEnablesIt() throws Exception {
+        AiSession session = newSession("sid-tools-on", "tools-on");
+        ((OllamaSessionSettings) session.settings()).setUseNativeToolCalling(true);
+        session.settings().setAllowInterAiComms(true);
+
+        List<String> names = toolNames(captureToolRequests(session).get(0));
+
+        assertTrue(names.contains(McpToolEnum.PEER_MESSAGE_SEND.toolName()),
+                   "enabling messaging on the session must offer its tool on the very next request");
+    }
+
+    private static String messageText(ChatRequest request) {
+        StringBuilder text = new StringBuilder();
+        for (ChatMessage message : request.messages()) {
+            if (message.content() != null) {
+                text.append(message.content()).append('\n');
+            }
+        }
+        return text.toString();
+    }
+
+    /**
+     * The per-turn instructions (the TOOLS pin) are built from the session's full handler map so the hidden tools are
+     * known and every sentence naming one is removed. Built from the already-filtered map, nothing counted as hidden
+     * and the header's inter-AI list still named PeerMessageSend for a session with messaging off.
+     */
+    @Test
+    void instructionsSentToTheModelNameNoToolOfADisabledGroup() throws Exception {
+        AiSession session = newSession("sid-instr-off", "instr-off");
+        ((OllamaSessionSettings) session.settings()).setUseNativeToolCalling(true);
+
+        String text = messageText(captureToolRequests(session).get(0));
+
+        assertTrue(text.contains(McpToolEnum.GET_PLUGIN_VERSION.toolName()),
+                   "the visible tool's instruction line must reach the model: " + text);
+        assertFalse(text.contains(McpToolEnum.PEER_MESSAGE_SEND.toolName()),
+                    "inter-AI messaging is off for this session, so no instruction text may name its tool: " + text);
+    }
+
+    /**
+     * Control for the test above: with messaging on, the same text does name the tool, so its absence there is the
+     * filter at work and not text that never reached the request.
+     */
+    @Test
+    void instructionsSentToTheModelNameAToolOnceItsGroupIsEnabled() throws Exception {
+        AiSession session = newSession("sid-instr-on", "instr-on");
+        ((OllamaSessionSettings) session.settings()).setUseNativeToolCalling(true);
+        session.settings().setAllowInterAiComms(true);
+
+        String text = messageText(captureToolRequests(session).get(0));
+
+        assertTrue(text.contains(McpToolEnum.PEER_MESSAGE_SEND.toolName()),
+                   "with messaging on, the instructions must name its tool: " + text);
+    }
+
+    private static final class FakeGatedTool implements McpToolInterface {
+
+        private final McpToolEnum tool;
+
+        FakeGatedTool(McpToolEnum tool) {
+            this.tool = tool;
+        }
+
+        @Override
+        public McpSectionEnum section() {
+            return McpSectionEnum.SYSTEM;
+        }
+
+        @Override
+        public String instruction(Set<McpInstructionOptionEnum> options) {
+            return tool.toolName() + " -> fake";
+        }
+
+        @Override
+        public boolean isMutating() {
+            return false;
+        }
+
+        @Override
+        public JsonObject schema(Set<McpInstructionOptionEnum> options) {
+            JsonObject schema = new JsonObject();
+            schema.addProperty("name", tool.toolName());
+            JsonObject inputSchema = new JsonObject();
+            inputSchema.addProperty("type", "object");
+            inputSchema.add("properties", new JsonObject());
+            schema.add("inputSchema", inputSchema);
+            return schema;
+        }
+
+        @Override
+        public String handle(ToolRequestArguments args,
+                             kiwi.ingenuity.netbeans.plugin.aicoder.process.session.AbstractAiSession session) {
+            return "ok";
         }
     }
 }

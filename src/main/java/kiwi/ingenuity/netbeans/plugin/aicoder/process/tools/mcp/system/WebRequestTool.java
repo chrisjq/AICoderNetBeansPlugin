@@ -41,6 +41,8 @@ import kiwi.ingenuity.netbeans.plugin.aicoder.process.tempfile.TempFile;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tempfile.TempFileDirEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tempfile.TempFileRegistry;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.TimeoutEnum;
+import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.exposure.McpToolAccess;
+import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.exposure.McpToolGroupEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.McpToolInterface;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.McpToolSchemas;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.ToolRequestArguments;
@@ -171,9 +173,8 @@ public class WebRequestTool implements McpToolInterface {
         if (!session.getSettings().effectiveAllowWebRequestAccess(option)) {
             throw new McpArgumentException(-32602,
                                            "'" + option.label().displayLabel() + "' is disabled for this session. "
-                                           + "Ask the user to enable it in this session's settings or in the "
-                                           + "plugin's global settings (Tools > Options > AI Coder Code) before "
-                                           + "retrying.");
+                                           + "Ask the user to enable it in this session's settings "
+                                           + "(MCP Tools → Web) before retrying.");
         }
     }
 
@@ -698,11 +699,9 @@ public class WebRequestTool implements McpToolInterface {
 
     @Override
     public String handle(ToolRequestArguments args, AbstractAiSession session) throws McpArgumentException {
-        if (!session.getSettings().effectiveAllowWebRequests()) {
-            throw new McpArgumentException(-32602,
-                                           "Web requests are disabled for this session. Ask the user to enable "
-                                           + "'Allow Web Requests' in this session's settings or in the plugin's "
-                                           + "global settings (Tools > Options > AI Coder Code) before retrying.");
+        String refusal = McpToolAccess.refusalMessage(session.getSettings(), McpToolGroupEnum.WEB);
+        if (refusal != null) {
+            throw new McpArgumentException(-32602, refusal);
         }
         URI uri = parseUri(args.require(WebRequestParamEnum.URL.key()));
         String method = normaliseMethod(args.str(WebRequestParamEnum.METHOD.key()));

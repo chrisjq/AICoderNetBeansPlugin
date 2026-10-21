@@ -2,18 +2,29 @@ package kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.ai;
 
 import java.util.List;
 import java.util.stream.Collectors;
+import kiwi.ingenuity.netbeans.plugin.aicoder.AccessControlLabelEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.mail.AiSessionInboxBroker;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.session.AiSession;
+import kiwi.ingenuity.netbeans.plugin.aicoder.ai.settings.AiSessionSettings;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.SessionRegistry;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.session.AbstractAiSession;
+import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.exposure.McpToolAccess;
+import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.exposure.McpToolGroupEnum;
 
 /**
  * Private helpers shared by the idle-watcher MCP tools in this package.
  */
 final class IdleWatcherTools {
 
-    static final String DISABLED_MESSAGE
-                        = "Error: Idle AI watcher timers are disabled for this session. Enable 'Allow Idle AI Watcher Timer?' in this session's configuration.";
+    private static final String IDLE_WATCHERS_FALLBACK = "The idle watcher timer is disabled for this session. Ask the user to enable '"
+            + AccessControlLabelEnum.ALLOW_IDLE_WATCHER_TIMER.displayLabel()
+            + "' in this session's settings (MCP Tools → Idle watchers) before retrying.";
+
+    static String disabledMessage(AbstractAiSession session) {
+        AiSessionSettings settings = session == null ? null : session.getSettings();
+        String reason = McpToolAccess.refusalMessage(settings, McpToolGroupEnum.IDLE_WATCHERS);
+        return "Error: " + (reason != null ? reason : IDLE_WATCHERS_FALLBACK);
+    }
 
     private IdleWatcherTools() {
     }

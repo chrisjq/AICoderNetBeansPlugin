@@ -137,6 +137,11 @@ public enum AiSessionSettingsKeyEnum {
      * Whether to enable clipboard access
      */
     ENABLE_CLIPBOARD_ACCESS("enableClipboardAccess"),
+    MCP_TOOL_CONFIG("mcpToolConfig"),
+    /**
+     * Random, opaque address of the session's MCP endpoint (/mcp/&lt;type&gt;/&lt;routingId&gt;)
+     */
+    MCP_ROUTING_ID("mcpRoutingId"),
     CONTEXT_TRIM_TRIGGER("contextTrimTrigger"),
     CONTEXT_TRIM_STRATEGY("contextTrimStrategy"),
     CONTEXT_TOKEN_THRESHOLD("contextTokenThreshold"),

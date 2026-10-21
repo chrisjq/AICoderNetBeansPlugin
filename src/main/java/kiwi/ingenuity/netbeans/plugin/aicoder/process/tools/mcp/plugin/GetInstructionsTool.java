@@ -35,8 +35,10 @@ public class GetInstructionsTool extends AbstractActionTool {
     @Override
     public String handle(ToolRequestArguments args, AbstractAiSession session) {
         AiTypeEnum type = session.getType();
-        Map<McpToolEnum, McpToolInterface> handlers = McpInstructionRegistry.getHandlers(type);
-        String full = McpInstructionRegistry.buildFullInstructions(type, handlers);
+        // The session's own handler map — the one tools/list answers from — so the guide and the tool list cannot
+        // disagree about what exists.
+        Map<McpToolEnum, McpToolInterface> handlers = session.getMcpToolHandlers();
+        String full = McpInstructionRegistry.buildFullInstructions(type, handlers, session.getSettings());
         session.getAiSession().setInstructionsLoaded(true);
         return full;
     }

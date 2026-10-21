@@ -175,7 +175,7 @@ class ApplyEditToolTest {
             String result = tool.handle(args(file.toString(), "old", "new", true, 5), session);
 
             assertTrue(result.contains("expected 5") && result.contains("found 2"),
-                    "expected a mismatch error naming both counts, got: " + result);
+                       "expected a mismatch error naming both counts, got: " + result);
             assertEquals(original, Files.readString(file), "a count mismatch must change nothing");
         }
         finally {
@@ -205,8 +205,8 @@ class ApplyEditToolTest {
 
     /**
      * Pins down the documented "asserts N, replaces one" behaviour of expectedCount without replaceAll: three
-     * occurrences actually present, expectedCount=3 passes the assertion, but only the FIRST is replaced —
-     * the assertion and the replacement count are independent of each other.
+     * occurrences actually present, expectedCount=3 passes the assertion, but only the FIRST is replaced — the
+     * assertion and the replacement count are independent of each other.
      */
     @Test
     void handle_expectedCountWithoutReplaceAll_onThreeMatches_assertsAllButReplacesOnlyTheFirst() throws Exception {
@@ -229,8 +229,8 @@ class ApplyEditToolTest {
     }
 
     /**
-     * Mutation-prove target: a negative expectedCount must be refused outright, not treated as the internal
-     * "omitted" sentinel (which would silently disable the assertion the caller just asked for).
+     * Mutation-prove target: a negative expectedCount must be refused outright, not treated as the internal "omitted"
+     * sentinel (which would silently disable the assertion the caller just asked for).
      */
     @Test
     void handle_negativeExpectedCount_isRefusedWithoutTouchingTheFile() throws Exception {
@@ -317,10 +317,6 @@ class ApplyEditToolTest {
 
         NoopRegistrar(String sessionId) {
             super(sessionId, AiTypeEnum.CLAUDE);
-        }
-
-        @Override
-        public void addMcpEndpoint(String endpointUrl) {
         }
 
         @Override

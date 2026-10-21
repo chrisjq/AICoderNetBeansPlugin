@@ -24,6 +24,8 @@ import kiwi.ingenuity.netbeans.plugin.aicoder.process.McpArgumentException;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.McpToolEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.events.AiProcessEventListener;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.session.AbstractAiSession;
+import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.exposure.McpToolConfig;
+import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.exposure.McpToolGroupEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.McpToolInterface;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.ToolRequestArguments;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.ToolSchemaKeyEnum;
@@ -75,8 +77,38 @@ class WebRequestToolTest {
         args.addProperty(WebRequestParamEnum.URL.key(), SAMPLE_PUBLIC_URL);
 
         Exception ex = assertThrows(Exception.class,
-                () -> tool.handle(args(args), new FakeSession(sessionAllowingWebRequests(false))));
-        assertTrue(ex.getMessage().contains("Web requests are disabled for this session"));
+                                    () -> tool.handle(args(args), new FakeSession(sessionAllowingWebRequests(false))));
+        assertTrue(ex.getMessage().contains("Web request access is disabled for this session"));
+    }
+
+    @Test
+    void anMcpLayerRefusalNamesTheToolGroupEvenWhileTheConfigSettingIsOn() {
+        WebRequestTool tool = new WebRequestTool();
+        JsonObject args = new JsonObject();
+        args.addProperty(WebRequestParamEnum.URL.key(), SAMPLE_PUBLIC_URL);
+        AiSession session = sessionAllowingWebRequests(true);
+        session.settings().setMcpToolConfig(McpToolConfig.withDisabled(Set.of(McpToolGroupEnum.WEB)));
+
+        Exception ex = assertThrows(Exception.class,
+                                    () -> tool.handle(args(args), new FakeSession(session)));
+        assertTrue(ex.getMessage().contains("The 'Web' tool group is switched off for this session"),
+                   ex.getMessage());
+        assertFalse(ex.getMessage().contains("'Allow web requests'"),
+                    "that checkbox is hidden while the MCP group is off");
+    }
+
+    @Test
+    void aConfigLayerRefusalUnderAnEnabledMcpGroupNamesTheSetting() {
+        WebRequestTool tool = new WebRequestTool();
+        JsonObject args = new JsonObject();
+        args.addProperty(WebRequestParamEnum.URL.key(), SAMPLE_PUBLIC_URL);
+        AiSession session = sessionAllowingWebRequests(false);
+        session.settings().setMcpToolConfig(McpToolConfig.ALL_ENABLED);
+
+        Exception ex = assertThrows(Exception.class,
+                                    () -> tool.handle(args(args), new FakeSession(session)));
+        assertTrue(ex.getMessage().contains("Web request access is disabled for this session"), ex.getMessage());
+        assertTrue(ex.getMessage().contains("'Allow web requests'"), ex.getMessage());
     }
 
     @Test

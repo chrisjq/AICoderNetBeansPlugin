@@ -16,8 +16,10 @@ import java.io.IOException;
 import java.lang.reflect.InvocationTargetException;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Comparator;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.logging.Level;
 import java.util.logging.Logger;
@@ -30,6 +32,7 @@ import javax.swing.JComponent;
 import javax.swing.JDialog;
 import javax.swing.JEditorPane;
 import javax.swing.JLabel;
+import javax.swing.JList;
 import javax.swing.JOptionPane;
 import javax.swing.JPanel;
 import javax.swing.JScrollPane;
@@ -50,9 +53,12 @@ import kiwi.ingenuity.netbeans.plugin.aicoder.ai.settings.AiSessionCreateSetting
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.settings.AiSessionSettings;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.settings.AiTypeSettings;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.settings.ConfigTemplate;
+import kiwi.ingenuity.netbeans.plugin.aicoder.ai.settings.McpTemplate;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.settings.SpecialInstructionTemplate;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.ui.AiTopComponent;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.server.McpToolsDocumentation;
+import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.exposure.LegacyToolGroups;
+import kiwi.ingenuity.netbeans.plugin.aicoder.serialization.McpTemplatePersistenceManager;
 import kiwi.ingenuity.netbeans.plugin.aicoder.serialization.SessionPersistenceManager;
 import kiwi.ingenuity.netbeans.plugin.aicoder.serialization.TemplatePersistenceManager;
 import kiwi.ingenuity.netbeans.plugin.aicoder.utils.BrowserUtil;
@@ -118,6 +124,7 @@ public class SessionPickerDialog extends JDialog {
     private final SessionPickerOperations operations;
     private final LoadEpochGuard loadEpoch = new LoadEpochGuard();
     private final TemplatePersistenceManager templates = new TemplatePersistenceManager();
+    private final McpTemplatePersistenceManager mcpTemplates = new McpTemplatePersistenceManager();
     private final SessionTableModel sessions = new SessionTableModel();
     private final JTable sessionTable = new JTable(sessions);
     private final JLabel sessionsStatusLabel = new JLabel(" ");
@@ -134,6 +141,7 @@ public class SessionPickerDialog extends JDialog {
     private final JComboBox<String> projectCombo = new JComboBox<>();
     private final JComboBox<AiTypeEnum> aiTypeCombo = new JComboBox<>();
     private final JComboBox<ConfigTemplate> configCombo = new JComboBox<>();
+    private final JComboBox<McpTemplate> mcpTemplateCombo = new JComboBox<>();
     private final JComboBox<SpecialInstructionTemplate> instructionsCombo = new JComboBox<>();
     private final JCheckBox injectOnCreate = new JCheckBox("Inject Session Instructions on Create");
     private final JCheckBox closeAfterCreate = new JCheckBox("Close after action", true);
@@ -141,6 +149,9 @@ public class SessionPickerDialog extends JDialog {
     private JButton createButton;
     private final JPanel typeSettingsHolder = new JPanel(new BorderLayout());
     private AiSessionCreateSettingsPanel<AiSessionSettings> typeSettingsPanel;
+    private long templateLoadEpoch;
+    private boolean templatesLoading;
+    private boolean disposed;
 
     private SessionPickerDialog(SessionPersistenceManager spm) {
         super(WindowManager.getDefault().getMainWindow(), "AI Manager", true);
@@ -162,7 +173,8 @@ public class SessionPickerDialog extends JDialog {
         setDefaultCloseOperation(DISPOSE_ON_CLOSE);
         getRootPane().setBorder(BorderFactory.createEmptyBorder(12, 12, 12, 12));
         aiTypeCombo.setRenderer(new AiTypeRenderer());
-        configCombo.setRenderer(new TemplateRenderer<>(ConfigTemplate::name, "Default"));
+        configCombo.setRenderer(new DuplicateAwareTemplateRenderer<>(configCombo, ConfigTemplate::name, "Default"));
+        mcpTemplateCombo.setRenderer(new DuplicateAwareTemplateRenderer<>(mcpTemplateCombo, McpTemplate::name, "Default"));
         instructionsCombo.setRenderer(new TemplateRenderer<>(SpecialInstructionTemplate::name, "None"));
         instructionsCombo.addActionListener(e -> updateInstructionInjectionControl());
         aiTypeCombo.addActionListener(e -> replaceTypeSettingsPanel());
@@ -220,9 +232,10 @@ public class SessionPickerDialog extends JDialog {
         c.weightx = 1;
         form.add(typeSettingsHolder, c);
         addRow(form, c, 5, "Config Template:", configCombo);
-        addRow(form, c, 6, "Session Instructions:", instructionsCombo);
+        addRow(form, c, 6, "MCP Template:", mcpTemplateCombo);
+        addRow(form, c, 7, "Session Instructions:", instructionsCombo);
         c.gridx = 0;
-        c.gridy = 7;
+        c.gridy = 8;
         c.gridwidth = 2;
         form.add(injectOnCreate, c);
         JPanel actions = new JPanel(new FlowLayout(FlowLayout.LEFT, 4, 0));
@@ -230,9 +243,9 @@ public class SessionPickerDialog extends JDialog {
         createButton.addActionListener(e -> onCreateNew());
         actions.add(createButton);
         actions.add(closeAfterCreate);
-        c.gridy = 8;
-        form.add(actions, c);
         c.gridy = 9;
+        form.add(actions, c);
+        c.gridy = 10;
         c.weighty = 1;
         form.add(new JPanel(), c);
         return new JScrollPane(form);
@@ -240,6 +253,7 @@ public class SessionPickerDialog extends JDialog {
 
     private Component buildTemplatesTab() {
         JTabbedPane nested = new JTabbedPane();
+        nested.addTab("MCP Templates", new McpTemplatesPanel(mcpTemplates, this::refreshTemplates));
         nested.addTab("Config Templates", new ConfigTemplatesPanel(templates, this::refreshTemplates));
         nested.addTab("Session Instructions", new InstructionTemplatesPanel(templates, this::refreshTemplates));
         return nested;
@@ -320,7 +334,6 @@ public class SessionPickerDialog extends JDialog {
         }
         typeSettingsPanel = (AiSessionCreateSettingsPanel) type.getSettingsCreator().createSettingsPanel();
         AiSessionSettings defaults = type.createDefaultSettings();
-        defaults.applyDefaultSettingsFromGlobal();
         type.getSettingsCreator().applyDefaultSettingsFromGlobal(defaults);
         typeSettingsPanel.load(defaults);
         typeSettingsPanel.startLoading();
@@ -404,21 +417,260 @@ public class SessionPickerDialog extends JDialog {
     }
 
     private void refreshTemplates() {
-        Object config = configCombo.getSelectedItem(), instruction = instructionsCombo.getSelectedItem();
-        configCombo.removeAllItems();
-        configCombo.addItem(null);
-        instructionsCombo.removeAllItems();
-        instructionsCombo.addItem(null);
+        long epoch = ++templateLoadEpoch;
+        templatesLoading = true;
+        setCreateEnabled(false);
+        String selectedConfigId = configCombo.getSelectedItem() instanceof ConfigTemplate value ? value.id() : null;
+        String selectedMcpId = mcpTemplateCombo.getSelectedItem() instanceof McpTemplate value ? value.id() : null;
+        String selectedInstructionId = instructionsCombo.getSelectedItem() instanceof SpecialInstructionTemplate value ? value.id() : null;
+        CompletableFuture<TemplateData> load;
         try {
-            templates.saveConfigDefaultsIfEmpty().forEach(configCombo::addItem);
-            templates.saveSpecialInstructionDefaultsIfEmpty().forEach(instructionsCombo::addItem);
+            load = CompletableFuture.supplyAsync(() -> loadTemplateData(templates, mcpTemplates), SessionPickerOperations.executor());
         }
-        catch (IOException e) {
-            LOG.log(Level.WARNING, "Could not load templates", e);
+        catch (RejectedExecutionException ex) {
+            // The shared pool was retired (plugin shutdown). Report it exactly like any other load failure rather
+            // than letting it escape refreshTemplates() as an unchecked throwable.
+            load = CompletableFuture.failedFuture(new java.util.concurrent.CompletionException(ex));
         }
-        configCombo.setSelectedItem(config);
-        instructionsCombo.setSelectedItem(instruction);
-        updateInstructionInjectionControl();
+        load.whenComplete((data, error) -> SwingUtilities.invokeLater(() -> {
+            if (epoch != templateLoadEpoch || disposed) {
+                return;
+            }
+            templatesLoading = false;
+            configCombo.removeAllItems();
+            mcpTemplateCombo.removeAllItems();
+            instructionsCombo.removeAllItems();
+            instructionsCombo.addItem(null);
+            if (data != null) {
+                populate(configCombo, data.configs(), ConfigTemplate::isDefault, ConfigTemplate::name);
+                populate(mcpTemplateCombo, data.mcps(), McpTemplate::isDefault, McpTemplate::name);
+                data.instructions().forEach(instructionsCombo::addItem);
+            }
+            selectTemplateById(configCombo, selectedConfigId);
+            selectTemplateById(mcpTemplateCombo, selectedMcpId);
+            selectInstructionById(selectedInstructionId);
+            updateInstructionInjectionControl();
+            if (error != null) {
+                Throwable cause = error instanceof java.util.concurrent.CompletionException && error.getCause() != null
+                                  ? error.getCause() : error;
+                LOG.log(Level.WARNING, "Could not load templates", cause);
+                JOptionPane.showMessageDialog(this, "Could not load templates: " + cause.getMessage(),
+                                              "Templates", JOptionPane.ERROR_MESSAGE);
+            }
+            else if (data != null && !data.failures().isEmpty()) {
+                String details = data.failures().stream()
+                        .map(failure -> failure.store().label() + ": " + failure.message())
+                        .reduce((a, b) -> a + "\n" + b).orElse("");
+                JOptionPane.showMessageDialog(this,
+                                              "Could not load the following template store(s), which are shown with "
+                                              + "their defaults instead:\n" + details,
+                                              "Templates", JOptionPane.WARNING_MESSAGE);
+            }
+            // Only an empty config or MCP list disables Create: a failed instruction store does not, and neither
+            // does a failed config/MCP store, whose combo falls back to a single in-memory Default below.
+            setCreateEnabled(configCombo.getItemCount() > 0 && mcpTemplateCombo.getItemCount() > 0);
+        }));
+    }
+
+    /**
+     * Loads the three template stores independently, so a failure in one leaves the others usable. A store that fails
+     * is reported in {@link TemplateData#failures()}, and the config/MCP lists carry a single in-memory Default so the
+     * combo is never empty and Create is enabled. A failure never empties a combo it did not touch.
+     * <p>
+     * Static and package-private so it can be tested without a dialog. Does blocking file I/O: call it off the EDT.
+     */
+    static TemplateData loadTemplateData(TemplatePersistenceManager templates, McpTemplatePersistenceManager mcpTemplates) {
+        List<ConfigTemplate> configs;
+        List<McpTemplate> mcps;
+        List<SpecialInstructionTemplate> instructions;
+        List<StoreFailure> failures = new ArrayList<>();
+        try {
+            configs = templates.saveConfigDefaultsIfEmpty();
+        }
+        catch (IOException ex) {
+            LOG.log(Level.WARNING, "Could not load the config template store", ex);
+            failures.add(new StoreFailure(TemplateStoreEnum.CONFIG, reasonOf(ex)));
+            configs = List.of(inMemoryDefaultConfig());
+        }
+        try {
+            mcps = mcpTemplates.loadMcpTemplates();
+        }
+        catch (IOException ex) {
+            LOG.log(Level.WARNING, "Could not load the MCP template store", ex);
+            failures.add(new StoreFailure(TemplateStoreEnum.MCP, reasonOf(ex)));
+            mcps = List.of(inMemoryDefaultMcp());
+        }
+        try {
+            instructions = templates.saveSpecialInstructionDefaultsIfEmpty();
+        }
+        catch (IOException ex) {
+            LOG.log(Level.WARNING, "Could not load the instruction template store", ex);
+            failures.add(new StoreFailure(TemplateStoreEnum.INSTRUCTION, reasonOf(ex)));
+            instructions = List.of();
+        }
+        return new TemplateData(configs, mcps, instructions, List.copyOf(failures));
+    }
+
+    /**
+     * An in-memory Default config template for the picker's fallback when the store cannot be read: seeded from the
+     * effective global settings, exactly as {@code TemplatePersistenceManager} seeds a fresh store, and never written.
+     */
+    private static ConfigTemplate inMemoryDefaultConfig() {
+        AiSessionSettings settings = new AiSessionSettings();
+        settings.applyDefaultSettingsFromGlobal();
+        return ConfigTemplate.createDefault(settings);
+    }
+
+    /**
+     * The MCP picker's fallback when the MCP store cannot be read: the Default derived from the legacy settings, which
+     * is what the store itself would seed, and never written.
+     */
+    static McpTemplate inMemoryDefaultMcp() {
+        return McpTemplate.createDefault(LegacyToolGroups.derive(null));
+    }
+
+    private static String reasonOf(IOException ex) {
+        String message = ex.getMessage();
+        return message != null && !message.isBlank() ? message : ex.getClass().getSimpleName();
+    }
+
+    private static <T> void populate(JComboBox<T> combo, List<T> items,
+                                     java.util.function.Predicate<T> isDefault,
+                                     java.util.function.Function<T, String> nameOf) {
+        items.stream()
+                .sorted(Comparator.comparing((T item) -> isDefault.test(item)).reversed()
+                        .thenComparing(nameOf, String.CASE_INSENSITIVE_ORDER))
+                .forEach(combo::addItem);
+    }
+
+    private void selectTemplateById(JComboBox<?> combo, String id) {
+        if (id != null) {
+            for (int i = 0; i < combo.getItemCount(); i++) {
+                Object value = combo.getItemAt(i);
+                if (value instanceof ConfigTemplate config && id.equals(config.id())
+                        || value instanceof McpTemplate mcp && id.equals(mcp.id())) {
+                    combo.setSelectedIndex(i);
+                    return;
+                }
+            }
+        }
+        if (combo.getItemCount() > 0) {
+            combo.setSelectedIndex(0);
+        }
+    }
+
+    private void selectInstructionById(String id) {
+        if (id != null) {
+            for (int i = 0; i < instructionsCombo.getItemCount(); i++) {
+                SpecialInstructionTemplate value = (SpecialInstructionTemplate) instructionsCombo.getItemAt(i);
+                if (value != null && id.equals(value.id())) {
+                    instructionsCombo.setSelectedIndex(i);
+                    return;
+                }
+            }
+        }
+        instructionsCombo.setSelectedIndex(0);
+    }
+
+    /**
+     * The outcome of {@link #loadTemplateData}: three independently-loaded lists and the stores that failed. A failing
+     * store leaves its list usable rather than null.
+     */
+    record TemplateData(List<ConfigTemplate> configs,
+                        List<McpTemplate> mcps,
+                        List<SpecialInstructionTemplate> instructions,
+                        List<StoreFailure> failures) {
+
+    }
+
+    /**
+     * One template store that could not be read, with the reason it gave.
+     */
+    record StoreFailure(TemplateStoreEnum store, String message) {
+
+    }
+
+    /**
+     * The three template stores, named so a failure can say which one it was.
+     */
+    enum TemplateStoreEnum {
+        CONFIG("Config"),
+        MCP("MCP"),
+        INSTRUCTION("Session Instructions");
+
+        private final String label;
+
+        TemplateStoreEnum(String label) {
+            this.label = label;
+        }
+
+        String label() {
+            return label;
+        }
+    }
+
+    /**
+     * Renders a template combo, appending " (n)" to a name shared by more than one entry, mirroring
+     * {@code McpToolSettingsPanel.templateChoices}: two templates can legitimately carry the same name, and identical
+     * labels in a combo are indistinguishable. The suffix is the entry's 1-based position among same-named entries, in
+     * combo order — the combo is sorted Default-first then by name, so the order (and the suffix) is stable.
+     */
+    private static final class DuplicateAwareTemplateRenderer<T> extends DefaultListCellRenderer {
+
+        private final JComboBox<T> combo;
+        private final java.util.function.Function<T, String> nameOf;
+        private final String empty;
+
+        DuplicateAwareTemplateRenderer(JComboBox<T> combo, java.util.function.Function<T, String> nameOf, String empty) {
+            this.combo = combo;
+            this.nameOf = nameOf;
+            this.empty = empty;
+        }
+
+        @Override
+        @SuppressWarnings("unchecked")
+        public Component getListCellRendererComponent(JList<?> list, Object value, int index, boolean selected, boolean focus) {
+            super.getListCellRendererComponent(list, value, index, selected, focus);
+            setText(value == null ? empty : label((T) value));
+            return this;
+        }
+
+        private String label(T value) {
+            String name = nameOf.apply(value);
+            List<String> names = new ArrayList<>();
+            int position = 0;
+            for (int i = 0; i < combo.getItemCount(); i++) {
+                T candidate = combo.getItemAt(i);
+                if (candidate != null) {
+                    names.add(nameOf.apply(candidate));
+                    if (candidate == value) {
+                        position = names.size();
+                    }
+                }
+            }
+            return duplicateLabel(name, names, position);
+        }
+    }
+
+    /**
+     * The display label for the entry at {@code position} (1-based) in {@code names}: the bare name when it is unique,
+     * otherwise " (n)" appended so same-named entries are distinguishable. Mirrors
+     * {@code McpToolSettingsPanel.templateChoices}. Package-private and static so it can be tested without a combo.
+     */
+    static String duplicateLabel(String name, List<String> names, int position) {
+        long total = names.stream().filter(name::equals).count();
+        return total > 1 ? name + " (" + position + ")" : name;
+    }
+
+    static void applyTemplates(AiSession session, ConfigTemplate config, McpTemplate mcpTemplate) {
+        if (config == null) {
+            throw new IllegalArgumentException("A config template is required");
+        }
+        if (mcpTemplate == null) {
+            throw new IllegalArgumentException("An MCP template is required");
+        }
+        config.applyTo(session.settings());
+        session.settings().setMcpToolConfig(mcpTemplate.config());
     }
 
     private void onCreateNew() {
@@ -431,9 +683,31 @@ public class SessionPickerDialog extends JDialog {
         }
         PluginSettings.setLastSessionAiType(type);
         ConfigTemplate config = (ConfigTemplate) configCombo.getSelectedItem();
+        if (config == null) {
+            try {
+                config = templates.getDefault();
+            }
+            catch (IOException e) {
+                LOG.log(Level.WARNING, "Could not load the default config template", e);
+                JOptionPane.showMessageDialog(this, "Could not load the default config template: " + e.getMessage(),
+                                              "Create session", JOptionPane.ERROR_MESSAGE);
+                return;
+            }
+        }
+        McpTemplate mcpTemplate = (McpTemplate) mcpTemplateCombo.getSelectedItem();
+        if (mcpTemplate == null) {
+            try {
+                mcpTemplate = mcpTemplates.getDefault();
+            }
+            catch (IOException e) {
+                LOG.log(Level.WARNING, "Could not load the default MCP template", e);
+                JOptionPane.showMessageDialog(this, "Could not load the default MCP template: " + e.getMessage(),
+                                              "Create session", JOptionPane.ERROR_MESSAGE);
+                return;
+            }
+        }
         SpecialInstructionTemplate instruction = (SpecialInstructionTemplate) instructionsCombo.getSelectedItem();
         AiSessionSettings typeSettingsSnapshot = type.createDefaultSettings();
-        typeSettingsSnapshot.applyDefaultSettingsFromGlobal();
         type.getSettingsCreator().applyDefaultSettingsFromGlobal(typeSettingsSnapshot);
         if (typeSettingsPanel != null) {
             typeSettingsPanel.applyTo(typeSettingsSnapshot);
@@ -447,9 +721,7 @@ public class SessionPickerDialog extends JDialog {
         for (int i = 1; i <= count; i++) {
             AiSession session = AiSession.create(project, type).withName(count == 1 ? baseName : baseName + "_" + i);
             type.getSettingsCreator().update(session.settings(), typeSettingsJson);
-            if (config != null) {
-                config.applyTo(session.settings());
-            }
+            applyTemplates(session, config, mcpTemplate);
             if (instruction != null) {
                 session.settings().setSessionInstructions(instruction.body());
             }
@@ -474,12 +746,13 @@ public class SessionPickerDialog extends JDialog {
     }
 
     private void setCreateEnabled(boolean enabled) {
-        createButton.setEnabled(enabled);
+        createButton.setEnabled(enabled && !templatesLoading);
         nameField.setEnabled(enabled);
         countSpinner.setEnabled(enabled);
         projectCombo.setEnabled(enabled);
         aiTypeCombo.setEnabled(enabled);
         configCombo.setEnabled(enabled);
+        mcpTemplateCombo.setEnabled(enabled);
         instructionsCombo.setEnabled(enabled);
         injectOnCreate.setEnabled(enabled && instructionsCombo.getSelectedItem() != null);
     }
@@ -601,6 +874,8 @@ public class SessionPickerDialog extends JDialog {
 
     @Override
     public void dispose() {
+        disposed = true;
+        ++templateLoadEpoch;
         DialogBounds.remember(DIALOG_BOUNDS_KEY, this);
         OpenProjects.getDefault().removePropertyChangeListener(openProjectsListener);
         if (typeSettingsPanel != null) {

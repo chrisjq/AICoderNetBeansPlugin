@@ -7,6 +7,7 @@ import kiwi.ingenuity.netbeans.plugin.aicoder.process.McpArgumentException;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.McpToolEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.server.McpToolInvoker;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.session.AbstractAiSession;
+import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.exposure.McpToolAccess;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.McpToolInterface;
 
 public class OllamaMcpBridge extends AbstractMcpBridge {
@@ -30,6 +31,9 @@ public class OllamaMcpBridge extends AbstractMcpBridge {
         McpToolInterface handler = session.getMcpToolHandlers().get(tool);
         if (handler == null) {
             return "Error: unhandled tool: " + toolName;
+        }
+        if (!McpToolAccess.isToolEnabled(session.getSettings(), tool, handler)) {
+            return "Error: " + McpToolAccess.unavailableMessage(session.getSettings(), tool, handler);
         }
         try {
             return McpToolInvoker.invoke(tool, handler, argsWithAuth, session);

@@ -21,6 +21,7 @@ class PiAiMcpRegistrarTest {
 
     private String sessionId;
     private String otherSessionId;
+    private String routingId;
 
     @BeforeEach
     void setUp() {
@@ -28,6 +29,7 @@ class PiAiMcpRegistrarTest {
         McpServerRegistry.portOverride = 0;
         sessionId = "pi-mcp-registrar-test-" + UUID.randomUUID();
         otherSessionId = "pi-mcp-registrar-test-other-" + UUID.randomUUID();
+        routingId = "routing-" + UUID.randomUUID();
     }
 
     @AfterEach
@@ -40,7 +42,7 @@ class PiAiMcpRegistrarTest {
 
     @Test
     void constructorExposesSessionIdAiTypeAndExecutablePath() {
-        PiAiMcpRegistrar registrar = new PiAiMcpRegistrar(sessionId, "/usr/local/bin/pi");
+        PiAiMcpRegistrar registrar = new PiAiMcpRegistrar(sessionId, "/usr/local/bin/pi", routingId);
         assertEquals(sessionId, registrar.getSessionId());
         assertEquals(AiTypeEnum.PI, registrar.getAiType());
         assertEquals("/usr/local/bin/pi", registrar.getExecutablePath());
@@ -48,25 +50,19 @@ class PiAiMcpRegistrarTest {
 
     @Test
     void registerHooksAlwaysSucceeds() {
-        PiAiMcpRegistrar registrar = new PiAiMcpRegistrar(sessionId, "/usr/local/bin/pi");
+        PiAiMcpRegistrar registrar = new PiAiMcpRegistrar(sessionId, "/usr/local/bin/pi", routingId);
         assertTrue(registrar.registerHooks("http://127.0.0.1:1"));
     }
 
     @Test
-    void addMcpEndpointDoesNotThrow() {
-        PiAiMcpRegistrar registrar = new PiAiMcpRegistrar(sessionId, "/usr/local/bin/pi");
-        registrar.addMcpEndpoint("http://127.0.0.1:1/mcp/pi"); // must not throw
-    }
-
-    @Test
     void getExtensionFilePath_isNullWhenTheSharedMcpServerIsNotRunning() {
-        PiAiMcpRegistrar registrar = new PiAiMcpRegistrar(sessionId, "/usr/local/bin/pi");
+        PiAiMcpRegistrar registrar = new PiAiMcpRegistrar(sessionId, "/usr/local/bin/pi", routingId);
         assertNull(registrar.getExtensionFilePath());
     }
 
     @Test
     void getExtensionFilePath_generatesTheFileOnceTheSharedServerIsUp() throws Exception {
-        PiAiMcpRegistrar registrar = new PiAiMcpRegistrar(sessionId, "/usr/local/bin/pi");
+        PiAiMcpRegistrar registrar = new PiAiMcpRegistrar(sessionId, "/usr/local/bin/pi", routingId);
         assertTrue(McpServerRegistry.register(registrar).get(5, TimeUnit.SECONDS));
 
         String path = registrar.getExtensionFilePath();
@@ -78,8 +74,19 @@ class PiAiMcpRegistrarTest {
     }
 
     @Test
+    void getExtensionFilePath_pointsPiAtThisSessionsAddressedEndpoint() throws Exception {
+        PiAiMcpRegistrar registrar = new PiAiMcpRegistrar(sessionId, "/usr/local/bin/pi", routingId);
+        assertTrue(McpServerRegistry.register(registrar).get(5, TimeUnit.SECONDS));
+
+        String content = Files.readString(Path.of(registrar.getExtensionFilePath()));
+
+        assertTrue(content.contains("/mcp/pi/" + routingId),
+                   "the generated extension must carry the session-addressed MCP URL, not the shared /mcp/pi one");
+    }
+
+    @Test
     void getExtensionFilePath_isMemoizedAcrossCalls() throws Exception {
-        PiAiMcpRegistrar registrar = new PiAiMcpRegistrar(sessionId, "/usr/local/bin/pi");
+        PiAiMcpRegistrar registrar = new PiAiMcpRegistrar(sessionId, "/usr/local/bin/pi", routingId);
         assertTrue(McpServerRegistry.register(registrar).get(5, TimeUnit.SECONDS));
 
         String first = registrar.getExtensionFilePath();
@@ -90,7 +97,7 @@ class PiAiMcpRegistrarTest {
 
     @Test
     void unregisterHooks_deletesThisInstancesOwnFile() throws Exception {
-        PiAiMcpRegistrar registrar = new PiAiMcpRegistrar(sessionId, "/usr/local/bin/pi");
+        PiAiMcpRegistrar registrar = new PiAiMcpRegistrar(sessionId, "/usr/local/bin/pi", routingId);
         assertTrue(McpServerRegistry.register(registrar).get(5, TimeUnit.SECONDS));
         Path written = Path.of(registrar.getExtensionFilePath());
         assertTrue(Files.exists(written));
@@ -102,7 +109,7 @@ class PiAiMcpRegistrarTest {
 
     @Test
     void removeMcpEndpoint_alsoDeletesTheExtensionFile() throws Exception {
-        PiAiMcpRegistrar registrar = new PiAiMcpRegistrar(sessionId, "/usr/local/bin/pi");
+        PiAiMcpRegistrar registrar = new PiAiMcpRegistrar(sessionId, "/usr/local/bin/pi", routingId);
         assertTrue(McpServerRegistry.register(registrar).get(5, TimeUnit.SECONDS));
         Path written = Path.of(registrar.getExtensionFilePath());
         assertTrue(Files.exists(written));
@@ -113,16 +120,15 @@ class PiAiMcpRegistrarTest {
     }
 
     /**
-     * The scenario {@code PiAiProcessManager} relies on: with several pi sessions open, calling THIS
-     * registrar's {@link PiAiMcpRegistrar#deleteExtensionFile()} directly (not via the type-gated
-     * {@code registerHooks}/{@code unregisterHooks} framework callbacks) removes only its own session's file,
-     * leaving a sibling session's file untouched — see the class javadoc's "closing one removes only its
-     * file" requirement.
+     * The scenario {@code PiAiProcessManager} relies on: with several pi sessions open, calling THIS registrar's
+     * {@link PiAiMcpRegistrar#deleteExtensionFile()} directly (not via the type-gated
+     * {@code registerHooks}/{@code unregisterHooks} framework callbacks) removes only its own session's file, leaving a
+     * sibling session's file untouched — see the class javadoc's "closing one removes only its file" requirement.
      */
     @Test
     void deleteExtensionFile_removesOnlyItsOwnSessionsFile() throws Exception {
-        PiAiMcpRegistrar mine = new PiAiMcpRegistrar(sessionId, "/usr/local/bin/pi");
-        PiAiMcpRegistrar other = new PiAiMcpRegistrar(otherSessionId, "/usr/local/bin/pi");
+        PiAiMcpRegistrar mine = new PiAiMcpRegistrar(sessionId, "/usr/local/bin/pi", routingId);
+        PiAiMcpRegistrar other = new PiAiMcpRegistrar(otherSessionId, "/usr/local/bin/pi", routingId);
         assertTrue(McpServerRegistry.register(mine).get(5, TimeUnit.SECONDS));
         assertTrue(McpServerRegistry.register(other).get(5, TimeUnit.SECONDS));
         Path myFile = Path.of(mine.getExtensionFilePath());
@@ -138,7 +144,7 @@ class PiAiMcpRegistrarTest {
 
     @Test
     void deleteExtensionFile_isIdempotentAndNeverThrows() throws Exception {
-        PiAiMcpRegistrar registrar = new PiAiMcpRegistrar(sessionId, "/usr/local/bin/pi");
+        PiAiMcpRegistrar registrar = new PiAiMcpRegistrar(sessionId, "/usr/local/bin/pi", routingId);
         assertTrue(McpServerRegistry.register(registrar).get(5, TimeUnit.SECONDS));
         registrar.getExtensionFilePath();
 

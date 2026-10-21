@@ -12,23 +12,19 @@ import kiwi.ingenuity.netbeans.plugin.aicoder.AccessControlLabelEnum;
 
 public final class AiMessagingSettingsPanel extends JPanel {
 
-    private static String label(AccessControlLabelEnum label, boolean sessionMode) {
-        return sessionMode ? label.displayLabel() : label.globalLabel();
-    }
-
     private final JCheckBox allowInterAiCheckBox = new JCheckBox();
     private final JCheckBox autoNotifyInboxCheckBox = new JCheckBox();
     private final JCheckBox allowImportantMessagesCheckBox = new JCheckBox();
     private final JCheckBox allowIdleWatcherCheckBox = new JCheckBox();
 
-    public AiMessagingSettingsPanel(boolean sessionMode) {
+    public AiMessagingSettingsPanel() {
         setBorder(BorderFactory.createTitledBorder("AI Messaging"));
         setLayout(new GridBagLayout());
 
-        allowInterAiCheckBox.setText(label(AccessControlLabelEnum.ALLOW_INTER_AI_COMMS, sessionMode));
-        autoNotifyInboxCheckBox.setText(label(AccessControlLabelEnum.AUTO_NOTIFY_INBOX, sessionMode));
-        allowImportantMessagesCheckBox.setText(label(AccessControlLabelEnum.ALLOW_IMPORTANT_MESSAGES, sessionMode));
-        allowIdleWatcherCheckBox.setText(label(AccessControlLabelEnum.ALLOW_IDLE_WATCHER_TIMER, sessionMode));
+        allowInterAiCheckBox.setText(AccessControlLabelEnum.ALLOW_INTER_AI_COMMS.displayLabel());
+        autoNotifyInboxCheckBox.setText(AccessControlLabelEnum.AUTO_NOTIFY_INBOX.displayLabel());
+        allowImportantMessagesCheckBox.setText(AccessControlLabelEnum.ALLOW_IMPORTANT_MESSAGES.displayLabel());
+        allowIdleWatcherCheckBox.setText(AccessControlLabelEnum.ALLOW_IDLE_WATCHER_TIMER.displayLabel());
 
         addRow(allowInterAiCheckBox, 0, 0);
         addRow(autoNotifyInboxCheckBox, 1, 20);

@@ -30,7 +30,7 @@ public class ListIdleWatchersTool extends AbstractActionTool {
     @Override
     public String handle(ToolRequestArguments args, AbstractAiSession session) {
         if (session == null || !session.getAiSession().allowsIdleWatcherTimer()) {
-            return IdleWatcherTools.DISABLED_MESSAGE;
+            return IdleWatcherTools.disabledMessage(session);
         }
         List<IdleWatcherStatus> statuses = IdleWatcherRegistry.getInstance().list(session.getId());
         if (statuses.isEmpty()) {

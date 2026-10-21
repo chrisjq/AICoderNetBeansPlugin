@@ -65,13 +65,12 @@ public class OpenCodeAiProcessManager extends AbstractAcpProcessManager {
      * ends, which is the one thing that would have made it worth doing.
      *
      * <p>
-     * Tested on opencode 1.18.23 four ways: a blocking POST with a 5 s bound (timed out, our own timeout
-     * closing the connection), the same with a long bound, asynchronous fire-and-forget, and finally a
-     * three-phase task with checkpoints after each phase to rule out "the turn was too short to cross a
-     * promotion boundary". In every case the peer reported the message arriving only after the whole turn
-     * finished. {@code POST …/prompt} waits on the running turn regardless of {@code delivery}; the sibling
-     * {@code /session/…/prompt_async} returns immediately but its schema has no {@code delivery} field at
-     * all, so it cannot steer.
+     * Tested on opencode 1.18.23 four ways: a blocking POST with a 5 s bound (timed out, our own timeout closing the
+     * connection), the same with a long bound, asynchronous fire-and-forget, and finally a three-phase task with
+     * checkpoints after each phase to rule out "the turn was too short to cross a promotion boundary". In every case
+     * the peer reported the message arriving only after the whole turn finished. {@code POST …/prompt} waits on the
+     * running turn regardless of {@code delivery}; the sibling {@code /session/…/prompt_async} returns immediately but
+     * its schema has no {@code delivery} field at all, so it cannot steer.
      *
      * <p>
      * Left in rather than deleted so it can be re-tested cheaply against a future opencode: set this true, rebuild, and
@@ -285,15 +284,9 @@ public class OpenCodeAiProcessManager extends AbstractAcpProcessManager {
             if (ok) {
                 registrar = reg;
             }
-            else {
-                listener.onAiProcessEvent(new StatusEvent(StatusEventTypeEnum.INFO,
-                        "MCP server registration returned false — running without MCP tools"));
-            }
         }
         catch (Exception e) {
             LOG.log(Level.WARNING, "MCP server registration failed; running without MCP tools", e);
-            listener.onAiProcessEvent(new StatusEvent(StatusEventTypeEnum.INFO,
-                    "MCP server unavailable — running without MCP tools"));
         }
 
         if (PluginSettings.isDebugJson()) {
@@ -407,9 +400,11 @@ public class OpenCodeAiProcessManager extends AbstractAcpProcessManager {
                 throw new IOException("Unsupported ACP protocol version: " + proto + " (expected 1)");
             }
             // ---- Blocking wait 2: session/resume (if stored) or session/new ----
-            // Use the registry's single source of truth for the endpoint URL — correct for all sessions,
-            // not just the first (the registrar only receives addMcpEndpoint on the first of its type).
-            String mcpBaseUrl = McpServerRegistry.endpointUrlFor(AiTypeEnum.OPENCODE);
+            // An endpoint is valid only after this session's registrar was registered.
+            String mcpBaseUrl = registrar != null
+                                ? McpServerRegistry.endpointUrlFor(AiTypeEnum.OPENCODE,
+                                                                   currentSession.settings().ensureMcpRoutingId()) : null;
+            reportMcpUnavailableIfNeeded(mcpBaseUrl, "OpenCode");
             String resumeId = pendingAcpResumeId;
             JsonObject sessionResult = null;
             boolean resumed = false;

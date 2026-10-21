@@ -3,6 +3,7 @@ package kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.system;
 import com.google.gson.JsonObject;
 import java.time.Instant;
 import java.util.Map;
+import java.util.Set;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.AiTypeEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.session.AiSession;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.settings.AiSessionSettings;
@@ -10,6 +11,8 @@ import kiwi.ingenuity.netbeans.plugin.aicoder.process.McpArgumentException;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.McpToolEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.events.AiProcessEventListener;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.session.AbstractAiSession;
+import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.exposure.McpToolConfig;
+import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.exposure.McpToolGroupEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.McpToolInterface;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.ToolRequestArguments;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.ToolSchemaKeyEnum;
@@ -44,6 +47,35 @@ class GetClipboardToolTest {
                                                                  new FakeSession(SESSION_ID, settings)));
         assertEquals(-32602, ex.getCode(), "a disabled clipboard must be an invalid-argument refusal");
         assertTrue(ex.getMessage().contains("disabled"), ex.getMessage());
+    }
+
+    @Test
+    void anMcpLayerRefusalNamesTheToolGroupEvenWhileTheConfigSettingIsOn() {
+        AiSessionSettings settings = new AiSessionSettings();
+        settings.setEnableClipboardAccess(true);
+        settings.setMcpToolConfig(McpToolConfig.withDisabled(Set.of(McpToolGroupEnum.CLIPBOARD)));
+        GetClipboardTool tool = new GetClipboardTool();
+
+        McpArgumentException ex = assertThrows(McpArgumentException.class,
+                                               () -> tool.handle(new ToolRequestArguments(new JsonObject()),
+                                                                 new FakeSession(SESSION_ID, settings)));
+        assertTrue(ex.getMessage().contains("The 'Clipboard' tool group is switched off for this session"),
+                   ex.getMessage());
+    }
+
+    @Test
+    void aConfigLayerRefusalUnderAnEnabledMcpGroupKeepsTheConfigText() {
+        AiSessionSettings settings = new AiSessionSettings();
+        settings.setMcpToolConfig(McpToolConfig.ALL_ENABLED);
+        settings.setEnableClipboardAccess(false);
+        GetClipboardTool tool = new GetClipboardTool();
+
+        McpArgumentException ex = assertThrows(McpArgumentException.class,
+                                               () -> tool.handle(new ToolRequestArguments(new JsonObject()),
+                                                                 new FakeSession(SESSION_ID, settings)));
+        assertEquals("Clipboard access is disabled for this session. Ask the user to enable "
+                + "'Allow clipboard access' in this session's settings (MCP Tools → Clipboard) before retrying.",
+                     ex.getMessage());
     }
 
     private static final class FakeSession extends AbstractAiSession {

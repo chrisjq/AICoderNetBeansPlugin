@@ -12,6 +12,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Collection;
 import java.util.Collections;
 import java.util.IdentityHashMap;
 import java.util.LinkedHashMap;
@@ -19,14 +20,17 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
+import java.util.UUID;
 import java.util.concurrent.CancellationException;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.ThreadLocalRandom;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Consumer;
 import java.util.logging.Level;
 import java.util.logging.Logger;
@@ -91,10 +95,17 @@ import kiwi.ingenuity.netbeans.plugin.aicoder.process.events.AiProcessEvent;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.events.AiProcessEventListener;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.events.AiProcessImplEvent;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.server.McpHookServer;
+import kiwi.ingenuity.netbeans.plugin.aicoder.process.server.McpInstructionRegistry;
+import kiwi.ingenuity.netbeans.plugin.aicoder.process.session.AbstractAiSession;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tempfile.TempFileRegistry;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tempfile.TmpMarkerExpander;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.TimeoutEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.build.BuildQueue;
+import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.exposure.HiddenToolTextFilter;
+import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.exposure.McpToolAccess;
+import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.exposure.McpToolFirstStartConfig;
+import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.exposure.McpToolRestartFlow;
+import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.McpToolInterface;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.providers.netbeans.FileUtils;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.providers.netbeans.RefactoringProvider;
 import kiwi.ingenuity.netbeans.plugin.aicoder.serialization.HistoryPersistenceManager;
@@ -189,8 +200,19 @@ public final class AiTopComponent extends TopComponent implements AiProcessEvent
             + "A tool call that was running when the message arrived is normally allowed to finish first, so a result "
             + "you received is real. If a tool call is instead reported to you as rejected, cancelled or \"the user "
             + "doesn't want to proceed\", it was aborted by this incoming message and its outcome is UNKNOWN: it may "
-            + "already have taken effect. Check its effect (re-read the file, " + McpToolEnum.LIST_BUILDS.toolName() + ", " + McpToolEnum.PEER_MESSAGE_LIST.toolName() + ", " + McpToolEnum.GET_GIT_STATUS.toolName() + "…) "
-            + "before repeating it. Then read your inbox and resume your work.";
+            + "already have taken effect. ";
+
+    static String interruptExplanation(Set<McpToolEnum> hidden) {
+        StringBuilder checkWith = new StringBuilder("re-read the file");
+        for (McpToolEnum tool : List.of(McpToolEnum.LIST_BUILDS, McpToolEnum.PEER_MESSAGE_LIST,
+                                        McpToolEnum.GET_GIT_STATUS)) {
+            if (!hidden.contains(tool)) {
+                checkWith.append(", ").append(tool.toolName());
+            }
+        }
+        return INBOX_INTERRUPT_EXPLANATION + "Check its effect (" + checkWith + "…) "
+                + "before repeating it. Then read your inbox and resume your work.";
+    }
     /**
      * @param userInitiated false when the plugin submits a turn on the user's behalf — currently the
      * queued-inbox-notification flush at turn end. Only the auto-scroll decision depends on it: a turn the user did not
@@ -414,8 +436,31 @@ public final class AiTopComponent extends TopComponent implements AiProcessEvent
     private boolean backendBusy = false;
 
     /**
-     * The session clock starts on the FIRST READY only. READY also closes non-turn work (a compaction) — and
-     * pi used to send it after every turn — so restarting the clock on every READY reset it mid-session.
+     * The backend start that is still running, if any. A second {@link #startAiProcess()} while it is incomplete joins
+     * it rather than launching another start, which would race the first one's history load and — for a backend whose
+     * start() stops the previous process — kill the process carrying the conversation. A tool-change restart also waits
+     * for it, since stopping a backend that is only just starting would leave nothing to start it again.
+     */
+    private final StartInFlight startFlight = new StartInFlight();
+
+    /**
+     * Bumped when the tab closes. A start launched earlier checks it before it spawns and again before it reports back,
+     * so a tab closed while its backend was starting (or restarting) cannot leave a process and an MCP route behind.
+     */
+    private volatile int lifecycleGeneration = 0;
+
+    /**
+     * Applies a tool-set change that needs the backend process restarted, but never mid-turn: asked while busy, it
+     * waits and runs from the first idle point after the turn (or other work) ends. See
+     * {@link #restartBackendForToolChange}.
+     */
+    private final DeferredRestart toolRestart = new DeferredRestart(
+            () -> backendBusy || startFlight.isInFlight() || (aiBackend != null && aiBackend.isBusy()),
+            this::restartBackendForToolChange);
+
+    /**
+     * The session clock starts on the FIRST READY only. READY also closes non-turn work (a compaction) — and pi used to
+     * send it after every turn — so restarting the clock on every READY reset it mid-session.
      */
     private boolean sessionClockStarted = false;
 
@@ -504,6 +549,10 @@ public final class AiTopComponent extends TopComponent implements AiProcessEvent
         setLayout(new BorderLayout());
 
         conversationPanel = new ConversationPanel();
+        // The transcript is capped by THIS session's Max history (session setting, else the legacy global fallback), read
+        // per message so a change in the session dialog applies without reopening the tab.
+        conversationPanel.setHistoryCap(() -> session.settings() != null
+                                              ? session.settings().effectiveMaxHistory() : PluginSettings.getMaxHistory());
         promptHistory = new PromptHistory();
         infoBar = new AiInfoBar();
         inputField = new AiInputField(promptHistory, session);
@@ -670,10 +719,10 @@ public final class AiTopComponent extends TopComponent implements AiProcessEvent
     }
 
     /**
-     * Label for a confirm notification. Not every confirm is about a file: a shell command has no path at
-     * all, and rendering the absent one printed the literal string "null" to the user ("Execute: null —
-     * auto-accepted"), which says nothing about what was approved. Those events carry the subject in their
-     * display text instead — the command itself — so fall back to it.
+     * Label for a confirm notification. Not every confirm is about a file: a shell command has no path at all, and
+     * rendering the absent one printed the literal string "null" to the user ("Execute: null — auto-accepted"), which
+     * says nothing about what was approved. Those events carry the subject in their display text instead — the command
+     * itself — so fall back to it.
      */
     private String confirmLabel(ConfirmEvent ce) {
         return buildConfirmLabel(shortPath(ce.filePath()),
@@ -961,7 +1010,10 @@ public final class AiTopComponent extends TopComponent implements AiProcessEvent
         if (liveSession == null || liveSession.getMailDeliveryTiming() != MailDeliveryTimingEnum.ABORTS_TURN) {
             return null;
         }
-        return INBOX_INTERRUPT_EXPLANATION;
+        Map<McpToolEnum, McpToolInterface> all = liveSession.getMcpToolHandlers();
+        Set<McpToolEnum> hidden = HiddenToolTextFilter.hiddenFrom(
+                all, McpToolAccess.effectiveTools(liveSession.getSettings(), all));
+        return HiddenToolTextFilter.omitSentencesReferencing(interruptExplanation(hidden), hidden);
     }
 
     /**
@@ -1075,6 +1127,14 @@ public final class AiTopComponent extends TopComponent implements AiProcessEvent
         return hasFirst ? first : hasSecond ? second : null;
     }
 
+    /**
+     * A normal backend crash invalidates a queued payload, but a replacement backend crash during a tool-change restart
+     * must preserve it until the restart flow has reported that the conversation could not be resumed.
+     */
+    static boolean shouldClearPendingSubmitAfterBackendExit(boolean restartInFlight) {
+        return !restartInFlight;
+    }
+
     private void submitNotificationTurn(NotificationTypeEnum type, String notificationText) {
         submitNotificationTurn(type, notificationText, null);
     }
@@ -1122,6 +1182,10 @@ public final class AiTopComponent extends TopComponent implements AiProcessEvent
     }
 
     private void openSessionConfig() {
+        // The tools the AI can see, computed before the dialog: it applies its values to session.settings() in place on
+        // OK, and the inter-AI comms and idle-timer settings change the visible tools as well as the group switches.
+        Map<McpToolEnum, McpToolInterface> toolHandlers = McpInstructionRegistry.getHandlers(session.aiType());
+        Set<McpToolEnum> toolsBefore = McpToolRestartFlow.exposedTools(session.settings(), toolHandlers);
         kiwi.ingenuity.netbeans.plugin.aicoder.ai.ui.AiSessionSettingsDialog dlg
                 = kiwi.ingenuity.netbeans.plugin.aicoder.ai.ui.AiSessionSettingsDialog.show(session);
         if (dlg.getResultConfig() == null) {
@@ -1142,7 +1206,7 @@ public final class AiTopComponent extends TopComponent implements AiProcessEvent
         // session-EXIT path: it drains this session's inbox and falsely notifies
         // peers the session exited. register() is idempotent and preserves the
         // existing inbox, so only unregister when actually turning comms OFF.
-        boolean interAiOn = session.settings().effectiveAllowInterAiComms();
+        boolean interAiOn = session.allowsInterAiComms();
         AiSessionInboxBroker broker = AiSessionInboxBroker.getInstance();
         if (interAiOn) {
             broker.register(session);
@@ -1166,6 +1230,11 @@ public final class AiTopComponent extends TopComponent implements AiProcessEvent
         // scope map so file-tool permission changes take effect on the next tool
         // call, not only after the next user submit.
         refreshMcpSessionScope();
+        // Switching a group off is already enforced; switching one on only reaches the AI after a restart. Prompted here,
+        // once the dialog has closed and the settings are saved. Every non-Ollama backend resumes its conversation.
+        McpToolRestartFlow.onConfigChanged(session.aiType(), aiBackend != null && aiBackend.isRunning(), toolsBefore,
+                                           McpToolRestartFlow.exposedTools(session.settings(), toolHandlers),
+                                           toolRestart::request);
     }
 
     /**
@@ -1307,7 +1376,7 @@ public final class AiTopComponent extends TopComponent implements AiProcessEvent
             PERSIST_EXECUTOR.execute(() -> backendForListeners.registerLifecycleListeners(this));
         }
         SwingUtilities.invokeLater(() -> fireListenerEvent(SessionLifecycleListener::onSessionStarted));
-        if (session.settings() != null && session.settings().effectiveAllowInterAiComms()) {
+        if (session.allowsInterAiComms()) {
             AiSessionInboxBroker.getInstance().register(session);
         }
         refreshSessionIdentity();
@@ -1379,7 +1448,138 @@ public final class AiTopComponent extends TopComponent implements AiProcessEvent
         }
     }
 
+    /**
+     * Restarts the backend process so it picks up a changed tool set, resuming the same conversation. Reuses the
+     * open-from-history sequence: stop, start, then resume the stored session id once the start has completed. Only
+     * called through {@link #toolRestart}, so never mid-turn. A backend that is not running needs nothing — its next
+     * start already carries the new tools. EDT only.
+     */
+    private void restartBackendForToolChange() {
+        AiImplementation backend = aiBackend;
+        if (backend == null || !backend.isRunning()) {
+            return;
+        }
+        String resumeId = backend.getSessionId();
+        // From here until finishToolRestart the process is being replaced and the conversation is not yet resumed:
+        // input stays disabled and any submit is stashed, so nothing reaches the new process as a fresh conversation.
+        toolRestart.restartStarted();
+        refreshInputEnabled();
+        infoBar.setStatusMessage("Restarting " + session.aiType().displayName() + " to apply tool changes...");
+        try {
+            backend.stop();
+            startAiProcess().whenComplete((ignored, ex) -> SwingUtilities.invokeLater(
+                    () -> finishToolRestart(backend, resumeId, ex != null || !backend.isRunning())));
+        }
+        catch (RuntimeException e) {
+            LOG.log(Level.WARNING, "Restarting the backend for a tool change failed", e);
+            finishToolRestart(backend, null, true);
+        }
+    }
+
+    /**
+     * Second half of {@link #restartBackendForToolChange}, once the new process is up: resume the conversation FIRST,
+     * then replay whatever was stashed while the process was down. The order matters — a prompt sent before the resume
+     * goes out as a brand-new conversation and the history is lost.
+     * <p>
+     * When the restart {@code failed} there is no conversation to resume into, so nothing stashed is replayed: that
+     * would put the user's text into a fresh conversation. It stays stashed, and the user is told.
+     */
+    private void finishToolRestart(AiImplementation backend, String resumeId, boolean failed) {
+        try {
+            boolean restarted = failed ? toolRestart.restartFailed() : toolRestart.restartFinished(() -> {
+                if (aiBackend != backend) {
+                    return; // the tab was closed while restarting
+                }
+                if (resumeId == null || resumeId.isBlank()) {
+                    throw new IllegalStateException("No conversation id is available to resume after a tool-change restart");
+                }
+                backend.resumeSession(resumeId);
+                if (contextProvider != null) {
+                    contextProvider.resetSentContext();
+                }
+            }, () -> {
+                                                                                           });
+            if (aiBackend != backend) {
+                return;
+            }
+            refreshInputEnabled();
+            if (!restarted) {
+                boolean kept = pendingSubmitText != null || pendingSubmitAgentOnlyText != null;
+                String notice = "Restarting " + session.aiType().displayName() + " to apply tool changes failed."
+                        + (kept ? " Your message is kept and is sent when the session starts again." : "");
+                infoBar.setStatusMessage(notice);
+                conversationPanel.addSystemMessage(notice);
+            }
+            else if (pendingSubmitText != null || pendingSubmitAgentOnlyText != null) {
+                replayPendingSubmit();
+            }
+            else {
+                flushPendingNotifications();
+            }
+        }
+        finally {
+            // A tool change requested while this restart was in flight was only remembered; the restart counted as busy
+            // until now, so nothing else would run it before the next turn ends.
+            maybeRunDeferredToolRestart();
+        }
+    }
+
+    /**
+     * Sends what was stashed while the backend was down or restarting. Both halves are replayed: the one-argument form
+     * would drop a stashed build report or inbox block.
+     */
+    private void replayPendingSubmit() {
+        if (pendingSubmitText == null && pendingSubmitAgentOnlyText == null) {
+            return;
+        }
+        String queued = pendingSubmitText != null ? pendingSubmitText : "";
+        String queuedAgentOnly = pendingSubmitAgentOnlyText;
+        pendingSubmitText = null;
+        pendingSubmitAgentOnlyText = null;
+        handleSubmit(queued, false, queuedAgentOnly);
+    }
+
+    /**
+     * Gives a deferred tool restart its chances to run. Called wherever the session may have just gone idle; once now
+     * and once after the current event has finished, because a backend may clear its busy state only after it has
+     * emitted the event that brought us here.
+     */
+    private void maybeRunDeferredToolRestart() {
+        toolRestart.onMaybeIdle();
+        SwingUtilities.invokeLater(toolRestart::onMaybeIdle);
+    }
+
+    /**
+     * Gives {@code session} an MCP routing id that no other live session of the same type owns, generating one if it
+     * has none. The MCP server resolves a session endpoint by routing id, so two sessions sharing one would be served
+     * each other's tools. A clash can only come from duplicated session files or settings; the later session to start
+     * gets a fresh id. Sessions are compared by identity, so the session's own wrappers in {@code live} do not count.
+     *
+     * @return true if the session's settings changed and must be saved
+     */
+    static boolean claimUniqueMcpRoutingId(AiSession session, Collection<AbstractAiSession> live) {
+        AiSessionSettings settings = session.settings();
+        boolean generated = settings.mcpRoutingId() == null;
+        String id = settings.ensureMcpRoutingId();
+        boolean ownedByAnother = live.stream().anyMatch(other -> other.getAiSession() != session
+                && other.getType() == session.aiType()
+                && other.getSettings() != null
+                && id.equals(other.getSettings().mcpRoutingId()));
+        if (ownedByAnother) {
+            settings.setMcpRoutingId(UUID.randomUUID().toString());
+            return true;
+        }
+        return generated;
+    }
+
+    /**
+     * Starts the backend, or joins the start that is already running: see {@link #startFlight}. EDT only.
+     */
     private CompletableFuture<Void> startAiProcess() {
+        return startFlight.start(this::launchAiProcess);
+    }
+
+    private CompletableFuture<Void> launchAiProcess() {
         CompletableFuture<Void> ret = new CompletableFuture<>();
         if (!new AiTypeRegistry().getSettings(session.aiType()).enabled()) {
             String msg = session.aiType().displayName() + " is disabled — enable it in Tools > Options > Advanced > " + session.aiType().displayName();
@@ -1395,33 +1595,76 @@ public final class AiTopComponent extends TopComponent implements AiProcessEvent
             return ret;
         }
         if (aiBackend != null) {
+            boolean settingsChanged = McpToolFirstStartConfig.initialize(session.settings());
+            // Before the backend is handed its endpoint URL: the routing id must exist, be unique among the live
+            // sessions of this type, and be saved with the rest of the settings.
+            settingsChanged |= claimUniqueMcpRoutingId(session, SessionRegistry.allSessions());
+            if (settingsChanged) {
+                updateSessionSettings(session.settings());
+            }
             AiImplementation backend = aiBackend;
             backend.setCurrentSession(session);
             // startWithDiscovery() itself locates the CLI executable (PATH scan +
             // well-known-location stat calls) and, if missing, blocks on the
             // ExecutablePrompter dialog — all on the calling thread. Run the whole
             // call off the EDT so opening/creating a session never blocks the UI.
-            PERSIST_EXECUTOR.execute(() -> {
-                try {
-                    backend.startWithDiscovery(null);
-                }
-                finally {
-                    // Must run even if startWithDiscovery() throws — otherwise `ret`
-                    // never completes and loadHistoryInBackground()'s future.get()
-                    // blocks its PERSIST_EXECUTOR thread forever (pool is bounded and
-                    // shared with history load/save, so repeated failures exhaust it).
-                    SwingUtilities.invokeLater(() -> {
-                        refreshMcpSessionScope();
-                        backend.onStarted(AiTopComponent.this);
-                        ret.complete(null);
-                    });
-                }
-            });
+            final int generation = lifecycleGeneration;
+            AtomicReference<Throwable> startupFailure = new AtomicReference<>();
+            try {
+                PERSIST_EXECUTOR.execute(() -> {
+                    try {
+                        // A tab closed while this task was queued must not spawn a process nobody owns.
+                        if (generation == lifecycleGeneration) {
+                            backend.startWithDiscovery(null);
+                        }
+                    }
+                    catch (RuntimeException | Error e) {
+                        startupFailure.set(e);
+                    }
+                    finally {
+                        // Must run even if startWithDiscovery() throws — otherwise `ret`
+                        // never completes and loadHistoryInBackground()'s future.get()
+                        // blocks its PERSIST_EXECUTOR thread forever (pool is bounded and
+                        // shared with history load/save, so repeated failures exhaust it).
+                        SwingUtilities.invokeLater(() -> {
+                            if (generation != lifecycleGeneration) {
+                                // Closed while starting: componentClosed has already stopped and dropped the backend it
+                                // knew about, but this start may have finished after that. Stop what it left running.
+                                stopAbandonedBackend(backend);
+                                ret.complete(null);
+                                return;
+                            }
+                            Throwable failure = startupFailure.get();
+                            if (failure != null) {
+                                ret.completeExceptionally(failure);
+                                return;
+                            }
+                            refreshMcpSessionScope();
+                            backend.onStarted(AiTopComponent.this);
+                            ret.complete(null);
+                            // A tool change asked for during the start was only remembered; nothing else would run it.
+                            maybeRunDeferredToolRestart();
+                        });
+                    }
+                });
+            }
+            catch (RejectedExecutionException e) {
+                ret.completeExceptionally(e);
+            }
 
             return ret;
         }
         ret.complete(null);
         return ret;
+    }
+
+    private static void stopAbandonedBackend(AiImplementation backend) {
+        try {
+            backend.stop();
+        }
+        catch (RuntimeException e) {
+            LOG.log(Level.WARNING, "Error stopping a backend that finished starting after its tab was closed", e);
+        }
     }
 
     /**
@@ -1508,6 +1751,10 @@ public final class AiTopComponent extends TopComponent implements AiProcessEvent
 
     @Override
     public void componentClosed() {
+        // First, so a start or restart still running on the executor sees the tab is gone before it spawns or reports.
+        lifecycleGeneration++;
+        // A tool change waiting for the turn to end has no tab left to apply to.
+        toolRestart.cancel();
         drainPendingInteractions();
         try {
             BuildQueue.getInstance().cancelForSession(session.id());
@@ -1838,8 +2085,17 @@ public final class AiTopComponent extends TopComponent implements AiProcessEvent
                     leaveBusy();
                     infoBar.setStatusMessage("Ready...");
                     refreshInputEnabled();
+                    // A submit stashed while the backend was starting is replayed by READY, but a stash can also be
+                    // left behind here (e.g. it was made after that READY). Only when the session is truly idle and
+                    // not mid-restart, which has its own replay once the conversation is resumed.
+                    if (!toolRestart.isRestartInFlight() && aiBackend != null && aiBackend.isRunning()
+                            && (pendingSubmitText != null || pendingSubmitAgentOnlyText != null)) {
+                        replayPendingSubmit();
+                    }
                 }
             }
+            // Idle only if nothing queued took the session straight into another turn — backendBusy says so.
+            maybeRunDeferredToolRestart();
         }
         else if (event instanceof PolicyRefusalEvent refusalEvent) {
             // RECORDED, NEVER SHOWN: nothing is drawn, no status is set, nothing is added to history. It is consumed a
@@ -1944,7 +2200,9 @@ public final class AiTopComponent extends TopComponent implements AiProcessEvent
                         infoBar.startSessionClock();
                         sessionClockStarted = true;
                     }
-                    boolean closesWork = startupResolved;
+                    // Not while a tool-change restart is resuming the conversation: anything delivered now would reach
+                    // the new process as a fresh conversation. finishToolRestart flushes once it has resumed.
+                    boolean closesWork = startupResolved && !toolRestart.isRestartInFlight();
                     startupResolved = true;
                     leaveBusy();
                     // READY after startup closes non-turn work (a compaction). Mail that arrived meanwhile was held by
@@ -1959,13 +2217,10 @@ public final class AiTopComponent extends TopComponent implements AiProcessEvent
                     // Replay BOTH halves. Calling the one-argument form here would pass null agent-only text and
                     // discard a stashed build report or inbox block outright — the payload would have survived the
                     // restart only to be dropped on the way back in.
-                    if (pendingSubmitText != null || pendingSubmitAgentOnlyText != null) {
-                        String queued = pendingSubmitText != null ? pendingSubmitText : "";
-                        String queuedAgentOnly = pendingSubmitAgentOnlyText;
-                        pendingSubmitText = null;
-                        pendingSubmitAgentOnlyText = null;
-                        handleSubmit(queued, false, queuedAgentOnly);
+                    if (!toolRestart.isRestartInFlight()) {
+                        replayPendingSubmit();
                     }
+                    maybeRunDeferredToolRestart();
                 }
                 case STOPPED -> {
                     cancelledThisTurn = false;
@@ -1977,12 +2232,18 @@ public final class AiTopComponent extends TopComponent implements AiProcessEvent
                     }
                     drainPendingInteractions();
                     refreshInputEnabled();
+                    maybeRunDeferredToolRestart();
                 }
                 case EXITED, FAILED -> {
-                    pendingSubmitText = null;
-                    // Cleared with it: a payload stashed for a process that then died must not ride out on some later,
-                    // unrelated turn.
-                    pendingSubmitAgentOnlyText = null;
+                    // A dead backend needs no restart: its next start already carries the new tool set.
+                    toolRestart.cancel();
+                    if (shouldClearPendingSubmitAfterBackendExit(toolRestart.isRestartInFlight())) {
+                        // Cleared with it: a payload stashed for a process that then died must not ride out on some
+                        // later, unrelated turn. A tool-change replacement is different: finishToolRestart must keep
+                        // its stash so it can report the restart failure and avoid sending it into a fresh conversation.
+                        pendingSubmitText = null;
+                        pendingSubmitAgentOnlyText = null;
+                    }
                     startupResolved = true;
                     leaveBusy();
                     // Close the streaming bubble first, exactly as INTERRUPTED does below. A backend dying mid-response
@@ -2069,12 +2330,15 @@ public final class AiTopComponent extends TopComponent implements AiProcessEvent
         if (text == null) {
             text = "";
         }
-        if (aiBackend != null && !aiBackend.isRunning()) {
+        // Also stashed while a tool-change restart is resuming the conversation, even though the new process may already
+        // be up: a prompt sent before the resume would start a fresh conversation. finishToolRestart replays it.
+        if (aiBackend != null && (!aiBackend.isRunning() || toolRestart.isRestartInFlight())) {
             // BOTH halves are stashed. Keeping only the visible one used to be harmless, because everything a
             // notification had to say was visible; it is not any more. A build result finishing while the backend is
             // stopped composes an EMPTY visible string and a full agent-only report, so stashing only `text` threw the
             // entire payload away and the AI was never told its build had finished.
-            boolean alreadyStarting = pendingSubmitText != null || pendingSubmitAgentOnlyText != null;
+            boolean alreadyStarting = toolRestart.isRestartInFlight()
+                    || pendingSubmitText != null || pendingSubmitAgentOnlyText != null;
             pendingSubmitText = pendingSubmitText == null || pendingSubmitText.isBlank() ? text
                                 : text.isBlank() ? pendingSubmitText : pendingSubmitText + "\n\n" + text;
             if (hasHidden) {
@@ -2282,7 +2546,7 @@ public final class AiTopComponent extends TopComponent implements AiProcessEvent
 
     private void refreshInputEnabled() {
         boolean wasDisabled = !inputField.isEnabled();
-        if (!startupResolved) {
+        if (!startupResolved || toolRestart.isRestartInFlight()) {
             inputField.setEnabled(false);
             inputField.setCanSend(false);
             sendButton.setEnabled(false);

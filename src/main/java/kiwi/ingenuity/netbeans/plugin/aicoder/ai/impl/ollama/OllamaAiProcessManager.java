@@ -57,6 +57,8 @@ import kiwi.ingenuity.netbeans.plugin.aicoder.process.server.McpInstructionRegis
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.server.McpServerRegistry;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.server.McpToolInvoker;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.server.RawJsonArgumentScanner;
+import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.exposure.HiddenToolTextFilter;
+import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.exposure.McpToolAccess;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.McpToolInterface;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.ToolSchemaKeyEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.serialization.ContextPersistenceManager;
@@ -556,10 +558,15 @@ public class OllamaAiProcessManager extends AiProcessManager {
             String effectiveModel = resolveEffectiveModel(settings);
             String effectiveBaseUrl = resolveEffectiveBaseUrl(settings);
 
-            Map<McpToolEnum, McpToolInterface> handlers = buildToolHandlers(ollamaSession);
+            Map<McpToolEnum, McpToolInterface> allHandlers = buildToolHandlers(ollamaSession);
+            Map<McpToolEnum, McpToolInterface> handlers = McpToolAccess.effectiveTools(currentSession.settings(), allHandlers);
+            Set<McpToolEnum> hiddenTools = HiddenToolTextFilter.hiddenFrom(allHandlers, handlers);
+            // The FULL handler map: buildFullInstructions filters it itself and needs the unfiltered map to know
+            // which tools are hidden. Handing it the already-filtered map would leave every hidden tool's name in
+            // the header and per-tool text.
             String instructions = McpInstructionRegistry.buildFullInstructions(
-                    currentSession.aiType(), handlers);
-            JsonArray toolSchemas = bridge.listToolsForModel(handlers.values());
+                    currentSession.aiType(), allHandlers, currentSession.settings());
+            JsonArray toolSchemas = bridge.listToolsForModel(handlers.values(), hiddenTools);
             List<JsonObject> tools = new ArrayList<>();
             Set<String> knownToolNames = new LinkedHashSet<>();
             for (int i = 0; i < toolSchemas.size(); i++) {
@@ -1171,9 +1178,9 @@ public class OllamaAiProcessManager extends AiProcessManager {
     }
 
     /**
-     * Three-level fallback per setting: session value if set, else the global default, else the hardcoded
-     * default baked into ContextBrokerSettings. Session values are nullable precisely so "unset" is
-     * distinguishable from "set to zero/false".
+     * Three-level fallback per setting: session value if set, else the global default, else the hardcoded default baked
+     * into ContextBrokerSettings. Session values are nullable precisely so "unset" is distinguishable from "set to
+     * zero/false".
      */
     ContextBrokerSettings resolveBrokerSettings() {
         ContextBrokerSettings s = ContextBrokerSettings.defaults();
@@ -1211,6 +1218,10 @@ public class OllamaAiProcessManager extends AiProcessManager {
 
     Map<McpToolEnum, McpToolInterface> buildToolHandlers(OllamaAiSession session) {
         return session.getMcpToolHandlers();
+    }
+
+    Map<McpToolEnum, McpToolInterface> effectiveToolHandlers() {
+        return McpToolAccess.effectiveTools(currentSession.settings(), buildToolHandlers(ollamaSession));
     }
 
     protected String displayName() {

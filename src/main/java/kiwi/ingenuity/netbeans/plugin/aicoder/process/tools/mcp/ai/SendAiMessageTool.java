@@ -5,6 +5,7 @@ import com.google.gson.JsonObject;
 import java.util.List;
 import java.util.Set;
 import java.util.stream.Collectors;
+import kiwi.ingenuity.netbeans.plugin.aicoder.AccessControlLabelEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.mail.AiInboxMessage;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.mail.AiSessionInboxBroker;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.session.AiSession;
@@ -13,6 +14,8 @@ import kiwi.ingenuity.netbeans.plugin.aicoder.process.McpSectionEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.McpToolEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.SessionRegistry;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.session.AbstractAiSession;
+import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.exposure.McpToolAccess;
+import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.exposure.McpToolGroupEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.AbstractActionTool;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.McpToolSchemas;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.ToolRequestArguments;
@@ -167,8 +170,9 @@ public class SendAiMessageTool extends AbstractActionTool {
         if (message.length() > AiInboxMessage.MAX_MESSAGE_LENGTH) {
             return "Error: message body exceeds maximum length of " + AiInboxMessage.MAX_MESSAGE_LENGTH + " characters";
         }
-        if (broker.isActive(senderId) && !broker.isInterAiCommsAllowed(senderId)) {
-            return "Error: inter-AI communication is disabled for this session";
+        String senderRefusal = callerCommsRefusal(senderId);
+        if (senderRefusal != null) {
+            return "Error: " + senderRefusal;
         }
         if (!broker.isActive(targetSessionId)) {
             // Unlike the sender's credentials, which the MCP server has already
@@ -181,22 +185,21 @@ public class SendAiMessageTool extends AbstractActionTool {
                         + McpToolEnum.PEER_SESSION_LIST.toolName() + " and use a listed id or unique name.";
             }
             // A comms-disabled session is never handed an inbox: AiTopComponent registers a session only when
-            // effectiveAllowInterAiComms() is on and unregisters it when comms is toggled off, so such a target
-            // always arrives here as "not active". isInterAiCommsAllowed reads the registry, not the inbox, so
-            // it still answers correctly for it. It must be told the real cause — "is not active" would send the
-            // caller back to the session list that hides this very session.
+            // AiSession.allowsInterAiComms() is on — the "Allow inter-AI communication" setting AND the Peer
+            // messaging MCP group — and unregisters it when either goes off, so such a target always arrives here as
+            // "not active". isInterAiCommsAllowed reads the registry, not the inbox, so it still answers correctly
+            // for it. It must be told the real cause — "is not active" would send the caller back to the session
+            // list that hides this very session.
             if (!broker.isInterAiCommsAllowed(targetSessionId)) {
-                return "Error: session '" + targetSessionId + "' has inter-AI messaging disabled — enable "
-                       + "Allow inter-AI comms in its session settings";
+                return targetCommsRefusal(targetSessionId);
             }
             return "Error: session '" + targetSessionId + "' is not active";
         }
-        // Defensive belt-and-braces: unreachable today because inbox registration is keyed on the comms setting
-        // (see above). Kept so a future change that decouples registration from the setting cannot silently
+        // Defensive belt-and-braces: unreachable today because inbox registration is keyed on
+        // AiSession.allowsInterAiComms() (see above). Kept so a future change that decouples registration from the setting cannot silently
         // deliver to a comms-disabled session; same wording as the registry-known refusal above.
         if (!broker.isInterAiCommsAllowed(targetSessionId)) {
-            return "Error: session '" + targetSessionId + "' has inter-AI messaging disabled — enable "
-                   + "Allow inter-AI comms in its session settings";
+            return targetCommsRefusal(targetSessionId);
         }
         String replyToMessageId = args.str(SendAiMessageParamEnum.REPLY_TO_MESSAGE_ID.key());
         boolean important = args.bool(SendAiMessageParamEnum.IMPORTANT.key());
@@ -277,6 +280,40 @@ public class SendAiMessageTool extends AbstractActionTool {
     private static String senderName(String sessionId) {
         var abs = SessionRegistry.get(sessionId);
         return abs != null ? abs.getAiSession().name() : sessionId;
+    }
+
+    /**
+     * Why the calling session may not use the peer tools, or null if it may. Asked of the session itself, never of the
+     * inbox: a session with comms off has no inbox, so gating on inbox presence skipped this check exactly when it
+     * mattered. Worded by {@link McpToolAccess#refusalMessage} for the layer that refuses (the Peer messaging MCP
+     * group, or the "Allow inter-AI communication" setting beneath it). An unknown session is left to the credential
+     * checks.
+     */
+    static String callerCommsRefusal(String callerSessionId) {
+        AbstractAiSession caller = callerSessionId == null ? null : SessionRegistry.get(callerSessionId);
+        if (caller == null || caller.getAiSession().allowsInterAiComms()) {
+            return null;
+        }
+        return McpToolAccess.refusalMessage(caller.getSettings(), McpToolGroupEnum.PEER_MESSAGING);
+    }
+
+    /**
+     * The refusal for a target that cannot receive messages, naming the setting the TARGET's user has to change. Not
+     * {@link McpToolAccess#refusalMessage} verbatim: that text says "this session", which here would read as the
+     * caller's own.
+     */
+    private static String targetCommsRefusal(String targetSessionId) {
+        String prefix = "Error: session '" + targetSessionId + "' has inter-AI messaging disabled — ";
+        AbstractAiSession target = SessionRegistry.get(targetSessionId);
+        if (target != null
+                && McpToolAccess.denialLayer(target.getSettings(), McpToolGroupEnum.PEER_MESSAGING)
+                == McpToolAccess.DenialLayer.MCP) {
+            return prefix + "its '" + McpToolGroupEnum.PEER_MESSAGING.label() + "' tool group is switched off. "
+                    + "Ask the user to switch it on in that session's settings (MCP Tools → "
+                    + McpToolGroupEnum.PEER_MESSAGING.label() + ").";
+        }
+        return prefix + "ask the user to enable '" + AccessControlLabelEnum.ALLOW_INTER_AI_COMMS.displayLabel()
+                + "' in that session's settings (MCP Tools → " + McpToolGroupEnum.PEER_MESSAGING.label() + ").";
     }
 
 }

@@ -114,10 +114,10 @@ public class CodexAiProcessManager extends AiProcessManager {
     }
 
     /**
-     * {@code TurnStartParams}, codex-cli 0.155.0: {@code threadId} and the {@code input} array as usual, plus
-     * an optional {@code effort} override — "Override the reasoning effort for this turn and subsequent
-     * turns." A null or blank {@code effort} omits the field, letting the model apply its own default (the
-     * "not set" entry {@code (model default)}).
+     * {@code TurnStartParams}, codex-cli 0.155.0: {@code threadId} and the {@code input} array as usual, plus an
+     * optional {@code effort} override — "Override the reasoning effort for this turn and subsequent turns." A null or
+     * blank {@code effort} omits the field, letting the model apply its own default (the "not set" entry
+     * {@code (model default)}).
      */
     static JsonObject buildTurnStartParams(String threadId, String promptText, String effort) {
         JsonObject textInput = new JsonObject();
@@ -562,15 +562,9 @@ public class CodexAiProcessManager extends AiProcessManager {
             if (ok) {
                 registrar = reg;
             }
-            else {
-                listener.onAiProcessEvent(new StatusEvent(StatusEventTypeEnum.INFO,
-                        "MCP server registration returned false — running without MCP tools"));
-            }
         }
         catch (Exception e) {
             LOG.log(Level.WARNING, "MCP server registration failed; running without MCP tools", e);
-            listener.onAiProcessEvent(new StatusEvent(StatusEventTypeEnum.INFO,
-                    "MCP server unavailable — running without MCP tools"));
         }
 
         codexAiSession = new CodexAiSession(currentSession, listener);
@@ -585,12 +579,36 @@ public class CodexAiProcessManager extends AiProcessManager {
     }
 
     /**
-     * Spawns the codex process and performs the handshake. Always called on a background thread — blocks up
-     * to 30 s per request. The instance monitor is held only for brief state writes, never across the
-     * blocking waits, mirroring {@code OpenCodeAiProcessManager.spawnAndHandshake}.
+     * Emits the single actionable notice for this spawn when it has no session-scoped MCP endpoint.
+     */
+    void reportMcpUnavailableIfNeeded(String mcpEndpointUrl) {
+        if (mcpEndpointUrl == null || mcpEndpointUrl.isBlank()) {
+            LOG.log(Level.WARNING, "MCP server unavailable; running Codex without plugin tools");
+            listener.onAiProcessEvent(new StatusEvent(StatusEventTypeEnum.INFO,
+                                                      StatusMessageUtil.formatMcpToolsUnavailable("Codex")));
+        }
+    }
+
+    CodexAiMcpRegistrar suspendRegistrarForTest() {
+        CodexAiMcpRegistrar saved = registrar;
+        registrar = null;
+        return saved;
+    }
+
+    void restoreRegistrarForTest(CodexAiMcpRegistrar saved) {
+        registrar = saved;
+    }
+
+    /**
+     * Spawns the codex process and performs the handshake. Always called on a background thread — blocks up to 30 s per
+     * request. The instance monitor is held only for brief state writes, never across the blocking waits, mirroring
+     * {@code OpenCodeAiProcessManager.spawnAndHandshake}.
      */
     protected void spawnAndHandshake(File workDir) throws Exception {
-        String mcpEndpointUrl = registrar != null ? McpServerRegistry.endpointUrlFor(AiTypeEnum.CODEX) : null;
+        String mcpEndpointUrl = registrar != null
+                                ? McpServerRegistry.endpointUrlFor(AiTypeEnum.CODEX,
+                                                                   currentSession.settings().ensureMcpRoutingId()) : null;
+        reportMcpUnavailableIfNeeded(mcpEndpointUrl);
         List<String> baseArgs = new ArrayList<>(List.of("app-server", "--listen", "stdio://"));
         baseArgs.addAll(buildMcpConfigArgs(mcpEndpointUrl));
         if (PluginSettings.isDebugJson()) {

@@ -199,7 +199,7 @@ class UiToolsHandleGateEndToEndTest {
     @Test
     void navigateToLineRejectsNonPositiveLine() {
         McpArgumentException ex = assertThrows(McpArgumentException.class,
-                () -> new NavigateToLineTool().handle(navigateArgs(inDir.resolve("NavigateZero.java").toString(), 0), session(restrictedSessionId)));
+                                               () -> new NavigateToLineTool().handle(navigateArgs(inDir.resolve("NavigateZero.java").toString(), 0), session(restrictedSessionId)));
         assertTrue(ex.getMessage().contains("must be at least 1"));
     }
 
@@ -214,10 +214,6 @@ class UiToolsHandleGateEndToEndTest {
 
         NoopRegistrar(String sessionId) {
             super(sessionId, AiTypeEnum.CLAUDE);
-        }
-
-        @Override
-        public void addMcpEndpoint(String endpointUrl) {
         }
 
         @Override

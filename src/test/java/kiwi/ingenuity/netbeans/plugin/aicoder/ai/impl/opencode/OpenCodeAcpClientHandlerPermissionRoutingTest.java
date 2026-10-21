@@ -3,8 +3,10 @@ package kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.opencode;
 import com.google.gson.JsonArray;
 import com.google.gson.JsonObject;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
 import java.util.function.Predicate;
@@ -27,6 +29,8 @@ import kiwi.ingenuity.netbeans.plugin.aicoder.process.events.AiProcessEvent;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.events.AiProcessEventListener;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.server.McpHookServerUtil;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.session.AbstractAiSession;
+import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.exposure.McpToolConfig;
+import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.exposure.McpToolGroupEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.McpToolInterface;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -37,15 +41,15 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import org.junit.jupiter.api.Test;
 
 /**
- * A permission request that only asks to LOOK at a path must not surface as "Write", must not render a diff,
- * and — when the path is inside the session's own {@code ~/.ai-coder/{type}/{sessionId}/} tree, which is
- * where the plugin spools oversized tool results — must not ask at all.
+ * A permission request that only asks to LOOK at a path must not surface as "Write", must not render a diff, and — when
+ * the path is inside the session's own {@code ~/.ai-coder/{type}/{sessionId}/} tree, which is where the plugin spools
+ * oversized tool results — must not ask at all.
  *
  * <p>
- * The {@code external_directory} fixtures reproduce what OpenCode's ACP agent actually sends for that
- * permission (read out of its source): {@code kind:"other"} (its kind mapping has no entry for
- * {@code external_directory}), the parent directory as the title, file and directory as {@code locations},
- * the raw metadata as {@code rawInput}, and no {@code content}.
+ * The {@code external_directory} fixtures reproduce what OpenCode's ACP agent actually sends for that permission (read
+ * out of its source): {@code kind:"other"} (its kind mapping has no entry for {@code external_directory}), the parent
+ * directory as the title, file and directory as {@code locations}, the raw metadata as {@code rawInput}, and no
+ * {@code content}.
  */
 class OpenCodeAcpClientHandlerPermissionRoutingTest {
 
@@ -59,13 +63,13 @@ class OpenCodeAcpClientHandlerPermissionRoutingTest {
 
     private static OpenCodeAcpClientHandler handler(List<AiProcessEvent> fired, Predicate<String> ownTree) {
         return new OpenCodeAcpClientHandler(fired::add, () -> {
-        }, null, ownTree);
+                                    }, null, ownTree);
     }
 
     private static OpenCodeAcpClientHandler handlerWithSteering(List<AiProcessEvent> fired, Predicate<String> ownTree,
                                                                 Predicate<String> steeringIsActive) {
         return new OpenCodeAcpClientHandler(fired::add, () -> {
-        }, null, ownTree, steeringIsActive);
+                                    }, null, ownTree, steeringIsActive);
     }
 
     private static JsonObject params(JsonObject toolCall) {
@@ -86,8 +90,7 @@ class OpenCodeAcpClientHandlerPermissionRoutingTest {
     }
 
     /**
-     * The shape OpenCode sends for an {@code external_directory} ask: kind "other", title = parentDir, no
-     * content.
+     * The shape OpenCode sends for an {@code external_directory} ask: kind "other", title = parentDir, no content.
      */
     private static JsonObject externalDirectory(String filepath, String parentDir) {
         JsonObject rawInput = new JsonObject();
@@ -113,7 +116,7 @@ class OpenCodeAcpClientHandlerPermissionRoutingTest {
 
     private static void assertNoWriteEvent(List<AiProcessEvent> fired) {
         assertTrue(fired.stream().noneMatch(e -> e instanceof PermissionEvent),
-                "a request to look at a path must never raise the Write/diff flow");
+                   "a request to look at a path must never raise the Write/diff flow");
     }
 
     private static String optionId(JsonObject result) {
@@ -173,7 +176,7 @@ class OpenCodeAcpClientHandlerPermissionRoutingTest {
         List<AiProcessEvent> fired = new ArrayList<>();
         // The three-argument constructor the process manager used before the exemption existed: nothing is exempt.
         OpenCodeAcpClientHandler legacy = new OpenCodeAcpClientHandler(fired::add, () -> {
-        });
+                                                               });
 
         CompletableFuture<JsonObject> future = legacy.onRequestPermission(params(externalDirectory(OWN_SPOOL_FILE, OWN_SPOOL_DIR)));
 
@@ -198,7 +201,7 @@ class OpenCodeAcpClientHandlerPermissionRoutingTest {
     @Test
     void theRealCheckDeniesAnUnregisteredSession() {
         assertFalse(AbstractAcpClientHandler.ownSessionConfigFileCheck("no-such-plugin-session").test(OWN_SPOOL_FILE),
-                "an exemption that cannot be verified must never be granted");
+                    "an exemption that cannot be verified must never be granted");
     }
 
     // ---- Fix 2: a request to look is not a write, and never shows a blanking diff ----
@@ -219,7 +222,7 @@ class OpenCodeAcpClientHandlerPermissionRoutingTest {
         assertEquals(outside, ce.filePath());
         assertEquals(outside, ce.displayText());
         assertFalse(ce.requireExplicitApproval(),
-                "auto-accept keeps answering these as it did when they were mislabelled Write; only the label changes");
+                    "auto-accept keeps answering these as it did when they were mislabelled Write; only the label changes");
     }
 
     @Test
@@ -371,13 +374,13 @@ class OpenCodeAcpClientHandlerPermissionRoutingTest {
         assertEquals("reject", optionId(future.get(1, TimeUnit.SECONDS)));
         assertTrue(fired.stream().noneMatch(e -> e instanceof ConfirmEvent), "no ConfirmEvent raised");
         assertTrue(fired.stream().noneMatch(e -> e instanceof SystemNotificationEvent),
-                "a steering refusal is a tool-use log line, not a chat notification");
+                   "a steering refusal is a tool-use log line, not a chat notification");
         McpSteeringRefusalEvent event = (McpSteeringRefusalEvent) fired.stream()
                 .filter(e -> e instanceof McpSteeringRefusalEvent).findFirst().get();
         assertEquals(1, event.refusals().size());
         assertEquals("Execute", event.refusals().get(0).toolLabel());
         assertEquals(McpSteeringPolicy.steeringFeedbackFor(McpSteeringPolicy.Category.SHELL),
-                event.refusals().get(0).steeringText());
+                     event.refusals().get(0).steeringText());
     }
 
     @Test
@@ -392,13 +395,13 @@ class OpenCodeAcpClientHandlerPermissionRoutingTest {
         assertEquals("reject", optionId(future.get(1, TimeUnit.SECONDS)));
         assertTrue(fired.stream().noneMatch(e -> e instanceof ConfirmEvent), "no ConfirmEvent raised for access kind");
         assertTrue(fired.stream().noneMatch(e -> e instanceof SystemNotificationEvent),
-                "a steering refusal is a tool-use log line, not a chat notification");
+                   "a steering refusal is a tool-use log line, not a chat notification");
         McpSteeringRefusalEvent event = (McpSteeringRefusalEvent) fired.stream()
                 .filter(e -> e instanceof McpSteeringRefusalEvent).findFirst().get();
         assertEquals(1, event.refusals().size());
         assertEquals("Read", event.refusals().get(0).toolLabel());
         assertEquals(McpSteeringPolicy.steeringFeedbackFor(McpSteeringPolicy.Category.READ),
-                event.refusals().get(0).steeringText());
+                     event.refusals().get(0).steeringText());
     }
 
     @Test
@@ -422,13 +425,13 @@ class OpenCodeAcpClientHandlerPermissionRoutingTest {
         assertEquals("reject", optionId(future.get(1, TimeUnit.SECONDS)));
         assertTrue(fired.stream().noneMatch(e -> e instanceof PermissionEvent), "no PermissionEvent raised for write");
         assertTrue(fired.stream().noneMatch(e -> e instanceof SystemNotificationEvent),
-                "a steering refusal is a tool-use log line, not a chat notification");
+                   "a steering refusal is a tool-use log line, not a chat notification");
         McpSteeringRefusalEvent event = (McpSteeringRefusalEvent) fired.stream()
                 .filter(e -> e instanceof McpSteeringRefusalEvent).findFirst().get();
         assertEquals(1, event.refusals().size());
         assertEquals("Write", event.refusals().get(0).toolLabel());
         assertEquals(McpSteeringPolicy.steeringFeedbackFor(McpSteeringPolicy.Category.WRITE),
-                event.refusals().get(0).steeringText());
+                     event.refusals().get(0).steeringText());
     }
 
     @Test
@@ -447,25 +450,24 @@ class OpenCodeAcpClientHandlerPermissionRoutingTest {
         assertEquals("reject", optionId(future.get(1, TimeUnit.SECONDS)));
         assertTrue(fired.stream().noneMatch(e -> e instanceof ConfirmEvent), "no ConfirmEvent raised");
         assertTrue(fired.stream().noneMatch(e -> e instanceof SystemNotificationEvent),
-                "a steering refusal is a tool-use log line, not a chat notification");
+                   "a steering refusal is a tool-use log line, not a chat notification");
         McpSteeringRefusalEvent event = (McpSteeringRefusalEvent) fired.stream()
                 .filter(e -> e instanceof McpSteeringRefusalEvent).findFirst().get();
         assertEquals(1, event.refusals().size());
         assertEquals("unknown-kind", event.refusals().get(0).toolLabel());
         assertEquals(McpSteeringPolicy.steeringFeedbackFor(McpSteeringPolicy.Category.UNKNOWN),
-                event.refusals().get(0).steeringText());
+                     event.refusals().get(0).steeringText());
     }
 
     /**
-     * TIER 2 (Boss's answer to the SECURITY tightening, keeping OpenCode's original behaviour working): a
-     * bare {@code title} match by our strict prefix rule — OpenCode calling one of our tools directly, no
-     * {@code use_tool}-style wrapper at all — is EXEMPT FROM STEERING ({@code namesOurTool}), but is NOT
-     * auto-allowed: it still falls through to the normal flow, a {@link ConfirmEvent} here since {@code kind}
-     * is {@code "execute"}. That is what makes a spoofed bare match harmless even if a native call forged it
-     * — the diff panel/confirm dialog is still the real gate; only the (separate, now-tightened) auto- allow
-     * would have been unsafe to extend this match to, which is why tier 1 ({@code
-     * isVerifiedOurToolWrapper}) requires the full {@code use_tool} wrapper shape and tier 2 does not skip
-     * the dialog.
+     * TIER 2 (Boss's answer to the SECURITY tightening, keeping OpenCode's original behaviour working): a bare
+     * {@code title} match by our strict prefix rule — OpenCode calling one of our tools directly, no
+     * {@code use_tool}-style wrapper at all — is EXEMPT FROM STEERING ({@code namesOurTool}), but is NOT auto-allowed:
+     * it still falls through to the normal flow, a {@link ConfirmEvent} here since {@code kind} is {@code "execute"}.
+     * That is what makes a spoofed bare match harmless even if a native call forged it — the diff panel/confirm dialog
+     * is still the real gate; only the (separate, now-tightened) auto- allow would have been unsafe to extend this
+     * match to, which is why tier 1 ({@code
+     * isVerifiedOurToolWrapper}) requires the full {@code use_tool} wrapper shape and tier 2 does not skip the dialog.
      */
     @Test
     void bareTitleMatchWithNoUseToolWrapperShape_isExemptFromSteering_butStillPrompts() throws Exception {
@@ -485,7 +487,7 @@ class OpenCodeAcpClientHandlerPermissionRoutingTest {
         assertFalse(future.isDone(), "not auto-allowed — it must still wait on a real decision");
         assertEquals(1, fired.size());
         assertInstanceOf(ConfirmEvent.class, fired.get(0),
-                "a bare title match must be exempt from steering but still prompt normally: " + fired);
+                         "a bare title match must be exempt from steering but still prompt normally: " + fired);
     }
 
     @Test
@@ -515,11 +517,10 @@ class OpenCodeAcpClientHandlerPermissionRoutingTest {
     }
 
     /**
-     * Regression: production steering is resolved under the PLUGIN session UUID (the id
-     * {@link SessionRegistry} is keyed by), never under the ACP session id an individual
-     * {@code session/request_permission} request carries. The ACP id looks like {@code ses_...} and no plugin
-     * session is ever registered under it, so the old code — which looked the ACP id up — got {@code null}
-     * and steering silently never fired.
+     * Regression: production steering is resolved under the PLUGIN session UUID (the id {@link SessionRegistry} is
+     * keyed by), never under the ACP session id an individual {@code session/request_permission} request carries. The
+     * ACP id looks like {@code ses_...} and no plugin session is ever registered under it, so the old code — which
+     * looked the ACP id up — got {@code null} and steering silently never fired.
      */
     @Test
     void steeringFiresUnderThePluginSessionIdEvenWhenTheAcpSessionIdDiffers() throws Exception {
@@ -529,7 +530,7 @@ class OpenCodeAcpClientHandlerPermissionRoutingTest {
         try {
             // Production path: no injected predicate; the session is registered in SessionRegistry.
             OpenCodeAcpClientHandler handler = new OpenCodeAcpClientHandler(fired::add, () -> {
-            }, null, ownTree(), null, pluginSessionId);
+                                                                    }, null, ownTree(), null, pluginSessionId);
 
             JsonObject toolCall = new JsonObject();
             toolCall.addProperty("title", "echo hello");
@@ -551,7 +552,7 @@ class OpenCodeAcpClientHandlerPermissionRoutingTest {
                     .filter(e -> e instanceof McpSteeringRefusalEvent).findFirst().get();
             assertEquals("Execute", event.refusals().get(0).toolLabel());
             assertEquals(McpSteeringPolicy.steeringFeedbackFor(McpSteeringPolicy.Category.SHELL),
-                    event.refusals().get(0).steeringText());
+                         event.refusals().get(0).steeringText());
         }
         finally {
             SessionRegistry.unregister(pluginSessionId);
@@ -563,13 +564,40 @@ class OpenCodeAcpClientHandlerPermissionRoutingTest {
         List<AiProcessEvent> fired = new ArrayList<>();
         // Production path with a plugin session id that is NOT in SessionRegistry.
         OpenCodeAcpClientHandler handler = new OpenCodeAcpClientHandler(fired::add, () -> {
-        }, null, ownTree(), null, "unregistered-plugin-session");
+                                                                }, null, ownTree(), null, "unregistered-plugin-session");
 
         CompletableFuture<JsonObject> future = handler.onRequestPermission(params(
                 simple("read", "notes.txt", "/Users/chris/Documents/notes.txt")));
 
         assertEquals(1, fired.size(), "no registered session: steering is off, user is asked");
         assertInstanceOf(ConfirmEvent.class, fired.get(0));
+    }
+
+    @Test
+    void steeringReadWithFileReadingDisabledDoesNotNameGetFileContent() throws Exception {
+        List<AiProcessEvent> fired = new ArrayList<>();
+        String pluginSessionId = "plugin-session-hidden-read";
+        registerReadHiddenSteeringSession(pluginSessionId);
+        try {
+            OpenCodeAcpClientHandler handler = new OpenCodeAcpClientHandler(fired::add, () -> {
+                                                                    }, null, ownTree(), null, pluginSessionId);
+
+            CompletableFuture<JsonObject> future = handler.onRequestPermission(params(
+                    simple("read", "notes.txt", "/Users/chris/Documents/notes.txt")));
+
+            assertEquals("reject", optionId(future.get(1, TimeUnit.SECONDS)),
+                         "the native read is still refused while FILE_READING is switched off");
+            assertTrue(fired.stream().noneMatch(e -> e instanceof ConfirmEvent), "no ConfirmEvent raised for a steered read");
+            McpSteeringRefusalEvent event = (McpSteeringRefusalEvent) fired.stream()
+                    .filter(e -> e instanceof McpSteeringRefusalEvent).findFirst().orElseThrow();
+            String steeringText = event.refusals().get(0).steeringText();
+            assertTrue(steeringText.startsWith("Refused automatically"), steeringText);
+            assertFalse(steeringText.contains(McpToolEnum.GET_FILE_CONTENT.toolName()),
+                        "a hidden tool must never be named in the refusal: " + steeringText);
+        }
+        finally {
+            SessionRegistry.unregister(pluginSessionId);
+        }
     }
 
     private static void registerSteeringSession(String pluginSessionId) {
@@ -590,6 +618,30 @@ class OpenCodeAcpClientHandlerPermissionRoutingTest {
             @Override
             public Map<McpToolEnum, McpToolInterface> getMcpToolHandlers() {
                 return Map.of();
+            }
+        };
+        SessionRegistry.register(wrapper);
+    }
+
+    private static void registerReadHiddenSteeringSession(String pluginSessionId) {
+        AiSession aiSession = AiSession.create(null, AiTypeEnum.OPENCODE);
+        aiSession.settings().setMcpSteering(true);
+        aiSession.settings().setMcpToolConfig(McpToolConfig.withDisabled(Set.of(McpToolGroupEnum.FILE_READING)));
+        AbstractAiSession wrapper = new AbstractAiSession(aiSession) {
+            @Override
+            public String getId() {
+                return pluginSessionId;
+            }
+
+            @Override
+            public AiProcessEventListener getAiProcessEventListener() {
+                return e -> {
+                };
+            }
+
+            @Override
+            public Map<McpToolEnum, McpToolInterface> getMcpToolHandlers() {
+                return Collections.singletonMap(McpToolEnum.GET_FILE_CONTENT, null);
             }
         };
         SessionRegistry.register(wrapper);
@@ -647,8 +699,8 @@ class OpenCodeAcpClientHandlerPermissionRoutingTest {
 
             // 2. access/read (READ)
             assertEquals("reject", optionId(handler.onRequestPermission(
-                    params(simple("read", "notes.txt", "/Users/chris/Documents/notes.txt")))
-                    .get(1, TimeUnit.SECONDS)));
+                         params(simple("read", "notes.txt", "/Users/chris/Documents/notes.txt")))
+                         .get(1, TimeUnit.SECONDS)));
 
             // 3. edit with diff (WRITE)
             JsonObject content = new JsonObject();
@@ -731,7 +783,7 @@ class OpenCodeAcpClientHandlerPermissionRoutingTest {
                     .get(1, TimeUnit.SECONDS);
 
             assertTrue(captured.isEmpty(),
-                    "with tool-use logging off, steering refusals must keep out of the log");
+                       "with tool-use logging off, steering refusals must keep out of the log");
             // The backend still receives the refusal — only the log line is gated.
             assertEquals(2, fired.stream().filter(e -> e instanceof McpSteeringRefusalEvent).count());
             assertTrue(fired.stream().noneMatch(e -> e instanceof SystemNotificationEvent));
@@ -744,10 +796,10 @@ class OpenCodeAcpClientHandlerPermissionRoutingTest {
 
     // ---- Review follow-up: Grok's fail-closed option-id fallback must not change OpenCode's real replies ----
     /**
-     * Grok's reply now fails closed (falls back to optionId text, or cancels) when no option kind is
-     * recognised — but OpenCode's options array always carries recognised kinds, so it must take the SAME
-     * strict kind-match path it always has and resolve to its own literal {@code "once"}/{@code "reject"}
-     * ids, completely unaffected by that fallback machinery.
+     * Grok's reply now fails closed (falls back to optionId text, or cancels) when no option kind is recognised — but
+     * OpenCode's options array always carries recognised kinds, so it must take the SAME strict kind-match path it
+     * always has and resolve to its own literal {@code "once"}/{@code "reject"} ids, completely unaffected by that
+     * fallback machinery.
      */
     @Test
     void realisticOptionsArrayWithRecognisedKinds_stillResolvesToOpenCodesOwnLiteralIds() throws Exception {
@@ -766,7 +818,7 @@ class OpenCodeAcpClientHandlerPermissionRoutingTest {
         event.response().complete(PermissionDecision.allowed());
         JsonObject result = reply.get(1, TimeUnit.SECONDS);
         assertEquals("once", result.getAsJsonObject("outcome").get("optionId").getAsString(),
-                "OpenCode's real options array must resolve to its own literal \"once\"");
+                     "OpenCode's real options array must resolve to its own literal \"once\"");
     }
 
     private static JsonObject permissionOption(String optionId, String name, String kind) {

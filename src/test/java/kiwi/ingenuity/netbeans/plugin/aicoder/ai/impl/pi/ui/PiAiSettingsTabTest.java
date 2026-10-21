@@ -21,11 +21,10 @@ import org.junit.jupiter.api.io.TempDir;
 class PiAiSettingsTabTest {
 
     /**
-     * Derived from {@link PiVersionCheck#TESTED_MAJOR_MINOR}, never spelled out — including the status
-     * label's own "tested: X.x" text, which is built from the same constant the tab renders it from.
-     * Hard-coded copies of the then-current number turned five tests in this class red the last time it was
-     * bumped. {@link #UNTESTED} sits far above any plausible pi release so a future bump cannot reclassify it
-     * as tested.
+     * Derived from {@link PiVersionCheck#TESTED_MAJOR_MINOR}, never spelled out — including the status label's own
+     * "tested: X.x" text, which is built from the same constant the tab renders it from. Hard-coded copies of the
+     * then-current number turned five tests in this class red the last time it was bumped. {@link #UNTESTED} sits far
+     * above any plausible pi release so a future bump cannot reclassify it as tested.
      */
     private static final String TESTED = PiVersionCheck.TESTED_MAJOR_MINOR + ".1";
     private static final String UNTESTED = "9.99.0";
@@ -168,13 +167,14 @@ class PiAiSettingsTabTest {
         assertEquals(NOT_VERIFIED_TEXT, tab.versionStatusLabelTextForTests());
     }
 
+    // FLAKY (seen 2026-10-20/22): fails intermittently in the full suite but passes when run alone.
+    // Observed: "the button starts disabled the moment Refresh is clicked" expected false but was true (line 194). Likely cause: EDT/background timing; the first refresh can finish and re-enable the button before the assertion runs. Re-run alone before treating a failure as real.
     /**
-     * {@code PiModelDiscovery.discoverAsync} guarantees exactly one terminal {@code onResult} call for every
-     * outcome, including the busy-skip case (a discovery already in progress). Occupies that shared
-     * in-progress latch with a slow discovery of our own first, so the tab's own Refresh call is very likely
-     * to land on the busy-skip path — but the assertion holds either way (busy-skip, or a real attempt of its
-     * own against a bad path that fails fast and exhausts its retries), since both converge on the button
-     * coming back.
+     * {@code PiModelDiscovery.discoverAsync} guarantees exactly one terminal {@code onResult} call for every outcome,
+     * including the busy-skip case (a discovery already in progress). Occupies that shared in-progress latch with a
+     * slow discovery of our own first, so the tab's own Refresh call is very likely to land on the busy-skip path — but
+     * the assertion holds either way (busy-skip, or a real attempt of its own against a bad path that fails fast and
+     * exhausts its retries), since both converge on the button coming back.
      */
     @Test
     void handleRefreshModels_secondCallWhileOneIsInProgress_stillReEnablesTheButton(@TempDir Path dir) throws Exception {
@@ -184,7 +184,7 @@ class PiAiSettingsTabTest {
 
         CountDownLatch slowDiscoveryDone = new CountDownLatch(1);
         kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.pi.PiModelDiscovery.discoverAsync(slowExe.toString(),
-                models -> slowDiscoveryDone.countDown());
+                                                                                         models -> slowDiscoveryDone.countDown());
 
         PiAiSettingsTab tab = new PiAiSettingsTab();
         tab.load();
@@ -195,7 +195,7 @@ class PiAiSettingsTabTest {
         waitUntil(tab::refreshModelsButtonEnabledForTests);
 
         assertTrue(slowDiscoveryDone.await(5, TimeUnit.SECONDS),
-                "let the background slow discovery finish before the next test runs");
+                   "let the background slow discovery finish before the next test runs");
     }
 
     private static void waitUntil(BooleanSupplier condition) throws InterruptedException {

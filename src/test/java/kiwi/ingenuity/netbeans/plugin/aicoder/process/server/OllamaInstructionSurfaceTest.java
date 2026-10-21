@@ -6,10 +6,13 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import kiwi.ingenuity.netbeans.plugin.aicoder.GitAccessOptionEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.AiTypeEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.claude.ClaudeToolHandlerFactory;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.ollama.OllamaToolHandlerFactory;
+import kiwi.ingenuity.netbeans.plugin.aicoder.ai.settings.AiSessionSettings;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.McpToolEnum;
+import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.exposure.McpToolConfig;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.McpToolInterface;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.ToolSchemaKeyEnum;
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -36,9 +39,27 @@ class OllamaInstructionSurfaceTest {
         return OllamaToolHandlerFactory.build(() -> null, null);
     }
 
+    /**
+     * Settings under which every tool group is on at both layers, so the assembled text covers every tool — the surface
+     * this class guards is the widest one a session can get.
+     */
+    private static AiSessionSettings allGroupsEnabled() {
+        AiSessionSettings settings = new AiSessionSettings();
+        settings.setMcpToolConfig(McpToolConfig.ALL_ENABLED);
+        settings.setAllowInterAiComms(true);
+        settings.setAllowIdleWatcherTimer(true);
+        settings.setAllowDatabaseAccess(true);
+        settings.setAllowWebRequests(true);
+        settings.setEnableClipboardAccess(true);
+        settings.setAllowGitAccess(true);
+        settings.setAllowGitAccessOption(GitAccessOptionEnum.READ, true);
+        settings.setAllowGitAccessOption(GitAccessOptionEnum.WRITE, true);
+        return settings;
+    }
+
     private static String ollamaInstructions() {
         return McpInstructionRegistry.buildFullInstructions(
-                AiTypeEnum.OLLAMA_LOCAL, ollamaHandlers());
+                AiTypeEnum.OLLAMA_LOCAL, ollamaHandlers(), allGroupsEnabled());
     }
 
     /**
@@ -186,7 +207,7 @@ class OllamaInstructionSurfaceTest {
     @Test
     void claudeKeepsProactiveCallDirectives() {
         String text = McpInstructionRegistry.buildFullInstructions(
-                AiTypeEnum.CLAUDE, ClaudeToolHandlerFactory.build(() -> null, null));
+                AiTypeEnum.CLAUDE, ClaudeToolHandlerFactory.build(() -> null, null), allGroupsEnabled());
         assertTrue(text.contains("call at session start"),
                    "Claude follows the conditional correctly and should keep the stronger wording");
     }
@@ -223,7 +244,7 @@ class OllamaInstructionSurfaceTest {
         assertFalse(handlers.isEmpty(), "handler map must be populated for the control to mean anything");
 
         String text = McpInstructionRegistry.buildFullInstructions(
-                AiTypeEnum.CLAUDE, handlers);
+                AiTypeEnum.CLAUDE, handlers, allGroupsEnabled());
         assertTrue(text.contains("INSTEAD OF"), "Claude should still get built-in-tool redirects");
         assertTrue(text.contains("Bash"), "Claude should still get Bash policy");
 

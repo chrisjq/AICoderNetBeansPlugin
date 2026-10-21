@@ -5,6 +5,7 @@ import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.githubcopilot.settings.Git
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.grok.settings.GrokSessionSettings;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.ollama.settings.OllamaSessionSettings;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.opencode.settings.OpenCodeSessionSettings;
+import kiwi.ingenuity.netbeans.plugin.aicoder.ai.session.AiSession;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.settings.AiModelSessionSettings;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.settings.AiSessionSettings;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.settings.OpenAiClientSessionSettings;
@@ -37,6 +38,27 @@ class AiTypeEnumSettingsTest {
             assertNull(((AiModelSessionSettings) settings).model(),
                        type + " default settings should not pre-pick a model");
         }
+    }
+
+    @Test
+    void newSessionLeavesGenericValuesForConfigTemplate() {
+        AiSession session = AiSession.create(null, AiTypeEnum.CLAUDE);
+        AiSessionSettings settings = session.settings();
+
+        assertNull(settings.maxHistory());
+        assertNull(settings.saveHistory());
+        assertNull(settings.restrictToProjectFiles());
+        assertNull(settings.allowInterAiComms());
+        assertNull(settings.autoNotifyInbox());
+        assertNull(settings.allowImportantMessages());
+        assertNull(settings.allowIdleWatcherTimer());
+        assertNull(settings.mcpSteering());
+        assertNull(settings.autoAccept());
+        assertNull(settings.allowWebRequests());
+        assertNull(settings.allowDatabaseAccess());
+        assertNull(settings.allowGitAccess());
+        assertNull(settings.databaseRowLimit());
+        assertNull(settings.enableClipboardAccess());
     }
 
     @Test

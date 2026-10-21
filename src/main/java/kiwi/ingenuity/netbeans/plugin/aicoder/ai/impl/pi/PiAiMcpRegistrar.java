@@ -17,8 +17,7 @@ import kiwi.ingenuity.netbeans.plugin.aicoder.process.server.McpServerRegistry;
  * list, and deletes it when the session stops.
  *
  * <p>
- * <b>Why generation is NOT done in {@link #addMcpEndpoint}/{@link #registerHooks}.</b> Those two methods (see
- * {@link AiMcpRegistrar}'s own javadoc: "Called only once per AI type") are invoked by {@code McpServerRegistry}'s
+ * <b>Why generation is NOT done in {@link #registerHooks}.</b> That method is invoked by {@code McpServerRegistry}'s
  * supervisor only when this session is the FIRST of {@link AiTypeEnum#PI} to register — exactly right for Claude's
  * single shared {@code settings.json} hook, wrong for a file that must exist per-session. Generation instead happens
  * lazily, memoized, on the first call to {@link #getExtensionFilePath()} — which {@code PiAiProcessManager} only calls
@@ -41,12 +40,14 @@ public final class PiAiMcpRegistrar extends AiMcpRegistrar {
     private static final Logger LOG = Logger.getLogger(PiAiMcpRegistrar.class.getName());
 
     private final String executablePath;
+    private final String routingId;
     private final Object generationLock = new Object();
     private volatile String extensionFilePath;
 
-    public PiAiMcpRegistrar(String sessionId, String executablePath) {
+    public PiAiMcpRegistrar(String sessionId, String executablePath, String routingId) {
         super(sessionId, AiTypeEnum.PI);
         this.executablePath = executablePath;
+        this.routingId = routingId;
     }
 
     public String getExecutablePath() {
@@ -69,7 +70,7 @@ public final class PiAiMcpRegistrar extends AiMcpRegistrar {
                 return extensionFilePath;
             }
             McpHookServer server = McpServerRegistry.getServer();
-            String mcpUrl = McpServerRegistry.endpointUrlFor(AiTypeEnum.PI);
+            String mcpUrl = McpServerRegistry.endpointUrlFor(AiTypeEnum.PI, routingId);
             if (server == null || mcpUrl == null) {
                 LOG.log(Level.WARNING,
                         "Cannot generate pi extension file for session {0}: the shared MCP server is not running",
@@ -87,12 +88,6 @@ public final class PiAiMcpRegistrar extends AiMcpRegistrar {
             }
             return extensionFilePath;
         }
-    }
-
-    @Override
-    public void addMcpEndpoint(String endpointUrl) {
-        // No shared per-type CLI config: the MCP URL is baked into each session's own generated
-        // extension file instead — see getExtensionFilePath().
     }
 
     @Override

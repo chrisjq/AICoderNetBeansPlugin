@@ -82,7 +82,7 @@ public class CreateIdleWatcherTool extends AbstractActionTool {
     @Override
     public String handle(ToolRequestArguments args, AbstractAiSession session) {
         if (session == null || !session.getAiSession().allowsIdleWatcherTimer()) {
-            return IdleWatcherTools.DISABLED_MESSAGE;
+            return IdleWatcherTools.disabledMessage(session);
         }
         String typeError = args.requireStringIfPresent(CreateIdleWatcherParamEnum.TARGET_SESSION_ID.key());
         if (typeError != null) {

@@ -33,6 +33,7 @@ import kiwi.ingenuity.netbeans.plugin.aicoder.ai.McpSteeringPolicy;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.events.PermissionDecision;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.events.PermissionEvent;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.mail.AiSessionInboxBroker;
+import kiwi.ingenuity.netbeans.plugin.aicoder.ai.settings.AiSessionSettings;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.McpArgumentException;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.McpInstructionOptionEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.McpToolEnum;
@@ -41,6 +42,8 @@ import kiwi.ingenuity.netbeans.plugin.aicoder.process.SessionRegistry;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.locking.LockManager;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.session.AbstractAiSession;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.TimeoutEnum;
+import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.exposure.HiddenToolTextFilter;
+import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.exposure.McpToolAccess;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.McpToolInterface;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.providers.netbeans.FileUtils;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.providers.netbeans.RefactoringProvider;
@@ -570,7 +573,7 @@ public class McpHookServer {
             }
             McpHookServerUtil.sendJson(ex, 200, steered
                                                 ? McpHookServerUtil.hookDeny(McpSteeringPolicy.steeringFeedbackFor(
-                                               steeringCategoryForSteeredClaudeTool(toolName)))
+                                               steeringCategoryForSteeredClaudeTool(toolName), session))
                                                 : McpHookServerUtil.hookAllow());
             return;
         }
@@ -781,7 +784,7 @@ public class McpHookServer {
         };
     }
 
-    // ---- MCP Streamable HTTP endpoint (/mcp/{aiType}) ----
+    // ---- MCP Streamable HTTP endpoint (/mcp/{aiType} and /mcp/{aiType}/{routingId}) ----
     private void handleMcp(HttpExchange ex) throws IOException {
         try {
             McpHookServerUtil.addCors(ex);
@@ -852,17 +855,37 @@ public class McpHookServer {
             String rpcMethod = (methodEl != null && !methodEl.isJsonNull() && methodEl.isJsonPrimitive())
                                ? methodEl.getAsString() : "";
 
-            String path = ex.getRequestURI().getPath();
-            String aiTypeKey = path != null && path.startsWith("/mcp/")
-                               ? path.substring("/mcp/".length()) : null;
-            AiTypeEnum aiType = aiTypeKey != null ? AiTypeEnum.fromKey(aiTypeKey) : null;
+            McpEndpointRoute route = McpEndpointRoute.parse(ex.getRequestURI().getPath());
+            AiTypeEnum aiType = route.typeKey() != null ? AiTypeEnum.fromKey(route.typeKey()) : null;
+            // A session-addressed URL answers from that session's own tool set. An address that names no open session
+            // is refused rather than served the per-type list: failing open would hand every tool to a stale client.
+            AbstractAiSession routedSession = null;
+            String endpointRefusal = null;
+            if (route.kind() == McpEndpointRoute.Kind.INVALID) {
+                endpointRefusal = UNKNOWN_ENDPOINT_MESSAGE;
+            }
+            else if (route.kind() == McpEndpointRoute.Kind.SESSION) {
+                routedSession = sessionForRoute(route, aiType);
+                if (routedSession == null) {
+                    endpointRefusal = UNKNOWN_ENDPOINT_MESSAGE;
+                }
+            }
 
             JsonObject params = McpHookServerUtil.obj(req, McpProtocolKeyEnum.PARAMS.key());
 
             switch (rpcMethod) {
                 case "initialize" -> {
-                    String instructions = McpHookServerUtil.getInitializeStub(
-                            aiType != null ? aiType.getMcpOptions() : Set.of());
+                    if (endpointRefusal != null) {
+                        McpHookServerUtil.sendJson(ex, 200, McpHookServerUtil.mcpError(id, -32600, endpointRefusal));
+                        return;
+                    }
+                    Set<McpToolEnum> stubHidden = routedSession != null ? hiddenToolsOf(routedSession) : Set.of();
+                    // The list-style lines name only the visible tools; the filter then removes any remaining
+                    // sentence that names a hidden one.
+                    String instructions = HiddenToolTextFilter.omitSentencesReferencing(
+                            McpHookServerUtil.getInitializeStub(
+                                    aiType != null ? aiType.getMcpOptions() : Set.of(), stubHidden),
+                            stubHidden);
                     JsonObject result = new JsonObject();
                     String clientProto = McpHookServerUtil.str(params, McpProtocolKeyEnum.PROTOCOL_VERSION.key());
                     result.addProperty(McpProtocolKeyEnum.PROTOCOL_VERSION.key(),
@@ -878,14 +901,29 @@ public class McpHookServer {
                     McpHookServerUtil.sendJson(ex, 200, McpHookServerUtil.mcpOk(id, result));
                 }
                 case "tools/list" -> {
-                    Map<McpToolEnum, McpToolInterface> handlers
-                                                       = aiType != null ? McpInstructionRegistry.getHandlers(aiType) : Map.of();
+                    if (endpointRefusal != null) {
+                        McpHookServerUtil.sendJson(ex, 200, McpHookServerUtil.mcpError(id, -32600, endpointRefusal));
+                        return;
+                    }
+                    Map<McpToolEnum, McpToolInterface> handlers;
+                    Set<McpToolEnum> hiddenTools = Set.of();
+                    if (routedSession != null) {
+                        Map<McpToolEnum, McpToolInterface> allHandlers = routedSession.getMcpToolHandlers();
+                        handlers = McpToolAccess.effectiveTools(routedSession.getSettings(), allHandlers);
+                        hiddenTools = HiddenToolTextFilter.hiddenFrom(allHandlers, handlers);
+                    }
+                    else {
+                        handlers = aiType != null ? McpInstructionRegistry.getHandlers(aiType) : Map.of();
+                    }
                     Set<McpInstructionOptionEnum> toolOptions
                             = aiType != null ? aiType.getMcpOptions() : Set.of();
                     JsonObject result = new JsonObject();
                     JsonArray tools = new JsonArray();
                     for (McpToolInterface h : handlers.values()) {
-                        tools.add(h.schema(toolOptions));
+                        JsonObject schema = h.schema(toolOptions);
+                        tools.add(hiddenTools.isEmpty()
+                                  ? schema
+                                  : HiddenToolTextFilter.omitHiddenReferencesInDescriptions(schema, hiddenTools));
                     }
                     result.add(McpProtocolKeyEnum.TOOLS.key(), tools);
                     McpHookServerUtil.sendJson(ex, 200, McpHookServerUtil.mcpOk(id, result));
@@ -925,12 +963,28 @@ public class McpHookServer {
 
                     if (session == null) {
                         McpHookServerUtil.sendJson(ex, 200,
-                                McpHookServerUtil.mcpError(id, -32600, "Unknown session"));
+                                                   McpHookServerUtil.mcpError(id, -32600, "Unknown session"));
+                        return;
+                    }
+
+                    String routeRefusal = routeCallRefusal(route, aiType, session);
+                    if (routeRefusal != null) {
+                        McpHookServerUtil.sendJson(ex, 200, McpHookServerUtil.mcpError(id, -32600, routeRefusal));
                         return;
                     }
 
                     String requestedName = McpHookServerUtil.str(params, McpProtocolKeyEnum.NAME.key());
                     McpToolEnum requestedTool = McpToolEnum.of(requestedName);
+                    // Enforced from the live settings on every call, including the transitional legacy path, so
+                    // a client holding an older tool list cannot reach a tool the session has since switched off.
+                    if (requestedTool != null && hiddenToolsOf(session).contains(requestedTool)) {
+                        // Names the layer that refuses (MCP group switch, or the config setting beneath it).
+                        McpHookServerUtil.sendJson(ex, 200, McpHookServerUtil.mcpError(id, -32601,
+                                                                                       McpToolAccess.unavailableMessage(
+                                                                                               session.getSettings(), requestedTool,
+                                                                                               session.getMcpToolHandlers().get(requestedTool))));
+                        return;
+                    }
                     if (isToolGated(session.getAiSession().isInstructionsLoaded(), requestedTool)) {
                         McpHookServerUtil.sendJson(ex, 200, McpHookServerUtil.mcpTextResult(id,
                                                                                             "BLOCKED: call GetInstructions before using "
@@ -956,6 +1010,67 @@ public class McpHookServer {
             catch (Exception ignored) {
             }
         }
+    }
+
+    private static final String UNKNOWN_ENDPOINT_MESSAGE
+            = "Unknown MCP endpoint: this address does not belong to any open session. "
+            + "Reconnect using the MCP URL configured for your own session.";
+
+    /**
+     * The open session of {@code type} whose routing id is {@code route}'s, or null. Never generates a routing id: an
+     * address nobody was given must not resolve.
+     */
+    private static AbstractAiSession sessionForRoute(McpEndpointRoute route, AiTypeEnum type) {
+        if (type == null) {
+            return null;
+        }
+        AbstractAiSession owner = null;
+        for (AbstractAiSession candidate : SessionRegistry.allSessions()) {
+            if (!ownsRoute(candidate, type, route.routingId())) {
+                continue;
+            }
+            // The registry can contain aliases for one session. A second distinct owner makes this
+            // address ambiguous, so refuse it rather than arbitrarily exposing either session's tools.
+            if (owner != null && owner.getAiSession() != candidate.getAiSession()) {
+                return null;
+            }
+            owner = candidate;
+        }
+        return owner;
+    }
+
+    private static boolean ownsRoute(AbstractAiSession session, AiTypeEnum type, String routingId) {
+        AiSessionSettings settings = session.getSettings();
+        return session.getType() == type && settings != null && routingId.equals(settings.mcpRoutingId());
+    }
+
+    /**
+     * Why a {@code tools/call} arriving on {@code route} must be refused for the already-authenticated {@code session},
+     * or null if the route allows it. A routing id is an address, not a credential, so a call on someone else's URL is
+     * refused even though its own sessionId and secret are valid.
+     */
+    private static String routeCallRefusal(McpEndpointRoute route, AiTypeEnum type, AbstractAiSession session) {
+        return switch (route.kind()) {
+            case LEGACY ->
+                null;
+            case INVALID ->
+                UNKNOWN_ENDPOINT_MESSAGE;
+            case SESSION -> {
+                AbstractAiSession owner = sessionForRoute(route, type);
+                if (owner == null) {
+                    yield UNKNOWN_ENDPOINT_MESSAGE;
+                }
+                yield owner.getAiSession() == session.getAiSession()
+                      ? null
+                      : "Wrong MCP endpoint: this address belongs to a different session than the sessionId you supplied. "
+                + "Use the MCP URL configured for your own session.";
+            }
+        };
+    }
+
+    private static Set<McpToolEnum> hiddenToolsOf(AbstractAiSession session) {
+        Map<McpToolEnum, McpToolInterface> all = session.getMcpToolHandlers();
+        return HiddenToolTextFilter.hiddenFrom(all, McpToolAccess.effectiveTools(session.getSettings(), all));
     }
 
     private void handleMcpToolCall(HttpExchange ex, JsonObject req, JsonElement id,

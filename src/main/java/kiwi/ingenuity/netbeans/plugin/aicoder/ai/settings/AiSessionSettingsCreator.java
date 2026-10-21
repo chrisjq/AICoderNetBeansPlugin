@@ -1,11 +1,14 @@
 package kiwi.ingenuity.netbeans.plugin.aicoder.ai.settings;
 
 import com.google.gson.JsonObject;
+import java.util.logging.Level;
+import java.util.logging.Logger;
 import javax.swing.JComponent;
 import javax.swing.JPanel;
 import kiwi.ingenuity.netbeans.plugin.aicoder.DatabaseAccessOptionEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.GitAccessOptionEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.WebRequestAccessOptionEnum;
+import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.exposure.McpToolConfig;
 
 /**
  * Base class for creating and updating AI session settings. Implements a chain of responsibility pattern where
@@ -13,6 +16,8 @@ import kiwi.ingenuity.netbeans.plugin.aicoder.WebRequestAccessOptionEnum;
  * objects.
  */
 public abstract class AiSessionSettingsCreator<E extends AiSessionSettings> {
+
+    private static final Logger LOG = Logger.getLogger(AiSessionSettingsCreator.class.getName());
 
     public abstract E create();
 
@@ -120,6 +125,23 @@ public abstract class AiSessionSettingsCreator<E extends AiSessionSettings> {
         key = AiSessionSettingsKeyEnum.ENABLE_CLIPBOARD_ACCESS.key();
         if (cfgObj.has(key) && cfgObj.get(key).isJsonPrimitive()) {
             settings.setEnableClipboardAccess(cfgObj.get(key).getAsBoolean());
+        }
+        key = AiSessionSettingsKeyEnum.MCP_TOOL_CONFIG.key();
+        if (cfgObj.has(key) && cfgObj.get(key).isJsonObject()) {
+            // A malformed config must not silently widen access: parseOrNull leaves it null, so the session keeps
+            // deriving its tools from the legacy toggles instead.
+            settings.setMcpToolConfig(McpToolConfig.parseOrNull(cfgObj.getAsJsonObject(key)));
+        }
+        key = AiSessionSettingsKeyEnum.MCP_ROUTING_ID.key();
+        if (cfgObj.has(key) && cfgObj.get(key).isJsonPrimitive() && !cfgObj.get(key).getAsString().isBlank()) {
+            String routingId = cfgObj.get(key).getAsString();
+            if (AiSessionSettings.isValidMcpRoutingId(routingId)) {
+                settings.setMcpRoutingId(routingId);
+            }
+            else {
+                LOG.log(Level.WARNING, "ignoring malformed persisted MCP routing id; a new one will be generated "
+                        + "(value starts with \"{0}\")", routingId.substring(0, Math.min(16, routingId.length())));
+            }
         }
     }
 

@@ -89,6 +89,53 @@ class GrokAiProcessManagerAcpTest {
         return events.stream().filter(e -> e instanceof StatusEvent se && se.type() == type).count();
     }
 
+    @Test
+    @Timeout(30)
+    void spawnWithoutRegisteredRegistrarEmitsOneNoticeForNewAndLoadedSessions() throws Exception {
+        String notice = kiwi.ingenuity.netbeans.plugin.aicoder.utils.StatusMessageUtil.formatMcpToolsUnavailable("Grok");
+        File script = fakeAgent(
+                "read -r _session\n"
+                + "printf '{\"jsonrpc\":\"2.0\",\"id\":2,\"result\":{\"sessionId\":\"ses_fake\"}}\\n'\n"
+                + "sleep 5\n");
+
+        for (String resumeId : java.util.Arrays.asList(null, "ses_previous")) {
+            List<AiProcessEvent> events = new CopyOnWriteArrayList<>();
+            TestableGrokAiProcessManager manager = startManager(script, events);
+            manager.suspendRegistrarForTesting();
+            manager.pendingAcpResumeId = resumeId;
+            try {
+                manager.spawnAndHandshake(WORK_DIR);
+                assertEquals(1, events.stream()
+                             .filter(e -> e instanceof StatusEvent se && notice.equals(se.text()))
+                             .count(), "one unavailable notice for " + (resumeId == null ? "session/new" : "session/load"));
+            }
+            finally {
+                manager.restoreRegistrarForTesting();
+                manager.stopAndCloseConnections();
+            }
+        }
+    }
+
+    @Test
+    @Timeout(30)
+    void spawnWithRegisteredRegistrarDoesNotEmitUnavailableNotice() throws Exception {
+        List<AiProcessEvent> events = new CopyOnWriteArrayList<>();
+        TestableGrokAiProcessManager manager = startManager(fakeAgent(
+                "read -r _session\n"
+                + "printf '{\"jsonrpc\":\"2.0\",\"id\":2,\"result\":{\"sessionId\":\"ses_fake\"}}\\n'\n"
+                + "sleep 5\n"), events);
+        try {
+            manager.spawnAndHandshake(WORK_DIR);
+            String notice = kiwi.ingenuity.netbeans.plugin.aicoder.utils.StatusMessageUtil.formatMcpToolsUnavailable("Grok");
+            assertEquals(0, events.stream()
+                         .filter(e -> e instanceof StatusEvent se && notice.equals(se.text()))
+                         .count(), events.toString());
+        }
+        finally {
+            manager.stopAndCloseConnections();
+        }
+    }
+
     // ---- 1. Launch + handshake: initialize, session/new with the plugin's MCP server, turn completes ----
     @Test
     void launchAndHandshake_sessionNewCarriesThePluginIdAsTheMcpServerName() throws Exception {
@@ -117,6 +164,23 @@ class GrokAiProcessManagerAcpTest {
         }
         finally {
             manager.stopAndCloseConnections();
+        }
+    }
+
+    @Test
+    void sessionMcpUrlUsesRoutingIdForGrok() throws Exception {
+        GrokSessionSettings settings = new GrokSessionSettings();
+        settings.setMcpRoutingId("route-1234");
+        assertTrue(McpServerRegistry.register(new GrokAiMcpRegistrar("grok-url-test")).get(5, TimeUnit.SECONDS));
+        try {
+            String endpoint = McpServerRegistry.endpointUrlFor(AiTypeEnum.GROK, settings.ensureMcpRoutingId());
+            assertNotNull(endpoint);
+            assertTrue(endpoint.endsWith("/mcp/grok/route-1234"), endpoint);
+            JsonObject params = GrokAiProcessManager.buildSessionNewParams(WORK_DIR.getAbsolutePath(), endpoint);
+            assertEquals(endpoint, params.getAsJsonArray("mcpServers").get(0).getAsJsonObject().get("url").getAsString());
+        }
+        finally {
+            McpServerRegistry.stopAll();
         }
     }
 
@@ -1009,6 +1073,18 @@ class GrokAiProcessManagerAcpTest {
         void armTurn(boolean turnInFlight) {
             running = true;
             processing = turnInFlight;
+        }
+
+        private kiwi.ingenuity.netbeans.plugin.aicoder.process.server.AiMcpRegistrar savedRegistrar;
+
+        void suspendRegistrarForTesting() {
+            savedRegistrar = registrar;
+            registrar = null;
+        }
+
+        void restoreRegistrarForTesting() {
+            registrar = savedRegistrar;
+            savedRegistrar = null;
         }
     }
 

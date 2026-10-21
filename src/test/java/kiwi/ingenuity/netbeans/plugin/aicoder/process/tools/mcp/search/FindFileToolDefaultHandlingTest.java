@@ -79,7 +79,7 @@ class FindFileToolDefaultHandlingTest {
 
         assertTrue(out.contains("visible.txt"), "a visible file must be listed: " + out);
         assertFalse(out.contains(".dotfile"),
-                "omitting ignoreHidden must default to true and exclude the dotfile: " + out);
+                    "omitting ignoreHidden must default to true and exclude the dotfile: " + out);
     }
 
     @Test
@@ -91,7 +91,7 @@ class FindFileToolDefaultHandlingTest {
 
         assertTrue(out.contains("visible.txt"), "a visible file must be listed: " + out);
         assertTrue(out.contains(".dotfile"),
-                "override-compatible ignoreHidden=false must include the dotfile: " + out);
+                   "override-compatible ignoreHidden=false must include the dotfile: " + out);
     }
 
     @Test
@@ -101,8 +101,8 @@ class FindFileToolDefaultHandlingTest {
         String out = new FindFileTool(server).handle(new ToolRequestArguments(o), session);
 
         assertTrue(out.contains("deepfile.txt"),
-                "omitting maxDepth must search to the ceiling (default -1, capped at MAX_DEPTH_CEILING) and find the "
-                + "deep file: " + out);
+                   "omitting maxDepth must search to the ceiling (default -1, capped at MAX_DEPTH_CEILING) and find the "
+                   + "deep file: " + out);
     }
 
     @Test
@@ -146,10 +146,6 @@ class FindFileToolDefaultHandlingTest {
 
         NoopRegistrar(String sessionId) {
             super(sessionId, AiTypeEnum.CLAUDE);
-        }
-
-        @Override
-        public void addMcpEndpoint(String endpointUrl) {
         }
 
         @Override

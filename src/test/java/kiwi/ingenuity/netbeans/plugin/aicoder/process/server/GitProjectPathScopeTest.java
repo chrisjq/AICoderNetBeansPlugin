@@ -32,18 +32,18 @@ import org.junit.jupiter.api.io.TempDir;
 
 /**
  * Pins that a git tool's caller-supplied path is checked against the calling session's file scope, so
- * restrict-to-project actually restricts git the way it restricts every other file tool. Before this, every
- * git tool except GitCommit took an arbitrary absolute {@code projectPath} straight to
- * {@code GitProvider#resolveRoot} with no scope check at all — a session locked to one project could GitReset
- * --hard, GitCheckout or GetGitDiff any repository on the machine.
+ * restrict-to-project actually restricts git the way it restricts every other file tool. Before this, every git tool
+ * except GitCommit took an arbitrary absolute {@code projectPath} straight to {@code GitProvider#resolveRoot} with no
+ * scope check at all — a session locked to one project could GitReset --hard, GitCheckout or GetGitDiff any repository
+ * on the machine.
  * <p>
- * The check deliberately validates the SUPPLIED path and not the resolved repository root: a {@code .git}
- * directory frequently sits above the NetBeans project directory, and scoping the resolved root would break
- * that ordinary layout. Every assertion here is therefore about the argument the caller passed, never about
- * where the upward walk for {@code .git} eventually lands.
+ * The check deliberately validates the SUPPLIED path and not the resolved repository root: a {@code .git} directory
+ * frequently sits above the NetBeans project directory, and scoping the resolved root would break that ordinary layout.
+ * Every assertion here is therefore about the argument the caller passed, never about where the upward walk for
+ * {@code .git} eventually lands.
  * <p>
- * Every tool used here is read-only and every path points at an empty temp directory that is not a
- * repository, so a regression that lets a call through mutates nothing — it only fails an assertion.
+ * Every tool used here is read-only and every path points at an empty temp directory that is not a repository, so a
+ * regression that lets a call through mutates nothing — it only fails an assertion.
  */
 class GitProjectPathScopeTest {
 
@@ -82,11 +82,11 @@ class GitProjectPathScopeTest {
     @Test
     void deniesGitToolWhenProjectPathIsOutsideTheSessionScope() throws Exception {
         String result = McpToolInvoker.invoke(McpToolEnum.GET_GIT_STATUS, new GetGitStatusTool(),
-                projectPathArgs(outsideDir), new FakeSession(restrictedSessionId));
+                                              projectPathArgs(outsideDir), new FakeSession(restrictedSessionId));
         assertTrue(result.startsWith("Access denied"),
-                "a restricted session must not reach a repository outside its scope: " + result);
+                   "a restricted session must not reach a repository outside its scope: " + result);
         assertTrue(result.contains(outsideDir.toString()),
-                "the denial must quote the refused path back: " + result);
+                   "the denial must quote the refused path back: " + result);
     }
 
     @Test
@@ -95,9 +95,9 @@ class GitProjectPathScopeTest {
         // restrict-to-project. The directory is not a repository, so the tool answers
         // "Repository not found" — the point is only that it got that far.
         String result = McpToolInvoker.invoke(McpToolEnum.GET_GIT_STATUS, new GetGitStatusTool(),
-                projectPathArgs(projectDir), new FakeSession(restrictedSessionId));
+                                              projectPathArgs(projectDir), new FakeSession(restrictedSessionId));
         assertFalse(result.startsWith("Access denied"),
-                "a path inside the session's own project must not be refused: " + result);
+                    "a path inside the session's own project must not be refused: " + result);
     }
 
     @Test
@@ -105,9 +105,9 @@ class GitProjectPathScopeTest {
         String unrestrictedSessionId = "git-scope-open-" + UUID.randomUUID();
         server.registerSession(unrestrictedSessionId, CLAUDE, List.of(), false);
         String result = McpToolInvoker.invoke(McpToolEnum.GET_GIT_STATUS, new GetGitStatusTool(),
-                projectPathArgs(outsideDir), new FakeSession(unrestrictedSessionId));
+                                              projectPathArgs(outsideDir), new FakeSession(unrestrictedSessionId));
         assertFalse(result.startsWith("Access denied"),
-                "restrict-to-project OFF must keep working exactly as before: " + result);
+                    "restrict-to-project OFF must keep working exactly as before: " + result);
     }
 
     @Test
@@ -118,9 +118,9 @@ class GitProjectPathScopeTest {
         JsonObject o = new JsonObject();
         o.addProperty(GitBlameParamEnum.FILE.key(), outsideDir.resolve("secret.txt").toString());
         String result = McpToolInvoker.invoke(McpToolEnum.GIT_BLAME, new GitBlameTool(),
-                o, new FakeSession(restrictedSessionId));
+                                              o, new FakeSession(restrictedSessionId));
         assertTrue(result.startsWith("Access denied"),
-                "an absolute file argument must be scoped when projectPath is omitted: " + result);
+                   "an absolute file argument must be scoped when projectPath is omitted: " + result);
     }
 
     @Test
@@ -137,11 +137,11 @@ class GitProjectPathScopeTest {
             }
             gitTools++;
             assertNotNull(McpToolInvoker.gitScopeDenialOrNull(entry.getValue(),
-                    projectPathArgs(outsideDir), session),
-                    entry.getKey().toolName() + " must refuse an out-of-scope projectPath");
+                                                              projectPathArgs(outsideDir), session),
+                          entry.getKey().toolName() + " must refuse an out-of-scope projectPath");
         }
         assertTrue(gitTools >= 20,
-                "expected the full git tool surface to be walked, saw only " + gitTools);
+                   "expected the full git tool surface to be walked, saw only " + gitTools);
     }
 
     @Test
@@ -150,8 +150,8 @@ class GitProjectPathScopeTest {
         // not be swept up by a guard that exists for the git surface, which has its own
         // scope handling.
         assertNull(McpToolInvoker.gitScopeDenialOrNull(new GetPluginVersionTool(),
-                projectPathArgs(outsideDir), new FakeSession(restrictedSessionId)),
-                "the git guard must not fire for a non-git tool");
+                                                       projectPathArgs(outsideDir), new FakeSession(restrictedSessionId)),
+                   "the git guard must not fire for a non-git tool");
     }
 
     @Test
@@ -163,27 +163,23 @@ class GitProjectPathScopeTest {
         args.addProperty(McpToolPropertyEnum.PROJECT_PATH.key(), outsideDir.toString());
 
         String result = McpToolInvoker.invoke(McpToolEnum.GET_GIT_STATUS,
-                new GetGitStatusTool(), args, session);
+                                              new GetGitStatusTool(), args, session);
 
         assertTrue(result.contains("Git access is disabled"),
-                "scope was reported first — the two checks are the wrong way round: " + result);
+                   "scope was reported first — the two checks are the wrong way round: " + result);
     }
 
     @Test
     void failsClosedWhenTheCallHasNoSession() {
         assertNotNull(McpToolInvoker.gitScopeDenialOrNull(new GetGitStatusTool(),
-                projectPathArgs(outsideDir), null),
-                "a git call with no session identity must be refused, not waved through");
+                                                          projectPathArgs(outsideDir), null),
+                      "a git call with no session identity must be refused, not waved through");
     }
 
     private static final class NoopRegistrar extends AiMcpRegistrar {
 
         NoopRegistrar(String sessionId) {
             super(sessionId, AiTypeEnum.CLAUDE);
-        }
-
-        @Override
-        public void addMcpEndpoint(String endpointUrl) {
         }
 
         @Override

@@ -25,56 +25,56 @@ class GithubCopilotPermissionPolicyTest {
     // tool calls prompted.
     private static Map<String, Object> mcpExtensionData(String serverName) {
         return Map.of("serverName", serverName,
-                "toolName", serverName + "-GetFileContent",
-                "toolTitle", "GetFileContent",
-                "readOnly", false);
+                      "toolName", serverName + "-GetFileContent",
+                      "toolTitle", "GetFileContent",
+                      "readOnly", false);
     }
 
     @Test
     void liveMcpKindWithOurServerNameInExtensionDataAutoApproves() {
         assertEquals(GithubCopilotPermissionPolicy.Category.MCP_OUR_SERVER,
-                GithubCopilotPermissionPolicy.classify("mcp", MCP_SERVER_NAME,
-                        mcpExtensionData(MCP_SERVER_NAME)),
-                "this is the exact shape a live session sends; it must not prompt");
+                     GithubCopilotPermissionPolicy.classify("mcp", MCP_SERVER_NAME,
+                                                            mcpExtensionData(MCP_SERVER_NAME)),
+                     "this is the exact shape a live session sends; it must not prompt");
     }
 
     @Test
     void mcpKindFromAnotherServerStillPrompts() {
         assertEquals(GithubCopilotPermissionPolicy.Category.UNKNOWN,
-                GithubCopilotPermissionPolicy.classify("mcp", MCP_SERVER_NAME,
-                        mcpExtensionData("some-other-mcp-server")),
-                "this plugin gates only its own tools, so another server's must still be asked about");
+                     GithubCopilotPermissionPolicy.classify("mcp", MCP_SERVER_NAME,
+                                                            mcpExtensionData("some-other-mcp-server")),
+                     "this plugin gates only its own tools, so another server's must still be asked about");
     }
 
     @Test
     void mcpKindWithNoExtensionDataPrompts() {
         assertEquals(GithubCopilotPermissionPolicy.Category.UNKNOWN,
-                GithubCopilotPermissionPolicy.classify("mcp", MCP_SERVER_NAME, null),
-                "no server name means it cannot be confirmed as ours — fail closed");
+                     GithubCopilotPermissionPolicy.classify("mcp", MCP_SERVER_NAME, null),
+                     "no server name means it cannot be confirmed as ours — fail closed");
     }
 
     @Test
     void mcpServerNameMatchIsCaseInsensitive() {
         assertEquals(GithubCopilotPermissionPolicy.Category.MCP_OUR_SERVER,
-                GithubCopilotPermissionPolicy.classify("MCP", MCP_SERVER_NAME,
-                        mcpExtensionData(MCP_SERVER_NAME.toUpperCase(Locale.ROOT))));
+                     GithubCopilotPermissionPolicy.classify("MCP", MCP_SERVER_NAME,
+                                                            mcpExtensionData(MCP_SERVER_NAME.toUpperCase(Locale.ROOT))));
     }
 
     // ---- panel labelling and credential masking ----
     @Test
     void toolNamePrefersTheToolTitleOverTheCategoryLabel() {
         assertEquals("PeerMessageSend",
-                GithubCopilotPermissionPolicy.describeToolName(
-                        GithubCopilotPermissionPolicy.Category.UNKNOWN, "mcp",
-                        Map.of("toolTitle", "PeerMessageSend")),
-                "a live panel read \"Unknown\" while the tool title sat unused in extensionData");
+                     GithubCopilotPermissionPolicy.describeToolName(
+                             GithubCopilotPermissionPolicy.Category.UNKNOWN, "mcp",
+                             Map.of("toolTitle", "PeerMessageSend")),
+                     "a live panel read \"Unknown\" while the tool title sat unused in extensionData");
     }
 
     @Test
     void recognisedCategoriesKeepTheirCleanLabel() {
         assertEquals("Shell", GithubCopilotPermissionPolicy.describeToolName(
-                GithubCopilotPermissionPolicy.Category.SHELL, "commands(echo)", Map.of()),
-                "\"Shell\" reads better than the raw kind for a recognised category");
+                     GithubCopilotPermissionPolicy.Category.SHELL, "commands(echo)", Map.of()),
+                     "\"Shell\" reads better than the raw kind for a recognised category");
     }
 
     @Test
@@ -84,23 +84,23 @@ class GithubCopilotPermissionPolicyTest {
         // an arbitrary server string. "Unknown" is more honest there than printing
         // it where a tool name belongs; the raw kind still appears in the text.
         assertEquals("Internal Command", GithubCopilotPermissionPolicy.describeToolName(
-                GithubCopilotPermissionPolicy.Category.UNKNOWN, "some-future-kind(thing)", Map.of()));
+                     GithubCopilotPermissionPolicy.Category.UNKNOWN, "some-future-kind(thing)", Map.of()));
         assertEquals("Internal Command", GithubCopilotPermissionPolicy.describeToolName(
-                GithubCopilotPermissionPolicy.Category.UNKNOWN, null, null));
+                     GithubCopilotPermissionPolicy.Category.UNKNOWN, null, null));
     }
 
     @Test
     void aRecognisedMcpRequestStillShowsItsToolTitle() {
         // The case that actually matters in practice: "PeerMessageSend", not "Unknown".
         assertEquals("PeerMessageSend", GithubCopilotPermissionPolicy.describeToolName(
-                GithubCopilotPermissionPolicy.Category.UNKNOWN, "mcp",
-                Map.of("toolTitle", "PeerMessageSend")));
+                     GithubCopilotPermissionPolicy.Category.UNKNOWN, "mcp",
+                     Map.of("toolTitle", "PeerMessageSend")));
     }
 
     @Test
     void credentialsAreMaskedInTheDisplayText() {
         String text = GithubCopilotPermissionPolicy.describeRequest("mcp",
-                Map.of("secretKey", "848473ea-a2ab-4802-a8a5-721015c9579e"));
+                                                                    Map.of("secretKey", "848473ea-a2ab-4802-a8a5-721015c9579e"));
         assertFalse(text.contains("848473ea"), "a session secret must never be rendered: " + text);
         assertTrue(text.contains("***"), text);
     }
@@ -110,7 +110,7 @@ class GithubCopilotPermissionPolicyTest {
         // The inter-AI tools pass secretKey inside args={...}, which is how one was
         // rendered in full to the confirm panel during a live run.
         String text = GithubCopilotPermissionPolicy.describeRequest("mcp",
-                Map.of("args", "{sessionId=abc, secretKey=848473ea-a2ab-4802, targetSessionId=def}"));
+                                                                    Map.of("args", "{sessionId=abc, secretKey=848473ea-a2ab-4802, targetSessionId=def}"));
         assertFalse(text.contains("848473ea"), "nested secret must be masked too: " + text);
         assertTrue(text.contains("secretKey=***"), text);
     }
@@ -118,7 +118,7 @@ class GithubCopilotPermissionPolicyTest {
     @Test
     void overlongValuesAreTruncated() {
         String text = GithubCopilotPermissionPolicy.describeRequest("mcp",
-                Map.of("message", "x".repeat(1000)));
+                                                                    Map.of("message", "x".repeat(1000)));
         assertTrue(text.length() < 600, "one huge argument must not swamp the panel: " + text.length());
         assertTrue(text.contains("…"), text);
     }
@@ -126,92 +126,92 @@ class GithubCopilotPermissionPolicyTest {
     @Test
     void nullOrBlankKindIsUnknown() {
         assertEquals(GithubCopilotPermissionPolicy.Category.UNKNOWN,
-                GithubCopilotPermissionPolicy.classify(null, MCP_SERVER_NAME, null));
+                     GithubCopilotPermissionPolicy.classify(null, MCP_SERVER_NAME, null));
         assertEquals(GithubCopilotPermissionPolicy.Category.UNKNOWN,
-                GithubCopilotPermissionPolicy.classify("   ", MCP_SERVER_NAME, null));
+                     GithubCopilotPermissionPolicy.classify("   ", MCP_SERVER_NAME, null));
     }
 
     @Test
     void ourMcpServerKindAutoApprovesInBareForm() {
         assertEquals(GithubCopilotPermissionPolicy.Category.MCP_OUR_SERVER,
-                GithubCopilotPermissionPolicy.classify(MCP_SERVER_NAME, MCP_SERVER_NAME, null));
+                     GithubCopilotPermissionPolicy.classify(MCP_SERVER_NAME, MCP_SERVER_NAME, null));
     }
 
     @Test
     void ourMcpServerKindAutoApprovesInFullPatternForm() {
         assertEquals(GithubCopilotPermissionPolicy.Category.MCP_OUR_SERVER,
-                GithubCopilotPermissionPolicy.classify(MCP_SERVER_NAME + "(GetFileContent)", MCP_SERVER_NAME, null));
+                     GithubCopilotPermissionPolicy.classify(MCP_SERVER_NAME + "(GetFileContent)", MCP_SERVER_NAME, null));
     }
 
     @Test
     void ourMcpServerMatchIsCaseInsensitive() {
         assertEquals(GithubCopilotPermissionPolicy.Category.MCP_OUR_SERVER,
-                GithubCopilotPermissionPolicy.classify(MCP_SERVER_NAME.toUpperCase(Locale.ROOT), MCP_SERVER_NAME, null));
+                     GithubCopilotPermissionPolicy.classify(MCP_SERVER_NAME.toUpperCase(Locale.ROOT), MCP_SERVER_NAME, null));
     }
 
     @Test
     void commandsKindRoutesToShell() {
         assertEquals(GithubCopilotPermissionPolicy.Category.SHELL,
-                GithubCopilotPermissionPolicy.classify("commands", MCP_SERVER_NAME,
-                        Map.of("fullCommandText", "echo hi", "intention", "test")));
+                     GithubCopilotPermissionPolicy.classify("commands", MCP_SERVER_NAME,
+                                                            Map.of("fullCommandText", "echo hi", "intention", "test")));
     }
 
     /**
      * The kind getKind() actually reports for a shell command is "shell" — "commands" appears only inside
-     * extensionData, as a sub-array beside fullCommandText. Captured verbatim from a live request. A rewrite
-     * that matched only "commands" made the SHELL branch unreachable, so every shell command fell through to
-     * UNKNOWN and was auto-denied instead of prompting.
+     * extensionData, as a sub-array beside fullCommandText. Captured verbatim from a live request. A rewrite that
+     * matched only "commands" made the SHELL branch unreachable, so every shell command fell through to UNKNOWN and was
+     * auto-denied instead of prompting.
      */
     @Test
     void shellKindFromLiveRequestRoutesToShellNotUnknown() {
         assertEquals(GithubCopilotPermissionPolicy.Category.SHELL,
-                GithubCopilotPermissionPolicy.classify("shell", MCP_SERVER_NAME,
-                        Map.of("fullCommandText", "find src/main/java -name \"*.java\" | wc -l",
-                                "intention", "Count .java files in src/main/java",
-                                "commands", "[{identifier=find, readOnly=false}]")));
+                     GithubCopilotPermissionPolicy.classify("shell", MCP_SERVER_NAME,
+                                                            Map.of("fullCommandText", "find src/main/java -name \"*.java\" | wc -l",
+                                                                   "intention", "Count .java files in src/main/java",
+                                                                   "commands", "[{identifier=find, readOnly=false}]")));
     }
 
     @Test
     void commandsSuffixRoutesToShellTheSameAsBareForm() {
         assertEquals(GithubCopilotPermissionPolicy.Category.SHELL,
-                GithubCopilotPermissionPolicy.classify("commands(echo)", MCP_SERVER_NAME,
-                        Map.of("fullCommandText", "echo hi")));
+                     GithubCopilotPermissionPolicy.classify("commands(echo)", MCP_SERVER_NAME,
+                                                            Map.of("fullCommandText", "echo hi")));
     }
 
     @Test
     void readKindRoutesToInternal() {
         assertEquals(GithubCopilotPermissionPolicy.Category.INTERNAL,
-                GithubCopilotPermissionPolicy.classify("read", MCP_SERVER_NAME,
-                        Map.of("path", "src/Main.java", "intention", "inspect")));
+                     GithubCopilotPermissionPolicy.classify("read", MCP_SERVER_NAME,
+                                                            Map.of("path", "src/Main.java", "intention", "inspect")));
     }
 
     @Test
     void pathAndUrlKindsRouteToInternal() {
         assertEquals(GithubCopilotPermissionPolicy.Category.INTERNAL,
-                GithubCopilotPermissionPolicy.classify("path", MCP_SERVER_NAME,
-                        Map.of("accessKind", "shell", "paths", List.of("/tmp"))));
+                     GithubCopilotPermissionPolicy.classify("path", MCP_SERVER_NAME,
+                                                            Map.of("accessKind", "shell", "paths", List.of("/tmp"))));
         assertEquals(GithubCopilotPermissionPolicy.Category.INTERNAL,
-                GithubCopilotPermissionPolicy.classify("url", MCP_SERVER_NAME,
-                        Map.of("url", "https://example.com", "intention", "fetch")));
+                     GithubCopilotPermissionPolicy.classify("url", MCP_SERVER_NAME,
+                                                            Map.of("url", "https://example.com", "intention", "fetch")));
     }
 
     /**
-     * apply_patch arrives with the bare kind "write", not a file kind. Captured verbatim from the IDE log
-     * during a live probe: "{@code MCP Steering refusal: backend=copilot, category=UNKNOWN: GitHub Copilot
-     * requests permission: write — intention=Create file, fileName=..., diff=}". It used to fall through to
-     * UNKNOWN and get the generic GetInstructions steer; it must now be its own steerable category.
+     * apply_patch arrives with the bare kind "write", not a file kind. Captured verbatim from the IDE log during a live
+     * probe: "{@code MCP Steering refusal: backend=copilot, category=UNKNOWN: GitHub Copilot
+     * requests permission: write — intention=Create file, fileName=..., diff=}". It used to fall through to UNKNOWN and
+     * get the generic GetInstructions steer; it must now be its own steerable category.
      */
     @Test
     void writeKindFromLiveRequestRoutesToWriteNotUnknown() {
         assertEquals(GithubCopilotPermissionPolicy.Category.WRITE,
-                GithubCopilotPermissionPolicy.classify("write", MCP_SERVER_NAME,
-                        Map.of("intention", "Create file", "fileName", "target/steering-probe.txt", "diff", "")));
+                     GithubCopilotPermissionPolicy.classify("write", MCP_SERVER_NAME,
+                                                            Map.of("intention", "Create file", "fileName", "target/steering-probe.txt", "diff", "")));
     }
 
     @Test
     void unrecognisedKindIsUnknownRatherThanGuessed() {
         assertEquals(GithubCopilotPermissionPolicy.Category.UNKNOWN,
-                GithubCopilotPermissionPolicy.classify("some-future-kind(thing)", MCP_SERVER_NAME, null));
+                     GithubCopilotPermissionPolicy.classify("some-future-kind(thing)", MCP_SERVER_NAME, null));
     }
 
     @Test
@@ -223,28 +223,28 @@ class GithubCopilotPermissionPolicyTest {
     @Test
     void describeRequestHandlesMissingKindAndEmptyExtensionData() {
         assertEquals("GitHub Copilot requests permission: (unknown kind)",
-                GithubCopilotPermissionPolicy.describeRequest(null, Map.of()));
+                     GithubCopilotPermissionPolicy.describeRequest(null, Map.of()));
         assertEquals("GitHub Copilot requests permission: (unknown kind)",
-                GithubCopilotPermissionPolicy.describeRequest(null, null));
+                     GithubCopilotPermissionPolicy.describeRequest(null, null));
     }
 
     @Test
     void rejectFeedbackNamesTheMcpAlternativeForEachNativeKind() {
         assertTrue(GithubCopilotPermissionPolicy.rejectFeedbackFor(
-                GithubCopilotPermissionPolicy.Category.INTERNAL, "read").contains("GetFileContent"));
+                GithubCopilotPermissionPolicy.Category.INTERNAL, "read", null).contains("GetFileContent"));
         assertTrue(GithubCopilotPermissionPolicy.rejectFeedbackFor(
-                GithubCopilotPermissionPolicy.Category.INTERNAL, "path").contains("GetProjectStructure"));
+                GithubCopilotPermissionPolicy.Category.INTERNAL, "path", null).contains("GetProjectStructure"));
         assertTrue(GithubCopilotPermissionPolicy.rejectFeedbackFor(
-                GithubCopilotPermissionPolicy.Category.INTERNAL, "url").contains("WebRequest"));
+                GithubCopilotPermissionPolicy.Category.INTERNAL, "url", null).contains("WebRequest"));
         assertTrue(GithubCopilotPermissionPolicy.rejectFeedbackFor(
-                GithubCopilotPermissionPolicy.Category.UNKNOWN, "future").contains("GetInstructions"));
+                GithubCopilotPermissionPolicy.Category.UNKNOWN, "future", null).contains("GetInstructions"));
         assertTrue(GithubCopilotPermissionPolicy.rejectFeedbackFor(
-                GithubCopilotPermissionPolicy.Category.WRITE, "write").contains("ApplyEdit"),
-                "a write refusal must name ApplyEdit/WriteFile, not fall back to GetInstructions");
+                GithubCopilotPermissionPolicy.Category.WRITE, "write", null).contains("ApplyEdit"),
+                   "a write refusal must name ApplyEdit/WriteFile, not fall back to GetInstructions");
         assertEquals(McpSteeringPolicy.steeringFeedbackFor(McpSteeringPolicy.Category.WRITE),
-                GithubCopilotPermissionPolicy.rejectFeedbackFor(
-                        GithubCopilotPermissionPolicy.Category.WRITE, "write"),
-                "WRITE must map to the same steer text the OpenCode/Codex write paths produce");
+                     GithubCopilotPermissionPolicy.rejectFeedbackFor(
+                             GithubCopilotPermissionPolicy.Category.WRITE, "write", null),
+                     "WRITE must map to the same steer text the OpenCode/Codex write paths produce");
     }
 
 }

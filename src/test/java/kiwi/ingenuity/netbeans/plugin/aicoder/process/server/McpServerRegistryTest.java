@@ -108,7 +108,7 @@ class McpServerRegistryTest {
         assertTrue(register(claude));
         assertNotNull(McpServerRegistry.getServer());
         assertEquals(1, claude.count("registerHooks"));
-        assertEquals(1, claude.count("add"));
+        assertEquals(1, claude.count("remove"), "first registration clears any legacy global endpoint");
     }
 
     @Test
@@ -118,7 +118,7 @@ class McpServerRegistryTest {
         assertTrue(register(c1));
         assertTrue(register(c2));
         assertEquals(0, c2.count("registerHooks"));
-        assertEquals(0, c2.count("add"));
+        assertEquals(0, c2.count("remove"));
     }
 
     @Test
@@ -129,7 +129,7 @@ class McpServerRegistryTest {
         FakeRegistrar dup = new FakeRegistrar("c1", AiTypeEnum.CLAUDE);
         assertTrue(register(dup));
         assertEquals(0, dup.count("registerHooks"));
-        assertEquals(0, dup.count("add"));
+        assertEquals(0, dup.count("remove"));
         assertNotNull(McpServerRegistry.getServer());
     }
 
@@ -187,7 +187,7 @@ class McpServerRegistryTest {
         FakeRegistrar bad = new FakeRegistrar("c1", AiTypeEnum.CLAUDE);
         bad.hooksResult = false;
         assertFalse(register(bad));
-        assertEquals(0, bad.count("add"));
+        assertEquals(0, bad.count("remove"));
         assertTrue(awaitServerStopped(3000), "failed registration must leave no running server");
     }
 
@@ -357,7 +357,7 @@ class McpServerRegistryTest {
     }
 
     @Test
-    void reRegisteringTypeAfterTeardownReinstallsEndpoint() throws Exception {
+    void reRegisteringTypeAfterTeardownRunsRegistrationAgain() throws Exception {
         FakeRegistrar c1 = new FakeRegistrar("c1", AiTypeEnum.CLAUDE);
         assertTrue(register(c1));
         McpServerRegistry.deregister(c1);
@@ -366,7 +366,7 @@ class McpServerRegistryTest {
         FakeRegistrar c2 = new FakeRegistrar("c2", AiTypeEnum.CLAUDE);
         assertTrue(register(c2));
         assertEquals(1, c2.count("registerHooks"));
-        assertEquals(1, c2.count("add"));
+        assertEquals(1, c2.count("remove"));
         assertNotNull(McpServerRegistry.getServer());
     }
 
@@ -404,7 +404,7 @@ class McpServerRegistryTest {
         // the shutdown sweep must not undo hooks a second time.
         FakeRegistrar claude = new FakeRegistrar("c1", AiTypeEnum.CLAUDE);
         assertTrue(register(claude));
-        claude.events.clear(); // registration itself records a "remove" before "add"
+        claude.events.clear(); // registration itself records a "remove"
         McpServerRegistry.deregister(claude);
         awaitCount(claude, "unregisterHooks", 1, 3000);
 
@@ -433,19 +433,39 @@ class McpServerRegistryTest {
 
     @Test
     void endpointUrlForReturnsNonNullForSecondSessionOfType() {
-        // First session gets addMcpEndpoint called; second does NOT (typeCount guard).
-        // endpointUrlFor must still return the correct URL for both sessions.
         FakeRegistrar oc1 = new FakeRegistrar("oc1", AiTypeEnum.OPENCODE);
         assertTrue(register(oc1));
-        assertEquals(1, oc1.count("add"), "first session must have addMcpEndpoint called");
 
         FakeRegistrar oc2 = new FakeRegistrar("oc2", AiTypeEnum.OPENCODE);
         assertTrue(register(oc2));
-        assertEquals(0, oc2.count("add"), "second session must NOT have addMcpEndpoint called");
 
         String url = McpServerRegistry.endpointUrlFor(AiTypeEnum.OPENCODE);
-        assertNotNull(url, "endpointUrlFor must return non-null even when the registrar's addMcpEndpoint was never called");
+        assertNotNull(url, "endpointUrlFor must return non-null for every session of the type");
         assertEquals(McpServerRegistry.getServer().getBaseUrl() + "/mcp/opencode", url);
+    }
+
+    @Test
+    void sessionEndpointUrlAppendsTheRoutingIdToTheTypeUrl() {
+        FakeRegistrar r = new FakeRegistrar("oc1", AiTypeEnum.OPENCODE);
+        assertTrue(register(r));
+
+        String url = McpServerRegistry.endpointUrlFor(AiTypeEnum.OPENCODE, "route-123");
+
+        assertEquals(McpServerRegistry.getServer().getBaseUrl() + "/mcp/opencode/route-123", url);
+        assertEquals(McpServerRegistry.endpointUrlFor(AiTypeEnum.OPENCODE) + "/route-123", url);
+        assertNull(McpServerRegistry.endpointUrlFor(AiTypeEnum.OPENCODE, "bad/id%value"));
+        assertNull(McpServerRegistry.endpointUrlFor(AiTypeEnum.OPENCODE, "short"));
+    }
+
+    @Test
+    void sessionEndpointUrlIsNullWhenTheServerIsDownOrTheRoutingIdIsMissing() {
+        assertNull(McpServerRegistry.endpointUrlFor(AiTypeEnum.OPENCODE, "route-123"), "server not running");
+
+        FakeRegistrar r = new FakeRegistrar("oc1", AiTypeEnum.OPENCODE);
+        assertTrue(register(r));
+        assertNull(McpServerRegistry.endpointUrlFor(AiTypeEnum.OPENCODE, null));
+        assertNull(McpServerRegistry.endpointUrlFor(AiTypeEnum.OPENCODE, " "));
+        assertNull(McpServerRegistry.endpointUrlFor(null, "route-123"));
     }
 
     /**
@@ -462,11 +482,6 @@ class McpServerRegistryTest {
 
         FakeRegistrar(String sessionId, AiTypeEnum type) {
             super(sessionId, type);
-        }
-
-        @Override
-        public void addMcpEndpoint(String endpointUrl) {
-            events.add("add");
         }
 
         @Override

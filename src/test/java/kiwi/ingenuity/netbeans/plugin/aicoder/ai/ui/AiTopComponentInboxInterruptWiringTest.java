@@ -8,6 +8,7 @@ import java.util.List;
 import java.util.Set;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
+import kiwi.ingenuity.netbeans.plugin.aicoder.process.McpToolEnum;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -354,15 +355,21 @@ class AiTopComponentInboxInterruptWiringTest {
     }
 
     /**
-     * THE ORDERING THAT MUST NOT BE UNDONE. The drain AND its system line sit BELOW the not-running early
-     * return. Moved above it, the user would be told "Delivered pending inbox messages" while the payload was
-     * discarded — worse than the original dropped-mail bug, because it reports success.
+     * THE ORDERING THAT MUST NOT BE UNDONE. The drain AND its system line sit BELOW the not-running early return. Moved
+     * above it, the user would be told "Delivered pending inbox messages" while the payload was discarded — worse than
+     * the original dropped-mail bug, because it reports success.
+     *
+     * <p>
+     * "Not running" also covers a tool-change restart in flight: while the process is being replaced and the
+     * conversation resumed, submits are stashed by this same early return, so the drain must stay below it for that
+     * case too.
      */
     @Test
     void deferredMailIsDrainedAndAnnouncedOnlyAfterTheNotRunningEarlyReturn() throws IOException {
         String source = readSource();
 
-        int earlyReturn = source.indexOf("if (aiBackend != null && !aiBackend.isRunning()) {");
+        int earlyReturn = source.indexOf(
+                "if (aiBackend != null && (!aiBackend.isRunning() || toolRestart.isRestartInFlight())) {");
         int drain = source.indexOf("String deferredForAgent = null;");
         int announce = source.indexOf("conversationPanel.addSystemMessage(\"Delivered pending inbox messages\")");
         assertTrue(earlyReturn >= 0, "the not-running early return must still exist");
@@ -461,7 +468,7 @@ class AiTopComponentInboxInterruptWiringTest {
         int declaration = source.indexOf("private String consumeInboxInterruptExplanation()");
         int clearMailFlag = source.indexOf("mailArrivedDuringTurn = false", declaration);
         int stopCheck = source.indexOf("cancelledTurnJustCompleted", declaration);
-        int returnExplanation = source.indexOf("return INBOX_INTERRUPT_EXPLANATION", declaration);
+        int returnExplanation = source.indexOf("HiddenToolTextFilter.omitSentencesReferencing(interruptExplanation(", declaration);
 
         assertTrue(stopCheck > declaration && stopCheck < returnExplanation,
                    "the user-stop check must sit inside this method, before it can return the explanation");
@@ -534,6 +541,23 @@ class AiTopComponentInboxInterruptWiringTest {
 
         assertTrue(wording.contains("normally allowed to finish first"), wording);
         assertTrue(wording.contains("a result you received is real"), wording);
+    }
+
+    /**
+     * The check sentence survives any hidden set, and names only the tools the session can see.
+     */
+    @Test
+    void theCheckSentenceAlwaysSurvivesAndNamesOnlyVisibleTools() {
+        String visible = AiTopComponent.interruptExplanation(Set.of());
+        assertTrue(visible.contains("Check its effect (re-read the file, ListBuilds, PeerMessageList, GetGitStatus…) "),
+                   visible);
+
+        String allHidden = AiTopComponent.interruptExplanation(Set.of(McpToolEnum.LIST_BUILDS,
+                                                                      McpToolEnum.PEER_MESSAGE_LIST, McpToolEnum.GET_GIT_STATUS));
+        assertTrue(allHidden.contains("Check its effect (re-read the file…) before repeating it."), allHidden);
+        assertFalse(allHidden.contains("ListBuilds"), allHidden);
+        assertFalse(allHidden.contains("PeerMessageList"), allHidden);
+        assertFalse(allHidden.contains("GetGitStatus"), allHidden);
     }
 
 }

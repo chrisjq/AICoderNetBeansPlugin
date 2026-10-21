@@ -12,16 +12,27 @@ import kiwi.ingenuity.netbeans.plugin.aicoder.WebRequestAccessOptionEnum;
  */
 public final class ConfigTemplate {
 
+    public static final String DEFAULT_ID = "default";
+
+    private static final String DEFAULT_NAME = "Default";
+
     public static ConfigTemplate create(String name, AiSessionSettings settings) {
         Instant now = Instant.now();
         return new ConfigTemplate(UUID.randomUUID().toString(), name, settings, now, now);
     }
 
+    public static ConfigTemplate createDefault(AiSessionSettings settings) {
+        Instant now = Instant.now();
+        return new ConfigTemplate(DEFAULT_ID, DEFAULT_NAME, settings, now, now);
+    }
+
     public static ConfigTemplate fromJson(JsonObject value) {
         String id = value.get("id").getAsString();
         String name = value.get("name").getAsString();
-        Instant created = Instant.parse(value.get("createdAt").getAsString());
-        Instant updated = Instant.parse(value.get("updatedAt").getAsString());
+        // Lenient about the timestamps, as McpTemplate.fromJson is: a template is worth keeping even when a hand-edited
+        // or older store left them out, so a missing or unparseable value falls back rather than dropping the entry.
+        Instant created = instantOr(value, "createdAt", Instant.EPOCH);
+        Instant updated = instantOr(value, "updatedAt", created);
         AiSessionSettings config = new AiSessionSettings();
         if (value.has("config") && value.get("config").isJsonObject()) {
             new AiSessionSettingsCreator<AiSessionSettings>() {
@@ -37,6 +48,18 @@ public final class ConfigTemplate {
         }
         config.setSessionInstructions(null);
         return new ConfigTemplate(id, name, config, created, updated);
+    }
+
+    private static Instant instantOr(JsonObject value, String field, Instant fallback) {
+        if (!value.has(field) || value.get(field).isJsonNull()) {
+            return fallback;
+        }
+        try {
+            return Instant.parse(value.get(field).getAsString());
+        }
+        catch (RuntimeException ex) {
+            return fallback;
+        }
     }
 
     public static AiSessionSettings copy(AiSessionSettings source) {
@@ -92,6 +115,10 @@ public final class ConfigTemplate {
 
     public String name() {
         return name;
+    }
+
+    public boolean isDefault() {
+        return DEFAULT_ID.equals(id);
     }
 
     public AiSessionSettings settings() {

@@ -8,7 +8,7 @@ class McpSteeringSettingsPanelTest {
 
     @Test
     void checkboxAndWindowRoundTrip() {
-        McpSteeringSettingsPanel panel = new McpSteeringSettingsPanel(true);
+        McpSteeringSettingsPanel panel = new McpSteeringSettingsPanel();
         panel.setMcpSteeringSelected(true);
         assertTrue(panel.isMcpSteeringSelected());
         assertTrue(panel.isEnabled());

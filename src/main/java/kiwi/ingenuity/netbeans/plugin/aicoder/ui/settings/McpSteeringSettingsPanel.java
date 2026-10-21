@@ -11,16 +11,12 @@ import kiwi.ingenuity.netbeans.plugin.aicoder.AccessControlLabelEnum;
 
 public final class McpSteeringSettingsPanel extends JPanel {
 
-    private static String label(AccessControlLabelEnum label, boolean sessionMode) {
-        return sessionMode ? label.displayLabel() : label.globalLabel();
-    }
-
     private final JCheckBox enabledCheckBox = new JCheckBox();
 
-    public McpSteeringSettingsPanel(boolean sessionMode) {
+    public McpSteeringSettingsPanel() {
         setBorder(BorderFactory.createTitledBorder("MCP steering"));
         setLayout(new GridBagLayout());
-        enabledCheckBox.setText(label(AccessControlLabelEnum.MCP_STEERING, sessionMode));
+        enabledCheckBox.setText(AccessControlLabelEnum.MCP_STEERING.displayLabel());
         addRow(enabledCheckBox, 0);
     }
 

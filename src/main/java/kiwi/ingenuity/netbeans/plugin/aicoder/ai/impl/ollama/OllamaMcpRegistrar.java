@@ -14,10 +14,6 @@ public class OllamaMcpRegistrar extends AiMcpRegistrar {
     }
 
     @Override
-    public void addMcpEndpoint(String endpointUrl) {
-    }
-
-    @Override
     public void removeMcpEndpoint() {
     }
 

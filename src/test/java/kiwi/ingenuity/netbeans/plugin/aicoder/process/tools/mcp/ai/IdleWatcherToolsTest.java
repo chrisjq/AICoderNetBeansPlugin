@@ -29,8 +29,8 @@ import org.junit.jupiter.api.Test;
 class IdleWatcherToolsTest {
 
     private static final String DISABLED
-                                = "Error: Idle AI watcher timers are disabled for this session. Enable 'Allow Idle AI Watcher Timer?' in"
-                                  + " this session's configuration.";
+            = "Error: The idle watcher timer is disabled for this session. Ask the user to enable "
+            + "'Allow idle AI watcher timer' in this session's settings (MCP Tools → Idle watchers) before retrying.";
 
     private final List<String> registeredSessionIds = new ArrayList<>();
     private final List<String[]> createdWatchers = new ArrayList<>();
@@ -105,6 +105,23 @@ class IdleWatcherToolsTest {
             o.addProperty(CreateIdleWatcherParamEnum.TIMEOUT_MINUTES.key(), String.valueOf(timeoutValue));
         }
         return new CreateIdleWatcherTool().handle(new ToolRequestArguments(o), watcher);
+    }
+
+    @Test
+    void disabledMessageFallsBackToTheIdleWatcherSettingWhenNoLayerRefuses() {
+        AbstractAiSession enabled = session("idlewatch-tool-fallback-enabled", true);
+
+        assertEquals("Error: The idle watcher timer is disabled for this session. Ask the user to enable "
+                + "'Allow idle AI watcher timer' in this session's settings (MCP Tools → Idle watchers) before retrying.",
+                     IdleWatcherTools.disabledMessage(enabled));
+    }
+
+    @Test
+    void disabledMessageForANullSessionNeverNamesNull() {
+        String message = IdleWatcherTools.disabledMessage(null);
+
+        assertTrue(message.startsWith("Error: "), message);
+        assertFalse(message.contains("null"), message);
     }
 
     @Test
@@ -280,8 +297,8 @@ class IdleWatcherToolsTest {
     }
 
     /**
-     * The not-found reply is a non-error message (not an "Error:"-prefixed one), matching StopAsyncBuild's
-     * "No queued or running async build ... belongs to you" pattern.
+     * The not-found reply is a non-error message (not an "Error:"-prefixed one), matching StopAsyncBuild's "No queued
+     * or running async build ... belongs to you" pattern.
      */
     @Test
     void cancellingTwiceTheSecondTimeIsTheNonErrorNotFoundReply() {

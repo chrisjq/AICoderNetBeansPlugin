@@ -57,7 +57,6 @@ public class PluginSettingsPanel extends JPanel implements Scrollable {
 
     // General tab controls
     private final AiSessionConfigPanel sessionConfigPanel;
-    private final JCheckBox saveHistoryCheck;
     private final JCheckBox saveSessionOnCloseIfTickedCheck;
     private final JCheckBox debugJsonCheck;
     private final JCheckBox debugContextCheck;
@@ -108,10 +107,6 @@ public class PluginSettingsPanel extends JPanel implements Scrollable {
         pg.gridy = 1;
         pg.gridwidth = 2;
         pg.weightx = 1;
-        saveHistoryCheck = new JCheckBox("Save conversation history between sessions");
-        addTo(pluginGroup, saveHistoryCheck, pg);
-
-        pg.gridy = 2;
         saveSessionOnCloseIfTickedCheck = new JCheckBox("Save Session by default When Closing Tab (If History is Saved) - Don't ask");
         addTo(pluginGroup, saveSessionOnCloseIfTickedCheck, pg);
         pg.gridwidth = 1;
@@ -255,7 +250,6 @@ public class PluginSettingsPanel extends JPanel implements Scrollable {
         add(tabs, BorderLayout.CENTER);
 
         // Listeners (attached once)
-        saveHistoryCheck.addActionListener(e -> fireChanged());
         saveSessionOnCloseIfTickedCheck.addActionListener(e -> fireChanged());
         debugJsonCheck.addActionListener(e -> fireChanged());
         debugContextCheck.addActionListener(e -> fireChanged());
@@ -271,9 +265,9 @@ public class PluginSettingsPanel extends JPanel implements Scrollable {
     private Component makeDefaultsBanner() {
         JLabel banner = new JLabel("<html><body style='width:520px'>"
                 + "<b>Manage AI sessions via Tools &rarr; AI Manager.</b><br><br>"
-                + "<i>The settings below are global defaults applied when a new AI session is "
-                + "created &mdash; changing them here affects only newly-created sessions, "
-                + "not existing ones.</i>"
+                + "<i>New sessions take their settings from the Default config template (Templates &rarr; Config Templates) "
+                + "and their tool groups from MCP templates (Templates &rarr; MCP Templates). "
+                + "The settings below are plugin-wide or per AI type.</i>"
                 + "</body></html>");
         banner.setBorder(javax.swing.BorderFactory.createEmptyBorder(8, 10, 4, 10));
         return banner;
@@ -296,7 +290,6 @@ public class PluginSettingsPanel extends JPanel implements Scrollable {
 
     void load() {
         sessionConfigPanel.loadGlobal();
-        saveHistoryCheck.setSelected(PluginSettings.isSaveHistory());
         saveSessionOnCloseIfTickedCheck.setSelected(PluginSettings.isSaveSessionOnCloseIfTicked());
         debugJsonCheck.setSelected(PluginSettings.isDebugJson());
         debugContextCheck.setSelected(PluginSettings.isDebugContext());
@@ -324,7 +317,6 @@ public class PluginSettingsPanel extends JPanel implements Scrollable {
 
     void store() {
         sessionConfigPanel.applyGlobal();
-        PluginSettings.setSaveHistory(saveHistoryCheck.isSelected());
         PluginSettings.setSaveSessionOnCloseIfTicked(saveSessionOnCloseIfTickedCheck.isSelected());
         PluginSettings.setDebugJson(debugJsonCheck.isSelected());
         PluginSettings.setDebugContext(debugContextCheck.isSelected());

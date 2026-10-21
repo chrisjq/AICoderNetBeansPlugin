@@ -277,21 +277,15 @@ public class GrokAiProcessManager extends AbstractAcpProcessManager {
         }
         sessionId = currentSession.id();
 
-        GrokAiMcpRegistrar reg = new GrokAiMcpRegistrar(sessionId);
+        GrokAiMcpRegistrar reg = new GrokAiMcpRegistrar(sessionId, executablePath);
         try {
             boolean ok = McpServerRegistry.register(reg).get(GrokTimeoutEnum.GROK_CLI_CONFIG_WRITE_MILLIS.millis(), TimeUnit.MILLISECONDS);
             if (ok) {
                 registrar = reg;
             }
-            else {
-                listener.onAiProcessEvent(new StatusEvent(StatusEventTypeEnum.INFO,
-                        "MCP server registration returned false — running without MCP tools"));
-            }
         }
         catch (Exception e) {
             LOG.log(Level.WARNING, "MCP registration failed for session " + sessionId, e);
-            listener.onAiProcessEvent(new StatusEvent(StatusEventTypeEnum.INFO,
-                    "MCP server unavailable — running without MCP tools"));
         }
 
         grokAiSession = new GrokAiSession(currentSession, listener);
@@ -405,7 +399,11 @@ public class GrokAiProcessManager extends AbstractAcpProcessManager {
             throw new IOException("Unsupported ACP protocol version: " + proto + " (expected 1)");
         }
 
-        String mcpBaseUrl = McpServerRegistry.endpointUrlFor(AiTypeEnum.GROK);
+        // An endpoint is valid only after this session's registrar was registered.
+        String mcpBaseUrl = registrar != null
+                            ? McpServerRegistry.endpointUrlFor(AiTypeEnum.GROK,
+                                                               currentSession.settings().ensureMcpRoutingId()) : null;
+        reportMcpUnavailableIfNeeded(mcpBaseUrl, "Grok");
         String resumeId = pendingAcpResumeId;
         JsonObject sessionResult = null;
         boolean resumed = false;
@@ -816,14 +814,14 @@ public class GrokAiProcessManager extends AbstractAcpProcessManager {
     }
 
     /**
-     * Grok reports usage once, in the {@code session/prompt} result's {@code _meta} (no streamed
-     * {@code usage_update} session/update) — verified facts: {@code {inputTokens, outputTokens,
-     * cachedReadTokens, reasoningTokens, totalTokens, modelId}}. The context-WINDOW size is not in that
-     * payload; it comes from {@link #modelContextWindows}, read once at handshake time from
-     * {@code models.availableModels[]._meta.totalContextTokens} and looked up by the turn's own
-     * {@code modelId} so a model switch reports the new model's window, not the one Grok started with. 0 when
-     * the model is not in that map — the info bar already treats a non-positive max as "keep whatever window
-     * size I last knew", never as a reason to show zero.
+     * Grok reports usage once, in the {@code session/prompt} result's {@code _meta} (no streamed {@code usage_update}
+     * session/update) — verified facts: {@code {inputTokens, outputTokens,
+     * cachedReadTokens, reasoningTokens, totalTokens, modelId}}. The context-WINDOW size is not in that payload; it
+     * comes from {@link #modelContextWindows}, read once at handshake time from
+     * {@code models.availableModels[]._meta.totalContextTokens} and looked up by the turn's own {@code modelId} so a
+     * model switch reports the new model's window, not the one Grok started with. 0 when the model is not in that map —
+     * the info bar already treats a non-positive max as "keep whatever window size I last knew", never as a reason to
+     * show zero.
      */
     void reportUsage(JsonObject result) {
         if (result == null || !result.has("_meta") || !result.get("_meta").isJsonObject()) {

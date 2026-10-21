@@ -15,29 +15,23 @@ import kiwi.ingenuity.netbeans.plugin.aicoder.WebRequestAccessOptionEnum;
 
 public final class WebRequestAccessSettingsPanel extends JPanel {
 
-    private static String label(AccessControlLabelEnum label, boolean sessionMode) {
-        return sessionMode ? label.displayLabel() : label.globalLabel();
-    }
-
     private final JCheckBox allowWebRequestsCheckBox = new JCheckBox();
     private final Map<WebRequestAccessOptionEnum, JCheckBox> optionCheckBoxes
             = new EnumMap<>(WebRequestAccessOptionEnum.class);
 
-    public WebRequestAccessSettingsPanel(boolean sessionMode) {
+    public WebRequestAccessSettingsPanel() {
         setBorder(BorderFactory.createTitledBorder("Web Requests"));
         setLayout(new GridBagLayout());
 
-        allowWebRequestsCheckBox.setText(label(AccessControlLabelEnum.ALLOW_WEB_REQUESTS, sessionMode));
-        addRow(allowWebRequestsCheckBox, 0, 0);
-
-        int row = 1;
+        int row = 0;
+        allowWebRequestsCheckBox.setText(AccessControlLabelEnum.ALLOW_WEB_REQUESTS.displayLabel());
+        addRow(allowWebRequestsCheckBox, row++, 0);
+        allowWebRequestsCheckBox.addActionListener(e -> updateDependentState());
         for (WebRequestAccessOptionEnum option : WebRequestAccessOptionEnum.values()) {
-            JCheckBox checkBox = new JCheckBox(label(option.label(), sessionMode));
+            JCheckBox checkBox = new JCheckBox(option.label().displayLabel());
             optionCheckBoxes.put(option, checkBox);
             addRow(checkBox, row++, 20);
         }
-
-        allowWebRequestsCheckBox.addActionListener(e -> updateDependentState());
         updateDependentState();
     }
 

@@ -63,10 +63,10 @@ public class GithubCopilotProcessManager extends AiProcessManager {
      * {@code glob} by SearchTypes/SearchInFiles/GetProjectStructure, and {@code view} by GetFileContent.
      *
      * <p>
-     * Withholding beats denying at the permission gate. The gate still refuses these (kind {@code read}), but
-     * only after Copilot has spent a tool call on one, and every refusal posts a system message — a short
-     * survey produced six. Excluded, they are never offered, so there is nothing to refuse and nothing to
-     * announce, and the "Internal Command" notice stays rare enough to be worth reading.
+     * Withholding beats denying at the permission gate. The gate still refuses these (kind {@code read}), but only
+     * after Copilot has spent a tool call on one, and every refusal posts a system message — a short survey produced
+     * six. Excluded, they are never offered, so there is nothing to refuse and nothing to announce, and the "Internal
+     * Command" notice stays rare enough to be worth reading.
      *
      * <p>
      * {@code bash} is deliberately NOT excluded: running commands is the one capability the plugin's tools do not
@@ -368,9 +368,9 @@ public class GithubCopilotProcessManager extends AiProcessManager {
     }
 
     /**
-     * Resume an existing Copilot session only when it is actually present in the SDK session store; otherwise
-     * create a fresh one under the stable plugin session id so later reopen/resume uses the same id without a
-     * noisy "session not found" exception on first start.
+     * Resume an existing Copilot session only when it is actually present in the SDK session store; otherwise create a
+     * fresh one under the stable plugin session id so later reopen/resume uses the same id without a noisy "session not
+     * found" exception on first start.
      */
     private CreatedSession createOrResumeSession(CopilotClient client, String model)
             throws ExecutionException, InterruptedException, TimeoutException {
@@ -454,15 +454,13 @@ public class GithubCopilotProcessManager extends AiProcessManager {
     }
 
     /**
-     * Validates {@link #reasoningEffort} against {@code forModel}'s live-discovered supported list before it
-     * reaches {@link #buildCreateConfig}/{@link #buildResumeConfig}. Package-private for direct unit testing.
-     * Mirrors the reference validate/clear/INFO implementation,
-     * {@code OpenCodeAiProcessManager.applyInitialEffortOption}, narrowed for Copilot: an unset value is left
-     * alone; a value not supported by the model (including an unknown model, which is treated as "no
-     * support") is never sent, and — only when it was pinned in the session
-     * ({@link #reasoningEffortFromSession}) — is cleared with exactly one INFO event; a global-sourced value
-     * is instead omitted with a FINE log, leaving the global and the session untouched; a supported value is
-     * returned unchanged.
+     * Validates {@link #reasoningEffort} against {@code forModel}'s live-discovered supported list before it reaches
+     * {@link #buildCreateConfig}/{@link #buildResumeConfig}. Package-private for direct unit testing. Mirrors the
+     * reference validate/clear/INFO implementation, {@code OpenCodeAiProcessManager.applyInitialEffortOption}, narrowed
+     * for Copilot: an unset value is left alone; a value not supported by the model (including an unknown model, which
+     * is treated as "no support") is never sent, and — only when it was pinned in the session
+     * ({@link #reasoningEffortFromSession}) — is cleared with exactly one INFO event; a global-sourced value is instead
+     * omitted with a FINE log, leaving the global and the session untouched; a supported value is returned unchanged.
      */
     String resolveValidatedReasoningEffort(String forModel) {
         String stored = reasoningEffort;
@@ -517,8 +515,13 @@ public class GithubCopilotProcessManager extends AiProcessManager {
     }
 
     private Map<String, com.github.copilot.rpc.McpServerConfig> buildMcpServers() {
-        String endpoint = McpServerRegistry.endpointUrlFor(AiTypeEnum.GitHubCoPilot);
+        String endpoint = currentSession == null ? null
+                          : McpServerRegistry.endpointUrlFor(AiTypeEnum.GitHubCoPilot,
+                                                             currentSession.settings().ensureMcpRoutingId());
         if (endpoint == null || sessionId == null) {
+            LOG.log(Level.WARNING, "MCP server unavailable; running Copilot without plugin tools");
+            listener.onAiProcessEvent(new StatusEvent(StatusEventTypeEnum.INFO,
+                                                      StatusMessageUtil.formatMcpToolsUnavailable("GitHub Copilot")));
             return Map.of();
         }
         McpHttpServerConfig mcpServer = new McpHttpServerConfig()

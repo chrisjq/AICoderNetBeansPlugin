@@ -33,10 +33,93 @@ import kiwi.ingenuity.netbeans.plugin.aicoder.ai.session.InterruptTypeEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.ui.PermissionDiffPolicy;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.SessionRegistry;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.events.AiProcessEvent;
+import kiwi.ingenuity.netbeans.plugin.aicoder.process.server.McpServerRegistry;
 import static org.junit.jupiter.api.Assertions.*;
 import org.junit.jupiter.api.Test;
 
 class OpenCodeAiProcessManagerTest {
+
+    @Test
+    @org.junit.jupiter.api.Timeout(30)
+    void spawnWithoutRegisteredRegistrarEmitsOneNoticeForNewAndResumedSessions() throws Exception {
+        String notice = kiwi.ingenuity.netbeans.plugin.aicoder.utils.StatusMessageUtil.formatMcpToolsUnavailable("OpenCode");
+
+        for (String resumeId : java.util.Arrays.asList(null, "ses_previous")) {
+            List<AiProcessEvent> events = new ArrayList<>();
+            class NoticeManager extends OpenCodeAiProcessManager {
+
+                private kiwi.ingenuity.netbeans.plugin.aicoder.process.server.AiMcpRegistrar savedRegistrar;
+
+                NoticeManager() {
+                    super(events::add);
+                }
+
+                void suspendRegistrar() {
+                    savedRegistrar = registrar;
+                    registrar = null;
+                }
+
+                void restoreRegistrar() {
+                    registrar = savedRegistrar;
+                    savedRegistrar = null;
+                }
+            }
+            NoticeManager manager = new NoticeManager();
+            manager.setCurrentSession(new AiSession("notice-" + (resumeId == null ? "new" : "resume"),
+                                                    "Test", null, AiTypeEnum.OPENCODE, null,
+                                                    new OpenCodeSessionSettings(), Instant.now(), Instant.now()));
+            manager.start(fakeOpenCodeAcpHandshake().getAbsolutePath(), null);
+            manager.suspendRegistrar();
+            manager.pendingAcpResumeId = resumeId;
+            try {
+                manager.spawnAndHandshake(new File(System.getProperty("java.io.tmpdir")));
+                assertEquals(1, events.stream()
+                             .filter(e -> e instanceof StatusEvent se && notice.equals(se.text()))
+                             .count(), "one unavailable notice for " + (resumeId == null ? "session/new" : "session/resume"));
+            }
+            finally {
+                manager.restoreRegistrar();
+                manager.stop();
+            }
+        }
+    }
+
+    @Test
+    @org.junit.jupiter.api.Timeout(30)
+    void spawnWithRegisteredRegistrarDoesNotEmitUnavailableNotice() throws Exception {
+        List<AiProcessEvent> events = new ArrayList<>();
+        OpenCodeAiProcessManager manager = new OpenCodeAiProcessManager(events::add);
+        manager.setCurrentSession(new AiSession("notice-live-endpoint", "Test", null,
+                                                AiTypeEnum.OPENCODE, null, new OpenCodeSessionSettings(),
+                                                Instant.now(), Instant.now()));
+        manager.start(fakeOpenCodeAcpHandshake().getAbsolutePath(), null);
+        try {
+            manager.spawnAndHandshake(new File(System.getProperty("java.io.tmpdir")));
+            String notice = kiwi.ingenuity.netbeans.plugin.aicoder.utils.StatusMessageUtil.formatMcpToolsUnavailable("OpenCode");
+            assertEquals(0, events.stream()
+                         .filter(e -> e instanceof StatusEvent se && notice.equals(se.text()))
+                         .count(), events.toString());
+        }
+        finally {
+            manager.stop();
+        }
+    }
+
+    private static File fakeOpenCodeAcpHandshake() throws IOException {
+        File script = File.createTempFile("fake-opencode-", ".sh");
+        script.deleteOnExit();
+        String body = "#!/bin/sh\n"
+                + "if [ \"$1\" = \"--version\" ]; then echo \"1.0.0\"; exit 0; fi\n"
+                + "read -r _initialize\n"
+                + "printf '{\"jsonrpc\":\"2.0\",\"id\":1,\"result\":{\"protocolVersion\":1}}\\n'\n"
+                + "read -r session\n"
+                + "case \"$session\" in *session/resume*) printf '{\"jsonrpc\":\"2.0\",\"id\":2,\"result\":{}}\\n' ;; "
+                + "*) printf '{\"jsonrpc\":\"2.0\",\"id\":2,\"result\":{\"sessionId\":\"ses_fake\"}}\\n' ;; esac\n"
+                + "sleep 5\n";
+        java.nio.file.Files.writeString(script.toPath(), body, StandardCharsets.UTF_8);
+        script.setExecutable(true);
+        return script;
+    }
 
     @Test
     void ownSessionConfigFileCheckIsAlwaysPassedAsANonNullHandlerPredicate() {
@@ -204,7 +287,7 @@ class OpenCodeAiProcessManagerTest {
         // Uses the verbatim sample shape
         List<AiProcessEvent> fired = new ArrayList<>();
         OpenCodeAcpClientHandler handler = new OpenCodeAcpClientHandler(e -> fired.add(e), () -> {
-                                                  });
+                                                                });
 
         JsonObject content = new JsonObject();
         content.addProperty("type", "text");
@@ -768,16 +851,22 @@ class OpenCodeAiProcessManagerTest {
 
     // ---- MCP wiring tests ----
     @Test
-    void mcpRegistrarCapturesEndpointFromAddAndClearsOnRemove() {
-        OpenCodeAiMcpRegistrar reg = new OpenCodeAiMcpRegistrar("cap-test-session");
-        assertNull(reg.getEndpointUrl(), "endpoint must be null before addMcpEndpoint is called");
-
-        String endpoint = "http://127.0.0.1:1234/mcp/opencode";
-        reg.addMcpEndpoint(endpoint);
-        assertEquals(endpoint, reg.getEndpointUrl(), "addMcpEndpoint must capture the URL verbatim");
-
-        reg.removeMcpEndpoint();
-        assertNull(reg.getEndpointUrl(), "removeMcpEndpoint must clear the captured URL");
+    void sessionMcpUrlUsesRoutingIdForOpenCode() throws Exception {
+        OpenCodeSessionSettings settings = new OpenCodeSessionSettings();
+        settings.setMcpRoutingId("route-1234");
+        McpServerRegistry.portOverride = 0;
+        assertTrue(McpServerRegistry.register(new OpenCodeAiMcpRegistrar("opencode-url-test")).get(5, TimeUnit.SECONDS));
+        try {
+            String endpoint = McpServerRegistry.endpointUrlFor(AiTypeEnum.OPENCODE, settings.ensureMcpRoutingId());
+            assertNotNull(endpoint);
+            assertTrue(endpoint.endsWith("/mcp/opencode/route-1234"), endpoint);
+            JsonObject params = OpenCodeAiProcessManager.buildSessionNewParams("/project/dir", endpoint);
+            assertEquals(endpoint, params.getAsJsonArray("mcpServers").get(0).getAsJsonObject().get("url").getAsString());
+        }
+        finally {
+            McpServerRegistry.stopAll();
+            McpServerRegistry.portOverride = null;
+        }
     }
 
     @Test
@@ -811,7 +900,7 @@ class OpenCodeAiProcessManagerTest {
                 Instant.now(), Instant.now());
 
         OpenCodeAiSession session = new OpenCodeAiSession(aiSession, e -> {
-                                                                });
+                                                  });
 
         assertNotNull(SessionRegistry.get("test-opencode-mcp-session"),
                       "Session must be registered after construction");
