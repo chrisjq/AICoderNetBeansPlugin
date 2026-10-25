@@ -20,36 +20,38 @@ import java.util.logging.Level;
 import java.util.logging.Logger;
 import kiwi.ingenuity.netbeans.plugin.aicoder.PluginSettings;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.AiProcessManager;
+import kiwi.ingenuity.netbeans.plugin.aicoder.ai.debuglog.DebugDirectionEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.events.StatusEvent;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.events.StatusEventTypeEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.events.TextDeltaEvent;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.events.ToolUseEvent;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.events.TurnCompleteEvent;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.http.ChatMessage;
-import kiwi.ingenuity.netbeans.plugin.aicoder.ai.http.ChatRequest;
-import kiwi.ingenuity.netbeans.plugin.aicoder.ai.http.ChatResult;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.http.ChatRole;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.http.ChatToolCall;
-import kiwi.ingenuity.netbeans.plugin.aicoder.ai.http.ExtractedToolCall;
-import kiwi.ingenuity.netbeans.plugin.aicoder.ai.http.HttpAiClient;
-import kiwi.ingenuity.netbeans.plugin.aicoder.ai.http.OpenAiCompatibleClient;
-import kiwi.ingenuity.netbeans.plugin.aicoder.ai.http.OpenAiHttpStatusException;
-import kiwi.ingenuity.netbeans.plugin.aicoder.ai.http.OpenAiJsonKeyEnum;
-import kiwi.ingenuity.netbeans.plugin.aicoder.ai.http.OpenAiToolCallParseException;
-import kiwi.ingenuity.netbeans.plugin.aicoder.ai.http.SchemaToolCalls;
-import kiwi.ingenuity.netbeans.plugin.aicoder.ai.http.ToolCallExtractor;
-import kiwi.ingenuity.netbeans.plugin.aicoder.ai.http.context.AbstractChatContextBroker;
-import kiwi.ingenuity.netbeans.plugin.aicoder.ai.http.context.ContextBrokerSettings;
-import kiwi.ingenuity.netbeans.plugin.aicoder.ai.http.context.ContextTriggerEnum;
-import kiwi.ingenuity.netbeans.plugin.aicoder.ai.http.context.ContextTrimStrategyEnum;
-import kiwi.ingenuity.netbeans.plugin.aicoder.ai.http.context.OllamaChatContextBroker;
-import kiwi.ingenuity.netbeans.plugin.aicoder.ai.http.context.PinSlotEnum;
+import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.ollama.context.OllamaAbstractChatContextBroker;
+import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.ollama.context.OllamaChatContextBroker;
+import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.ollama.context.OllamaContextBrokerSettings;
+import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.ollama.context.OllamaContextTriggerEnum;
+import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.ollama.context.OllamaContextTrimStrategyEnum;
+import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.ollama.context.OllamaPinSlotEnum;
+import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.ollama.context.OllamaSummariser;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.ollama.events.OllamaTokenUsageEvent;
+import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.ollama.http.OllamaChatRequest;
+import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.ollama.http.OllamaChatResult;
+import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.ollama.http.OllamaExtractedToolCall;
+import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.ollama.http.OllamaHttpAiClient;
+import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.ollama.http.OllamaHttpClient;
+import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.ollama.http.OllamaHttpJsonKeyEnum;
+import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.ollama.http.OllamaHttpStatusException;
+import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.ollama.http.OllamaSchemaToolCalls;
+import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.ollama.http.OllamaToolCallExtractor;
+import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.ollama.http.OllamaToolCallParseException;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.ollama.session.OllamaAiSession;
+import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.ollama.settings.OllamaClientSessionSettings;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.ollama.settings.OllamaPluginSettings;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.ollama.settings.OllamaSessionSettings;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.session.InterruptTypeEnum;
-import kiwi.ingenuity.netbeans.plugin.aicoder.ai.settings.OpenAiClientSessionSettings;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.McpInstructionOptionEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.McpToolEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.events.AiProcessEventListener;
@@ -140,7 +142,7 @@ public class OllamaAiProcessManager extends AiProcessManager {
      * life of the session, because a repeated id would make the pairing ambiguous across committed turns and stricter
      * endpoints reject duplicates outright.
      */
-    private void appendMalformedToolCallRecovery(AbstractChatContextBroker localBroker, String toolCallError) {
+    private void appendMalformedToolCallRecovery(OllamaAbstractChatContextBroker localBroker, String toolCallError) {
         String malformedCallId = MALFORMED_TOOL_CALL_ID_PREFIX + malformedToolCallCount.incrementAndGet();
         localBroker.append(new ChatMessage(ChatRole.ASSISTANT, null,
                                            List.of(new ChatToolCall(malformedCallId, MALFORMED_TOOL_CALL_NAME, "{}")), null));
@@ -150,21 +152,21 @@ public class OllamaAiProcessManager extends AiProcessManager {
     /**
      * A hand-edited preference must not stop a session starting.
      */
-    private static ContextTriggerEnum parseTrigger(String raw) {
+    private static OllamaContextTriggerEnum parseTrigger(String raw) {
         try {
-            return ContextTriggerEnum.valueOf(raw);
+            return OllamaContextTriggerEnum.valueOf(raw);
         }
         catch (RuntimeException ex) {
-            return ContextTriggerEnum.ESTIMATED_TOKENS;
+            return OllamaContextTriggerEnum.ESTIMATED_TOKENS;
         }
     }
 
-    private static ContextTrimStrategyEnum parseStrategy(String raw) {
+    private static OllamaContextTrimStrategyEnum parseStrategy(String raw) {
         try {
-            return ContextTrimStrategyEnum.valueOf(raw);
+            return OllamaContextTrimStrategyEnum.valueOf(raw);
         }
         catch (RuntimeException ex) {
-            return ContextTrimStrategyEnum.DROP_MARKED;
+            return OllamaContextTrimStrategyEnum.DROP_MARKED;
         }
     }
 
@@ -174,13 +176,13 @@ public class OllamaAiProcessManager extends AiProcessManager {
     }
 
     /**
-     * ContextBrokerSettings has no equals(): it is a plain mutable settings bag, not a value type, so field-by-field
-     * comparison lives here instead. Two null-safety branches aside, this is the same six-field comparison
-     * AbstractChatContextBroker.updateSettings() uses to decide whether to log — duplicated rather than shared, since
-     * the two live in different packages for different purposes (one gates a debug log line, this one resets a
-     * user-facing warning).
+     * OllamaContextBrokerSettings has no equals(): it is a plain mutable settings bag, not a value type, so
+     * field-by-field comparison lives here instead. Two null-safety branches aside, this is the same six-field
+     * comparison OllamaAbstractChatContextBroker.updateSettings() uses to decide whether to log — duplicated rather
+     * than shared, since the two live in different packages for different purposes (one gates a debug log line, this
+     * one resets a user-facing warning).
      */
-    private static boolean settingsDiffer(ContextBrokerSettings a, ContextBrokerSettings b) {
+    private static boolean settingsDiffer(OllamaContextBrokerSettings a, OllamaContextBrokerSettings b) {
         if (a == null || b == null) {
             return a != b;
         }
@@ -202,10 +204,10 @@ public class OllamaAiProcessManager extends AiProcessManager {
     private final AtomicInteger malformedToolCallCount = new AtomicInteger();
 
     private volatile OllamaMcpRegistrar registrar;
-    private volatile HttpAiClient httpClient;
+    private volatile OllamaHttpAiClient httpClient;
     volatile OllamaAiSession ollamaSession;
     volatile OllamaMcpBridge bridge;
-    volatile AbstractChatContextBroker broker;
+    volatile OllamaAbstractChatContextBroker broker;
     volatile Thread activeTurnThread;
     /**
      * Turn generation: monotonically incremented once per turn started and once per cancel/stop. A turn worker keeps
@@ -229,7 +231,7 @@ public class OllamaAiProcessManager extends AiProcessManager {
      * injection is guarded by {@code turnGeneration == turnEpoch}.
      */
     private volatile boolean pendingMailNotice;
-    private volatile ContextBrokerSettings lastResolvedSettings;
+    private volatile OllamaContextBrokerSettings lastResolvedSettings;
     private volatile boolean contextDiscoveryInitial;
     private volatile boolean pinnedOverBudgetWarned;
     /**
@@ -267,8 +269,9 @@ public class OllamaAiProcessManager extends AiProcessManager {
         contextDiscoveryInitial = true;
         historySchemaMode = null;
         if (currentSession == null) {
-            listener.onAiProcessEvent(new StatusEvent(StatusEventTypeEnum.FAILED,
-                                                      StatusMessageUtil.formatSessionNotConfigured()));
+            String failure = StatusMessageUtil.formatSessionNotConfigured();
+            debugLog(DebugDirectionEnum.EVENT, "error", failure);
+            listener.onAiProcessEvent(new StatusEvent(StatusEventTypeEnum.FAILED, failure));
             return;
         }
         if (!validateStart()) {
@@ -286,15 +289,16 @@ public class OllamaAiProcessManager extends AiProcessManager {
             mcpReady = false;
         }
         if (!mcpReady) {
-            listener.onAiProcessEvent(new StatusEvent(StatusEventTypeEnum.FAILED,
-                                                      StatusMessageUtil.formatMcpSetupFailed()));
+            String failure = StatusMessageUtil.formatMcpSetupFailed();
+            debugLog(DebugDirectionEnum.EVENT, "error", failure);
+            listener.onAiProcessEvent(new StatusEvent(StatusEventTypeEnum.FAILED, failure));
             return;
         }
         registrar = reg;
         ollamaSession = new OllamaAiSession(currentSession, listener);
         bridge = createBridge(ollamaSession);
         bridge.setSessionCredentials(currentSession.id(), currentSession.secret());
-        ContextBrokerSettings settingsForBroker = resolveBrokerSettings();
+        OllamaContextBrokerSettings settingsForBroker = resolveBrokerSettings();
         lastResolvedSettings = settingsForBroker;
         broker = createContextBroker(currentSession.id(), settingsForBroker);
         if (broker instanceof OllamaChatContextBroker ollamaBroker) {
@@ -310,7 +314,7 @@ public class OllamaAiProcessManager extends AiProcessManager {
                     resolveEffectiveModel(effectiveSessionSettings()));
         }
         if (broker != null
-                && settingsForBroker.trigger() == ContextTriggerEnum.REPORTED_TOKENS) {
+                && settingsForBroker.trigger() == OllamaContextTriggerEnum.REPORTED_TOKENS) {
             listener.onAiProcessEvent(new StatusEvent(StatusEventTypeEnum.INFO,
                                                       "Context trigger falls back to estimated tokens until this endpoint reports usage"));
         }
@@ -320,10 +324,10 @@ public class OllamaAiProcessManager extends AiProcessManager {
             // null summariser would make that button silently do nothing for
             // almost every user running the default DROP_MARKED strategy.
             OllamaSessionSettings settingsForSummariser = effectiveSessionSettings();
-            broker.setSummariser(new OllamaContextSummariser(createHttpAiClient(),
-                                                             resolveEffectiveBaseUrl(settingsForSummariser),
-                                                             resolveApiKey(settingsForSummariser),
-                                                             resolveEffectiveModel(settingsForSummariser)));
+            broker.setSummariser(loggingSummariser(new OllamaContextSummariser(createHttpAiClient(),
+                                                                               resolveEffectiveBaseUrl(settingsForSummariser),
+                                                                               resolveApiKey(settingsForSummariser),
+                                                                               resolveEffectiveModel(settingsForSummariser))));
         }
         if (broker != null && settingsForBroker.persistOnClose()) {
             JsonObject saved = createContextPersistenceManager().load(currentSession.id());
@@ -338,6 +342,7 @@ public class OllamaAiProcessManager extends AiProcessManager {
         }
         currentSession.setInstructionsLoaded(true);
         running = true;
+        debugLog(DebugDirectionEnum.EVENT, "start", "");
         listener.onAiProcessEvent(new StatusEvent(StatusEventTypeEnum.READY,
                                                   StatusMessageUtil.formatReady(displayName())));
     }
@@ -386,6 +391,7 @@ public class OllamaAiProcessManager extends AiProcessManager {
      */
     private void refuseSendPrompt(String reason) {
         listener.onAiProcessEvent(new StatusEvent(StatusEventTypeEnum.INFO, reason));
+        debugLog(DebugDirectionEnum.EVENT, "turn-end", "");
         listener.onAiProcessEvent(new TurnCompleteEvent());
     }
 
@@ -405,7 +411,7 @@ public class OllamaAiProcessManager extends AiProcessManager {
                 + "\n\n## MCP Tool List\n"
                 + "These are the tools you can call to help you complete the user's task, with their parameters "
                 + "(those in [square brackets] are optional; use each name exactly as written):\n\n"
-                + SchemaToolCalls.renderToolList(tools)
+                + OllamaSchemaToolCalls.renderToolList(tools)
                 + "\n## End of tool list\n\n"
                 + "Reply as JSON, one tool call at a time.\n\n"
                 + "To call a tool: put its name in tool_name and its arguments in tool_arguments. The tool will run, its "
@@ -517,29 +523,29 @@ public class OllamaAiProcessManager extends AiProcessManager {
      * rest of this session. Any other failure (non-4xx status, no reasoning_effort in the request, network/stream
      * error) propagates unchanged.
      */
-    private ChatResult chatWithReasoningEffortRetry(HttpAiClient client, ChatRequest request,
-                                                    Consumer<String> onTextDelta) throws IOException {
+    private OllamaChatResult chatWithReasoningEffortRetry(OllamaHttpAiClient client, OllamaChatRequest request,
+                                                          Consumer<String> onTextDelta) throws IOException {
         if (reasoningEffortDisabledForSession && request.reasoningEffort() != null) {
             // Belt and braces: a caller-side mistake (e.g. a stale resolveEffectiveReasoningEffort snapshot taken
             // before an earlier retry in the same turn set the flag) must not put the field back on the wire once
             // the session has already been told the server rejects it — strip it here rather than relying on a
             // second 4xx to catch it, which would also mean a second INFO event.
-            request = new ChatRequest(request.baseUrl(), request.apiKey(), request.model(),
-                                      request.messages(), request.toolSchemas(), request.responseFormat(), null);
+            request = new OllamaChatRequest(request.baseUrl(), request.apiKey(), request.model(),
+                                            request.messages(), request.toolSchemas(), request.responseFormat(), null);
         }
         try {
             return client.chat(request, onTextDelta);
         }
-        catch (OpenAiHttpStatusException ex) {
+        catch (OllamaHttpStatusException ex) {
             if (request.reasoningEffort() == null || ex.statusCode() < 400 || ex.statusCode() >= 500) {
                 throw ex;
             }
             reasoningEffortDisabledForSession = true;
             listener.onAiProcessEvent(new StatusEvent(StatusEventTypeEnum.INFO,
-                                                      "The local server rejected " + OpenAiJsonKeyEnum.REASONING_EFFORT.key()
+                                                      "The local server rejected " + OllamaHttpJsonKeyEnum.REASONING_EFFORT.key()
                                                       + "; retrying without it"));
-            ChatRequest retryRequest = new ChatRequest(request.baseUrl(), request.apiKey(), request.model(),
-                                                       request.messages(), request.toolSchemas(), request.responseFormat(), null);
+            OllamaChatRequest retryRequest = new OllamaChatRequest(request.baseUrl(), request.apiKey(), request.model(),
+                                                                   request.messages(), request.toolSchemas(), request.responseFormat(), null);
             return client.chat(retryRequest, onTextDelta);
         }
     }
@@ -583,10 +589,10 @@ public class OllamaAiProcessManager extends AiProcessManager {
                 }
             }
 
-            JsonObject endTurnTool = SchemaToolCalls.endTurnToolSchema();
+            JsonObject endTurnTool = OllamaSchemaToolCalls.endTurnToolSchema();
             tools.add(endTurnTool);
-            // EndTurn must ALSO be a known name, not just an offered tool. Both SchemaToolCalls.parse and
-            // ToolCallExtractor drop any call whose name is not in this set, so without this line the
+            // EndTurn must ALSO be a known name, not just an offered tool. Both OllamaSchemaToolCalls.parse and
+            // OllamaToolCallExtractor drop any call whose name is not in this set, so without this line the
             // model's EndTurn is silently discarded, endTurnCall below is always null, the turn never
             // ends, and the raw envelope is emitted to the user as narration. The whole contract was
             // dead code until an independent review found it — no test covered the end-to-end path.
@@ -595,16 +601,16 @@ public class OllamaAiProcessManager extends AiProcessManager {
             // Populating the tools array makes this backend call something on
             // every turn regardless of the request, so under TOOL_CALLS_VIA_SCHEMA
             // the tools are described in the prompt and the reply is constrained
-            // by a schema instead. See SchemaToolCalls.
+            // by a schema instead. See OllamaSchemaToolCalls.
             boolean schemaMode = settings.useNativeToolCalling() != null
                                  ? !settings.useNativeToolCalling()
                                  : currentSession.aiType().getMcpOptions()
                             .contains(McpInstructionOptionEnum.TOOL_CALLS_VIA_SCHEMA);
-            JsonObject responseFormat = schemaMode ? SchemaToolCalls.responseFormat(knownToolNames) : null;
+            JsonObject responseFormat = schemaMode ? OllamaSchemaToolCalls.responseFormat(knownToolNames) : null;
             List<JsonObject> requestTools = schemaMode ? List.of() : tools;
             instructions = instructionsWithToolProtocol(instructions, tools, schemaMode);
 
-            AbstractChatContextBroker localBroker = broker;
+            OllamaAbstractChatContextBroker localBroker = broker;
             if (localBroker == null) {
                 return;
             }
@@ -631,17 +637,17 @@ public class OllamaAiProcessManager extends AiProcessManager {
             // about. This is what lets a preference change (e.g. Token
             // threshold) take effect on the next request instead of requiring
             // a session restart.
-            ContextBrokerSettings refreshedSettings = resolveBrokerSettings();
+            OllamaContextBrokerSettings refreshedSettings = resolveBrokerSettings();
             if (settingsDiffer(lastResolvedSettings, refreshedSettings)) {
                 pinnedOverBudgetWarned = false;
             }
             lastResolvedSettings = refreshedSettings;
             localBroker.updateSettings(refreshedSettings);
-            localBroker.upsertPin(PinSlotEnum.TOOLS, instructions);
+            localBroker.upsertPin(OllamaPinSlotEnum.TOOLS, instructions);
             localBroker.beginTurn();
             localBroker.append(new ChatMessage(ChatRole.USER, text, List.of(), null));
 
-            HttpAiClient client = httpClient;
+            OllamaHttpAiClient client = httpClient;
             if (client == null) {
                 client = createHttpAiClient();
                 httpClient = client;
@@ -714,13 +720,13 @@ public class OllamaAiProcessManager extends AiProcessManager {
                                                          List.of(), null));
                     }
                 }
-                ChatRequest request = new ChatRequest(effectiveBaseUrl, apiKey, effectiveModel,
-                                                      List.copyOf(wireMessages), List.copyOf(requestTools), responseFormat,
-                                                      iterationReasoningEffort);
+                OllamaChatRequest request = new OllamaChatRequest(effectiveBaseUrl, apiKey, effectiveModel,
+                                                                  List.copyOf(wireMessages), List.copyOf(requestTools), responseFormat,
+                                                                  iterationReasoningEffort);
                 StringBuilder buf = new StringBuilder();
                 boolean[] decided = {false};
                 boolean[] streaming = {false};
-                ChatResult result;
+                OllamaChatResult result;
                 try {
                     result = chatWithReasoningEffortRetry(client, request, delta -> {
                                                       if (turnGeneration != turnEpoch) {
@@ -751,7 +757,7 @@ public class OllamaAiProcessManager extends AiProcessManager {
                                                       }
                                                   });
                 }
-                catch (OpenAiToolCallParseException parseEx) {
+                catch (OllamaToolCallParseException parseEx) {
                     // The server rejected the WHOLE request because the model's tool call
                     // was not valid JSON — a recoverable model mistake, not a transport
                     // failure. No parseable response ever reached us, so the malformed call
@@ -779,21 +785,21 @@ public class OllamaAiProcessManager extends AiProcessManager {
                 localBroker.recordUsage(estimatedForRequest, result.promptTokens());
                 listener.onAiProcessEvent(new OllamaTokenUsageEvent(
                         localBroker.estimatedTokenTotal(), contextWindowForEvent(localBroker, lastResolvedSettings.tokenThreshold())));
-                List<ExtractedToolCall> calls;
+                List<OllamaExtractedToolCall> calls;
                 String assistantText;
                 String toolCallError = null;
                 boolean schemaShaped = false;
                 if (schemaMode) {
                     // The answer is the schema's message field; the raw content is
                     // a JSON envelope the user must never see.
-                    SchemaToolCalls.Reply reply = SchemaToolCalls.parse(result, knownToolNames);
+                    OllamaSchemaToolCalls.Reply reply = OllamaSchemaToolCalls.parse(result, knownToolNames);
                     calls = reply.calls();
                     assistantText = reply.message();
                     toolCallError = reply.toolCallError();
                     schemaShaped = reply.spokeProtocol();
                 }
                 else {
-                    calls = ToolCallExtractor.extract(result, knownToolNames);
+                    calls = OllamaToolCallExtractor.extract(result, knownToolNames);
                     assistantText = result.assistantText();
                 }
                 if (calls.isEmpty() && toolCallError != null) {
@@ -813,23 +819,24 @@ public class OllamaAiProcessManager extends AiProcessManager {
                         if (!cancelledByUser) {
                             listener.onAiProcessEvent(new StatusEvent(StatusEventTypeEnum.INFO,
                                                                       "The model kept sending malformed tool calls instead of an answer"));
+                            debugLog(DebugDirectionEnum.EVENT, "turn-end", "");
                             listener.onAiProcessEvent(new TurnCompleteEvent());
                         }
                         return;
                     }
                     continue;
                 }
-                ExtractedToolCall endTurnCall = calls.stream()
+                OllamaExtractedToolCall endTurnCall = calls.stream()
                         .filter(call -> END_TURN_TOOL_NAME.equals(call.name()))
                         .findFirst().orElse(null);
                 if (endTurnCall != null) {
                     String finalText = assistantText;
                     try {
                         JsonObject arguments = JsonParser.parseString(endTurnCall.argumentsJson()).getAsJsonObject();
-                        if (arguments.has(OpenAiJsonKeyEnum.MESSAGE.key())
-                                && !arguments.get(OpenAiJsonKeyEnum.MESSAGE.key()).isJsonNull()
-                                && !arguments.get(OpenAiJsonKeyEnum.MESSAGE.key()).getAsString().isBlank()) {
-                            finalText = arguments.get(OpenAiJsonKeyEnum.MESSAGE.key()).getAsString();
+                        if (arguments.has(OllamaHttpJsonKeyEnum.MESSAGE.key())
+                                && !arguments.get(OllamaHttpJsonKeyEnum.MESSAGE.key()).isJsonNull()
+                                && !arguments.get(OllamaHttpJsonKeyEnum.MESSAGE.key()).getAsString().isBlank()) {
+                            finalText = arguments.get(OllamaHttpJsonKeyEnum.MESSAGE.key()).getAsString();
                         }
                     }
                     catch (RuntimeException ex) {
@@ -849,6 +856,7 @@ public class OllamaAiProcessManager extends AiProcessManager {
                     }
                     localBroker.commitTurn();
                     turnCommitted = true;
+                    debugLog(DebugDirectionEnum.EVENT, "turn-end", "");
                     listener.onAiProcessEvent(new TurnCompleteEvent());
                     return;
                 }
@@ -864,6 +872,7 @@ public class OllamaAiProcessManager extends AiProcessManager {
                         if (!cancelledByUser) {
                             listener.onAiProcessEvent(new StatusEvent(StatusEventTypeEnum.INFO,
                                                                       "The model returned an empty response instead of an answer"));
+                            debugLog(DebugDirectionEnum.EVENT, "turn-end", "");
                             listener.onAiProcessEvent(new TurnCompleteEvent());
                         }
                         return;
@@ -884,6 +893,7 @@ public class OllamaAiProcessManager extends AiProcessManager {
                         }
                         localBroker.commitTurn();
                         turnCommitted = true;
+                        debugLog(DebugDirectionEnum.EVENT, "turn-end", "");
                         listener.onAiProcessEvent(new TurnCompleteEvent());
                         return;
                     }
@@ -900,6 +910,7 @@ public class OllamaAiProcessManager extends AiProcessManager {
                                                                   "Stopped: the model kept repeating itself without making progress"));
                         localBroker.commitTurn();
                         turnCommitted = true;
+                        debugLog(DebugDirectionEnum.EVENT, "turn-end", "");
                         listener.onAiProcessEvent(new TurnCompleteEvent());
                         return;
                     }
@@ -926,6 +937,7 @@ public class OllamaAiProcessManager extends AiProcessManager {
                                                                   "Stopped: the model answered without signalling it had finished"));
                         localBroker.commitTurn();
                         turnCommitted = true;
+                        debugLog(DebugDirectionEnum.EVENT, "turn-end", "");
                         listener.onAiProcessEvent(new TurnCompleteEvent());
                         return;
                     }
@@ -936,7 +948,7 @@ public class OllamaAiProcessManager extends AiProcessManager {
                  */
                 // Narration alongside a tool call is only safe to show when the model SPOKE THE
                 // PROTOCOL, because then message is a field distinct from the call. When the call was
-                // scraped out of free text by ToolCallExtractor, assistantText IS the call's raw JSON —
+                // scraped out of free text by OllamaToolCallExtractor, assistantText IS the call's raw JSON —
                 // emitting it would put {"name":"GetPluginVersion",...} in front of the user.
                 if (schemaShaped && assistantText != null && !assistantText.isBlank()) {
                     listener.onAiProcessEvent(new TextDeltaEvent(assistantText, null));
@@ -948,7 +960,7 @@ public class OllamaAiProcessManager extends AiProcessManager {
                     if (cancelledByUser) {
                         break;
                     }
-                    ExtractedToolCall call = calls.get(callIndex);
+                    OllamaExtractedToolCall call = calls.get(callIndex);
                     // callIndex alone repeats "call_0" on every iteration, and a turn that produces tool calls on
                     // two iterations ends up with two ASSISTANT calls and two results sharing one id — the
                     // results are matched to calls by id, so the pairing becomes ambiguous and stricter endpoints
@@ -1036,6 +1048,7 @@ public class OllamaAiProcessManager extends AiProcessManager {
                                                                   "Stopped: the model kept repeating the same tool call without making progress"));
                     }
                     if (!cancelledByUser) {
+                        debugLog(DebugDirectionEnum.EVENT, "turn-end", "");
                         listener.onAiProcessEvent(new TurnCompleteEvent());
                     }
                     return;
@@ -1057,6 +1070,7 @@ public class OllamaAiProcessManager extends AiProcessManager {
                     turnCommitted = true;
                 }
                 if (!cancelledByUser) {
+                    debugLog(DebugDirectionEnum.EVENT, "turn-end", "");
                     listener.onAiProcessEvent(new TurnCompleteEvent());
                 }
             }
@@ -1064,15 +1078,17 @@ public class OllamaAiProcessManager extends AiProcessManager {
         catch (IOException ex) {
             LOG.log(Level.WARNING, "Ollama send failed", ex);
             if (!cancelledByUser) {
-                listener.onAiProcessEvent(new StatusEvent(StatusEventTypeEnum.FAILED,
-                                                          StatusMessageUtil.formatSendFailed(describe(ex))));
+                String failure = StatusMessageUtil.formatSendFailed(describe(ex));
+                debugLog(DebugDirectionEnum.EVENT, "error", failure);
+                listener.onAiProcessEvent(new StatusEvent(StatusEventTypeEnum.FAILED, failure));
             }
         }
         catch (RuntimeException ex) {
             LOG.log(Level.WARNING, "Ollama send failed", ex);
             if (!cancelledByUser) {
-                listener.onAiProcessEvent(new StatusEvent(StatusEventTypeEnum.FAILED,
-                                                          StatusMessageUtil.formatSendFailed(describe(ex))));
+                String failure = StatusMessageUtil.formatSendFailed(describe(ex));
+                debugLog(DebugDirectionEnum.EVENT, "error", failure);
+                listener.onAiProcessEvent(new StatusEvent(StatusEventTypeEnum.FAILED, failure));
             }
         }
         finally {
@@ -1090,7 +1106,7 @@ public class OllamaAiProcessManager extends AiProcessManager {
             // Comparing against the published owner reference costs nothing and needs no lock. The epoch
             // guard stops a stale thread's LOOP; this stops a stale thread's TEARDOWN.
             if (Thread.currentThread() == activeTurnThread) {
-                AbstractChatContextBroker brokerSnap = broker;
+                OllamaAbstractChatContextBroker brokerSnap = broker;
                 if (brokerSnap != null) {
                     brokerSnap.rollbackTurn();
                     // The rolled-back turn discards the mail notice its loop-top injected, and the flag was
@@ -1125,20 +1141,20 @@ public class OllamaAiProcessManager extends AiProcessManager {
      *
      * @return true if a non-empty answer was produced and emitted
      */
-    private boolean answerWithoutTools(HttpAiClient client, String baseUrl, String apiKey,
-                                       String model, String reasoningEffort, AbstractChatContextBroker localBroker) throws IOException {
+    private boolean answerWithoutTools(OllamaHttpAiClient client, String baseUrl, String apiKey,
+                                       String model, String reasoningEffort, OllamaAbstractChatContextBroker localBroker) throws IOException {
         List<ChatMessage> prompt = new ArrayList<>(localBroker.snapshot());
         prompt.add(new ChatMessage(ChatRole.USER,
                                    "Stop calling tools. Answer my original message directly, in plain text.",
                                    List.of(), null));
         StringBuilder buf = new StringBuilder();
-        ChatResult result = chatWithReasoningEffortRetry(client,
-                                                         new ChatRequest(baseUrl, apiKey, model, List.copyOf(prompt), List.of(), null, reasoningEffort),
-                                                         delta -> {
-                                                             if (!cancelledByUser) {
-                                                                 buf.append(delta);
-                                                             }
-                                                         });
+        OllamaChatResult result = chatWithReasoningEffortRetry(client,
+                                                               new OllamaChatRequest(baseUrl, apiKey, model, List.copyOf(prompt), List.of(), null, reasoningEffort),
+                                                               delta -> {
+                                                                   if (!cancelledByUser) {
+                                                                       buf.append(delta);
+                                                                   }
+                                                               });
         String text = buf.length() > 0 ? buf.toString() : result.assistantText();
         if (cancelledByUser || text == null || text.isBlank() || isEmptyJson(text)) {
             return false;
@@ -1152,20 +1168,22 @@ public class OllamaAiProcessManager extends AiProcessManager {
         return McpServerRegistry.register(reg).get(2, TimeUnit.MINUTES);
     }
 
-    HttpAiClient createHttpAiClient() {
-        return new OpenAiCompatibleClient();
+    OllamaHttpAiClient createHttpAiClient() {
+        OllamaHttpClient client = new OllamaHttpClient();
+        client.setDebugLogSink((direction, line) -> debugLog(direction, "wire", line));
+        return client;
     }
 
     OllamaMcpBridge createBridge(OllamaAiSession session) {
         return new OllamaMcpBridge(session);
     }
 
-    private static int contextWindowForEvent(AbstractChatContextBroker broker, int fallback) {
+    private static int contextWindowForEvent(OllamaAbstractChatContextBroker broker, int fallback) {
         int discovered = broker == null ? 0 : broker.contextLimitForDisplay();
         return discovered > 0 ? discovered : fallback;
     }
 
-    AbstractChatContextBroker createContextBroker(String sessionId, ContextBrokerSettings settings) {
+    OllamaAbstractChatContextBroker createContextBroker(String sessionId, OllamaContextBrokerSettings settings) {
         return new OllamaChatContextBroker(sessionId, settings);
     }
 
@@ -1179,14 +1197,14 @@ public class OllamaAiProcessManager extends AiProcessManager {
 
     /**
      * Three-level fallback per setting: session value if set, else the global default, else the hardcoded default baked
-     * into ContextBrokerSettings. Session values are nullable precisely so "unset" is distinguishable from "set to
-     * zero/false".
+     * into OllamaContextBrokerSettings. Session values are nullable precisely so "unset" is distinguishable from "set
+     * to zero/false".
      */
-    ContextBrokerSettings resolveBrokerSettings() {
-        ContextBrokerSettings s = ContextBrokerSettings.defaults();
-        OpenAiClientSessionSettings cfg
+    OllamaContextBrokerSettings resolveBrokerSettings() {
+        OllamaContextBrokerSettings s = OllamaContextBrokerSettings.defaults();
+        OllamaClientSessionSettings cfg
                 = currentSession != null
-                && currentSession.settings() instanceof OpenAiClientSessionSettings o
+                && currentSession.settings() instanceof OllamaClientSessionSettings o
                   ? o : null;
 
         s.setTrigger(cfg != null && cfg.contextTrimTrigger() != null
@@ -1212,7 +1230,7 @@ public class OllamaAiProcessManager extends AiProcessManager {
         return s;
     }
 
-    ContextBrokerSettings brokerSettingsForTest() {
+    OllamaContextBrokerSettings brokerSettingsForTest() {
         return lastResolvedSettings;
     }
 
@@ -1301,6 +1319,7 @@ public class OllamaAiProcessManager extends AiProcessManager {
 
     @Override
     public synchronized void stop() {
+        debugLog(DebugDirectionEnum.EVENT, "stop", "");
         failWorkInFlight("Ollama session stopped while work was in progress");
         // Logged before the state is torn down, so the record says what was
         // actually in flight at the moment of the stop rather than the
@@ -1325,7 +1344,7 @@ public class OllamaAiProcessManager extends AiProcessManager {
         }
         ollamaSession = null;
         bridge = null;
-        AbstractChatContextBroker brokerSnap = broker;
+        OllamaAbstractChatContextBroker brokerSnap = broker;
         if (brokerSnap instanceof OllamaChatContextBroker ollamaBroker) {
             ollamaBroker.close();
         }
@@ -1366,13 +1385,13 @@ public class OllamaAiProcessManager extends AiProcessManager {
 
     @Override
     public void updatePinnedContext(String identity, String baseline, String instructions) {
-        AbstractChatContextBroker localBroker = broker;
+        OllamaAbstractChatContextBroker localBroker = broker;
         if (localBroker == null) {
             return;
         }
-        localBroker.upsertPin(PinSlotEnum.IDENTITY, identity);
-        localBroker.upsertPin(PinSlotEnum.BASELINE, baseline);
-        localBroker.upsertPin(PinSlotEnum.INSTRUCTIONS, instructions);
+        localBroker.upsertPin(OllamaPinSlotEnum.IDENTITY, identity);
+        localBroker.upsertPin(OllamaPinSlotEnum.BASELINE, baseline);
+        localBroker.upsertPin(OllamaPinSlotEnum.INSTRUCTIONS, instructions);
     }
 
     /**
@@ -1381,14 +1400,14 @@ public class OllamaAiProcessManager extends AiProcessManager {
      * the visible log and the model's memory always agreed, so this divergence needs calling out.
      */
     public void clearContext() {
-        AbstractChatContextBroker b = broker;
+        OllamaAbstractChatContextBroker b = broker;
         if (b == null) {
             return;
         }
         b.clearHistory();
         listener.onAiProcessEvent(new StatusEvent(StatusEventTypeEnum.INFO,
                                                   "Context cleared — the model no longer has the earlier conversation"));
-        ContextBrokerSettings resolved = lastResolvedSettings;
+        OllamaContextBrokerSettings resolved = lastResolvedSettings;
         if (resolved != null) {
             listener.onAiProcessEvent(new OllamaTokenUsageEvent(
                     b.estimatedTokenTotal(), contextWindowForEvent(b, resolved.tokenThreshold())));
@@ -1415,7 +1434,7 @@ public class OllamaAiProcessManager extends AiProcessManager {
     }
 
     private CompletableFuture<Integer> compactAsync() {
-        AbstractChatContextBroker b = broker;
+        OllamaAbstractChatContextBroker b = broker;
         if (b == null) {
             return CompletableFuture.failedFuture(new IllegalStateException("Ollama session is not running"));
         }
@@ -1438,13 +1457,13 @@ public class OllamaAiProcessManager extends AiProcessManager {
      * itself be overridden. Lets a test force an exception out of the compaction without needing a broker genuinely
      * wired to trip one.
      */
-    int invokeCompactNow(AbstractChatContextBroker b) {
+    int invokeCompactNow(OllamaAbstractChatContextBroker b) {
         return b.compactNow();
     }
 
     private StatusEvent compactSucceeded(int evicted) {
-        AbstractChatContextBroker b = broker;
-        ContextBrokerSettings resolved = lastResolvedSettings;
+        OllamaAbstractChatContextBroker b = broker;
+        OllamaContextBrokerSettings resolved = lastResolvedSettings;
         if (b != null && resolved != null) {
             listener.onAiProcessEvent(new OllamaTokenUsageEvent(
                     b.estimatedTokenTotal(), contextWindowForEvent(b, resolved.tokenThreshold())));
@@ -1455,8 +1474,34 @@ public class OllamaAiProcessManager extends AiProcessManager {
                                : "Compacted — " + evicted + " earlier exchange(s) summarised");
     }
 
+    /**
+     * Wraps a summariser so each request and reply reaches the backend debug log as {@code summary.request} (SENT) and
+     * {@code summary.response} (RECEIVED). Package-private so a test can drive it with a fake summariser.
+     */
+    OllamaSummariser loggingSummariser(OllamaSummariser inner) {
+        return span -> {
+            debugLog(DebugDirectionEnum.SENT, "summary.request", renderSpan(span));
+            String summary = inner.summarise(span);
+            debugLog(DebugDirectionEnum.RECEIVED, "summary.response", summary == null ? "" : summary);
+            return summary;
+        };
+    }
+
+    /**
+     * The transcript a summary request sends, one {@code role: text} line per message, for the backend debug log.
+     */
+    private static String renderSpan(List<ChatMessage> span) {
+        StringBuilder text = new StringBuilder();
+        for (ChatMessage message : span) {
+            text.append(message.role()).append(": ").append(message.content()).append('\n');
+        }
+        return text.toString();
+    }
+
     private StatusEvent compactFailed(Throwable error) {
-        return new StatusEvent(StatusEventTypeEnum.FAILED, "Compact failed: " + describe(error));
+        String failure = "Compact failed: " + describe(error);
+        debugLog(DebugDirectionEnum.EVENT, "error", failure);
+        return new StatusEvent(StatusEventTypeEnum.FAILED, failure);
     }
 
     @Override

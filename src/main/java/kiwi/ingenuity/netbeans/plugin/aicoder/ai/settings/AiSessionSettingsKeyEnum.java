@@ -142,6 +142,10 @@ public enum AiSessionSettingsKeyEnum {
      * Random, opaque address of the session's MCP endpoint (/mcp/&lt;type&gt;/&lt;routingId&gt;)
      */
     MCP_ROUTING_ID("mcpRoutingId"),
+    /**
+     * Whether the session writes everything sent to and received from the model to backend-debug.log
+     */
+    BACKEND_DEBUG_LOG("backendDebugLog"),
     CONTEXT_TRIM_TRIGGER("contextTrimTrigger"),
     CONTEXT_TRIM_STRATEGY("contextTrimStrategy"),
     CONTEXT_TOKEN_THRESHOLD("contextTokenThreshold"),

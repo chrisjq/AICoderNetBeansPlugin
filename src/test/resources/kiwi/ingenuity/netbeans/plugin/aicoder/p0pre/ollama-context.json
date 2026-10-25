@@ -1,0 +1,44 @@
+{
+  "version": 1,
+  "sessionId": "p0pre",
+  "savedAt": 1700000000000,
+  "calibrationRatio": 1.25,
+  "entries": [
+    {
+      "sequence": 1,
+      "groupId": 1,
+      "timestamp": 1000,
+      "retention": "EVICTABLE",
+      "estimatedTokens": 7,
+      "role": "USER",
+      "content": "Please inspect the project.",
+      "toolCalls": []
+    },
+    {
+      "sequence": 2,
+      "groupId": 2,
+      "timestamp": 2000,
+      "retention": "EVICTABLE",
+      "estimatedTokens": 9,
+      "role": "ASSISTANT",
+      "toolCalls": [
+        {
+          "id": "call_p0pre_1",
+          "name": "GetFileContent",
+          "arguments": "{\"filePath\":\"/p/pom.xml\"}"
+        }
+      ]
+    },
+    {
+      "sequence": 3,
+      "groupId": 2,
+      "timestamp": 3000,
+      "retention": "EVICTABLE",
+      "estimatedTokens": 4,
+      "role": "TOOL",
+      "content": "<project/>",
+      "toolCallId": "call_p0pre_1",
+      "toolCalls": []
+    }
+  ]
+}

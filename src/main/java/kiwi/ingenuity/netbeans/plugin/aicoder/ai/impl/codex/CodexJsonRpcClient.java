@@ -19,6 +19,8 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.locks.ReentrantLock;
+import java.util.function.BiConsumer;
+import kiwi.ingenuity.netbeans.plugin.aicoder.ai.debuglog.DebugDirectionEnum;
 
 /**
  * Bidirectional newline-delimited JSON-RPC 2.0 transport for Codex's {@code app-server} protocol.
@@ -60,6 +62,7 @@ public class CodexJsonRpcClient {
     private final Thread readerThread;
     private final AtomicBoolean closed = new AtomicBoolean(false);
     private volatile boolean streamEnded;
+    private volatile BiConsumer<DebugDirectionEnum, String> debugLogSink;
 
     public CodexJsonRpcClient(OutputStream out, InputStream in,
                               CodexNotificationListener notificationListener,
@@ -83,6 +86,13 @@ public class CodexJsonRpcClient {
         this.readerThread = new Thread(() -> readLoop(in), "codex-reader");
         this.readerThread.setDaemon(true);
         this.readerThread.start();
+    }
+
+    /**
+     * Sets an optional, non-blocking observer for raw JSON-RPC traffic. A {@code null} observer disables it.
+     */
+    public void setDebugLogSink(BiConsumer<DebugDirectionEnum, String> sink) {
+        debugLogSink = sink;
     }
 
     public CompletableFuture<JsonObject> sendRequest(String method, JsonObject params) {
@@ -165,6 +175,7 @@ public class CodexJsonRpcClient {
      */
     private void writeMessage(JsonObject message) {
         String line = GSON.toJson(message);
+        log(DebugDirectionEnum.SENT, line);
         writeLock.lock();
         try {
             writer.print(line);
@@ -204,6 +215,7 @@ public class CodexJsonRpcClient {
     }
 
     private void handleLine(String line) {
+        log(DebugDirectionEnum.RECEIVED, line);
         try {
             JsonObject msg = JsonParser.parseString(line).getAsJsonObject();
             boolean hasMethod = msg.has(CodexJsonKeyEnum.METHOD.key());
@@ -254,6 +266,18 @@ public class CodexJsonRpcClient {
      * message would read "java.lang.UnsupportedOperationException: only add and update are supported" and the
      * explanation would be buried behind a Java class name that means nothing to the model reading it.</p>
      */
+    private void log(DebugDirectionEnum direction, String line) {
+        BiConsumer<DebugDirectionEnum, String> sink = debugLogSink;
+        if (sink != null) {
+            try {
+                sink.accept(direction, line);
+            }
+            catch (RuntimeException ignored) {
+                // Diagnostics must not interfere with the JSON-RPC transport.
+            }
+        }
+    }
+
     private void handleInboundRequest(long id, String method, JsonObject params) {
         requestHandler.onServerRequest(method, params)
                 .thenAccept(result -> sendSuccessResponse(id, result))

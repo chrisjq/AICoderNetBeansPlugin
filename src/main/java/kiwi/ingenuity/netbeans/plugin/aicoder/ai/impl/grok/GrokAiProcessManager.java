@@ -26,6 +26,7 @@ import kiwi.ingenuity.netbeans.plugin.aicoder.ai.acp.AbstractAcpProcessManager;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.acp.AcpConnection;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.acp.AcpJsonKeyEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.acp.AcpMethodEnum;
+import kiwi.ingenuity.netbeans.plugin.aicoder.ai.debuglog.DebugDirectionEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.events.StatusEvent;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.events.StatusEventTypeEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.grok.events.GrokTokenUsageEvent;
@@ -266,13 +267,15 @@ public class GrokAiProcessManager extends AbstractAcpProcessManager {
 
         if (!GrokExecutableLocator.isExecutableFile(executablePath)) {
             running = false;
-            listener.onAiProcessEvent(new StatusEvent(StatusEventTypeEnum.FAILED,
-                                                      StatusMessageUtil.formatStartFailed("grok executable not found at " + executablePath)));
+            String failure = StatusMessageUtil.formatStartFailed("grok executable not found at " + executablePath);
+            debugLog(DebugDirectionEnum.EVENT, "error", failure);
+            listener.onAiProcessEvent(new StatusEvent(StatusEventTypeEnum.FAILED, failure));
             return;
         }
         if (currentSession == null) {
-            listener.onAiProcessEvent(new StatusEvent(StatusEventTypeEnum.FAILED,
-                                                      StatusMessageUtil.formatSessionNotConfigured()));
+            String failure = StatusMessageUtil.formatSessionNotConfigured();
+            debugLog(DebugDirectionEnum.EVENT, "error", failure);
+            listener.onAiProcessEvent(new StatusEvent(StatusEventTypeEnum.FAILED, failure));
             return;
         }
         sessionId = currentSession.id();
@@ -290,6 +293,7 @@ public class GrokAiProcessManager extends AbstractAcpProcessManager {
 
         grokAiSession = new GrokAiSession(currentSession, listener);
         running = true;
+        debugLog(DebugDirectionEnum.EVENT, "start", "");
         listener.onAiProcessEvent(new StatusEvent(StatusEventTypeEnum.READY, StatusMessageUtil.formatReady("Grok")));
     }
 
@@ -889,6 +893,7 @@ public class GrokAiProcessManager extends AbstractAcpProcessManager {
      */
     @Override
     public synchronized void stop() {
+        debugLog(DebugDirectionEnum.EVENT, "stop", "");
         if (PluginSettings.isDebugJson()) {
             LOG.log(Level.INFO, "Grok stop: shutting session down (session={0}, turnInFlight={1}, connected={2})",
                     new Object[]{acpSessionId, processing, connection != null});

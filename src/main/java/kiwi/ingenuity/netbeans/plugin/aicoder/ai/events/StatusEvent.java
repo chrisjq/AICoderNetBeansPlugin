@@ -10,11 +10,20 @@ import kiwi.ingenuity.netbeans.plugin.aicoder.process.events.AiProcessEvent;
  * has just started can be cancelled, which decides whether the Stop button is shown. The UI never needs to know
  * <em>what</em>
  * the work is. Every other status type ignores it.
+ *
+ * <p>
+ * {@code tooltip} is the status line's tooltip, a full sentence where the label is terse ("Approval…"); null keeps the
+ * label text as the tooltip.
  */
-public record StatusEvent(StatusEventTypeEnum type, String text, boolean cancellable) implements AiProcessEvent {
+public record StatusEvent(StatusEventTypeEnum type, String text, boolean cancellable, String tooltip)
+        implements AiProcessEvent {
 
     public StatusEvent(StatusEventTypeEnum type, String text) {
-        this(type, text, false);
+        this(type, text, false, null);
+    }
+
+    public StatusEvent(StatusEventTypeEnum type, String text, boolean cancellable) {
+        this(type, text, cancellable, null);
     }
 
     /**

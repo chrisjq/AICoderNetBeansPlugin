@@ -24,6 +24,7 @@ import java.util.logging.Logger;
 import kiwi.ingenuity.netbeans.plugin.aicoder.PluginSettings;
 import kiwi.ingenuity.netbeans.plugin.aicoder.StringConst;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.AiProcessManager;
+import kiwi.ingenuity.netbeans.plugin.aicoder.ai.debuglog.DebugDirectionEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.events.StatusEvent;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.events.StatusEventTypeEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.events.TurnCompleteEvent;
@@ -423,6 +424,11 @@ public abstract class AbstractAcpProcessManager extends AiProcessManager {
      * Emits the shared, actionable notice when an ACP session is launched without a live plugin MCP endpoint.
      */
     protected final void reportMcpUnavailableIfNeeded(String mcpEndpointUrl, String aiName) {
+        // A stop can win while the background handshake is still assembling MCP settings; do not emit
+        // a late informational notice after the turn has already been closed.
+        if (!running) {
+            return;
+        }
         if (mcpEndpointUrl == null || mcpEndpointUrl.isBlank()) {
             LOG.log(Level.WARNING, "MCP server unavailable; running {0} without plugin tools", aiName);
             listener.onAiProcessEvent(new StatusEvent(StatusEventTypeEnum.INFO,
@@ -580,6 +586,16 @@ public abstract class AbstractAcpProcessManager extends AiProcessManager {
     }
 
     /**
+     * Wires shared backend debug logging to raw ACP transport lines.
+     */
+    protected void configureAcpDebugObserver(AcpConnection conn) {
+        debugLog(DebugDirectionEnum.EVENT, "start", "");
+        conn.setDebugObserver((direction, line) -> debugLog(direction,
+                                                            direction == DebugDirectionEnum.SENT ? "wire.sent" : "wire.received",
+                                                            line));
+    }
+
+    /**
      * Decides whether the handshake may publish its connection or must instead report the agent as dead — the decision
      * and its detection (an ended stream, a grace wait for an exit that is probably only moments away, then an is-alive
      * check) do not depend on any backend-specific state, so every ACP backend shares one implementation rather than
@@ -645,6 +661,7 @@ public abstract class AbstractAcpProcessManager extends AiProcessManager {
                 }
             }
             if (!exitedUnreported) {
+                configureAcpDebugObserver(conn);
                 publishUnderLock.run();
             }
         }
@@ -774,6 +791,7 @@ public abstract class AbstractAcpProcessManager extends AiProcessManager {
             // would stay locked forever (cross-cutting rule found in the Copilot and Codex backends). None of
             // these refusals has a closer of its own, so INFO says why and TurnCompleteEvent releases the lock.
             listener.onAiProcessEvent(new StatusEvent(StatusEventTypeEnum.INFO, sendRefusalReason()));
+            debugLog(DebugDirectionEnum.EVENT, "turn-end", "");
             listener.onAiProcessEvent(new TurnCompleteEvent());
             return;
         }
@@ -856,6 +874,7 @@ public abstract class AbstractAcpProcessManager extends AiProcessManager {
             // session carries straight on or goes idle, and it can only take a refusal into account if it has
             // already been told of it. Events reach the UI in the order they are posted here.
             onTurnCompleteWhileRunning(result, stoppedByUser);
+            debugLog(DebugDirectionEnum.EVENT, "turn-end", "");
             listener.onAiProcessEvent(new TurnCompleteEvent());
         }
         else {
@@ -915,6 +934,7 @@ public abstract class AbstractAcpProcessManager extends AiProcessManager {
             // report as a cancelled handleTurnComplete applies, before the turn-complete event for the same
             // reason; there is no stopReason here, -32800 itself says "cancelled".
             onTurnErrorCancelled(stoppedByUser);
+            debugLog(DebugDirectionEnum.EVENT, "turn-end", "");
             listener.onAiProcessEvent(new TurnCompleteEvent());
             return;
         }
@@ -924,8 +944,9 @@ public abstract class AbstractAcpProcessManager extends AiProcessManager {
         if (onTurnError(cause)) {
             return;
         }
-        listener.onAiProcessEvent(new StatusEvent(StatusEventTypeEnum.FAILED,
-                                                  StatusMessageUtil.formatSendFailed(cause != null ? cause.getMessage() : ex.getMessage())));
+        String failure = StatusMessageUtil.formatSendFailed(cause != null ? cause.getMessage() : ex.getMessage());
+        debugLog(DebugDirectionEnum.EVENT, "error", failure);
+        listener.onAiProcessEvent(new StatusEvent(StatusEventTypeEnum.FAILED, failure));
     }
 
     /**
@@ -1195,8 +1216,9 @@ public abstract class AbstractAcpProcessManager extends AiProcessManager {
             // Not our turn any more: Stop, stop() or the exit already ended it, and processing may now
             // belong to a newer turn — report nothing and leave it alone.
             if (stillOurTurn) {
-                listener.onAiProcessEvent(new StatusEvent(StatusEventTypeEnum.FAILED,
-                                                          StatusMessageUtil.formatSendFailed(e.getMessage())));
+                String failure = StatusMessageUtil.formatSendFailed(e.getMessage());
+                debugLog(DebugDirectionEnum.EVENT, "error", failure);
+                listener.onAiProcessEvent(new StatusEvent(StatusEventTypeEnum.FAILED, failure));
             }
             return;
         }
@@ -1220,6 +1242,7 @@ public abstract class AbstractAcpProcessManager extends AiProcessManager {
         if (!running || pendingDiff) {
             processing = false; // stop()/diff panel won the race; nobody else will rearm
             listener.onAiProcessEvent(new StatusEvent(StatusEventTypeEnum.INFO, sendRefusalReason()));
+            debugLog(DebugDirectionEnum.EVENT, "turn-end", "");
             listener.onAiProcessEvent(new TurnCompleteEvent());
             return;
         }

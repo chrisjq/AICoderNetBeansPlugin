@@ -25,6 +25,7 @@ import kiwi.ingenuity.netbeans.plugin.aicoder.PluginSettings;
 import kiwi.ingenuity.netbeans.plugin.aicoder.StringConst;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.AiProcessManager;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.AiTypeEnum;
+import kiwi.ingenuity.netbeans.plugin.aicoder.ai.debuglog.DebugDirectionEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.events.StatusEvent;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.events.StatusEventTypeEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.events.TurnCompleteEvent;
@@ -626,8 +627,12 @@ public class ClaudeAiProcessManager extends AiProcessManager {
                                                                            LOG.log(Level.INFO, "ai json [{0}]: {1}",
                                                                                    new Object[]{sid, McpHookServerUtil.redactAllSecrets(line)});
                                                                        }
+                                                                       debugLog(DebugDirectionEnum.RECEIVED, "line", line);
                                                                        trackToolCallLifecycle(line);
                                                                        p.parseLine(line);
+                                                                       if (isTurnEndLine(line)) {
+                                                                           debugLog(DebugDirectionEnum.EVENT, "turn-end", "");
+                                                                       }
                                                                    },
                                                                    err -> {
                                                                        // Claude's stream-json protocol runs on stdout, not stderr, so a
@@ -645,6 +650,8 @@ public class ClaudeAiProcessManager extends AiProcessManager {
         launchedModel = model;
         launchedEffort = configuredEffort;
         launchCount++;
+        launched.setDebugSink((direction, payload) -> debugLog(direction, "line", payload));
+        debugLog(DebugDirectionEnum.EVENT, "start", "");
         launched.process().onExit().thenRun(() -> handleProcessExit(launched));
         firstMessage = false;
         return persistentSession;
@@ -671,6 +678,7 @@ public class ClaudeAiProcessManager extends AiProcessManager {
             awaitingCancelResult = false;
             inFlightToolCalls = 0;
             pendingMailInterrupt = false;
+            debugLog(DebugDirectionEnum.EVENT, "exit", String.valueOf(dead.process().exitValue()));
             suppress = cancelledByUser || turnInterrupted;
             deadSessionCompaction = compactionFuture;
         }
@@ -1040,6 +1048,7 @@ public class ClaudeAiProcessManager extends AiProcessManager {
         }
         running = false;
         processing = false;
+        debugLog(DebugDirectionEnum.EVENT, "stop", "");
         failWorkInFlight("Claude stopped during compaction");
         completeCompactionFailure(new IllegalStateException("Claude stopped during compaction"));
         cancelledByUser = true;

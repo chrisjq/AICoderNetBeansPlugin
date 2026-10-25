@@ -1,7 +1,7 @@
 package kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.ollama;
 
 import java.util.Map;
-import kiwi.ingenuity.netbeans.plugin.aicoder.ai.http.ExtractedToolCall;
+import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.ollama.http.OllamaExtractedToolCall;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.server.McpToolInvoker;
 import static org.junit.jupiter.api.Assertions.*;
 import org.junit.jupiter.api.Test;
@@ -10,8 +10,8 @@ class OllamaAiProcessManagerDuplicatesTest {
 
     @Test
     void ollamaAiProcessManager_refusesToolWithDuplicateParameters() {
-        ExtractedToolCall call = new ExtractedToolCall("SaveFile", "{\"path\": \"/tmp/a\", \"path\": \"/tmp/b\"}",
-                                                       Map.of("path", 2));
+        OllamaExtractedToolCall call = new OllamaExtractedToolCall("SaveFile", "{\"path\": \"/tmp/a\", \"path\": \"/tmp/b\"}",
+                                                                   Map.of("path", 2));
         String result = McpToolInvoker.duplicateParametersMessage(call.name(), call.duplicateCounts());
 
         assertTrue(result.contains("Duplicate parameters for SaveFile"), "should mention tool name: " + result);
@@ -34,8 +34,8 @@ class OllamaAiProcessManagerDuplicatesTest {
 
     @Test
     void extractedToolCall_conveysExtractorDuplicates() {
-        ExtractedToolCall call = new ExtractedToolCall("GetFile", "{\"path\": \"/tmp/a\", \"path\": \"/tmp/b\"}",
-                                                       Map.of("path", 2));
+        OllamaExtractedToolCall call = new OllamaExtractedToolCall("GetFile", "{\"path\": \"/tmp/a\", \"path\": \"/tmp/b\"}",
+                                                                   Map.of("path", 2));
 
         assertNotNull(call.duplicateCounts(), "duplicateCounts should not be null");
         assertEquals(2, call.duplicateCounts().get("path"), "should preserve extractor duplicates");
@@ -43,7 +43,7 @@ class OllamaAiProcessManagerDuplicatesTest {
 
     @Test
     void extractedToolCall_cleanCallHasEmptyDuplicates() {
-        ExtractedToolCall call = new ExtractedToolCall("CleanTool", "{\"param\": \"value\"}");
+        OllamaExtractedToolCall call = new OllamaExtractedToolCall("CleanTool", "{\"param\": \"value\"}");
 
         assertTrue(call.duplicateCounts().isEmpty(), "clean call should have empty duplicates");
     }

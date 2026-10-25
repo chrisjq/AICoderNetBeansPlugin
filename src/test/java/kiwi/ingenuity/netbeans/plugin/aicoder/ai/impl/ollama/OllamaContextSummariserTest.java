@@ -5,10 +5,10 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.function.Consumer;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.http.ChatMessage;
-import kiwi.ingenuity.netbeans.plugin.aicoder.ai.http.ChatRequest;
-import kiwi.ingenuity.netbeans.plugin.aicoder.ai.http.ChatResult;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.http.ChatRole;
-import kiwi.ingenuity.netbeans.plugin.aicoder.ai.http.HttpAiClient;
+import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.ollama.http.OllamaChatRequest;
+import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.ollama.http.OllamaChatResult;
+import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.ollama.http.OllamaHttpAiClient;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -25,7 +25,7 @@ class OllamaContextSummariserTest {
     @Test
     void returnsTheModelsSummary() throws Exception {
         StubClient client = new StubClient(
-                new ChatResult("The user asked how to open files.", List.of(), "stop"));
+                new OllamaChatResult("The user asked how to open files.", List.of(), "stop"));
         OllamaContextSummariser s
                 = new OllamaContextSummariser(client, "http://localhost:11434", null, "m");
 
@@ -34,30 +34,30 @@ class OllamaContextSummariserTest {
 
     @Test
     void sendsNoToolsSoTheModelCannotDoAnythingButSummarise() throws Exception {
-        StubClient client = new StubClient(new ChatResult("summary", List.of(), "stop"));
+        StubClient client = new StubClient(new OllamaChatResult("summary", List.of(), "stop"));
         OllamaContextSummariser s
                 = new OllamaContextSummariser(client, "http://localhost:11434", null, "m");
 
         s.summarise(span());
 
         assertTrue(client.requests.get(0).toolSchemas().isEmpty(),
-                "offering tools during summarisation invites the model to call one instead");
+                   "offering tools during summarisation invites the model to call one instead");
     }
 
     @Test
     void aBlankSummaryIsReportedAsNullNotAsEmptyText() throws Exception {
-        StubClient client = new StubClient(new ChatResult("   ", List.of(), "stop"));
+        StubClient client = new StubClient(new OllamaChatResult("   ", List.of(), "stop"));
         OllamaContextSummariser s
                 = new OllamaContextSummariser(client, "http://localhost:11434", null, "m");
 
         assertNull(s.summarise(span()),
-                "a blank summary must trigger the caller's fallback, not replace history "
-                + "with whitespace");
+                   "a blank summary must trigger the caller's fallback, not replace history "
+                   + "with whitespace");
     }
 
     @Test
     void anEmptySpanIsNotSentToTheModelAtAll() throws Exception {
-        StubClient client = new StubClient(new ChatResult("summary", List.of(), "stop"));
+        StubClient client = new StubClient(new OllamaChatResult("summary", List.of(), "stop"));
         OllamaContextSummariser s
                 = new OllamaContextSummariser(client, "http://localhost:11434", null, "m");
 
@@ -65,23 +65,23 @@ class OllamaContextSummariserTest {
         assertTrue(client.requests.isEmpty(), "no span, no request");
     }
 
-    private static final class StubClient implements HttpAiClient {
+    private static final class StubClient implements OllamaHttpAiClient {
 
-        private final ChatResult result;
+        private final OllamaChatResult result;
         private final IOException failure;
-        final List<ChatRequest> requests = new ArrayList<>();
+        final List<OllamaChatRequest> requests = new ArrayList<>();
 
-        StubClient(ChatResult result) {
+        StubClient(OllamaChatResult result) {
             this(result, null);
         }
 
-        StubClient(ChatResult result, IOException failure) {
+        StubClient(OllamaChatResult result, IOException failure) {
             this.result = result;
             this.failure = failure;
         }
 
         @Override
-        public ChatResult chat(ChatRequest request, Consumer<String> onTextDelta)
+        public OllamaChatResult chat(OllamaChatRequest request, Consumer<String> onTextDelta)
                 throws IOException {
             requests.add(request);
             if (failure != null) {

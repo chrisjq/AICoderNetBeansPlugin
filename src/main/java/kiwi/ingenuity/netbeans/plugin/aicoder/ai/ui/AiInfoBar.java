@@ -159,13 +159,40 @@ public class AiInfoBar extends JPanel {
      * own threads. Self-dispatches rather than relying on every caller to remember to.
      */
     public void setStatusMessage(String text) {
+        setStatusMessage(text, null);
+    }
+
+    /**
+     * As {@link #setStatusMessage(String)}, with a separate tooltip (a full sentence for a terse label). A null or
+     * blank {@code tooltip} shows the label text, as before. Safe from any thread.
+     */
+    public void setStatusMessage(String text, String tooltip) {
         if (!SwingUtilities.isEventDispatchThread()) {
-            SwingUtilities.invokeLater(() -> setStatusMessage(text));
+            SwingUtilities.invokeLater(() -> setStatusMessage(text, tooltip));
             return;
         }
         String raw = (text == null || text.isBlank()) ? " " : text;
         statusLabel.setText(fitToLabel(raw));
-        statusLabel.setToolTipText(raw.isBlank() ? null : raw);
+        if (tooltip != null && !tooltip.isBlank() && !raw.isBlank()) {
+            statusLabel.setToolTipText(tooltip);
+        }
+        else {
+            statusLabel.setToolTipText(raw.isBlank() ? null : raw);
+        }
+    }
+
+    /**
+     * The status label's tooltip now set (for tests).
+     */
+    String statusToolTip() {
+        return statusLabel.getToolTipText();
+    }
+
+    /**
+     * The status label's full text before fitting (for tests).
+     */
+    String statusText() {
+        return statusLabel.getText();
     }
 
     private String fitToLabel(String text) {

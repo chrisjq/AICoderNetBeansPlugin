@@ -13,6 +13,7 @@ import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.codex.CodexAiImplementatio
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.githubcopilot.GithubCopilotAiImplementation;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.grok.GrokAiImplementation;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.ollama.OllamaAiImplementation;
+import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.openaicompatible.OpenAiCompatibleAiImplementation;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.opencode.OpenCodeAiImplementation;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.pi.PiAiImplementation;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.settings.AiTypeSettings;
@@ -80,6 +81,8 @@ public final class AiTypeRegistry implements Registry {
                 new GithubCopilotAiImplementation(listener, prompter);
             case OLLAMA_LOCAL ->
                 new OllamaAiImplementation(listener, prompter);
+            case OPENAI_COMPATIBLE ->
+                new OpenAiCompatibleAiImplementation(listener, prompter);
             case OPENCODE ->
                 new OpenCodeAiImplementation(listener, prompter);
             case CODEX ->

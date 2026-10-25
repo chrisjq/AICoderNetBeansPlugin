@@ -132,7 +132,7 @@ public final class McpTemplatesPanel extends TemplatePanel<McpTemplate> {
 
     @Override
     protected boolean canDelete(McpTemplate value) {
-        return value != null && !value.isDefault();
+        return value != null && !value.isDefault() && !value.isMinimal();
     }
 
     @Override

@@ -3,12 +3,12 @@ package kiwi.ingenuity.netbeans.plugin.aicoder.ai;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.claude.settings.ClaudeSessionSettings;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.githubcopilot.settings.GithubCopilotSessionSettings;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.grok.settings.GrokSessionSettings;
+import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.ollama.settings.OllamaClientSessionSettings;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.ollama.settings.OllamaSessionSettings;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.opencode.settings.OpenCodeSessionSettings;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.session.AiSession;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.settings.AiModelSessionSettings;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.settings.AiSessionSettings;
-import kiwi.ingenuity.netbeans.plugin.aicoder.ai.settings.OpenAiClientSessionSettings;
 import static org.junit.jupiter.api.Assertions.*;
 import org.junit.jupiter.api.Test;
 
@@ -111,15 +111,15 @@ class AiTypeEnumSettingsTest {
     }
 
     @Test
-    void isOpenAiCompatibleMatchesTheSettingsClassForEveryType() {
+    void usesLegacyOllamaSettingsMatchesTheSettingsClassForEveryType() {
         for (AiTypeEnum type : AiTypeEnum.values()) {
             AiSessionSettings settings = type.createDefaultSettings();
-            boolean settingsAreOpenAi = settings instanceof OpenAiClientSessionSettings;
-            assertEquals(settingsAreOpenAi, type.isOpenAiCompatible(),
-                         type + ": isOpenAiCompatible() is " + type.isOpenAiCompatible()
+            boolean settingsAreOpenAi = settings instanceof OllamaClientSessionSettings;
+            assertEquals(settingsAreOpenAi, type.usesLegacyOllamaSettings(),
+                         type + ": usesLegacyOllamaSettings() is " + type.usesLegacyOllamaSettings()
                          + " but its settings class " + settings.getClass().getSimpleName()
                          + (settingsAreOpenAi ? " DOES" : " does NOT")
-                         + " extend OpenAiClientSessionSettings — the flag and the class hierarchy disagree");
+                         + " extend OllamaClientSessionSettings — the flag and the class hierarchy disagree");
         }
     }
 

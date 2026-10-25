@@ -1,0 +1,472 @@
+package kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.ollama.http;
+
+import com.google.gson.Gson;
+import com.google.gson.JsonArray;
+import com.google.gson.JsonElement;
+import com.google.gson.JsonObject;
+import com.google.gson.JsonParser;
+import java.io.BufferedReader;
+import java.io.IOException;
+import java.io.InputStream;
+import java.io.InputStreamReader;
+import java.net.URI;
+import java.net.http.HttpClient;
+import java.net.http.HttpRequest;
+import java.net.http.HttpResponse;
+import java.nio.charset.StandardCharsets;
+import java.time.Duration;
+import java.util.ArrayList;
+import java.util.Comparator;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Locale;
+import java.util.Map;
+import java.util.Objects;
+import java.util.function.BiConsumer;
+import java.util.function.Consumer;
+import java.util.logging.Level;
+import java.util.logging.Logger;
+import kiwi.ingenuity.netbeans.plugin.aicoder.PluginSettings;
+import kiwi.ingenuity.netbeans.plugin.aicoder.ai.debuglog.DebugDirectionEnum;
+import kiwi.ingenuity.netbeans.plugin.aicoder.ai.http.ChatMessage;
+import kiwi.ingenuity.netbeans.plugin.aicoder.ai.http.ChatToolCall;
+import kiwi.ingenuity.netbeans.plugin.aicoder.process.server.McpHookServerUtil;
+import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.TimeoutEnum;
+import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.ToolSchemaKeyEnum;
+
+public class OllamaHttpClient implements OllamaHttpAiClient {
+
+    private static final Logger LOG = Logger.getLogger(OllamaHttpClient.class.getName());
+    private static final Gson GSON = new Gson();
+    private static final Duration DEFAULT_TIMEOUT = Duration.ofMillis(TimeoutEnum.OPENAI_HTTP_REQUEST_TIMEOUT_MILLIS.millis());
+    /**
+     * Master switch for logging tool_calls SSE deltas to "ollama sse". Default OFF.
+     *
+     * <p>
+     * Why off: a single chunk is frequently not a complete JSON object on its own (arguments stream in fragments — see
+     * {@link PartialToolCall}), and even when it is, a secret's own characters can straddle two separate chunks — no
+     * per-line redaction can catch that. Individually these fragments are near-unreadable anyway, and the ASSEMBLED
+     * call is already logged in the next turn's "ollama request" log, which replays the complete history — the version
+     * anyone would actually want to read.
+     *
+     * <p>
+     * Flip to {@code true} only when debugging a tool call whose arguments never assemble correctly and the
+     * request-history replay isn't enough to diagnose it. Ordinary content deltas keep logging regardless of this flag
+     * — see {@link #isToolCallDelta}, which this flag gates.
+     */
+    static final boolean LOG_TOOL_CALL_SSE_DELTAS = false;
+
+    static OllamaChatResult assembleSse(List<String> sseDataLines) {
+        StringBuilder assistantText = new StringBuilder();
+        Map<Integer, PartialToolCall> toolCalls = new LinkedHashMap<>();
+        String finishReason = null;
+        Integer promptTokens = null;
+        Integer completionTokens = null;
+
+        for (String dataLine : sseDataLines) {
+            if (dataLine == null || dataLine.isBlank() || "[DONE]".equals(dataLine)) {
+                continue;
+            }
+            JsonObject root;
+            try {
+                root = JsonParser.parseString(dataLine).getAsJsonObject();
+            }
+            catch (RuntimeException ex) {
+                continue;
+            }
+            JsonObject usage = root.getAsJsonObject(OllamaHttpJsonKeyEnum.USAGE.key());
+            if (usage != null) {
+                JsonElement pt = usage.get(OllamaHttpJsonKeyEnum.PROMPT_TOKENS.key());
+                if (pt != null && !pt.isJsonNull()) {
+                    promptTokens = pt.getAsInt();
+                }
+                JsonElement ct = usage.get(OllamaHttpJsonKeyEnum.COMPLETION_TOKENS.key());
+                if (ct != null && !ct.isJsonNull()) {
+                    completionTokens = ct.getAsInt();
+                }
+            }
+            JsonArray choices = root.getAsJsonArray(OllamaHttpJsonKeyEnum.CHOICES.key());
+            if (choices == null || choices.isEmpty()) {
+                continue;
+            }
+            JsonObject choice = choices.get(0).getAsJsonObject();
+            JsonElement finishReasonEl = choice.get(OllamaHttpJsonKeyEnum.FINISH_REASON.key());
+            if (finishReasonEl != null && !finishReasonEl.isJsonNull()) {
+                finishReason = finishReasonEl.getAsString();
+            }
+            JsonObject delta = choice.getAsJsonObject(OllamaHttpJsonKeyEnum.DELTA.key());
+            if (delta == null) {
+                continue;
+            }
+            JsonElement contentEl = delta.get(OllamaHttpJsonKeyEnum.CONTENT.key());
+            if (contentEl != null && !contentEl.isJsonNull()) {
+                assistantText.append(contentEl.getAsString());
+            }
+            JsonArray deltaToolCalls = delta.getAsJsonArray(OllamaHttpJsonKeyEnum.TOOL_CALLS.key());
+            if (deltaToolCalls != null) {
+                appendToolCalls(toolCalls, deltaToolCalls);
+            }
+        }
+
+        List<ChatToolCall> finalToolCalls = toolCalls.entrySet().stream()
+                .sorted(Comparator.comparingInt(Map.Entry::getKey))
+                .map(Map.Entry::getValue)
+                .map(PartialToolCall::toChatToolCall)
+                .toList();
+        return new OllamaChatResult(assistantText.toString(), finalToolCalls, finishReason,
+                                    promptTokens, completionTokens);
+    }
+
+    private static List<String> readSseDataLines(InputStream body, Consumer<String> onTextDelta,
+                                                 BiConsumer<DebugDirectionEnum, String> debugLogSink) throws IOException {
+        List<String> lines = new ArrayList<>();
+        try (BufferedReader reader = new BufferedReader(new InputStreamReader(body, StandardCharsets.UTF_8))) {
+            String line;
+            while ((line = reader.readLine()) != null) {
+                if (!line.startsWith("data:")) {
+                    continue;
+                }
+                String data = line.substring(5).stripLeading();
+                BiConsumer<DebugDirectionEnum, String> sink = debugLogSink;
+                if (sink != null) {
+                    sink.accept(DebugDirectionEnum.RECEIVED, data);
+                }
+
+                // Tool-call deltas are excluded by default (not just redacted), behind
+                // LOG_TOOL_CALL_SSE_DELTAS — see that flag's javadoc for the full trade-off
+                // (a fragment cannot be made safe, not that it's uninteresting; the
+                // assembled call is already visible, fully redacted, in the next turn's
+                // "ollama request" log, which replays the complete history). Ordinary
+                // content deltas are never excluded, flag or no flag.
+                if (PluginSettings.isDebugJson() && (LOG_TOOL_CALL_SSE_DELTAS || !isToolCallDelta(data))) {
+                    LOG.log(Level.INFO, "ollama sse: {0}", McpHookServerUtil.redactAllSecrets(data));
+                }
+                lines.add(data);
+                emitTextDelta(data, onTextDelta);
+            }
+        }
+        return lines;
+    }
+
+    static boolean isToolCallDelta(String data) {
+        if (data == null || data.isBlank() || "[DONE]".equals(data)) {
+            return false;
+        }
+        try {
+            JsonObject root = JsonParser.parseString(data).getAsJsonObject();
+            JsonArray choices = root.getAsJsonArray(OllamaHttpJsonKeyEnum.CHOICES.key());
+            if (choices == null || choices.isEmpty()) {
+                return false;
+            }
+            JsonObject choice = choices.get(0).getAsJsonObject();
+            JsonObject delta = choice.getAsJsonObject(OllamaHttpJsonKeyEnum.DELTA.key());
+            return delta != null && delta.has(OllamaHttpJsonKeyEnum.TOOL_CALLS.key());
+        }
+        catch (RuntimeException e) {
+            // Unparseable — cannot confirm it's a tool-call fragment, so it is not
+            // excluded on a hunch; ordinary content keeps streaming to the log as before.
+            return false;
+        }
+    }
+
+    private static void emitTextDelta(String data, Consumer<String> onTextDelta) {
+        if (onTextDelta == null || data == null || data.isBlank() || "[DONE]".equals(data)) {
+            return;
+        }
+        try {
+            JsonObject root = JsonParser.parseString(data).getAsJsonObject();
+            JsonArray choices = root.getAsJsonArray(OllamaHttpJsonKeyEnum.CHOICES.key());
+            if (choices == null || choices.isEmpty()) {
+                return;
+            }
+            JsonObject choice = choices.get(0).getAsJsonObject();
+            JsonObject delta = choice.getAsJsonObject(OllamaHttpJsonKeyEnum.DELTA.key());
+            if (delta == null) {
+                return;
+            }
+            JsonElement contentEl = delta.get(OllamaHttpJsonKeyEnum.CONTENT.key());
+            if (contentEl != null && !contentEl.isJsonNull()) {
+                onTextDelta.accept(contentEl.getAsString());
+            }
+        }
+        catch (RuntimeException ex) {
+            // skip malformed delta
+        }
+    }
+
+    private static void appendToolCalls(Map<Integer, PartialToolCall> toolCalls, JsonArray deltaToolCalls) {
+        for (JsonElement element : deltaToolCalls) {
+            if (element == null || !element.isJsonObject()) {
+                continue;
+            }
+            JsonObject toolCall = element.getAsJsonObject();
+            int index = toolCall.has(OllamaHttpJsonKeyEnum.INDEX.key())
+                        ? toolCall.get(OllamaHttpJsonKeyEnum.INDEX.key()).getAsInt() : toolCalls.size();
+            PartialToolCall partial = toolCalls.computeIfAbsent(index, i -> new PartialToolCall());
+            JsonElement idEl = toolCall.get(OllamaHttpJsonKeyEnum.ID.key());
+            if (idEl != null && !idEl.isJsonNull()) {
+                partial.id = idEl.getAsString();
+            }
+            JsonObject function = toolCall.getAsJsonObject(OllamaHttpJsonKeyEnum.FUNCTION.key());
+            if (function == null) {
+                continue;
+            }
+            JsonElement nameEl = function.get(OllamaHttpJsonKeyEnum.NAME.key());
+            if (nameEl != null && !nameEl.isJsonNull()) {
+                partial.name = nameEl.getAsString();
+            }
+            JsonElement argsEl = function.get(OllamaHttpJsonKeyEnum.ARGUMENTS.key());
+            if (argsEl != null && !argsEl.isJsonNull()) {
+                partial.arguments.append(argsEl.getAsString());
+            }
+        }
+    }
+
+    private static JsonObject buildPayload(OllamaChatRequest request) {
+        JsonObject payload = new JsonObject();
+        payload.addProperty(OllamaHttpJsonKeyEnum.MODEL.key(), request.model());
+        payload.addProperty(OllamaHttpJsonKeyEnum.STREAM.key(), true);
+        JsonObject streamOptions = new JsonObject();
+        streamOptions.addProperty(OllamaHttpJsonKeyEnum.INCLUDE_USAGE.key(), true);
+        payload.add(OllamaHttpJsonKeyEnum.STREAM_OPTIONS.key(), streamOptions);
+
+        JsonArray messages = new JsonArray();
+        for (ChatMessage message : request.messages() == null ? List.<ChatMessage>of() : request.messages()) {
+            messages.add(toApiMessage(message));
+        }
+        payload.add(OllamaHttpJsonKeyEnum.MESSAGES.key(), messages);
+
+        JsonArray tools = new JsonArray();
+        for (JsonObject toolSchema : request.toolSchemas() == null ? List.<JsonObject>of() : request.toolSchemas()) {
+            JsonObject function = new JsonObject();
+            if (toolSchema != null) {
+                // toolSchema is one of the plugin's OWN MCP tool definitions, so it is
+                // READ with ToolSchemaKeyEnum; what is WRITTEN into the OpenAI
+                // function object uses OllamaHttpJsonKeyEnum. Same spelling today, but
+                // two contracts — keep them from sharing one constant.
+                if (toolSchema.has(ToolSchemaKeyEnum.NAME.key())) {
+                    function.add(OllamaHttpJsonKeyEnum.NAME.key(), toolSchema.get(ToolSchemaKeyEnum.NAME.key()));
+                }
+                if (toolSchema.has(ToolSchemaKeyEnum.DESCRIPTION.key())) {
+                    function.add(OllamaHttpJsonKeyEnum.DESCRIPTION.key(), toolSchema.get(ToolSchemaKeyEnum.DESCRIPTION.key()));
+                }
+                // A schema already in OpenAI shape carries "parameters" instead.
+                JsonElement parameters = toolSchema.has(ToolSchemaKeyEnum.INPUT_SCHEMA.key())
+                                         ? toolSchema.get(ToolSchemaKeyEnum.INPUT_SCHEMA.key())
+                                         : toolSchema.has(OllamaHttpJsonKeyEnum.PARAMETERS.key()) ? toolSchema.get(OllamaHttpJsonKeyEnum.PARAMETERS.key()) : null;
+                if (parameters != null && parameters.isJsonObject()) {
+                    function.add(OllamaHttpJsonKeyEnum.PARAMETERS.key(), deepCopy(parameters.getAsJsonObject()));
+                }
+            }
+            JsonObject tool = new JsonObject();
+            tool.addProperty(OllamaHttpJsonKeyEnum.TYPE.key(), "function");
+            tool.add(OllamaHttpJsonKeyEnum.FUNCTION.key(), function);
+            tools.add(tool);
+        }
+        payload.add(OllamaHttpJsonKeyEnum.TOOLS.key(), tools);
+        if (request.responseFormat() != null) {
+            payload.add(OllamaHttpJsonKeyEnum.RESPONSE_FORMAT.key(), request.responseFormat());
+        }
+        if (request.reasoningEffort() != null && !request.reasoningEffort().isBlank()) {
+            payload.addProperty(OllamaHttpJsonKeyEnum.REASONING_EFFORT.key(), request.reasoningEffort());
+        }
+        return payload;
+    }
+
+    static JsonObject buildPayloadForTest(OllamaChatRequest request) {
+        return buildPayload(request);
+    }
+
+    private static JsonObject toApiMessage(ChatMessage message) {
+        JsonObject out = new JsonObject();
+        out.addProperty(OllamaHttpJsonKeyEnum.ROLE.key(), message.role().name().toLowerCase(Locale.ROOT));
+        if (message.content() == null) {
+            out.add(OllamaHttpJsonKeyEnum.CONTENT.key(), null);
+        }
+        else {
+            out.addProperty(OllamaHttpJsonKeyEnum.CONTENT.key(), message.content());
+        }
+        if (message.toolCallId() != null) {
+            out.addProperty(OllamaHttpJsonKeyEnum.TOOL_CALL_ID.key(), message.toolCallId());
+        }
+        if (message.toolCalls() != null && !message.toolCalls().isEmpty()) {
+            JsonArray toolCalls = new JsonArray();
+            for (ChatToolCall call : message.toolCalls()) {
+                JsonObject toolCall = new JsonObject();
+                if (call.id() != null) {
+                    toolCall.addProperty(OllamaHttpJsonKeyEnum.ID.key(), call.id());
+                }
+                toolCall.addProperty(OllamaHttpJsonKeyEnum.TYPE.key(), "function");
+                JsonObject function = new JsonObject();
+                function.addProperty(OllamaHttpJsonKeyEnum.NAME.key(), call.name());
+                function.addProperty(OllamaHttpJsonKeyEnum.ARGUMENTS.key(), call.argumentsJson() == null ? "{}" : call.argumentsJson());
+                toolCall.add(OllamaHttpJsonKeyEnum.FUNCTION.key(), function);
+                toolCalls.add(toolCall);
+            }
+            out.add(OllamaHttpJsonKeyEnum.TOOL_CALLS.key(), toolCalls);
+        }
+        return out;
+    }
+
+    private static JsonObject deepCopy(JsonObject source) {
+        return source == null ? new JsonObject() : JsonParser.parseString(source.toString()).getAsJsonObject();
+    }
+
+    private static String trimTrailingSlash(String baseUrl) {
+        String trimmed = baseUrl.trim();
+        while (trimmed.endsWith("/")) {
+            trimmed = trimmed.substring(0, trimmed.length() - 1);
+        }
+        return trimmed;
+    }
+
+    /**
+     * Upper bound on the parse error carried to the model. Ollama's message can echo the model's entire raw output in
+     * {@code raw='...'}, which is useless to the model and expensive in the transcript — the {@code err=} tail is the
+     * actionable part, and capping it means a huge raw echo can never be copied into the conversation.
+     */
+    static final int MAX_TOOL_CALL_PARSE_ERROR_LENGTH = 200;
+
+    /**
+     * Detects an HTTP 500 whose error body is a server-side tool-call PARSE failure — the exact shape Ollama local
+     * models produce when they hallucinate mid-string and emit tool arguments that are not valid JSON
+     * ({@code error parsing tool call: raw='...', err=...}). Returns the bounded parse error (the {@code err=} clause
+     * when present), or {@code null} for anything else. Only this shape is recoverable: a genuine server or transport
+     * failure must keep failing as it does today.
+     */
+    static String extractToolCallParseError(String errorBody) {
+        if (errorBody == null || errorBody.isBlank()) {
+            return null;
+        }
+        String message;
+        try {
+            JsonElement root = JsonParser.parseString(errorBody);
+            if (!root.isJsonObject()) {
+                return null;
+            }
+            JsonElement error = root.getAsJsonObject().get("error");
+            if (error == null) {
+                return null;
+            }
+            if (error.isJsonObject()) {
+                JsonElement msg = error.getAsJsonObject().get("message");
+                message = msg != null && msg.isJsonPrimitive() ? msg.getAsString() : null;
+            }
+            else if (error.isJsonPrimitive()) {
+                message = error.getAsString();
+            }
+            else {
+                return null;
+            }
+        }
+        catch (RuntimeException ex) {
+            return null;
+        }
+        if (message == null || !message.contains("error parsing tool call")) {
+            return null;
+        }
+        String err = message;
+        int idx = message.lastIndexOf("err=");
+        if (idx >= 0) {
+            err = message.substring(idx + "err=".length()).strip();
+        }
+        if (err.length() > MAX_TOOL_CALL_PARSE_ERROR_LENGTH) {
+            err = err.substring(0, MAX_TOOL_CALL_PARSE_ERROR_LENGTH) + "...";
+        }
+        return err;
+    }
+
+    private final HttpClient httpClient;
+    private volatile BiConsumer<DebugDirectionEnum, String> debugLogSink;
+
+    public OllamaHttpClient() {
+        this(HttpClient.newBuilder()
+                .followRedirects(HttpClient.Redirect.NORMAL)
+                .connectTimeout(Duration.ofMillis(TimeoutEnum.OPENAI_HTTP_CONNECT_TIMEOUT_MILLIS.millis()))
+                .build());
+    }
+
+    public void setDebugLogSink(BiConsumer<DebugDirectionEnum, String> sink) {
+        this.debugLogSink = sink;
+    }
+
+    OllamaHttpClient(HttpClient httpClient) {
+        this.httpClient = Objects.requireNonNull(httpClient, "httpClient");
+    }
+
+    @Override
+    public OllamaChatResult chat(OllamaChatRequest request, Consumer<String> onTextDelta) throws IOException {
+        Objects.requireNonNull(request, "request");
+        if (request.baseUrl() == null || request.baseUrl().isBlank()) {
+            throw new IllegalArgumentException("baseUrl must not be blank");
+        }
+        if (request.model() == null || request.model().isBlank()) {
+            throw new IllegalArgumentException("model must not be blank");
+        }
+
+        String endpoint = trimTrailingSlash(request.baseUrl()) + "/v1/chat/completions";
+        HttpRequest.Builder builder = HttpRequest.newBuilder(URI.create(endpoint))
+                .timeout(DEFAULT_TIMEOUT)
+                .header("Content-Type", "application/json")
+                .header("Accept", "text/event-stream");
+        if (request.apiKey() != null && !request.apiKey().isBlank()) {
+            builder.header("Authorization", "Bearer " + request.apiKey().trim());
+        }
+        String payloadJson = GSON.toJson(buildPayload(request));
+        BiConsumer<DebugDirectionEnum, String> sink = debugLogSink;
+        if (sink != null) {
+            sink.accept(DebugDirectionEnum.SENT, payloadJson);
+        }
+        if (PluginSettings.isDebugJson()) {
+            LOG.log(Level.INFO, "ollama request: {0}", McpHookServerUtil.redactAllSecrets(payloadJson));
+        }
+        builder.POST(HttpRequest.BodyPublishers.ofString(payloadJson, StandardCharsets.UTF_8));
+
+        try {
+            HttpResponse<InputStream> response = httpClient.send(builder.build(), HttpResponse.BodyHandlers.ofInputStream());
+            try (InputStream body = response.body()) {
+                if (response.statusCode() < 200 || response.statusCode() >= 300) {
+                    String errorBody = new String(body.readAllBytes(), StandardCharsets.UTF_8);
+                    // Server error bodies can echo request content (and occasionally auth
+                    // material) — never surface them unredacted through exception messages.
+                    String redactedBody = McpHookServerUtil.redactAllSecrets(errorBody);
+                    String toolCallParseError = extractToolCallParseError(errorBody);
+                    if (toolCallParseError != null) {
+                        // A server-side rejection of an unparseable tool call is a recoverable MODEL
+                        // mistake, not a transport failure: the parse error can be fed back to the
+                        // model as a tool result so it can correct itself on the next iteration.
+                        // Carried on a dedicated subtype so Ollama's process manager can tell this
+                        // apart from a genuine 500, which must keep failing as it does today.
+                        throw new OllamaToolCallParseException(response.statusCode(),
+                                                               "HTTP " + response.statusCode() + " from " + endpoint
+                                                               + ": " + redactedBody,
+                                                               McpHookServerUtil.redactAllSecrets(toolCallParseError));
+                    }
+                    throw new OllamaHttpStatusException(response.statusCode(),
+                                                        "HTTP " + response.statusCode() + " from " + endpoint
+                                                        + ": " + redactedBody);
+                }
+                List<String> sseDataLines = readSseDataLines(body, onTextDelta, debugLogSink);
+                return assembleSse(sseDataLines);
+            }
+        }
+        catch (InterruptedException ex) {
+            Thread.currentThread().interrupt();
+            throw new IOException("Interrupted while waiting for chat completion", ex);
+        }
+        catch (RuntimeException ex) {
+            throw new IOException("Invalid SSE payload: " + ex.getMessage(), ex);
+        }
+    }
+
+    private static final class PartialToolCall {
+
+        private String id;
+        private String name;
+        private final StringBuilder arguments = new StringBuilder();
+
+        private ChatToolCall toChatToolCall() {
+            return new ChatToolCall(id, name, arguments.toString());
+        }
+    }
+}

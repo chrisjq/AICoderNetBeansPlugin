@@ -8,6 +8,8 @@ import java.util.logging.Level;
 import java.util.logging.Logger;
 import javax.swing.SwingUtilities;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.AiTypeRegistry;
+import kiwi.ingenuity.netbeans.plugin.aicoder.ai.BackendExecutors;
+import kiwi.ingenuity.netbeans.plugin.aicoder.ai.debuglog.BackendDebugLogWriter;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.idlewatch.IdleWatcherRegistry;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.pi.extension.PiExtensionFiles;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.mail.AiSessionInboxBroker;
@@ -141,6 +143,8 @@ public class Installer extends ModuleInstall {
             AiSessionInboxBroker.getInstance().shutdownNotifier();
             AiSessionInboxBroker.getInstance().shutdownSweeper();
             LockManager.getInstance().shutdown();
+            BackendDebugLogWriter.drain(BackendDebugLogWriter.shutdownDrainBound());
+            BackendExecutors.shutdown();
             // The AI tabs were closed above, so every TARGET_CLOSED notice has already gone out; now the idle-watcher
             // scheduler can be torn down explicitly so a disabled module's classloader is not pinned by its thread.
             try {

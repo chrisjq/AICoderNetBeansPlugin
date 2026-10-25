@@ -1,9 +1,11 @@
 package kiwi.ingenuity.netbeans.plugin.aicoder.ai.ui;
 
+import java.awt.Component;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.Callable;
 import java.util.concurrent.atomic.AtomicReference;
+import javax.swing.JPanel;
 import javax.swing.SwingUtilities;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.AiMessage;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.TimeoutEnum;
@@ -89,7 +91,7 @@ class MessagePanelStreamingThrottleTest {
         });
         int count = onEdt(panel::rebuildCount);
         assertTrue(count < DELTAS,
-                "streaming N deltas must not cause N rebuilds: expected << " + DELTAS + ", got " + count);
+                   "streaming N deltas must not cause N rebuilds: expected << " + DELTAS + ", got " + count);
         assertTrue(count >= 1, "finalise must flush at least one rebuild, got " + count);
     }
 
@@ -115,9 +117,9 @@ class MessagePanelStreamingThrottleTest {
         });
         // The final flush reflects the complete accumulated text, in order, with nothing dropped.
         assertEquals(expected.toString(), onEdt(panel::lastRebuiltText),
-                "finalise must flush the complete accumulated text, nothing dropped or reordered");
+                     "finalise must flush the complete accumulated text, nothing dropped or reordered");
         assertEquals(expected.toString(), onEdt(panel::getAccumulatedText),
-                "accumulated buffer must retain every delta");
+                     "accumulated buffer must retain every delta");
     }
 
     /**
@@ -128,28 +130,120 @@ class MessagePanelStreamingThrottleTest {
      * the model pauses. The leading-edge clauses (not pending + interval elapsed -&gt; render now) are also pinned.
      */
     @Test
+    void hiddenPanelBuffersUntilRebuildAndKeepsCompleteText() throws Exception {
+        CountingMessagePanel panel = onEdt(CountingMessagePanel::new);
+        onEdt(() -> {
+            panel.appendDelta("first");
+            panel.appendDelta(" second");
+            return null;
+        });
+        assertEquals(0, onEdt(panel::rebuildCount));
+        onEdt(() -> {
+            panel.rebuildContent();
+            return null;
+        });
+        assertEquals("first second", onEdt(panel::lastRebuiltText));
+    }
+
+    @Test
+    void finaliseWhileHiddenRendersAllBufferedText() throws Exception {
+        CountingMessagePanel panel = onEdt(CountingMessagePanel::new);
+        onEdt(() -> {
+            panel.appendDelta("a");
+            panel.appendDelta("b");
+            panel.finalise();
+            return null;
+        });
+        assertEquals("ab", onEdt(panel::lastRebuiltText));
+    }
+
+    @Test
+    void incrementalParagraphComponentsAreReusedAndAmbiguousFallsBack() throws Exception {
+        class Exposed extends MessagePanel {
+
+            Exposed() {
+                super(AiMessage.Role.ASSISTANT, false);
+            }
+
+            void render() {
+                rebuildContent();
+            }
+
+            JPanel panel() {
+                return contentPanelForTest();
+            }
+        }
+        Exposed panel = onEdt(Exposed::new);
+        onEdt(() -> {
+            panel.appendDelta("first paragraph\n\n");
+            panel.render();
+            return null;
+        });
+        Component first = onEdt(() -> panel.panel().getComponent(0));
+        onEdt(() -> {
+            panel.appendDelta("second paragraph");
+            panel.render();
+            return null;
+        });
+        assertTrue(first == onEdt(() -> panel.panel().getComponent(0)));
+        assertTrue(MessagePanel.isAmbiguousMarkdown("- list"));
+    }
+
+    @Test
+    void incrementalRulesCoverAllContextSensitiveConstructs() {
+        assertTrue(MessagePanel.isAmbiguousMarkdown("```java\ncode"));
+        assertTrue(MessagePanel.isAmbiguousMarkdown("- item"));
+        assertTrue(MessagePanel.isAmbiguousMarkdown("| a | b |"));
+        assertTrue(MessagePanel.isAmbiguousMarkdown("# heading"));
+        assertFalse(MessagePanel.isAmbiguousMarkdown("paragraph\n\nnext"));
+    }
+
+    @Test
+    void adaptiveSizeCacheInputChangesAreRecognised() {
+        assertEquals(5, MessagePanel.completedMarkdownPrefixLength("one\n\ntwo"));
+        assertEquals(0, MessagePanel.completedMarkdownPrefixLength("single paragraph"));
+    }
+
+    @Test
+    void completedPrefixIncrementalRulesRejectAmbiguousMarkdown() {
+        assertEquals(5, MessagePanel.completedMarkdownPrefixLength("one\n\ntwo"));
+        assertEquals(0, MessagePanel.completedMarkdownPrefixLength("# heading\\n\\nnext"));
+        assertTrue(MessagePanel.isAmbiguousMarkdown("- list item"));
+        assertTrue(MessagePanel.isAmbiguousMarkdown("```java\\nclass X {"));
+        assertFalse(MessagePanel.isAmbiguousMarkdown("plain paragraph"));
+    }
+
+    @Test
+    void adaptiveIntervalGrowsWithMessageSizeAndCaps() {
+        assertEquals(250L, MessagePanel.throttleIntervalForLength(0));
+        assertEquals(250L, MessagePanel.throttleIntervalForLength(9_999));
+        assertEquals(300L, MessagePanel.throttleIntervalForLength(10_000));
+        assertEquals(1_000L, MessagePanel.throttleIntervalForLength(200_000));
+    }
+
+    @Test
     void shouldRebuildNowIsATrailingThrottleNotALeadingDebounce() {
         long interval = TimeoutEnum.MESSAGE_REBUILD_THROTTLE_MILLIS.millis();
         long now = 1_000_000_000L;
 
         // Anti-debounce: a delta while a rebuild is pending must NEVER render an extra now, regardless of elapsed time.
         assertFalse(MessagePanel.shouldRebuildNow(now, now - 10 * interval, true),
-                "pending + huge elapsed must still be false (no debounce reset / no extra render)");
+                    "pending + huge elapsed must still be false (no debounce reset / no extra render)");
         assertFalse(MessagePanel.shouldRebuildNow(now, now - interval, true),
-                "pending + interval elapsed must still be false");
+                    "pending + interval elapsed must still be false");
         assertFalse(MessagePanel.shouldRebuildNow(now, now, true),
-                "pending + just rendered must be false");
+                    "pending + just rendered must be false");
 
         // Not pending and interval elapsed -> render now (leading edge).
         assertTrue(MessagePanel.shouldRebuildNow(now, now - interval, false),
-                "not pending + exactly interval elapsed -> true (leading edge)");
+                   "not pending + exactly interval elapsed -> true (leading edge)");
         assertTrue(MessagePanel.shouldRebuildNow(now, now - interval - 5, false),
-                "not pending + more than interval elapsed -> true");
+                   "not pending + more than interval elapsed -> true");
 
         // Not pending and within interval -> defer (do not render now).
         assertFalse(MessagePanel.shouldRebuildNow(now, now - interval + 1, false),
-                "not pending + just inside interval -> false (defer to window boundary)");
+                    "not pending + just inside interval -> false (defer to window boundary)");
         assertFalse(MessagePanel.shouldRebuildNow(now, now - 1, false),
-                "not pending + almost no elapsed -> false");
+                    "not pending + almost no elapsed -> false");
     }
 }

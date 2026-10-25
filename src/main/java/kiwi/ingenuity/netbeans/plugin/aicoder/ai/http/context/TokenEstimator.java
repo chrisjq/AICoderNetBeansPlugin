@@ -15,8 +15,27 @@ public class TokenEstimator {
     private static final double MAX_RATIO = 2.0d;
     private static final double SMOOTHING = 0.3d;
 
+    private final double charsPerToken;
+    private final int perMessageOverhead;
+    private final double smoothing;
+    private final double minRatio;
+    private final double maxRatio;
+
     private volatile double ratio = 1.0d;
     private volatile boolean seenReportedUsage = false;
+
+    public TokenEstimator() {
+        this(CHARS_PER_TOKEN, PER_MESSAGE_OVERHEAD, SMOOTHING, MIN_RATIO, MAX_RATIO);
+    }
+
+    public TokenEstimator(double charsPerToken, int perMessageOverhead, double smoothing,
+                          double minRatio, double maxRatio) {
+        this.charsPerToken = charsPerToken;
+        this.perMessageOverhead = perMessageOverhead;
+        this.smoothing = smoothing;
+        this.minRatio = minRatio;
+        this.maxRatio = maxRatio;
+    }
 
     public int estimate(ChatMessage message) {
         if (message == null) {
@@ -31,7 +50,7 @@ public class TokenEstimator {
                 chars += call.argumentsJson().length();
             }
         }
-        int raw = (int) Math.ceil(chars / CHARS_PER_TOKEN) + PER_MESSAGE_OVERHEAD;
+        int raw = (int) Math.ceil(chars / charsPerToken) + perMessageOverhead;
         return (int) Math.ceil(raw * ratio);
     }
 
@@ -45,8 +64,8 @@ public class TokenEstimator {
         }
         seenReportedUsage = true;
         double observed = (double) reported / (double) estimated;
-        double blended = (ratio * (1.0d - SMOOTHING)) + (observed * SMOOTHING);
-        ratio = Math.max(MIN_RATIO, Math.min(MAX_RATIO, blended));
+        double blended = (ratio * (1.0d - smoothing)) + (observed * smoothing);
+        ratio = Math.max(minRatio, Math.min(maxRatio, blended));
     }
 
     public double calibrationRatio() {
@@ -77,6 +96,6 @@ public class TokenEstimator {
         if (Double.isNaN(value) || Double.isInfinite(value)) {
             return;
         }
-        ratio = Math.max(MIN_RATIO, Math.min(MAX_RATIO, value));
+        ratio = Math.max(minRatio, Math.min(maxRatio, value));
     }
 }

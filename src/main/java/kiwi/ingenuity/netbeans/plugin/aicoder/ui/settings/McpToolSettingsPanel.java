@@ -391,18 +391,39 @@ public final class McpToolSettingsPanel extends JPanel {
     static TemplateChoice[] templateChoices(List<McpTemplate> templates) {
         Map<String, Integer> totals = new HashMap<>();
         for (McpTemplate template : templates) {
-            totals.merge(template.name(), 1, Integer::sum);
+            totals.merge(baseLabel(template), 1, Integer::sum);
         }
         Map<String, Integer> indexes = new HashMap<>();
         return templates.stream()
-                .sorted(Comparator.comparing(McpTemplate::isDefault).reversed()
-                        .thenComparing(McpTemplate::name, String.CASE_INSENSITIVE_ORDER))
+                .sorted(Comparator.comparingInt(McpToolSettingsPanel::rank)
+                        .thenComparing(McpToolSettingsPanel::baseLabel, String.CASE_INSENSITIVE_ORDER))
                 .map(template -> {
-                    int total = totals.get(template.name());
-                    int index = indexes.merge(template.name(), 1, Integer::sum);
-                    String label = total == 1 ? template.name() : template.name() + " (" + index + ")";
+                    String base = baseLabel(template);
+                    int total = totals.get(base);
+                    int index = indexes.merge(base, 1, Integer::sum);
+                    String label = total == 1 ? base : base + " (" + index + ")";
                     return new TemplateChoice(template, label);
                 }).toArray(TemplateChoice[]::new);
+    }
+
+    /**
+     * Default first, Minimal second, the rest by name — the Default is what the chooser preselects, and the built-in
+     * Minimal (which is never preselected) sits directly beneath it.
+     */
+    private static int rank(McpTemplate template) {
+        if (template.isDefault()) {
+            return 0;
+        }
+        return template.isMinimal() ? 1 : 2;
+    }
+
+    /**
+     * The base name an MCP template is shown under: the built-in Minimal is labelled "Minimal (built-in)" so a user
+     * template the user happens to have named "Minimal" stays distinguishable from it. Every other template keeps its
+     * own name, and a numeric suffix is added if two of them still collide.
+     */
+    private static String baseLabel(McpTemplate template) {
+        return template.isMinimal() ? template.name() + " (built-in)" : template.name();
     }
 
     record TemplateChoice(McpTemplate template, String label) {

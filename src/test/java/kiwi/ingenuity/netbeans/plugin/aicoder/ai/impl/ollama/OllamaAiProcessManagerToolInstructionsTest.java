@@ -2,7 +2,7 @@ package kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.ollama;
 
 import com.google.gson.JsonObject;
 import java.util.List;
-import kiwi.ingenuity.netbeans.plugin.aicoder.ai.http.SchemaToolCalls;
+import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.ollama.http.OllamaSchemaToolCalls;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import org.junit.jupiter.api.Test;
@@ -54,7 +54,7 @@ class OllamaAiProcessManagerToolInstructionsTest {
 
     @Test
     void endTurnToolDescriptionMakesCompletionRequired() {
-        String description = SchemaToolCalls.endTurnToolSchema().get("description").getAsString();
+        String description = OllamaSchemaToolCalls.endTurnToolSchema().get("description").getAsString();
         assertTrue(description.contains("REQUIRED"));
         assertTrue(description.contains("returns control to the user so they can prompt again"));
         assertTrue(description.contains("message argument"));

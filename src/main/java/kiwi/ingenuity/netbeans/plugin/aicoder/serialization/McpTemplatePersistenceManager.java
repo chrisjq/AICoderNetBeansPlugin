@@ -87,13 +87,13 @@ public final class McpTemplatePersistenceManager {
     }
 
     /**
-     * Deletes a template by id. The built-in Default template is refused, and so is an id that is not present: nothing
-     * is written and {@code false} is returned in both cases.
+     * Deletes a template by id. The built-in Default and Minimal templates are refused, and so is an id that is not
+     * present: nothing is written and {@code false} is returned in every case.
      */
     public boolean deleteMcpTemplate(String id) throws IOException {
         synchronized (JVM_LOCK) {
             return withLock(FILENAME, () -> {
-                        if (McpTemplate.DEFAULT_ID.equals(id)) {
+                        if (McpTemplate.DEFAULT_ID.equals(id) || McpTemplate.MINIMAL_ID.equals(id)) {
                             return false;
                         }
                         List<McpTemplate> all = loadOrSeedForWrite();
@@ -139,10 +139,19 @@ public final class McpTemplatePersistenceManager {
             LOG.log(Level.WARNING, "MCP template store is unreadable; serving an in-memory Default", ex);
             return List.of(seededDefault());
         }
-        // "Seeded once" is decided by the presence of the Default entry itself, not by a marker file: a Default that
-        // is present is never overwritten, and a missing one is re-seeded as recovery.
+        // "Seeded once" is decided by the presence of the built-in entries themselves, not by a marker file: a Default
+        // or Minimal that is present is never overwritten, and a missing one is re-seeded as recovery. The built-in
+        // Minimal is seeded in every store (new and existing), so it always exists and can never be deleted.
+        boolean seeded = false;
         if (corrupt || all.stream().noneMatch(McpTemplate::isDefault)) {
             all.add(seededDefault());
+            seeded = true;
+        }
+        if (corrupt || all.stream().noneMatch(McpTemplate::isMinimal)) {
+            all.add(seededMinimal());
+            seeded = true;
+        }
+        if (seeded) {
             persist(all);
         }
         return all;
@@ -164,6 +173,10 @@ public final class McpTemplatePersistenceManager {
 
     private McpTemplate seededDefault() {
         return McpTemplate.createDefault(LegacyToolGroups.derive(null));
+    }
+
+    private McpTemplate seededMinimal() {
+        return McpTemplate.createMinimal();
     }
 
     private <T> T withLock(String filename, IoAction<T> action) throws IOException {

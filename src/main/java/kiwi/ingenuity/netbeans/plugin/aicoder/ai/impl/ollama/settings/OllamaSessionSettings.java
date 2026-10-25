@@ -1,9 +1,8 @@
 package kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.ollama.settings;
 
 import com.google.gson.JsonObject;
-import kiwi.ingenuity.netbeans.plugin.aicoder.ai.settings.OpenAiClientSessionSettings;
 
-public class OllamaSessionSettings extends OpenAiClientSessionSettings {
+public class OllamaSessionSettings extends OllamaClientSessionSettings {
 
     private volatile String baseUrl;
     private volatile String reasoningEffort;
@@ -17,13 +16,13 @@ public class OllamaSessionSettings extends OpenAiClientSessionSettings {
     }
 
     public OllamaSessionSettings(Integer maxHistory, Boolean restrictToProjectFiles,
-            Boolean allowInterAiComms, Boolean autoNotifyInbox,
-            Boolean allowImportantMessages, String sessionInstructions,
-            String model, String baseUrl, Boolean autoAccept,
-            Boolean allowWebRequests) {
+                                 Boolean allowInterAiComms, Boolean autoNotifyInbox,
+                                 Boolean allowImportantMessages, String sessionInstructions,
+                                 String model, String baseUrl, Boolean autoAccept,
+                                 Boolean allowWebRequests) {
         super(maxHistory, restrictToProjectFiles, allowInterAiComms,
-                autoNotifyInbox, allowImportantMessages, sessionInstructions,
-                model, autoAccept, allowWebRequests);
+              autoNotifyInbox, allowImportantMessages, sessionInstructions,
+              model, autoAccept, allowWebRequests);
         this.baseUrl = baseUrl;
     }
 

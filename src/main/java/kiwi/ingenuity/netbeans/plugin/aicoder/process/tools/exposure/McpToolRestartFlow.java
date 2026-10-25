@@ -54,7 +54,8 @@ public final class McpToolRestartFlow {
      */
     public static boolean shouldPrompt(AiTypeEnum aiType, boolean backendRunning,
                                        Set<McpToolEnum> before, Set<McpToolEnum> after) {
-        return aiType != AiTypeEnum.OLLAMA_LOCAL && backendRunning && !newlyExposed(before, after).isEmpty();
+        return aiType != AiTypeEnum.OLLAMA_LOCAL && aiType != AiTypeEnum.OPENAI_COMPATIBLE
+                && backendRunning && !newlyExposed(before, after).isEmpty();
     }
 
     /**

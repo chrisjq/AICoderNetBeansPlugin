@@ -18,6 +18,7 @@ import java.util.logging.Level;
 import java.util.logging.Logger;
 import kiwi.ingenuity.netbeans.plugin.aicoder.PluginSettings;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.AiProcessManager;
+import kiwi.ingenuity.netbeans.plugin.aicoder.ai.debuglog.DebugDirectionEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.events.StatusEvent;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.events.StatusEventTypeEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.events.TurnCompleteEvent;
@@ -454,6 +455,7 @@ public class PiAiProcessManager extends AiProcessManager {
                 }
                 if (isTurnComplete) {
                     refreshContextUsage();
+                    debugLog(DebugDirectionEnum.EVENT, "turn-end", "");
                 }
             }
             else if (event instanceof StatusEvent se && se.type() == StatusEventTypeEnum.INFO) {
@@ -547,6 +549,7 @@ public class PiAiProcessManager extends AiProcessManager {
                                                    if (PluginSettings.isDebugJson()) {
                                                        LOG.log(Level.INFO, "pi event [{0}]: {1}", new Object[]{sidForLog, line});
                                                    }
+                                                   debugLog(DebugDirectionEnum.RECEIVED, "event", line);
                                                    p.parseLine(line);
                                                },
                                                err -> {
@@ -566,10 +569,12 @@ public class PiAiProcessManager extends AiProcessManager {
             throw e;
         }
         p.setUiResponseSender(launched::sendRawLine);
+        launched.setDebugSink((direction, payload) -> debugLog(direction, "command", payload));
         persistentSession = launched;
         launchedModel = model;
         launchedThinkingLevel = configuredThinkingLevel;
         launchCount++;
+        debugLog(DebugDirectionEnum.EVENT, "start", "pi session launched");
         launched.process().onExit().thenRun(() -> handleProcessExit(launched));
         fetchInitialPickers(launched);
         return persistentSession;
@@ -747,6 +752,7 @@ public class PiAiProcessManager extends AiProcessManager {
      */
     private void handleProcessExit(PiPersistentSession dead) {
         boolean workWasInFlight = failWorkInFlight("Pi process exited while work was in progress");
+        debugLog(DebugDirectionEnum.EVENT, "exit", "pi process exited");
         boolean suppress;
         boolean wasProcessing;
         PiAiMcpRegistrar reg;
@@ -989,6 +995,7 @@ public class PiAiProcessManager extends AiProcessManager {
 
     @Override
     public synchronized void stop() {
+        debugLog(DebugDirectionEnum.EVENT, "stop", "pi session stopped");
         failWorkInFlight("Pi session stopped while work was in progress");
         if (PluginSettings.isDebugJson()) {
             LOG.log(Level.INFO, "Pi stop: shutting session down (session={0}, turnInFlight={1}, sessionAlive={2})",

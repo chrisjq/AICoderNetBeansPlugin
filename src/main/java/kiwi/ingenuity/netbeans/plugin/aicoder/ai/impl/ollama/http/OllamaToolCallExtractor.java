@@ -1,0 +1,137 @@
+package kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.ollama.http;
+
+import com.google.gson.Gson;
+import com.google.gson.JsonElement;
+import com.google.gson.JsonObject;
+import com.google.gson.JsonParser;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Map;
+import java.util.Set;
+import kiwi.ingenuity.netbeans.plugin.aicoder.ai.http.ChatToolCall;
+import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.ollama.http.OllamaChatResult;
+import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.ollama.http.OllamaHttpJsonKeyEnum;
+import kiwi.ingenuity.netbeans.plugin.aicoder.process.server.RawJsonArgumentScanner;
+
+public final class OllamaToolCallExtractor {
+
+    private static final Gson GSON = new Gson();
+
+    public static List<OllamaExtractedToolCall> extract(OllamaChatResult result, Set<String> knownToolNames) {
+        if (result == null) {
+            return List.of();
+        }
+        if (result.toolCalls() != null && !result.toolCalls().isEmpty()) {
+            return fromStructured(result.toolCalls());
+        }
+        if (knownToolNames == null || knownToolNames.isEmpty()) {
+            return List.of();
+        }
+        String assistantText = result.assistantText();
+        if (assistantText == null || assistantText.isBlank()) {
+            return List.of();
+        }
+        try {
+            JsonElement parsed = JsonParser.parseString(stripCodeFence(assistantText));
+            List<OllamaExtractedToolCall> out = new ArrayList<>();
+            Map<String, Integer> rawObjectDuplicates
+                    = RawJsonArgumentScanner.duplicateKeys(stripCodeFence(assistantText), OllamaHttpJsonKeyEnum.ARGUMENTS.key());
+            if (parsed.isJsonObject()) {
+                addIfKnownTool(parsed.getAsJsonObject(), knownToolNames, out, rawObjectDuplicates);
+            }
+            else if (parsed.isJsonArray()) {
+                for (JsonElement element : parsed.getAsJsonArray()) {
+                    if (element != null && element.isJsonObject()) {
+                        addIfKnownTool(element.getAsJsonObject(), knownToolNames, out, rawObjectDuplicates);
+                    }
+                }
+            }
+            return out.isEmpty() ? List.of() : List.copyOf(out);
+        }
+        catch (RuntimeException ex) {
+            return List.of();
+        }
+    }
+
+    /**
+     * Unwraps a markdown code fence around a text-form tool call.
+     *
+     * <p>
+     * Models that emit tool calls as assistant text rather than in the structured
+     * {@link OllamaHttpJsonKeyEnum#TOOL_CALLS} field frequently wrap them in ```json ... ```. The backticks are not
+     * JSON, so the payload must be unwrapped before parsing — otherwise the call is missed and the raw block is shown
+     * to the user as if it were the answer.
+     *
+     * @return the fenced content, or the input stripped if it is not fenced
+     */
+    private static String stripCodeFence(String text) {
+        String trimmed = text.strip();
+        if (!trimmed.startsWith("```")) {
+            return trimmed;
+        }
+        int closing = trimmed.lastIndexOf("```");
+        String inner = closing > 2 ? trimmed.substring(3, closing) : trimmed.substring(3);
+        int firstNewline = inner.indexOf('\n');
+        if (firstNewline >= 0) {
+            // Drop the opening fence's language tag ("json", "JSON", or empty)
+            // but keep the line when the payload itself starts there.
+            String tag = inner.substring(0, firstNewline).trim();
+            if (!tag.startsWith("{") && !tag.startsWith("[")) {
+                inner = inner.substring(firstNewline + 1);
+            }
+        }
+        return inner.strip();
+    }
+
+    // Structured ChatToolCall values no longer contain the raw response envelope, so nested duplicate keys
+    // cannot be recovered here; the text path above scans before Gson materialises the object.
+    private static List<OllamaExtractedToolCall> fromStructured(List<ChatToolCall> toolCalls) {
+        List<OllamaExtractedToolCall> out = new ArrayList<>();
+        for (ChatToolCall call : toolCalls) {
+            if (call == null || call.name() == null || call.name().isBlank()) {
+                continue;
+            }
+            out.add(new OllamaExtractedToolCall(call.name(),
+                                                call.argumentsJson() == null ? "{}" : call.argumentsJson()));
+        }
+        return out.isEmpty() ? List.of() : List.copyOf(out);
+    }
+
+    private static void addIfKnownTool(JsonObject obj, Set<String> knownToolNames,
+                                       List<OllamaExtractedToolCall> out,
+                                       Map<String, Integer> rawObjectDuplicates) {
+        JsonElement nameEl = obj.get(OllamaHttpJsonKeyEnum.NAME.key());
+        JsonElement argumentsEl = obj.get(OllamaHttpJsonKeyEnum.ARGUMENTS.key());
+        if (nameEl == null || !nameEl.isJsonPrimitive() || !nameEl.getAsJsonPrimitive().isString()) {
+            return;
+        }
+        String name = nameEl.getAsString();
+        if (!knownToolNames.contains(name)) {
+            return;
+        }
+        JsonObject argumentsObj;
+        Map<String, Integer> duplicates = Map.of();
+        if (argumentsEl != null && argumentsEl.isJsonObject()) {
+            argumentsObj = argumentsEl.getAsJsonObject();
+            duplicates = rawObjectDuplicates == null ? Map.of() : rawObjectDuplicates;
+        }
+        else if (argumentsEl != null && argumentsEl.isJsonPrimitive() && argumentsEl.getAsJsonPrimitive().isString()) {
+            String rawJson = argumentsEl.getAsString();
+            duplicates = RawJsonArgumentScanner.duplicateTopLevelKeys(rawJson);
+            try {
+                JsonElement parsedArgs = JsonParser.parseString(rawJson);
+                argumentsObj = parsedArgs.isJsonObject() ? parsedArgs.getAsJsonObject() : new JsonObject();
+            }
+            catch (RuntimeException ex) {
+                argumentsObj = new JsonObject();
+            }
+        }
+        else {
+            argumentsObj = new JsonObject();
+        }
+        out.add(new OllamaExtractedToolCall(name, GSON.toJson(argumentsObj), duplicates));
+    }
+
+    private OllamaToolCallExtractor() {
+    }
+}

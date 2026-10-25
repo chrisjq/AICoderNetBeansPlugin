@@ -8,6 +8,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.Timeout;
 
 class TokenEstimatorTest {
 
@@ -16,11 +17,11 @@ class TokenEstimatorTest {
         TokenEstimator est = new TokenEstimator();
         ChatMessage plain = new ChatMessage(ChatRole.USER, "a".repeat(35), List.of(), null);
         ChatMessage withCall = new ChatMessage(ChatRole.ASSISTANT, null,
-                List.of(new ChatToolCall("c0", "Tool", "a".repeat(35))), null);
+                                               List.of(new ChatToolCall("c0", "Tool", "a".repeat(35))), null);
 
         assertTrue(est.estimate(plain) > 10);
         assertTrue(est.estimate(withCall) > 10,
-                "tool-call arguments are payload too and must be counted");
+                   "tool-call arguments are payload too and must be counted");
     }
 
     @Test
@@ -44,7 +45,7 @@ class TokenEstimatorTest {
             est.calibrate(100, 100000);
         }
         assertEquals(2.0d, est.calibrationRatio(), 0.0001d,
-                "an endpoint reporting cumulative totals must not drive the ratio to nonsense");
+                     "an endpoint reporting cumulative totals must not drive the ratio to nonsense");
     }
 
     @Test
@@ -60,7 +61,7 @@ class TokenEstimatorTest {
         TokenEstimator est = new TokenEstimator();
         est.calibrate(100, 110);
         assertTrue(est.hasSeenReportedUsage(),
-                "REPORTED_TOKENS may only be trusted after usage has actually arrived");
+                   "REPORTED_TOKENS may only be trusted after usage has actually arrived");
     }
 
     @Test
@@ -71,5 +72,28 @@ class TokenEstimatorTest {
         }
         est.reset();
         assertEquals(1.0d, est.calibrationRatio(), 0.0001d);
+    }
+
+    @Test
+    @Timeout(5)
+    void noArgConstructorKeepsTheExistingConstants() {
+        var a = new TokenEstimator();
+        var b = new TokenEstimator(3.5d, 4, 0.3d, 0.5d, 2.0d);
+        var m = new ChatMessage(ChatRole.USER, "x".repeat(700), List.of(), null);
+        assertEquals(b.estimate(m), a.estimate(m));
+        a.calibrate(100, 500);
+        b.calibrate(100, 500);
+        assertEquals(b.calibrationRatio(), a.calibrationRatio(), 1e-9);
+    }
+
+    @Test
+    @Timeout(5)
+    void customValuesAreUsed() {
+        var e = new TokenEstimator(7.0d, 0, 1.0d, 0.1d, 10.0d);
+        assertEquals(100, e.estimate(new ChatMessage(ChatRole.USER, "x".repeat(700), List.of(), null)));
+        e.calibrate(100, 900);
+        assertEquals(9.0d, e.calibrationRatio(), 1e-9);
+        e.calibrate(100, 5000);
+        assertEquals(10.0d, e.calibrationRatio(), 1e-9);
     }
 }

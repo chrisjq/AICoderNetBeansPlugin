@@ -4,11 +4,11 @@ import java.io.IOException;
 import java.util.ArrayList;
 import java.util.List;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.http.ChatMessage;
-import kiwi.ingenuity.netbeans.plugin.aicoder.ai.http.ChatRequest;
-import kiwi.ingenuity.netbeans.plugin.aicoder.ai.http.ChatResult;
+import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.ollama.http.OllamaChatRequest;
+import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.ollama.http.OllamaChatResult;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.http.ChatRole;
-import kiwi.ingenuity.netbeans.plugin.aicoder.ai.http.HttpAiClient;
-import kiwi.ingenuity.netbeans.plugin.aicoder.ai.http.context.ContextSummariser;
+import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.ollama.http.OllamaHttpAiClient;
+import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.ollama.context.OllamaSummariser;
 
 /**
  * Summarises an evicted span by asking the same backend that produced it.
@@ -16,19 +16,19 @@ import kiwi.ingenuity.netbeans.plugin.aicoder.ai.http.context.ContextSummariser;
  * No tools are offered: a model given a tool list during summarisation will
  * often call one instead of answering. The reply is plain prose.
  */
-public class OllamaContextSummariser implements ContextSummariser {
+public class OllamaContextSummariser implements OllamaSummariser {
 
     private static final String INSTRUCTION
             = "Summarise the following conversation excerpt in at most 200 words. "
             + "Preserve decisions made, file paths, and any facts the user stated about "
             + "themselves or the project. Do not add commentary. Reply with the summary only.";
 
-    private final HttpAiClient client;
+    private final OllamaHttpAiClient client;
     private final String baseUrl;
     private final String apiKey;
     private final String model;
 
-    public OllamaContextSummariser(HttpAiClient client, String baseUrl, String apiKey,
+    public OllamaContextSummariser(OllamaHttpAiClient client, String baseUrl, String apiKey,
             String model) {
         this.client = client;
         this.baseUrl = baseUrl;
@@ -56,8 +56,7 @@ public class OllamaContextSummariser implements ContextSummariser {
         prompt.add(new ChatMessage(ChatRole.SYSTEM, INSTRUCTION, List.of(), null));
         prompt.add(new ChatMessage(ChatRole.USER, transcript.toString(), List.of(), null));
 
-        ChatResult result = client.chat(
-                new ChatRequest(baseUrl, apiKey, model, List.copyOf(prompt), List.of()),
+        OllamaChatResult result = client.chat(new OllamaChatRequest(baseUrl, apiKey, model, List.copyOf(prompt), List.of()),
                 delta -> {
                 });
         String text = result.assistantText();

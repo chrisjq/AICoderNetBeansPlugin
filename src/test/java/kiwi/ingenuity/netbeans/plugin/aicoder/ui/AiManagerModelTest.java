@@ -15,6 +15,7 @@ import java.util.concurrent.atomic.AtomicReference;
 import javax.swing.JCheckBox;
 import javax.swing.JLabel;
 import javax.swing.JPanel;
+import javax.swing.JSpinner;
 import javax.swing.SwingUtilities;
 import javax.swing.border.TitledBorder;
 import javax.swing.table.TableModel;
@@ -26,6 +27,7 @@ import kiwi.ingenuity.netbeans.plugin.aicoder.PluginSettings;
 import kiwi.ingenuity.netbeans.plugin.aicoder.WebRequestAccessOptionEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.AiTypeEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.claude.settings.ClaudeSessionSettings;
+import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.openaicompatible.settings.OpenAiCompatibleSessionSettings;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.session.AiSession;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.settings.AiSessionSettings;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.settings.ConfigTemplate;
@@ -413,6 +415,80 @@ class AiManagerModelTest {
         AiSessionConfigPanel session = onEdt(() -> new AiSessionConfigPanel(AiSessionConfigPanelMode.SESSION));
         assertNotNull(onEdt(() -> findTitledPanel(session, "MCP Tools")),
                       "SESSION mode owns the MCP tools panel");
+    }
+
+    @Test
+    void openAiTypePanelFieldAlignsWithTheSessionHostField() throws Exception {
+        AiSessionConfigPanel panel = onEdt(() -> new AiSessionConfigPanel(AiSessionConfigPanelMode.SESSION));
+        onEdt(() -> {
+            panel.loadSession(new OpenAiCompatibleSessionSettings(), AiTypeEnum.OPENAI_COMPATIBLE);
+            int minimumWidth = panel.getMinimumSize().width;
+            int preferredHeight = panel.getPreferredSize().height;
+            for (int width : new int[]{minimumWidth, minimumWidth + 400}) {
+                panel.setSize(width, preferredHeight);
+                layoutTree(panel);
+                JPanel hostGroup = findTitledPanel(panel, "Session Settings");
+                JLabel nestedLabel = findLabel(panel, "Server type:");
+                assertNotNull(hostGroup);
+                assertNotNull(nestedLabel);
+                Component hostField = findFirst(hostGroup, JSpinner.class);
+                Component nestedField = fieldAfter(nestedLabel);
+                assertNotNull(hostField);
+                int hostFieldX = SwingUtilities.convertPoint(hostField.getParent(), hostField.getX(), 0, panel).x;
+                int nestedFieldX = SwingUtilities.convertPoint(nestedField.getParent(), nestedField.getX(), 0, panel).x;
+                assertEquals(hostFieldX, nestedFieldX, 1, "field alignment at " + width + "px");
+            }
+            return null;
+        });
+    }
+
+    private static void layoutTree(Container container) {
+        container.doLayout();
+        for (Component child : container.getComponents()) {
+            if (child instanceof Container nested) {
+                layoutTree(nested);
+            }
+        }
+    }
+
+    private static <T extends Component> T findFirst(Component root, Class<T> type) {
+        if (type.isInstance(root)) {
+            return type.cast(root);
+        }
+        if (root instanceof Container container) {
+            for (Component child : container.getComponents()) {
+                T result = findFirst(child, type);
+                if (result != null) {
+                    return result;
+                }
+            }
+        }
+        return null;
+    }
+
+    private static JLabel findLabel(Component root, String text) {
+        if (root instanceof JLabel label && text.equals(label.getText())) {
+            return label;
+        }
+        if (root instanceof Container container) {
+            for (Component child : container.getComponents()) {
+                JLabel result = findLabel(child, text);
+                if (result != null) {
+                    return result;
+                }
+            }
+        }
+        return null;
+    }
+
+    private static Component fieldAfter(JLabel label) {
+        Component[] components = label.getParent().getComponents();
+        for (int index = 0; index + 1 < components.length; index++) {
+            if (components[index] == label) {
+                return components[index + 1];
+            }
+        }
+        throw new AssertionError("No field after " + label.getText());
     }
 
     private static List<String> labelTexts(Component root) {

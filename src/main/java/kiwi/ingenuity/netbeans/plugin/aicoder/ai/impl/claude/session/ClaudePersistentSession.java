@@ -13,9 +13,11 @@ import java.io.OutputStream;
 import java.nio.charset.StandardCharsets;
 import java.util.List;
 import java.util.concurrent.TimeUnit;
+import java.util.function.BiConsumer;
 import java.util.function.Consumer;
 import java.util.logging.Level;
 import java.util.logging.Logger;
+import kiwi.ingenuity.netbeans.plugin.aicoder.ai.debuglog.DebugDirectionEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.claude.ClaudeJsonKeyEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.claude.ClaudeTimeoutEnum;
 
@@ -30,7 +32,7 @@ public final class ClaudePersistentSession {
     private static final Gson GSON = new GsonBuilder().disableHtmlEscaping().create();
 
     public static ClaudePersistentSession launch(List<String> command, File workDir,
-            Consumer<String> lineConsumer, Consumer<String> stderrConsumer) throws IOException {
+                                                 Consumer<String> lineConsumer, Consumer<String> stderrConsumer) throws IOException {
         ProcessBuilder pb = new ProcessBuilder(command);
         configureMcpToolTimeout(pb);
         if (workDir != null && workDir.isDirectory()) {
@@ -50,7 +52,7 @@ public final class ClaudePersistentSession {
      */
     static void configureMcpToolTimeout(ProcessBuilder processBuilder) {
         String configured = processBuilder.environment().putIfAbsent("MCP_TOOL_TIMEOUT",
-                Long.toString(ClaudeTimeoutEnum.MCP_TOOL_TIMEOUT_MILLIS.millis()));
+                                                                     Long.toString(ClaudeTimeoutEnum.MCP_TOOL_TIMEOUT_MILLIS.millis()));
         if (configured == null) {
             return;
         }
@@ -105,6 +107,7 @@ public final class ClaudePersistentSession {
     private final Thread readerThread;
     private final Thread stderrThread;
     private volatile boolean closed = false;
+    private volatile BiConsumer<DebugDirectionEnum, String> debugSink;
 
     private ClaudePersistentSession(Process process, Consumer<String> lineConsumer, Consumer<String> stderrConsumer) {
         this.process = process;
@@ -120,8 +123,10 @@ public final class ClaudePersistentSession {
             return false;
         }
         try {
-            stdin.write(frameUserMessage(text).getBytes(StandardCharsets.UTF_8));
+            String framed = frameUserMessage(text);
+            stdin.write(framed.getBytes(StandardCharsets.UTF_8));
             stdin.flush();
+            logOutbound(framed);
             return true;
         }
         catch (IOException e) {
@@ -137,11 +142,26 @@ public final class ClaudePersistentSession {
         try {
             stdin.write((jsonLine + "\n").getBytes(StandardCharsets.UTF_8));
             stdin.flush();
+            logOutbound(jsonLine);
             return true;
         }
         catch (IOException e) {
             LOG.log(Level.FINE, "Claude control write failed", e);
             return false;
+        }
+    }
+
+    /**
+     * Sets the sink that receives every line written to the backend's stdin for the debug log; null turns it off.
+     */
+    public void setDebugSink(BiConsumer<DebugDirectionEnum, String> sink) {
+        debugSink = sink;
+    }
+
+    private void logOutbound(String payload) {
+        BiConsumer<DebugDirectionEnum, String> sink = debugSink;
+        if (sink != null) {
+            sink.accept(DebugDirectionEnum.SENT, payload);
         }
     }
 

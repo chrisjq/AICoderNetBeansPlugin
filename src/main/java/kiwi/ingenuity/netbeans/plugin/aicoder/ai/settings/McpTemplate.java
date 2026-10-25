@@ -2,9 +2,12 @@ package kiwi.ingenuity.netbeans.plugin.aicoder.ai.settings;
 
 import com.google.gson.JsonObject;
 import java.time.Instant;
+import java.util.EnumSet;
 import java.util.Objects;
+import java.util.Set;
 import java.util.UUID;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.exposure.McpToolConfig;
+import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.exposure.McpToolGroupEnum;
 
 /**
  * Immutable named MCP tool-exposure template. Persisted separately from {@link ConfigTemplate}, in the store owned by
@@ -17,7 +20,22 @@ public final class McpTemplate {
      */
     public static final String DEFAULT_ID = "default";
 
+    /**
+     * Fixed id of the built-in Minimal template, seeded alongside Default in every store. Editable, never deletable.
+     */
+    public static final String MINIMAL_ID = "minimal";
+
     private static final String DEFAULT_NAME = "Default";
+
+    /**
+     * Name of the built-in Minimal template. A user may also create a template with this name; the built-in one is then
+     * shown as "Minimal (built-in)" so the two are distinguishable.
+     */
+    public static final String MINIMAL_NAME = "Minimal";
+
+    private static final Set<McpToolGroupEnum> MINIMAL_GROUPS = Set.of(McpToolGroupEnum.FILE_READING,
+                                                                       McpToolGroupEnum.FILE_EDITING,
+                                                                       McpToolGroupEnum.TEXT_SEARCH);
 
     public static McpTemplate create(String name, McpToolConfig config) {
         Instant now = Instant.now();
@@ -27,6 +45,18 @@ public final class McpTemplate {
     public static McpTemplate createDefault(McpToolConfig config) {
         Instant now = Instant.now();
         return new McpTemplate(DEFAULT_ID, DEFAULT_NAME, config, now, now);
+    }
+
+    /**
+     * The built-in Minimal template: file reading, file editing and text search on, every other switchable group off.
+     * Non-switchable groups are dropped by {@link McpToolConfig} exactly as {@link #createDefault} and the legacy
+     * derivation leave them.
+     */
+    public static McpTemplate createMinimal() {
+        EnumSet<McpToolGroupEnum> disabled = EnumSet.allOf(McpToolGroupEnum.class);
+        MINIMAL_GROUPS.forEach(disabled::remove);
+        Instant now = Instant.now();
+        return new McpTemplate(MINIMAL_ID, MINIMAL_NAME, McpToolConfig.withDisabled(disabled), now, now);
     }
 
     public static McpTemplate fromJson(JsonObject value) {
@@ -92,6 +122,10 @@ public final class McpTemplate {
 
     public boolean isDefault() {
         return DEFAULT_ID.equals(id);
+    }
+
+    public boolean isMinimal() {
+        return MINIMAL_ID.equals(id);
     }
 
     public McpTemplate withNameAndConfig(String newName, McpToolConfig newConfig) {

@@ -51,6 +51,7 @@ import javax.swing.filechooser.FileFilter;
 import kiwi.ingenuity.netbeans.plugin.aicoder.PluginSettings;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.AiImplementation;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.AiSessionHost;
+import kiwi.ingenuity.netbeans.plugin.aicoder.ai.AiTypeEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.AiTypePropertyBus;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.AiTypeRegistry;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.ContextProvider;
@@ -72,6 +73,7 @@ import kiwi.ingenuity.netbeans.plugin.aicoder.ai.events.SystemNotificationEvent;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.events.TextDeltaEvent;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.events.ToolUseEvent;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.events.TurnCompleteEvent;
+import kiwi.ingenuity.netbeans.plugin.aicoder.ai.events.TurnEndReason;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.idlewatch.IdleWatcherRegistry;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.mail.AiSessionInboxBroker;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.notification.AbstractNotification;
@@ -1580,9 +1582,13 @@ public final class AiTopComponent extends TopComponent implements AiProcessEvent
         return startFlight.start(this::launchAiProcess);
     }
 
+    static boolean shouldRefuseDisabledType(AiTypeEnum type, boolean enabled) {
+        return type != AiTypeEnum.OLLAMA_LOCAL && !enabled;
+    }
+
     private CompletableFuture<Void> launchAiProcess() {
         CompletableFuture<Void> ret = new CompletableFuture<>();
-        if (!new AiTypeRegistry().getSettings(session.aiType()).enabled()) {
+        if (shouldRefuseDisabledType(session.aiType(), new AiTypeRegistry().getSettings(session.aiType()).enabled())) {
             String msg = session.aiType().displayName() + " is disabled — enable it in Tools > Options > Advanced > " + session.aiType().displayName();
             if (infoBar != null) {
                 infoBar.setStatusMessage(msg);
@@ -2060,6 +2066,13 @@ public final class AiTopComponent extends TopComponent implements AiProcessEvent
             assistantTurnActive = false;
             pendingNewlineBeforeText = false;
             conversationPanel.finaliseAssistantMessage();
+            // The backend formats the reason text and sends it on the event. ANSWERED has no chat message.
+            TurnCompleteEvent turnComplete = (TurnCompleteEvent) event;
+            String turnEndMessage = turnComplete.message();
+            if (turnComplete.reason() != null && turnComplete.reason() != TurnEndReason.ANSWERED
+                    && turnEndMessage != null && !turnEndMessage.isBlank()) {
+                conversationPanel.addSystemMessage(turnEndMessage);
+            }
             // The AI has returned to a non-thinking state. If a question or
             // permission request is still open, the AI has stopped waiting for it
             // — e.g. its own tool-call timeout fired before our 300s one — so it is
@@ -2276,7 +2289,8 @@ public final class AiTopComponent extends TopComponent implements AiProcessEvent
                     }
                 }
                 default ->
-                    infoBar.setStatusMessage(se.text());
+                    // A null tooltip shows the label text, as every backend but OpenAI Compatible sends.
+                    infoBar.setStatusMessage(se.text(), se.tooltip());
             }
         }
         else if (event instanceof SystemNotificationEvent sn) {

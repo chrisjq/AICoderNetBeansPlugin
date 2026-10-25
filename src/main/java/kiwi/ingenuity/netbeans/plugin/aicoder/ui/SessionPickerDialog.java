@@ -47,6 +47,10 @@ import kiwi.ingenuity.netbeans.plugin.aicoder.Installer;
 import kiwi.ingenuity.netbeans.plugin.aicoder.PluginSettings;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.AiTypeEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.AiTypeRegistry;
+import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.openaicompatible.detect.DetectedFacts;
+import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.openaicompatible.settings.OpenAiCompatibleSessionSettings;
+import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.openaicompatible.ui.OpenAiCompatibleBasicPanel;
+import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.openaicompatible.ui.OpenAiCompatibleDetectedPanel;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.session.AiSession;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.session.SessionInstructionsDeliveryEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.settings.AiSessionCreateSettingsPanel;
@@ -56,6 +60,7 @@ import kiwi.ingenuity.netbeans.plugin.aicoder.ai.settings.ConfigTemplate;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.settings.McpTemplate;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.settings.SpecialInstructionTemplate;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.ui.AiTopComponent;
+import kiwi.ingenuity.netbeans.plugin.aicoder.ai.ui.FormLayoutUtil;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.server.McpToolsDocumentation;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.exposure.LegacyToolGroups;
 import kiwi.ingenuity.netbeans.plugin.aicoder.serialization.McpTemplatePersistenceManager;
@@ -114,7 +119,7 @@ public class SessionPickerDialog extends JDialog {
         c.gridx = 0;
         c.gridwidth = 1;
         c.weightx = 0;
-        p.add(new JLabel(label), c);
+        p.add(FormLayoutUtil.label(label), c);
         c.gridx = 1;
         c.weightx = 1;
         p.add(value, c);
@@ -140,6 +145,7 @@ public class SessionPickerDialog extends JDialog {
     private final JSpinner countSpinner = new JSpinner(new SpinnerNumberModel(1, 1, MAX_CREATE_COUNT, 1));
     private final JComboBox<String> projectCombo = new JComboBox<>();
     private final JComboBox<AiTypeEnum> aiTypeCombo = new JComboBox<>();
+    private final JLabel ollamaDeprecationNote = new JLabel("Ollama (Local) is now off by default and deprecated — enable it in Tools > Options > Advanced > Ollama (Local), or use 'OpenAI Compatible'.");
     private final JComboBox<ConfigTemplate> configCombo = new JComboBox<>();
     private final JComboBox<McpTemplate> mcpTemplateCombo = new JComboBox<>();
     private final JComboBox<SpecialInstructionTemplate> instructionsCombo = new JComboBox<>();
@@ -174,10 +180,15 @@ public class SessionPickerDialog extends JDialog {
         getRootPane().setBorder(BorderFactory.createEmptyBorder(12, 12, 12, 12));
         aiTypeCombo.setRenderer(new AiTypeRenderer());
         configCombo.setRenderer(new DuplicateAwareTemplateRenderer<>(configCombo, ConfigTemplate::name, "Default"));
-        mcpTemplateCombo.setRenderer(new DuplicateAwareTemplateRenderer<>(mcpTemplateCombo, McpTemplate::name, "Default"));
+        mcpTemplateCombo.setRenderer(new DuplicateAwareTemplateRenderer<>(mcpTemplateCombo,
+                                                                          SessionPickerDialog::mcpTemplateLabel,
+                                                                          "Default"));
         instructionsCombo.setRenderer(new TemplateRenderer<>(SpecialInstructionTemplate::name, "None"));
         instructionsCombo.addActionListener(e -> updateInstructionInjectionControl());
-        aiTypeCombo.addActionListener(e -> replaceTypeSettingsPanel());
+        aiTypeCombo.addActionListener(e -> {
+            updateOllamaDeprecationNote();
+            replaceTypeSettingsPanel();
+        });
         updateInstructionInjectionControl();
         JTabbedPane tabs = new JTabbedPane();
         tabs.addTab("Existing Sessions", buildExistingTab());
@@ -230,12 +241,19 @@ public class SessionPickerDialog extends JDialog {
         c.gridy = 4;
         c.gridwidth = 2;
         c.weightx = 1;
+        ollamaDeprecationNote.setVisible(false);
+        form.add(ollamaDeprecationNote, c);
+        c.gridy = 5;
+        c.gridwidth = 2;
+        c.weightx = 1;
+        c.fill = GridBagConstraints.HORIZONTAL;
+        c.anchor = GridBagConstraints.NORTHWEST;
         form.add(typeSettingsHolder, c);
-        addRow(form, c, 5, "Config Template:", configCombo);
-        addRow(form, c, 6, "MCP Template:", mcpTemplateCombo);
-        addRow(form, c, 7, "Session Instructions:", instructionsCombo);
+        addRow(form, c, 6, "Config Template:", configCombo);
+        addRow(form, c, 7, "MCP Template:", mcpTemplateCombo);
+        addRow(form, c, 8, "Session Instructions:", instructionsCombo);
         c.gridx = 0;
-        c.gridy = 8;
+        c.gridy = 9;
         c.gridwidth = 2;
         form.add(injectOnCreate, c);
         JPanel actions = new JPanel(new FlowLayout(FlowLayout.LEFT, 4, 0));
@@ -243,9 +261,9 @@ public class SessionPickerDialog extends JDialog {
         createButton.addActionListener(e -> onCreateNew());
         actions.add(createButton);
         actions.add(closeAfterCreate);
-        c.gridy = 9;
-        form.add(actions, c);
         c.gridy = 10;
+        form.add(actions, c);
+        c.gridy = 11;
         c.weighty = 1;
         form.add(new JPanel(), c);
         return new JScrollPane(form);
@@ -316,10 +334,30 @@ public class SessionPickerDialog extends JDialog {
     private void populateTypes() {
         new AiTypeRegistry().getEnabled().stream().map(AiTypeSettings::type).forEach(aiTypeCombo::addItem);
         AiTypeEnum last = PluginSettings.getLastSessionAiType();
-        if (last != null) {
+        if (fallbackType(last, PluginSettings.isAiEnabled(AiTypeEnum.OLLAMA_LOCAL)) != last) {
+            aiTypeCombo.setSelectedItem(fallbackType(last, PluginSettings.isAiEnabled(AiTypeEnum.OLLAMA_LOCAL)));
+        }
+        else if (last != null) {
             aiTypeCombo.setSelectedItem(last);
         }
+        updateOllamaDeprecationNote();
         replaceTypeSettingsPanel();
+    }
+
+    private void updateOllamaDeprecationNote() {
+        AiTypeEnum selected = (AiTypeEnum) aiTypeCombo.getSelectedItem();
+        ollamaDeprecationNote.setVisible(showOllamaDeprecationNote(selected,
+                                                                   PluginSettings.isAiEnabled(AiTypeEnum.OLLAMA_LOCAL)));
+    }
+
+    static AiTypeEnum fallbackType(AiTypeEnum last, boolean ollamaEnabled) {
+        return last == AiTypeEnum.OLLAMA_LOCAL && !ollamaEnabled
+               ? AiTypeEnum.OPENAI_COMPATIBLE
+               : last;
+    }
+
+    static boolean showOllamaDeprecationNote(AiTypeEnum selected, boolean ollamaEnabled) {
+        return selected == AiTypeEnum.OLLAMA_LOCAL && !ollamaEnabled;
     }
 
     @SuppressWarnings({"unchecked", "rawtypes"})
@@ -339,6 +377,24 @@ public class SessionPickerDialog extends JDialog {
         typeSettingsPanel.startLoading();
         JComponent component = typeSettingsPanel.component();
         typeSettingsHolder.add(component, BorderLayout.CENTER);
+        if (type == AiTypeEnum.OPENAI_COMPATIBLE && (Object) typeSettingsPanel instanceof OpenAiCompatibleBasicPanel basic) {
+            OpenAiCompatibleDetectedPanel detected = new OpenAiCompatibleDetectedPanel();
+            basic.setTestResultListener(result -> {
+                OpenAiCompatibleSessionSettings snapshot = new OpenAiCompatibleSessionSettings();
+                basic.applyTo(snapshot);
+                DetectedFacts facts = DetectedFacts.of("test-connection")
+                        .withApiBase(result.apiBase())
+                        .withModels(result.models());
+                if (result.serverKind() != null) {
+                    facts = facts.withKind(result.serverKind());
+                }
+                String selectedModel = snapshot.effectiveModel();
+                facts = facts.withCapabilities(new DetectedFacts.Capabilities(null, null,
+                                                                              selectedModel == null ? null : result.reasoningLevelsByModel().get(selectedModel)));
+                detected.update(facts, snapshot);
+            });
+            typeSettingsHolder.add(detected.component(), BorderLayout.SOUTH);
+        }
         typeSettingsHolder.revalidate();
         typeSettingsHolder.repaint();
         if (isShowing()) {
@@ -442,8 +498,9 @@ public class SessionPickerDialog extends JDialog {
             instructionsCombo.removeAllItems();
             instructionsCombo.addItem(null);
             if (data != null) {
-                populate(configCombo, data.configs(), ConfigTemplate::isDefault, ConfigTemplate::name);
-                populate(mcpTemplateCombo, data.mcps(), McpTemplate::isDefault, McpTemplate::name);
+                populate(configCombo, data.configs(), ConfigTemplate::isDefault, t -> false, ConfigTemplate::name);
+                populate(mcpTemplateCombo, data.mcps(), McpTemplate::isDefault, McpTemplate::isMinimal,
+                         SessionPickerDialog::mcpTemplateLabel);
                 data.instructions().forEach(instructionsCombo::addItem);
             }
             selectTemplateById(configCombo, selectedConfigId);
@@ -536,11 +593,23 @@ public class SessionPickerDialog extends JDialog {
 
     private static <T> void populate(JComboBox<T> combo, List<T> items,
                                      java.util.function.Predicate<T> isDefault,
+                                     java.util.function.Predicate<T> isMinimal,
                                      java.util.function.Function<T, String> nameOf) {
-        items.stream()
-                .sorted(Comparator.comparing((T item) -> isDefault.test(item)).reversed()
+        ordered(items, isDefault, isMinimal, nameOf).forEach(combo::addItem);
+    }
+
+    /**
+     * The order a template combo is populated in: Default first, then Minimal, then everything else by case-insensitive
+     * name. Package-private and static so the ordering can be tested without a combo.
+     */
+    static <T> List<T> ordered(List<T> items,
+                               java.util.function.Predicate<T> isDefault,
+                               java.util.function.Predicate<T> isMinimal,
+                               java.util.function.Function<T, String> nameOf) {
+        return items.stream()
+                .sorted(Comparator.comparingInt((T item) -> isDefault.test(item) ? 0 : isMinimal.test(item) ? 1 : 2)
                         .thenComparing(nameOf, String.CASE_INSENSITIVE_ORDER))
-                .forEach(combo::addItem);
+                .toList();
     }
 
     private void selectTemplateById(JComboBox<?> combo, String id) {
@@ -660,6 +729,15 @@ public class SessionPickerDialog extends JDialog {
     static String duplicateLabel(String name, List<String> names, int position) {
         long total = names.stream().filter(name::equals).count();
         return total > 1 ? name + " (" + position + ")" : name;
+    }
+
+    /**
+     * The base name an MCP template is shown under: the built-in Minimal is labelled "Minimal (built-in)" so a user
+     * template the user happens to have named "Minimal" stays distinguishable from it. Every other template keeps its
+     * own name, and the duplicate-aware renderer adds a numeric suffix if two of them still collide.
+     */
+    static String mcpTemplateLabel(McpTemplate template) {
+        return template.isMinimal() ? template.name() + " (built-in)" : template.name();
     }
 
     static void applyTemplates(AiSession session, ConfigTemplate config, McpTemplate mcpTemplate) {

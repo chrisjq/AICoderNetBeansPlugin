@@ -51,6 +51,7 @@ public class AiSessionSettings {
     private volatile Boolean enableClipboardAccess;
     private volatile McpToolConfig mcpToolConfig;
     private volatile String mcpRoutingId;
+    private volatile Boolean backendDebugLog;
     private final Object mcpRoutingIdLock = new Object();
 
     public AiSessionSettings() {
@@ -419,6 +420,26 @@ public class AiSessionSettings {
         this.mcpToolConfig = newMcpToolConfig;
     }
 
+    /**
+     * Whether this session writes everything sent to and received from the model to backend-debug.log in its session
+     * folder, or null when not set.
+     */
+    public Boolean backendDebugLog() {
+        return backendDebugLog;
+    }
+
+    /**
+     * The backend debug log is off unless the session (or its config template) switches it on; there is no global
+     * default.
+     */
+    public boolean effectiveBackendDebugLog() {
+        return backendDebugLog != null && backendDebugLog;
+    }
+
+    public void setBackendDebugLog(Boolean newBackendDebugLog) {
+        this.backendDebugLog = newBackendDebugLog;
+    }
+
     public static boolean isValidMcpRoutingId(String id) {
         return id != null && MCP_ROUTING_ID.matcher(id).matches();
     }
@@ -573,6 +594,9 @@ public class AiSessionSettings {
         }
         if (mcpRoutingId != null) {
             cfgObj.addProperty(AiSessionSettingsKeyEnum.MCP_ROUTING_ID.key(), mcpRoutingId);
+        }
+        if (backendDebugLog != null) {
+            cfgObj.addProperty(AiSessionSettingsKeyEnum.BACKEND_DEBUG_LOG.key(), backendDebugLog);
         }
     }
 }

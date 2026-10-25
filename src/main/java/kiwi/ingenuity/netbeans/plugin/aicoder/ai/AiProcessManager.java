@@ -3,13 +3,22 @@ package kiwi.ingenuity.netbeans.plugin.aicoder.ai;
 import java.io.File;
 import java.nio.file.Path;
 import java.util.List;
+import java.util.Objects;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CompletionException;
+import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.ExecutionException;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Function;
 import java.util.function.Supplier;
+import kiwi.ingenuity.netbeans.plugin.aicoder.PluginUtil;
+import kiwi.ingenuity.netbeans.plugin.aicoder.ai.debuglog.BackendDebugLog;
+import kiwi.ingenuity.netbeans.plugin.aicoder.ai.debuglog.BackendDebugLogWriter;
+import kiwi.ingenuity.netbeans.plugin.aicoder.ai.debuglog.DebugDirectionEnum;
+import kiwi.ingenuity.netbeans.plugin.aicoder.ai.debuglog.DebugLogBudget;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.events.StatusEvent;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.events.StatusEventTypeEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.session.AiSession;
@@ -58,6 +67,11 @@ public abstract class AiProcessManager {
      * The shared session model object.
      */
     protected volatile AiSession currentSession = null;
+
+    private final Object toolExecutorLock = new Object();
+    private ExecutorService toolExecutor;
+    private volatile BackendDebugLog backendDebugLog;
+    private final CopyOnWriteArrayList<String> debugSecrets = new CopyOnWriteArrayList<>();
 
     protected volatile boolean running = false;
     protected volatile boolean processing = false;
@@ -216,6 +230,120 @@ public abstract class AiProcessManager {
             t = t.getCause();
         }
         return t;
+    }
+
+    /**
+     * The session's single-threaded tool executor, created on first use (spec §3.8, §4.2).
+     */
+    protected final ExecutorService toolExecutor() {
+        synchronized (toolExecutorLock) {
+            if (toolExecutor == null || toolExecutor.isShutdown()) {
+                toolExecutor = Executors.newSingleThreadExecutor(
+                        BackendExecutors.daemonFactory("aicoder-tool-" + Objects.toString(sessionId, "?") + "-"));
+            }
+            return toolExecutor;
+        }
+    }
+
+    /**
+     * Interrupts the running tool and returns at once; never waits, so it is safe on the EDT (spec §3.8).
+     */
+    protected final void shutdownToolExecutorAsync() {
+        ExecutorService ex;
+        synchronized (toolExecutorLock) {
+            ex = toolExecutor;
+            toolExecutor = null;
+        }
+        if (ex != null) {
+            ex.shutdownNow();
+        }
+    }
+
+    final boolean hasToolExecutor() {
+        synchronized (toolExecutorLock) {
+            return toolExecutor != null;
+        }
+    }
+
+    /**
+     * Enables or disables this session's backend debug log. Opening is idempotent while a log is active.
+     */
+    public final synchronized void setBackendDebugLog(boolean enabled) {
+        if (!enabled) {
+            BackendDebugLog log = backendDebugLog;
+            backendDebugLog = null;
+            if (log != null) {
+                log.close();
+            }
+            return;
+        }
+        if (backendDebugLog != null) {
+            return;
+        }
+        Path dir = sessionConfigDir;
+        if (dir == null && currentSession != null && sessionId != null) {
+            try {
+                dir = PluginUtil.getPluginAiSessionConfigDir(currentSession.aiType(), sessionId);
+            }
+            catch (Exception ignored) {
+                return;
+            }
+        }
+        if (dir == null) {
+            return;
+        }
+        try {
+            BackendDebugLog log = BackendDebugLogWriter.open(dir.resolve("backend-debug.log"), debugLogBudget());
+            for (String secret : debugSecrets) {
+                log.registerSecret(secret);
+            }
+            backendDebugLog = log;
+        }
+        catch (RuntimeException ignored) {
+            // Diagnostics must never prevent a backend from starting.
+        }
+    }
+
+    /**
+     * The bounds for this backend's debug log. A backend overrides this to use its own limits.
+     */
+    protected DebugLogBudget debugLogBudget() {
+        return DebugLogBudget.defaults();
+    }
+
+    /**
+     * Queues one backend diagnostic entry when debug logging is enabled.
+     */
+    protected final void debugLog(DebugDirectionEnum direction, String kind, String payload) {
+        BackendDebugLog log = backendDebugLog;
+        if (log != null) {
+            log.log(direction, kind, payload);
+        }
+    }
+
+    /**
+     * Registers a value that must be redacted from future debug-log entries.
+     */
+    protected final void registerDebugSecret(String value) {
+        if (value != null && !value.isEmpty()) {
+            debugSecrets.addIfAbsent(value);
+            BackendDebugLog log = backendDebugLog;
+            if (log != null) {
+                log.registerSecret(value);
+            }
+        }
+    }
+
+    /**
+     * Closes the backend debug log, optionally deleting its files.
+     */
+    public final CompletableFuture<Void> closeBackendDebugLog(boolean delete) {
+        BackendDebugLog log = backendDebugLog;
+        if (log == null) {
+            return CompletableFuture.completedFuture(null);
+        }
+        backendDebugLog = null;
+        return delete ? log.closeAndDelete() : log.close();
     }
 
     public void updatePinnedContext(String identity, String baseline, String instructions) {

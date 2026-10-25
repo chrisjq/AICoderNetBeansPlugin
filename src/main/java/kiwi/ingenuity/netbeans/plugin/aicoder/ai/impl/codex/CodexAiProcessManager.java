@@ -20,6 +20,7 @@ import kiwi.ingenuity.netbeans.plugin.aicoder.PluginSettings;
 import kiwi.ingenuity.netbeans.plugin.aicoder.StringConst;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.AiProcessManager;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.AiTypeEnum;
+import kiwi.ingenuity.netbeans.plugin.aicoder.ai.debuglog.DebugDirectionEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.events.StatusEvent;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.events.StatusEventTypeEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.events.TurnCompleteEvent;
@@ -543,13 +544,15 @@ public class CodexAiProcessManager extends AiProcessManager {
 
         if (!CodexExecutableLocator.isExecutableFile(executablePath)) {
             running = false;
-            listener.onAiProcessEvent(new StatusEvent(StatusEventTypeEnum.FAILED,
-                                                      StatusMessageUtil.formatStartFailed("executable not found at " + executablePath)));
+            String failure = StatusMessageUtil.formatStartFailed("executable not found at " + executablePath);
+            debugLog(DebugDirectionEnum.EVENT, "error", failure);
+            listener.onAiProcessEvent(new StatusEvent(StatusEventTypeEnum.FAILED, failure));
             return;
         }
         if (currentSession == null) {
-            listener.onAiProcessEvent(new StatusEvent(StatusEventTypeEnum.FAILED,
-                                                      StatusMessageUtil.formatSessionNotConfigured()));
+            String failure = StatusMessageUtil.formatSessionNotConfigured();
+            debugLog(DebugDirectionEnum.EVENT, "error", failure);
+            listener.onAiProcessEvent(new StatusEvent(StatusEventTypeEnum.FAILED, failure));
             return;
         }
         sessionId = currentSession.id();
@@ -575,6 +578,7 @@ public class CodexAiProcessManager extends AiProcessManager {
         }
 
         running = true;
+        debugLog(DebugDirectionEnum.EVENT, "start", "");
         listener.onAiProcessEvent(new StatusEvent(StatusEventTypeEnum.READY, StatusMessageUtil.formatReady("Codex")));
     }
 
@@ -656,8 +660,10 @@ public class CodexAiProcessManager extends AiProcessManager {
         p.onExit().thenRun(() -> handleProcessExit(p));
 
         CodexAppServerHandler handler = new CodexAppServerHandler(sessionId, listener, this::onHandlerDisconnected);
+        handler.setEventSink((kind, payload) -> debugLog(DebugDirectionEnum.EVENT, kind, payload));
         CodexJsonRpcClient c = new CodexJsonRpcClient(p.getOutputStream(), p.getInputStream(),
                                                       this::onNotification, handler::onServerRequest, handler::onDisconnected);
+        c.setDebugLogSink((direction, payload) -> debugLog(direction, "jsonrpc", payload));
 
         String resumeId = pendingResumeThreadId;
         JsonObject threadResult;
@@ -831,6 +837,7 @@ public class CodexAiProcessManager extends AiProcessManager {
             // turn's closer arrived, so a backend still "processing" is unwinding a turn the UI closed. Every
             // refusal therefore closes the turn it opened: INFO says why, TurnCompleteEvent ends it.
             listener.onAiProcessEvent(new StatusEvent(StatusEventTypeEnum.INFO, refusal));
+            debugLog(DebugDirectionEnum.EVENT, "turn-end", "");
             listener.onAiProcessEvent(new TurnCompleteEvent());
         }
     }
@@ -900,8 +907,9 @@ public class CodexAiProcessManager extends AiProcessManager {
             // Not our turn any more: Stop, stop() or the exit already ended it, and processing may now
             // belong to a newer turn — report nothing and leave it alone.
             if (stillOurTurn) {
-                listener.onAiProcessEvent(new StatusEvent(StatusEventTypeEnum.FAILED,
-                                                          StatusMessageUtil.formatSendFailed(e.getMessage())));
+                String failure = StatusMessageUtil.formatSendFailed(e.getMessage());
+                debugLog(DebugDirectionEnum.EVENT, "error", failure);
+                listener.onAiProcessEvent(new StatusEvent(StatusEventTypeEnum.FAILED, failure));
             }
             return;
         }
@@ -939,6 +947,7 @@ public class CodexAiProcessManager extends AiProcessManager {
         CodexAppServerHandler handler = appServerHandler;
         String tid = threadId;
         if (c == null || handler == null || tid == null) {
+            debugLog(DebugDirectionEnum.EVENT, "error", "Codex session is not active");
             listener.onAiProcessEvent(new StatusEvent(StatusEventTypeEnum.FAILED, "Codex session is not active"));
             return;
         }
@@ -975,8 +984,9 @@ public class CodexAiProcessManager extends AiProcessManager {
                         processing = false;
                         interruptRequested = false;
                     }
-                    listener.onAiProcessEvent(new StatusEvent(StatusEventTypeEnum.FAILED,
-                                                              "turn/start failed: " + (ex.getMessage() != null ? ex.getMessage() : ex.toString())));
+                    String failure = "turn/start failed: " + (ex.getMessage() != null ? ex.getMessage() : ex.toString());
+                    debugLog(DebugDirectionEnum.EVENT, "error", failure);
+                    listener.onAiProcessEvent(new StatusEvent(StatusEventTypeEnum.FAILED, failure));
                     return null;
                 });
     }
@@ -1215,6 +1225,7 @@ public class CodexAiProcessManager extends AiProcessManager {
 
     @Override
     public synchronized void stop() {
+        debugLog(DebugDirectionEnum.EVENT, "stop", "");
         // A compaction still running when the session stops must not leave the UI locked: its closing
         // FAILED comes from here, never from a turn/completed that will not arrive.
         compaction = null;

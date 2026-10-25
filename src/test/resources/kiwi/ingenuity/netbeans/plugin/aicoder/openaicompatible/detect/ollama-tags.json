@@ -1,0 +1,21 @@
+{
+  "models": [
+    {
+      "name": "llama3.2:latest",
+      "model": "llama3.2:latest",
+      "details": {
+        "format": "gguf",
+        "family": "llama",
+        "parameter_size": "3.2B"
+      }
+    },
+    {
+      "name": "qwen2.5-coder:7b",
+      "model": "qwen2.5-coder:7b",
+      "details": {
+        "format": "gguf",
+        "family": "qwen2"
+      }
+    }
+  ]
+}

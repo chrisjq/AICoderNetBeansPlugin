@@ -31,9 +31,10 @@ class McpTemplatePersistenceManagerTest {
 
         List<McpTemplate> loaded = manager.loadMcpTemplates();
 
-        assertEquals(1, loaded.size());
+        assertEquals(2, loaded.size());
         assertTrue(loaded.get(0).isDefault());
         assertEquals(LegacyToolGroups.derive(null), loaded.get(0).config());
+        assertTrue(loaded.stream().anyMatch(McpTemplate::isMinimal), "the seeded Minimal is present");
     }
 
     @Test
@@ -47,11 +48,12 @@ class McpTemplatePersistenceManagerTest {
 
         List<McpTemplate> reloaded = manager.loadMcpTemplates();
 
-        assertEquals(1, reloaded.size());
-        assertTrue(reloaded.get(0).isDefault());
-        assertEquals("Renamed", reloaded.get(0).name());
-        assertEquals(edited, reloaded.get(0).config());
-        assertTrue(reloaded.get(0).config().isDisabled(McpToolGroupEnum.GIT_WRITE));
+        assertEquals(2, reloaded.size());
+        McpTemplate def = reloaded.stream().filter(McpTemplate::isDefault).findFirst().orElseThrow();
+        assertEquals("Renamed", def.name());
+        assertEquals(edited, def.config());
+        assertTrue(def.config().isDisabled(McpToolGroupEnum.GIT_WRITE));
+        assertTrue(reloaded.stream().anyMatch(McpTemplate::isMinimal), "the seeded Minimal is present");
     }
 
     @Test
@@ -84,9 +86,9 @@ class McpTemplatePersistenceManagerTest {
 
         List<McpTemplate> loaded = manager.loadMcpTemplates();
 
-        assertEquals(3, loaded.size());
+        assertEquals(4, loaded.size());
         Set<String> ids = new HashSet<>(loaded.stream().map(McpTemplate::id).toList());
-        assertEquals(Set.of(McpTemplate.DEFAULT_ID, a.id(), b.id()), ids);
+        assertEquals(Set.of(McpTemplate.DEFAULT_ID, McpTemplate.MINIMAL_ID, a.id(), b.id()), ids);
         assertEquals(configA, loaded.stream().filter(t -> t.id().equals(a.id())).findFirst().orElseThrow().config());
         assertEquals(configB, loaded.stream().filter(t -> t.id().equals(b.id())).findFirst().orElseThrow().config());
     }
@@ -98,9 +100,10 @@ class McpTemplatePersistenceManagerTest {
         McpTemplatePersistenceManager manager = new McpTemplatePersistenceManager(temp);
 
         List<McpTemplate> loaded = assertDoesNotThrow(manager::loadMcpTemplates);
-        assertEquals(1, loaded.size());
+        assertEquals(2, loaded.size());
         assertTrue(loaded.get(0).isDefault());
         assertEquals(LegacyToolGroups.derive(null), loaded.get(0).config());
+        assertTrue(loaded.stream().anyMatch(McpTemplate::isMinimal), "the seeded Minimal is present");
     }
 
     @Test
@@ -214,9 +217,10 @@ class McpTemplatePersistenceManagerTest {
 
         List<McpTemplate> loaded = new McpTemplatePersistenceManager(temp).loadMcpTemplates();
 
-        assertEquals(1, loaded.size());
+        assertEquals(2, loaded.size());
         assertTrue(loaded.get(0).isDefault());
         assertEquals(LegacyToolGroups.derive(null), loaded.get(0).config());
+        assertTrue(loaded.stream().anyMatch(McpTemplate::isMinimal), "the seeded Minimal is present");
     }
 
     @Test
@@ -231,9 +235,10 @@ class McpTemplatePersistenceManagerTest {
 
         List<McpTemplate> loaded = new McpTemplatePersistenceManager(temp).loadMcpTemplates();
 
-        assertEquals(1, loaded.size());
+        assertEquals(2, loaded.size());
         assertEquals(firstDefault.config(), loaded.get(0).config());
         assertEquals(1, loaded.stream().filter(McpTemplate::isDefault).count());
+        assertTrue(loaded.stream().anyMatch(McpTemplate::isMinimal), "the seeded Minimal is present");
     }
 
     @Test

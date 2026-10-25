@@ -17,6 +17,7 @@ import java.util.concurrent.CancellationException;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.TimeUnit;
+import java.util.function.BiConsumer;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 import kiwi.ingenuity.netbeans.plugin.aicoder.PluginSettings;
@@ -58,6 +59,8 @@ import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.providers.netbeans.R
 class CodexAppServerHandler implements CodexNotificationListener, CodexServerRequestHandler, CodexConnectionListener {
 
     private static final Logger LOG = Logger.getLogger(CodexAppServerHandler.class.getName());
+
+    private volatile BiConsumer<String, String> eventSink;
 
     static final String METHOD_AGENT_MESSAGE_DELTA = "item/agentMessage/delta";
     static final String METHOD_ITEM_STARTED = "item/started";
@@ -704,13 +707,30 @@ class CodexAppServerHandler implements CodexNotificationListener, CodexServerReq
         CodexAiImplementation.publishRateLimit(event);
     }
 
+    /**
+     * Receives the turn's lifecycle events ({@code kind} and payload) for the backend debug log. Set by the manager;
+     * without one the handler logs nothing.
+     */
+    void setEventSink(BiConsumer<String, String> sink) {
+        eventSink = sink;
+    }
+
+    private void recordEvent(String kind, String payload) {
+        BiConsumer<String, String> sink = eventSink;
+        if (sink != null) {
+            sink.accept(kind, payload);
+        }
+    }
+
     private void handleTurnCompleted(JsonObject params) {
         String status = extractTurnStatus(params);
         if ("failed".equals(status)) {
             String message = buildFailedMessage(params);
+            recordEvent("error", message);
             listener.onAiProcessEvent(new StatusEvent(StatusEventTypeEnum.FAILED, message));
             return;
         }
+        recordEvent("turn-end", "");
         listener.onAiProcessEvent(new TurnCompleteEvent());
     }
 

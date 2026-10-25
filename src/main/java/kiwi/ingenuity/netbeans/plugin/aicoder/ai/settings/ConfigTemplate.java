@@ -93,6 +93,7 @@ public final class ConfigTemplate {
         }
         target.setDatabaseRowLimit(source.effectiveDatabaseRowLimit());
         target.setEnableClipboardAccess(source.effectiveEnableClipboardAccess());
+        target.setBackendDebugLog(source.effectiveBackendDebugLog());
     }
 
     private final String id;

@@ -1,0 +1,33 @@
+{
+  "models": [
+    {
+      "type": "llm",
+      "key": "loaded-model",
+      "display_name": "Loaded",
+      "max_context_length": 131072,
+      "capabilities": {
+        "vision": false,
+        "trained_for_tool_use": true
+      },
+      "loaded_instances": [
+        {
+          "id": "0",
+          "config": {
+            "context_length": 8192,
+            "flash_attention": true
+          }
+        }
+      ]
+    },
+    {
+      "type": "llm",
+      "key": "unloaded-model",
+      "display_name": "Unloaded",
+      "max_context_length": 32768,
+      "capabilities": {
+        "trained_for_tool_use": false
+      },
+      "loaded_instances": []
+    }
+  ]
+}

@@ -17,10 +17,12 @@ import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.TimeUnit;
+import java.util.function.BiConsumer;
 import java.util.function.Consumer;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 import kiwi.ingenuity.netbeans.plugin.aicoder.PluginSettings;
+import kiwi.ingenuity.netbeans.plugin.aicoder.ai.debuglog.DebugDirectionEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.pi.PiJsonKeyEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.pi.PiTimeoutEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.utils.JsonUtils;
@@ -191,6 +193,7 @@ public final class PiPersistentSession {
     private final Thread stderrThread;
     private final Map<String, CompletableFuture<JsonObject>> pending = new ConcurrentHashMap<>();
     private volatile boolean closed = false;
+    private volatile BiConsumer<DebugDirectionEnum, String> debugSink;
 
     private PiPersistentSession(Process process, Consumer<String> eventLine, Consumer<String> stderrConsumer) {
         this.process = process;
@@ -216,8 +219,10 @@ public final class PiPersistentSession {
             }
             pending.put(id, future);
             try {
-                stdin.write(frameRequest(command, id).getBytes(StandardCharsets.UTF_8));
+                String frame = frameRequest(command, id);
+                stdin.write(frame.getBytes(StandardCharsets.UTF_8));
                 stdin.flush();
+                logSent(frame);
             }
             catch (IOException e) {
                 pending.remove(id);
@@ -238,11 +243,23 @@ public final class PiPersistentSession {
         try {
             stdin.write((jsonLine + "\n").getBytes(StandardCharsets.UTF_8));
             stdin.flush();
+            logSent(jsonLine);
             return true;
         }
         catch (IOException e) {
             LOG.log(Level.FINE, "Pi control write failed", e);
             return false;
+        }
+    }
+
+    public void setDebugSink(BiConsumer<DebugDirectionEnum, String> sink) {
+        this.debugSink = sink;
+    }
+
+    private void logSent(String frame) {
+        BiConsumer<DebugDirectionEnum, String> sink = debugSink;
+        if (sink != null) {
+            sink.accept(DebugDirectionEnum.SENT, frame.strip());
         }
     }
 

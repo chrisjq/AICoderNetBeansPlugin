@@ -1,0 +1,12 @@
+{
+  "models": [
+    {
+      "name": "llama3.2:latest",
+      "model": "llama3.2:latest",
+      "context_length": 8192,
+      "details": {
+        "family": "llama"
+      }
+    }
+  ]
+}

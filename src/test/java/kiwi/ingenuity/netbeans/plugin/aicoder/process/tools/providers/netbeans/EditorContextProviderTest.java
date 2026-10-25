@@ -223,14 +223,14 @@ class EditorContextProviderTest {
         Path tempRoot = Files.createTempDirectory("aicoder-fnf-match");
         try {
             Path realFile = Files.createDirectories(tempRoot.resolve("ai/http/context"))
-                    .resolve("PinSlotEnum.java");
+                    .resolve("OllamaPinSlotEnum.java");
             Files.writeString(realFile, "// placeholder");
 
             String result = EditorContextProvider.buildNotFoundMessage(
-                    "/wrong/process/broker/PinSlotEnum.java",
+                    "/wrong/process/broker/OllamaPinSlotEnum.java",
                     List.of(tempRoot.toFile()));
 
-            assertTrue(result.startsWith("File not found: /wrong/process/broker/PinSlotEnum.java"),
+            assertTrue(result.startsWith("File not found: /wrong/process/broker/OllamaPinSlotEnum.java"),
                        "first line must be unchanged: " + result);
             assertTrue(result.contains("Did you mean:"), "must contain Did you mean section: " + result);
             assertTrue(result.contains(realFile.toString()), "must list the real path: " + result);

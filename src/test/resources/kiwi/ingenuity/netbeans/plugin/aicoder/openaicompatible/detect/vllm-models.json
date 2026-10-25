@@ -1,0 +1,11 @@
+{
+  "object": "list",
+  "data": [
+    {
+      "id": "meta-llama/Llama-3-8B",
+      "object": "model",
+      "owned_by": "vllm",
+      "max_model_len": 8192
+    }
+  ]
+}

@@ -1,0 +1,19 @@
+{
+  "data": [
+    {
+      "id": "loaded-model",
+      "object": "model",
+      "type": "llm",
+      "state": "loaded",
+      "max_context_length": 131072,
+      "loaded_context_length": 4096
+    },
+    {
+      "id": "unloaded-model",
+      "object": "model",
+      "type": "llm",
+      "state": "not-loaded",
+      "max_context_length": 32768
+    }
+  ]
+}

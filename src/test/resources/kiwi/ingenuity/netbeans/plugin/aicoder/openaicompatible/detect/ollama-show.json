@@ -1,0 +1,13 @@
+{
+  "modelfile": "FROM llama3.2",
+  "parameters": "num_ctx                        8192\nstop                           \"<|eot_id|>\"",
+  "details": {
+    "family": "llama"
+  },
+  "model_info": {
+    "general.architecture": "llama",
+    "llama.context_length": 131072,
+    "llama.embedding_length": 4096
+  },
+  "capabilities": ["completion", "tools", "thinking"]
+}

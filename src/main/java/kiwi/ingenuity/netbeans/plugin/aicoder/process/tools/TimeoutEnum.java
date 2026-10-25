@@ -129,11 +129,11 @@ public enum TimeoutEnum {
      * saturated the UI thread and froze the IDE when several sessions streamed at once. The mandatory flush on message
      * finalise guarantees no buffered tail is ever dropped and no timer is left armed.
      * <p>
-     * 100 ms is a deliberate trade: ten renders a second reads as smooth streaming while still capping the
-     * rebuild cost at ten per second per session rather than one per token. Raise it if several sessions
-     * streaming at once still strain the EDT — the throttle's protection scales directly with this number.
+     * 250 ms is a deliberate trade: four renders a second reads as smooth streaming while still capping the rebuild
+     * cost per session rather than one per token. MessagePanel adds a size-based increment for very large replies,
+     * capped at one second, so the EDT remains responsive even when several sessions stream at once.
      */
-    MESSAGE_REBUILD_THROTTLE_MILLIS(100L, Kind.UI_FEEDBACK),
+    MESSAGE_REBUILD_THROTTLE_MILLIS(250L, Kind.UI_FEEDBACK),
     DATABASE_QUERY_TIMEOUT_MILLIS(300_000L, Kind.EXTERNAL_IO),
     /**
      * How long an OpenAI-compatible chat request (Ollama) may take to START responding. The JDK applies it only until

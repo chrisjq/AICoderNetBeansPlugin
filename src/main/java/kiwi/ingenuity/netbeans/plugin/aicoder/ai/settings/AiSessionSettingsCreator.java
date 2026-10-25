@@ -126,6 +126,10 @@ public abstract class AiSessionSettingsCreator<E extends AiSessionSettings> {
         if (cfgObj.has(key) && cfgObj.get(key).isJsonPrimitive()) {
             settings.setEnableClipboardAccess(cfgObj.get(key).getAsBoolean());
         }
+        key = AiSessionSettingsKeyEnum.BACKEND_DEBUG_LOG.key();
+        if (cfgObj.has(key) && cfgObj.get(key).isJsonPrimitive()) {
+            settings.setBackendDebugLog(cfgObj.get(key).getAsBoolean());
+        }
         key = AiSessionSettingsKeyEnum.MCP_TOOL_CONFIG.key();
         if (cfgObj.has(key) && cfgObj.get(key).isJsonObject()) {
             // A malformed config must not silently widen access: parseOrNull leaves it null, so the session keeps

@@ -27,6 +27,7 @@ import kiwi.ingenuity.netbeans.plugin.aicoder.PluginSettings;
 import kiwi.ingenuity.netbeans.plugin.aicoder.StringConst;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.AiProcessManager;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.AiTypeEnum;
+import kiwi.ingenuity.netbeans.plugin.aicoder.ai.debuglog.DebugDirectionEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.events.StatusEvent;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.events.StatusEventTypeEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.events.TurnCompleteEvent;
@@ -224,18 +225,21 @@ public class GithubCopilotProcessManager extends AiProcessManager {
 
         if (!GithubCopilotExecutableLocator.isExecutableFile(executablePath)) {
             running = false;
-            listener.onAiProcessEvent(new StatusEvent(StatusEventTypeEnum.FAILED,
-                                                      StatusMessageUtil.formatStartFailed("copilot executable not found at " + executablePath)));
+            String failure = StatusMessageUtil.formatStartFailed("copilot executable not found at " + executablePath);
+            debugLog(DebugDirectionEnum.EVENT, "error", failure);
+            listener.onAiProcessEvent(new StatusEvent(StatusEventTypeEnum.FAILED, failure));
             listener.onAiProcessEvent(new GithubCopilotFatalErrorEvent(
                     "EXECUTABLE_NOT_FOUND", "GitHub Copilot CLI not found"));
             return;
         }
         if (currentSession == null) {
-            listener.onAiProcessEvent(new StatusEvent(StatusEventTypeEnum.FAILED,
-                                                      StatusMessageUtil.formatSessionNotConfigured()));
+            String failure = StatusMessageUtil.formatSessionNotConfigured();
+            debugLog(DebugDirectionEnum.EVENT, "error", failure);
+            listener.onAiProcessEvent(new StatusEvent(StatusEventTypeEnum.FAILED, failure));
             return;
         }
         sessionId = currentSession.id();
+        registerDebugSecret(currentSession.secret());
         if (sessionCorrupted) {
             copilotSessionId = UUID.randomUUID().toString();
             sessionCorrupted = false;
@@ -262,8 +266,9 @@ public class GithubCopilotProcessManager extends AiProcessManager {
             mcpReady = false;
         }
         if (!mcpReady) {
-            listener.onAiProcessEvent(new StatusEvent(StatusEventTypeEnum.FAILED,
-                                                      StatusMessageUtil.formatMcpSetupFailed()));
+            String failure = StatusMessageUtil.formatMcpSetupFailed();
+            debugLog(DebugDirectionEnum.EVENT, "error", failure);
+            listener.onAiProcessEvent(new StatusEvent(StatusEventTypeEnum.FAILED, failure));
             return;
         }
         registrar = reg;
@@ -293,6 +298,7 @@ public class GithubCopilotProcessManager extends AiProcessManager {
         }
 
         running = true;
+        debugLog(DebugDirectionEnum.EVENT, "start", "");
         listener.onAiProcessEvent(new StatusEvent(StatusEventTypeEnum.READY, StatusMessageUtil.formatReady("GitHub Copilot")));
         listener.onAiProcessEvent(new GithubCopilotFatalErrorEvent(null, null));
         GithubCopilotQuotaService.getQuotaAsync(executablePath, quota -> {
@@ -359,6 +365,8 @@ public class GithubCopilotProcessManager extends AiProcessManager {
      */
     GithubCopilotSessionEventBridge createEventBridge(AiProcessEventListener turnAwareListener) {
         GithubCopilotSessionEventBridge bridge = new GithubCopilotSessionEventBridge(turnAwareListener);
+        bridge.setDebugLogSink(value -> debugLog(DebugDirectionEnum.RECEIVED, "event", value));
+        bridge.setEventSink((kind, payload) -> debugLog(DebugDirectionEnum.EVENT, kind, payload));
         bridge.setOnError(this::handleRuntimeError);
         bridge.setSessionNameSupplier(() -> {
             AiSession s = currentSession;
@@ -420,6 +428,7 @@ public class GithubCopilotProcessManager extends AiProcessManager {
         try {
             GithubCopilotPermissionHandler handler = new GithubCopilotPermissionHandler(listener, sessionId);
             permissionHandler = handler;
+            debugLog(DebugDirectionEnum.SENT, "session.resume", describeConfig(model, mcpServers, validatedEffort));
             return resumeSessionHook(client, copilotSessionId, buildResumeConfig(model, mcpServers, handler, validatedEffort))
                     .get(TimeoutEnum.MCP_REGISTRATION_WAIT_MILLIS.millis(), TimeUnit.MILLISECONDS);
         }
@@ -504,12 +513,23 @@ public class GithubCopilotProcessManager extends AiProcessManager {
         return sessionListContains(sessions, targetSessionId);
     }
 
+    /**
+     * The model, reasoning effort and MCP server names a create or resume sends. The MCP entries themselves are left
+     * out: they carry the session's secrets, so only their names reach the backend debug log.
+     */
+    private static String describeConfig(String model, Map<String, com.github.copilot.rpc.McpServerConfig> mcpServers,
+                                         String reasoningEffort) {
+        return "model=" + model + ", reasoningEffort=" + (reasoningEffort == null ? "" : reasoningEffort)
+                + ", mcpServers=" + (mcpServers == null ? "[]" : mcpServers.keySet());
+    }
+
     private CopilotSession createSession(CopilotClient client, String model,
                                          Map<String, com.github.copilot.rpc.McpServerConfig> mcpServers, String targetSessionId,
                                          String reasoningEffort)
             throws ExecutionException, InterruptedException, TimeoutException {
         GithubCopilotPermissionHandler handler = new GithubCopilotPermissionHandler(listener, sessionId);
         permissionHandler = handler;
+        debugLog(DebugDirectionEnum.SENT, "session.create", describeConfig(model, mcpServers, reasoningEffort));
         return createSessionHook(client, buildCreateConfig(targetSessionId, model, mcpServers, handler, reasoningEffort))
                 .get(TimeoutEnum.MCP_REGISTRATION_WAIT_MILLIS.millis(), TimeUnit.MILLISECONDS);
     }
@@ -622,8 +642,9 @@ public class GithubCopilotProcessManager extends AiProcessManager {
             listener.onAiProcessEvent(new StatusEvent(StatusEventTypeEnum.INFO,
                                                       "Model was not available for your account — switched to 'auto'. Please resend your message."));
         }
-        listener.onAiProcessEvent(new StatusEvent(StatusEventTypeEnum.FAILED,
-                                                  StatusMessageUtil.formatSendFailed(msg)));
+        String failure = StatusMessageUtil.formatSendFailed(msg);
+        debugLog(DebugDirectionEnum.EVENT, "error", failure);
+        listener.onAiProcessEvent(new StatusEvent(StatusEventTypeEnum.FAILED, failure));
         LOG.log(Level.WARNING, "GitHub Copilot session start failed", e);
     }
 
@@ -681,9 +702,11 @@ public class GithubCopilotProcessManager extends AiProcessManager {
             // Mid-compaction failure: the compaction is non-turn work, so its runWork closer must be the ONE and
             // only closing status (#1). Reporting FAILED here as well would close it twice and let runWork's later
             // closer — FAILED or even READY — paint the tab over the error.
+            debugLog(DebugDirectionEnum.EVENT, "error", runtimeFailureMessage(msg));
             failWorkInFlight(runtimeFailureMessage(msg));
             return;
         }
+        debugLog(DebugDirectionEnum.EVENT, "error", runtimeFailureMessage(msg));
         listener.onAiProcessEvent(runtimeFailureStatus(msg));
     }
 
@@ -738,6 +761,7 @@ public class GithubCopilotProcessManager extends AiProcessManager {
             // refusal also re-enables the UI with a turn-complete; stale in-flight completions are ignored by the UI contract.
             listener.onAiProcessEvent(new StatusEvent(StatusEventTypeEnum.INFO, refusal.reason()));
             if (refusal.releasesUi()) {
+                debugLog(DebugDirectionEnum.EVENT, "turn-end", "");
                 listener.onAiProcessEvent(new TurnCompleteEvent());
             }
             return;
@@ -785,6 +809,7 @@ public class GithubCopilotProcessManager extends AiProcessManager {
         // it does NOT mean the turn finished. Only handle the failure-to-queue case
         // here; the success path's `processing` reset happens on TurnCompleteEvent
         // in the turnAwareListener built in start().
+        debugLog(DebugDirectionEnum.SENT, "send", text);
         session.send(text).whenComplete((messageId, err) -> {
             if (err != null) {
                 synchronized (GithubCopilotProcessManager.this) {
@@ -792,8 +817,9 @@ public class GithubCopilotProcessManager extends AiProcessManager {
                 }
                 if (!cancelledByUser) {
                     LOG.log(Level.WARNING, "GitHub Copilot send failed", err);
-                    listener.onAiProcessEvent(new StatusEvent(StatusEventTypeEnum.FAILED,
-                                                              StatusMessageUtil.formatSendFailed(err.getMessage())));
+                    String failure = StatusMessageUtil.formatSendFailed(err.getMessage());
+                    debugLog(DebugDirectionEnum.EVENT, "error", failure);
+                    listener.onAiProcessEvent(new StatusEvent(StatusEventTypeEnum.FAILED, failure));
                 }
             }
         });
@@ -821,9 +847,10 @@ public class GithubCopilotProcessManager extends AiProcessManager {
                 if (created != null) {
                     created.close();
                 }
-                listener.onAiProcessEvent(new StatusEvent(StatusEventTypeEnum.FAILED,
-                                                          StatusMessageUtil.formatSendFailed(
-                                                                  "could not re-establish the session after the model change")));
+                String failure = StatusMessageUtil.formatSendFailed(
+                        "could not re-establish the session after the model change");
+                debugLog(DebugDirectionEnum.EVENT, "error", failure);
+                listener.onAiProcessEvent(new StatusEvent(StatusEventTypeEnum.FAILED, failure));
                 return;
             }
             copilotSession = created;
@@ -893,6 +920,7 @@ public class GithubCopilotProcessManager extends AiProcessManager {
                 if (handler != null) {
                     handler.cancelPendingPermissions();
                 }
+                debugLog(DebugDirectionEnum.SENT, "abort", "session.abort");
                 session.abort();
                 if (PluginSettings.isDebugJson()) {
                     LOG.log(Level.INFO, "GitHub Copilot interrupt: session.abort() sent (session={0})", sessionId);
@@ -911,6 +939,7 @@ public class GithubCopilotProcessManager extends AiProcessManager {
                     com.github.copilot.rpc.MessageOptions options = new com.github.copilot.rpc.MessageOptions()
                             .setPrompt("[inbox] You have a new message — check your inbox NOW.")
                             .setMode("immediate");
+                    debugLog(DebugDirectionEnum.SENT, "send", "mail notice, mode=immediate");
                     session.send(options);
                 }
                 else if (PluginSettings.isDebugJson()) {
@@ -924,6 +953,7 @@ public class GithubCopilotProcessManager extends AiProcessManager {
 
     @Override
     public synchronized void stop() {
+        debugLog(DebugDirectionEnum.EVENT, "stop", "");
         // Logged before the state is torn down, so the record says what was
         // actually in flight at the moment of the stop rather than the
         // cleared-out aftermath.

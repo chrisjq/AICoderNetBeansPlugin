@@ -58,6 +58,7 @@ public abstract class AiImplementation {
     public void start(String executableOrConfig, String modelOrConfig) {
         delegate().start(executableOrConfig, modelOrConfig);
         afterStart();
+        applyBackendDebugLog(currentSession == null ? null : currentSession.settings());
     }
 
     /**
@@ -106,7 +107,7 @@ public abstract class AiImplementation {
             if (stillQueued) {
                 runCallback(pending.onNotDelivered);
                 listener.onAiProcessEvent(new StatusEvent(StatusEventTypeEnum.FAILED,
-                        StatusMessageUtil.formatSendFailed(e.getMessage())));
+                                                          StatusMessageUtil.formatSendFailed(e.getMessage())));
             }
         }
     }
@@ -155,7 +156,7 @@ public abstract class AiImplementation {
                 LOG.log(Level.WARNING, "sendPrompt failed", e);
                 runCallback(pending.onNotDelivered);
                 listener.onAiProcessEvent(new StatusEvent(StatusEventTypeEnum.FAILED,
-                        StatusMessageUtil.formatSendFailed(e.getMessage())));
+                                                          StatusMessageUtil.formatSendFailed(e.getMessage())));
             }
             if (handedOver) {
                 runCallback(pending.onHandedOver);
@@ -293,10 +294,22 @@ public abstract class AiImplementation {
      */
     public void applySessionSettings(AiSessionSettings settings) {
         if (settings instanceof AiModelSessionSettings modelSettings
-            && modelSettings.model() != null && !modelSettings.model().isBlank()
-            && !Objects.equals(modelSettings.model(), delegate().getModel())) {
+                && modelSettings.model() != null && !modelSettings.model().isBlank()
+                && !Objects.equals(modelSettings.model(), delegate().getModel())) {
             setModel(modelSettings.model());
         }
+        applyBackendDebugLog(settings);
+    }
+
+    /**
+     * Pushes the generic backend-debug-log switch into the running process manager. No-op when there is no session
+     * settings object yet; the manager itself no-ops until it has a session folder.
+     */
+    private void applyBackendDebugLog(AiSessionSettings settings) {
+        if (settings == null) {
+            return;
+        }
+        delegate().setBackendDebugLog(settings.effectiveBackendDebugLog());
     }
 
     public void setPendingDiff(boolean pending) {

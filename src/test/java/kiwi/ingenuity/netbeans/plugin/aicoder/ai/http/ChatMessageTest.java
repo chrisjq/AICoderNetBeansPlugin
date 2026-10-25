@@ -33,6 +33,6 @@ class ChatMessageTest {
 
         assertNotSame(original, copy);
         assertEquals("old", copy.content(),
-                "a snapshot handed to ChatRequest must not change under an in-flight request");
+                     "a snapshot handed to OllamaChatRequest must not change under an in-flight request");
     }
 }

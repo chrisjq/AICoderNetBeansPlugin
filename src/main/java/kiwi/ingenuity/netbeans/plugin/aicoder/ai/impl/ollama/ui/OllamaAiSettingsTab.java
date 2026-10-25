@@ -53,6 +53,13 @@ public final class OllamaAiSettingsTab implements SettingsTab {
 
         c.gridx = 0;
         c.gridy = 1;
+        c.gridwidth = 3;
+        JLabel deprecation = new JLabel("<html><b>Ollama (local) is deprecated and will be removed in a future version. Use 'OpenAI Compatible' instead — it works with Ollama (http://localhost:11434), LM Studio and hosted endpoints.</b></html>");
+        panel.add(deprecation, c);
+        c.gridwidth = 1;
+
+        c.gridx = 0;
+        c.gridy = 2;
         c.weightx = 0;
         panel.add(new JLabel("Base URL:"), c);
 
@@ -67,7 +74,7 @@ public final class OllamaAiSettingsTab implements SettingsTab {
         panel.add(testButton, c);
 
         c.gridx = 1;
-        c.gridy = 2;
+        c.gridy = 3;
         c.gridwidth = 2;
         testResultLabel = new JLabel(" ");
         testResultLabel.setFont(testResultLabel.getFont().deriveFont(Font.ITALIC, 11f));
@@ -75,7 +82,7 @@ public final class OllamaAiSettingsTab implements SettingsTab {
         c.gridwidth = 1;
 
         c.gridx = 0;
-        c.gridy = 3;
+        c.gridy = 4;
         c.weightx = 0;
         panel.add(new JLabel("Model:"), c);
 
@@ -88,7 +95,7 @@ public final class OllamaAiSettingsTab implements SettingsTab {
         c.gridwidth = 1;
 
         c.gridx = 0;
-        c.gridy = 4;
+        c.gridy = 5;
         c.weightx = 0;
         panel.add(new JLabel("Default thinking:"), c);
         reasoningEffortCombo = new JComboBox<>(REASONING_EFFORT_OPTIONS);
@@ -99,7 +106,7 @@ public final class OllamaAiSettingsTab implements SettingsTab {
         c.gridwidth = 1;
 
         c.gridx = 0;
-        c.gridy = 5;
+        c.gridy = 6;
         c.weighty = 1;
         c.gridwidth = 3;
         panel.add(Box.createVerticalGlue(), c);

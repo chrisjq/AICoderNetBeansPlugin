@@ -127,7 +127,7 @@ class OllamaInstructionSurfaceTest {
 
     /**
      * Under TOOL_CALLS_VIA_SCHEMA the tools array is not sent and the tool list is rendered from the schemas by
-     * SchemaToolCalls — which carries parameter names the per-tool instruction lines never had. Enabling
+     * OllamaSchemaToolCalls — which carries parameter names the per-tool instruction lines never had. Enabling
      * TOOL_INSTRUCTION as well would describe all 83 tools twice, ~9k characters of duplication.
      */
     @Test
@@ -156,7 +156,7 @@ class OllamaInstructionSurfaceTest {
         for (McpToolInterface handler : handlers.values()) {
             schemas.add(handler.schema(AiTypeEnum.OLLAMA_LOCAL.getMcpOptions()));
         }
-        String rendered = kiwi.ingenuity.netbeans.plugin.aicoder.ai.http.SchemaToolCalls.renderToolList(schemas);
+        String rendered = kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.ollama.http.OllamaSchemaToolCalls.renderToolList(schemas);
         Set<String> renderedNames = new HashSet<>();
         for (String line : rendered.split("\\n")) {
             if (line.startsWith("- ")) {

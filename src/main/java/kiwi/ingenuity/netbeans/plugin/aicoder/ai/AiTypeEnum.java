@@ -6,6 +6,7 @@ import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.codex.settings.CodexSettin
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.githubcopilot.settings.GithubCopilotSettingsCreator;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.grok.settings.GrokSettingsCreator;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.ollama.settings.OllamaSettingsCreator;
+import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.openaicompatible.settings.OpenAiCompatibleSettingsCreator;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.opencode.settings.OpenCodeSettingsCreator;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.pi.settings.PiSettingsCreator;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.settings.AiSessionSettings;
@@ -24,7 +25,7 @@ import static kiwi.ingenuity.netbeans.plugin.aicoder.process.McpInstructionOptio
  * initializing and updating type-specific configurations.
  */
 public enum AiTypeEnum {
-    //                                                          implemented  enabledByDefault  openAiCompatible  mailDeliveryTiming
+    //                                                          implemented  enabledByDefault  usesLegacyOllamaSettings  mailDeliveryTiming
     // ClaudeAiProcessManager:444 sends control_request(interrupt) for Mail — byte-identical to
     // what Cancel sends, so the CLI cannot tell mail from the Stop button and ends the turn,
     // taking any in-flight tool call with it.
@@ -52,13 +53,18 @@ public enum AiTypeEnum {
     // into the prompt from the schemas, carrying names, parameters and
     // descriptions. The per-tool instruction lines describe the same tools
     // without the parameters, so enabling both only duplicated ~9k characters.
-    //                                                          implemented  enabledByDefault  openAiCompatible  mailDeliveryTiming
+    //                                                          implemented  enabledByDefault  usesLegacyOllamaSettings  mailDeliveryTiming
     // OllamaAiProcessManager — interrupt(Mail) arms pendingMailNotice and the tool-loop's next
     // iteration appends MAIL_NOTIFICATION_TEXT as a USER message, so this backend has a mid-turn channel.
     // NOT_APPLICABLE: ONLY_MCP_TOOL_ACCESS — this backend reaches the IDE through the in-process MCP
     // bridge and has no native file/shell tools of its own, so there is no such call to refuse.
-    OLLAMA_LOCAL("Ollama (Local)", "ollama_local", true, true, true, MailDeliveryTimingEnum.DURING_TURN, McpSteeringSupportEnum.NOT_APPLICABLE, new OllamaSettingsCreator(),
-            Set.of(HEADER, ONLY_MCP_TOOL_ACCESS, SOFTEN_TOOL_DIRECTIVES, TOOL_CALLS_VIA_SCHEMA), null, null),
+    OLLAMA_LOCAL("Ollama (Local)", "ollama_local", true, false, true, MailDeliveryTimingEnum.DURING_TURN, McpSteeringSupportEnum.NOT_APPLICABLE, new OllamaSettingsCreator(),
+                 Set.of(HEADER, ONLY_MCP_TOOL_ACCESS, SOFTEN_TOOL_DIRECTIVES, TOOL_CALLS_VIA_SCHEMA), null, null),
+    OPENAI_COMPATIBLE("OpenAI Compatible", "openai_compatible",
+                      true,
+                      true, false, MailDeliveryTimingEnum.DURING_TURN, McpSteeringSupportEnum.NOT_APPLICABLE,
+                      new OpenAiCompatibleSettingsCreator(),
+                      Set.of(HEADER, ONLY_MCP_TOOL_ACCESS, SOFTEN_TOOL_DIRECTIVES), null, null),
     // FORCE_MCP_TOOL_USE for the same reason as Copilot: OpenCode keeps its own
     // bash/grep/read/edit tools and reached for them first, shelling out to grep
     // on project files. The "use the plugin tools INSTEAD OF built-in
@@ -69,7 +75,7 @@ public enum AiTypeEnum {
     // else (OpenCodeAcpClientHandler:741), so steering text cannot ride the refusal and must arrive
     // as an agent-only turn afterwards.
     OPENCODE("OpenCode", "opencode", true, true, false, MailDeliveryTimingEnum.ABORTS_TURN, McpSteeringSupportEnum.DENY_NEEDS_FOLLOW_UP, new OpenCodeSettingsCreator(), Set.of(HEADER, TOOL_INSTRUCTION, CREDENTIALS, FORCE_MCP_TOOL_USE),
-            "Accept", "Reject, you may need to remind it to use MCP tool manually."),
+             "Accept", "Reject, you may need to remind it to use MCP tool manually."),
     // MCP IS registered now: CodexAiProcessManager.buildMcpConfigArgs passes
     // -c mcp_servers.<name>.url / .default_tools_approval_mode / .tool_timeout_sec at
     // spawn time, with CodexAiMcpRegistrar alongside it. So the options below are the
@@ -125,10 +131,10 @@ public enum AiTypeEnum {
      */
     private final boolean implemented;
     /**
-     * Whether this AI type communicates via the OpenAI-compatible HTTP API. True only for types whose session
-     * settings extend OpenAiClientSessionSettings.
+     * Whether this AI type communicates via the OpenAI-compatible HTTP API. True only for types whose session settings
+     * extend OllamaClientSessionSettings.
      */
-    private final boolean openAiCompatible;
+    private final boolean usesLegacyOllamaSettings;
     /**
      * Creator responsible for instantiating and updating settings
      */
@@ -163,7 +169,7 @@ public enum AiTypeEnum {
     private final String confirmRejectTooltip;
 
     AiTypeEnum(String displayName, String key, boolean isImplemented, boolean enabledByDefault,
-               boolean openAiCompatible, MailDeliveryTimingEnum mailDeliveryTiming,
+               boolean usesLegacyOllamaSettings, MailDeliveryTimingEnum mailDeliveryTiming,
                McpSteeringSupportEnum mcpSteeringSupport,
                AiSessionSettingsCreator settingCreator, Set<McpInstructionOptionEnum> options,
                String confirmAcceptTooltip, String confirmRejectTooltip) {
@@ -171,7 +177,7 @@ public enum AiTypeEnum {
         this.key = key;
         this.implemented = isImplemented;
         this.enabledByDefault = enabledByDefault;
-        this.openAiCompatible = openAiCompatible;
+        this.usesLegacyOllamaSettings = usesLegacyOllamaSettings;
         this.mailDeliveryTiming = mailDeliveryTiming;
         this.mcpSteeringSupport = mcpSteeringSupport;
         this.settingCreator = settingCreator;
@@ -238,11 +244,13 @@ public enum AiTypeEnum {
     }
 
     /**
-     * Returns true if this AI type communicates via the OpenAI-compatible HTTP API. When true, the session
-     * settings will be an instance of OpenAiClientSessionSettings and context management controls apply.
+     * Whether this type stores its session settings in the legacy Ollama client settings class.
+     *
+     * @deprecated only Ollama (Local) uses this; it is removed with that type.
      */
-    public boolean isOpenAiCompatible() {
-        return openAiCompatible;
+    @Deprecated
+    public boolean usesLegacyOllamaSettings() {
+        return usesLegacyOllamaSettings;
     }
 
     /**

@@ -28,6 +28,7 @@ import kiwi.ingenuity.netbeans.plugin.aicoder.ai.acp.AcpException;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.acp.AcpJsonKeyEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.acp.AcpMethodEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.acp.AcpStopReasonEnum;
+import kiwi.ingenuity.netbeans.plugin.aicoder.ai.debuglog.DebugDirectionEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.events.PolicyRefusalEvent;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.events.StatusEvent;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.events.StatusEventTypeEnum;
@@ -892,6 +893,7 @@ public class OpenCodeAiProcessManager extends AbstractAcpProcessManager {
 
     @Override
     public synchronized void stop() {
+        debugLog(DebugDirectionEnum.EVENT, "stop", "");
         // A compaction still running when the session is stopped must not be left locking the UI: its
         // closing FAILED comes from here, never a late READY from a response that will not come
         // (mirrors PiAiProcessManager.stop()).

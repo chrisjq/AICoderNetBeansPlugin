@@ -23,11 +23,20 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Set;
 import java.util.UUID;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 import java.util.stream.Collectors;
+import javax.swing.SwingUtilities;
+import kiwi.ingenuity.netbeans.plugin.aicoder.PluginSettings;
 import kiwi.ingenuity.netbeans.plugin.aicoder.PluginUtil;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.AiTypeEnum;
+import kiwi.ingenuity.netbeans.plugin.aicoder.ai.debuglog.BackendDebugLogWriter;
+import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.openaicompatible.keys.SessionSecrets;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.session.AiSession;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.session.SessionInstructionsDeliveryEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.settings.AiSessionSettings;
@@ -61,18 +70,18 @@ public class SessionPersistenceManager {
 
     private static void deleteRecursively(Path root) throws IOException {
         Files.walkFileTree(root, new SimpleFileVisitor<>() {
-            @Override
-            public FileVisitResult visitFile(Path file, BasicFileAttributes attrs) throws IOException {
-                Files.deleteIfExists(file);
-                return FileVisitResult.CONTINUE;
-            }
+                       @Override
+                       public FileVisitResult visitFile(Path file, BasicFileAttributes attrs) throws IOException {
+                           Files.deleteIfExists(file);
+                           return FileVisitResult.CONTINUE;
+                       }
 
-            @Override
-            public FileVisitResult postVisitDirectory(Path dir, IOException exc) throws IOException {
-                Files.deleteIfExists(dir);
-                return FileVisitResult.CONTINUE;
-            }
-        });
+                       @Override
+                       public FileVisitResult postVisitDirectory(Path dir, IOException exc) throws IOException {
+                           Files.deleteIfExists(dir);
+                           return FileVisitResult.CONTINUE;
+                       }
+                   });
     }
 
     /**
@@ -154,16 +163,64 @@ public class SessionPersistenceManager {
         // Remove the per-session config dir (~/.ai-coder/{type}/{sessionId}):
         // logs, memory, and any other per-session data an AI impl stored there.
         if (deleted != null) {
+            // Close first so a queued append cannot recreate the folder after it is deleted.
+            closeBackendDebugLogBeforeConfigDirDelete(deleted.aiType(), sessionId);
             TempFileRegistry.cleanupSession(sessionId);
             PluginUtil.deleteAiSessionConfigDir(deleted.aiType(), sessionId);
+            if (deleted.aiType() == AiTypeEnum.OPENAI_COMPATIBLE) {
+                SessionSecrets.deleteAllAsync(sessionId);
+            }
         }
     }
 
     /**
-     * Deletes every directory directly under {@code baseDir} that no remaining persisted session references.
-     * Only directories are considered — sessions.json, sessions.lock and temp files are regular files and are
-     * left alone. Runs while holding the JVM-wide and cross-process locks, so the referenced-id set matches
-     * exactly what was just persisted.
+     * Logged at most once: session delete is not supposed to run on the EDT, and waiting here would freeze the UI.
+     */
+    private static final AtomicBoolean LOGGED_EDT_DEBUG_LOG_SKIP = new AtomicBoolean();
+
+    /**
+     * Stops the writer from recreating {@code ~/.ai-coder/{type}/{sessionId}} after that folder is removed. Waits at
+     * most two seconds, and only off the EDT.
+     */
+    private static void closeBackendDebugLogBeforeConfigDirDelete(AiTypeEnum type, String sessionId) {
+        if (type == null || sessionId == null || sessionId.isBlank()) {
+            return;
+        }
+        Path sessionDir;
+        try {
+            sessionDir = PluginUtil.getPluginConfigDir().resolve(type.key()).resolve(sessionId);
+        }
+        catch (IOException ex) {
+            if (PluginSettings.isDebugJson()) {
+                LOG.log(Level.FINE, "Could not resolve the session folder before closing its backend debug log", ex);
+            }
+            return;
+        }
+        CompletableFuture<Void> closed = BackendDebugLogWriter.closeAndDeleteUnder(sessionDir);
+        if (SwingUtilities.isEventDispatchThread()) {
+            if (PluginSettings.isDebugJson() && LOGGED_EDT_DEBUG_LOG_SKIP.compareAndSet(false, true)) {
+                LOG.fine("Not waiting for the backend debug log to close: session delete ran on the EDT");
+            }
+            return;
+        }
+        try {
+            closed.get(2, TimeUnit.SECONDS);
+        }
+        catch (InterruptedException ex) {
+            Thread.currentThread().interrupt();
+        }
+        catch (TimeoutException | ExecutionException ex) {
+            if (PluginSettings.isDebugJson()) {
+                LOG.log(Level.FINE, "Backend debug log did not finish closing before the session folder was deleted", ex);
+            }
+        }
+    }
+
+    /**
+     * Deletes every directory directly under {@code baseDir} that no remaining persisted session references. Only
+     * directories are considered — sessions.json, sessions.lock and temp files are regular files and are left alone.
+     * Runs while holding the JVM-wide and cross-process locks, so the referenced-id set matches exactly what was just
+     * persisted.
      */
     private void purgeOrphanHistoryDirsLocked(List<AiSession> keptSessions) throws IOException {
         Set<String> referencedIds = keptSessions.stream()
@@ -242,9 +299,9 @@ public class SessionPersistenceManager {
                     }
                     List<String> missingKeys = new ArrayList<>();
                     for (String requiredKey : new String[]{idKey,
-                                                           SessionPersistenceKeyEnum.NAME.key(),
-                                                           SessionPersistenceKeyEnum.CREATED_AT.key(),
-                                                           SessionPersistenceKeyEnum.LAST_USED_AT.key()}) {
+                        SessionPersistenceKeyEnum.NAME.key(),
+                        SessionPersistenceKeyEnum.CREATED_AT.key(),
+                        SessionPersistenceKeyEnum.LAST_USED_AT.key()}) {
                         if (!o.has(requiredKey)) {
                             missingKeys.add(requiredKey);
                         }
@@ -334,12 +391,12 @@ public class SessionPersistenceManager {
             o.addProperty(SessionPersistenceKeyEnum.CREATED_AT.key(), s.createdAt().toString());
             o.addProperty(SessionPersistenceKeyEnum.LAST_USED_AT.key(), s.lastUsedAt().toString());
             o.addProperty(SessionPersistenceKeyEnum.SESSION_INSTRUCTIONS_DELIVERY.key(),
-                    s.sessionInstructionsDelivery().name());
+                          s.sessionInstructionsDelivery().name());
             o.addProperty(SessionPersistenceKeyEnum.STARTUP_INSTRUCTIONS_INJECTED.key(),
-                    s.isStartupInstructionsInjected());
+                          s.isStartupInstructionsInjected());
             if (s.lastInjectedInstructions() != null) {
                 o.addProperty(SessionPersistenceKeyEnum.LAST_INJECTED_INSTRUCTIONS.key(),
-                        s.lastInjectedInstructions());
+                              s.lastInjectedInstructions());
             }
             arr.add(o);
         }

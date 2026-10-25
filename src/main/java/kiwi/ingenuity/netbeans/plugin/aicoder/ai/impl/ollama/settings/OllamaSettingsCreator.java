@@ -4,9 +4,8 @@ import com.google.gson.JsonObject;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.ollama.OllamaAiImplementation;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.settings.AiSessionCreateSettingsPanel;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.settings.AiSessionSettings;
-import kiwi.ingenuity.netbeans.plugin.aicoder.ai.settings.OpenAiClientSettingsCreator;
 
-public class OllamaSettingsCreator extends OpenAiClientSettingsCreator<OllamaSessionSettings> {
+public class OllamaSettingsCreator extends OllamaClientSettingsCreator<OllamaSessionSettings> {
 
     @Override
     public OllamaSessionSettings create() {
@@ -34,7 +33,8 @@ public class OllamaSettingsCreator extends OpenAiClientSettingsCreator<OllamaSes
         key = OllamaSessionSettingsKeyEnum.USE_NATIVE_TOOL_CALLING.key();
         if (cfgObj.has(key) && cfgObj.get(key).isJsonPrimitive()) {
             settings.setUseNativeToolCalling(cfgObj.get(key).getAsBoolean());
-        } else {
+        }
+        else {
             settings.setUseNativeToolCalling(null);
         }
     }

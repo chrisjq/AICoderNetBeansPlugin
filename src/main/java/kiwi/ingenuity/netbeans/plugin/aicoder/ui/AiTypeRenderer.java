@@ -11,7 +11,7 @@ public final class AiTypeRenderer extends DefaultListCellRenderer {
     public Component getListCellRendererComponent(JList<?> list, Object value, int index, boolean selected, boolean focus) {
         super.getListCellRendererComponent(list, value, index, selected, focus);
         if (value instanceof AiTypeEnum type) {
-            setText(type.displayName());
+            setText(type.displayName() + (type == AiTypeEnum.OLLAMA_LOCAL ? " — deprecated" : ""));
         }
         return this;
     }

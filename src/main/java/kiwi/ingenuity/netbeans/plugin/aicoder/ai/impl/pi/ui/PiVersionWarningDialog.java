@@ -43,7 +43,7 @@ public final class PiVersionWarningDialog {
 
         JPanel panel = new JPanel(new BorderLayout(6, 6));
         panel.add(new JLabel("<html>Please file a bug: pi " + version
-                             + " was marked as not working with this plugin.</html>"), BorderLayout.NORTH);
+                + " was marked as not working with this plugin.</html>"), BorderLayout.NORTH);
 
         JButton linkButton = new JButton(issueUrl.isBlank() ? "Report a bug" : issueUrl);
         linkButton.addActionListener(e -> {

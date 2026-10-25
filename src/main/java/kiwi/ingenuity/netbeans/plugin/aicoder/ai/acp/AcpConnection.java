@@ -18,9 +18,11 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.locks.ReentrantLock;
+import java.util.function.BiConsumer;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 import kiwi.ingenuity.netbeans.plugin.aicoder.PluginSettings;
+import kiwi.ingenuity.netbeans.plugin.aicoder.ai.debuglog.DebugDirectionEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.server.McpHookServerUtil;
 
 /**
@@ -64,6 +66,7 @@ public class AcpConnection {
     private final Thread readerThread;
     private final AtomicBoolean closed = new AtomicBoolean(false);
     private volatile boolean streamEnded;
+    private volatile BiConsumer<DebugDirectionEnum, String> debugObserver;
 
     public AcpConnection(OutputStream out, InputStream in, AcpClientHandler handler) {
         this(out, in, handler, "ACP");
@@ -169,12 +172,19 @@ public class AcpConnection {
     }
 
     /**
-     * Runs {@code task} on the single-thread FIFO notification executor ({@code acp-notify}), the same
-     * executor that delivers session/update notifications and the disconnection callback — so it is ordered
-     * after every notification the reader already queued. The process manager uses this to sequence a
-     * compaction's flag-clear and completion behind the streamed-back summary. Throws
-     * {@link java.util.concurrent.RejectedExecutionException} once the connection is closed; callers run the
-     * task inline then.
+     * Installs a non-blocking observer for raw wire lines. The observer is invoked on the caller's transport thread and
+     * must return quickly.
+     */
+    public void setDebugObserver(BiConsumer<DebugDirectionEnum, String> observer) {
+        this.debugObserver = observer;
+    }
+
+    /**
+     * Runs {@code task} on the single-thread FIFO notification executor ({@code acp-notify}), the same executor that
+     * delivers session/update notifications and the disconnection callback — so it is ordered after every notification
+     * the reader already queued. The process manager uses this to sequence a compaction's flag-clear and completion
+     * behind the streamed-back summary. Throws {@link java.util.concurrent.RejectedExecutionException} once the
+     * connection is closed; callers run the task inline then.
      */
     public void runOnNotifyThread(Runnable task) {
         notifyExecutor.execute(task);
@@ -186,6 +196,10 @@ public class AcpConnection {
      */
     private boolean writeMessage(JsonObject message) {
         String line = GSON.toJson(message);
+        BiConsumer<DebugDirectionEnum, String> observer = debugObserver;
+        if (observer != null) {
+            observer.accept(DebugDirectionEnum.SENT, line);
+        }
         if (PluginSettings.isDebugJson()) {
             LOG.log(Level.INFO, "{0} >> {1}", new Object[]{label, McpHookServerUtil.redactAllSecrets(line)});
         }
@@ -207,6 +221,10 @@ public class AcpConnection {
             while (!closed.get() && (line = reader.readLine()) != null) {
                 String trimmed = line.trim();
                 if (!trimmed.isEmpty()) {
+                    BiConsumer<DebugDirectionEnum, String> observer = debugObserver;
+                    if (observer != null) {
+                        observer.accept(DebugDirectionEnum.RECEIVED, trimmed);
+                    }
                     if (PluginSettings.isDebugJson()) {
                         LOG.log(Level.INFO, "{0} << {1}", new Object[]{label, McpHookServerUtil.redactAllSecrets(trimmed)});
                     }

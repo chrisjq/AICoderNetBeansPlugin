@@ -15,6 +15,7 @@ import com.google.gson.JsonObject;
 import java.util.HashSet;
 import java.util.Map;
 import java.util.Set;
+import java.util.function.BiConsumer;
 import java.util.function.Consumer;
 import java.util.function.Supplier;
 import java.util.logging.Level;
@@ -58,14 +59,20 @@ public final class GithubCopilotSessionEventBridge {
         return obj;
     }
 
-    private static void logRaw(String kind, Object detail) {
+    private void logRaw(String kind, Object detail) {
+        String value = detail == null ? "null" : String.valueOf(detail);
+        Consumer<String> sink = debugLogSink;
+        if (sink != null) {
+            sink.accept(kind + ": " + value);
+        }
         if (PluginSettings.isDebugJson()) {
-            LOG.log(Level.INFO, "copilot event [{0}]: {1}",
-                    new Object[]{kind, detail == null ? "null" : String.valueOf(detail)});
+            LOG.log(Level.INFO, "copilot event [{0}]: {1}", new Object[]{kind, value});
         }
     }
 
     private final AiProcessEventListener listener;
+    private Consumer<String> debugLogSink;
+    private volatile BiConsumer<String, String> eventSink;
     private Consumer<String> onError;
     private Supplier<String> sessionName = () -> null;
     private String lastMessageId = null;
@@ -84,6 +91,24 @@ public final class GithubCopilotSessionEventBridge {
      * Registers a callback for a human-readable error reported mid-session (e.g. quota exceeded, rate limited). The
      * plugin surfaces this in the turn's exit message so the user sees why a turn produced no output.
      */
+    public void setDebugLogSink(Consumer<String> sink) {
+        this.debugLogSink = sink;
+    }
+
+    /**
+     * Receives the turn lifecycle events ({@code kind} and payload) for the backend debug log. Set by the manager.
+     */
+    public void setEventSink(BiConsumer<String, String> sink) {
+        this.eventSink = sink;
+    }
+
+    private void recordEvent(String kind, String payload) {
+        BiConsumer<String, String> sink = eventSink;
+        if (sink != null) {
+            sink.accept(kind, payload);
+        }
+    }
+
     public void setOnError(Consumer<String> cb) {
         this.onError = cb;
     }
@@ -104,7 +129,7 @@ public final class GithubCopilotSessionEventBridge {
         // here. That is exactly the silent-turn-death class of bug: a throwing
         // handler could swallow the assistant's message. Surface it in our log.
         session.setEventErrorHandler((event, error) -> LOG.log(Level.WARNING,
-                "copilot event handler threw for " + (event == null ? "?" : event.getType()), error));
+                                                               "copilot event handler threw for " + (event == null ? "?" : event.getType()), error));
 
         // Catch-all raw logger (debug-gated). The turn that produced no output
         // did so because the content arrived on an event type we did not listen
@@ -120,80 +145,80 @@ public final class GithubCopilotSessionEventBridge {
         // when the agent calls them over HTTP, so they are skipped to avoid
         // double lines.
         session.on(ToolExecutionStartEvent.class, e -> {
-            ToolExecutionStartEvent.ToolExecutionStartEventData data = e.getData();
-            // Not logRaw(): data.arguments() carries this session's secretKey for
-            // MCP tool calls, and an opaque third-party toString() is not something
-            // we can guarantee stays secret-free today or after an SDK upgrade — a
-            // security-sensitive log line must be built only from named accessors we
-            // control, never from an object we do not own the shape of.
-            if (PluginSettings.isDebugJson()) {
-                LOG.log(Level.INFO, "copilot event [tool.start]: toolName={0} mcpServerName={1}",
-                        new Object[]{data == null ? null : data.toolName(),
-                                     data == null ? null : data.mcpServerName()});
-            }
-            if (data == null || !PluginSettings.isLogToolUse()) {
-                return;
-            }
-            String mcpServer = data.mcpServerName();
-            if (mcpServer != null && !mcpServer.isBlank()) {
-                return; // an MCP tool — McpToolInvoker already logged it
-            }
-            String toolName = data.toolName();
-            if (toolName == null || toolName.isBlank()) {
-                return;
-            }
-            McpHookServerUtil.logToolUse(sessionName.get(), toolName, toArgsObject(data.arguments()));
-        });
+               ToolExecutionStartEvent.ToolExecutionStartEventData data = e.getData();
+               // Not logRaw(): data.arguments() carries this session's secretKey for
+               // MCP tool calls, and an opaque third-party toString() is not something
+               // we can guarantee stays secret-free today or after an SDK upgrade — a
+               // security-sensitive log line must be built only from named accessors we
+               // control, never from an object we do not own the shape of.
+               if (PluginSettings.isDebugJson()) {
+                   LOG.log(Level.INFO, "copilot event [tool.start]: toolName={0} mcpServerName={1}",
+                           new Object[]{data == null ? null : data.toolName(),
+                               data == null ? null : data.mcpServerName()});
+               }
+               if (data == null || !PluginSettings.isLogToolUse()) {
+                   return;
+               }
+               String mcpServer = data.mcpServerName();
+               if (mcpServer != null && !mcpServer.isBlank()) {
+                   return; // an MCP tool — McpToolInvoker already logged it
+               }
+               String toolName = data.toolName();
+               if (toolName == null || toolName.isBlank()) {
+                   return;
+               }
+               McpHookServerUtil.logToolUse(sessionName.get(), toolName, toArgsObject(data.arguments()));
+           });
 
         session.on(AssistantMessageDeltaEvent.class, e -> {
-            AssistantMessageDeltaEvent.AssistantMessageDeltaEventData data = e.getData();
-            logRaw("assistant.delta", data == null ? null : data.deltaContent());
-            if (data == null) {
-                return;
-            }
-            String deltaContent = data.deltaContent();
-            if (deltaContent == null || deltaContent.isEmpty()) {
-                return;
-            }
-            // Copilot streams each assistant message as a run of deltas. When a
-            // new message begins mid-turn the chunks otherwise concatenate
-            // ("...this.Waking.."). Insert a blank line at the boundary,
-            // keyed on messageId (mirrors the old parser's heuristic, now with
-            // an authoritative id on every delta instead of a fallback).
-            String messageId = data.messageId();
-            if (messageId != null && lastMessageId != null && !messageId.equals(lastMessageId)) {
-                listener.onAiProcessEvent(new TextDeltaEvent("\n\n", null));
-            }
-            if (messageId != null) {
-                lastMessageId = messageId;
-                streamedMessageIds.add(messageId);
-            }
-            listener.onAiProcessEvent(new TextDeltaEvent(deltaContent, null));
-        });
+               AssistantMessageDeltaEvent.AssistantMessageDeltaEventData data = e.getData();
+               logRaw("assistant.delta", data == null ? null : data.deltaContent());
+               if (data == null) {
+                   return;
+               }
+               String deltaContent = data.deltaContent();
+               if (deltaContent == null || deltaContent.isEmpty()) {
+                   return;
+               }
+               // Copilot streams each assistant message as a run of deltas. When a
+               // new message begins mid-turn the chunks otherwise concatenate
+               // ("...this.Waking.."). Insert a blank line at the boundary,
+               // keyed on messageId (mirrors the old parser's heuristic, now with
+               // an authoritative id on every delta instead of a fallback).
+               String messageId = data.messageId();
+               if (messageId != null && lastMessageId != null && !messageId.equals(lastMessageId)) {
+                   listener.onAiProcessEvent(new TextDeltaEvent("\n\n", null));
+               }
+               if (messageId != null) {
+                   lastMessageId = messageId;
+                   streamedMessageIds.add(messageId);
+               }
+               listener.onAiProcessEvent(new TextDeltaEvent(deltaContent, null));
+           });
         // A complete (non-streamed) assistant message. Reasoning models such as
         // gpt-5-mini deliver their answer this way and fire no deltas at all, so
         // without this the whole turn was dropped — the model "thought and
         // exited" with nothing shown. Emitted only when the id did not stream.
         session.on(AssistantMessageEvent.class, e -> {
-            AssistantMessageEvent.AssistantMessageEventData data = e.getData();
-            logRaw("assistant.message", data == null ? null : data.content());
-            if (data == null) {
-                return;
-            }
-            String content = data.content();
-            String messageId = data.messageId();
-            if (content == null || content.isBlank()
-                || (messageId != null && streamedMessageIds.contains(messageId))) {
-                return;
-            }
-            listener.onAiProcessEvent(new TextDeltaEvent(content, null));
-        });
+               AssistantMessageEvent.AssistantMessageEventData data = e.getData();
+               logRaw("assistant.message", data == null ? null : data.content());
+               if (data == null) {
+                   return;
+               }
+               String content = data.content();
+               String messageId = data.messageId();
+               if (content == null || content.isBlank()
+                       || (messageId != null && streamedMessageIds.contains(messageId))) {
+                   return;
+               }
+               listener.onAiProcessEvent(new TextDeltaEvent(content, null));
+           });
         // Not yet surfaced to the user, but logged so the next unexplained empty
         // turn shows whether the model spoke through one of these instead.
         session.on(AssistantReasoningEvent.class,
-                e -> logRaw("assistant.reasoning", e.getData() == null ? null : e.getData().content()));
+                   e -> logRaw("assistant.reasoning", e.getData() == null ? null : e.getData().content()));
         session.on(AssistantStreamingDeltaEvent.class,
-                e -> logRaw("assistant.streaming_delta", e.getData()));
+                   e -> logRaw("assistant.streaming_delta", e.getData()));
         // assistant.turn_end fires once per internal agentic-loop step (e.g. a
         // tool-only step with no text output), not once per user-visible
         // response — a multi-step response fires it several times before the
@@ -203,65 +228,66 @@ public final class GithubCopilotSessionEventBridge {
         // TurnCompleteEvent; mapping turn_end to it re-enables the send button
         // mid-response whenever a step produces no text.
         session.on(AssistantTurnEndEvent.class, e -> {
-            logRaw("assistant.turn_end", e.getData());
-            lastMessageId = null;
-            errorReportedThisTurn = false;
-        });
+               logRaw("assistant.turn_end", e.getData());
+               lastMessageId = null;
+               errorReportedThisTurn = false;
+           });
         session.on(SessionIdleEvent.class, e -> {
-            logRaw("session.idle", e.getData());
-            errorReportedThisTurn = false;
-            listener.onAiProcessEvent(new TurnCompleteEvent());
-        });
+               logRaw("session.idle", e.getData());
+               errorReportedThisTurn = false;
+               recordEvent("turn-end", "");
+               listener.onAiProcessEvent(new TurnCompleteEvent());
+           });
         session.on(SessionUsageInfoEvent.class, e -> {
-            SessionUsageInfoEvent.SessionUsageInfoEventData data = e.getData();
-            logRaw("session.usage", data);
-            if (data == null || data.currentTokens() == null) {
-                return;
-            }
-            int current = data.currentTokens().intValue();
-            int limit = data.tokenLimit() != null ? data.tokenLimit().intValue() : 0;
-            listener.onAiProcessEvent(new GithubCopilotTokenUsageEvent(current, limit));
-        });
+               SessionUsageInfoEvent.SessionUsageInfoEventData data = e.getData();
+               logRaw("session.usage", data);
+               if (data == null || data.currentTokens() == null) {
+                   return;
+               }
+               int current = data.currentTokens().intValue();
+               int limit = data.tokenLimit() != null ? data.tokenLimit().intValue() : 0;
+               listener.onAiProcessEvent(new GithubCopilotTokenUsageEvent(current, limit));
+           });
         session.on(SessionErrorEvent.class, e -> {
-            SessionErrorEvent.SessionErrorEventData data = e.getData();
-            logRaw("session.error", data);
-            if (data == null || onError == null || errorReportedThisTurn) {
-                return;
-            }
-            String msg = data.message();
-            if (msg != null && !msg.isBlank()) {
-                String messageKey = GithubCopilotJsonKeyEnum.MESSAGE.key();
-                if (msg.trim().startsWith("{") && msg.contains("\"" + messageKey + "\"")) {
-                    try {
-                        JsonObject obj = com.google.gson.JsonParser.parseString(msg).getAsJsonObject();
-                        if (obj.has(messageKey) && !obj.get(messageKey).isJsonNull()) {
-                            msg = obj.get(messageKey).getAsString();
-                        }
-                    }
-                    catch (Exception ignored) {
-                    }
-                }
-                errorReportedThisTurn = true;
-                onError.accept(msg);
-            }
-        });
+               SessionErrorEvent.SessionErrorEventData data = e.getData();
+               logRaw("session.error", data);
+               if (data == null || onError == null || errorReportedThisTurn) {
+                   return;
+               }
+               String msg = data.message();
+               if (msg != null && !msg.isBlank()) {
+                   String messageKey = GithubCopilotJsonKeyEnum.MESSAGE.key();
+                   if (msg.trim().startsWith("{") && msg.contains("\"" + messageKey + "\"")) {
+                       try {
+                           JsonObject obj = com.google.gson.JsonParser.parseString(msg).getAsJsonObject();
+                           if (obj.has(messageKey) && !obj.get(messageKey).isJsonNull()) {
+                               msg = obj.get(messageKey).getAsString();
+                           }
+                       }
+                       catch (Exception ignored) {
+                       }
+                   }
+                   errorReportedThisTurn = true;
+                   onError.accept(msg);
+               }
+           });
         // A model-level call failure (bad request, quota, transport). Previously
         // unhandled, so a failed call left the user with a turn that ended with
         // no output and no explanation. Surface it like any other error.
         session.on(ModelCallFailureEvent.class, e -> {
-            ModelCallFailureEvent.ModelCallFailureEventData data = e.getData();
-            logRaw("model.call_failure", data);
-            if (data == null || onError == null || errorReportedThisTurn) {
-                return;
-            }
-            String msg = data.errorMessage();
-            if (msg == null || msg.isBlank()) {
-                msg = "model call failed"
-                      + (data.failureKind() != null ? " (" + data.failureKind() + ")" : "")
-                      + (data.errorCode() != null ? " [" + data.errorCode() + "]" : "");
-            }
-            errorReportedThisTurn = true;
-            onError.accept(msg);
-        });
+               ModelCallFailureEvent.ModelCallFailureEventData data = e.getData();
+               logRaw("model.call_failure", data);
+               if (data == null || onError == null || errorReportedThisTurn) {
+                   return;
+               }
+               String msg = data.errorMessage();
+               if (msg == null || msg.isBlank()) {
+                   msg = "model call failed"
+                           + (data.failureKind() != null ? " (" + data.failureKind() + ")" : "")
+                           + (data.errorCode() != null ? " [" + data.errorCode() + "]" : "");
+               }
+               errorReportedThisTurn = true;
+               onError.accept(msg);
+           });
     }
 }

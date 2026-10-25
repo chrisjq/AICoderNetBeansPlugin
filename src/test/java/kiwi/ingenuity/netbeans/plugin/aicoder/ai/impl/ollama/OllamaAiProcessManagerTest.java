@@ -28,19 +28,19 @@ import kiwi.ingenuity.netbeans.plugin.aicoder.ai.events.StatusEventTypeEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.events.TextDeltaEvent;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.events.TurnCompleteEvent;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.http.ChatMessage;
-import kiwi.ingenuity.netbeans.plugin.aicoder.ai.http.ChatRequest;
-import kiwi.ingenuity.netbeans.plugin.aicoder.ai.http.ChatResult;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.http.ChatRole;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.http.ChatToolCall;
-import kiwi.ingenuity.netbeans.plugin.aicoder.ai.http.HttpAiClient;
-import kiwi.ingenuity.netbeans.plugin.aicoder.ai.http.OpenAiHttpStatusException;
-import kiwi.ingenuity.netbeans.plugin.aicoder.ai.http.OpenAiJsonKeyEnum;
-import kiwi.ingenuity.netbeans.plugin.aicoder.ai.http.OpenAiToolCallParseException;
-import kiwi.ingenuity.netbeans.plugin.aicoder.ai.http.context.AbstractChatContextBroker;
-import kiwi.ingenuity.netbeans.plugin.aicoder.ai.http.context.ContextBrokerSettings;
-import kiwi.ingenuity.netbeans.plugin.aicoder.ai.http.context.ContextTrimStrategyEnum;
-import kiwi.ingenuity.netbeans.plugin.aicoder.ai.http.context.OllamaChatContextBroker;
+import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.ollama.context.OllamaAbstractChatContextBroker;
+import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.ollama.context.OllamaChatContextBroker;
+import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.ollama.context.OllamaContextBrokerSettings;
+import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.ollama.context.OllamaContextTrimStrategyEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.ollama.events.OllamaTokenUsageEvent;
+import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.ollama.http.OllamaChatRequest;
+import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.ollama.http.OllamaChatResult;
+import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.ollama.http.OllamaHttpAiClient;
+import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.ollama.http.OllamaHttpJsonKeyEnum;
+import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.ollama.http.OllamaHttpStatusException;
+import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.ollama.http.OllamaToolCallParseException;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.ollama.session.OllamaAiSession;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.ollama.settings.OllamaSessionSettings;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.session.AiSession;
@@ -196,7 +196,7 @@ class OllamaAiProcessManagerTest {
     /**
      * A contract-following reply: the model ends its turn with an EndTurn tool call carrying a message.
      */
-    private static final ChatResult END_TURN_ANSWER = new ChatResult(
+    private static final OllamaChatResult END_TURN_ANSWER = new OllamaChatResult(
             "{\"message\":\"answer\",\"tool_name\":\"EndTurn\",\"tool_arguments\":{}}", List.of(), "stop");
 
     /**
@@ -204,7 +204,7 @@ class OllamaAiProcessManagerTest {
      * keys (native replies carry no schema-shaped {@code tool_name}). Ends the turn the same way END_TURN_ANSWER does
      * in schema mode.
      */
-    private static final ChatResult NATIVE_END_TURN_ANSWER = new ChatResult(
+    private static final OllamaChatResult NATIVE_END_TURN_ANSWER = new OllamaChatResult(
             "{\"name\":\"EndTurn\",\"arguments\":{\"message\":\"native final answer\"}}", List.of(), "stop");
 
     /**
@@ -235,10 +235,10 @@ class OllamaAiProcessManagerTest {
 
     /**
      * The EndTurn contract end to end. This is the test whose ABSENCE let EndTurn ship as dead code: the handler only
-     * fires when the call survives parsing, and both SchemaToolCalls.parse and ToolCallExtractor drop any name not
-     * present in knownToolNames. EndTurn was offered as a tool and allowed by the response-format grammar, but never
-     * added to that set, so every EndTurn the model sent was silently discarded — the turn ran on and the raw envelope
-     * was emitted as narration.
+     * fires when the call survives parsing, and both OllamaSchemaToolCalls.parse and OllamaToolCallExtractor drop any
+     * name not present in knownToolNames. EndTurn was offered as a tool and allowed by the response-format grammar, but
+     * never added to that set, so every EndTurn the model sent was silently discarded — the turn ran on and the raw
+     * envelope was emitted as narration.
      * <p>
      * Deleting {@code knownToolNames.add(END_TURN_TOOL_NAME)} from OllamaAiProcessManager turns this red.
      */
@@ -253,10 +253,9 @@ class OllamaAiProcessManagerTest {
             }
         };
 
-        FakeHttpClient fake = new FakeHttpClient(List.of(
-                new ChatResult("{\"message\":\"envelope text\",\"tool_name\":\"EndTurn\","
-                        + "\"tool_arguments\":{\"message\":\"the real final answer\"}}",
-                               List.of(), "stop")));
+        FakeHttpClient fake = new FakeHttpClient(List.of(new OllamaChatResult("{\"message\":\"envelope text\",\"tool_name\":\"EndTurn\","
+                + "\"tool_arguments\":{\"message\":\"the real final answer\"}}",
+                                                                              List.of(), "stop")));
 
         TestOllamaProcessManager manager = new TestOllamaProcessManager(listener, fake);
         manager.setCurrentSession(newSession());
@@ -291,10 +290,9 @@ class OllamaAiProcessManagerTest {
             }
         };
 
-        FakeHttpClient fake = new FakeHttpClient(List.of(
-                new ChatResult("{\"message\":\"fallback answer\",\"tool_name\":\"EndTurn\","
-                        + "\"tool_arguments\":{}}",
-                               List.of(), "stop")));
+        FakeHttpClient fake = new FakeHttpClient(List.of(new OllamaChatResult("{\"message\":\"fallback answer\",\"tool_name\":\"EndTurn\","
+                + "\"tool_arguments\":{}}",
+                                                                              List.of(), "stop")));
 
         TestOllamaProcessManager manager = new TestOllamaProcessManager(listener, fake);
         manager.setCurrentSession(newSession());
@@ -309,8 +307,8 @@ class OllamaAiProcessManagerTest {
 
     /**
      * EndTurn arriving as a NATIVE-STYLE envelope, which the schema parser does not recognise and hands to
-     * ToolCallExtractor. That path has no exemption for EndTurn — unlike SchemaToolCalls:313, which special-cases the
-     * literal — so it drops any name missing from knownToolNames.
+     * OllamaToolCallExtractor. That path has no exemption for EndTurn — unlike OllamaSchemaToolCalls:313, which
+     * special-cases the literal — so it drops any name missing from knownToolNames.
      * <p>
      * This is the test that actually bites: comment out {@code knownToolNames.add(END_TURN_TOOL_NAME)} in
      * OllamaAiProcessManager and it goes red, because the EndTurn call is discarded, the turn continues as narration,
@@ -328,11 +326,10 @@ class OllamaAiProcessManagerTest {
             }
         };
 
-        // No tool_name/message keys, so SchemaToolCalls.parse falls through to ToolCallExtractor.
-        FakeHttpClient fake = new FakeHttpClient(List.of(
-                new ChatResult("{\"name\":\"EndTurn\",\"arguments\":{\"message\":\"extractor final answer\"}}",
-                               List.of(), "stop"),
-                new ChatResult("this second reply must never be requested", List.of(), "stop")));
+        // No tool_name/message keys, so OllamaSchemaToolCalls.parse falls through to OllamaToolCallExtractor.
+        FakeHttpClient fake = new FakeHttpClient(List.of(new OllamaChatResult("{\"name\":\"EndTurn\",\"arguments\":{\"message\":\"extractor final answer\"}}",
+                                                                              List.of(), "stop"),
+                                                         new OllamaChatResult("this second reply must never be requested", List.of(), "stop")));
 
         TestOllamaProcessManager manager = new TestOllamaProcessManager(listener, fake);
         manager.setCurrentSession(newSession());
@@ -363,10 +360,9 @@ class OllamaAiProcessManagerTest {
             }
         };
 
-        FakeHttpClient fakeClient = new FakeHttpClient(List.of(
-                new ChatResult("{\"name\":\"GetPluginVersion\",\"arguments\":{}}",
-                               List.of(), "stop"),
-                new ChatResult("Finished.", List.of(), "stop")));
+        FakeHttpClient fakeClient = new FakeHttpClient(List.of(new OllamaChatResult("{\"name\":\"GetPluginVersion\",\"arguments\":{}}",
+                                                                                    List.of(), "stop"),
+                                                               new OllamaChatResult("Finished.", List.of(), "stop")));
 
         TestOllamaProcessManager manager = new TestOllamaProcessManager(listener, fakeClient);
         AiSession shared = newSession();
@@ -376,7 +372,7 @@ class OllamaAiProcessManagerTest {
 
         assertTrue(done.await(5, TimeUnit.SECONDS));
         assertEquals(2, fakeClient.requests.size());
-        ChatRequest secondRequest = fakeClient.requests.get(1);
+        OllamaChatRequest secondRequest = fakeClient.requests.get(1);
         ChatMessage assistantToolCall = secondRequest.messages().get(2);
         assertEquals(ChatRole.ASSISTANT, assistantToolCall.role());
         assertEquals(1, assistantToolCall.toolCalls().size());
@@ -399,8 +395,8 @@ class OllamaAiProcessManagerTest {
      * USER/ASSISTANT alternation, and the duplicate broke the template so the model stopped calling tools mid-session.
      * The two must fold into ONE assistant message: content joined, tool call retained.
      * <p>
-     * Deleting the merge in {@code AbstractChatContextBroker.appendAssistant} turns this red: the narration keeps its
-     * own ASSISTANT entry and the tool round becomes a second, consecutive one.
+     * Deleting the merge in {@code OllamaAbstractChatContextBroker.appendAssistant} turns this red: the narration keeps
+     * its own ASSISTANT entry and the tool round becomes a second, consecutive one.
      */
     @Test
     void narrationThenToolRoundSendsOneMergedAssistantMessage() throws Exception {
@@ -417,11 +413,10 @@ class OllamaAiProcessManagerTest {
         PluginSettings.setOllamaMaxNarrationTurns(10);
         PluginSettings.setOllamaMaxUnproductiveRounds(10);
 
-        FakeHttpClient fake = new FakeHttpClient(List.of(
-                new ChatResult("I will check the plugin version first", List.of(), "stop"),
-                new ChatResult("off I go",
-                               List.of(new ChatToolCall("c1", "GetPluginVersion", "{}")), "tool_calls"),
-                NATIVE_END_TURN_ANSWER));
+        FakeHttpClient fake = new FakeHttpClient(List.of(new OllamaChatResult("I will check the plugin version first", List.of(), "stop"),
+                                                         new OllamaChatResult("off I go",
+                                                                              List.of(new ChatToolCall("c1", "GetPluginVersion", "{}")), "tool_calls"),
+                                                         NATIVE_END_TURN_ANSWER));
 
         TestOllamaProcessManager manager = new TestOllamaProcessManager(listener, fake);
         manager.setCurrentSession(newSession());
@@ -474,10 +469,9 @@ class OllamaAiProcessManagerTest {
             }
         };
 
-        FakeHttpClient fake = new FakeHttpClient(List.of(
-                new ChatResult("let me check that",
-                               List.of(new ChatToolCall("c0", "GetPluginVersion", "{}")), "tool_calls"),
-                NATIVE_END_TURN_ANSWER));
+        FakeHttpClient fake = new FakeHttpClient(List.of(new OllamaChatResult("let me check that",
+                                                                              List.of(new ChatToolCall("c0", "GetPluginVersion", "{}")), "tool_calls"),
+                                                         NATIVE_END_TURN_ANSWER));
 
         AiSession session = newSession();
         ((OllamaSessionSettings) session.settings()).setUseNativeToolCalling(Boolean.TRUE);
@@ -529,11 +523,10 @@ class OllamaAiProcessManagerTest {
         PluginSettings.setOllamaMaxNarrationTurns(10);
         PluginSettings.setOllamaMaxUnproductiveRounds(10);
 
-        FakeHttpClient fake = new FakeHttpClient(List.of(
-                new ChatResult("I will check the plugin version first", List.of(), "stop"),
-                new ChatResult("off I go",
-                               List.of(new ChatToolCall("c1", "GetPluginVersion", "{}")), "tool_calls"),
-                NATIVE_END_TURN_ANSWER));
+        FakeHttpClient fake = new FakeHttpClient(List.of(new OllamaChatResult("I will check the plugin version first", List.of(), "stop"),
+                                                         new OllamaChatResult("off I go",
+                                                                              List.of(new ChatToolCall("c1", "GetPluginVersion", "{}")), "tool_calls"),
+                                                         NATIVE_END_TURN_ANSWER));
 
         AiSession session = newSession();
         ((OllamaSessionSettings) session.settings()).setUseNativeToolCalling(Boolean.TRUE);
@@ -544,7 +537,7 @@ class OllamaAiProcessManagerTest {
         assertTrue(done.await(5, TimeUnit.SECONDS));
 
         assertEquals(3, fake.requests.size());
-        for (ChatRequest request : fake.requests) {
+        for (OllamaChatRequest request : fake.requests) {
             for (ChatMessage m : request.messages()) {
                 if (m.role() == ChatRole.ASSISTANT) {
                     boolean carriesText = m.content() != null && !m.content().isBlank();
@@ -590,11 +583,10 @@ class OllamaAiProcessManagerTest {
         PluginSettings.setOllamaMaxNarrationTurns(10);
         PluginSettings.setOllamaMaxUnproductiveRounds(10);
 
-        FakeHttpClient fake = new FakeHttpClient(List.of(
-                new ChatResult("I will check the plugin version first", List.of(), "stop"),
-                new ChatResult("off I go",
-                               List.of(new ChatToolCall("c1", "GetPluginVersion", "{}")), "tool_calls"),
-                NATIVE_END_TURN_ANSWER));
+        FakeHttpClient fake = new FakeHttpClient(List.of(new OllamaChatResult("I will check the plugin version first", List.of(), "stop"),
+                                                         new OllamaChatResult("off I go",
+                                                                              List.of(new ChatToolCall("c1", "GetPluginVersion", "{}")), "tool_calls"),
+                                                         NATIVE_END_TURN_ANSWER));
 
         AiSession session = newSession();
         ((OllamaSessionSettings) session.settings()).setUseNativeToolCalling(Boolean.TRUE);
@@ -631,10 +623,9 @@ class OllamaAiProcessManagerTest {
         };
         // Identical calls are caught by the repeat guard, so the two rounds call the SAME tool with DIFFERENT
         // arguments — still the same bug shape (a duplicate id across iterations).
-        FakeHttpClient fake = new FakeHttpClient(List.of(
-                new ChatResult("", List.of(new ChatToolCall("c0", "GetPluginVersion", "{}")), "tool_calls"),
-                new ChatResult("", List.of(new ChatToolCall("c1", "GetPluginVersion", "{\"n\":2}")), "tool_calls"),
-                END_TURN_ANSWER));
+        FakeHttpClient fake = new FakeHttpClient(List.of(new OllamaChatResult("", List.of(new ChatToolCall("c0", "GetPluginVersion", "{}")), "tool_calls"),
+                                                         new OllamaChatResult("", List.of(new ChatToolCall("c1", "GetPluginVersion", "{\"n\":2}")), "tool_calls"),
+                                                         END_TURN_ANSWER));
 
         TestOllamaProcessManager manager = new TestOllamaProcessManager(listener, fake);
         manager.setCurrentSession(newSession());
@@ -670,10 +661,9 @@ class OllamaAiProcessManagerTest {
         List<AiProcessEvent> events = new ArrayList<>();
         AtomicReference<CountDownLatch> closer = new AtomicReference<>(new CountDownLatch(1));
         AiProcessEventListener listener = closerTrackingListener(events, closer);
-        FakeHttpClient fake = new FakeHttpClient(List.of(
-                END_TURN_ANSWER,
-                new ChatResult("{\"message\":\"second answer\",\"tool_name\":\"EndTurn\",\"tool_arguments\":{}}",
-                               List.of(), "stop")));
+        FakeHttpClient fake = new FakeHttpClient(List.of(END_TURN_ANSWER,
+                                                         new OllamaChatResult("{\"message\":\"second answer\",\"tool_name\":\"EndTurn\",\"tool_arguments\":{}}",
+                                                                              List.of(), "stop")));
 
         AiSession session = newSession();
         TestOllamaProcessManager manager = new TestOllamaProcessManager(listener, fake);
@@ -718,14 +708,14 @@ class OllamaAiProcessManagerTest {
 
         // Arguments must differ per call: identical calls are caught by the
         // repeat guard long before the iteration cap is reached.
-        List<ChatResult> repeating = new ArrayList<>();
+        List<OllamaChatResult> repeating = new ArrayList<>();
         // This test is ABOUT the cap, so it sets its own rather than inheriting the class default —
         // the asserted counts below only mean something against a bound stated here.
         PluginSettings.setOllamaMaxToolIterations(25);
         for (int i = 0; i < 30; i++) {
-            repeating.add(new ChatResult("",
-                                         List.of(new ChatToolCall("call-" + i, "GetPluginVersion", "{\"n\":" + i + "}")),
-                                         "tool_calls"));
+            repeating.add(new OllamaChatResult("",
+                                               List.of(new ChatToolCall("call-" + i, "GetPluginVersion", "{\"n\":" + i + "}")),
+                                               "tool_calls"));
         }
         FakeHttpClient fakeClient = new FakeHttpClient(repeating);
         TestOllamaProcessManager manager = new TestOllamaProcessManager(listener, fakeClient);
@@ -756,11 +746,11 @@ class OllamaAiProcessManagerTest {
             }
         };
 
-        List<ChatResult> identical = new ArrayList<>();
+        List<OllamaChatResult> identical = new ArrayList<>();
         for (int i = 0; i < 30; i++) {
-            identical.add(new ChatResult("",
-                                         List.of(new ChatToolCall("call-" + i, "GetPluginVersion", "{}")),
-                                         "tool_calls"));
+            identical.add(new OllamaChatResult("",
+                                               List.of(new ChatToolCall("call-" + i, "GetPluginVersion", "{}")),
+                                               "tool_calls"));
         }
         TestOllamaProcessManager manager
                 = new TestOllamaProcessManager(listener, new FakeHttpClient(identical));
@@ -795,12 +785,12 @@ class OllamaAiProcessManagerTest {
             }
         };
 
-        List<ChatResult> varying = new ArrayList<>();
+        List<OllamaChatResult> varying = new ArrayList<>();
         for (int i = 0; i < 30; i++) {
-            varying.add(new ChatResult("",
-                                       List.of(new ChatToolCall("call-" + i, "GetPluginVersion",
-                                                                "{\"description\":\"attempt " + i + "\"}")),
-                                       "tool_calls"));
+            varying.add(new OllamaChatResult("",
+                                             List.of(new ChatToolCall("call-" + i, "GetPluginVersion",
+                                                                      "{\"description\":\"attempt " + i + "\"}")),
+                                             "tool_calls"));
         }
         TestOllamaProcessManager manager = new TestOllamaProcessManager(
                 listener, new FakeHttpClient(varying), "Description updated.");
@@ -831,9 +821,8 @@ class OllamaAiProcessManagerTest {
                 done.countDown();
             }
         };
-        FakeHttpClient fake = new FakeHttpClient(List.of(
-                new ChatResult("I will inspect that.", List.of(), "stop"),
-                NATIVE_END_TURN_ANSWER));
+        FakeHttpClient fake = new FakeHttpClient(List.of(new OllamaChatResult("I will inspect that.", List.of(), "stop"),
+                                                         NATIVE_END_TURN_ANSWER));
         TestOllamaProcessManager manager = new TestOllamaProcessManager(listener, fake);
         AiSession session = newSession();
         ((OllamaSessionSettings) session.settings()).setUseNativeToolCalling(true);
@@ -843,7 +832,7 @@ class OllamaAiProcessManagerTest {
 
         assertTrue(done.await(5, TimeUnit.SECONDS));
         assertTrue(fake.requests.size() >= 2, "the nudge must permit a follow-up request");
-        ChatRequest followUp = fake.requests.get(1);
+        OllamaChatRequest followUp = fake.requests.get(1);
         ChatMessage last = followUp.messages().get(followUp.messages().size() - 1);
         assertEquals(ChatRole.USER, last.role(),
                      "native follow-up must end on a synthetic USER nudge, not trailing assistant prose");
@@ -866,9 +855,8 @@ class OllamaAiProcessManagerTest {
         };
         AiSession session = newSession();
         ((OllamaSessionSettings) session.settings()).setUseNativeToolCalling(false);
-        FakeHttpClient fake = new FakeHttpClient(List.of(
-                new ChatResult("{\"message\":\"schema narration\",\"tool_name\":\"\"}", List.of(), "stop"),
-                END_TURN_ANSWER));
+        FakeHttpClient fake = new FakeHttpClient(List.of(new OllamaChatResult("{\"message\":\"schema narration\",\"tool_name\":\"\"}", List.of(), "stop"),
+                                                         END_TURN_ANSWER));
         TestOllamaProcessManager manager = new TestOllamaProcessManager(listener, fake);
         manager.setCurrentSession(session);
         manager.start(null, "qwen2.5-coder:7b");
@@ -876,7 +864,7 @@ class OllamaAiProcessManagerTest {
 
         assertTrue(done.await(5, TimeUnit.SECONDS));
         assertTrue(fake.requests.size() >= 2);
-        ChatRequest followUp = fake.requests.get(1);
+        OllamaChatRequest followUp = fake.requests.get(1);
         ChatMessage last = followUp.messages().get(followUp.messages().size() - 1);
         assertEquals(ChatRole.ASSISTANT, last.role(),
                      "schema mode must not receive the native-only USER nudge");
@@ -897,10 +885,9 @@ class OllamaAiProcessManagerTest {
         };
         AiSession session = newSession();
         ((OllamaSessionSettings) session.settings()).setUseNativeToolCalling(true);
-        FakeHttpClient fake = new FakeHttpClient(List.of(
-                new ChatResult("complete answer, first wording", List.of(), "stop"),
-                new ChatResult("complete answer, second wording", List.of(), "stop"),
-                new ChatResult("must not be requested", List.of(), "stop")));
+        FakeHttpClient fake = new FakeHttpClient(List.of(new OllamaChatResult("complete answer, first wording", List.of(), "stop"),
+                                                         new OllamaChatResult("complete answer, second wording", List.of(), "stop"),
+                                                         new OllamaChatResult("must not be requested", List.of(), "stop")));
         TestOllamaProcessManager manager = new TestOllamaProcessManager(listener, fake);
         manager.setCurrentSession(session);
         manager.start(null, "qwen2.5-coder:7b");
@@ -925,10 +912,9 @@ class OllamaAiProcessManagerTest {
         };
         AiSession session = newSession();
         ((OllamaSessionSettings) session.settings()).setUseNativeToolCalling(true);
-        FakeHttpClient fake = new FakeHttpClient(List.of(
-                new ChatResult("I will inspect it.", List.of(), "stop"),
-                new ChatResult("", List.of(new ChatToolCall("c1", "GetPluginVersion", "{}")), "tool_calls"),
-                NATIVE_END_TURN_ANSWER));
+        FakeHttpClient fake = new FakeHttpClient(List.of(new OllamaChatResult("I will inspect it.", List.of(), "stop"),
+                                                         new OllamaChatResult("", List.of(new ChatToolCall("c1", "GetPluginVersion", "{}")), "tool_calls"),
+                                                         NATIVE_END_TURN_ANSWER));
         TestOllamaProcessManager manager = new TestOllamaProcessManager(listener, fake);
         manager.setCurrentSession(session);
         manager.start(null, "qwen2.5-coder:7b");
@@ -951,13 +937,13 @@ class OllamaAiProcessManagerTest {
             }
         };
 
-        List<ChatResult> scripted = new ArrayList<>();
+        List<OllamaChatResult> scripted = new ArrayList<>();
         for (int i = 0; i < 3; i++) {
-            scripted.add(new ChatResult("",
-                                        List.of(new ChatToolCall("c" + i, "GetPluginVersion", "{\"d\":\"v" + i + "\"}")),
-                                        "tool_calls"));
+            scripted.add(new OllamaChatResult("",
+                                              List.of(new ChatToolCall("c" + i, "GetPluginVersion", "{\"d\":\"v" + i + "\"}")),
+                                              "tool_calls"));
         }
-        scripted.add(new ChatResult("Hello! How can I help with your project?", List.of(), "stop"));
+        scripted.add(new OllamaChatResult("Hello! How can I help with your project?", List.of(), "stop"));
 
         // About the UNPRODUCTIVE-ROUND limit, so it raises it to 2: one productive
         // round, two that learn nothing, then the no-tools fallback. The class-wide pin of 1 would exit a
@@ -977,7 +963,7 @@ class OllamaAiProcessManagerTest {
                 && td.text() != null && td.text().contains("How can I help")),
                    "the user must get a real answer, not just a status line");
         // The recovery request must offer no tools, or the model can stall again.
-        ChatRequest recovery = fake.requests.get(fake.requests.size() - 1);
+        OllamaChatRequest recovery = fake.requests.get(fake.requests.size() - 1);
         assertTrue(recovery.toolSchemas().isEmpty(), "final request must offer no tools");
     }
 
@@ -999,11 +985,10 @@ class OllamaAiProcessManagerTest {
         PluginSettings.setOllamaMaxUnproductiveRounds(2);
         PluginSettings.setOllamaMaxNarrationTurns(10);
 
-        FakeHttpClient fake = new FakeHttpClient(List.of(
-                new ChatResult("same", List.of(), "stop"),
-                new ChatResult("same", List.of(), "stop"),
-                new ChatResult("same", List.of(), "stop"),
-                new ChatResult("never reached", List.of(), "stop")));
+        FakeHttpClient fake = new FakeHttpClient(List.of(new OllamaChatResult("same", List.of(), "stop"),
+                                                         new OllamaChatResult("same", List.of(), "stop"),
+                                                         new OllamaChatResult("same", List.of(), "stop"),
+                                                         new OllamaChatResult("never reached", List.of(), "stop")));
         TestOllamaProcessManager manager = new TestOllamaProcessManager(listener, fake);
         manager.setCurrentSession(newSession());
         manager.start(null, "qwen2.5-coder:7b");
@@ -1038,11 +1023,10 @@ class OllamaAiProcessManagerTest {
         PluginSettings.setOllamaMaxUnproductiveRounds(1);
         PluginSettings.setOllamaMaxNarrationTurns(10);
 
-        FakeHttpClient fake = new FakeHttpClient(List.of(
-                new ChatResult("first line", List.of(), "stop"),
-                new ChatResult("a different line", List.of(), "stop"),
-                new ChatResult("yet another line", List.of(), "stop"),
-                END_TURN_ANSWER));
+        FakeHttpClient fake = new FakeHttpClient(List.of(new OllamaChatResult("first line", List.of(), "stop"),
+                                                         new OllamaChatResult("a different line", List.of(), "stop"),
+                                                         new OllamaChatResult("yet another line", List.of(), "stop"),
+                                                         END_TURN_ANSWER));
         TestOllamaProcessManager manager = new TestOllamaProcessManager(listener, fake);
         manager.setCurrentSession(newSession());
         manager.start(null, "qwen2.5-coder:7b");
@@ -1077,11 +1061,10 @@ class OllamaAiProcessManagerTest {
         PluginSettings.setOllamaMaxUnproductiveRounds(10);
         PluginSettings.setOllamaMaxNarrationTurns(3);
 
-        FakeHttpClient fake = new FakeHttpClient(List.of(
-                new ChatResult("one", List.of(), "stop"),
-                new ChatResult("two", List.of(), "stop"),
-                new ChatResult("three", List.of(), "stop"),
-                new ChatResult("never reached", List.of(), "stop")));
+        FakeHttpClient fake = new FakeHttpClient(List.of(new OllamaChatResult("one", List.of(), "stop"),
+                                                         new OllamaChatResult("two", List.of(), "stop"),
+                                                         new OllamaChatResult("three", List.of(), "stop"),
+                                                         new OllamaChatResult("never reached", List.of(), "stop")));
         TestOllamaProcessManager manager = new TestOllamaProcessManager(listener, fake);
         manager.setCurrentSession(newSession());
         manager.start(null, "qwen2.5-coder:7b");
@@ -1116,14 +1099,13 @@ class OllamaAiProcessManagerTest {
         PluginSettings.setOllamaMaxUnproductiveRounds(2);
         PluginSettings.setOllamaMaxNarrationTurns(4);
 
-        FakeHttpClient fake = new FakeHttpClient(List.of(
-                new ChatResult("x", List.of(), "stop"),
-                new ChatResult("x", List.of(), "stop"),
-                new ChatResult("{\"name\":\"GetPluginVersion\",\"arguments\":{\"d\":\"fresh\"}}",
-                               List.of(), "stop"),
-                new ChatResult("x", List.of(), "stop"),
-                new ChatResult("x", List.of(), "stop"),
-                new ChatResult("x", List.of(), "stop")));
+        FakeHttpClient fake = new FakeHttpClient(List.of(new OllamaChatResult("x", List.of(), "stop"),
+                                                         new OllamaChatResult("x", List.of(), "stop"),
+                                                         new OllamaChatResult("{\"name\":\"GetPluginVersion\",\"arguments\":{\"d\":\"fresh\"}}",
+                                                                              List.of(), "stop"),
+                                                         new OllamaChatResult("x", List.of(), "stop"),
+                                                         new OllamaChatResult("x", List.of(), "stop"),
+                                                         new OllamaChatResult("x", List.of(), "stop")));
         TestOllamaProcessManager manager = new TestOllamaProcessManager(listener, fake, "Description updated.");
         manager.setCurrentSession(newSession());
         manager.start(null, "qwen2.5-coder:7b");
@@ -1163,7 +1145,7 @@ class OllamaAiProcessManagerTest {
         PluginSettings.setOllamaMaxNarrationTurns(10);
 
         GatedHttpClient client = new GatedHttpClient(
-                new Gate(new ChatResult("first prose", List.of(), "stop"), false),
+                new Gate(new OllamaChatResult("first prose", List.of(), "stop"), false),
                 new Gate(END_TURN_ANSWER, true));
         TestOllamaProcessManager manager = new TestOllamaProcessManager(listener, client);
         manager.setCurrentSession(newSession());
@@ -1204,7 +1186,7 @@ class OllamaAiProcessManagerTest {
         };
 
         GatedHttpClient client = new GatedHttpClient(
-                new Gate(new ChatResult("", List.of(new ChatToolCall("c0", "GetPluginVersion", "{}")), "tool_calls"), false),
+                new Gate(new OllamaChatResult("", List.of(new ChatToolCall("c0", "GetPluginVersion", "{}")), "tool_calls"), false),
                 new Gate(END_TURN_ANSWER, true));
         TestOllamaProcessManager manager = new TestOllamaProcessManager(listener, client);
         manager.setCurrentSession(newSession());
@@ -1284,7 +1266,7 @@ class OllamaAiProcessManagerTest {
         PluginSettings.setOllamaMaxUnproductiveRounds(2);
 
         GatedHttpClient client = new GatedHttpClient(
-                new Gate(new ChatResult("", List.of(new ChatToolCall("c0", "GetPluginVersion", "{}")), "tool_calls"), false),
+                new Gate(new OllamaChatResult("", List.of(new ChatToolCall("c0", "GetPluginVersion", "{}")), "tool_calls"), false),
                 new Gate(END_TURN_ANSWER, true));
         TestOllamaProcessManager manager = new TestOllamaProcessManager(listener, client);
         manager.setCurrentSession(newSession());
@@ -1331,7 +1313,7 @@ class OllamaAiProcessManagerTest {
         AiProcessEventListener listener = closerTrackingListener(events, closer);
 
         GatedHttpClient client = new GatedHttpClient(
-                new Gate(new ChatResult("", List.of(new ChatToolCall("c0", "GetPluginVersion", "{}")), "tool_calls"), false),
+                new Gate(new OllamaChatResult("", List.of(new ChatToolCall("c0", "GetPluginVersion", "{}")), "tool_calls"), false),
                 new Gate(END_TURN_ANSWER, false),
                 new Gate(END_TURN_ANSWER, true));
         TestOllamaProcessManager manager = new TestOllamaProcessManager(listener, client);
@@ -1390,10 +1372,10 @@ class OllamaAiProcessManagerTest {
         PluginSettings.setOllamaMaxNarrationTurns(3);
 
         GatedHttpClient client = new GatedHttpClient(
-                new Gate(new ChatResult("first", List.of(), "stop"), false),
-                new Gate(new ChatResult("second", List.of(), "stop"), true),
-                new Gate(new ChatResult("third", List.of(), "stop"), true),
-                new Gate(new ChatResult("fourth", List.of(), "stop"), true));
+                new Gate(new OllamaChatResult("first", List.of(), "stop"), false),
+                new Gate(new OllamaChatResult("second", List.of(), "stop"), true),
+                new Gate(new OllamaChatResult("third", List.of(), "stop"), true),
+                new Gate(new OllamaChatResult("fourth", List.of(), "stop"), true));
         TestOllamaProcessManager manager = new TestOllamaProcessManager(listener, client);
         manager.setCurrentSession(newSession());
         manager.start(null, "qwen2.5-coder:7b");
@@ -1437,11 +1419,10 @@ class OllamaAiProcessManagerTest {
         PluginSettings.setOllamaMaxUnproductiveRounds(3);
         PluginSettings.setOllamaMaxNarrationTurns(10);
 
-        FakeHttpClient fake = new FakeHttpClient(List.of(
-                new ChatResult("one", List.of(), "stop"),
-                new ChatResult("one", List.of(), "stop"),
-                new ChatResult("two", List.of(), "stop"),
-                END_TURN_ANSWER));
+        FakeHttpClient fake = new FakeHttpClient(List.of(new OllamaChatResult("one", List.of(), "stop"),
+                                                         new OllamaChatResult("one", List.of(), "stop"),
+                                                         new OllamaChatResult("two", List.of(), "stop"),
+                                                         END_TURN_ANSWER));
         TestOllamaProcessManager manager = new TestOllamaProcessManager(listener, fake);
         manager.setCurrentSession(newSession());
         manager.start(null, "qwen2.5-coder:7b");
@@ -1473,7 +1454,7 @@ class OllamaAiProcessManagerTest {
             }
         };
 
-        FakeHttpClient fake = new FakeHttpClient(List.of(new ChatResult("{}", List.of(), "stop")));
+        FakeHttpClient fake = new FakeHttpClient(List.of(new OllamaChatResult("{}", List.of(), "stop")));
         TestOllamaProcessManager manager = new TestOllamaProcessManager(listener, fake);
         AiSession shared = newSession("sid5", "session5");
         manager.setCurrentSession(shared);
@@ -1513,13 +1494,13 @@ class OllamaAiProcessManagerTest {
             }
         };
 
-        HttpAiClient cancelClient = (ChatRequest request, Consumer<String> onTextDelta) -> {
+        OllamaHttpAiClient cancelClient = (OllamaChatRequest request, Consumer<String> onTextDelta) -> {
             if (ref[0] != null) {
                 ref[0].interrupt(InterruptTypeEnum.Cancel);
             }
-            return new ChatResult("",
-                                  List.of(new ChatToolCall("c0", "GetPluginVersion", "{}")),
-                                  "tool_calls");
+            return new OllamaChatResult("",
+                                        List.of(new ChatToolCall("c0", "GetPluginVersion", "{}")),
+                                        "tool_calls");
         };
 
         TestOllamaProcessManager manager = new TestOllamaProcessManager(listener, cancelClient);
@@ -1560,7 +1541,7 @@ class OllamaAiProcessManagerTest {
         AtomicReference<CountDownLatch> closer = new AtomicReference<>(new CountDownLatch(1));
         AiProcessEventListener listener = closerTrackingListener(events, closer);
         GatedHttpClient client = new GatedHttpClient(
-                new Gate(new ChatResult("", List.of(new ChatToolCall("c0", "GetPluginVersion", "{}")), "tool_calls"), false),
+                new Gate(new OllamaChatResult("", List.of(new ChatToolCall("c0", "GetPluginVersion", "{}")), "tool_calls"), false),
                 new Gate(END_TURN_ANSWER, true));
         TestOllamaProcessManager manager = new TestOllamaProcessManager(listener, client);
         manager.setCurrentSession(newSession());
@@ -1636,7 +1617,7 @@ class OllamaAiProcessManagerTest {
         AtomicReference<CountDownLatch> closer = new AtomicReference<>(new CountDownLatch(1));
         AiProcessEventListener listener = closerTrackingListener(events, closer);
         GatedHttpClient client = new GatedHttpClient(
-                new Gate(new ChatResult("", List.of(new ChatToolCall("c0", "GetPluginVersion", "{}")), "tool_calls"), false),
+                new Gate(new OllamaChatResult("", List.of(new ChatToolCall("c0", "GetPluginVersion", "{}")), "tool_calls"), false),
                 new Gate(END_TURN_ANSWER, true));
         TestOllamaProcessManager manager = new TestOllamaProcessManager(listener, client);
         manager.setCurrentSession(newSession());
@@ -1701,7 +1682,7 @@ class OllamaAiProcessManagerTest {
         AtomicReference<CountDownLatch> closer = new AtomicReference<>(new CountDownLatch(1));
         AiProcessEventListener listener = closerTrackingListener(events, closer);
         GatedHttpClient client = new GatedHttpClient(
-                new Gate(new ChatResult("", List.of(new ChatToolCall("c0", "GetPluginVersion", "{}")), "tool_calls"), false),
+                new Gate(new OllamaChatResult("", List.of(new ChatToolCall("c0", "GetPluginVersion", "{}")), "tool_calls"), false),
                 new Gate(END_TURN_ANSWER, false));
         TestOllamaProcessManager manager = new TestOllamaProcessManager(listener, client);
         manager.setCurrentSession(newSession());
@@ -1762,7 +1743,7 @@ class OllamaAiProcessManagerTest {
         AtomicReference<CountDownLatch> closer = new AtomicReference<>(new CountDownLatch(1));
         AiProcessEventListener listener = closerTrackingListener(events, closer);
         GatedHttpClient client = new GatedHttpClient(
-                new Gate(new ChatResult("", List.of(new ChatToolCall("c0", "GetPluginVersion", "{}")), "tool_calls"), false),
+                new Gate(new OllamaChatResult("", List.of(new ChatToolCall("c0", "GetPluginVersion", "{}")), "tool_calls"), false),
                 new Gate(END_TURN_ANSWER, true));
         TestOllamaProcessManager manager = new TestOllamaProcessManager(listener, client);
         manager.setCurrentSession(newSession());
@@ -1809,7 +1790,7 @@ class OllamaAiProcessManagerTest {
         List<AiProcessEvent> events = new CopyOnWriteArrayList<>();
         AiProcessEventListener listener = events::add;
         GatedHttpClient client = new GatedHttpClient(
-                new Gate(new ChatResult("", List.of(new ChatToolCall("c0", "GetPluginVersion", "{}")), "tool_calls"), false));
+                new Gate(new OllamaChatResult("", List.of(new ChatToolCall("c0", "GetPluginVersion", "{}")), "tool_calls"), false));
         TestOllamaProcessManager manager = new TestOllamaProcessManager(listener, client);
         manager.setCurrentSession(newSession());
         manager.start(null, "qwen2.5-coder:7b");
@@ -1875,11 +1856,11 @@ class OllamaAiProcessManagerTest {
             }
         };
 
-        HttpAiClient cancelClient = (ChatRequest request, Consumer<String> onTextDelta) -> {
+        OllamaHttpAiClient cancelClient = (OllamaChatRequest request, Consumer<String> onTextDelta) -> {
             if (ref[0] != null) {
                 ref[0].interrupt(InterruptTypeEnum.Cancel);
             }
-            return new ChatResult("", List.of(new ChatToolCall("c0", "GetPluginVersion", "{}")), "tool_calls");
+            return new OllamaChatResult("", List.of(new ChatToolCall("c0", "GetPluginVersion", "{}")), "tool_calls");
         };
 
         TestOllamaProcessManager manager = new TestOllamaProcessManager(listener, cancelClient);
@@ -1915,14 +1896,14 @@ class OllamaAiProcessManagerTest {
             }
         };
 
-        HttpAiClient client = (ChatRequest request, Consumer<String> onTextDelta) -> {
+        OllamaHttpAiClient client = (OllamaChatRequest request, Consumer<String> onTextDelta) -> {
             if (request.toolSchemas().isEmpty()) {
                 // The no-tools fallback request: simulate a Cancel landing mid-call, exactly like a real
                 // Stop press racing this HTTP round-trip.
                 ref[0].interrupt(InterruptTypeEnum.Cancel);
-                return new ChatResult("too late", List.of(), "stop");
+                return new OllamaChatResult("too late", List.of(), "stop");
             }
-            return new ChatResult("", List.of(new ChatToolCall("c0", "GetPluginVersion", "{}")), "tool_calls");
+            return new OllamaChatResult("", List.of(new ChatToolCall("c0", "GetPluginVersion", "{}")), "tool_calls");
         };
 
         TestOllamaProcessManager manager = new TestOllamaProcessManager(listener, client);
@@ -1964,18 +1945,18 @@ class OllamaAiProcessManagerTest {
         };
 
         AtomicInteger toolRound = new AtomicInteger();
-        HttpAiClient client = (ChatRequest request, Consumer<String> onTextDelta) -> {
+        OllamaHttpAiClient client = (OllamaChatRequest request, Consumer<String> onTextDelta) -> {
             if (request.toolSchemas().isEmpty()) {
                 ref[0].interrupt(InterruptTypeEnum.Cancel);
-                return new ChatResult("too late", List.of(), "stop");
+                return new OllamaChatResult("too late", List.of(), "stop");
             }
             // Distinct arguments each round: a repeated call signature is short-circuited as
             // "already called" without even reaching the tool, which would trip the (pinned to 1)
             // unproductive-rounds fallback tested separately — this test is about the hard cap instead, so
             // every round must be genuinely productive to survive long enough to reach it.
             int n = toolRound.incrementAndGet();
-            return new ChatResult("", List.of(new ChatToolCall("c" + n, "GetPluginVersion", "{\"n\":" + n + "}")),
-                                  "tool_calls");
+            return new OllamaChatResult("", List.of(new ChatToolCall("c" + n, "GetPluginVersion", "{\"n\":" + n + "}")),
+                                        "tool_calls");
         };
 
         TestOllamaProcessManager manager = new TestOllamaProcessManager(listener, client);
@@ -2002,9 +1983,8 @@ class OllamaAiProcessManagerTest {
     void historySurvivesAcrossTurns() throws Exception {
         AiProcessEventListener listener = event -> {
         };
-        FakeHttpClient fakeClient = new FakeHttpClient(List.of(
-                new ChatResult("first answer", List.of(), "stop"),
-                new ChatResult("second answer", List.of(), "stop")));
+        FakeHttpClient fakeClient = new FakeHttpClient(List.of(new OllamaChatResult("first answer", List.of(), "stop"),
+                                                               new OllamaChatResult("second answer", List.of(), "stop")));
 
         TestOllamaProcessManager manager = new TestOllamaProcessManager(listener, fakeClient);
         manager.setCurrentSession(newSession());
@@ -2034,8 +2014,7 @@ class OllamaAiProcessManagerTest {
     void anIoExceptionMidTurnDoesNotBrickTheSession() throws Exception {
         AiProcessEventListener listener = event -> {
         };
-        FailFirstHttpClient client = new FailFirstHttpClient(List.of(
-                new ChatResult("answer after recovery", List.of(), "stop")));
+        FailFirstHttpClient client = new FailFirstHttpClient(List.of(new OllamaChatResult("answer after recovery", List.of(), "stop")));
 
         TestOllamaProcessManager manager = new TestOllamaProcessManager(listener, client);
         manager.setCurrentSession(newSession());
@@ -2063,15 +2042,14 @@ class OllamaAiProcessManagerTest {
     void theStopCallingToolsPromptNeverEntersHistory() throws Exception {
         AiProcessEventListener listener = event -> {
         };
-        FakeHttpClient fakeClient = new FakeHttpClient(List.of(
-                new ChatResult("{\"name\":\"GetPluginVersion\",\"arguments\":{\"d\":\"a\"}}",
-                               List.of(), "stop"),
-                new ChatResult("{\"name\":\"GetPluginVersion\",\"arguments\":{\"d\":\"b\"}}",
-                               List.of(), "stop"),
-                new ChatResult("{\"name\":\"GetPluginVersion\",\"arguments\":{\"d\":\"c\"}}",
-                               List.of(), "stop"),
-                new ChatResult("fine, here is your answer", List.of(), "stop"),
-                new ChatResult("second turn answer", List.of(), "stop")));
+        FakeHttpClient fakeClient = new FakeHttpClient(List.of(new OllamaChatResult("{\"name\":\"GetPluginVersion\",\"arguments\":{\"d\":\"a\"}}",
+                                                                                    List.of(), "stop"),
+                                                               new OllamaChatResult("{\"name\":\"GetPluginVersion\",\"arguments\":{\"d\":\"b\"}}",
+                                                                                    List.of(), "stop"),
+                                                               new OllamaChatResult("{\"name\":\"GetPluginVersion\",\"arguments\":{\"d\":\"c\"}}",
+                                                                                    List.of(), "stop"),
+                                                               new OllamaChatResult("fine, here is your answer", List.of(), "stop"),
+                                                               new OllamaChatResult("second turn answer", List.of(), "stop")));
 
         // About the UNPRODUCTIVE-ROUND limit reaching the no-tools fallback, so it needs 2 unproductive
         // rounds before the fallback rather than the class-wide pin of 1.
@@ -2088,7 +2066,7 @@ class OllamaAiProcessManagerTest {
         manager.sendPrompt("next question", home, List.of());
         awaitIdle(manager);
 
-        ChatRequest last = fakeClient.requests.get(fakeClient.requests.size() - 1);
+        OllamaChatRequest last = fakeClient.requests.get(fakeClient.requests.size() - 1);
         StringBuilder all = new StringBuilder();
         for (ChatMessage m : last.messages()) {
             String c = m.content() == null ? "" : m.content();
@@ -2120,7 +2098,7 @@ class OllamaAiProcessManagerTest {
 
         assertEquals(2, client.requests.size(),
                      "one parse-failure request, then the repaired retry — the turn must survive, not die on the 500");
-        ChatRequest repaired = client.requests.get(1);
+        OllamaChatRequest repaired = client.requests.get(1);
         ChatMessage recoveryAssistant = repaired.messages().stream()
                 .filter(m -> m.role() == ChatRole.ASSISTANT
                         && m.toolCalls().size() == 1
@@ -2202,9 +2180,8 @@ class OllamaAiProcessManagerTest {
     void pinnedContextReachesTheBrokerAndIsNotDuplicatedPerTurn() throws Exception {
         AiProcessEventListener listener = event -> {
         };
-        FakeHttpClient fakeClient = new FakeHttpClient(List.of(
-                new ChatResult("first answer", List.of(), "stop"),
-                new ChatResult("second answer", List.of(), "stop")));
+        FakeHttpClient fakeClient = new FakeHttpClient(List.of(new OllamaChatResult("first answer", List.of(), "stop"),
+                                                               new OllamaChatResult("second answer", List.of(), "stop")));
 
         TestOllamaProcessManager manager = new TestOllamaProcessManager(listener, fakeClient);
         manager.setCurrentSession(newSession());
@@ -2227,15 +2204,14 @@ class OllamaAiProcessManagerTest {
         assertEquals(1, countOccurrences(system, "BASELINE-BLOCK"),
                      "BASELINE pin must appear exactly once after two identical upserts");
         assertTrue(system.indexOf("IDENTITY-BLOCK") < system.indexOf("BASELINE-BLOCK"),
-                   "IDENTITY slot is declared before BASELINE in PinSlotEnum so it must render first");
+                   "IDENTITY slot is declared before BASELINE in OllamaPinSlotEnum so it must render first");
     }
 
     @Test
     void reportedUsageReachesTheBrokerAndCalibratesTheEstimator() throws Exception {
         AiProcessEventListener listener = event -> {
         };
-        FakeHttpClient fakeClient = new FakeHttpClient(List.of(
-                new ChatResult("answer", List.of(), "stop", 5000, 20)));
+        FakeHttpClient fakeClient = new FakeHttpClient(List.of(new OllamaChatResult("answer", List.of(), "stop", 5000, 20)));
 
         TestOllamaProcessManager manager = new TestOllamaProcessManager(listener, fakeClient);
         manager.setCurrentSession(newSession());
@@ -2253,32 +2229,30 @@ class OllamaAiProcessManagerTest {
     void sessionSettingsOverrideGlobalDefaultsInTheBroker() throws Exception {
         AiProcessEventListener listener = event -> {
         };
-        FakeHttpClient fakeClient = new FakeHttpClient(List.of(
-                new ChatResult("a", List.of(), "stop")));
+        FakeHttpClient fakeClient = new FakeHttpClient(List.of(new OllamaChatResult("a", List.of(), "stop")));
         TestOllamaProcessManager manager = new TestOllamaProcessManager(listener, fakeClient);
 
         AiSession s = newSession();
         ((OllamaSessionSettings) s.settings()).setContextTokenThreshold(1234);
-        ((OllamaSessionSettings) s.settings()).setContextTrimStrategy(ContextTrimStrategyEnum.DROP);
+        ((OllamaSessionSettings) s.settings()).setContextTrimStrategy(OllamaContextTrimStrategyEnum.DROP);
         manager.setCurrentSession(s);
         manager.start(null, "qwen2.5-coder:7b");
 
         assertEquals(1234, manager.brokerSettingsForTest().tokenThreshold());
-        assertEquals(ContextTrimStrategyEnum.DROP, manager.brokerSettingsForTest().strategy());
+        assertEquals(OllamaContextTrimStrategyEnum.DROP, manager.brokerSettingsForTest().strategy());
     }
 
     @Test
     void summariserWiredInStartIsUsedWhenSummariseStrategyTrims() throws Exception {
         AiProcessEventListener listener = event -> {
         };
-        FakeHttpClient fakeClient = new FakeHttpClient(List.of(
-                new ChatResult("first answer", List.of(), "stop"),
-                new ChatResult("a short summary of turn one", List.of(), "stop"),
-                new ChatResult("second answer", List.of(), "stop")));
+        FakeHttpClient fakeClient = new FakeHttpClient(List.of(new OllamaChatResult("first answer", List.of(), "stop"),
+                                                               new OllamaChatResult("a short summary of turn one", List.of(), "stop"),
+                                                               new OllamaChatResult("second answer", List.of(), "stop")));
 
         TestOllamaProcessManager manager = new TestOllamaProcessManager(listener, fakeClient);
         AiSession s = newSession();
-        ((OllamaSessionSettings) s.settings()).setContextTrimStrategy(ContextTrimStrategyEnum.SUMMARISE);
+        ((OllamaSessionSettings) s.settings()).setContextTrimStrategy(OllamaContextTrimStrategyEnum.SUMMARISE);
         ((OllamaSessionSettings) s.settings()).setContextTokenThreshold(1);
         manager.setCurrentSession(s);
         manager.start(null, "qwen2.5-coder:7b");
@@ -2551,7 +2525,7 @@ class OllamaAiProcessManagerTest {
         awaitIdle(manager);
 
         // Recalibrate AFTER the turn commits, not before start(): the standing tool-instructions pin
-        // (upserted per-turn, OllamaAiProcessManager's own PinSlotEnum.TOOLS) dwarfs one short exchange —
+        // (upserted per-turn, OllamaAiProcessManager's own OllamaPinSlotEnum.TOOLS) dwarfs one short exchange —
         // measured at ~750+ of this turn's ~800 total tokens — so any threshold small enough to guarantee
         // eviction via the normal 70%-of-threshold low-water mark also trips compactNow()'s own
         // pinned-content guard (pinnedCost >= lowWater), which bails out at evicted=0 before ever reaching
@@ -2559,7 +2533,7 @@ class OllamaAiProcessManagerTest {
         // lowWater is threshold*0/100=0, so "lowWater > 0" is false and the guard never fires, and the
         // eviction loop's target is likewise 0, so any nonzero usage is "over budget" — evicting the
         // committed group regardless of exactly how large the pin turns out to be.
-        ContextBrokerSettings recalibrated = ContextBrokerSettings.defaults();
+        OllamaContextBrokerSettings recalibrated = OllamaContextBrokerSettings.defaults();
         recalibrated.setTokenThreshold(1);
         recalibrated.setTrimTargetPercent(0);
         manager.broker.updateSettings(recalibrated);
@@ -2607,9 +2581,8 @@ class OllamaAiProcessManagerTest {
     void contextIsSavedByDefaultAndRestoredIntoTheNextWireRequest() throws Exception {
         AiProcessEventListener listener = event -> {
         };
-        FakeHttpClient client = new FakeHttpClient(List.of(
-                new ChatResult("first answer", List.of(), "stop"),
-                new ChatResult("second answer", List.of(), "stop")));
+        FakeHttpClient client = new FakeHttpClient(List.of(new OllamaChatResult("first answer", List.of(), "stop"),
+                                                           new OllamaChatResult("second answer", List.of(), "stop")));
 
         AiSession session = newSession();
         TestOllamaProcessManager first = new TestOllamaProcessManager(listener, client);
@@ -2639,9 +2612,8 @@ class OllamaAiProcessManagerTest {
     void contextIsSavedOnStopAndRestoredOnStartWhenEnabled() throws Exception {
         AiProcessEventListener listener = event -> {
         };
-        FakeHttpClient client = new FakeHttpClient(List.of(
-                new ChatResult("first answer", List.of(), "stop"),
-                new ChatResult("second answer", List.of(), "stop")));
+        FakeHttpClient client = new FakeHttpClient(List.of(new OllamaChatResult("first answer", List.of(), "stop"),
+                                                           new OllamaChatResult("second answer", List.of(), "stop")));
 
         AiSession session = newSession();
         ((OllamaSessionSettings) session.settings()).setContextPersistOnClose(true);
@@ -2667,8 +2639,7 @@ class OllamaAiProcessManagerTest {
     void contextIsNotSavedWhenPersistenceIsOff() throws Exception {
         AiProcessEventListener listener = event -> {
         };
-        FakeHttpClient client = new FakeHttpClient(List.of(
-                new ChatResult("answer", List.of(), "stop")));
+        FakeHttpClient client = new FakeHttpClient(List.of(new OllamaChatResult("answer", List.of(), "stop")));
 
         AiSession session = newSession();
         ((OllamaSessionSettings) session.settings()).setContextPersistOnClose(false);
@@ -2698,9 +2669,8 @@ class OllamaAiProcessManagerTest {
     void tokenThresholdChangeBetweenTurnsIsPickedUpOnTheNextTurn() throws Exception {
         AiProcessEventListener listener = event -> {
         };
-        FakeHttpClient fakeClient = new FakeHttpClient(List.of(
-                new ChatResult("first answer", List.of(), "stop"),
-                new ChatResult("second answer", List.of(), "stop")));
+        FakeHttpClient fakeClient = new FakeHttpClient(List.of(new OllamaChatResult("first answer", List.of(), "stop"),
+                                                               new OllamaChatResult("second answer", List.of(), "stop")));
 
         AiSession s = newSession();
         ((OllamaSessionSettings) s.settings()).setContextTokenThreshold(9000);
@@ -2726,12 +2696,11 @@ class OllamaAiProcessManagerTest {
     void loweringThresholdBetweenTurnsCausesTheBrokerToActuallyTrimOnTheNextTurn() throws Exception {
         AiProcessEventListener listener = event -> {
         };
-        FakeHttpClient fakeClient = new FakeHttpClient(List.of(
-                new ChatResult("first answer", List.of(), "stop"),
-                new ChatResult("second answer", List.of(), "stop")));
+        FakeHttpClient fakeClient = new FakeHttpClient(List.of(new OllamaChatResult("first answer", List.of(), "stop"),
+                                                               new OllamaChatResult("second answer", List.of(), "stop")));
 
         AiSession s = newSession();
-        ((OllamaSessionSettings) s.settings()).setContextTrimStrategy(ContextTrimStrategyEnum.DROP);
+        ((OllamaSessionSettings) s.settings()).setContextTrimStrategy(OllamaContextTrimStrategyEnum.DROP);
         ((OllamaSessionSettings) s.settings()).setContextTokenThreshold(1_000_000);
         TestOllamaProcessManager manager = new TestOllamaProcessManager(listener, fakeClient);
         manager.setCurrentSession(s);
@@ -2756,7 +2725,7 @@ class OllamaAiProcessManagerTest {
     void reasoningEffortIsOmittedFromTheRequestWhenNotSet() throws Exception {
         AiProcessEventListener listener = event -> {
         };
-        FakeHttpClient fakeClient = new FakeHttpClient(List.of(new ChatResult("answer", List.of(), "stop")));
+        FakeHttpClient fakeClient = new FakeHttpClient(List.of(new OllamaChatResult("answer", List.of(), "stop")));
         TestOllamaProcessManager manager = new TestOllamaProcessManager(listener, fakeClient);
         manager.setCurrentSession(newSession());
         manager.start(null, "qwen2.5-coder:7b");
@@ -2770,7 +2739,7 @@ class OllamaAiProcessManagerTest {
     void reasoningEffortFromSessionSettingsIsSentWithTheExactValue() throws Exception {
         AiProcessEventListener listener = event -> {
         };
-        FakeHttpClient fakeClient = new FakeHttpClient(List.of(new ChatResult("answer", List.of(), "stop")));
+        FakeHttpClient fakeClient = new FakeHttpClient(List.of(new OllamaChatResult("answer", List.of(), "stop")));
         TestOllamaProcessManager manager = new TestOllamaProcessManager(listener, fakeClient);
         AiSession s = newSession();
         ((OllamaSessionSettings) s.settings()).setReasoningEffort("high");
@@ -2795,7 +2764,7 @@ class OllamaAiProcessManagerTest {
         AtomicReference<CountDownLatch> closer = new AtomicReference<>(new CountDownLatch(1));
         AiProcessEventListener listener = closerTrackingListener(events, closer);
         RejectReasoningEffortHttpClient client
-                = new RejectReasoningEffortHttpClient(new ChatResult("answer", List.of(), "stop"));
+                = new RejectReasoningEffortHttpClient(new OllamaChatResult("answer", List.of(), "stop"));
         TestOllamaProcessManager manager = new TestOllamaProcessManager(listener, client);
         AiSession s = newSession();
         ((OllamaSessionSettings) s.settings()).setReasoningEffort("high");
@@ -2809,7 +2778,7 @@ class OllamaAiProcessManagerTest {
         assertNull(client.requests.get(1).reasoningEffort(), "the retry must omit the field");
         long infoCount = events.stream().filter(e -> e instanceof StatusEvent se
                 && se.type() == StatusEventTypeEnum.INFO
-                && se.text() != null && se.text().contains(OpenAiJsonKeyEnum.REASONING_EFFORT.key())).count();
+                && se.text() != null && se.text().contains(OllamaHttpJsonKeyEnum.REASONING_EFFORT.key())).count();
         assertEquals(1, infoCount, "exactly one INFO event for the rejection");
 
         closer.set(new CountDownLatch(1));
@@ -2874,7 +2843,7 @@ class OllamaAiProcessManagerTest {
 
         long infoCount = events.stream().filter(e -> e instanceof StatusEvent se
                 && se.type() == StatusEventTypeEnum.INFO
-                && se.text() != null && se.text().contains(OpenAiJsonKeyEnum.REASONING_EFFORT.key())).count();
+                && se.text() != null && se.text().contains(OllamaHttpJsonKeyEnum.REASONING_EFFORT.key())).count();
         assertEquals(1, infoCount,
                      "exactly one INFO event for the whole turn — not a second one from the fallback request");
     }
@@ -2903,7 +2872,7 @@ class OllamaAiProcessManagerTest {
             // Bare prose is narration under the EndTurn contract, so it would hit the narration bound and
             // fire a second INFO ("answered without signalling it had finished") — correct behaviour, but
             // noise for a test that is about the reasoning-effort pre-flight clear.
-            FakeHttpClient fakeClient = new FakeHttpClient(List.of(new ChatResult(
+            FakeHttpClient fakeClient = new FakeHttpClient(List.of(new OllamaChatResult(
                     "{\"message\":\"answer\",\"tool_name\":\"EndTurn\",\"tool_arguments\":{}}",
                     List.of(), "stop")));
             TestOllamaProcessManager manager = new TestOllamaProcessManager(listener, fakeClient);
@@ -2943,25 +2912,25 @@ class OllamaAiProcessManagerTest {
      * {@code toolSchemas()} is constant across every request for this session type and cannot tell the tool-call rounds
      * apart from the fallback round.
      */
-    private static final class RejectReasoningEffortThenBarrenLoopHttpClient implements HttpAiClient {
+    private static final class RejectReasoningEffortThenBarrenLoopHttpClient implements OllamaHttpAiClient {
 
-        private final List<ChatRequest> requests = new ArrayList<>();
+        private final List<OllamaChatRequest> requests = new ArrayList<>();
 
         @Override
-        public ChatResult chat(ChatRequest request, Consumer<String> onTextDelta) throws IOException {
+        public OllamaChatResult chat(OllamaChatRequest request, Consumer<String> onTextDelta) throws IOException {
             int ordinal = requests.size();
             requests.add(request);
             if (ordinal == 0) {
-                throw new OpenAiHttpStatusException(400, "bad request: unknown field reasoning_effort");
+                throw new OllamaHttpStatusException(400, "bad request: unknown field reasoning_effort");
             }
             if (ordinal <= 3) {
                 // The retry, then two more rounds of the model repeating the SAME call — drives barrenRounds to 2.
-                return new ChatResult("", List.of(new ChatToolCall("call-x", "GetPluginVersion", "{}")), "tool_calls");
+                return new OllamaChatResult("", List.of(new ChatToolCall("call-x", "GetPluginVersion", "{}")), "tool_calls");
             }
             // ordinal 4: the no-tools fallback request from answerWithoutTools.
             String text = "fine, here is your answer";
             onTextDelta.accept(text);
-            return new ChatResult(text, List.of(), "stop");
+            return new OllamaChatResult(text, List.of(), "stop");
         }
     }
 
@@ -2969,20 +2938,20 @@ class OllamaAiProcessManagerTest {
      * Rejects any request carrying reasoning_effort with a 400, exactly the way a server that only understands Ollama's
      * native {@code think} parameter would behave against the OpenAI-compatible endpoint.
      */
-    private static final class RejectReasoningEffortHttpClient implements HttpAiClient {
+    private static final class RejectReasoningEffortHttpClient implements OllamaHttpAiClient {
 
-        private final ChatResult okResult;
-        private final List<ChatRequest> requests = new ArrayList<>();
+        private final OllamaChatResult okResult;
+        private final List<OllamaChatRequest> requests = new ArrayList<>();
 
-        RejectReasoningEffortHttpClient(ChatResult okResult) {
+        RejectReasoningEffortHttpClient(OllamaChatResult okResult) {
             this.okResult = okResult;
         }
 
         @Override
-        public ChatResult chat(ChatRequest request, Consumer<String> onTextDelta) throws IOException {
+        public OllamaChatResult chat(OllamaChatRequest request, Consumer<String> onTextDelta) throws IOException {
             requests.add(request);
             if (request.reasoningEffort() != null) {
-                throw new OpenAiHttpStatusException(400, "bad request: unknown field reasoning_effort");
+                throw new OllamaHttpStatusException(400, "bad request: unknown field reasoning_effort");
             }
             if (okResult.assistantText() != null && !okResult.assistantText().isBlank()) {
                 onTextDelta.accept(okResult.assistantText());
@@ -2991,20 +2960,20 @@ class OllamaAiProcessManagerTest {
         }
     }
 
-    private static final class FakeHttpClient implements HttpAiClient {
+    private static final class FakeHttpClient implements OllamaHttpAiClient {
 
-        private final List<ChatResult> scripted;
-        private final List<ChatRequest> requests = new ArrayList<>();
+        private final List<OllamaChatResult> scripted;
+        private final List<OllamaChatRequest> requests = new ArrayList<>();
         private int index = 0;
 
-        FakeHttpClient(List<ChatResult> scripted) {
+        FakeHttpClient(List<OllamaChatResult> scripted) {
             this.scripted = scripted;
         }
 
         @Override
-        public ChatResult chat(ChatRequest request, Consumer<String> onTextDelta) {
+        public OllamaChatResult chat(OllamaChatRequest request, Consumer<String> onTextDelta) {
             requests.add(request);
-            ChatResult result = scripted.get(index++);
+            OllamaChatResult result = scripted.get(index++);
             if (result.assistantText() != null && !result.assistantText().isBlank()) {
                 onTextDelta.accept(result.assistantText());
             }
@@ -3012,25 +2981,25 @@ class OllamaAiProcessManagerTest {
         }
     }
 
-    private static final class FailFirstHttpClient implements HttpAiClient {
+    private static final class FailFirstHttpClient implements OllamaHttpAiClient {
 
-        private final List<ChatResult> scripted;
-        private final List<ChatRequest> requests = new ArrayList<>();
+        private final List<OllamaChatResult> scripted;
+        private final List<OllamaChatRequest> requests = new ArrayList<>();
         private int index = 0;
 
-        FailFirstHttpClient(List<ChatResult> scripted) {
+        FailFirstHttpClient(List<OllamaChatResult> scripted) {
             this.scripted = scripted;
         }
 
         @Override
-        public ChatResult chat(ChatRequest request, Consumer<String> onTextDelta)
+        public OllamaChatResult chat(OllamaChatRequest request, Consumer<String> onTextDelta)
                 throws IOException {
             requests.add(request);
             if (index == 0) {
                 index++;
                 throw new IOException("stream cut");
             }
-            ChatResult result = scripted.get(index++ - 1);
+            OllamaChatResult result = scripted.get(index++ - 1);
             if (result.assistantText() != null && !result.assistantText().isBlank()) {
                 onTextDelta.accept(result.assistantText());
             }
@@ -3039,27 +3008,27 @@ class OllamaAiProcessManagerTest {
     }
 
     /**
-     * Serves a scripted {@link ChatResult} per request ordinal, holding that request OPEN on a {@link Gate} until the
-     * test opens it. Requests past the last gate fall through immediately and reuse its result. This is what lets a
+     * Serves a scripted {@link OllamaChatResult} per request ordinal, holding that request OPEN on a {@link Gate} until
+     * the test opens it. Requests past the last gate fall through immediately and reuse its result. This is what lets a
      * test press Stop while a turn genuinely has a request in flight, instead of racing the fake's near-instant return.
-     * {@link #requests} exposes every ChatRequest that was actually sent.
+     * {@link #requests} exposes every OllamaChatRequest that was actually sent.
      */
-    private static final class GatedHttpClient implements HttpAiClient {
+    private static final class GatedHttpClient implements OllamaHttpAiClient {
 
         private final Gate[] gates;
-        private final List<ChatRequest> requests = new ArrayList<>();
+        private final List<OllamaChatRequest> requests = new ArrayList<>();
 
         GatedHttpClient(Gate... gates) {
             this.gates = gates;
         }
 
         @Override
-        public ChatResult chat(ChatRequest request, Consumer<String> onTextDelta) throws IOException {
+        public OllamaChatResult chat(OllamaChatRequest request, Consumer<String> onTextDelta) throws IOException {
             int ordinal = requests.size();
             requests.add(request);
             Gate gate = gates[Math.min(ordinal, gates.length - 1)];
             gate.awaitUntilOpen();
-            ChatResult result = gate.result;
+            OllamaChatResult result = gate.result;
             if (result.assistantText() != null && !result.assistantText().isBlank()) {
                 onTextDelta.accept(result.assistantText());
             }
@@ -3076,9 +3045,9 @@ class OllamaAiProcessManagerTest {
 
         private final CountDownLatch inCall = new CountDownLatch(1);
         private volatile boolean open;
-        private final ChatResult result;
+        private final OllamaChatResult result;
 
-        Gate(ChatResult result, boolean startsOpen) {
+        Gate(OllamaChatResult result, boolean startsOpen) {
             this.result = result;
             this.open = startsOpen;
         }
@@ -3109,37 +3078,37 @@ class OllamaAiProcessManagerTest {
      * Serves one server-side tool-call parse failure (HTTP 500, Ollama's "error parsing tool call" shape), then a
      * normal schema reply.
      */
-    private static final class ToolCallParse500ThenAnswerClient implements HttpAiClient {
+    private static final class ToolCallParse500ThenAnswerClient implements OllamaHttpAiClient {
 
-        private final List<ChatRequest> requests = new ArrayList<>();
+        private final List<OllamaChatRequest> requests = new ArrayList<>();
         private int index = 0;
 
         @Override
-        public ChatResult chat(ChatRequest request, Consumer<String> onTextDelta) throws IOException {
+        public OllamaChatResult chat(OllamaChatRequest request, Consumer<String> onTextDelta) throws IOException {
             requests.add(request);
             if (index++ == 0) {
-                throw new OpenAiToolCallParseException(500,
+                throw new OllamaToolCallParseException(500,
                                                        "HTTP 500 from https://ollama/v1/chat/completions: "
                                                        + "{\"error\":{\"message\":\"error parsing tool call: raw='hello ? world', "
                                                        + "err=invalid character '?' after object key:value pair\",\"type\":\"api_error\"}}",
                                                        "invalid character '?' after object key:value pair");
             }
-            return new ChatResult("{\"message\":\"Understood — let me fix that.\",\"tool_name\":\"\"}",
-                                  List.of(), "stop");
+            return new OllamaChatResult("{\"message\":\"Understood — let me fix that.\",\"tool_name\":\"\"}",
+                                        List.of(), "stop");
         }
     }
 
     /**
      * Serves a server-side tool-call parse failure on every request.
      */
-    private static final class ToolCallParse500EveryTimeClient implements HttpAiClient {
+    private static final class ToolCallParse500EveryTimeClient implements OllamaHttpAiClient {
 
-        private final List<ChatRequest> requests = new ArrayList<>();
+        private final List<OllamaChatRequest> requests = new ArrayList<>();
 
         @Override
-        public ChatResult chat(ChatRequest request, Consumer<String> onTextDelta) throws IOException {
+        public OllamaChatResult chat(OllamaChatRequest request, Consumer<String> onTextDelta) throws IOException {
             requests.add(request);
-            throw new OpenAiToolCallParseException(500,
+            throw new OllamaToolCallParseException(500,
                                                    "HTTP 500 from https://ollama/v1/chat/completions: "
                                                    + "{\"error\":{\"message\":\"error parsing tool call: raw='hello ? world', "
                                                    + "err=invalid character '?' after object key:value pair\",\"type\":\"api_error\"}}",
@@ -3150,21 +3119,21 @@ class OllamaAiProcessManagerTest {
     /**
      * Serves an ordinary 500 with no tool-call parse marker.
      */
-    private static final class Plain500Client implements HttpAiClient {
+    private static final class Plain500Client implements OllamaHttpAiClient {
 
-        private final List<ChatRequest> requests = new ArrayList<>();
+        private final List<OllamaChatRequest> requests = new ArrayList<>();
 
         @Override
-        public ChatResult chat(ChatRequest request, Consumer<String> onTextDelta) throws IOException {
+        public OllamaChatResult chat(OllamaChatRequest request, Consumer<String> onTextDelta) throws IOException {
             requests.add(request);
-            throw new OpenAiHttpStatusException(500,
+            throw new OllamaHttpStatusException(500,
                                                 "HTTP 500 from https://ollama/v1/chat/completions: {\"error\":\"upstream exploded\"}");
         }
     }
 
     private static final class TestOllamaProcessManager extends OllamaAiProcessManager {
 
-        private final HttpAiClient fakeClient;
+        private final OllamaHttpAiClient fakeClient;
         /**
          * When set, every tool returns this — the "Description updated." case.
          */
@@ -3175,11 +3144,11 @@ class OllamaAiProcessManagerTest {
         private volatile boolean throwOnCompact = false;
         private volatile CountDownLatch compactGate;
 
-        TestOllamaProcessManager(AiProcessEventListener listener, HttpAiClient fakeClient) {
+        TestOllamaProcessManager(AiProcessEventListener listener, OllamaHttpAiClient fakeClient) {
             this(listener, fakeClient, null);
         }
 
-        TestOllamaProcessManager(AiProcessEventListener listener, HttpAiClient fakeClient,
+        TestOllamaProcessManager(AiProcessEventListener listener, OllamaHttpAiClient fakeClient,
                                  String fixedToolResult) {
             super(listener);
             this.fakeClient = fakeClient;
@@ -3204,7 +3173,7 @@ class OllamaAiProcessManagerTest {
         }
 
         @Override
-        int invokeCompactNow(AbstractChatContextBroker b) {
+        int invokeCompactNow(OllamaAbstractChatContextBroker b) {
             if (throwOnCompact) {
                 throw new IllegalStateException("boom");
             }
@@ -3238,7 +3207,7 @@ class OllamaAiProcessManagerTest {
         }
 
         @Override
-        HttpAiClient createHttpAiClient() {
+        OllamaHttpAiClient createHttpAiClient() {
             return fakeClient;
         }
 
@@ -3256,7 +3225,7 @@ class OllamaAiProcessManagerTest {
         }
 
         @Override
-        AbstractChatContextBroker createContextBroker(String sessionId, ContextBrokerSettings settings) {
+        OllamaAbstractChatContextBroker createContextBroker(String sessionId, OllamaContextBrokerSettings settings) {
             return new OllamaChatContextBroker(sessionId, settings);
         }
 
@@ -3267,7 +3236,7 @@ class OllamaAiProcessManagerTest {
         }
     }
 
-    private static List<String> toolNames(ChatRequest request) {
+    private static List<String> toolNames(OllamaChatRequest request) {
         List<String> names = new ArrayList<>();
         for (JsonObject tool : request.toolSchemas()) {
             if (tool.has(ToolSchemaKeyEnum.NAME.key())) {
@@ -3277,11 +3246,11 @@ class OllamaAiProcessManagerTest {
         return names;
     }
 
-    private static List<ChatRequest> captureToolRequests(AiSession session) throws Exception {
-        List<ChatRequest> requests = new CopyOnWriteArrayList<>();
-        HttpAiClient client = (ChatRequest request, Consumer<String> onTextDelta) -> {
+    private static List<OllamaChatRequest> captureToolRequests(AiSession session) throws Exception {
+        List<OllamaChatRequest> requests = new CopyOnWriteArrayList<>();
+        OllamaHttpAiClient client = (OllamaChatRequest request, Consumer<String> onTextDelta) -> {
             requests.add(request);
-            return new ChatResult("done", List.of(), "stop");
+            return new OllamaChatResult("done", List.of(), "stop");
         };
         TestOllamaProcessManager manager = new TestOllamaProcessManager(event -> {
         }, client);
@@ -3316,7 +3285,7 @@ class OllamaAiProcessManagerTest {
                    "enabling messaging on the session must offer its tool on the very next request");
     }
 
-    private static String messageText(ChatRequest request) {
+    private static String messageText(OllamaChatRequest request) {
         StringBuilder text = new StringBuilder();
         for (ChatMessage message : request.messages()) {
             if (message.content() != null) {

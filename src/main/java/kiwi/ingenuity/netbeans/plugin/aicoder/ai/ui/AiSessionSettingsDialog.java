@@ -9,6 +9,8 @@ import java.awt.GridBagLayout;
 import java.awt.Insets;
 import java.awt.Rectangle;
 import java.awt.Toolkit;
+import java.io.IOException;
+import java.nio.file.Path;
 import javax.swing.BorderFactory;
 import javax.swing.JButton;
 import javax.swing.JDialog;
@@ -17,6 +19,8 @@ import javax.swing.JPanel;
 import javax.swing.JScrollPane;
 import javax.swing.JTextArea;
 import javax.swing.JTextField;
+import kiwi.ingenuity.netbeans.plugin.aicoder.PluginUtil;
+import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.openaicompatible.ui.RunningSessionDetectedView;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.session.AiSession;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.settings.AiSessionSettings;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ui.DialogBounds;
@@ -56,6 +60,10 @@ public class AiSessionSettingsDialog extends JDialog {
     private final JTextArea descriptionArea = new JTextArea(3, 24);
     private final JTextArea sessionInstructionsArea = new JTextArea(4, 24);
     private final AiSessionConfigPanel configPanel = new AiSessionConfigPanel(AiSessionConfigPanelMode.SESSION);
+    /**
+     * The live Detected panel of a running OpenAI Compatible session; null for every other session.
+     */
+    private final RunningSessionDetectedView detectedView;
     private AiSessionSettings result;
     private String resultName;
     private String resultDescription;
@@ -71,6 +79,8 @@ public class AiSessionSettingsDialog extends JDialog {
         sessionInstructionsArea.setLineWrap(true);
         sessionInstructionsArea.setWrapStyleWord(true);
         configPanel.loadSession(settings, session.aiType());
+        configPanel.setSessionDebugLogDir(sessionDebugLogDir(session));
+        detectedView = RunningSessionDetectedView.forSession(session);
         add(buildForm(), BorderLayout.CENTER);
         JPanel buttons = new JPanel();
         JButton ok = new JButton("OK");
@@ -93,7 +103,8 @@ public class AiSessionSettingsDialog extends JDialog {
         if (gc != null) {
             screenBounds = gc.getBounds();
             screenInsets = Toolkit.getDefaultToolkit().getScreenInsets(gc);
-        } else {
+        }
+        else {
             screenBounds = GraphicsEnvironment.getLocalGraphicsEnvironment().getMaximumWindowBounds();
         }
 
@@ -109,6 +120,9 @@ public class AiSessionSettingsDialog extends JDialog {
     @Override
     public void dispose() {
         DialogBounds.remember(DIALOG_BOUNDS_KEY, this);
+        if (detectedView != null) {
+            detectedView.dispose();
+        }
         configPanel.dispose();
         super.dispose();
     }
@@ -126,7 +140,15 @@ public class AiSessionSettingsDialog extends JDialog {
         c.gridy = 1;
         c.gridwidth = 2;
         c.weightx = 1;
-        form.add(configPanel, c);
+        if (detectedView == null) {
+            form.add(configPanel, c);
+        }
+        else {
+            JPanel configHolder = new JPanel(new BorderLayout());
+            configHolder.add(configPanel, BorderLayout.CENTER);
+            configHolder.add(detectedView.component(), BorderLayout.SOUTH);
+            form.add(configHolder, c);
+        }
 
         JScrollPane descriptionScroll = new JScrollPane(descriptionArea);
         descriptionScroll.setPreferredSize(new Dimension(300, 200));
@@ -166,5 +188,21 @@ public class AiSessionSettingsDialog extends JDialog {
 
     public String getResultDescription() {
         return resultDescription;
+    }
+
+    /**
+     * The session folder that holds {@code backend-debug.log}, without creating it. A missing plugin root leaves the
+     * Open log folder button disabled rather than failing the dialog.
+     */
+    private static Path sessionDebugLogDir(AiSession session) {
+        if (session == null || session.aiType() == null || session.id() == null) {
+            return null;
+        }
+        try {
+            return PluginUtil.getPluginConfigDir().resolve(session.aiType().key()).resolve(session.id());
+        }
+        catch (IOException ex) {
+            return null;
+        }
     }
 }

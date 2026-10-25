@@ -301,7 +301,8 @@ public class ContextProvider {
         boolean isFirstSend = (lastSentProjects == null);
 
         AiSession s = session;
-        if (s != null && s.aiType() == AiTypeEnum.OLLAMA_LOCAL) {
+        if (s != null && (s.aiType() == AiTypeEnum.OLLAMA_LOCAL
+                || s.aiType() == AiTypeEnum.OPENAI_COMPATIBLE)) {
             // Identity, baseline and instructions are pinned broker slots.
             // Signal delivery so the UI notice still fires, but do not inject —
             // the pinned slot already carries them.

@@ -1,11 +1,19 @@
 package kiwi.ingenuity.netbeans.plugin.aicoder.ui.settings;
 
 import java.awt.BorderLayout;
+import java.awt.Desktop;
+import java.awt.FlowLayout;
 import java.awt.GridBagConstraints;
 import java.awt.GridBagLayout;
 import java.awt.Insets;
 import java.awt.event.ActionListener;
+import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.util.logging.Level;
+import java.util.logging.Logger;
 import javax.swing.BorderFactory;
+import javax.swing.JButton;
 import javax.swing.JCheckBox;
 import javax.swing.JLabel;
 import javax.swing.JPanel;
@@ -18,11 +26,13 @@ import kiwi.ingenuity.netbeans.plugin.aicoder.GitAccessOptionEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.PluginSettings;
 import kiwi.ingenuity.netbeans.plugin.aicoder.WebRequestAccessOptionEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.AiTypeEnum;
+import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.ollama.settings.OllamaClientSessionSettings;
+import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.ollama.settings.OllamaContextSettingsPanel;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.settings.AiSessionCreateSettingsPanel;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.settings.AiSessionSettings;
-import kiwi.ingenuity.netbeans.plugin.aicoder.ai.settings.OpenAiClientSessionSettings;
-import kiwi.ingenuity.netbeans.plugin.aicoder.ai.settings.OpenAiContextSettingsPanel;
+import kiwi.ingenuity.netbeans.plugin.aicoder.ai.ui.FormLayoutUtil;
 
+// Depends on the Ollama package for the deprecated Ollama (Local) type; removed with it.
 /**
  * Shared controls for global defaults, a session override, and a template snapshot.
  */
@@ -53,6 +63,7 @@ public final class AiSessionConfigPanel extends JPanel {
             target.setAllowGitAccessOption(option, source.allowGitAccessOption(option));
         }
         target.setDatabaseRowLimit(source.databaseRowLimit());
+        target.setBackendDebugLog(source.backendDebugLog());
     }
 
     private static JPanel buildGroupPanel(String title) {
@@ -74,6 +85,7 @@ public final class AiSessionConfigPanel extends JPanel {
         c.gridx = 0;
         c.weightx = 0;
         c.gridwidth = 1;
+        FormLayoutUtil.applyLabelColumnWidth(label);
         panel.add(label, c);
         c.gridx = 1;
         c.weightx = 1;
@@ -95,6 +107,12 @@ public final class AiSessionConfigPanel extends JPanel {
     private final JCheckBox restrict = new JCheckBox();
     private final JCheckBox clipboard = new JCheckBox(AccessControlLabelEnum.ALLOW_CLIPBOARD_ACCESS.displayLabel());
     private final JCheckBox autoAccept = new JCheckBox("Automatically accept file changes");
+    private static final String BACKEND_DEBUG_LOG_TOOLTIP = "Writes everything sent to and received from the model to backend-debug.log in the session folder (may contain project source; API keys and the MCP secret are redacted).";
+    private final JCheckBox backendDebugLog = new JCheckBox("Backend debug log");
+    private final JButton openLogFolder = new JButton("Open log folder");
+    private final JLabel debugLogSize = new JLabel("0 B");
+    private final JPanel debugLogActions = new JPanel(new FlowLayout(FlowLayout.LEFT, 8, 0));
+    private Path debugLogDir;
     // TEMPLATE mode only: a template edits every config setting directly. A live SESSION edits them through
     // mcpTools, beneath each group's switch, and GLOBAL edits none, so these are null there rather than built unseen.
     private final AiMessagingSettingsPanel messaging;
@@ -103,7 +121,7 @@ public final class AiSessionConfigPanel extends JPanel {
     private final GitAccessSettingsPanel git;
     // TEMPLATE and SESSION modes; null in GLOBAL.
     private final McpSteeringSettingsPanel mcpSteering;
-    private final OpenAiContextSettingsPanel contextPanel;
+    private final OllamaContextSettingsPanel contextPanel;
     private final JPanel typePanelHolder = new JPanel(new BorderLayout());
     @SuppressWarnings("rawtypes")
     private AiSessionCreateSettingsPanel currentTypePanel;
@@ -135,13 +153,19 @@ public final class AiSessionConfigPanel extends JPanel {
             mcpSteering.setVisible(template);
         }
         restrict.setText(AccessControlLabelEnum.RESTRICT_TO_PROJECT_FILES.displayLabel());
+        backendDebugLog.setToolTipText(BACKEND_DEBUG_LOG_TOOLTIP);
+        openLogFolder.setEnabled(false);
+        openLogFolder.addActionListener(e -> openDebugLogFolder());
+        debugLogActions.setOpaque(false);
+        debugLogActions.add(openLogFolder);
+        debugLogActions.add(debugLogSize);
         setLayout(new GridBagLayout());
         GridBagConstraints c = new GridBagConstraints();
         c.insets = new Insets(4, 4, 4, 4);
         c.anchor = GridBagConstraints.WEST;
         c.fill = GridBagConstraints.HORIZONTAL;
 
-        contextPanel = new OpenAiContextSettingsPanel();
+        contextPanel = new OllamaContextSettingsPanel();
 
         if (mode == AiSessionConfigPanelMode.GLOBAL) {
             // Only the OpenAI context defaults are global now. The note that session defaults live in the Default config
@@ -163,8 +187,10 @@ public final class AiSessionConfigPanel extends JPanel {
             addFullTo(generalGroup, gc, 5, database);
             addFullTo(generalGroup, gc, 6, git);
             addFullTo(generalGroup, gc, 7, clipboard);
-            addFullTo(generalGroup, gc, 8, messaging);
-            addFullTo(generalGroup, gc, 9, mcpSteering);
+            addFullTo(generalGroup, gc, 8, backendDebugLog);
+            addFullTo(generalGroup, gc, 9, debugLogActions);
+            addFullTo(generalGroup, gc, 10, messaging);
+            addFullTo(generalGroup, gc, 11, mcpSteering);
             addFull(c, 0, generalGroup);
 
             // OpenAI Compatible Settings group — hidden until an OpenAI-compatible session is loaded
@@ -179,6 +205,7 @@ public final class AiSessionConfigPanel extends JPanel {
             sessionTypeGroup = new JPanel(new GridBagLayout());
             sessionTypeGroup.setBorder(sessionTypeBorder);
             GridBagConstraints tc = groupConstraints();
+            tc.insets = new Insets(0, 0, 0, 0);
             addFullTo(sessionTypeGroup, tc, 0, typePanelHolder);
             sessionTypeGroup.setVisible(false);
             addFull(c, 2, sessionTypeGroup);
@@ -193,8 +220,10 @@ public final class AiSessionConfigPanel extends JPanel {
             addFullTo(generalGroup, gc, 1, saveHistory);
             addFullTo(generalGroup, gc, 2, restrict);
             addFullTo(generalGroup, gc, 3, autoAccept);
-            addFullTo(generalGroup, gc, 4, mcpSteering);
-            addFullTo(generalGroup, gc, 5, mcpTools);
+            addFullTo(generalGroup, gc, 4, backendDebugLog);
+            addFullTo(generalGroup, gc, 5, debugLogActions);
+            addFullTo(generalGroup, gc, 6, mcpSteering);
+            addFullTo(generalGroup, gc, 7, mcpTools);
             addFull(c, 0, generalGroup);
 
             // OpenAI Compatible Settings group — hidden until an OpenAI-compatible session is loaded
@@ -209,6 +238,7 @@ public final class AiSessionConfigPanel extends JPanel {
             sessionTypeGroup = new JPanel(new GridBagLayout());
             sessionTypeGroup.setBorder(sessionTypeBorder);
             GridBagConstraints tc = groupConstraints();
+            tc.insets = new Insets(0, 0, 0, 0);
             addFullTo(sessionTypeGroup, tc, 0, typePanelHolder);
             sessionTypeGroup.setVisible(false);
             addFull(c, 2, sessionTypeGroup);
@@ -225,6 +255,9 @@ public final class AiSessionConfigPanel extends JPanel {
         saveHistory.addActionListener(listener);
         restrict.addActionListener(listener);
         autoAccept.addActionListener(listener);
+        if (mode != AiSessionConfigPanelMode.GLOBAL) {
+            backendDebugLog.addActionListener(listener);
+        }
         if (mode == AiSessionConfigPanelMode.TEMPLATE) {
             clipboard.addActionListener(listener);
             messaging.addChangeListener(listener);
@@ -247,12 +280,12 @@ public final class AiSessionConfigPanel extends JPanel {
 
     public void loadGlobal() {
         require(AiSessionConfigPanelMode.GLOBAL);
-        contextPanel.load(new OpenAiClientSessionSettings());
+        contextPanel.load(new OllamaClientSessionSettings());
     }
 
     public void applyGlobal() {
         require(AiSessionConfigPanelMode.GLOBAL);
-        OpenAiClientSessionSettings ctx = new OpenAiClientSessionSettings();
+        OllamaClientSessionSettings ctx = new OllamaClientSessionSettings();
         contextPanel.applyTo(ctx);
         PluginSettings.setContextTrimTrigger(ctx.contextTrimTrigger().name());
         PluginSettings.setContextTrimStrategy(ctx.contextTrimStrategy().name());
@@ -271,13 +304,13 @@ public final class AiSessionConfigPanel extends JPanel {
         boolean templateMode = mode == AiSessionConfigPanelMode.TEMPLATE;
         mcpSteering.setVisible(templateMode);
         mcpSteering.setEnabled(templateMode);
-        boolean isOpenAi = settings instanceof OpenAiClientSessionSettings;
+        boolean isOpenAi = settings instanceof OllamaClientSessionSettings;
         contextPanel.setVisible(isOpenAi);
         if (sessionContextGroup != null) {
             sessionContextGroup.setVisible(isOpenAi);
         }
         if (isOpenAi) {
-            contextPanel.load((OpenAiClientSessionSettings) settings);
+            contextPanel.load((OllamaClientSessionSettings) settings);
         }
         replaceTypePanel(null, settings);
     }
@@ -288,12 +321,12 @@ public final class AiSessionConfigPanel extends JPanel {
         boolean mcpSteeringSupported = aiType != null && aiType.mcpSteeringSupport().supported();
         mcpSteering.setVisible(mcpSteeringSupported);
         mcpSteering.setEnabled(mcpSteeringSupported);
-        boolean isOpenAi = aiType != null && aiType.isOpenAiCompatible();
+        boolean isOpenAi = aiType != null && aiType.usesLegacyOllamaSettings();
         contextPanel.setVisible(isOpenAi);
         if (sessionContextGroup != null) {
             sessionContextGroup.setVisible(isOpenAi);
         }
-        if (isOpenAi && settings instanceof OpenAiClientSessionSettings o) {
+        if (isOpenAi && settings instanceof OllamaClientSessionSettings o) {
             contextPanel.load(o);
         }
         replaceTypePanel(aiType, settings);
@@ -307,8 +340,8 @@ public final class AiSessionConfigPanel extends JPanel {
             settings.setMcpToolConfig(values.mcpToolConfig());
         }
         if (contextPanel != null && contextPanel.isVisible()
-                && settings instanceof OpenAiClientSessionSettings) {
-            contextPanel.applyTo((OpenAiClientSessionSettings) settings);
+                && settings instanceof OllamaClientSessionSettings) {
+            contextPanel.applyTo((OllamaClientSessionSettings) settings);
         }
         if (currentTypePanel != null && currentTypePanelSettingsClass != null
                 && currentTypePanelSettingsClass.isInstance(settings)) {
@@ -330,6 +363,9 @@ public final class AiSessionConfigPanel extends JPanel {
         result.setSaveHistory(saveHistory.isSelected());
         result.setRestrictToProjectFiles(restrict.isSelected());
         result.setAutoAccept(autoAccept.isSelected());
+        if (mode != AiSessionConfigPanelMode.GLOBAL) {
+            result.setBackendDebugLog(backendDebugLog.isSelected());
+        }
         if (mcpSteering != null) {
             result.setMcpSteering(mcpSteering.isMcpSteeringSelected());
         }
@@ -421,6 +457,8 @@ public final class AiSessionConfigPanel extends JPanel {
         saveHistory.setSelected(settings.effectiveSaveHistory());
         restrict.setSelected(settings.effectiveRestrictToProjectFiles());
         autoAccept.setSelected(settings.effectiveAutoAccept());
+        backendDebugLog.setSelected(settings.effectiveBackendDebugLog());
+        refreshDebugLogStatus();
         if (mcpSteering != null) {
             mcpSteering.setMcpSteeringSelected(settings.effectiveMcpSteering());
         }
@@ -469,10 +507,72 @@ public final class AiSessionConfigPanel extends JPanel {
         c.gridx = 0;
         c.weightx = 0;
         c.gridwidth = 1;
+        FormLayoutUtil.applyLabelColumnWidth(label);
         add(label, c);
         c.gridx = 1;
         c.weightx = 1;
         add(field, c);
+    }
+
+    /**
+     * Session folder whose {@code backend-debug.log} the Open log folder button and size label describe. Null in a
+     * template, which has no session folder, so the button stays disabled.
+     */
+    public void setSessionDebugLogDir(Path dir) {
+        this.debugLogDir = dir;
+        refreshDebugLogStatus();
+    }
+
+    private void refreshDebugLogStatus() {
+        Path dir = debugLogDir;
+        boolean exists = false;
+        String size = "0 B";
+        if (dir != null) {
+            Path log = dir.resolve("backend-debug.log");
+            try {
+                if (Files.isRegularFile(log)) {
+                    exists = true;
+                    size = formatByteSize(Files.size(log));
+                }
+            }
+            catch (IOException ex) {
+                size = "-";
+            }
+        }
+        openLogFolder.setEnabled(exists);
+        debugLogSize.setText(size);
+    }
+
+    private void openDebugLogFolder() {
+        Path folder = debugLogDir;
+        if (folder == null) {
+            return;
+        }
+        Thread opener = new Thread(() -> {
+            try {
+                if (Desktop.isDesktopSupported() && Desktop.getDesktop().isSupported(Desktop.Action.OPEN)) {
+                    Desktop.getDesktop().open(folder.toFile());
+                }
+            }
+            catch (IOException | RuntimeException ex) {
+                if (PluginSettings.isDebugJson()) {
+                    Logger.getLogger(AiSessionConfigPanel.class.getName()).log(Level.FINE,
+                                                                               "Could not open the backend debug-log folder", ex);
+                }
+            }
+        }, "aicoder-open-log-folder");
+        opener.setDaemon(true);
+        opener.start();
+    }
+
+    private static String formatByteSize(long bytes) {
+        if (bytes < 1024) {
+            return bytes + " B";
+        }
+        if (bytes < 1024L * 1024L) {
+            return (bytes / 1024) + " KB";
+        }
+        return (bytes / (1024L * 1024L)) + " MB";
     }
 
     private void addFull(GridBagConstraints c, int row, java.awt.Component field) {

@@ -33,6 +33,8 @@ import javax.swing.KeyStroke;
 import javax.swing.SwingUtilities;
 import javax.swing.Timer;
 import javax.swing.UIManager;
+import javax.swing.event.DocumentEvent;
+import javax.swing.event.DocumentListener;
 import javax.swing.event.HyperlinkEvent;
 import javax.swing.text.DefaultCaret;
 import javax.swing.text.JTextComponent;
@@ -487,6 +489,15 @@ public class MessagePanel extends JPanel {
      *
      * @return true to render immediately
      */
+    static long throttleIntervalForLength(int length) {
+        long extra = Math.max(0L, length / 10_000L) * 50L;
+        return Math.min(1_000L, TimeoutEnum.MESSAGE_REBUILD_THROTTLE_MILLIS.millis() + extra);
+    }
+
+    private long throttleIntervalMillis() {
+        return throttleIntervalForLength(accumulatedText.length());
+    }
+
     static boolean shouldRebuildNow(long nowMillis, long lastRebuildMillis, boolean rebuildPending) {
         if (rebuildPending) {
             return false;
@@ -510,6 +521,11 @@ public class MessagePanel extends JPanel {
      * debounce, so rendering continues during uninterrupted streaming. {@code null} until first used.
      */
     private Timer rebuildTimer;
+    private boolean rebuildDirty;
+    /**
+     * Prefix of completed, unambiguous markdown blocks already appended to the component tree.
+     */
+    private String renderedPrefix = "";
     /**
      * Wall-clock millis of the most recent {@link #rebuildContent()}; the throttle's leading edge is measured from
      * here.
@@ -582,6 +598,12 @@ public class MessagePanel extends JPanel {
         wrapper.add(contentPanel, BorderLayout.CENTER);
         add(wrapper, BorderLayout.CENTER);
         setOpaque(false);
+        addHierarchyListener(e -> {
+            if ((e.getChangeFlags() & java.awt.event.HierarchyEvent.SHOWING_CHANGED) != 0 && isShowing() && rebuildDirty) {
+                rebuildDirty = false;
+                rebuildContent();
+            }
+        });
     }
 
     public String getAccumulatedText() {
@@ -601,6 +623,10 @@ public class MessagePanel extends JPanel {
             return;
         }
         accumulatedText.append(delta);
+        if (!isShowing()) {
+            rebuildDirty = true;
+            return;
+        }
         // Throttle the full rebuild instead of doing it per delta: a streaming
         // reply arriving as N small deltas would otherwise re-parse + re-render
         // the whole message N times (O(N²) on the EDT), which is what froze the
@@ -623,7 +649,7 @@ public class MessagePanel extends JPanel {
         }
         long now = System.currentTimeMillis();
         if (rebuildTimer == null) {
-            rebuildTimer = new Timer((int) TimeoutEnum.MESSAGE_REBUILD_THROTTLE_MILLIS.millis(), e -> {
+            rebuildTimer = new Timer((int) throttleIntervalMillis(), e -> {
                                  lastRebuildMillis = System.currentTimeMillis();
                                  rebuildContent();
                              });
@@ -635,7 +661,7 @@ public class MessagePanel extends JPanel {
             rebuildContent();
         }
         else if (!pending) {
-            long interval = TimeoutEnum.MESSAGE_REBUILD_THROTTLE_MILLIS.millis();
+            long interval = throttleIntervalForLength(accumulatedText.length());
             long delay = Math.max(1L, interval - (now - lastRebuildMillis));
             rebuildTimer.setInitialDelay((int) delay);
             rebuildTimer.start();
@@ -670,24 +696,79 @@ public class MessagePanel extends JPanel {
         super.removeNotify();
     }
 
+    static boolean isAmbiguousMarkdown(String text) {
+        String[] lines = text.split("\\n", -1);
+        int fences = 0;
+        for (String line : lines) {
+            String trimmed = line.stripLeading();
+            if (trimmed.startsWith("```") || trimmed.startsWith("~~~")) {
+                fences++;
+            }
+            if (trimmed.startsWith("#") || trimmed.startsWith(">") || trimmed.startsWith("|")
+                    || trimmed.startsWith("- ") || trimmed.startsWith("* ") || trimmed.matches("\\d+[.)] .*")
+                    || trimmed.startsWith("    ")) {
+                return true;
+            }
+        }
+        return (fences & 1) != 0;
+    }
+
+    static int completedMarkdownPrefixLength(String text) {
+        if (text.isEmpty() || isAmbiguousMarkdown(text)) {
+            return 0;
+        }
+        int boundary = text.lastIndexOf("\n\n");
+        return boundary < 0 ? 0 : boundary + 2;
+    }
+
     protected void rebuildContent() {
-        contentPanel.removeAll();
+        long started = System.nanoTime();
         String fullText = accumulatedText.toString();
 
-        if (role == AiMessage.Role.USER) {
-            // The user's own typed text must never be interpreted as Markdown — only the assistant's (and
-            // system's) output goes through MD_PARSER below.
-            rebuildLiteralUserContent(fullText);
+        if (role == AiMessage.Role.USER || finalised) {
+            renderedPrefix = "";
+            contentPanel.removeAll();
+            if (role == AiMessage.Role.USER) {
+                rebuildLiteralUserContent(fullText);
+            }
+            else {
+                renderNodes(MD_PARSER.parse(ensureTableBlankLines(fullText)));
+            }
             contentPanel.revalidate();
             contentPanel.repaint();
+            logRebuild(started, fullText.length());
             return;
         }
 
-        // Parse the full text once so markdown is always interpreted in complete context.
-        Node fullDoc = MD_PARSER.parse(ensureTableBlankLines(fullText));
-        renderNodes(fullDoc);
+        int completedLength = completedMarkdownPrefixLength(fullText);
+        if (completedLength > 0 && completedLength >= renderedPrefix.length()
+                && fullText.startsWith(renderedPrefix)) {
+            if (renderedPrefix.isEmpty()) {
+                contentPanel.removeAll();
+            }
+            String suffix = fullText.substring(renderedPrefix.length(), completedLength);
+            if (!suffix.isEmpty()) {
+                renderNodes(MD_PARSER.parse(ensureTableBlankLines(suffix)));
+            }
+            renderedPrefix = fullText.substring(0, completedLength);
+        }
+        else {
+            // Lists, tables, headings, block quotes, fences, and other context-sensitive markdown are
+            // re-parsed as a whole until finalisation; partial reuse would produce incorrect output.
+            renderedPrefix = "";
+            contentPanel.removeAll();
+            renderNodes(MD_PARSER.parse(ensureTableBlankLines(fullText)));
+        }
         contentPanel.revalidate();
         contentPanel.repaint();
+        logRebuild(started, fullText.length());
+    }
+
+    private void logRebuild(long started, int length) {
+        if (PluginSettings.isDebugJson()) {
+            LOG.log(Level.FINE, "MessagePanel rebuild: {0} ms, {1} chars, showing={2}",
+                    new Object[]{(System.nanoTime() - started) / 1_000_000L, length, isShowing()});
+        }
     }
 
     /**
@@ -871,6 +952,9 @@ public class MessagePanel extends JPanel {
         String html = "<html><head><style>" + css + "</style></head><body>" + bodyHtml + "</body></html>";
 
         JEditorPane pane = new JEditorPane("text/html", html) {
+            private int cachedWidth = -1;
+            private Dimension cachedPreferredSize;
+
             @Override
             public Dimension getPreferredSize() {
                 // BoxLayout calls getPreferredSize() before bounds are set, so
@@ -898,10 +982,53 @@ public class MessagePanel extends JPanel {
                         }
                     }
                 }
+                if (w > 0 && w == cachedWidth && cachedPreferredSize != null) {
+                    return new Dimension(cachedPreferredSize);
+                }
                 if (w > 0) {
                     setSize(w, Short.MAX_VALUE);
                 }
-                return super.getPreferredSize();
+                Dimension measured = super.getPreferredSize();
+                if (w > 0) {
+                    cachedWidth = w;
+                    cachedPreferredSize = new Dimension(measured);
+                }
+                return measured;
+            }
+
+            private void invalidatePreferredSizeCache() {
+                cachedWidth = -1;
+                cachedPreferredSize = null;
+            }
+
+            @Override
+            public void setText(String t) {
+                invalidatePreferredSizeCache();
+                super.setText(t);
+            }
+
+            @Override
+            public void setDocument(javax.swing.text.Document doc) {
+                super.setDocument(doc);
+                invalidatePreferredSizeCache();
+                if (doc != null) {
+                    doc.addDocumentListener(new DocumentListener() {
+                        @Override
+                        public void insertUpdate(DocumentEvent e) {
+                            invalidatePreferredSizeCache();
+                        }
+
+                        @Override
+                        public void removeUpdate(DocumentEvent e) {
+                            invalidatePreferredSizeCache();
+                        }
+
+                        @Override
+                        public void changedUpdate(DocumentEvent e) {
+                            invalidatePreferredSizeCache();
+                        }
+                    });
+                }
             }
         };
         pane.setEditable(false);

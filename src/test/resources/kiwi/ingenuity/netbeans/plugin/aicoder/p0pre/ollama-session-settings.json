@@ -1,0 +1,11 @@
+{
+  "maxHistory": 50,
+  "model": "qwen3:8b",
+  "baseUrl": "http://localhost:11434",
+  "contextTrimTrigger": "MESSAGE_COUNT",
+  "contextTrimStrategy": "SUMMARISE",
+  "contextTokenThreshold": 4321,
+  "contextTrimTargetPercent": 73,
+  "contextMaxMessages": 17,
+  "contextPersistOnClose": false
+}
