@@ -4,9 +4,8 @@ import kiwi.ingenuity.netbeans.plugin.aicoder.ai.http.ChatMessage;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.http.ChatToolCall;
 
 /**
- * Character-based token estimate, corrected over time by the usage the backend
- * reports. No Java tokenizer exists for these models, so estimation plus
- * feedback is the accepted approach.
+ * Character-based token estimate, corrected over time by the usage the backend reports. No Java tokenizer exists for
+ * these models, so estimation plus feedback is the accepted approach.
  */
 public class TokenEstimator {
 
@@ -38,8 +37,7 @@ public class TokenEstimator {
 
     /**
      * @param estimated what this estimator predicted for the request just sent
-     * @param reported the backend's prompt_tokens, or null when it reported
-     * none
+     * @param reported the backend's prompt_tokens, or null when it reported none
      */
     public void calibrate(int estimated, Integer reported) {
         if (reported == null || reported <= 0 || estimated <= 0) {
@@ -56,26 +54,24 @@ public class TokenEstimator {
     }
 
     /**
-     * True once the endpoint has actually returned a usage object. Until then
-     * REPORTED_TOKENS has nothing to act on and the broker falls back to
-     * ESTIMATED_TOKENS.
+     * True once the endpoint has actually returned a usage object. Until then REPORTED_TOKENS has nothing to act on and
+     * the broker falls back to ESTIMATED_TOKENS.
      */
     public boolean hasSeenReportedUsage() {
         return seenReportedUsage;
     }
 
     /**
-     * Called on model change: the ratio is tokenizer-specific and cheaply
-     * re-learned. Whether the endpoint reports usage is a property of the
-     * endpoint, not the model, so that flag survives.
+     * Called on model change: the ratio is tokenizer-specific and cheaply re-learned. Whether the endpoint reports
+     * usage is a property of the endpoint, not the model, so that flag survives.
      */
     public void reset() {
         ratio = 1.0d;
     }
 
     /**
-     * Restore a ratio earned in a previous run. Clamped like any other, so a
-     * corrupt file cannot inject a nonsense multiplier.
+     * Restore a ratio earned in a previous run. Clamped like any other, so a corrupt file cannot inject a nonsense
+     * multiplier.
      */
     public void restoreRatio(double value) {
         if (Double.isNaN(value) || Double.isInfinite(value)) {

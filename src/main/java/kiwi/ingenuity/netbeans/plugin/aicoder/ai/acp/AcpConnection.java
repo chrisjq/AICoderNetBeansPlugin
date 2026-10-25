@@ -36,9 +36,9 @@ import kiwi.ingenuity.netbeans.plugin.aicoder.process.server.McpHookServerUtil;
  *
  * <p>
  * Notifications (session/update) and the disconnection callback are delivered via a single-thread executor
- * («acp-notify») to guarantee FIFO order. Inbound requests (particularly session/request_permission, whose
- * approval response expires after 120 s) and response-future completions run on a cached-thread-pool executor
- * («acp-dispatch») so the reader thread is never blocked.
+ * («acp-notify») to guarantee FIFO order. Inbound requests (particularly session/request_permission, whose approval
+ * response expires after 120 s) and response-future completions run on a cached-thread-pool executor («acp-dispatch»)
+ * so the reader thread is never blocked.
  */
 public class AcpConnection {
 
@@ -47,8 +47,8 @@ public class AcpConnection {
     private static final Gson GSON = new Gson();
 
     /**
-     * Upper bound on each piece of agent-supplied error text (the error message and its detail) carried into
-     * an {@link AcpException} message.
+     * Upper bound on each piece of agent-supplied error text (the error message and its detail) carried into an
+     * {@link AcpException} message.
      */
     static final int MAX_ERROR_DETAIL_CHARS = 500;
 
@@ -70,10 +70,9 @@ public class AcpConnection {
     }
 
     /**
-     * @param label backend name for the raw wire log ({@code "Grok"}, {@code "OpenCode"}) — purely cosmetic,
-     *              never parsed, never sent on the wire. Every line in both directions is logged under this
-     *              label, secrets redacted, when {@link PluginSettings#isDebugJson()} is set — the same gate
-     *              every other ACP debug line in this plugin uses.
+     * @param label backend name for the raw wire log ({@code "Grok"}, {@code "OpenCode"}) — purely cosmetic, never
+     * parsed, never sent on the wire. Every line in both directions is logged under this label, secrets redacted, when
+     * {@link PluginSettings#isDebugJson()} is set — the same gate every other ACP debug line in this plugin uses.
      */
     public AcpConnection(OutputStream out, InputStream in, AcpClientHandler handler, String label) {
         this.writer = new PrintWriter(new OutputStreamWriter(out, StandardCharsets.UTF_8), false);
@@ -128,8 +127,8 @@ public class AcpConnection {
     }
 
     /**
-     * True once the reader has hit end of stream or a read error: nothing more will ever be read, so no
-     * response can arrive. Set before the disconnect callback is queued.
+     * True once the reader has hit end of stream or a read error: nothing more will ever be read, so no response can
+     * arrive. Set before the disconnect callback is queued.
      */
     public boolean isStreamEnded() {
         return streamEnded;
@@ -182,8 +181,8 @@ public class AcpConnection {
     }
 
     /**
-     * @return false when the write failed (the agent's stdin is closed); notifications and responses ignore
-     *         it as before, only {@link #sendRequest} acts on it
+     * @return false when the write failed (the agent's stdin is closed); notifications and responses ignore it as
+     * before, only {@link #sendRequest} acts on it
      */
     private boolean writeMessage(JsonObject message) {
         String line = GSON.toJson(message);
@@ -299,8 +298,8 @@ public class AcpConnection {
     }
 
     /**
-     * Agent-supplied error text reaches the UI and the log, so the plugin's own session secrets are masked
-     * and its size is bounded — an upstream error body can be arbitrarily large.
+     * Agent-supplied error text reaches the UI and the log, so the plugin's own session secrets are masked and its size
+     * is bounded — an upstream error body can be arbitrarily large.
      */
     static String redactAndBound(String text) {
         String redacted = McpHookServerUtil.redactAllSecrets(text);

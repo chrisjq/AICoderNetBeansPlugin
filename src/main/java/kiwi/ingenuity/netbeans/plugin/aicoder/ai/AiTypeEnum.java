@@ -20,8 +20,8 @@ import static kiwi.ingenuity.netbeans.plugin.aicoder.process.McpInstructionOptio
 import static kiwi.ingenuity.netbeans.plugin.aicoder.process.McpInstructionOptionEnum.TOOL_INSTRUCTION;
 
 /**
- * Enumerates available AI implementations and their configurations. Each type maintains a settings creator
- * for initializing and updating type-specific configurations.
+ * Enumerates available AI implementations and their configurations. Each type maintains a settings creator for
+ * initializing and updating type-specific configurations.
  */
 public enum AiTypeEnum {
     //                                                          implemented  enabledByDefault  openAiCompatible  mailDeliveryTiming
@@ -134,28 +134,27 @@ public enum AiTypeEnum {
      */
     private final AiSessionSettingsCreator settingCreator;
     /**
-     * Controls what this AI type receives in instruction text and tool schemas. Types that reach the plugin
-     * through a bridge which injects credentials server-side omit CREDENTIALS, so they are never shown
-     * sessionId/secretKey.
+     * Controls what this AI type receives in instruction text and tool schemas. Types that reach the plugin through a
+     * bridge which injects credentials server-side omit CREDENTIALS, so they are never shown sessionId/secretKey.
      */
     private final Set<McpInstructionOptionEnum> mcpOptions;
     /**
-     * When an inbox message reaches this backend if it is mid-turn, and at what cost. Decides both whether
-     * marking a message important can do anything and whether the recipient needs telling afterwards that an
-     * aborted tool call was not a user rejection.
+     * When an inbox message reaches this backend if it is mid-turn, and at what cost. Decides both whether marking a
+     * message important can do anything and whether the recipient needs telling afterwards that an aborted tool call
+     * was not a user rejection.
      */
     private final MailDeliveryTimingEnum mailDeliveryTiming;
     /**
-     * Whether this backend can be steered away from its own native tools, and if so whether the steering text
-     * survives the refusal. Like {@link #mailDeliveryTiming} this is a property of the backend's wire
-     * protocol, not a setting: it decides both whether the option is offered at all for this type and whether
-     * a refusal must be followed by an agent-only turn to carry the text the refusal could not.
+     * Whether this backend can be steered away from its own native tools, and if so whether the steering text survives
+     * the refusal. Like {@link #mailDeliveryTiming} this is a property of the backend's wire protocol, not a setting:
+     * it decides both whether the option is offered at all for this type and whether a refusal must be followed by an
+     * agent-only turn to carry the text the refusal could not.
      */
     private final McpSteeringSupportEnum mcpSteeringSupport;
     /**
-     * Tooltip for the confirm dialog's accept button, or {@code null} when this backend supplies none. A
-     * tooltip that says nothing useful teaches the user to ignore them all, so a backend gets text only when
-     * it has genuinely backend-specific advice for the moment of decision.
+     * Tooltip for the confirm dialog's accept button, or {@code null} when this backend supplies none. A tooltip that
+     * says nothing useful teaches the user to ignore them all, so a backend gets text only when it has genuinely
+     * backend-specific advice for the moment of decision.
      */
     private final String confirmAcceptTooltip;
     /**
@@ -182,8 +181,8 @@ public enum AiTypeEnum {
     }
 
     /**
-     * When an inbox message reaches this backend if it is mid-turn. Senders use this to tell whether an
-     * important message can actually interrupt the target.
+     * When an inbox message reaches this backend if it is mid-turn. Senders use this to tell whether an important
+     * message can actually interrupt the target.
      */
     public MailDeliveryTimingEnum mailDeliveryTiming() {
         return mailDeliveryTiming;
@@ -197,16 +196,14 @@ public enum AiTypeEnum {
     }
 
     /**
-     * Tooltip text for the confirm dialog's accept button for this backend, or {@code null} to show no
-     * tooltip.
+     * Tooltip text for the confirm dialog's accept button for this backend, or {@code null} to show no tooltip.
      */
     public String confirmAcceptTooltip() {
         return confirmAcceptTooltip;
     }
 
     /**
-     * Tooltip text for the confirm dialog's reject button for this backend, or {@code null} to show no
-     * tooltip.
+     * Tooltip text for the confirm dialog's reject button for this backend, or {@code null} to show no tooltip.
      */
     public String confirmRejectTooltip() {
         return confirmRejectTooltip;

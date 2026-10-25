@@ -26,8 +26,8 @@ public abstract class AiImplementation {
     protected final AiTypeEnum type;
     protected final AiProcessEventListener listener;
     /**
-     * UI-side hook for locating a missing CLI executable (shows a file chooser) without this class needing to
-     * know about Swing/EDT. See {@link ExecutablePrompter}.
+     * UI-side hook for locating a missing CLI executable (shows a file chooser) without this class needing to know
+     * about Swing/EDT. See {@link ExecutablePrompter}.
      */
     protected final ExecutablePrompter prompter;
     /**
@@ -61,10 +61,9 @@ public abstract class AiImplementation {
     }
 
     /**
-     * Where the work that takes the process manager's monitor runs, in submission order, never on the
-     * caller's
-     * thread. The default is one queue per implementation; a subclass whose other session-control work takes
-     * the same monitor returns its own executor so that work and the sends keep their order.
+     * Where the work that takes the process manager's monitor runs, in submission order, never on the caller's thread.
+     * The default is one queue per implementation; a subclass whose other session-control work takes the same monitor
+     * returns its own executor so that work and the sends keep their order.
      */
     protected Executor sessionControlExecutor() {
         return sendQueue;
@@ -72,24 +71,21 @@ public abstract class AiImplementation {
 
     /**
      * Hands the prompt to the backend on the session-control executor and returns at once. Every backend's
-     * {@code sendPrompt} can wait for a monitor that {@code start()} or a recycle holds for up to two
-     * minutes,
-     * and this is called from the EDT. While the prompt is still queued, {@link #isBusy()} and
-     * {@link #isProcessing()} report it, so a Stop sees work to wait for; the turn's own closing event, or
-     * the
-     * STOPPED / FAILED raised here, releases the UI's busy lock.
+     * {@code sendPrompt} can wait for a monitor that {@code start()} or a recycle holds for up to two minutes, and this
+     * is called from the EDT. While the prompt is still queued, {@link #isBusy()} and {@link #isProcessing()} report
+     * it, so a Stop sees work to wait for; the turn's own closing event, or the STOPPED / FAILED raised here, releases
+     * the UI's busy lock.
      */
     public void sendPrompt(String text, File workingDir, List<File> projectDirs) {
         sendPrompt(text, workingDir, projectDirs, null, null);
     }
 
     /**
-     * As {@link #sendPrompt(String, File, List)}, and reports what became of the prompt so a caller can
-     * record
-     * "delivered" state only when it really got there. Exactly one of the two callbacks runs (either may be
-     * null): {@code onHandedOver} on the session-control thread once the backend has accepted the prompt, or
-     * {@code onNotDelivered}, on whichever thread dropped it, when a Cancel or Stop dropped the prompt before
-     * the backend had it, the backend threw, or the executor refused it.
+     * As {@link #sendPrompt(String, File, List)}, and reports what became of the prompt so a caller can record
+     * "delivered" state only when it really got there. Exactly one of the two callbacks runs (either may be null):
+     * {@code onHandedOver} on the session-control thread once the backend has accepted the prompt, or
+     * {@code onNotDelivered}, on whichever thread dropped it, when a Cancel or Stop dropped the prompt before the
+     * backend had it, the backend threw, or the executor refused it.
      */
     public void sendPrompt(String text, File workingDir, List<File> projectDirs, Runnable onHandedOver,
                            Runnable onNotDelivered) {
@@ -133,10 +129,9 @@ public abstract class AiImplementation {
     }
 
     /**
-     * Called, off the caller's thread, whenever a send stops counting as busy without the backend having a
-     * state of its own to show for it. The turn's closing event can be handled before the send has returned
-     * from the backend, while {@link #isBusy()} still reports it, so whoever refreshes the UI from
-     * {@code isBusy()} needs this to look again.
+     * Called, off the caller's thread, whenever a send stops counting as busy without the backend having a state of its
+     * own to show for it. The turn's closing event can be handled before the send has returned from the backend, while
+     * {@link #isBusy()} still reports it, so whoever refreshes the UI from {@code isBusy()} needs this to look again.
      */
     public void setBusyStateListener(Runnable listener) {
         this.busyStateListener = listener;
@@ -199,8 +194,8 @@ public abstract class AiImplementation {
     }
 
     /**
-     * Removes every send that has not reached the backend yet and returns them; the caller reports them as
-     * not delivered once it is out of the lock.
+     * Removes every send that has not reached the backend yet and returns them; the caller reports them as not
+     * delivered once it is out of the lock.
      */
     private List<PendingSend> dropQueuedSendsLocked() {
         List<PendingSend> dropped = List.copyOf(queuedSends);
@@ -215,9 +210,9 @@ public abstract class AiImplementation {
     }
 
     /**
-     * True from the moment a send is queued until the backend's own {@code sendPrompt} has returned. Until
-     * then the backend can still be waiting for its monitor and reports nothing, so this is what keeps the UI
-     * from seeing an idle session in the middle of a send.
+     * True from the moment a send is queued until the backend's own {@code sendPrompt} has returned. Until then the
+     * backend can still be waiting for its monitor and reports nothing, so this is what keeps the UI from seeing an
+     * idle session in the middle of a send.
      */
     private boolean sendInFlight() {
         synchronized (sendLock) {
@@ -230,9 +225,9 @@ public abstract class AiImplementation {
     }
 
     /**
-     * Graceful interrupt that aborts the in-flight turn. Backends that support a graceful interrupt keep
-     * partial output; others terminate the process. A Cancel also drops any send still queued, and closes the
-     * busy lock the UI took for it.
+     * Graceful interrupt that aborts the in-flight turn. Backends that support a graceful interrupt keep partial
+     * output; others terminate the process. A Cancel also drops any send still queued, and closes the busy lock the UI
+     * took for it.
      */
     public void interrupt(InterruptTypeEnum type) {
         if (type != InterruptTypeEnum.Cancel) {
@@ -284,17 +279,17 @@ public abstract class AiImplementation {
     public abstract void setModel(String model);
 
     /**
-     * Pushes session settings into the running backend. Called on every OK of the session config dialog,
-     * whether or not anything about the model was touched.
+     * Pushes session settings into the running backend. Called on every OK of the session config dialog, whether or not
+     * anything about the model was touched.
      *
      * <p>
-     * Only forwards a model that actually differs from the one the backend is already on. {@code setModel} is
-     * not a plain setter for every backend — Claude and Copilot recycle the CLI session from it — so calling
-     * it with an unchanged value discarded a warm session on every config save. Worse for Claude, whose
-     * recycle carried no in-flight-turn guard: saving the dialog mid-turn killed the session while the turn
-     * stayed marked in flight, and from there Stop was a silent no-op and the chat input never re-enabled.
-     * The guard in ClaudeAiProcessManager.recycleForModelChange() now covers that too; this comparison stops
-     * the pointless recycle happening at all, for every backend at once.
+     * Only forwards a model that actually differs from the one the backend is already on. {@code setModel} is not a
+     * plain setter for every backend — Claude and Copilot recycle the CLI session from it — so calling it with an
+     * unchanged value discarded a warm session on every config save. Worse for Claude, whose recycle carried no
+     * in-flight-turn guard: saving the dialog mid-turn killed the session while the turn stayed marked in flight, and
+     * from there Stop was a silent no-op and the chat input never re-enabled. The guard in
+     * ClaudeAiProcessManager.recycleForModelChange() now covers that too; this comparison stops the pointless recycle
+     * happening at all, for every backend at once.
      */
     public void applySessionSettings(AiSessionSettings settings) {
         if (settings instanceof AiModelSessionSettings modelSettings
@@ -317,8 +312,8 @@ public abstract class AiImplementation {
     }
 
     /**
-     * True while the backend is doing anything the user must wait for — a turn or non-turn work such as a
-     * compaction. {@link #isProcessing()} is turns only.
+     * True while the backend is doing anything the user must wait for — a turn or non-turn work such as a compaction.
+     * {@link #isProcessing()} is turns only.
      */
     public boolean isBusy() {
         return sendInFlight() || delegate().isBusy();
@@ -352,8 +347,8 @@ public abstract class AiImplementation {
     }
 
     /**
-     * Type-wide services that should start when the first session of this AI type is created. The registry
-     * owns this object rather than retaining this UI-bound implementation instance until plugin shutdown.
+     * Type-wide services that should start when the first session of this AI type is created. The registry owns this
+     * object rather than retaining this UI-bound implementation instance until plugin shutdown.
      */
     public AiTypeLifecycle typeLifecycle() {
         return AiTypeLifecycle.NO_OP;

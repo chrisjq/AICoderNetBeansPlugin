@@ -1,9 +1,8 @@
 package kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp;
 
 /**
- * Structural JSON Schema vocabulary keys used when building MCP tool definitions in each tool's
- * {@code schema()} method. Centralises the fixed schema keywords so they are not repeated as string literals
- * across the tool classes.
+ * Structural JSON Schema vocabulary keys used when building MCP tool definitions in each tool's {@code schema()}
+ * method. Centralises the fixed schema keywords so they are not repeated as string literals across the tool classes.
  * <p>
  * It is also the vocabulary for READING those definitions back: when {@code OpenAiCompatibleClient} /
  * {@code SchemaToolCalls} (ai.http) turn the plugin's tool definitions into an OpenAI {@code tools} payload,

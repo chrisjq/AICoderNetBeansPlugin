@@ -31,15 +31,15 @@ import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.ToolSchemaKeyEnu
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.git.GitAccessGuard;
 
 /**
- * Runs a single MCP tool call with the same locking/handler semantics for both the HTTP {@code tools/call}
- * path and in-process callers. Returns the tool result string, or a human-readable lock-contention message.
+ * Runs a single MCP tool call with the same locking/handler semantics for both the HTTP {@code tools/call} path and
+ * in-process callers. Returns the tool result string, or a human-readable lock-contention message.
  */
 public final class McpToolInvoker {
 
     /**
-     * Fair gate between whole-workspace refactorings and short file writes. File mutations take the shared
-     * side only while RefactoringProvider performs the actual write; prompts deliberately happen before this
-     * gate, so a waiting user never blocks unrelated work.
+     * Fair gate between whole-workspace refactorings and short file writes. File mutations take the shared side only
+     * while RefactoringProvider performs the actual write; prompts deliberately happen before this gate, so a waiting
+     * user never blocks unrelated work.
      */
     private static final ReentrantReadWriteLock MUTATION_GATE = new ReentrantReadWriteLock(true);
 
@@ -49,8 +49,7 @@ public final class McpToolInvoker {
     }
 
     /**
-     * Invokes a tool after validating the materialised arguments and duplicate names found while its raw JSON
-     * was read.
+     * Invokes a tool after validating the materialised arguments and duplicate names found while its raw JSON was read.
      */
     public static String invoke(McpToolEnum tool, McpToolInterface handler,
                                 JsonObject argsObj, AbstractAiSession session, Map<String, Integer> duplicateCounts)
@@ -121,9 +120,9 @@ public final class McpToolInvoker {
     }
 
     /**
-     * Rejects malformed argument lists before a tool can acquire a lock or execute. Schema options are
-     * deliberately empty: credentials are accepted unconditionally because bridges may inject them while
-     * omitting them from their model-facing schema.
+     * Rejects malformed argument lists before a tool can acquire a lock or execute. Schema options are deliberately
+     * empty: credentials are accepted unconditionally because bridges may inject them while omitting them from their
+     * model-facing schema.
      */
     private static void validateArguments(McpToolEnum tool, McpToolInterface handler,
                                           JsonObject argsObj, Map<String, Integer> duplicateCounts) throws McpArgumentException {
@@ -184,34 +183,30 @@ public final class McpToolInvoker {
     }
 
     /**
-     * Denial message when a git tool is handed a path outside the calling session's file scope, or null when
-     * the call may proceed. Applied here rather than in each of the twenty-one git tools because this is the
-     * single dispatch point every one of them passes through (the HTTP {@code tools/call} path and
-     * OllamaMcpBridge both funnel into {@link #invoke}), so a git tool added later inherits the check instead
-     * of having to remember it.
+     * Denial message when a git tool is handed a path outside the calling session's file scope, or null when the call
+     * may proceed. Applied here rather than in each of the twenty-one git tools because this is the single dispatch
+     * point every one of them passes through (the HTTP {@code tools/call} path and OllamaMcpBridge both funnel into
+     * {@link #invoke}), so a git tool added later inherits the check instead of having to remember it.
      * <p>
-     * What is validated is the CALLER-SUPPLIED path, never the repository root that
-     * {@code GitProvider#resolveRoot} eventually walks up to. That distinction is the whole point: a
-     * {@code .git} directory very often sits ABOVE the NetBeans project directory, and a session legitimately
-     * scoped to the project must still be able to reach the repository that contains it. Scoping the resolved
-     * root would break that ordinary layout. Scoping the input does not — the caller must name somewhere it
-     * is allowed to be, and the upward walk then lands wherever it lands.
+     * What is validated is the CALLER-SUPPLIED path, never the repository root that {@code GitProvider#resolveRoot}
+     * eventually walks up to. That distinction is the whole point: a {@code .git} directory very often sits ABOVE the
+     * NetBeans project directory, and a session legitimately scoped to the project must still be able to reach the
+     * repository that contains it. Scoping the resolved root would break that ordinary layout. Scoping the input does
+     * not — the caller must name somewhere it is allowed to be, and the upward walk then lands wherever it lands.
      * <p>
      * Two arguments are checked. {@code projectPath} is documented as required on every git tool
-     * ({@code ProjectPathParamEnum}), so it is the primary gate. {@code file} is checked too, but only when
-     * it is absolute: GitBlame is the one tool that lets {@code projectPath} be omitted when {@code file} is
-     * an absolute path, which would otherwise leave a per-line-authorship read of any file on disk completely
-     * ungated. A RELATIVE {@code file} is deliberately left alone — GitAdd/GitReset take repo-relative paths
-     * that {@code
-     * GitProvider#resolveFiles} already confines with its own within-repository check, and resolving them
-     * here against the JVM's working directory would reject ordinary, correct calls.
+     * ({@code ProjectPathParamEnum}), so it is the primary gate. {@code file} is checked too, but only when it is
+     * absolute: GitBlame is the one tool that lets {@code projectPath} be omitted when {@code file} is an absolute
+     * path, which would otherwise leave a per-line-authorship read of any file on disk completely ungated. A RELATIVE
+     * {@code file} is deliberately left alone — GitAdd/GitReset take repo-relative paths that {@code
+     * GitProvider#resolveFiles} already confines with its own within-repository check, and resolving them here against
+     * the JVM's working directory would reject ordinary, correct calls.
      * <p>
-     * Uses {@link McpHookServer#isProjectFileAllowed} rather than {@code isFileAccessible}: a git repository
-     * is never the session's own config directory, so the config-dir exemption has nothing to contribute. It
-     * fails closed when the server or session id is missing, matching the build providers' existing treatment
-     * of the same question. {@code GitCommit}'s {@code areCommitTargetsAllowed} is untouched and still runs —
-     * it checks the individual files being committed, which is a narrower question than this one and not
-     * answered by it.
+     * Uses {@link McpHookServer#isProjectFileAllowed} rather than {@code isFileAccessible}: a git repository is never
+     * the session's own config directory, so the config-dir exemption has nothing to contribute. It fails closed when
+     * the server or session id is missing, matching the build providers' existing treatment of the same question.
+     * {@code GitCommit}'s {@code areCommitTargetsAllowed} is untouched and still runs — it checks the individual files
+     * being committed, which is a narrower question than this one and not answered by it.
      */
     static String gitScopeDenialOrNull(McpToolInterface handler, JsonObject argsObj, AbstractAiSession session) {
         if (handler == null || handler.section() != McpSectionEnum.GIT) {
@@ -233,12 +228,12 @@ public final class McpToolInvoker {
     }
 
     /**
-     * Contention message on acquisition failure. By the time this is returned the acquisition has already
-     * waited the lock's full configured wait and lost — the wait duration is reported straight from the
-     * {@link TimeoutEnum} constant the lock uses ({@link LockTypeEnum#getWaitTimeout()}) so it can never
-     * drift when the constant is retuned. Because the holder survived a full wait, it is still working, so
-     * the message steers the caller away from sleeping and retrying in a loop (observed behaviour after the
-     * old "try again shortly" wording) and towards doing other work or reporting the contention to the user.
+     * Contention message on acquisition failure. By the time this is returned the acquisition has already waited the
+     * lock's full configured wait and lost — the wait duration is reported straight from the {@link TimeoutEnum}
+     * constant the lock uses ({@link LockTypeEnum#getWaitTimeout()}) so it can never drift when the constant is
+     * retuned. Because the holder survived a full wait, it is still working, so the message steers the caller away from
+     * sleeping and retrying in a loop (observed behaviour after the old "try again shortly" wording) and towards doing
+     * other work or reporting the contention to the user.
      */
     static String lockedMessage(LockTypeEnum lockType, String holder, String toolName) {
         TimeoutEnum wait = lockType.getWaitTimeout();
@@ -256,11 +251,10 @@ public final class McpToolInvoker {
 
     /**
      * Contention message when the plugin-wide mutation lock stays busy for the full
-     * {@link TimeoutEnum#MUTATION_LOCK_WAIT_MILLIS} wait. The mutation lock guards a SINGLE handler
-     * invocation, so it is normally brief — unlike the long-lived global locks, an immediate retry really is
-     * the right next step here, so this message deliberately keeps a plain "Please try again." and carries
-     * none of the do-other-work steer (which would be wrong advice over a lock that is probably already
-     * free).
+     * {@link TimeoutEnum#MUTATION_LOCK_WAIT_MILLIS} wait. The mutation lock guards a SINGLE handler invocation, so it
+     * is normally brief — unlike the long-lived global locks, an immediate retry really is the right next step here, so
+     * this message deliberately keeps a plain "Please try again." and carries none of the do-other-work steer (which
+     * would be wrong advice over a lock that is probably already free).
      */
     static String mutationLockTimeoutMessage() {
         return "Error: mutation lock timeout — another operation held the mutation"
@@ -275,9 +269,8 @@ public final class McpToolInvoker {
 
     /**
      * Maps a normalised lock key back to the caller's own spelling, for messages: the key may be case-folded
-     * (case-insensitive-volume handling), so echoing it back to the AI on refusal would show a path that
-     * differs from the one it actually passed. Falls back to the key itself if, somehow, none of the original
-     * paths normalise to it.
+     * (case-insensitive-volume handling), so echoing it back to the AI on refusal would show a path that differs from
+     * the one it actually passed. Falls back to the key itself if, somehow, none of the original paths normalise to it.
      */
     private static String originalPathFor(LockManager lockManager, Collection<String> paths, String normalisedKey) {
         for (String original : paths) {
@@ -289,9 +282,9 @@ public final class McpToolInvoker {
     }
 
     /**
-     * Runs a real file mutation under the shared side of the mutation gate and the per-file locks. Callers
-     * must invoke this only after every confirmation/diff prompt has completed. Paths are sorted and
-     * normalised by LockManager, avoiding A→B/B→A deadlocks for moves and copies.
+     * Runs a real file mutation under the shared side of the mutation gate and the per-file locks. Callers must invoke
+     * this only after every confirmation/diff prompt has completed. Paths are sorted and normalised by LockManager,
+     * avoiding A→B/B→A deadlocks for moves and copies.
      */
     public static String withFileMutation(String sessionId, Collection<String> paths,
                                           Supplier<String> action) {
@@ -337,9 +330,9 @@ public final class McpToolInvoker {
     }
 
     /**
-     * Serializes a read only with an in-flight WRITE of the same file — never with another read, which may
-     * run concurrently alongside it. Deliberately does not enter the shared mutation gate either: reads must
-     * remain available while an unrelated refactoring is exclusive.
+     * Serializes a read only with an in-flight WRITE of the same file — never with another read, which may run
+     * concurrently alongside it. Deliberately does not enter the shared mutation gate either: reads must remain
+     * available while an unrelated refactoring is exclusive.
      */
     public static String withFileRead(String sessionId, Collection<String> paths,
                                       Supplier<String> action) {

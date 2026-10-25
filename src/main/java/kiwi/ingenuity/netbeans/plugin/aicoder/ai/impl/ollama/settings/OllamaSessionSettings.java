@@ -52,9 +52,9 @@ public class OllamaSessionSettings extends OpenAiClientSessionSettings {
     }
 
     /**
-     * Ollama keeps model-facing context by default because its local sessions have no remote transcript to
-     * reconstruct after restart. An explicit session value still wins; the nullable distinction also makes
-     * existing sessions with an unset value adopt the Ollama default.
+     * Ollama keeps model-facing context by default because its local sessions have no remote transcript to reconstruct
+     * after restart. An explicit session value still wins; the nullable distinction also makes existing sessions with
+     * an unset value adopt the Ollama default.
      */
     @Override
     public boolean effectiveContextPersistOnClose() {

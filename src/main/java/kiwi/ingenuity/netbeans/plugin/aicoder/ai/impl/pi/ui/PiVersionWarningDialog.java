@@ -14,8 +14,7 @@ import kiwi.ingenuity.netbeans.plugin.aicoder.utils.BrowserUtil;
 
 /**
  * "Is pi &lt;version&gt; working correctly with the AI Coder plugin?" dialog, opened from the info bar's
- * version-warning button and the Options → Pi tab's Verify… button, with the exact Yes / Unsure / No
- * behaviour.
+ * version-warning button and the Options → Pi tab's Verify… button, with the exact Yes / Unsure / No behaviour.
  */
 public final class PiVersionWarningDialog {
 
@@ -65,8 +64,8 @@ public final class PiVersionWarningDialog {
 
     /**
      * Built from {@link Installer#HOMEPAGE}, same "never null, blank on failure" idiom as
-     * {@code Installer.releaseUrl()}. Package-private so the dialog's tests can verify the exact URL shape
-     * without opening a real dialog.
+     * {@code Installer.releaseUrl()}. Package-private so the dialog's tests can verify the exact URL shape without
+     * opening a real dialog.
      */
     static String bugReportUrl() {
         String home = Installer.HOMEPAGE;

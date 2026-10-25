@@ -50,8 +50,8 @@ public class GitProvider {
     private static final Logger LOG = Logger.getLogger(GitProvider.class.getName());
 
     /**
-     * Message given to a stash push when the caller supplies none. Documented as the default in GitStash's
-     * schema, so the two must agree.
+     * Message given to a stash push when the caller supplies none. Documented as the default in GitStash's schema, so
+     * the two must agree.
      */
     public static final String STASH_DEFAULT_MESSAGE = "WIP";
 
@@ -87,9 +87,9 @@ public class GitProvider {
                                       = List.of("main", "master", "production", "release");
 
     /**
-     * Logs a failed git operation whose message has already been returned to the caller. A revision that does
-     * not exist or a branch that is not merged is the caller's mistake, not an IDE fault, so its stack trace
-     * is logged only with debug JSON on; every other failure stays a WARNING.
+     * Logs a failed git operation whose message has already been returned to the caller. A revision that does not exist
+     * or a branch that is not merged is the caller's mistake, not an IDE fault, so its stack trace is logged only with
+     * debug JSON on; every other failure stays a WARNING.
      */
     static void logGitError(String operation, Exception e) {
         if (isCallerMistake(e)) {
@@ -106,15 +106,13 @@ public class GitProvider {
     }
 
     /**
-     * Refusal for a push/pull/fetch to a remote name that is not configured, or null when it is configured or
-     * is a URL or path (which git accepts in place of a name). Checked up front because the transport
-     * otherwise fails with a plain {@link GitException} ("origin: not found.") that cannot be told apart from
-     * a real network failure.
+     * Refusal for a push/pull/fetch to a remote name that is not configured, or null when it is configured or is a URL
+     * or path (which git accepts in place of a name). Checked up front because the transport otherwise fails with a
+     * plain {@link GitException} ("origin: not found.") that cannot be told apart from a real network failure.
      */
     /**
-     * The remote-tracking branches of {@code remote}, e.g. {@code origin/main}, sorted. A local branch whose
-     * name merely starts with the remote's name is not one, so the remote flag is required as well as the
-     * prefix.
+     * The remote-tracking branches of {@code remote}, e.g. {@code origin/main}, sorted. A local branch whose name
+     * merely starts with the remote's name is not one, so the remote flag is required as well as the prefix.
      */
     static List<String> trackingBranchesOf(String remote, Map<String, Boolean> remoteFlagByBranch) {
         return remoteFlagByBranch.entrySet().stream()
@@ -501,19 +499,18 @@ public class GitProvider {
     }
 
     /**
-     * Guarded here rather than per-caller so every call site — including any added later — is protected at
-     * once. {@code FileOwnerQuery.getOwner()} can throw
-     * {@code ExceptionInInitializerError}/{@code NoClassDefFoundError} when the IDE's ProjectManager Lookup
-     * is unavailable; those are Errors, not Exceptions, so {@code catch(Throwable)} is required to contain
-     * them.
+     * Guarded here rather than per-caller so every call site — including any added later — is protected at once.
+     * {@code FileOwnerQuery.getOwner()} can throw {@code ExceptionInInitializerError}/{@code NoClassDefFoundError} when
+     * the IDE's ProjectManager Lookup is unavailable; those are Errors, not Exceptions, so {@code catch(Throwable)} is
+     * required to contain them.
      * <p>
-     * Most callers (RefactoringProvider's write/edit/delete/copy/move) treat this as a best-effort cosmetic
-     * refresh after an already-completed file operation and ignore the returned string either way — a stale
-     * VCS badge is a much smaller problem than reporting a completed operation as failed, so swallowing the
-     * failure into a returned message here is CORRECT for them, not the false-success pattern the rest of
-     * this review targets. Do not "fix" this back into throwing. RefreshFileStatusTool is the one caller
-     * where this refresh IS the operation, and it returns this method's result directly — for that caller,
-     * this branch is what turns an uncaught Error into a real, reportable failure message instead.
+     * Most callers (RefactoringProvider's write/edit/delete/copy/move) treat this as a best-effort cosmetic refresh
+     * after an already-completed file operation and ignore the returned string either way — a stale VCS badge is a much
+     * smaller problem than reporting a completed operation as failed, so swallowing the failure into a returned message
+     * here is CORRECT for them, not the false-success pattern the rest of this review targets. Do not "fix" this back
+     * into throwing. RefreshFileStatusTool is the one caller where this refresh IS the operation, and it returns this
+     * method's result directly — for that caller, this branch is what turns an uncaught Error into a real, reportable
+     * failure message instead.
      */
     public static String refreshVcsStatus(String filePath) {
         try {
@@ -588,12 +585,11 @@ public class GitProvider {
     }
 
     /**
-     * Resolves the working root for a git operation. {@code projectPath} is required and is used directly as
-     * the target project/repository root (relative paths are resolved against the default project root, as a
-     * convenience). This lets a caller always explicitly target any open project's repository, or any repo on
-     * disk — instead of relying on NetBeans' "main project" notion, which is ambiguous (and can be plain
-     * wrong) whenever multiple projects/repos are open at once, or when the git repository lives outside any
-     * open project's directory.
+     * Resolves the working root for a git operation. {@code projectPath} is required and is used directly as the target
+     * project/repository root (relative paths are resolved against the default project root, as a convenience). This
+     * lets a caller always explicitly target any open project's repository, or any repo on disk — instead of relying on
+     * NetBeans' "main project" notion, which is ambiguous (and can be plain wrong) whenever multiple projects/repos are
+     * open at once, or when the git repository lives outside any open project's directory.
      */
     private static File resolveRoot(String projectPath) {
         if (projectPath == null || projectPath.isBlank()) {
@@ -614,20 +610,19 @@ public class GitProvider {
     }
 
     /**
-     * Resolves the best root directory for locating a specific file's git repository: the NetBeans project
-     * that owns the file (so a file in a non-default open project resolves to its own repo), falling back to
-     * the file's own directory so {@link #findGitRoot} can still walk upward to find {@code .git}. Only used
-     * by {@link #gitBlame} when projectPath is omitted, since blame is a single-file operation and the
-     * project can be determined from the file itself.
+     * Resolves the best root directory for locating a specific file's git repository: the NetBeans project that owns
+     * the file (so a file in a non-default open project resolves to its own repo), falling back to the file's own
+     * directory so {@link #findGitRoot} can still walk upward to find {@code .git}. Only used by {@link #gitBlame} when
+     * projectPath is omitted, since blame is a single-file operation and the project can be determined from the file
+     * itself.
      * <p>
      * The owner lookup is contained by {@code catch(Throwable)} for the same reason as {@link #refreshVcsStatus}:
-     * {@code FileOwnerQuery.getOwner()} throws
-     * {@code ExceptionInInitializerError}/{@code NoClassDefFoundError} — Errors, not Exceptions — when the
-     * IDE's ProjectManager Lookup is unavailable. Unguarded, that escaped {@code gitBlame} as a raw Error
-     * whenever a caller passed an absolute filePath without a projectPath. Falling through to the file's own
-     * directory is a genuine degradation and not a swallowed failure: {@link #findGitRoot} still walks upward
-     * from there and finds the same repository in every layout except a file owned by a project that sits
-     * below its own git root.
+     * {@code FileOwnerQuery.getOwner()} throws {@code ExceptionInInitializerError}/{@code NoClassDefFoundError} —
+     * Errors, not Exceptions — when the IDE's ProjectManager Lookup is unavailable. Unguarded, that escaped
+     * {@code gitBlame} as a raw Error whenever a caller passed an absolute filePath without a projectPath. Falling
+     * through to the file's own directory is a genuine degradation and not a swallowed failure: {@link #findGitRoot}
+     * still walks upward from there and finds the same repository in every layout except a file owned by a project that
+     * sits below its own git root.
      */
     private static File resolveRootForFile(File file) {
         FileObject fo = FileUtils.resolveByFile(file);
@@ -856,8 +851,8 @@ public class GitProvider {
     }
 
     /**
-     * Stages normal changes and removes tracked files which disappeared from the working tree. GitClient.add
-     * alone does not stage those removals.
+     * Stages normal changes and removes tracked files which disappeared from the working tree. GitClient.add alone does
+     * not stage those removals.
      */
     private static void stageChanges(GitClient client, File[] targets) throws GitException {
         client.add(targets, NULL_PM);
@@ -875,9 +870,8 @@ public class GitProvider {
     }
 
     /**
-     * Whether {@code status} represents a staged change: a tracked, non-ignored file whose HEAD-vs-INDEX
-     * entry is not NORMAL. The single notion of "staged" shared by {@link #stagedPaths} and
-     * {@link #countStagedAmong}.
+     * Whether {@code status} represents a staged change: a tracked, non-ignored file whose HEAD-vs-INDEX entry is not
+     * NORMAL. The single notion of "staged" shared by {@link #stagedPaths} and {@link #countStagedAmong}.
      */
     private static boolean isStaged(GitStatus status) {
         return status.isTracked()
@@ -896,9 +890,9 @@ public class GitProvider {
     }
 
     /**
-     * How many of {@code targets} have staged changes — the number of files a GitAdd call targeting
-     * {@code targets} actually staged, as opposed to the number of paths the caller requested: a "." request
-     * names one path but can stage a whole tree.
+     * How many of {@code targets} have staged changes — the number of files a GitAdd call targeting {@code targets}
+     * actually staged, as opposed to the number of paths the caller requested: a "." request names one path but can
+     * stage a whole tree.
      */
     private static int countStagedAmong(GitClient client, File[] targets) throws GitException {
         int count = 0;

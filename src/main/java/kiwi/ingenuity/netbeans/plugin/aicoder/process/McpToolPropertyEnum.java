@@ -3,16 +3,15 @@ package kiwi.ingenuity.netbeans.plugin.aicoder.process;
 /**
  * The single source of truth for MCP tool property (parameter) names.
  * <p>
- * Every tool exposes its parameters through a per-tool {@code *ParamEnum}, which names the subset it accepts;
- * the wire key itself comes from here, so the twenty tools that take a file path cannot end up advertising
- * twenty slightly different spellings of it. Anything that would otherwise write a property name as a string
- * literal — {@code props.add(...)} in a schema, {@code args.str(...)} in a handler — takes it from this enum
- * instead.
+ * Every tool exposes its parameters through a per-tool {@code *ParamEnum}, which names the subset it accepts; the wire
+ * key itself comes from here, so the twenty tools that take a file path cannot end up advertising twenty slightly
+ * different spellings of it. Anything that would otherwise write a property name as a string literal —
+ * {@code props.add(...)} in a schema, {@code args.str(...)} in a handler — takes it from this enum instead.
  * <p>
  * Keys are camelCase without exception. {@code WriteFile} and {@code ApplyEdit} previously used snake_case
- * ({@code file_path}, {@code old_string}, {@code new_string}) while every other tool used camelCase, which
- * meant an AI that had learned one spelling supplied an argument the other tool silently ignored.
- * McpToolPropertyEnumTest enforces the convention.
+ * ({@code file_path}, {@code old_string}, {@code new_string}) while every other tool used camelCase, which meant an AI
+ * that had learned one spelling supplied an argument the other tool silently ignored. McpToolPropertyEnumTest enforces
+ * the convention.
  */
 public enum McpToolPropertyEnum {
     /**
@@ -56,8 +55,8 @@ public enum McpToolPropertyEnum {
      */
     COLUMN("column"),
     /**
-     * Whether a refactoring proceeds despite non-fatal problems, reporting them instead of refusing. Never
-     * overrides a fatal problem.
+     * Whether a refactoring proceeds despite non-fatal problems, reporting them instead of refusing. Never overrides a
+     * fatal problem.
      */
     COMMIT_WITH_WARNING("commitWithWarning"),
     /**
@@ -73,8 +72,8 @@ public enum McpToolPropertyEnum {
      */
     CONTEXT_LINES("contextLines"),
     /**
-     * Gradle --continue / Maven -fae equivalent for Gradle: keep running other tasks after a failure instead
-     * of stopping at the first one.
+     * Gradle --continue / Maven -fae equivalent for Gradle: keep running other tasks after a failure instead of
+     * stopping at the first one.
      */
     CONTINUE_ON_FAILURE("continueOnFailure"),
     /**
@@ -114,8 +113,8 @@ public enum McpToolPropertyEnum {
      */
     EXPECTS_REPLY("expectsReply"),
     /**
-     * Maven -fae: run every module before failing, reporting all failures at the end instead of stopping at
-     * the first one.
+     * Maven -fae: run every module before failing, reporting all failures at the end instead of stopping at the first
+     * one.
      */
     FAIL_AT_END("failAtEnd"),
     /**
@@ -273,8 +272,7 @@ public enum McpToolPropertyEnum {
      */
     NOTE("note"),
     /**
-     * Maven -o / Gradle --offline: work from the local repository/cache only, without contacting remote
-     * repos.
+     * Maven -o / Gradle --offline: work from the local repository/cache only, without contacting remote repos.
      */
     OFFLINE("offline"),
     /**
@@ -310,8 +308,8 @@ public enum McpToolPropertyEnum {
      */
     PATTERN("pattern"),
     /**
-     * When true, FixImports imports the unique top-ranked candidate for an ambiguous name and reports the
-     * choice. Default false. A tie is not imported.
+     * When true, FixImports imports the unique top-ranked candidate for an ambiguous name and reports the choice.
+     * Default false. A tie is not imported.
      */
     PICK_BEST("pickBest"),
     /**
@@ -344,8 +342,7 @@ public enum McpToolPropertyEnum {
      */
     QUESTIONS("questions"),
     /**
-     * Whether to return the exact file text (decoded with the file's encoding), no line-number gutter and no
-     * header.
+     * Whether to return the exact file text (decoded with the file's encoding), no line-number gutter and no header.
      */
     RAW("raw"),
     /**
@@ -401,9 +398,9 @@ public enum McpToolPropertyEnum {
      */
     SESSION_ID("sessionId"),
     /**
-     * Maven -DskipTests / Gradle -x check (-x test for the Gradle test run): skip tests, and for a Gradle
-     * build the whole check lifecycle. Default differs by tool — see each tool's own description for what it
-     * preserves from before this option existed.
+     * Maven -DskipTests / Gradle -x check (-x test for the Gradle test run): skip tests, and for a Gradle build the
+     * whole check lifecycle. Default differs by tool — see each tool's own description for what it preserves from
+     * before this option existed.
      */
     SKIP_TESTS("skipTests"),
     /**
@@ -444,8 +441,8 @@ public enum McpToolPropertyEnum {
      */
     TARGET_PACKAGE("targetPackage"),
     /**
-     * Optional destination project root — omitted keeps a move inside the source file's own project; given,
-     * moves across module boundaries into this project instead.
+     * Optional destination project root — omitted keeps a move inside the source file's own project; given, moves
+     * across module boundaries into this project instead.
      */
     TARGET_PROJECT_PATH("targetProjectPath"),
     /**
@@ -458,8 +455,8 @@ public enum McpToolPropertyEnum {
      */
     TARGET_SESSION_ID("targetSessionId"),
     /**
-     * Gradle tasks to run (e.g. {@code build}, {@code assemble}, {@code :module:build}). Maven's equivalent
-     * is {@link #GOALS}, Ant's is {@link #TARGETS}.
+     * Gradle tasks to run (e.g. {@code build}, {@code assemble}, {@code :module:build}). Maven's equivalent is
+     * {@link #GOALS}, Ant's is {@link #TARGETS}.
      */
     TASKS("tasks"),
     /**

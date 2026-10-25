@@ -155,8 +155,8 @@ public class AiInfoBar extends JPanel {
     }
 
     /**
-     * Safe to call from any thread — same reason as {@link #setAutoAccept(boolean)}: backends report status
-     * from their own threads. Self-dispatches rather than relying on every caller to remember to.
+     * Safe to call from any thread — same reason as {@link #setAutoAccept(boolean)}: backends report status from their
+     * own threads. Self-dispatches rather than relying on every caller to remember to.
      */
     public void setStatusMessage(String text) {
         if (!SwingUtilities.isEventDispatchThread()) {
@@ -204,11 +204,11 @@ public class AiInfoBar extends JPanel {
     }
 
     /**
-     * Set the auto-accept checkbox state without firing the listener (used to initialise or sync the UI from
-     * session settings). Safe to call from any thread: several {@code AiSessionHost.updateSessionSettings}
-     * callers reach this from a background thread (e.g. a backend's clear-invalid-effort callback, an ACP
-     * handshake thread) — self-dispatches to the EDT rather than demanding every caller remember to —
-     * demanding it is what let this go unguarded before.
+     * Set the auto-accept checkbox state without firing the listener (used to initialise or sync the UI from session
+     * settings). Safe to call from any thread: several {@code AiSessionHost.updateSessionSettings} callers reach this
+     * from a background thread (e.g. a backend's clear-invalid-effort callback, an ACP handshake thread) —
+     * self-dispatches to the EDT rather than demanding every caller remember to — demanding it is what let this go
+     * unguarded before.
      */
     public void setAutoAccept(boolean value) {
         if (!SwingUtilities.isEventDispatchThread()) {
@@ -234,8 +234,8 @@ public class AiInfoBar extends JPanel {
     }
 
     /**
-     * Busy/ready from the backend. Stop is shown only while the work in flight can be cancelled; the
-     * extension hears {@link AiInfoBarExtension#onBusyChanged} so every bar applies the same lock rule.
+     * Busy/ready from the backend. Stop is shown only while the work in flight can be cancelled; the extension hears
+     * {@link AiInfoBarExtension#onBusyChanged} so every bar applies the same lock rule.
      */
     public void setBusy(boolean busy, boolean cancellable) {
         if (!SwingUtilities.isEventDispatchThread()) {
@@ -251,8 +251,8 @@ public class AiInfoBar extends JPanel {
     }
 
     /**
-     * Hides Stop without changing busy state — once pressed, the cancel request has been sent and the session
-     * stays locked until the backend reports it has actually stopped.
+     * Hides Stop without changing busy state — once pressed, the cancel request has been sent and the session stays
+     * locked until the backend reports it has actually stopped.
      */
     public void hideStop() {
         if (!SwingUtilities.isEventDispatchThread()) {

@@ -35,8 +35,8 @@ import kiwi.ingenuity.netbeans.plugin.aicoder.ai.settings.AiSessionSettingsCreat
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tempfile.TempFileRegistry;
 
 /**
- * Manages persistent storage and retrieval of AI session data. Handles JSON serialization of sessions to disk
- * with proper file locking and atomicity guarantees.
+ * Manages persistent storage and retrieval of AI session data. Handles JSON serialization of sessions to disk with
+ * proper file locking and atomicity guarantees.
  */
 public class SessionPersistenceManager {
 
@@ -49,9 +49,9 @@ public class SessionPersistenceManager {
      */
     private static final Gson GSON = new GsonBuilder().setPrettyPrinting().create();
     /**
-     * Serializes all instances in this JVM before acquiring the cross-process file lock. FileChannel.lock()
-     * throws OverlappingFileLockException if the same JVM holds it twice, so we need intra-JVM serialization
-     * independently of per-instance synchronized methods.
+     * Serializes all instances in this JVM before acquiring the cross-process file lock. FileChannel.lock() throws
+     * OverlappingFileLockException if the same JVM holds it twice, so we need intra-JVM serialization independently of
+     * per-instance synchronized methods.
      */
     private static final Object JVM_LOCK = new Object();
 
@@ -76,9 +76,9 @@ public class SessionPersistenceManager {
     }
 
     /**
-     * Renders a single JSON property for a log line without ever serialising its enclosing object, so a
-     * future sensitive field cannot start leaking through error logging. Absent or non-scalar values collapse
-     * to a placeholder that names the key instead.
+     * Renders a single JSON property for a log line without ever serialising its enclosing object, so a future
+     * sensitive field cannot start leaking through error logging. Absent or non-scalar values collapse to a placeholder
+     * that names the key instead.
      */
     private static String scalarOrPlaceholder(JsonObject o, String key) {
         if (o.has(key) && o.get(key).isJsonPrimitive()) {

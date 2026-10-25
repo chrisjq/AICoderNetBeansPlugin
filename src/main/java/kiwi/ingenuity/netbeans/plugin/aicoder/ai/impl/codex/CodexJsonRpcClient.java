@@ -124,8 +124,8 @@ public class CodexJsonRpcClient {
     }
 
     /**
-     * True once the reader has hit end of stream or a read error: nothing more will ever be read, so no
-     * response can arrive. Set before the disconnect callback is queued.
+     * True once the reader has hit end of stream or a read error: nothing more will ever be read, so no response can
+     * arrive. Set before the disconnect callback is queued.
      */
     boolean isStreamEnded() {
         return streamEnded;
