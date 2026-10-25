@@ -10,6 +10,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Optional;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 import kiwi.ingenuity.netbeans.plugin.aicoder.PluginSettings;
@@ -84,7 +85,7 @@ public class GitProvider {
         }
     };
     private static final List<String> PROTECTED_BRANCHES
-                                      = List.of("main", "master", "production", "release");
+            = List.of("main", "master", "production", "release");
 
     /**
      * Logs a failed git operation whose message has already been returned to the caller. A revision that does not exist
@@ -124,7 +125,7 @@ public class GitProvider {
 
     static String unknownRemoteMessage(String remoteName, Map<String, ?> remotes) {
         if (remotes.containsKey(remoteName) || remoteName.contains(":") || remoteName.startsWith("/")
-            || remoteName.startsWith(".")) {
+                || remoteName.startsWith(".")) {
             return null;
         }
         return remotes.isEmpty()
@@ -242,6 +243,141 @@ public class GitProvider {
         }
     }
 
+    /**
+     * Partial staging: stages the selected hunks (and, within a hunk, the selected new-file line range) of one file
+     * into the git index, leaving the rest of the file unstaged. It builds the patch of the selected hunks from the
+     * file's UNSTAGED diff ({@link GitHunkPatch}) and applies it with {@code git apply --cached} using the same git
+     * binary JGit uses ({@link GitExecutableLocator}) — {@code org.netbeans.libs.git} can only stage whole files, so
+     * the index is written here via the git CLI. Only one file at a time.
+     */
+    public static String gitAddHunks(String projectPath, String file, List<GitHunkPatch.Selection> selections) {
+        File root = resolveRoot(projectPath);
+        if (root == null) {
+            return noRepoError(projectPath);
+        }
+        File gitRoot = findGitRoot(root);
+        if (gitRoot == null) {
+            return "Not a git repository: " + root;
+        }
+        try {
+            File target = resolveFiles(root, List.of(file))[0];
+            try (GitClient client = GitRepository.getInstance(gitRoot).createClient()) {
+                ByteArrayOutputStream baos = new ByteArrayOutputStream();
+                client.exportDiff(new File[]{target}, GitClient.DiffMode.INDEX_VS_WORKINGTREE, baos, NULL_PM);
+                // ISO_8859_1 is byte-transparent, so the diff bytes round-trip unchanged for a file in any
+                // encoding (path names are decoded as UTF-8 separately by GitHunkPatch).
+                String diff = baos.toString(StandardCharsets.ISO_8859_1);
+                List<GitHunkPatch.FileDiff> files = GitHunkPatch.parse(diff);
+                if (files.isEmpty()) {
+                    return "No unstaged changes in " + file
+                            + " (untracked files must be staged whole with GitAdd files)";
+                }
+                String patch;
+                try {
+                    patch = GitHunkPatch.buildPatch(files.get(0), selections);
+                }
+                catch (IllegalArgumentException e) {
+                    return e.getMessage();
+                }
+                Optional<File> git = GitExecutableLocator.find();
+                if (git.isEmpty()) {
+                    return "Git executable not found (the same lookup JGit uses found no git)";
+                }
+                GitCommandRunner.Result result;
+                try {
+                    result = GitCommandRunner.run(git.get(), gitRoot, patch, 30,
+                                                  "apply", "--cached", "--whitespace=nowarn", "-");
+                }
+                catch (IOException e) {
+                    // A timeout or process start failure, not a bad path: report it as a git error.
+                    logGitError("gitAddHunks", e);
+                    return "Git error: " + e.getMessage();
+                }
+                if (result.exitCode() != 0) {
+                    return "Git error: " + result.stderr().trim();
+                }
+                FileUtil.refreshFor(root);
+                return "Staged " + countHunkHeaders(patch) + " hunk(s) of " + file;
+            }
+        }
+        catch (IOException e) {
+            logGitError("gitAddHunks", e);
+            return "Invalid path: " + e.getMessage();
+        }
+        catch (GitException e) {
+            logGitError("gitAddHunks", e);
+            return "Git error: " + e.getMessage();
+        }
+    }
+
+    /**
+     * Partially unstages the selected hunks from one file, leaving all other indexed changes intact. Hunk and line
+     * numbers refer to the index (the {@code +} side of the HEAD-vs-index diff).
+     */
+    public static String gitResetHunks(String projectPath, String file, List<GitHunkPatch.Selection> selections) {
+        File root = resolveRoot(projectPath);
+        if (root == null) {
+            return noRepoError(projectPath);
+        }
+        File gitRoot = findGitRoot(root);
+        if (gitRoot == null) {
+            return "Not a git repository: " + root;
+        }
+        try {
+            File target = resolveFiles(root, List.of(file))[0];
+            try (GitClient client = GitRepository.getInstance(gitRoot).createClient()) {
+                ByteArrayOutputStream baos = new ByteArrayOutputStream();
+                client.exportDiff(new File[]{target}, GitClient.DiffMode.HEAD_VS_INDEX, baos, NULL_PM);
+                String diff = baos.toString(StandardCharsets.ISO_8859_1);
+                List<GitHunkPatch.FileDiff> files = GitHunkPatch.parse(diff);
+                if (files.isEmpty()) {
+                    throw new IllegalArgumentException("No staged changes in " + file);
+                }
+                String patch = GitHunkPatch.buildPatch(files.get(0), selections);
+                Optional<File> git = GitExecutableLocator.find();
+                if (git.isEmpty()) {
+                    return "Git executable not found (the same lookup JGit uses found no git)";
+                }
+                GitCommandRunner.Result result;
+                try {
+                    result = GitCommandRunner.run(git.get(), gitRoot, patch, 30,
+                            "apply", "--cached", "--reverse", "--whitespace=nowarn", "-");
+                }
+                catch (IOException e) {
+                    logGitError("gitResetHunks", e);
+                    return "Git error: " + e.getMessage();
+                }
+                if (result.exitCode() != 0) {
+                    return "Git error: " + result.stderr().trim();
+                }
+                FileUtil.refreshFor(root);
+                return "Unstaged " + countHunkHeaders(patch) + " hunk(s) of " + file;
+            }
+        }
+        catch (IOException e) {
+            logGitError("gitResetHunks", e);
+            return "Invalid path: " + e.getMessage();
+        }
+        catch (GitException e) {
+            logGitError("gitResetHunks", e);
+            return "Git error: " + e.getMessage();
+        }
+    }
+
+    /**
+     * Counts the {@code @@} hunk-header lines in a patch — i.e. the hunks it actually contains. A selection that
+     * produces no changed lines is omitted from the patch, so this (not the number of selections) is what was staged.
+     */
+    private static int countHunkHeaders(String patch) {
+        int count = 0;
+        for (String line : patch.split("\n")) {
+            if (line.startsWith("@@")) {
+                count++;
+            }
+        }
+        return count;
+    }
+
     public static String gitCommit(String projectPath, String message, List<String> files, String sessionId) {
         File root = resolveRoot(projectPath);
         if (root == null) {
@@ -260,7 +396,7 @@ public class GitProvider {
                 List<String> outside = stagedPathsOutside(commitTargets, stagedPaths(client, root), root);
                 if (!outside.isEmpty()) {
                     return "Error: other changes are already staged and would be left out: "
-                           + String.join(", ", outside);
+                            + String.join(", ", outside);
                 }
                 stageChanges(client, commitTargets);
             }
@@ -561,8 +697,8 @@ public class GitProvider {
             // does NOT prove the refresh succeeded; the returned string is what callers and the user actually see.
             String cause = String.valueOf(t.getMessage());
             boolean projectManagerUnavailable = (t instanceof NoClassDefFoundError
-                                                 || t instanceof ExceptionInInitializerError)
-                                                && cause.contains("ProjectManager");
+                    || t instanceof ExceptionInInitializerError)
+                    && cause.contains("ProjectManager");
             LOG.log(projectManagerUnavailable ? Level.FINE : Level.WARNING,
                     "refreshVcsStatus failed for " + filePath, t);
             return "Could not refresh VCS status: " + t.getMessage();
@@ -642,8 +778,8 @@ public class GitProvider {
                 // running IDE and must still be shouted about. Do not demote this to a blanket FINE.
                 String cause = String.valueOf(t.getMessage());
                 boolean projectManagerUnavailable = (t instanceof NoClassDefFoundError
-                                                     || t instanceof ExceptionInInitializerError)
-                                                    && cause.contains("ProjectManager");
+                        || t instanceof ExceptionInInitializerError)
+                        && cause.contains("ProjectManager");
                 // The WARNING half is a real defect worth surfacing, so it is NOT gated. Only the expected-and-noisy
                 // FINE half sits behind the debug flag.
                 if (!projectManagerUnavailable) {
@@ -672,7 +808,7 @@ public class GitProvider {
 
     private static File[] resolveFiles(File root, List<String> paths) throws IOException {
         if (paths == null || paths.isEmpty()
-            || (paths.size() == 1 && ".".equals(paths.get(0)))) {
+                || (paths.size() == 1 && ".".equals(paths.get(0)))) {
             return new File[]{root};
         }
         List<File> result = new ArrayList<>();
@@ -744,8 +880,8 @@ public class GitProvider {
         String oldRelative = stripDiffPrefix(oldPath.value());
         String newRelative = stripDiffPrefix(newPath.value());
         return (matchesDiffTarget(oldRelative, targetPaths) || matchesDiffTarget(newRelative, targetPaths))
-               && isDiffPathAccessible(gitRoot, oldRelative, sessionId)
-               && isDiffPathAccessible(gitRoot, newRelative, sessionId);
+                && isDiffPathAccessible(gitRoot, oldRelative, sessionId)
+                && isDiffPathAccessible(gitRoot, newRelative, sessionId);
     }
 
     private static String stripDiffPrefix(String path) {
@@ -789,7 +925,7 @@ public class GitProvider {
         if (header.charAt(index) != '"') {
             int end = header.indexOf(' ', index);
             return new GitDiffPath(header.substring(index, end >= 0 ? end : header.length()),
-                    end >= 0 ? end + 1 : header.length());
+                                   end >= 0 ? end + 1 : header.length());
         }
         ByteArrayOutputStream bytes = new ByteArrayOutputStream();
         for (int cursor = index + 1; cursor < header.length(); cursor++) {
@@ -803,10 +939,10 @@ public class GitProvider {
             }
             char escaped = header.charAt(++cursor);
             if (escaped >= '0' && escaped <= '7' && cursor + 2 < header.length()
-                && header.charAt(cursor + 1) >= '0' && header.charAt(cursor + 1) <= '7'
-                && header.charAt(cursor + 2) >= '0' && header.charAt(cursor + 2) <= '7') {
+                    && header.charAt(cursor + 1) >= '0' && header.charAt(cursor + 1) <= '7'
+                    && header.charAt(cursor + 2) >= '0' && header.charAt(cursor + 2) <= '7') {
                 bytes.write((escaped - '0') * 64 + (header.charAt(++cursor) - '0') * 8
-                            + (header.charAt(++cursor) - '0'));
+                        + (header.charAt(++cursor) - '0'));
             }
             else {
                 bytes.write(switch (escaped) {
@@ -842,7 +978,7 @@ public class GitProvider {
                 throw new IOException("Path is outside repository: " + path);
             }
             if (sessionId != null && McpServerRegistry.getServer() != null
-                && !McpHookServer.isFileAccessible(McpServerRegistry.getServer(), sessionId, file.getPath())) {
+                    && !McpHookServer.isFileAccessible(McpServerRegistry.getServer(), sessionId, file.getPath())) {
                 throw new IOException("Path is not accessible in this session: " + path);
             }
             result.add(file);
@@ -875,8 +1011,8 @@ public class GitProvider {
      */
     private static boolean isStaged(GitStatus status) {
         return status.isTracked()
-               && status.getStatusIndexWC() != GitStatus.Status.STATUS_IGNORED
-               && status.getStatusHeadIndex() != GitStatus.Status.STATUS_NORMAL;
+                && status.getStatusIndexWC() != GitStatus.Status.STATUS_IGNORED
+                && status.getStatusHeadIndex() != GitStatus.Status.STATUS_NORMAL;
     }
 
     private static List<String> stagedPaths(GitClient client, File root) throws GitException {
@@ -963,18 +1099,18 @@ public class GitProvider {
 
     static boolean isSuccessfulTransportResult(GitRefUpdateResult result) {
         return result == GitRefUpdateResult.NO_CHANGE
-               || result == GitRefUpdateResult.NEW
-               || result == GitRefUpdateResult.FORCED
-               || result == GitRefUpdateResult.FAST_FORWARD
-               || result == GitRefUpdateResult.UP_TO_DATE
-               || result == GitRefUpdateResult.RENAMED
-               || result == GitRefUpdateResult.OK;
+                || result == GitRefUpdateResult.NEW
+                || result == GitRefUpdateResult.FORCED
+                || result == GitRefUpdateResult.FAST_FORWARD
+                || result == GitRefUpdateResult.UP_TO_DATE
+                || result == GitRefUpdateResult.RENAMED
+                || result == GitRefUpdateResult.OK;
     }
 
     static boolean isSuccessfulMergeStatus(GitMergeResult.MergeStatus status) {
         return status == GitMergeResult.MergeStatus.FAST_FORWARD
-               || status == GitMergeResult.MergeStatus.ALREADY_UP_TO_DATE
-               || status == GitMergeResult.MergeStatus.MERGED;
+                || status == GitMergeResult.MergeStatus.ALREADY_UP_TO_DATE
+                || status == GitMergeResult.MergeStatus.MERGED;
     }
 
     private static String formatTransportUpdates(String operation, Map<String, GitTransportUpdate> updates) {
@@ -1301,8 +1437,8 @@ public class GitProvider {
                     authorName = authorName.substring(0, 20);
                 }
                 sb.append(String.format("%-7s %-20s %4d %s%n",
-                        hash.substring(0, Math.min(7, hash.length())),
-                        authorName, i + 1, d.getContent()));
+                                        hash.substring(0, Math.min(7, hash.length())),
+                                        authorName, i + 1, d.getContent()));
             }
             return sb.toString().stripTrailing();
         }
@@ -1547,9 +1683,9 @@ public class GitProvider {
             return false;
         }
         return name.matches("^[a-zA-Z0-9._/+-]+$")
-               && !name.contains("..")
-               && !name.endsWith(".lock")
-               && !name.startsWith("-");
+                && !name.contains("..")
+                && !name.endsWith(".lock")
+                && !name.startsWith("-");
     }
 
     private static boolean isWithinRepository(File gitRoot, File file) {
@@ -1557,7 +1693,7 @@ public class GitProvider {
             String canonical = file.getCanonicalPath();
             String rootCanonical = gitRoot.getCanonicalPath();
             return canonical.startsWith(rootCanonical + File.separator)
-                   || canonical.equals(rootCanonical);
+                    || canonical.equals(rootCanonical);
         }
         catch (IOException e) {
             return false;

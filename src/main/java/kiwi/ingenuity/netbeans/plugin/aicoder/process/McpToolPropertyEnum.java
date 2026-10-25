@@ -154,9 +154,12 @@ public enum McpToolPropertyEnum {
      */
     FOCUS("focus"),
     /**
-     * Maven goals to run (e.g. {@code package}, {@code clean install}). Gradle's equivalent is
-     * {@link #TASKS}, Ant's is {@link #TARGETS} — each build system keeps its own vocabulary rather than
-     * sharing this key.
+     * First line of a requested working-tree line range (inclusive).
+     */
+    FROM_LINE("fromLine"),
+    /**
+     * Maven goals to run (e.g. {@code package}, {@code clean install}). Gradle's equivalent is {@link #TASKS}, Ant's is
+     * {@link #TARGETS} — each build system keeps its own vocabulary rather than sharing this key.
      */
     GOALS("goals"),
     /**
@@ -167,6 +170,14 @@ public enum McpToolPropertyEnum {
      * HTTP request headers.
      */
     HEADERS("headers"),
+    /**
+     * 1-based hunk number within a file's GetGitDiff output.
+     */
+    HUNK("hunk"),
+    /**
+     * Partial-staging entries: a file and, optionally, a hunk and/or a working-tree line range.
+     */
+    HUNKS("hunks"),
     /**
      * Whether a message should interrupt the recipient.
      */
@@ -475,6 +486,10 @@ public enum McpToolPropertyEnum {
      * HTTP request timeout in seconds.
      */
     TIMEOUT_SECONDS("timeoutSeconds"),
+    /**
+     * Last line of a requested working-tree line range (inclusive).
+     */
+    TO_LINE("toLine"),
     /**
      * Requested resource type.
      */

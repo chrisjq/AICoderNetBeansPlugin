@@ -7,7 +7,8 @@ import kiwi.ingenuity.netbeans.plugin.aicoder.process.McpToolPropertyEnum;
  * extraction so the two cannot drift.
  */
 public enum GitAddParamEnum {
-    FILES(McpToolPropertyEnum.FILES);
+    FILES(McpToolPropertyEnum.FILES),
+    HUNKS(McpToolPropertyEnum.HUNKS);
 
     private final McpToolPropertyEnum property;
 

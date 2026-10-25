@@ -71,6 +71,8 @@ public final class McpToolReferences {
         put(references, McpToolEnum.PEER_SESSION_DESCRIBE, McpToolEnum.PEER_SESSION_LIST);
         put(references, McpToolEnum.PEER_IDLE_WATCHER_CREATE, McpToolEnum.PEER_SESSION_LIST);
         put(references, McpToolEnum.PEER_IDLE_WATCHER_CANCEL, McpToolEnum.PEER_IDLE_WATCHER_CREATE, McpToolEnum.PEER_IDLE_WATCHER_LIST);
+        put(references, McpToolEnum.GIT_ADD, McpToolEnum.GET_GIT_DIFF);
+        put(references, McpToolEnum.GIT_RESET, McpToolEnum.GET_GIT_DIFF);
         return Collections.unmodifiableMap(references);
     }
 

@@ -8,6 +8,7 @@ import kiwi.ingenuity.netbeans.plugin.aicoder.process.McpToolPropertyEnum;
  */
 public enum GitResetParamEnum {
     FILES(McpToolPropertyEnum.FILES),
+    HUNKS(McpToolPropertyEnum.HUNKS),
     REVISION(McpToolPropertyEnum.REVISION),
     TYPE(McpToolPropertyEnum.TYPE);
 
