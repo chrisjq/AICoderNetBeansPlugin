@@ -14,7 +14,10 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.concurrent.locks.ReentrantReadWriteLock;
 import java.util.function.Supplier;
+import java.util.logging.Level;
+import java.util.logging.Logger;
 import javax.swing.SwingUtilities;
+import kiwi.ingenuity.netbeans.plugin.aicoder.PluginSettings;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.McpArgumentException;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.McpSectionEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.McpToolEnum;
@@ -42,6 +45,8 @@ public final class McpToolInvoker {
      * user never blocks unrelated work.
      */
     private static final ReentrantReadWriteLock MUTATION_GATE = new ReentrantReadWriteLock(true);
+
+    private static final Logger LOG = Logger.getLogger(McpToolInvoker.class.getName());
 
     public static String invoke(McpToolEnum tool, McpToolInterface handler,
                                 JsonObject argsObj, AbstractAiSession session) throws McpArgumentException {
@@ -138,6 +143,11 @@ public final class McpToolInvoker {
         }
         accepted.add(McpToolPropertyEnum.SESSION_ID.key());
         accepted.add(McpToolPropertyEnum.SECRET_KEY.key());
+        // Before the unknown and required checks, so a glued name such as "query=foo" is judged by its repaired form.
+        // argsObj is the same object the handler later receives, so the repair reaches the tool.
+        for (ToolArgumentNameRepair.Repair repair : ToolArgumentNameRepair.repairInPlace(argsObj, accepted)) {
+            logRepair(tool, repair);
+        }
 
         List<String> errors = new ArrayList<>();
         String duplicateMessage = duplicateParametersMessage(tool.toolName(), duplicateCounts);
@@ -149,8 +159,8 @@ public final class McpToolInvoker {
                 .filter(key -> !accepted.contains(key)).toList();
         if (!unknown.isEmpty()) {
             errors.add("Unknown parameter" + (unknown.size() == 1 ? " '" + unknown.get(0) + "'" : "s "
-                                                                                                  + String.join(", ", unknown)) + " for " + tool.toolName()
-                       + ". Accepted parameters: " + String.join(", ", accepted) + ".");
+                    + String.join(", ", unknown)) + " for " + tool.toolName()
+                    + ". Accepted parameters: " + String.join(", ", accepted) + ".");
         }
 
         List<String> missing = new ArrayList<>();
@@ -171,11 +181,11 @@ public final class McpToolInvoker {
             // telling it what to do next is not. The malformed-tool-call recovery in
             // OllamaAiProcessManager already ends with "call the tool again" for the same reason.
             errors.add(tool.toolName() + " was NOT called — "
-                       + (missing.size() == 1
-                          ? "you left out the required parameter \"" + missing.get(0) + "\""
-                          : "you left out these required parameters: " + String.join(", ", missing))
-                       + ". Call " + tool.toolName()
-                       + " again with every required parameter set. Nothing ran, so no work was lost.");
+                    + (missing.size() == 1
+                       ? "you left out the required parameter \"" + missing.get(0) + "\""
+                       : "you left out these required parameters: " + String.join(", ", missing))
+                    + ". Call " + tool.toolName()
+                    + " again with every required parameter set. Nothing ran, so no work was lost.");
         }
         if (!errors.isEmpty()) {
             throw new McpArgumentException(-32602, String.join("\n", errors));
@@ -216,12 +226,12 @@ public final class McpToolInvoker {
         String sessionId = session == null ? null : session.getId();
         String projectPath = McpHookServerUtil.str(argsObj, McpToolPropertyEnum.PROJECT_PATH.key());
         if (projectPath != null && !projectPath.isBlank()
-            && !McpHookServer.isProjectFileAllowed(server, sessionId, projectPath)) {
+                && !McpHookServer.isProjectFileAllowed(server, sessionId, projectPath)) {
             return McpHookServer.fileAccessDeniedMessage(server, sessionId, projectPath);
         }
         String file = McpHookServerUtil.str(argsObj, McpToolPropertyEnum.FILE.key());
         if (file != null && !file.isBlank() && new File(file).isAbsolute()
-            && !McpHookServer.isProjectFileAllowed(server, sessionId, file)) {
+                && !McpHookServer.isProjectFileAllowed(server, sessionId, file)) {
             return McpHookServer.fileAccessDeniedMessage(server, sessionId, file);
         }
         return null;
@@ -241,12 +251,12 @@ public final class McpToolInvoker {
                         ? "already waited " + wait.millis() / 1000 + "s (" + wait.name() + ") for this lock and lost"
                         : "lost this lock immediately (no waiting is configured: " + wait.name() + " is 0)";
         return "Resource locked by session "
-               + (holder != null ? holder : "another operation")
-               + " performing " + lockType.getDescription()
-               + ". Tool: " + toolName + " " + waited
-               + ", and the holder is still active — an immediate retry will probably fail again."
-               + " Do not sleep and retry in a loop: do other work and come back to this later,"
-               + " or report the contention to the user.";
+                + (holder != null ? holder : "another operation")
+                + " performing " + lockType.getDescription()
+                + ". Tool: " + toolName + " " + waited
+                + ", and the holder is still active — an immediate retry will probably fail again."
+                + " Do not sleep and retry in a loop: do other work and come back to this later,"
+                + " or report the contention to the user.";
     }
 
     /**
@@ -258,9 +268,27 @@ public final class McpToolInvoker {
      */
     static String mutationLockTimeoutMessage() {
         return "Error: mutation lock timeout — another operation held the mutation"
-               + " lock through the full "
-               + TimeoutEnum.MUTATION_LOCK_WAIT_MILLIS / 1000 + "s wait"
-               + " (MUTATION_LOCK_WAIT_MILLIS). Please try again.";
+                + " lock through the full "
+                + TimeoutEnum.MUTATION_LOCK_WAIT_MILLIS / 1000 + "s wait"
+                + " (MUTATION_LOCK_WAIT_MILLIS). Please try again.";
+    }
+
+    /**
+     * One FINE line per repaired argument name. Only the key is logged, never its value, because a glued value can be a
+     * credential.
+     */
+    private static void logRepair(McpToolEnum tool, ToolArgumentNameRepair.Repair repair) {
+        if (!PluginSettings.isDebugJson()) {
+            return;
+        }
+        if (repair.to() == null) {
+            LOG.log(Level.FINE, "Dropped unusable tool argument name ''{0}'' for {1}",
+                    new Object[]{repair.from(), tool.toolName()});
+        }
+        else {
+            LOG.log(Level.FINE, "Repaired tool argument name ''{0}'' -> ''{1}'' for {2}",
+                    new Object[]{repair.from(), repair.to(), tool.toolName()});
+        }
     }
 
     private static String safe(String s) {
@@ -311,7 +339,7 @@ public final class McpToolInvoker {
                 String path = contendedPath.get() != null ? contendedPath.get() : normalised.iterator().next();
                 if (lockManager.isPathBlockedByReadersOnly(path)) {
                     return "File is locked: reads of " + originalPathFor(lockManager, paths, path)
-                           + " were in progress; retry shortly.";
+                            + " were in progress; retry shortly.";
                 }
                 return LockManager.fileLockedMessage(lockManager.getFileLockHolder(path));
             }
@@ -434,7 +462,7 @@ public final class McpToolInvoker {
             return "";
         }
         return "Duplicate parameters for " + toolName + ": " + duplicates
-               + ". Each parameter may be given once.";
+                + ". Each parameter may be given once.";
     }
 
     private McpToolInvoker() {
