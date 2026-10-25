@@ -2,8 +2,10 @@ package kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.ai;
 
 import com.google.gson.JsonObject;
 import java.time.Instant;
+import java.util.List;
 import java.util.Map;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.AiTypeEnum;
+import kiwi.ingenuity.netbeans.plugin.aicoder.ai.mail.AiInboxMessage;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.mail.AiSessionInboxBroker;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.notification.AbstractNotification;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.session.AiSession;
@@ -18,11 +20,11 @@ import static org.junit.jupiter.api.Assertions.*;
 import org.junit.jupiter.api.Test;
 
 /**
- * Covers reply tracking owned by this session, including SendAiMessageTool delivery for an unknown
- * replyToMessageId, the "You still owe replies to:" reminder SendAiMessageTool appends after a successful
- * send, and the DeleteAiMessageTool warning for deleting an unanswered expects-reply message. Setup mirrors
- * InterAiToolHandlersTest's real-session/real-broker pattern rather than mocking, since the behaviour under
- * test lives in how the tools compose real AiSessionInboxBroker state.
+ * Covers reply tracking owned by this session, including SendAiMessageTool delivery for an unknown replyToMessageId,
+ * the "Separately, you still owe replies to:" reminder SendAiMessageTool appends after a successful send, and the
+ * DeleteAiMessageTool warning for deleting an unanswered expects-reply message. Setup mirrors InterAiToolHandlersTest's
+ * real-session/real-broker pattern rather than mocking, since the behaviour under test lives in how the tools compose
+ * real AiSessionInboxBroker state.
  */
 class ReplyTrackingToolsTest {
 
@@ -97,9 +99,9 @@ class ReplyTrackingToolsTest {
         SendAiMessageTool tool = new SendAiMessageTool();
 
         String unknown = tool.handle(sendArgs(sender, target, "Unknown", "body", "does-not-exist-12345"), null);
-        assertTrue(unknown.startsWith("Message sent"), unknown);
-        assertTrue(unknown.contains("Note:"), unknown);
-        assertTrue(unknown.contains("unknown"), unknown);
+        assertTrue(unknown.startsWith("Your message WAS delivered"), unknown);
+        assertTrue(unknown.contains("do NOT send it again"), unknown);
+        assertTrue(unknown.contains("matched no message"), unknown);
 
         String sentBySender = broker.sendMessage(sender.id(), peer.id(), "Earlier", "body", null);
         String own = tool.handle(sendArgs(sender, target, "Own", "body", sentBySender), null);
@@ -112,6 +114,44 @@ class ReplyTrackingToolsTest {
         broker.listInbox(target.id(), target.secret()).forEach(message -> assertNull(message.replyToId()));
     }
 
+    @Test
+    void unknownReplyIdAutoMatchesTheOnlyReplyOwedToTheTarget() {
+        AiSession sender = session("rtt-auto-sender", "Sender", true);
+        AiSession target = session("rtt-auto-target", "Target", true);
+        AiSessionInboxBroker broker = AiSessionInboxBroker.getInstance();
+        String owedId = broker.sendMessage(target.id(), sender.id(), "Please answer", "body", null,
+                                           false, true, false);
+
+        String result = new SendAiMessageTool().handle(
+                sendArgs(sender, target, "Answer", "body", "69675271"), null);
+
+        assertTrue(result.contains("treated as your reply to " + owedId), result);
+        assertTrue(result.contains("now marked replied"), result);
+        assertTrue(broker.listOwedReplies(sender.id()).isEmpty());
+        List<AiInboxMessage> deliveredMessages = broker.listInbox(target.id(), target.secret());
+        AiInboxMessage delivered = deliveredMessages.get(deliveredMessages.size() - 1);
+        assertEquals(owedId, delivered.replyToId());
+    }
+
+    @Test
+    void unknownReplyIdWithSeveralOwedRepliesDoesNotGuessAndListsEachOne() {
+        AiSession sender = session("rtt-many-sender", "Sender", true);
+        AiSession target = session("rtt-many-target", "Target", true);
+        AiSessionInboxBroker broker = AiSessionInboxBroker.getInstance();
+        String first = broker.sendMessage(target.id(), sender.id(), "First", "body", null, false, true, false);
+        String second = broker.sendMessage(target.id(), sender.id(), "Second", "body", null, false, true, false);
+
+        String result = new SendAiMessageTool().handle(
+                sendArgs(sender, target, "Report", "body", "69675271"), null);
+
+        assertTrue(result.contains("do NOT send it again"), result);
+        assertTrue(result.contains("id=" + first), result);
+        assertTrue(result.contains("id=" + second), result);
+        assertEquals(2, broker.listOwedReplies(sender.id()).size());
+        List<AiInboxMessage> deliveredMessages = broker.listInbox(target.id(), target.secret());
+        assertNull(deliveredMessages.get(deliveredMessages.size() - 1).replyToId());
+    }
+
     // ---- SendAiMessageTool: owed-replies block ----
     @Test
     void owedRepliesBlockListsAReadUnansweredMessageButExcludesUnreadAndJustAnswered() {
@@ -122,25 +162,25 @@ class ReplyTrackingToolsTest {
         AiSessionInboxBroker broker = AiSessionInboxBroker.getInstance();
 
         String readOwedId = broker.sendMessage(readPeer.id(), me.id(), "Please review", "body", null,
-                false, true, false);
+                                               false, true, false);
         broker.readMessageWithResult(me.id(), me.secret(), readOwedId);
 
         broker.sendMessage(unreadPeer.id(), me.id(), "Also needs a reply", "body", null, false, true, false);
         // left unread deliberately
 
         String toBeAnsweredId = broker.sendMessage(answeredPeer.id(), me.id(), "Answering this one now", "body", null,
-                false, true, false);
+                                                   false, true, false);
         broker.readMessageWithResult(me.id(), me.secret(), toBeAnsweredId);
 
         String result = new SendAiMessageTool().handle(
                 sendArgs(me, answeredPeer, "Re: Answering this one now", "here you go", toBeAnsweredId), null);
 
-        assertTrue(result.contains("You still owe replies to:"), result);
+        assertTrue(result.contains("you still owe replies to:"), result);
         assertTrue(result.contains("id=" + readOwedId), result);
         assertTrue(result.contains("Please review"), result);
         assertFalse(result.contains("Also needs a reply"), "unread messages must not be surfaced here: " + result);
         assertFalse(result.contains("id=" + toBeAnsweredId),
-                "the message just answered by this call must be excluded: " + result);
+                    "the message just answered by this call must be excluded: " + result);
     }
 
     @Test
@@ -150,7 +190,7 @@ class ReplyTrackingToolsTest {
 
         String result = new SendAiMessageTool().handle(sendArgs(me, target, "Hi", "body", null), null);
 
-        assertFalse(result.contains("You still owe replies to:"), result);
+        assertFalse(result.contains("you still owe replies to:"), result);
     }
 
     // ---- DeleteAiMessageTool: unanswered-reply warning ----
@@ -161,7 +201,7 @@ class ReplyTrackingToolsTest {
         AiSessionInboxBroker broker = AiSessionInboxBroker.getInstance();
 
         String owedId = broker.sendMessage(peer.id(), me.id(), "Needs an answer", "body", null,
-                false, true, false);
+                                           false, true, false);
         String fyiId = broker.sendMessage(peer.id(), me.id(), "FYI only", "body", null, false, false, false);
 
         JsonObject deleteOwed = new JsonObject();

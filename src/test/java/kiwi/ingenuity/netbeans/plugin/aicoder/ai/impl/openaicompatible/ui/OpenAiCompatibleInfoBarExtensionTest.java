@@ -54,6 +54,25 @@ class OpenAiCompatibleInfoBarExtensionTest {
     }
 
     @Test
+    void resetEnabledTracksModelAndEffortSelectors() throws Exception {
+        OpenAiCompatibleInfoBarExtension extension = new OpenAiCompatibleInfoBarExtension();
+
+        SwingUtilities.invokeAndWait(() -> extension.setResetEnabled(false));
+        for (JComponent component : extension.createComponents()) {
+            if (component instanceof JComboBox<?>) {
+                assertEquals(false, component.isEnabled());
+            }
+        }
+
+        SwingUtilities.invokeAndWait(() -> extension.setResetEnabled(true));
+        for (JComponent component : extension.createComponents()) {
+            if (component instanceof JComboBox<?>) {
+                assertEquals(true, component.isEnabled());
+            }
+        }
+    }
+
+    @Test
     void contextUsageEventUpdatesGaugeAndTooltip() throws Exception {
         OpenAiCompatibleInfoBarExtension extension = new OpenAiCompatibleInfoBarExtension();
 

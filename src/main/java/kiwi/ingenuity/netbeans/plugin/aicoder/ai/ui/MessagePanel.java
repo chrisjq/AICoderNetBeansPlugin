@@ -602,6 +602,13 @@ public class MessagePanel extends JPanel {
             if ((e.getChangeFlags() & java.awt.event.HierarchyEvent.SHOWING_CHANGED) != 0 && isShowing() && rebuildDirty) {
                 rebuildDirty = false;
                 rebuildContent();
+                SwingUtilities.invokeLater(() -> {
+                    ConversationPanel conversation = (ConversationPanel) SwingUtilities.getAncestorOfClass(
+                            ConversationPanel.class, this);
+                    if (conversation != null) {
+                        conversation.restoreScrollAfterDeferredRender();
+                    }
+                });
             }
         });
     }

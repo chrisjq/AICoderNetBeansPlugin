@@ -223,7 +223,13 @@ public class SendAiMessageTool extends AbstractActionTool {
                     + "retry once it has finished processing.";
         }
         boolean tryInterruptEnabled = targetAllowsImportant && important;
-        String result = "Message sent to session " + targetSessionId + " (id=" + messageId + ")";
+        String result;
+        if (sendResult.unmatchedReplyTo()) {
+            result = unmatchedReplyResult(broker, senderId, targetSessionId, replyToMessageId, messageId);
+        }
+        else {
+            result = "Message sent to session " + targetSessionId + " (id=" + messageId + ")";
+        }
         if (targetRunning) {
             result += " — WARNING: target session is currently processing";
 
@@ -241,13 +247,36 @@ public class SendAiMessageTool extends AbstractActionTool {
         if (sendResult.replyToNote() != null) {
             result += "\nNote: " + sendResult.replyToNote();
         }
-        result += owedRepliesBlock(senderId, sendResult.replyToNote() == null ? replyToMessageId : null);
+        result += owedRepliesBlock(senderId, sendResult.answeredMessageId());
         return result;
     }
 
+    private static String unmatchedReplyResult(AiSessionInboxBroker broker, String senderId, String targetSessionId,
+                                               String replyToMessageId, String messageId) {
+        String targetName = senderName(targetSessionId);
+        StringBuilder result = new StringBuilder("Your message WAS delivered to ").append(targetName)
+                .append(" (id=").append(messageId).append(") — do NOT send it again. replyToMessageId ")
+                .append(replyToMessageId).append(" matched no message, so no reply was recorded. ")
+                .append("To close a reply you owe, call PeerMessageMarkReplied with the right messageId:");
+        List<AiInboxMessage> owedToTarget = broker.listOwedReplies(senderId).stream()
+                .filter(message -> targetSessionId.equals(message.fromSessionId()))
+                .toList();
+        if (owedToTarget.isEmpty()) {
+            result.append(" none owed to ").append(targetName).append(".");
+        }
+        else {
+            for (AiInboxMessage message : owedToTarget) {
+                String subject = message.subject() != null && !message.subject().isBlank()
+                                 ? message.subject() : "(no subject)";
+                result.append("\n- id=").append(message.id()).append(" \"").append(subject).append("\"");
+            }
+        }
+        return result.toString();
+    }
+
     /**
-     * "You still owe replies to:" reminder appended after every successful send, so the reply obligation stays visible
-     * right when the sender is already in the mail tool rather than only on the next turn's preamble (see
+     * "Separately, you still owe replies to:" reminder appended after every successful send, so the reply obligation
+     * stays visible right when the sender is already in the mail tool rather than only on the next turn's preamble (see
      * ContextProvider.appendOwedReplies, the equivalent per-turn section). Only messages already read are listed — an
      * unread one has not been seen yet, so surfacing it here would be the same premature-reply nudge
      * NotificationUtilInboxTest guards the auto-delivered notification against. The message just answered by this very
@@ -261,7 +290,7 @@ public class SendAiMessageTool extends AbstractActionTool {
         if (owed.isEmpty()) {
             return "";
         }
-        StringBuilder sb = new StringBuilder("\nYou still owe replies to:\n");
+        StringBuilder sb = new StringBuilder("\nSeparately, you still owe replies to:\n");
         for (AiInboxMessage m : owed) {
             String subject = m.subject() != null && !m.subject().isBlank() ? m.subject() : "(no subject)";
             sb.append("- id=").append(m.id())

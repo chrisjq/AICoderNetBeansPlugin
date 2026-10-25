@@ -463,6 +463,13 @@ public class ConversationPanel extends JScrollPane {
     }
 
     /**
+     * Re-pins after a hidden message panel has rendered on becoming visible.
+     */
+    void restoreScrollAfterDeferredRender() {
+        scrollToBottom();
+    }
+
+    /**
      * Scrolls to the newest message REGARDLESS of the auto-scroll setting. Two kinds of caller qualify:
      * <ul>
      * <li>The user just acted — sending a message, or switching auto-scroll back on. They asked for something and

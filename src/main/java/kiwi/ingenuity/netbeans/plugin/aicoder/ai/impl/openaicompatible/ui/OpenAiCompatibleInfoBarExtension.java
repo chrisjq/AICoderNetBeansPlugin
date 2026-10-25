@@ -215,10 +215,15 @@ public final class OpenAiCompatibleInfoBarExtension implements AiInfoBarExtensio
     }
 
     /**
-     * Enables or disables the Reset button (same rule as Compact).
+     * Enables or disables the Reset button and the model/effort selectors as one reset-state group (same rule as
+     * Compact).
      */
     public void setResetEnabled(boolean enabled) {
-        onEdt(() -> resetButton.setEnabled(enabled));
+        onEdt(() -> {
+            resetButton.setEnabled(enabled);
+            modelCombo.setEnabled(enabled);
+            effortCombo.setEnabled(enabled);
+        });
     }
 
     /**

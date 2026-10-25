@@ -22,8 +22,12 @@ class DialogPlacementTest {
         JFrame frame = new JFrame();
         try {
             JPanel panel = new JPanel();
+            frame.setUndecorated(true);
+            frame.setFocusableWindowState(false);
+            frame.setAutoRequestFocus(false);
             frame.add(panel);
             frame.pack();
+            frame.setLocation(-10_000, -10_000);
             frame.setVisible(true);
             assertSame(frame, DialogPlacement.anchor(panel));
         }
