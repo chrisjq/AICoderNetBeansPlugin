@@ -32,6 +32,7 @@ import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.exposure.McpToolCate
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.exposure.McpToolConfig;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.exposure.McpToolGroupEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.serialization.McpTemplatePersistenceManager;
+import kiwi.ingenuity.netbeans.plugin.aicoder.ui.DialogPlacement;
 import org.openide.util.RequestProcessor;
 
 /**
@@ -49,11 +50,11 @@ public final class McpToolSettingsPanel extends JPanel {
             = McpToolSettingsPanel::confirmTemplateApplication;
 
     private static boolean confirmTemplateApplication(Component parent, TemplateChoice choice) {
-        return JOptionPane.showConfirmDialog(parent,
-                                             "Applying \"" + choice.template().name()
-                                             + "\" replaces the tool switches set in this dialog. Continue?",
-                                             "Apply MCP template",
-                                             JOptionPane.YES_NO_OPTION)
+        return DialogPlacement.showConfirmDialog(parent,
+                                                 "Applying \"" + choice.template().name()
+                                                 + "\" replaces the tool switches set in this dialog. Continue?",
+                                                 "Apply MCP template",
+                                                 JOptionPane.YES_NO_OPTION)
                 == JOptionPane.YES_OPTION;
     }
 
@@ -359,18 +360,18 @@ public final class McpToolSettingsPanel extends JPanel {
             if (error != null) {
                 Throwable cause = error instanceof java.util.concurrent.CompletionException && error.getCause() != null
                                   ? error.getCause() : error;
-                JOptionPane.showMessageDialog(this, "Could not load MCP templates: " + cause.getMessage(),
-                                              "MCP Templates", JOptionPane.ERROR_MESSAGE);
+                DialogPlacement.showMessageDialog(this, "Could not load MCP templates: " + cause.getMessage(),
+                                                  "MCP Templates", JOptionPane.ERROR_MESSAGE);
                 return;
             }
             if (templates.isEmpty()) {
                 return;
             }
             TemplateChoice[] choices = templateChoices(templates);
-            TemplateChoice choice = (TemplateChoice) JOptionPane.showInputDialog(this, "Apply MCP template",
-                                                                                 "MCP Templates",
-                                                                                 JOptionPane.PLAIN_MESSAGE, null,
-                                                                                 choices, choices[0]);
+            TemplateChoice choice = (TemplateChoice) DialogPlacement.showInputDialog(this, "Apply MCP template",
+                                                                                     "MCP Templates",
+                                                                                     JOptionPane.PLAIN_MESSAGE, null,
+                                                                                     choices, choices[0]);
             if (choice != null && isDisplayable()) {
                 applyTemplate(choice);
             }

@@ -20,6 +20,7 @@ import javax.swing.JTextField;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.session.AiSession;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.settings.AiSessionSettings;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ui.DialogBounds;
+import kiwi.ingenuity.netbeans.plugin.aicoder.ui.DialogPlacement;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ui.ScrollablePanel;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ui.settings.AiSessionConfigPanel;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ui.settings.AiSessionConfigPanelMode;
@@ -34,9 +35,8 @@ public class AiSessionSettingsDialog extends JDialog {
 
     public static AiSessionSettingsDialog show(AiSession session) {
         AiSessionSettingsDialog dialog = new AiSessionSettingsDialog(session);
-        if (!DialogBounds.restore(DIALOG_BOUNDS_KEY, dialog, 560, 400)) {
-            dialog.setLocationRelativeTo(WindowManager.getDefault().getMainWindow());
-        }
+        DialogBounds.restore(DIALOG_BOUNDS_KEY, dialog, 560, 400);
+        DialogPlacement.centre(dialog, WindowManager.getDefault().getMainWindow());
         dialog.setVisible(true);
         return dialog;
     }

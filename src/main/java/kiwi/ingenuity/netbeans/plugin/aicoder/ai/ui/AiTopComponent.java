@@ -111,6 +111,7 @@ import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.providers.netbeans.R
 import kiwi.ingenuity.netbeans.plugin.aicoder.serialization.HistoryPersistenceManager;
 import kiwi.ingenuity.netbeans.plugin.aicoder.serialization.HistoryPersistenceManager.LoadedHistory;
 import kiwi.ingenuity.netbeans.plugin.aicoder.serialization.SessionPersistenceManager;
+import kiwi.ingenuity.netbeans.plugin.aicoder.ui.DialogPlacement;
 import kiwi.ingenuity.netbeans.plugin.aicoder.utils.NotificationUtil;
 import kiwi.ingenuity.netbeans.plugin.aicoder.utils.ProjectPathUtil;
 import org.netbeans.api.project.Project;
@@ -1261,7 +1262,7 @@ public final class AiTopComponent extends TopComponent implements AiProcessEvent
             return true;
         }
         Object[] options = {"Delete session", "Keep for later", "Cancel"};
-        int choice = JOptionPane.showOptionDialog(
+        int choice = DialogPlacement.showOptionDialog(
                 this,
                 "Close \"" + session.name() + "\"?\n\nDelete removes the session and its history permanently.",
                 "Close Session",
@@ -1707,7 +1708,7 @@ public final class AiTopComponent extends TopComponent implements AiProcessEvent
                 if (dialogParent == null) {
                     dialogParent = WindowManager.getDefault().getMainWindow();
                 }
-                String chosen = (String) JOptionPane.showInputDialog(
+                String chosen = (String) DialogPlacement.showInputDialog(
                         dialogParent,
                         "Multiple projects are open.\nWhich should " + session.aiType().displayName() + " use as its working directory?",
                         "Select Working Project",

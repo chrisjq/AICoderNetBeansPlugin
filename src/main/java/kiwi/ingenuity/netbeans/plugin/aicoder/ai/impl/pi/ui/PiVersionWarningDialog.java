@@ -10,6 +10,7 @@ import javax.swing.JOptionPane;
 import javax.swing.JPanel;
 import kiwi.ingenuity.netbeans.plugin.aicoder.Installer;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.pi.PiVersionCheck;
+import kiwi.ingenuity.netbeans.plugin.aicoder.ui.DialogPlacement;
 import kiwi.ingenuity.netbeans.plugin.aicoder.utils.BrowserUtil;
 
 /**
@@ -22,8 +23,8 @@ public final class PiVersionWarningDialog {
         String version = check.installedVersion();
         String message = "Is pi " + version + " working correctly with the AI Coder plugin?";
         Object[] options = {"Yes, verified", "Unsure", "No"};
-        int choice = JOptionPane.showOptionDialog(parent, message, "Verify pi version",
-                JOptionPane.DEFAULT_OPTION, JOptionPane.QUESTION_MESSAGE, null, options, options[1]);
+        int choice = DialogPlacement.showOptionDialog(parent, message, "Verify pi version",
+                                                      JOptionPane.DEFAULT_OPTION, JOptionPane.QUESTION_MESSAGE, null, options, options[1]);
         switch (choice) {
             case 0 ->
                 onVerified.run();
@@ -59,7 +60,7 @@ public final class PiVersionWarningDialog {
         });
         panel.add(copyButton, BorderLayout.SOUTH);
 
-        JOptionPane.showMessageDialog(parent, panel, "Please file a bug", JOptionPane.WARNING_MESSAGE);
+        DialogPlacement.showMessageDialog(parent, panel, "Please file a bug", JOptionPane.WARNING_MESSAGE);
     }
 
     /**

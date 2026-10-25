@@ -35,6 +35,7 @@ import javax.swing.SwingUtilities;
 import javax.swing.table.TableRowSorter;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.TimeoutEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.serialization.TemplatePersistenceManager;
+import kiwi.ingenuity.netbeans.plugin.aicoder.ui.DialogPlacement;
 
 /**
  * A list of templates on the left and an editor on the right. Everything that touches a template store — which takes a
@@ -350,7 +351,7 @@ public abstract class TemplatePanel<T> extends JPanel {
 
     private void remove() {
         if (selected == null || storeOperationsInFlight > 0
-                || JOptionPane.showConfirmDialog(this, "Delete template?", "Delete", JOptionPane.YES_NO_OPTION) != JOptionPane.YES_OPTION) {
+                || DialogPlacement.showConfirmDialog(this, "Delete template?", "Delete", JOptionPane.YES_NO_OPTION) != JOptionPane.YES_OPTION) {
             return;
         }
         T target = selected;
@@ -465,6 +466,6 @@ public abstract class TemplatePanel<T> extends JPanel {
             return;
         }
         String message = cause.getMessage() == null ? cause.getClass().getSimpleName() : cause.getMessage();
-        JOptionPane.showMessageDialog(this, title + ": " + message, "Templates", JOptionPane.ERROR_MESSAGE);
+        DialogPlacement.showMessageDialog(this, title + ": " + message, "Templates", JOptionPane.ERROR_MESSAGE);
     }
 }

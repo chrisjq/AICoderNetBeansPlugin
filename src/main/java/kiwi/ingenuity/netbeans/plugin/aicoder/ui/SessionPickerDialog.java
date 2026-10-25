@@ -61,6 +61,7 @@ import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.exposure.LegacyToolG
 import kiwi.ingenuity.netbeans.plugin.aicoder.serialization.McpTemplatePersistenceManager;
 import kiwi.ingenuity.netbeans.plugin.aicoder.serialization.SessionPersistenceManager;
 import kiwi.ingenuity.netbeans.plugin.aicoder.serialization.TemplatePersistenceManager;
+import kiwi.ingenuity.netbeans.plugin.aicoder.ui.DialogPlacement;
 import kiwi.ingenuity.netbeans.plugin.aicoder.utils.BrowserUtil;
 import kiwi.ingenuity.netbeans.plugin.aicoder.utils.ProjectPathUtil;
 import org.netbeans.api.project.Project;
@@ -82,9 +83,8 @@ public class SessionPickerDialog extends JDialog {
 
     public static void show(SessionPersistenceManager spm) {
         SessionPickerDialog dialog = new SessionPickerDialog(spm);
-        if (!DialogBounds.restore(DIALOG_BOUNDS_KEY, dialog, 820, 560)) {
-            dialog.setLocationRelativeTo(WindowManager.getDefault().getMainWindow());
-        }
+        DialogBounds.restore(DIALOG_BOUNDS_KEY, dialog, 820, 560);
+        DialogPlacement.centre(dialog, WindowManager.getDefault().getMainWindow());
         dialog.setVisible(true);
     }
 
@@ -454,17 +454,17 @@ public class SessionPickerDialog extends JDialog {
                 Throwable cause = error instanceof java.util.concurrent.CompletionException && error.getCause() != null
                                   ? error.getCause() : error;
                 LOG.log(Level.WARNING, "Could not load templates", cause);
-                JOptionPane.showMessageDialog(this, "Could not load templates: " + cause.getMessage(),
-                                              "Templates", JOptionPane.ERROR_MESSAGE);
+                DialogPlacement.showMessageDialog(this, "Could not load templates: " + cause.getMessage(),
+                                                  "Templates", JOptionPane.ERROR_MESSAGE);
             }
             else if (data != null && !data.failures().isEmpty()) {
                 String details = data.failures().stream()
                         .map(failure -> failure.store().label() + ": " + failure.message())
                         .reduce((a, b) -> a + "\n" + b).orElse("");
-                JOptionPane.showMessageDialog(this,
-                                              "Could not load the following template store(s), which are shown with "
-                                              + "their defaults instead:\n" + details,
-                                              "Templates", JOptionPane.WARNING_MESSAGE);
+                DialogPlacement.showMessageDialog(this,
+                                                  "Could not load the following template store(s), which are shown with "
+                                                  + "their defaults instead:\n" + details,
+                                                  "Templates", JOptionPane.WARNING_MESSAGE);
             }
             // Only an empty config or MCP list disables Create: a failed instruction store does not, and neither
             // does a failed config/MCP store, whose combo falls back to a single in-memory Default below.
@@ -678,7 +678,7 @@ public class SessionPickerDialog extends JDialog {
         AiTypeEnum type = (AiTypeEnum) aiTypeCombo.getSelectedItem();
         String baseName = nameField.getText().trim();
         if (project == null || type == null || baseName.isEmpty()) {
-            JOptionPane.showMessageDialog(this, "Name, open project, and AI type are required.", "Create session", JOptionPane.WARNING_MESSAGE);
+            DialogPlacement.showMessageDialog(this, "Name, open project, and AI type are required.", "Create session", JOptionPane.WARNING_MESSAGE);
             return;
         }
         PluginSettings.setLastSessionAiType(type);
@@ -689,8 +689,8 @@ public class SessionPickerDialog extends JDialog {
             }
             catch (IOException e) {
                 LOG.log(Level.WARNING, "Could not load the default config template", e);
-                JOptionPane.showMessageDialog(this, "Could not load the default config template: " + e.getMessage(),
-                                              "Create session", JOptionPane.ERROR_MESSAGE);
+                DialogPlacement.showMessageDialog(this, "Could not load the default config template: " + e.getMessage(),
+                                                  "Create session", JOptionPane.ERROR_MESSAGE);
                 return;
             }
         }
@@ -701,8 +701,8 @@ public class SessionPickerDialog extends JDialog {
             }
             catch (IOException e) {
                 LOG.log(Level.WARNING, "Could not load the default MCP template", e);
-                JOptionPane.showMessageDialog(this, "Could not load the default MCP template: " + e.getMessage(),
-                                              "Create session", JOptionPane.ERROR_MESSAGE);
+                DialogPlacement.showMessageDialog(this, "Could not load the default MCP template: " + e.getMessage(),
+                                                  "Create session", JOptionPane.ERROR_MESSAGE);
                 return;
             }
         }
@@ -776,7 +776,7 @@ public class SessionPickerDialog extends JDialog {
         List<AiSession> eligible = selected.stream().filter(s -> s.projectPath() == null || isProjectOpen(s.projectPath())).sorted((a, b) -> a.name().compareToIgnoreCase(b.name())).toList();
         if (!blocked.isEmpty()) {
             String names = blocked.stream().map(AiSession::name).sorted(String.CASE_INSENSITIVE_ORDER).reduce((a, b) -> a + ", " + b).orElse("");
-            JOptionPane.showMessageDialog(this, "The project for the following sessions is not open:\n" + names + "\n\nOpen the project(s) first.", "Project not open", JOptionPane.WARNING_MESSAGE);
+            DialogPlacement.showMessageDialog(this, "The project for the following sessions is not open:\n" + names + "\n\nOpen the project(s) first.", "Project not open", JOptionPane.WARNING_MESSAGE);
         }
         if (eligible.isEmpty()) {
             return;
@@ -797,7 +797,7 @@ public class SessionPickerDialog extends JDialog {
         if (selected.isEmpty()) {
             return;
         }
-        if (JOptionPane.showConfirmDialog(this, "Delete selected sessions and their history permanently?", "Delete Sessions", JOptionPane.YES_NO_OPTION, JOptionPane.WARNING_MESSAGE) != JOptionPane.YES_OPTION) {
+        if (DialogPlacement.showConfirmDialog(this, "Delete selected sessions and their history permanently?", "Delete Sessions", JOptionPane.YES_NO_OPTION, JOptionPane.WARNING_MESSAGE) != JOptionPane.YES_OPTION) {
             return;
         }
         setSessionsActionsEnabled(false);
