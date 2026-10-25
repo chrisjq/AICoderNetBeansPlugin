@@ -2,7 +2,7 @@
 
 This guide explains the NetBeans UI for creating and operating AI sessions.
 
-For what the plugin is and how to install it, see the [README](README.md). For tool and settings details, see the [Reference](REFERENCE.md).
+For what the plugin is and how to install it, see the [README](../README.md). For tool and settings details, see the [Reference](REFERENCE.md).
 
 ## Start here
 

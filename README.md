@@ -16,7 +16,7 @@ Use it as a simple coding assistant or create AI teams that can implement projec
 | [**Pi**](https://pi.dev/docs/latest) | Long-lived `pi --mode rpc` session | Executable, live model and thinking-level pickers, and version-verification status | Enabled |
 | [**Ollama (Local)**](https://docs.ollama.com/cli) | OpenAI-compatible HTTP API | Base URL, editable/discovered model, thinking, and context-management options | Enabled. Note: Not as live tested as the other implementations, feel free to send me some hardware I can use to live test it well :) |
 
-Each session has its own backend, model, settings, working project, chat history, session instructions, and optional persisted backend session/thread state. Multiple sessions and backends can run at the same time. Builds are queued one at a time for the whole plugin and Git operations take one Git lock, while ordinary file changes on different paths run concurrently; only exclusive refactors take a plugin-wide gate — see [Concurrency and limits](REFERENCE.md#concurrency-and-limits).
+Each session has its own backend, model, settings, working project, chat history, session instructions, and optional persisted backend session/thread state. Multiple sessions and backends can run at the same time. Builds are queued one at a time for the whole plugin and Git operations take one Git lock, while ordinary file changes on different paths run concurrently; only exclusive refactors take a plugin-wide gate — see [Concurrency and limits](docs/REFERENCE.md#concurrency-and-limits).
 
 ## What it provides
 
@@ -86,7 +86,7 @@ Install the generated `.nbm` from `target/` using **Tools > Plugins > Downloaded
 4. Use the dockable chat tab to ask for analysis, changes, tests, or IDE operations.
 5. Review every proposed content diff in the NetBeans Accept/Reject panel before it is saved — unless you enable Auto-accept, which applies changes without asking. See [Change review and safety](#change-review-and-safety).
 
-You can set session-specific options from its configuration UI. An unset session option inherits its global default. For step-by-step use of the AI Manager, session tabs, reviews, and templates, see the [UI guide](UI_GUIDE.md).
+You can set session-specific options from its configuration UI. An unset session option inherits its global default. For step-by-step use of the AI Manager, session tabs, reviews, and templates, see the [UI guide](docs/UI_GUIDE.md).
 
 ## Configuration
 
@@ -138,7 +138,7 @@ When creating or configuring an **Ollama (Local)** session, **Use native tool ca
 - **Off (schema mode, recommended):** the tool list is placed in the prompt and a JSON response grammar constrains the reply shape and tool names. This is generally the more reliable choice for local models.
 - **On (native mode):** the plugin sends the standard OpenAI-style tools array and accepts structured `tool_calls`. This follows the path many models are tuned for, but depends on the selected model's chat template; behaviour can differ even between releases in the same family.
 
-Changing this setting in an existing session resets that session's conversation history so the model never sees mixed tool-call protocols. The pinned instructions and tool list remain. Ollama completes a turn by calling `EndTurn`, not merely by writing prose; the default safeguards stop a turn after 10 narration replies, 3 repeated unproductive rounds, or 500 total tool-loop iterations. See the [reference](REFERENCE.md#ollama-local-settings) for persistence and setting details.
+Changing this setting in an existing session resets that session's conversation history so the model never sees mixed tool-call protocols. The pinned instructions and tool list remain. Ollama completes a turn by calling `EndTurn`, not merely by writing prose; the default safeguards stop a turn after 10 narration replies, 3 repeated unproductive rounds, or 500 total tool-loop iterations. See the [reference](docs/REFERENCE.md#ollama-local-settings) for persistence and setting details.
 
 ### Thinking and reasoning effort
 
@@ -173,19 +173,19 @@ The Manager's **Help** tab holds generated MCP tool documentation and an **About
 
 ## MCP and IDE tool reference
 
-The local MCP server exposes the following NetBeans-aware capabilities to compatible backends. Tool availability varies by backend — some tools are registered only for certain AI types. Tools gated by a session permission (web requests, database access, git) are always listed and are refused at call time when the permission is off. For the complete tool list, usage rules, permission model, and backend/session settings, see the [tool and settings reference](REFERENCE.md); the same tool documentation is browsable in the IDE under **Tools > AI Manager > Help > MCP Tools**.
+The local MCP server exposes the following NetBeans-aware capabilities to compatible backends. Tool availability varies by backend — some tools are registered only for certain AI types. Tools gated by a session permission (web requests, database access, git) are always listed and are refused at call time when the permission is off. For the complete tool list, usage rules, permission model, and backend/session settings, see the [tool and settings reference](docs/REFERENCE.md); the same tool documentation is browsable in the IDE under **Tools > AI Manager > Help > MCP Tools**.
 
 ### Build and test
 
 | Tool | Description |
 |---|---|
-| [`BuildProject`](REFERENCE.md#buildproject), [`CleanProject`](REFERENCE.md#cleanproject), [`CleanAndBuildProject`](REFERENCE.md#cleanandbuildproject) | Invoke NetBeans build actions for the active project type; queued like every other build |
-| [`RunProject`](REFERENCE.md#runproject) | Invokes the IDE's Run Project action (or Debug Project) to launch the app for the user; fire-and-forget, not queued, cannot be stopped by the AI |
-| [`BuildMavenProject`](REFERENCE.md#buildmavenproject), [`CleanAndBuildMavenProject`](REFERENCE.md#cleanandbuildmavenproject), [`RunMavenTests`](REFERENCE.md#runmaventests) | Maven package/clean/test operations |
-| [`BuildGradleProject`](REFERENCE.md#buildgradleproject), [`CleanAndBuildGradleProject`](REFERENCE.md#cleanandbuildgradleproject), [`RunGradleTests`](REFERENCE.md#rungradletests) | Gradle build, clean-and-build, and test operations |
-| [`BuildAntProject`](REFERENCE.md#buildantproject), [`CleanAndBuildAntProject`](REFERENCE.md#cleanandbuildantproject), [`RunAntTests`](REFERENCE.md#runanttests) | Ant build, clean-and-build, and test operations |
-| [`DownloadMavenSources`](REFERENCE.md#downloadmavensources), [`DownloadMavenJavadoc`](REFERENCE.md#downloadmavenjavadoc) | Download dependency sources or Javadoc; queued like every other build |
-| [`ListBuilds`](REFERENCE.md#listbuilds), [`StopAsyncBuild`](REFERENCE.md#stopasyncbuild) | Inspect the shared build queue and cancel one of your own async builds |
+| [`BuildProject`](docs/REFERENCE.md#buildproject), [`CleanProject`](docs/REFERENCE.md#cleanproject), [`CleanAndBuildProject`](docs/REFERENCE.md#cleanandbuildproject) | Invoke NetBeans build actions for the active project type; queued like every other build |
+| [`RunProject`](docs/REFERENCE.md#runproject) | Invokes the IDE's Run Project action (or Debug Project) to launch the app for the user; fire-and-forget, not queued, cannot be stopped by the AI |
+| [`BuildMavenProject`](docs/REFERENCE.md#buildmavenproject), [`CleanAndBuildMavenProject`](docs/REFERENCE.md#cleanandbuildmavenproject), [`RunMavenTests`](docs/REFERENCE.md#runmaventests) | Maven package/clean/test operations |
+| [`BuildGradleProject`](docs/REFERENCE.md#buildgradleproject), [`CleanAndBuildGradleProject`](docs/REFERENCE.md#cleanandbuildgradleproject), [`RunGradleTests`](docs/REFERENCE.md#rungradletests) | Gradle build, clean-and-build, and test operations |
+| [`BuildAntProject`](docs/REFERENCE.md#buildantproject), [`CleanAndBuildAntProject`](docs/REFERENCE.md#cleanandbuildantproject), [`RunAntTests`](docs/REFERENCE.md#runanttests) | Ant build, clean-and-build, and test operations |
+| [`DownloadMavenSources`](docs/REFERENCE.md#downloadmavensources), [`DownloadMavenJavadoc`](docs/REFERENCE.md#downloadmavenjavadoc) | Download dependency sources or Javadoc; queued like every other build |
+| [`ListBuilds`](docs/REFERENCE.md#listbuilds), [`StopAsyncBuild`](docs/REFERENCE.md#stopasyncbuild) | Inspect the shared build queue and cancel one of your own async builds |
 
 **Every** build tool runs through a single plugin-wide build queue — the Maven, Gradle and Ant build, clean-and-build and test tools, the two Maven download tools, and the three IDE actions alike: first come first served, one build running at a time, and up to eight builds per project queued or running (a ninth is refused). Each accepts `async` (default `false`). With `async: true` the call returns the build's id immediately and the full result is delivered as a message when it finishes (up to 2 hours once started); without it the call waits up to 120 seconds for its turn to begin and then returns the result. The two are separate clocks: the 120 seconds is only the wait for a free slot, and never counts against the build's own time. An inline build's own limit adapts to the project — 5 minutes, or the longest it has previously taken to build *successfully* plus 20% — so a slow project stops being cut off once it has proved how long it needs. `ListBuilds` shows that figure per project. IDE actions report COMPLETED (result unknown) when NetBeans says the action ran; the API flag does not confirm the build result. Use Maven, Gradle or Ant tools for an authoritative build result. Present build options with wrong types are refused before queueing; full results include the exact command run, starting with `JAVA_HOME=<install folder>` of the Java platform the project builds with in NetBeans (its default platform when the project names none), and Maven downloads do not count toward Longest OK run.
 
@@ -195,35 +195,35 @@ Asking for a build that is already queued or running with the same options does 
 
 | Tool | Description |
 |---|---|
-| [`SearchInFiles`](REFERENCE.md#searchinfiles), [`SearchTypes`](REFERENCE.md#searchtypes), [`SearchSymbols`](REFERENCE.md#searchsymbols) | IDE-aware text, type, and member search; all three search every open project when no file is supplied, and report the true total when results are truncated |
-| [`FilterFileContent`](REFERENCE.md#filterfilecontent) | Pattern-match lines within a single named file, with optional context per match; reaches files off the source classpath that project search cannot see |
-| [`FindFile`](REFERENCE.md#findfile) | Locate files or directories by name below a permitted directory, with depth limiting and hidden-entry filtering; reaches paths off the source classpath that project search cannot see |
-| [`FindDeclaration`](REFERENCE.md#finddeclaration), [`FindImplementations`](REFERENCE.md#findimplementations), [`FindUsages`](REFERENCE.md#findusages) | Navigate relationships in Java source |
-| [`GetProjectStructure`](REFERENCE.md#getprojectstructure), [`GetClassMembers`](REFERENCE.md#getclassmembers), [`GetTypeHierarchy`](REFERENCE.md#gettypehierarchy), [`GetJavadoc`](REFERENCE.md#getjavadoc) | Inspect project and classpath information |
-| [`RenameSymbol`](REFERENCE.md#renamesymbol), [`MoveClass`](REFERENCE.md#moveclass), [`MoveFile`](REFERENCE.md#movefile), [`InlineVariable`](REFERENCE.md#inlinevariable), [`ChangeMethodSignature`](REFERENCE.md#changemethodsignature) | IDE refactorings that update references where applicable |
-| [`GetDiagnostics`](REFERENCE.md#getdiagnostics), [`NavigateToLine`](REFERENCE.md#navigatetoline), [`FixImports`](REFERENCE.md#fiximports), [`OrganiseImports`](REFERENCE.md#organiseimports), [`OrganiseMembers`](REFERENCE.md#organisemembers), [`ReformatFile`](REFERENCE.md#reformatfile) | Diagnostics, navigation, and source maintenance; `FixImports`, `OrganiseImports` and `ReformatFile` edit and save without opening an editor or dialog |
+| [`SearchInFiles`](docs/REFERENCE.md#searchinfiles), [`SearchTypes`](docs/REFERENCE.md#searchtypes), [`SearchSymbols`](docs/REFERENCE.md#searchsymbols) | IDE-aware text, type, and member search; all three search every open project when no file is supplied, and report the true total when results are truncated |
+| [`FilterFileContent`](docs/REFERENCE.md#filterfilecontent) | Pattern-match lines within a single named file, with optional context per match; reaches files off the source classpath that project search cannot see |
+| [`FindFile`](docs/REFERENCE.md#findfile) | Locate files or directories by name below a permitted directory, with depth limiting and hidden-entry filtering; reaches paths off the source classpath that project search cannot see |
+| [`FindDeclaration`](docs/REFERENCE.md#finddeclaration), [`FindImplementations`](docs/REFERENCE.md#findimplementations), [`FindUsages`](docs/REFERENCE.md#findusages) | Navigate relationships in Java source |
+| [`GetProjectStructure`](docs/REFERENCE.md#getprojectstructure), [`GetClassMembers`](docs/REFERENCE.md#getclassmembers), [`GetTypeHierarchy`](docs/REFERENCE.md#gettypehierarchy), [`GetJavadoc`](docs/REFERENCE.md#getjavadoc) | Inspect project and classpath information |
+| [`RenameSymbol`](docs/REFERENCE.md#renamesymbol), [`MoveClass`](docs/REFERENCE.md#moveclass), [`MoveFile`](docs/REFERENCE.md#movefile), [`InlineVariable`](docs/REFERENCE.md#inlinevariable), [`ChangeMethodSignature`](docs/REFERENCE.md#changemethodsignature) | IDE refactorings that update references where applicable |
+| [`GetDiagnostics`](docs/REFERENCE.md#getdiagnostics), [`NavigateToLine`](docs/REFERENCE.md#navigatetoline), [`FixImports`](docs/REFERENCE.md#fiximports), [`OrganiseImports`](docs/REFERENCE.md#organiseimports), [`OrganiseMembers`](docs/REFERENCE.md#organisemembers), [`ReformatFile`](docs/REFERENCE.md#reformatfile) | Diagnostics, navigation, and source maintenance; `FixImports`, `OrganiseImports` and `ReformatFile` edit and save without opening an editor or dialog |
 
 ### Files, VCS, and system access
 
 | Tool | Description |
 |---|---|
-| [`GetFileContent`](REFERENCE.md#getfilecontent), [`GetFileInfo`](REFERENCE.md#getfileinfo), [`GetCurrentFile`](REFERENCE.md#getcurrentfile), [`GetCurrentFileContent`](REFERENCE.md#getcurrentfilecontent), [`GetOpenFiles`](REFERENCE.md#getopenfiles), [`GetSelectedText`](REFERENCE.md#getselectedtext) | Read editor and filesystem context, including unsaved editor content where applicable. `GetFileInfo` describes files, directories and symbolic links |
-| [`WriteFile`](REFERENCE.md#writefile), [`ApplyEdit`](REFERENCE.md#applyedit), [`SaveFile`](REFERENCE.md#savefile) | Propose or save content changes through the review gate |
-| [`CopyFile`](REFERENCE.md#copyfile), [`MoveFile`](REFERENCE.md#movefile), [`DeleteFile`](REFERENCE.md#deletefile) | Copy, relocate, or remove files with explicit confirmation |
-| [`CreateDirectory`](REFERENCE.md#createdirectory), [`DeleteDirectory`](REFERENCE.md#deletedirectory) | Create an empty directory tree, or remove one with explicit confirmation if it holds no files |
-| [`CloseFile`](REFERENCE.md#closefile), [`RefreshFileStatus`](REFERENCE.md#refreshfilestatus) | Manage open files and refresh NetBeans/VCS state |
-| [`GetGitStatus`](REFERENCE.md#getgitstatus), [`GetGitDiff`](REFERENCE.md#getgitdiff), [`GitAdd`](REFERENCE.md#gitadd), [`GitCommit`](REFERENCE.md#gitcommit), [`GitLog`](REFERENCE.md#gitlog), [`GitPush`](REFERENCE.md#gitpush), [`GitPull`](REFERENCE.md#gitpull), [`GitCheckout`](REFERENCE.md#gitcheckout), [`GitBranch`](REFERENCE.md#gitbranch), [`GitDeleteBranch`](REFERENCE.md#gitdeletebranch), [`GitStash`](REFERENCE.md#gitstash), [`GitFetch`](REFERENCE.md#gitfetch), [`GitReset`](REFERENCE.md#gitreset), [`GitMerge`](REFERENCE.md#gitmerge), [`GitShow`](REFERENCE.md#gitshow), [`GitBlame`](REFERENCE.md#gitblame), [`GitRebase`](REFERENCE.md#gitrebase), [`GitCherryPick`](REFERENCE.md#gitcherrypick), [`GitTag`](REFERENCE.md#gittag), [`GitRemote`](REFERENCE.md#gitremote), [`GitRevert`](REFERENCE.md#gitrevert) | Git inspection and repository operations; `GetGitDiff`, `GitShow` and `GitLog` accept `filePaths` to limit their output |
-| [`GetClipboard`](REFERENCE.md#getclipboard) | Read clipboard text when clipboard access is enabled |
-| [`WebRequest`](REFERENCE.md#webrequest) | Make permitted HTTP/HTTPS requests |
+| [`GetFileContent`](docs/REFERENCE.md#getfilecontent), [`GetFileInfo`](docs/REFERENCE.md#getfileinfo), [`GetCurrentFile`](docs/REFERENCE.md#getcurrentfile), [`GetCurrentFileContent`](docs/REFERENCE.md#getcurrentfilecontent), [`GetOpenFiles`](docs/REFERENCE.md#getopenfiles), [`GetSelectedText`](docs/REFERENCE.md#getselectedtext) | Read editor and filesystem context, including unsaved editor content where applicable. `GetFileInfo` describes files, directories and symbolic links |
+| [`WriteFile`](docs/REFERENCE.md#writefile), [`ApplyEdit`](docs/REFERENCE.md#applyedit), [`SaveFile`](docs/REFERENCE.md#savefile) | Propose or save content changes through the review gate |
+| [`CopyFile`](docs/REFERENCE.md#copyfile), [`MoveFile`](docs/REFERENCE.md#movefile), [`DeleteFile`](docs/REFERENCE.md#deletefile) | Copy, relocate, or remove files with explicit confirmation |
+| [`CreateDirectory`](docs/REFERENCE.md#createdirectory), [`DeleteDirectory`](docs/REFERENCE.md#deletedirectory) | Create an empty directory tree, or remove one with explicit confirmation if it holds no files |
+| [`CloseFile`](docs/REFERENCE.md#closefile), [`RefreshFileStatus`](docs/REFERENCE.md#refreshfilestatus) | Manage open files and refresh NetBeans/VCS state |
+| [`GetGitStatus`](docs/REFERENCE.md#getgitstatus), [`GetGitDiff`](docs/REFERENCE.md#getgitdiff), [`GitAdd`](docs/REFERENCE.md#gitadd), [`GitCommit`](docs/REFERENCE.md#gitcommit), [`GitLog`](docs/REFERENCE.md#gitlog), [`GitPush`](docs/REFERENCE.md#gitpush), [`GitPull`](docs/REFERENCE.md#gitpull), [`GitCheckout`](docs/REFERENCE.md#gitcheckout), [`GitBranch`](docs/REFERENCE.md#gitbranch), [`GitDeleteBranch`](docs/REFERENCE.md#gitdeletebranch), [`GitStash`](docs/REFERENCE.md#gitstash), [`GitFetch`](docs/REFERENCE.md#gitfetch), [`GitReset`](docs/REFERENCE.md#gitreset), [`GitMerge`](docs/REFERENCE.md#gitmerge), [`GitShow`](docs/REFERENCE.md#gitshow), [`GitBlame`](docs/REFERENCE.md#gitblame), [`GitRebase`](docs/REFERENCE.md#gitrebase), [`GitCherryPick`](docs/REFERENCE.md#gitcherrypick), [`GitTag`](docs/REFERENCE.md#gittag), [`GitRemote`](docs/REFERENCE.md#gitremote), [`GitRevert`](docs/REFERENCE.md#gitrevert) | Git inspection and repository operations; `GetGitDiff`, `GitShow` and `GitLog` accept `filePaths` to limit their output |
+| [`GetClipboard`](docs/REFERENCE.md#getclipboard) | Read clipboard text when clipboard access is enabled |
+| [`WebRequest`](docs/REFERENCE.md#webrequest) | Make permitted HTTP/HTTPS requests |
 
 ### Database and collaboration
 
 | Tool | Description |
 |---|---|
-| [`ListDatabaseConnections`](REFERENCE.md#listdatabaseconnections), [`ListTables`](REFERENCE.md#listtables), [`GetTableSchema`](REFERENCE.md#gettableschema), [`GetTableData`](REFERENCE.md#gettabledata), [`ExecuteSqlQuery`](REFERENCE.md#executesqlquery) | Read-only Database Explorer access |
-| [`PeerSessionList`](REFERENCE.md#peersessionlist), [`PeerMessageSend`](REFERENCE.md#peermessagesend), [`PeerMessageList`](REFERENCE.md#peermessagelist), [`PeerMessageRead`](REFERENCE.md#peermessageread), [`PeerMessageDelete`](REFERENCE.md#peermessagedelete), [`PeerMessageMarkReplied`](REFERENCE.md#peermessagemarkreplied), [`PeerSessionIsActive`](REFERENCE.md#peersessionisactive), [`PeerSessionDescribe`](REFERENCE.md#peersessiondescribe) | Inter-AI session discovery and messaging |
-| [`PeerIdleWatcherCreate`](REFERENCE.md#peeridlewatchercreate), [`PeerIdleWatcherCancel`](REFERENCE.md#peeridlewatchercancel), [`PeerIdleWatcherList`](REFERENCE.md#peeridlewatcherlist) | Notifies a session when a peer has gone idle |
-| [`GetPluginVersion`](REFERENCE.md#getpluginversion), [`GetInstructions`](REFERENCE.md#getinstructions), [`AskUserQuestion`](REFERENCE.md#askuserquestion), [`RunInspect`](REFERENCE.md#runinspect) | Plugin guidance, user input (`AskUserQuestion` is available only on some backends), and static-analysis entry points |
+| [`ListDatabaseConnections`](docs/REFERENCE.md#listdatabaseconnections), [`ListTables`](docs/REFERENCE.md#listtables), [`GetTableSchema`](docs/REFERENCE.md#gettableschema), [`GetTableData`](docs/REFERENCE.md#gettabledata), [`ExecuteSqlQuery`](docs/REFERENCE.md#executesqlquery) | Read-only Database Explorer access |
+| [`PeerSessionList`](docs/REFERENCE.md#peersessionlist), [`PeerMessageSend`](docs/REFERENCE.md#peermessagesend), [`PeerMessageList`](docs/REFERENCE.md#peermessagelist), [`PeerMessageRead`](docs/REFERENCE.md#peermessageread), [`PeerMessageDelete`](docs/REFERENCE.md#peermessagedelete), [`PeerMessageMarkReplied`](docs/REFERENCE.md#peermessagemarkreplied), [`PeerSessionIsActive`](docs/REFERENCE.md#peersessionisactive), [`PeerSessionDescribe`](docs/REFERENCE.md#peersessiondescribe) | Inter-AI session discovery and messaging |
+| [`PeerIdleWatcherCreate`](docs/REFERENCE.md#peeridlewatchercreate), [`PeerIdleWatcherCancel`](docs/REFERENCE.md#peeridlewatchercancel), [`PeerIdleWatcherList`](docs/REFERENCE.md#peeridlewatcherlist) | Notifies a session when a peer has gone idle |
+| [`GetPluginVersion`](docs/REFERENCE.md#getpluginversion), [`GetInstructions`](docs/REFERENCE.md#getinstructions), [`AskUserQuestion`](docs/REFERENCE.md#askuserquestion), [`RunInspect`](docs/REFERENCE.md#runinspect) | Plugin guidance, user input (`AskUserQuestion` is available only on some backends), and static-analysis entry points |
 
 ## Change review and safety
 

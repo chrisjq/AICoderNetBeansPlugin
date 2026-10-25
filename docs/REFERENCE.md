@@ -3,7 +3,7 @@
 
 This is the detailed reference for the plugin's settings and MCP/IDE tools. Backend availability determines which tools are offered — some are registered only for certain AI types. A session's permission settings do not change the list: a tool the session lacks permission for is still offered and is refused when called.
 
-For what the plugin is and how to install it, see the [README](README.md). For using the NetBeans interface, see the [UI guide](UI_GUIDE.md).
+For what the plugin is and how to install it, see the [README](../README.md). For using the NetBeans interface, see the [UI guide](UI_GUIDE.md).
 
 ## Settings
 
