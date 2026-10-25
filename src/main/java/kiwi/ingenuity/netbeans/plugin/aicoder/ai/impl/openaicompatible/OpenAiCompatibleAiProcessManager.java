@@ -30,9 +30,7 @@ import java.util.function.Supplier;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 import kiwi.ingenuity.netbeans.plugin.aicoder.PluginSettings;
-import kiwi.ingenuity.netbeans.plugin.aicoder.PluginUtil;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.AiProcessManager;
-import kiwi.ingenuity.netbeans.plugin.aicoder.ai.AiTypeEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.BackendExecutors;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.debuglog.BackendDebugLogWriter;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.debuglog.DebugDirectionEnum;
@@ -45,6 +43,7 @@ import kiwi.ingenuity.netbeans.plugin.aicoder.ai.events.ToolUseEvent;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.events.TurnCompleteEvent;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.events.TurnEndReason;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.http.ChatMessage;
+import kiwi.ingenuity.netbeans.plugin.aicoder.ai.http.ChatRole;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.http.context.TokenEstimator;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.ollama.OllamaMcpRegistrar;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.openaicompatible.BaseUrls;
@@ -73,6 +72,10 @@ import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.openaicompatible.events.Op
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.openaicompatible.headers.ExtraHeaders;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.openaicompatible.headers.ExtraHeaders.ExtraHeader;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.openaicompatible.keys.SessionSecrets;
+import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.openaicompatible.memory.MemoryPromptSection;
+import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.openaicompatible.memory.SessionMemoryFolders;
+import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.openaicompatible.memory.SessionMemoryNotifier;
+import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.openaicompatible.memory.SessionMemoryStore;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.openaicompatible.settings.OpenAiCompatiblePluginSettings;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.openaicompatible.settings.OpenAiCompatibleSessionSettings;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.openaicompatible.tools.ToolCallModeResolver;
@@ -149,8 +152,7 @@ public final class OpenAiCompatibleAiProcessManager extends AiProcessManager imp
     /**
      * Where a session's saved context lives; tests substitute a temporary folder.
      */
-    private volatile ContextDirResolver contextDirResolver = id -> PluginUtil
-            .getPluginAiSessionConfigDir(AiTypeEnum.OPENAI_COMPATIBLE).resolve(id);
+    private volatile ContextDirResolver contextDirResolver = SessionMemoryFolders::sessionDir;
     private volatile ExecutorService contextIo = newContextIo();
 
     private static ExecutorService newContextIo() {
@@ -726,7 +728,8 @@ public final class OpenAiCompatibleAiProcessManager extends AiProcessManager imp
             debugLog(DebugDirectionEnum.EVENT, "turn", "Turn started (model " + context.model() + ", "
                      + context.apiBase() + ", " + offered.schemas().size() + " tools)");
             ToolCallingModeEnum mode = toolCallingModeFor(settings, context.model(), detected);
-            TurnLoop loop = new TurnLoop(history, systemPrompt(offered.instructions()), client, requestFlags.flags(),
+            registerMemoryNotifier();
+            TurnLoop loop = new TurnLoop(history, systemPrompt(offered), client, requestFlags.flags(),
                                          limits, handle, outcome, context, turnListener(), debugSink(),
                                          this::takeMailNotice, toolRunner, ++turnCounter)
                     .withCounts(countsOf(settings))
@@ -843,10 +846,11 @@ public final class OpenAiCompatibleAiProcessManager extends AiProcessManager imp
     /**
      * The tools this turn offers and the MCP instruction text that goes with them.
      */
-    private record OfferedTools(JsonArray schemas, String instructions, Set<McpToolEnum> hiddenTools) {
+    private record OfferedTools(JsonArray schemas, String instructions, Set<McpToolEnum> hiddenTools,
+                                boolean memoryExposed) {
 
         OfferedTools(JsonArray schemas, String instructions) {
-            this(schemas, instructions, Set.of());
+            this(schemas, instructions, Set.of(), false);
         }
     }
 
@@ -878,7 +882,7 @@ public final class OpenAiCompatibleAiProcessManager extends AiProcessManager imp
                                                          ToolSchemaSanitiser.Limits.fromPluginSettings()));
             }
         }
-        return new OfferedTools(schemas, instructions, hiddenTools);
+        return new OfferedTools(schemas, instructions, hiddenTools, handlers.containsKey(McpToolEnum.MEMORY_SAVE));
     }
 
     /**
@@ -987,11 +991,14 @@ public final class OpenAiCompatibleAiProcessManager extends AiProcessManager imp
     }
 
     /**
-     * The pinned identity, baseline and session instructions, then the MCP tool instructions.
+     * The pinned identity, baseline and session instructions, then the Memory section when the memory tools are
+     * offered, then the MCP tool instructions. Built when a turn (or a compaction) starts, so a note saved during one
+     * turn is in the next turn's prompt.
      */
-    private String systemPrompt(String toolInstructions) {
+    private String systemPrompt(OfferedTools offered) {
         StringBuilder prompt = new StringBuilder();
-        for (String part : new String[]{pinnedIdentity, pinnedBaseline, pinnedInstructions, toolInstructions}) {
+        for (String part : new String[]{pinnedIdentity, pinnedBaseline, pinnedInstructions, memorySection(offered),
+            offered.instructions()}) {
             if (part != null && !part.isBlank()) {
                 if (prompt.length() > 0) {
                     prompt.append("\n\n");
@@ -1000,6 +1007,57 @@ public final class OpenAiCompatibleAiProcessManager extends AiProcessManager imp
             }
         }
         return prompt.toString();
+    }
+
+    /**
+     * The Memory section for this session's system prompt, or null when the memory tools are not offered to it. The
+     * notes are read from the session's own folder, found the way the saved context is.
+     */
+    private String memorySection(OfferedTools offered) {
+        String id = sessionId;
+        if (!offered.memoryExposed() || id == null) {
+            return null;
+        }
+        List<SessionMemoryStore.Note> notes;
+        try {
+            notes = new SessionMemoryStore(SessionMemoryFolders.memoryDir(contextDirResolver.resolve(id))).list();
+        }
+        catch (IOException | RuntimeException ex) {
+            notes = List.of();
+        }
+        TurnContext estimating = turnContext;
+        return MemoryPromptSection.build(
+                notes, text -> estimating.estimate(List.of(new ChatMessage(ChatRole.SYSTEM, text, List.of(), null))),
+                MemoryPromptSection.INDEX_TOKEN_CAP);
+    }
+
+    private volatile SessionMemoryNotifier.Listener memoryListener;
+    private volatile String memoryListenerSessionId;
+
+    /**
+     * Has the memory tools' saves and deletes noted in this session's backend debug log (names only, never content).
+     */
+    private void registerMemoryNotifier() {
+        String id = sessionId;
+        if (id == null || id.equals(memoryListenerSessionId)) {
+            return;
+        }
+        unregisterMemoryNotifier();
+        SessionMemoryNotifier.Listener noted = (action, name) -> debugLog(DebugDirectionEnum.EVENT, "memory",
+                                                                          action + " " + name);
+        SessionMemoryNotifier.register(id, noted);
+        memoryListener = noted;
+        memoryListenerSessionId = id;
+    }
+
+    private void unregisterMemoryNotifier() {
+        SessionMemoryNotifier.Listener noted = memoryListener;
+        String id = memoryListenerSessionId;
+        memoryListener = null;
+        memoryListenerSessionId = null;
+        if (noted != null) {
+            SessionMemoryNotifier.unregister(id, noted);
+        }
     }
 
     private DebugSink debugSink() {
@@ -1224,7 +1282,7 @@ public final class OpenAiCompatibleAiProcessManager extends AiProcessManager imp
             RequestHandle handle = new RequestHandle();
             compactHandle = handle;
             TurnContext.Compaction compaction = sessionContext.compact(
-                    history, systemPrompt(offered.instructions()), true, handle);
+                    history, systemPrompt(offered), true, handle);
             if (!compaction.changed()) {
                 listener.onAiProcessEvent(new StatusEvent(StatusEventTypeEnum.INFO, NOTHING_TO_COMPACT));
             }
@@ -1480,6 +1538,7 @@ public final class OpenAiCompatibleAiProcessManager extends AiProcessManager imp
         }
         running = false;
         DetectedSnapshotSources.unregister(sessionId, this);
+        unregisterMemoryNotifier();
         if (pollerJoined) {
             pollerRegistry.leave(sessionId);
             pollerJoined = false;

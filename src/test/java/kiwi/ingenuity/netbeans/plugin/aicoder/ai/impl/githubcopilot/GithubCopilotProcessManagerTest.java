@@ -520,7 +520,7 @@ class GithubCopilotProcessManagerTest {
     private static SessionErrorEvent sessionError(String message) {
         SessionErrorEvent event = new SessionErrorEvent();
         event.setData(new SessionErrorEvent.SessionErrorEventData(
-                null, null, null, message, null, null, null, null, null, null));
+                null, null, null, null, null, null, message, null, null, null, null, null, null));
         return event;
     }
 

@@ -15,6 +15,7 @@ public enum McpSectionEnum {
     UI_SOURCE("UI -> Source Code Formatting"),
     UI_DIALOG("UI -> Dialog Actions"),
     USER_INPUT("Request Input from User"),
+    MEMORY("Memory (OpenAI Compatible only)"),
     PLUGIN("Plugin");
 
     private final String title;

@@ -73,6 +73,9 @@ public final class McpToolAccess {
     }
 
     private static boolean configSettingAllows(AiSessionSettings settings, McpToolGroupEnum group) {
+        if (!group.availableFor(settings)) {
+            return false;
+        }
         return switch (group) {
             case DATABASE ->
                 settings.effectiveAllowDatabaseAccess();
@@ -129,6 +132,10 @@ public final class McpToolAccess {
     }
 
     private static String configRefusalMessage(AiSessionSettings settings, McpToolGroupEnum group) {
+        if (!group.availableFor(settings)) {
+            return "The '" + group.label() + "' tools are not available in this kind of session ("
+                    + group.category().label() + ").";
+        }
         return switch (group) {
             case DATABASE ->
                 askToEnable("Database access", AccessControlLabelEnum.ALLOW_DATABASE_ACCESS.displayLabel(), group);

@@ -3,6 +3,8 @@ package kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.exposure;
 import java.util.Collections;
 import java.util.EnumSet;
 import java.util.Set;
+import java.util.function.Predicate;
+import kiwi.ingenuity.netbeans.plugin.aicoder.ai.settings.AiSessionSettings;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.McpSectionEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.McpToolEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.McpToolInterface;
@@ -34,7 +36,8 @@ public enum McpToolGroupEnum {
     PEER_MESSAGING(McpToolCategoryEnum.COLLABORATION, "Peer messaging", true, McpToolEnum.PEER_MESSAGE_SEND, McpToolEnum.PEER_MESSAGE_LIST, McpToolEnum.PEER_MESSAGE_READ, McpToolEnum.PEER_MESSAGE_MARK_REPLIED, McpToolEnum.PEER_MESSAGE_DELETE, McpToolEnum.PEER_SESSION_LIST, McpToolEnum.PEER_SESSION_DESCRIBE, McpToolEnum.PEER_SESSION_IS_ACTIVE),
     IDLE_WATCHERS(McpToolCategoryEnum.COLLABORATION, "Idle watchers", true, McpToolEnum.PEER_IDLE_WATCHER_CREATE, McpToolEnum.PEER_IDLE_WATCHER_LIST, McpToolEnum.PEER_IDLE_WATCHER_CANCEL),
     ASK_USER(McpToolCategoryEnum.COLLABORATION, "Ask user", true, McpToolEnum.ASK_USER_QUESTION),
-    PLUGIN_INFO(McpToolCategoryEnum.COLLABORATION, "Plugin information", true, McpToolEnum.GET_PLUGIN_VERSION);
+    PLUGIN_INFO(McpToolCategoryEnum.COLLABORATION, "Plugin information", true, McpToolEnum.GET_PLUGIN_VERSION),
+    MEMORY(McpToolCategoryEnum.MEMORY, "Session memory", true, AiSessionSettings::supportsSessionMemory, McpToolEnum.MEMORY_SAVE, McpToolEnum.MEMORY_READ, McpToolEnum.MEMORY_DELETE);
 
     public static final Set<McpToolEnum> GIT_TOOLS = gitTools();
     public static final Set<McpToolGroupEnum> BUILD_SYSTEM_GROUPS = Set.of(MAVEN, GRADLE, ANT, GENERIC_PROJECT);
@@ -42,13 +45,28 @@ public enum McpToolGroupEnum {
     private final McpToolCategoryEnum category;
     private final String label;
     private final boolean switchable;
+    private final Predicate<AiSessionSettings> availableFor;
     private final Set<McpToolEnum> fixedMembers;
 
     McpToolGroupEnum(McpToolCategoryEnum category, String label, boolean switchable, McpToolEnum... members) {
+        this(category, label, switchable, settings -> true, members);
+    }
+
+    McpToolGroupEnum(McpToolCategoryEnum category, String label, boolean switchable,
+                     Predicate<AiSessionSettings> availableFor, McpToolEnum... members) {
         this.category = category;
         this.label = label;
         this.switchable = switchable;
+        this.availableFor = availableFor;
         this.fixedMembers = members.length == 0 ? Set.of() : Collections.unmodifiableSet(EnumSet.of(members[0], members));
+    }
+
+    /**
+     * Whether the group can be offered to a session at all. Most groups are offered to every backend; a group that
+     * belongs to one backend (the session memory tools) is never offered to the others, whatever the switches say.
+     */
+    public boolean availableFor(AiSessionSettings settings) {
+        return availableFor.test(settings);
     }
 
     public McpToolCategoryEnum category() {

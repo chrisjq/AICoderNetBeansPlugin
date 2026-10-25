@@ -11,7 +11,8 @@ public enum McpToolCategoryEnum {
     BUILD("Build"),
     GIT("Git"),
     EXTERNAL("External"),
-    COLLABORATION("Collaboration");
+    COLLABORATION("Collaboration"),
+    MEMORY("Memory (OpenAI Compatible only)");
 
     private final String label;
 

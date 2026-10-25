@@ -76,6 +76,11 @@ public class OpenAiCompatibleSessionSettings extends AiModelSessionSettings {
     public static final int MIN_UNPRODUCTIVE_ROUNDS = 1;
     public static final int MIN_NATIVE_FAILURES = 1;
 
+    @Override
+    public boolean supportsSessionMemory() {
+        return true;
+    }
+
     public Integer firstByteTimeoutSeconds() {
         return firstByteTimeoutSeconds;
     }

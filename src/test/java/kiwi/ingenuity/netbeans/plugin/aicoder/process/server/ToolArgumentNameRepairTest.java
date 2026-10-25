@@ -160,6 +160,93 @@ class ToolArgumentNameRepairTest {
         assertFalse(args.has("isRegex"));
     }
 
+    // ---- real streams from the CMAC debug logs, exactly as sent ----------
+    /**
+     * The accepted names of the search tools these streams were seen on.
+     */
+    private static final Set<String> SEARCH_ACCEPTED = Set.of(
+            "filePath", "pattern", "query", "filePattern", "isRegex", "caseSensitive", "contextLines", "maxMatches");
+
+    /**
+     * Repairs one streamed key with its JSON value, exactly as the model sent it.
+     */
+    private static JsonObject repairOne(String key, String valueJson) {
+        JsonObject args = new JsonObject();
+        args.add(key, JsonParser.parseString(valueJson));
+        ToolArgumentNameRepair.repairInPlace(args, SEARCH_ACCEPTED);
+        return args;
+    }
+
+    @Test
+    void caseSensitiveGluedToAFalseValueIsRepaired() {
+        JsonObject args = repairOne("caseSensitive=false", "false");
+
+        assertFalse(args.get("caseSensitive").getAsBoolean());
+        assertFalse(args.has("caseSensitive=false"));
+    }
+
+    @Test
+    void theSentValueWinsOverATextSuffixOnTheName() {
+        // "isRegex=4" arrives with false: the JSON value is kept, because the suffix is used only for a null or blank value.
+        assertFalse(repairOne("isRegex=4", "false").get("isRegex").getAsBoolean());
+    }
+
+    @Test
+    void aNumericValueIsKeptAsSent() {
+        // The repair keeps the value the model sent (the number 1). It does not reinterpret it as a boolean.
+        assertEquals(1, repairOne("caseSensitive=1", "1").get("caseSensitive").getAsInt());
+    }
+
+    @Test
+    void zeroSuffixWithAFalseValueIsRepairedAsSent() {
+        assertFalse(repairOne("caseSensitive=0", "false").get("caseSensitive").getAsBoolean());
+    }
+
+    @Test
+    void maxMatchesGluedToANumberKeepsTheSentValue() {
+        assertEquals(200, repairOne("maxMatches=4", "200").get("maxMatches").getAsInt());
+    }
+
+    @Test
+    void trailingLetterAndNumericSuffixAreBothRepaired() {
+        // "maxMatchest=0": a stray trailing letter and a "=0" suffix together. The name is repaired, the sent value is kept.
+        assertEquals(200, repairOne("maxMatchest=0", "200").get("maxMatches").getAsInt());
+    }
+
+    @Test
+    void filePatternGluedToANumberKeepsTheSentValue() {
+        // The name is repaired and the sent value (the number 4) is kept as sent.
+        assertEquals(4, repairOne("filePattern=4", "4").get("filePattern").getAsInt());
+    }
+
+    @Test
+    void twoCorruptedKeysInOneCallAreBothRepaired() {
+        JsonObject args = new JsonObject();
+        args.addProperty("caseSensitivet", false);
+        args.addProperty("maxMatchest", 200);
+
+        ToolArgumentNameRepair.repairInPlace(args, SEARCH_ACCEPTED);
+
+        assertFalse(args.get("caseSensitive").getAsBoolean());
+        assertEquals(200, args.get("maxMatches").getAsInt());
+        assertFalse(args.has("caseSensitivet"));
+        assertFalse(args.has("maxMatchest"));
+    }
+
+    @Test
+    void aGluedKeyAndATrailingLetterKeyInOneCallAreBothRepaired() {
+        JsonObject args = new JsonObject();
+        args.add("caseSensitive=0", JsonParser.parseString("false"));
+        args.add("maxMatchest=0", JsonParser.parseString("200"));
+
+        ToolArgumentNameRepair.repairInPlace(args, SEARCH_ACCEPTED);
+
+        assertFalse(args.get("caseSensitive").getAsBoolean());
+        assertEquals(200, args.get("maxMatches").getAsInt());
+        assertFalse(args.has("caseSensitive=0"));
+        assertFalse(args.has("maxMatchest=0"));
+    }
+
     // ---- through the real invoke path ----------------------------------
     @Test
     void invokeHandsTheRepairedArgumentToTheHandler() throws Exception {

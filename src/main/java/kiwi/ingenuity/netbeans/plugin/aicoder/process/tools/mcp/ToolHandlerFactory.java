@@ -59,6 +59,9 @@ import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.help.GetClassMem
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.help.GetJavadocTool;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.help.GetProjectStructureTool;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.help.GetTypeHierarchyTool;
+import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.memory.MemoryDeleteTool;
+import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.memory.MemoryReadTool;
+import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.memory.MemorySaveTool;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.plugin.GetInstructionsTool;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.plugin.GetPluginVersionTool;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.refactor.ChangeMethodSignatureTool;
@@ -202,6 +205,9 @@ public final class ToolHandlerFactory {
         map.put(McpToolEnum.PEER_IDLE_WATCHER_CREATE, new CreateIdleWatcherTool());
         map.put(McpToolEnum.PEER_IDLE_WATCHER_CANCEL, new CancelIdleWatcherTool());
         map.put(McpToolEnum.PEER_IDLE_WATCHER_LIST, new ListIdleWatchersTool());
+        map.put(McpToolEnum.MEMORY_SAVE, new MemorySaveTool());
+        map.put(McpToolEnum.MEMORY_READ, new MemoryReadTool());
+        map.put(McpToolEnum.MEMORY_DELETE, new MemoryDeleteTool());
         return Collections.unmodifiableMap(map);
     }
 

@@ -74,6 +74,7 @@ public final class McpToolSettingsPanel extends JPanel {
     private final GitAccessSettingsPanel git;
     private final JCheckBox clipboardBox = new JCheckBox();
     private final Map<McpToolGroupEnum, JPanel> configHolders = new EnumMap<>(McpToolGroupEnum.class);
+    private final Map<McpToolCategoryEnum, JPanel> categoryPanels = new EnumMap<>(McpToolCategoryEnum.class);
     private JPanel gitConfigHolder;
     private final List<ActionListener> changeListeners = new ArrayList<>();
     private boolean refreshing;
@@ -99,6 +100,7 @@ public final class McpToolSettingsPanel extends JPanel {
             }
             JPanel categoryPanel = buildCategoryPanel(category);
             if (categoryPanel != null) {
+                categoryPanels.put(category, categoryPanel);
                 addFull(row++, categoryPanel);
             }
         }
@@ -130,6 +132,7 @@ public final class McpToolSettingsPanel extends JPanel {
     public void load(AiSessionSettings settings) {
         model.applyConfig(McpToolAccess.configOf(settings));
         refreshGroupBoxes();
+        showCategoriesAvailableFor(settings);
         allowInterAiBox.setSelected(settings.effectiveAllowInterAiComms());
         autoNotifyBox.setSelected(settings.effectiveAutoNotifyInbox());
         allowImportantBox.setSelected(settings.effectiveAllowImportantMessages());
@@ -150,6 +153,31 @@ public final class McpToolSettingsPanel extends JPanel {
         }
         clipboardBox.setSelected(settings.effectiveEnableClipboardAccess());
         updateConfigSettingsVisibility();
+    }
+
+    /**
+     * Shows a category only when at least one of its groups can be offered to a session with these settings, so a
+     * backend's own tools (the session memory) are never listed for the others.
+     */
+    private void showCategoriesAvailableFor(AiSessionSettings settings) {
+        for (Map.Entry<McpToolCategoryEnum, JPanel> entry : categoryPanels.entrySet()) {
+            boolean available = false;
+            for (McpToolGroupEnum group : McpToolGroupEnum.values()) {
+                if (group.category() == entry.getKey() && group.availableFor(settings)) {
+                    available = true;
+                }
+            }
+            entry.getValue().setVisible(available);
+        }
+        revalidate();
+    }
+
+    /**
+     * Whether the category's section is currently shown.
+     */
+    boolean isCategoryVisible(McpToolCategoryEnum category) {
+        JPanel panel = categoryPanels.get(category);
+        return panel != null && panel.isVisible();
     }
 
     public McpToolConfig selectedConfig() {

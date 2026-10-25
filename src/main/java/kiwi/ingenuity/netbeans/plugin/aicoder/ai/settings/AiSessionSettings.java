@@ -57,6 +57,13 @@ public class AiSessionSettings {
     public AiSessionSettings() {
     }
 
+    /**
+     * Whether sessions with these settings can use the session memory tools; only the OpenAI Compatible backend does.
+     */
+    public boolean supportsSessionMemory() {
+        return false;
+    }
+
     public AiSessionSettings(Integer maxHistory, Boolean restrictToProjectFiles,
                              Boolean allowInterAiComms, Boolean autoNotifyInbox,
                              Boolean allowImportantMessages, String sessionInstructions,

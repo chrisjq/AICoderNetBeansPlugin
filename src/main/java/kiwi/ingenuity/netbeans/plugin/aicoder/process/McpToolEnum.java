@@ -112,6 +112,10 @@ public enum McpToolEnum {
     RUN_INSPECT("RunInspect"),
     // USER_INPUT
     ASK_USER_QUESTION("AskUserQuestion"),
+    // MEMORY
+    MEMORY_SAVE("MemorySave"),
+    MEMORY_READ("MemoryRead"),
+    MEMORY_DELETE("MemoryDelete"),
     // PLUGIN
     GET_PLUGIN_VERSION("GetPluginVersion"),
     GET_INSTRUCTIONS("GetInstructions"),
