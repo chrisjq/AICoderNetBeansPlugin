@@ -562,7 +562,7 @@ public class OpenAiCompatibleSessionSettings extends AiModelSessionSettings {
     }
 
     public boolean effectiveSaveContextOnClose() {
-        return saveContextOnClose != null && saveContextOnClose;
+        return saveContextOnClose == null || saveContextOnClose;
     }
 
     public Boolean apiKeySet() {

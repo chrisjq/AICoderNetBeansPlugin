@@ -9,6 +9,7 @@ import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.openaicompatible.ToolCalli
 import org.junit.jupiter.api.AfterEach;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Timeout;
 
@@ -47,6 +48,16 @@ class OpenAiCompatibleSessionSettingsTest {
         assertEquals(true, restored.apiKeySet());
         assertEquals(List.of("X-Plain", "X-Secret"), restored.extraHeaderNames());
         assertEquals(Map.of("X-Plain", "value"), restored.extraHeaderPlainValues());
+    }
+
+    @Test
+    void saveContextOnCloseDefaultsToOnButHonoursExplicitFalse() {
+        OpenAiCompatibleSessionSettings settings = new OpenAiCompatibleSessionSettings();
+        assertTrue(settings.effectiveSaveContextOnClose(), "unset must preserve context");
+        settings.setSaveContextOnClose(false);
+        assertFalse(settings.effectiveSaveContextOnClose());
+        settings.setSaveContextOnClose(true);
+        assertTrue(settings.effectiveSaveContextOnClose());
     }
 
     @Test

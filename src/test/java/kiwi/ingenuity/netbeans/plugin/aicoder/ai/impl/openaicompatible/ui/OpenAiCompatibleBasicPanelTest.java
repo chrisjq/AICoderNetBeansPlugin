@@ -34,7 +34,7 @@ class OpenAiCompatibleBasicPanelTest {
         source.setModel("test-model");
         source.setContextWindowOverride(8192);
         source.setToolCallingMode(ToolCallingModeEnum.NATIVE);
-        source.setSaveContextOnClose(true);
+        // Leave this unset: a newly created/legacy session must show the default checked and persist true on Apply.
         source.setApiKeySet(true);
 
         OpenAiCompatibleBasicPanel panel = new OpenAiCompatibleBasicPanel();

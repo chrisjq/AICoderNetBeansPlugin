@@ -48,7 +48,7 @@ public enum AiTypeEnum {
     // javadoc as "instead of killing anything".
     // DENY_WITH_MESSAGE: PermissionRequestResult.reject(feedback) carries our text and the handler
     // already forwards decision.message() verbatim — this backend is where the pattern came from.
-    GitHubCoPilot("GitHub CoPilot", "github_copilot", true, true, false, MailDeliveryTimingEnum.DURING_TURN, McpSteeringSupportEnum.DENY_WITH_MESSAGE, new GithubCopilotSettingsCreator(), Set.of(HEADER, TOOL_INSTRUCTION, CREDENTIALS, FORCE_MCP_TOOL_USE), null, null),
+    GitHubCoPilot("GitHub Copilot", "github_copilot", true, true, false, MailDeliveryTimingEnum.DURING_TURN, McpSteeringSupportEnum.DENY_WITH_MESSAGE, new GithubCopilotSettingsCreator(), Set.of(HEADER, TOOL_INSTRUCTION, CREDENTIALS, FORCE_MCP_TOOL_USE), null, null),
     // No TOOL_INSTRUCTION: under TOOL_CALLS_VIA_SCHEMA the tool list is rendered
     // into the prompt from the schemas, carrying names, parameters and
     // descriptions. The per-tool instruction lines describe the same tools

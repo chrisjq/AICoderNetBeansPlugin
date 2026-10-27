@@ -161,6 +161,24 @@ class OpenAiCompatibleAiProcessManagerStateTest {
     // ---- saved context ----
     @Test
     @Timeout(20)
+    void unsetSaveContextOnCloseWritesAndRestoresContext() throws Exception {
+        OpenAiCompatibleSessionSettings settings = localSettings();
+        OpenAiCompatibleAiProcessManager first = start("ctx-default", answering("Default answer."), settings);
+        runTurn(first, "default question");
+        first.awaitContextIo();
+        assertTrue(Files.isRegularFile(contextFile("ctx-default")), "the unset default saves context");
+        first.stop();
+
+        OpenAiCompatibleAiProcessManager second = start("ctx-default", answering("unused"), settings);
+
+        List<ChatMessage> restored = second.historyForTest();
+        assertEquals(2, restored.size());
+        assertEquals("default question", restored.get(0).content());
+        assertEquals("Default answer.", restored.get(1).content());
+    }
+
+    @Test
+    @Timeout(20)
     void theHistorySurvivesStopAndRestartWhenSaveContextIsOn() throws Exception {
         OpenAiCompatibleSessionSettings settings = localSettings();
         settings.setSaveContextOnClose(true);
