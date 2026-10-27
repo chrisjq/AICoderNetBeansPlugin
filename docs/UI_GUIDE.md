@@ -1,105 +1,66 @@
+[← Back to README](../README.md)
+
 # AI Coder user interface guide
 
-This guide explains the NetBeans UI for creating and operating AI sessions.
-
-For what the plugin is and how to install it, see the [README](../README.md). For tool and settings details, see the [Reference](REFERENCE.md).
-
-## Start here
-
-1. Enable and configure one or more backends in **Tools > Options > Miscellaneous > AI Coder** (the same panel is also registered under **Advanced**). The panel has a General tab and one tab per backend; every backend is enabled by default, and a backend you untick on its tab does not appear when creating a session.
-2. Open **Tools > AI Manager**.
-3. Create a session, select its backend and project, then choose **Create & Open**.
-4. Work in the session's dockable chat tab.
-5. Accept or reject every proposed change in the NetBeans review panel.
+This guide describes the NetBeans UI for creating and operating sessions. The first steps are in [Getting started](GETTING_STARTED.md); the options are in [Settings](SETTINGS.md).
 
 ## AI Manager
 
-**Tools > AI Manager** is the session control centre.
+**Tools > AI Manager** is the session control centre. It has four tabs: **Existing Sessions**, **Create Session**, **Templates** ([Templates](TEMPLATES.md)) and **Help**. Help has two sub-tabs:
 
-It has four tabs: **Existing Sessions**, **Create Session**, **Templates**, and **Help**. Help holds two sub-tabs: **MCP Tools**, with generated documentation for the available tools, and **About**, showing the plugin name, installed version, and the project homepage and this version's release page as clickable links.
+- **MCP Tools** provides generated documentation for the available IDE tools; see the [MCP tool reference](MCP_REFERENCE.md).
+- **About** shows the plugin name, installed version, and links to the project homepage and this version's release page.
 
 | Action | Where | What it does |
 |---|---|---|
-| Create & Open | Create Session | Creates one or more named sessions using the selected backend, project, and initial settings, and opens each one. Use the **Count** spinner to create several at once. |
-| Open | Existing Sessions | Opens a selected saved session and restores its available history and working directory. Every saved session is listed; one whose project is not currently open is greyed out, and opening it is refused until that project is open. |
-| Delete | Existing Sessions | After you confirm, removes the saved session, its history, and its local backend session configuration. |
+| Create & Open | Create Session | Creates and opens one or more sessions with the chosen backend, project, templates and settings. The **Count** spinner creates several identical sessions named `<name>_1`, `<name>_2`, … |
+| Open | Existing Sessions | Opens a saved session and restores its history and working directory. Every saved session is listed; one whose project is not open is greyed out and cannot be opened until it is. |
+| Delete | Existing Sessions | After you confirm, removes the session ([what is removed](SESSIONS.md#creating-opening-deleting)). |
 
-Both tabs offer a **Close after action** checkbox to dismiss the dialog once the action completes.
+**Existing Sessions** and **Create Session** each have a **Close after action** checkbox that closes the dialog when the action completes.
 
-Session settings are changed from the session itself rather than from the AI Manager: open its chat tab and use the gear button to reach **Session Configuration**, which covers the session name, description, instructions, permissions, model, and backend options.
+### Session Configuration
 
-Each session has an independent backend, model, selected project, history, session instructions, permissions, and backend session/thread state. Multiple sessions, including different backends, can run concurrently.
+Session settings are changed from the session itself. Open its chat tab and use the **⚙** gear above the Send button to reach **Session Configuration**: name, description, instructions, permissions, MCP tool groups, model and backend options. An unset option inherits its global default ([Settings](SETTINGS.md)).
 
 ## Creating a session
 
-Choose a descriptive name, an open project, and a backend. The new session inherits global defaults unless you override settings in its configuration.
-
-- Select **Claude**, **GitHub CoPilot**, **Grok**, **OpenCode**, **Codex**, **Pi**, or **Ollama (Local)**.
-- Choose or enter a model where the backend permits it.
-- For OpenCode, set **Mode** to `build` for normal work or `plan` for a read-only proposal.
-- Set the thinking or reasoning-effort level where the backend supports one — Claude calls it *Effort level*, Codex *Effort*, GitHub CoPilot and Grok *Reasoning effort*, Pi *Thinking level*, and Ollama *Thinking*. Leaving it on `default` sends nothing and lets the model or CLI use its own setting. Only levels the selected model actually supports are offered, so switching to a model with fewer levels can never produce an error.
-- Add session instructions when the session needs project-specific rules.
-- Use project-file restriction and the permission controls to set the session's access boundary.
+Choose a name, an open project and an **AI type** (the backend) ([Backends](BACKENDS.md)). Choose or type a model where the backend allows it, and set its effort level if it has one ([Effort and thinking](BACKENDS.md#effort-and-thinking)). Pick the templates the session starts from ([Templates](TEMPLATES.md#choosing-templates-when-creating-a-session)). Add session instructions for project-specific rules ([Sessions](SESSIONS.md#session-instructions)). Use project-file restriction and the permission controls to set the session's access boundary ([Settings](SETTINGS.md)).
 
 ## Chat tabs and context
 
-Opened sessions appear as dockable NetBeans chat tabs. The chat renders Markdown, code blocks, assistant status, tool activity, notifications, and backend information.
+Sessions open as dockable chat tabs. The chat renders Markdown, code blocks, status, tool activity, notifications and backend information. Closing a tab asks what to do with the session ([Sessions](SESSIONS.md#closing-a-tab)). A turn is one exchange: from your message until the assistant finishes. Each tab has a status marker:
 
-Each chat tab carries a coloured status marker: green when the session is ready for input, orange while a turn is in flight, white when the session is waiting for your answer to a confirmation, question, or diff, and red when the backend is not running or has failed.
-
-The info bar above the input shows the session timer, a model picker and a reasoning-effort picker where the backend has them, usage gauges, and a **⇒ Compact** button at the end where the backend supports compaction. It also holds **Auto-Accept** and **Save** (keep the conversation history). While a turn is in flight it shows a **■ Stop** button, which cancels the current response; it is hidden when there is nothing to cancel.
-
-Above the Send button sit two controls: the **⚙** gear on the left opens Session Configuration, and the **⬇** toggle on the right controls auto-scrolling. Auto-scroll is on when a session opens and is not saved between sessions, so each tab starts following the conversation and each can be set independently — useful when watching one session stream while reading back through another.
-
-Switching it off holds your position: new assistant text, system notices and inbox notifications arrive without moving the view. Switching it back on jumps to the latest message immediately. Two things ignore the setting: your own messages, because you pressed Send and expect to see them, and questions or Yes/No prompts, because those block the assistant until you answer and must not be hidden. The tooltip reports the current state as *Auto Scroll - Enabled* or *Auto Scroll - Disabled*.
-
-At initial delivery, the session supplies identity, open projects, and active-editor context. Later requests send changes where possible, while stateless backends receive the baseline required to work correctly. Context and transcript history are persisted independently when enabled.
-
-Paste an image from the clipboard into chat when the selected backend supports image input.
-
-### Searching open projects
-
-When the assistant uses `SearchInFiles` without a `filePath`, it searches every open project's Java source roots (or a project root that has no registered Java roots). This makes project-wide search independent of which editor tab is active. Supplying a source file narrows the search to that file's source classpath; `filePattern`, case-sensitive matching, and regex matching are available when needed. See the [SearchInFiles reference](REFERENCE.md#searchinfiles) for parameter details.
-
-## Templates
-
-The AI Manager provides two reusable template types:
-
-| Template | Purpose |
+| Colour | Meaning |
 |---|---|
-| Config Templates | Reuses common non-backend settings such as permissions, history, and UI-related session options. It does not overwrite backend credentials or selection. |
-| Session Instructions | Reuses prompts and operating rules without replacing the session's backend configuration. |
+| Green | Ready for input |
+| Orange | The backend is busy — a turn, or work it runs itself such as compacting |
+| White | Waiting for your answer to a confirmation, question or diff |
+| Red | The backend is not running or has failed |
 
-Both template types include built-in **Coordinator**, **CoderPeer**, and **ReviewerPeer** entries. Use them as starting points for a coordinating session, an implementation session, or a review-focused session.
+The info bar above the input shows:
 
-## Instructions and session persistence
+- the session timer;
+- the model and effort pickers, where the backend has them ([Effort and thinking](BACKENDS.md#effort-and-thinking));
+- usage and context gauges, where the backend reports them (which ones is on each backend's page);
+- **⇒ Compact**, where the backend can summarise its conversation to free context (OpenAI Compatible adds more buttons, on [its page](ai/openai_compatible/README.md#info-bar));
+- **Auto-Accept** ([Change review](CHANGE_REVIEW.md#auto-accept)) and **Save** (keep the chat history);
+- **■ Stop** while a turn is in flight, which cancels the current response. It is hidden when there is nothing to cancel.
 
-Special instructions can be sent automatically when a session starts or on the first user request. The UI records whether the selected delivery has occurred, avoiding unintended repetition.
+Above the Send button, the **⬇** toggle controls auto-scrolling. Auto-scroll is set per tab and is not remembered between IDE restarts.
 
-When history saving is enabled, the plugin restores session definitions, conversation history, and recoverable context after the IDE restarts. Invalid saved content is ignored and rebuilt instead of preventing the session from opening.
+- On when a session opens.
+- Off holds your position while new assistant text, notices and inbox notifications arrive.
+- On jumps to the latest message.
 
-Closing a chat tab asks whether to **Delete session**, **Keep for later**, or **Cancel**. If you turn on the Options setting to save a session when its tab closes, the prompt is skipped: the session is kept if history saving is enabled for it and deleted if it is not.
+Your own messages and questions or Yes/No prompts always show, because you expect to see them and they block the assistant. The tooltip says *Auto Scroll - Enabled* or *Auto Scroll - Disabled*.
 
-## Change review
+You can paste a clipboard image into the chat when the backend supports image input. [What the assistant is told](SESSIONS.md#what-the-assistant-is-told) covers IDE context; [History and model context](SESSIONS.md#history-and-model-context) covers saved conversation and context.
 
-AI-proposed content writes are shown in the NetBeans diff review panel. Use **Accept** to apply the change or **Reject** to decline it. This panel is the confirmation step for `WriteFile`, `ApplyEdit`, and content-bearing `SaveFile` operations.
+## Review prompts in the chat
 
-Copying, moving, and deleting files are confirmed as actions rather than diffs, because they change no content. These and shell commands proposed by a backend are confirmed inline in the chat with **Yes** and **No** buttons, showing what would run. NetBeans refactoring tools retain their native reference-aware behaviour.
+AI-proposed content writes open the NetBeans diff panel with **Accept** and **Reject**. File actions, backend shell commands and `AskUserQuestion` choices appear inline in the chat with buttons. What each covers, how long it waits, and what **Auto-Accept** and **Auto-deny unsupported tool calls** change are in [Change review](CHANGE_REVIEW.md).
 
-Two things to know about these prompts:
+## Notifications
 
-- **Auto-accept, in the info bar, approves content writes and file actions without asking.** It is off by default and can be set per session. Shell commands depend on MCP tool steering (the **Auto-deny unsupported tool calls** option, on by default): while it is on, a backend's own shell commands are refused in favour of the plugin's tools and are never auto-approved. With it off, GitHub CoPilot, OpenCode and Grok always ask (as they do for requests whose subject could not be identified), Codex command approvals are auto-approved, and Claude and Pi do not prompt for shell commands at all; Ollama has no shell. Review before enabling it.
-- **A prompt left unanswered expires after 120 seconds.** That is not a rejection: the backend is told it may retry, and the buttons stop responding. If a prompt appears to have gone dead, it timed out.
-
-## Usage and notifications
-
-Info bars may display backend-reported context and account usage:
-
-- Claude rolling-limit gauges.
-- GitHub Copilot usage gauge.
-- Codex account rate-limit gauge, including used percentage and reset time.
-- Context gauge showing used versus total active context window where a backend reports it.
-
-If inter-AI messaging is enabled, the inbox can show notices for peer messages. Automatic notices and interruption for important messages are separately configurable. When a message that expects a reply is read for the first time, its contents also instruct the assistant to reply with `PeerMessageSend`; that instruction is not repeated on later reads. Sessions can also set idle watchers, which notify them when another session has been idle for a set time (the **Allow Idle AI Watcher Timer?** option controls this).
-
-Enabling important-message interruption lets a message reach a session mid-turn. Codex, GitHub Copilot, Ollama and Pi read it without stopping the turn (Pi at the next step boundary, once its running tool calls finish). Claude, Grok and OpenCode end the turn to deliver it, after any running tool call returns. `PeerSessionList` reports the effective behaviour per session as `mailDelivery`, combining the setting and the backend, so an assistant can see whether marking a message important will achieve anything before it does so.
+With inter-AI messaging enabled, the chat shows notices for peer messages, interruptions by important messages and idle-watcher alerts ([Collaboration](COLLABORATION.md)). When a background build finishes, its result arrives as a system message ([Build tools](MCP_REFERENCE.md#build-tools)).
