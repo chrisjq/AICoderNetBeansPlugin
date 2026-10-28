@@ -77,6 +77,17 @@ class ExtraHeadersTest {
 
     @Test
     @Timeout(5)
+    void secretLookupCharsAreZeroedAfterBuildingHeader() {
+        char[] value = "secret".toCharArray();
+        List<ExtraHeader> sent = ExtraHeaders.forRequest(List.of("X-Token"), Map.of(),
+                                                         name -> Optional.of(value), false, ignored -> {
+                                                         });
+        assertEquals(List.of(new ExtraHeader("X-Token", "secret")), sent);
+        assertArrayEquals(new char[value.length], value);
+    }
+
+    @Test
+    @Timeout(5)
     void restrictedHeadersAreDroppedWithAWarning() {
         List<String> warnings = new ArrayList<>();
 

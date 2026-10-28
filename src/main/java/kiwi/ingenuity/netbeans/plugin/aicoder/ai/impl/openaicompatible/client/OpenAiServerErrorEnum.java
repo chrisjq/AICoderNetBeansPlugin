@@ -26,8 +26,15 @@ public enum OpenAiServerErrorEnum {
             null,
             TextMatch.NONE,
             List.of(),
-            "No API key was sent (keyring unavailable or key not on this computer) — unlock the "
-            + "keyring or enter the key again.",
+            "No API key was sent — set a session key, or use a default key for this server.",
+            List.of()),
+    KEY_UNAVAILABLE(
+            MappedError.Kind.NO_KEY_SENT,
+            List.of(401, 403),
+            null,
+            TextMatch.NONE,
+            List.of(),
+            "The API key could not be read from the system keyring (it may be locked).",
             List.of()),
     KEY_REQUIRED(
             MappedError.Kind.KEY_REQUIRED,

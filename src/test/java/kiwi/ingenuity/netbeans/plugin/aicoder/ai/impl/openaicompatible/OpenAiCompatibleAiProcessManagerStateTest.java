@@ -19,6 +19,7 @@ import kiwi.ingenuity.netbeans.plugin.aicoder.ai.http.ChatRole;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.openaicompatible.client.AssembledReply;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.openaicompatible.client.ClientResult;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.openaicompatible.client.CompatibilityFlags;
+import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.openaicompatible.client.ErrorMapper;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.openaicompatible.client.MappedError;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.openaicompatible.detect.DetectedSnapshot;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.openaicompatible.detect.DetectedSnapshotSources;
@@ -327,7 +328,7 @@ class OpenAiCompatibleAiProcessManagerStateTest {
 
     @Test
     @Timeout(20)
-    void aKeyThatWasNotKeptByTheKeyringShowsTheNotSavedHintAtTheNextTurn() throws Exception {
+    void aKeyThatWasNotKeptByTheKeyringShowsTheUnavailableHintAtTheNextTurn() throws Exception {
         SecretStore forgetful = new SecretStore() {
             @Override
             public char[] read(String key) {
@@ -351,7 +352,7 @@ class OpenAiCompatibleAiProcessManagerStateTest {
         assertEquals(Boolean.FALSE, secrets.get().saveKeyAsync("sk-1".toCharArray()).get(5, TimeUnit.SECONDS));
         runTurn(pm, "hello");
 
-        assertEquals(OpenAiCompatibleAiProcessManager.KEY_NOT_SAVED_HINT, pm.keyHintForTest());
+        assertEquals(OpenAiCompatibleAiProcessManager.KEY_UNAVAILABLE_HINT, pm.keyHintForTest());
     }
 
     @Test
@@ -372,6 +373,63 @@ class OpenAiCompatibleAiProcessManagerStateTest {
 
         reject.set(false);
         runTurn(pm, "hello again");
+        assertNull(pm.keyHintForTest());
+    }
+
+    @Test
+    @Timeout(20)
+    void noKeySentWithoutConfiguredKeyShowsNotSetHint() throws Exception {
+        ChatClient noKeyClient = (request, flags, apiKey, headers, limits, handle, onTextDelta, debug, keySituation)
+                -> CompletableFuture.completedFuture(new ClientResult(null, ClientResult.End.HTTP_ERROR,
+                                                                      ErrorMapper.map(401, "unauthorized", keySituation, "http://localhost:1", "model-x"), false));
+        OpenAiCompatibleAiProcessManager pm = start("key-no-key", noKeyClient, localSettings());
+
+        runTurn(pm, "hello");
+
+        assertEquals(OpenAiCompatibleAiProcessManager.KEY_NOT_SET_HINT, pm.keyHintForTest());
+    }
+
+    @Test
+    @Timeout(20)
+    void effectiveKeyWithUnknownStateUsesUnavailableHint() {
+        SecretStore broken = new SecretStore() {
+            @Override
+            public char[] read(String key) {
+                throw new IllegalStateException("keyring locked");
+            }
+
+            @Override
+            public void save(String key, char[] value, String description) {
+            }
+
+            @Override
+            public void delete(String key) {
+            }
+        };
+        OpenAiCompatibleSessionSettings settings = localSettings();
+        settings.setApiKeySet(true);
+
+        OpenAiCompatibleAiProcessManager pm = start("key-unknown-unavail", answering("a"), settings, broken, null);
+
+        assertEquals(OpenAiCompatibleAiProcessManager.KEY_UNAVAILABLE_HINT, pm.keyHintForTest());
+    }
+
+    @Test
+    @Timeout(20)
+    void reloadingSameSettingsClearsAStaleKeyHint() throws Exception {
+        AtomicBoolean reject = new AtomicBoolean(true);
+        ChatClient client = (request, flags, apiKey, headers, limits, handle, onTextDelta, debug, keySituation)
+                -> reject.get()
+                   ? failing(MappedError.Kind.KEY_REJECTED, "Rejected")
+                        .send(request, flags, apiKey, headers, limits, handle, onTextDelta, debug, keySituation)
+                   : answering("ok").send(request, flags, apiKey, headers, limits, handle, onTextDelta, debug,
+                                          keySituation);
+        OpenAiCompatibleSessionSettings settings = localSettings();
+        OpenAiCompatibleAiProcessManager pm = start("key-reload", client, settings);
+        runTurn(pm, "hello");
+        assertEquals(OpenAiCompatibleAiProcessManager.KEY_REJECTED_HINT, pm.keyHintForTest());
+
+        pm.onSessionSettingsChanged(settings);
         assertNull(pm.keyHintForTest());
     }
 

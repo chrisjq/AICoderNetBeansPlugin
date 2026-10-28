@@ -14,13 +14,17 @@ import java.awt.event.MouseEvent;
 import java.beans.PropertyChangeListener;
 import java.io.IOException;
 import java.lang.reflect.InvocationTargetException;
+import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Comparator;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.CompletionException;
 import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.atomic.AtomicReference;
+import java.util.function.Function;
+import java.util.function.Predicate;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 import javax.swing.BorderFactory;
@@ -48,6 +52,7 @@ import kiwi.ingenuity.netbeans.plugin.aicoder.PluginSettings;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.AiTypeEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.AiTypeRegistry;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.openaicompatible.detect.DetectedFacts;
+import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.openaicompatible.keys.SessionSecrets;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.openaicompatible.settings.OpenAiCompatibleSessionSettings;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.openaicompatible.ui.OpenAiCompatibleBasicPanel;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.openaicompatible.ui.OpenAiCompatibleDetectedPanel;
@@ -98,9 +103,9 @@ public class SessionPickerDialog extends JDialog {
     }
 
     static String projectDisplayLabel(String path, List<String> openProjectPaths) {
-        String name = java.nio.file.Path.of(path).getFileName().toString();
+        String name = Path.of(path).getFileName().toString();
         long matchingNames = openProjectPaths.stream()
-                .map(p -> java.nio.file.Path.of(p).getFileName().toString())
+                .map(p -> Path.of(p).getFileName().toString())
                 .filter(name::equals)
                 .count();
         return matchingNames > 1 ? path : name;
@@ -167,7 +172,7 @@ public class SessionPickerDialog extends JDialog {
         OpenProjects.getDefault().addPropertyChangeListener(openProjectsListener);
         projectCombo.setRenderer(new DefaultListCellRenderer() {
             @Override
-            public Component getListCellRendererComponent(javax.swing.JList<?> list, Object value, int index,
+            public Component getListCellRendererComponent(JList<?> list, Object value, int index,
                                                           boolean isSelected, boolean cellHasFocus) {
                 Component component = super.getListCellRendererComponent(list, value, index, isSelected, cellHasFocus);
                 if (value instanceof String path) {
@@ -486,7 +491,7 @@ public class SessionPickerDialog extends JDialog {
         catch (RejectedExecutionException ex) {
             // The shared pool was retired (plugin shutdown). Report it exactly like any other load failure rather
             // than letting it escape refreshTemplates() as an unchecked throwable.
-            load = CompletableFuture.failedFuture(new java.util.concurrent.CompletionException(ex));
+            load = CompletableFuture.failedFuture(new CompletionException(ex));
         }
         load.whenComplete((data, error) -> SwingUtilities.invokeLater(() -> {
             if (epoch != templateLoadEpoch || disposed) {
@@ -508,7 +513,7 @@ public class SessionPickerDialog extends JDialog {
             selectInstructionById(selectedInstructionId);
             updateInstructionInjectionControl();
             if (error != null) {
-                Throwable cause = error instanceof java.util.concurrent.CompletionException && error.getCause() != null
+                Throwable cause = error instanceof CompletionException && error.getCause() != null
                                   ? error.getCause() : error;
                 LOG.log(Level.WARNING, "Could not load templates", cause);
                 DialogPlacement.showMessageDialog(this, "Could not load templates: " + cause.getMessage(),
@@ -592,9 +597,9 @@ public class SessionPickerDialog extends JDialog {
     }
 
     private static <T> void populate(JComboBox<T> combo, List<T> items,
-                                     java.util.function.Predicate<T> isDefault,
-                                     java.util.function.Predicate<T> isMinimal,
-                                     java.util.function.Function<T, String> nameOf) {
+                                     Predicate<T> isDefault,
+                                     Predicate<T> isMinimal,
+                                     Function<T, String> nameOf) {
         ordered(items, isDefault, isMinimal, nameOf).forEach(combo::addItem);
     }
 
@@ -603,9 +608,9 @@ public class SessionPickerDialog extends JDialog {
      * name. Package-private and static so the ordering can be tested without a combo.
      */
     static <T> List<T> ordered(List<T> items,
-                               java.util.function.Predicate<T> isDefault,
-                               java.util.function.Predicate<T> isMinimal,
-                               java.util.function.Function<T, String> nameOf) {
+                               Predicate<T> isDefault,
+                               Predicate<T> isMinimal,
+                               Function<T, String> nameOf) {
         return items.stream()
                 .sorted(Comparator.comparingInt((T item) -> isDefault.test(item) ? 0 : isMinimal.test(item) ? 1 : 2)
                         .thenComparing(nameOf, String.CASE_INSENSITIVE_ORDER))
@@ -687,10 +692,10 @@ public class SessionPickerDialog extends JDialog {
     private static final class DuplicateAwareTemplateRenderer<T> extends DefaultListCellRenderer {
 
         private final JComboBox<T> combo;
-        private final java.util.function.Function<T, String> nameOf;
+        private final Function<T, String> nameOf;
         private final String empty;
 
-        DuplicateAwareTemplateRenderer(JComboBox<T> combo, java.util.function.Function<T, String> nameOf, String empty) {
+        DuplicateAwareTemplateRenderer(JComboBox<T> combo, Function<T, String> nameOf, String empty) {
             this.combo = combo;
             this.nameOf = nameOf;
             this.empty = empty;
@@ -751,6 +756,44 @@ public class SessionPickerDialog extends JDialog {
         session.settings().setMcpToolConfig(mcpTemplate.config());
     }
 
+    /**
+     * Forgets the staged API key once the sessions it was saved for have been created. A failed creation keeps it, so
+     * the next Create can retry with the same key.
+     */
+    private void discardStagedApiKey() {
+        if ((Object) typeSettingsPanel instanceof OpenAiCompatibleBasicPanel basic) {
+            basic.discardStagedKey();
+        }
+    }
+
+    private CompletableFuture<Void> cleanupSavedKeys(List<AiSession> sessions) {
+        List<CompletableFuture<Void>> cleanup = sessions.stream()
+                .map(session -> SessionSecrets.deleteAllAsync(session.id()))
+                .toList();
+        return CompletableFuture.allOf(cleanup.toArray(new CompletableFuture<?>[0]));
+    }
+
+    /**
+     * The sessions of {@code toCreate} that are not in {@code created}: the ones whose save failed or that were
+     * dropped.
+     */
+    static List<AiSession> sessionsNotCreated(List<AiSession> toCreate, List<AiSession> created) {
+        List<AiSession> missing = new ArrayList<>();
+        for (AiSession session : toCreate) {
+            boolean found = false;
+            for (AiSession done : created) {
+                if (done.id().equals(session.id())) {
+                    found = true;
+                    break;
+                }
+            }
+            if (!found) {
+                missing.add(session);
+            }
+        }
+        return missing;
+    }
+
     private void onCreateNew() {
         String project = (String) projectCombo.getSelectedItem();
         AiTypeEnum type = (AiTypeEnum) aiTypeCombo.getSelectedItem();
@@ -807,20 +850,29 @@ public class SessionPickerDialog extends JDialog {
             toCreate.add(session);
         }
         setCreateEnabled(false);
-        operations.createAll(toCreate).whenComplete((created, error) -> SwingUtilities.invokeLater(() -> {
-            if (error != null) {
-                LOG.log(Level.WARNING, "Could not create sessions", error);
-                sessionsStatusLabel.setText("Could not create sessions: " + error.getMessage());
-            }
-            else if (!created.isEmpty()) {
-                created.forEach(this::openSession);
-                loadSessions();
-                if (close) {
-                    dispose();
-                }
-            }
-            setCreateEnabled(true);
-        }));
+        (typeSettingsPanel == null
+         ? CompletableFuture.completedFuture(null)
+         : typeSettingsPanel.savePendingSecrets(toCreate))
+                .thenCompose(ignored -> operations.createAll(toCreate))
+                // A session whose save failed (or was dropped) keeps its saved key unless it is removed here.
+                .thenCompose(created -> cleanupSavedKeys(sessionsNotCreated(toCreate, created))
+                        .handle((ignored, cleanupError) -> created))
+                .whenComplete((created, error) -> SwingUtilities.invokeLater(() -> {
+                    if (error != null) {
+                        cleanupSavedKeys(toCreate);
+                        LOG.log(Level.WARNING, "Could not create sessions", error);
+                        sessionsStatusLabel.setText("Could not create sessions: " + error.getMessage());
+                    }
+                    else if (!created.isEmpty()) {
+                        discardStagedApiKey();
+                        created.forEach(this::openSession);
+                        loadSessions();
+                        if (close) {
+                            dispose();
+                        }
+                    }
+                    setCreateEnabled(true);
+                }));
     }
 
     private void setCreateEnabled(boolean enabled) {

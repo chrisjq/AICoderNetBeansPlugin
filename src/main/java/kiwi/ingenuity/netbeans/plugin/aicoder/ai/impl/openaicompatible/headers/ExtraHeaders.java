@@ -1,6 +1,7 @@
 package kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.openaicompatible.headers;
 
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
@@ -73,7 +74,13 @@ public final class ExtraHeaders {
                     warn.accept("Header " + name + " needs its value on this computer");
                     continue;
                 }
-                out.add(new ExtraHeader(name, new String(value.get())));
+                char[] secret = value.get();
+                try {
+                    out.add(new ExtraHeader(name, new String(secret)));
+                }
+                finally {
+                    Arrays.fill(secret, (char) 0);
+                }
             }
             else {
                 String value = plainValues.get(name);

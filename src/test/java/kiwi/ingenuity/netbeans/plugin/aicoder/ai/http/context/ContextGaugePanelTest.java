@@ -1,10 +1,17 @@
 package kiwi.ingenuity.netbeans.plugin.aicoder.ai.http.context;
 
+import kiwi.ingenuity.netbeans.plugin.aicoder.ui.UIConstants;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import org.junit.jupiter.api.Test;
 
 class ContextGaugePanelTest {
+
+    @Test
+    void minimumWidthMatchesInfoBarGaugeWidth() {
+        assertEquals(UIConstants.INFO_BAR_CONTEXT_PROGRESS_WIDTH,
+                     new ContextGaugePanel().bar().getMinimumSize().width);
+    }
 
     @Test
     void showsNoUsageDataBeforeTheFirstUpdate() {

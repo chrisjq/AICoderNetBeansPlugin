@@ -14,7 +14,8 @@ public final class NbKeyringSecretStore implements SecretStore {
 
     @Override
     public void save(String key, char[] value, String description) {
-        Keyring.save(key, value, description);
+        // Keyring.save zeroes the array it is given once saved, so the caller's copy is passed on, not the caller's array.
+        Keyring.save(key, value.clone(), description);
     }
 
     @Override

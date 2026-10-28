@@ -1,6 +1,7 @@
 package kiwi.ingenuity.netbeans.plugin.aicoder.ui.settings;
 
 import java.awt.BorderLayout;
+import java.awt.Component;
 import java.awt.Desktop;
 import java.awt.FlowLayout;
 import java.awt.GridBagConstraints;
@@ -10,6 +11,8 @@ import java.awt.event.ActionListener;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.List;
+import java.util.concurrent.CompletableFuture;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 import javax.swing.BorderFactory;
@@ -28,6 +31,7 @@ import kiwi.ingenuity.netbeans.plugin.aicoder.WebRequestAccessOptionEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.AiTypeEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.ollama.settings.OllamaClientSessionSettings;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.ollama.settings.OllamaContextSettingsPanel;
+import kiwi.ingenuity.netbeans.plugin.aicoder.ai.session.AiSession;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.settings.AiSessionCreateSettingsPanel;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.settings.AiSessionSettings;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.ui.FormLayoutUtil;
@@ -80,7 +84,7 @@ public final class AiSessionConfigPanel extends JPanel {
         return gc;
     }
 
-    private static void addRowTo(JPanel panel, GridBagConstraints c, int row, JLabel label, java.awt.Component field) {
+    private static void addRowTo(JPanel panel, GridBagConstraints c, int row, JLabel label, Component field) {
         c.gridy = row;
         c.gridx = 0;
         c.weightx = 0;
@@ -92,7 +96,7 @@ public final class AiSessionConfigPanel extends JPanel {
         panel.add(field, c);
     }
 
-    private static void addFullTo(JPanel panel, GridBagConstraints c, int row, java.awt.Component field) {
+    private static void addFullTo(JPanel panel, GridBagConstraints c, int row, Component field) {
         c.gridy = row;
         c.gridx = 0;
         c.gridwidth = 2;
@@ -132,6 +136,7 @@ public final class AiSessionConfigPanel extends JPanel {
      */
     private McpToolSettingsPanel mcpTools;
     private ActionListener changeListener;
+    private String sessionId;
 
     // Non-null only in non-GLOBAL modes — group wrappers for show/hide control
     private JPanel sessionContextGroup;
@@ -249,6 +254,13 @@ public final class AiSessionConfigPanel extends JPanel {
         return mode;
     }
 
+    /**
+     * Identifies the live session while it is being configured, so backend panels can store session-scoped secrets.
+     */
+    public void setSessionId(String sessionId) {
+        this.sessionId = sessionId;
+    }
+
     public void addChangeListener(ActionListener listener) {
         this.changeListener = listener;
         maxHistory.addChangeListener(e -> listener.actionPerformed(null));
@@ -349,6 +361,25 @@ public final class AiSessionConfigPanel extends JPanel {
         }
     }
 
+    public CompletableFuture<Boolean> keySaveFuture() {
+        return currentTypePanel == null ? null : currentTypePanel.keySaveFuture();
+    }
+
+    public CompletableFuture<Void> keyStateReady() {
+        return currentTypePanel == null ? CompletableFuture.completedFuture(null)
+               : currentTypePanel.keyStateReady();
+    }
+
+    public CompletableFuture<Void> revertKeyChange(CompletableFuture<Boolean> change) {
+        return currentTypePanel == null ? CompletableFuture.completedFuture(null)
+               : currentTypePanel.revertKeyChange(change);
+    }
+
+    public CompletableFuture<Void> savePendingSecrets(List<AiSession> sessions) {
+        return currentTypePanel == null ? CompletableFuture.completedFuture(null)
+               : currentTypePanel.savePendingSecrets(sessions);
+    }
+
     public void dispose() {
         if (currentTypePanel != null) {
             currentTypePanel.dispose();
@@ -433,7 +464,7 @@ public final class AiSessionConfigPanel extends JPanel {
             }
             return;
         }
-        currentTypePanel = aiType.getSettingsCreator().createSettingsPanel();
+        currentTypePanel = aiType.getSettingsCreator().createSettingsPanel(sessionId, settings);
         currentTypePanelSettingsClass = settings != null ? settings.getClass() : null;
         currentTypePanel.load(settings);
         if (changeListener != null) {
@@ -502,7 +533,7 @@ public final class AiSessionConfigPanel extends JPanel {
         }
     }
 
-    private void addRow(GridBagConstraints c, int row, JLabel label, java.awt.Component field) {
+    private void addRow(GridBagConstraints c, int row, JLabel label, Component field) {
         c.gridy = row;
         c.gridx = 0;
         c.weightx = 0;
@@ -575,7 +606,7 @@ public final class AiSessionConfigPanel extends JPanel {
         return (bytes / (1024L * 1024L)) + " MB";
     }
 
-    private void addFull(GridBagConstraints c, int row, java.awt.Component field) {
+    private void addFull(GridBagConstraints c, int row, Component field) {
         c.gridy = row;
         c.gridx = 0;
         c.gridwidth = 2;

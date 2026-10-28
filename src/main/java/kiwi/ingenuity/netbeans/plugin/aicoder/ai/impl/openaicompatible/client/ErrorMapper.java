@@ -27,6 +27,14 @@ public final class ErrorMapper {
          */
         NOT_SENT_UNAVAILABLE,
         /**
+         * No key is configured for this request.
+         */
+        NO_KEY_CONFIGURED,
+        /**
+         * No key was sent because the configured default belongs to another server.
+         */
+        DEFAULT_KEY_OTHER_SERVER,
+        /**
          * No key is configured.
          */
         NONE
@@ -92,6 +100,10 @@ public final class ErrorMapper {
 
     private static OpenAiServerErrorEnum keyItem(KeySituation keySituation) {
         if (keySituation == KeySituation.NOT_SENT_UNAVAILABLE) {
+            return OpenAiServerErrorEnum.KEY_UNAVAILABLE;
+        }
+        if (keySituation == KeySituation.NO_KEY_CONFIGURED
+                || keySituation == KeySituation.DEFAULT_KEY_OTHER_SERVER) {
             return OpenAiServerErrorEnum.NO_KEY_SENT;
         }
         if (keySituation == KeySituation.SENT) {

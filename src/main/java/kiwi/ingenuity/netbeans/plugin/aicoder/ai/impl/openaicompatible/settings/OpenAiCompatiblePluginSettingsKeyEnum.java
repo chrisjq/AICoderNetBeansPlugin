@@ -50,6 +50,7 @@ public enum OpenAiCompatiblePluginSettingsKeyEnum {
     DEBUG_LOG_QUEUE_ENTRIES("ai.openai_compatible.debugLogQueueEntries", 10000),
     DEBUG_LOG_MAX_ENTRY_BYTES("ai.openai_compatible.debugLogMaxEntryBytes", 256L << 10),
     DEBUG_LOG_DRAIN_SECONDS("ai.openai_compatible.debugLogDrainSeconds", 2L),
+    KEYRING_LOAD_TIMEOUT_MILLIS("ai.openai_compatible.keyringLoadTimeoutMillis", 10000L),
     SUMMARISE_THRESHOLD("ai.openai_compatible.summariseThreshold", 16384);
 
     private final String key;

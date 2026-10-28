@@ -1,5 +1,6 @@
 package kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.openaicompatible.keys;
 
+import java.util.Arrays;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CountDownLatch;
@@ -50,6 +51,8 @@ final class FakeSecretStore implements SecretStore {
         if (!lossy) {
             values.put(key, value.clone());
         }
+        // Like Keyring.save, the fake zeroes the array it is given, so callers that reuse it after a save are caught.
+        Arrays.fill(value, (char) 0);
     }
 
     @Override

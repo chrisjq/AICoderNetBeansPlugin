@@ -6,6 +6,7 @@ import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
 import java.time.Duration;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -387,57 +388,68 @@ public final class TurnLoop {
      * Runs the turn to its end and returns the outcome, which always holds a reason when this returns.
      */
     public TurnOutcome run(String userText) {
-        if (!waitForPreviousTool()) {
-            debug.event("Turn ended before it started: " + outcome.reason());
+        try {
+            if (!waitForPreviousTool()) {
+                debug.event("Turn ended before it started: " + outcome.reason());
+                return outcome;
+            }
+            repetition = new RepetitionTracker(Math.max(2, counts.repetitionWindow()),
+                                               Math.max(1, counts.unproductiveRounds()));
+            inputSchemas = inputSchemasOf(context.tools());
+            history.add(new ChatMessage(ChatRole.USER, userText, List.of(), null));
+            if (!overheadFits()) {
+                debug.event("Turn ended before sending: " + outcome.reason());
+                return outcome;
+            }
+            while (outcome.reason() == null) {
+                if (handle.isCancelled() || Thread.currentThread().isInterrupted()) {
+                    claim(TurnEndReason.CANCELLED, TurnEndReason.CANCELLED.message());
+                    break;
+                }
+                round++;
+                if (takeMail.getAsBoolean()) {
+                    history.add(new ChatMessage(ChatRole.USER, InterruptTypeEnum.MAIL_NOTIFICATION_TEXT, List.of(), null));
+                }
+                boolean last = finalRequest;
+                compactIfNeeded(compactBeforeNext);
+                compactBeforeNext = false;
+                List<ChatMessage> wire = wireMessages();
+                wireTail.clear();
+                lastEstimate = contextManager == null ? 0 : contextManager.estimate(wire);
+                boolean offerNativeTools = !last && mode == ToolCallingModeEnum.NATIVE;
+                ClientResult result = sendAndWait(wire, offerNativeTools ? context.tools() : null, schemaResponseFormat(last));
+                if (result == null) {
+                    break;
+                }
+                if (result.end() == ClientResult.End.COMPLETE) {
+                    onUsage(result.reply());
+                }
+                if (last) {
+                    onFinalResult(result);
+                }
+                else {
+                    onResult(result);
+                }
+            }
+            if (outcome.reason() == null) {
+                // Defensive: every path above claims; this keeps the "exactly one reason" contract even if one is missed.
+                claim(TurnEndReason.SERVER_ERROR, TurnEndReason.SERVER_ERROR.message(EARLY_END_MESSAGE));
+            }
+            if (reasoning.length() > 0) {
+                debug.event("Reasoning this turn: " + reasoning.length() + " characters (not sent back).");
+            }
+            debug.event("Turn ended: " + outcome.reason());
             return outcome;
         }
-        repetition = new RepetitionTracker(Math.max(2, counts.repetitionWindow()),
-                                           Math.max(1, counts.unproductiveRounds()));
-        inputSchemas = inputSchemasOf(context.tools());
-        history.add(new ChatMessage(ChatRole.USER, userText, List.of(), null));
-        if (!overheadFits()) {
-            debug.event("Turn ended before sending: " + outcome.reason());
-            return outcome;
+        finally {
+            zero(context.apiKey());
         }
-        while (outcome.reason() == null) {
-            if (handle.isCancelled() || Thread.currentThread().isInterrupted()) {
-                claim(TurnEndReason.CANCELLED, TurnEndReason.CANCELLED.message());
-                break;
-            }
-            round++;
-            if (takeMail.getAsBoolean()) {
-                history.add(new ChatMessage(ChatRole.USER, InterruptTypeEnum.MAIL_NOTIFICATION_TEXT, List.of(), null));
-            }
-            boolean last = finalRequest;
-            compactIfNeeded(compactBeforeNext);
-            compactBeforeNext = false;
-            List<ChatMessage> wire = wireMessages();
-            wireTail.clear();
-            lastEstimate = contextManager == null ? 0 : contextManager.estimate(wire);
-            boolean offerNativeTools = !last && mode == ToolCallingModeEnum.NATIVE;
-            ClientResult result = sendAndWait(wire, offerNativeTools ? context.tools() : null, schemaResponseFormat(last));
-            if (result == null) {
-                break;
-            }
-            if (result.end() == ClientResult.End.COMPLETE) {
-                onUsage(result.reply());
-            }
-            if (last) {
-                onFinalResult(result);
-            }
-            else {
-                onResult(result);
-            }
+    }
+
+    static void zero(char[] value) {
+        if (value != null) {
+            Arrays.fill(value, (char) 0);
         }
-        if (outcome.reason() == null) {
-            // Defensive: every path above claims; this keeps the "exactly one reason" contract even if one is missed.
-            claim(TurnEndReason.SERVER_ERROR, TurnEndReason.SERVER_ERROR.message(EARLY_END_MESSAGE));
-        }
-        if (reasoning.length() > 0) {
-            debug.event("Reasoning this turn: " + reasoning.length() + " characters (not sent back).");
-        }
-        debug.event("Turn ended: " + outcome.reason());
-        return outcome;
     }
 
     /**

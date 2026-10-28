@@ -407,6 +407,22 @@ public final class OpenAiCompatiblePluginSettings {
         return readLong(OpenAiCompatiblePluginSettingsKeyEnum.DEBUG_LOG_DRAIN_SECONDS);
     }
 
+    public static Duration getKeyringLoadTimeout() {
+        long millis = readLong(OpenAiCompatiblePluginSettingsKeyEnum.KEYRING_LOAD_TIMEOUT_MILLIS);
+        if (millis <= 0) {
+            return Duration.ofSeconds(10);
+        }
+        return Duration.ofMillis(millis);
+    }
+
+    public static void setKeyringLoadTimeout(Duration timeout) {
+        if (timeout == null || timeout.isNegative()) {
+            writeLong(OpenAiCompatiblePluginSettingsKeyEnum.KEYRING_LOAD_TIMEOUT_MILLIS, 10000L);
+            return;
+        }
+        writeLong(OpenAiCompatiblePluginSettingsKeyEnum.KEYRING_LOAD_TIMEOUT_MILLIS, timeout.toMillis());
+    }
+
     public static void setDebugLogDrainSeconds(long value) {
         writeLong(OpenAiCompatiblePluginSettingsKeyEnum.DEBUG_LOG_DRAIN_SECONDS, value);
     }

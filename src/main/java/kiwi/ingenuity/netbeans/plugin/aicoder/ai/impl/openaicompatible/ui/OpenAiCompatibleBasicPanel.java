@@ -1,6 +1,7 @@
 package kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.openaicompatible.ui;
 
 import java.awt.BorderLayout;
+import java.awt.Component;
 import java.awt.GridBagConstraints;
 import java.awt.GridBagLayout;
 import java.awt.Insets;
@@ -13,6 +14,9 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.CompletionException;
+import java.util.concurrent.Executor;
+import java.util.concurrent.RejectedExecutionException;
 import java.util.function.Consumer;
 import javax.swing.DefaultComboBoxModel;
 import javax.swing.JButton;
@@ -26,6 +30,8 @@ import javax.swing.JSpinner;
 import javax.swing.JTextField;
 import javax.swing.SpinnerNumberModel;
 import javax.swing.SwingUtilities;
+import javax.swing.event.DocumentEvent;
+import javax.swing.event.DocumentListener;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.BackendExecutors;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.openaicompatible.BaseUrls;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.openaicompatible.ConnectionTester;
@@ -33,10 +39,12 @@ import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.openaicompatible.OpenAiCom
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.openaicompatible.ServerTypeEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.openaicompatible.ToolCallingModeEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.openaicompatible.context.CompactionStrategyEnum;
+import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.openaicompatible.keys.SecretStore;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.openaicompatible.keys.SessionSecrets;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.openaicompatible.settings.DefaultKeyRules;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.openaicompatible.settings.OpenAiCompatiblePluginSettings;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.openaicompatible.settings.OpenAiCompatibleSessionSettings;
+import kiwi.ingenuity.netbeans.plugin.aicoder.ai.session.AiSession;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.settings.AiSessionCreateSettingsPanel;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.ui.BlankSafeComboRenderer;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.ui.FormLayoutUtil;
@@ -88,8 +96,27 @@ public final class OpenAiCompatibleBasicPanel implements AiSessionCreateSettings
     private final SessionSecrets secrets;
     private final HeaderSecretSaver headerSaver;
     private final OpenAiCompatibleLimits limits;
+    private final Executor probeExecutor;
     private char[] pendingApiKey;
+    private CompletableFuture<Boolean> keySaveFuture;
+    /**
+     * A copy of the key the session had when the form loaded (null when it had none), for reverting an uncommitted
+     * save.
+     */
+    private char[] keyBeforeChange;
+    private boolean keyBeforeChangeKnown;
+    private CompletableFuture<Void> pendingRevert;
+    /**
+     * Completes once startLoading has read the keyring state (completed from the start, so a panel that never loads
+     * does not hold an OK back).
+     */
+    private CompletableFuture<Void> keyStateReady = CompletableFuture.completedFuture(null);
+    /**
+     * The keyring for new-session key saves; null means the default keyring.
+     */
+    private SecretStore sessionSecretStore;
     private boolean apiKeySet;
+    private boolean clearKeyPending;
     private Map<String, List<String>> reasoningLevelsByModel = Map.of();
     private boolean updating;
     private boolean ollamaImportChecked;
@@ -120,9 +147,15 @@ public final class OpenAiCompatibleBasicPanel implements AiSessionCreateSettings
     }
 
     OpenAiCompatibleBasicPanel(SessionSecrets secrets, OpenAiCompatibleLimits limits, HeaderSecretSaver headerSaver) {
+        this(secrets, limits, headerSaver, BackendExecutors.probePool());
+    }
+
+    OpenAiCompatibleBasicPanel(SessionSecrets secrets, OpenAiCompatibleLimits limits, HeaderSecretSaver headerSaver,
+                               Executor probeExecutor) {
         this.secrets = secrets;
         this.headerSaver = headerSaver;
         this.limits = limits == null ? OpenAiCompatibleLimits.defaults() : limits;
+        this.probeExecutor = probeExecutor == null ? BackendExecutors.probePool() : probeExecutor;
         buildLayout();
         wireBehaviour();
         refreshKeyState();
@@ -214,7 +247,7 @@ public final class OpenAiCompatibleBasicPanel implements AiSessionCreateSettings
         panel.repaint();
     }
 
-    private int addRow(GridBagConstraints c, int row, String label, java.awt.Component field) {
+    private int addRow(GridBagConstraints c, int row, String label, Component field) {
         c.gridy = row;
         c.gridx = 0;
         c.fill = GridBagConstraints.NONE;
@@ -299,12 +332,92 @@ public final class OpenAiCompatibleBasicPanel implements AiSessionCreateSettings
         refreshKeyState();
     }
 
+    /**
+     * Records the key the session had when the form loaded, so a dialog closed without committing can put it back. When
+     * the keyring state is still unknown nothing is recorded, and no revert is attempted.
+     */
+    private void recordKeyBeforeChange() {
+        if (keyBeforeChange != null) {
+            Arrays.fill(keyBeforeChange, (char) 0);
+        }
+        keyBeforeChange = null;
+        keyBeforeChangeKnown = false;
+        if (secrets == null || !keyStateKnown(secrets.keyState())) {
+            return;
+        }
+        keyBeforeChangeKnown = true;
+        keyBeforeChange = secrets.apiKey(Duration.ZERO).map(char[]::clone).orElse(null);
+    }
+
+    /**
+     * The error to report for a failed save: the cause of a wrapper, so the message is not wrapped twice.
+     */
+    private static Throwable unwrapped(Throwable error) {
+        return error instanceof CompletionException && error.getCause() != null ? error.getCause() : error;
+    }
+
+    /**
+     * Whether a keyring state read from the store is a known one: a missing value and a value that is there are both
+     * known, while a keyring that could not be read is not.
+     */
+    private static boolean keyStateKnown(SessionSecrets.KeyState state) {
+        return state == SessionSecrets.KeyState.PRESENT || state == SessionSecrets.KeyState.NOT_SET
+                || state == SessionSecrets.KeyState.MISSING_ON_THIS_COMPUTER;
+    }
+
+    /**
+     * Records the key before the change only when nothing has been staged yet: once a Change or Clear is staged, the
+     * key the form loaded with is no longer the state a revert should restore.
+     */
+    private void recordKeyBeforeChangeUnlessStaged() {
+        if (pendingApiKey == null && !clearKeyPending) {
+            recordKeyBeforeChange();
+        }
+    }
+
+    /**
+     * Undoes this panel's keyring change once {@code change} has finished: the previous key is saved back, or the key
+     * is cleared when there was none. Nothing is undone when the change failed, or when the state at load is unknown.
+     * The previous key is copied now, so the revert still works after {@link #dispose()}.
+     */
+    public CompletableFuture<Void> revertKeyChange(CompletableFuture<Boolean> change) {
+        char[] previous = keyBeforeChange == null ? null : keyBeforeChange.clone();
+        if (change == null || secrets == null || !keyBeforeChangeKnown) {
+            Arrays.fill(previous == null ? new char[0] : previous, (char) 0);
+            return CompletableFuture.completedFuture(null);
+        }
+        SessionSecrets target = secrets;
+        CompletableFuture<Void> revert = change
+                .handle((changed, error) -> error == null && Boolean.TRUE.equals(changed))
+                .thenCompose(succeeded -> {
+                    if (!succeeded) {
+                        return CompletableFuture.<Void>completedFuture(null);
+                    }
+                    if (previous == null) {
+                        return target.clearKeyAsync();
+                    }
+                    return target.saveKeyAsync(previous).thenApply(ignored -> (Void) null);
+                })
+                .whenComplete((ignored, error) -> {
+                    if (previous != null) {
+                        Arrays.fill(previous, (char) 0);
+                    }
+                });
+        pendingRevert = revert;
+        return revert;
+    }
+
     private static String defaultOrNone(String value) {
         return value == null || value.isBlank() ? "none" : value;
     }
 
     @Override
     public void applyTo(OpenAiCompatibleSessionSettings settings) {
+        if (keySaveFuture != null && keySaveFuture.isDone()) {
+            // A finished save is reported once; a failed one is retried below while its key is still staged.
+            keySaveFuture = null;
+        }
+        captureTypedApiKey();
         settings.setServerType((ServerTypeEnum) serverTypeCombo.getSelectedItem());
 
         String raw = baseUrlField.getText();
@@ -332,6 +445,12 @@ public final class OpenAiCompatibleBasicPanel implements AiSessionCreateSettings
         settings.setPrune(pruneCheck.isSelected());
         if (pendingApiKey != null && pendingApiKey.length > 0) {
             apiKeySet = true;
+            clearKeyPending = false;
+            savePendingApiKey();
+        }
+        else if (clearKeyPending && secrets != null) {
+            keySaveFuture = secrets.clearKeyAsync().thenApply(ignored -> true);
+            clearKeyPending = false;
         }
         settings.setApiKeySet(apiKeySet);
         advanced.applyTo(settings);
@@ -377,7 +496,99 @@ public final class OpenAiCompatibleBasicPanel implements AiSessionCreateSettings
     @Override
     public void startLoading() {
         loadOllamaImportOnce();
-        runTestConnection();
+        if (secrets == null) {
+            runTestConnection();
+            return;
+        }
+        CompletableFuture<Void> ready = new CompletableFuture<>();
+        keyStateReady = ready;
+        secrets.loadAsync(List.of()).whenComplete((ignored, error) -> SwingUtilities.invokeLater(() -> {
+            // The keyring state is known only now; a Change or Clear made before this point is not recorded as the "before".
+            recordKeyBeforeChangeUnlessStaged();
+            ready.complete(null);
+            runTestConnection();
+        }));
+    }
+
+    /**
+     * Completes once the keyring state this panel needs to revert a save is known. Completed at once when the panel has
+     * no keyring or startLoading has not been called.
+     */
+    @Override
+    public CompletableFuture<Void> keyStateReady() {
+        return keyStateReady;
+    }
+
+    @Override
+    public CompletableFuture<Boolean> keySaveFuture() {
+        return keySaveFuture;
+    }
+
+    @Override
+    public CompletableFuture<Void> savePendingSecrets(List<AiSession> sessions) {
+        Optional<char[]> pending = pendingApiKey();
+        if (pending.isEmpty() || sessions == null || sessions.isEmpty()) {
+            return CompletableFuture.completedFuture(null);
+        }
+        // The staged key stays staged until the picker discards it after the sessions are created, so a failed creation
+        // can be retried with the same key. The saves use a copy, zeroed once they have all finished.
+        char[] key = pending.get().clone();
+        List<CompletableFuture<Boolean>> saves = new ArrayList<>();
+        for (AiSession session : sessions) {
+            SessionSecrets sessionSecrets = sessionSecretsFor(session.id());
+            saves.add(sessionSecrets.saveKeyAsync(key)
+                    .whenComplete((ok, error) -> sessionSecrets.close()));
+        }
+        CompletableFuture<Void> all = CompletableFuture.allOf(saves.toArray(new CompletableFuture<?>[0]));
+        return all.<CompletableFuture<Void>>handle((ignored, error) -> {
+            boolean allSaved = error == null
+                    && saves.stream().allMatch(save -> Boolean.TRUE.equals(save.getNow(false)));
+            if (allSaved) {
+                return CompletableFuture.<Void>completedFuture(null);
+            }
+            List<CompletableFuture<Void>> cleanup = sessions.stream()
+                    .map(session -> deleteSessionSecretsFor(session.id()))
+                    .toList();
+            return CompletableFuture.allOf(cleanup.toArray(new CompletableFuture<?>[0]))
+                    .thenCompose(cleanupIgnored -> CompletableFuture.failedFuture(
+                            error == null ? new IllegalStateException(
+                                            "The API key could not be stored in the system keyring.")
+                            : unwrapped(error)));
+        })
+                .thenCompose(future -> future)
+                .whenComplete((ignored, error) -> Arrays.fill(key, (char) 0));
+    }
+
+    /**
+     * Forgets the staged key once the sessions it was saved for have been created. Until then the key stays staged, so
+     * a failed creation can be retried.
+     */
+    public void discardStagedKey() {
+        char[] key = pendingApiKey;
+        pendingApiKey = null;
+        if (key != null) {
+            Arrays.fill(key, (char) 0);
+        }
+    }
+
+    /**
+     * The keyring handle for one session's key: the default keyring, or the store a test injected.
+     */
+    private SessionSecrets sessionSecretsFor(String sessionId) {
+        return sessionSecretStore == null ? new SessionSecrets(sessionId, true)
+               : new SessionSecrets(sessionId, sessionSecretStore, BackendExecutors.probePool(), true);
+    }
+
+    private CompletableFuture<Void> deleteSessionSecretsFor(String sessionId) {
+        return sessionSecretStore == null ? SessionSecrets.deleteAllAsync(sessionId)
+               : SessionSecrets.deleteAllAsync(sessionId, sessionSecretStore, BackendExecutors.probePool());
+    }
+
+    /**
+     * Replaces the keyring the session keys are saved to (tests use an in-memory store).
+     */
+    void setSessionSecretStoreForTest(SecretStore store) {
+        sessionSecretStore = store;
     }
 
     @Override
@@ -395,10 +606,22 @@ public final class OpenAiCompatibleBasicPanel implements AiSessionCreateSettings
         char[] key = pendingApiKey;
         pendingApiKey = null;
         if (key != null) {
-            java.util.Arrays.fill(key, (char) 0);
+            Arrays.fill(key, (char) 0);
+        }
+        if (keyBeforeChange != null) {
+            Arrays.fill(keyBeforeChange, (char) 0);
+            keyBeforeChange = null;
         }
         if (secrets != null) {
-            secrets.close();
+            // A revert still running needs the secrets open; close them when it finishes.
+            CompletableFuture<Void> revert = pendingRevert;
+            SessionSecrets toClose = secrets;
+            if (revert != null && !revert.isDone()) {
+                revert.whenComplete((ignored, error) -> toClose.close());
+            }
+            else {
+                toClose.close();
+            }
         }
     }
 
@@ -444,33 +667,66 @@ public final class OpenAiCompatibleBasicPanel implements AiSessionCreateSettings
     }
 
     private void onChangeKey() {
-        char[] typed = apiKeyField.getPassword();
-        if (typed.length == 0) {
+        captureTypedApiKey();
+        if (pendingApiKey == null || pendingApiKey.length == 0) {
             return;
         }
-        pendingApiKey = typed;
         apiKeySet = true;
-        if (secrets != null) {
-            secrets.saveKeyAsync(typed).thenAccept(ok -> SwingUtilities.invokeLater(() -> {
-                if (Boolean.TRUE.equals(ok)) {
-                    statusLabel.setText("Key saved");
-                }
-                else {
-                    statusLabel.setText("Key kept for this run only");
-                }
-                refreshKeyState();
-            }));
-        }
+        clearKeyPending = false;
         apiKeyField.setText("");
         refreshKeyState();
     }
 
-    private void onClearKey() {
-        pendingApiKey = null;
-        apiKeySet = false;
-        if (secrets != null) {
-            secrets.clearKeyAsync().thenRun(() -> SwingUtilities.invokeLater(this::refreshKeyState));
+    /**
+     * Keeps a key entered without pressing Change until the caller applies the form. New-session panels have no session
+     * keyring yet; the picker consumes this value after it creates a session id.
+     */
+    private void captureTypedApiKey() {
+        char[] typed = apiKeyField.getPassword();
+        if (typed.length == 0) {
+            return;
         }
+        char[] previous = pendingApiKey;
+        pendingApiKey = typed;
+        if (previous != null && previous != typed) {
+            Arrays.fill(previous, (char) 0);
+        }
+    }
+
+    /**
+     * Starts the keyring save of the staged key. The staged key stays in place until the save succeeds, so a failed
+     * save can be retried by the next OK. The save works on its own copy, which is zeroed only after the save has
+     * finished.
+     */
+    private void savePendingApiKey() {
+        if (secrets == null || pendingApiKey == null || pendingApiKey.length == 0) {
+            return;
+        }
+        char[] staged = pendingApiKey;
+        char[] key = staged.clone();
+        CompletableFuture<Boolean> save = secrets.saveKeyAsync(key);
+        keySaveFuture = save;
+        // The staged key is touched only on the EDT, where the form reads and writes it too.
+        save.whenComplete((ok, error) -> SwingUtilities.invokeLater(() -> {
+            Arrays.fill(key, (char) 0);
+            if (error == null && Boolean.TRUE.equals(ok) && pendingApiKey == staged) {
+                pendingApiKey = null;
+                Arrays.fill(staged, (char) 0);
+            }
+            statusLabel.setText(Boolean.TRUE.equals(ok) ? "Key saved"
+                                : "API key not saved (keyring unavailable) — press OK to retry");
+            refreshKeyState();
+        }));
+    }
+
+    private void onClearKey() {
+        keySaveFuture = null;
+        clearKeyPending = true;
+        char[] pending = pendingApiKey;
+        pendingApiKey = null;
+        Arrays.fill(pending == null ? new char[0] : pending, (char) 0);
+        apiKeyField.setText("");
+        apiKeySet = false;
         refreshKeyState();
     }
 
@@ -500,17 +756,39 @@ public final class OpenAiCompatibleBasicPanel implements AiSessionCreateSettings
     private void runTestConnection() {
         testButton.setEnabled(false);
         statusLabel.setText("Testing…");
-        char[] key = pendingApiKey != null && pendingApiKey.length > 0 ? pendingApiKey : null;
-        if (key == null && secrets != null) {
-            key = secrets.apiKey(Duration.ZERO).orElse(null);
-        }
         String url = baseUrlField.getText();
-        ConnectionTester tester = new ConnectionTester();
-        tester.test(url, key, List.of(), limits).whenComplete((result, error)
-                -> SwingUtilities.invokeLater(() -> {
-                    testButton.setEnabled(true);
-                    applyTestResult(result, error);
-                }));
+        char[] key = pendingApiKey != null && pendingApiKey.length > 0 ? pendingApiKey.clone() : null;
+        try {
+            probeExecutor.execute(() -> {
+                char[] resolved = key;
+                if (resolved == null && secrets != null) {
+                    resolved = secrets.apiKey(limits.probeTimeout()).orElse(null);
+                }
+                ConnectionTester tester = new ConnectionTester();
+                char[] requestKey = resolved;
+                try {
+                    tester.test(url, requestKey, List.of(), limits).whenComplete((result, error) -> {
+                        Arrays.fill(requestKey == null ? new char[0] : requestKey, (char) 0);
+                        SwingUtilities.invokeLater(() -> {
+                            testButton.setEnabled(true);
+                            applyTestResult(result, error);
+                        });
+                    });
+                }
+                catch (RuntimeException ex) {
+                    Arrays.fill(requestKey == null ? new char[0] : requestKey, (char) 0);
+                    SwingUtilities.invokeLater(() -> {
+                        testButton.setEnabled(true);
+                        applyTestResult(null, ex);
+                    });
+                }
+            });
+        }
+        catch (RejectedExecutionException ex) {
+            Arrays.fill(key == null ? new char[0] : key, (char) 0);
+            testButton.setEnabled(true);
+            statusLabel.setText("N/A");
+        }
     }
 
     private void applyTestResult(ConnectionTester.Result result, Throwable error) {
@@ -617,7 +895,7 @@ public final class OpenAiCompatibleBasicPanel implements AiSessionCreateSettings
     /**
      * A document listener that treats every edit as a user change.
      */
-    private static final class SimpleDocumentListener implements javax.swing.event.DocumentListener {
+    private static final class SimpleDocumentListener implements DocumentListener {
 
         private final Runnable onChange;
 
@@ -626,17 +904,17 @@ public final class OpenAiCompatibleBasicPanel implements AiSessionCreateSettings
         }
 
         @Override
-        public void insertUpdate(javax.swing.event.DocumentEvent e) {
+        public void insertUpdate(DocumentEvent e) {
             onChange.run();
         }
 
         @Override
-        public void removeUpdate(javax.swing.event.DocumentEvent e) {
+        public void removeUpdate(DocumentEvent e) {
             onChange.run();
         }
 
         @Override
-        public void changedUpdate(javax.swing.event.DocumentEvent e) {
+        public void changedUpdate(DocumentEvent e) {
             onChange.run();
         }
     }

@@ -1,11 +1,14 @@
 package kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.openaicompatible.keys;
 
 import java.time.Duration;
+import java.util.ArrayDeque;
+import java.util.Deque;
 import java.util.List;
 import java.util.Optional;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicReference;
 import java.util.prefs.Preferences;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.openaicompatible.settings.OpenAiCompatiblePluginSettings;
 import org.junit.jupiter.api.AfterEach;
@@ -21,6 +24,7 @@ class SessionSecretsTest {
     @BeforeEach
     void isolatePreferences() throws Exception {
         SessionSecrets.useForTest(Preferences.userRoot().node("/aicoder-test-" + System.nanoTime()));
+        SessionSecrets.clearPendingSavesForTest();
     }
 
     @AfterEach
@@ -64,6 +68,176 @@ class SessionSecretsTest {
         assertArrayEquals("bearer".toCharArray(), secrets.header("authorization").orElseThrow());
         assertEquals(SessionSecrets.KeyState.PRESENT, secrets.keyState());
         secrets.close();
+    }
+
+    @Test
+    @Timeout(10)
+    void loadingANewInstanceWaitsForAPendingKeySave() throws Exception {
+        executor = Executors.newSingleThreadExecutor();
+        FakeSecretStore store = new FakeSecretStore();
+        Deque<Runnable> delayedSaves = new ArrayDeque<>();
+        SessionSecrets writer = new SessionSecrets("race", store, delayedSaves::add, false);
+        SessionSecrets reader = new SessionSecrets("race", store, executor, true);
+
+        writer.saveKeyAsync("sk-race".toCharArray());
+        var load = reader.loadAsync(List.of());
+        assertFalse(load.isDone(), "the new instance must not read before the queued save finishes");
+
+        delayedSaves.removeFirst().run();
+        load.get(5, TimeUnit.SECONDS);
+
+        assertArrayEquals("sk-race".toCharArray(), reader.apiKey(Duration.ofSeconds(1)).orElseThrow());
+        writer.close();
+        reader.close();
+    }
+
+    @Test
+    @Timeout(10)
+    void failedPendingSaveDoesNotFailAConcurrentLoad() throws Exception {
+        AtomicReference<Thread> loadThread = new AtomicReference<>();
+        executor = Executors.newSingleThreadExecutor(r -> {
+            Thread t = new Thread(r);
+            loadThread.set(t);
+            return t;
+        });
+        Deque<Runnable> delayedSaves = new ArrayDeque<>();
+        SecretStore store = new SecretStore() {
+            @Override
+            public char[] read(String key) {
+                return null;
+            }
+
+            @Override
+            public void save(String key, char[] value, String description) {
+                throw new IllegalStateException("save failed");
+            }
+
+            @Override
+            public void delete(String key) {
+            }
+        };
+        SessionSecrets writer = new SessionSecrets("failed-race", store, delayedSaves::add, false);
+        SessionSecrets reader = new SessionSecrets("failed-race", store, executor, true);
+
+        var save = writer.saveKeyAsync("key".toCharArray());
+        var load = reader.loadAsync(List.of());
+        assertFalse(load.isDone());
+
+        long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(5);
+        while (System.nanoTime() < deadline) {
+            Thread t = loadThread.get();
+            if (t != null) {
+                Thread.State state = t.getState();
+                if (state == Thread.State.WAITING || state == Thread.State.TIMED_WAITING) {
+                    break;
+                }
+            }
+            Thread.sleep(5);
+        }
+        assertFalse(delayedSaves.isEmpty());
+        delayedSaves.removeFirst().run();
+
+        save.handle((ignored, error) -> null).join();
+        load.join();
+        assertEquals(SessionSecrets.KeyState.UNAVAILABLE, reader.keyState());
+        assertEquals(SessionSecrets.UnavailableReason.KEYRING_ERROR, reader.unavailableReason());
+        writer.close();
+        reader.close();
+    }
+
+    @Test
+    @Timeout(10)
+    void pendingSaveTimeoutMarksUnavailable() throws Exception {
+        executor = Executors.newSingleThreadExecutor();
+        Preferences prefs = Preferences.userRoot().node("/aicoder-timeout-" + System.nanoTime());
+        OpenAiCompatiblePluginSettings.useForTest(prefs);
+        OpenAiCompatiblePluginSettings.setKeyringLoadTimeout(Duration.ofMillis(10));
+        Deque<Runnable> delayedSaves = new ArrayDeque<>();
+        SecretStore store = new SecretStore() {
+            @Override
+            public char[] read(String key) {
+                return null;
+            }
+
+            @Override
+            public void save(String key, char[] value, String description) {
+            }
+
+            @Override
+            public void delete(String key) {
+            }
+        };
+        SessionSecrets writer = new SessionSecrets("timeout-race", store, delayedSaves::add, false);
+        SessionSecrets reader = new SessionSecrets("timeout-race", store, executor, true);
+
+        var save = writer.saveKeyAsync("key".toCharArray());
+        var load = reader.loadAsync(List.of("Authorization"));
+        assertFalse(load.isDone());
+
+        try {
+            load.get(2, TimeUnit.SECONDS);
+        }
+        catch (Exception ignored) {
+        }
+
+        assertEquals(SessionSecrets.KeyState.UNAVAILABLE, reader.keyState());
+        assertEquals(SessionSecrets.UnavailableReason.KEYRING_ERROR, reader.unavailableReason());
+        assertTrue(reader.header("authorization").isEmpty());
+        if (!delayedSaves.isEmpty()) {
+            delayedSaves.removeFirst().run();
+        }
+        save.join();
+        writer.close();
+        reader.close();
+    }
+
+    @Test
+    @Timeout(10)
+    void pendingSaveTimeoutStillLoadsHeaders() throws Exception {
+        executor = Executors.newSingleThreadExecutor();
+        Preferences prefs = Preferences.userRoot().node("/aicoder-timeout-" + System.nanoTime());
+        OpenAiCompatiblePluginSettings.useForTest(prefs);
+        OpenAiCompatiblePluginSettings.setKeyringLoadTimeout(Duration.ofMillis(10));
+        Deque<Runnable> delayedSaves = new ArrayDeque<>();
+        SecretStore store = new SecretStore() {
+            @Override
+            public char[] read(String key) {
+                if (key.endsWith(".header.authorization")) {
+                    return "bearer".toCharArray();
+                }
+                return null;
+            }
+
+            @Override
+            public void save(String key, char[] value, String description) {
+            }
+
+            @Override
+            public void delete(String key) {
+            }
+        };
+        SessionSecrets writer = new SessionSecrets("timeout-headers", store, delayedSaves::add, false);
+        SessionSecrets reader = new SessionSecrets("timeout-headers", store, executor, true);
+
+        var save = writer.saveKeyAsync("key".toCharArray());
+        var load = reader.loadAsync(List.of("Authorization"));
+        assertFalse(load.isDone());
+
+        try {
+            load.get(2, TimeUnit.SECONDS);
+        }
+        catch (Exception ignored) {
+        }
+
+        assertEquals(SessionSecrets.KeyState.UNAVAILABLE, reader.keyState());
+        assertEquals(SessionSecrets.UnavailableReason.KEYRING_ERROR, reader.unavailableReason());
+        assertArrayEquals("bearer".toCharArray(), reader.header("authorization").orElseThrow());
+        if (!delayedSaves.isEmpty()) {
+            delayedSaves.removeFirst().run();
+        }
+        save.join();
+        writer.close();
+        reader.close();
     }
 
     @Test
@@ -172,14 +346,14 @@ class SessionSecretsTest {
 
     @Test
     @Timeout(10)
-    void closeZeroFillsValues() {
+    void closeDoesNotMutateCallerKeyCopy() {
         executor = Executors.newSingleThreadExecutor();
         FakeSecretStore store = new FakeSecretStore();
         var secrets = new SessionSecrets("s6", store, executor, false);
         secrets.saveKeyAsync("key".toCharArray()).join();
         char[] held = secrets.apiKey(Duration.ZERO).orElseThrow();
         secrets.close();
-        assertArrayEquals(new char[]{0, 0, 0}, held);
+        assertArrayEquals("key".toCharArray(), held);
     }
 
     @Test

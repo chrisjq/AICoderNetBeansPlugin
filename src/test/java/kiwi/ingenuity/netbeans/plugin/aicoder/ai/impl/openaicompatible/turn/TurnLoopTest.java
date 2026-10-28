@@ -1,12 +1,16 @@
 package kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.openaicompatible.turn;
 
+import com.google.gson.JsonArray;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.function.BooleanSupplier;
+import java.util.function.Consumer;
 import java.util.function.Function;
+import java.util.function.UnaryOperator;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.events.TurnEndReason;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.http.ChatMessage;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.http.ChatRole;
@@ -20,6 +24,7 @@ import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.openaicompatible.client.Er
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.openaicompatible.client.MappedError;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.openaicompatible.client.RequestHandle;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.session.InterruptTypeEnum;
+import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -55,7 +60,7 @@ class TurnLoopTest {
         public CompletableFuture<ClientResult> send(ChatRequestSpec request, CompatibilityFlags flags, char[] apiKey,
                                                     List<kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.openaicompatible.headers.ExtraHeaders.ExtraHeader> headers,
                                                     OpenAiCompatibleLimits limits, RequestHandle handle,
-                                                    java.util.function.Consumer<String> onTextDelta,
+                                                    Consumer<String> onTextDelta,
                                                     kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.openaicompatible.client.OpenAiCompatibleHttpClient.DebugSink debug,
                                                     ErrorMapper.KeySituation keySituation) {
             requests.add(request);
@@ -88,13 +93,52 @@ class TurnLoopTest {
     }
 
     private static Run run(ChatClient client, String prompt, TurnOutcome outcome,
-                           java.util.function.BooleanSupplier takeMail) {
+                           BooleanSupplier takeMail) {
+        return run(client, prompt, outcome, takeMail, CONTEXT);
+    }
+
+    private static Run run(ChatClient client, String prompt, TurnOutcome outcome,
+                           BooleanSupplier takeMail, TurnLoop.RequestContext context) {
         List<ChatMessage> history = new ArrayList<>();
         List<String> deltas = new ArrayList<>();
         TurnLoop loop = new TurnLoop(history, "SYSTEM PROMPT", client, new CompatibilityFlags(), LIMITS,
-                                     new RequestHandle(), outcome, CONTEXT, deltas::add, null, takeMail, null, 1);
+                                     new RequestHandle(), outcome, context, deltas::add, null, takeMail, null, 1);
         loop.run(prompt);
         return new Run(outcome, history, deltas);
+    }
+
+    @Test
+    @Timeout(10)
+    void realNormalTurnZeroesRequestContextApiKey() {
+        char[] key = "turn-secret".toCharArray();
+        TurnLoop.RequestContext context = new TurnLoop.RequestContext(
+                "http://localhost:1/v1", "model-x", new JsonArray(), key, List.of(), ErrorMapper.KeySituation.SENT);
+        Run result = run(new ScriptedClient(request -> complete("ok", "stop", true)), "hi",
+                         new TurnOutcome(), () -> false, context);
+        assertEquals(TurnEndReason.ANSWERED, result.outcome().reason());
+        assertArrayEquals(new char[key.length], key);
+    }
+
+    @Test
+    @Timeout(10)
+    void realCancelledTurnZeroesRequestContextApiKey() {
+        char[] key = "turn-secret".toCharArray();
+        TurnLoop.RequestContext context = new TurnLoop.RequestContext(
+                "http://localhost:1/v1", "model-x", new JsonArray(), key, List.of(), ErrorMapper.KeySituation.SENT);
+        TurnOutcome outcome = new TurnOutcome();
+        run(new ScriptedClient(request -> complete("ok", "stop", true)), "hi", outcome, () -> true, context);
+        assertArrayEquals(new char[key.length], key);
+    }
+
+    @Test
+    @Timeout(10)
+    void realEarlyReturnZeroesRequestContextApiKey() {
+        char[] key = "turn-secret".toCharArray();
+        TurnLoop.RequestContext context = new TurnLoop.RequestContext(
+                "http://localhost:1/v1", "model-x", new JsonArray(), key, List.of(), ErrorMapper.KeySituation.SENT);
+        run(new ScriptedClient(request -> complete("partial", null, false)), "hi",
+            new TurnOutcome(), () -> false, context);
+        assertArrayEquals(new char[key.length], key);
     }
 
     @Test
@@ -155,7 +199,7 @@ class TurnLoopTest {
                    "the nudge is sent, never stored");
     }
 
-    private static Run run(ChatClient client, String prompt, java.util.function.UnaryOperator<TurnLoop> tune) {
+    private static Run run(ChatClient client, String prompt, UnaryOperator<TurnLoop> tune) {
         List<ChatMessage> history = new ArrayList<>();
         List<String> deltas = new ArrayList<>();
         TurnOutcome outcome = new TurnOutcome();

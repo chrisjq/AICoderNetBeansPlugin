@@ -5,6 +5,7 @@ import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.time.Duration;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Collection;
 import java.util.Collections;
 import java.util.HashSet;
@@ -13,6 +14,8 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ExecutionException;
 import java.util.concurrent.Executor;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
@@ -33,6 +36,11 @@ public final class SessionSecrets implements AutoCloseable {
     private static final String DEFAULT_ID = "default";
     private static volatile Preferences PREFS = NbPreferences.forModule(PluginSettings.class);
     private static final SecretStore DEFAULT_STORE = new NbKeyringSecretStore();
+    /**
+     * Saves already handed to the Keyring, indexed by their eventual entry name. A freshly created SessionSecrets waits
+     * for one before loading, so a live-session reload cannot observe the old empty value.
+     */
+    private static final Map<String, CompletableFuture<?>> PENDING_SAVES = new ConcurrentHashMap<>();
 
     public enum KeyState {
         UNKNOWN_YET,
@@ -56,7 +64,7 @@ public final class SessionSecrets implements AutoCloseable {
     private final Executor executor;
     private final boolean apiKeySet;
     private final Object lock = new Object();
-    private final Map<String, char[]> headers = new java.util.concurrent.ConcurrentHashMap<>();
+    private final Map<String, char[]> headers = new ConcurrentHashMap<>();
     private final AtomicReference<KeyState> state = new AtomicReference<>(KeyState.UNKNOWN_YET);
     private volatile char[] apiKey;
     private volatile char[] defaultKey;
@@ -103,9 +111,43 @@ public final class SessionSecrets implements AutoCloseable {
                             future.complete(null);
                             return;
                         }
-                        char[] loaded = store.read(keyName());
-                        if (loaded != null) {
-                            apiKey = loaded.clone();
+                        boolean pendingFailed = false;
+                        CompletableFuture<?> pendingSave = PENDING_SAVES.get(keyName());
+                        if (pendingSave != null) {
+                            if (pendingSave.isDone()) {
+                                try {
+                                    pendingSave.getNow(null);
+                                }
+                                catch (Exception ex) {
+                                    markUnavailable(UnavailableReason.KEYRING_ERROR);
+                                    pendingFailed = true;
+                                }
+                            }
+                            else {
+                                try {
+                                    Duration wait = OpenAiCompatiblePluginSettings.getKeyringLoadTimeout();
+                                    if (wait == null || wait.isNegative()) {
+                                        wait = Duration.ofSeconds(10);
+                                    }
+                                    pendingSave.get(wait.toNanos(), TimeUnit.NANOSECONDS);
+                                }
+                                catch (InterruptedException ex) {
+                                    Thread.currentThread().interrupt();
+                                    markUnavailable(UnavailableReason.KEYRING_ERROR);
+                                    pendingFailed = true;
+                                }
+                                catch (ExecutionException | TimeoutException ex) {
+                                    markUnavailable(UnavailableReason.KEYRING_ERROR);
+                                    pendingFailed = true;
+                                }
+                            }
+                        }
+                        char[] loaded = null;
+                        if (!pendingFailed) {
+                            loaded = store.read(keyName());
+                            if (loaded != null) {
+                                apiKey = loaded.clone();
+                            }
                         }
                         if (!apiKeySet) {
                             // The plugin default is read in the same batch, and only for a session without a key of its own.
@@ -120,7 +162,17 @@ public final class SessionSecrets implements AutoCloseable {
                                 headers.put(name, value.clone());
                             }
                         }
-                        state.set(loaded == null ? (apiKeySet ? KeyState.MISSING_ON_THIS_COMPUTER : KeyState.NOT_SET) : KeyState.PRESENT);
+                        if (pendingFailed) {
+                            if (state.get() != KeyState.UNAVAILABLE) {
+                                markUnavailable(UnavailableReason.KEYRING_ERROR);
+                            }
+                        }
+                        else if (loaded == null) {
+                            state.set(apiKeySet ? KeyState.MISSING_ON_THIS_COMPUTER : KeyState.NOT_SET);
+                        }
+                        else {
+                            state.set(KeyState.PRESENT);
+                        }
                         future.complete(null);
                     }
                     catch (RuntimeException ex) {
@@ -140,7 +192,7 @@ public final class SessionSecrets implements AutoCloseable {
     public Optional<char[]> apiKey(Duration maxWait) {
         CompletableFuture<Void> future = loadFuture;
         if (future == null) {
-            return Optional.ofNullable(apiKey);
+            return apiKey == null ? Optional.empty() : Optional.of(apiKey.clone());
         }
         try {
             long nanos;
@@ -161,7 +213,7 @@ public final class SessionSecrets implements AutoCloseable {
             return Optional.empty();
         }
         char[] value = apiKey;
-        return value == null ? Optional.empty() : Optional.of(value);
+        return value == null ? Optional.empty() : Optional.of(value.clone());
     }
 
     /**
@@ -178,7 +230,7 @@ public final class SessionSecrets implements AutoCloseable {
         char[] fallback = defaultKey;
         boolean useDefault = !apiKeySet && fallback != null && sameRootAsDefault(sessionUrl);
         usingDefault = useDefault;
-        return useDefault ? Optional.of(fallback) : Optional.empty();
+        return useDefault ? Optional.of(fallback.clone()) : Optional.empty();
     }
 
     /**
@@ -235,28 +287,31 @@ public final class SessionSecrets implements AutoCloseable {
             return Optional.empty();
         }
         char[] value = headers.get(name.toLowerCase(Locale.ROOT));
-        return value == null ? Optional.empty() : Optional.of(value);
+        return value == null ? Optional.empty() : Optional.of(value.clone());
     }
 
     public CompletableFuture<Boolean> saveKeyAsync(char[] key) {
         if (key == null) {
             return CompletableFuture.completedFuture(false);
         }
-        return submit(() -> {
-            char[] copy = key.clone();
-            store.save(keyName(), copy, "OpenAI Compatible API key");
-            char[] readBack = store.read(keyName());
-            boolean ok = java.util.Arrays.equals(copy, readBack);
-            replaceApiKey(copy);
-            if (ok) {
-                state.set(KeyState.PRESENT);
-                track(keyName());
-            }
-            else {
-                markUnavailable(UnavailableReason.NOT_PERSISTED);
-            }
-            return ok;
-        });
+        // Snapshot before queuing so a form can immediately zero its temporary input after handing it to us.
+        char[] copy = key.clone();
+        String name = keyName();
+        return submit(name, () -> {
+                  // The store may zero the array it is given, so it gets its own copy and `copy` stays intact.
+                  store.save(name, copy.clone(), "OpenAI Compatible API key");
+                  char[] readBack = store.read(name);
+                  boolean ok = Arrays.equals(copy, readBack);
+                  replaceApiKey(copy);
+                  if (ok) {
+                      state.set(KeyState.PRESENT);
+                      track(name);
+                  }
+                  else {
+                      markUnavailable(UnavailableReason.NOT_PERSISTED);
+                  }
+                  return ok;
+              });
     }
 
     public CompletableFuture<Boolean> saveHeaderAsync(String name, char[] value) {
@@ -267,9 +322,10 @@ public final class SessionSecrets implements AutoCloseable {
         return submit(() -> {
             char[] copy = value.clone();
             String key = headerKeyName(normalised);
-            store.save(key, copy, "OpenAI Compatible secret header");
+            // The store may zero the array it is given, so it gets its own copy and `copy` stays intact.
+            store.save(key, copy.clone(), "OpenAI Compatible secret header");
             char[] readBack = store.read(key);
-            boolean ok = java.util.Arrays.equals(copy, readBack);
+            boolean ok = Arrays.equals(copy, readBack);
             char[] old = headers.put(normalised, copy);
             zero(old);
             if (ok) {
@@ -283,15 +339,15 @@ public final class SessionSecrets implements AutoCloseable {
     }
 
     public CompletableFuture<Void> clearKeyAsync() {
-        return submit(() -> {
-            store.delete(keyName());
-            char[] old = apiKey;
-            apiKey = null;
-            zero(old);
-            removeTracked(keyName());
-            state.set(KeyState.NOT_SET);
-            return null;
-        });
+        return submit(keyName(), () -> {
+                  store.delete(keyName());
+                  char[] old = apiKey;
+                  apiKey = null;
+                  zero(old);
+                  removeTracked(keyName());
+                  state.set(KeyState.NOT_SET);
+                  return null;
+              });
     }
 
     public static CompletableFuture<Void> deleteAllAsync(String sessionId) {
@@ -375,8 +431,16 @@ public final class SessionSecrets implements AutoCloseable {
         }, executor);
     }
 
-    private <T> CompletableFuture<T> submit(java.util.function.Supplier<T> action) {
+    private <T> CompletableFuture<T> submit(Supplier<T> action) {
+        return submit(null, action);
+    }
+
+    private <T> CompletableFuture<T> submit(String pendingName, Supplier<T> action) {
         CompletableFuture<T> future = new CompletableFuture<>();
+        if (pendingName != null) {
+            PENDING_SAVES.put(pendingName, future);
+            future.whenComplete((ignored, error) -> PENDING_SAVES.remove(pendingName, future));
+        }
         try {
             executor.execute(() -> {
                 try {
@@ -421,6 +485,10 @@ public final class SessionSecrets implements AutoCloseable {
         PREFS = preferences;
     }
 
+    static void clearPendingSavesForTest() {
+        PENDING_SAVES.clear();
+    }
+
     private static Set<String> trackedEntries() {
         String value = PREFS.get(ENTRIES_KEY, "");
         if (value.isBlank()) {
@@ -454,7 +522,7 @@ public final class SessionSecrets implements AutoCloseable {
 
     private static void zero(char[] value) {
         if (value != null) {
-            java.util.Arrays.fill(value, (char) 0);
+            Arrays.fill(value, (char) 0);
         }
     }
 

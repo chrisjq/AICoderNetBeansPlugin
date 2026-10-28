@@ -1,6 +1,12 @@
 package kiwi.ingenuity.netbeans.plugin.aicoder.ai.settings;
 
 import com.google.gson.JsonObject;
+import java.lang.reflect.Field;
+import java.lang.reflect.Modifier;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Objects;
+import java.util.UUID;
 import java.util.regex.Pattern;
 import kiwi.ingenuity.netbeans.plugin.aicoder.DatabaseAccessOptionEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.GitAccessOptionEnum;
@@ -55,6 +61,78 @@ public class AiSessionSettings {
     private final Object mcpRoutingIdLock = new Object();
 
     public AiSessionSettings() {
+    }
+
+    /**
+     * Copies every persisted field, including null/unset values, without replacing the shared settings object.
+     */
+    public void copyFrom(AiSessionSettings source) {
+        requireCompatible(source);
+        for (Field field : copyableFields()) {
+            writeField(field, this, readField(field, source));
+        }
+    }
+
+    /**
+     * Copies only the fields where {@code candidate} differs from {@code snapshot}. A field the caller did not change
+     * keeps whatever this object holds now, so runtime fields written while the caller was working (such as the MCP
+     * routing id) survive the commit.
+     */
+    public void copyChangedFrom(AiSessionSettings snapshot, AiSessionSettings candidate) {
+        requireCompatible(snapshot);
+        requireCompatible(candidate);
+        for (Field field : copyableFields()) {
+            Object base = readField(field, snapshot);
+            Object next = readField(field, candidate);
+            if (!Objects.equals(base, next)) {
+                writeField(field, this, next);
+            }
+        }
+    }
+
+    private void requireCompatible(AiSessionSettings source) {
+        if (source == null || !getClass().isAssignableFrom(source.getClass())
+                && !source.getClass().isAssignableFrom(getClass())) {
+            throw new IllegalArgumentException("incompatible settings");
+        }
+    }
+
+    /**
+     * The persisted fields of this class and its settings superclasses: no statics, no finals, no locks.
+     */
+    private List<Field> copyableFields() {
+        List<Field> fields = new ArrayList<>();
+        for (Class<?> type = getClass(); type != null && AiSessionSettings.class.isAssignableFrom(type);
+             type = type.getSuperclass()) {
+            for (Field field : type.getDeclaredFields()) {
+                int modifiers = field.getModifiers();
+                if (Modifier.isStatic(modifiers) || Modifier.isFinal(modifiers)
+                        || field.getName().endsWith("Lock")) {
+                    continue;
+                }
+                field.setAccessible(true);
+                fields.add(field);
+            }
+        }
+        return fields;
+    }
+
+    private static Object readField(Field field, AiSessionSettings target) {
+        try {
+            return field.get(target);
+        }
+        catch (IllegalAccessException ex) {
+            throw new IllegalStateException("Could not copy settings field " + field.getName(), ex);
+        }
+    }
+
+    private static void writeField(Field field, AiSessionSettings target, Object value) {
+        try {
+            field.set(target, value);
+        }
+        catch (IllegalAccessException ex) {
+            throw new IllegalStateException("Could not copy settings field " + field.getName(), ex);
+        }
     }
 
     /**
@@ -280,7 +358,7 @@ public class AiSessionSettings {
         }
         synchronized (mcpRoutingIdLock) {
             if (mcpRoutingId == null) {
-                mcpRoutingId = java.util.UUID.randomUUID().toString();
+                mcpRoutingId = UUID.randomUUID().toString();
             }
             return mcpRoutingId;
         }

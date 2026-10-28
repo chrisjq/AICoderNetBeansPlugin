@@ -32,7 +32,7 @@ AI Coder removes a trailing `/`, `/v1` or `/chat/completions` from **Base URL** 
 
 ## API key and extra headers
 
-An API key is optional and stored in the **NetBeans keyring** (the IDE's secure password store), not in the session file. Choose **Change** or **Clear** beside the key status. A session without its own key uses the default key only when both URLs have the same server root.
+An API key is optional. Each session keeps its own key in the **NetBeans keyring** (the IDE's secure password store), never in the session file. Choose **Change** or **Clear** beside the key status; the change takes effect when you press **OK**. If the keyring cannot store the key, **OK** says so and the dialog stays open so you can try again. A session without its own key uses the default key from the **OpenAI Compatible** tab in **Tools > Options > Miscellaneous > AI Coder** ([Settings](../../SETTINGS.md)) only when its **Base URL** has the same server root as the default **Base URL**.
 
 The **⚠** hint explains unavailable, missing or rejected keys. It also warns before sending a key over unencrypted `http://` to a non-local host.
 

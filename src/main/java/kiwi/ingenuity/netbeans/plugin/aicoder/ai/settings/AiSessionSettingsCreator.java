@@ -47,6 +47,13 @@ public abstract class AiSessionSettingsCreator<E extends AiSessionSettings> {
         };
     }
 
+    /**
+     * Creates a settings panel for an existing session. Most backends do not need its identity.
+     */
+    public AiSessionCreateSettingsPanel<E> createSettingsPanel(String sessionId, E current) {
+        return createSettingsPanel();
+    }
+
     public void update(E settings, JsonObject cfgObj) {
         String key = AiSessionSettingsKeyEnum.MAX_HISTORY.key();
         if (cfgObj.has(key) && cfgObj.get(key).isJsonPrimitive()) {

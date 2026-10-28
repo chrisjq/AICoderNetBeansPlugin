@@ -375,6 +375,11 @@ public final class AiTopComponent extends TopComponent implements AiProcessEvent
 
     private final ConversationPanel conversationPanel;
     /**
+     * Inbox notices that arrived while the assistant was streaming. They are drawn after the turn completes so a mail
+     * line can never split one assistant reply into two bubbles. Accessed only on the EDT.
+     */
+    private final InboxNoticeDeferral pendingInboxMessages = new InboxNoticeDeferral(this::drawInboxMessage);
+    /**
      * Set when an inbox message lands while a turn is in flight, so the interruption it causes can be explained
      * afterwards even if the assistant reads the message itself and leaves the pending-notification queue empty. See
      * {@code explainInboxInterruptIfNeeded}.
@@ -1189,8 +1194,7 @@ public final class AiTopComponent extends TopComponent implements AiProcessEvent
         // OK, and the inter-AI comms and idle-timer settings change the visible tools as well as the group switches.
         Map<McpToolEnum, McpToolInterface> toolHandlers = McpInstructionRegistry.getHandlers(session.aiType());
         Set<McpToolEnum> toolsBefore = McpToolRestartFlow.exposedTools(session.settings(), toolHandlers);
-        kiwi.ingenuity.netbeans.plugin.aicoder.ai.ui.AiSessionSettingsDialog dlg
-                = kiwi.ingenuity.netbeans.plugin.aicoder.ai.ui.AiSessionSettingsDialog.show(session);
+        AiSessionSettingsDialog dlg = AiSessionSettingsDialog.show(session);
         if (dlg.getResultConfig() == null) {
             return;
         }
@@ -1412,17 +1416,23 @@ public final class AiTopComponent extends TopComponent implements AiProcessEvent
 
     private void handleGlobalProperty(AiPropertyEvent event) {
         if (event instanceof AiInboxMessageEvent ime && session.id().equals(ime.targetSessionId())) {
-            SwingUtilities.invokeLater(() -> {
-                // Mail arrives asynchronously, so it can land mid-stream. Without
-                // this the notice is appended after a still-growing assistant
-                // bubble: the transcript then shows the notice at the bottom while
-                // the text it interrupted carries on above it. addSystemMessage's
-                // own javadoc makes finalising the caller's job.
-                finaliseActiveAssistantIfNeeded();
-                conversationPanel.addSystemMessage(
-                        NotificationUtil.formatInboxMessage(ime.fromName(), ime.subject()));
-            });
+            SwingUtilities.invokeLater(() -> handleInboxMessageOnEdt(ime));
         }
+    }
+
+    private void handleInboxMessageOnEdt(AiInboxMessageEvent message) {
+        boolean busy = assistantTurnActive || backendBusy || (aiBackend != null && aiBackend.isWorkInFlight());
+        pendingInboxMessages.offer(message, busy);
+    }
+
+    private void drawInboxMessage(AiInboxMessageEvent message) {
+        finaliseActiveAssistantIfNeeded();
+        conversationPanel.addSystemMessage(
+                NotificationUtil.formatInboxMessage(message.fromName(), message.subject()));
+    }
+
+    private void flushPendingInboxMessages() {
+        pendingInboxMessages.flush();
     }
 
     private void initializeSessionComponents() {
@@ -2073,6 +2083,8 @@ public final class AiTopComponent extends TopComponent implements AiProcessEvent
                     && turnEndMessage != null && !turnEndMessage.isBlank()) {
                 conversationPanel.addSystemMessage(turnEndMessage);
             }
+            // Notices that arrived during streaming are drawn only after the complete assistant bubble is closed.
+            flushPendingInboxMessages();
             // The AI has returned to a non-thinking state. If a question or
             // permission request is still open, the AI has stopped waiting for it
             // — e.g. its own tool-call timeout fired before our 300s one — so it is
@@ -2219,6 +2231,9 @@ public final class AiTopComponent extends TopComponent implements AiProcessEvent
                     boolean closesWork = startupResolved && !toolRestart.isRestartInFlight();
                     startupResolved = true;
                     leaveBusy();
+                    if (!assistantTurnActive) {
+                        flushPendingInboxMessages();
+                    }
                     // READY after startup closes non-turn work (a compaction). Mail that arrived meanwhile was held by
                     // flushPendingNotifications (the backend was busy); deliver it now rather than at some later
                     // TurnComplete. The startup READY does not flush: that path is unchanged.
@@ -2243,6 +2258,7 @@ public final class AiTopComponent extends TopComponent implements AiProcessEvent
                     assistantTurnActive = false;
                     if (conversationPanel != null) {
                         conversationPanel.finaliseAssistantMessage();
+                        flushPendingInboxMessages();
                     }
                     drainPendingInteractions();
                     refreshInputEnabled();
@@ -2265,6 +2281,7 @@ public final class AiTopComponent extends TopComponent implements AiProcessEvent
                     // off, and every later addSystemMessage lands on top of an orphaned bubble — including the deferred
                     // mail notice on the next restart.
                     finaliseActiveAssistantIfNeeded();
+                    flushPendingInboxMessages();
                     conversationPanel.addSystemMessage(se.text());
                     infoBar.setStatusMessage("Ready...");
                     if (aiBackend != null) {

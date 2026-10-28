@@ -11,6 +11,7 @@ import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
 import java.time.Duration;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
@@ -76,6 +77,7 @@ import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.openaicompatible.memory.Me
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.openaicompatible.memory.SessionMemoryFolders;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.openaicompatible.memory.SessionMemoryNotifier;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.openaicompatible.memory.SessionMemoryStore;
+import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.openaicompatible.settings.DefaultKeyRules;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.openaicompatible.settings.OpenAiCompatiblePluginSettings;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.openaicompatible.settings.OpenAiCompatibleSessionSettings;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.openaicompatible.tools.ToolCallModeResolver;
@@ -468,11 +470,8 @@ public final class OpenAiCompatibleAiProcessManager extends AiProcessManager imp
             deleteContextFile();
         }
         String nextSignature = detectionSettingsSignature(settings);
-        if (nextSignature.equals(detectionSettingsSignature)) {
-            client = observed(clientFactory.apply(limitsFor(settings)));
-            fireSnapshotChanged();
-            return;
-        }
+        // A session key's value is deliberately absent from settings. Always reload secrets so a Change in Session
+        // Configuration reaches an already running session even when no detection setting changed.
         SessionSecrets previous = secrets;
         SessionSecrets loaded = secretsFactory.apply(sessionId, settings.effectiveApiKeySet());
         secrets = loaded;
@@ -480,6 +479,14 @@ public final class OpenAiCompatibleAiProcessManager extends AiProcessManager imp
                            settings.extraHeaderNames().stream().filter(ExtraHeaders::isSecret).toList());
         if (previous != null) {
             previous.close();
+        }
+        if (nextSignature.equals(detectionSettingsSignature)) {
+            keyResultHint = null;
+            keyResultTooltip = null;
+            refreshKeyHint(loaded, lastHeaderWarnings);
+            client = observed(clientFactory.apply(limitsFor(settings)));
+            fireSnapshotChanged();
+            return;
         }
         detectionSettingsSignature = nextSignature;
         decisions.generation(detectionGeneration(settings));
@@ -567,6 +574,12 @@ public final class OpenAiCompatibleAiProcessManager extends AiProcessManager imp
         return facts != null && facts.kind() == ServerKind.OLLAMA;
     }
 
+    private static void zeroSecret(char[] value) {
+        if (value != null) {
+            Arrays.fill(value, (char) 0);
+        }
+    }
+
     /**
      * Joins the detection poller with the session's API key once the Keyring batch has been read (spec §3.4: the key is
      * sent when set), so keyed and hosted endpoints answer the probes. Before that the poller is joined without a key;
@@ -591,6 +604,7 @@ public final class OpenAiCompatibleAiProcessManager extends AiProcessManager imp
         }
         pollerRegistry.join(session.id(), root, keyHash, key, type, modelName,
                             (facts, reachable) -> onPollerReport(facts, reachable, settings));
+        zeroSecret(key);
         pollerJoined = true;
     }
 
@@ -944,6 +958,13 @@ public final class OpenAiCompatibleAiProcessManager extends AiProcessManager imp
                         || state == SessionSecrets.KeyState.MISSING_ON_THIS_COMPUTER) {
                     keySituation = ErrorMapper.KeySituation.NOT_SENT_UNAVAILABLE;
                 }
+                else if (OpenAiCompatiblePluginSettings.isDefaultKeySet()
+                        && !DefaultKeyRules.sameRoot(entered, OpenAiCompatiblePluginSettings.getBaseUrl())) {
+                    keySituation = ErrorMapper.KeySituation.DEFAULT_KEY_OTHER_SERVER;
+                }
+                else {
+                    keySituation = ErrorMapper.KeySituation.NO_KEY_CONFIGURED;
+                }
             }
         }
         SessionSecrets lookup = current;
@@ -1273,24 +1294,31 @@ public final class OpenAiCompatibleAiProcessManager extends AiProcessManager imp
             OpenAiCompatibleLimits limits = limitsFor(settings);
             OfferedTools offered = offeredTools(session);
             TurnLoop.RequestContext context = requestContext(settings, limits, offered.schemas(), detected);
-            TurnContext sessionContext = turnContext;
-            sessionContext.applySettings(settings);
-            sessionContext.setWindowSources(() -> detected);
-            sessionContext.beginTurn(contextConfig(settings, context.model(), detected),
-                                     summaryRunner(settings, context, limits, offered.hiddenTools(),
-                                                   compactFlags.flags()));
-            RequestHandle handle = new RequestHandle();
-            compactHandle = handle;
-            TurnContext.Compaction compaction = sessionContext.compact(
-                    history, systemPrompt(offered), true, handle);
-            if (!compaction.changed()) {
-                listener.onAiProcessEvent(new StatusEvent(StatusEventTypeEnum.INFO, NOTHING_TO_COMPACT));
+            try {
+                TurnContext sessionContext = turnContext;
+                sessionContext.applySettings(settings);
+                sessionContext.setWindowSources(() -> detected);
+                sessionContext.beginTurn(contextConfig(settings, context.model(), detected),
+                                         summaryRunner(settings, context, limits, offered.hiddenTools(),
+                                                       compactFlags.flags()));
+                RequestHandle handle = new RequestHandle();
+                compactHandle = handle;
+                TurnContext.Compaction compaction = sessionContext.compact(
+                        history, systemPrompt(offered), true, handle);
+                if (!compaction.changed()) {
+                    listener.onAiProcessEvent(new StatusEvent(StatusEventTypeEnum.INFO, NOTHING_TO_COMPACT));
+                }
+                for (String notice : compaction.notices()) {
+                    listener.onAiProcessEvent(new SystemNotificationEvent(notice));
+                }
+                lastContextUsed = sessionContext.estimate(history);
+                emitContextUsage(settings, context.model(), lastContextUsed);
             }
-            for (String notice : compaction.notices()) {
-                listener.onAiProcessEvent(new SystemNotificationEvent(notice));
+            finally {
+                if (context.apiKey() != null) {
+                    Arrays.fill(context.apiKey(), '\0');
+                }
             }
-            lastContextUsed = sessionContext.estimate(history);
-            emitContextUsage(settings, context.model(), lastContextUsed);
         }
         catch (RuntimeException ex) {
             LOG.log(Level.WARNING, "OpenAI Compatible compaction failed", ex);
@@ -1760,14 +1788,11 @@ public final class OpenAiCompatibleAiProcessManager extends AiProcessManager imp
     static final String KEY_REJECTED_HINT = "API key rejected";
     static final String KEY_NEEDED_HINT = "API key needed";
     static final String KEY_UNAVAILABLE_HINT = "API key unavailable (keyring locked?)";
-    static final String KEY_NOT_SAVED_HINT = "API key not saved (keyring unavailable)";
     static final String KEY_NOT_FOUND_HINT = "API key not found on this computer — enter it again";
+    static final String KEY_NOT_SET_HINT = "No API key is set for this session";
+    static final String DEFAULT_KEY_OTHER_SERVER_HINT = "Default API key is for another server";
     static final String KEY_UNAVAILABLE_TIP
-            = "No API key was sent (keyring unavailable or key not on this computer) — unlock the keyring or enter "
-            + "the key again.";
-    static final String KEY_NOT_SAVED_TIP
-            = "The system keyring did not keep the key, so it is only held until the session closes. Enter it again "
-            + "next time, or fix the keyring.";
+            = "The system keyring was unavailable, so no API key was sent. Unlock it or enter the key again.";
     static final String KEY_NOT_FOUND_TIP
             = "The session says an API key was set, but this computer's keyring has none for it. Enter the key again "
             + "in session settings.";
@@ -1801,7 +1826,7 @@ public final class OpenAiCompatibleAiProcessManager extends AiProcessManager imp
                     setKeyResultHint(KEY_NEEDED_HINT, error.message());
                 case NO_KEY_SENT -> {
                     if (shownKeyHint == null) {
-                        setKeyResultHint(KEY_UNAVAILABLE_HINT, error.message());
+                        setKeyResultHint(noKeySentHint(), noKeySentTooltip());
                     }
                 }
                 default -> {
@@ -1824,6 +1849,44 @@ public final class OpenAiCompatibleAiProcessManager extends AiProcessManager imp
         applyKeyHint(text, tooltip);
     }
 
+    static String noKeySentHintForState(SessionSecrets.KeyState state, boolean effectiveApiKeySet) {
+        if (state == SessionSecrets.KeyState.UNAVAILABLE) {
+            return KEY_UNAVAILABLE_HINT;
+        }
+        return effectiveApiKeySet ? KEY_NOT_FOUND_HINT : KEY_NOT_SET_HINT;
+    }
+
+    private String noKeySentHint() {
+        SessionSecrets current = secrets;
+        if (current != null) {
+            if (current.keyState() == SessionSecrets.KeyState.UNAVAILABLE) {
+                return KEY_UNAVAILABLE_HINT;
+            }
+            if (current.keyState() == SessionSecrets.KeyState.MISSING_ON_THIS_COMPUTER) {
+                return KEY_NOT_FOUND_HINT;
+            }
+        }
+        OpenAiCompatibleSessionSettings settings = latestSettings;
+        if (settings != null && settings.effectiveApiKeySet()) {
+            SessionSecrets.KeyState state = current == null ? SessionSecrets.KeyState.UNKNOWN_YET : current.keyState();
+            if (state == SessionSecrets.KeyState.UNKNOWN_YET) {
+                return KEY_UNAVAILABLE_HINT;
+            }
+            return noKeySentHintForState(state, true);
+        }
+        if (settings != null && OpenAiCompatiblePluginSettings.isDefaultKeySet()
+                && !DefaultKeyRules.sameRoot(settings.effectiveBaseUrl(), OpenAiCompatiblePluginSettings.getBaseUrl())) {
+            return DEFAULT_KEY_OTHER_SERVER_HINT;
+        }
+        return KEY_NOT_SET_HINT;
+    }
+
+    private String noKeySentTooltip() {
+        return DEFAULT_KEY_OTHER_SERVER_HINT.equals(noKeySentHint())
+               ? "The plugin-wide default API key is used only by sessions on the same server."
+               : "Enter an API key in session settings, or configure a plugin-wide default key.";
+    }
+
     /**
      * Recomputes the key hint: a hint from the last request first, then what the Keyring state says (not found on this
      * computer, unavailable, not saved), then a secret header that still needs its value. Cleared when none applies.
@@ -1839,14 +1902,8 @@ public final class OpenAiCompatibleAiProcessManager extends AiProcessManager imp
                     tooltip = KEY_NOT_FOUND_TIP;
                 }
                 case UNAVAILABLE -> {
-                    if (current.unavailableReason() == SessionSecrets.UnavailableReason.NOT_PERSISTED) {
-                        text = KEY_NOT_SAVED_HINT;
-                        tooltip = KEY_NOT_SAVED_TIP;
-                    }
-                    else {
-                        text = KEY_UNAVAILABLE_HINT;
-                        tooltip = KEY_UNAVAILABLE_TIP;
-                    }
+                    text = KEY_UNAVAILABLE_HINT;
+                    tooltip = KEY_UNAVAILABLE_TIP;
                 }
                 default -> {
                 }

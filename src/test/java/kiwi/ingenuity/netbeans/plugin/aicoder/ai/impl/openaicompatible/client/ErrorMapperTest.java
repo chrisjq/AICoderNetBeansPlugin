@@ -30,9 +30,8 @@ class ErrorMapperTest {
 
     @Test
     @Timeout(5)
-    void noKeySentWhenTheKeyringWasUnavailable() {
-        String message = "No API key was sent (keyring unavailable or key not on this computer) — unlock the "
-                + "keyring or enter the key again.";
+    void keyringUnavailableUsesTheKeyringMessage() {
+        String message = "The API key could not be read from the system keyring (it may be locked).";
         for (int status : new int[]{401, 403}) {
             assertMapped(status, "{\"error\":{\"message\":\"unauthorized\"}}",
                          ErrorMapper.KeySituation.NOT_SENT_UNAVAILABLE, MappedError.Kind.NO_KEY_SENT, message, null, null);
@@ -50,6 +49,19 @@ class ErrorMapperTest {
                          ErrorMapper.KeySituation.NONE, MappedError.Kind.KEY_REQUIRED, message, null, null);
             assertMapped(status, "missing key",
                          ErrorMapper.KeySituation.NONE, MappedError.Kind.KEY_REQUIRED, message, null, null);
+        }
+    }
+
+    @Test
+    @Timeout(5)
+    void noKeyConfiguredAndDefaultForAnotherServerMapToNoKeySent() {
+        String message = "No API key was sent — set a session key, or use a default key for this server.";
+        for (ErrorMapper.KeySituation situation : new ErrorMapper.KeySituation[]{
+            ErrorMapper.KeySituation.NO_KEY_CONFIGURED,
+            ErrorMapper.KeySituation.DEFAULT_KEY_OTHER_SERVER}) {
+            for (int status : new int[]{401, 403}) {
+                assertMapped(status, "unauthorized", situation, MappedError.Kind.NO_KEY_SENT, message, null, null);
+            }
         }
     }
 

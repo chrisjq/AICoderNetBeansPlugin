@@ -8,6 +8,7 @@ import java.util.Map;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.openaicompatible.ServerTypeEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.openaicompatible.ToolCallingModeEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.openaicompatible.context.CompactionStrategyEnum;
+import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.openaicompatible.keys.SessionSecrets;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.openaicompatible.ui.OpenAiCompatibleBasicPanel;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.settings.AiModelSessionSettingsCreator;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.settings.AiSessionCreateSettingsPanel;
@@ -19,6 +20,14 @@ public class OpenAiCompatibleSettingsCreator
     @Override
     public AiSessionCreateSettingsPanel<OpenAiCompatibleSessionSettings> createSettingsPanel() {
         return new OpenAiCompatibleBasicPanel();
+    }
+
+    @Override
+    public AiSessionCreateSettingsPanel<OpenAiCompatibleSessionSettings> createSettingsPanel(
+            String sessionId, OpenAiCompatibleSessionSettings current) {
+        return sessionId == null || sessionId.isBlank()
+               ? createSettingsPanel()
+               : new OpenAiCompatibleBasicPanel(new SessionSecrets(sessionId, current != null && current.effectiveApiKeySet()));
     }
 
     @Override
