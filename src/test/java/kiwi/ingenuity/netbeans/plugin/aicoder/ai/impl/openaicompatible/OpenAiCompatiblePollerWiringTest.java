@@ -14,6 +14,7 @@ import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.openaicompatible.client.As
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.openaicompatible.client.ClientResult;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.openaicompatible.detect.DetectedFacts;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.openaicompatible.detect.ServerKind;
+import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.openaicompatible.detect.WindowReading;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.openaicompatible.events.OpenAiCompatibleContextUsageEvent;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.openaicompatible.keys.SecretStore;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.openaicompatible.keys.SessionSecrets;
@@ -24,6 +25,7 @@ import kiwi.ingenuity.netbeans.plugin.aicoder.process.events.AiProcessEvent;
 import org.junit.jupiter.api.AfterEach;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Timeout;
@@ -95,6 +97,7 @@ class OpenAiCompatiblePollerWiringTest {
     private final List<String> joinedHashes = new CopyOnWriteArrayList<>();
     private final List<String> joinedKeys = new CopyOnWriteArrayList<>();
     private OpenAiCompatibleAiProcessManager manager;
+    private volatile Runnable duringJoin;
 
     @AfterEach
     void tearDown() {
@@ -132,6 +135,11 @@ class OpenAiCompatiblePollerWiringTest {
         created.setPollerJoinObserverForTest((hash, key) -> {
             joinedHashes.add(hash);
             joinedKeys.add(key == null ? "<none>" : new String(key));
+            Runnable hook = duringJoin;
+            if (hook != null) {
+                duringJoin = null;
+                hook.run();
+            }
         });
         AiSession session = new AiSession("oc-poller-" + System.nanoTime(), "OC", null, AiTypeEnum.OPENAI_COMPATIBLE,
                                           null, settings, Instant.now(), Instant.now());
@@ -208,6 +216,78 @@ class OpenAiCompatiblePollerWiringTest {
                 .map(OpenAiCompatibleContextUsageEvent.class::cast)
                 .reduce((first, second) -> second).orElseThrow();
         assertEquals(64_000, usage.window(), "the new override reaches the poller path");
+    }
+
+    // ---- 2b. keyed detection is accepted (generation follows the join) ----
+    private static OpenAiCompatibleSessionSettings lmStudioSettings() {
+        OpenAiCompatibleSessionSettings settings = new OpenAiCompatibleSessionSettings();
+        settings.setBaseUrl("http://10.0.0.45:1234");
+        settings.setServerType(ServerTypeEnum.LM_STUDIO);
+        settings.setModel("m");
+        settings.setApiKeySet(true);
+        return settings;
+    }
+
+    @Test
+    @Timeout(10)
+    void keyedFactsAreAcceptedAfterTheKeyArrivesLate() {
+        HeldExecutor keyring = new HeldExecutor();
+        OpenAiCompatibleAiProcessManager pm = started(lmStudioSettings(), storeWithKey(), keyring);
+        assertEquals(List.of(""), joinedHashes, "joined without a key while the Keyring is being read");
+
+        keyring.release();
+
+        assertEquals(2, joinedHashes.size(), "joined again with the key");
+        assertFalse(joinedHashes.get(1).isEmpty());
+        events.clear();
+        pm.onPollerReport(DetectedFacts.of(DetectedFacts.generation("http://10.0.0.45:1234", "m", joinedHashes.get(1)))
+                .withKind(ServerKind.LMSTUDIO)
+                .withWindowReadings(List.of(new WindowReading(150_000, WindowReading.Source.LMSTUDIO_LOADED, true))),
+                          true, lmStudioSettings());
+
+        OpenAiCompatibleContextUsageEvent usage = events.stream()
+                .filter(OpenAiCompatibleContextUsageEvent.class::isInstance)
+                .map(OpenAiCompatibleContextUsageEvent.class::cast)
+                .reduce((first, second) -> second).orElseThrow();
+        assertEquals(150_000, usage.window(), "the keyed reading is used, not the assumed 8,192");
+    }
+
+    @Test
+    @Timeout(10)
+    void aKeyThatLoadsDuringTheFirstJoinStillGetsAKeyedJoin() {
+        HeldExecutor keyring = new HeldExecutor();
+        duringJoin = keyring::release;
+
+        started(lmStudioSettings(), storeWithKey(), keyring);
+
+        assertEquals(2, joinedHashes.size(), "a second, keyed join happens");
+        assertEquals("", joinedHashes.get(0));
+        assertFalse(joinedHashes.get(1).isEmpty());
+    }
+
+    @Test
+    @Timeout(10)
+    void detectionRefusedWith401ShowsTheKeyHintNotATypeMismatch() {
+        OpenAiCompatibleAiProcessManager pm = started(lmStudioSettings(), storeWithKey(), Runnable::run);
+        String generation = DetectedFacts.generation("http://10.0.0.45:1234", "m", joinedHashes.get(joinedHashes.size() - 1));
+
+        pm.onPollerReport(DetectedFacts.of(generation).withKind(ServerKind.GENERIC).withProbesUnauthorized(true), true,
+                          lmStudioSettings());
+        assertEquals(OpenAiCompatibleAiProcessManager.KEY_REJECTED_HINT, pm.keyHintForTest());
+
+        pm.onPollerReport(DetectedFacts.of(generation).withKind(ServerKind.LMSTUDIO), true, lmStudioSettings());
+        assertNull(pm.keyHintForTest(), "a later snapshot that is not refused clears the hint");
+    }
+
+    @Test
+    @Timeout(10)
+    void aChatKeyRejectionSurvivesALaterDetectionReport() {
+        OpenAiCompatibleAiProcessManager pm = started(lmStudioSettings(), storeWithKey(), Runnable::run);
+        pm.setKeyResultHintForTest(OpenAiCompatibleAiProcessManager.KEY_REJECTED_HINT);
+
+        pm.onPollerReport(DetectedFacts.of("non-refused").withKind(ServerKind.LMSTUDIO), true, lmStudioSettings());
+
+        assertEquals(OpenAiCompatibleAiProcessManager.KEY_REJECTED_HINT, pm.keyHintForTest());
     }
 
     // ---- 3. keep-alive only for a detected Ollama ----

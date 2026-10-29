@@ -75,22 +75,33 @@ class OpenAiCompatibleSessionSettingsTest {
 
     @Test
     @Timeout(5)
-    void unsetValuesReadPluginDefaultsAndExplicitDefaultIsPersisted() throws Exception {
+    void unsetValuesDoNotReadPluginServerDefaults() {
         Preferences prefs = Preferences.userRoot().node("openai-compatible-settings-" + java.util.UUID.randomUUID());
         OpenAiCompatiblePluginSettings.useForTest(prefs);
-        OpenAiCompatiblePluginSettings.setBaseUrl("http://default");
-        OpenAiCompatiblePluginSettings.setServerType(ServerTypeEnum.OLLAMA);
         OpenAiCompatiblePluginSettings.setModel("default-model");
 
         OpenAiCompatibleSessionSettings settings = new OpenAiCompatibleSessionSettings();
-        assertEquals("http://default", settings.effectiveBaseUrl());
-        assertEquals(ServerTypeEnum.OLLAMA, settings.effectiveServerType());
+        assertEquals("", settings.effectiveBaseUrl());
+        assertEquals(ServerTypeEnum.AUTO, settings.effectiveServerType());
         assertEquals("default-model", settings.effectiveModel());
+    }
 
-        settings.setBaseUrl("http://default");
-        JsonObject json = new JsonObject();
-        settings.populateJsonObject(json);
-        assertEquals("http://default", json.get(OpenAiCompatibleSessionSettingsKeyEnum.BASE_URL.key()).getAsString());
-        prefs.removeNode();
+    @Test
+    @Timeout(5)
+    void missingUrlIsFilledFromTheDefaultServer() {
+        Preferences prefs = Preferences.userRoot().node("openai-compatible-settings-" + java.util.UUID.randomUUID());
+        OpenAiCompatiblePluginSettings.useForTest(prefs);
+        SavedServer server = SavedServer.create("A", "http://a:1", ServerTypeEnum.LM_STUDIO);
+        OpenAiCompatiblePluginSettings.setSavedServers(List.of(server));
+        OpenAiCompatiblePluginSettings.setDefaultServerId(server.id());
+
+        OpenAiCompatibleSessionSettings settings = new OpenAiCompatibleSessionSettings();
+        OpenAiCompatibleSettingsCreator.fillMissingServer(settings);
+        assertEquals("http://a:1", settings.effectiveBaseUrl());
+        assertEquals(ServerTypeEnum.LM_STUDIO, settings.effectiveServerType());
+
+        settings.setBaseUrl("http://own:2");
+        OpenAiCompatibleSettingsCreator.fillMissingServer(settings);
+        assertEquals("http://own:2", settings.effectiveBaseUrl());
     }
 }

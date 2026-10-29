@@ -244,8 +244,13 @@ public final class ProbeParsers {
             if (v1) {
                 loaded = loadedInstanceContext(match);
                 JsonObject capabilities = object(match, CAPABILITIES);
-                if (capabilities != null && has(capabilities, TRAINED_FOR_TOOL_USE)) {
-                    tools = bool(capabilities, TRAINED_FOR_TOOL_USE);
+                if (capabilities != null) {
+                    if (has(capabilities, TRAINED_FOR_TOOL_USE)) {
+                        tools = bool(capabilities, TRAINED_FOR_TOOL_USE);
+                    }
+                    else if (has(capabilities, TOOLS)) {
+                        tools = bool(capabilities, TOOLS);
+                    }
                 }
                 if (capabilities != null) {
                     JsonElement reasoningElement = capabilities.get("reasoning");

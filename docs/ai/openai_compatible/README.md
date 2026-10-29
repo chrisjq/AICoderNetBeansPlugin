@@ -10,21 +10,23 @@ To connect a local server, follow [Run a local model](../../howto/LOCAL_MODEL.md
 
 ## Where the settings are
 
-- The **OpenAI Compatible** tab in AI Coder options ([Settings](../../SETTINGS.md)) holds defaults for new sessions and plugin-wide **Advanced** values.
+- The **OpenAI Compatible** tab in AI Coder options ([Settings](../../SETTINGS.md)) holds plugin-wide **Advanced** values.
 - **Create Session** and **Session Configuration** hold per-session values, including per-session **Advanced** settings.
 
-An empty session field uses the plugin default and shows "(default: X)".
+Saved servers are managed in a **Servers** list; see [Connect](#connect).
 
 ## Server type and detection
 
 ### Connect
 
-Choose a **Server type**, enter or confirm **Base URL**, then choose **Test connection**.
+In **Tools > Options > Miscellaneous > AI Coder > OpenAI Compatible**, use the **Servers** list. **Add**, **Edit**, **Remove** and **Set default** manage reusable entries. Each entry has an optional Name, URL, Server type (including Auto-detect) and an optional API key kept in the NetBeans keyring. **Test connection** and the read-only **Detected** panel apply to the selected entry.
 
-- **Server type** can be Auto-detect, Ollama, LM Studio, llama.cpp, vLLM or OpenAI-compatible (other / hosted). Choosing a known type fills **Base URL** with that server's default local URL when the field is empty or holds another preset's URL.
-- **Test connection** checks the URL and the key currently in the field. It reports **Connected**, **API key rejected**, or **N/A**; **N/A** means the server cannot be reached.
+In **Create Session** or **Session Configuration**, choose a saved server from **Base URL** or type your own URL. The **…** button opens **Manage servers**, using the same list. Selecting an entry copies its URL, server type and API key into the session; an entry without a key clears the session key. The change takes effect when you press **OK**. Later edits to a saved entry do not change existing sessions. New sessions start on the default entry, and each session uses only its own key.
+
+**Test connection** reports **Connected**, **API key rejected**, or **N/A**; **N/A** means the server cannot be reached. If an explicit type does not match the server, the **⚠** hint recommends Auto-detect; chat is still attempted.
+
+- **Server type** can be Auto-detect, Ollama, LM Studio, llama.cpp, vLLM or OpenAI-compatible (other / hosted).
 - The read-only **Detected** panel shows the server kind, reachability, API base, streaming, capabilities, context-window information, compaction, tool-calling and models.
-- If an explicit type does not match the server, the **⚠** hint recommends Auto-detect; chat is still attempted.
 
 ### Details
 
@@ -32,7 +34,7 @@ AI Coder removes a trailing `/`, `/v1` or `/chat/completions` from **Base URL** 
 
 ## API key and extra headers
 
-An API key is optional. Each session keeps its own key in the **NetBeans keyring** (the IDE's secure password store), never in the session file. Choose **Change** or **Clear** beside the key status; the change takes effect when you press **OK**. If the keyring cannot store the key, **OK** says so and the dialog stays open so you can try again. A session without its own key uses the default key from the **OpenAI Compatible** tab in **Tools > Options > Miscellaneous > AI Coder** ([Settings](../../SETTINGS.md)) only when its **Base URL** has the same server root as the default **Base URL**.
+An API key is optional. Each session keeps its own key in the **NetBeans keyring** (the IDE's secure password store), never in the session file. Choose **Change** or **Clear** beside the key status; the change takes effect when you press **OK**. Removing a saved server or deleting a session removes its key from the keyring.
 
 The **⚠** hint explains unavailable, missing or rejected keys. It also warns before sending a key over unencrypted `http://` to a non-local host.
 

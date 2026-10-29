@@ -11,11 +11,12 @@ import java.util.List;
  * <p>
  * {@link #generation(String, String, String)} is {@code root + newline + model + newline + keyHash}. {@code withX}
  * returns a copy. This record implements {@link WindowSources} so the window ladder can read it without a second type.
+ * {@code probesUnauthorized} is true when every probe in the cycle was refused with a 401, so the server needs a key.
  */
 public record DetectedFacts(String generation, ServerKind kind, String apiBase, Boolean streaming,
                             Capabilities capabilities, List<WindowReading> windowReadings, boolean v1WindowFieldPresent,
                             Integer ollamaTrainingContextLength, Integer lmStudioMaxContextLength, Integer llamaCppTrainContextLength,
-                            List<String> models, Instant timestamp) implements WindowSources {
+                            List<String> models, Instant timestamp, boolean probesUnauthorized) implements WindowSources {
 
     /**
      * Tools and thinking support. {@code null} means the probe has not said.
@@ -45,7 +46,7 @@ public record DetectedFacts(String generation, ServerKind kind, String apiBase, 
      * A snapshot with only the generation set. Detection fills the rest with {@code withX}.
      */
     public static DetectedFacts of(String generation) {
-        return new DetectedFacts(generation, null, null, null, null, null, false, null, null, null, null, null);
+        return new DetectedFacts(generation, null, null, null, null, null, false, null, null, null, null, null, false);
     }
 
     /**
@@ -58,73 +59,79 @@ public record DetectedFacts(String generation, ServerKind kind, String apiBase, 
     public DetectedFacts withGeneration(String generation) {
         return new DetectedFacts(generation, kind, apiBase, streaming, capabilities, windowReadings,
                                  v1WindowFieldPresent, ollamaTrainingContextLength, lmStudioMaxContextLength,
-                                 llamaCppTrainContextLength, models, timestamp);
+                                 llamaCppTrainContextLength, models, timestamp, probesUnauthorized);
     }
 
     public DetectedFacts withKind(ServerKind kind) {
         return new DetectedFacts(generation, kind, apiBase, streaming, capabilities, windowReadings,
                                  v1WindowFieldPresent, ollamaTrainingContextLength, lmStudioMaxContextLength,
-                                 llamaCppTrainContextLength, models, timestamp);
+                                 llamaCppTrainContextLength, models, timestamp, probesUnauthorized);
     }
 
     public DetectedFacts withApiBase(String apiBase) {
         return new DetectedFacts(generation, kind, apiBase, streaming, capabilities, windowReadings,
                                  v1WindowFieldPresent, ollamaTrainingContextLength, lmStudioMaxContextLength,
-                                 llamaCppTrainContextLength, models, timestamp);
+                                 llamaCppTrainContextLength, models, timestamp, probesUnauthorized);
     }
 
     public DetectedFacts withStreaming(Boolean streaming) {
         return new DetectedFacts(generation, kind, apiBase, streaming, capabilities, windowReadings,
                                  v1WindowFieldPresent, ollamaTrainingContextLength, lmStudioMaxContextLength,
-                                 llamaCppTrainContextLength, models, timestamp);
+                                 llamaCppTrainContextLength, models, timestamp, probesUnauthorized);
     }
 
     public DetectedFacts withCapabilities(Capabilities capabilities) {
         return new DetectedFacts(generation, kind, apiBase, streaming, capabilities, windowReadings,
                                  v1WindowFieldPresent, ollamaTrainingContextLength, lmStudioMaxContextLength,
-                                 llamaCppTrainContextLength, models, timestamp);
+                                 llamaCppTrainContextLength, models, timestamp, probesUnauthorized);
     }
 
     public DetectedFacts withWindowReadings(List<WindowReading> windowReadings) {
         return new DetectedFacts(generation, kind, apiBase, streaming, capabilities, windowReadings,
                                  v1WindowFieldPresent, ollamaTrainingContextLength, lmStudioMaxContextLength,
-                                 llamaCppTrainContextLength, models, timestamp);
+                                 llamaCppTrainContextLength, models, timestamp, probesUnauthorized);
     }
 
     public DetectedFacts withV1WindowFieldPresent(boolean v1WindowFieldPresent) {
         return new DetectedFacts(generation, kind, apiBase, streaming, capabilities, windowReadings,
                                  v1WindowFieldPresent, ollamaTrainingContextLength, lmStudioMaxContextLength,
-                                 llamaCppTrainContextLength, models, timestamp);
+                                 llamaCppTrainContextLength, models, timestamp, probesUnauthorized);
     }
 
     public DetectedFacts withOllamaTrainingContextLength(Integer ollamaTrainingContextLength) {
         return new DetectedFacts(generation, kind, apiBase, streaming, capabilities, windowReadings,
                                  v1WindowFieldPresent, ollamaTrainingContextLength, lmStudioMaxContextLength,
-                                 llamaCppTrainContextLength, models, timestamp);
+                                 llamaCppTrainContextLength, models, timestamp, probesUnauthorized);
     }
 
     public DetectedFacts withLmStudioMaxContextLength(Integer lmStudioMaxContextLength) {
         return new DetectedFacts(generation, kind, apiBase, streaming, capabilities, windowReadings,
                                  v1WindowFieldPresent, ollamaTrainingContextLength, lmStudioMaxContextLength,
-                                 llamaCppTrainContextLength, models, timestamp);
+                                 llamaCppTrainContextLength, models, timestamp, probesUnauthorized);
     }
 
     public DetectedFacts withLlamaCppTrainContextLength(Integer llamaCppTrainContextLength) {
         return new DetectedFacts(generation, kind, apiBase, streaming, capabilities, windowReadings,
                                  v1WindowFieldPresent, ollamaTrainingContextLength, lmStudioMaxContextLength,
-                                 llamaCppTrainContextLength, models, timestamp);
+                                 llamaCppTrainContextLength, models, timestamp, probesUnauthorized);
     }
 
     public DetectedFacts withModels(List<String> models) {
         return new DetectedFacts(generation, kind, apiBase, streaming, capabilities, windowReadings,
                                  v1WindowFieldPresent, ollamaTrainingContextLength, lmStudioMaxContextLength,
-                                 llamaCppTrainContextLength, models, timestamp);
+                                 llamaCppTrainContextLength, models, timestamp, probesUnauthorized);
     }
 
     public DetectedFacts withTimestamp(Instant timestamp) {
         return new DetectedFacts(generation, kind, apiBase, streaming, capabilities, windowReadings,
                                  v1WindowFieldPresent, ollamaTrainingContextLength, lmStudioMaxContextLength,
-                                 llamaCppTrainContextLength, models, timestamp);
+                                 llamaCppTrainContextLength, models, timestamp, probesUnauthorized);
+    }
+
+    public DetectedFacts withProbesUnauthorized(boolean probesUnauthorized) {
+        return new DetectedFacts(generation, kind, apiBase, streaming, capabilities, windowReadings,
+                                 v1WindowFieldPresent, ollamaTrainingContextLength, lmStudioMaxContextLength,
+                                 llamaCppTrainContextLength, models, timestamp, probesUnauthorized);
     }
 
     @Override

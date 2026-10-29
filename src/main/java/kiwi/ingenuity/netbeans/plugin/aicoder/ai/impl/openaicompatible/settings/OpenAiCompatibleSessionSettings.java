@@ -514,7 +514,7 @@ public class OpenAiCompatibleSessionSettings extends AiModelSessionSettings {
     }
 
     public ServerTypeEnum effectiveServerType() {
-        return serverType != null ? serverType : OpenAiCompatiblePluginSettings.getServerType();
+        return serverType != null ? serverType : ServerTypeEnum.AUTO;
     }
 
     public String baseUrl() {
@@ -526,7 +526,7 @@ public class OpenAiCompatibleSessionSettings extends AiModelSessionSettings {
     }
 
     public String effectiveBaseUrl() {
-        return baseUrl != null ? baseUrl : OpenAiCompatiblePluginSettings.getBaseUrl();
+        return baseUrl == null ? "" : baseUrl;
     }
 
     public Integer contextWindowOverride() {
@@ -574,7 +574,7 @@ public class OpenAiCompatibleSessionSettings extends AiModelSessionSettings {
     }
 
     public boolean effectiveApiKeySet() {
-        return apiKeySet != null ? apiKeySet : OpenAiCompatiblePluginSettings.isDefaultKeySet();
+        return apiKeySet != null && apiKeySet;
     }
 
     public List<String> extraHeaderNames() {

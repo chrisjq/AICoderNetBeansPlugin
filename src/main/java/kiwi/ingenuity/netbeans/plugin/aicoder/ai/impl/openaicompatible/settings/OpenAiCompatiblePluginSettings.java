@@ -1,6 +1,13 @@
 package kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.openaicompatible.settings;
 
+import com.google.gson.JsonArray;
+import com.google.gson.JsonElement;
+import com.google.gson.JsonObject;
+import com.google.gson.JsonParser;
 import java.time.Duration;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Optional;
 import java.util.prefs.Preferences;
 import kiwi.ingenuity.netbeans.plugin.aicoder.PluginSettings;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.ollama.settings.OllamaPluginSettingsKeyEnum;
@@ -21,28 +28,106 @@ public final class OpenAiCompatiblePluginSettings {
         return test != null ? test : NbPreferences.forModule(PluginSettings.class);
     }
 
-    public static ServerTypeEnum getServerType() {
-        String value = prefs().get(OpenAiCompatiblePluginSettingsKeyEnum.SERVER_TYPE.key(),
-                                   ServerTypeEnum.AUTO.name());
+    /**
+     * Returns the saved server entries in their stored order. Invalid or incomplete entries are ignored.
+     */
+    public static List<SavedServer> getSavedServers() {
+        String json = prefs().get(OpenAiCompatiblePluginSettingsKeyEnum.SAVED_SERVERS.key(), "");
+        if (json.isBlank()) {
+            return List.of();
+        }
         try {
-            return ServerTypeEnum.valueOf(value);
+            JsonElement parsed = JsonParser.parseString(json);
+            if (!parsed.isJsonArray()) {
+                return List.of();
+            }
+            List<SavedServer> servers = new ArrayList<>();
+            for (JsonElement element : parsed.getAsJsonArray()) {
+                SavedServer server = parseSavedServer(element);
+                if (server != null) {
+                    servers.add(server);
+                }
+            }
+            return List.copyOf(servers);
+        }
+        catch (RuntimeException ex) {
+            return List.of();
+        }
+    }
+
+    /**
+     * Replaces the saved server entries, preserving their order.
+     */
+    public static void setSavedServers(List<SavedServer> servers) {
+        JsonArray entries = new JsonArray();
+        if (servers != null) {
+            for (SavedServer server : servers) {
+                if (server != null) {
+                    JsonObject entry = new JsonObject();
+                    entry.addProperty("id", server.id());
+                    entry.addProperty("name", server.name());
+                    entry.addProperty("url", server.url());
+                    entry.addProperty("serverType", server.serverType().name());
+                    entries.add(entry);
+                }
+            }
+        }
+        prefs().put(OpenAiCompatiblePluginSettingsKeyEnum.SAVED_SERVERS.key(), entries.toString());
+    }
+
+    public static String getDefaultServerId() {
+        return prefs().get(OpenAiCompatiblePluginSettingsKeyEnum.DEFAULT_SERVER_ID.key(), "");
+    }
+
+    public static void setDefaultServerId(String serverId) {
+        prefs().put(OpenAiCompatiblePluginSettingsKeyEnum.DEFAULT_SERVER_ID.key(), serverId == null ? "" : serverId);
+    }
+
+    /**
+     * Returns the selected default entry, falling back to the first saved entry when its id is unavailable.
+     */
+    public static Optional<SavedServer> getDefaultServer() {
+        List<SavedServer> servers = getSavedServers();
+        if (servers.isEmpty()) {
+            return Optional.empty();
+        }
+        String defaultId = getDefaultServerId();
+        return servers.stream().filter(server -> server.id().equals(defaultId)).findFirst()
+                .or(() -> servers.stream().findFirst());
+    }
+
+    private static SavedServer parseSavedServer(JsonElement element) {
+        if (!element.isJsonObject()) {
+            return null;
+        }
+        JsonObject entry = element.getAsJsonObject();
+        if (!entry.has("id") || !entry.has("url") || !entry.get("id").isJsonPrimitive()
+                || !entry.get("url").isJsonPrimitive()) {
+            return null;
+        }
+        try {
+            String id = entry.get("id").getAsString();
+            String name = entry.has("name") && entry.get("name").isJsonPrimitive()
+                          ? entry.get("name").getAsString() : "";
+            String url = entry.get("url").getAsString();
+            ServerTypeEnum serverType = parseServerType(entry);
+            return new SavedServer(id, name, url, serverType);
+        }
+        catch (RuntimeException ex) {
+            return null;
+        }
+    }
+
+    private static ServerTypeEnum parseServerType(JsonObject entry) {
+        if (!entry.has("serverType") || !entry.get("serverType").isJsonPrimitive()) {
+            return ServerTypeEnum.AUTO;
+        }
+        try {
+            return ServerTypeEnum.valueOf(entry.get("serverType").getAsString());
         }
         catch (IllegalArgumentException ex) {
             return ServerTypeEnum.AUTO;
         }
-    }
-
-    public static void setServerType(ServerTypeEnum value) {
-        prefs().put(OpenAiCompatiblePluginSettingsKeyEnum.SERVER_TYPE.key(),
-                    (value == null ? ServerTypeEnum.AUTO : value).name());
-    }
-
-    public static String getBaseUrl() {
-        return prefs().get(OpenAiCompatiblePluginSettingsKeyEnum.BASE_URL.key(), "");
-    }
-
-    public static void setBaseUrl(String value) {
-        prefs().put(OpenAiCompatiblePluginSettingsKeyEnum.BASE_URL.key(), value == null ? "" : value);
     }
 
     public static String getModel() {
@@ -73,14 +158,6 @@ public final class OpenAiCompatiblePluginSettings {
         prefs().putBoolean(OpenAiCompatiblePluginSettingsKeyEnum.SHOW_REASONING.key(), value);
     }
 
-    public static boolean isDefaultKeySet() {
-        return prefs().getBoolean(OpenAiCompatiblePluginSettingsKeyEnum.DEFAULT_KEY_SET.key(), false);
-    }
-
-    public static void setDefaultKeySet(boolean value) {
-        prefs().putBoolean(OpenAiCompatiblePluginSettingsKeyEnum.DEFAULT_KEY_SET.key(), value);
-    }
-
     /**
      * One-time import of Ollama (Local)'s stored URL/model into these defaults (spec §8.1).
      */
@@ -95,7 +172,16 @@ public final class OpenAiCompatiblePluginSettings {
         boolean urlStored = p.get(urlKey, null) != null;
         boolean modelStored = p.get(modelKey, null) != null;
         if (urlStored) {
-            setBaseUrl(BaseUrls.normalise(p.get(urlKey, "")));
+            String url = BaseUrls.normalise(p.get(urlKey, ""));
+            List<SavedServer> servers = new ArrayList<>(getSavedServers());
+            if (servers.stream().noneMatch(server -> server.url().equals(url))) {
+                SavedServer ollama = SavedServer.create("Ollama", url, ServerTypeEnum.OLLAMA);
+                servers.add(ollama);
+                setSavedServers(servers);
+                if (getDefaultServerId().isBlank()) {
+                    setDefaultServerId(ollama.id());
+                }
+            }
         }
         if (modelStored) {
             setModel(p.get(modelKey, ""));

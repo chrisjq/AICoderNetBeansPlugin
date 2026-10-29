@@ -28,6 +28,7 @@ import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.function.Function;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 import java.util.stream.Collectors;
@@ -63,6 +64,11 @@ public class SessionPersistenceManager {
      * per-instance synchronized methods.
      */
     private static final Object JVM_LOCK = new Object();
+    private static volatile Function<String, CompletableFuture<Void>> sessionSecretsDeleter = SessionSecrets::deleteAllAsync;
+
+    static void setSessionSecretsDeleterForTest(Function<String, CompletableFuture<Void>> deleter) {
+        sessionSecretsDeleter = deleter == null ? SessionSecrets::deleteAllAsync : deleter;
+    }
 
     public static Path defaultBaseDir() {
         return Path.of(System.getProperty("user.home"), ".netbeans", ".aicoder");
@@ -168,7 +174,7 @@ public class SessionPersistenceManager {
             TempFileRegistry.cleanupSession(sessionId);
             PluginUtil.deleteAiSessionConfigDir(deleted.aiType(), sessionId);
             if (deleted.aiType() == AiTypeEnum.OPENAI_COMPATIBLE) {
-                SessionSecrets.deleteAllAsync(sessionId);
+                sessionSecretsDeleter.apply(sessionId);
             }
         }
     }

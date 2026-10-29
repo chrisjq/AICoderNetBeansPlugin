@@ -26,7 +26,7 @@ public enum OpenAiServerErrorEnum {
             null,
             TextMatch.NONE,
             List.of(),
-            "No API key was sent — set a session key, or use a default key for this server.",
+            "No API key was sent — set a session key.",
             List.of()),
     KEY_UNAVAILABLE(
             MappedError.Kind.NO_KEY_SENT,

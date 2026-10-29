@@ -146,47 +146,6 @@ class OpenAiCompatibleBasicPanelCompactionTest {
 
     @Test
     @Timeout(10)
-    void aSessionOnTheDefaultUrlWithoutItsOwnKeyShowsUsingDefault() {
-        OpenAiCompatiblePluginSettings.setBaseUrl("http://h:1");
-        OpenAiCompatiblePluginSettings.setDefaultKeySet(true);
-        OpenAiCompatibleBasicPanel panel = new OpenAiCompatibleBasicPanel();
-
-        OpenAiCompatibleSessionSettings sameRoot = explicit();
-        sameRoot.setBaseUrl("http://h:1/v1");
-        panel.load(sameRoot);
-        assertEquals("Key: using default (for h)", keyLabel(panel.component()));
-
-        OpenAiCompatibleSessionSettings otherRoot = explicit();
-        otherRoot.setBaseUrl("http://other:1");
-        panel.load(otherRoot);
-        assertEquals("Key: not set", keyLabel(panel.component()));
-
-        OpenAiCompatibleSessionSettings ownKey = explicit();
-        ownKey.setApiKeySet(true);
-        panel.load(ownKey);
-        assertEquals("Key: set", keyLabel(panel.component()));
-    }
-
-    @Test
-    @Timeout(10)
-    void editingTheUrlRefreshesTheUsingDefaultLabel() throws Exception {
-        OpenAiCompatiblePluginSettings.setBaseUrl("http://h:1");
-        OpenAiCompatiblePluginSettings.setDefaultKeySet(true);
-        OpenAiCompatibleBasicPanel panel = new OpenAiCompatibleBasicPanel();
-        OpenAiCompatibleSessionSettings in = explicit();
-        in.setBaseUrl("http://other:1");
-        panel.load(in);
-        assertEquals("Key: not set", keyLabel(panel.component()));
-
-        javax.swing.JTextField url = find(panel.component(), javax.swing.JTextField.class).stream()
-                .filter(field -> !(field instanceof javax.swing.JPasswordField)).findFirst().orElseThrow();
-        SwingUtilities.invokeAndWait(() -> url.setText("http://h:1"));
-
-        assertEquals("Key: using default (for h)", keyLabel(panel.component()));
-    }
-
-    @Test
-    @Timeout(10)
     void theInfoBarCompactButtonFiresItsListenerAndCanBeDisabled() throws Exception {
         OpenAiCompatibleInfoBarExtension extension = new OpenAiCompatibleInfoBarExtension();
         JButton button = extension.createComponents().stream()

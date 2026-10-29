@@ -4,7 +4,6 @@ import java.time.Duration;
 import java.util.ArrayDeque;
 import java.util.Deque;
 import java.util.List;
-import java.util.Optional;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
@@ -33,12 +32,6 @@ class SessionSecretsTest {
         if (executor != null) {
             executor.shutdownNow();
         }
-    }
-
-    private static void defaultUrl(String url) {
-        Preferences prefs = Preferences.userRoot().node("/aicoder-defaults-" + System.nanoTime());
-        OpenAiCompatiblePluginSettings.useForTest(prefs);
-        OpenAiCompatiblePluginSettings.setBaseUrl(url);
     }
 
     @Test
@@ -358,60 +351,13 @@ class SessionSecretsTest {
 
     @Test
     @Timeout(10)
-    void sameRootUsesTheDefaultKey() {
+    void ownKeyIsReturned() {
         executor = Executors.newSingleThreadExecutor();
-        defaultUrl("https://api.example.com/v1");
         FakeSecretStore store = new FakeSecretStore();
-        store.put("aicoder.openai_compatible.default", "dkey");
-        var secrets = new SessionSecrets("d1", store, executor, false);
-        secrets.loadAsync(List.of()).join();
-        Optional<char[]> key = secrets.apiKeyFor(Duration.ofSeconds(1), "https://API.example.com/v1/chat/completions");
-        assertArrayEquals("dkey".toCharArray(), key.orElseThrow());
-        assertTrue(secrets.usingDefaultKey());
-        secrets.close();
-    }
-
-    @Test
-    @Timeout(10)
-    void differentRootGetsNoKey() {
-        executor = Executors.newSingleThreadExecutor();
-        defaultUrl("https://api.example.com/v1");
-        FakeSecretStore store = new FakeSecretStore();
-        store.put("aicoder.openai_compatible.default", "dkey");
-        var secrets = new SessionSecrets("d2", store, executor, false);
-        secrets.loadAsync(List.of()).join();
-        assertTrue(secrets.apiKeyFor(Duration.ofSeconds(1), "https://other.example.com/v1").isEmpty());
-        assertFalse(secrets.usingDefaultKey());
-        secrets.close();
-    }
-
-    @Test
-    @Timeout(10)
-    void ownKeyWinsOverTheDefaultKey() {
-        executor = Executors.newSingleThreadExecutor();
-        defaultUrl("https://api.example.com/v1");
-        FakeSecretStore store = new FakeSecretStore();
-        store.put("aicoder.openai_compatible.default", "dkey");
         var secrets = new SessionSecrets("d3", store, executor, false);
         secrets.loadAsync(List.of()).join();
         assertTrue(secrets.saveKeyAsync("skey".toCharArray()).join());
-        assertArrayEquals("skey".toCharArray(),
-                          secrets.apiKeyFor(Duration.ofSeconds(1), "https://api.example.com/v1").orElseThrow());
-        assertFalse(secrets.usingDefaultKey());
-        secrets.close();
-    }
-
-    @Test
-    @Timeout(10)
-    void sessionFlaggedWithAKeyNeverFallsBackToTheDefault() {
-        executor = Executors.newSingleThreadExecutor();
-        defaultUrl("https://api.example.com/v1");
-        FakeSecretStore store = new FakeSecretStore();
-        store.put("aicoder.openai_compatible.default", "dkey");
-        var secrets = new SessionSecrets("d4", store, executor, true);
-        secrets.loadAsync(List.of()).join();
-        assertTrue(secrets.apiKeyFor(Duration.ofSeconds(1), "https://api.example.com/v1").isEmpty());
-        assertFalse(secrets.usingDefaultKey());
+        assertArrayEquals("skey".toCharArray(), secrets.apiKey(Duration.ofSeconds(1)).orElseThrow());
         secrets.close();
     }
 }

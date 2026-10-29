@@ -5,6 +5,7 @@ import com.google.gson.JsonObject;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.Map;
+import java.util.function.Consumer;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.openaicompatible.ServerTypeEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.openaicompatible.ToolCallingModeEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.openaicompatible.context.CompactionStrategyEnum;
@@ -118,17 +119,21 @@ public class OpenAiCompatibleSettingsCreator
             }
             settings.setExtraHeaderPlainValues(values);
         }
+        fillMissingServer(settings);
     }
 
     @Override
     public void applyDefaultSettingsFromGlobal(AiSessionSettings settings) {
         if (settings instanceof OpenAiCompatibleSessionSettings compatible) {
-            if (compatible.serverType() == null) {
-                compatible.setServerType(OpenAiCompatiblePluginSettings.getServerType());
-            }
-            if (compatible.baseUrl() == null) {
-                compatible.setBaseUrl(OpenAiCompatiblePluginSettings.getBaseUrl());
-            }
+            boolean takeDefaultUrl = compatible.baseUrl() == null || compatible.baseUrl().isBlank();
+            OpenAiCompatiblePluginSettings.getDefaultServer().ifPresent(server -> {
+                if (takeDefaultUrl) {
+                    compatible.setBaseUrl(server.url());
+                    if (compatible.serverType() == null) {
+                        compatible.setServerType(server.serverType());
+                    }
+                }
+            });
             if (compatible.model() == null) {
                 compatible.setModel(OpenAiCompatiblePluginSettings.getModel());
             }
@@ -138,19 +143,31 @@ public class OpenAiCompatibleSettingsCreator
         }
     }
 
-    private static void setString(JsonObject object, String key, java.util.function.Consumer<String> setter) {
+    public static void fillMissingServer(OpenAiCompatibleSessionSettings settings) {
+        if (settings == null || (settings.baseUrl() != null && !settings.baseUrl().isBlank())) {
+            return;
+        }
+        OpenAiCompatiblePluginSettings.getDefaultServer().ifPresent(server -> {
+            settings.setBaseUrl(server.url());
+            if (settings.serverType() == null) {
+                settings.setServerType(server.serverType());
+            }
+        });
+    }
+
+    private static void setString(JsonObject object, String key, Consumer<String> setter) {
         if (object.has(key) && object.get(key).isJsonPrimitive()) {
             setter.accept(object.get(key).getAsString());
         }
     }
 
-    private static void setInt(JsonObject object, String key, java.util.function.Consumer<Integer> setter) {
+    private static void setInt(JsonObject object, String key, Consumer<Integer> setter) {
         if (object.has(key) && object.get(key).isJsonPrimitive()) {
             setter.accept(object.get(key).getAsInt());
         }
     }
 
-    private static void setDouble(JsonObject object, String key, java.util.function.Consumer<Double> setter) {
+    private static void setDouble(JsonObject object, String key, Consumer<Double> setter) {
         if (object.has(key) && object.get(key).isJsonPrimitive()) {
             try {
                 setter.accept(object.get(key).getAsDouble());
@@ -161,14 +178,14 @@ public class OpenAiCompatibleSettingsCreator
         }
     }
 
-    private static void setBoolean(JsonObject object, String key, java.util.function.Consumer<Boolean> setter) {
+    private static void setBoolean(JsonObject object, String key, Consumer<Boolean> setter) {
         if (object.has(key) && object.get(key).isJsonPrimitive()) {
             setter.accept(object.get(key).getAsBoolean());
         }
     }
 
     private static <T extends Enum<T>> void setEnum(JsonObject object, String key, Class<T> type,
-                                                    java.util.function.Consumer<T> setter) {
+                                                    Consumer<T> setter) {
         if (object.has(key) && object.get(key).isJsonPrimitive()) {
             try {
                 setter.accept(Enum.valueOf(type, object.get(key).getAsString()));

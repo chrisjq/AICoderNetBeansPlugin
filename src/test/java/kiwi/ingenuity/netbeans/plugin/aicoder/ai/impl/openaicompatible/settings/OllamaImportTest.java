@@ -39,7 +39,7 @@ class OllamaImportTest {
     void nothingStoredMarksImportWithoutChangingDefaults() {
         preferences();
         assertFalse(OpenAiCompatiblePluginSettings.importFromOllamaOnce());
-        assertEquals(ServerTypeEnum.AUTO, OpenAiCompatiblePluginSettings.getServerType());
+        assertTrue(OpenAiCompatiblePluginSettings.getDefaultServer().isEmpty());
         assertTrue(preferences().getBoolean(OpenAiCompatiblePluginSettingsKeyEnum.IMPORTED_FROM_OLLAMA.key(), false));
     }
 
@@ -48,8 +48,14 @@ class OllamaImportTest {
     void urlImportNormalisesAndLeavesTypeAuto() {
         preferences().put(OllamaPluginSettingsKeyEnum.BASE_URL.key(), "http://localhost:11434/v1/");
         assertTrue(OpenAiCompatiblePluginSettings.importFromOllamaOnce());
-        assertEquals("http://localhost:11434", OpenAiCompatiblePluginSettings.getBaseUrl());
-        assertEquals(ServerTypeEnum.AUTO, OpenAiCompatiblePluginSettings.getServerType());
+        SavedServer imported = OpenAiCompatiblePluginSettings.getDefaultServer().orElseThrow();
+        assertEquals("http://localhost:11434", imported.url());
+        assertEquals(ServerTypeEnum.OLLAMA, imported.serverType());
+        SavedServer ollama = OpenAiCompatiblePluginSettings.getSavedServers().get(0);
+        assertEquals("Ollama", ollama.name());
+        assertEquals("http://localhost:11434", ollama.url());
+        assertEquals(ServerTypeEnum.OLLAMA, ollama.serverType());
+        assertEquals(ollama.id(), OpenAiCompatiblePluginSettings.getDefaultServerId());
     }
 
     @Test
@@ -58,7 +64,7 @@ class OllamaImportTest {
         preferences().put(OllamaPluginSettingsKeyEnum.MODEL.key(), "qwen");
         assertTrue(OpenAiCompatiblePluginSettings.importFromOllamaOnce());
         assertEquals("qwen", OpenAiCompatiblePluginSettings.getModel());
-        assertEquals(ServerTypeEnum.AUTO, OpenAiCompatiblePluginSettings.getServerType());
+        assertTrue(OpenAiCompatiblePluginSettings.getDefaultServer().isEmpty());
     }
 
     @Test

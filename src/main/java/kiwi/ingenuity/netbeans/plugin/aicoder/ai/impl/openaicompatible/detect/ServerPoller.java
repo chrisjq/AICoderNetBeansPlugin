@@ -436,6 +436,13 @@ public final class ServerPoller {
         if (!reachable && !results.isEmpty()) {
             runFullSet = true;
         }
+        boolean unauthorized = !results.isEmpty();
+        for (ProbeClient.ProbeResult result : results.values()) {
+            if (result == null || result.kind() != ProbeClient.Kind.UNAUTHORIZED) {
+                unauthorized = false;
+                break;
+            }
+        }
         Map<String, JsonObject> bodies = new LinkedHashMap<>();
         for (Map.Entry<String, ProbeClient.ProbeResult> entry : results.entrySet()) {
             JsonObject body = resolveBody(entry.getKey(), entry.getValue());
@@ -458,9 +465,9 @@ public final class ServerPoller {
                 publications.add(new Publication(session.listener, kept, false));
                 continue;
             }
-            DetectedFacts facts = parseSession(session, bodies);
+            DetectedFacts facts = parseSession(session, bodies).withProbesUnauthorized(unauthorized);
             ServerKind chosen = chosenKind(session.type);
-            session.typeMismatch = chosen != null && facts.kind() != chosen;
+            session.typeMismatch = !unauthorized && chosen != null && facts.kind() != chosen;
             session.lastGood = facts;
             session.windowConfirmed = !facts.windowReadings().isEmpty();
             publications.add(new Publication(session.listener, facts, true));

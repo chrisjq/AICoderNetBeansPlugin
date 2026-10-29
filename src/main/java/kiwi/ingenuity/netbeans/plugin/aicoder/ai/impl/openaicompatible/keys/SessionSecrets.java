@@ -24,16 +24,13 @@ import java.util.function.Supplier;
 import java.util.prefs.Preferences;
 import kiwi.ingenuity.netbeans.plugin.aicoder.PluginSettings;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.BackendExecutors;
-import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.openaicompatible.BaseUrls;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.openaicompatible.settings.OpenAiCompatiblePluginSettings;
 import org.openide.util.NbPreferences;
 
 public final class SessionSecrets implements AutoCloseable {
 
     private static final String PREFIX = "aicoder.openai_compatible.";
-    private static final String DEFAULT_KEY_NAME = "aicoder.openai_compatible.default";
     private static final String ENTRIES_KEY = "ai.openai_compatible.keyringEntries";
-    private static final String DEFAULT_ID = "default";
     private static volatile Preferences PREFS = NbPreferences.forModule(PluginSettings.class);
     private static final SecretStore DEFAULT_STORE = new NbKeyringSecretStore();
     /**
@@ -67,8 +64,6 @@ public final class SessionSecrets implements AutoCloseable {
     private final Map<String, char[]> headers = new ConcurrentHashMap<>();
     private final AtomicReference<KeyState> state = new AtomicReference<>(KeyState.UNKNOWN_YET);
     private volatile char[] apiKey;
-    private volatile char[] defaultKey;
-    private volatile boolean usingDefault;
     private volatile UnavailableReason unavailableReason = UnavailableReason.NONE;
     private volatile CompletableFuture<Void> loadFuture;
     private volatile boolean closed;
@@ -149,13 +144,6 @@ public final class SessionSecrets implements AutoCloseable {
                                 apiKey = loaded.clone();
                             }
                         }
-                        if (!apiKeySet) {
-                            // The plugin default is read in the same batch, and only for a session without a key of its own.
-                            char[] fallback = store.read(DEFAULT_KEY_NAME);
-                            if (fallback != null) {
-                                defaultKey = fallback;
-                            }
-                        }
                         for (String name : names) {
                             char[] value = store.read(headerKeyName(name));
                             if (value != null) {
@@ -216,37 +204,8 @@ public final class SessionSecrets implements AutoCloseable {
         return value == null ? Optional.empty() : Optional.of(value.clone());
     }
 
-    /**
-     * The key to send for this session: its own key if it has one, otherwise the plugin default when this session has
-     * no key flag set and its root equals the root of the plugin-default base URL (spec §8.6). Sets
-     * {@link #usingDefaultKey()} for the panel.
-     */
-    public Optional<char[]> apiKeyFor(Duration maxWait, String sessionUrl) {
-        Optional<char[]> own = apiKey(maxWait);
-        if (own.isPresent()) {
-            usingDefault = false;
-            return own;
-        }
-        char[] fallback = defaultKey;
-        boolean useDefault = !apiKeySet && fallback != null && sameRootAsDefault(sessionUrl);
-        usingDefault = useDefault;
-        return useDefault ? Optional.of(fallback.clone()) : Optional.empty();
-    }
-
-    /**
-     * True when the last {@link #apiKeyFor} call returned the plugin default key.
-     */
-    public boolean usingDefaultKey() {
-        return usingDefault;
-    }
-
-    private static boolean sameRootAsDefault(String sessionUrl) {
-        String defaultRoot = BaseUrls.root(OpenAiCompatiblePluginSettings.getBaseUrl());
-        return !defaultRoot.isEmpty() && defaultRoot.equals(BaseUrls.root(sessionUrl));
-    }
-
     public String keyHash() {
-        char[] key = apiKey != null ? apiKey : defaultKey;
+        char[] key = apiKey;
         if (key == null || key.length == 0) {
             return "";
         }
@@ -383,7 +342,7 @@ public final class SessionSecrets implements AutoCloseable {
     /**
      * Deletes the stored entries of sessions that no longer exist (spec §8.6). The existence check is built on the
      * background thread by {@code existence}; a null result means the sessions cannot be read, and then nothing is
-     * deleted. A session whose folder cannot be checked is kept, and the default key is never deleted.
+     * deleted. A session whose folder cannot be checked is kept.
      */
     public static CompletableFuture<Void> cleanupOrphansAsync(Supplier<SessionExistence> existence) {
         return cleanupOrphansAsync(existence, DEFAULT_STORE, BackendExecutors.probePool());
@@ -398,7 +357,7 @@ public final class SessionSecrets implements AutoCloseable {
             }
             for (String key : new ArrayList<>(trackedEntries())) {
                 String id = sessionIdFromKey(key);
-                if (id == null || DEFAULT_ID.equals(id)) {
+                if (id == null) {
                     continue;
                 }
                 try {
@@ -481,7 +440,7 @@ public final class SessionSecrets implements AutoCloseable {
         return dot < 0 ? rest : rest.substring(0, dot);
     }
 
-    static void useForTest(Preferences preferences) {
+    public static void useForTest(Preferences preferences) {
         PREFS = preferences;
     }
 
@@ -532,9 +491,6 @@ public final class SessionSecrets implements AutoCloseable {
         char[] value = apiKey;
         apiKey = null;
         zero(value);
-        char[] fallback = defaultKey;
-        defaultKey = null;
-        zero(fallback);
         for (char[] header : headers.values()) {
             zero(header);
         }

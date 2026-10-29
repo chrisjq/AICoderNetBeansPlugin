@@ -21,8 +21,11 @@ import java.util.Comparator;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CompletionException;
+import java.util.concurrent.Executor;
 import java.util.concurrent.RejectedExecutionException;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicReference;
+import java.util.function.Consumer;
 import java.util.function.Function;
 import java.util.function.Predicate;
 import java.util.logging.Level;
@@ -133,8 +136,8 @@ public class SessionPickerDialog extends JDialog {
     private final SessionPersistenceManager spm;
     private final SessionPickerOperations operations;
     private final LoadEpochGuard loadEpoch = new LoadEpochGuard();
-    private final TemplatePersistenceManager templates = new TemplatePersistenceManager();
-    private final McpTemplatePersistenceManager mcpTemplates = new McpTemplatePersistenceManager();
+    private final TemplatePersistenceManager templates;
+    private final McpTemplatePersistenceManager mcpTemplates;
     private final SessionTableModel sessions = new SessionTableModel();
     private final JTable sessionTable = new JTable(sessions);
     private final JLabel sessionsStatusLabel = new JLabel(" ");
@@ -163,10 +166,25 @@ public class SessionPickerDialog extends JDialog {
     private long templateLoadEpoch;
     private boolean templatesLoading;
     private boolean disposed;
+    /**
+     * Test seam: when set, {@link #onCreateNew} runs it in place of the real creation once the key state is ready.
+     */
+    Runnable createHookForTest;
+    /**
+     * The wait for the key state of the AI type's settings panel, while Create is held for it.
+     */
+    private CompletableFuture<Void> pendingKeyStateWait;
 
     private SessionPickerDialog(SessionPersistenceManager spm) {
+        this(spm, new TemplatePersistenceManager(), new McpTemplatePersistenceManager());
+    }
+
+    SessionPickerDialog(SessionPersistenceManager spm, TemplatePersistenceManager templates,
+                        McpTemplatePersistenceManager mcpTemplates) {
         super(WindowManager.getDefault().getMainWindow(), "AI Manager", true);
         this.spm = spm;
+        this.templates = templates;
+        this.mcpTemplates = mcpTemplates;
         this.operations = new SessionPickerOperations(spm, this::closeAndDeleteTab);
         setLayout(new BorderLayout());
         OpenProjects.getDefault().addPropertyChangeListener(openProjectsListener);
@@ -306,9 +324,10 @@ public class SessionPickerDialog extends JDialog {
         addRow(form, c, 0, "Plugin Name:", new JLabel(Installer.displayName()));
         addRow(form, c, 1, "Plugin Version:", new JLabel(Installer.VERSION));
         addRow(form, c, 2, "Homepage:", buildLink(Installer.HOMEPAGE));
-        addRow(form, c, 3, "Version Homepage (If Available):", buildLink(Installer.releaseUrl()));
+        addRow(form, c, 3, "Release Homepage:", buildLink(Installer.versionTreeUrl()));
+        addRow(form, c, 4, "Release:", buildLink(Installer.releaseUrl()));
         c.gridx = 0;
-        c.gridy = 4;
+        c.gridy = 5;
         c.gridwidth = 2;
         c.weightx = 1;
         c.weighty = 1;
@@ -387,14 +406,11 @@ public class SessionPickerDialog extends JDialog {
             basic.setTestResultListener(result -> {
                 OpenAiCompatibleSessionSettings snapshot = new OpenAiCompatibleSessionSettings();
                 basic.applyTo(snapshot);
-                DetectedFacts facts = DetectedFacts.of("test-connection")
-                        .withApiBase(result.apiBase())
-                        .withModels(result.models());
-                if (result.serverKind() != null) {
-                    facts = facts.withKind(result.serverKind());
-                }
+                DetectedFacts facts = result.facts().withGeneration("test-connection");
                 String selectedModel = snapshot.effectiveModel();
-                facts = facts.withCapabilities(new DetectedFacts.Capabilities(null, null,
+                DetectedFacts.Capabilities caps = facts.capabilities();
+                facts = facts.withCapabilities(new DetectedFacts.Capabilities(caps == null ? null : caps.tools(),
+                                                                              caps == null ? null : caps.thinking(),
                                                                               selectedModel == null ? null : result.reasoningLevelsByModel().get(selectedModel)));
                 detected.update(facts, snapshot);
             });
@@ -794,12 +810,54 @@ public class SessionPickerDialog extends JDialog {
         return missing;
     }
 
+    /**
+     * Runs {@code proceed} once {@code ready} is done, or {@code failed} if it fails; both run through {@code edt}.
+     * When there is nothing to wait for, {@code proceed} runs at once. The returned future completes after the callback
+     * has run.
+     */
+    static CompletableFuture<Void> awaitKeyStateThen(CompletableFuture<Void> ready, Executor edt, Runnable proceed,
+                                                     Consumer<Throwable> failed) {
+        if (ready == null || ready.isDone()) {
+            proceed.run();
+            return CompletableFuture.completedFuture(null);
+        }
+        CompletableFuture<Void> finished = new CompletableFuture<>();
+        ready.copy().orTimeout(10, TimeUnit.SECONDS).whenComplete((ignored, error) -> edt.execute(() -> {
+            try {
+                if (error != null) {
+                    failed.accept(error);
+                }
+                else {
+                    proceed.run();
+                }
+            }
+            finally {
+                finished.complete(null);
+            }
+        }));
+        return finished;
+    }
+
     private void onCreateNew() {
+        if (disposed || (pendingKeyStateWait != null && !pendingKeyStateWait.isDone())) {
+            return;
+        }
         String project = (String) projectCombo.getSelectedItem();
         AiTypeEnum type = (AiTypeEnum) aiTypeCombo.getSelectedItem();
         String baseName = nameField.getText().trim();
         if (project == null || type == null || baseName.isEmpty()) {
             DialogPlacement.showMessageDialog(this, "Name, open project, and AI type are required.", "Create session", JOptionPane.WARNING_MESSAGE);
+            return;
+        }
+        CompletableFuture<Void> ready = typeSettingsPanel == null ? null : typeSettingsPanel.keyStateReady();
+        if (ready != null && !ready.isDone()) {
+            setCreateEnabled(false);
+            pendingKeyStateWait = awaitKeyStateThen(ready, SwingUtilities::invokeLater,
+                                                    this::proceedAfterKeyState, error -> keyStateFailed());
+            return;
+        }
+        if (createHookForTest != null) {
+            createHookForTest.run();
             return;
         }
         PluginSettings.setLastSessionAiType(type);
@@ -873,6 +931,29 @@ public class SessionPickerDialog extends JDialog {
                     }
                     setCreateEnabled(true);
                 }));
+    }
+
+    /**
+     * The key state is known. Create is re-enabled before re-entering, so a validation or template failure after the
+     * wait leaves it usable; the real creation disables it again.
+     */
+    private void proceedAfterKeyState() {
+        pendingKeyStateWait = null;
+        if (disposed) {
+            return;
+        }
+        setCreateEnabled(true);
+        onCreateNew();
+    }
+
+    private void keyStateFailed() {
+        pendingKeyStateWait = null;
+        if (disposed) {
+            return;
+        }
+        DialogPlacement.showMessageDialog(this, "Could not load the saved API key state.",
+                                          "Create session", JOptionPane.ERROR_MESSAGE);
+        setCreateEnabled(true);
     }
 
     private void setCreateEnabled(boolean enabled) {

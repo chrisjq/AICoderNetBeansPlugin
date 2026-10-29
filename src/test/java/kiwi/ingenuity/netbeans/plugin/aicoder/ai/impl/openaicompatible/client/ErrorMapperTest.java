@@ -54,14 +54,11 @@ class ErrorMapperTest {
 
     @Test
     @Timeout(5)
-    void noKeyConfiguredAndDefaultForAnotherServerMapToNoKeySent() {
-        String message = "No API key was sent — set a session key, or use a default key for this server.";
-        for (ErrorMapper.KeySituation situation : new ErrorMapper.KeySituation[]{
-            ErrorMapper.KeySituation.NO_KEY_CONFIGURED,
-            ErrorMapper.KeySituation.DEFAULT_KEY_OTHER_SERVER}) {
-            for (int status : new int[]{401, 403}) {
-                assertMapped(status, "unauthorized", situation, MappedError.Kind.NO_KEY_SENT, message, null, null);
-            }
+    void noKeyConfiguredMapsToNoKeySent() {
+        String message = "No API key was sent — set a session key.";
+        for (int status : new int[]{401, 403}) {
+            assertMapped(status, "unauthorized", ErrorMapper.KeySituation.NO_KEY_CONFIGURED,
+                         MappedError.Kind.NO_KEY_SENT, message, null, null);
         }
     }
 

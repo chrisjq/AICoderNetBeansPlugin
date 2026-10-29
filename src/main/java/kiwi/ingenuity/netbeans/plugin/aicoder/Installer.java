@@ -72,6 +72,17 @@ public class Installer extends ModuleInstall {
     }
 
     /**
+     * Source tree at this build's tag. Blank when the version is unavailable.
+     */
+    public static String versionTreeUrl() {
+        if (HOMEPAGE.isBlank() || VERSION.isBlank() || "unknown".equals(VERSION)) {
+            return "";
+        }
+        String base = HOMEPAGE.endsWith("/") ? HOMEPAGE.substring(0, HOMEPAGE.length() - 1) : HOMEPAGE;
+        return base + "/tree/v" + VERSION;
+    }
+
+    /**
      * The plugin's display name, read from the same bundle key the Plugin Manager shows, so the two cannot disagree.
      * <p>
      * Falls back rather than propagating: {@link NbBundle} throws when a key is absent, and a build that dropped this

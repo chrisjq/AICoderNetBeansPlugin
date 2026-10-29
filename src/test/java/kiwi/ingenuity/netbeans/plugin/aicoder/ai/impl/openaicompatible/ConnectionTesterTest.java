@@ -189,6 +189,121 @@ class ConnectionTesterTest {
         assertEquals(ServerKind.OLLAMA, result.serverKind());
     }
 
+    @Test
+    @Timeout(5)
+    void lmStudioApiProbeUsesAuthorizationAndReturnsFullFacts() throws Exception {
+        List<String> authorizations = new ArrayList<>();
+        byte[] lmModels = ("{\"data\":[{\"id\":\"splash\"}],\"models\":[{\"key\":\"splash\","
+                + "\"max_context_length\":4096,\"capabilities\":{\"tools\":true,\"reasoning\":{"
+                + "\"allowed_options\":[\"low\",\"high\"]}}}]}").getBytes(StandardCharsets.UTF_8);
+        server = HttpServer.create(new InetSocketAddress(InetAddress.getLoopbackAddress(), 0), 0);
+        server.createContext("/v1/models", jsonHandler(200, TWO_MODELS_JSON));
+        server.createContext("/api/v1/models", exchange -> {
+                         authorizations.add(exchange.getRequestHeaders().getFirst("Authorization"));
+                         jsonHandler(200, lmModels).handle(exchange);
+                     });
+        server.start();
+
+        Result result = await(new ConnectionTester().test(urlOf(server), "secret".toCharArray(), List.of(),
+                                                          OpenAiCompatibleLimits.defaults()));
+
+        assertEquals(List.of("Bearer secret"), authorizations);
+        assertEquals(ServerKind.LMSTUDIO, result.serverKind());
+        assertEquals(List.of("splash"), result.facts().models());
+        assertEquals(4096, result.facts().lmStudioMaxContextLength());
+        assertEquals(Boolean.TRUE, result.facts().capabilities().tools());
+        assertEquals(List.of("low", "high"), result.reasoningLevelsByModel().get("splash"));
+    }
+
+    @Test
+    @Timeout(5)
+    void ollamaProbesPopulateCapabilitiesAndContext() throws Exception {
+        server = HttpServer.create(new InetSocketAddress(InetAddress.getLoopbackAddress(), 0), 0);
+        server.createContext("/v1/models", jsonHandler(200, TWO_MODELS_JSON));
+        server.createContext("/api/tags", jsonHandler(200,
+                                                      "{\"models\":[{\"name\":\"discovered:latest\",\"details\":{}}]}".getBytes(StandardCharsets.UTF_8)));
+        server.createContext("/api/ps", jsonHandler(200,
+                                                    "{\"models\":[{\"name\":\"discovered:latest\",\"context_length\":4096}]}".getBytes(StandardCharsets.UTF_8)));
+        server.createContext("/api/show", exchange -> {
+                         assertEquals("POST", exchange.getRequestMethod());
+                         assertEquals("Bearer secret", exchange.getRequestHeaders().getFirst("Authorization"));
+                         jsonHandler(200, ("{\"capabilities\":[\"tools\",\"thinking\"],\"parameters\":\"num_ctx 2048\","
+                                     + "\"model_info\":{\"llama.context_length\":8192}}").getBytes(StandardCharsets.UTF_8)).handle(exchange);
+                     });
+        server.start();
+
+        Result result = await(new ConnectionTester().test(urlOf(server), ServerTypeEnum.OLLAMA, "chosen:latest",
+                                                          "secret".toCharArray(), List.of(),
+                                                          OpenAiCompatibleLimits.defaults()));
+
+        assertEquals(ServerKind.OLLAMA, result.serverKind());
+        assertEquals(List.of("discovered:latest"), result.facts().models());
+        assertEquals(Boolean.TRUE, result.facts().capabilities().tools());
+        assertEquals(Boolean.TRUE, result.facts().capabilities().thinking());
+        assertEquals(4096, result.facts().ollamaPsContextLength());
+        assertEquals(2048, result.facts().ollamaNumCtx());
+        assertEquals(8192, result.facts().ollamaTrainingContextLength());
+    }
+
+    @Test
+    @Timeout(5)
+    void llamaCppPropsEnrichesTheDetectedWindow() throws Exception {
+        server = HttpServer.create(new InetSocketAddress(InetAddress.getLoopbackAddress(), 0), 0);
+        server.createContext("/v1/models", jsonHandler(200, TWO_MODELS_JSON));
+        server.createContext("/props", jsonHandler(200,
+                                                   "{\"default_generation_settings\":{\"n_ctx\":8192}}".getBytes(StandardCharsets.UTF_8)));
+        server.start();
+
+        Result result = await(new ConnectionTester().test(urlOf(server), null, List.of(),
+                                                          OpenAiCompatibleLimits.defaults()));
+
+        assertEquals(ServerKind.LLAMACPP, result.serverKind());
+        assertEquals(8192, result.facts().llamaCppNCtx());
+        assertEquals(result.apiBase() + "/v1", result.facts().apiBase());
+    }
+
+    @Test
+    @Timeout(5)
+    void genericServerStillReturnsACompleteDetectedSnapshot() throws Exception {
+        String url = start(jsonHandler(200, TWO_MODELS_JSON));
+
+        Result result = await(new ConnectionTester().test(url, null, List.of(), OpenAiCompatibleLimits.defaults()));
+
+        assertEquals(ServerKind.GENERIC, result.serverKind());
+        assertEquals(ServerKind.GENERIC, result.facts().kind());
+        assertEquals(List.of("a", "b"), result.facts().models());
+        assertNotNull(result.facts().timestamp());
+        assertEquals(url + "/v1", result.facts().apiBase());
+    }
+
+    @Test
+    @Timeout(5)
+    void explicitLmStudioDoesNotProbeOllamaEndpoints() throws Exception {
+        List<String> paths = java.util.Collections.synchronizedList(new ArrayList<>());
+        server = HttpServer.create(new InetSocketAddress(InetAddress.getLoopbackAddress(), 0), 0);
+        server.createContext("/", exchange -> {
+                         paths.add(exchange.getRequestURI().getPath());
+                         if ("/v1/models".equals(exchange.getRequestURI().getPath())) {
+                             jsonHandler(200, TWO_MODELS_JSON).handle(exchange);
+                         }
+                         else if ("/api/v1/models".equals(exchange.getRequestURI().getPath())) {
+                             jsonHandler(200, "{\"models\":[{\"key\":\"a\",\"max_context_length\":4096}]}".getBytes(StandardCharsets.UTF_8))
+                                     .handle(exchange);
+                         }
+                         else {
+                             exchange.sendResponseHeaders(404, -1);
+                         }
+                     });
+        server.start();
+
+        Result result = await(new ConnectionTester().test(urlOf(server), ServerTypeEnum.LM_STUDIO, "a",
+                                                          null, List.of(), OpenAiCompatibleLimits.defaults()));
+
+        assertEquals(ServerKind.LMSTUDIO, result.serverKind());
+        assertFalse(paths.contains("/api/tags"));
+        assertFalse(paths.contains("/api/show"));
+    }
+
     private String start(HttpHandler handler) throws IOException {
         server = HttpServer.create(new InetSocketAddress(InetAddress.getLoopbackAddress(), 0), 0);
         server.createContext("/v1/models", handler);

@@ -32,6 +32,7 @@ import javax.swing.SpinnerNumberModel;
 import javax.swing.SwingUtilities;
 import javax.swing.event.DocumentEvent;
 import javax.swing.event.DocumentListener;
+import javax.swing.plaf.basic.BasicComboBoxEditor;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.BackendExecutors;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.openaicompatible.BaseUrls;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.openaicompatible.ConnectionTester;
@@ -39,11 +40,12 @@ import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.openaicompatible.OpenAiCom
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.openaicompatible.ServerTypeEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.openaicompatible.ToolCallingModeEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.openaicompatible.context.CompactionStrategyEnum;
+import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.openaicompatible.keys.SavedServerKeys;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.openaicompatible.keys.SecretStore;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.openaicompatible.keys.SessionSecrets;
-import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.openaicompatible.settings.DefaultKeyRules;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.openaicompatible.settings.OpenAiCompatiblePluginSettings;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.openaicompatible.settings.OpenAiCompatibleSessionSettings;
+import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.openaicompatible.settings.SavedServer;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.session.AiSession;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.settings.AiSessionCreateSettingsPanel;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.ui.BlankSafeComboRenderer;
@@ -66,9 +68,9 @@ public final class OpenAiCompatibleBasicPanel implements AiSessionCreateSettings
 
     private final JPanel panel = new JPanel(new GridBagLayout());
     private final JComboBox<ServerTypeEnum> serverTypeCombo = new JComboBox<>(ServerTypeEnum.values());
-    private final JTextField baseUrlField = new JTextField(24);
+    private final JComboBox<Object> baseUrlCombo = new JComboBox<>();
     private final JLabel baseUrlNote = new JLabel(" ");
-    private final JLabel baseUrlDefaultLabel = new JLabel(" ");
+    private final JButton manageServersButton = new JButton("…");
     private final JPasswordField apiKeyField = new JPasswordField(24);
     private final JLabel keyStateLabel = new JLabel();
     private final JLabel keyWarningLabel = new JLabel(" ");
@@ -94,6 +96,7 @@ public final class OpenAiCompatibleBasicPanel implements AiSessionCreateSettings
     private final JButton advancedToggle = new JButton(ADVANCED_COLLAPSED);
 
     private final SessionSecrets secrets;
+    private final SavedServerKeys savedServerKeys;
     private final HeaderSecretSaver headerSaver;
     private final OpenAiCompatibleLimits limits;
     private final Executor probeExecutor;
@@ -111,6 +114,13 @@ public final class OpenAiCompatibleBasicPanel implements AiSessionCreateSettings
      * does not hold an OK back).
      */
     private CompletableFuture<Void> keyStateReady = CompletableFuture.completedFuture(null);
+    private CompletableFuture<Void> savedKeyRead = CompletableFuture.completedFuture(null);
+    private int savedServerSelectionToken;
+    private String selectedSavedServerId;
+    private boolean savedPickApiKeySet;
+    private boolean savedPickClearKeyPending;
+    private char[] savedPickPendingApiKey;
+    private boolean disposed;
     /**
      * The keyring for new-session key saves; null means the default keyring.
      */
@@ -147,12 +157,18 @@ public final class OpenAiCompatibleBasicPanel implements AiSessionCreateSettings
     }
 
     OpenAiCompatibleBasicPanel(SessionSecrets secrets, OpenAiCompatibleLimits limits, HeaderSecretSaver headerSaver) {
-        this(secrets, limits, headerSaver, BackendExecutors.probePool());
+        this(secrets, limits, headerSaver, BackendExecutors.probePool(), new SavedServerKeys());
     }
 
     OpenAiCompatibleBasicPanel(SessionSecrets secrets, OpenAiCompatibleLimits limits, HeaderSecretSaver headerSaver,
                                Executor probeExecutor) {
+        this(secrets, limits, headerSaver, probeExecutor, new SavedServerKeys());
+    }
+
+    OpenAiCompatibleBasicPanel(SessionSecrets secrets, OpenAiCompatibleLimits limits, HeaderSecretSaver headerSaver,
+                               Executor probeExecutor, SavedServerKeys savedServerKeys) {
         this.secrets = secrets;
+        this.savedServerKeys = savedServerKeys == null ? new SavedServerKeys() : savedServerKeys;
         this.headerSaver = headerSaver;
         this.limits = limits == null ? OpenAiCompatibleLimits.defaults() : limits;
         this.probeExecutor = probeExecutor == null ? BackendExecutors.probePool() : probeExecutor;
@@ -162,7 +178,22 @@ public final class OpenAiCompatibleBasicPanel implements AiSessionCreateSettings
     }
 
     private void buildLayout() {
-        baseUrlField.setToolTipText("e.g. http://localhost:11434 or https://host/v1 — both work");
+        baseUrlCombo.setEditable(true);
+        baseUrlCombo.setEditor(new BasicComboBoxEditor() {
+            @Override
+            public void setItem(Object item) {
+                super.setItem(item instanceof SavedServer server ? server.url() : item);
+            }
+
+            @Override
+            public Object getItem() {
+                return ((JTextField) getEditorComponent()).getText();
+            }
+        });
+        baseUrlCombo.setToolTipText("e.g. http://localhost:11434 or https://host/v1 — both work");
+        baseUrlCombo.setRenderer((list, value, index, selected, focus)
+                -> new JLabel(value instanceof SavedServer server ? server.label() : value == null ? "" : value.toString()));
+        manageServersButton.setToolTipText("Manage servers");
         modelCombo.setEditable(true);
         summaryModelCombo.setEditable(true);
         summaryModelCombo.setToolTipText("The model that writes the summaries when the context is compacted. "
@@ -182,11 +213,9 @@ public final class OpenAiCompatibleBasicPanel implements AiSessionCreateSettings
         int row = 0;
         row = addRow(c, row, "Server type:", serverTypeCombo);
         JPanel baseUrlRow = new JPanel(new BorderLayout(6, 0));
-        baseUrlRow.add(baseUrlField, BorderLayout.CENTER);
-        JPanel baseUrlNotes = new JPanel(new BorderLayout());
-        baseUrlNotes.add(baseUrlNote, BorderLayout.NORTH);
-        baseUrlNotes.add(baseUrlDefaultLabel, BorderLayout.SOUTH);
-        baseUrlRow.add(baseUrlNotes, BorderLayout.SOUTH);
+        baseUrlRow.add(baseUrlCombo, BorderLayout.CENTER);
+        baseUrlRow.add(manageServersButton, BorderLayout.EAST);
+        baseUrlRow.add(baseUrlNote, BorderLayout.SOUTH);
         row = addRow(c, row, "Base URL:", baseUrlRow);
         JPanel keyRow = new JPanel(new BorderLayout(6, 0));
         keyRow.add(apiKeyField, BorderLayout.CENTER);
@@ -266,10 +295,26 @@ public final class OpenAiCompatibleBasicPanel implements AiSessionCreateSettings
             applyServerTypePreset();
             markChange.run();
         });
-        baseUrlField.getDocument().addDocumentListener(new SimpleDocumentListener(() -> {
-            refreshKeyState();
-            markChange.run();
-        }));
+        ((JTextField) baseUrlCombo.getEditor().getEditorComponent()).getDocument()
+                .addDocumentListener(new SimpleDocumentListener(() -> {
+                    if (!updating && selectedSavedServerId != null
+                            && !savedServerUrl(selectedSavedServerId).equals(baseUrlText())) {
+                        selectedSavedServerId = null;
+                    }
+                    refreshKeyState();
+                    markChange.run();
+                }));
+        baseUrlCombo.addActionListener(e -> {
+            if (!updating && baseUrlCombo.getSelectedItem() instanceof SavedServer server
+                    && !server.id().equals(selectedSavedServerId)) {
+                selectSavedServer(server);
+            }
+        });
+        manageServersButton.addActionListener(e -> {
+            String current = baseUrlText();
+            SavedServersEditor.showManageDialog(panel, savedServerKeys);
+            loadSavedServers(current);
+        });
         compactionCombo.addActionListener(e -> {
             Object selected = compactionCombo.getSelectedItem();
             if (selected instanceof CompactionStrategyEnum strategy) {
@@ -309,7 +354,10 @@ public final class OpenAiCompatibleBasicPanel implements AiSessionCreateSettings
         updating = true;
         try {
             serverTypeCombo.setSelectedItem(settings.effectiveServerType());
-            baseUrlField.setText(settings.effectiveBaseUrl());
+            loadSavedServers(settings.effectiveBaseUrl());
+            if (settings.effectiveBaseUrl().isBlank()) {
+                OpenAiCompatiblePluginSettings.getDefaultServer().ifPresent(this::selectSavedServer);
+            }
             apiKeySet = settings.effectiveApiKeySet();
             modelCombo.setSelectedItem(settings.effectiveModel());
             summaryModelCombo.setSelectedItem(settings.summaryModel() == null ? "" : settings.summaryModel());
@@ -322,7 +370,6 @@ public final class OpenAiCompatibleBasicPanel implements AiSessionCreateSettings
             autoCompactCheck.setSelected(settings.effectiveAutoCompact());
             pruneCheck.setSelected(settings.effectivePrune());
             baseUrlNote.setText(" ");
-            baseUrlDefaultLabel.setText("(default: " + defaultOrNone(OpenAiCompatiblePluginSettings.getBaseUrl()) + ")");
             modelDefaultLabel.setText("(default: " + defaultOrNone(OpenAiCompatiblePluginSettings.getModel()) + ")");
         }
         finally {
@@ -407,6 +454,119 @@ public final class OpenAiCompatibleBasicPanel implements AiSessionCreateSettings
         return revert;
     }
 
+    private String baseUrlText() {
+        Object item = baseUrlCombo.getEditor().getItem();
+        return item instanceof SavedServer server ? server.url() : item == null ? "" : item.toString();
+    }
+
+    private void setBaseUrlText(String value) {
+        baseUrlCombo.getEditor().setItem(value == null ? "" : value);
+    }
+
+    void loadSavedServers(String currentUrl) {
+        boolean wasUpdating = updating;
+        updating = true;
+        try {
+            baseUrlCombo.removeAllItems();
+            for (SavedServer server : OpenAiCompatiblePluginSettings.getSavedServers()) {
+                baseUrlCombo.addItem(server);
+            }
+            baseUrlCombo.setSelectedItem(null);
+            selectedSavedServerId = null;
+            setBaseUrlText(currentUrl);
+        }
+        finally {
+            updating = wasUpdating;
+        }
+    }
+
+    private String savedServerUrl(String id) {
+        return OpenAiCompatiblePluginSettings.getSavedServers().stream()
+                .filter(server -> server.id().equals(id)).map(SavedServer::url).findFirst().orElse("");
+    }
+
+    private void selectSavedServer(SavedServer server) {
+        selectedSavedServerId = server.id();
+        // Only a pick made with no saved-key read pending takes the snapshot: a later pick must keep the state from
+        // before the first one, not the temporary "key present" state that pick set.
+        if (savedKeyRead.isDone()) {
+            savedPickApiKeySet = apiKeySet;
+            savedPickClearKeyPending = clearKeyPending;
+            zeroSavedPickPendingApiKey();
+            savedPickPendingApiKey = pendingApiKey == null ? null : pendingApiKey.clone();
+        }
+        // Until the asynchronous read completes, retain a conservative "key present" state. A read failure must never
+        // make Apply/OK clear the session's existing key; a successful empty read below will explicitly clear it.
+        if (secrets != null) {
+            apiKeySet = true;
+            refreshKeyState();
+        }
+        int token = ++savedServerSelectionToken;
+        serverTypeCombo.setSelectedItem(server.serverType());
+        setBaseUrlText(server.url());
+        CompletableFuture<Void> ready = new CompletableFuture<>();
+        savedKeyRead = ready;
+        savedServerKeys.readAsync(server.id()).whenComplete((key, error)
+                -> SwingUtilities.invokeLater(() -> {
+                    try {
+                        applySavedServerKey(token, key, error);
+                    }
+                    finally {
+                        ready.complete(null);
+                    }
+                }));
+    }
+
+    private void applySavedServerKey(int token, Optional<char[]> key, Throwable error) {
+        char[] value = key != null && key.isPresent() ? key.get() : null;
+        try {
+            if (disposed || token != savedServerSelectionToken) {
+                return;
+            }
+            if (error != null) {
+                apiKeySet = savedPickApiKeySet;
+                clearKeyPending = savedPickClearKeyPending;
+                char[] old = pendingApiKey;
+                pendingApiKey = savedPickPendingApiKey == null ? null : savedPickPendingApiKey.clone();
+                if (old != null) {
+                    Arrays.fill(old, (char) 0);
+                }
+                refreshKeyState();
+                statusLabel.setText("Could not read the saved key — the session key is unchanged");
+                return;
+            }
+            if (value == null || value.length == 0) {
+                onClearKey();
+                return;
+            }
+            char[] old = pendingApiKey;
+            pendingApiKey = value.clone();
+            if (old != null) {
+                Arrays.fill(old, (char) 0);
+            }
+            apiKeySet = true;
+            clearKeyPending = false;
+            apiKeyField.setText("");
+            refreshKeyState();
+        }
+        finally {
+            if (value != null) {
+                Arrays.fill(value, (char) 0);
+            }
+            // Only the latest pick's snapshot is still needed; a stale read must not clear the one a newer read uses.
+            if (token == savedServerSelectionToken) {
+                zeroSavedPickPendingApiKey();
+            }
+        }
+    }
+
+    private void zeroSavedPickPendingApiKey() {
+        if (savedPickPendingApiKey != null) {
+            Arrays.fill(savedPickPendingApiKey, (char) 0);
+            savedPickPendingApiKey = null;
+        }
+    }
+
     private static String defaultOrNone(String value) {
         return value == null || value.isBlank() ? "none" : value;
     }
@@ -420,7 +580,7 @@ public final class OpenAiCompatibleBasicPanel implements AiSessionCreateSettings
         captureTypedApiKey();
         settings.setServerType((ServerTypeEnum) serverTypeCombo.getSelectedItem());
 
-        String raw = baseUrlField.getText();
+        String raw = baseUrlText();
         boolean removedV1 = BaseUrls.removedV1(raw);
         settings.setBaseUrl(BaseUrls.normalise(raw));
         if (removedV1) {
@@ -516,7 +676,7 @@ public final class OpenAiCompatibleBasicPanel implements AiSessionCreateSettings
      */
     @Override
     public CompletableFuture<Void> keyStateReady() {
-        return keyStateReady;
+        return CompletableFuture.allOf(keyStateReady, savedKeyRead);
     }
 
     @Override
@@ -603,6 +763,9 @@ public final class OpenAiCompatibleBasicPanel implements AiSessionCreateSettings
 
     @Override
     public void dispose() {
+        disposed = true;
+        savedServerSelectionToken++;
+        zeroSavedPickPendingApiKey();
         char[] key = pendingApiKey;
         pendingApiKey = null;
         if (key != null) {
@@ -650,9 +813,9 @@ public final class OpenAiCompatibleBasicPanel implements AiSessionCreateSettings
         if (preset.isBlank()) {
             return;
         }
-        String current = baseUrlField.getText().trim();
+        String current = baseUrlText().trim();
         if (current.isEmpty() || isAnotherPreset(current)) {
-            baseUrlField.setText(preset);
+            setBaseUrlText(preset);
             baseUrlNote.setText("Base URL changed to " + preset);
         }
     }
@@ -731,11 +894,8 @@ public final class OpenAiCompatibleBasicPanel implements AiSessionCreateSettings
     }
 
     private void refreshKeyState() {
-        String usingDefault = DefaultKeyRules.usingDefaultLabel(baseUrlField.getText(),
-                                                                OpenAiCompatiblePluginSettings.getBaseUrl(), OpenAiCompatiblePluginSettings.isDefaultKeySet(),
-                                                                apiKeySet);
-        keyStateLabel.setText(usingDefault != null ? usingDefault : apiKeySet ? "Key: set" : "Key: not set");
-        advanced.setApiKeySet(apiKeySet || usingDefault != null);
+        keyStateLabel.setText(apiKeySet ? "Key: set" : "Key: not set");
+        advanced.setApiKeySet(apiKeySet);
         refreshKeyWarning();
     }
 
@@ -744,11 +904,8 @@ public final class OpenAiCompatibleBasicPanel implements AiSessionCreateSettings
      * typed, or the default's for the same server).
      */
     private void refreshKeyWarning() {
-        String url = baseUrlField.getText().trim().toLowerCase(Locale.ROOT);
-        boolean keyActive = apiKeySet || apiKeyField.getPassword().length > 0
-                || DefaultKeyRules.usingDefaultLabel(baseUrlField.getText(),
-                                                     OpenAiCompatiblePluginSettings.getBaseUrl(), OpenAiCompatiblePluginSettings.isDefaultKeySet(),
-                                                     apiKeySet) != null;
+        String url = baseUrlText().trim().toLowerCase(Locale.ROOT);
+        boolean keyActive = apiKeySet || apiKeyField.getPassword().length > 0;
         keyWarningLabel.setText(url.startsWith("http://") && !BaseUrls.isLocal(url) && keyActive
                                 ? "The API key would be sent unencrypted (http://) to a non-local server." : " ");
     }
@@ -756,7 +913,10 @@ public final class OpenAiCompatibleBasicPanel implements AiSessionCreateSettings
     private void runTestConnection() {
         testButton.setEnabled(false);
         statusLabel.setText("Testing…");
-        String url = baseUrlField.getText();
+        String url = baseUrlText();
+        ServerTypeEnum serverType = (ServerTypeEnum) serverTypeCombo.getSelectedItem();
+        Object selectedModel = modelCombo.getSelectedItem();
+        String model = selectedModel instanceof String value ? value : "";
         char[] key = pendingApiKey != null && pendingApiKey.length > 0 ? pendingApiKey.clone() : null;
         try {
             probeExecutor.execute(() -> {
@@ -767,7 +927,7 @@ public final class OpenAiCompatibleBasicPanel implements AiSessionCreateSettings
                 ConnectionTester tester = new ConnectionTester();
                 char[] requestKey = resolved;
                 try {
-                    tester.test(url, requestKey, List.of(), limits).whenComplete((result, error) -> {
+                    tester.test(url, serverType, model, requestKey, List.of(), limits).whenComplete((result, error) -> {
                         Arrays.fill(requestKey == null ? new char[0] : requestKey, (char) 0);
                         SwingUtilities.invokeLater(() -> {
                             testButton.setEnabled(true);
@@ -794,12 +954,12 @@ public final class OpenAiCompatibleBasicPanel implements AiSessionCreateSettings
     private void applyTestResult(ConnectionTester.Result result, Throwable error) {
         if (error != null || result == null) {
             statusLabel.setText("N/A");
-            statusLabel.setToolTipText("Cannot reach the server at " + baseUrlField.getText());
+            statusLabel.setToolTipText("Cannot reach the server at " + baseUrlText());
             return;
         }
         statusLabel.setText(result.text());
         statusLabel.setToolTipText(result.kind() == ConnectionTester.Kind.NOT_AVAILABLE
-                                   ? "Cannot reach the server at " + baseUrlField.getText() : null);
+                                   ? "Cannot reach the server at " + baseUrlText() : null);
         if (result.kind() != ConnectionTester.Kind.CONNECTED) {
             reasoningLevelsByModel = Map.of();
             return;

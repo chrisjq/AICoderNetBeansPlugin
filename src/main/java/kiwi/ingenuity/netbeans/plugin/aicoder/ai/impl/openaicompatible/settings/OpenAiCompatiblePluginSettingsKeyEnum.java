@@ -1,11 +1,10 @@
 package kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.openaicompatible.settings;
 
 public enum OpenAiCompatiblePluginSettingsKeyEnum {
-    SERVER_TYPE("ai.openai_compatible.serverType"),
-    BASE_URL("ai.openai_compatible.baseUrl"),
     MODEL("ai.openai_compatible.model"),
     REASONING_EFFORT("ai.openai_compatible.reasoningEffort"),
-    DEFAULT_KEY_SET("ai.openai_compatible.defaultKeySet"),
+    SAVED_SERVERS("ai.openai_compatible.savedServers"),
+    DEFAULT_SERVER_ID("ai.openai_compatible.defaultServerId"),
     IMPORTED_FROM_OLLAMA("ai.openai_compatible.importedFromOllama"),
     SHOW_REASONING("ai.openai_compatible.showReasoning"),
 

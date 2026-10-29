@@ -81,12 +81,12 @@ class SessionSecretsStartupCleanupTest {
     }
 
     @Test
-    void theDefaultKeyIsNeverDeleted() {
+    void theRetiredDefaultKeyIsCleanedUp() {
         FakeSecretStore store = new FakeSecretStore();
         saveKey(store, "default");
 
         SessionSecrets.cleanupOrphansAsync(() -> existing(), store, Runnable::run).join();
 
-        assertNotNull(store.read(keyOf("default")));
+        assertNull(store.read(keyOf("default")));
     }
 }

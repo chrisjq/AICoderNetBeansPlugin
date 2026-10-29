@@ -270,6 +270,30 @@ class ServerPollerTest {
         }
     }
 
+    @Test
+    @Timeout(5)
+    void everyProbeRefusedWith401IsFlaggedAndIsNotATypeMismatch() {
+        FakeProber prober = new FakeProber();
+        prober.unauthorized = true;
+        ScheduledExecutorService scheduler = scheduler();
+        try {
+            PollerRegistry registry = registry(scheduler, prober, 8, Duration.ofSeconds(30));
+            registry.join("locked", "http://localhost:1234", "hash", null, ServerTypeEnum.LM_STUDIO, "model", prober);
+
+            DetectedFacts facts = prober.facts.get(prober.facts.size() - 1);
+            assertTrue(facts.probesUnauthorized());
+            assertTrue(prober.reachable.get(prober.reachable.size() - 1));
+            prober.paths.clear();
+
+            registry.postReply("locked");
+
+            assertEquals(List.of(ServerPoller.LM_V1), paths(prober), "no type mismatch, so no widened probe set");
+        }
+        finally {
+            scheduler.shutdownNow();
+        }
+    }
+
     private static PollerRegistry registry(ScheduledExecutorService scheduler, FakeProber prober, int cap,
                                            Duration interval) {
         return new PollerRegistry(fast(interval), scheduler, cap, (root, key) -> prober);
@@ -320,6 +344,7 @@ class ServerPollerTest {
         private final CountDownLatch publications = new CountDownLatch(1);
         private volatile CompletableFuture<ProbeClient.ProbeResult> gate = CompletableFuture.completedFuture(null);
         private volatile boolean unreachable;
+        private volatile boolean unauthorized;
         private volatile boolean tagsSignature;
         private volatile boolean endpointErrors;
         private volatile boolean tagsFailed;
@@ -362,6 +387,9 @@ class ServerPollerTest {
         }
 
         private ProbeClient.ProbeResult result(String path) {
+            if (unauthorized) {
+                return new ProbeClient.ProbeResult(401, null, ProbeClient.Kind.UNAUTHORIZED);
+            }
             if (unreachable) {
                 return new ProbeClient.ProbeResult(0, null, ProbeClient.Kind.UNREACHABLE);
             }

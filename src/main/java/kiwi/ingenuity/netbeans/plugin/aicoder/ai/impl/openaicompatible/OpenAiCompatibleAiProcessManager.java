@@ -24,6 +24,7 @@ import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.function.BiConsumer;
 import java.util.function.BiFunction;
 import java.util.function.Consumer;
 import java.util.function.Function;
@@ -77,7 +78,6 @@ import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.openaicompatible.memory.Me
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.openaicompatible.memory.SessionMemoryFolders;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.openaicompatible.memory.SessionMemoryNotifier;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.openaicompatible.memory.SessionMemoryStore;
-import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.openaicompatible.settings.DefaultKeyRules;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.openaicompatible.settings.OpenAiCompatiblePluginSettings;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.openaicompatible.settings.OpenAiCompatibleSessionSettings;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.openaicompatible.tools.ToolCallModeResolver;
@@ -178,6 +178,7 @@ public final class OpenAiCompatibleAiProcessManager extends AiProcessManager imp
      * The text of the key hint currently shown, so a late-attached info bar can show it too.
      */
     private volatile String shownKeyHint;
+    private volatile boolean detectionHintShown;
     private volatile String shownKeyTooltip;
     private volatile Boolean lastReachable;
     private final List<Runnable> snapshotListeners = new CopyOnWriteArrayList<>();
@@ -201,6 +202,8 @@ public final class OpenAiCompatibleAiProcessManager extends AiProcessManager imp
     private volatile SessionDecisions decisions = new SessionDecisions("");
     private final PollerRegistry pollerRegistry;
     private volatile boolean pollerJoined;
+    private volatile String pollerJoinKeyHash = "";
+    private volatile boolean stopped;
     /**
      * The session's context management (compaction, overflow, overhead and truncation checks); replaced on each start.
      */
@@ -353,6 +356,7 @@ public final class OpenAiCompatibleAiProcessManager extends AiProcessManager imp
         stop();
         currentSession = session;
         sessionId = session.id();
+        running = true;
         prepareSession(session);
     }
 
@@ -401,6 +405,7 @@ public final class OpenAiCompatibleAiProcessManager extends AiProcessManager imp
         List<String> secretHeaders = settings == null ? List.of()
                                      : settings.extraHeaderNames().stream().filter(ExtraHeaders::isSecret).toList();
         secrets = loaded;
+        stopped = false;
         checkKeysAfterLoad(settings, loaded, secretHeaders);
         sessionDecisions.generation(detectionGeneration(settings));
         detectionSettingsSignature = detectionSettingsSignature(settings);
@@ -544,13 +549,17 @@ public final class OpenAiCompatibleAiProcessManager extends AiProcessManager imp
      * callback so it never works from a copy taken when the poller was joined.
      */
     private volatile OpenAiCompatibleSessionSettings latestSettings;
-    private volatile java.util.function.BiConsumer<String, char[]> pollerJoinObserverForTest;
+    private volatile BiConsumer<String, char[]> pollerJoinObserverForTest;
 
     /**
      * Sees each poller join's key hash and (a copy of) the key it carries, for tests in this package.
      */
-    void setPollerJoinObserverForTest(java.util.function.BiConsumer<String, char[]> observer) {
+    void setPollerJoinObserverForTest(BiConsumer<String, char[]> observer) {
         pollerJoinObserverForTest = observer;
+    }
+
+    boolean pollerJoinedForTest() {
+        return pollerJoined;
     }
 
     /**
@@ -561,10 +570,10 @@ public final class OpenAiCompatibleAiProcessManager extends AiProcessManager imp
         AiSession session = currentSession;
         OpenAiCompatibleSessionSettings latest = latestSettings;
         OpenAiCompatibleSessionSettings settings = latest != null ? latest : settingsOf(session);
-        if (!running || !pollerJoined || session == null || settings == null) {
+        if (stopped || !pollerJoined || session == null || settings == null) {
             return;
         }
-        if (loaded.apiKeyFor(Duration.ZERO, settings.effectiveBaseUrl()).isEmpty()) {
+        if (loaded.apiKey(Duration.ZERO).isEmpty()) {
             return;
         }
         joinPoller(session, settings);
@@ -586,6 +595,10 @@ public final class OpenAiCompatibleAiProcessManager extends AiProcessManager imp
      * {@link #checkKeysAfterLoad} joins again when the key arrives. The key is copied by the registry and never logged.
      */
     private void joinPoller(AiSession session, OpenAiCompatibleSessionSettings settings) {
+        joinPoller(session, settings, false);
+    }
+
+    private void joinPoller(AiSession session, OpenAiCompatibleSessionSettings settings, boolean retried) {
         String url = settings == null ? "" : settings.effectiveBaseUrl();
         String root = BaseUrls.root(url);
         String modelName = settings == null ? model : settings.effectiveModel();
@@ -595,17 +608,41 @@ public final class OpenAiCompatibleAiProcessManager extends AiProcessManager imp
         String keyHash = "";
         if (current != null && current == keysLoadedFor) {
             // The batch is complete, so this returns at once without touching the Keyring.
-            key = current.apiKeyFor(Duration.ZERO, url).orElse(null);
+            key = current.apiKey(Duration.ZERO).orElse(null);
             keyHash = key == null ? "" : current.keyHash();
         }
-        java.util.function.BiConsumer<String, char[]> observer = pollerJoinObserverForTest;
+        // Snapshots are stamped with this join's key hash, so the decisions must expect the same generation.
+        SessionDecisions currentDecisions = decisions;
+        if (currentDecisions != null) {
+            currentDecisions.generation(DetectedFacts.generation(root, modelName, keyHash));
+        }
+        boolean keyed = key != null;
+        BiConsumer<String, char[]> observer = pollerJoinObserverForTest;
         if (observer != null) {
             observer.accept(keyHash, key == null ? null : key.clone());
         }
+        if (stopped) {
+            pollerRegistry.leave(session.id());
+            zeroSecret(key);
+            return;
+        }
+        pollerJoinKeyHash = keyHash;
         pollerRegistry.join(session.id(), root, keyHash, key, type, modelName,
                             (facts, reachable) -> onPollerReport(facts, reachable, settings));
         zeroSecret(key);
+        if (stopped) {
+            pollerRegistry.leave(session.id());
+            return;
+        }
         pollerJoined = true;
+        // The key may have loaded while this join was running, when rejoinPollerWithKey saw no joined poller.
+        if (!keyed && !retried && current != null && current == keysLoadedFor) {
+            char[] late = current.apiKey(Duration.ZERO).orElse(null);
+            if (late != null) {
+                zeroSecret(late);
+                joinPoller(session, settings, true);
+            }
+        }
     }
 
     /**
@@ -644,7 +681,16 @@ public final class OpenAiCompatibleAiProcessManager extends AiProcessManager imp
                 bar.setAvailableEfforts(levels, settings == null ? null : settings.reasoningEffort());
             }
             emitContextUsage(settings, modelName, null);
-            boolean mismatch = isTypeMismatch(type, facts.kind());
+            boolean refused = facts.probesUnauthorized();
+            if (refused && keyResultHint == null) {
+                detectionHintShown = true;
+                applyKeyHint(!pollerJoinKeyHash.isBlank() ? KEY_REJECTED_HINT : DETECTION_REFUSED_HINT, "");
+            }
+            else if (detectionHintShown && keyResultHint == null) {
+                detectionHintShown = false;
+                applyKeyHint(null, null);
+            }
+            boolean mismatch = !refused && isTypeMismatch(type, facts.kind());
             if (mismatch) {
                 if (bar != null) {
                     bar.setTypeMismatch(type.displayName(), facts.kindName());
@@ -946,7 +992,7 @@ public final class OpenAiCompatibleAiProcessManager extends AiProcessManager imp
         char[] apiKey = null;
         ErrorMapper.KeySituation keySituation = ErrorMapper.KeySituation.NONE;
         if (current != null) {
-            Optional<char[]> key = current.apiKeyFor(limits.probeTimeout(), entered);
+            Optional<char[]> key = current.apiKey(limits.probeTimeout());
             if (key.isPresent()) {
                 apiKey = key.get();
                 keySituation = ErrorMapper.KeySituation.SENT;
@@ -957,10 +1003,6 @@ public final class OpenAiCompatibleAiProcessManager extends AiProcessManager imp
                 if (state == SessionSecrets.KeyState.UNAVAILABLE
                         || state == SessionSecrets.KeyState.MISSING_ON_THIS_COMPUTER) {
                     keySituation = ErrorMapper.KeySituation.NOT_SENT_UNAVAILABLE;
-                }
-                else if (OpenAiCompatiblePluginSettings.isDefaultKeySet()
-                        && !DefaultKeyRules.sameRoot(entered, OpenAiCompatiblePluginSettings.getBaseUrl())) {
-                    keySituation = ErrorMapper.KeySituation.DEFAULT_KEY_OTHER_SERVER;
                 }
                 else {
                     keySituation = ErrorMapper.KeySituation.NO_KEY_CONFIGURED;
@@ -1554,6 +1596,7 @@ public final class OpenAiCompatibleAiProcessManager extends AiProcessManager imp
      */
     @Override
     public void stop() {
+        stopped = true;
         if (running && !processing && !compacting) {
             // Idle, so the history is stable. A running turn or compaction saves it itself when it ends.
             persistContextAsync();
@@ -1786,11 +1829,11 @@ public final class OpenAiCompatibleAiProcessManager extends AiProcessManager imp
 
     // ---- Key hints (spec §7.4 rank 2, §8.6) ----
     static final String KEY_REJECTED_HINT = "API key rejected";
+    static final String DETECTION_REFUSED_HINT = "Detection refused (401) — the server needs an API key";
     static final String KEY_NEEDED_HINT = "API key needed";
     static final String KEY_UNAVAILABLE_HINT = "API key unavailable (keyring locked?)";
     static final String KEY_NOT_FOUND_HINT = "API key not found on this computer — enter it again";
     static final String KEY_NOT_SET_HINT = "No API key is set for this session";
-    static final String DEFAULT_KEY_OTHER_SERVER_HINT = "Default API key is for another server";
     static final String KEY_UNAVAILABLE_TIP
             = "The system keyring was unavailable, so no API key was sent. Unlock it or enter the key again.";
     static final String KEY_NOT_FOUND_TIP
@@ -1825,7 +1868,7 @@ public final class OpenAiCompatibleAiProcessManager extends AiProcessManager imp
                 case KEY_REQUIRED ->
                     setKeyResultHint(KEY_NEEDED_HINT, error.message());
                 case NO_KEY_SENT -> {
-                    if (shownKeyHint == null) {
+                    if (shownKeyHint == null || DETECTION_REFUSED_HINT.equals(shownKeyHint)) {
                         setKeyResultHint(noKeySentHint(), noKeySentTooltip());
                     }
                 }
@@ -1874,17 +1917,11 @@ public final class OpenAiCompatibleAiProcessManager extends AiProcessManager imp
             }
             return noKeySentHintForState(state, true);
         }
-        if (settings != null && OpenAiCompatiblePluginSettings.isDefaultKeySet()
-                && !DefaultKeyRules.sameRoot(settings.effectiveBaseUrl(), OpenAiCompatiblePluginSettings.getBaseUrl())) {
-            return DEFAULT_KEY_OTHER_SERVER_HINT;
-        }
         return KEY_NOT_SET_HINT;
     }
 
     private String noKeySentTooltip() {
-        return DEFAULT_KEY_OTHER_SERVER_HINT.equals(noKeySentHint())
-               ? "The plugin-wide default API key is used only by sessions on the same server."
-               : "Enter an API key in session settings, or configure a plugin-wide default key.";
+        return "Enter an API key in session settings.";
     }
 
     /**
@@ -1939,6 +1976,10 @@ public final class OpenAiCompatibleAiProcessManager extends AiProcessManager imp
 
     String keyHintForTest() {
         return shownKeyHint;
+    }
+
+    void setKeyResultHintForTest(String text) {
+        setKeyResultHint(text, null);
     }
 
     /**

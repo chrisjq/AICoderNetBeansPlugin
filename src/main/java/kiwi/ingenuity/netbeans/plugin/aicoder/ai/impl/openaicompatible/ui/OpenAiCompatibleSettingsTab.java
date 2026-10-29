@@ -9,30 +9,30 @@ import java.beans.PropertyChangeListener;
 import java.beans.PropertyChangeSupport;
 import java.util.Arrays;
 import java.util.List;
-import java.util.Locale;
+import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ExecutionException;
 import java.util.concurrent.RejectedExecutionException;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 import java.util.function.Consumer;
 import javax.swing.JButton;
 import javax.swing.JComboBox;
 import javax.swing.JLabel;
 import javax.swing.JOptionPane;
 import javax.swing.JPanel;
-import javax.swing.JPasswordField;
 import javax.swing.JTextField;
 import javax.swing.SwingUtilities;
 import javax.swing.event.DocumentEvent;
 import javax.swing.event.DocumentListener;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.AiTypeEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.BackendExecutors;
-import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.openaicompatible.BaseUrls;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.openaicompatible.ConnectionTester;
-import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.openaicompatible.ServerTypeEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.openaicompatible.detect.DetectedFacts;
-import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.openaicompatible.keys.SessionSecrets;
-import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.openaicompatible.settings.DefaultKeyRules;
+import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.openaicompatible.keys.SavedServerKeys;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.openaicompatible.settings.OpenAiCompatiblePluginSettings;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.openaicompatible.settings.OpenAiCompatibleSessionSettings;
+import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.openaicompatible.settings.SavedServer;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.ui.BlankSafeComboRenderer;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.ui.FormLayoutUtil;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ui.DialogPlacement;
@@ -40,46 +40,18 @@ import kiwi.ingenuity.netbeans.plugin.aicoder.ui.SettingsTab;
 import org.openide.util.lookup.ServiceProvider;
 
 /**
- * Plugin defaults for OpenAI Compatible (spec §8.1, §8.4, §8.6): Basic (server type, base URL, API key, model),
- * Advanced plugin-wide values (collapsed), and a Detected panel for the default URL. New sessions start from the Basic
- * values. The key lives in the Keyring under {@code aicoder.openai_compatible.default}; it is cleared on Save when the
- * default URL moves to a different root. Ollama (local)'s URL and model are imported once the first time the form
- * opens.
+ * OpenAI Compatible options: reusable saved servers, model/reasoning settings, advanced values, and a Detected panel.
  */
 @ServiceProvider(service = SettingsTab.class)
 public final class OpenAiCompatibleSettingsTab implements SettingsTab {
 
-    /**
-     * Session id under which the default key is stored: the Keyring entry becomes
-     * {@code aicoder.openai_compatible.default}.
-     */
-    static final String DEFAULT_KEY_ID = "default";
-
     private static final String ADVANCED_COLLAPSED = "Advanced ▸";
     private static final String ADVANCED_EXPANDED = "Advanced ▾";
 
-    /**
-     * The Keyring operations on the default key; replaced by a fake in tests.
-     */
-    interface DefaultKeyStore {
-
-        /**
-         * @return true when the key was stored and read back
-         */
-        CompletableFuture<Boolean> save(char[] key);
-
-        CompletableFuture<Void> clear();
-    }
-
     private final PropertyChangeSupport pcs = new PropertyChangeSupport(this);
     private final JPanel panel = new JPanel(new GridBagLayout());
-    private final JComboBox<ServerTypeEnum> serverTypeCombo = new JComboBox<>(ServerTypeEnum.values());
-    private final JTextField baseUrlField = new JTextField(28);
-    private final JLabel baseUrlNote = new JLabel(" ");
-    private final JPasswordField apiKeyField = new JPasswordField(28);
-    private final JLabel keyStateLabel = new JLabel();
-    private final JLabel keyWarningLabel = new JLabel(" ");
-    private final JButton clearKeyButton = new JButton("Clear");
+    private final SavedServerKeys serverKeys;
+    private final SavedServersEditor serversEditor;
     private final JTextField modelField = new JTextField(28);
     private final JComboBox<String> reasoningEffortCombo = new JComboBox<>(
             new String[]{BlankSafeComboRenderer.DEFAULT_OPTION, "off", "low", "medium", "high", "xhigh", "on"});
@@ -89,60 +61,32 @@ public final class OpenAiCompatibleSettingsTab implements SettingsTab {
     private final JButton testButton = new JButton("Test connection");
     private final JLabel testStatus = new JLabel(" ");
     private final OpenAiCompatibleDetectedPanel detected = new OpenAiCompatibleDetectedPanel();
+    private final ConnectionTester connectionTester = new ConnectionTester();
 
-    private final DefaultKeyStore keyStore;
     private volatile Consumer<String> noticeSink;
     private boolean updating;
-    private boolean clearKeyRequested;
     private volatile CompletableFuture<Boolean> importFuture;
     private volatile CompletableFuture<Void> storeFuture = CompletableFuture.completedFuture(null);
     private DetectedFacts lastFacts;
 
     public OpenAiCompatibleSettingsTab() {
-        this(new DefaultKeyStore() {
-            @Override
-            public CompletableFuture<Boolean> save(char[] key) {
-                SessionSecrets secrets = new SessionSecrets(DEFAULT_KEY_ID,
-                                                            OpenAiCompatiblePluginSettings.isDefaultKeySet());
-                return secrets.saveKeyAsync(key).whenComplete((ok, error) -> secrets.close());
-            }
-
-            @Override
-            public CompletableFuture<Void> clear() {
-                SessionSecrets secrets = new SessionSecrets(DEFAULT_KEY_ID,
-                                                            OpenAiCompatiblePluginSettings.isDefaultKeySet());
-                return secrets.clearKeyAsync().whenComplete((ok, error) -> secrets.close());
-            }
-        });
+        this(new SavedServerKeys());
     }
 
-    OpenAiCompatibleSettingsTab(DefaultKeyStore keyStore) {
-        this.keyStore = keyStore;
+    OpenAiCompatibleSettingsTab(SavedServerKeys serverKeys) {
+        this.serverKeys = serverKeys;
+        this.serversEditor = new SavedServersEditor(serverKeys);
         buildLayout();
         wireBehaviour();
     }
 
     private void buildLayout() {
-        serverTypeCombo.setRenderer((list, value, index, selected, focus)
-                -> new JLabel(value == null ? "" : value.displayName()));
-        baseUrlField.setToolTipText("e.g. http://localhost:11434 or https://host/v1 — both work");
-        apiKeyField.setToolTipText("Stored in the system keyring. Used by sessions that talk to the same server as "
-                + "the default URL and have no key of their own.");
-
         GridBagConstraints c = new GridBagConstraints();
         c.insets = new Insets(3, 3, 3, 3);
         c.anchor = GridBagConstraints.FIRST_LINE_START;
         int row = 0;
-        row = addRow(c, row, "", new JLabel("Defaults for new OpenAI Compatible sessions."));
-        row = addRow(c, row, "Server type:", serverTypeCombo);
-        row = addRow(c, row, "Base URL:", baseUrlField);
-        row = addRow(c, row, "", baseUrlNote);
-        row = addRow(c, row, "API key:", apiKeyField);
-        JPanel keyRow = new JPanel();
-        keyRow.add(keyStateLabel);
-        keyRow.add(clearKeyButton);
-        row = addRow(c, row, "", keyRow);
-        row = addRow(c, row, "", keyWarningLabel);
+        row = addRow(c, row, "", new JLabel("Saved OpenAI Compatible servers."));
+        row = addRow(c, row, "Servers:", serversEditor);
         JPanel testRow = new JPanel(new BorderLayout(6, 0));
         testRow.add(testButton, BorderLayout.WEST);
         testRow.add(testStatus, BorderLayout.CENTER);
@@ -171,10 +115,10 @@ public final class OpenAiCompatibleSettingsTab implements SettingsTab {
     }
 
     private void wireBehaviour() {
-        serverTypeCombo.addActionListener(e -> {
-            applyServerTypePreset();
+        serversEditor.addChangeListener(this::fireChanged);
+        serversEditor.addSelectionListener(selected -> {
+            testButton.setEnabled(selected.isPresent());
             refreshDetected();
-            fireChanged();
         });
         DocumentListener onEdit = new DocumentListener() {
             @Override
@@ -192,15 +136,7 @@ public final class OpenAiCompatibleSettingsTab implements SettingsTab {
                 edited();
             }
         };
-        baseUrlField.getDocument().addDocumentListener(onEdit);
-        apiKeyField.getDocument().addDocumentListener(onEdit);
         modelField.getDocument().addDocumentListener(onEdit);
-        clearKeyButton.addActionListener(e -> {
-            clearKeyRequested = true;
-            apiKeyField.setText("");
-            refreshKeyLabel();
-            fireChanged();
-        });
         advancedToggle.addActionListener(e -> toggleAdvanced());
         pluginAdvanced.addChangeListener(this::fireChanged);
         testButton.addActionListener(e -> runTestConnection());
@@ -216,7 +152,6 @@ public final class OpenAiCompatibleSettingsTab implements SettingsTab {
 
     private void edited() {
         if (!updating) {
-            refreshKeyLabel();
             refreshDetected();
             fireChanged();
         }
@@ -228,75 +163,22 @@ public final class OpenAiCompatibleSettingsTab implements SettingsTab {
         }
     }
 
-    private void applyServerTypePreset() {
-        if (updating || !(serverTypeCombo.getSelectedItem() instanceof ServerTypeEnum type)) {
-            return;
-        }
-        String preset = type.presetUrl();
-        if (preset.isBlank()) {
-            return;
-        }
-        String current = baseUrlField.getText().trim();
-        if (current.isEmpty() || isAnotherPreset(current)) {
-            baseUrlField.setText(preset);
-            noteLabel.setText("Base URL changed to " + preset);
-        }
-    }
-
-    private static boolean isAnotherPreset(String url) {
-        for (ServerTypeEnum type : ServerTypeEnum.values()) {
-            if (!type.presetUrl().isBlank() && type.presetUrl().equals(url)) {
-                return true;
-            }
-        }
-        return false;
-    }
-
-    private void refreshKeyLabel() {
-        if (apiKeyField.getPassword().length > 0) {
-            keyStateLabel.setText("Key: will be saved");
-        }
-        else if (OpenAiCompatiblePluginSettings.isDefaultKeySet() && !clearKeyRequested) {
-            keyStateLabel.setText("Key: set");
-        }
-        else {
-            keyStateLabel.setText("Key: not set");
-        }
-        refreshKeyWarning();
-    }
-
-    /**
-     * The unencrypted-key warning (spec §8.6): an {@code http://} URL to a non-local host while a key is active (typed,
-     * or the stored default key that has not been cleared).
-     */
-    private void refreshKeyWarning() {
-        String url = baseUrlField.getText().trim().toLowerCase(Locale.ROOT);
-        boolean keyActive = apiKeyField.getPassword().length > 0
-                || OpenAiCompatiblePluginSettings.isDefaultKeySet() && !clearKeyRequested;
-        keyWarningLabel.setText(url.startsWith("http://") && !BaseUrls.isLocal(url) && keyActive
-                                ? "The API key would be sent unencrypted (http://) to a non-local server." : " ");
-    }
-
     private void fillFromSettings() {
         updating = true;
         try {
-            serverTypeCombo.setSelectedItem(OpenAiCompatiblePluginSettings.getServerType());
-            baseUrlField.setText(OpenAiCompatiblePluginSettings.getBaseUrl());
             modelField.setText(OpenAiCompatiblePluginSettings.getModel());
             String effort = OpenAiCompatiblePluginSettings.getReasoningEffort();
             reasoningEffortCombo.setSelectedItem(effort == null ? BlankSafeComboRenderer.DEFAULT_OPTION : effort);
-            apiKeyField.setText("");
-            clearKeyRequested = false;
-            baseUrlNote.setText(" ");
             pluginAdvanced.load();
+            serversEditor.load();
         }
         finally {
             updating = false;
         }
-        refreshKeyLabel();
         lastFacts = null;
         testStatus.setText(" ");
         testStatus.setToolTipText(null);
+        testButton.setEnabled(serversEditor.selected().isPresent());
         refreshDetected();
     }
 
@@ -337,56 +219,34 @@ public final class OpenAiCompatibleSettingsTab implements SettingsTab {
     }
 
     /**
-     * Saves the defaults. A typed key goes to the Keyring (the "key set" flag turns on only once it was read back); the
-     * stored default key is cleared when the URL moved to a different root, or when Clear was pressed.
+     * Persists the saved server list and plugin-wide options.
      */
     @Override
     public void store() {
-        String previousUrl = OpenAiCompatiblePluginSettings.getBaseUrl();
-        String enteredUrl = baseUrlField.getText();
-        String newUrl = BaseUrls.normalise(enteredUrl);
-        boolean keyWasSet = OpenAiCompatiblePluginSettings.isDefaultKeySet();
-        baseUrlNote.setText(BaseUrls.removedV1(enteredUrl) ? "/v1 removed — the plugin adds it" : " ");
-
-        OpenAiCompatiblePluginSettings.setServerType((ServerTypeEnum) serverTypeCombo.getSelectedItem());
-        OpenAiCompatiblePluginSettings.setBaseUrl(newUrl);
         OpenAiCompatiblePluginSettings.setModel(modelField.getText().trim());
         Object effort = reasoningEffortCombo.getSelectedItem();
         OpenAiCompatiblePluginSettings.setReasoningEffort(
                 effort == null || BlankSafeComboRenderer.DEFAULT_OPTION.equals(effort) ? null : effort.toString());
         pluginAdvanced.store();
-
-        char[] typed = apiKeyField.getPassword();
-        CompletableFuture<Void> work = CompletableFuture.completedFuture(null);
-        if (typed.length > 0) {
-            work = keyStore.save(typed).thenAccept(ok -> {
-                if (Boolean.TRUE.equals(ok)) {
-                    OpenAiCompatiblePluginSettings.setDefaultKeySet(true);
-                }
-                else {
-                    notice("The default API key could not be stored in the system keyring.");
-                }
-            });
+        boolean saved = false;
+        try {
+            saved = serversEditor.save().get(10, TimeUnit.SECONDS);
         }
-        else if (keyWasSet && clearKeyRequested) {
-            OpenAiCompatiblePluginSettings.setDefaultKeySet(false);
-            work = keyStore.clear();
+        catch (InterruptedException ex) {
+            Thread.currentThread().interrupt();
         }
-        else if (keyWasSet && DefaultKeyRules.shouldClearDefaultKey(previousUrl, newUrl)) {
-            OpenAiCompatiblePluginSettings.setDefaultKeySet(false);
-            work = keyStore.clear();
-            notice(DefaultKeyRules.CLEARED_NOTICE);
+        catch (ExecutionException | TimeoutException ex) {
+            // Report the failure below without allowing Options OK to appear successful.
         }
-        storeFuture = work.whenComplete((value, error) -> Arrays.fill(typed, (char) 0));
-        apiKeyField.setText("");
-        clearKeyRequested = false;
-        refreshKeyLabel();
+        if (!saved) {
+            notice("Could not store server settings.");
+        }
+        storeFuture = CompletableFuture.completedFuture(null);
     }
 
     @Override
     public boolean isValid() {
-        String url = baseUrlField.getText().trim().toLowerCase(Locale.ROOT);
-        return url.isEmpty() || url.startsWith("http://") || url.startsWith("https://");
+        return true;
     }
 
     @Override
@@ -420,6 +280,10 @@ public final class OpenAiCompatibleSettingsTab implements SettingsTab {
         return storeFuture;
     }
 
+    SavedServersEditor serversEditor() {
+        return serversEditor;
+    }
+
     OpenAiCompatiblePluginAdvancedPanel pluginAdvanced() {
         return pluginAdvanced;
     }
@@ -441,31 +305,44 @@ public final class OpenAiCompatibleSettingsTab implements SettingsTab {
     }
 
     private void runTestConnection() {
+        Optional<SavedServer> selected = serversEditor.selected();
+        if (selected.isEmpty()) {
+            testButton.setEnabled(false);
+            return;
+        }
         testButton.setEnabled(false);
         testStatus.setText("Testing\u2026");
         testStatus.setToolTipText(null);
-        char[] typed = apiKeyField.getPassword();
-        char[] key = typed.length == 0 ? null : typed;
-        String url = baseUrlField.getText();
-        new ConnectionTester()
-                .test(url, key, List.of(), OpenAiCompatiblePluginSettings.fromPluginSettings())
-                .whenComplete((result, error) -> SwingUtilities.invokeLater(() -> {
-                    testButton.setEnabled(true);
-                    applyTestResult(result, error);
-                }));
+        SavedServer server = selected.get();
+        serversEditor.keyForConnectionTest(server).whenComplete((keyResult, keyError) -> {
+            char[] key = keyResult != null && keyResult.isPresent() ? keyResult.get() : null;
+            connectionTester
+                    .test(server.url(), server.serverType(), modelField.getText().trim(), key, List.of(),
+                          OpenAiCompatiblePluginSettings.fromPluginSettings())
+                    .whenComplete((result, error) -> {
+                        if (key != null) {
+                            Arrays.fill(key, (char) 0);
+                        }
+                        SwingUtilities.invokeLater(() -> {
+                            testButton.setEnabled(serversEditor.selected().isPresent());
+                            applyTestResult(result, error);
+                        });
+                    });
+        });
     }
 
     private void applyTestResult(ConnectionTester.Result result, Throwable error) {
+        String url = serversEditor.selected().map(SavedServer::url).orElse("");
         if (error != null || result == null) {
             testStatus.setText("N/A");
-            testStatus.setToolTipText("Cannot reach the server at " + baseUrlField.getText());
+            testStatus.setToolTipText("Cannot reach the server at " + url);
             lastFacts = null;
             refreshDetected();
             return;
         }
         testStatus.setText(result.text());
         testStatus.setToolTipText(result.kind() == ConnectionTester.Kind.NOT_AVAILABLE
-                                  ? "Cannot reach the server at " + baseUrlField.getText() : null);
+                                  ? "Cannot reach the server at " + url : null);
         lastFacts = factsFrom(result);
         refreshDetected();
     }
@@ -474,13 +351,7 @@ public final class OpenAiCompatibleSettingsTab implements SettingsTab {
         if (result.kind() != ConnectionTester.Kind.CONNECTED) {
             return null;
         }
-        DetectedFacts facts = DetectedFacts.of("plugin-defaults")
-                .withApiBase(result.apiBase())
-                .withModels(result.models());
-        if (result.serverKind() != null) {
-            facts = facts.withKind(result.serverKind());
-        }
-        return facts;
+        return result.facts().withGeneration("plugin-defaults");
     }
 
     private void refreshDetected() {
@@ -489,11 +360,10 @@ public final class OpenAiCompatibleSettingsTab implements SettingsTab {
 
     private OpenAiCompatibleSessionSettings snapshotSettings() {
         OpenAiCompatibleSessionSettings settings = new OpenAiCompatibleSessionSettings();
-        ServerTypeEnum type = (ServerTypeEnum) serverTypeCombo.getSelectedItem();
-        if (type != null) {
-            settings.setServerType(type);
-        }
-        settings.setBaseUrl(BaseUrls.normalise(baseUrlField.getText()));
+        serversEditor.selected().ifPresent(server -> {
+            settings.setServerType(server.serverType());
+            settings.setBaseUrl(server.url());
+        });
         return settings;
     }
 

@@ -6,13 +6,16 @@ import java.awt.GraphicsEnvironment;
 import java.lang.reflect.Field;
 import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
+import java.util.ArrayDeque;
 import java.util.ArrayList;
+import java.util.Deque;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CompletionException;
 import java.util.concurrent.RejectedExecutionException;
+import java.util.prefs.Preferences;
 import javax.swing.JButton;
 import javax.swing.JComboBox;
 import javax.swing.JPasswordField;
@@ -23,9 +26,12 @@ import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.openaicompatible.OpenAiCom
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.openaicompatible.ServerTypeEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.openaicompatible.ToolCallingModeEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.openaicompatible.detect.ServerKind;
+import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.openaicompatible.keys.SavedServerKeys;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.openaicompatible.keys.SecretStore;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.openaicompatible.keys.SessionSecrets;
+import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.openaicompatible.settings.OpenAiCompatiblePluginSettings;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.openaicompatible.settings.OpenAiCompatibleSessionSettings;
+import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.openaicompatible.settings.SavedServer;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.session.AiSession;
 import static org.junit.jupiter.api.Assertions.*;
 import org.junit.jupiter.api.Assumptions;
@@ -103,7 +109,7 @@ class OpenAiCompatibleBasicPanelTest {
             @Override
             public char[] read(String key) {
                 char[] value = entries.get(key);
-                return value != null && !working[0] ? "other".toCharArray() : value;
+                return value != null && !working[0] ? "other".toCharArray() : value == null ? null : value.clone();
             }
 
             @Override
@@ -518,6 +524,341 @@ class OpenAiCompatibleBasicPanelTest {
         finally {
             panel.dispose();
         }
+    }
+
+    @Test
+    @Timeout(15)
+    void pickingASavedServerWithAKeyStagesUrlTypeAndKey() throws Exception {
+        Assumptions.assumeFalse(GraphicsEnvironment.isHeadless(), "Swing component creation needs a display");
+        Map<String, char[]> entries = new HashMap<>();
+        SavedServer server = SavedServer.create("Entry", "http://h:1", ServerTypeEnum.LLAMA_CPP);
+        OpenAiCompatiblePluginSettings.useForTest(Preferences.userRoot().node("/saved-panel-" + System.nanoTime()));
+        OpenAiCompatiblePluginSettings.setSavedServers(List.of(server));
+        SecretStore store = keyring(entries, new boolean[]{true});
+        new SavedServerKeys(store, Runnable::run).saveAsync(server.id(), "sk-e".toCharArray()).join();
+        SessionSecrets secrets = new SessionSecrets("session", store, Runnable::run, false);
+        OpenAiCompatibleBasicPanel panel = new OpenAiCompatibleBasicPanel(secrets, OpenAiCompatibleLimits.defaults(),
+                                                                          secrets::saveHeaderAsync, Runnable::run, new SavedServerKeys(store, Runnable::run));
+        try {
+            panel.load(new OpenAiCompatibleSessionSettings());
+            baseUrlCombo(panel).setSelectedItem(server);
+            flushEdt();
+            OpenAiCompatibleSessionSettings result = new OpenAiCompatibleSessionSettings();
+            panel.applyTo(result);
+            assertEquals("http://h:1", result.baseUrl());
+            assertEquals(ServerTypeEnum.LLAMA_CPP, result.serverType());
+            assertTrue(result.apiKeySet());
+            assertTrue(panel.keySaveFuture().join());
+            assertArrayEquals("sk-e".toCharArray(), entries.get("aicoder.openai_compatible.session"));
+        }
+        finally {
+            OpenAiCompatiblePluginSettings.useForTest(null);
+            panel.dispose();
+        }
+    }
+
+    @Test
+    @Timeout(15)
+    void pickingASavedServerWithoutAKeyClearsTheSessionKey() throws Exception {
+        Assumptions.assumeFalse(GraphicsEnvironment.isHeadless(), "Swing component creation needs a display");
+        Map<String, char[]> entries = new HashMap<>();
+        entries.put("aicoder.openai_compatible.session-clear", "old".toCharArray());
+        SavedServer server = SavedServer.create("No key", "http://h:2", ServerTypeEnum.AUTO);
+        OpenAiCompatiblePluginSettings.useForTest(Preferences.userRoot().node("/saved-panel-" + System.nanoTime()));
+        OpenAiCompatiblePluginSettings.setSavedServers(List.of(server));
+        SecretStore store = keyring(entries, new boolean[]{true});
+        SessionSecrets secrets = new SessionSecrets("session-clear", store, Runnable::run, true);
+        OpenAiCompatibleBasicPanel panel = new OpenAiCompatibleBasicPanel(secrets, OpenAiCompatibleLimits.defaults(),
+                                                                          secrets::saveHeaderAsync, Runnable::run, new SavedServerKeys(store, Runnable::run));
+        try {
+            panel.load(new OpenAiCompatibleSessionSettings());
+            baseUrlCombo(panel).setSelectedItem(server);
+            flushEdt();
+            OpenAiCompatibleSessionSettings result = new OpenAiCompatibleSessionSettings();
+            panel.applyTo(result);
+            assertFalse(result.apiKeySet());
+            assertNull(entries.get("aicoder.openai_compatible.session-clear"));
+        }
+        finally {
+            OpenAiCompatiblePluginSettings.useForTest(null);
+            panel.dispose();
+        }
+    }
+
+    @Test
+    @Timeout(15)
+    void cancelLeavesTheSessionUntouched() throws Exception {
+        Assumptions.assumeFalse(GraphicsEnvironment.isHeadless(), "Swing component creation needs a display");
+        Map<String, char[]> entries = new HashMap<>();
+        SavedServer server = SavedServer.create("Entry", "http://h:3", ServerTypeEnum.AUTO);
+        SecretStore store = keyring(entries, new boolean[]{true});
+        new SavedServerKeys(store, Runnable::run).saveAsync(server.id(), "new".toCharArray()).join();
+        SessionSecrets secrets = new SessionSecrets("cancel", store, Runnable::run, false);
+        OpenAiCompatibleBasicPanel panel = new OpenAiCompatibleBasicPanel(secrets, OpenAiCompatibleLimits.defaults(),
+                                                                          secrets::saveHeaderAsync, Runnable::run, new SavedServerKeys(store, Runnable::run));
+        try {
+            panel.load(new OpenAiCompatibleSessionSettings());
+            baseUrlCombo(panel).setSelectedItem(server);
+            flushEdt();
+            panel.dispose();
+            assertNull(entries.get("aicoder.openai_compatible.cancel"));
+        }
+        finally {
+            panel.dispose();
+        }
+    }
+
+    @Test
+    @Timeout(15)
+    void newSessionStartsOnTheDefaultServer() throws Exception {
+        Assumptions.assumeFalse(GraphicsEnvironment.isHeadless(), "Swing component creation needs a display");
+        SavedServer server = SavedServer.create("Default", "http://d:1", ServerTypeEnum.AUTO);
+        OpenAiCompatiblePluginSettings.useForTest(Preferences.userRoot().node("/saved-panel-" + System.nanoTime()));
+        OpenAiCompatiblePluginSettings.setSavedServers(List.of(server));
+        OpenAiCompatiblePluginSettings.setDefaultServerId(server.id());
+        OpenAiCompatibleBasicPanel panel = new OpenAiCompatibleBasicPanel();
+        try {
+            panel.load(new OpenAiCompatibleSessionSettings());
+            OpenAiCompatibleSessionSettings result = new OpenAiCompatibleSessionSettings();
+            panel.applyTo(result);
+            assertEquals("http://d:1", result.baseUrl());
+        }
+        finally {
+            OpenAiCompatiblePluginSettings.useForTest(null);
+            panel.dispose();
+        }
+    }
+
+    @Test
+    @Timeout(15)
+    void typedCustomUrlIsKept() throws Exception {
+        Assumptions.assumeFalse(GraphicsEnvironment.isHeadless(), "Swing component creation needs a display");
+        OpenAiCompatibleBasicPanel panel = new OpenAiCompatibleBasicPanel();
+        try {
+            panel.load(new OpenAiCompatibleSessionSettings());
+            baseUrlCombo(panel).getEditor().setItem("http://custom:9");
+            OpenAiCompatibleSessionSettings result = new OpenAiCompatibleSessionSettings();
+            panel.applyTo(result);
+            assertEquals("http://custom:9", result.baseUrl());
+        }
+        finally {
+            panel.dispose();
+        }
+    }
+
+    @Test
+    @Timeout(15)
+    void reloadingTheSavedServerListStagesNothing() throws Exception {
+        Assumptions.assumeFalse(GraphicsEnvironment.isHeadless(), "Swing component creation needs a display");
+        OpenAiCompatibleSessionSettings settings = new OpenAiCompatibleSessionSettings();
+        settings.setBaseUrl("http://original:9");
+        settings.setServerType(ServerTypeEnum.LLAMA_CPP);
+        settings.setApiKeySet(true);
+        SavedServer saved = SavedServer.create("Saved", "http://saved:1", ServerTypeEnum.AUTO);
+        OpenAiCompatiblePluginSettings.useForTest(Preferences.userRoot().node("/saved-panel-" + System.nanoTime()));
+        OpenAiCompatiblePluginSettings.setSavedServers(List.of(saved));
+        OpenAiCompatibleBasicPanel panel = new OpenAiCompatibleBasicPanel();
+        try {
+            panel.load(settings);
+            panel.loadSavedServers("http://original:9");
+            assertEquals("http://original:9", baseUrlCombo(panel).getEditor().getItem());
+            assertEquals(ServerTypeEnum.LLAMA_CPP, field(OpenAiCompatibleBasicPanel.class, panel, "serverTypeCombo") instanceof JComboBox<?> combo
+                                                   ? combo.getSelectedItem() : null);
+            assertTrue(panel.pendingApiKey().isEmpty());
+            OpenAiCompatibleSessionSettings result = new OpenAiCompatibleSessionSettings();
+            panel.applyTo(result);
+            assertTrue(result.apiKeySet());
+            assertEquals(ServerTypeEnum.LLAMA_CPP, result.serverType());
+        }
+        finally {
+            OpenAiCompatiblePluginSettings.useForTest(null);
+            panel.dispose();
+        }
+    }
+
+    @Test
+    @Timeout(15)
+    void aFailedReadOfALaterPickRestoresTheStateBeforeTheFirstPick() throws Exception {
+        Assumptions.assumeFalse(GraphicsEnvironment.isHeadless(), "Swing component creation needs a display");
+        Map<String, char[]> entries = new HashMap<>();
+        SecretStore store = new SecretStore() {
+            @Override
+            public char[] read(String key) {
+                if (key.startsWith("aicoder.openai_compatible_server.")) {
+                    throw new IllegalStateException("read failed");
+                }
+                char[] value = entries.get(key);
+                return value == null ? null : value.clone();
+            }
+
+            @Override
+            public void save(String key, char[] value, String description) {
+                entries.put(key, value.clone());
+            }
+
+            @Override
+            public void delete(String key) {
+                entries.remove(key);
+            }
+        };
+        SavedServer first = SavedServer.create("First", "http://first:1", ServerTypeEnum.AUTO);
+        SavedServer second = SavedServer.create("Second", "http://second:1", ServerTypeEnum.AUTO);
+        OpenAiCompatiblePluginSettings.useForTest(Preferences.userRoot().node("/saved-panel-" + System.nanoTime()));
+        OpenAiCompatiblePluginSettings.setSavedServers(List.of(first, second));
+        List<Runnable> reads = new ArrayList<>();
+        SessionSecrets secrets = new SessionSecrets("pick-fail", store, Runnable::run, false);
+        OpenAiCompatibleBasicPanel panel = new OpenAiCompatibleBasicPanel(secrets, OpenAiCompatibleLimits.defaults(),
+                                                                           secrets::saveHeaderAsync, Runnable::run, new SavedServerKeys(store, reads::add));
+        try {
+            panel.load(new OpenAiCompatibleSessionSettings());
+            baseUrlCombo(panel).setSelectedItem(first);
+            baseUrlCombo(panel).setSelectedItem(second);
+            List.copyOf(reads).forEach(Runnable::run);
+            flushEdt();
+
+            OpenAiCompatibleSessionSettings result = new OpenAiCompatibleSessionSettings();
+            panel.applyTo(result);
+            assertEquals(Boolean.FALSE, result.apiKeySet(), "the failed read restores the state from before the first pick");
+        }
+        finally {
+            OpenAiCompatiblePluginSettings.useForTest(null);
+            panel.dispose();
+        }
+    }
+
+    @Test
+    @Timeout(15)
+    void pickingAnEntryShowsItsUrlNotTheRecord() throws Exception {
+        Assumptions.assumeFalse(GraphicsEnvironment.isHeadless(), "Swing component creation needs a display");
+        SavedServer server = SavedServer.create("Entry", "http://entry:2", ServerTypeEnum.AUTO);
+        OpenAiCompatiblePluginSettings.useForTest(Preferences.userRoot().node("/saved-panel-" + System.nanoTime()));
+        OpenAiCompatiblePluginSettings.setSavedServers(List.of(server));
+        OpenAiCompatibleBasicPanel panel = new OpenAiCompatibleBasicPanel();
+        try {
+            panel.load(new OpenAiCompatibleSessionSettings());
+            baseUrlCombo(panel).setSelectedItem(server);
+            assertEquals(server.url(), baseUrlCombo(panel).getEditor().getItem());
+            assertFalse(baseUrlCombo(panel).getEditor().getItem().toString().contains("SavedServer["));
+        }
+        finally {
+            OpenAiCompatiblePluginSettings.useForTest(null);
+            panel.dispose();
+        }
+    }
+
+    @Test
+    @Timeout(15)
+    void aKeyReadErrorKeepsTheSessionKey() throws Exception {
+        Assumptions.assumeFalse(GraphicsEnvironment.isHeadless(), "Swing component creation needs a display");
+        Map<String, char[]> entries = new HashMap<>();
+        SecretStore store = new SecretStore() {
+            @Override
+            public char[] read(String key) {
+                if (key.startsWith("aicoder.openai_compatible_server.")) {
+                    throw new IllegalStateException("read failed");
+                }
+                char[] value = entries.get(key);
+                return value == null ? null : value.clone();
+            }
+
+            @Override
+            public void save(String key, char[] value, String description) {
+                entries.put(key, value.clone());
+            }
+
+            @Override
+            public void delete(String key) {
+                entries.remove(key);
+            }
+        };
+        entries.put("aicoder.openai_compatible.error-session", "old".toCharArray());
+        SavedServer server = SavedServer.create("Entry", "http://entry:3", ServerTypeEnum.AUTO);
+        OpenAiCompatiblePluginSettings.useForTest(Preferences.userRoot().node("/saved-panel-" + System.nanoTime()));
+        OpenAiCompatiblePluginSettings.setSavedServers(List.of(server));
+        SessionSecrets secrets = new SessionSecrets("error-session", store, Runnable::run, true);
+        OpenAiCompatibleBasicPanel panel = new OpenAiCompatibleBasicPanel(secrets, OpenAiCompatibleLimits.defaults(),
+                                                                          secrets::saveHeaderAsync, Runnable::run, new SavedServerKeys(store, Runnable::run));
+        try {
+            OpenAiCompatibleSessionSettings loaded = new OpenAiCompatibleSessionSettings();
+            loaded.setApiKeySet(true);
+            loaded.setBaseUrl("http://own:1");
+            panel.load(loaded);
+            baseUrlCombo(panel).setSelectedItem(server);
+            flushEdt();
+            OpenAiCompatibleSessionSettings result = new OpenAiCompatibleSessionSettings();
+            panel.applyTo(result);
+            assertTrue(result.apiKeySet());
+            assertArrayEquals("old".toCharArray(), entries.get("aicoder.openai_compatible.error-session"));
+        }
+        finally {
+            OpenAiCompatiblePluginSettings.useForTest(null);
+            panel.dispose();
+        }
+    }
+
+    @Test
+    @Timeout(15)
+    void aSlowFirstPickCannotOverrideTheSecond() throws Exception {
+        Assumptions.assumeFalse(GraphicsEnvironment.isHeadless(), "Swing component creation needs a display");
+        Deque<Runnable> tasks = new ArrayDeque<>();
+        Map<String, char[]> entries = new HashMap<>();
+        SecretStore store = keyring(entries, new boolean[]{true});
+        SavedServer first = SavedServer.create("A", "http://a:1", ServerTypeEnum.AUTO);
+        SavedServer second = SavedServer.create("B", "http://b:2", ServerTypeEnum.AUTO);
+        new SavedServerKeys(store, Runnable::run).saveAsync(first.id(), "key-a".toCharArray()).join();
+        new SavedServerKeys(store, Runnable::run).saveAsync(second.id(), "key-b".toCharArray()).join();
+        OpenAiCompatiblePluginSettings.useForTest(Preferences.userRoot().node("/saved-panel-" + System.nanoTime()));
+        OpenAiCompatiblePluginSettings.setSavedServers(List.of(first, second));
+        SavedServerKeys savedKeys = new SavedServerKeys(store, tasks::add);
+        OpenAiCompatibleBasicPanel panel = new OpenAiCompatibleBasicPanel(null, OpenAiCompatibleLimits.defaults(),
+                                                                          null, Runnable::run, savedKeys);
+        try {
+            panel.load(new OpenAiCompatibleSessionSettings());
+            baseUrlCombo(panel).setSelectedItem(first);
+            baseUrlCombo(panel).setSelectedItem(second);
+            tasks.removeLast().run();
+            tasks.removeFirst().run();
+            flushEdt();
+            assertArrayEquals("key-b".toCharArray(), panel.pendingApiKey().orElseThrow());
+        }
+        finally {
+            OpenAiCompatiblePluginSettings.useForTest(null);
+            panel.dispose();
+        }
+    }
+
+    @Test
+    @Timeout(15)
+    void okRightAfterAPickSavesThePickedKey() throws Exception {
+        Assumptions.assumeFalse(GraphicsEnvironment.isHeadless(), "Swing component creation needs a display");
+        Map<String, char[]> entries = new HashMap<>();
+        SecretStore store = keyring(entries, new boolean[]{true});
+        SavedServer server = SavedServer.create("Entry", "http://entry:4", ServerTypeEnum.AUTO);
+        new SavedServerKeys(store, Runnable::run).saveAsync(server.id(), "picked".toCharArray()).join();
+        OpenAiCompatiblePluginSettings.useForTest(Preferences.userRoot().node("/saved-panel-" + System.nanoTime()));
+        OpenAiCompatiblePluginSettings.setSavedServers(List.of(server));
+        SessionSecrets secrets = new SessionSecrets("picked-session", store, Runnable::run, false);
+        OpenAiCompatibleBasicPanel panel = new OpenAiCompatibleBasicPanel(secrets, OpenAiCompatibleLimits.defaults(),
+                                                                          null, Runnable::run, new SavedServerKeys(store, Runnable::run));
+        try {
+            panel.load(new OpenAiCompatibleSessionSettings());
+            panel.startLoading();
+            baseUrlCombo(panel).setSelectedItem(server);
+            panel.keyStateReady().join();
+            flushEdt();
+            panel.applyTo(new OpenAiCompatibleSessionSettings());
+            assertTrue(panel.keySaveFuture().join());
+            assertArrayEquals("picked".toCharArray(), entries.get("aicoder.openai_compatible.picked-session"));
+        }
+        finally {
+            OpenAiCompatiblePluginSettings.useForTest(null);
+            panel.dispose();
+        }
+    }
+
+    @SuppressWarnings("unchecked")
+    private static JComboBox<Object> baseUrlCombo(OpenAiCompatibleBasicPanel panel) throws ReflectiveOperationException {
+        return (JComboBox<Object>) field(OpenAiCompatibleBasicPanel.class, panel, "baseUrlCombo");
     }
 
     private static ConnectionTester.Result connectedResult(Map<String, List<String>> levelsByModel) {
