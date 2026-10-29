@@ -132,6 +132,7 @@ public final class OpenAiCompatibleBasicPanel implements AiSessionCreateSettings
     private boolean ollamaImportChecked;
     private ActionListener changeListener;
     private Consumer<ConnectionTester.Result> testResultListener;
+    private Runnable testConnectionHook;
 
     public OpenAiCompatibleBasicPanel() {
         this(null, OpenAiCompatibleLimits.defaults());
@@ -354,9 +355,10 @@ public final class OpenAiCompatibleBasicPanel implements AiSessionCreateSettings
         updating = true;
         try {
             serverTypeCombo.setSelectedItem(settings.effectiveServerType());
-            loadSavedServers(settings.effectiveBaseUrl());
-            if (settings.effectiveBaseUrl().isBlank()) {
-                OpenAiCompatiblePluginSettings.getDefaultServer().ifPresent(this::selectSavedServer);
+            String loadedBaseUrl = settings.effectiveBaseUrl();
+            loadSavedServers(loadedBaseUrl);
+            if (secrets == null) {
+                selectInitialSavedServer(loadedBaseUrl);
             }
             apiKeySet = settings.effectiveApiKeySet();
             modelCombo.setSelectedItem(settings.effectiveModel());
@@ -480,6 +482,22 @@ public final class OpenAiCompatibleBasicPanel implements AiSessionCreateSettings
         }
     }
 
+    private void selectInitialSavedServer(String loadedUrl) {
+        Optional<SavedServer> defaultServer = OpenAiCompatiblePluginSettings.getDefaultServer();
+        if (loadedUrl == null || loadedUrl.isBlank()) {
+            defaultServer.ifPresent(this::selectSavedServer);
+            return;
+        }
+        String normalised = BaseUrls.normalise(loadedUrl);
+        SavedServer match = defaultServer.filter(server -> normalised.equals(BaseUrls.normalise(server.url())))
+                .orElseGet(() -> OpenAiCompatiblePluginSettings.getSavedServers().stream()
+                        .filter(server -> normalised.equals(BaseUrls.normalise(server.url())))
+                        .findFirst().orElse(null));
+        if (match != null) {
+            selectSavedServer(match);
+        }
+    }
+
     private String savedServerUrl(String id) {
         return OpenAiCompatiblePluginSettings.getSavedServers().stream()
                 .filter(server -> server.id().equals(id)).map(SavedServer::url).findFirst().orElse("");
@@ -556,6 +574,9 @@ public final class OpenAiCompatibleBasicPanel implements AiSessionCreateSettings
             // Only the latest pick's snapshot is still needed; a stale read must not clear the one a newer read uses.
             if (token == savedServerSelectionToken) {
                 zeroSavedPickPendingApiKey();
+            }
+            if (!disposed && token == savedServerSelectionToken && testButton.isEnabled()) {
+                runTestConnection();
             }
         }
     }
@@ -657,7 +678,9 @@ public final class OpenAiCompatibleBasicPanel implements AiSessionCreateSettings
     public void startLoading() {
         loadOllamaImportOnce();
         if (secrets == null) {
-            runTestConnection();
+            if (savedKeyRead.isDone()) {
+                runTestConnection();
+            }
             return;
         }
         CompletableFuture<Void> ready = new CompletableFuture<>();
@@ -759,6 +782,10 @@ public final class OpenAiCompatibleBasicPanel implements AiSessionCreateSettings
 
     public void setTestResultListener(Consumer<ConnectionTester.Result> listener) {
         testResultListener = listener;
+    }
+
+    void setTestConnectionHookForTest(Runnable hook) {
+        testConnectionHook = hook;
     }
 
     @Override
@@ -911,6 +938,10 @@ public final class OpenAiCompatibleBasicPanel implements AiSessionCreateSettings
     }
 
     private void runTestConnection() {
+        if (testConnectionHook != null) {
+            testConnectionHook.run();
+            return;
+        }
         testButton.setEnabled(false);
         statusLabel.setText("Testing…");
         String url = baseUrlText();

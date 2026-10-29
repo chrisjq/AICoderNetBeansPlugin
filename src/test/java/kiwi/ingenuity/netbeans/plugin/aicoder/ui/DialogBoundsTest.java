@@ -1,5 +1,6 @@
 package kiwi.ingenuity.netbeans.plugin.aicoder.ui;
 
+import java.awt.Dimension;
 import java.awt.Rectangle;
 import java.util.List;
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -46,5 +47,23 @@ class DialogBoundsTest {
                 List.of(new Rectangle(0, 0, 1920, 1080)));
 
         assertEquals(original, restored);
+    }
+
+    @Test
+    void defaultSizeUsesSeventyPercentOfUsableBounds() {
+        assertEquals(new Dimension(1792, 980),
+                     DialogBounds.defaultSize(new Rectangle(0, 0, 2560, 1400), 820, 560));
+    }
+
+    @Test
+    void defaultSizeHonoursMinimumsOnSmallUsableScreen() {
+        assertEquals(new Dimension(820, 560),
+                     DialogBounds.defaultSize(new Rectangle(0, 0, 1000, 700), 820, 560));
+    }
+
+    @Test
+    void defaultSizeCapsMinimumsToSmallerThanMinimumScreen() {
+        assertEquals(new Dimension(500, 300),
+                     DialogBounds.defaultSize(new Rectangle(0, 0, 500, 300), 820, 560));
     }
 }

@@ -228,9 +228,8 @@ public class SessionPickerDialog extends JDialog {
         populateProjects();
         populateTypes();
         refreshTemplates();
-        setPreferredSize(new Dimension(850, 600));
         setMinimumSize(new Dimension(820, 560));
-        pack();
+        DialogBounds.applyDefaultSize(this, WindowManager.getDefault().getMainWindow(), 820, 560);
     }
 
     private Component buildExistingTab() {
@@ -418,9 +417,6 @@ public class SessionPickerDialog extends JDialog {
         }
         typeSettingsHolder.revalidate();
         typeSettingsHolder.repaint();
-        if (isShowing()) {
-            pack();
-        }
     }
 
     private void populateProjects() {

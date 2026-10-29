@@ -3,13 +3,9 @@ package kiwi.ingenuity.netbeans.plugin.aicoder.ai.ui;
 import java.awt.BorderLayout;
 import java.awt.Component;
 import java.awt.Dimension;
-import java.awt.GraphicsConfiguration;
-import java.awt.GraphicsEnvironment;
 import java.awt.GridBagConstraints;
 import java.awt.GridBagLayout;
 import java.awt.Insets;
-import java.awt.Rectangle;
-import java.awt.Toolkit;
 import java.io.IOException;
 import java.nio.file.Path;
 import java.time.Duration;
@@ -135,24 +131,7 @@ public class AiSessionSettingsDialog extends JDialog {
         add(buttons, BorderLayout.SOUTH);
         pack();
 
-        // Calculate usable screen bounds from parent window's GraphicsConfiguration
-        GraphicsConfiguration gc = WindowManager.getDefault().getMainWindow().getGraphicsConfiguration();
-        Rectangle screenBounds;
-        Insets screenInsets = new Insets(0, 0, 0, 0);
-        if (gc != null) {
-            screenBounds = gc.getBounds();
-            screenInsets = Toolkit.getDefaultToolkit().getScreenInsets(gc);
-        }
-        else {
-            screenBounds = GraphicsEnvironment.getLocalGraphicsEnvironment().getMaximumWindowBounds();
-        }
-
-        int usableHeight = screenBounds.height - screenInsets.top - screenInsets.bottom;
-        int initialHeight = Math.max(600, usableHeight / 2);
-        initialHeight = Math.min(initialHeight, usableHeight);
-        int initialWidth = Math.max(560, getWidth());
-
-        setSize(new Dimension(initialWidth, initialHeight));
+        DialogBounds.applyDefaultSize(this, WindowManager.getDefault().getMainWindow(), 560, 400);
         setMinimumSize(new Dimension(560, 400));
     }
 
