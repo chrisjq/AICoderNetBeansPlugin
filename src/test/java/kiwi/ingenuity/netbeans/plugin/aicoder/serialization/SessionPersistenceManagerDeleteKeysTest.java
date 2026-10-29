@@ -5,12 +5,12 @@ import java.time.Instant;
 import java.util.Arrays;
 import java.util.HashMap;
 import java.util.Map;
-import java.util.prefs.Preferences;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.AiTypeEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.openaicompatible.keys.SecretStore;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.openaicompatible.keys.SessionSecrets;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.openaicompatible.settings.OpenAiCompatibleSessionSettings;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.session.AiSession;
+import kiwi.ingenuity.netbeans.plugin.aicoder.testutil.MemoryPreferences;
 import org.junit.jupiter.api.AfterEach;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import org.junit.jupiter.api.BeforeEach;
@@ -25,7 +25,7 @@ class SessionPersistenceManagerDeleteKeysTest {
 
     @BeforeEach
     void isolateSecrets() {
-        SessionSecrets.useForTest(Preferences.userRoot().node("/aicoder-delete-keys-" + System.nanoTime()));
+        SessionSecrets.useForTest(MemoryPreferences.create());
     }
 
     @AfterEach

@@ -1,7 +1,7 @@
 package kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.openaicompatible.settings;
 
-import java.util.UUID;
 import java.util.prefs.Preferences;
+import kiwi.ingenuity.netbeans.plugin.aicoder.testutil.MemoryPreferences;
 import org.junit.jupiter.api.AfterEach;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;
@@ -15,7 +15,7 @@ class SummariseThresholdSettingsTest {
 
     @BeforeEach
     void setUp() {
-        preferences = Preferences.userRoot().node("openai-compatible-summarise-" + UUID.randomUUID());
+        preferences = MemoryPreferences.create();
         OpenAiCompatiblePluginSettings.useForTest(preferences);
     }
 

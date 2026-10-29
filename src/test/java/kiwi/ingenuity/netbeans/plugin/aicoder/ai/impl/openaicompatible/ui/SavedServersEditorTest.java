@@ -8,13 +8,13 @@ import java.util.Map;
 import java.util.Queue;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.Executor;
-import java.util.prefs.Preferences;
 import javax.swing.SwingUtilities;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.openaicompatible.ServerTypeEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.openaicompatible.keys.SavedServerKeys;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.openaicompatible.keys.SecretStore;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.openaicompatible.settings.OpenAiCompatiblePluginSettings;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.openaicompatible.settings.SavedServer;
+import kiwi.ingenuity.netbeans.plugin.aicoder.testutil.MemoryPreferences;
 import org.junit.jupiter.api.AfterEach;
 import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -172,7 +172,7 @@ class SavedServersEditorTest {
 
     private static void useTestPreferences() {
         OpenAiCompatiblePluginSettings.useForTest(
-                Preferences.userRoot().node("/aicoder-saved-editor-" + System.nanoTime()));
+                MemoryPreferences.create());
     }
 
     private static final class QueueExecutor implements Executor {

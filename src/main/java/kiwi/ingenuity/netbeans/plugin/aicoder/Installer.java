@@ -7,6 +7,7 @@ import java.util.Properties;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 import javax.swing.SwingUtilities;
+import kiwi.ingenuity.netbeans.plugin.aicoder.ai.AiTypeEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.AiTypeRegistry;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.BackendExecutors;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.debuglog.BackendDebugLogWriter;
@@ -102,6 +103,13 @@ public class Installer extends ModuleInstall {
     public void restored() {
         LOG.log(Level.INFO, StringConst.PLUGIN_NAME + " plugin v{0} activated. Use Tools > AI Coder to open the panel.", VERSION);
         BuildQueue.getInstance().setCompletionListener(new SessionBuildNotifier());
+        // Ollama (Local) is deprecated; enabling it lasts for this IDE run only.
+        try {
+            PluginSettings.clearAiEnabled(AiTypeEnum.OLLAMA_LOCAL);
+        }
+        catch (RuntimeException e) {
+            LOG.log(Level.WARNING, "Could not clear the deprecated Ollama (Local) enabled flag at startup", e);
+        }
         // No pi session can be running yet at plugin startup, so any file here was left behind by a
         // crash or kill — see PiExtensionFiles' class javadoc.
         try {

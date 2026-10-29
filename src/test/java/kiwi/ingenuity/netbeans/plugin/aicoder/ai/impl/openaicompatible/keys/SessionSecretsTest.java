@@ -10,6 +10,7 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.prefs.Preferences;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.openaicompatible.settings.OpenAiCompatiblePluginSettings;
+import kiwi.ingenuity.netbeans.plugin.aicoder.testutil.MemoryPreferences;
 import org.junit.jupiter.api.AfterEach;
 import static org.junit.jupiter.api.Assertions.*;
 import org.junit.jupiter.api.BeforeEach;
@@ -22,7 +23,7 @@ class SessionSecretsTest {
 
     @BeforeEach
     void isolatePreferences() throws Exception {
-        SessionSecrets.useForTest(Preferences.userRoot().node("/aicoder-test-" + System.nanoTime()));
+        SessionSecrets.useForTest(MemoryPreferences.create());
         SessionSecrets.clearPendingSavesForTest();
     }
 
@@ -142,7 +143,7 @@ class SessionSecretsTest {
     @Timeout(10)
     void pendingSaveTimeoutMarksUnavailable() throws Exception {
         executor = Executors.newSingleThreadExecutor();
-        Preferences prefs = Preferences.userRoot().node("/aicoder-timeout-" + System.nanoTime());
+        Preferences prefs = MemoryPreferences.create();
         OpenAiCompatiblePluginSettings.useForTest(prefs);
         OpenAiCompatiblePluginSettings.setKeyringLoadTimeout(Duration.ofMillis(10));
         Deque<Runnable> delayedSaves = new ArrayDeque<>();
@@ -188,7 +189,7 @@ class SessionSecretsTest {
     @Timeout(10)
     void pendingSaveTimeoutStillLoadsHeaders() throws Exception {
         executor = Executors.newSingleThreadExecutor();
-        Preferences prefs = Preferences.userRoot().node("/aicoder-timeout-" + System.nanoTime());
+        Preferences prefs = MemoryPreferences.create();
         OpenAiCompatiblePluginSettings.useForTest(prefs);
         OpenAiCompatiblePluginSettings.setKeyringLoadTimeout(Duration.ofMillis(10));
         Deque<Runnable> delayedSaves = new ArrayDeque<>();

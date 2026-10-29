@@ -1,13 +1,13 @@
 package kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.openaicompatible.ui;
 
 import java.util.List;
-import java.util.prefs.Preferences;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.AiTypeEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.openaicompatible.ServerTypeEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.openaicompatible.keys.SavedServerKeys;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.openaicompatible.keys.SecretStore;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.openaicompatible.settings.OpenAiCompatiblePluginSettings;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.openaicompatible.settings.SavedServer;
+import kiwi.ingenuity.netbeans.plugin.aicoder.testutil.MemoryPreferences;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ui.SettingsTab;
 import org.junit.jupiter.api.AfterEach;
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -38,7 +38,7 @@ class OpenAiCompatibleSettingsTabTest {
     @Test
     void keylessOptionsStorePersistsBeforeReturning() {
         OpenAiCompatiblePluginSettings.useForTest(
-                Preferences.userRoot().node("/aicoder-settings-tab-" + System.nanoTime()));
+                MemoryPreferences.create());
         SecretStore store = new SecretStore() {
             @Override
             public char[] read(String name) {

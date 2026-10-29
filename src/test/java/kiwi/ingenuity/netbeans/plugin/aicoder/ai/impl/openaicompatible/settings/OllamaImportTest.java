@@ -2,11 +2,11 @@ package kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.openaicompatible.settings
 
 import java.util.ArrayList;
 import java.util.List;
-import java.util.UUID;
 import java.util.concurrent.CountDownLatch;
 import java.util.prefs.Preferences;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.ollama.settings.OllamaPluginSettingsKeyEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.openaicompatible.ServerTypeEnum;
+import kiwi.ingenuity.netbeans.plugin.aicoder.testutil.MemoryPreferences;
 import org.junit.jupiter.api.AfterEach;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -20,7 +20,7 @@ class OllamaImportTest {
 
     private Preferences preferences() {
         if (preferences == null) {
-            preferences = Preferences.userRoot().node("openai-compatible-import-" + UUID.randomUUID());
+            preferences = MemoryPreferences.create();
             OpenAiCompatiblePluginSettings.useForTest(preferences);
         }
         return preferences;

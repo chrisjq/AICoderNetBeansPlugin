@@ -109,6 +109,13 @@ public final class PluginSettings {
         prefs().putBoolean(PluginSettingsKeyEnum.AI_ENABLED_PREFIX.key() + type.key(), v);
     }
 
+    /**
+     * Removes a per-backend enabled override, restoring the backend's default state.
+     */
+    public static void clearAiEnabled(AiTypeEnum type) {
+        prefs().remove(PluginSettingsKeyEnum.AI_ENABLED_PREFIX.key() + type.key());
+    }
+
     // ---- Global session defaults ----
     /**
      * Legacy fallback only: read for existing sessions' unset values and when seeding the Default config/MCP templates.

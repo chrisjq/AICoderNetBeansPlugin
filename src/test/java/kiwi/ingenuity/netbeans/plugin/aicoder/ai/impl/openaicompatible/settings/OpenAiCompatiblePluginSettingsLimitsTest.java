@@ -1,9 +1,9 @@
 package kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.openaicompatible.settings;
 
 import java.time.Duration;
-import java.util.UUID;
 import java.util.prefs.Preferences;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.openaicompatible.OpenAiCompatibleLimits;
+import kiwi.ingenuity.netbeans.plugin.aicoder.testutil.MemoryPreferences;
 import org.junit.jupiter.api.AfterEach;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import org.junit.jupiter.api.BeforeEach;
@@ -16,7 +16,7 @@ class OpenAiCompatiblePluginSettingsLimitsTest {
 
     @BeforeEach
     void setUp() {
-        preferences = Preferences.userRoot().node("openai-compatible-limits-" + UUID.randomUUID());
+        preferences = MemoryPreferences.create();
         OpenAiCompatiblePluginSettings.useForTest(preferences);
     }
 

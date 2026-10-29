@@ -54,7 +54,7 @@ public final class OllamaAiSettingsTab implements SettingsTab {
         c.gridx = 0;
         c.gridy = 1;
         c.gridwidth = 3;
-        JLabel deprecation = new JLabel("<html><b>Ollama (local) is deprecated and will be removed in a future version. Use 'OpenAI Compatible' instead — it works with Ollama (http://localhost:11434), LM Studio and hosted endpoints.</b></html>");
+        JLabel deprecation = new JLabel("<html><b>Ollama (local) is deprecated and enabling it lasts until NetBeans restarts. Use 'OpenAI Compatible' instead — it works with Ollama (http://localhost:11434), LM Studio and hosted endpoints.</b></html>");
         panel.add(deprecation, c);
         c.gridwidth = 1;
 
@@ -136,7 +136,7 @@ public final class OllamaAiSettingsTab implements SettingsTab {
 
     @Override
     public String getTabTitle() {
-        return AiTypeEnum.OLLAMA_LOCAL.displayName();
+        return "Ollama (Deprecated)";
     }
 
     @Override

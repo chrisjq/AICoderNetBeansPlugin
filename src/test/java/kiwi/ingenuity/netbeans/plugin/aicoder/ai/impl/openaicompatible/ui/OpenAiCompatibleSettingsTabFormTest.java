@@ -4,7 +4,6 @@ import com.sun.net.httpserver.HttpServer;
 import java.net.InetSocketAddress;
 import java.util.Arrays;
 import java.util.Map;
-import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.TimeUnit;
 import java.util.prefs.Preferences;
@@ -13,6 +12,7 @@ import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.openaicompatible.ServerTyp
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.openaicompatible.keys.SavedServerKeys;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.openaicompatible.keys.SecretStore;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.openaicompatible.settings.OpenAiCompatiblePluginSettings;
+import kiwi.ingenuity.netbeans.plugin.aicoder.testutil.MemoryPreferences;
 import org.junit.jupiter.api.AfterEach;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -55,7 +55,7 @@ class OpenAiCompatibleSettingsTabFormTest {
     @BeforeEach
     void isolatePreferences() {
         Assumptions.assumeFalse(java.awt.GraphicsEnvironment.isHeadless());
-        prefs = Preferences.userRoot().node("openai-compatible-tab-" + UUID.randomUUID());
+        prefs = MemoryPreferences.create();
         OpenAiCompatiblePluginSettings.useForTest(prefs);
     }
 

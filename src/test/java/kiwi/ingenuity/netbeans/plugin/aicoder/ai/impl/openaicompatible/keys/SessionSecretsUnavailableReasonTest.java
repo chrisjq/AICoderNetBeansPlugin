@@ -4,9 +4,9 @@ import java.time.Duration;
 import java.util.List;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
-import java.util.prefs.Preferences;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.openaicompatible.keys.SessionSecrets.KeyState;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.openaicompatible.keys.SessionSecrets.UnavailableReason;
+import kiwi.ingenuity.netbeans.plugin.aicoder.testutil.MemoryPreferences;
 import org.junit.jupiter.api.AfterEach;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -21,7 +21,7 @@ class SessionSecretsUnavailableReasonTest {
 
     @BeforeEach
     void isolatePreferences() {
-        SessionSecrets.useForTest(Preferences.userRoot().node("/aicoder-reason-test-" + System.nanoTime()));
+        SessionSecrets.useForTest(MemoryPreferences.create());
     }
 
     @AfterEach

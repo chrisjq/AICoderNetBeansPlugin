@@ -4,6 +4,7 @@ import java.util.List;
 import java.util.Optional;
 import java.util.prefs.Preferences;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.openaicompatible.ServerTypeEnum;
+import kiwi.ingenuity.netbeans.plugin.aicoder.testutil.MemoryPreferences;
 import org.junit.jupiter.api.AfterEach;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import org.junit.jupiter.api.Test;
@@ -46,7 +47,7 @@ class SavedServersSettingsTest {
 
     @Test
     void corruptJsonReadsAsEmptyList() {
-        Preferences preferences = Preferences.userRoot().node("/aicoder-saved-bad-" + System.nanoTime());
+        Preferences preferences = MemoryPreferences.create();
         OpenAiCompatiblePluginSettings.useForTest(preferences);
         preferences.put(OpenAiCompatiblePluginSettingsKeyEnum.SAVED_SERVERS.key(), "{not json");
 
@@ -55,6 +56,6 @@ class SavedServersSettingsTest {
 
     private static void useTestPreferences() {
         OpenAiCompatiblePluginSettings.useForTest(
-                Preferences.userRoot().node("/aicoder-saved-" + System.nanoTime()));
+                MemoryPreferences.create());
     }
 }

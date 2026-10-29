@@ -5,12 +5,12 @@ import java.awt.Container;
 import java.awt.GraphicsEnvironment;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.UUID;
 import java.util.prefs.Preferences;
 import javax.swing.JComboBox;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.openaicompatible.ServerTypeEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.openaicompatible.settings.OpenAiCompatiblePluginSettings;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.openaicompatible.settings.OpenAiCompatibleSessionSettings;
+import kiwi.ingenuity.netbeans.plugin.aicoder.testutil.MemoryPreferences;
 import org.junit.jupiter.api.AfterEach;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;
@@ -27,7 +27,7 @@ class OpenAiCompatibleSummaryModelPanelTest {
     @BeforeEach
     void isolatePreferences() {
         Assumptions.assumeFalse(GraphicsEnvironment.isHeadless());
-        prefs = Preferences.userRoot().node("openai-compatible-summary-" + UUID.randomUUID());
+        prefs = MemoryPreferences.create();
         OpenAiCompatiblePluginSettings.useForTest(prefs);
     }
 

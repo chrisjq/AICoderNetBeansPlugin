@@ -50,6 +50,7 @@ class OllamaDeprecationTest {
     void settingsTabContainsDeprecationText() {
         Assumptions.assumeFalse(java.awt.GraphicsEnvironment.isHeadless());
         OllamaAiSettingsTab tab = new OllamaAiSettingsTab();
+        assertEquals("Ollama (Deprecated)", tab.getTabTitle());
         assertTrue(findText(tab.getComponent(), "deprecated"));
     }
 

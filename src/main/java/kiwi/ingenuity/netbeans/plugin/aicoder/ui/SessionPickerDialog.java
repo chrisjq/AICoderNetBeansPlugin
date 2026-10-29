@@ -153,7 +153,7 @@ public class SessionPickerDialog extends JDialog {
     private final JSpinner countSpinner = new JSpinner(new SpinnerNumberModel(1, 1, MAX_CREATE_COUNT, 1));
     private final JComboBox<String> projectCombo = new JComboBox<>();
     private final JComboBox<AiTypeEnum> aiTypeCombo = new JComboBox<>();
-    private final JLabel ollamaDeprecationNote = new JLabel("Ollama (Local) is now off by default and deprecated — enable it in Tools > Options > Advanced > Ollama (Local), or use 'OpenAI Compatible'.");
+    private final JLabel ollamaDeprecationNote = new JLabel("Ollama (Local) is deprecated; enabling it lasts until NetBeans restarts. Use 'OpenAI Compatible' instead.");
     private final JComboBox<ConfigTemplate> configCombo = new JComboBox<>();
     private final JComboBox<McpTemplate> mcpTemplateCombo = new JComboBox<>();
     private final JComboBox<SpecialInstructionTemplate> instructionsCombo = new JComboBox<>();

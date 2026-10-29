@@ -2,7 +2,7 @@ package kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.openaicompatible.keys;
 
 import java.io.IOException;
 import java.util.Set;
-import java.util.prefs.Preferences;
+import kiwi.ingenuity.netbeans.plugin.aicoder.testutil.MemoryPreferences;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import org.junit.jupiter.api.BeforeEach;
@@ -18,7 +18,7 @@ class SessionSecretsStartupCleanupTest {
 
     @BeforeEach
     void isolatePreferences() {
-        SessionSecrets.useForTest(Preferences.userRoot().node("/aicoder-startup-cleanup-" + System.nanoTime()));
+        SessionSecrets.useForTest(MemoryPreferences.create());
     }
 
     private static String keyOf(String sessionId) {

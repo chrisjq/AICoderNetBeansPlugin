@@ -10,6 +10,7 @@ import java.awt.Rectangle;
 import java.beans.PropertyChangeListener;
 import java.beans.PropertyChangeSupport;
 import java.util.Collection;
+import java.util.Comparator;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -38,6 +39,13 @@ import org.openide.util.Lookup;
 public class PluginSettingsPanel extends JPanel implements Scrollable {
 
     static final String PROP_CHANGED = "changed";
+
+    static List<SettingsTab> orderAiTabs(Collection<? extends SettingsTab> tabs) {
+        return tabs.stream()
+                .<SettingsTab>map(tab -> tab)
+                .sorted(Comparator.comparing(tab -> tab.getAiType() == AiTypeEnum.OLLAMA_LOCAL))
+                .toList();
+    }
 
     private static JPanel buildGroupPanel(String title) {
         JPanel p = new JPanel(new GridBagLayout());
@@ -217,8 +225,7 @@ public class PluginSettingsPanel extends JPanel implements Scrollable {
         tabs.addTab("General", generalTab);
 
         // ===== Per-AI tabs (discovered via Lookup) =====
-        Collection<? extends SettingsTab> aiTabs
-                = Lookup.getDefault().lookupAll(SettingsTab.class);
+        List<SettingsTab> aiTabs = orderAiTabs(Lookup.getDefault().lookupAll(SettingsTab.class));
         for (SettingsTab tab : aiTabs) {
             if (tab.getAiType().isImplemented()) {
                 // Build wrapper with enable checkbox at NORTH and scrollable options in CENTER

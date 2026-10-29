@@ -6,6 +6,7 @@ import java.util.Map;
 import java.util.prefs.Preferences;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.openaicompatible.ServerTypeEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.openaicompatible.ToolCallingModeEnum;
+import kiwi.ingenuity.netbeans.plugin.aicoder.testutil.MemoryPreferences;
 import org.junit.jupiter.api.AfterEach;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -76,7 +77,7 @@ class OpenAiCompatibleSessionSettingsTest {
     @Test
     @Timeout(5)
     void unsetValuesDoNotReadPluginServerDefaults() {
-        Preferences prefs = Preferences.userRoot().node("openai-compatible-settings-" + java.util.UUID.randomUUID());
+        Preferences prefs = MemoryPreferences.create();
         OpenAiCompatiblePluginSettings.useForTest(prefs);
         OpenAiCompatiblePluginSettings.setModel("default-model");
 
@@ -89,7 +90,7 @@ class OpenAiCompatibleSessionSettingsTest {
     @Test
     @Timeout(5)
     void missingUrlIsFilledFromTheDefaultServer() {
-        Preferences prefs = Preferences.userRoot().node("openai-compatible-settings-" + java.util.UUID.randomUUID());
+        Preferences prefs = MemoryPreferences.create();
         OpenAiCompatiblePluginSettings.useForTest(prefs);
         SavedServer server = SavedServer.create("A", "http://a:1", ServerTypeEnum.LM_STUDIO);
         OpenAiCompatiblePluginSettings.setSavedServers(List.of(server));
