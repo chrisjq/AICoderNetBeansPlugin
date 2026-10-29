@@ -8,7 +8,7 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CompletionException;
 import java.util.concurrent.atomic.AtomicInteger;
 import javax.swing.JLabel;
-import javax.swing.JScrollPane;
+import javax.swing.JTabbedPane;
 import javax.swing.JTextField;
 import javax.swing.SwingUtilities;
 import javax.swing.WindowConstants;
@@ -16,11 +16,8 @@ import kiwi.ingenuity.netbeans.plugin.aicoder.ai.AiTypeEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.openaicompatible.settings.OpenAiCompatibleSessionSettings;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.session.AiSession;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.settings.AiSessionSettings;
-import kiwi.ingenuity.netbeans.plugin.aicoder.ui.ScrollablePanel;
-import kiwi.ingenuity.netbeans.plugin.aicoder.ui.settings.AiSessionConfigPanel;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
-import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
@@ -268,20 +265,55 @@ class AiSessionSettingsDialogTest {
         AiSession session = AiSession.create("/tmp", type);
         AiSessionSettingsDialog dialog = new AiSessionSettingsDialog(session);
         try {
-            JScrollPane outer = dialog.buildForm();
-            ScrollablePanel form = assertInstanceOf(ScrollablePanel.class, outer.getViewport().getView());
-            Component[] children = form.getComponents();
+            JTabbedPane tabs = dialog.buildForm();
+            assertEquals(3, tabs.getTabCount());
+            assertEquals("Session", tabs.getTitleAt(0));
+            assertEquals("General", tabs.getTitleAt(1));
+            assertEquals("MCP Tools", tabs.getTitleAt(2));
 
-            assertEquals("Session name:", ((JLabel) children[0]).getText());
-            assertInstanceOf(JTextField.class, children[1]);
-            assertInstanceOf(AiSessionConfigPanel.class, children[2]);
-            assertEquals("Description:", ((JLabel) children[3]).getText());
-            assertInstanceOf(JScrollPane.class, children[4]);
-            assertEquals("Session Instructions:", ((JLabel) children[5]).getText());
-            assertInstanceOf(JScrollPane.class, children[6]);
+            Component sessionTab = tabs.getComponentAt(0);
+            assertTrue(indexOfText(sessionTab, "Session name:") < indexOfText(sessionTab, "Description:"));
+            assertTrue(indexOfText(sessionTab, "Description:") < indexOfText(sessionTab, "Session Instructions:"));
+            assertNotNull(findFirst(sessionTab, JTextField.class));
         }
         finally {
             dialog.dispose();
+        }
+    }
+
+    private static int indexOfText(Component root, String text) {
+        List<Component> components = new ArrayList<>();
+        collectComponents(root, components);
+        for (int index = 0; index < components.size(); index++) {
+            Component component = components.get(index);
+            if (component instanceof JLabel label && text.equals(label.getText())) {
+                return index;
+            }
+        }
+        return Integer.MAX_VALUE;
+    }
+
+    private static <T extends Component> T findFirst(Component root, Class<T> type) {
+        if (type.isInstance(root)) {
+            return type.cast(root);
+        }
+        if (root instanceof java.awt.Container container) {
+            for (Component child : container.getComponents()) {
+                T found = findFirst(child, type);
+                if (found != null) {
+                    return found;
+                }
+            }
+        }
+        return null;
+    }
+
+    private static void collectComponents(Component root, List<Component> into) {
+        into.add(root);
+        if (root instanceof java.awt.Container container) {
+            for (Component child : container.getComponents()) {
+                collectComponents(child, into);
+            }
         }
     }
 }

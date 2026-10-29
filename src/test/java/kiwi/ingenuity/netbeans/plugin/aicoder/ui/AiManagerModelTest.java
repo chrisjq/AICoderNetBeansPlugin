@@ -15,7 +15,6 @@ import java.util.concurrent.atomic.AtomicReference;
 import javax.swing.JCheckBox;
 import javax.swing.JLabel;
 import javax.swing.JPanel;
-import javax.swing.JSpinner;
 import javax.swing.SwingUtilities;
 import javax.swing.border.TitledBorder;
 import javax.swing.table.TableModel;
@@ -27,7 +26,6 @@ import kiwi.ingenuity.netbeans.plugin.aicoder.PluginSettings;
 import kiwi.ingenuity.netbeans.plugin.aicoder.WebRequestAccessOptionEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.AiTypeEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.claude.settings.ClaudeSessionSettings;
-import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.openaicompatible.settings.OpenAiCompatibleSessionSettings;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.session.AiSession;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.settings.AiSessionSettings;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.settings.ConfigTemplate;
@@ -417,87 +415,23 @@ class AiManagerModelTest {
                       "SESSION mode owns the MCP tools panel");
     }
 
-    @Test
-    void openAiTypePanelFieldAlignsWithTheSessionHostField() throws Exception {
-        AiSessionConfigPanel panel = onEdt(() -> new AiSessionConfigPanel(AiSessionConfigPanelMode.SESSION));
-        onEdt(() -> {
-            panel.loadSession(new OpenAiCompatibleSessionSettings(), AiTypeEnum.OPENAI_COMPATIBLE);
-            int minimumWidth = panel.getMinimumSize().width;
-            int preferredHeight = panel.getPreferredSize().height;
-            for (int width : new int[]{minimumWidth, minimumWidth + 400}) {
-                panel.setSize(width, preferredHeight);
-                layoutTree(panel);
-                JPanel hostGroup = findTitledPanel(panel, "Session Settings");
-                JLabel nestedLabel = findLabel(panel, "Server type:");
-                assertNotNull(hostGroup);
-                assertNotNull(nestedLabel);
-                Component hostField = findFirst(hostGroup, JSpinner.class);
-                Component nestedField = fieldAfter(nestedLabel);
-                assertNotNull(hostField);
-                int hostFieldX = SwingUtilities.convertPoint(hostField.getParent(), hostField.getX(), 0, panel).x;
-                int nestedFieldX = SwingUtilities.convertPoint(nestedField.getParent(), nestedField.getX(), 0, panel).x;
-                assertEquals(hostFieldX, nestedFieldX, 1, "field alignment at " + width + "px");
-            }
-            return null;
-        });
-    }
-
-    private static void layoutTree(Container container) {
-        container.doLayout();
-        for (Component child : container.getComponents()) {
-            if (child instanceof Container nested) {
-                layoutTree(nested);
-            }
-        }
-    }
-
-    private static <T extends Component> T findFirst(Component root, Class<T> type) {
-        if (type.isInstance(root)) {
-            return type.cast(root);
-        }
-        if (root instanceof Container container) {
-            for (Component child : container.getComponents()) {
-                T result = findFirst(child, type);
-                if (result != null) {
-                    return result;
-                }
-            }
-        }
-        return null;
-    }
-
-    private static JLabel findLabel(Component root, String text) {
-        if (root instanceof JLabel label && text.equals(label.getText())) {
-            return label;
-        }
-        if (root instanceof Container container) {
-            for (Component child : container.getComponents()) {
-                JLabel result = findLabel(child, text);
-                if (result != null) {
-                    return result;
-                }
-            }
-        }
-        return null;
-    }
-
-    private static Component fieldAfter(JLabel label) {
-        Component[] components = label.getParent().getComponents();
-        for (int index = 0; index + 1 < components.length; index++) {
-            if (components[index] == label) {
-                return components[index + 1];
-            }
-        }
-        throw new AssertionError("No field after " + label.getText());
-    }
-
     private static List<String> labelTexts(Component root) {
         List<String> texts = new ArrayList<>();
-        collectLabelTexts(root, texts);
+        if (root instanceof AiSessionConfigPanel panel && panel.mode() == AiSessionConfigPanelMode.SESSION) {
+            collectLabelTexts(panel.generalSection(), texts);
+            collectLabelTexts(panel.typeSection(), texts);
+            collectLabelTexts(panel.mcpSection(), texts);
+        }
+        else {
+            collectLabelTexts(root, texts);
+        }
         return texts;
     }
 
     private static void collectLabelTexts(Component component, List<String> texts) {
+        if (component == null) {
+            return;
+        }
         if (component instanceof JLabel label && label.getText() != null) {
             texts.add(label.getText());
         }
@@ -509,6 +443,11 @@ class AiManagerModelTest {
     }
 
     private static boolean containsCheckBoxText(Component root, String wanted) {
+        if (root instanceof AiSessionConfigPanel panel && panel.mode() == AiSessionConfigPanelMode.SESSION) {
+            return containsCheckBoxText(panel.generalSection(), wanted)
+                    || containsCheckBoxText(panel.typeSection(), wanted)
+                    || containsCheckBoxText(panel.mcpSection(), wanted);
+        }
         if (root instanceof JCheckBox box && wanted.equals(box.getText())) {
             return true;
         }
@@ -523,6 +462,19 @@ class AiManagerModelTest {
     }
 
     private static JPanel findTitledPanel(Component root, String title) {
+        if (root instanceof AiSessionConfigPanel panel && panel.mode() == AiSessionConfigPanelMode.SESSION) {
+            JPanel result = findTitledPanel(panel.generalSection(), title);
+            if (result == null) {
+                result = findTitledPanel(panel.typeSection(), title);
+            }
+            if (result == null) {
+                result = findTitledPanel(panel.mcpSection(), title);
+            }
+            return result;
+        }
+        if (root == null) {
+            return null;
+        }
         if (root instanceof JPanel panel
                 && panel.getBorder() instanceof TitledBorder border
                 && title.equals(border.getTitle())) {
@@ -540,6 +492,19 @@ class AiManagerModelTest {
     }
 
     private static JCheckBox findMcpSteeringCheckBox(Component root) {
+        if (root instanceof AiSessionConfigPanel panel && panel.mode() == AiSessionConfigPanelMode.SESSION) {
+            JCheckBox result = findMcpSteeringCheckBox(panel.generalSection());
+            if (result == null) {
+                result = findMcpSteeringCheckBox(panel.typeSection());
+            }
+            if (result == null) {
+                result = findMcpSteeringCheckBox(panel.mcpSection());
+            }
+            return result;
+        }
+        if (root == null) {
+            return null;
+        }
         if (root instanceof JPanel panel
                 && panel.getBorder() instanceof TitledBorder border
                 && "MCP steering".equals(border.getTitle())) {

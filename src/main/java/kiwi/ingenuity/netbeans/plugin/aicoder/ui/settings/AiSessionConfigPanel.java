@@ -18,6 +18,7 @@ import java.util.logging.Logger;
 import javax.swing.BorderFactory;
 import javax.swing.JButton;
 import javax.swing.JCheckBox;
+import javax.swing.JComponent;
 import javax.swing.JLabel;
 import javax.swing.JPanel;
 import javax.swing.JSpinner;
@@ -142,6 +143,9 @@ public final class AiSessionConfigPanel extends JPanel {
     private JPanel sessionContextGroup;
     private JPanel sessionTypeGroup;
     private TitledBorder sessionTypeBorder;
+    private JComponent generalSection;
+    private JComponent typeSection;
+    private JComponent mcpSection;
 
     public AiSessionConfigPanel(AiSessionConfigPanelMode mode) {
         this.mode = mode;
@@ -216,29 +220,27 @@ public final class AiSessionConfigPanel extends JPanel {
             addFull(c, 2, sessionTypeGroup);
         }
         else {
-            // Session Settings group — the generic per-session settings plus the MCP tools panel, which owns the
-            // per-group switches together with the web, database, git and clipboard settings of a live session.
+            // Session sections are exposed separately so the Session Configuration dialog can place them in tabs.
             mcpTools = new McpToolSettingsPanel();
-            JPanel generalGroup = buildGroupPanel("Session Settings");
+            generalSection = new JPanel(new GridBagLayout());
+            generalSection.setBorder(BorderFactory.createEmptyBorder(4, 4, 4, 4));
             GridBagConstraints gc = groupConstraints();
-            addRowTo(generalGroup, gc, 0, new JLabel("Max history:"), maxHistory);
-            addFullTo(generalGroup, gc, 1, saveHistory);
-            addFullTo(generalGroup, gc, 2, restrict);
-            addFullTo(generalGroup, gc, 3, autoAccept);
-            addFullTo(generalGroup, gc, 4, backendDebugLog);
-            addFullTo(generalGroup, gc, 5, debugLogActions);
-            addFullTo(generalGroup, gc, 6, mcpSteering);
-            addFullTo(generalGroup, gc, 7, mcpTools);
-            addFull(c, 0, generalGroup);
+            addRowTo((JPanel) generalSection, gc, 0, new JLabel("Max history:"), maxHistory);
+            addFullTo((JPanel) generalSection, gc, 1, saveHistory);
+            addFullTo((JPanel) generalSection, gc, 2, restrict);
+            addFullTo((JPanel) generalSection, gc, 3, autoAccept);
+            addFullTo((JPanel) generalSection, gc, 4, backendDebugLog);
+            addFullTo((JPanel) generalSection, gc, 5, debugLogActions);
+            addFullTo((JPanel) generalSection, gc, 6, mcpSteering);
 
-            // OpenAI Compatible Settings group — hidden until an OpenAI-compatible session is loaded
+            // OpenAI Compatible and AI-type settings share the type tab.
+            JPanel typeSections = new JPanel(new GridBagLayout());
+            GridBagConstraints typeConstraints = groupConstraints();
             sessionContextGroup = buildGroupPanel("OpenAI Compatible Settings");
             GridBagConstraints oc = groupConstraints();
             addFullTo(sessionContextGroup, oc, 0, contextPanel);
             sessionContextGroup.setVisible(false);
-            addFull(c, 1, sessionContextGroup);
 
-            // AI-type-specific group — hidden until a typed session is loaded; title set dynamically
             sessionTypeBorder = BorderFactory.createTitledBorder("");
             sessionTypeGroup = new JPanel(new GridBagLayout());
             sessionTypeGroup.setBorder(sessionTypeBorder);
@@ -246,12 +248,36 @@ public final class AiSessionConfigPanel extends JPanel {
             tc.insets = new Insets(0, 0, 0, 0);
             addFullTo(sessionTypeGroup, tc, 0, typePanelHolder);
             sessionTypeGroup.setVisible(false);
-            addFull(c, 2, sessionTypeGroup);
+            addFullTo(typeSections, typeConstraints, 0, sessionTypeGroup);
+            addFullTo(typeSections, typeConstraints, 1, sessionContextGroup);
+            typeSection = typeSections;
+            mcpSection = mcpTools;
         }
     }
 
     public AiSessionConfigPanelMode mode() {
         return mode;
+    }
+
+    /**
+     * The General section for SESSION mode; the Session Configuration dialog places it in its General tab.
+     */
+    public JComponent generalSection() {
+        return generalSection;
+    }
+
+    /**
+     * The type/context section for SESSION mode; the Session Configuration dialog places it in its Session tab.
+     */
+    public JComponent typeSection() {
+        return typeSection;
+    }
+
+    /**
+     * The MCP tools section for SESSION mode; the Session Configuration dialog places it in its MCP Tools tab.
+     */
+    public JComponent mcpSection() {
+        return mcpSection;
     }
 
     /**

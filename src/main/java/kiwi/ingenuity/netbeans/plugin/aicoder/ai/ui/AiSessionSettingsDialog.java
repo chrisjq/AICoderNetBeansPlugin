@@ -21,6 +21,7 @@ import javax.swing.JLabel;
 import javax.swing.JOptionPane;
 import javax.swing.JPanel;
 import javax.swing.JScrollPane;
+import javax.swing.JTabbedPane;
 import javax.swing.JTextArea;
 import javax.swing.JTextField;
 import javax.swing.SwingUtilities;
@@ -48,6 +49,7 @@ public class AiSessionSettingsDialog extends JDialog {
 
     private static final String DIALOG_BOUNDS_KEY = "session-configuration";
     private static final String TITLE = "Session Configuration";
+    private static int lastTabIndex;
     private static final Duration KEY_WAIT = Duration.ofSeconds(10);
     private static final String KEY_ERROR = "The API key could not be stored in the system keyring.";
     private static final String KEYRING_LOADING = "The keyring is still loading; try again.";
@@ -138,6 +140,9 @@ public class AiSessionSettingsDialog extends JDialog {
     @Override
     public void dispose() {
         if (!closed) {
+            if (sessionTabs != null) {
+                lastTabIndex = sessionTabs.getSelectedIndex();
+            }
             closed = true;
             DialogBounds.remember(DIALOG_BOUNDS_KEY, this);
             if (detectedView != null) {
@@ -210,6 +215,9 @@ public class AiSessionSettingsDialog extends JDialog {
             }
             else {
                 result = null;
+                if (sessionTabs != null) {
+                    sessionTabs.setSelectedIndex(0);
+                }
                 errorSink.accept(errorMessage);
             }
         }));
@@ -235,46 +243,67 @@ public class AiSessionSettingsDialog extends JDialog {
         }
     }
 
-    JScrollPane buildForm() {
-        ScrollablePanel form = new ScrollablePanel(new GridBagLayout());
-        form.setBorder(BorderFactory.createEmptyBorder(12, 12, 12, 12));
+    private JTabbedPane sessionTabs;
+
+    static int lastTabIndexForTest() {
+        return lastTabIndex;
+    }
+
+    static void resetLastTabForTest() {
+        lastTabIndex = 0;
+    }
+
+    private JScrollPane scrollableTab(Component component) {
+        ScrollablePanel container = new ScrollablePanel(new BorderLayout());
+        container.add(component, BorderLayout.NORTH);
+        JScrollPane scroll = new JScrollPane(container);
+        scroll.setHorizontalScrollBarPolicy(JScrollPane.HORIZONTAL_SCROLLBAR_NEVER);
+        scroll.getVerticalScrollBar().setUnitIncrement(16);
+        return scroll;
+    }
+
+    JTabbedPane buildForm() {
+        sessionTabs = new JTabbedPane();
+
+        ScrollablePanel session = new ScrollablePanel(new GridBagLayout());
+        session.setBorder(BorderFactory.createEmptyBorder(12, 12, 12, 12));
         GridBagConstraints c = new GridBagConstraints();
         c.insets = new Insets(4, 4, 4, 4);
         c.anchor = GridBagConstraints.WEST;
         c.fill = GridBagConstraints.HORIZONTAL;
-        addRow(form, c, 0, new JLabel("Session name:"), nameField);
+        addRow(session, c, 0, new JLabel("Session name:"), nameField);
 
         c.gridx = 0;
         c.gridy = 1;
         c.gridwidth = 2;
         c.weightx = 1;
-        if (detectedView == null) {
-            form.add(configPanel, c);
-        }
-        else {
-            JPanel configHolder = new JPanel(new BorderLayout());
-            configHolder.add(configPanel, BorderLayout.CENTER);
-            configHolder.add(detectedView.component(), BorderLayout.SOUTH);
-            form.add(configHolder, c);
+        session.add(configPanel.typeSection(), c);
+        if (detectedView != null) {
+            GridBagConstraints detectedConstraints = (GridBagConstraints) c.clone();
+            detectedConstraints.gridy = 2;
+            session.add(detectedView.component(), detectedConstraints);
         }
 
         JScrollPane descriptionScroll = new JScrollPane(descriptionArea);
         descriptionScroll.setPreferredSize(new Dimension(300, 200));
         descriptionScroll.setMinimumSize(new Dimension(200, 200));
-        addRow(form, c, 2, new JLabel("Description:"), descriptionScroll);
+        addRow(session, c, 3, new JLabel("Description:"), descriptionScroll);
 
         JScrollPane instructionsScroll = new JScrollPane(sessionInstructionsArea);
         instructionsScroll.setPreferredSize(new Dimension(300, 200));
         instructionsScroll.setMinimumSize(new Dimension(200, 200));
-        addRow(form, c, 3, new JLabel("Session Instructions:"), instructionsScroll);
+        addRow(session, c, 4, new JLabel("Session Instructions:"), instructionsScroll);
 
-        c.gridy = 4;
+        c.gridy = 5;
         c.weighty = 1;
-        form.add(new JPanel(), c);
-        JScrollPane scroll = new JScrollPane(form);
-        scroll.setHorizontalScrollBarPolicy(JScrollPane.HORIZONTAL_SCROLLBAR_NEVER);
-        scroll.getVerticalScrollBar().setUnitIncrement(16);
-        return scroll;
+        session.add(new JPanel(), c);
+
+        sessionTabs.addTab("Session", scrollableTab(session));
+        sessionTabs.addTab("General", scrollableTab(configPanel.generalSection()));
+        sessionTabs.addTab("MCP Tools", scrollableTab(configPanel.mcpSection()));
+        sessionTabs.setSelectedIndex(Math.min(lastTabIndex, sessionTabs.getTabCount() - 1));
+
+        return sessionTabs;
     }
 
     private AiSessionSettings buildResult(AiSessionSettings original) {
