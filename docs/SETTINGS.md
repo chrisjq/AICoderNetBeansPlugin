@@ -25,7 +25,7 @@ A session can override each applicable option in its **Session Configuration** (
 | Clipboard | **Allow clipboard access**. Off by default. |
 | MCP tools | Which tool groups a session may use, per session or via an MCP template ([MCP tool access](MCP_TOOL_ACCESS.md)). |
 | Backend debug log | Per session or in a config template; off by default.<br>Writes everything sent to and received from the backend to `backend-debug.log` in the [session folder](SESSIONS.md#what-a-session-holds). It may contain project source, but API keys and the MCP secret are redacted.<br>**Open log folder** opens it and shows the size.<br>It rolls over at 10 MB, keeping one `.1` file. OpenAI Compatible can change these limits in its [advanced settings](ai/openai_compatible/ADVANCED.md#plugin-wide-debug-log). |
-| Infrastructure | MCP loopback port, save-on-close prompting ([Sessions](SESSIONS.md#closing-a-tab)), inbox retention and size (defaults 60 minutes and 1,000 messages), debug JSON/context logging, tool-use logging. |
+| Infrastructure | MCP loopback port, terminal command override (leave empty for the system default; use `{dir}` and `{command}` placeholders), save-on-close prompting ([Sessions](SESSIONS.md#closing-a-tab)), inbox retention and size (defaults 60 minutes and 1,000 messages), debug JSON/context logging, tool-use logging. |
 
 ## Permissions in detail
 

@@ -6,6 +6,7 @@ import java.nio.file.Path;
 import java.util.ArrayDeque;
 import java.util.List;
 import java.util.Objects;
+import java.util.Optional;
 import java.util.concurrent.Executor;
 import java.util.logging.Level;
 import java.util.logging.Logger;
@@ -357,6 +358,20 @@ public abstract class AiImplementation {
 
     public AiInfoBarExtension createInfoBarExtension(AiSession session, AiSessionHost host) {
         return null;
+    }
+
+    /**
+     * Returns the terminal CLI name when this backend can launch a local executable.
+     */
+    public Optional<String> terminalExecutableName() {
+        return Optional.empty();
+    }
+
+    /**
+     * Returns terminal-launch details when this backend is a locally installed CLI.
+     */
+    public Optional<TerminalLaunch> terminalLaunch() {
+        return Optional.empty();
     }
 
     /**

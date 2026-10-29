@@ -2,11 +2,13 @@ package kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.pi;
 
 import java.nio.file.Path;
 import java.util.Locale;
+import java.util.Optional;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.AiImplementation;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.AiModelCatalog;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.AiSessionHost;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.AiTypeEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.ExecutablePrompter;
+import kiwi.ingenuity.netbeans.plugin.aicoder.ai.TerminalLaunch;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.events.StatusEvent;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.events.StatusEventTypeEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.pi.settings.PiPluginSettings;
@@ -20,12 +22,11 @@ import kiwi.ingenuity.netbeans.plugin.aicoder.process.events.AiProcessEventListe
 import kiwi.ingenuity.netbeans.plugin.aicoder.utils.StatusMessageUtil;
 
 /**
- * Thin adapter so the generic multi-AI system (AiSession, AiTopComponent, etc.) can use the pi
- * implementation, mirrors {@code ClaudeAiImplementation}'s role. Unlike Claude, pi needs no credential
- * monitor or its own model/usage-fetch machinery — {@link PiModelDiscovery} already discovers models via
- * {@code pi --list-models} and publishes straight into {@link #modelCatalog()} on its own; this class only
- * wires the process manager, session paths, the pi session id used for {@code --session-id}, and the info
- * bar.
+ * Thin adapter so the generic multi-AI system (AiSession, AiTopComponent, etc.) can use the pi implementation, mirrors
+ * {@code ClaudeAiImplementation}'s role. Unlike Claude, pi needs no credential monitor or its own model/usage-fetch
+ * machinery — {@link PiModelDiscovery} already discovers models via {@code pi --list-models} and publishes straight
+ * into {@link #modelCatalog()} on its own; this class only wires the process manager, session paths, the pi session id
+ * used for {@code --session-id}, and the info bar.
  */
 public class PiAiImplementation extends AiImplementation {
 
@@ -47,6 +48,18 @@ public class PiAiImplementation extends AiImplementation {
         return delegate;
     }
 
+    @Override
+    public Optional<String> terminalExecutableName() {
+        return Optional.of("pi");
+    }
+
+    @Override
+    public Optional<TerminalLaunch> terminalLaunch() {
+        String executablePath = PiExecutableLocator.locate();
+        return executablePath == null ? Optional.empty()
+               : terminalExecutableName().map(name -> new TerminalLaunch(name, executablePath, false));
+    }
+
     public String getCurrentModel() {
         if (currentSession != null && currentSession.settings() instanceof AiModelSessionSettings mc && mc.model() != null) {
             return mc.model();
@@ -56,7 +69,7 @@ public class PiAiImplementation extends AiImplementation {
 
     private String effectiveThinkingLevel() {
         if (currentSession != null && currentSession.settings() instanceof PiSessionSettings ps
-            && ps.thinkingLevel() != null && !ps.thinkingLevel().isBlank()) {
+                && ps.thinkingLevel() != null && !ps.thinkingLevel().isBlank()) {
             return ps.thinkingLevel();
         }
         String global = PiPluginSettings.getThinkingLevel();
@@ -91,10 +104,10 @@ public class PiAiImplementation extends AiImplementation {
     }
 
     /**
-     * pi's process spawns lazily on the first {@link #sendPrompt} (see {@code PiAiProcessManager}'s class
-     * javadoc), so — unlike an earlier draft of this method — there is no race to beat: setting these after
-     * {@code delegate.start()} returns, exactly like {@code ClaudeAiImplementation.afterStart()}, is soon
-     * enough, since the first real {@code ensureSession()} call is always well after this method returns.
+     * pi's process spawns lazily on the first {@link #sendPrompt} (see {@code PiAiProcessManager}'s class javadoc), so
+     * — unlike an earlier draft of this method — there is no race to beat: setting these after {@code delegate.start()}
+     * returns, exactly like {@code ClaudeAiImplementation.afterStart()}, is soon enough, since the first real
+     * {@code ensureSession()} call is always well after this method returns.
      */
     @Override
     protected void afterStart() {
@@ -135,14 +148,14 @@ public class PiAiImplementation extends AiImplementation {
     public AiInfoBarExtension createInfoBarExtension(AiSession session, AiSessionHost host) {
         PiSessionSettings settings = session.settings() instanceof PiSessionSettings ps ? ps : null;
         PiAiInfoBarExtension provider = new PiAiInfoBarExtension(settings, delegate.getVersionCheck(),
-                MODEL_CATALOG.getCachedModels());
+                                                                 MODEL_CATALOG.getCachedModels());
         delegate.sessionSnapshot().forEach(provider::onAiProcessImplEvent);
         provider.addListener(new PiInfoBarListener() {
             @Override
             public void onModelChanged(String providerSlashId) {
                 int slash = providerSlashId.indexOf('/');
                 delegate.setModel(slash > 0 ? providerSlashId.substring(0, slash) : "",
-                        slash > 0 ? providerSlashId.substring(slash + 1) : providerSlashId)
+                                  slash > 0 ? providerSlashId.substring(slash + 1) : providerSlashId)
                         .thenRun(() -> {
                             if (currentSession != null && currentSession.settings() instanceof AiModelSessionSettings modelCfg) {
                                 modelCfg.setModel(providerSlashId);
@@ -184,20 +197,20 @@ public class PiAiImplementation extends AiImplementation {
     }
 
     /**
-     * Runs pi's non-turn compact RPC through the shared busy/ready contract. The parser owns the progress
-     * message for automatic and manual compactions; this operation owns the single manual closing status.
+     * Runs pi's non-turn compact RPC through the shared busy/ready contract. The parser owns the progress message for
+     * automatic and manual compactions; this operation owns the single manual closing status.
      */
     private void compact() {
         if (!isRunning() || delegate().isAwaitingCancelResult()
-            || (isBusy() && !delegate().isWorkInFlight())) {
+                || (isBusy() && !delegate().isWorkInFlight())) {
             listener.onAiProcessEvent(new StatusEvent(StatusEventTypeEnum.INFO, "Wait for pi to finish before compacting"));
             return;
         }
         boolean started = delegate.runWork("Compacting conversation…", false,
-                PiTimeoutEnum.COMPACT_RESPONSE_TIMEOUT_MILLIS.millis(),
-                delegate::compactUnlessSessionEnds,
-                ignored -> new StatusEvent(StatusEventTypeEnum.READY, "Conversation compacted."),
-                this::compactFailureStatus);
+                                           PiTimeoutEnum.COMPACT_RESPONSE_TIMEOUT_MILLIS.millis(),
+                                           delegate::compactUnlessSessionEnds,
+                                           ignored -> new StatusEvent(StatusEventTypeEnum.READY, "Conversation compacted."),
+                                           this::compactFailureStatus);
         if (!started) {
             listener.onAiProcessEvent(new StatusEvent(StatusEventTypeEnum.INFO, "Compaction already in progress"));
         }
@@ -214,10 +227,9 @@ public class PiAiImplementation extends AiImplementation {
 
     /**
      * Persists a freshly generated pi session id (minted by {@code PiAiProcessManager.start} when
-     * {@code PiSessionSettings.piSessionId()} was still empty) back into the session's settings, so the NEXT
-     * reopen resumes the same pi conversation instead of minting another id and starting fresh.
-     * {@code start()} cannot do this itself — it has no {@link AiSessionHost} to call
-     * {@code updateSessionSettings} on.
+     * {@code PiSessionSettings.piSessionId()} was still empty) back into the session's settings, so the NEXT reopen
+     * resumes the same pi conversation instead of minting another id and starting fresh. {@code start()} cannot do this
+     * itself — it has no {@link AiSessionHost} to call {@code updateSessionSettings} on.
      */
     @Override
     public void onStarted(AiSessionHost session) {

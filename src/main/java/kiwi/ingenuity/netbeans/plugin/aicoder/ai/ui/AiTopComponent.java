@@ -57,6 +57,7 @@ import kiwi.ingenuity.netbeans.plugin.aicoder.ai.AiTypeRegistry;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.ContextProvider;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.ExecutablePrompter;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.MailDeliveryTimingEnum;
+import kiwi.ingenuity.netbeans.plugin.aicoder.ai.TerminalLaunch;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.events.AiInboxMessageEvent;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.events.AiPropertyEvent;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.events.AiPropertyListener;
@@ -116,6 +117,7 @@ import kiwi.ingenuity.netbeans.plugin.aicoder.serialization.SessionPersistenceMa
 import kiwi.ingenuity.netbeans.plugin.aicoder.ui.DialogPlacement;
 import kiwi.ingenuity.netbeans.plugin.aicoder.utils.NotificationUtil;
 import kiwi.ingenuity.netbeans.plugin.aicoder.utils.ProjectPathUtil;
+import kiwi.ingenuity.netbeans.plugin.aicoder.utils.TerminalUtil;
 import org.netbeans.api.project.Project;
 import org.netbeans.api.project.ui.OpenProjects;
 import org.openide.filesystems.FileObject;
@@ -630,6 +632,11 @@ public final class AiTopComponent extends TopComponent implements AiProcessEvent
         configButton.setToolTipText("Session configuration");
         configButton.setMargin(new Insets(0, 4, 0, 4));
         configButton.addActionListener(e -> openSessionConfig());
+
+        JButton terminalButton = new JButton(">_");
+        terminalButton.setMargin(new Insets(0, 4, 0, 4));
+        terminalButton.setFocusable(false);
+        terminalButton.addActionListener(e -> launchInTerminal());
         // On by default for a freshly opened session, which is what it has always done — the
         // toggle exists to let the user stop it, not to change the starting behaviour.
         //
@@ -672,6 +679,10 @@ public final class AiTopComponent extends TopComponent implements AiProcessEvent
         add(splitPane, BorderLayout.CENTER);
 
         this.aiBackend = createBackend();
+        aiBackend.terminalExecutableName().ifPresent(name -> {
+            terminalButton.setToolTipText("Launch new " + name + " session in terminal");
+            buttonStrip.add(terminalButton, BorderLayout.CENTER);
+        });
         installInfoBarExtension();
 
         session.setAiSessionCallback(new AiSessionCallback() {
@@ -2692,6 +2703,43 @@ public final class AiTopComponent extends TopComponent implements AiProcessEvent
                        : contextProvider != null ? contextProvider.resolveWorkingDirectory()
                          : new File(System.getProperty("user.home"));
         return workDir != null ? workDir : new File(System.getProperty("user.home"));
+    }
+
+    private void launchInTerminal() {
+        String executableName = aiBackend == null ? null : aiBackend.terminalExecutableName().orElse(null);
+        if (executableName == null) {
+            return;
+        }
+        int choice = DialogPlacement.showConfirmDialog(this,
+                                                       "Open '" + executableName + "' executable in new terminal window?",
+                                                       "Launch terminal", JOptionPane.YES_NO_OPTION, JOptionPane.QUESTION_MESSAGE);
+        if (choice != JOptionPane.YES_OPTION) {
+            return;
+        }
+
+        RequestProcessor.getDefault().execute(() -> {
+            TerminalLaunch launch = aiBackend == null ? null : aiBackend.terminalLaunch().orElse(null);
+            if (launch == null) {
+                String message = "The '" + executableName + "' executable could not be located. Set it in Tools > "
+                        + "Options > AI Coder.";
+                SwingUtilities.invokeLater(() -> DialogPlacement.showMessageDialog(this, message, "Launch terminal",
+                                                                                   JOptionPane.ERROR_MESSAGE));
+                return;
+            }
+
+            File workDir = resolveWorkDir();
+            List<File> projectDirs = contextProvider != null ? contextProvider.getAllOpenProjectDirs() : List.of();
+            try {
+                TerminalUtil.openInTerminal(workDir, launch.command(workDir, projectDirs));
+            }
+            catch (IOException e) {
+                String detail = e.getMessage();
+                String message = detail == null || detail.isBlank()
+                                 ? "Could not open a terminal window." : "Could not open a terminal window: " + detail;
+                SwingUtilities.invokeLater(() -> DialogPlacement.showMessageDialog(this, message, "Launch terminal",
+                                                                                   JOptionPane.ERROR_MESSAGE));
+            }
+        });
     }
 
     public AiSession getSession() {

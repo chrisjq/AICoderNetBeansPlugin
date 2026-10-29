@@ -352,6 +352,14 @@ public final class PluginSettings {
         prefs().putBoolean(PluginSettingsKeyEnum.LOG_TOOL_USE.key(), v);
     }
 
+    public static String getTerminalCommand() {
+        return getString(PluginSettingsKeyEnum.TERMINAL_COMMAND);
+    }
+
+    public static void setTerminalCommand(String value) {
+        prefs().put(PluginSettingsKeyEnum.TERMINAL_COMMAND.key(), value == null ? "" : value.trim());
+    }
+
     // ---- Inbox lifecycle ----
     public static int getInboxRetentionMinutes() {
         return getInt(PluginSettingsKeyEnum.INBOX_RETENTION_MINUTES);

@@ -2,12 +2,14 @@ package kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.grok;
 
 import java.util.Arrays;
 import java.util.List;
+import java.util.Optional;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.AiImplementation;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.AiModelCatalog;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.AiSessionHost;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.AiTypeEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.AiTypePropertyBus;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.ExecutablePrompter;
+import kiwi.ingenuity.netbeans.plugin.aicoder.ai.TerminalLaunch;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.events.AvailableModelsEvent;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.events.StatusEvent;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.events.StatusEventTypeEnum;
@@ -22,10 +24,10 @@ import kiwi.ingenuity.netbeans.plugin.aicoder.process.events.AiProcessEventListe
 import kiwi.ingenuity.netbeans.plugin.aicoder.utils.StatusMessageUtil;
 
 /**
- * Thin adapter so the generic multi-AI system (AiSession, AiTopComponent, etc.) can use the Grok (xAI)
- * implementation. Drives the {@code grok} CLI (https://docs.x.ai/build/cli) in headless mode via
- * {@link GrokAiProcessManager}, reusing the shared MCP tool server for IDE introspection, edits, builds, git,
- * etc. — the same architecture as {@code ClaudeAiImplementation}.
+ * Thin adapter so the generic multi-AI system (AiSession, AiTopComponent, etc.) can use the Grok (xAI) implementation.
+ * Drives the {@code grok} CLI (https://docs.x.ai/build/cli) in headless mode via {@link GrokAiProcessManager}, reusing
+ * the shared MCP tool server for IDE introspection, edits, builds, git, etc. — the same architecture as
+ * {@code ClaudeAiImplementation}.
  */
 public class GrokAiImplementation extends AiImplementation {
 
@@ -39,34 +41,33 @@ public class GrokAiImplementation extends AiImplementation {
     }
 
     /**
-     * Discover the Grok model list once per IDE run via {@code grok models}, then broadcast it to every open
-     * Grok session's info bar via {@link AiTypePropertyBus} — mirroring the Claude/Copilot flow. A session
-     * opened after discovery already completed replays the cached list immediately.
+     * Discover the Grok model list once per IDE run via {@code grok models}, then broadcast it to every open Grok
+     * session's info bar via {@link AiTypePropertyBus} — mirroring the Claude/Copilot flow. A session opened after
+     * discovery already completed replays the cached list immediately.
      */
     public static void triggerModelDiscovery() {
         if (!MODEL_CATALOG.beginRefresh()) {
             return;
         }
         GrokModelDiscovery.discoverAsync(GrokExecutableLocator.locate(), list -> {
-            if (list != null && !list.isEmpty()) {
-                GrokPluginSettings.setDiscoveredModels(list.toArray(String[]::new));
-            }
-            MODEL_CATALOG.publish(list);
-        });
+                                     if (list != null && !list.isEmpty()) {
+                                         GrokPluginSettings.setDiscoveredModels(list.toArray(String[]::new));
+                                     }
+                                     MODEL_CATALOG.publish(list);
+                                 });
     }
 
     private final GrokAiProcessManager delegate;
     /**
-     * Retained so {@link #clearInvalidPersistedReasoningEffort} can persist a clear even when it fires from
-     * deep in the process manager's send path (a background thread, well after
-     * {@link #createInfoBarExtension} returned) — mirrors {@code GithubCopilotAiImplementation}'s identical
-     * {@code sessionHost} field, kept for the same reason (a write-back path needed outside
-     * {@code createInfoBarExtension}'s own call).
+     * Retained so {@link #clearInvalidPersistedReasoningEffort} can persist a clear even when it fires from deep in the
+     * process manager's send path (a background thread, well after {@link #createInfoBarExtension} returned) — mirrors
+     * {@code GithubCopilotAiImplementation}'s identical {@code sessionHost} field, kept for the same reason (a
+     * write-back path needed outside {@code createInfoBarExtension}'s own call).
      */
     private volatile AiSessionHost sessionHost;
     /**
-     * Makes a pick (stored in the manager and persisted) and the clearing of a rejected level (check, then
-     * persist) atomic with respect to each other, so a clear can never wipe a pick made while it was running.
+     * Makes a pick (stored in the manager and persisted) and the clearing of a rejected level (check, then persist)
+     * atomic with respect to each other, so a clear can never wipe a pick made while it was running.
      */
     private final Object persistedEffortLock = new Object();
 
@@ -83,6 +84,18 @@ public class GrokAiImplementation extends AiImplementation {
     @Override
     protected GrokAiProcessManager delegate() {
         return delegate;
+    }
+
+    @Override
+    public Optional<String> terminalExecutableName() {
+        return Optional.of("grok");
+    }
+
+    @Override
+    public Optional<TerminalLaunch> terminalLaunch() {
+        String executablePath = GrokExecutableLocator.locate();
+        return executablePath == null ? Optional.empty()
+               : terminalExecutableName().map(name -> new TerminalLaunch(name, executablePath, true));
     }
 
     public String getCurrentModel() {
@@ -150,10 +163,9 @@ public class GrokAiImplementation extends AiImplementation {
     }
 
     /**
-     * The effective reasoning effort (session wins over global default) plus which scope it came from — the
-     * two are treated differently when the value turns out to be unsupported by the model: only a
-     * session-sourced value is ever cleared, never the global default. {@code value()} is {@code null} when
-     * neither scope has one set.
+     * The effective reasoning effort (session wins over global default) plus which scope it came from — the two are
+     * treated differently when the value turns out to be unsupported by the model: only a session-sourced value is ever
+     * cleared, never the global default. {@code value()} is {@code null} when neither scope has one set.
      */
     private record EffectiveReasoningEffort(String value, boolean fromSession) {
 
@@ -161,7 +173,7 @@ public class GrokAiImplementation extends AiImplementation {
 
     private EffectiveReasoningEffort effectiveReasoningEffort() {
         if (currentSession != null && currentSession.settings() instanceof GrokSessionSettings gs
-            && gs.reasoningEffort() != null && !gs.reasoningEffort().isBlank()) {
+                && gs.reasoningEffort() != null && !gs.reasoningEffort().isBlank()) {
             return new EffectiveReasoningEffort(gs.reasoningEffort(), true);
         }
         String global = GrokPluginSettings.getReasoningEffort();
@@ -170,10 +182,10 @@ public class GrokAiImplementation extends AiImplementation {
 
     /**
      * Called back by {@link GrokAiProcessManager#buildReasoningEffortArgs} only when it clears an unsupported
-     * SESSION-sourced value from its own in-memory field (never for a global-sourced one — the global default
-     * is never modified automatically), so the PERSISTED session setting is also cleared — otherwise the next
-     * session start re-reads the same stale value from disk and re-triggers the same INFO event forever.
-     * Package-private for direct unit testing.
+     * SESSION-sourced value from its own in-memory field (never for a global-sourced one — the global default is never
+     * modified automatically), so the PERSISTED session setting is also cleared — otherwise the next session start
+     * re-reads the same stale value from disk and re-triggers the same INFO event forever. Package-private for direct
+     * unit testing.
      */
     void clearInvalidPersistedReasoningEffort() {
         synchronized (persistedEffortLock) {
@@ -228,7 +240,7 @@ public class GrokAiImplementation extends AiImplementation {
         // by CodexAiImplementationTest's createInfoBarExtension_modelChangeListenerHandlesNullHostAndSession),
         // exactly like initialModel above uses session.settings() rather than currentSession for the same reason.
         String initialEffort = session.settings() instanceof GrokSessionSettings initialGrokCfg && initialGrokCfg.reasoningEffort() != null
-                               && !initialGrokCfg.reasoningEffort().isBlank()
+                && !initialGrokCfg.reasoningEffort().isBlank()
                                ? initialGrokCfg.reasoningEffort() : GrokPluginSettings.getReasoningEffort();
         provider.setSelectedReasoningEffort((initialEffort != null && !initialEffort.isBlank()) ? initialEffort : null);
         provider.addReasoningEffortChangeListener(e -> {
@@ -268,18 +280,17 @@ public class GrokAiImplementation extends AiImplementation {
     }
 
     /**
-     * Run after every {@code delegate.start()}: hands the manager the effective reasoning effort, which it
-     * sends once the ACP session is established, and — when the session settings hold a stored ACP session id
-     * — switches the freshly started manager to resume that session rather than create a new one, so an
-     * in-place restart or reopen of an existing session (IDE restart, reopening the chat tab) continues the
-     * same conversation.
+     * Run after every {@code delegate.start()}: hands the manager the effective reasoning effort, which it sends once
+     * the ACP session is established, and — when the session settings hold a stored ACP session id — switches the
+     * freshly started manager to resume that session rather than create a new one, so an in-place restart or reopen of
+     * an existing session (IDE restart, reopening the chat tab) continues the same conversation.
      */
     @Override
     protected void afterStart() {
         EffectiveReasoningEffort effort = effectiveReasoningEffort();
         delegate.configureReasoningEffort(effort.value(), effort.fromSession());
         if (currentSession != null && currentSession.settings() instanceof GrokSessionSettings gs
-            && gs.acpSessionId() != null && !gs.acpSessionId().isBlank()) {
+                && gs.acpSessionId() != null && !gs.acpSessionId().isBlank()) {
             delegate.resumeSession(gs.acpSessionId());
         }
     }

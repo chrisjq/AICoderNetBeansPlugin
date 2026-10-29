@@ -4,6 +4,7 @@ import com.google.gson.JsonArray;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 import java.nio.file.Path;
+import java.util.Optional;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 import kiwi.ingenuity.netbeans.plugin.aicoder.PluginSettings;
@@ -12,6 +13,7 @@ import kiwi.ingenuity.netbeans.plugin.aicoder.ai.AiModelCatalog;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.AiSessionHost;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.AiTypeEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.ExecutablePrompter;
+import kiwi.ingenuity.netbeans.plugin.aicoder.ai.TerminalLaunch;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.acp.AcpJsonKeyEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.events.StatusEvent;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.events.StatusEventTypeEnum;
@@ -33,9 +35,8 @@ public class OpenCodeAiImplementation extends AiImplementation {
     }
 
     /**
-     * OpenCode's model list only becomes available after a successful ACP {@code session/new} handshake, via
-     * the {@code configOptions} array. There is nothing to discover before a session exists; models are
-     * cached in
+     * OpenCode's model list only becomes available after a successful ACP {@code session/new} handshake, via the
+     * {@code configOptions} array. There is nothing to discover before a session exists; models are cached in
      * {@link kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.opencode.settings.OpenCodePluginSettings#setDiscoveredModels}
      * when the first {@code session/new} response arrives.
      */
@@ -53,6 +54,18 @@ public class OpenCodeAiImplementation extends AiImplementation {
     @Override
     protected OpenCodeAiProcessManager delegate() {
         return delegate;
+    }
+
+    @Override
+    public Optional<String> terminalExecutableName() {
+        return Optional.of("opencode");
+    }
+
+    @Override
+    public Optional<TerminalLaunch> terminalLaunch() {
+        String executablePath = OpenCodeExecutableLocator.locate();
+        return executablePath == null ? Optional.empty()
+               : terminalExecutableName().map(name -> new TerminalLaunch(name, executablePath, false));
     }
 
     @Override
@@ -76,27 +89,26 @@ public class OpenCodeAiImplementation extends AiImplementation {
         }
         else {
             listener.onAiProcessEvent(new StatusEvent(StatusEventTypeEnum.FAILED,
-                    StatusMessageUtil.formatExecutableNotFound(null)));
+                                                      StatusMessageUtil.formatExecutableNotFound(null)));
         }
     }
 
     /**
-     * Resolves the model to start a session with: an explicit argument first, then the session's own choice,
-     * then the global default. Extracted from {@link #startWithDiscovery} so it can be tested without going
-     * through {@link OpenCodeExecutableLocator#locate}, which depends on what is actually installed on the
-     * machine running the tests.
+     * Resolves the model to start a session with: an explicit argument first, then the session's own choice, then the
+     * global default. Extracted from {@link #startWithDiscovery} so it can be tested without going through
+     * {@link OpenCodeExecutableLocator#locate}, which depends on what is actually installed on the machine running the
+     * tests.
      *
      * <p>
-     * AiTopComponent always calls {@code startWithDiscovery(null)} — the session-picker flow applies the
-     * chosen model to session settings, not through this argument — so falling straight to the global default
-     * here, as this used to do, silently ran every OpenCode session on
-     * {@code OpenCodePluginSettings.getModel()} regardless of what the user picked per session. Session
-     * settings must be checked before the global default, matching Claude/Ollama's pattern.
+     * AiTopComponent always calls {@code startWithDiscovery(null)} — the session-picker flow applies the chosen model
+     * to session settings, not through this argument — so falling straight to the global default here, as this used to
+     * do, silently ran every OpenCode session on {@code OpenCodePluginSettings.getModel()} regardless of what the user
+     * picked per session. Session settings must be checked before the global default, matching Claude/Ollama's pattern.
      */
     String resolveStartupModel(String model) {
         String sessionModel = currentSession != null
-                              && currentSession.settings() instanceof OpenCodeSessionSettings s
-                              && s.model() != null && !s.model().isBlank()
+                && currentSession.settings() instanceof OpenCodeSessionSettings s
+                && s.model() != null && !s.model().isBlank()
                               ? s.model() : null;
         String effectiveModel = (model != null && !model.isBlank())
                                 ? model
@@ -133,7 +145,7 @@ public class OpenCodeAiImplementation extends AiImplementation {
         // persist in OpenCodeSessionSettings.acpSessionId. Ignore the argument and
         // always resume from the stored ACP id (or not at all).
         String stored = currentSession != null
-                        && currentSession.settings() instanceof OpenCodeSessionSettings
+                && currentSession.settings() instanceof OpenCodeSessionSettings
                         ? ((OpenCodeSessionSettings) currentSession.settings()).acpSessionId()
                         : null;
         if (stored != null && !stored.isBlank()) {
@@ -212,9 +224,9 @@ public class OpenCodeAiImplementation extends AiImplementation {
             LOG.log(Level.INFO,
                     "OpenCode createInfoBarExtension [{0}]: session#={1} settings#={2} model={3}",
                     new Object[]{session != null ? session.id() : null,
-                                 session != null ? System.identityHashCode(session) : null,
-                                 s != null ? System.identityHashCode(s) : null,
-                                 s != null ? s.model() : null});
+                        session != null ? System.identityHashCode(session) : null,
+                        s != null ? System.identityHashCode(s) : null,
+                        s != null ? s.model() : null});
         }
         return new OpenCodeAiInfoBarExtension(delegate().configOptions(), s, this::handleInfoBarConfigChange, this::compact);
     }
@@ -248,7 +260,7 @@ public class OpenCodeAiImplementation extends AiImplementation {
                 }
                 String detail = error.getMessage() == null ? error.getClass().getSimpleName() : error.getMessage();
                 listener.onAiProcessEvent(new StatusEvent(StatusEventTypeEnum.INFO,
-                        "OpenCode configuration change failed: " + detail));
+                                                          "OpenCode configuration change failed: " + detail));
                 return null;
             });
         }

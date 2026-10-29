@@ -224,7 +224,8 @@ public enum PluginSettingsKeyEnum {
      * binds a model making endless productive calls. Configurable mainly so tests can lower it: at the production
      * default a runaway takes ~500 requests to stop, which is far longer than a unit test should run.
      */
-    OLLAMA_MAX_TOOL_ITERATIONS("ai.ollama.maxToolIterations", 500);
+    OLLAMA_MAX_TOOL_ITERATIONS("ai.ollama.maxToolIterations", 500),
+    TERMINAL_COMMAND("ai.terminalCommand", "");
 
     public static PluginSettingsKeyEnum forWebRequestAccessOption(WebRequestAccessOptionEnum option) {
         return switch (option) {

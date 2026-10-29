@@ -1,6 +1,7 @@
 package kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.codex;
 
 import java.nio.file.Path;
+import java.util.Optional;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 import kiwi.ingenuity.netbeans.plugin.aicoder.PluginSettings;
@@ -10,6 +11,7 @@ import kiwi.ingenuity.netbeans.plugin.aicoder.ai.AiSessionHost;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.AiTypeEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.AiTypePropertyBus;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.ExecutablePrompter;
+import kiwi.ingenuity.netbeans.plugin.aicoder.ai.TerminalLaunch;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.events.StatusEvent;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.events.StatusEventTypeEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.codex.events.CodexRateLimitEvent;
@@ -50,6 +52,18 @@ public class CodexAiImplementation extends AiImplementation {
     }
 
     @Override
+    public Optional<String> terminalExecutableName() {
+        return Optional.of("codex");
+    }
+
+    @Override
+    public Optional<TerminalLaunch> terminalLaunch() {
+        String executablePath = CodexExecutableLocator.locate();
+        return executablePath == null ? Optional.empty()
+               : terminalExecutableName().map(name -> new TerminalLaunch(name, executablePath, true));
+    }
+
+    @Override
     public void startWithDiscovery(String model) {
         String effectiveModel = resolveStartupModel(model);
         String execPath = CodexExecutableLocator.locate();
@@ -70,22 +84,21 @@ public class CodexAiImplementation extends AiImplementation {
         }
         else {
             listener.onAiProcessEvent(new StatusEvent(StatusEventTypeEnum.FAILED,
-                    StatusMessageUtil.formatExecutableNotFound(null)));
+                                                      StatusMessageUtil.formatExecutableNotFound(null)));
         }
     }
 
     /**
-     * Resolves the model to start a session with: an explicit argument first, then the session's own choice,
-     * then the global default. Mirrors OpenCodeAiImplementation.resolveStartupModel — that method exists
-     * because an earlier version fell straight to the global default here, silently running every session on
-     * it regardless of what the user picked per session. AiTopComponent always calls
-     * {@code startWithDiscovery(null)}, so session settings must be checked before the global default from
-     * the start, not discovered as a bug later.
+     * Resolves the model to start a session with: an explicit argument first, then the session's own choice, then the
+     * global default. Mirrors OpenCodeAiImplementation.resolveStartupModel — that method exists because an earlier
+     * version fell straight to the global default here, silently running every session on it regardless of what the
+     * user picked per session. AiTopComponent always calls {@code startWithDiscovery(null)}, so session settings must
+     * be checked before the global default from the start, not discovered as a bug later.
      */
     String resolveStartupModel(String model) {
         String sessionModel = currentSession != null
-                              && currentSession.settings() instanceof CodexSessionSettings s
-                              && s.model() != null && !s.model().isBlank()
+                && currentSession.settings() instanceof CodexSessionSettings s
+                && s.model() != null && !s.model().isBlank()
                               ? s.model() : null;
         String effectiveModel = (model != null && !model.isBlank())
                                 ? model
@@ -122,7 +135,7 @@ public class CodexAiImplementation extends AiImplementation {
         // CodexSessionSettings.threadId(). Ignore the argument and always resume
         // from the stored thread id (or not at all).
         String stored = currentSession != null
-                        && currentSession.settings() instanceof CodexSessionSettings
+                && currentSession.settings() instanceof CodexSessionSettings
                         ? ((CodexSessionSettings) currentSession.settings()).threadId()
                         : null;
         if (stored != null && !stored.isBlank()) {
@@ -153,11 +166,11 @@ public class CodexAiImplementation extends AiImplementation {
     }
 
     /**
-     * Seeds the combo from the SESSION's own model (not {@code CodexPluginSettings.getModel()}'s global
-     * default) — the trap this project already hit once for OpenCode's info bar. Model changes flow back
-     * through {@code setModel()} (session-scoped, per its own doc) and {@code host.updateSessionSettings()},
-     * never {@code AiTypePropertyBus}, which is keyed by AI type and would reset every other Codex session's
-     * dropdown (see {@link CodexAiInfoBarExtension}'s own javadoc on this).
+     * Seeds the combo from the SESSION's own model (not {@code CodexPluginSettings.getModel()}'s global default) — the
+     * trap this project already hit once for OpenCode's info bar. Model changes flow back through {@code setModel()}
+     * (session-scoped, per its own doc) and {@code host.updateSessionSettings()}, never {@code AiTypePropertyBus},
+     * which is keyed by AI type and would reset every other Codex session's dropdown (see
+     * {@link CodexAiInfoBarExtension}'s own javadoc on this).
      */
     @Override
     public AiInfoBarExtension createInfoBarExtension(AiSession session, AiSessionHost host) {
@@ -173,7 +186,7 @@ public class CodexAiImplementation extends AiImplementation {
         });
         ext.addEffortChangeListener(e -> {
             if (host != null && currentSession != null
-                && currentSession.settings() instanceof CodexSessionSettings s) {
+                    && currentSession.settings() instanceof CodexSessionSettings s) {
                 s.setEffort(ext.getSelectedEffort());
                 host.updateSessionSettings(s);
             }
@@ -187,29 +200,29 @@ public class CodexAiImplementation extends AiImplementation {
     }
 
     /**
-     * The Compact button's handler. The bar disables the button while busy, so the guards here only cover the
-     * cases the bar cannot know about: no conversation yet (Codex spawns lazily on the first prompt) and a
-     * compaction the core started elsewhere.
+     * The Compact button's handler. The bar disables the button while busy, so the guards here only cover the cases the
+     * bar cannot know about: no conversation yet (Codex spawns lazily on the first prompt) and a compaction the core
+     * started elsewhere.
      * <p>
-     * Known limitation: a conversation restored after an IDE restart is only resumed ({@code thread/resume})
-     * on its first prompt, so until then {@code threadId()} is null and Compact refuses with "send a message
-     * first" even though there is history to compact. Compacting it would mean spawning and resuming here
-     * first; deliberately left as is.
+     * Known limitation: a conversation restored after an IDE restart is only resumed ({@code thread/resume}) on its
+     * first prompt, so until then {@code threadId()} is null and Compact refuses with "send a message first" even
+     * though there is history to compact. Compacting it would mean spawning and resuming here first; deliberately left
+     * as is.
      */
     void compact() {
         if (delegate.threadId() == null) {
             listener.onAiProcessEvent(new StatusEvent(StatusEventTypeEnum.INFO,
-                    "Nothing to compact yet — send a message first"));
+                                                      "Nothing to compact yet — send a message first"));
             return;
         }
         if (delegate.isProcessing()) {
             listener.onAiProcessEvent(new StatusEvent(StatusEventTypeEnum.INFO,
-                    "Wait for Codex to finish before compacting"));
+                                                      "Wait for Codex to finish before compacting"));
             return;
         }
         if (delegate.isStoppedTurnWindingDown()) {
             listener.onAiProcessEvent(new StatusEvent(StatusEventTypeEnum.INFO,
-                    "Wait for Codex to finish the turn you stopped, then compact again"));
+                                                      "Wait for Codex to finish the turn you stopped, then compact again"));
             return;
         }
         if (!delegate.compact()) {

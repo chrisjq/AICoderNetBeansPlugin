@@ -22,8 +22,11 @@ import javax.swing.JPanel;
 import javax.swing.JScrollPane;
 import javax.swing.JSpinner;
 import javax.swing.JTabbedPane;
+import javax.swing.JTextField;
 import javax.swing.Scrollable;
 import javax.swing.SpinnerNumberModel;
+import javax.swing.event.DocumentEvent;
+import javax.swing.event.DocumentListener;
 import kiwi.ingenuity.netbeans.plugin.aicoder.PluginSettings;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.AiTypeEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ui.ScrollablePanel;
@@ -72,6 +75,7 @@ public class PluginSettingsPanel extends JPanel implements Scrollable {
     private final JSpinner mcpPortSpinner;
     private final JSpinner diffContextSpinner;
     private final JSpinner fontSizeSpinner;
+    private final JTextField terminalCommandField;
     private final JSpinner inboxRetentionSpinner;
     private final JSpinner inboxMaxSizeSpinner;
 
@@ -118,6 +122,17 @@ public class PluginSettingsPanel extends JPanel implements Scrollable {
         saveSessionOnCloseIfTickedCheck = new JCheckBox("Save Session by default When Closing Tab (If History is Saved) - Don't ask");
         addTo(pluginGroup, saveSessionOnCloseIfTickedCheck, pg);
         pg.gridwidth = 1;
+
+        pg.gridx = 0;
+        pg.gridy = 2;
+        pg.weightx = 0;
+        JLabel terminalLabel = new JLabel("Terminal command:");
+        terminalCommandField = new JTextField();
+        terminalCommandField.setToolTipText("Leave empty to use the system's default terminal. Use {dir} for the working folder and {command} for the AI command, e.g. konsole --workdir {dir} -e {command}");
+        addTo(pluginGroup, terminalLabel, pg);
+        pg.gridx = 1;
+        pg.weightx = 1;
+        addTo(pluginGroup, terminalCommandField, pg);
 
         pg.gridx = 0;
         pg.gridy = 3;
@@ -264,6 +279,22 @@ public class PluginSettingsPanel extends JPanel implements Scrollable {
         mcpPortSpinner.addChangeListener(e -> fireChanged());
         diffContextSpinner.addChangeListener(e -> fireChanged());
         fontSizeSpinner.addChangeListener(e -> fireChanged());
+        terminalCommandField.getDocument().addDocumentListener(new DocumentListener() {
+            @Override
+            public void insertUpdate(DocumentEvent e) {
+                fireChanged();
+            }
+
+            @Override
+            public void removeUpdate(DocumentEvent e) {
+                fireChanged();
+            }
+
+            @Override
+            public void changedUpdate(DocumentEvent e) {
+                fireChanged();
+            }
+        });
         sessionConfigPanel.addChangeListener(e -> fireChanged());
         inboxRetentionSpinner.addChangeListener(e -> fireChanged());
         inboxMaxSizeSpinner.addChangeListener(e -> fireChanged());
@@ -304,6 +335,7 @@ public class PluginSettingsPanel extends JPanel implements Scrollable {
         mcpPortSpinner.setValue(PluginSettings.getHookServerPort());
         diffContextSpinner.setValue(PluginSettings.getDiffContextLines());
         fontSizeSpinner.setValue(PluginSettings.getChatFontSize());
+        terminalCommandField.setText(PluginSettings.getTerminalCommand());
         inboxRetentionSpinner.setValue(PluginSettings.getInboxRetentionMinutes());
         inboxMaxSizeSpinner.setValue(PluginSettings.getInboxMaxSize());
         for (SettingsTab tab : aiSettingsTabs) {
@@ -331,6 +363,7 @@ public class PluginSettingsPanel extends JPanel implements Scrollable {
         PluginSettings.setHookServerPort((Integer) mcpPortSpinner.getValue());
         PluginSettings.setDiffContextLines((Integer) diffContextSpinner.getValue());
         PluginSettings.setChatFontSize((Integer) fontSizeSpinner.getValue());
+        PluginSettings.setTerminalCommand(terminalCommandField.getText());
         PluginSettings.setInboxRetentionMinutes((Integer) inboxRetentionSpinner.getValue());
         PluginSettings.setInboxMaxSize((Integer) inboxMaxSizeSpinner.getValue());
         for (SettingsTab tab : aiSettingsTabs) {

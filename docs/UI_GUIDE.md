@@ -47,7 +47,7 @@ The info bar above the input shows:
 - **Auto-Accept** ([Change review](CHANGE_REVIEW.md#auto-accept)) and **Save** (keep the chat history);
 - **■ Stop** while a turn is in flight, which cancels the current response. It is hidden when there is nothing to cancel.
 
-Above the Send button, the **⬇** toggle controls auto-scrolling. Auto-scroll is set per tab and is not remembered between IDE restarts.
+Above the Send button, the **>_** button (for locally installed CLI backends) opens a new session in your terminal, and the **⬇** toggle controls auto-scrolling. Auto-scroll is set per tab and is not remembered between IDE restarts.
 
 - On when a session opens.
 - Off holds your position while new assistant text, notices and inbox notifications arrive.
