@@ -11,6 +11,7 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.server.McpToolInvoker;
+import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.providers.netbeans.FileUtils;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
@@ -29,9 +30,13 @@ class LockManagerFileLockTest {
         return "/tmp/lock-test-" + UUID.randomUUID() + ".txt";
     }
 
+    private static String lockKey(String path) {
+        return FileUtils.normaliseLockPaths(List.of(path)).iterator().next();
+    }
+
     /**
-     * A contended file-lock attempt waits out the full file-lock wait before refusing; shorten it so a test
-     * asserting the refusal doesn't spend that whole wait.
+     * A contended file-lock attempt waits out the full file-lock wait before refusing; shorten it so a test asserting
+     * the refusal doesn't spend that whole wait.
      */
     private static boolean tryContendedFileLock(LockManager lm, String sessionId, String file) {
         LockManager.waitTimeoutOverrideMillisForTests = 50L;
@@ -62,12 +67,13 @@ class LockManagerFileLockTest {
         String file = uniquePath();
 
         assertTrue(lm.acquireFileLock("sessionA", file));
+        String key = lockKey(file);
         assertFalse(tryContendedFileLock(lm, "sessionB", file));
 
-        lm.releaseFileLock("sessionA", file);
+        lm.releaseFileLock("sessionA", key);
 
         assertTrue(lm.acquireFileLock("sessionB", file));
-        lm.releaseFileLock("sessionB", file);
+        lm.releaseFileLock("sessionB", key);
     }
 
     @Test
@@ -96,10 +102,10 @@ class LockManagerFileLockTest {
 
         assertNull(lm.getFileLockHolder(file), "one release must fully clear the path");
         assertEquals(0, lm.getAllActiveLocks().stream()
-                .filter(l -> "sessionA".equals(l.getSessionId())
+                     .filter(l -> "sessionA".equals(l.getSessionId())
                              && l.getLockedPaths().contains(file))
-                .count(),
-                "the superseded lock object must be retired from session tracking");
+                     .count(),
+                     "the superseded lock object must be retired from session tracking");
     }
 
     /**
@@ -113,21 +119,23 @@ class LockManagerFileLockTest {
 
         assertTrue(lm.acquireFileLocks("sessionM", Set.of(f1, f2)));
         assertTrue(lm.acquireFileLocks("sessionM", Set.of(f1)));
+        String key1 = lockKey(f1);
+        String key2 = lockKey(f2);
 
-        lm.releaseFileLock("sessionM", f1);
+        lm.releaseFileLock("sessionM", key1);
 
-        assertNull(lm.getFileLockHolder(f1), "superseding lock's path is released");
-        assertEquals("sessionM", lm.getFileLockHolder(f2),
-                "the original multi-path lock must still guard the untouched path");
+        assertNull(lm.getFileLockHolder(key1), "superseding lock's path is released");
+        assertEquals("sessionM", lm.getFileLockHolder(key2),
+                     "the original multi-path lock must still guard the untouched path");
 
         assertTrue(lm.acquireFileLock("sessionB", f1));
         assertFalse(tryContendedFileLock(lm, "sessionB", f2));
 
-        lm.releaseFileLock("sessionB", f1);
-        lm.releaseFileLock("sessionM", f2);
+        lm.releaseFileLock("sessionB", key1);
+        lm.releaseFileLock("sessionM", key2);
 
         assertTrue(lm.acquireFileLock("sessionB", f2), "nothing may leak after the last release");
-        lm.releaseFileLock("sessionB", f2);
+        lm.releaseFileLock("sessionB", key2);
     }
 
     @Test
@@ -188,8 +196,8 @@ class LockManagerFileLockTest {
     }
 
     /**
-     * BigP_1 n1, direction 1: a read must be blocked by a directory lock covering its path, the same way a
-     * write already is.
+     * BigP_1 n1, direction 1: a read must be blocked by a directory lock covering its path, the same way a write
+     * already is.
      */
     @Test
     void readUnderAnActiveDirectoryLockIsContended() {
@@ -202,7 +210,7 @@ class LockManagerFileLockTest {
             LockManager.waitTimeoutOverrideMillisForTests = 50L;
             try {
                 assertNull(lm.acquireFileReadLocks("reader", List.of(file), null),
-                        "a read under an active directory lock must be contended, not silently allowed");
+                           "a read under an active directory lock must be contended, not silently allowed");
             }
             finally {
                 LockManager.waitTimeoutOverrideMillisForTests = null;
@@ -228,7 +236,7 @@ class LockManagerFileLockTest {
             LockManager.waitTimeoutOverrideMillisForTests = 50L;
             try {
                 assertFalse(lm.acquireDirectoryLock("dir-holder", dir),
-                        "a directory lock must wait out an active read under it, not silently proceed");
+                            "a directory lock must wait out an active read under it, not silently proceed");
             }
             finally {
                 LockManager.waitTimeoutOverrideMillisForTests = null;
@@ -240,9 +248,9 @@ class LockManagerFileLockTest {
     }
 
     /**
-     * Cosmetic fix: a write refused because readers hold the path used to echo the NORMALISED key back in the
-     * message, which can differ from what the caller actually passed (here, a symlink alias resolves to a
-     * different real path). The message must show the caller's own spelling.
+     * Cosmetic fix: a write refused because readers hold the path used to echo the NORMALISED key back in the message,
+     * which can differ from what the caller actually passed (here, a symlink alias resolves to a different real path).
+     * The message must show the caller's own spelling.
      */
     @Test
     void writeRefusalByReadersShowsTheCallersOriginalPathNotTheResolvedRealPath() throws Exception {
@@ -270,7 +278,7 @@ class LockManagerFileLockTest {
                 LockManager.waitTimeoutOverrideMillisForTests = null;
             }
             assertTrue(result.contains(alias.toString()),
-                    "refusal must show the caller's own path, not the resolved real path: " + result);
+                       "refusal must show the caller's own path, not the resolved real path: " + result);
 
             readerRelease.countDown();
             assertEquals("read", reader.get(5, TimeUnit.SECONDS));
@@ -285,9 +293,9 @@ class LockManagerFileLockTest {
 
     /**
      * Cosmetic fix: a directory-lock refusal caused by a reader at a CHILD path used to name a null holder
-     * (getFileLockHolder(dirPath) finds nothing at the exact directory key) and fall back to "another
-     * in-progress write" — misleading, since nothing is writing. It must say reads were in progress instead,
-     * naming the directory the caller asked for.
+     * (getFileLockHolder(dirPath) finds nothing at the exact directory key) and fall back to "another in-progress
+     * write" — misleading, since nothing is writing. It must say reads were in progress instead, naming the directory
+     * the caller asked for.
      */
     @Test
     void directoryMutationRefusalByReadersUnderItNamesReadsNotAPhantomWriter() throws Exception {
@@ -314,9 +322,9 @@ class LockManagerFileLockTest {
                 LockManager.waitTimeoutOverrideMillisForTests = null;
             }
             assertTrue(result.contains("reads under") && result.contains(dir),
-                    "must say reads were in progress, naming the directory: " + result);
+                       "must say reads were in progress, naming the directory: " + result);
             assertFalse(result.contains("in-progress write"),
-                    "must not fall back to the misleading write message: " + result);
+                        "must not fall back to the misleading write message: " + result);
 
             readerRelease.countDown();
             assertEquals("read", reader.get(5, TimeUnit.SECONDS));
@@ -345,9 +353,10 @@ class LockManagerFileLockTest {
         String file = uniquePath();
 
         assertTrue(lm.acquireFileLock("sessionA", file));
-        assertEquals("sessionA", lm.getFileLockHolder(file));
+        String key = lockKey(file);
+        assertEquals("sessionA", lm.getFileLockHolder(key));
 
-        lm.releaseFileLock("sessionA", file);
-        assertNull(lm.getFileLockHolder(file));
+        lm.releaseFileLock("sessionA", key);
+        assertNull(lm.getFileLockHolder(key));
     }
 }

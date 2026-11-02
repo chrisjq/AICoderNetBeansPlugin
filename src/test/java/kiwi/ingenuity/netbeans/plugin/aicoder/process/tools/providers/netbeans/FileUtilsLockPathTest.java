@@ -18,12 +18,17 @@ class FileUtilsLockPathTest {
 
         String relative = root.relativize(realParent.resolve("../child/file.txt")).toString();
         String throughAlias = alias.resolve("child/file.txt").toString();
-        String expected = realParent.resolve("file.txt").toString();
+        String expected = realParent.toRealPath().resolve("file.txt").toString();
 
-        Set<String> paths = FileUtils.normaliseLockPaths(List.of(
-                root.resolve(relative).toString(), throughAlias, expected, expected));
-
-        assertEquals(Set.of(expected), paths);
+        FileUtils.caseInsensitiveVolumeOverrideForTests = false;
+        try {
+            Set<String> paths = FileUtils.normaliseLockPaths(List.of(
+                    root.resolve(relative).toString(), throughAlias, expected, expected));
+            assertEquals(Set.of(expected), paths);
+        }
+        finally {
+            FileUtils.caseInsensitiveVolumeOverrideForTests = null;
+        }
     }
 
     @Test
@@ -31,8 +36,15 @@ class FileUtilsLockPathTest {
         Path existing = Files.createDirectories(root.resolve("existing"));
         Path future = existing.resolve("one/two/file.txt");
 
-        assertEquals(Set.of(future.toString()),
-                FileUtils.normaliseLockPaths(List.of(future.toString())));
+        FileUtils.caseInsensitiveVolumeOverrideForTests = false;
+        try {
+            Path expected = existing.toRealPath().resolve("one/two/file.txt");
+            assertEquals(Set.of(expected.toString()),
+                         FileUtils.normaliseLockPaths(List.of(future.toString())));
+        }
+        finally {
+            FileUtils.caseInsensitiveVolumeOverrideForTests = null;
+        }
     }
 
     @Test

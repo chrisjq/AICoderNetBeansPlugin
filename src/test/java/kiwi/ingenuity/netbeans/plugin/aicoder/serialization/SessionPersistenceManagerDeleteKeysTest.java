@@ -31,7 +31,7 @@ class SessionPersistenceManagerDeleteKeysTest {
     @AfterEach
     void resetSecretDeleter() {
         SessionPersistenceManager.setSessionSecretsDeleterForTest(null);
-        SessionSecrets.useForTest(null);
+        SessionSecrets.useForTest(MemoryPreferences.create());
     }
 
     @Test

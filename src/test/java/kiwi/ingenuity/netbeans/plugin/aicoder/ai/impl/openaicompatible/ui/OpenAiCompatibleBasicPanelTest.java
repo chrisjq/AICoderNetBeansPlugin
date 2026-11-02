@@ -35,6 +35,7 @@ import kiwi.ingenuity.netbeans.plugin.aicoder.ai.session.AiSession;
 import kiwi.ingenuity.netbeans.plugin.aicoder.testutil.MemoryPreferences;
 import static org.junit.jupiter.api.Assertions.*;
 import org.junit.jupiter.api.Assumptions;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Timeout;
 
@@ -43,6 +44,11 @@ import org.junit.jupiter.api.Timeout;
  * key marks the session as having one.
  */
 class OpenAiCompatibleBasicPanelTest {
+
+    @BeforeEach
+    void isolateSessionSecrets() {
+        SessionSecrets.useForTest(MemoryPreferences.create());
+    }
 
     @Test
     @Timeout(15)

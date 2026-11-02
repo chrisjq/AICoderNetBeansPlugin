@@ -1,6 +1,7 @@
 package kiwi.ingenuity.netbeans.plugin.aicoder.process.server;
 
 import java.io.IOException;
+import java.lang.reflect.Field;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
@@ -29,6 +30,7 @@ import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.ui.source.FixImp
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.ui.source.OrganiseImportsTool;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.ui.source.OrganiseMembersTool;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.ui.source.ReformatFileTool;
+import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.providers.netbeans.FileUtils;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -60,7 +62,7 @@ class McpToolInvokerFileLockConcurrencyTest {
             }));
 
             assertTrue(entered.await(WAIT_SECONDS, TimeUnit.SECONDS),
-                    "different paths must both enter before either action is released");
+                       "different paths must both enter before either action is released");
             release.countDown();
             assertEquals("a", first.get(WAIT_SECONDS, TimeUnit.SECONDS));
             assertEquals("b", second.get(WAIT_SECONDS, TimeUnit.SECONDS));
@@ -101,7 +103,7 @@ class McpToolInvokerFileLockConcurrencyTest {
                 });
                 assertTrue(secondAttempted.await(WAIT_SECONDS, TimeUnit.SECONDS));
                 assertFalse(secondEntered.await(250, TimeUnit.MILLISECONDS),
-                        "the symlink alias must remain blocked while the real path is held");
+                            "the symlink alias must remain blocked while the real path is held");
 
                 firstRelease.countDown();
                 assertEquals("first", first.get(WAIT_SECONDS, TimeUnit.SECONDS));
@@ -144,7 +146,7 @@ class McpToolInvokerFileLockConcurrencyTest {
             });
             assertTrue(exclusiveAttempted.await(WAIT_SECONDS, TimeUnit.SECONDS));
             assertFalse(exclusiveEntered.await(250, TimeUnit.MILLISECONDS),
-                    "an exclusive refactor must wait for in-flight file work");
+                        "an exclusive refactor must wait for in-flight file work");
 
             sharedRelease.countDown();
             assertEquals("shared", shared.get(WAIT_SECONDS, TimeUnit.SECONDS));
@@ -182,7 +184,7 @@ class McpToolInvokerFileLockConcurrencyTest {
             });
             assertTrue(sharedAttempted.await(WAIT_SECONDS, TimeUnit.SECONDS));
             assertFalse(sharedEntered.await(250, TimeUnit.MILLISECONDS),
-                    "file work must wait for an in-flight exclusive refactor");
+                        "file work must wait for an in-flight exclusive refactor");
 
             exclusiveRelease.countDown();
             assertEquals("exclusive", exclusive.get(WAIT_SECONDS, TimeUnit.SECONDS));
@@ -196,19 +198,19 @@ class McpToolInvokerFileLockConcurrencyTest {
     }
 
     /**
-     * Item 8d: the previous version only synchronised SUBMISSION — with an instantaneous action, the thread
-     * pool could run both calls fully back-to-back and never actually overlap, so the test proved nothing
-     * about contention. Here the winner of the race into the acquisition is forced to HOLD both paths (via
-     * {@code release}) while the loser is provably still waiting ({@code oneEntered} fires only once), so the
-     * two calls are guaranteed to genuinely overlap before either completes.
+     * Item 8d: the previous version only synchronised SUBMISSION — with an instantaneous action, the thread pool could
+     * run both calls fully back-to-back and never actually overlap, so the test proved nothing about contention. Here
+     * the winner of the race into the acquisition is forced to HOLD both paths (via {@code release}) while the loser is
+     * provably still waiting ({@code oneEntered} fires only once), so the two calls are guaranteed to genuinely overlap
+     * before either completes.
      *
      * <p>
-     * Checked empirically (mutation-removing the sort in {@code FileUtils#normaliseLockPaths}): this test
-     * still passes without it, because {@code tryAcquireFileLocks} checks and commits every path in one
-     * {@code synchronized} call — no thread can ever be observed mid-acquisition holding one path while
-     * waiting on another, so A→B/B→A ordering cannot deadlock here regardless of key order. The sort's actual
-     * job — a canonical, deterministic key order — is covered separately by
-     * {@link #normalizedMultiPathKeysHaveOneDeterministicAcquisitionOrder}, which DOES fail without it.
+     * Checked empirically (mutation-removing the sort in {@code FileUtils#normaliseLockPaths}): this test still passes
+     * without it, because {@code tryAcquireFileLocks} checks and commits every path in one {@code synchronized} call —
+     * no thread can ever be observed mid-acquisition holding one path while waiting on another, so A→B/B→A ordering
+     * cannot deadlock here regardless of key order. The sort's actual job — a canonical, deterministic key order — is
+     * covered separately by {@link #normalizedMultiPathKeysHaveOneDeterministicAcquisitionOrder}, which DOES fail
+     * without it.
      */
     @Test
     void oppositeDirectionMultiPathOperationsCompleteWithoutDeadlock() throws Exception {
@@ -222,21 +224,21 @@ class McpToolInvokerFileLockConcurrencyTest {
             Future<String> aToB = executor.submit(() -> {
                 awaitBarrier(startTogether);
                 return McpToolInvoker.withFileMutation("copy-a", List.of(fileA, fileB), () -> {
-                    oneEntered.countDown();
-                    awaitLatch(release);
-                    return "a-to-b";
-                });
+                                                   oneEntered.countDown();
+                                                   awaitLatch(release);
+                                                   return "a-to-b";
+                                               });
             });
             Future<String> bToA = executor.submit(() -> {
                 awaitBarrier(startTogether);
                 return McpToolInvoker.withFileMutation("copy-b", List.of(fileB, fileA), () -> {
-                    oneEntered.countDown();
-                    awaitLatch(release);
-                    return "b-to-a";
-                });
+                                                   oneEntered.countDown();
+                                                   awaitLatch(release);
+                                                   return "b-to-a";
+                                               });
             });
             assertTrue(oneEntered.await(WAIT_SECONDS, TimeUnit.SECONDS),
-                    "whichever direction wins the race must actually enter its critical section");
+                       "whichever direction wins the race must actually enter its critical section");
             release.countDown();
 
             assertEquals("a-to-b", aToB.get(WAIT_SECONDS, TimeUnit.SECONDS));
@@ -265,7 +267,7 @@ class McpToolInvokerFileLockConcurrencyTest {
             Future<String> read = executor.submit(() -> McpToolInvoker.withFileRead(
                     "reader", List.of(file), () -> "read-ran"));
             assertEquals("read-ran", read.get(WAIT_SECONDS, TimeUnit.SECONDS),
-                    "a read must not wait for an in-flight exclusive refactor");
+                         "a read must not wait for an in-flight exclusive refactor");
 
             exclusiveRelease.countDown();
             assertEquals("exclusive", exclusive.get(WAIT_SECONDS, TimeUnit.SECONDS));
@@ -294,12 +296,11 @@ class McpToolInvokerFileLockConcurrencyTest {
     }
 
     /**
-     * Item 1 / the HIGH finding: two PARALLEL calls from the SAME session on the SAME path used to both enter
-     * their critical section at once — tryAcquireFileLocks treated same-session as automatic reentrancy
-     * regardless of which thread was calling, so the second call ran concurrently with the first, and
-     * whichever finished first released the lock while the other was still writing. Reentrancy is now keyed
-     * on the acquiring THREAD, not merely the session, so a second parallel call must wait like any other
-     * contender.
+     * Item 1 / the HIGH finding: two PARALLEL calls from the SAME session on the SAME path used to both enter their
+     * critical section at once — tryAcquireFileLocks treated same-session as automatic reentrancy regardless of which
+     * thread was calling, so the second call ran concurrently with the first, and whichever finished first released the
+     * lock while the other was still writing. Reentrancy is now keyed on the acquiring THREAD, not merely the session,
+     * so a second parallel call must wait like any other contender.
      */
     @Test
     void sameSessionParallelWritesSerialise() throws Exception {
@@ -321,13 +322,13 @@ class McpToolInvokerFileLockConcurrencyTest {
             Future<String> second = executor.submit(() -> {
                 secondAttempted.countDown();
                 return McpToolInvoker.withFileMutation("same-session", List.of(file), () -> {
-                    secondEntered.countDown();
-                    return "second";
-                });
+                                                   secondEntered.countDown();
+                                                   return "second";
+                                               });
             });
             assertTrue(secondAttempted.await(WAIT_SECONDS, TimeUnit.SECONDS));
             assertFalse(secondEntered.await(250, TimeUnit.MILLISECONDS),
-                    "a second PARALLEL call from the SAME session must wait, not run concurrently with the first");
+                        "a second PARALLEL call from the SAME session must wait, not run concurrently with the first");
 
             firstRelease.countDown();
             assertEquals("first", first.get(WAIT_SECONDS, TimeUnit.SECONDS));
@@ -341,8 +342,8 @@ class McpToolInvokerFileLockConcurrencyTest {
     }
 
     /**
-     * N4: reads must serialise only against a WRITE of the same path, never against another read — two
-     * sessions reading the same file must both proceed.
+     * N4: reads must serialise only against a WRITE of the same path, never against another read — two sessions reading
+     * the same file must both proceed.
      */
     @Test
     void concurrentReadsOfTheSameFileBothProceed() throws Exception {
@@ -364,7 +365,7 @@ class McpToolInvokerFileLockConcurrencyTest {
                 return "b";
             }));
             assertTrue(bothEntered.await(WAIT_SECONDS, TimeUnit.SECONDS),
-                    "two reads of the same file must both proceed concurrently, neither waiting for the other");
+                       "two reads of the same file must both proceed concurrently, neither waiting for the other");
 
             release.countDown();
             assertEquals("a", first.get(WAIT_SECONDS, TimeUnit.SECONDS));
@@ -396,13 +397,13 @@ class McpToolInvokerFileLockConcurrencyTest {
             Future<String> reader = executor.submit(() -> {
                 readerAttempted.countDown();
                 return McpToolInvoker.withFileRead("reader", List.of(file), () -> {
-                    readerEntered.countDown();
-                    return "read";
-                });
+                                               readerEntered.countDown();
+                                               return "read";
+                                           });
             });
             assertTrue(readerAttempted.await(WAIT_SECONDS, TimeUnit.SECONDS));
             assertFalse(readerEntered.await(250, TimeUnit.MILLISECONDS),
-                    "a read must wait for an in-flight write of the same file");
+                        "a read must wait for an in-flight write of the same file");
 
             writerRelease.countDown();
             assertEquals("written", writer.get(WAIT_SECONDS, TimeUnit.SECONDS));
@@ -433,16 +434,16 @@ class McpToolInvokerFileLockConcurrencyTest {
                 new FixImportsTool());
         for (McpToolInterface tool : pathLockedTools) {
             assertTrue(tool.usesOwnFileLocking(), tool.getClass().getSimpleName()
-                                                  + " must override usesOwnFileLocking() so it takes the shared gate, not the exclusive one");
+                       + " must override usesOwnFileLocking() so it takes the shared gate, not the exclusive one");
         }
     }
 
     /**
-     * M2: registry-driven, so a new mutating tool cannot silently fall through to the exclusive gate
-     * unreviewed. Every {@code isMutating()} handler in {@link ToolHandlerFactory} must be deliberately wired
-     * into exactly one of: path-locked ({@code usesOwnFileLocking()}), the whole-workspace EXCLUSIVE
-     * allowlist below, or a tool that bypasses the global lock entirely because it has its own
-     * synchronisation (build queue, git's own lock, the in-memory inbox broker).
+     * M2: registry-driven, so a new mutating tool cannot silently fall through to the exclusive gate unreviewed. Every
+     * {@code isMutating()} handler in {@link ToolHandlerFactory} must be deliberately wired into exactly one of:
+     * path-locked ({@code usesOwnFileLocking()}), the whole-workspace EXCLUSIVE allowlist below, or a tool that
+     * bypasses the global lock entirely because it has its own synchronisation (build queue, git's own lock, the
+     * in-memory inbox broker).
      */
     @Test
     void everyMutatingHandlerIsWiredForLockingDeliberately() {
@@ -459,19 +460,19 @@ class McpToolInvokerFileLockConcurrencyTest {
             // already true, listing the class in EXCLUSIVE_ALLOWLIST too would hide which category
             // actually applies and could mask a future mistake going the other way.
             assertFalse(ownLocking && exclusiveByDesign, entry.getKey() + " (" + tool.getClass().getSimpleName()
-                                                         + ") is both usesOwnFileLocking() and on EXCLUSIVE_ALLOWLIST — pick one category");
+                        + ") is both usesOwnFileLocking() and on EXCLUSIVE_ALLOWLIST — pick one category");
             boolean bypassesGlobalLockWithItsOwnSynchronisation = !tool.requiresGlobalMutationLock() && !ownLocking;
             if (!(ownLocking || exclusiveByDesign || bypassesGlobalLockWithItsOwnSynchronisation)) {
                 unwired.add(entry.getKey() + " (" + tool.getClass().getSimpleName() + ")");
             }
         }
         assertTrue(unwired.isEmpty(), "wired into none of usesOwnFileLocking()/EXCLUSIVE_ALLOWLIST/an explicit "
-                                      + "global-lock bypass, so it would silently fall through to the exclusive gate: " + unwired);
+                   + "global-lock bypass, so it would silently fall through to the exclusive gate: " + unwired);
     }
 
     /**
-     * Whole-workspace operations deliberately left on the default exclusive gate — not path-locked, and not
-     * exempted via their own synchronisation. Grown only by deliberate review: see
+     * Whole-workspace operations deliberately left on the default exclusive gate — not path-locked, and not exempted
+     * via their own synchronisation. Grown only by deliberate review: see
      * {@link #everyMutatingHandlerIsWiredForLockingDeliberately}.
      */
     private static final Set<Class<?>> EXCLUSIVE_ALLOWLIST = Set.of(
@@ -506,15 +507,31 @@ class McpToolInvokerFileLockConcurrencyTest {
     @Test
     void normalizedMultiPathKeysHaveOneDeterministicAcquisitionOrder() throws IOException {
         Path root = Files.createTempDirectory("file-lock-order-");
+        Boolean previousOverride = setCaseInsensitiveOverride(false);
         try {
-            Path first = root.resolve("a-destination");
-            Path second = root.resolve("z-destination");
+            Path realRoot = root.toRealPath();
+            Path first = realRoot.resolve("a-destination");
+            Path second = realRoot.resolve("z-destination");
             List<String> keys = new ArrayList<>(LockManager.getInstance().normalisePaths(
                     List.of(second.toString(), first.toString())));
             assertEquals(List.of(first.toString(), second.toString()), keys);
         }
         finally {
+            setCaseInsensitiveOverride(previousOverride);
             Files.deleteIfExists(root);
+        }
+    }
+
+    private static Boolean setCaseInsensitiveOverride(Boolean value) {
+        try {
+            Field field = FileUtils.class.getDeclaredField("caseInsensitiveVolumeOverrideForTests");
+            field.setAccessible(true);
+            Boolean previous = (Boolean) field.get(null);
+            field.set(null, value);
+            return previous;
+        }
+        catch (ReflectiveOperationException ex) {
+            throw new AssertionError("Unable to set FileUtils test override", ex);
         }
     }
 

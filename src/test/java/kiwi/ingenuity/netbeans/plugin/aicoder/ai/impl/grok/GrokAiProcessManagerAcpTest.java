@@ -143,7 +143,7 @@ class GrokAiProcessManagerAcpTest {
         File capture = captureFile();
         File script = fakeAgent(
                 "read -r line\n"
-                + "echo \"$line\" >> \"" + capture + "\"\n"
+                + "printf '%s\\n' \"$line\" >> \"" + capture + "\"\n"
                 + "printf '{\"jsonrpc\":\"2.0\",\"id\":2,\"result\":{\"sessionId\":\"ses_fake\"}}\\n'\n"
                 + "read -r _prompt\n"
                 + "printf '{\"jsonrpc\":\"2.0\",\"id\":3,\"result\":{\"stopReason\":\"end_turn\"}}\\n'\n");
@@ -357,7 +357,7 @@ class GrokAiProcessManagerAcpTest {
         File capture = captureFile();
         File script = fakeAgent(
                 "read -r line\n"
-                + "echo \"$line\" >> \"" + capture + "\"\n"
+                + "printf '%s\\n' \"$line\" >> \"" + capture + "\"\n"
                 + "printf '{\"jsonrpc\":\"2.0\",\"id\":2,\"result\":{}}\\n'\n"
                 + "read -r _prompt\n"
                 + "printf '{\"jsonrpc\":\"2.0\",\"id\":3,\"result\":{\"stopReason\":\"end_turn\"}}\\n'\n"
@@ -550,10 +550,10 @@ class GrokAiProcessManagerAcpTest {
                 "read -r _session\n"
                 + "printf '{\"jsonrpc\":\"2.0\",\"id\":2,\"result\":{\"sessionId\":\"ses_fake\"}}\\n'\n"
                 + "read -r line1\n"
-                + "echo \"$line1\" >> \"" + capture + "\"\n"
+                + "printf '%s\\n' \"$line1\" >> \"" + capture + "\"\n"
                 + "printf '{\"jsonrpc\":\"2.0\",\"id\":3,\"result\":{\"stopReason\":\"end_turn\"}}\\n'\n"
                 + "read -r line2\n"
-                + "echo \"$line2\" >> \"" + capture + "\"\n"
+                + "printf '%s\\n' \"$line2\" >> \"" + capture + "\"\n"
                 + "printf '{\"jsonrpc\":\"2.0\",\"id\":4,\"result\":{\"stopReason\":\"end_turn\"}}\\n'\n"
                 + "sleep 60\n");
         TestableGrokAiProcessManager manager = new TestableGrokAiProcessManager(events::add);
@@ -726,7 +726,7 @@ class GrokAiProcessManagerAcpTest {
         File script = fakeAgent(
                 "if [ -f \"" + marker.getAbsolutePath() + "\" ]; then\n"
                 + "  read -r line\n"
-                + "  echo \"$line\" >> \"" + capture + "\"\n"
+                + "  printf '%s\\n' \"$line\" >> \"" + capture + "\"\n"
                 + "  printf '{\"jsonrpc\":\"2.0\",\"id\":2,\"result\":{}}\\n'\n"
                 + "  sleep 60\n"
                 + "else\n"
@@ -818,13 +818,13 @@ class GrokAiProcessManagerAcpTest {
                 + "[{\"id\":\"reasoning_effort\","
                 + "\"currentValue\":\"low\",\"options\":[{\"value\":\"low\"},{\"value\":\"high\"}]}]}}\\n'\n"
                 + "read -r line1\n"
-                + "echo \"$line1\" >> \"" + capture + "\"\n"
+                + "printf '%s\\n' \"$line1\" >> \"" + capture + "\"\n"
                 + "printf '{\"jsonrpc\":\"2.0\",\"id\":3,\"result\":{\"configOptions\":[{\"id\":\"reasoning_effort\","
                 + "\"currentValue\":\"high\",\"options\":[{\"value\":\"low\"},{\"value\":\"high\"}]}]}}\\n'\n"
                 + "read -r _prompt\n"
                 + "printf '{\"jsonrpc\":\"2.0\",\"id\":4,\"result\":{\"stopReason\":\"end_turn\"}}\\n'\n"
                 + "read -r line2\n"
-                + "echo \"$line2\" >> \"" + capture + "\"\n"
+                + "printf '%s\\n' \"$line2\" >> \"" + capture + "\"\n"
                 + "printf '{\"jsonrpc\":\"2.0\",\"id\":5,\"result\":{\"configOptions\":[{\"id\":\"reasoning_effort\","
                 + "\"currentValue\":\"low\",\"options\":[{\"value\":\"low\"},{\"value\":\"high\"}]}]}}\\n'\n"
                 + "sleep 60\n");

@@ -24,14 +24,15 @@ import kiwi.ingenuity.netbeans.plugin.aicoder.process.session.AbstractAiSession;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.McpToolInterface;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.ToolRequestArguments;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.ToolSchemaKeyEnum;
+import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.providers.netbeans.FileUtils;
 import static org.junit.jupiter.api.Assertions.*;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
 /**
- * AUDIT 3/6 — proves every GetFileContentTool parameter is read and changes the output: filePath selects the
- * file, startLine narrows from that line, endLine narrows to that line (both 1-based inclusive), and
- * out-of-range values clamp instead of failing.
+ * AUDIT 3/6 — proves every GetFileContentTool parameter is read and changes the output: filePath selects the file,
+ * startLine narrows from that line, endLine narrows to that line (both 1-based inclusive), and out-of-range values
+ * clamp instead of failing.
  */
 class GetFileContentToolTest {
 
@@ -90,12 +91,12 @@ class GetFileContentToolTest {
         assertTrue(props.has(GetFileContentParamEnum.END_LINE.key()));
         assertTrue(props.has(GetFileContentParamEnum.RAW.key()));
         assertEquals("boolean", props.getAsJsonObject(GetFileContentParamEnum.RAW.key())
-                .get(ToolSchemaKeyEnum.TYPE.key()).getAsString());
+                     .get(ToolSchemaKeyEnum.TYPE.key()).getAsString());
         JsonArray required = schema.getAsJsonArray(ToolSchemaKeyEnum.REQUIRED.key());
         assertEquals(1, required.size());
         assertEquals(GetFileContentParamEnum.FILE_PATH.key(), required.get(0).getAsString());
         assertEquals("integer", props.getAsJsonObject(GetFileContentParamEnum.START_LINE.key())
-                .get(ToolSchemaKeyEnum.TYPE.key()).getAsString());
+                     .get(ToolSchemaKeyEnum.TYPE.key()).getAsString());
     }
 
     @Test
@@ -205,13 +206,13 @@ class GetFileContentToolTest {
 
         assertTrue(result.startsWith("Error:"), result);
         assertTrue(result.contains(GetFileContentParamEnum.START_LINE.key())
-                   && result.contains(GetFileContentParamEnum.END_LINE.key()), result);
+                && result.contains(GetFileContentParamEnum.END_LINE.key()), result);
         assertFalse(result.contains("[Truncated"), "raw output must never carry the inline truncation marker: " + result);
     }
 
     /**
-     * Mutation-prove target: a ranged raw read used to rejoin {@code Files.readAllLines} output with a
-     * hardcoded {@code \n}, silently turning CRLF into LF for every line but the file's own terminators.
+     * Mutation-prove target: a ranged raw read used to rejoin {@code Files.readAllLines} output with a hardcoded
+     * {@code \n}, silently turning CRLF into LF for every line but the file's own terminators.
      */
     @Test
     void rawRangeOnACrlfFilePreservesOriginalLineTerminators(@TempDir Path dir) throws Exception {
@@ -247,7 +248,8 @@ class GetFileContentToolTest {
                 return "write-done";
             }));
             assertTrue(writeEntered.await(5, TimeUnit.SECONDS));
-            assertEquals("writer", LockManager.getInstance().getFileLockHolder(file.toString()));
+            String key = FileUtils.normaliseLockPaths(List.of(file.toString())).iterator().next();
+            assertEquals("writer", LockManager.getInstance().getFileLockHolder(key));
 
             Future<String> read = executor.submit(() -> tool
                     .handle(rawArgs(file.toString(), null, null), session()));
