@@ -15,6 +15,7 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.locks.ReentrantLock;
@@ -289,11 +290,11 @@ public class AcpConnection {
                             ex = new AcpException(0, redactAndBound("malformed error response: " + parseError.getMessage()));
                         }
                         AcpException finalEx = ex;
-                        dispatchExecutor.execute(() -> future.completeExceptionally(finalEx));
+                        completeResponse(() -> future.completeExceptionally(finalEx));
                     }
                     else {
                         JsonObject result = msg.has(AcpJsonKeyEnum.RESULT.key()) ? msg.getAsJsonObject(AcpJsonKeyEnum.RESULT.key()) : new JsonObject();
-                        dispatchExecutor.execute(() -> future.complete(result));
+                        completeResponse(() -> future.complete(result));
                     }
                 }
             }
@@ -301,6 +302,24 @@ public class AcpConnection {
         catch (Exception e) {
             // Malformed or unexpected message — drop silently
         }
+    }
+
+    /**
+     * Completes a response on the dispatcher unless close raced with response handling. The response future has already
+     * been removed from {@code pending}, so a rejected dispatch must complete it here; close can no longer find and
+     * fail it.
+     */
+    private void completeResponse(Runnable completion) {
+        try {
+            dispatchExecutor.execute(completion);
+        }
+        catch (RejectedExecutionException ex) {
+            completion.run();
+        }
+    }
+
+    void shutdownDispatchExecutorForTest() {
+        dispatchExecutor.shutdown();
     }
 
     static String errorDataMessage(JsonObject error) {

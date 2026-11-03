@@ -341,7 +341,7 @@ public class GitProvider {
                 GitCommandRunner.Result result;
                 try {
                     result = GitCommandRunner.run(git.get(), gitRoot, patch, 30,
-                            "apply", "--cached", "--reverse", "--whitespace=nowarn", "-");
+                                                  "apply", "--cached", "--reverse", "--whitespace=nowarn", "-");
                 }
                 catch (IOException e) {
                     logGitError("gitResetHunks", e);
@@ -667,7 +667,7 @@ public class GitProvider {
                     }
                     return "Refreshed VCS status for: " + filePath;
                 }
-                return "File not found: " + filePath;
+                return FileUtils.fileNotFoundMessage(filePath);
             }
             Project[] projects = OpenProjects.getDefault().getOpenProjects();
             if (projects.length == 0) {

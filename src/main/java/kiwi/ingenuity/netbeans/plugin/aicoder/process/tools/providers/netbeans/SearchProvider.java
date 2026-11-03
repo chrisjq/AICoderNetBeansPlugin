@@ -72,7 +72,7 @@ public class SearchProvider {
         if (filePath != null && !filePath.isBlank()) {
             FileObject fo = resolveFileObject(filePath);
             if (fo == null) {
-                return "File not found: " + filePath;
+                return FileUtils.fileNotFoundMessage(filePath);
             }
             List<FileObject> projectRoots = owningProjectSourceRoots(fo);
             if (!projectRoots.isEmpty()) {
@@ -140,7 +140,7 @@ public class SearchProvider {
                         // A pathological pattern must not hang the handler thread; report and
                         // stop so the caller learns the query (not the corpus) is the problem.
                         return "Regex timed out after " + e.timeoutMillis()
-                               + " ms — the pattern backtracks catastrophically; simplify it.";
+                                + " ms — the pattern backtracks catastrophically; simplify it.";
                     }
                     catch (IOException e) {
                         // Skip unreadable / non-UTF-8 files (e.g. MalformedInputException)
@@ -161,11 +161,11 @@ public class SearchProvider {
     }
 
     /**
-     * The files not already searched under an earlier root, recording them as searched. Roots can nest: a
-     * project with no Java source groups (an aggregator pom) is walked from its project directory, which
-     * contains its child modules' source roots, and those are walked again as roots of their own. A file
-     * under more than one of these roots used to be reported again for each root: every match under
-     * app-platform twice, and under bm-flow-ui three times, inflating both the match and file counts.
+     * The files not already searched under an earlier root, recording them as searched. Roots can nest: a project with
+     * no Java source groups (an aggregator pom) is walked from its project directory, which contains its child modules'
+     * source roots, and those are walked again as roots of their own. A file under more than one of these roots used to
+     * be reported again for each root: every match under app-platform twice, and under bm-flow-ui three times,
+     * inflating both the match and file counts.
      */
     static List<Path> unsearchedFiles(List<Path> files, Set<Path> searched) {
         return files.stream().filter(p -> searched.add(p.toAbsolutePath().normalize())).toList();
@@ -200,7 +200,7 @@ public class SearchProvider {
             }
             ClasspathInfo classpath = js.getClasspathInfo();
             Set<ElementHandle<TypeElement>> found
-                                            = classpath.getClassIndex().getDeclaredTypes(name, toNameKind(kind), scopes);
+                    = classpath.getClassIndex().getDeclaredTypes(name, toNameKind(kind), scopes);
             if (found == null) {
                 continue;
             }
@@ -264,14 +264,14 @@ public class SearchProvider {
             }
             ClasspathInfo classpath = js.getClasspathInfo();
             Iterable<ClassIndex.Symbols> found
-                                         = classpath.getClassIndex().getDeclaredSymbols(name, toNameKind(kind), scopes);
+                    = classpath.getClassIndex().getDeclaredSymbols(name, toNameKind(kind), scopes);
             if (found == null) {
                 continue;
             }
             for (ClassIndex.Symbols symbols : found) {
                 ElementHandle<TypeElement> enclosing = symbols.getEnclosingType();
                 hits.putIfAbsent(enclosing.getQualifiedName(),
-                        new SymbolHit(enclosing, List.copyOf(symbols.getSymbols()), classpath));
+                                 new SymbolHit(enclosing, List.copyOf(symbols.getSymbols()), classpath));
             }
         }
         if (hits.isEmpty()) {
@@ -292,8 +292,8 @@ public class SearchProvider {
                     .append(f != null ? f.getPath() : "[binary]").append("\n");
         });
         return "Found " + sorted.size() + " type(s) with matching symbols"
-               + (sorted.size() > MAX_TYPE_HITS ? " (showing first " + MAX_TYPE_HITS + ")" : "")
-               + ":\n\n" + sb;
+                + (sorted.size() > MAX_TYPE_HITS ? " (showing first " + MAX_TYPE_HITS + ")" : "")
+                + ":\n\n" + sb;
     }
 
     public static String findDeclaration(String filePath, int line, int column) {
@@ -304,7 +304,7 @@ public class SearchProvider {
         FileObject fo = resolveFileObject(filePath);
         if (fo == null) {
             return filePath != null && !filePath.isBlank()
-                   ? "File not found: " + filePath : "No projects open";
+                   ? FileUtils.fileNotFoundMessage(filePath) : "No projects open";
         }
         JavaSource js = JavaSource.forFileObject(fo);
         if (js == null) {
@@ -344,7 +344,7 @@ public class SearchProvider {
                     if (pos >= 0) {
                         File f = FileUtil.toFile(fo);
                         result.set((f != null ? f.getPath() : fo.getPath())
-                                   + ":" + lm.getLineNumber(pos));
+                                + ":" + lm.getLineNumber(pos));
                         return;
                     }
                 }
@@ -406,7 +406,7 @@ public class SearchProvider {
         FileObject fo = resolveFileObject(filePath);
         if (fo == null) {
             return filePath != null && !filePath.isBlank()
-                   ? "File not found: " + filePath : "No projects open";
+                   ? FileUtils.fileNotFoundMessage(filePath) : "No projects open";
         }
         JavaSource js = JavaSource.forFileObject(fo);
         if (js == null) {
@@ -478,14 +478,14 @@ public class SearchProvider {
     /**
      * Decides what a search covers.
      * <p>
-     * With no {@code filePath} this is every open project's Java source roots — unchanged, and independently
-     * confirmed to work: a token occurring only in {@code src/main} is found from the default path.
+     * With no {@code filePath} this is every open project's Java source roots — unchanged, and independently confirmed
+     * to work: a token occurring only in {@code src/main} is found from the default path.
      * <p>
-     * With a {@code filePath} it is every source root of the project that OWNS that file, which is the fix.
-     * Previously the anchor file's own {@code ClasspathInfo} was used, meaning its single source root, so
-     * anchoring on a main file silently discarded every test type and vice versa — while the schema described
-     * the parameter as scoping to a project. Widening to the owning project keeps the parameter's real
-     * purpose, which is choosing ONE project when several are open, without dropping half of it.
+     * With a {@code filePath} it is every source root of the project that OWNS that file, which is the fix. Previously
+     * the anchor file's own {@code ClasspathInfo} was used, meaning its single source root, so anchoring on a main file
+     * silently discarded every test type and vice versa — while the schema described the parameter as scoping to a
+     * project. Widening to the owning project keeps the parameter's real purpose, which is choosing ONE project when
+     * several are open, without dropping half of it.
      */
     private static SearchAnchors resolveSearchAnchors(String filePath) {
         if (filePath == null || filePath.isBlank()) {
@@ -496,7 +496,7 @@ public class SearchProvider {
         }
         FileObject fo = FileUtils.resolveByPath(filePath);
         if (fo == null) {
-            return new SearchAnchors("File not found: " + filePath, List.of());
+            return new SearchAnchors(FileUtils.fileNotFoundMessage(filePath), List.of());
         }
         if (JavaSource.forFileObject(fo) == null) {
             return new SearchAnchors("Not a Java source file: " + filePath, List.of());
@@ -543,31 +543,31 @@ public class SearchProvider {
      * Java source roots of every open project, used when no {@code filePath} narrows the search.
      *
      * <p>
-     * This used to fall back to whatever file the editor happened to have focused and take its SOURCE
-     * classpath. That made a project-wide search depend on unrelated editor state: with a non-source file in
-     * front — a pom, a README — {@code ClassPath.getClassPath} returns null and every search failed,
-     * reporting "Cannot resolve source classpath for: null" because the caller's own filePath was still null
-     * at that point. Searching the open projects is what the caller asked for when they omitted a path.
+     * This used to fall back to whatever file the editor happened to have focused and take its SOURCE classpath. That
+     * made a project-wide search depend on unrelated editor state: with a non-source file in front — a pom, a README —
+     * {@code ClassPath.getClassPath} returns null and every search failed, reporting "Cannot resolve source classpath
+     * for: null" because the caller's own filePath was still null at that point. Searching the open projects is what
+     * the caller asked for when they omitted a path.
      */
     /**
      * Every Java source root of the project that owns {@code fo}.
      * <p>
      * This is the fix for a silent-omission defect. An anchored search used to take
-     * {@code JavaSource.forFileObject(fo)} and query that ONE file's {@code ClasspathInfo}, which is its own
-     * source root — so anchoring on a {@code src/main} file dropped every {@code src/test} type, and
-     * anchoring on a test file dropped every main type, despite both being the same Maven project and the
-     * schema calling {@code filePath} "any source file in the target project". Nothing in the output said a
-     * root had been excluded. Two peers hit this independently on three different tools: 2 types instead of
-     * 7, and a main-only query returning 0 from a test anchor.
+     * {@code JavaSource.forFileObject(fo)} and query that ONE file's {@code ClasspathInfo}, which is its own source
+     * root — so anchoring on a {@code src/main} file dropped every {@code src/test} type, and anchoring on a test file
+     * dropped every main type, despite both being the same Maven project and the schema calling {@code filePath} "any
+     * source file in the target project". Nothing in the output said a root had been excluded. Two peers hit this
+     * independently on three different tools: 2 types instead of 7, and a main-only query returning 0 from a test
+     * anchor.
      * <p>
-     * Widening to the owning project — rather than to every open project — is what keeps the parameter
-     * meaningful: its purpose is to pick ONE project when several are open.
+     * Widening to the owning project — rather than to every open project — is what keeps the parameter meaningful: its
+     * purpose is to pick ONE project when several are open.
      * <p>
      * {@code FileOwnerQuery.getOwner} is contained by {@code catch(Throwable)} for the same reason as
      * {@code GitProvider.resolveRootForFile}: it throws
-     * {@code ExceptionInInitializerError}/{@code NoClassDefFoundError} — Errors, not Exceptions — when the
-     * IDE's ProjectManager Lookup is unavailable. Falling back to the file's own root then restores exactly
-     * the old behaviour, which is narrower than ideal but never wrong-by-crash.
+     * {@code ExceptionInInitializerError}/{@code NoClassDefFoundError} — Errors, not Exceptions — when the IDE's
+     * ProjectManager Lookup is unavailable. Falling back to the file's own root then restores exactly the old
+     * behaviour, which is narrower than ideal but never wrong-by-crash.
      */
     private static List<FileObject> owningProjectSourceRoots(FileObject fo) {
         try {
@@ -589,8 +589,8 @@ public class SearchProvider {
     }
 
     /**
-     * One Java file per root, to anchor a {@code ClasspathInfo} query at each. A root with no Java source in
-     * it is skipped rather than failing the whole search.
+     * One Java file per root, to anchor a {@code ClasspathInfo} query at each. A root with no Java source in it is
+     * skipped rather than failing the whole search.
      */
     private static List<FileObject> javaAnchors(List<FileObject> roots) {
         List<FileObject> anchors = new ArrayList<>();
@@ -623,22 +623,21 @@ public class SearchProvider {
      * Resolves the file that anchors a search to a project's classpath.
      *
      * <p>
-     * When no path is given this used to take whatever file the editor had focused. That made results depend
-     * on where the user's cursor happened to be — a caller asking the same question twice could get different
-     * answers, and the caller had no way to know which file it had actually searched. The anchor is now the
-     * first open project's source root: still a fallback, but a deterministic one that does not move while
-     * the user clicks around. Callers that need a specific project should pass {@code filePath}.
+     * When no path is given this used to take whatever file the editor had focused. That made results depend on where
+     * the user's cursor happened to be — a caller asking the same question twice could get different answers, and the
+     * caller had no way to know which file it had actually searched. The anchor is now the first open project's source
+     * root: still a fallback, but a deterministic one that does not move while the user clicks around. Callers that
+     * need a specific project should pass {@code filePath}.
      */
     /**
      * Refuses a line-based lookup that was given no file.
      * <p>
      * {@link #resolveFileObject} falls back to the first open project's SOURCE ROOT, which is a directory.
-     * {@code JavaSource.forFileObject} returns null for a directory, so the documented "omit filePath"
-     * fallback could never work for the two line-based tools: it reported
-     * {@code "Not a Java source file: null"}, quoting the null path back at the caller. Picking some
-     * arbitrary first Java file instead would be worse — a line number resolved against a file the caller
-     * never named produces a confident WRONG answer rather than an error. A line only means something
-     * relative to a specific file, so the honest contract is to require one.
+     * {@code JavaSource.forFileObject} returns null for a directory, so the documented "omit filePath" fallback could
+     * never work for the two line-based tools: it reported {@code "Not a Java source file: null"}, quoting the null
+     * path back at the caller. Picking some arbitrary first Java file instead would be worse — a line number resolved
+     * against a file the caller never named produces a confident WRONG answer rather than an error. A line only means
+     * something relative to a specific file, so the honest contract is to require one.
      * <p>
      * {@code SearchTypes}/{@code SearchSymbols} never reach this: they route a null path to
      * {@link #searchAcrossOpenProjects} first, where searching every root genuinely is meaningful.
@@ -646,8 +645,8 @@ public class SearchProvider {
     private static String requireFilePathForLineLookup(String filePath) {
         return filePath == null || filePath.isBlank()
                ? McpToolPropertyEnum.FILE_PATH.key() + " is required — a line number can only be resolved against a "
-                 + "specific file. Call " + McpToolEnum.GET_CURRENT_FILE.toolName()
-                 + " if you want the file the user is looking at."
+                + "specific file. Call " + McpToolEnum.GET_CURRENT_FILE.toolName()
+                + " if you want the file the user is looking at."
                : null;
     }
 
@@ -663,9 +662,8 @@ public class SearchProvider {
     }
 
     /**
-     * A type hit plus the classpath it was found through, which {@code SourceUtils.getFile} needs to resolve
-     * its source file. Once results are merged across roots the two can no longer be assumed to come from the
-     * same anchor.
+     * A type hit plus the classpath it was found through, which {@code SourceUtils.getFile} needs to resolve its source
+     * file. Once results are merged across roots the two can no longer be assumed to come from the same anchor.
      */
     private record TypeHit(ElementHandle<TypeElement> handle, ClasspathInfo classpath) {
 

@@ -887,7 +887,8 @@ class GrokAiProcessManagerAcpTest {
                 "read -r _session\n"
                 + "printf '{\"jsonrpc\":\"2.0\",\"id\":2,\"result\":{\"sessionId\":\"ses_fake\"}}\\n'\n"
                 + "read -r _prompt\n"
-                + "printf '{\"jsonrpc\":\"2.0\",\"id\":3,\"result\":{\"stopReason\":\"end_turn\"}}\\n'\n");
+                + "printf '{\"jsonrpc\":\"2.0\",\"id\":3,\"result\":{\"stopReason\":\"end_turn\"}}\\n'\n"
+                + "sleep 5\n");
         TestableGrokAiProcessManager manager = startManager(script, events);
         File debugFile = PluginUtil.getPluginAiSessionConfigDir(AiTypeEnum.GROK, "s1").resolve("grok-acp-debug.log").toFile();
         try {

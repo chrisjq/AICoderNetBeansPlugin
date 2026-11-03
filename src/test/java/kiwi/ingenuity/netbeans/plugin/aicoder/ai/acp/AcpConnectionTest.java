@@ -59,8 +59,8 @@ class AcpConnectionTest {
     }
 
     /**
-     * PrintWriter swallows write errors, so a request to an agent whose stdin is gone used to wait forever —
-     * and so did the turn waiting on it. It must fail at once instead.
+     * PrintWriter swallows write errors, so a request to an agent whose stdin is gone used to wait forever — and so did
+     * the turn waiting on it. It must fail at once instead.
      */
     @Test
     void requestToAnAgentThatCannotReadFailsImmediately() throws Exception {
@@ -110,6 +110,25 @@ class AcpConnectionTest {
 
         JsonObject received = future.get(5, TimeUnit.SECONDS);
         assertEquals(1, received.get("protocolVersion").getAsInt());
+    }
+
+    @Test
+    void responseCompletesWhenDispatchIsRejectedAfterShutdown() throws Exception {
+        CompletableFuture<JsonObject> future = connection.sendRequest(AcpMethodEnum.INITIALIZE, new JsonObject());
+        long id = agentRead().get("id").getAsLong();
+
+        connection.shutdownDispatchExecutorForTest();
+
+        JsonObject response = new JsonObject();
+        response.addProperty("jsonrpc", "2.0");
+        response.addProperty("id", id);
+        JsonObject result = new JsonObject();
+        result.addProperty("protocolVersion", 1);
+        response.add("result", result);
+        agentSend(response);
+
+        assertEquals(1, future.get(5, TimeUnit.SECONDS).get("protocolVersion").getAsInt(),
+                     "a rejected response dispatch must complete inline rather than strand the turn");
     }
 
     @Test
@@ -251,7 +270,7 @@ class AcpConnectionTest {
         agentSend(errorResp);
 
         ExecutionException thrown = assertThrows(ExecutionException.class,
-                () -> future.get(5, TimeUnit.SECONDS));
+                                                 () -> future.get(5, TimeUnit.SECONDS));
         AcpException acp = assertInstanceOf(AcpException.class, thrown.getCause());
         assertEquals(-32603, acp.code());
         assertTrue(acp.getMessage().contains("Internal error"), acp.getMessage());
@@ -259,10 +278,10 @@ class AcpConnectionTest {
     }
 
     /**
-     * Review finding: {@code error.code} is normally a number, but a non-numeric value (e.g. an agent bug)
-     * threw out of the error branch entirely — after {@code pending.remove(id)} had already taken the future
-     * out of the map, so it was never completed either way, and the turn waiting on it hung until its own
-     * caller-side timeout rather than failing immediately.
+     * Review finding: {@code error.code} is normally a number, but a non-numeric value (e.g. an agent bug) threw out of
+     * the error branch entirely — after {@code pending.remove(id)} had already taken the future out of the map, so it
+     * was never completed either way, and the turn waiting on it hung until its own caller-side timeout rather than
+     * failing immediately.
      */
     @Test
     void errorResponseWithNonNumericCodeStillCompletesTheFuture() throws Exception {
@@ -279,8 +298,8 @@ class AcpConnectionTest {
         agentSend(errorResp);
 
         ExecutionException thrown = assertThrows(ExecutionException.class,
-                () -> future.get(5, TimeUnit.SECONDS),
-                "a malformed error.code must still fail the future, not leave it hanging forever");
+                                                 () -> future.get(5, TimeUnit.SECONDS),
+                                                 "a malformed error.code must still fail the future, not leave it hanging forever");
         AcpException acp = assertInstanceOf(AcpException.class, thrown.getCause());
         assertEquals(0, acp.code());
         assertTrue(acp.getMessage().contains("malformed error response"), acp.getMessage());
@@ -307,7 +326,7 @@ class AcpConnectionTest {
         agentSend(errorResp);
 
         ExecutionException thrown = assertThrows(ExecutionException.class,
-                () -> future.get(5, TimeUnit.SECONDS));
+                                                 () -> future.get(5, TimeUnit.SECONDS));
         AcpException acp = assertInstanceOf(AcpException.class, thrown.getCause());
         assertEquals(0, acp.code());
         String message = acp.getMessage();
@@ -318,7 +337,7 @@ class AcpConnectionTest {
         String prefix = "ACP error 0: ";
         assertTrue(message.startsWith(prefix), message);
         assertTrue(message.length() <= prefix.length() + AcpConnection.MAX_ERROR_DETAIL_CHARS + 1,
-                message.length() + " " + message);
+                   message.length() + " " + message);
         assertTrue(message.endsWith("\u2026"), message);
     }
 
@@ -467,7 +486,7 @@ class AcpConnectionTest {
 
         AcpClientHandler orderHandler = new AcpClientHandler() {
             private final AtomicBoolean first
-                                        = new AtomicBoolean(true);
+                    = new AtomicBoolean(true);
 
             @Override
             public void onSessionUpdate(String sid, JsonObject update) {
@@ -533,7 +552,7 @@ class AcpConnectionTest {
                 received.append(text);
             }
             assertEquals(expected.toString(), received.toString(),
-                    "session/update notifications must arrive in submitted order");
+                         "session/update notifications must arrive in submitted order");
         }
         finally {
             firstChunkGate.countDown(); // safety in case test fails early
@@ -561,7 +580,7 @@ class AcpConnectionTest {
 
         AcpClientHandler combinedHandler = new AcpClientHandler() {
             private final AtomicBoolean first
-                                        = new AtomicBoolean(true);
+                    = new AtomicBoolean(true);
 
             @Override
             public void onSessionUpdate(String sid, JsonObject update) {
@@ -635,7 +654,7 @@ class AcpConnectionTest {
                 received.append(text);
             }
             assertEquals(expected.toString(), received.toString(),
-                    "notifications must arrive in order even while permission is pending");
+                         "notifications must arrive in order even while permission is pending");
 
             // Release permission and verify reply is sent
             slowPermission.complete(new JsonObject());

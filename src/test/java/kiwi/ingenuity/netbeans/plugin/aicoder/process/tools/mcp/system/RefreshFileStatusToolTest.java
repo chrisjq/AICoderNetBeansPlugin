@@ -10,6 +10,7 @@ import kiwi.ingenuity.netbeans.plugin.aicoder.process.session.AbstractAiSession;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.McpToolInterface;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.ToolRequestArguments;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.ToolSchemaKeyEnum;
+import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.providers.netbeans.FileUtils;
 import static org.junit.jupiter.api.Assertions.*;
 import org.junit.jupiter.api.Test;
 
@@ -38,7 +39,7 @@ class RefreshFileStatusToolTest {
         assertTrue(schema.getAsJsonObject(ToolSchemaKeyEnum.PROPERTIES.key())
                 .has(RefreshFileStatusParamEnum.FILE_PATH.key()));
         assertFalse(schema.has(ToolSchemaKeyEnum.REQUIRED.key()),
-                "filePath must be optional — no required array may be advertised");
+                    "filePath must be optional — no required array may be advertised");
     }
 
     @Test
@@ -50,12 +51,12 @@ class RefreshFileStatusToolTest {
         String withPath = tool.handle(args(missing), session);
         String withoutPath = tool.handle(args(null), session);
 
-        assertEquals("File not found: " + missing, withPath,
-                "a filePath naming nothing must hit the file-scoped branch");
+        assertEquals(FileUtils.fileNotFoundMessage(missing), withPath,
+                     "a filePath naming nothing must hit the file-scoped branch");
         assertNotEquals(withPath, withoutPath,
-                "the reply must change with the filePath parameter — it may not be ignored");
+                        "the reply must change with the filePath parameter — it may not be ignored");
         assertFalse(withoutPath.contains(missing),
-                "the no-path reply must not contain the path the parameter would have supplied");
+                    "the no-path reply must not contain the path the parameter would have supplied");
     }
 
     private static final class FakeSession extends AbstractAiSession {

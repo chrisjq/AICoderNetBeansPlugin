@@ -164,7 +164,7 @@ class GetFileContentToolTest {
 
         String result = tool.handle(args(missing, null, null), session());
 
-        assertTrue(result.startsWith("File not found: " + missing), result);
+        assertTrue(result.startsWith(FileUtils.fileNotFoundMessage(missing)), result);
     }
 
     @Test

@@ -7,13 +7,13 @@ import org.junit.jupiter.api.Test;
 
 /**
  * AUDIT 7: the filePath parameter of the five ui/file+source tools (CloseFile, FixImports, OrganiseImports,
- * OrganiseMembers, ReformatFile) is read and changes behaviour. Proves the headless-testable branches: a
- * null/blank value is rejected with "is required" (provider does not fall back to the focused editor), and a
- * value pointing at a nonexistent file reports "File not found". FixImports and OrganiseImports no longer run
- * an editor action: an existing file is handled by HeadlessImportFixer and HeadlessImportOrganiser, and their
- * decisions are covered by ImportCandidatePlannerTest and ImportOrganisePlannerTest. ReformatFile loads the
- * document without an editor and reformats it on the EDT, and OrganiseMembers still opens an editor on the EDT;
- * a plain unit test does not stub either for a file that exists.
+ * OrganiseMembers, ReformatFile) is read and changes behaviour. Proves the headless-testable branches: a null/blank
+ * value is rejected with "is required" (provider does not fall back to the focused editor), and a value pointing at a
+ * nonexistent file reports "File not found". FixImports and OrganiseImports no longer run an editor action: an existing
+ * file is handled by HeadlessImportFixer and HeadlessImportOrganiser, and their decisions are covered by
+ * ImportCandidatePlannerTest and ImportOrganisePlannerTest. ReformatFile loads the document without an editor and
+ * reformats it on the EDT, and OrganiseMembers still opens an editor on the EDT; a plain unit test does not stub either
+ * for a file that exists.
  */
 class UiToolsFilePathParamTest {
 
@@ -27,7 +27,7 @@ class UiToolsFilePathParamTest {
     @Test
     void closeFileReportsMissingFileByName() {
         assertTrue(RefactoringProvider.closeFile("/no/such/aicoder-ui/close-me.java")
-                .contains("File not found: /no/such/aicoder-ui/close-me.java"));
+                .contains(FileUtils.fileNotFoundMessage("/no/such/aicoder-ui/close-me.java")));
     }
 
     @Test
@@ -39,7 +39,7 @@ class UiToolsFilePathParamTest {
     @Test
     void fixImportsReportsMissingFileByName() {
         assertTrue(RefactoringProvider.fixImports("/no/such/aicoder-ui/fix.java")
-                .contains("File not found: /no/such/aicoder-ui/fix.java"));
+                .contains(FileUtils.fileNotFoundMessage("/no/such/aicoder-ui/fix.java")));
     }
 
     @Test
@@ -51,7 +51,7 @@ class UiToolsFilePathParamTest {
     @Test
     void organiseImportsReportsMissingFileByName() {
         assertTrue(RefactoringProvider.organiseImports("/no/such/aicoder-ui/order.java")
-                .contains("File not found: /no/such/aicoder-ui/order.java"));
+                .contains(FileUtils.fileNotFoundMessage("/no/such/aicoder-ui/order.java")));
     }
 
     @Test
@@ -63,7 +63,7 @@ class UiToolsFilePathParamTest {
     @Test
     void organiseMembersReportsMissingFileByName() {
         assertTrue(RefactoringProvider.organiseMembers("/no/such/aicoder-ui/members.java")
-                .contains("File not found: /no/such/aicoder-ui/members.java"));
+                .contains(FileUtils.fileNotFoundMessage("/no/such/aicoder-ui/members.java")));
     }
 
     @Test
@@ -76,6 +76,6 @@ class UiToolsFilePathParamTest {
     @Test
     void reformatFileReportsMissingFileByName() {
         assertTrue(RefactoringProvider.reformatFile("/no/such/aicoder-ui/format.java")
-                .contains("File not found: /no/such/aicoder-ui/format.java"));
+                .contains(FileUtils.fileNotFoundMessage("/no/such/aicoder-ui/format.java")));
     }
 }

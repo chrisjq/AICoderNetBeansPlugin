@@ -230,8 +230,9 @@ class EditorContextProviderTest {
                     "/wrong/process/broker/OllamaPinSlotEnum.java",
                     List.of(tempRoot.toFile()));
 
-            assertTrue(result.startsWith("File not found: /wrong/process/broker/OllamaPinSlotEnum.java"),
-                       "first line must be unchanged: " + result);
+            assertTrue(result.startsWith(FileUtils.fileNotFoundMessage("/wrong/process/broker/OllamaPinSlotEnum.java")),
+                       "first line must be unchanged: " + result
+            );
             assertTrue(result.contains("Did you mean:"), "must contain Did you mean section: " + result);
             assertTrue(result.contains(realFile.toString()), "must list the real path: " + result);
             assertFalse(result.contains("GetProjectStructure"), "must not show fallback hint when match found: " + result);
@@ -259,8 +260,9 @@ class EditorContextProviderTest {
                     "/wrong/NoSuchClass.java",
                     List.of(tempRoot.toFile()));
 
-            assertTrue(result.startsWith("File not found: /wrong/NoSuchClass.java"),
-                       "first line must be unchanged: " + result);
+            assertTrue(result.startsWith(FileUtils.fileNotFoundMessage("/wrong/NoSuchClass.java")),
+                       "first line must be unchanged: " + result
+            );
             assertFalse(result.contains("Did you mean:"), "must not show match list when none found: " + result);
             assertTrue(result.contains("GetProjectStructure"), "must show GetProjectStructure hint: " + result);
         }
@@ -295,8 +297,9 @@ class EditorContextProviderTest {
     @Test
     void getFileContent_missingFile_firstLineUnchanged() {
         String result = EditorContextProvider.getFileContent("/no/such/aicoder/Missing.java", 0, 0);
-        assertTrue(result.startsWith("File not found: /no/such/aicoder/Missing.java"),
-                   "not-found first line must be preserved: " + result);
+        assertTrue(result.startsWith(FileUtils.fileNotFoundMessage("/no/such/aicoder/Missing.java")),
+                   "not-found first line must be preserved: " + result
+        );
     }
 
     @Test
@@ -407,7 +410,8 @@ class EditorContextProviderTest {
     @Test
     void filterFileContent_missingFile_reportsNotFound() {
         String out = EditorContextProvider.filterFileContent("/no/such/aicoder/build.log", "error", false, false, 0, 0);
-        assertTrue(out.startsWith("File not found: /no/such/aicoder/build.log"), out);
+        assertTrue(out.startsWith(FileUtils.fileNotFoundMessage("/no/such/aicoder/build.log")), out
+        );
     }
 
     /**

@@ -18,6 +18,11 @@ public final class PluginSettings {
     // isDebugJson() per request, off the EDT) re-triggers that noisy path.
     // Caching resolves it once; the returned node is live, so reads/writes and
     // change listeners still work.
+    // In unit tests, org-netbeans-core-startup supplies PreferencesProviderImpl;
+    // with no netbeans.user in the surefire JVM, storage is the in-memory config
+    // filesystem, not ~/.netbeans/<version>/config/Preferences or ~/.java/.userPrefs.
+    // Only the catch fallback below (Preferences.userRoot()) can persist outside
+    // NetBeans storage, and only when that storage is unavailable.
     private static volatile Preferences cachedPrefs;
 
     private static Preferences prefs() {
