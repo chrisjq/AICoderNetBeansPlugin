@@ -10,7 +10,7 @@ OpenCode runs the `opencode` CLI and its agent process for each session.
 
 - Install the [OpenCode](https://opencode.ai) CLI and log in to a provider with OpenCode's own tooling.
 - The **OpenCode** tab of the AI Coder options holds the [standard backend fields](../../BACKENDS.md#where-a-backends-settings-are), without a default effort, plus the **Default mode** for new sessions.
-- Raise OpenCode's MCP tool timeout before using long-running tools (see [below](#raising-the-mcp-tool-timeout)).
+- Raise OpenCode's MCP tool timeout before using long-running tools (see [Raising the MCP tool timeout](#raising-the-mcp-tool-timeout)).
 
 ## Model and effort
 

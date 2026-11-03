@@ -4,7 +4,7 @@
 
 See also: [Settings](SETTINGS.md)
 
-The plugin keeps three kinds of reusable template. All are edited under **Tools > AI Manager > Templates**, in the tabs **MCP Templates**, **Config Templates** and **Session Instructions**. Each editor lists the stored templates (Name, Updated, Created) and has **Save**, **Cancel** and **Delete** buttons; deleting asks "Delete template?". Built-in entries can be edited but never deleted, so their Delete button is hidden.
+The plugin keeps three kinds of reusable template. All are edited in **Tools > AI Manager**, on the **Templates** tab, in the tabs **MCP Templates**, **Config Templates** and **Session Instructions**. Each editor lists the stored templates (Name, Updated, Created) and has **Save**, **Cancel** and **Delete** buttons; deleting asks "Delete template?". Built-in entries can be edited but never deleted, so their Delete button is hidden.
 
 | Template kind | What it holds | Built-in entries |
 |---|---|---|
@@ -30,7 +30,7 @@ Applying a config template copies every value into the session's settings. The s
 
 ## MCP templates
 
-An MCP template records which switchable tool groups are **off**; everything else is on. Its editor has one checkbox per group, under the categories Files, Code, Editor, Build, Git, External, Collaboration and Memory (OpenAI Compatible only). The Build queue group has no checkbox: it is derived and shown as "Build queue (derived: on/off)". A new template starts from the Default's current switches. Groups and tools are in [MCP tool access](MCP_TOOL_ACCESS.md#groups-and-categories).
+An MCP template records which switchable tool groups are **off**; everything else is on. Its editor has one checkbox per group, in the categories Files, Code, Editor, Build, Git, External, Collaboration and Memory (OpenAI Compatible only). The Build queue group has no checkbox: it is derived and shown as "Build queue (derived: on/off)". A new template starts from the Default's current switches. Groups and tools are in [MCP tool access](MCP_TOOL_ACCESS.md#groups-and-categories).
 
 Two templates are built in and seeded into every store whenever they are missing. An existing one is never overwritten.
 
@@ -47,7 +47,7 @@ A session instruction template is a name and a body of text. Choosing one in Cre
 - **CoderPeer:** Waits for tasks from a peer, completes them and replies with the result; does not commit.
 - **ReviewerPeer:** Waits for review tasks from a peer and replies with verified findings; does not commit.
 
-The full text is editable under Templates > Session Instructions.
+The full text is editable at Templates > Session Instructions.
 
 With the matching config templates they give a coordinating, an implementation and a review-only session that can message each other ([Collaboration](COLLABORATION.md#roles)).
 
@@ -63,6 +63,6 @@ The **Create Session** tab of the AI Manager ([UI guide](UI_GUIDE.md#ai-manager)
 
 ## Changing a session afterwards
 
-The **MCP Tools** panel of Session Configuration holds the per-session group switches, the settings under each group and an **Apply MCP template…** button. The button lists templates in the picker's order. If the chosen template differs from the current switches, it asks "Applying "<name>" replaces the tool switches set in this dialog. Continue?" first. Whether the running backend needs a restart is in [When a change takes effect](MCP_TOOL_ACCESS.md#when-a-change-takes-effect).
+The **MCP Tools** panel of Session Configuration holds the per-session group switches, each group's Config section and an **Apply new MCP template…** button. The button lists templates in the picker's order. If the chosen template differs from the current switches, it asks `Applying "<name>" replaces the tool switches set in this dialog. Continue?` first. Whether the running backend needs a restart is in [When a change takes effect](MCP_TOOL_ACCESS.md#when-a-change-takes-effect).
 
 Templates are stored with lock files, separately from sessions; see [what a session holds](SESSIONS.md#what-a-session-holds). Editing a template never changes sessions created from it.

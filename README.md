@@ -8,11 +8,12 @@ Please consult the readme that applies to your version of the plugin you are run
 
 [Claude](docs/ai/claude/README.md), [GitHub Copilot](docs/ai/github_copilot/README.md), [Grok](docs/ai/grok/README.md), [Codex](docs/ai/codex/README.md), [Pi](docs/ai/pi/README.md), [OpenCode](docs/ai/opencode/README.md) and [OpenAI Compatible](docs/ai/openai_compatible/README.md) (LM Studio, llama.cpp, vLLM, Ollama, hosted APIs), compared in [Backends](docs/BACKENDS.md). Each session has its own backend (the AI service it talks to), model, settings, project, chat history and instructions. Sessions of different backends run side by side.
 
-**Ollama (Local)** is deprecated and off by default. Use OpenAI Compatible with server type Ollama instead. Existing Ollama (Local) sessions keep working.
+**Ollama (Deprecated)** is switched off at every IDE start. Use OpenAI Compatible with server type Ollama instead.
 
 ## What it provides
 
 - Streaming Markdown chat with syntax-highlighted code, tool activity and status, in dockable chat tabs.
+- A **>_** button that opens the session's CLI in a terminal (CLI backends).
 - AI Manager for creating, opening and deleting sessions, with reusable **Config Template**, **MCP Template** and **Session Instructions** templates.
 - Per-session instructions and IDE context; chat history saved between IDE restarts when Save history is on ([Sessions](docs/SESSIONS.md#history-and-model-context)).
 - Usage and context gauges where a backend reports them.

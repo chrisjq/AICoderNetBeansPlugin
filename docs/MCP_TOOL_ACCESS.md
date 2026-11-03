@@ -4,7 +4,7 @@
 
 See also: [Backends](BACKENDS.md) · [OpenAI Compatible](ai/openai_compatible/README.md) · How-to: [Limit session access](howto/LIMIT_ACCESS.md)
 
-Each session decides which MCP (Model Context Protocol) tools — the plugin's IDE tools — its assistant sees. Tools are arranged in **groups**, groups under **categories**, and a session switches whole groups on or off. The switches are in **⚙ > Session Configuration > MCP Tools** and start from the MCP template chosen at creation ([Templates](TEMPLATES.md)). The tools themselves are in the [MCP tool reference](MCP_REFERENCE.md).
+Each session decides which MCP (Model Context Protocol) tools — the plugin's IDE tools — its assistant sees. Tools are arranged in **groups** within **categories**, and a session switches whole groups on or off. The switches are in **⚙ > Session Configuration > MCP Tools** and start from the MCP template chosen at creation ([Templates](TEMPLATES.md)). The tools themselves are in the [MCP tool reference](MCP_REFERENCE.md).
 
 ## Groups and categories
 
@@ -43,7 +43,7 @@ A Git tool is in Git read or Git write by its own mutating flag. That is why `Gi
 A tool is available only when **both** allow it:
 
 1. **The group switch** in MCP Tools (or the session's MCP template).
-2. **The setting beneath the group**, for groups that have one. These are the permissions in [Settings](SETTINGS.md). The MCP Tools panel shows each under its group's switch and hides it while the group is off. The stored value is kept and applies again when the group is switched back on.
+2. **The group's Config settings**, for groups that have them. These are the permissions in [Settings](SETTINGS.md). The **MCP Tools** tab shows each group's Config section only while the group is switched on. The stored value is kept and applies again when the group is switched back on.
 
 | Group | Setting that must also allow it |
 |---|---|
@@ -68,7 +68,7 @@ A tool that fails either test is left out of the tool list, and the instruction 
 
 - A new session gets the switches of the **MCP template** chosen in Create Session. That is Default unless you pick another, such as the built-in **Minimal** ([Templates](TEMPLATES.md#mcp-templates)).
 - A session with no tool configuration of its own (created before it had any) derives one from its permission settings the first time it starts. Database, Git read, Git write, Web and Clipboard follow their settings; every other group is on. The result is stored with the session. The built-in **Default** MCP template is seeded from the global settings by the same rule.
-- After that the switches are the session's own. Edit them in MCP Tools or replace them with **Apply MCP template…** ([Changing a session afterwards](TEMPLATES.md#changing-a-session-afterwards)). Editing a template never changes an existing session.
+- After that the switches are the session's own. Edit them in MCP Tools or replace them with **Apply new MCP template…** ([Changing a session afterwards](TEMPLATES.md#changing-a-session-afterwards)). Editing a template never changes an existing session.
 
 ## When a change takes effect
 

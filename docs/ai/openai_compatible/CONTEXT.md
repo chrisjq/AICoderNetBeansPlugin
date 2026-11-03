@@ -40,7 +40,7 @@ Tokens are estimated from characters and calibrated against the `prompt_tokens` 
 | None | Never compacts; the server decides what happens when the context is full |
 
 - The most recent part of the history is kept verbatim (a percentage of the window with a minimum, or an absolute size). Cuts fall between turns, never between a tool call and its result.
-- The **Summary model** (empty = the chat model) writes summaries from a structured template. A rejected summary gets one repair nudge, then falls back to dropping.
+- The **Summary model** (empty = the chat model) writes summaries from a structured template. A rejected summary gets the configured repair nudges, then falls back to dropping.
 - Each compaction posts one system message: "Context compacted (N messages summarised)" or "Context trimmed (N earlier exchanges dropped)".
 - A single tool result larger than the tool-result share of the window is cut in the model's context, with a note on how to read the rest. The chat keeps the full result.
 

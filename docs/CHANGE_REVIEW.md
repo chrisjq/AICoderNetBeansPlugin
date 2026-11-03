@@ -8,7 +8,7 @@ See also: [UI guide](UI_GUIDE.md) · [MCP tool reference](MCP_REFERENCE.md) · [
 
 ## The diff panel
 
-`WriteFile` and `ApplyEdit` open in the NetBeans diff panel, as does `SaveFile` when it creates a new file. Nothing is saved until you press **Accept**; **Reject** declines. Refactorings use the NetBeans refactoring APIs, so references stay consistent and no diff is shown.
+`WriteFile` and `ApplyEdit` open in AI Coder's diff window, as does `SaveFile` when it creates a new file. Nothing is saved until you press **Accept**; **Reject** declines. Refactorings use the NetBeans refactoring APIs, so references stay consistent and no diff is shown.
 
 Your unsaved editor changes are saved before the prompt appears, so you keep them whether you accept or reject. The diff is built from the file on disk and does not include those edits. The assistant is told when a save happened, and the tool refuses rather than discard changes it cannot save. Reading a file saves the same way, so the assistant sees what you see.
 
@@ -20,11 +20,11 @@ Diff and **Yes**/**No** prompts left unanswered expire after 120 seconds. `AskUs
 
 ## Auto-Accept
 
-**Auto-Accept** approves content writes and file actions without asking and reports them in the chat history afterwards. It is off by default and is set per session: in the info bar, in **⚙ > Session Configuration**, or from a **Config Template** when the session is created. It never approves a request whose subject the plugin could not identify. It does not approve shell commands on its own; those are governed by **Auto-deny unsupported tool calls**, below.
+**Auto-Accept** approves content writes and file actions without asking and reports them in the chat history afterwards. It is off by default and is set per session: in the info bar, in **⚙ > Session Configuration > General**, or from a **Config Template** when the session is created. It never approves a request whose subject the plugin could not identify. It does not approve shell commands on its own; those are governed by [**Auto-deny unsupported tool calls**](#backends-with-their-own-tools).
 
 ## Backends with their own tools
 
-Some backends have shell and file tools beside the plugin's. **Auto-deny unsupported tool calls** (on by default) refuses those calls in favour of the plugin's tools and tells the model why. It is never auto-approved. How the refusal reaches the model depends on the backend:
+Some backends have their own shell and file tools as well as the plugin's. **Auto-deny unsupported tool calls** (on by default, in **Session Configuration > General** for backends that support it) refuses those calls in favour of the plugin's tools and tells the model why. It is never auto-approved. How the refusal reaches the model depends on the backend:
 
 | Backend | Steering on | Steering off |
 |---|---|---|

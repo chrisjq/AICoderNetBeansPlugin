@@ -9,19 +9,19 @@ This guide describes the NetBeans UI for creating and operating sessions. The fi
 **Tools > AI Manager** is the session control centre. It has four tabs: **Existing Sessions**, **Create Session**, **Templates** ([Templates](TEMPLATES.md)) and **Help**. Help has two sub-tabs:
 
 - **MCP Tools** provides generated documentation for the available IDE tools; see the [MCP tool reference](MCP_REFERENCE.md).
-- **About** shows the plugin name, installed version, and links to the project homepage and this version's release page.
+- **About** shows the plugin name and version, with links to the homepage, this version's release tree and its release page.
 
 | Action | Where | What it does |
 |---|---|---|
 | Create & Open | Create Session | Creates and opens one or more sessions with the chosen backend, project, templates and settings. The **Count** spinner creates several identical sessions named `<name>_1`, `<name>_2`, … |
 | Open | Existing Sessions | Opens a saved session and restores its history and working directory. Every saved session is listed; one whose project is not open is greyed out and cannot be opened until it is. |
-| Delete | Existing Sessions | After you confirm, removes the session ([what is removed](SESSIONS.md#creating-opening-deleting)). |
+| Delete | Existing Sessions | After you confirm, removes the selected sessions ([what is removed](SESSIONS.md#creating-opening-deleting)). |
 
 **Existing Sessions** and **Create Session** each have a **Close after action** checkbox that closes the dialog when the action completes.
 
 ### Session Configuration
 
-Session settings are changed from the session itself. Open its chat tab and use the **⚙** gear above the Send button to reach **Session Configuration**: name, description, instructions, permissions, MCP tool groups, model and backend options. An unset option inherits its global default ([Settings](SETTINGS.md)).
+Open the session's chat tab and choose **⚙** (Session configuration) to open **Session Configuration**. The **Session** tab holds name, description, instructions and the model and backend options. The **General** tab holds history, Save, project-file restriction, Auto-Accept and the debug log. The **MCP Tools** tab switches tool groups on or off and shows each group's Config settings while it is on. The dialog reopens on the tab you used last. New sessions take their values from the templates chosen in Create Session ([Templates](TEMPLATES.md)).
 
 ## Creating a session
 
@@ -38,7 +38,7 @@ Sessions open as dockable chat tabs. The chat renders Markdown, code blocks, sta
 | White | Waiting for your answer to a confirmation, question or diff |
 | Red | The backend is not running or has failed |
 
-The info bar above the input shows:
+The info bar shows:
 
 - the session timer;
 - the model and effort pickers, where the backend has them ([Effort and thinking](BACKENDS.md#effort-and-thinking));
@@ -47,7 +47,7 @@ The info bar above the input shows:
 - **Auto-Accept** ([Change review](CHANGE_REVIEW.md#auto-accept)) and **Save** (keep the chat history);
 - **■ Stop** while a turn is in flight, which cancels the current response. It is hidden when there is nothing to cancel.
 
-Above the Send button, the **>_** button (for locally installed CLI backends) opens a new session in your terminal, and the **⬇** toggle controls auto-scrolling. Auto-scroll is set per tab and is not remembered between IDE restarts.
+The chat input controls hold **⚙** (Session configuration), the **⬇** auto-scroll toggle and, for the CLI backends (Claude, Codex, GitHub Copilot, Grok, OpenCode, Pi), **>_**. **>_** asks for confirmation, then opens a new session of that CLI in a terminal window in the session's working folder. Claude, Codex, GitHub Copilot and Grok also get your other open project folders; OpenCode and Pi get the working folder only. The terminal command can be overridden in [Settings](SETTINGS.md#general-and-session-settings). Auto-scroll is set per tab and is not remembered between IDE restarts.
 
 - On when a session opens.
 - Off holds your position while new assistant text, notices and inbox notifications arrive.
@@ -59,7 +59,7 @@ You can paste a clipboard image into the chat when the backend supports image in
 
 ## Review prompts in the chat
 
-AI-proposed content writes open the NetBeans diff panel with **Accept** and **Reject**. File actions, backend shell commands and `AskUserQuestion` choices appear inline in the chat with buttons. What each covers, how long it waits, and what **Auto-Accept** and **Auto-deny unsupported tool calls** change are in [Change review](CHANGE_REVIEW.md).
+AI-proposed content writes open a diff window with **Accept** and **Reject**. File actions, backend shell commands and `AskUserQuestion` choices appear inline in the chat with buttons. What each covers, how long it waits, and what **Auto-Accept** and **Auto-deny unsupported tool calls** change are in [Change review](CHANGE_REVIEW.md).
 
 ## Notifications
 

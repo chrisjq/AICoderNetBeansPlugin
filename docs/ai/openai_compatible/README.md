@@ -34,7 +34,7 @@ AI Coder removes a trailing `/`, `/v1` or `/chat/completions` from **Base URL** 
 
 ## API key and extra headers
 
-An API key is optional. Each session keeps its own key in the **NetBeans keyring** (the IDE's secure password store), never in the session file. Choose **Change** or **Clear** beside the key status; the change takes effect when you press **OK**. Removing a saved server or deleting a session removes its key from the keyring.
+An API key is optional. Each session keeps its own key in the **NetBeans keyring** (the IDE's secure password store), never in the session file. Choose **Change** or **Clear** for the API key; the change takes effect when you press **OK**. Removing a saved server or deleting a session removes its key from the keyring.
 
 The **⚠** hint explains unavailable, missing or rejected keys. It also warns before sending a key over unencrypted `http://` to a non-local host.
 

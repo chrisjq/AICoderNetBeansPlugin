@@ -8,12 +8,7 @@ Sessions open in the same IDE can message each other. One assistant can delegate
 
 ## Switching it on
 
-In **⚙ > Session Configuration > MCP Tools**, switch on the **Peer messaging** group and tick **Allow inter-AI communication**. Both are needed. Two settings sit beside them (defaults in [Settings](SETTINGS.md#general-and-session-settings)):
-
-- **Auto-notify on incoming messages:** the session is told when mail arrives.
-- **Allow important messages, interrupt this session:** a message may interrupt while it is working.
-
-The **Idle watchers** group with **Allow idle AI watcher timer** lets a session be notified when a peer has been idle for a while.
+In **⚙ > Session Configuration > MCP Tools**, enable the **Peer messaging** group. Its **Peer Messaging Config** contains **Allow inter-AI communication**, **Auto-notify on incoming messages**, and **Allow important messages, interrupt this session**. The first setting is required; the latter two use the defaults in [Settings](SETTINGS.md#general-and-session-settings). The **Idle watchers** group has an **Idle Watchers Config** containing **Allow idle AI watcher timer**, which enables notices when a peer has been idle for a while.
 
 ## The tools
 
@@ -32,7 +27,8 @@ An **important** message is delivered sooner, but only if the recipient allows i
 | [OpenAI Compatible](ai/openai_compatible/README.md) | Read while it is running a turn, without stopping it |
 | [Pi](ai/pi/README.md) | Read after the current tool calls finish, without interrupting the work |
 | [Claude](ai/claude/README.md) | The turn is interrupted as the Stop button does, and any running tool call is cancelled. The plugin then explains that mail, not you, cut it short |
-| [Grok](ai/grok/README.md), [OpenCode](ai/opencode/README.md) | The turn ends after any running tool call returns; the plugin then explains that mail cut it short |
+| [Grok](ai/grok/README.md) | The turn is interrupted and any running tool call is cancelled; the plugin then explains that mail cut it short |
+| [OpenCode](ai/opencode/README.md) | Read mid-turn without stopping it when the agent supports steering; otherwise interrupted like Grok |
 
 ## Roles
 
