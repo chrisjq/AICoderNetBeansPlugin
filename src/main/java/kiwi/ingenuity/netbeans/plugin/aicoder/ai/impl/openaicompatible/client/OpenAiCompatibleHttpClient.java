@@ -367,9 +367,10 @@ public final class OpenAiCompatibleHttpClient {
             while (base.endsWith("/")) {
                 base = base.substring(0, base.length() - 1);
             }
+            // No request-level timeout: our watchdog enforces first-byte, idle and total limits. Some JDKs
+            // keep HttpRequest.timeout running into the response body and abort a streaming reply mid-stream.
             HttpRequest.Builder builder = HttpRequest.newBuilder(URI.create(base + "/chat/completions"))
                     .version(HttpClient.Version.HTTP_1_1)
-                    .timeout(call.limits.firstByteTimeout())
                     .header("Content-Type", "application/json")
                     .header("Accept", "text/event-stream");
             if (call.apiKey != null) {

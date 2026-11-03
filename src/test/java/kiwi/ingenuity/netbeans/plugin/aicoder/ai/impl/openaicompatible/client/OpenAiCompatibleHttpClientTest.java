@@ -25,8 +25,6 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Timeout;
-import org.junit.jupiter.api.condition.DisabledOnOs;
-import org.junit.jupiter.api.condition.OS;
 
 class OpenAiCompatibleHttpClientTest {
 
@@ -263,7 +261,6 @@ class OpenAiCompatibleHttpClientTest {
 
     @Test
     @Timeout(10)
-    @DisabledOnOs(value = OS.MAC, disabledReason = "Transport error before the watchdog on macOS; cause under investigation")
     void aStallMidStreamIsAnIdleTimeoutAndKeepsThePartialText() throws Exception {
         try (FakeServer server = new FakeServer((exchange, n) -> {
             OutputStream out = startSse(exchange);
@@ -280,7 +277,6 @@ class OpenAiCompatibleHttpClientTest {
 
     @Test
     @Timeout(10)
-    @DisabledOnOs(value = OS.MAC, disabledReason = "Transport error before the watchdog on macOS; cause under investigation")
     void aSlowTrickleBeyondTheTotalCapIsATotalTimeout() throws Exception {
         try (FakeServer server = new FakeServer((exchange, n) -> {
             OutputStream out = startSse(exchange);
