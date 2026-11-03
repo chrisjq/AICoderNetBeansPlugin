@@ -1,5 +1,6 @@
 package kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.exposure;
 
+import java.util.Arrays;
 import java.util.EnumSet;
 import java.util.Map;
 import java.util.Set;
@@ -38,7 +39,7 @@ class McpToolGroupEnumTest {
         assertEquals(EnumSet.allOf(McpToolEnum.class), handlers.keySet());
         for (McpToolEnum tool : McpToolEnum.values()) {
             McpToolGroupEnum resolved = McpToolGroupEnum.groupOf(tool, handlers.get(tool));
-            long matches = java.util.Arrays.stream(McpToolGroupEnum.values())
+            long matches = Arrays.stream(McpToolGroupEnum.values())
                     .filter(group -> group == resolved).count();
             assertEquals(1, matches, tool::toString);
         }
@@ -53,5 +54,20 @@ class McpToolGroupEnumTest {
             }
         }
         assertEquals(Set.of(McpToolGroupEnum.ALWAYS_ON, McpToolGroupEnum.BUILD_QUEUE), fixed);
+    }
+
+    @Test
+    void tooltipListsFixedGroupToolsInDeclaredOrder() {
+        assertEquals("File reading: " + McpToolEnum.GET_FILE_CONTENT.toolName() + ", "
+                + McpToolEnum.GET_FILE_INFO.toolName() + ", " + McpToolEnum.FILTER_FILE_CONTENT.toolName(),
+                     McpToolGroupEnum.FILE_READING.tooltip());
+    }
+
+    @Test
+    void tooltipListsGitReadToolsInDeclaredOrder() {
+        assertEquals("Git read: " + McpToolEnum.GET_GIT_STATUS.toolName() + ", "
+                + McpToolEnum.GET_GIT_DIFF.toolName() + ", " + McpToolEnum.GIT_LOG.toolName() + ", "
+                + McpToolEnum.GIT_SHOW.toolName() + ", " + McpToolEnum.GIT_BLAME.toolName(),
+                     McpToolGroupEnum.GIT_READ.tooltip());
     }
 }

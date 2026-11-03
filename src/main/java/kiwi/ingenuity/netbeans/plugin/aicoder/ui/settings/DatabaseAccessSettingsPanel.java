@@ -17,6 +17,7 @@ import javax.swing.event.ChangeListener;
 import kiwi.ingenuity.netbeans.plugin.aicoder.AccessControlLabelEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.DatabaseAccessOptionEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.PluginSettingsKeyEnum;
+import kiwi.ingenuity.netbeans.plugin.aicoder.process.McpToolEnum;
 
 /**
  * Mirrors {@link WebRequestAccessSettingsPanel}'s master + sub-option structure for database access, plus a row-limit
@@ -37,10 +38,14 @@ public final class DatabaseAccessSettingsPanel extends JPanel {
 
         int row = 0;
         allowDatabaseAccessCheckBox.setText(AccessControlLabelEnum.ALLOW_DATABASE_ACCESS.displayLabel());
+        allowDatabaseAccessCheckBox.setToolTipText("Allows database tools to access configured connections.");
         addRow(allowDatabaseAccessCheckBox, row++, 0);
         allowDatabaseAccessCheckBox.addActionListener(e -> updateDependentState());
         for (DatabaseAccessOptionEnum option : DatabaseAccessOptionEnum.values()) {
             JCheckBox checkBox = new JCheckBox(option.label().displayLabel());
+            checkBox.setToolTipText(option == DatabaseAccessOptionEnum.READ_ONLY
+                                    ? "Always on: queries run read-only and must be a single SELECT."
+                                    : "Allows database tools such as " + databaseToolName(option) + " for this operation.");
             if (option == DatabaseAccessOptionEnum.READ_ONLY) {
                 checkBox.setSelected(true);
                 checkBox.setEnabled(false);
@@ -50,6 +55,7 @@ public final class DatabaseAccessSettingsPanel extends JPanel {
         }
 
         rowLimitSpinner = new JSpinner(new SpinnerNumberModel(PluginSettingsKeyEnum.DATABASE_ROW_LIMIT.defaultInt(), 1, 5000, 10));
+        rowLimitSpinner.setToolTipText("Limits rows returned by " + McpToolEnum.GET_TABLE_DATA.toolName() + " and " + McpToolEnum.EXECUTE_SQL_QUERY.toolName() + ".");
         GridBagConstraints c = new GridBagConstraints();
         c.gridx = 0;
         c.gridy = row;
@@ -104,6 +110,21 @@ public final class DatabaseAccessSettingsPanel extends JPanel {
 
     public void setRowLimitValue(int value) {
         rowLimitSpinner.setValue(Math.max(1, Math.min(5000, value)));
+    }
+
+    private String databaseToolName(DatabaseAccessOptionEnum option) {
+        return switch (option) {
+            case LIST_TABLES ->
+                McpToolEnum.LIST_TABLES.toolName();
+            case SCHEMA ->
+                McpToolEnum.GET_TABLE_SCHEMA.toolName();
+            case SELECT ->
+                McpToolEnum.GET_TABLE_DATA.toolName();
+            case EXECUTE_SQL ->
+                McpToolEnum.EXECUTE_SQL_QUERY.toolName();
+            case READ_ONLY ->
+                "read-only database queries";
+        };
     }
 
     private void updateDependentState() {

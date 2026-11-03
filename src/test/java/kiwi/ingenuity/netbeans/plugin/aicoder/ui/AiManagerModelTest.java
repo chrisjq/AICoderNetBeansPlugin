@@ -2,6 +2,8 @@ package kiwi.ingenuity.netbeans.plugin.aicoder.ui;
 
 import java.awt.Component;
 import java.awt.Container;
+import java.awt.GridBagConstraints;
+import java.awt.GridBagLayout;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -9,7 +11,9 @@ import java.time.Instant;
 import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Set;
 import java.util.concurrent.Callable;
 import java.util.concurrent.atomic.AtomicReference;
 import javax.swing.JCheckBox;
@@ -26,6 +30,7 @@ import kiwi.ingenuity.netbeans.plugin.aicoder.PluginSettings;
 import kiwi.ingenuity.netbeans.plugin.aicoder.WebRequestAccessOptionEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.AiTypeEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.claude.settings.ClaudeSessionSettings;
+import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.openaicompatible.settings.OpenAiCompatibleSessionSettings;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.session.AiSession;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.settings.AiSessionSettings;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.settings.ConfigTemplate;
@@ -277,6 +282,40 @@ class AiManagerModelTest {
      * {@code loadSession(AiSessionSettings)} unconditionally re-hiding it afterwards, so the control vanished the
      * moment a template was selected or the editor cleared.
      */
+    @Test
+    void templateModeRoundTripsMessagingValues() throws Exception {
+        AiSessionConfigPanel panel = onEdt(() -> new AiSessionConfigPanel(AiSessionConfigPanelMode.TEMPLATE));
+        AiSessionSettings source = new AiSessionSettings();
+        source.setAllowInterAiComms(true);
+        source.setAutoNotifyInbox(true);
+        source.setAllowImportantMessages(true);
+        source.setAllowIdleWatcherTimer(true);
+        onEdt(() -> {
+            panel.loadSession(source);
+            return null;
+        });
+        AiSessionSettings target = onEdt(panel::snapshot);
+        assertTrue(target.effectiveAllowInterAiComms());
+        assertTrue(target.effectiveAutoNotifyInbox());
+        assertTrue(target.effectiveAllowImportantMessages());
+        assertTrue(target.effectiveAllowIdleWatcherTimer());
+    }
+
+    @Test
+    void templatePanelsUseDistinctRowsAfterOpenAiLoad() throws Exception {
+        AiSessionConfigPanel panel = onEdt(() -> new AiSessionConfigPanel(AiSessionConfigPanelMode.TEMPLATE));
+        onEdt(() -> {
+            panel.loadSession(new OpenAiCompatibleSessionSettings());
+            return null;
+        });
+        Set<Integer> rows = new HashSet<>();
+        GridBagLayout layout = (GridBagLayout) panel.getLayout();
+        for (Component child : panel.getComponents()) {
+            GridBagConstraints constraints = layout.getConstraints(child);
+            assertTrue(rows.add(constraints.gridy), "template group panels must not share grid rows");
+        }
+    }
+
     @Test
     void templateModeKeepsMcpSteeringVisibleAfterLoadSession() throws Exception {
         AiSessionConfigPanel panel = onEdt(() -> new AiSessionConfigPanel(AiSessionConfigPanelMode.TEMPLATE));

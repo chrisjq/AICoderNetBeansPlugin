@@ -120,7 +120,8 @@ public final class AiSessionConfigPanel extends JPanel {
     private Path debugLogDir;
     // TEMPLATE mode only: a template edits every config setting directly. A live SESSION edits them through
     // mcpTools, beneath each group's switch, and GLOBAL edits none, so these are null there rather than built unseen.
-    private final AiMessagingSettingsPanel messaging;
+    private final PeerMessagingSettingsPanel peerMessaging;
+    private final IdleWatcherSettingsPanel idleWatcher;
     private final WebRequestAccessSettingsPanel web;
     private final DatabaseAccessSettingsPanel database;
     private final GitAccessSettingsPanel git;
@@ -151,7 +152,8 @@ public final class AiSessionConfigPanel extends JPanel {
         this.mode = mode;
         boolean sessionLabels = mode != AiSessionConfigPanelMode.GLOBAL;
         boolean template = mode == AiSessionConfigPanelMode.TEMPLATE;
-        messaging = template ? new AiMessagingSettingsPanel() : null;
+        peerMessaging = template ? new PeerMessagingSettingsPanel() : null;
+        idleWatcher = template ? new IdleWatcherSettingsPanel() : null;
         web = template ? new WebRequestAccessSettingsPanel() : null;
         database = template ? new DatabaseAccessSettingsPanel() : null;
         git = template ? new GitAccessSettingsPanel() : null;
@@ -192,22 +194,36 @@ public final class AiSessionConfigPanel extends JPanel {
             addFullTo(generalGroup, gc, 1, saveHistory);
             addFullTo(generalGroup, gc, 2, restrict);
             addFullTo(generalGroup, gc, 3, autoAccept);
-            addFullTo(generalGroup, gc, 4, web);
-            addFullTo(generalGroup, gc, 5, database);
-            addFullTo(generalGroup, gc, 6, git);
-            addFullTo(generalGroup, gc, 7, clipboard);
-            addFullTo(generalGroup, gc, 8, backendDebugLog);
-            addFullTo(generalGroup, gc, 9, debugLogActions);
-            addFullTo(generalGroup, gc, 10, messaging);
-            addFullTo(generalGroup, gc, 11, mcpSteering);
-            addFull(c, 0, generalGroup);
+            addFullTo(generalGroup, gc, 4, backendDebugLog);
+            addFullTo(generalGroup, gc, 5, debugLogActions);
+            addFullTo(generalGroup, gc, 6, mcpSteering);
+            int templateRow = 0;
+            addFull(c, templateRow++, generalGroup);
+
+            JPanel externalGroup = buildGroupPanel("External");
+            GridBagConstraints ec = groupConstraints();
+            addFullTo(externalGroup, ec, 0, web);
+            addFullTo(externalGroup, ec, 1, database);
+            addFullTo(externalGroup, ec, 2, clipboard);
+            addFull(c, templateRow++, externalGroup);
+
+            JPanel gitGroup = buildGroupPanel("Git");
+            GridBagConstraints gic = groupConstraints();
+            addFullTo(gitGroup, gic, 0, git);
+            addFull(c, templateRow++, gitGroup);
+
+            JPanel collaborationGroup = buildGroupPanel("Collaboration");
+            GridBagConstraints cc = groupConstraints();
+            addFullTo(collaborationGroup, cc, 0, peerMessaging);
+            addFullTo(collaborationGroup, cc, 1, idleWatcher);
+            addFull(c, templateRow++, collaborationGroup);
 
             // OpenAI Compatible Settings group — hidden until an OpenAI-compatible session is loaded
             sessionContextGroup = buildGroupPanel("OpenAI Compatible Settings");
             GridBagConstraints oc = groupConstraints();
             addFullTo(sessionContextGroup, oc, 0, contextPanel);
             sessionContextGroup.setVisible(false);
-            addFull(c, 1, sessionContextGroup);
+            addFull(c, templateRow++, sessionContextGroup);
 
             // AI-type-specific group — hidden until a typed session is loaded; title set dynamically
             sessionTypeBorder = BorderFactory.createTitledBorder("");
@@ -217,7 +233,7 @@ public final class AiSessionConfigPanel extends JPanel {
             tc.insets = new Insets(0, 0, 0, 0);
             addFullTo(sessionTypeGroup, tc, 0, typePanelHolder);
             sessionTypeGroup.setVisible(false);
-            addFull(c, 2, sessionTypeGroup);
+            addFull(c, templateRow++, sessionTypeGroup);
         }
         else {
             // Session sections are exposed separately so the Session Configuration dialog can place them in tabs.
@@ -298,7 +314,8 @@ public final class AiSessionConfigPanel extends JPanel {
         }
         if (mode == AiSessionConfigPanelMode.TEMPLATE) {
             clipboard.addActionListener(listener);
-            messaging.addChangeListener(listener);
+            peerMessaging.addChangeListener(listener);
+            idleWatcher.addChangeListener(listener);
             web.addChangeListener(listener);
             database.addChangeListener(listener);
             git.addChangeListener(listener);
@@ -449,10 +466,10 @@ public final class AiSessionConfigPanel extends JPanel {
             result.setEnableClipboardAccess(mcpTools.isClipboardAccessSelected());
         }
         else if (mode == AiSessionConfigPanelMode.TEMPLATE) {
-            result.setAllowInterAiComms(messaging.isAllowInterAiSelected());
-            result.setAutoNotifyInbox(messaging.isAutoNotifySelected());
-            result.setAllowImportantMessages(messaging.isAllowImportantSelected());
-            result.setAllowIdleWatcherTimer(messaging.isAllowIdleWatcherSelected());
+            result.setAllowInterAiComms(peerMessaging.isAllowInterAiSelected());
+            result.setAutoNotifyInbox(peerMessaging.isAutoNotifySelected());
+            result.setAllowImportantMessages(peerMessaging.isAllowImportantSelected());
+            result.setAllowIdleWatcherTimer(idleWatcher.isAllowIdleWatcherSelected());
             result.setAllowWebRequests(web.isAllowWebRequestsSelected());
             for (WebRequestAccessOptionEnum option : WebRequestAccessOptionEnum.values()) {
                 result.setAllowWebRequestAccess(option, web.isOptionSelected(option));
@@ -527,10 +544,10 @@ public final class AiSessionConfigPanel extends JPanel {
             return;
         }
 
-        messaging.setAllowInterAiSelected(settings.effectiveAllowInterAiComms());
-        messaging.setAutoNotifySelected(settings.effectiveAutoNotifyInbox());
-        messaging.setAllowImportantSelected(settings.effectiveAllowImportantMessages());
-        messaging.setAllowIdleWatcherSelected(settings.effectiveAllowIdleWatcherTimer());
+        peerMessaging.setAllowInterAiSelected(settings.effectiveAllowInterAiComms());
+        peerMessaging.setAutoNotifySelected(settings.effectiveAutoNotifyInbox());
+        peerMessaging.setAllowImportantSelected(settings.effectiveAllowImportantMessages());
+        idleWatcher.setAllowIdleWatcherSelected(settings.effectiveAllowIdleWatcherTimer());
         clipboard.setSelected(settings.effectiveEnableClipboardAccess());
         web.setAllowWebRequestsSelected(settings.effectiveAllowWebRequests());
         database.setAllowDatabaseAccessSelected(settings.effectiveAllowDatabaseAccess());

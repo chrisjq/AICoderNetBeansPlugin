@@ -2,6 +2,7 @@ package kiwi.ingenuity.netbeans.plugin.aicoder.ui.settings;
 
 import java.awt.BorderLayout;
 import java.awt.Component;
+import java.awt.FlowLayout;
 import java.awt.GridBagConstraints;
 import java.awt.GridBagLayout;
 import java.awt.Insets;
@@ -14,8 +15,10 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.CompletionException;
 import java.util.function.BiPredicate;
 import javax.swing.BorderFactory;
+import javax.swing.BoxLayout;
 import javax.swing.JButton;
 import javax.swing.JCheckBox;
 import javax.swing.JOptionPane;
@@ -27,6 +30,8 @@ import kiwi.ingenuity.netbeans.plugin.aicoder.GitAccessOptionEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.WebRequestAccessOptionEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.settings.AiSessionSettings;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.settings.McpTemplate;
+import kiwi.ingenuity.netbeans.plugin.aicoder.ai.ui.WrapLayout;
+import kiwi.ingenuity.netbeans.plugin.aicoder.process.McpToolEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.exposure.McpToolAccess;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.exposure.McpToolCategoryEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.exposure.McpToolConfig;
@@ -65,10 +70,8 @@ public final class McpToolSettingsPanel extends JPanel {
     private final McpToolSelectionModel model = new McpToolSelectionModel(McpToolConfig.ALL_ENABLED);
     private final Map<McpToolGroupEnum, JCheckBox> groupBoxes = new EnumMap<>(McpToolGroupEnum.class);
     private final JCheckBox buildQueueBox = new JCheckBox();
-    private final JCheckBox allowInterAiBox = new JCheckBox();
-    private final JCheckBox autoNotifyBox = new JCheckBox();
-    private final JCheckBox allowImportantBox = new JCheckBox();
-    private final JCheckBox allowIdleWatcherBox = new JCheckBox();
+    private final PeerMessagingSettingsPanel peerMessaging = new PeerMessagingSettingsPanel();
+    private final IdleWatcherSettingsPanel idleWatcher = new IdleWatcherSettingsPanel();
     private final DatabaseAccessSettingsPanel database;
     private final WebRequestAccessSettingsPanel web;
     private final GitAccessSettingsPanel git;
@@ -76,6 +79,8 @@ public final class McpToolSettingsPanel extends JPanel {
     private final Map<McpToolGroupEnum, JPanel> configHolders = new EnumMap<>(McpToolGroupEnum.class);
     private final Map<McpToolCategoryEnum, JPanel> categoryPanels = new EnumMap<>(McpToolCategoryEnum.class);
     private JPanel gitConfigHolder;
+    private JPanel peerMessagingHolder;
+    private JPanel idleWatcherHolder;
     private final List<ActionListener> changeListeners = new ArrayList<>();
     private boolean refreshing;
 
@@ -87,11 +92,7 @@ public final class McpToolSettingsPanel extends JPanel {
         database = new DatabaseAccessSettingsPanel();
         git = new GitAccessSettingsPanel();
         clipboardBox.setText(AccessControlLabelEnum.ALLOW_CLIPBOARD_ACCESS.displayLabel());
-
-        allowInterAiBox.setText(AccessControlLabelEnum.ALLOW_INTER_AI_COMMS.displayLabel());
-        autoNotifyBox.setText(AccessControlLabelEnum.AUTO_NOTIFY_INBOX.displayLabel());
-        allowImportantBox.setText(AccessControlLabelEnum.ALLOW_IMPORTANT_MESSAGES.displayLabel());
-        allowIdleWatcherBox.setText(AccessControlLabelEnum.ALLOW_IDLE_WATCHER_TIMER.displayLabel());
+        clipboardBox.setToolTipText("Allows " + McpToolEnum.GET_CLIPBOARD.toolName() + " to read clipboard text.");
 
         JButton applyTemplate = new JButton("Apply new MCP template…");
         applyTemplate.addActionListener(e -> chooseTemplate());
@@ -117,19 +118,13 @@ public final class McpToolSettingsPanel extends JPanel {
             }
         }
 
-        allowInterAiBox.addActionListener(e -> {
-            updateBehaviourEnablement();
-            fireChange();
-        });
-        autoNotifyBox.addActionListener(e -> fireChange());
-        allowImportantBox.addActionListener(e -> fireChange());
-        allowIdleWatcherBox.addActionListener(e -> fireChange());
+        peerMessaging.addChangeListener(e -> fireChange());
+        idleWatcher.addChangeListener(e -> fireChange());
         web.addChangeListener(e -> fireChange());
         database.addChangeListener(e -> fireChange());
         database.addRowLimitChangeListener(e -> fireChange());
         git.addChangeListener(e -> fireChange());
         clipboardBox.addActionListener(e -> fireChange());
-        updateBehaviourEnablement();
         updateConfigSettingsVisibility();
     }
 
@@ -141,11 +136,10 @@ public final class McpToolSettingsPanel extends JPanel {
         model.applyConfig(McpToolAccess.configOf(settings));
         refreshGroupBoxes();
         showCategoriesAvailableFor(settings);
-        allowInterAiBox.setSelected(settings.effectiveAllowInterAiComms());
-        autoNotifyBox.setSelected(settings.effectiveAutoNotifyInbox());
-        allowImportantBox.setSelected(settings.effectiveAllowImportantMessages());
-        allowIdleWatcherBox.setSelected(settings.effectiveAllowIdleWatcherTimer());
-        updateBehaviourEnablement();
+        peerMessaging.setAllowInterAiSelected(settings.effectiveAllowInterAiComms());
+        peerMessaging.setAutoNotifySelected(settings.effectiveAutoNotifyInbox());
+        peerMessaging.setAllowImportantSelected(settings.effectiveAllowImportantMessages());
+        idleWatcher.setAllowIdleWatcherSelected(settings.effectiveAllowIdleWatcherTimer());
         web.setAllowWebRequestsSelected(settings.effectiveAllowWebRequests());
         for (WebRequestAccessOptionEnum option : WebRequestAccessOptionEnum.values()) {
             web.setOptionSelected(option, settings.effectiveAllowWebRequestAccess(option));
@@ -197,19 +191,19 @@ public final class McpToolSettingsPanel extends JPanel {
     }
 
     public boolean isAllowInterAiCommsSelected() {
-        return allowInterAiBox.isSelected();
+        return peerMessaging.isAllowInterAiSelected();
     }
 
     public boolean isAutoNotifySelected() {
-        return autoNotifyBox.isSelected();
+        return peerMessaging.isAutoNotifySelected();
     }
 
     public boolean isAllowImportantSelected() {
-        return allowImportantBox.isSelected();
+        return peerMessaging.isAllowImportantSelected();
     }
 
     public boolean isAllowIdleWatcherSelected() {
-        return allowIdleWatcherBox.isSelected();
+        return idleWatcher.isAllowIdleWatcherSelected();
     }
 
     public boolean isAllowWebRequestsSelected() {
@@ -246,7 +240,7 @@ public final class McpToolSettingsPanel extends JPanel {
 
     /**
      * Whether the config-settings holder for {@code group} is currently shown. Groups with no config settings report
-     * {@code true}; the two git groups share one holder, shown whenever either is on.
+     * {@code true}; the git groups share one holder, and collaboration groups each expose their own holder.
      */
     boolean areConfigSettingsVisibleFor(McpToolGroupEnum group) {
         JPanel holder = configHolders.get(group);
@@ -255,6 +249,12 @@ public final class McpToolSettingsPanel extends JPanel {
         }
         if (group == McpToolGroupEnum.GIT_READ || group == McpToolGroupEnum.GIT_WRITE) {
             return gitConfigHolder != null && gitConfigHolder.isVisible();
+        }
+        if (group == McpToolGroupEnum.PEER_MESSAGING) {
+            return peerMessagingHolder != null && peerMessagingHolder.isVisible();
+        }
+        if (group == McpToolGroupEnum.IDLE_WATCHERS) {
+            return idleWatcherHolder != null && idleWatcherHolder.isVisible();
         }
         return true;
     }
@@ -266,14 +266,16 @@ public final class McpToolSettingsPanel extends JPanel {
     }
 
     private JPanel buildCategoryPanel(McpToolCategoryEnum category) {
-        JPanel panel = new JPanel(new GridBagLayout());
+        JPanel panel = new JPanel(new BorderLayout(0, 4));
         panel.setBorder(BorderFactory.createTitledBorder(category.label()));
-        int row = 0;
+        JPanel switches = WrapLayout.wrappingRow(FlowLayout.LEFT, 4, 2);
+        JPanel configs = new JPanel();
+        configs.setLayout(new BoxLayout(configs, BoxLayout.Y_AXIS));
+        int groupCount = 0;
         for (McpToolGroupEnum group : McpToolGroupEnum.values()) {
             if (group.category() != category || group == McpToolGroupEnum.ALWAYS_ON) {
                 continue;
             }
-            JCheckBox behaviour = null;
             JCheckBox box;
             if (group == McpToolGroupEnum.BUILD_QUEUE) {
                 buildQueueBox.setText(group.label());
@@ -293,28 +295,30 @@ public final class McpToolSettingsPanel extends JPanel {
                 });
                 groupBoxes.put(group, box);
             }
-            if (group == McpToolGroupEnum.PEER_MESSAGING) {
-                behaviour = allowInterAiBox;
-            }
-            else if (group == McpToolGroupEnum.IDLE_WATCHERS) {
-                behaviour = allowIdleWatcherBox;
-            }
-            addGroupRow(panel, row++, box, behaviour);
+            box.setToolTipText(group.tooltip());
+            switches.add(box);
+            groupCount++;
             JPanel configHolder = buildConfigHolder(group);
             if (configHolder != null) {
-                addFullRow(panel, row++, configHolder);
+                configs.add(configHolder);
             }
         }
         if (category == McpToolCategoryEnum.COLLABORATION) {
-            addFullRow(panel, row++, autoNotifyBox);
-            addFullRow(panel, row++, allowImportantBox);
+            peerMessagingHolder = new JPanel(new BorderLayout());
+            peerMessagingHolder.add(peerMessaging, BorderLayout.CENTER);
+            configs.add(peerMessagingHolder);
+            idleWatcherHolder = new JPanel(new BorderLayout());
+            idleWatcherHolder.add(idleWatcher, BorderLayout.CENTER);
+            configs.add(idleWatcherHolder);
         }
         if (category == McpToolCategoryEnum.GIT) {
             gitConfigHolder = new JPanel(new BorderLayout());
             gitConfigHolder.add(git, BorderLayout.CENTER);
-            addFullRow(panel, row++, gitConfigHolder);
+            configs.add(gitConfigHolder);
         }
-        return row == 0 ? null : panel;
+        panel.add(switches, BorderLayout.NORTH);
+        panel.add(configs, BorderLayout.CENTER);
+        return groupCount == 0 ? null : panel;
     }
 
     /**
@@ -349,6 +353,12 @@ public final class McpToolSettingsPanel extends JPanel {
             gitConfigHolder.setVisible(model.areConfigSettingsVisibleFor(McpToolGroupEnum.GIT_READ)
                     || model.areConfigSettingsVisibleFor(McpToolGroupEnum.GIT_WRITE));
         }
+        if (peerMessagingHolder != null) {
+            peerMessagingHolder.setVisible(model.areConfigSettingsVisibleFor(McpToolGroupEnum.PEER_MESSAGING));
+        }
+        if (idleWatcherHolder != null) {
+            idleWatcherHolder.setVisible(model.areConfigSettingsVisibleFor(McpToolGroupEnum.IDLE_WATCHERS));
+        }
         revalidate();
         repaint();
     }
@@ -373,12 +383,6 @@ public final class McpToolSettingsPanel extends JPanel {
         updateConfigSettingsVisibility();
     }
 
-    private void updateBehaviourEnablement() {
-        boolean comms = allowInterAiBox.isSelected();
-        autoNotifyBox.setEnabled(comms);
-        allowImportantBox.setEnabled(comms);
-    }
-
     private void chooseTemplate() {
         // The store load takes a cross-process file lock, so it runs off the EDT — on the plugin's shared NetBeans
         // request processor (the same one AiTopComponent uses for its off-EDT work), never the JDK common pool.
@@ -387,14 +391,14 @@ public final class McpToolSettingsPanel extends JPanel {
                 return new McpTemplatePersistenceManager().loadMcpTemplates();
             }
             catch (IOException ex) {
-                throw new java.util.concurrent.CompletionException(ex);
+                throw new CompletionException(ex);
             }
         }, RequestProcessor.getDefault()).whenComplete((templates, error) -> SwingUtilities.invokeLater(() -> {
             if (!isDisplayable()) {
                 return;
             }
             if (error != null) {
-                Throwable cause = error instanceof java.util.concurrent.CompletionException && error.getCause() != null
+                Throwable cause = error instanceof CompletionException && error.getCause() != null
                                   ? error.getCause() : error;
                 DialogPlacement.showMessageDialog(this, "Could not load MCP templates: " + cause.getMessage(),
                                                   "MCP Templates", JOptionPane.ERROR_MESSAGE);
@@ -474,34 +478,6 @@ public final class McpToolSettingsPanel extends JPanel {
         for (ActionListener listener : changeListeners) {
             listener.actionPerformed(null);
         }
-    }
-
-    private void addGroupRow(JPanel panel, int row, JCheckBox groupBox, JCheckBox behaviour) {
-        GridBagConstraints c = new GridBagConstraints();
-        c.gridy = row;
-        c.gridx = 0;
-        c.weightx = behaviour == null ? 1 : 0;
-        c.fill = GridBagConstraints.HORIZONTAL;
-        c.anchor = GridBagConstraints.WEST;
-        c.insets = new Insets(2, 4, 2, 4);
-        panel.add(groupBox, c);
-        if (behaviour != null) {
-            c.gridx = 1;
-            c.weightx = 1;
-            panel.add(behaviour, c);
-        }
-    }
-
-    private void addFullRow(JPanel panel, int row, Component component) {
-        GridBagConstraints c = new GridBagConstraints();
-        c.gridy = row;
-        c.gridx = 0;
-        c.gridwidth = 2;
-        c.weightx = 1;
-        c.fill = GridBagConstraints.HORIZONTAL;
-        c.anchor = GridBagConstraints.WEST;
-        c.insets = new Insets(2, 4, 2, 4);
-        panel.add(component, c);
     }
 
     private void addFull(int row, Component component) {

@@ -11,24 +11,20 @@ import javax.swing.JPanel;
 import javax.swing.SwingUtilities;
 
 /**
- * FlowLayout that reports the size of the wrapped result rather than a single
- * row. FlowLayout.layoutContainer already wraps to the container width, but its
- * preferredLayoutSize always measures one row, so the caller allocates too
- * little height and the wrapped rows are clipped vertically.
+ * FlowLayout that reports the size of the wrapped result rather than a single row. FlowLayout.layoutContainer already
+ * wraps to the container width, but its preferredLayoutSize always measures one row, so the caller allocates too little
+ * height and the wrapped rows are clipped vertically.
  */
-class WrapLayout extends FlowLayout {
+public class WrapLayout extends FlowLayout {
 
     /**
-     * Creates a panel using this layout that revalidates itself when its width
-     * changes. layoutSize measures against the width available during the
-     * current pass, which while resizing is still the previous pass's value —
-     * so shrinking the panel until the buttons need an extra row would leave
-     * the reported height one pass behind and clip that row. A LayoutManager
-     * cannot observe resizes itself, so the panel carries the listener. Prefer
-     * this over constructing the panel and layout separately, which silently
-     * omits it.
+     * Creates a panel using this layout that revalidates itself when its width changes. layoutSize measures against the
+     * width available during the current pass, which while resizing is still the previous pass's value — so shrinking
+     * the panel until the buttons need an extra row would leave the reported height one pass behind and clip that row.
+     * A LayoutManager cannot observe resizes itself, so the panel carries the listener. Prefer this over constructing
+     * the panel and layout separately, which silently omits it.
      */
-    static JPanel wrappingRow(int align, int hgap, int vgap) {
+    public static JPanel wrappingRow(int align, int hgap, int vgap) {
         JPanel row = new JPanel(new WrapLayout(align, hgap, vgap));
         row.addComponentListener(new ComponentAdapter() {
             private int lastWidth = 0;
@@ -46,9 +42,8 @@ class WrapLayout extends FlowLayout {
     }
 
     /**
-     * Width available to lay out in. The container's own width is 0 until it
-     * has been laid out, so fall back to the nearest sized ancestor minus all
-     * intermediate insets — same approach WrappingHtmlLabel uses.
+     * Width available to lay out in. The container's own width is 0 until it has been laid out, so fall back to the
+     * nearest sized ancestor minus all intermediate insets — same approach WrappingHtmlLabel uses.
      */
     private static int availableWidth(Container target) {
         int w = target.getWidth();
@@ -76,7 +71,7 @@ class WrapLayout extends FlowLayout {
         return w > 0 ? w : Integer.MAX_VALUE;
     }
 
-    WrapLayout(int align, int hgap, int vgap) {
+    public WrapLayout(int align, int hgap, int vgap) {
         super(align, hgap, vgap);
     }
 

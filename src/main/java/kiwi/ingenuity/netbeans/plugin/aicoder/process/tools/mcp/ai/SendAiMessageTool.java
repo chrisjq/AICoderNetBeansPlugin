@@ -50,7 +50,8 @@ public class SendAiMessageTool extends AbstractActionTool {
         subj.addProperty(ToolSchemaKeyEnum.TYPE.key(), "string");
         subj.addProperty(ToolSchemaKeyEnum.DESCRIPTION.key(), "Short subject line (max "
                          + AiInboxMessage.MAX_SUBJECT_LENGTH + " chars). The recipient sees only this, not the body, "
-                         + "when the message is delivered — make it state what you want done.");
+                         + "when the message is delivered — make it state what you want done. Longer subjects are shortened to "
+                         + (AiInboxMessage.MAX_SUBJECT_LENGTH - 1) + " chars plus … and the full subject is put at the top of the message.");
         props.add(SendAiMessageParamEnum.SUBJECT.key(), subj);
 
         JsonObject msg = new JsonObject();
@@ -161,14 +162,30 @@ public class SendAiMessageTool extends AbstractActionTool {
         if (subject == null || subject.isBlank()) {
             return "Error: " + SendAiMessageParamEnum.SUBJECT.key() + " is required";
         }
-        if (subject.length() > AiInboxMessage.MAX_SUBJECT_LENGTH) {
-            return "Error: subject exceeds maximum length of " + AiInboxMessage.MAX_SUBJECT_LENGTH + " characters";
-        }
         if (message == null || message.isBlank()) {
             return "Error: " + SendAiMessageParamEnum.MESSAGE.key() + " is required";
         }
         if (message.length() > AiInboxMessage.MAX_MESSAGE_LENGTH) {
             return "Error: message body exceeds maximum length of " + AiInboxMessage.MAX_MESSAGE_LENGTH + " characters";
+        }
+        String originalSubject = subject;
+        String normalizedSubject = originalSubject.strip();
+        boolean subjectTruncated = normalizedSubject.length() > AiInboxMessage.MAX_SUBJECT_LENGTH;
+        if (subjectTruncated) {
+            int cut = AiInboxMessage.MAX_SUBJECT_LENGTH - 1;
+            if (Character.isHighSurrogate(normalizedSubject.charAt(cut - 1))) {
+                cut--;
+            }
+            String head = normalizedSubject.substring(0, cut).stripTrailing();
+            subject = head + "…";
+            String prefix = "Full subject: " + originalSubject + "\n\n";
+            if (prefix.length() + message.length() > AiInboxMessage.MAX_MESSAGE_LENGTH) {
+                return "Error: subject is too long to keep in the message body — shorten the subject";
+            }
+            message = prefix + message;
+        }
+        else {
+            subject = normalizedSubject;
         }
         String senderRefusal = callerCommsRefusal(senderId);
         if (senderRefusal != null) {
@@ -229,6 +246,11 @@ public class SendAiMessageTool extends AbstractActionTool {
         }
         else {
             result = "Message sent to session " + targetSessionId + " (id=" + messageId + ")";
+        }
+        if (subjectTruncated) {
+            String truncationNote = "subject truncated to " + AiInboxMessage.MAX_SUBJECT_LENGTH
+                    + " characters; full subject kept at the top of the message";
+            result = sendResult.unmatchedReplyTo() ? truncationNote + "\n" + result : result + " (" + truncationNote + ")";
         }
         if (targetRunning) {
             result += " — WARNING: target session is currently processing";

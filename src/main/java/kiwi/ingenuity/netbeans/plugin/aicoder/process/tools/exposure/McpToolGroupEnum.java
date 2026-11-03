@@ -2,8 +2,10 @@ package kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.exposure;
 
 import java.util.Collections;
 import java.util.EnumSet;
+import java.util.List;
 import java.util.Set;
 import java.util.function.Predicate;
+import java.util.stream.Collectors;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.settings.AiSessionSettings;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.McpSectionEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.McpToolEnum;
@@ -46,6 +48,7 @@ public enum McpToolGroupEnum {
     private final String label;
     private final boolean switchable;
     private final Predicate<AiSessionSettings> availableFor;
+    private final List<McpToolEnum> declaredMembers;
     private final Set<McpToolEnum> fixedMembers;
 
     McpToolGroupEnum(McpToolCategoryEnum category, String label, boolean switchable, McpToolEnum... members) {
@@ -58,6 +61,7 @@ public enum McpToolGroupEnum {
         this.label = label;
         this.switchable = switchable;
         this.availableFor = availableFor;
+        this.declaredMembers = List.of(members);
         this.fixedMembers = members.length == 0 ? Set.of() : Collections.unmodifiableSet(EnumSet.of(members[0], members));
     }
 
@@ -75,6 +79,15 @@ public enum McpToolGroupEnum {
 
     public String label() {
         return label;
+    }
+
+    /**
+     * The label and bare tool names controlled by this group, in declaration order.
+     */
+    public String tooltip() {
+        return label + ": " + declaredMembers.stream()
+                .map(McpToolEnum::toolName)
+                .collect(Collectors.joining(", "));
     }
 
     public boolean switchable() {

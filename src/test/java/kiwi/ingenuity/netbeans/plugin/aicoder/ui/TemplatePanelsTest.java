@@ -12,6 +12,7 @@ import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicReference;
 import javax.swing.AbstractButton;
 import javax.swing.JButton;
+import javax.swing.JCheckBox;
 import javax.swing.JComponent;
 import javax.swing.JLabel;
 import javax.swing.JTable;
@@ -155,6 +156,26 @@ class TemplatePanelsTest {
     }
 
     @Test
+    void mcpTemplateSwitchesUseGroupTooltips() throws Exception {
+        McpTemplatesPanel panel = onEdt(() -> new McpTemplatesPanel(new McpTemplatePersistenceManager(tempDir), () -> {
+                                                            }));
+        awaitLoaded(panel);
+
+        for (McpToolGroupEnum group : McpToolGroupEnum.values()) {
+            if (group == McpToolGroupEnum.ALWAYS_ON || !group.switchable()) {
+                continue;
+            }
+            JCheckBox box = onEdt(() -> findCheckBox(panel, group.label()));
+            assertNotNull(box, () -> "switch for " + group.label() + " must be present");
+            assertEquals(group.tooltip(), box.getToolTipText());
+        }
+        JLabel buildQueue = onEdt(() -> findLabel(panel, McpToolGroupEnum.BUILD_QUEUE.label()));
+        assertNotNull(buildQueue, "the derived build queue label must be present");
+        assertEquals(McpToolGroupEnum.BUILD_QUEUE.tooltip() + " (on when any build system is on)",
+                     buildQueue.getToolTipText());
+    }
+
+    @Test
     void mcpTemplatesEditorShowsNoAlwaysOnGroupOrLockedLabel() throws Exception {
         McpTemplatePersistenceManager mcp = new McpTemplatePersistenceManager(tempDir);
         McpTemplatesPanel panel = onEdt(() -> new McpTemplatesPanel(mcp, () -> {
@@ -167,6 +188,37 @@ class TemplatePanelsTest {
                     "the always-on category must not be shown");
         assertFalse(onEdt(() -> containsText(panel, McpToolGroupEnum.ALWAYS_ON.label() + " (locked on)")),
                     "the always-on group must not be shown as locked on");
+    }
+
+    private static JLabel findLabel(Component root, String text) {
+        if (root instanceof JLabel label && label.getText() != null
+                && label.getText().startsWith(text + " (derived:")) {
+            return label;
+        }
+        if (root instanceof Container container) {
+            for (Component child : container.getComponents()) {
+                JLabel result = findLabel(child, text);
+                if (result != null) {
+                    return result;
+                }
+            }
+        }
+        return null;
+    }
+
+    private static JCheckBox findCheckBox(Component root, String text) {
+        if (root instanceof JCheckBox box && text.equals(box.getText())) {
+            return box;
+        }
+        if (root instanceof Container container) {
+            for (Component child : container.getComponents()) {
+                JCheckBox result = findCheckBox(child, text);
+                if (result != null) {
+                    return result;
+                }
+            }
+        }
+        return null;
     }
 
     private static boolean containsText(Component root, String text) {

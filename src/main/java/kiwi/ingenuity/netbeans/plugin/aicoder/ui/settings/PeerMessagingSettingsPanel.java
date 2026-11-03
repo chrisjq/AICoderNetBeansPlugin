@@ -9,27 +9,31 @@ import javax.swing.BorderFactory;
 import javax.swing.JCheckBox;
 import javax.swing.JPanel;
 import kiwi.ingenuity.netbeans.plugin.aicoder.AccessControlLabelEnum;
+import kiwi.ingenuity.netbeans.plugin.aicoder.process.McpToolEnum;
 
-public final class AiMessagingSettingsPanel extends JPanel {
+/**
+ * The inter-AI messaging checkboxes: allow comms, and the two options that depend on it.
+ */
+public final class PeerMessagingSettingsPanel extends JPanel {
 
     private final JCheckBox allowInterAiCheckBox = new JCheckBox();
     private final JCheckBox autoNotifyInboxCheckBox = new JCheckBox();
     private final JCheckBox allowImportantMessagesCheckBox = new JCheckBox();
-    private final JCheckBox allowIdleWatcherCheckBox = new JCheckBox();
 
-    public AiMessagingSettingsPanel() {
-        setBorder(BorderFactory.createTitledBorder("AI Messaging Config"));
+    public PeerMessagingSettingsPanel() {
+        setBorder(BorderFactory.createTitledBorder("Peer Messaging Config"));
         setLayout(new GridBagLayout());
 
         allowInterAiCheckBox.setText(AccessControlLabelEnum.ALLOW_INTER_AI_COMMS.displayLabel());
+        allowInterAiCheckBox.setToolTipText("Allows Peer messaging tools such as " + McpToolEnum.PEER_MESSAGE_SEND.toolName() + ".");
         autoNotifyInboxCheckBox.setText(AccessControlLabelEnum.AUTO_NOTIFY_INBOX.displayLabel());
+        autoNotifyInboxCheckBox.setToolTipText("Delivers incoming messages to this session as soon as they arrive; when off they wait until the next prompt.");
         allowImportantMessagesCheckBox.setText(AccessControlLabelEnum.ALLOW_IMPORTANT_MESSAGES.displayLabel());
-        allowIdleWatcherCheckBox.setText(AccessControlLabelEnum.ALLOW_IDLE_WATCHER_TIMER.displayLabel());
+        allowImportantMessagesCheckBox.setToolTipText("Lets another session's message sent with important=true interrupt this session's running turn (where the backend supports it).");
 
         addRow(allowInterAiCheckBox, 0, 0);
         addRow(autoNotifyInboxCheckBox, 1, 20);
         addRow(allowImportantMessagesCheckBox, 2, 20);
-        addRow(allowIdleWatcherCheckBox, 3, 20);
 
         allowInterAiCheckBox.addActionListener(e -> updateDependentState());
         updateDependentState();
@@ -39,7 +43,6 @@ public final class AiMessagingSettingsPanel extends JPanel {
         allowInterAiCheckBox.addActionListener(listener);
         autoNotifyInboxCheckBox.addActionListener(listener);
         allowImportantMessagesCheckBox.addActionListener(listener);
-        allowIdleWatcherCheckBox.addActionListener(listener);
     }
 
     public boolean isAllowInterAiSelected() {
@@ -67,14 +70,6 @@ public final class AiMessagingSettingsPanel extends JPanel {
         allowImportantMessagesCheckBox.setSelected(selected);
     }
 
-    public boolean isAllowIdleWatcherSelected() {
-        return allowIdleWatcherCheckBox.isSelected();
-    }
-
-    public void setAllowIdleWatcherSelected(boolean selected) {
-        allowIdleWatcherCheckBox.setSelected(selected);
-    }
-
     private void updateDependentState() {
         boolean enabled = allowInterAiCheckBox.isSelected();
         autoNotifyInboxCheckBox.setEnabled(enabled);
@@ -91,5 +86,4 @@ public final class AiMessagingSettingsPanel extends JPanel {
         c.insets = new Insets(4, 4 + leftInset, 4, 4);
         add(component, c);
     }
-
 }

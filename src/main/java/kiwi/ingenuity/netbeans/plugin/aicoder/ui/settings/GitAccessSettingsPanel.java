@@ -7,11 +7,14 @@ import java.awt.Insets;
 import java.awt.event.ActionListener;
 import java.util.EnumMap;
 import java.util.Map;
+import java.util.stream.Collectors;
 import javax.swing.BorderFactory;
 import javax.swing.JCheckBox;
 import javax.swing.JPanel;
 import kiwi.ingenuity.netbeans.plugin.aicoder.AccessControlLabelEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.GitAccessOptionEnum;
+import kiwi.ingenuity.netbeans.plugin.aicoder.process.McpToolEnum;
+import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.exposure.McpToolGroupEnum;
 
 public final class GitAccessSettingsPanel extends JPanel {
 
@@ -24,11 +27,21 @@ public final class GitAccessSettingsPanel extends JPanel {
         setLayout(new GridBagLayout());
 
         allowGitAccessCheckBox.setText(AccessControlLabelEnum.ALLOW_GIT_ACCESS.displayLabel());
+        allowGitAccessCheckBox.setToolTipText("Allows Git tools to inspect or modify the repository.");
         addRow(allowGitAccessCheckBox, 0, 0);
 
         int row = 1;
         for (GitAccessOptionEnum option : GitAccessOptionEnum.values()) {
             JCheckBox checkBox = new JCheckBox(option.label().displayLabel());
+            checkBox.setToolTipText(option == GitAccessOptionEnum.READ
+                                    ? "Allows " + McpToolEnum.GET_GIT_STATUS.toolName() + ", " + McpToolEnum.GET_GIT_DIFF.toolName()
+                    + ", " + McpToolEnum.GIT_LOG.toolName() + ", " + McpToolEnum.GIT_SHOW.toolName()
+                    + ", and " + McpToolEnum.GIT_BLAME.toolName() + " to inspect repository state."
+                                    : "Allows Git tools that change the repository or remotes: "
+                    + McpToolGroupEnum.GIT_WRITE.fixedMembers().stream()
+                            .map(McpToolEnum::toolName)
+                            .collect(Collectors.joining(", "))
+                    + ".");
             optionCheckBoxes.put(option, checkBox);
             addRow(checkBox, row++, 20);
         }

@@ -12,6 +12,7 @@ import javax.swing.JCheckBox;
 import javax.swing.JPanel;
 import kiwi.ingenuity.netbeans.plugin.aicoder.AccessControlLabelEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.WebRequestAccessOptionEnum;
+import kiwi.ingenuity.netbeans.plugin.aicoder.process.McpToolEnum;
 
 public final class WebRequestAccessSettingsPanel extends JPanel {
 
@@ -25,10 +26,15 @@ public final class WebRequestAccessSettingsPanel extends JPanel {
 
         int row = 0;
         allowWebRequestsCheckBox.setText(AccessControlLabelEnum.ALLOW_WEB_REQUESTS.displayLabel());
+        allowWebRequestsCheckBox.setToolTipText("Allows " + McpToolEnum.WEB_REQUEST.toolName()
+                + " GET requests to public destinations; the options below allow more methods, headers, bodies, localhost and private networks.");
         addRow(allowWebRequestsCheckBox, row++, 0);
         allowWebRequestsCheckBox.addActionListener(e -> updateDependentState());
         for (WebRequestAccessOptionEnum option : WebRequestAccessOptionEnum.values()) {
             JCheckBox checkBox = new JCheckBox(option.label().displayLabel());
+            checkBox.setToolTipText(option.isMethod()
+                                    ? "Allows " + option.methodName() + " requests via " + McpToolEnum.WEB_REQUEST.toolName() + "."
+                                    : webOptionTooltip(option));
             optionCheckBoxes.put(option, checkBox);
             addRow(checkBox, row++, 20);
         }
@@ -61,6 +67,21 @@ public final class WebRequestAccessSettingsPanel extends JPanel {
 
     public void setOptionSelected(WebRequestAccessOptionEnum option, boolean selected) {
         optionCheckBoxes.get(option).setSelected(selected);
+    }
+
+    private String webOptionTooltip(WebRequestAccessOptionEnum option) {
+        return switch (option) {
+            case HEADERS ->
+                "Allows " + McpToolEnum.WEB_REQUEST.toolName() + " to send custom request headers.";
+            case BODY ->
+                "Allows " + McpToolEnum.WEB_REQUEST.toolName() + " to send request bodies.";
+            case LOCALHOST ->
+                "Allows requests to localhost services.";
+            case PRIVATE_NETWORKS ->
+                "Allows private-network requests, including link-local, CGNAT, and cloud metadata addresses.";
+            default ->
+                "";
+        };
     }
 
     private void updateDependentState() {

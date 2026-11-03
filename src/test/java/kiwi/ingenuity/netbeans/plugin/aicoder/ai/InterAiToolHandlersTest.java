@@ -121,12 +121,53 @@ class InterAiToolHandlersTest {
         SendAiMessageTool tool = new SendAiMessageTool();
 
         String accepted = tool.handle(sendArgs(sender, target.id(), "s".repeat(100), "b".repeat(200_000),
-                null, false, true, true), null);
+                                               null, false, true, true), null);
         assertTrue(accepted.startsWith("Message sent"), accepted);
-        assertTrue(tool.handle(sendArgs(sender, target.id(), "s".repeat(101), "body", null, false, false, false), null)
-                .contains("subject exceeds maximum length"));
-        assertTrue(tool.handle(sendArgs(sender, target.id(), "ok", "b".repeat(200_001), null, false, false, false), null)
-                .contains("message body exceeds maximum length"));
+        assertTrue(tool.handle(sendArgs(sender, target.id(), "s".repeat(101), "   ", null, false, false, false), null)
+                .contains("message is required"));
+
+        String longSubject = "s".repeat(101);
+        String truncated = tool.handle(sendArgs(sender, target.id(), longSubject, "body", null, false, false, false), null);
+        assertTrue(truncated.contains("subject truncated to 100 characters"), truncated);
+        AiInboxMessage truncatedMessage = broker.listInbox(target.id(), target.secret()).stream()
+                .filter(m -> m.subject().endsWith("…")).findFirst().orElseThrow();
+        assertTrue(truncatedMessage.subject().length() <= 100);
+        assertTrue(truncatedMessage.body().startsWith("Full subject: " + longSubject));
+
+        String surrogateSubject = "a".repeat(98) + "😀" + "tail";
+        String surrogateResult = tool.handle(sendArgs(sender, target.id(), surrogateSubject, "surrogate", null, false, false, false), null);
+        assertTrue(surrogateResult.contains("subject truncated to 100 characters"), surrogateResult);
+        AiInboxMessage surrogateMessage = broker.listInbox(target.id(), target.secret()).stream()
+                .filter(m -> m.body().startsWith("Full subject: " + surrogateSubject)).findFirst().orElseThrow();
+        assertTrue(surrogateMessage.subject().length() <= AiInboxMessage.MAX_SUBJECT_LENGTH);
+        assertTrue(surrogateMessage.subject().endsWith("…"));
+        for (int i = 0; i < surrogateMessage.subject().length(); i++) {
+            char c = surrogateMessage.subject().charAt(i);
+            assertFalse(Character.isHighSurrogate(c) && (i + 1 == surrogateMessage.subject().length()
+                    || !Character.isLowSurrogate(surrogateMessage.subject().charAt(i + 1))));
+            assertFalse(Character.isLowSurrogate(c) && (i == 0
+                    || !Character.isHighSurrogate(surrogateMessage.subject().charAt(i - 1))));
+        }
+
+        String allSpacePrefix = " ".repeat(99) + "x".repeat(150);
+        tool.handle(sendArgs(sender, target.id(), allSpacePrefix, "spaces", null, false, false, false), null);
+        AiInboxMessage allSpaceMessage = broker.listInbox(target.id(), target.secret()).stream()
+                .filter(m -> m.body().startsWith("Full subject: " + allSpacePrefix)).findFirst().orElseThrow();
+        assertTrue(allSpaceMessage.subject().length() <= AiInboxMessage.MAX_SUBJECT_LENGTH);
+        assertTrue(allSpaceMessage.subject().endsWith("…"));
+
+        String exactSubject = "s".repeat(100);
+        String tooLongSubjectResult = tool.handle(sendArgs(sender, target.id(), "x".repeat(199_990), "ok", null, false, false, false), null);
+        assertTrue(tooLongSubjectResult.contains("subject is too long to keep in the message body"), tooLongSubjectResult);
+
+        String exactSubjectResult = tool.handle(sendArgs(sender, target.id(), exactSubject, "exact", null, false, false, false), null);
+        assertTrue(exactSubjectResult.startsWith("Message sent"), exactSubjectResult);
+        AiInboxMessage exactMessage = broker.listInbox(target.id(), target.secret()).stream()
+                .filter(m -> exactSubject.equals(m.subject())).findFirst().orElseThrow();
+        assertEquals(exactSubject, exactMessage.subject());
+        String plainBodyError = tool.handle(sendArgs(sender, target.id(), "long".repeat(30), "b".repeat(200_001), null, false, false, false), null);
+        assertTrue(plainBodyError.contains("message body exceeds maximum length"), plainBodyError);
+        assertFalse(plainBodyError.contains("subject is too long"), plainBodyError);
 
         AiInboxMessage stored = broker.listInbox(target.id(), target.secret()).get(0);
         assertTrue(stored.expectsReply());
@@ -134,18 +175,17 @@ class InterAiToolHandlersTest {
     }
 
     /**
-     * FIX 4 (the incident Boss hit: a RUNNING session with allowInterAiComms=false was absent from
-     * PeerSessionList) — a comms-disabled target must be told so, and must NOT be told it is "not active":
-     * the two failures need opposite remedies, and pasting the wrong one sends the caller back to the session
-     * list that hides the real target. Nothing may be written to the inbox.
+     * FIX 4 (the incident Boss hit: a RUNNING session with allowInterAiComms=false was absent from PeerSessionList) — a
+     * comms-disabled target must be told so, and must NOT be told it is "not active": the two failures need opposite
+     * remedies, and pasting the wrong one sends the caller back to the session list that hides the real target. Nothing
+     * may be written to the inbox.
      * <p>
-     * The target is built the way production builds a comms-disabled session: KNOWN to the registry (the
-     * session helper registers a wrapper) but never registered with the broker — AiTopComponent registers a
-     * session only when allowInterAiComms is on, so registering it with the broker first would test a state
-     * that cannot occur and would let the bug survive.
+     * The target is built the way production builds a comms-disabled session: KNOWN to the registry (the session helper
+     * registers a wrapper) but never registered with the broker — AiTopComponent registers a session only when
+     * allowInterAiComms is on, so registering it with the broker first would test a state that cannot occur and would
+     * let the bug survive.
      * <p>
-     * Moving the comms check out of the !isActive branch turns this red: the target falls through to "is not
-     * active".
+     * Moving the comms check out of the !isActive branch turns this red: the target falls through to "is not active".
      */
     @Test
     void sendToolRefusesATargetWhoseInterAiCommsAreDisabled() {
@@ -161,15 +201,15 @@ class InterAiToolHandlersTest {
         assertTrue(result.contains("inter-AI messaging disabled"), result);
         assertTrue(result.contains(target.id()), "the refusal must name the id: " + result);
         assertFalse(result.contains("is not active"),
-                "a comms-disabled target must not be told it is not active");
+                    "a comms-disabled target must not be told it is not active");
         assertTrue(broker.listInbox(target.id(), target.secret()).isEmpty(),
-                "a refused send must not write an inbox entry");
+                   "a refused send must not write an inbox entry");
     }
 
     /**
-     * A session that EXISTS (registered with a wrapper) but has no inbox is genuinely inactive, and must be
-     * told "is not active" — never the unknown-id advice, which would send the caller hunting for an id that
-     * is known to the registry.
+     * A session that EXISTS (registered with a wrapper) but has no inbox is genuinely inactive, and must be told "is
+     * not active" — never the unknown-id advice, which would send the caller hunting for an id that is known to the
+     * registry.
      */
     @Test
     void sendToolDistinguishesAKnownInactiveTargetFromAnUnknownId() {
@@ -185,12 +225,12 @@ class InterAiToolHandlersTest {
         assertTrue(result.startsWith("Error:"), result);
         assertTrue(result.contains("is not active"), result);
         assertFalse(result.contains("no AI session has the ID"),
-                "a KNOWN but inactive session must not be told its id is unknown");
+                    "a KNOWN but inactive session must not be told its id is unknown");
     }
 
     /**
-     * A truly unknown id must get the directive verbatim-id advice and must never be told "is not active" —
-     * that advice is reserved for sessions the registry can still find.
+     * A truly unknown id must get the directive verbatim-id advice and must never be told "is not active" — that advice
+     * is reserved for sessions the registry can still find.
      */
     @Test
     void sendToolDistinguishesAnUnknownIdFromAnInactiveSession() {
@@ -200,13 +240,13 @@ class InterAiToolHandlersTest {
         SendAiMessageTool tool = new SendAiMessageTool();
 
         String result = tool.handle(sendArgs(sender, "fx4-does-not-exist", "s", "b",
-                null, false, false, false), null);
+                                             null, false, false, false), null);
 
         assertTrue(result.startsWith("Error:"), result);
         assertTrue(result.contains("no active AI session has the id or name"), result);
         assertTrue(result.contains("listed id or unique name"), result);
         assertFalse(result.contains("is not active"),
-                "an unknown id must not get the 'is not active' advice meant for a known session");
+                    "an unknown id must not get the 'is not active' advice meant for a known session");
     }
 
     @Test
@@ -249,7 +289,7 @@ class InterAiToolHandlersTest {
         assertTrue(broker.listInbox(self.id(), self.secret()).isEmpty(), "a refused self-send must not write an inbox entry");
         assertTrue(broker.listOwedReplies(self.id()).isEmpty());
         assertTrue(pendingRepliesOf(broker).values().stream().noneMatch(e -> e.toString().contains(self.id())),
-                "a refused self-send must not create pending-reply tracking");
+                   "a refused self-send must not create pending-reply tracking");
     }
 
     @Test

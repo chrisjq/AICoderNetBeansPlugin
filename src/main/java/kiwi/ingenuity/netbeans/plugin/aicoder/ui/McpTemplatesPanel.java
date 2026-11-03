@@ -8,10 +8,12 @@ import java.util.EnumMap;
 import java.util.EnumSet;
 import java.util.List;
 import javax.swing.BorderFactory;
+import javax.swing.BoxLayout;
 import javax.swing.JCheckBox;
 import javax.swing.JLabel;
 import javax.swing.JPanel;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.settings.McpTemplate;
+import kiwi.ingenuity.netbeans.plugin.aicoder.ai.ui.WrapLayout;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.exposure.LegacyToolGroups;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.exposure.McpToolCategoryEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.exposure.McpToolConfig;
@@ -43,13 +45,13 @@ public final class McpTemplatesPanel extends TemplatePanel<McpTemplate> {
     }
 
     private void buildEditor() {
-        editor.setLayout(new javax.swing.BoxLayout(editor, javax.swing.BoxLayout.Y_AXIS));
+        editor.setLayout(new BoxLayout(editor, BoxLayout.Y_AXIS));
         EnumMap<McpToolCategoryEnum, JPanel> categories = new EnumMap<>(McpToolCategoryEnum.class);
         for (McpToolCategoryEnum category : McpToolCategoryEnum.values()) {
             if (category == McpToolCategoryEnum.ALWAYS_ON) {
                 continue;
             }
-            JPanel categoryPanel = new JPanel(new FlowLayout(FlowLayout.LEFT, 4, 2));
+            JPanel categoryPanel = WrapLayout.wrappingRow(FlowLayout.LEFT, 4, 2);
             categoryPanel.setBorder(BorderFactory.createTitledBorder(category.label()));
             categories.put(category, categoryPanel);
             editor.add(categoryPanel);
@@ -60,10 +62,12 @@ public final class McpTemplatesPanel extends TemplatePanel<McpTemplate> {
             }
             JPanel categoryPanel = categories.get(group.category());
             if (group == McpToolGroupEnum.BUILD_QUEUE) {
+                buildQueueState.setToolTipText(group.tooltip() + " (on when any build system is on)");
                 categoryPanel.add(buildQueueState);
             }
             else if (group.switchable()) {
                 JCheckBox box = new JCheckBox(group.label());
+                box.setToolTipText(group.tooltip());
                 box.addActionListener(e -> updateBuildQueueState());
                 switches.put(group, box);
                 categoryPanel.add(box);

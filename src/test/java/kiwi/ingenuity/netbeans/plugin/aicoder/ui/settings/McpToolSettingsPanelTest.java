@@ -36,6 +36,38 @@ class McpToolSettingsPanelTest {
     }
 
     @Test
+    void collaborationConfigHoldersFollowTheirSwitches() throws Exception {
+        McpToolSettingsPanel panel = createPanel();
+        SwingUtilities.invokeAndWait(() -> panel.applyConfig(McpToolConfig.ALL_ENABLED
+                .with(McpToolGroupEnum.PEER_MESSAGING, true)
+                .with(McpToolGroupEnum.IDLE_WATCHERS, true)));
+        assertFalse(panel.areConfigSettingsVisibleFor(McpToolGroupEnum.PEER_MESSAGING));
+        assertFalse(panel.areConfigSettingsVisibleFor(McpToolGroupEnum.IDLE_WATCHERS));
+
+        SwingUtilities.invokeAndWait(() -> panel.applyConfig(McpToolConfig.ALL_ENABLED));
+        assertTrue(panel.areConfigSettingsVisibleFor(McpToolGroupEnum.PEER_MESSAGING));
+        assertTrue(panel.areConfigSettingsVisibleFor(McpToolGroupEnum.IDLE_WATCHERS));
+    }
+
+    @Test
+    void collaborationValuesSurviveHiddenHolders() throws Exception {
+        McpToolSettingsPanel panel = createPanel();
+        AiSessionSettings settings = new AiSessionSettings();
+        settings.setAllowInterAiComms(true);
+        settings.setAutoNotifyInbox(true);
+        settings.setAllowImportantMessages(true);
+        settings.setAllowIdleWatcherTimer(true);
+        SwingUtilities.invokeAndWait(() -> panel.load(settings));
+        SwingUtilities.invokeAndWait(() -> panel.applyConfig(McpToolConfig.ALL_ENABLED
+                .with(McpToolGroupEnum.PEER_MESSAGING, true)
+                .with(McpToolGroupEnum.IDLE_WATCHERS, true)));
+        assertTrue(panel.isAllowInterAiCommsSelected());
+        assertTrue(panel.isAutoNotifySelected());
+        assertTrue(panel.isAllowImportantSelected());
+        assertTrue(panel.isAllowIdleWatcherSelected());
+    }
+
+    @Test
     void configValuesAreKeptWhileTheirGroupIsHidden() throws Exception {
         McpToolSettingsPanel panel = createPanel();
         AiSessionSettings settings = new AiSessionSettings();
