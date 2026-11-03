@@ -14,7 +14,7 @@ public final class McpSteeringSettingsPanel extends JPanel {
     private final JCheckBox enabledCheckBox = new JCheckBox();
 
     public McpSteeringSettingsPanel() {
-        setBorder(BorderFactory.createTitledBorder("MCP steering"));
+        setBorder(BorderFactory.createTitledBorder("MCP Steering Config"));
         setLayout(new GridBagLayout());
         enabledCheckBox.setText(AccessControlLabelEnum.MCP_STEERING.displayLabel());
         addRow(enabledCheckBox, 0);

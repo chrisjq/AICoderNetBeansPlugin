@@ -336,7 +336,7 @@ public final class TurnContext {
         }
         else {
             message = "Tool definitions alone need ~" + overhead + " tokens of your " + w + "-token window. Apply the "
-                    + "'Minimal' MCP template (session settings → MCP Tools → Apply MCP template…), switch off tool "
+                    + "'Minimal' MCP template (session settings → MCP Tools → Apply new MCP template…), switch off tool "
                     + "groups, or raise the context window.";
             hint = HintState.toolsTooBigText(toolTokens, w);
         }

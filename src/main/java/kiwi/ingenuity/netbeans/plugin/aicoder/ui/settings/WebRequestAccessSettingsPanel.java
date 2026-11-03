@@ -20,7 +20,7 @@ public final class WebRequestAccessSettingsPanel extends JPanel {
             = new EnumMap<>(WebRequestAccessOptionEnum.class);
 
     public WebRequestAccessSettingsPanel() {
-        setBorder(BorderFactory.createTitledBorder("Web Requests"));
+        setBorder(BorderFactory.createTitledBorder("Web Requests Config"));
         setLayout(new GridBagLayout());
 
         int row = 0;

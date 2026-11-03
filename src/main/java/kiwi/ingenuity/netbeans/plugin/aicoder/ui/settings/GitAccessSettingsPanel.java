@@ -20,7 +20,7 @@ public final class GitAccessSettingsPanel extends JPanel {
             = new EnumMap<>(GitAccessOptionEnum.class);
 
     public GitAccessSettingsPanel() {
-        setBorder(BorderFactory.createTitledBorder("Git"));
+        setBorder(BorderFactory.createTitledBorder("Git Config"));
         setLayout(new GridBagLayout());
 
         allowGitAccessCheckBox.setText(AccessControlLabelEnum.ALLOW_GIT_ACCESS.displayLabel());

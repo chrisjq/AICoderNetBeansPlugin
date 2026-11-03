@@ -18,7 +18,7 @@ public final class AiMessagingSettingsPanel extends JPanel {
     private final JCheckBox allowIdleWatcherCheckBox = new JCheckBox();
 
     public AiMessagingSettingsPanel() {
-        setBorder(BorderFactory.createTitledBorder("AI Messaging"));
+        setBorder(BorderFactory.createTitledBorder("AI Messaging Config"));
         setLayout(new GridBagLayout());
 
         allowInterAiCheckBox.setText(AccessControlLabelEnum.ALLOW_INTER_AI_COMMS.displayLabel());

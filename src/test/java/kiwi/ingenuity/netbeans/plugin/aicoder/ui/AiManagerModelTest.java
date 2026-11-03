@@ -316,7 +316,7 @@ class AiManagerModelTest {
     void sessionModeShowsTheMcpSteeringSwitchForATypeThatSupportsItAndRoundTripsIt() throws Exception {
         AiSessionConfigPanel panel = onEdt(() -> new AiSessionConfigPanel(AiSessionConfigPanelMode.SESSION));
         JCheckBox steering = onEdt(() -> findMcpSteeringCheckBox(panel));
-        JPanel steeringPanel = onEdt(() -> findTitledPanel(panel, "MCP steering"));
+        JPanel steeringPanel = onEdt(() -> findTitledPanel(panel, "MCP Steering Config"));
         assertNotNull(steering, "the switch is part of the SESSION General group again");
         assertFalse(steeringPanel.isVisible(), "hidden until an AI type that supports steering is loaded");
 
@@ -346,7 +346,7 @@ class AiManagerModelTest {
     @Test
     void sessionModeHidesTheMcpSteeringSwitchWhenNoAiTypeIsKnown() throws Exception {
         AiSessionConfigPanel panel = onEdt(() -> new AiSessionConfigPanel(AiSessionConfigPanelMode.SESSION));
-        JPanel steeringPanel = onEdt(() -> findTitledPanel(panel, "MCP steering"));
+        JPanel steeringPanel = onEdt(() -> findTitledPanel(panel, "MCP Steering Config"));
 
         onEdt(() -> {
             panel.loadSession(new AiSessionSettings());
@@ -507,7 +507,7 @@ class AiManagerModelTest {
         }
         if (root instanceof JPanel panel
                 && panel.getBorder() instanceof TitledBorder border
-                && "MCP steering".equals(border.getTitle())) {
+                && "MCP Steering Config".equals(border.getTitle())) {
             return findCheckBox(panel);
         }
         if (root instanceof Container container) {

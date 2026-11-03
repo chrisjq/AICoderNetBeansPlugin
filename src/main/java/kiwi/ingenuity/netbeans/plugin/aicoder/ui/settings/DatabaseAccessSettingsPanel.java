@@ -32,7 +32,7 @@ public final class DatabaseAccessSettingsPanel extends JPanel {
     private final JSpinner rowLimitSpinner;
 
     public DatabaseAccessSettingsPanel() {
-        setBorder(BorderFactory.createTitledBorder("Database Access (read-only)"));
+        setBorder(BorderFactory.createTitledBorder("Database Access Config (read-only)"));
         setLayout(new GridBagLayout());
 
         int row = 0;

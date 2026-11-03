@@ -7,6 +7,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.prefs.Preferences;
 import javax.swing.JComboBox;
+import javax.swing.JTextField;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.openaicompatible.ServerTypeEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.openaicompatible.settings.OpenAiCompatiblePluginSettings;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.openaicompatible.settings.OpenAiCompatibleSessionSettings;
@@ -77,6 +78,8 @@ class OpenAiCompatibleSummaryModelPanelTest {
         JComboBox<?> combo = summaryCombo(panel.component());
         assertTrue(combo.isEditable());
         assertTrue(combo.getToolTipText().contains("Leave empty to use the chat model"));
+        JTextField editor = (JTextField) combo.getEditor().getEditorComponent();
+        assertEquals("Uses the chat model", editor.getClientProperty("JTextField.placeholderText"));
     }
 
     @Test

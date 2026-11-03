@@ -73,7 +73,7 @@ public final class HintState {
     public static final double TOOLS_SHARE_THRESHOLD = 0.25;
 
     private static final String MINIMAL_TEMPLATE_ADVICE = "Apply the 'Minimal' MCP template (session settings → MCP "
-            + "Tools → Apply MCP template…), switch off tool groups, or raise the context window.";
+            + "Tools → Apply new MCP template…), switch off tool groups, or raise the context window.";
 
     /**
      * Rank 3 label when the tool definitions do not fit the window: "Tools use ~N of W — apply Minimal".

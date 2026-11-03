@@ -63,6 +63,8 @@ import kiwi.ingenuity.netbeans.plugin.aicoder.ai.ui.FormLayoutUtil;
 public final class OpenAiCompatibleBasicPanel implements AiSessionCreateSettingsPanel<OpenAiCompatibleSessionSettings> {
 
     private static final long AUTO_CONTEXT = 0L;
+    // FlatLaf renders this client property as placeholder text; other look-and-feels ignore it.
+    private static final String SUMMARY_PLACEHOLDER_PROPERTY = "JTextField.placeholderText";
     private static final String ADVANCED_COLLAPSED = "Advanced ▸";
     private static final String ADVANCED_EXPANDED = "Advanced ▾";
 
@@ -178,6 +180,14 @@ public final class OpenAiCompatibleBasicPanel implements AiSessionCreateSettings
         refreshKeyState();
     }
 
+    private void applySummaryModelPlaceholder() {
+        Component editor = summaryModelCombo.getEditor() == null
+                           ? null : summaryModelCombo.getEditor().getEditorComponent();
+        if (editor instanceof JTextField field) {
+            field.putClientProperty(SUMMARY_PLACEHOLDER_PROPERTY, "Uses the chat model");
+        }
+    }
+
     private void buildLayout() {
         baseUrlCombo.setEditable(true);
         baseUrlCombo.setEditor(new BasicComboBoxEditor() {
@@ -197,6 +207,8 @@ public final class OpenAiCompatibleBasicPanel implements AiSessionCreateSettings
         manageServersButton.setToolTipText("Manage servers");
         modelCombo.setEditable(true);
         summaryModelCombo.setEditable(true);
+        applySummaryModelPlaceholder();
+        summaryModelCombo.addPropertyChangeListener("editor", e -> applySummaryModelPlaceholder());
         summaryModelCombo.setToolTipText("The model that writes the summaries when the context is compacted. "
                 + "Leave empty to use the chat model.");
         serverTypeCombo.setRenderer((list, value, index, selected, focus)

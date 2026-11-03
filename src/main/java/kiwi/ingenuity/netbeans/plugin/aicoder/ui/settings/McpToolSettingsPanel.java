@@ -38,8 +38,8 @@ import org.openide.util.RequestProcessor;
 /**
  * Per-session MCP tool-exposure switches: one checkbox per switchable group, grouped by category, with that group's
  * config settings (§5.6) shown beneath its switch, plus the behaviour settings that gate the collaboration groups and
- * an "Apply MCP template…" action. A group's config settings are hidden — not merely greyed — while the group is off;
- * their stored values are kept, so switching the group on again shows and applies them unchanged.
+ * an "Apply new MCP template…" action. A group's config settings are hidden — not merely greyed — while the group is
+ * off; their stored values are kept, so switching the group on again shows and applies them unchanged.
  */
 public final class McpToolSettingsPanel extends JPanel {
 
@@ -53,7 +53,7 @@ public final class McpToolSettingsPanel extends JPanel {
         return DialogPlacement.showConfirmDialog(parent,
                                                  "Applying \"" + choice.template().name()
                                                  + "\" replaces the tool switches set in this dialog. Continue?",
-                                                 "Apply MCP template",
+                                                 "Apply new MCP template",
                                                  JOptionPane.YES_NO_OPTION)
                 == JOptionPane.YES_OPTION;
     }
@@ -93,7 +93,19 @@ public final class McpToolSettingsPanel extends JPanel {
         allowImportantBox.setText(AccessControlLabelEnum.ALLOW_IMPORTANT_MESSAGES.displayLabel());
         allowIdleWatcherBox.setText(AccessControlLabelEnum.ALLOW_IDLE_WATCHER_TIMER.displayLabel());
 
-        int row = 0;
+        JButton applyTemplate = new JButton("Apply new MCP template…");
+        applyTemplate.addActionListener(e -> chooseTemplate());
+        GridBagConstraints templateConstraints = new GridBagConstraints();
+        templateConstraints.gridy = 0;
+        templateConstraints.gridx = 0;
+        templateConstraints.gridwidth = 2;
+        templateConstraints.weightx = 0;
+        templateConstraints.fill = GridBagConstraints.NONE;
+        templateConstraints.anchor = GridBagConstraints.WEST;
+        templateConstraints.insets = new Insets(4, 4, 4, 4);
+        add(applyTemplate, templateConstraints);
+
+        int row = 1;
         for (McpToolCategoryEnum category : McpToolCategoryEnum.values()) {
             if (category == McpToolCategoryEnum.ALWAYS_ON) {
                 continue;
@@ -104,10 +116,6 @@ public final class McpToolSettingsPanel extends JPanel {
                 addFull(row++, categoryPanel);
             }
         }
-
-        JButton applyTemplate = new JButton("Apply MCP template…");
-        applyTemplate.addActionListener(e -> chooseTemplate());
-        addFull(row, applyTemplate);
 
         allowInterAiBox.addActionListener(e -> {
             updateBehaviourEnablement();
@@ -396,7 +404,7 @@ public final class McpToolSettingsPanel extends JPanel {
                 return;
             }
             TemplateChoice[] choices = templateChoices(templates);
-            TemplateChoice choice = (TemplateChoice) DialogPlacement.showInputDialog(this, "Apply MCP template",
+            TemplateChoice choice = (TemplateChoice) DialogPlacement.showInputDialog(this, "Apply new MCP template",
                                                                                      "MCP Templates",
                                                                                      JOptionPane.PLAIN_MESSAGE, null,
                                                                                      choices, choices[0]);
