@@ -12,6 +12,7 @@ public enum CodexJsonKeyEnum {
      * JSON-RPC correlation identifier.
      */
     ID("id"),
+    IS_DEFAULT("isDefault"),
     /**
      * JSON-RPC method name.
      */
@@ -102,6 +103,15 @@ public enum CodexJsonKeyEnum {
      * model/list pagination cursor.
      */
     NEXT_CURSOR("nextCursor"),
+    /**
+     * Pagination cursor supplied to or returned from {@code model/list}.
+     */
+    CURSOR("cursor"),
+    /**
+     * Whether a model is hidden from the default picker list. Confirmed in the generated codex-cli 0.167.1
+     * {@code Model} schema.
+     */
+    HIDDEN("hidden"),
     /**
      * Codex thread identifier.
      */

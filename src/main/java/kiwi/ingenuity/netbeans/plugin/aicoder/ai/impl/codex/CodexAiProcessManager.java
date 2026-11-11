@@ -25,6 +25,7 @@ import kiwi.ingenuity.netbeans.plugin.aicoder.ai.events.StatusEvent;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.events.StatusEventTypeEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.events.TurnCompleteEvent;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.codex.events.CodexReasoningEffortEvent;
+import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.codex.settings.CodexPluginSettings;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.codex.settings.CodexSessionSettings;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.session.InterruptTypeEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.events.AiProcessEventListener;
@@ -89,17 +90,26 @@ public class CodexAiProcessManager extends AiProcessManager {
      * ThreadStartParams}/{@code ThreadResumeParams} (kebab-case) — NOT the same shape as
      * {@code TurnStartParams.sandboxPolicy}, which is an object with a camelCase {@code type}
      * (readOnly/workspaceWrite/dangerFullAccess). Confirmed by reading both generated schemas; easy to conflate since
-     * they cover the same concept. {@code model} is omitted (letting Codex use its own default) when null or blank.
+     * they cover the same concept. {@code model} is omitted (letting Codex use its own default) when null, blank or
+     * auto.
      */
     static JsonObject buildThreadStartParams(String cwd, String model) {
         JsonObject params = new JsonObject();
         params.addProperty(CodexJsonKeyEnum.CWD.key(), cwd);
         params.addProperty(CodexJsonKeyEnum.SANDBOX.key(), "workspace-write");
         params.addProperty(CodexJsonKeyEnum.APPROVAL_POLICY.key(), "untrusted");
-        if (model != null && !model.isBlank()) {
+        if (!omitsModel(model)) {
             params.addProperty(CodexJsonKeyEnum.MODEL.key(), model);
         }
         return params;
+    }
+
+    /**
+     * Whether a model is left out of a thread request. Blank means not set, and {@code auto} means Codex chooses, so
+     * neither sends a model; a session's {@code auto} therefore never inherits the global model.
+     */
+    static boolean omitsModel(String model) {
+        return model == null || model.isBlank() || CodexPluginSettings.AUTO_MODEL.equalsIgnoreCase(model.trim());
     }
 
     static JsonObject buildThreadResumeParams(String threadId, String cwd, String model) {
@@ -108,7 +118,7 @@ public class CodexAiProcessManager extends AiProcessManager {
         params.addProperty(CodexJsonKeyEnum.CWD.key(), cwd);
         params.addProperty(CodexJsonKeyEnum.SANDBOX.key(), "workspace-write");
         params.addProperty(CodexJsonKeyEnum.APPROVAL_POLICY.key(), "untrusted");
-        if (model != null && !model.isBlank()) {
+        if (!omitsModel(model)) {
             params.addProperty(CodexJsonKeyEnum.MODEL.key(), model);
         }
         return params;
@@ -338,6 +348,59 @@ public class CodexAiProcessManager extends AiProcessManager {
     }
 
     /**
+     * Publishes a {@code model/list} page to the catalogue only when it is the whole list: a page with a nextCursor is
+     * partial and is not published. Returns whether it published. Package-private, so the rule is testable without a
+     * live app-server.
+     */
+    static boolean publishIfCompleteList(JsonObject page) {
+        List<String> models = CodexModelDiscovery.parseModels(page);
+        if (models.isEmpty() || CodexModelDiscovery.nextCursor(page) != null) {
+            return false;
+        }
+        CodexAiImplementation.modelCatalog().publish(models);
+        CodexPluginSettings.setDiscoveredModels(models);
+        CodexAiImplementation.clearDiscoveryBackoff();
+        return true;
+    }
+
+    /**
+     * Whether the server started a different model than the one asked for. Auto asks for none, so it never mismatches.
+     */
+    static boolean isModelMismatch(String requested, String actual) {
+        return !omitsModel(requested) && actual != null && !actual.equals(requested);
+    }
+
+    /**
+     * The {@code model/list} entry marked {@code isDefault}, or null when none is.
+     */
+    static JsonObject findDefaultModelObject(JsonObject result) {
+        if (result == null || !result.has(CodexJsonKeyEnum.DATA.key()) || !result.get(CodexJsonKeyEnum.DATA.key()).isJsonArray()) {
+            return null;
+        }
+        for (JsonElement e : result.getAsJsonArray(CodexJsonKeyEnum.DATA.key())) {
+            if (e.isJsonObject() && e.getAsJsonObject().has(CodexJsonKeyEnum.IS_DEFAULT.key())
+                    && e.getAsJsonObject().get(CodexJsonKeyEnum.IS_DEFAULT.key()).isJsonPrimitive()
+                    && e.getAsJsonObject().get(CodexJsonKeyEnum.IS_DEFAULT.key()).getAsBoolean()) {
+                return e.getAsJsonObject();
+            }
+        }
+        return null;
+    }
+
+    /**
+     * {@link #publishIfCompleteList} with its failures contained: a malformed model entry must not stop the
+     * reasoning-effort probe that follows it.
+     */
+    private static void publishCompleteListSafely(JsonObject page) {
+        try {
+            publishIfCompleteList(page);
+        }
+        catch (RuntimeException ex) {
+            LOG.log(Level.FINE, "Could not publish the model list from the session probe", ex);
+        }
+    }
+
+    /**
      * Probes {@code model/list} on the established client, caches the capability list for subsequent dialogs, and fires
      * a per-session {@link CodexReasoningEffortEvent} (combo data for the info bar). Runs in the handshake thread; any
      * probe failure degrades silently to "no capability info" — the backend then never sends an {@code effort} field.
@@ -347,9 +410,17 @@ public class CodexAiProcessManager extends AiProcessManager {
     private void fireReasoningEffortEvent(CodexJsonRpcClient c, String activeModel, String echoEffort) {
         List<String> supported = List.of();
         String defaultEffort = null;
+        String probeModel = activeModel;
         try {
-            JsonObject result = c.sendRequest("model/list", new JsonObject()).get(30, TimeUnit.SECONDS);
+            JsonObject result = CodexModelDiscovery.readModelList(c, System.nanoTime() + TimeUnit.SECONDS.toNanos(30));
+            publishCompleteListSafely(result);
             JsonObject modelObj = findModelObject(result, activeModel);
+            if (activeModel == null) {
+                // Auto: probe the model the server reports as its default, and never under the literal "auto".
+                modelObj = findDefaultModelObject(result);
+                probeModel = modelObj != null && modelObj.has(CodexJsonKeyEnum.ID.key())
+                             ? modelObj.get(CodexJsonKeyEnum.ID.key()).getAsString() : null;
+            }
             if (modelObj != null) {
                 supported = extractSupportedReasoningEfforts(modelObj);
                 defaultEffort = extractDefaultReasoningEffort(modelObj);
@@ -366,9 +437,15 @@ public class CodexAiProcessManager extends AiProcessManager {
         if (supported.isEmpty()) {
             defaultEffort = null;
         }
-        CodexReasoningEffortCatalog.cache(activeModel, supported);
-        listener.onAiProcessEvent(new CodexReasoningEffortEvent(activeModel, supported, defaultEffort, echoEffort));
-        applyInitialEffortOption(activeModel, supported);
+        if (probeModel == null) {
+            // Auto with no default entry: show the echoed effort, but cache nothing and clear nothing.
+            LOG.log(Level.FINE, "model/list has no default model; reasoning efforts are not cached for auto");
+            listener.onAiProcessEvent(new CodexReasoningEffortEvent(activeModel, List.of(), null, echoEffort));
+            return;
+        }
+        CodexReasoningEffortCatalog.cache(probeModel, supported);
+        listener.onAiProcessEvent(new CodexReasoningEffortEvent(probeModel, supported, defaultEffort, echoEffort));
+        applyInitialEffortOption(probeModel, supported);
     }
 
     /**
@@ -777,7 +854,7 @@ public class CodexAiProcessManager extends AiProcessManager {
             throw new IOException("Codex exited during start-up");
         }
         String actualModel = extractModel(threadResult);
-        if (model != null && !model.isBlank() && actualModel != null && !actualModel.equals(model)) {
+        if (isModelMismatch(model, actualModel)) {
             LOG.log(Level.WARNING, "Codex model mismatch: requested \"{0}\" but thread started with \"{1}\"",
                     new Object[]{model, actualModel});
         }
@@ -798,7 +875,8 @@ public class CodexAiProcessManager extends AiProcessManager {
         // start (see OpenCodeAiProcessManager.applyInitialModeIfNeeded, lines
         // 536-541).
         String echoEffort = extractReasoningEffort(threadResult);
-        fireReasoningEffortEvent(c, actualModel != null && !actualModel.isBlank() ? actualModel : model, echoEffort);
+        fireReasoningEffortEvent(c, actualModel != null && !actualModel.isBlank() ? actualModel
+                                    : omitsModel(model) ? null : model, echoEffort);
         Runnable cb = onSessionEstablished;
         if (cb != null) {
             cb.run();

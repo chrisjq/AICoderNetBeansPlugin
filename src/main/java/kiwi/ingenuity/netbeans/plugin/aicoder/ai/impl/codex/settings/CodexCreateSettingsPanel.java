@@ -1,12 +1,16 @@
 package kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.codex.settings;
 
 import java.awt.BorderLayout;
+import java.awt.event.HierarchyEvent;
 import java.util.Arrays;
 import java.util.List;
+import java.util.stream.Stream;
+import javax.swing.DefaultComboBoxModel;
 import javax.swing.JComboBox;
 import javax.swing.JLabel;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.AiModelCatalog;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.AiTypeEnum;
+import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.codex.CodexAiImplementation;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.codex.CodexReasoningEffortCatalog;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.settings.ModelCreateSettingsPanel;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.ui.BlankSafeComboRenderer;
@@ -26,6 +30,11 @@ public final class CodexCreateSettingsPanel extends ModelCreateSettingsPanel<Cod
     private final JComboBox<String> effortCombo;
 
     /**
+     * Whether the model discovery has been requested for this panel, which happens once, the first time it is shown.
+     */
+    private boolean discoveryRequested;
+
+    /**
      * True while {@link #load} sets the selection, so a programmatic restore does not overwrite
      * {@link #lastSelectedEffort} — mirrors {@code ClaudeCreateSettingsPanel}'s flag. Without this, opening the New
      * Session dialog for a session with a stored effort silently pollutes what the NEXT blank session defaults to.
@@ -42,6 +51,13 @@ public final class CodexCreateSettingsPanel extends ModelCreateSettingsPanel<Cod
 
         content().add(new JLabel("Effort:"), BorderLayout.WEST);
         content().add(effortCombo, BorderLayout.CENTER);
+        component().addHierarchyListener(e -> {
+            if ((e.getChangeFlags() & HierarchyEvent.SHOWING_CHANGED) != 0 && component().isShowing()
+                    && !discoveryRequested) {
+                discoveryRequested = true;
+                CodexAiImplementation.triggerModelDiscovery();
+            }
+        });
     }
 
     @Override
@@ -71,6 +87,7 @@ public final class CodexCreateSettingsPanel extends ModelCreateSettingsPanel<Cod
     @Override
     public void applyTo(CodexSessionSettings settings) {
         super.applyTo(settings);
+        settings.setModel(CodexPluginSettings.toStoredModel(settings.model()));
         String s = currentEditorText();
         settings.setEffort(s.isEmpty() || BlankSafeComboRenderer.DEFAULT_OPTION.equals(s) ? null : s);
     }
@@ -82,7 +99,7 @@ public final class CodexCreateSettingsPanel extends ModelCreateSettingsPanel<Cod
         for (int i = 0; i < supported.size(); i++) {
             items[i + 1] = supported.get(i);
         }
-        effortCombo.setModel(new javax.swing.DefaultComboBoxModel<>(items));
+        effortCombo.setModel(new DefaultComboBoxModel<>(items));
         effortCombo.setSelectedItem(BlankSafeComboRenderer.DEFAULT_OPTION);
     }
 
@@ -104,11 +121,18 @@ public final class CodexCreateSettingsPanel extends ModelCreateSettingsPanel<Cod
 
     @Override
     protected List<String> knownModels() {
-        return Arrays.asList(CodexPluginSettings.getKnownModels());
+        return Stream.concat(Stream.of(CodexPluginSettings.AUTO_MODEL),
+                             Arrays.stream(CodexPluginSettings.getKnownModels())).toList();
+    }
+
+    @Override
+    protected List<String> modelsForDisplay(List<String> models) {
+        return Stream.concat(Stream.of(CodexPluginSettings.AUTO_MODEL),
+                             models != null ? models.stream() : Stream.empty()).distinct().toList();
     }
 
     @Override
     protected String defaultModel() {
-        return CodexPluginSettings.getModel();
+        return CodexPluginSettings.toDisplayModel(CodexPluginSettings.getModel());
     }
 }

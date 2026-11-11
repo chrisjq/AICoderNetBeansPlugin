@@ -13,7 +13,7 @@ Codex runs the `codex` CLI and app-server for each session.
 
 ## Model and effort
 
-The model field is editable and offers the known choices; you can also type a model ID. Reasoning effort is sent with each request, so changing it needs no restart. The levels come from the Codex server and depend on the model. **Session Configuration** also holds the app-server's sandbox and approval options.
+The model list is loaded from the installed Codex CLI; you can also type a model ID. Select **auto** to let Codex choose its default model. The list needs a signed-in Codex CLI; until it loads, the last list found, **auto** and typed model IDs are available. Reasoning effort is sent with each request, so changing it needs no restart. The levels come from the Codex server and depend on the model. Each thread runs in Codex's `workspace-write` sandbox with the `untrusted` approval policy; neither is configurable.
 
 ## Tools
 

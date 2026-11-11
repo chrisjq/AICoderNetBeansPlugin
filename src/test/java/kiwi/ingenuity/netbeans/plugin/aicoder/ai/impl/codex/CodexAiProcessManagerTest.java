@@ -188,6 +188,18 @@ class CodexAiProcessManagerTest {
         assertFalse(params2.has("model"));
     }
 
+    @Test
+    void buildThreadStartParamsOmitsModelWhenAuto() {
+        assertFalse(CodexAiProcessManager.buildThreadStartParams("/tmp", "auto").has("model"),
+                    "auto must leave the model out, so Codex chooses its own rather than the global model");
+        assertFalse(CodexAiProcessManager.buildThreadStartParams("/tmp", "Auto").has("model"));
+    }
+
+    @Test
+    void buildThreadResumeParamsOmitsModelWhenAuto() {
+        assertFalse(CodexAiProcessManager.buildThreadResumeParams("th_abc", "/tmp", "auto").has("model"));
+    }
+
     // ---- buildThreadResumeParams: same routing combo, keyed by the stored thread id ----
     @Test
     void buildThreadResumeParamsCarriesThreadIdCwdSandboxApprovalPolicyAndModel() {

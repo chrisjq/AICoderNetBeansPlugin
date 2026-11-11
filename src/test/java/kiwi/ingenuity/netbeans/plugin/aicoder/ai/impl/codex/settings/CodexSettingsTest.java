@@ -1,6 +1,7 @@
 package kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.codex.settings;
 
 import com.google.gson.JsonObject;
+import java.util.List;
 import static org.junit.jupiter.api.Assertions.*;
 import org.junit.jupiter.api.Test;
 
@@ -134,11 +135,36 @@ class CodexSettingsTest {
     }
 
     @Test
-    void knownModelsIncludesTheLiveDefault() {
-        // "gpt-5.6-terra" is what the live binary itself defaults to when no
-        // model is specified — confirmed by live probe, not invented.
-        assertTrue(java.util.Arrays.asList(CodexPluginSettings.getKnownModels()).contains("gpt-5.6-terra"));
-        assertEquals("gpt-5.6-terra", CodexPluginSettings.DEFAULT_MODEL);
+    void autoIsStoredAsItsOwnValueAndBlankIsNotSet() {
+        assertEquals("", CodexPluginSettings.DEFAULT_MODEL);
+        assertEquals(CodexPluginSettings.AUTO_MODEL, CodexPluginSettings.toStoredModel("AUTO"));
+        assertEquals(CodexPluginSettings.AUTO_MODEL, CodexPluginSettings.toStoredModel("Auto"));
+        assertEquals(CodexPluginSettings.DEFAULT_MODEL, CodexPluginSettings.toStoredModel("   "));
+        assertEquals(CodexPluginSettings.AUTO_MODEL, CodexPluginSettings.toDisplayModel(""));
+    }
+
+    @Test
+    void setModelAutoRoundTripsThroughThePreferences() {
+        String before = CodexPluginSettings.getModel();
+        try {
+            CodexPluginSettings.setModel("Auto");
+            assertEquals(CodexPluginSettings.AUTO_MODEL, CodexPluginSettings.getModel());
+        }
+        finally {
+            CodexPluginSettings.setModel(before);
+        }
+    }
+
+    @Test
+    void discoveredModelsRoundTripThroughThePreferences() {
+        List<String> before = CodexPluginSettings.getDiscoveredModels();
+        try {
+            CodexPluginSettings.setDiscoveredModels(List.of("gpt-a", "gpt-b"));
+            assertEquals(List.of("gpt-a", "gpt-b"), CodexPluginSettings.getDiscoveredModels());
+        }
+        finally {
+            CodexPluginSettings.setDiscoveredModels(before);
+        }
     }
 
     @Test

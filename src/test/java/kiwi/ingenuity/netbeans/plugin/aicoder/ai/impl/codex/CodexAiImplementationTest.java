@@ -121,8 +121,8 @@ class CodexAiImplementationTest {
         };
 
         assertEquals("gpt-5.6-luna", impl.resolveStartupModel(null),
-                "startWithDiscovery(null) must fall back to the session's chosen model, "
-                + "not CodexPluginSettings.getModel() — this is the per-session-model bug");
+                     "startWithDiscovery(null) must fall back to the session's chosen model, "
+                     + "not CodexPluginSettings.getModel() — this is the per-session-model bug");
     }
 
     @Test
@@ -139,7 +139,7 @@ class CodexAiImplementationTest {
         };
 
         assertEquals("gpt-5.5", impl.resolveStartupModel("gpt-5.5"),
-                "an explicit model argument must still win over the session setting");
+                     "an explicit model argument must still win over the session setting");
     }
 
     @Test
@@ -156,7 +156,7 @@ class CodexAiImplementationTest {
         };
 
         assertEquals(CodexPluginSettings.getModel(), impl.resolveStartupModel(null),
-                "with no session model and no explicit argument, the global default is still correct");
+                     "with no session model and no explicit argument, the global default is still correct");
     }
 
     @Test
@@ -173,7 +173,58 @@ class CodexAiImplementationTest {
         };
 
         assertEquals(CodexPluginSettings.getModel(), impl.resolveStartupModel(null),
-                "a blank (not null) session model must not be treated as a real choice");
+                     "a blank (not null) session model must not be treated as a real choice");
+    }
+
+    @Test
+    void sessionAutoIsNotReplacedByTheGlobalModel() {
+        String globalBefore = CodexPluginSettings.getModel();
+        try {
+            CodexPluginSettings.setModel("gpt-5.5");
+            CodexSessionSettings settings = new CodexSessionSettings();
+            settings.setModel(CodexPluginSettings.AUTO_MODEL);
+            AiSession session = newSession("s-swd-auto", settings);
+            CodexAiImplementation impl = new CodexAiImplementation(e -> {
+            }, null) {
+                {
+                    currentSession = session;
+                }
+            };
+
+            String model = impl.resolveStartupModel(null);
+
+            assertEquals(CodexPluginSettings.AUTO_MODEL, model, "a session's auto must not inherit the global model");
+            assertFalse(CodexAiProcessManager.buildThreadStartParams("/tmp", model).has("model"),
+                        "auto sends no model on thread/start");
+        }
+        finally {
+            CodexPluginSettings.setModel(globalBefore);
+        }
+    }
+
+    @Test
+    void sessionBlankInheritsTheGlobalModelOnThreadStart() {
+        String globalBefore = CodexPluginSettings.getModel();
+        try {
+            CodexPluginSettings.setModel("gpt-5.5");
+            CodexSessionSettings settings = new CodexSessionSettings();
+            settings.setModel("");
+            AiSession session = newSession("s-swd-inherit", settings);
+            CodexAiImplementation impl = new CodexAiImplementation(e -> {
+            }, null) {
+                {
+                    currentSession = session;
+                }
+            };
+
+            String model = impl.resolveStartupModel(null);
+
+            assertEquals("gpt-5.5", model, "a session that has not chosen a model inherits the global one");
+            assertEquals("gpt-5.5", CodexAiProcessManager.buildThreadStartParams("/tmp", model).get("model").getAsString());
+        }
+        finally {
+            CodexPluginSettings.setModel(globalBefore);
+        }
     }
 
     // ---- resumeSession: must use the stored Codex thread id, never the plugin's own UUID ----
@@ -200,7 +251,7 @@ class CodexAiImplementationTest {
         impl.resumeSession(pluginUuid);
 
         assertEquals(threadId, impl.exposedDelegate().pendingResumeThreadId,
-                "resumeSession(pluginUUID) must use the stored thread id, not the plugin UUID");
+                     "resumeSession(pluginUUID) must use the stored thread id, not the plugin UUID");
     }
 
     @Test
@@ -224,7 +275,7 @@ class CodexAiImplementationTest {
         impl.resumeSession(pluginUuid);
 
         assertNull(impl.exposedDelegate().pendingResumeThreadId,
-                "resumeSession must not set pendingResumeThreadId when no thread id is stored");
+                   "resumeSession must not set pendingResumeThreadId when no thread id is stored");
     }
 
     @Test
@@ -254,13 +305,13 @@ class CodexAiImplementationTest {
         // Simulate startAiProcess() -> afterStart() setting the stored thread id.
         impl.start("non-existent-codex-executable", "model");
         assertEquals(threadId, impl.exposedDelegate().pendingResumeThreadId,
-                "after afterStart(), pendingResumeThreadId must be the stored thread id");
+                     "after afterStart(), pendingResumeThreadId must be the stored thread id");
 
         // Simulate AiTopComponent.loadHistory() calling resumeSession with the plugin UUID.
         impl.resumeSession(pluginUuid);
 
         assertEquals(threadId, impl.exposedDelegate().pendingResumeThreadId,
-                "resumeSession(pluginUUID) must NOT overwrite the thread id set by afterStart()");
+                     "resumeSession(pluginUUID) must NOT overwrite the thread id set by afterStart()");
     }
 
     @Test
@@ -279,7 +330,7 @@ class CodexAiImplementationTest {
 
         assertTrue(ext instanceof CodexAiInfoBarExtension);
         assertEquals("gpt-5.6-luna", ((CodexAiInfoBarExtension) ext).getSelectedModel(),
-                "must seed from the session's own model, not CodexPluginSettings.getModel()");
+                     "must seed from the session's own model, not CodexPluginSettings.getModel()");
     }
 
     @Test
@@ -304,7 +355,7 @@ class CodexAiImplementationTest {
         combo.setSelectedItem("gpt-5.5");
 
         assertEquals("gpt-5.5", settings.model(),
-                "a user-initiated selection must persist to the session settings via setModel()");
+                     "a user-initiated selection must persist to the session settings via setModel()");
         assertSame(settings, updated.get(), "host.updateSessionSettings() must be called so the change is saved");
     }
 
@@ -435,13 +486,13 @@ class CodexAiImplementationTest {
             CodexAiImplementation.publishRateLimit(new CodexRateLimitEvent(51.0, 43_200L, 1_789_468_349L));
 
             assertTrue(deliveredToOpenBars.await(5, TimeUnit.SECONDS),
-                    "The type-wide property bus must deliver the account rate limit to every open Codex bar");
+                       "The type-wide property bus must deliver the account rate limit to every open Codex bar");
             SwingUtilities.invokeAndWait(() -> {
             });
             assertEquals("51%", ((JProgressBar) firstOpenBar.createComponents().get(3)).getString(),
-                    "The first open Codex bar must show the account-wide rate limit");
+                         "The first open Codex bar must show the account-wide rate limit");
             assertEquals("51%", ((JProgressBar) secondOpenBar.createComponents().get(3)).getString(),
-                    "The second open Codex bar must show the account-wide rate limit");
+                         "The second open Codex bar must show the account-wide rate limit");
 
             AtomicReference<CodexAiInfoBarExtension> lateCreatedBar = new AtomicReference<>();
             CodexAiImplementation impl = new CodexAiImplementation(e -> {
@@ -450,7 +501,7 @@ class CodexAiImplementationTest {
                     (CodexAiInfoBarExtension) impl.createInfoBarExtension(null, null)));
 
             assertEquals("51%", ((JProgressBar) lateCreatedBar.get().createComponents().get(3)).getString(),
-                    "A Codex bar opened after the rate-limit event must replay the cached account-wide fact");
+                         "A Codex bar opened after the rate-limit event must replay the cached account-wide fact");
         }
         finally {
             bus.removeListener(AiTypeEnum.CODEX, firstListener);

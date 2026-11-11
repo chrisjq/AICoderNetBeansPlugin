@@ -10,17 +10,24 @@ import java.io.File;
 import java.util.List;
 import java.util.concurrent.ExecutionException;
 import javax.swing.Box;
+import javax.swing.DefaultComboBoxModel;
 import javax.swing.JButton;
 import javax.swing.JComboBox;
 import javax.swing.JFileChooser;
 import javax.swing.JLabel;
 import javax.swing.JPanel;
 import javax.swing.JTextField;
+import javax.swing.SwingUtilities;
 import javax.swing.SwingWorker;
 import javax.swing.event.DocumentEvent;
 import javax.swing.event.DocumentListener;
+import javax.swing.filechooser.FileFilter;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.AiTypeEnum;
 import static kiwi.ingenuity.netbeans.plugin.aicoder.ai.AiTypeEnum.CODEX;
+import kiwi.ingenuity.netbeans.plugin.aicoder.ai.AiTypePropertyBus;
+import kiwi.ingenuity.netbeans.plugin.aicoder.ai.events.AiPropertyListener;
+import kiwi.ingenuity.netbeans.plugin.aicoder.ai.events.AvailableModelsEvent;
+import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.codex.CodexAiImplementation;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.codex.CodexExecutableLocator;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.codex.CodexReasoningEffortCatalog;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.codex.settings.CodexPluginSettings;
@@ -40,9 +47,33 @@ public final class CodexAiSettingsTab implements SettingsTab {
     private final JLabel testResultLabel;
     private final JComboBox<String> modelCombo;
     private final JComboBox<String> effortCombo;
+    private final AiPropertyListener catalogListener = event -> {
+        if (event instanceof AvailableModelsEvent available) {
+            SwingUtilities.invokeLater(() -> runQuietly(() -> refreshModelOptions(available.models())));
+        }
+    };
+    private boolean catalogListenerRegistered;
+    /**
+     * True while the tab itself rewrites its combos, so those rewrites are not taken for user edits.
+     */
+    private boolean updating;
 
     public CodexAiSettingsTab() {
-        panel = new JPanel(new GridBagLayout());
+        panel = new JPanel(new GridBagLayout()) {
+            @Override
+            public void addNotify() {
+                super.addNotify();
+                addCatalogListener();
+                runQuietly(() -> refreshModelOptions(List.of(CodexPluginSettings.getKnownModels())));
+                CodexAiImplementation.triggerModelDiscovery();
+            }
+
+            @Override
+            public void removeNotify() {
+                removeCatalogListener();
+                super.removeNotify();
+            }
+        };
         GridBagConstraints c = new GridBagConstraints();
         c.insets = new Insets(4, 4, 4, 4);
         c.fill = GridBagConstraints.HORIZONTAL;
@@ -83,7 +114,7 @@ public final class CodexAiSettingsTab implements SettingsTab {
         c.weightx = 0;
         panel.add(new JLabel("Model:"), c);
 
-        modelCombo = new JComboBox<>(CodexPluginSettings.KNOWN_MODELS);
+        modelCombo = new JComboBox<>(new String[]{CodexPluginSettings.AUTO_MODEL});
         modelCombo.setEditable(true);
         modelCombo.setToolTipText("Default model for new Codex sessions (editable — any model ID accepted)");
         c.gridx = 1;
@@ -98,7 +129,7 @@ public final class CodexAiSettingsTab implements SettingsTab {
         effortCombo = new JComboBox<>(new String[]{BlankSafeComboRenderer.DEFAULT_OPTION});
         effortCombo.setEditable(true);
         effortCombo.setToolTipText("Default reasoning effort for new sessions — \"" + BlankSafeComboRenderer.DEFAULT_OPTION
-                                   + "\" omits the field, letting the model apply its own default (options from the model/list probe; editable)");
+                + "\" omits the field, letting the model apply its own default (options from the model/list probe; editable)");
         c.gridx = 1;
         c.weightx = 1;
         panel.add(effortCombo, c);
@@ -132,9 +163,41 @@ public final class CodexAiSettingsTab implements SettingsTab {
         browseButton.addActionListener(e -> handleBrowse());
         detectButton.addActionListener(e -> handleDetect());
         testButton.addActionListener(e -> handleTest());
+        refreshModelOptions(List.of(CodexPluginSettings.getKnownModels()));
+    }
+
+    /**
+     * Runs a change the tab makes to its own combos without it counting as a user edit.
+     */
+    private void runQuietly(Runnable change) {
+        boolean wasUpdating = updating;
+        updating = true;
+        try {
+            change.run();
+        }
+        finally {
+            updating = wasUpdating;
+        }
+    }
+
+    private void addCatalogListener() {
+        if (!catalogListenerRegistered) {
+            AiTypePropertyBus.getInstance().addListener(CODEX, catalogListener);
+            catalogListenerRegistered = true;
+        }
+    }
+
+    private void removeCatalogListener() {
+        if (catalogListenerRegistered) {
+            AiTypePropertyBus.getInstance().removeListener(CODEX, catalogListener);
+            catalogListenerRegistered = false;
+        }
     }
 
     private void fireChange() {
+        if (updating) {
+            return;
+        }
         pcs.firePropertyChange(AiTypeEnum.CODEX.key(), null, null);
     }
 
@@ -150,8 +213,13 @@ public final class CodexAiSettingsTab implements SettingsTab {
 
     @Override
     public void load() {
+        runQuietly(this::loadNow);
+    }
+
+    private void loadNow() {
         executableField.setText(CodexPluginSettings.getExecutable());
-        modelCombo.setSelectedItem(CodexPluginSettings.getModel());
+        refreshModelOptions(List.of(CodexPluginSettings.getKnownModels()));
+        modelCombo.setSelectedItem(CodexPluginSettings.toDisplayModel(CodexPluginSettings.getModel()));
         refreshEffortOptions();
         setSelectedOrDefault(effortCombo, CodexPluginSettings.getEffort());
         testResultLabel.setText(" ");
@@ -160,7 +228,8 @@ public final class CodexAiSettingsTab implements SettingsTab {
     @Override
     public void store() {
         CodexPluginSettings.setExecutable(executableField.getText().strip());
-        Object sel = modelCombo.getSelectedItem();
+        Object sel = modelCombo.isEditable() && modelCombo.getEditor() != null
+                     ? modelCombo.getEditor().getItem() : modelCombo.getSelectedItem();
         CodexPluginSettings.setModel(sel != null ? sel.toString() : CodexPluginSettings.DEFAULT_MODEL);
         CodexPluginSettings.setEffort(valueOrDefault(effortCombo));
     }
@@ -176,10 +245,32 @@ public final class CodexAiSettingsTab implements SettingsTab {
     }
 
     /**
-     * Rebuilds the effort combo's entries from {@link CodexReasoningEffortCatalog} for the currently selected
-     * model — {@code (model default)} first, then any supported efforts past sessions discovered. No-op-able
-     * on a model with no cached capability data (combo keeps {@code (model default)}).
+     * Rebuilds the model combo: {@code auto} first, then the catalogue's models, with the current selection kept even
+     * when the list does not contain it, so a stored custom model stays selectable.
      */
+    private void refreshModelOptions(List<String> models) {
+        Object editorItem = modelCombo.isEditable() && modelCombo.getEditor() != null
+                            ? modelCombo.getEditor().getItem() : modelCombo.getSelectedItem();
+        String selected = editorItem != null ? editorItem.toString().trim() : CodexPluginSettings.AUTO_MODEL;
+        modelCombo.removeAllItems();
+        modelCombo.addItem(CodexPluginSettings.AUTO_MODEL);
+        if (models != null) {
+            models.stream().filter(model -> model != null && !model.isBlank()).forEach(modelCombo::addItem);
+        }
+        String display = CodexPluginSettings.toDisplayModel(CodexPluginSettings.toStoredModel(selected));
+        boolean found = false;
+        for (int i = 0; i < modelCombo.getItemCount(); i++) {
+            if (display.equals(modelCombo.getItemAt(i))) {
+                found = true;
+                break;
+            }
+        }
+        if (!found) {
+            modelCombo.addItem(display);
+        }
+        modelCombo.setSelectedItem(display);
+    }
+
     private void refreshEffortOptions() {
         Object sel = modelCombo.getSelectedItem();
         String model = sel != null ? sel.toString().trim() : CodexPluginSettings.DEFAULT_MODEL;
@@ -189,7 +280,7 @@ public final class CodexAiSettingsTab implements SettingsTab {
         for (int i = 0; i < supported.size(); i++) {
             items[i + 1] = supported.get(i);
         }
-        effortCombo.setModel(new javax.swing.DefaultComboBoxModel<>(items));
+        effortCombo.setModel(new DefaultComboBoxModel<>(items));
     }
 
     private void setSelectedOrDefault(JComboBox<String> combo, String storedValue) {
@@ -221,7 +312,7 @@ public final class CodexAiSettingsTab implements SettingsTab {
         JFileChooser fc = new JFileChooser();
         fc.setDialogTitle("Select codex executable");
         fc.setFileSelectionMode(JFileChooser.FILES_ONLY);
-        fc.setFileFilter(new javax.swing.filechooser.FileFilter() {
+        fc.setFileFilter(new FileFilter() {
             @Override
             public boolean accept(File f) {
                 return f.isDirectory() || f.getName().equals("codex") || f.getName().startsWith("codex.");

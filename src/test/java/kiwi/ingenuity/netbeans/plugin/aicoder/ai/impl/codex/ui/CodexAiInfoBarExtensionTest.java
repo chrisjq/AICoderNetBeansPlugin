@@ -7,6 +7,7 @@ import javax.swing.JComboBox;
 import javax.swing.JComponent;
 import javax.swing.JProgressBar;
 import javax.swing.SwingUtilities;
+import kiwi.ingenuity.netbeans.plugin.aicoder.ai.events.AvailableModelsEvent;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -41,6 +42,28 @@ class CodexAiInfoBarExtensionTest {
         assertTrue(components.get(0).isEnabled(), "ready must re-enable the model combo");
         assertTrue(components.get(1).isEnabled(), "ready must re-enable the effort combo");
         assertTrue(components.get(4).isEnabled(), "ready must re-enable Compact");
+    }
+
+    @Test
+    void availableModelsKeepsCustomStoredModelAndAutoFirst() throws Exception {
+        CodexAiInfoBarExtension ext = new CodexAiInfoBarExtension("gpt-6-sol");
+        @SuppressWarnings("unchecked")
+        JComboBox<String> models = (JComboBox<String>) ext.createComponents().get(0);
+
+        SwingUtilities.invokeAndWait(() -> ext.onPropertyEvent(new AvailableModelsEvent(List.of("gpt-5.6-terra"))));
+
+        assertEquals("auto", models.getItemAt(0));
+        assertEquals("gpt-6-sol", ext.getSelectedModel());
+        assertTrue(contains(models, "gpt-6-sol"));
+    }
+
+    private static boolean contains(JComboBox<String> combo, String value) {
+        for (int i = 0; i < combo.getItemCount(); i++) {
+            if (value.equals(combo.getItemAt(i))) {
+                return true;
+            }
+        }
+        return false;
     }
 
     @Test

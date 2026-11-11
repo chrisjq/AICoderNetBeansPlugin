@@ -3,7 +3,8 @@ package kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.codex.settings;
 public enum CodexPluginSettingsKeyEnum {
     EXECUTABLE("ai.codex.executable"),
     MODEL("ai.codex.model"),
-    EFFORT("ai.codex.effort");
+    EFFORT("ai.codex.effort"),
+    DISCOVERED_MODELS("ai.codex.discoveredModels");
 
     private final String key;
 

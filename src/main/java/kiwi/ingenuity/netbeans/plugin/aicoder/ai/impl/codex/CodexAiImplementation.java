@@ -1,7 +1,9 @@
 package kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.codex;
 
 import java.nio.file.Path;
+import java.util.List;
 import java.util.Optional;
+import java.util.concurrent.TimeUnit;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 import kiwi.ingenuity.netbeans.plugin.aicoder.PluginSettings;
@@ -12,6 +14,7 @@ import kiwi.ingenuity.netbeans.plugin.aicoder.ai.AiTypeEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.AiTypePropertyBus;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.ExecutablePrompter;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.TerminalLaunch;
+import kiwi.ingenuity.netbeans.plugin.aicoder.ai.events.AvailableModelsEvent;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.events.StatusEvent;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.events.StatusEventTypeEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.codex.events.CodexRateLimitEvent;
@@ -26,11 +29,82 @@ import kiwi.ingenuity.netbeans.plugin.aicoder.utils.StatusMessageUtil;
 public class CodexAiImplementation extends AiImplementation {
 
     private static final Logger LOG = Logger.getLogger(CodexAiImplementation.class.getName());
-    private static final AiModelCatalog modelCatalog = new AiModelCatalog(AiTypeEnum.CODEX);
+    private static final AiModelCatalog MODEL_CATALOG = new AiModelCatalog(AiTypeEnum.CODEX);
     private static volatile CodexRateLimitEvent cachedRateLimitEvent;
+    /**
+     * How long a failed or empty discovery stops the panels from re-running it (spec: no retry per panel build).
+     */
+    private static final long DISCOVERY_FAILURE_BACKOFF_NANOS = TimeUnit.SECONDS.toNanos(60L);
+    /**
+     * When the last discovery failed, from {@link System#nanoTime()} (monotonic); null when no backoff is recorded.
+     */
+    private static volatile Long lastDiscoveryFailureNanos;
+
+    /**
+     * Tests only. Stops {@link #triggerModelDiscovery} from launching the real CLI. It is public because the UI and
+     * settings tests live in other packages and still show panels that start a discovery on display.
+     */
+    public static volatile boolean discoveryDisabledForTests;
+
+    /**
+     * Notes a failed or empty discovery, so the next trigger within the backoff window is skipped.
+     */
+    static void recordDiscoveryFailure() {
+        lastDiscoveryFailureNanos = System.nanoTime();
+    }
+
+    /**
+     * Ends the backoff after a successful discovery.
+     */
+    static void clearDiscoveryBackoff() {
+        lastDiscoveryFailureNanos = null;
+    }
+
+    /**
+     * Test seam: pretends the last recorded failure happened {@code millisAgo} milliseconds ago.
+     */
+    static void backdateDiscoveryFailureForTests(long millisAgo) {
+        lastDiscoveryFailureNanos = System.nanoTime() - TimeUnit.MILLISECONDS.toNanos(millisAgo);
+    }
+
+    static boolean discoveryBackingOff() {
+        Long failed = lastDiscoveryFailureNanos;
+        return failed != null && System.nanoTime() - failed < DISCOVERY_FAILURE_BACKOFF_NANOS;
+    }
 
     public static AiModelCatalog modelCatalog() {
-        return modelCatalog;
+        return MODEL_CATALOG;
+    }
+
+    /**
+     * Starts a best-effort refresh of the models available to the logged-in Codex CLI account.
+     */
+    public static void triggerModelDiscovery() {
+        if (discoveryDisabledForTests || discoveryBackingOff() || !MODEL_CATALOG.beginRefresh()) {
+            return;
+        }
+        String executable = CodexExecutableLocator.locate();
+        if (executable == null) {
+            MODEL_CATALOG.refreshFailed();
+            return;
+        }
+        CodexModelDiscovery.discoverAsync(executable, CodexAiImplementation::applyDiscoveryResult);
+    }
+
+    /**
+     * Applies one discovery outcome: an empty result starts the backoff and ends the refresh; a complete list is
+     * published, persisted and clears the backoff.
+     */
+    static void applyDiscoveryResult(List<String> models) {
+        if (models == null || models.isEmpty()) {
+            recordDiscoveryFailure();
+            MODEL_CATALOG.refreshFailed();
+        }
+        else {
+            MODEL_CATALOG.publish(models);
+            CodexPluginSettings.setDiscoveredModels(models);
+            clearDiscoveryBackoff();
+        }
     }
 
     public static void publishRateLimit(CodexRateLimitEvent event) {
@@ -118,7 +192,7 @@ public class CodexAiImplementation extends AiImplementation {
         // The global default (Tools → Options) is owned solely by the settings panel.
         delegate().setModel(model);
         if (currentSession != null && currentSession.settings() instanceof CodexSessionSettings settings) {
-            settings.setModel(model);
+            settings.setModel(CodexPluginSettings.toStoredModel(model));
         }
         // Unlike OpenCode, there is no live config-option call to also push this
         // into an already-running thread — Codex's model is only settable at
@@ -167,16 +241,20 @@ public class CodexAiImplementation extends AiImplementation {
 
     /**
      * Seeds the combo from the SESSION's own model (not {@code CodexPluginSettings.getModel()}'s global default) — the
-     * trap this project already hit once for OpenCode's info bar. Model changes flow back through {@code setModel()}
-     * (session-scoped, per its own doc) and {@code host.updateSessionSettings()}, never {@code AiTypePropertyBus},
-     * which is keyed by AI type and would reset every other Codex session's dropdown (see
-     * {@link CodexAiInfoBarExtension}'s own javadoc on this).
+     * trap this project already hit once for OpenCode's info bar. The {@code AvailableModelsEvent} from
+     * {@code AiTypePropertyBus} refreshes the shared model list, and each info bar keeps its own selection. A blank
+     * session model displays the global default. Model changes flow back through {@code setModel()} (session-scoped,
+     * per its own doc) and {@code host.updateSessionSettings()}; see {@link CodexAiInfoBarExtension}'s own javadoc.
      */
     @Override
     public AiInfoBarExtension createInfoBarExtension(AiSession session, AiSessionHost host) {
         String initialModel = session != null && session.settings() instanceof CodexSessionSettings s
                               ? s.model() : null;
         CodexAiInfoBarExtension ext = new CodexAiInfoBarExtension(initialModel);
+        List<String> cachedModels = List.of(CodexPluginSettings.getKnownModels());
+        if (!cachedModels.isEmpty()) {
+            ext.onPropertyEvent(new AvailableModelsEvent(cachedModels));
+        }
         ext.addModelChangeListener(e -> {
             String selected = ext.getSelectedModel();
             setModel(selected);
