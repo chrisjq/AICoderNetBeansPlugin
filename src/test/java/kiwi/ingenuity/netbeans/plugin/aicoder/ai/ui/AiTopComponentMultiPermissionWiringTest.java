@@ -30,24 +30,25 @@ class AiTopComponentMultiPermissionWiringTest {
     /**
      * The driver's source, bounded by its OWN braces.
      *
-     * <p>This used to end the extent at {@code indexOf("private void checkForFileChanges()")} — the method that
-     * happened to follow the class. On 2026-08-29 a member reordering moved the inner class below that method, the
-     * marker was no longer ahead of it, and all eight tests in this class died on the bound with an opaque message
-     * before asserting anything about behaviour. Reordering members is legitimate; a test that reads source must
-     * tolerate it. Bounding by the class's own closing brace is deterministic under any reordering, insertion or
-     * rename around it.</p>
+     * <p>
+     * This used to end the extent at {@code indexOf("private void checkForFileChanges()")} — the method that happened
+     * to follow the class. On 2026-08-29 a member reordering moved the inner class below that method, the marker was no
+     * longer ahead of it, and all eight tests in this class died on the bound with an opaque message before asserting
+     * anything about behaviour. Reordering members is legitimate; a test that reads source must tolerate it. Bounding
+     * by the class's own closing brace is deterministic under any reordering, insertion or rename around it.</p>
      *
-     * <p>Do not replace this with another marker declaration. That is the same defect wearing a different name.</p>
+     * <p>
+     * Do not replace this with another marker declaration. That is the same defect wearing a different name.</p>
      */
     private String driverSource() throws IOException {
         String source = readSource();
         int start = source.indexOf(DRIVER_DECLARATION);
         assertTrue(start >= 0,
-                "AiTopComponent must declare '" + DRIVER_DECLARATION + "'. If it was renamed, update this constant.");
+                   "AiTopComponent must declare '" + DRIVER_DECLARATION + "'. If it was renamed, update this constant.");
         int end = endOfClassBody(source, start);
         assertTrue(end > start,
-                "could not find the closing brace of MultiReviewDriver starting at offset " + start
-                + " — its braces do not balance, or the declaration is not followed by a class body.");
+                   "could not find the closing brace of MultiReviewDriver starting at offset " + start
+                   + " — its braces do not balance, or the declaration is not followed by a class body.");
         return source.substring(start, end);
     }
 
@@ -57,7 +58,8 @@ class AiTopComponentMultiPermissionWiringTest {
      * Index just past the closing brace of the class body that starts after {@code declStart}, or -1 if it never
      * balances.
      *
-     * <p>Braces inside string literals, char literals, text blocks and comments are skipped — AiTopComponent contains
+     * <p>
+     * Braces inside string literals, char literals, text blocks and comments are skipped — AiTopComponent contains
      * quoted log messages and javadoc, and counting a brace inside either would end the extent in the wrong place and
      * fail in a way that looks like a real defect.</p>
      */
@@ -146,9 +148,9 @@ class AiTopComponentMultiPermissionWiringTest {
     void multiPermissionEventIsDispatched() throws IOException {
         String source = readSource();
         assertTrue(source.contains("event instanceof MultiPermissionEvent mpe"),
-                "handleEvent must have a MultiPermissionEvent branch");
+                   "handleEvent must have a MultiPermissionEvent branch");
         assertTrue(source.contains("showMultiPermissionReview(mpe)"),
-                "the MultiPermissionEvent branch must call showMultiPermissionReview");
+                   "the MultiPermissionEvent branch must call showMultiPermissionReview");
     }
 
     /**
@@ -162,7 +164,7 @@ class AiTopComponentMultiPermissionWiringTest {
         assertTrue(idx >= 0, "isVisibleChatOutput must exist");
         String body = source.substring(idx, Math.min(idx + 1200, source.length()));
         assertTrue(body.contains("event instanceof MultiPermissionEvent"),
-                "isVisibleChatOutput must treat a MultiPermissionEvent as awaiting-user output. Body:\n" + body);
+                   "isVisibleChatOutput must treat a MultiPermissionEvent as awaiting-user output. Body:\n" + body);
     }
 
     /**
@@ -174,7 +176,7 @@ class AiTopComponentMultiPermissionWiringTest {
     void theReviewIsBuiltWithTheSharedPathRenderer() throws IOException {
         String source = readSource();
         assertTrue(source.contains("new MultiPermissionReview(mpe, ProjectPathUtil::shortPath)"),
-                "the review must be constructed with ProjectPathUtil::shortPath as its path renderer");
+                   "the review must be constructed with ProjectPathUtil::shortPath as its path renderer");
     }
 
     /**
@@ -192,10 +194,10 @@ class AiTopComponentMultiPermissionWiringTest {
         assertTrue(autoAcceptIdx >= 0, "the auto-accept branch must be present. Body:\n" + body);
         String branch = body.substring(autoAcceptIdx, Math.min(autoAcceptIdx + 500, body.length()));
         assertTrue(branch.contains("review.autoAcceptAll()"),
-                "auto-accept must resolve through the review, not by completing the response directly. Branch:\n"
-                + branch);
+                   "auto-accept must resolve through the review, not by completing the response directly. Branch:\n"
+                   + branch);
         assertTrue(branch.contains("review.log()"),
-                "auto-accept must still write the per-file log. Branch:\n" + branch);
+                   "auto-accept must still write the per-file log. Branch:\n" + branch);
     }
 
     /**
@@ -208,11 +210,11 @@ class AiTopComponentMultiPermissionWiringTest {
     void theBatchCancellerRoutesThroughReviewCancelled() throws IOException {
         String driver = driverSource();
         assertTrue(driver.contains("pendingResponseCancellers.add(canceller)"),
-                "the driver must register a canceller so a stop or turn end tears the batch down");
+                   "the driver must register a canceller so a stop or turn end tears the batch down");
         assertTrue(driver.contains("review.cancelled("),
-                "the batch canceller must route through review.cancelled(...)");
+                   "the batch canceller must route through review.cancelled(...)");
         assertFalse(driver.contains("mpe.response().complete"),
-                "the driver must never complete the batch response directly — that bypasses the review");
+                    "the driver must never complete the batch response directly — that bypasses the review");
     }
 
     /**
@@ -227,13 +229,13 @@ class AiTopComponentMultiPermissionWiringTest {
         assertTrue(idx >= 0, "the driver must have a single finish() teardown");
         String finish = driver.substring(idx);
         assertTrue(finish.contains("if (finished)"),
-                "finish() must be idempotent so the log is written exactly once. Body:\n" + finish);
+                   "finish() must be idempotent so the log is written exactly once. Body:\n" + finish);
         assertTrue(finish.contains("cancelAndClose()"),
-                "finish() must close a diff this batch left open. Body:\n" + finish);
+                   "finish() must close a diff this batch left open. Body:\n" + finish);
         assertTrue(finish.contains("pendingResponseCancellers.remove(canceller)"),
-                "finish() must deregister the canceller. Body:\n" + finish);
-        assertTrue(finish.contains("conversationPanel.addSystemMessage(review.log())"),
-                "finish() must write the review's log to the message panel. Body:\n" + finish);
+                   "finish() must deregister the canceller. Body:\n" + finish);
+        assertTrue(finish.contains("assistantStream.showSystemNotice(review.log())"),
+                   "finish() must write the review's log through the stream sequencer. Body:\n" + finish);
     }
 
     /**
@@ -244,7 +246,7 @@ class AiTopComponentMultiPermissionWiringTest {
     void anUnreadableFileDeclinesTheWholeSet() throws IOException {
         String driver = driverSource();
         assertTrue(driver.contains("review.renderFailed(fp)"),
-                "a file that cannot be read or has no proposed content must go through review.renderFailed");
+                   "a file that cannot be read or has no proposed content must go through review.renderFailed");
     }
 
     /**
@@ -265,9 +267,9 @@ class AiTopComponentMultiPermissionWiringTest {
         int showAffordance = start.indexOf("conversationPanel.showMultiConfirm(");
         assertTrue(failFast >= 0, "start() must check for an unrenderable item. Body:\n" + start);
         assertTrue(showAffordance > failFast,
-                "the check must run BEFORE the affordance is shown, not after. Body:\n" + start);
+                   "the check must run BEFORE the affordance is shown, not after. Body:\n" + start);
         assertTrue(start.contains("review.renderFailed("),
-                "an unrenderable item must decline through review.renderFailed. Body:\n" + start);
+                   "an unrenderable item must decline through review.renderFailed. Body:\n" + start);
     }
 
     /**
@@ -279,9 +281,9 @@ class AiTopComponentMultiPermissionWiringTest {
     void oneWholeSetDeadlineIsArmedAtStart() throws IOException {
         String driver = driverSource();
         assertTrue(driver.contains("TimeoutEnum.USER_APPROVAL_WAIT_MILLIS"),
-                "the deadline must come from TimeoutEnum, never a literal");
+                   "the deadline must come from TimeoutEnum, never a literal");
         assertTrue(driver.contains("deadline.setRepeats(false)"),
-                "the deadline fires once for the whole set");
+                   "the deadline fires once for the whole set");
         int armed = driver.split("deadline\\.start\\(\\)", -1).length - 1;
         assertEquals(1, armed, "the deadline must be armed exactly once, not per file");
         int constructed = driver.split("new Timer\\(", -1).length - 1;
@@ -301,11 +303,11 @@ class AiTopComponentMultiPermissionWiringTest {
         assertTrue(end > idx, "could not bound expire()");
         String expire = driver.substring(idx, end);
         assertTrue(expire.contains("review.timedOut()"),
-                "expiry must go through review.timedOut(). Body:\n" + expire);
+                   "expiry must go through review.timedOut(). Body:\n" + expire);
         assertFalse(expire.contains("review.rejectAll()"),
-                "expiry must not be recorded as a rejection the user chose. Body:\n" + expire);
+                    "expiry must not be recorded as a rejection the user chose. Body:\n" + expire);
         assertTrue(expire.contains("finish()"),
-                "expiry must tear down through finish() like every other exit. Body:\n" + expire);
+                   "expiry must tear down through finish() like every other exit. Body:\n" + expire);
     }
 
     /**
@@ -319,7 +321,7 @@ class AiTopComponentMultiPermissionWiringTest {
         assertTrue(idx >= 0, "the driver must have a single finish() teardown");
         String finish = driver.substring(idx);
         assertTrue(finish.contains("deadline.stop()"),
-                "finish() must stop the deadline, so every exit path disposes it. Body:\n" + finish);
+                   "finish() must stop the deadline, so every exit path disposes it. Body:\n" + finish);
     }
 
     /**
@@ -330,8 +332,8 @@ class AiTopComponentMultiPermissionWiringTest {
     void theMainPanelAffordanceRejectsWithoutOpeningAnyDiff() throws IOException {
         String driver = driverSource();
         assertTrue(driver.contains("conversationPanel.showMultiConfirm("),
-                "the driver must show the inline main-panel affordance");
+                   "the driver must show the inline main-panel affordance");
         assertTrue(driver.contains("review.rejectAll()"),
-                "the affordance's reject must decline the whole set without reviewing");
+                   "the affordance's reject must decline the whole set without reviewing");
     }
 }

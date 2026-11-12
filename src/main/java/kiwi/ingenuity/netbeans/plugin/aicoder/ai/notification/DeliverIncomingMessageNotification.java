@@ -14,10 +14,9 @@ public class DeliverIncomingMessageNotification extends AbstractNotification {
     }
 
     /**
-     * What the USER sees: one short line naming who wrote and what about. The identifying block the assistant
-     * needs is {@link #agentOnlyText()} instead — it is an instruction addressed to the model ("read it with
-     * PeerMessageRead"), and echoing it into the transcript as though the user had typed it is what this
-     * split removes.
+     * What the USER sees: one short line naming who wrote and what about. The identifying block the assistant needs is
+     * {@link #agentOnlyText()} instead — it is an instruction addressed to the model ("read it with PeerMessageRead"),
+     * and echoing it into the transcript as though the user had typed it is what this split removes.
      */
     @Override
     public String text() {
@@ -25,10 +24,10 @@ public class DeliverIncomingMessageNotification extends AbstractNotification {
     }
 
     /**
-     * What the ASSISTANT receives, unchanged and in full: the id, sender, reply-expected flag, subject and
-     * the instruction to call PeerMessageRead. It is still sent on every delivery — only its place moved,
-     * from the visible prompt into the agent-only SYSTEM block. The id in particular is load-bearing: without
-     * it the recipient cannot fetch the body at all.
+     * What the ASSISTANT receives, unchanged and in full: the id, sender, reply-expected flag, subject and the
+     * instruction to call PeerMessageRead. It is still sent on every delivery — only its place moved, from the visible
+     * prompt into the agent-only SYSTEM block. The id in particular is load-bearing: without it the recipient cannot
+     * fetch the body at all.
      */
     @Override
     public String agentOnlyText() {
@@ -36,12 +35,19 @@ public class DeliverIncomingMessageNotification extends AbstractNotification {
     }
 
     /**
-     * The sender's display name, falling back to its session id when that session has since closed — an id is
-     * poor reading but it is still enough to identify who wrote.
+     * The sender's display name, falling back to its session id when that session has since closed — an id is poor
+     * reading but it is still enough to identify who wrote.
      */
     private String senderName() {
         var abs = SessionRegistry.get(message.fromSessionId());
         return abs != null ? abs.getAiSession().name() : message.fromSessionId();
+    }
+
+    /**
+     * Id used to deduplicate the agent-notification and property-bus render paths.
+     */
+    public String messageId() {
+        return message.id();
     }
 
     @Override

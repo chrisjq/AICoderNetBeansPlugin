@@ -16,6 +16,7 @@ import java.util.Collection;
 import java.util.Collections;
 import java.util.IdentityHashMap;
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
@@ -78,6 +79,7 @@ import kiwi.ingenuity.netbeans.plugin.aicoder.ai.events.TurnEndReason;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.idlewatch.IdleWatcherRegistry;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.mail.AiSessionInboxBroker;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.notification.AbstractNotification;
+import kiwi.ingenuity.netbeans.plugin.aicoder.ai.notification.DeliverIncomingMessageNotification;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.notification.NotificationTypeEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.permission.MultiPermissionReview;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.session.AiSession;
@@ -376,11 +378,13 @@ public final class AiTopComponent extends TopComponent implements AiProcessEvent
     }
 
     private final ConversationPanel conversationPanel;
+    private final AssistantStreamSequencer assistantStream;
     /**
-     * Inbox notices that arrived while the assistant was streaming. They are drawn after the turn completes so a mail
-     * line can never split one assistant reply into two bubbles. Accessed only on the EDT.
+     * Inbox ids already rendered in this tab. Both the synchronous bus event and the asynchronous agent notification
+     * may announce the same mail, so this EDT-only bounded set keeps the visible transcript to one row per message.
      */
-    private final InboxNoticeDeferral pendingInboxMessages = new InboxNoticeDeferral(this::drawInboxMessage);
+    private final Set<String> drawnInboxIds = new LinkedHashSet<>();
+    private static final int MAX_DRAWN_INBOX_IDS = 500;
     /**
      * Set when an inbox message lands while a turn is in flight, so the interruption it causes can be explained
      * afterwards even if the assistant reads the message itself and leaves the pending-notification queue empty. See
@@ -421,22 +425,11 @@ public final class AiTopComponent extends TopComponent implements AiProcessEvent
     private PropertyChangeListener openProjectsListener;
 
     /**
-     * Tracks whether an assistant turn is currently streaming
-     */
-    private boolean assistantTurnActive = false;
-
-    /**
      * Set when the user clicks Stop. Suppresses any buffered TextDeltaEvent or ToolUseEvent that arrive via invokeLater
      * after cancellation. Cleared when the cancelled turn is officially done (STOPPED status or TurnCompleteEvent).
      */
     private boolean cancelledThisTurn = false;
     private boolean cancelledTurnJustCompleted = false;
-
-    /**
-     * Set when a non-text event (tool use, permission) interrupts a streaming turn, so the next text block gets a blank
-     * line separator before it.
-     */
-    private boolean pendingNewlineBeforeText = false;
 
     /**
      * Busy/ready: set when the user starts work (Send) or the backend reports BUSY; cleared only when the backend
@@ -559,6 +552,28 @@ public final class AiTopComponent extends TopComponent implements AiProcessEvent
         setLayout(new BorderLayout());
 
         conversationPanel = new ConversationPanel();
+        assistantStream = new AssistantStreamSequencer(new AssistantStreamSink() {
+            @Override
+            public void beginAssistantMessage() {
+                conversationPanel.beginAssistantMessage();
+            }
+
+            @Override
+            public void appendDelta(String text) {
+                conversationPanel.appendDelta(text);
+            }
+
+            @Override
+            public void finaliseAssistantMessage() {
+                conversationPanel.finaliseAssistantMessage();
+            }
+
+            @Override
+            public void addSystemMessage(String text) {
+                conversationPanel.addSystemMessage(text);
+            }
+        }, SplitScheduler.swing(), AssistantStreamSequencer.DEFAULT_SPLIT_CAP_MILLIS);
+        conversationPanel.setAssistantMessageClosedListener(assistantStream::onAssistantMessageClosedExternally);
         // The transcript is capped by THIS session's Max history (session setting, else the legacy global fallback), read
         // per message so a change in the session dialog applies without reopening the tab.
         conversationPanel.setHistoryCap(() -> session.settings() != null
@@ -710,12 +725,21 @@ public final class AiTopComponent extends TopComponent implements AiProcessEvent
                     // setting is allowed to defer.
                     if (autoNotify || notification.skipAutoNotifyDeferral()) {
                         pendingNotifications.add(notification);
-                        SwingUtilities.invokeLater(() -> flushPendingNotifications());
                     }
                     else {
                         deferredNotifications.add(notification);
                     }
                 }
+                SwingUtilities.invokeLater(() -> {
+                    if (notification instanceof DeliverIncomingMessageNotification incoming) {
+                        drawInboxMessageIfNew(incoming.messageId(), incoming.text());
+                    }
+                    else if (notification.type() == NotificationTypeEnum.BUILD_COMPLETE
+                            || notification.type() == NotificationTypeEnum.IDLE_WATCHER) {
+                        assistantStream.showSystemNotice(notification.text());
+                    }
+                    flushPendingNotifications();
+                });
             }
 
             @Override
@@ -792,13 +816,11 @@ public final class AiTopComponent extends TopComponent implements AiProcessEvent
         List<AbstractNotification> deliverable = all.stream()
                 .filter(AbstractNotification::shouldDeliver)
                 .collect(Collectors.toList());
-        // Build results are events, not something the user said, so they go into the conversation as SYSTEM messages
-        // instead of riding in the prompt. Safe to touch the panel here: the isProcessing() guard above already
-        // returned if a turn were in flight, so no assistant message can be mid-stream — which is addSystemMessage's
-        // one precondition.
+        // Arrival publishers render build, idle-watch and inbox rows before this method runs. This queue is only the
+        // gate for sending their agent-only text once the backend is no longer busy; it never controls visible timing.
         String systemText = systemMessageText(deliverable);
         if (!systemText.isEmpty()) {
-            conversationPanel.addSystemMessage(systemText);
+            assistantStream.showSystemNotice(systemText);
         }
         String text = groupedVisibleText(deliverable);
         // Tested WITHOUT the interrupt explanation, because asking for it consumes it. A batch that submits nothing
@@ -870,10 +892,11 @@ public final class AiTopComponent extends TopComponent implements AiProcessEvent
      * [X]: Subject" — which is why {@link NotificationTypeEnum#BUILD_COMPLETE}'s prefix is blank and why
      * {@link NotificationTypeEnum#NEW_INBOX_MESSAGE}'s is no longer used.
      * <p>
-     * ARRIVING MAIL IS SKIPPED, because {@code handleGlobalProperty} has already drawn its line at the moment it landed
-     * — see {@link NotificationTypeEnum#announcedOnArrival}. Composing it here too gave every message a second,
-     * identical entry. That never showed on default settings, where mail is deferred and never reaches this batch, but
-     * the session templates enable {@code autoNotifyInbox} and would have shown it on every arrival.
+     * ARRIVING NOTICES ARE SKIPPED, because each one is drawn the moment it is delivered: mail by
+     * {@code handleGlobalProperty}, and build and idle-watch lines by the delivery callback — see
+     * {@link NotificationTypeEnum#announcedOnArrival}. Composing it here too gave every message a second, identical
+     * entry. Mail never showed the duplicate on default settings, where it is deferred and never reaches this batch,
+     * but the session templates enable {@code autoNotifyInbox} and would have shown it on every arrival.
      * <p>
      * Only the VISIBLE line comes from here. Everything such a notification has to tell the assistant travels in its
      * {@code agentOnlyText()} instead, since nothing that renders as a system message reaches the prompt at all — and
@@ -1432,18 +1455,18 @@ public final class AiTopComponent extends TopComponent implements AiProcessEvent
     }
 
     private void handleInboxMessageOnEdt(AiInboxMessageEvent message) {
-        boolean busy = assistantTurnActive || backendBusy || (aiBackend != null && aiBackend.isWorkInFlight());
-        pendingInboxMessages.offer(message, busy);
+        drawInboxMessageIfNew(message.messageId(),
+                              NotificationUtil.formatInboxMessage(message.fromName(), message.subject()));
     }
 
-    private void drawInboxMessage(AiInboxMessageEvent message) {
-        finaliseActiveAssistantIfNeeded();
-        conversationPanel.addSystemMessage(
-                NotificationUtil.formatInboxMessage(message.fromName(), message.subject()));
-    }
-
-    private void flushPendingInboxMessages() {
-        pendingInboxMessages.flush();
+    private void drawInboxMessageIfNew(String messageId, String text) {
+        if (messageId == null || messageId.isBlank() || !drawnInboxIds.add(messageId)) {
+            return;
+        }
+        if (drawnInboxIds.size() > MAX_DRAWN_INBOX_IDS) {
+            drawnInboxIds.remove(drawnInboxIds.iterator().next());
+        }
+        assistantStream.showSystemNotice(text);
     }
 
     private void initializeSessionComponents() {
@@ -1532,7 +1555,7 @@ public final class AiTopComponent extends TopComponent implements AiProcessEvent
                 String notice = "Restarting " + session.aiType().displayName() + " to apply tool changes failed."
                         + (kept ? " Your message is kept and is sent when the session starts again." : "");
                 infoBar.setStatusMessage(notice);
-                conversationPanel.addSystemMessage(notice);
+                assistantStream.showSystemNotice(notice);
             }
             else if (pendingSubmitText != null || pendingSubmitAgentOnlyText != null) {
                 replayPendingSubmit();
@@ -1846,6 +1869,8 @@ public final class AiTopComponent extends TopComponent implements AiProcessEvent
         catch (Exception e) {
             LOG.log(Level.WARNING, "Error removing globalPropertyListener during session close", e);
         }
+        // Close the open bubble and draw queued rows first, so they reach the saved transcript; reset() below drops any left.
+        assistantStream.endTurn();
         saveHistory();
         try {
             if (contextProvider != null) {
@@ -1870,9 +1895,8 @@ public final class AiTopComponent extends TopComponent implements AiProcessEvent
         catch (Exception e) {
             LOG.log(Level.WARNING, "Error stopping aiBackend during session close", e);
         }
-        assistantTurnActive = false;
+        assistantStream.reset();
         cancelledThisTurn = false;
-        pendingNewlineBeforeText = false;
     }
 
     @Override
@@ -2071,31 +2095,19 @@ public final class AiTopComponent extends TopComponent implements AiProcessEvent
             if (cancelledThisTurn) {
                 return;
             }
-            if (!assistantTurnActive) {
-                assistantTurnActive = true;
-                conversationPanel.beginAssistantMessage();
-            }
-            else if (pendingNewlineBeforeText) {
-                conversationPanel.appendDelta("\n\n");
-            }
-            pendingNewlineBeforeText = false;
-            conversationPanel.appendDelta(td.text());
+            assistantStream.onTextDelta(td.text());
         }
         else if (event instanceof TurnCompleteEvent) {
             cancelledTurnJustCompleted = cancelledThisTurn;
             cancelledThisTurn = false;
-            assistantTurnActive = false;
-            pendingNewlineBeforeText = false;
-            conversationPanel.finaliseAssistantMessage();
+            assistantStream.endTurn();
             // The backend formats the reason text and sends it on the event. ANSWERED has no chat message.
             TurnCompleteEvent turnComplete = (TurnCompleteEvent) event;
             String turnEndMessage = turnComplete.message();
             if (turnComplete.reason() != null && turnComplete.reason() != TurnEndReason.ANSWERED
                     && turnEndMessage != null && !turnEndMessage.isBlank()) {
-                conversationPanel.addSystemMessage(turnEndMessage);
+                assistantStream.showSystemNotice(turnEndMessage);
             }
-            // Notices that arrived during streaming are drawn only after the complete assistant bubble is closed.
-            flushPendingInboxMessages();
             // The AI has returned to a non-thinking state. If a question or
             // permission request is still open, the AI has stopped waiting for it
             // — e.g. its own tool-call timeout fired before our 300s one — so it is
@@ -2146,10 +2158,7 @@ public final class AiTopComponent extends TopComponent implements AiProcessEvent
 
         }
         else if (event instanceof AskUserQuestionEvent aqe) {
-            if (assistantTurnActive) {
-                assistantTurnActive = false;
-                conversationPanel.finaliseAssistantMessage();
-            }
+            assistantStream.splitNow();
             enterAwaitingUserState();
             Runnable aqeCanceller = () -> aqe.response().complete(null);
             pendingResponseCancellers.add(aqeCanceller);
@@ -2160,14 +2169,14 @@ public final class AiTopComponent extends TopComponent implements AiProcessEvent
                     aiBackend.setPendingDiff(false);
                 }
                 if (answer != null && !answer.isBlank()) {
-                    conversationPanel.addSystemMessage(NotificationUtil.formatAnswer(answer));
+                    assistantStream.showSystemNotice(NotificationUtil.formatAnswer(answer));
                 }
                 else {
                     // No answer — timed out or the turn was cancelled. Record it in
                     // history so the conversation shows the question was asked and
                     // never submitted; the live QuestionPanel is transient and gone
                     // after a save/restore.
-                    conversationPanel.addSystemMessage(
+                    assistantStream.showSystemNotice(
                             NotificationUtil.formatUnansweredQuestion(aqe.questions()));
                 }
                 refreshInputEnabled();
@@ -2175,16 +2184,13 @@ public final class AiTopComponent extends TopComponent implements AiProcessEvent
         }
         else if (event instanceof ConfirmEvent ce) {
             if (shouldAutoAccept(ce, infoBar.isAutoAccept())) {
-                finaliseActiveAssistantIfNeeded();
-                conversationPanel.addSystemMessage(
+                assistantStream.closeAndDrawNow();
+                assistantStream.showSystemNotice(
                         NotificationUtil.formatAutoAccepted(ce.toolName(), confirmLabel(ce)));
                 ce.response().complete(PermissionDecision.allowed());
                 return;
             }
-            if (assistantTurnActive) {
-                assistantTurnActive = false;
-                conversationPanel.finaliseAssistantMessage();
-            }
+            assistantStream.splitNow();
             enterAwaitingUserState();
             awaitApproval(ce.response());
             Runnable canceller = () -> ce.response().complete(PermissionDecision.denied("cancelled"));
@@ -2197,30 +2203,33 @@ public final class AiTopComponent extends TopComponent implements AiProcessEvent
                     aiBackend.setPendingDiff(false);
                 }
                 if (decision != null && decision.allow()) {
-                    conversationPanel.addSystemMessage(NotificationUtil.formatFileAcceptedTool(ce.toolName(), confirmLabel(ce)));
+                    assistantStream.showSystemNotice(NotificationUtil.formatFileAcceptedTool(ce.toolName(), confirmLabel(ce)));
                 }
                 else if (decision != null && decision.message() == null) {
-                    conversationPanel.addSystemMessage(NotificationUtil.formatFileRejectedTool(ce.toolName(), confirmLabel(ce)));
+                    assistantStream.showSystemNotice(NotificationUtil.formatFileRejectedTool(ce.toolName(), confirmLabel(ce)));
                 }
                 else if (decision != null) {
-                    conversationPanel.addSystemMessage(NotificationUtil.formatFileRejectedTool(ce.toolName(), confirmLabel(ce), decision.message()));
+                    assistantStream.showSystemNotice(NotificationUtil.formatFileRejectedTool(ce.toolName(), confirmLabel(ce), decision.message()));
                 }
                 refreshInputEnabled();
             }));
         }
         else if (event instanceof PermissionEvent pe) {
-            pendingNewlineBeforeText = true;
+            assistantStream.markParagraphBreak();
+            assistantStream.splitNow();
             showPermissionDiff(pe);
         }
         else if (event instanceof MultiPermissionEvent mpe) {
-            pendingNewlineBeforeText = true;
+            assistantStream.markParagraphBreak();
+            assistantStream.splitNow();
             showMultiPermissionReview(mpe);
         }
         else if (event instanceof ToolUseEvent tu) {
             if (cancelledThisTurn) {
                 return;
             }
-            pendingNewlineBeforeText = true;
+            assistantStream.markParagraphBreak();
+            assistantStream.splitNow();
             if (tu.isFileModification() && (aiBackend == null || !aiBackend.isMcpActive())) {
                 diffShownForCurrentTurn = true;
                 showDiff(tu);
@@ -2242,8 +2251,8 @@ public final class AiTopComponent extends TopComponent implements AiProcessEvent
                     boolean closesWork = startupResolved && !toolRestart.isRestartInFlight();
                     startupResolved = true;
                     leaveBusy();
-                    if (!assistantTurnActive) {
-                        flushPendingInboxMessages();
+                    if (assistantStream.hasPendingNotices()) {
+                        assistantStream.splitNow();
                     }
                     // READY after startup closes non-turn work (a compaction). Mail that arrived meanwhile was held by
                     // flushPendingNotifications (the backend was busy); deliver it now rather than at some later
@@ -2266,11 +2275,7 @@ public final class AiTopComponent extends TopComponent implements AiProcessEvent
                     cancelledThisTurn = false;
                     infoBar.setStatusMessage(se.text());
                     leaveBusy();
-                    assistantTurnActive = false;
-                    if (conversationPanel != null) {
-                        conversationPanel.finaliseAssistantMessage();
-                        flushPendingInboxMessages();
-                    }
+                    assistantStream.endTurn();
                     drainPendingInteractions();
                     refreshInputEnabled();
                     maybeRunDeferredToolRestart();
@@ -2291,9 +2296,8 @@ public final class AiTopComponent extends TopComponent implements AiProcessEvent
                     // leaves one open, and nothing else here clears it: the notice then renders after the text it cut
                     // off, and every later addSystemMessage lands on top of an orphaned bubble — including the deferred
                     // mail notice on the next restart.
-                    finaliseActiveAssistantIfNeeded();
-                    flushPendingInboxMessages();
-                    conversationPanel.addSystemMessage(se.text());
+                    assistantStream.endTurn();
+                    assistantStream.showSystemNotice(se.text());
                     infoBar.setStatusMessage("Ready...");
                     if (aiBackend != null) {
                         aiBackend.setPendingDiff(false);
@@ -2312,8 +2316,8 @@ public final class AiTopComponent extends TopComponent implements AiProcessEvent
                     // here, so without it the abort notice renders after text it aborted.
                     infoBar.hideStop();
                     if (conversationPanel != null) {
-                        finaliseActiveAssistantIfNeeded();
-                        conversationPanel.addSystemMessage(se.text());
+                        assistantStream.endTurn();
+                        assistantStream.showSystemNotice(se.text());
                     }
                 }
                 default ->
@@ -2322,10 +2326,8 @@ public final class AiTopComponent extends TopComponent implements AiProcessEvent
             }
         }
         else if (event instanceof SystemNotificationEvent sn) {
-            // Backends raise these mid-turn (e.g. the Copilot permission handler
-            // reporting a denied internal tool), so a stream may be open.
-            finaliseActiveAssistantIfNeeded();
-            conversationPanel.addSystemMessage(sn.text());
+            // Backends raise these while a reply may continue, so the sequencer chooses a safe split point.
+            assistantStream.showSystemNotice(sn.text());
         }
         else if (event instanceof AiProcessImplEvent si) {
             infoBarGate.deliver(ext -> ext.onAiProcessImplEvent(si));
@@ -2504,6 +2506,12 @@ public final class AiTopComponent extends TopComponent implements AiProcessEvent
             conversationPanel.addSystemMessage("Could not find pasted file @tmp." + missingName
                     + " — it may have been cleaned up, so the agent will see the marker text instead of the file.");
         }
+        if (deliveringMail) {
+            conversationPanel.addSystemMessage("Delivered pending inbox messages");
+        }
+        if (instructionsIncluded) {
+            conversationPanel.addSystemMessage("Session Instructions Sent");
+        }
         // A turn the user sent: locked from this moment, Stop shown (a turn can always be cancelled). The backend sends
         // no BUSY for it; the turn's TurnCompleteEvent (or STOPPED/FAILED/EXITED) closes it.
         enterBusy(true, "Thinking…");
@@ -2524,15 +2532,17 @@ public final class AiTopComponent extends TopComponent implements AiProcessEvent
             // queued behind a recycle would otherwise leave the instructions recorded as sent, the baseline believed
             // sent and the drained inbox mail gone, none of which reached the model.
             Runnable handedOver = () -> runOnEdt(() -> {
-                if (deliveringMail) {
-                    conversationPanel.addSystemMessage("Delivered pending inbox messages");
-                }
                 if (instructionsIncluded) {
-                    conversationPanel.addSystemMessage("Session Instructions Sent");
                     recordInstructionsDelivered(sessionInstructions);
                 }
             });
             Runnable notDelivered = () -> runOnEdt(() -> {
+                if (deliveringMail || instructionsIncluded) {
+                    String pending = deliveringMail && instructionsIncluded
+                                     ? "pending inbox messages and session instructions"
+                                     : deliveringMail ? "pending inbox messages" : "session instructions";
+                    assistantStream.showSystemNotice("Not sent — " + pending + " will go with your next message");
+                }
                 if (contextProvider != null && sentContextBefore != null) {
                     contextProvider.restoreSentContext(sentContextBefore);
                 }
@@ -2634,8 +2644,7 @@ public final class AiTopComponent extends TopComponent implements AiProcessEvent
             aiBackend.cancel();
         }
         infoBar.hideStop();
-        assistantTurnActive = false;
-        conversationPanel.finaliseAssistantMessage();
+        assistantStream.endTurn();
         drainPendingInteractions();
         infoBar.setStatusMessage("Stopped at user's request");
         if (!backendWasBusy) {
@@ -2682,18 +2691,6 @@ public final class AiTopComponent extends TopComponent implements AiProcessEvent
             session.setAwaitingApproval(false);
             clearPendingDiffAndRefreshInput();
         }));
-    }
-
-    /**
-     * If a streaming assistant turn is in progress, finalise it immediately. Call this before inserting any system
-     * message that must appear after the assistant text that was streaming at the time of the interruption.
-     */
-    private void finaliseActiveAssistantIfNeeded() {
-        if (assistantTurnActive) {
-            assistantTurnActive = false;
-            pendingNewlineBeforeText = false;
-            conversationPanel.finaliseAssistantMessage();
-        }
     }
 
     // --- AiSessionHost ---
@@ -2791,7 +2788,7 @@ public final class AiTopComponent extends TopComponent implements AiProcessEvent
         String original = tu.originalContent() != null ? tu.originalContent() : "";
 
         enterAwaitingUserState();
-        finaliseActiveAssistantIfNeeded();
+        assistantStream.closeAndDrawNow();
         conversationPanel.addSystemMessage(NotificationUtil.formatToolActionQuestion(tu.toolName(), shortPath(fp)));
 
         AiDiffTopComponent diff = new AiDiffTopComponent(fp, original, proposed, session.name());
@@ -2810,7 +2807,7 @@ public final class AiTopComponent extends TopComponent implements AiProcessEvent
                     backendSnap.setPendingDiff(false);
                     backendSnap.sendPrompt(appendDecisionMessage("Changes accepted.", message), wd, pd);
                 }
-                conversationPanel.addSystemMessage(NotificationUtil.formatFileAcceptedTool(tu.toolName(), shortPath(fp)));
+                assistantStream.showSystemNotice(NotificationUtil.formatFileAcceptedTool(tu.toolName(), shortPath(fp)));
                 refreshInputEnabled();
             }
 
@@ -2832,7 +2829,7 @@ public final class AiTopComponent extends TopComponent implements AiProcessEvent
                     backendSnap.setPendingDiff(false);
                     backendSnap.sendPrompt(appendDecisionMessage("Changes rejected, file reverted.", message), wd, pd);
                 }
-                conversationPanel.addSystemMessage(NotificationUtil.formatFileRejectedTool(tu.toolName(), shortPath(fp), message));
+                assistantStream.showSystemNotice(NotificationUtil.formatFileRejectedTool(tu.toolName(), shortPath(fp), message));
                 refreshInputEnabled();
             }
         });
@@ -2872,8 +2869,8 @@ public final class AiTopComponent extends TopComponent implements AiProcessEvent
     private void showPermissionDiff(PermissionEvent pe) {
         if (infoBar.isAutoAccept()) {
             LOG.log(Level.INFO, "Auto-accepted: {0} {1}", new Object[]{pe.toolName(), pe.filePath()});
-            finaliseActiveAssistantIfNeeded();
-            conversationPanel.addSystemMessage(NotificationUtil.formatAutoAccepted(pe.toolName(), shortPath(pe.filePath())));
+            assistantStream.closeAndDrawNow();
+            assistantStream.showSystemNotice(NotificationUtil.formatAutoAccepted(pe.toolName(), shortPath(pe.filePath())));
             pe.response().complete(PermissionDecision.allowed());
             return;
         }
@@ -2901,7 +2898,7 @@ public final class AiTopComponent extends TopComponent implements AiProcessEvent
                 LOG.log(Level.WARNING, "Could not read file for permission diff — denying: " + fp, e);
                 SwingUtilities.invokeLater(() -> {
                     clearPendingDiffAndRefreshInput();
-                    conversationPanel.addSystemMessage(
+                    assistantStream.showSystemNotice(
                             NotificationUtil.formatPermissionDenied(pe.toolName(), shortPath(fp),
                                                                     "could not read file for diff preview"));
                     if (!pe.response().isDone()) {
@@ -2930,7 +2927,7 @@ public final class AiTopComponent extends TopComponent implements AiProcessEvent
         switch (decision.outcome()) {
             case DENY -> {
                 LOG.log(Level.WARNING, "Permission denied for {0}: {1}", new Object[]{fp, decision.reason()});
-                conversationPanel.addSystemMessage(NotificationUtil.formatPermissionDenied(pe.toolName(), shortPath(fp), decision.reason()));
+                assistantStream.showSystemNotice(NotificationUtil.formatPermissionDenied(pe.toolName(), shortPath(fp), decision.reason()));
                 pe.response().complete(PermissionDecision.denied(decision.reason()));
                 clearPendingDiffAndRefreshInput();
                 return;
@@ -2953,7 +2950,7 @@ public final class AiTopComponent extends TopComponent implements AiProcessEvent
         }
 
         diffShownForCurrentTurn = true;
-        finaliseActiveAssistantIfNeeded();
+        assistantStream.closeAndDrawNow();
         conversationPanel.addSystemMessage(NotificationUtil.formatToolActionQuestion(pe.toolName(), shortPath(fp)));
         final Runnable canceller = () -> pe.response().complete(PermissionDecision.denied("Permission request cancelled"));
         pendingResponseCancellers.add(canceller);
@@ -2980,7 +2977,7 @@ public final class AiTopComponent extends TopComponent implements AiProcessEvent
                     pendingResponseCancellers.remove(canceller);
                     pe.response().complete(PermissionDecision.allowed());
                     clearPendingDiffAndRefreshInput();
-                    conversationPanel.addSystemMessage(NotificationUtil.formatFileAcceptedTool(pe.toolName(), shortPath(fp)));
+                    assistantStream.showSystemNotice(NotificationUtil.formatFileAcceptedTool(pe.toolName(), shortPath(fp)));
                     new Timer((int) TimeoutEnum.ACCEPTED_DIFF_REFRESH_DELAY_MILLIS.millis(),
                               ev -> FileUtils.refreshAfterWrite(fp)) {
                         {
@@ -2996,7 +2993,7 @@ public final class AiTopComponent extends TopComponent implements AiProcessEvent
                     pendingResponseCancellers.remove(canceller);
                     pe.response().complete(PermissionDecision.denied(message));
                     clearPendingDiffAndRefreshInput();
-                    conversationPanel.addSystemMessage(NotificationUtil.formatFileRejectedTool(pe.toolName(), shortPath(fp), message));
+                    assistantStream.showSystemNotice(NotificationUtil.formatFileRejectedTool(pe.toolName(), shortPath(fp), message));
                 }
             });
             openDiffs.add(diff);
@@ -3020,14 +3017,14 @@ public final class AiTopComponent extends TopComponent implements AiProcessEvent
 
         if (infoBar.isAutoAccept()) {
             LOG.log(Level.INFO, "Auto-accepted multi-file change set of {0} files", mpe.items().size());
-            finaliseActiveAssistantIfNeeded();
+            assistantStream.closeAndDrawNow();
             review.autoAcceptAll();
-            conversationPanel.addSystemMessage(review.log());
+            assistantStream.showSystemNotice(review.log());
             return;
         }
 
         enterAwaitingUserState();
-        finaliseActiveAssistantIfNeeded();
+        assistantStream.closeAndDrawNow();
         new MultiReviewDriver(review, mpe.items()).start();
     }
 
@@ -3108,7 +3105,7 @@ public final class AiTopComponent extends TopComponent implements AiProcessEvent
         aiBackend.sendPrompt(prompt, resolveWorkDir(), projectDirs,
                              () -> runOnEdt(() -> {
                                  if (preambleCarriedInstructions) {
-                                     conversationPanel.addSystemMessage("Session Instructions Sent");
+                                     assistantStream.showSystemNotice("Session Instructions Sent");
                                      recordInstructionsDelivered(instructions);
                                  }
                                  if (session != null) {
@@ -3489,7 +3486,7 @@ public final class AiTopComponent extends TopComponent implements AiProcessEvent
                 openDiffs.remove(stillOpen);
                 stillOpen.cancelAndClose();
             }
-            conversationPanel.addSystemMessage(review.log());
+            assistantStream.showSystemNotice(review.log());
             session.setAwaitingApproval(false);
             clearPendingDiffAndRefreshInput();
         }

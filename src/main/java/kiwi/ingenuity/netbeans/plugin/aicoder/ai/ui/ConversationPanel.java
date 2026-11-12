@@ -9,8 +9,6 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
 import java.util.function.IntSupplier;
-import java.util.logging.Level;
-import java.util.logging.Logger;
 import java.util.prefs.PreferenceChangeListener;
 import javax.swing.BorderFactory;
 import javax.swing.BoxLayout;
@@ -36,8 +34,6 @@ import org.openide.util.NbPreferences;
  */
 public class ConversationPanel extends JScrollPane {
 
-    private static final Logger LOG = Logger.getLogger(ConversationPanel.class.getName());
-
     /**
      * Layout-settle polling. JEditorPane lays out asynchronously and takes an unpredictable number of passes, so
      * "scroll to the bottom" cannot be done in a fixed number of them — it has to watch the scrollbar maximum until it
@@ -53,6 +49,7 @@ public class ConversationPanel extends JScrollPane {
 
     private final JPanel inner;
     private MessagePanel activeAssistant;
+    private Runnable assistantMessageClosedListener;
     private final List<AiMessage> history = new ArrayList<>();
     private final PreferenceChangeListener fontPrefListener;
     private boolean fontPrefListenerRegistered = false;
@@ -160,21 +157,32 @@ public class ConversationPanel extends JScrollPane {
     }
 
     /**
-     * Restore saved messages (called at startup if history exists).
+     * Restore saved messages, omitting blank assistant entries from both the display and history.
      */
     public void restoreHistory(List<AiMessage> messages) {
+        boolean hadActiveAssistant = activeAssistant != null;
         activeAssistant = null;
         history.clear();
         inner.removeAll();
         for (AiMessage m : messages) {
+            if (m.role() == AiMessage.Role.ASSISTANT
+                    && (m.markdownText() == null || m.markdownText().isBlank())) {
+                continue;
+            }
             history.add(m);
-            inner.add(MessagePanel.forRestored(m));
+            addMessageRow(MessagePanel.forRestored(m), m.role());
         }
         inner.revalidate();
         // Restoring history jumps to the newest message regardless of the auto-scroll setting:
         // this is session open, not a message arriving, and honouring the flag here would open a
         // restored session stranded in the middle of its own history.
         pinToBottomUntilSettled();
+        // The discarded bubble is deliberately not finalised or stored, but the sequencer must be
+        // told it is closed or it keeps a stale open bubble and drops every later delta. Notified
+        // after the rebuild so any rows it adds draw into the restored content.
+        if (hadActiveAssistant && assistantMessageClosedListener != null) {
+            assistantMessageClosedListener.run();
+        }
     }
 
     /**
@@ -193,12 +201,13 @@ public class ConversationPanel extends JScrollPane {
      * while the user is reading history — the exact thing auto-scroll is switched off to prevent.
      */
     public void addUserMessage(String text, boolean userInitiated) {
+        closeAssistantBeforeRow();
         AiMessage m = AiMessage.user(text);
         history.add(m);
         MessagePanel r = new MessagePanel(AiMessage.Role.USER, false);
         r.appendDelta(text);
         r.finalise();
-        inner.add(r);
+        addMessageRow(r, AiMessage.Role.USER);
         inner.revalidate();
         if (userInitiated) {
             forceScrollToBottom();
@@ -216,7 +225,7 @@ public class ConversationPanel extends JScrollPane {
             finaliseAssistantMessage();
         }
         activeAssistant = new MessagePanel(AiMessage.Role.ASSISTANT, false);
-        inner.add(activeAssistant);
+        addMessageRow(activeAssistant, AiMessage.Role.ASSISTANT);
         inner.revalidate();
         scrollToBottom();
     }
@@ -246,14 +255,23 @@ public class ConversationPanel extends JScrollPane {
     }
 
     /**
-     * Called when the AI's response is complete.
+     * Close the active assistant message, removing blank bubbles instead of saving them.
      */
     public void finaliseAssistantMessage() {
         if (activeAssistant == null) {
             return;
         }
-        activeAssistant.finalise();
         String text = activeAssistant.getAccumulatedText();
+        if (text == null || text.isBlank()) {
+            MessagePanel blank = activeAssistant;
+            activeAssistant = null;
+            blank.finalise();
+            inner.remove(blank);
+            inner.revalidate();
+            inner.repaint();
+            return;
+        }
+        activeAssistant.finalise();
         history.add(AiMessage.assistant(text));
         activeAssistant = null;
         enforceHistoryCap();
@@ -333,11 +351,19 @@ public class ConversationPanel extends JScrollPane {
      * Remove all messages.
      */
     public void clear() {
+        boolean hadActiveAssistant = activeAssistant != null;
         history.clear();
         activeAssistant = null;
         inner.removeAll();
         inner.revalidate();
         inner.repaint();
+        // The bubble is gone without being finalised or stored — the content is being discarded —
+        // but the sequencer still has to learn that it is no longer open, or it keeps believing a
+        // reply is streaming and drops every later delta. After the clear, so rows it adds land in
+        // the new content.
+        if (hadActiveAssistant && assistantMessageClosedListener != null) {
+            assistantMessageClosedListener.run();
+        }
     }
 
     /**
@@ -345,6 +371,7 @@ public class ConversationPanel extends JScrollPane {
      * unblocks the MCP server.
      */
     public void showQuestion(AskUserQuestionEvent event) {
+        closeAssistantBeforeRow();
         QuestionPanel qp = new QuestionPanel(event);
         qp.setAlignmentX(Component.LEFT_ALIGNMENT);
         inner.add(qp);
@@ -369,6 +396,7 @@ public class ConversationPanel extends JScrollPane {
      * ConfirmPanel completes event.response() when the user clicks Yes or No, which unblocks the MCP tool thread.
      */
     public void showConfirm(ConfirmEvent event, String acceptTooltip, String rejectTooltip) {
+        closeAssistantBeforeRow();
         ConfirmPanel cp = new ConfirmPanel(event, acceptTooltip, rejectTooltip);
         cp.setAlignmentX(Component.LEFT_ALIGNMENT);
         inner.add(cp);
@@ -384,6 +412,7 @@ public class ConversationPanel extends JScrollPane {
      * without opening any, so a change the user has already decided against costs one click rather than N.
      */
     public void showMultiConfirm(String prompt, CompletableFuture<PermissionDecision> response) {
+        closeAssistantBeforeRow();
         ConfirmPanel cp = new ConfirmPanel(prompt, "Accept Diffs", "Reject", response);
         cp.setAlignmentX(Component.LEFT_ALIGNMENT);
         inner.add(cp);
@@ -395,28 +424,58 @@ public class ConversationPanel extends JScrollPane {
 
     /**
      * Add a system notification to the conversation with orange indicator. Stored in history and persists when
-     * saved/restored. Callers must finalise any active assistant message before calling this method.
+     * saved/restored. Closes any active assistant message and notifies its listener before adding the row.
      */
     public void addSystemMessage(String text) {
-        if (activeAssistant != null && PluginSettings.isDebugJson()) {
-            // The contract above is easy to break silently: the panel lands after
-            // a bubble that keeps growing, and nothing complains. Finalising here
-            // instead is NOT an option — assistantTurnActive lives on
-            // AiTopComponent, so clearing activeAssistant behind its back leaves
-            // the two out of step and appendDelta() then discards the rest of the
-            // response. Naming the offender is the most this class can safely do.
-            LOG.log(Level.WARNING,
-                    "addSystemMessage called while an assistant message is still streaming — "
-                    + "caller must finalise first or the transcript order will be wrong: {0}", text);
-        }
+        closeAssistantBeforeRow();
         AiMessage m = AiMessage.system(text);
         history.add(m);
         MessagePanel r = new MessagePanel(AiMessage.Role.SYSTEM, false);
         r.appendDelta(text);
         r.finalise();
-        inner.add(r);
+        addMessageRow(r, AiMessage.Role.SYSTEM);
         inner.revalidate();
         scrollToBottom();
+    }
+
+    /**
+     * Set the EDT callback invoked when a row adder closes an active assistant message itself. Explicit finalisation
+     * does not invoke it; {@code null} removes the listener.
+     */
+    public void setAssistantMessageClosedListener(Runnable listener) {
+        assistantMessageClosedListener = listener;
+    }
+
+    /**
+     * Returns whether an assistant bubble is currently open; call on the EDT.
+     */
+    public boolean hasActiveAssistantMessage() {
+        return activeAssistant != null;
+    }
+
+    private void closeAssistantBeforeRow() {
+        if (activeAssistant != null) {
+            finaliseAssistantMessage();
+            if (assistantMessageClosedListener != null) {
+                assistantMessageClosedListener.run();
+            }
+        }
+    }
+
+    private void addMessageRow(MessagePanel panel, AiMessage.Role role) {
+        panel.putClientProperty("conversationRole", role.name());
+        inner.add(panel);
+    }
+
+    List<String> renderedRolesForTest() {
+        List<String> roles = new ArrayList<>();
+        for (Component component : inner.getComponents()) {
+            if (component instanceof MessagePanel panel
+                    && panel.getClientProperty("conversationRole") instanceof String role) {
+                roles.add(role);
+            }
+        }
+        return List.copyOf(roles);
     }
 
     /**

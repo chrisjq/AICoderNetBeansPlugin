@@ -82,7 +82,7 @@ class AiTopComponentNotificationGroupingTest {
 
         assertEquals("", AiTopComponent.groupedVisibleText(batch),
                      "a build result is not something the user typed, so it must not ride in the prompt");
-        assertEquals("BUILD: BuildMavenProject SUCCESS in 2 secs (/p)", AiTopComponent.systemMessageText(batch),
+        assertEquals("", AiTopComponent.systemMessageText(batch),
                      "the build summary is already one complete line; no [prefix] glued in front");
     }
 
@@ -100,7 +100,7 @@ class AiTopComponentNotificationGroupingTest {
 
         assertEquals("", AiTopComponent.groupedVisibleText(batch),
                      "neither mail nor a build result is something the user typed");
-        assertEquals("BUILD: X SUCCESS", AiTopComponent.systemMessageText(batch),
+        assertEquals("", AiTopComponent.systemMessageText(batch),
                      "the build line stands alone: mail was already drawn on arrival");
     }
 
@@ -112,18 +112,19 @@ class AiTopComponentNotificationGroupingTest {
                 notification(NotificationTypeEnum.BUILD_COMPLETE, "BUILD: X SUCCESS", null));
 
         assertEquals("", AiTopComponent.groupedVisibleText(batch), "nothing reaches the prompt from a notification");
-        assertEquals("BUILD: X SUCCESS", AiTopComponent.systemMessageText(batch),
+        assertEquals("", AiTopComponent.systemMessageText(batch),
                      "the blank entries are skipped and the one real line stands alone");
     }
 
     @Test
-    void severalBuildResultsInOneBatchAreJoinedIntoOneSystemMessage() {
+    void severalBuildResultsAreDrawnIndividuallyOnDeliveryNotGroupedAtFlush() {
         List<AbstractNotification> batch = List.of(
                 notification(NotificationTypeEnum.BUILD_COMPLETE, "BUILD: A SUCCESS", null),
                 notification(NotificationTypeEnum.BUILD_COMPLETE, "BUILD: B FAILED", null));
 
-        assertEquals("BUILD: A SUCCESS\n\nBUILD: B FAILED", AiTopComponent.systemMessageText(batch),
-                     "two builds finishing while the session was busy read as two lines, in arrival order");
+        assertEquals("", AiTopComponent.systemMessageText(batch),
+                     "each build is announced on delivery as its own system row, never joined at the next flush");
+        assertTrue(NotificationTypeEnum.BUILD_COMPLETE.announcedOnArrival());
     }
 
     /**
@@ -157,8 +158,10 @@ class AiTopComponentNotificationGroupingTest {
     void aTypeIsDrawnByTheFlushExactlyWhenNothingElseAlreadyDrewIt() {
         assertTrue(NotificationTypeEnum.NEW_INBOX_MESSAGE.announcedOnArrival(),
                    "handleGlobalProperty draws mail the moment it lands");
-        assertFalse(NotificationTypeEnum.BUILD_COMPLETE.announcedOnArrival(),
-                    "a finishing build has no arrival publisher — the flush is its only chance to be drawn");
+        assertTrue(NotificationTypeEnum.BUILD_COMPLETE.announcedOnArrival(),
+                   "a finishing build is drawn when it is delivered, so the flush must skip it too");
+        assertTrue(NotificationTypeEnum.IDLE_WATCHER.announcedOnArrival(),
+                   "an idle-watch alert is drawn when it is delivered, so the flush must skip it too");
 
         for (NotificationTypeEnum type : List.of(NotificationTypeEnum.NEW_INBOX_MESSAGE,
                                                  NotificationTypeEnum.BUILD_COMPLETE)) {
@@ -167,6 +170,22 @@ class AiTopComponentNotificationGroupingTest {
             assertEquals(type.announcedOnArrival() ? "" : "a line", AiTopComponent.systemMessageText(batch),
                          type + " must be drawn here exactly when it was not drawn on arrival");
         }
+    }
+
+    /**
+     * An idle-watch alert is delivered like a build result: it has no arrival publisher of its own, the delivery
+     * callback draws it, and the flush must neither draw it again nor drop its agent-only text.
+     */
+    @Test
+    void anIdleWatchAlertIsDrawnOnDeliveryAndTheAssistantStillHearsIt() {
+        List<AbstractNotification> batch = List.of(
+                notification(NotificationTypeEnum.IDLE_WATCHER, "IDLE WATCH: worker idle for 5 min", "the full idle report"));
+
+        assertEquals("", AiTopComponent.groupedVisibleText(batch), "an idle alert is not something the user typed");
+        assertEquals("", AiTopComponent.systemMessageText(batch), "the delivery callback already drew the line");
+        assertEquals("the full idle report", AiTopComponent.combinedAgentOnlyText(batch, null),
+                     "the assistant must still receive the idle report");
+        assertTrue(NotificationTypeEnum.IDLE_WATCHER.announcedOnArrival());
     }
 
     @Test

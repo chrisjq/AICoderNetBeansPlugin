@@ -23,14 +23,14 @@ public enum NotificationTypeEnum {
      * complete, self-identifying line ("BUILD: ..."), so gluing another marker in front of it would duplicate what the
      * line already says.
      */
-    BUILD_COMPLETE("", true, false),
+    BUILD_COMPLETE("", true, true),
     /**
      * An idle watcher firing: the target AI has now been continuously idle for the watcher's timeout, or the target
      * session closed (which is never an idle event). The prefix is deliberately blank: {@link
      * IdleWatcherNotification#text} already produces one complete, self-identifying line ("IDLE WATCH: ..."), so gluing
      * another marker in front of it would duplicate what the line already says.
      */
-    IDLE_WATCHER("", true, false);
+    IDLE_WATCHER("", true, true);
 
     private final String prefix;
     private final boolean rendersAsSystemMessage;
@@ -63,21 +63,16 @@ public enum NotificationTypeEnum {
     }
 
     /**
-     * Whether a SEPARATE publisher has already put this type's line in the conversation by the time the inbox flush
-     * runs, so the flush must not post it a second time.
+     * Whether this type's line is drawn when the notification is delivered, so the inbox flush must not post it a
+     * second time.
      * <p>
-     * True only for mail. {@code AiTopComponent.handleGlobalProperty} posts "New message from [X]: Subject" the moment
-     * the message lands, and has done so since long before these entries started rendering as system messages — that
-     * arrival line is the ORIGINAL publisher, and the one that gives prompt feedback. When the flush later composed the
-     * same line from {@link AbstractNotification#text}, mail gained a second, identical entry.
+     * True for mail, build results and idle-watch alerts. {@code AiTopComponent} draws each one as it is delivered:
+     * mail when the message lands, and the other two in the delivery callback. The flush still sends their agent-only
+     * text to the assistant; it only skips the visible row.
      * <p>
-     * The duplicate is invisible on default settings, which is why it survived review: with {@code autoNotifyInbox} off
-     * (the plugin default) mail is parked in the deferred queue and never reaches the flush at all, so only the arrival
-     * line is drawn. The three session templates turn that setting ON, so exactly the sessions created from them would
-     * have seen every arrival twice.
-     * <p>
-     * False for {@link #BUILD_COMPLETE}: a finishing build has no arrival publisher, and the flush is the only thing
-     * that ever draws its summary. Suppressing it there would lose the line entirely rather than de-duplicate it.
+     * Mail was the first case. Its arrival line predates these entries rendering as system messages, and the flush
+     * composed the same line again. The duplicate never showed with {@code autoNotifyInbox} off, the plugin default,
+     * but the session templates turn it on.
      */
     public boolean announcedOnArrival() {
         return announcedOnArrival;
