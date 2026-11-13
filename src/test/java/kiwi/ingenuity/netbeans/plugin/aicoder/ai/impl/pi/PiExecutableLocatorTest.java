@@ -3,6 +3,7 @@ package kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.pi;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.Arrays;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNull;
@@ -11,6 +12,66 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
 class PiExecutableLocatorTest {
+
+    @Test
+    void managedLauncherIsFoundAndTrustedOnPath(@TempDir Path home) throws IOException {
+        String originalHome = System.getProperty("user.home");
+        String originalOs = System.getProperty("os.name");
+        try {
+            System.setProperty("user.home", home.toString());
+            System.setProperty("os.name", "Linux");
+            Path executable = home.resolve(".pi/agent/bin/pi");
+            Files.createDirectories(executable.getParent());
+            Files.writeString(executable, "#!/bin/sh\n");
+            assertTrue(executable.toFile().setExecutable(true));
+            String[] candidates = PiExecutableLocator.platformCandidates(null, null);
+            assertEquals(executable.toString(), candidates[0]);
+            assertEquals(executable.toString(), PiExecutableLocator.findInCandidates(candidates));
+            assertEquals(executable.toString(),
+                         PiExecutableLocator.findOnPath(executable.getParent().toString()));
+        }
+        finally {
+            System.setProperty("user.home", originalHome);
+            System.setProperty("os.name", originalOs);
+        }
+    }
+
+    @Test
+    void agentDirectoryOverridePrecedesDefaultAndBlankIsIgnored(@TempDir Path home) throws IOException {
+        String originalHome = System.getProperty("user.home");
+        try {
+            System.setProperty("user.home", home.toString());
+            Path override = home.resolve("custom-agent");
+            Path executable = override.resolve("bin/pi");
+            Files.createDirectories(executable.getParent());
+            Files.writeString(executable, "#!/bin/sh\n");
+            assertTrue(executable.toFile().setExecutable(true));
+            String[] candidates = PiExecutableLocator.platformCandidates(override.toString(), null);
+            assertEquals(executable.toString(), candidates[0]);
+            assertEquals(home + "/.pi/agent/bin/pi", candidates[1]);
+            assertEquals(executable.toString(), PiExecutableLocator.findInCandidates(candidates));
+            assertEquals(home + "/.pi/agent/bin/pi",
+                         PiExecutableLocator.platformCandidates("  ", null)[0]);
+        }
+        finally {
+            System.setProperty("user.home", originalHome);
+        }
+    }
+
+    @Test
+    void windowsManagedCandidatesIncludeCmdAndExe() {
+        String originalOs = System.getProperty("os.name");
+        try {
+            System.setProperty("os.name", "Windows 11");
+            String profile = "C:/Users/example";
+            String[] candidates = PiExecutableLocator.platformCandidates(null, profile);
+            assertTrue(Arrays.asList(candidates).contains(profile + "\\.pi\\agent\\bin\\pi.cmd"));
+            assertTrue(Arrays.asList(candidates).contains(profile + "\\.pi\\agent\\bin\\pi.exe"));
+        }
+        finally {
+            System.setProperty("os.name", originalOs);
+        }
+    }
 
     @Test
     void findInCandidates_findsExistingExecutable(@TempDir Path dir) throws IOException {

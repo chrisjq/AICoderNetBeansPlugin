@@ -19,13 +19,14 @@ public final class PiExecutableLocator {
 
     /**
      * Test seam: when non-null, replaces {@link PiTimeoutEnum#PI_EXECUTABLE_TEST_MILLIS} as
-     * {@link #testExecutable(String)}'s whole-attempt budget so a hung fake CLI fails a test in milliseconds instead
-     * of seconds. Null in production.
+     * {@link #testExecutable(String)}'s whole-attempt budget so a hung fake CLI fails a test in milliseconds instead of
+     * seconds. Null in production.
      */
     static volatile Long testExecutableBudgetMillisForTests = null;
 
     private static final List<String> TRUSTED_DIRS = List.of(
             "/usr/bin", "/usr/local/bin",
+            System.getProperty("user.home") + "/.pi/agent/bin",
             System.getProperty("user.home") + "/.local/bin",
             System.getProperty("user.home") + "/bin",
             System.getProperty("user.home") + "/.npm-global/bin",
@@ -69,7 +70,7 @@ public final class PiExecutableLocator {
 
     /**
      * Locate the pi binary. Returns the path on success, or null if not found. Order: stored preference → PATH →
-     * well-known locations.
+     * well-known locations, starting with the managed install at ~/.pi/agent/bin/pi (or PI_CODING_AGENT_DIR/bin/pi).
      */
     public static String locate() {
         String stored = PiPluginSettings.getExecutable();
@@ -86,7 +87,10 @@ public final class PiExecutableLocator {
     }
 
     private static String findOnPath() {
-        String pathVar = System.getenv("PATH");
+        return findOnPath(System.getenv("PATH"));
+    }
+
+    static String findOnPath(String pathVar) {
         if (pathVar == null) {
             return null;
         }
@@ -96,7 +100,7 @@ public final class PiExecutableLocator {
         for (String dir : pathVar.split(File.pathSeparator)) {
             // On Windows, trust all PATH entries — common install locations
             // (%APPDATA%\npm, winget, scoop, etc.) are not in TRUSTED_DIRS.
-            if (dir.isBlank() || (!isWindows && !TRUSTED_DIRS.contains(dir))) {
+            if (dir.isBlank() || (!isWindows && !isTrustedDirectory(dir))) {
                 continue;
             }
             String candidate = dir + File.separator + name;
@@ -107,10 +111,22 @@ public final class PiExecutableLocator {
         return null;
     }
 
+    /**
+     * Candidate locations, with PI_CODING_AGENT_DIR/bin/pi before ~/.pi/agent/bin/pi. Only the Unix managed-install
+     * path is confirmed; Windows .cmd/.exe candidates are existence-checked guesses.
+     */
     public static String[] platformCandidates() {
+        return platformCandidates(System.getenv("PI_CODING_AGENT_DIR"), System.getenv("USERPROFILE"));
+    }
+
+    static String[] platformCandidates(String agentDir, String userProfile) {
         String home = System.getProperty("user.home", "");
         String os = System.getProperty("os.name", "").toLowerCase();
         List<String> c = new ArrayList<>();
+        if (agentDir != null && !agentDir.isBlank()) {
+            c.add(new File(agentDir, "bin/pi").getPath());
+        }
+        c.add(home + "/.pi/agent/bin/pi");
         c.add(home + "/.local/bin/pi");
         c.add(home + "/pi");
         c.add("/usr/local/bin/pi");
@@ -120,12 +136,21 @@ public final class PiExecutableLocator {
             c.add("/usr/local/homebrew/bin/pi");
         }
         if (os.contains("win")) {
+            if (userProfile != null && !userProfile.isBlank()) {
+                c.add(userProfile + "\\.pi\\agent\\bin\\pi.cmd");
+                c.add(userProfile + "\\.pi\\agent\\bin\\pi.exe");
+            }
             String local = System.getenv("LOCALAPPDATA");
             if (local != null) {
                 c.add(local + "\\Programs\\pi\\pi.exe");
             }
         }
         return c.toArray(String[]::new);
+    }
+
+    private static boolean isTrustedDirectory(String dir) {
+        return TRUSTED_DIRS.contains(dir)
+                || dir.equals(System.getProperty("user.home", "") + "/.pi/agent/bin");
     }
 
     public static String findInCandidates(String[] candidates) {
