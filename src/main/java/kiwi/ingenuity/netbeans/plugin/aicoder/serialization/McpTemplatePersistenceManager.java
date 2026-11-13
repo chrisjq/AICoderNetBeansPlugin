@@ -46,6 +46,7 @@ public final class McpTemplatePersistenceManager {
     private static final String FILENAME = "mcp-templates.json";
     private final Path baseDir;
     private final List<JsonElement> pendingDropped = new ArrayList<>();
+    private boolean knownGroupsNeedWriting;
 
     public McpTemplatePersistenceManager() {
         this(SessionPersistenceManager.defaultBaseDir());
@@ -151,8 +152,19 @@ public final class McpTemplatePersistenceManager {
             all.add(seededMinimal());
             seeded = true;
         }
+        // A stored config written before a group existed gets that group's starting state (off in Minimal, on
+        // elsewhere); writing the store back records it, so a later change by the user is kept.
         if (seeded) {
             persist(all);
+        }
+        else if (knownGroupsNeedWriting && !forWrite) {
+            try {
+                persist(all);
+            }
+            catch (IOException ex) {
+                // The migrated state still applies in memory; it is written again on the next load or save.
+                LOG.log(Level.WARNING, "Could not record the known MCP tool groups in the template store", ex);
+            }
         }
         return all;
     }
@@ -189,6 +201,7 @@ public final class McpTemplatePersistenceManager {
 
     private List<McpTemplate> load(String filename) throws IOException {
         pendingDropped.clear();
+        knownGroupsNeedWriting = false;
         Path file = baseDir.resolve(filename);
         if (!Files.exists(file)) {
             return new ArrayList<>();
@@ -213,6 +226,9 @@ public final class McpTemplatePersistenceManager {
                     continue;
                 }
                 result.add(template);
+                if (McpTemplate.needsKnownGroupsUpdate(json)) {
+                    knownGroupsNeedWriting = true;
+                }
             }
             catch (Exception ex) {
                 LOG.log(Level.WARNING, "Skipping malformed MCP template entry " + templateDescription(element), ex);

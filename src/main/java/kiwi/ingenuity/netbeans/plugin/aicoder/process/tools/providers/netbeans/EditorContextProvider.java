@@ -5,7 +5,9 @@ import java.awt.datatransfer.DataFlavor;
 import java.io.BufferedReader;
 import java.io.File;
 import java.io.IOException;
+import java.io.InputStream;
 import java.nio.charset.Charset;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.InvalidPathException;
 import java.nio.file.Path;
@@ -244,7 +246,11 @@ public class EditorContextProvider {
             return flush.error();
         }
         try {
-            List<String> lines = Files.readAllLines(f.toPath(), RefactoringProvider.resolveCharset(f));
+            Charset wideBom = wideBomCharset(f);
+            List<String> lines = Files.readAllLines(f.toPath(), wideBom != null ? wideBom : RefactoringProvider.resolveCharset(f));
+            if (wideBom != null && !lines.isEmpty()) {
+                lines.set(0, stripByteOrderMark(lines.get(0)));
+            }
             // startLine 999 on a 13-line file returned the header "lines 999–13 of 13" and no content.
             if (startLine > 0 && startLine > lines.size()) {
                 return GetFileContentParamEnum.START_LINE.key() + " " + startLine + " is past the end of "
@@ -266,7 +272,11 @@ public class EditorContextProvider {
             // rather than discovering it from a clipped first read.
             sb.append("File: ").append(FileUtils.toIdePath(f)).append(" (lines ")
                     .append(from + 1).append("–").append(to).append(" of ").append(lines.size())
-                    .append(", ").append(f.length()).append(" bytes)\n\n");
+                    .append(", ").append(f.length()).append(" bytes)\n");
+            if (wideBom != null) {
+                sb.append("Encoding: ").append(wideBom.name()).append(" (byte-order mark). Edits may not preserve this encoding.\n");
+            }
+            sb.append("\n");
             for (int i = from; i < to; i++) {
                 sb.append(String.format("%4d  %s%n", i + 1, lines.get(i)));
                 if (sb.length() > MAX_FILE_CONTENT_CHARS) {
@@ -284,6 +294,51 @@ public class EditorContextProvider {
     }
 
     /**
+     * The charset named by a UTF-16 or UTF-32 byte-order mark, or null when the file has none. Such a file is text, but
+     * the resolved charset (UTF-8 by default) would decode it into nonsense, so the mark decides how it is read.
+     */
+    static Charset wideBomCharset(File f) throws IOException {
+        byte[] head;
+        try (InputStream in = Files.newInputStream(f.toPath())) {
+            head = in.readNBytes(4);
+        }
+        if (head.length >= 4 && head[0] == 0 && head[1] == 0 && head[2] == (byte) 0xFE && head[3] == (byte) 0xFF) {
+            return utf32("UTF-32BE");
+        }
+        if (head.length >= 4 && head[0] == (byte) 0xFF && head[1] == (byte) 0xFE && head[2] == 0 && head[3] == 0) {
+            return utf32("UTF-32LE");
+        }
+        if (head.length >= 2 && head[0] == (byte) 0xFE && head[1] == (byte) 0xFF) {
+            return StandardCharsets.UTF_16BE;
+        }
+        if (head.length >= 2 && head[0] == (byte) 0xFF && head[1] == (byte) 0xFE) {
+            return StandardCharsets.UTF_16LE;
+        }
+        return null;
+    }
+
+    /**
+     * UTF-32 is an optional charset: a trimmed JDK may lack it, and then the file cannot be read, which is reported as
+     * an ordinary read error rather than an internal failure.
+     */
+    private static Charset utf32(String name) throws IOException {
+        try {
+            return Charset.forName(name);
+        }
+        catch (IllegalArgumentException ex) {
+            throw new IOException("UTF-32 is not supported by this Java runtime", ex);
+        }
+    }
+
+    /**
+     * Drops the byte-order mark that a UTF-16 or UTF-32 decode leaves as its first character, so the text starts where
+     * the file's content does.
+     */
+    private static String stripByteOrderMark(String text) {
+        return !text.isEmpty() && text.charAt(0) == (char) 0xFEFF ? text.substring(1) : text;
+    }
+
+    /**
      * Exact file text (decoded with the file's encoding) for {@code [from, to)} (0-based, half-open), with no header
      * and no gutter. The whole file is read directly from disk rather than rejoined line by line, so a file with no
      * trailing newline is returned exactly as it is on disk. A requested sub-range is sliced from the same decoded text
@@ -295,7 +350,11 @@ public class EditorContextProvider {
      */
     private static String rawFileContent(File f, List<String> lines, int from, int to) throws IOException {
         boolean wholeFile = from == 0 && to == lines.size();
-        String fullText = Files.readString(f.toPath(), RefactoringProvider.resolveCharset(f));
+        Charset wideBom = wideBomCharset(f);
+        String fullText = Files.readString(f.toPath(), wideBom != null ? wideBom : RefactoringProvider.resolveCharset(f));
+        if (wideBom != null) {
+            fullText = stripByteOrderMark(fullText);
+        }
         String text;
         if (wholeFile) {
             text = fullText;

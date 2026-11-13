@@ -47,6 +47,7 @@ public class OpenAiCompatibleSessionSettings extends AiModelSessionSettings {
     private volatile String summaryModel;
     private volatile Integer summariseThreshold;
     private volatile Boolean showReasoning;
+    private volatile ImageInputModeEnum imageInputMode;
     private volatile Integer reservePercent;
     private volatile Integer reserveMinimum;
     private volatile Integer reserveMaxSharePercent;
@@ -362,6 +363,22 @@ public class OpenAiCompatibleSessionSettings extends AiModelSessionSettings {
         return showReasoning != null ? showReasoning : OpenAiCompatiblePluginSettings.isShowReasoning();
     }
 
+    public ImageInputModeEnum imageInputMode() {
+        return imageInputMode;
+    }
+
+    public void setImageInputMode(ImageInputModeEnum value) {
+        imageInputMode = value;
+    }
+
+    /**
+     * @return whether the model may be sent images; {@link ImageInputModeEnum#AUTO} (trust the server, or try once)
+     * when unset
+     */
+    public ImageInputModeEnum effectiveImageInputMode() {
+        return imageInputMode != null ? imageInputMode : ImageInputModeEnum.AUTO;
+    }
+
     /**
      * Context-budget values (spec §8.2, per session). Percentages are whole percents; each {@code effective…} getter
      * clamps to its validation range and falls back to the defaults of {@link ContextBudgetSettings} or {@link Pruner}.
@@ -669,6 +686,9 @@ public class OpenAiCompatibleSessionSettings extends AiModelSessionSettings {
         }
         if (showReasoning != null) {
             cfgObj.addProperty(OpenAiCompatibleSessionSettingsKeyEnum.SHOW_REASONING.key(), showReasoning);
+        }
+        if (imageInputMode != null) {
+            cfgObj.addProperty(OpenAiCompatibleSessionSettingsKeyEnum.IMAGE_INPUT_MODE.key(), imageInputMode.name());
         }
         addIfSet(cfgObj, OpenAiCompatibleSessionSettingsKeyEnum.RESERVE_PERCENT, reservePercent);
         addIfSet(cfgObj, OpenAiCompatibleSessionSettingsKeyEnum.RESERVE_MINIMUM, reserveMinimum);

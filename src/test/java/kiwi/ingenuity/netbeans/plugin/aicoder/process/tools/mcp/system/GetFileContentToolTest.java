@@ -2,15 +2,20 @@ package kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.system;
 
 import com.google.gson.JsonArray;
 import com.google.gson.JsonObject;
+import java.awt.image.BufferedImage;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
+import javax.imageio.ImageIO;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.AiTypeEnum;
 import static kiwi.ingenuity.netbeans.plugin.aicoder.ai.AiTypeEnum.CLAUDE;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.session.AiSession;
@@ -21,6 +26,8 @@ import kiwi.ingenuity.netbeans.plugin.aicoder.process.locking.LockManager;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.server.McpHookServer;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.server.McpToolInvoker;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.session.AbstractAiSession;
+import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.exposure.McpToolConfig;
+import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.exposure.McpToolGroupEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.McpToolInterface;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.ToolRequestArguments;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.ToolSchemaKeyEnum;
@@ -71,8 +78,13 @@ class GetFileContentToolTest {
         return server;
     }
 
+    /**
+     * A session that has GetFileBinary registered, so the binary pointer names it. The server is never asked to
+     * register a session here: registerSession releases the locks of any session it does not know, and this helper runs
+     * while a writer holds a lock the read must wait behind.
+     */
     private static FakeSession session() {
-        return new FakeSession(SESSION_ID);
+        return new FakeSession(SESSION_ID, Map.of(McpToolEnum.GET_FILE_BINARY, new GetFileBinaryTool(new McpHookServer(0))));
     }
 
     private static Path threeLineFile(Path dir) throws Exception {
@@ -266,13 +278,167 @@ class GetFileContentToolTest {
         }
     }
 
+    @Test
+    void aBinaryFilePointsAtGetFileBinaryWhenThatToolIsEnabled(@TempDir Path dir) throws Exception {
+        Path f = dir.resolve("blob.bin");
+        Files.write(f, new byte[]{0x7f, 'E', 'L', 'F', 0, 1, 2, 3});
+        GetFileContentTool tool = new GetFileContentTool(unrestrictedServer());
+
+        String result = tool.handle(args(f.toString(), null, null), session());
+
+        assertTrue(result.startsWith("Binary file ("), result);
+        assertTrue(result.endsWith("Use " + McpToolEnum.GET_FILE_BINARY.toolName() + " to view it."), result);
+        assertFalse(result.contains("Error reading file"), result);
+    }
+
+    @Test
+    void aBinaryFileNamesNoToolWhenGetFileBinaryIsDisabled(@TempDir Path dir) throws Exception {
+        Path f = dir.resolve("blob.bin");
+        Files.write(f, new byte[]{0, 1, 2, 3});
+        GetFileContentTool tool = new GetFileContentTool(unrestrictedServer());
+        FakeSession session = session();
+        session.getSettings().setMcpToolConfig(McpToolConfig.withDisabled(Set.of(McpToolGroupEnum.FILE_BINARY)));
+
+        String result = tool.handle(args(f.toString(), null, null), session);
+
+        assertTrue(result.startsWith("Binary file ("), result);
+        assertTrue(result.endsWith("; it cannot be read as text."), result);
+        assertFalse(result.contains(McpToolEnum.GET_FILE_BINARY.toolName()), result);
+    }
+
+    @Test
+    void anEmptyFileIsTextNotBinary(@TempDir Path dir) throws Exception {
+        Path f = dir.resolve("empty.txt");
+        Files.writeString(f, "");
+        GetFileContentTool tool = new GetFileContentTool(unrestrictedServer());
+
+        String result = tool.handle(args(f.toString(), null, null), session());
+
+        assertFalse(result.startsWith("Binary file"), result);
+    }
+
+    @Test
+    void aNulByteLateInTheSniffWindowStillMarksTheFileBinary(@TempDir Path dir) throws Exception {
+        Path f = dir.resolve("late.dat");
+        byte[] content = new byte[4000];
+        Arrays.fill(content, (byte) 'a');
+        content[3999] = 0;
+        Files.write(f, content);
+
+        String pointer = GetFileContentTool.binaryPointer(session(), f.toString());
+
+        assertNotNull(pointer);
+        assertTrue(pointer.startsWith("Binary file ("), pointer);
+    }
+
+    @Test
+    void anSvgFileIsTextAndStaysReadable(@TempDir Path dir) throws Exception {
+        Path f = dir.resolve("icon.svg");
+        Files.writeString(f, "<svg xmlns=\"http://www.w3.org/2000/svg\"><rect width=\"4\" height=\"4\"/></svg>");
+        GetFileContentTool tool = new GetFileContentTool(unrestrictedServer());
+
+        String result = tool.handle(args(f.toString(), null, null), session());
+
+        assertFalse(result.startsWith("Binary file"), result);
+        assertTrue(result.contains("<svg"), result);
+    }
+
+    @Test
+    void aRealPngIsBinaryWhateverItsProbedType(@TempDir Path dir) throws Exception {
+        Path f = dir.resolve("tiny.png");
+        ImageIO.write(new BufferedImage(4, 4, BufferedImage.TYPE_INT_RGB), "png", f.toFile());
+
+        String pointer = GetFileContentTool.binaryPointer(session(), f.toString());
+
+        assertNotNull(pointer);
+        assertTrue(pointer.startsWith("Binary file ("), pointer);
+    }
+
+    @Test
+    void humanSizeUsesBytesKilobytesAndMegabytes() {
+        assertEquals("512 bytes", GetFileContentTool.humanSize(512));
+        assertEquals("120 KB", GetFileContentTool.humanSize(120 * 1024L));
+        assertEquals("3.8 MB", GetFileContentTool.humanSize(4_000_000L));
+    }
+
+    @Test
+    void anLfsPointerNamedAsAPngReadsAsText(@TempDir Path dir) throws Exception {
+        Path f = dir.resolve("logo.png");
+        Files.writeString(f, "version https://git-lfs.github.com/spec/v1\noid sha256:abc\nsize 12\n");
+        GetFileContentTool tool = new GetFileContentTool(unrestrictedServer());
+
+        String result = tool.handle(args(f.toString(), null, null), session());
+
+        assertFalse(result.startsWith("Binary file"), result);
+        assertTrue(result.contains("git-lfs"), result);
+    }
+
+    @Test
+    void anXpmFileReadsAsText(@TempDir Path dir) throws Exception {
+        Path f = dir.resolve("icon.xpm");
+        Files.writeString(f, "/* XPM */\nstatic char *icon[] = {\n\"1 1 1 1\",\n};\n");
+        GetFileContentTool tool = new GetFileContentTool(unrestrictedServer());
+
+        String result = tool.handle(args(f.toString(), null, null), session());
+
+        assertFalse(result.startsWith("Binary file"), result);
+        assertTrue(result.contains("XPM"), result);
+    }
+
+    @Test
+    void aUtf16FileWithAByteOrderMarkReadsAsText(@TempDir Path dir) throws Exception {
+        Path f = dir.resolve("utf16.txt");
+        Files.write(f, "hello".getBytes(StandardCharsets.UTF_16));
+        GetFileContentTool tool = new GetFileContentTool(unrestrictedServer());
+
+        String result = tool.handle(args(f.toString(), null, null), session());
+
+        assertFalse(result.startsWith("Binary file"), result);
+        assertTrue(result.contains("hello"), result);
+    }
+
+    @Test
+    void aWideEncodingFileNamesItsEncodingOnlyInTheGutterOutput(@TempDir Path dir) throws Exception {
+        Path f = dir.resolve("wide.txt");
+        Files.write(f, "hello".getBytes(StandardCharsets.UTF_16));
+        GetFileContentTool tool = new GetFileContentTool(unrestrictedServer());
+
+        String gutter = tool.handle(args(f.toString(), null, null), session());
+        String raw = tool.handle(rawArgs(f.toString(), null, null), session());
+
+        assertTrue(gutter.contains("Encoding: UTF-16BE (byte-order mark)"), gutter);
+        assertFalse(raw.contains("Encoding:"), raw);
+        assertEquals("hello", raw);
+    }
+
+    @Test
+    void aPathThatCannotBeParsedFallsThroughWithoutThrowing() {
+        String unparseable = "bad" + (char) 0 + "path";
+
+        assertNull(GetFileContentTool.binaryPointer(session(), unparseable));
+    }
+
+    @Test
+    void aSessionWithNoGetFileBinaryHandlerNamesNoTool(@TempDir Path dir) throws Exception {
+        Path f = dir.resolve("blob.bin");
+        Files.write(f, new byte[]{0, 1, 2, 3});
+        GetFileContentTool tool = new GetFileContentTool(unrestrictedServer());
+
+        String result = tool.handle(args(f.toString(), null, null), new FakeSession(SESSION_ID, Map.of()));
+
+        assertTrue(result.endsWith("; it cannot be read as text."), result);
+        assertFalse(result.contains(McpToolEnum.GET_FILE_BINARY.toolName()), result);
+    }
+
     private static final class FakeSession extends AbstractAiSession {
 
         private final String id;
+        private final Map<McpToolEnum, McpToolInterface> handlers;
 
-        FakeSession(String id) {
+        FakeSession(String id, Map<McpToolEnum, McpToolInterface> handlers) {
             super(AiSession.create(null, AiTypeEnum.CLAUDE));
             this.id = id;
+            this.handlers = handlers;
         }
 
         @Override
@@ -287,7 +453,7 @@ class GetFileContentToolTest {
 
         @Override
         public Map<McpToolEnum, McpToolInterface> getMcpToolHandlers() {
-            return Map.of();
+            return handlers;
         }
     }
 }

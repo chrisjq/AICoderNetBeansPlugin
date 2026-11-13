@@ -47,4 +47,13 @@ public interface McpToolInterface {
     }
 
     String handle(ToolRequestArguments args, AbstractAiSession session) throws McpArgumentException;
+
+    /**
+     * The tool's full result: text plus any images. The invoker calls this, not {@link #handle}. The default wraps
+     * {@link #handle}'s text, so a tool with no images needs nothing more; a tool that returns images overrides this
+     * and keeps {@link #handle} returning the text part only.
+     */
+    default McpToolResult handleResult(ToolRequestArguments args, AbstractAiSession session) throws McpArgumentException {
+        return McpToolResult.text(handle(args, session));
+    }
 }

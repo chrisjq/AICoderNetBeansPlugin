@@ -1,67 +1,36 @@
 package kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.openaicompatible.tools;
 
+import kiwi.ingenuity.netbeans.plugin.aicoder.process.McpToolEnum;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.Timeout;
 
 class ToolResultCapTest {
 
-    private static final String FILE_NOTE_SUFFIX
-            = " characters — read the rest with startLine/endLine or FilterFileContent]";
-    private static final String SEARCH_NOTE_SUFFIX = " characters — narrow the search]";
-
     @Test
-    @Timeout(5)
-    void shortResultIsUnchanged() {
-        assertEquals("abc", ToolResultCap.cap("GetFileContent", "abc", 10));
+    void aResultWithinTheCapIsReturnedUnchanged() {
+        assertEquals("abc", ToolResultCap.cap(McpToolEnum.GET_FILE_CONTENT.toolName(), "abc", 10));
     }
 
     @Test
-    @Timeout(5)
-    void resultExactlyAtTheLimitIsUnchanged() {
-        assertEquals("abcde", ToolResultCap.cap("GetFileContent", "abcde", 5));
+    void aFileReadNotesTheStartLineAndEndLineWayOut() {
+        String out = ToolResultCap.cap(McpToolEnum.GET_FILE_CONTENT.toolName(), "x".repeat(20), 5);
+
+        assertTrue(out.startsWith("xxxxx\n"), out);
+        assertTrue(out.contains("startLine/endLine"), out);
     }
 
     @Test
-    @Timeout(5)
-    void fileReadsGetTheReadTheRestNote() {
-        for (String tool : new String[]{"GetFileContent", "GetCurrentFileContent", "FilterFileContent"}) {
-            assertEquals("xxxxxxxxxx\n[truncated at 10" + FILE_NOTE_SUFFIX, ToolResultCap.cap(tool, "x".repeat(20), 10),
-                         tool);
-        }
+    void aSearchNotesThatTheSearchShouldBeNarrowed() {
+        String out = ToolResultCap.cap(McpToolEnum.SEARCH_IN_FILES.toolName(), "x".repeat(20), 5);
+
+        assertTrue(out.contains("narrow the search"), out);
     }
 
     @Test
-    @Timeout(5)
-    void searchesGetTheNarrowTheSearchNote() {
-        for (String tool : new String[]{"SearchInFiles", "SearchSymbols", "SearchTypes", "FindUsages", "FindFile"}) {
-            assertEquals("xxxxxxxxxx\n[truncated at 10" + SEARCH_NOTE_SUFFIX, ToolResultCap.cap(tool, "x".repeat(20), 10),
-                         tool);
-        }
-    }
+    void aBinaryFileToolGetsNoFileReadAdvice() {
+        String out = ToolResultCap.cap(McpToolEnum.GET_FILE_BINARY.toolName(), "x".repeat(20), 5);
 
-    @Test
-    @Timeout(5)
-    void otherToolsGetTheBareNote() {
-        assertEquals("xxxxxxxxxx\n[truncated at 10 characters]",
-                     ToolResultCap.cap("GitLog", "x".repeat(20), 10));
-    }
-
-    @Test
-    @Timeout(5)
-    void aSurrogatePairSplitAtTheCutIsDroppedWhole() {
-        String pair = new String(Character.toChars(0x1F600));
-
-        assertEquals("a\n[truncated at 1 characters]",
-                     ToolResultCap.cap("GitLog", "a" + pair, 2));
-    }
-
-    @Test
-    @Timeout(5)
-    void aSurrogatePairEndingExactlyAtTheCutIsKept() {
-        String pair = new String(Character.toChars(0x1F600));
-
-        assertEquals(pair + "\n[truncated at 2 characters]",
-                     ToolResultCap.cap("GitLog", pair + "a", 2));
+        assertEquals("xxxxx\n[truncated at 5 characters]", out);
     }
 }

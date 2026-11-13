@@ -81,6 +81,7 @@ import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.system.CreateDir
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.system.DeleteDirectoryTool;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.system.DeleteFileTool;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.system.GetClipboardTool;
+import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.system.GetFileBinaryTool;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.system.GetFileContentTool;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.system.GetFileInfoTool;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.system.MoveFileTool;
@@ -118,6 +119,7 @@ public final class ToolHandlerFactory {
         map.put(McpToolEnum.GET_TYPE_HIERARCHY, new GetTypeHierarchyTool());
         map.put(McpToolEnum.GET_CURRENT_FILE_CONTENT, new GetCurrentFileContentTool());
         map.put(McpToolEnum.GET_FILE_CONTENT, new GetFileContentTool(server));
+        map.put(McpToolEnum.GET_FILE_BINARY, new GetFileBinaryTool(server));
         map.put(McpToolEnum.GET_FILE_INFO, new GetFileInfoTool(server));
         map.put(McpToolEnum.WEB_REQUEST, new WebRequestTool());
         map.put(McpToolEnum.NAVIGATE_TO_LINE, new NavigateToLineTool());

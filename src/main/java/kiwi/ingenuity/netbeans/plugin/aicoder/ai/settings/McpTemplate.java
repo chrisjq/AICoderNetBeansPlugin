@@ -67,11 +67,21 @@ public final class McpTemplate {
         if (!value.has("config") || !value.get("config").isJsonObject()) {
             throw new IllegalArgumentException("MCP template config is missing or malformed");
         }
-        McpToolConfig config = McpToolConfig.parseOrNull(value.getAsJsonObject("config"));
+        // A group the stored config did not know about is off in the built-in Minimal template and on in every other.
+        McpToolConfig config = McpToolConfig.parseOrNull(value.getAsJsonObject("config"), MINIMAL_ID.equals(id));
         if (config == null) {
             throw new IllegalArgumentException("MCP template config is missing or malformed");
         }
         return new McpTemplate(id, name, config, created, updated);
+    }
+
+    /**
+     * Whether a stored template's config lacks the list of groups it knew about, or a group this version has, so that
+     * rewriting the store records the choice made when it was loaded.
+     */
+    public static boolean needsKnownGroupsUpdate(JsonObject value) {
+        return value.has("config") && value.get("config").isJsonObject()
+                && McpToolConfig.needsKnownGroupsUpdate(value.getAsJsonObject("config"));
     }
 
     private static Instant instantOr(JsonObject value, String field, Instant fallback) {

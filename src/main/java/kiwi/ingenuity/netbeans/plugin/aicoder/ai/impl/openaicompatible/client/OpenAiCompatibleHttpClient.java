@@ -185,6 +185,13 @@ public final class OpenAiCompatibleHttpClient {
             call.debug.event("The server rejected reasoning effort; it is no longer sent.");
             return run(call, call.spec, call.flags, false);
         }
+        // A request refused for its images is handed straight back: the turn loop resends it without them. Retrying here
+        // (field drop or blind retry) would upload the same images again for nothing.
+        boolean imagesRefused = ImageRejection.carriesImages(spec.messages()) && ImageRejection.isImageRejection(error);
+        if (imagesRefused) {
+            call.debug.event("The server refused the request's images; not retrying it here.");
+            return CompletableFuture.completedFuture(result.withRetried(call.retriesUsed > 0));
+        }
         if (!blind && error.kind() == MappedError.Kind.REJECTED_FIELD && error.rejectedField() != null
                 && call.compatFields.add(error.rejectedField())) {
             call.flags.turnOff(error.rejectedField());

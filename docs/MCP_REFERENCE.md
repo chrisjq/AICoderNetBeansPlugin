@@ -115,7 +115,8 @@ Read, write, copy, move and delete files. Writes open a diff for you to accept; 
 
 | Tool | Description | Parameters |
 |---|---|---|
-| <a id="getfilecontent"></a>`GetFileContent` | Reads a file, or a line range of it. The default output has line numbers and a header; `raw` gives the exact text. | **`filePath`** — file to read<br>`startLine` — first line; default start<br>`endLine` — last line; default end<br>`raw` (false) — exact text, no line numbers |
+| <a id="getfilecontent"></a>`GetFileContent` | Reads a text file, or a line range of it. The default output has line numbers and a header; `raw` gives the exact text. UTF-16 and UTF-32 files with a byte-order mark include an encoding header. Binary files point to `GetFileBinary`, or say they cannot be read as text when that tool is unavailable. | **`filePath`** — file to read<br>`startLine` — first line; default start<br>`endLine` — last line; default end<br>`raw` (false) — exact text, no line numbers |
+| <a id="getfilebinary"></a>`GetFileBinary` | Reads non-text files: displays images, lists archive entries, or shows a hex dump. PNG, JPEG, GIF and WebP are displayed directly; other images may be converted and scaled. Image display depends on the AI client passing images to its model. Text files are refused; use `GetFileContent`. | **`filePath`** — file to read<br>`mode` (`auto`) — `auto`, `image`, `hex` or `list`<br>`entry` — archive entry to read<br>`offset` (0) — hex-dump start<br>`length` — hex-dump byte count (≤32 KB) |
 | <a id="getfileinfo"></a>`GetFileInfo` | Shows a file's, directory's or link's size, line count, encoding, MIME type, timestamps, writability and unsaved-change state. | **`filePath`** — file, directory or link |
 | <a id="getcurrentfile"></a>`GetCurrentFile` | Shows the active editor's file, line and column. | none |
 | <a id="getcurrentfilecontent"></a>`GetCurrentFileContent` | Reads the active editor's content. | `raw` (false) — exact text, no header |

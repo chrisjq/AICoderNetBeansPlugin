@@ -43,6 +43,7 @@ import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.openaicompatible.context.C
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.openaicompatible.keys.SavedServerKeys;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.openaicompatible.keys.SecretStore;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.openaicompatible.keys.SessionSecrets;
+import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.openaicompatible.settings.ImageInputModeEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.openaicompatible.settings.OpenAiCompatiblePluginSettings;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.openaicompatible.settings.OpenAiCompatibleSessionSettings;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.openaicompatible.settings.SavedServer;
@@ -87,6 +88,7 @@ public final class OpenAiCompatibleBasicPanel implements AiSessionCreateSettings
     private final JComboBox<ToolCallingModeEnum> toolCallingCombo = new JComboBox<>(ToolCallingModeEnum.values());
     private final JCheckBox saveContextCheck = new JCheckBox("Save context on close");
     private final JCheckBox showReasoningCheck = new JCheckBox("Show the model's reasoning in the chat");
+    private final JComboBox<ImageInputModeEnum> imageInputCombo = new JComboBox<>(ImageInputModeEnum.values());
     private final JComboBox<CompactionStrategyEnum> compactionCombo = new JComboBox<>(
             new CompactionStrategyEnum[]{CompactionStrategyEnum.AUTO, CompactionStrategyEnum.SUMMARISE,
                 CompactionStrategyEnum.DROP, CompactionStrategyEnum.NONE});
@@ -219,6 +221,9 @@ public final class OpenAiCompatibleBasicPanel implements AiSessionCreateSettings
             return label;
         });
         compactionCombo.setToolTipText(strategyTooltip(CompactionStrategyEnum.AUTO));
+        imageInputCombo.setRenderer((list, value, index, selected, focus)
+                -> new JLabel(value == null ? "" : value.displayName()));
+        imageInputCombo.setToolTipText("Auto: use what the server reports, or try once and stop if the server rejects images");
 
         GridBagConstraints c = new GridBagConstraints();
         c.insets = new Insets(3, 4, 3, 4);
@@ -249,6 +254,7 @@ public final class OpenAiCompatibleBasicPanel implements AiSessionCreateSettings
         row = addRow(c, row, "Model:", modelRow);
         row = addRow(c, row, "Reasoning effort:", advanced.reasoningEffortComponent());
         row = addRow(c, row, "", showReasoningCheck);
+        row = addRow(c, row, "Model can view images:", imageInputCombo);
         row = addRow(c, row, "Summary model:", summaryModelCombo);
         JPanel contextRow = new JPanel(new BorderLayout(6, 0));
         contextRow.add(contextWindowSpinner, BorderLayout.CENTER);
@@ -353,6 +359,7 @@ public final class OpenAiCompatibleBasicPanel implements AiSessionCreateSettings
         toolCallingCombo.addActionListener(e -> markChange.run());
         saveContextCheck.addActionListener(e -> markChange.run());
         showReasoningCheck.addActionListener(e -> markChange.run());
+        imageInputCombo.addActionListener(e -> markChange.run());
         testButton.addActionListener(e -> runTestConnection());
         advancedToggle.addActionListener(e -> toggleAdvanced());
     }
@@ -379,6 +386,7 @@ public final class OpenAiCompatibleBasicPanel implements AiSessionCreateSettings
             toolCallingCombo.setSelectedItem(settings.effectiveToolCallingMode());
             saveContextCheck.setSelected(settings.effectiveSaveContextOnClose());
             showReasoningCheck.setSelected(settings.effectiveShowReasoning());
+            imageInputCombo.setSelectedItem(settings.effectiveImageInputMode());
             CompactionStrategyEnum strategy = settings.effectiveCompactionStrategy();
             compactionCombo.setSelectedItem(strategy);
             autoCompactCheck.setSelected(settings.effectiveAutoCompact());
@@ -633,6 +641,7 @@ public final class OpenAiCompatibleBasicPanel implements AiSessionCreateSettings
         settings.setToolCallingMode((ToolCallingModeEnum) toolCallingCombo.getSelectedItem());
         settings.setSaveContextOnClose(saveContextCheck.isSelected());
         settings.setShowReasoning(showReasoningCheck.isSelected());
+        settings.setImageInputMode((ImageInputModeEnum) imageInputCombo.getSelectedItem());
         settings.setCompactionStrategy((CompactionStrategyEnum) compactionCombo.getSelectedItem());
         settings.setAutoCompact(autoCompactCheck.isSelected());
         settings.setPrune(pruneCheck.isSelected());

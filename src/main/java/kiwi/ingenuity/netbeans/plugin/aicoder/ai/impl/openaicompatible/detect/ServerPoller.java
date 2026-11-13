@@ -606,15 +606,20 @@ public final class ServerPoller {
                                                            ProbeParsers.LmStudioResult lm) {
         Boolean tools = null;
         Boolean thinking = null;
+        Boolean vision = null;
         if (show != null) {
             tools = show.tools();
             thinking = show.thinking();
+            vision = show.vision();
         }
         else if (lm != null && lm.tools() != null) {
             tools = lm.tools();
         }
+        if (vision == null && lm != null) {
+            vision = lm.vision();
+        }
         List<String> reasoningLevels = lm == null ? null : lm.reasoningLevels();
-        return new DetectedFacts.Capabilities(tools, thinking, reasoningLevels);
+        return new DetectedFacts.Capabilities(tools, thinking, reasoningLevels, vision);
     }
 
     private static List<String> modelList(ServerKind kind, ProbeParsers.OllamaTagsResult tags,

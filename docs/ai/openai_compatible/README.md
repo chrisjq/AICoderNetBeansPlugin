@@ -46,6 +46,8 @@ The **⚠** hint explains unavailable, missing or rejected keys. It also warns b
 
 **Show the model's reasoning in the chat** is off by default. When enabled, the model's reasoning (reasoning fields and `<think>` text) is shown in the chat as a quoted block before the answer. It is never sent back to the model or summarised.
 
+**Model can view images:** controls whether image files from `GetFileBinary` are sent to the model. **Auto** uses the server's reported capability or tries once and stops after a rejection; **On** and **Off** override that choice.
+
 A model or effort choice in the [info bar](#info-bar) applies from the next turn. Changing the model re-runs detection.
 
 ## Info bar

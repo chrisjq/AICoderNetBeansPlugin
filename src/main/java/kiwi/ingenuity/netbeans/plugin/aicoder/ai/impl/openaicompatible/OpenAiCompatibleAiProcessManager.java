@@ -51,6 +51,7 @@ import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.ollama.OllamaMcpRegistrar;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.openaicompatible.BaseUrls;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.openaicompatible.client.ClientResult;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.openaicompatible.client.CompatibilityFlags;
+import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.openaicompatible.client.DataUriElider;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.openaicompatible.client.ErrorMapper;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.openaicompatible.client.MappedError;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.openaicompatible.client.OpenAiCompatibleHttpClient;
@@ -78,6 +79,7 @@ import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.openaicompatible.memory.Me
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.openaicompatible.memory.SessionMemoryFolders;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.openaicompatible.memory.SessionMemoryNotifier;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.openaicompatible.memory.SessionMemoryStore;
+import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.openaicompatible.settings.ImageInputModeEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.openaicompatible.settings.OpenAiCompatiblePluginSettings;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.openaicompatible.settings.OpenAiCompatibleSessionSettings;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.openaicompatible.tools.ToolCallModeResolver;
@@ -100,6 +102,7 @@ import kiwi.ingenuity.netbeans.plugin.aicoder.process.server.McpServerRegistry;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.exposure.HiddenToolTextFilter;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.exposure.McpToolAccess;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.McpToolInterface;
+import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.McpToolResult;
 import kiwi.ingenuity.netbeans.plugin.aicoder.utils.StatusMessageUtil;
 
 /**
@@ -241,7 +244,7 @@ public final class OpenAiCompatibleAiProcessManager extends AiProcessManager imp
     private volatile ToolRunner toolRunner;
     private volatile TurnLoop activeLoop;
     private volatile int turnCounter;
-    private volatile ToolRunner.Invoker invokerForTest;
+    private volatile ToolRunner.ResultInvoker invokerForTest;
     private volatile JsonArray toolsForTest;
 
     public OpenAiCompatibleAiProcessManager(AiProcessEventListener listener) {
@@ -364,6 +367,14 @@ public final class OpenAiCompatibleAiProcessManager extends AiProcessManager imp
      * Replaces the MCP bridge and the offered tools, for tests in this package; call after the session has started.
      */
     void setToolsForTest(ToolRunner.Invoker invoker, JsonArray tools) {
+        invokerForTest = invoker == null ? null : (name, arguments) -> McpToolResult.text(invoker.invoke(name, arguments));
+        toolsForTest = tools;
+    }
+
+    /**
+     * As {@link #setToolsForTest(ToolRunner.Invoker, JsonArray)}, for tools that return images.
+     */
+    void setResultToolsForTest(ToolRunner.ResultInvoker invoker, JsonArray tools) {
         invokerForTest = invoker;
         toolsForTest = tools;
     }
@@ -377,9 +388,10 @@ public final class OpenAiCompatibleAiProcessManager extends AiProcessManager imp
         sessionBridge.setSessionCredentials(session.id(), session.secret());
         aiSession = mcpSession;
         bridge = sessionBridge;
-        toolRunner = new ToolRunner(this::invokeTool, this::toolExecutor,
-                                    call -> listener.onAiProcessEvent(
-                                            new ToolUseEvent(call.name(), null, "", null, ToolUseEvent.Kind.OTHER)));
+        toolRunner = ToolRunner.withResults(this::invokeTool, this::toolExecutor,
+                                            call -> listener.onAiProcessEvent(
+                                                    new ToolUseEvent(call.name(), null, "", null,
+                                                                     ToolUseEvent.Kind.OTHER)));
         history = new ArrayList<>();
         lastContextUsed = 0;
         SessionDecisions sessionDecisions = new SessionDecisions(sessionId);
@@ -773,6 +785,9 @@ public final class OpenAiCompatibleAiProcessManager extends AiProcessManager imp
         SessionDecisions.Combined snapshot = SessionDecisions.combine(decisions.facts(), decisions);
         SessionDecisions.RequestFlags requestFlags = decisions.beginRequestSnapshot(snapshot);
         DetectedFacts detected = snapshot.facts();
+        // The image decision is read and recorded against the generation this turn starts in.
+        SessionDecisions imageDecisions = decisions;
+        String imageGeneration = imageDecisions.generation();
         try {
             AiSession session = currentSession;
             OpenAiCompatibleSessionSettings settings = settingsOf(session);
@@ -800,7 +815,10 @@ public final class OpenAiCompatibleAiProcessManager extends AiProcessManager imp
                     .withOverflowRetries(OpenAiCompatiblePluginSettings.getOverflowRetries())
                     .withEmptyReplyNudges(OpenAiCompatiblePluginSettings.getEmptyReplyNudges())
                     .withKeepAlive(isDetectedOllama(detected)
-                                   ? OpenAiCompatiblePluginSettings.getKeepAlive() : null);
+                                   ? OpenAiCompatiblePluginSettings.getKeepAlive() : null)
+                    .withImagePolicy(imagePolicy(settings.effectiveImageInputMode(), detected,
+                                                 imageDecisions.noImageInput()),
+                                     () -> recordNoImageInput(imageDecisions, imageGeneration));
             TurnContext sessionContext = turnContext;
             sessionContext.applySettings(settings);
             sessionContext.setWindowSources(() -> detected);
@@ -966,16 +984,49 @@ public final class OpenAiCompatibleAiProcessManager extends AiProcessManager imp
                                               null));
     }
 
-    private String invokeTool(String toolName, JsonObject arguments) {
-        ToolRunner.Invoker override = invokerForTest;
+    private McpToolResult invokeTool(String toolName, JsonObject arguments) {
+        ToolRunner.ResultInvoker override = invokerForTest;
         if (override != null) {
             return override.invoke(toolName, arguments);
         }
         OpenAiCompatibleMcpBridge sessionBridge = bridge;
         if (sessionBridge == null) {
-            return "Error: the session is not running.";
+            return McpToolResult.text("Error: the session is not running.");
         }
-        return sessionBridge.invokeTool(toolName, arguments);
+        return sessionBridge.invokeToolResult(toolName, arguments);
+    }
+
+    /**
+     * What a turn does with tool images. On and Off are the user's word and override everything. Auto sends them unless
+     * detection says the model has no vision or the server already rejected images for this model; when nothing is
+     * known it sends them, and the turn falls back if the server refuses.
+     */
+    static TurnLoop.ImagePolicy imagePolicy(ImageInputModeEnum mode, DetectedFacts detected, boolean rejectedBefore) {
+        ImageInputModeEnum effective = mode == null ? ImageInputModeEnum.AUTO : mode;
+        return switch (effective) {
+            case ON ->
+                TurnLoop.ImagePolicy.SEND;
+            case OFF ->
+                TurnLoop.ImagePolicy.DROP_SETTING_OFF;
+            case AUTO -> {
+                Boolean vision = detected == null || detected.capabilities() == null
+                                 ? null : detected.capabilities().vision();
+                yield Boolean.FALSE.equals(vision) || rejectedBefore
+                      ? TurnLoop.ImagePolicy.DROP_NO_VISION : TurnLoop.ImagePolicy.SEND;
+            }
+        };
+    }
+
+    /**
+     * The server refused a request because it carried images: later turns drop them (under Auto) until the URL, model
+     * or key changes. Recorded only for the generation the turn started in: a refusal that arrives after the model, URL
+     * or key changed came from the old server and says nothing about the new one.
+     */
+    private void recordNoImageInput(SessionDecisions turnDecisions, String turnGeneration) {
+        if (turnDecisions.recordNoImageInput(turnGeneration)) {
+            debugLog(DebugDirectionEnum.EVENT, "client", "The server rejected images; this model is treated as unable "
+                     + "to view them until the model, URL or key changes.");
+        }
     }
 
     private TurnLoop.RequestContext requestContext(OpenAiCompatibleSessionSettings settings,
@@ -1127,7 +1178,8 @@ public final class OpenAiCompatibleAiProcessManager extends AiProcessManager imp
         return new DebugSink() {
             @Override
             public void sent(String json) {
-                debugLog(DebugDirectionEnum.SENT, "request", json);
+                // Images travel as base64 data URIs; the log keeps their type and size only.
+                debugLog(DebugDirectionEnum.SENT, "request", DataUriElider.elide(json));
             }
 
             @Override

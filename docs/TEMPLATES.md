@@ -35,7 +35,7 @@ An MCP template records which switchable tool groups are **off**; everything els
 Two templates are built in and seeded into every store whenever they are missing. An existing one is never overwritten.
 
 - **Default** starts from the groups implied by the plugin's global permission defaults, by the rule in [Where the switches come from](MCP_TOOL_ACCESS.md#where-the-switches-come-from). Edit it to change what new sessions get.
-- **Minimal** has only **File reading**, **File editing** and **Text search** on. `GetInstructions` stays available because the Always on group has no switch. Apply it when a model's context window is too small for the full tool list; the [OpenAI Compatible](ai/openai_compatible/README.md#info-bar) info bar says so. In the template pickers the built-in one is labelled "Minimal (built-in)", so a template of your own called Minimal stays distinguishable.
+- **Minimal** has only **File reading**, **File editing** and **Text search** on; **Binary and image files** is off. `GetInstructions` stays available because the Always on group has no switch. Apply it when a model's context window is too small for the full tool list; the [OpenAI Compatible](ai/openai_compatible/README.md#info-bar) info bar says so. In the template pickers the built-in one is labelled "Minimal (built-in)", so a template of your own called Minimal stays distinguishable.
 
 A template store that fails to parse is moved aside as `.corrupt-<timestamp>` and a fresh one is seeded. A store that merely cannot be read is left alone, and an in-memory Default is used until it can be read.
 

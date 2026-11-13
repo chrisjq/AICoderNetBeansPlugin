@@ -13,6 +13,7 @@ import java.util.Set;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.concurrent.locks.ReentrantReadWriteLock;
+import java.util.function.Function;
 import java.util.function.Supplier;
 import java.util.logging.Level;
 import java.util.logging.Logger;
@@ -29,13 +30,15 @@ import kiwi.ingenuity.netbeans.plugin.aicoder.process.locking.ToolLockRegistry;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.session.AbstractAiSession;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.TimeoutEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.McpToolInterface;
+import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.McpToolResult;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.ToolRequestArguments;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.ToolSchemaKeyEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.git.GitAccessGuard;
 
 /**
  * Runs a single MCP tool call with the same locking/handler semantics for both the HTTP {@code tools/call} path and
- * in-process callers. Returns the tool result string, or a human-readable lock-contention message.
+ * in-process callers. Returns the tool result (text, and images for a tool that has them), or a human-readable
+ * lock-contention message.
  */
 public final class McpToolInvoker {
 
@@ -54,10 +57,28 @@ public final class McpToolInvoker {
     }
 
     /**
-     * Invokes a tool after validating the materialised arguments and duplicate names found while its raw JSON was read.
+     * Invokes a tool after validating the materialised arguments and duplicate names found while its raw JSON was read,
+     * and returns the text part of its result. Callers that can pass images on use {@link #invokeResult}.
      */
     public static String invoke(McpToolEnum tool, McpToolInterface handler,
                                 JsonObject argsObj, AbstractAiSession session, Map<String, Integer> duplicateCounts)
+            throws McpArgumentException {
+        return invokeResult(tool, handler, argsObj, session, duplicateCounts).text();
+    }
+
+    public static McpToolResult invokeResult(McpToolEnum tool, McpToolInterface handler,
+                                             JsonObject argsObj, AbstractAiSession session)
+            throws McpArgumentException {
+        return invokeResult(tool, handler, argsObj, session, Map.of());
+    }
+
+    /**
+     * Invokes a tool as {@link #invoke} does, but returns its full result, images included. Every refusal made here
+     * (git access or scope, a lock held elsewhere, the EDT, the mutation lock timeout) is a text-only result.
+     */
+    public static McpToolResult invokeResult(McpToolEnum tool, McpToolInterface handler,
+                                             JsonObject argsObj, AbstractAiSession session,
+                                             Map<String, Integer> duplicateCounts)
             throws McpArgumentException {
         // Logged here rather than at the HTTP entry point so in-process callers
         // are covered too: Ollama reaches tools through OllamaMcpBridge, so its
@@ -75,11 +96,11 @@ public final class McpToolInvoker {
         // projectPath and send the user hunting a scoping problem that does not exist.
         String gitAccessDenial = GitAccessGuard.denialOrNull(handler, session);
         if (gitAccessDenial != null) {
-            return gitAccessDenial;
+            return McpToolResult.text(gitAccessDenial);
         }
         String gitScopeDenial = gitScopeDenialOrNull(handler, argsObj, session);
         if (gitScopeDenial != null) {
-            return gitScopeDenial;
+            return McpToolResult.text(gitScopeDenial);
         }
         LockTypeEnum requiredLock = ToolLockRegistry.getLockType(tool, handler);
         LockManager lockManager = LockManager.getInstance();
@@ -88,15 +109,15 @@ public final class McpToolInvoker {
             if (requiredLock != null) {
                 if (!lockManager.acquireLock(session.getId(), requiredLock)) {
                     String holder = lockManager.getLockHolder(requiredLock);
-                    return lockedMessage(requiredLock, holder, tool.toolName());
+                    return McpToolResult.text(lockedMessage(requiredLock, holder, tool.toolName()));
                 }
                 lockAcquired = true;
             }
             if (!handler.requiresGlobalMutationLock()) {
-                return safe(handler.handle(new ToolRequestArguments(argsObj), session));
+                return safeResult(handler.handleResult(new ToolRequestArguments(argsObj), session));
             }
             if (SwingUtilities.isEventDispatchThread()) {
-                return "Error: mutation lock cannot wait on the EDT.";
+                return McpToolResult.text("Error: mutation lock cannot wait on the EDT.");
             }
             boolean mutLockAcquired;
             try {
@@ -108,10 +129,10 @@ public final class McpToolInvoker {
                 mutLockAcquired = false;
             }
             if (!mutLockAcquired) {
-                return mutationLockTimeoutMessage();
+                return McpToolResult.text(mutationLockTimeoutMessage());
             }
             try {
-                return safe(handler.handle(new ToolRequestArguments(argsObj), session));
+                return safeResult(handler.handleResult(new ToolRequestArguments(argsObj), session));
             }
             finally {
                 MUTATION_GATE.writeLock().unlock();
@@ -295,6 +316,10 @@ public final class McpToolInvoker {
         return s == null ? "" : s;
     }
 
+    private static McpToolResult safeResult(McpToolResult result) {
+        return result == null ? McpToolResult.text("") : result;
+    }
+
     /**
      * Maps a normalised lock key back to the caller's own spelling, for messages: the key may be case-folded
      * (case-insensitive-volume handling), so echoing it back to the AI on refusal would show a path that differs from
@@ -364,16 +389,26 @@ public final class McpToolInvoker {
      */
     public static String withFileRead(String sessionId, Collection<String> paths,
                                       Supplier<String> action) {
+        return withFileRead(sessionId, paths, () -> safe(action.get()), Function.identity());
+    }
+
+    /**
+     * As the String form, for an action whose result is not text: {@code onLocked} turns the lock-contention message
+     * into the result type when the file is being written, so the refusal reaches the caller in the same shape as a
+     * normal result.
+     */
+    public static <T> T withFileRead(String sessionId, Collection<String> paths,
+                                     Supplier<T> action, Function<String, T> onLocked) {
         LockManager lockManager = LockManager.getInstance();
         AtomicReference<String> contendedPath = new AtomicReference<>();
         ResourceLock lock = lockManager.acquireFileReadLocks(sessionId, paths, contendedPath);
         if (lock == null) {
             String path = contendedPath.get() != null
                           ? contendedPath.get() : lockManager.normalisePaths(paths).iterator().next();
-            return LockManager.fileLockedMessage(lockManager.getFileLockHolder(path));
+            return onLocked.apply(LockManager.fileLockedMessage(lockManager.getFileLockHolder(path)));
         }
         try {
-            return safe(action.get());
+            return action.get();
         }
         finally {
             lockManager.releaseFileReadLock(sessionId, lock);

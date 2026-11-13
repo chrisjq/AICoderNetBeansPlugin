@@ -17,6 +17,7 @@ import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.McpToolInterface
 public enum McpToolGroupEnum {
     ALWAYS_ON(McpToolCategoryEnum.ALWAYS_ON, "Always on", false, McpToolEnum.GET_INSTRUCTIONS),
     FILE_READING(McpToolCategoryEnum.FILES, "File reading", true, McpToolEnum.GET_FILE_CONTENT, McpToolEnum.GET_FILE_INFO, McpToolEnum.FILTER_FILE_CONTENT),
+    FILE_BINARY(McpToolCategoryEnum.FILES, "Binary and image files", true, McpToolEnum.GET_FILE_BINARY),
     FILE_EDITING(McpToolCategoryEnum.FILES, "File editing", true, McpToolEnum.APPLY_EDIT, McpToolEnum.WRITE_FILE, McpToolEnum.SAVE_FILE),
     FILE_MANAGEMENT(McpToolCategoryEnum.FILES, "File management", true, McpToolEnum.COPY_FILE, McpToolEnum.MOVE_FILE, McpToolEnum.DELETE_FILE, McpToolEnum.CREATE_DIRECTORY, McpToolEnum.DELETE_DIRECTORY),
     TEXT_SEARCH(McpToolCategoryEnum.FILES, "Text search", true, McpToolEnum.SEARCH_IN_FILES, McpToolEnum.FIND_FILE, McpToolEnum.GET_PROJECT_STRUCTURE),

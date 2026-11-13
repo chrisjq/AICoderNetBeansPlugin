@@ -8,8 +8,8 @@ public enum McpToolEnum {
 
     /**
      * IMPORTANT: When adding a new MCP tool to McpHookServer, add its enum constant here at the same time —
-     * allMcpNames() auto-generates the --allowedTools entry from this list. Constants are grouped by
-     * McpSectionEnum to make coverage easy to audit.
+     * allMcpNames() auto-generates the --allowedTools entry from this list. Constants are grouped by McpSectionEnum to
+     * make coverage easy to audit.
      *
      * Tool names are qualified with the shared MCP server name.
      */
@@ -77,6 +77,7 @@ public enum McpToolEnum {
     FIND_USAGES("FindUsages"),
     // SYSTEM
     GET_FILE_CONTENT("GetFileContent"),
+    GET_FILE_BINARY("GetFileBinary"),
     GET_FILE_INFO("GetFileInfo"),
     WEB_REQUEST("WebRequest"),
     GET_CLIPBOARD("GetClipboard"),
@@ -133,8 +134,7 @@ public enum McpToolEnum {
     PEER_IDLE_WATCHER_LIST("PeerIdleWatcherList");
 
     /**
-     * Comma-separated list of all plugin MCP tool names for --allowedTools, qualified with the shared MCP
-     * server name.
+     * Comma-separated list of all plugin MCP tool names for --allowedTools, qualified with the shared MCP server name.
      */
     public static String allMcpNames() {
         String prefix = "mcp__" + StringConst.PLUGIN_ID + "__";

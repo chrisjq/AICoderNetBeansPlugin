@@ -34,6 +34,9 @@ import static kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.openaicompatible.de
 import static kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.openaicompatible.detect.ServerFieldEnum.THINKING;
 import static kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.openaicompatible.detect.ServerFieldEnum.TOOLS;
 import static kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.openaicompatible.detect.ServerFieldEnum.TRAINED_FOR_TOOL_USE;
+import static kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.openaicompatible.detect.ServerFieldEnum.TYPE;
+import static kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.openaicompatible.detect.ServerFieldEnum.VISION;
+import static kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.openaicompatible.detect.ServerFieldEnum.VLM;
 
 /**
  * Pure parsers for detection probe bodies. Never throws on malformed JSON shapes; missing data is null/empty/false.
@@ -52,16 +55,34 @@ public final class ProbeParsers {
         }
     }
 
-    public record OllamaShowResult(boolean tools, boolean thinking, Integer trainingContextLength, Integer numCtx) {
+    /**
+     * @param vision true when the capabilities list contains {@code vision}, false when the list is present without it,
+     * null when the body has no capabilities list
+     */
+    public record OllamaShowResult(boolean tools, boolean thinking, Integer trainingContextLength, Integer numCtx,
+                                   Boolean vision) {
 
+        public OllamaShowResult(boolean tools, boolean thinking, Integer trainingContextLength, Integer numCtx) {
+            this(tools, thinking, trainingContextLength, numCtx, null);
+        }
     }
 
+    /**
+     * @param vision whether the matched model takes images ({@code type: vlm}, or {@code capabilities.vision}); null
+     * when the body does not say
+     */
     public record LmStudioResult(boolean signature, List<String> modelIds, Integer loadedContextLength,
-                                 Integer maxContextLength, Boolean tools, List<String> reasoningLevels) {
+                                 Integer maxContextLength, Boolean tools, List<String> reasoningLevels,
+                                 Boolean vision) {
 
         public LmStudioResult(boolean signature, List<String> modelIds, Integer loadedContextLength,
                               Integer maxContextLength, Boolean tools) {
-            this(signature, modelIds, loadedContextLength, maxContextLength, tools, null);
+            this(signature, modelIds, loadedContextLength, maxContextLength, tools, null, null);
+        }
+
+        public LmStudioResult(boolean signature, List<String> modelIds, Integer loadedContextLength,
+                              Integer maxContextLength, Boolean tools, List<String> reasoningLevels) {
+            this(signature, modelIds, loadedContextLength, maxContextLength, tools, reasoningLevels, null);
         }
 
         public LmStudioResult {
@@ -111,7 +132,8 @@ public final class ProbeParsers {
         boolean thinking = containsString(capabilities, THINKING.key());
         Integer training = trainingContextLength(object(json, MODEL_INFO));
         Integer numCtx = parseNumCtx(string(json, PARAMETERS));
-        return new OllamaShowResult(tools, thinking, training, numCtx);
+        Boolean vision = capabilities == null ? null : containsString(capabilities, VISION.key());
+        return new OllamaShowResult(tools, thinking, training, numCtx, vision);
     }
 
     public static Integer ollamaPs(JsonObject json, String model) {
@@ -239,8 +261,10 @@ public final class ProbeParsers {
         Integer max = null;
         Boolean tools = null;
         List<String> reasoningLevels = null;
+        Boolean vision = null;
         if (match != null) {
             max = asInt(match.get(MAX_CONTEXT_LENGTH.key()));
+            vision = lmStudioVision(match);
             if (v1) {
                 loaded = loadedInstanceContext(match);
                 JsonObject capabilities = object(match, CAPABILITIES);
@@ -276,7 +300,26 @@ public final class ProbeParsers {
                 }
             }
         }
-        return new LmStudioResult(signature, ids, loaded, max, tools, reasoningLevels);
+        return new LmStudioResult(signature, ids, loaded, max, tools, reasoningLevels, vision);
+    }
+
+    /**
+     * Whether an LM Studio model entry takes images: {@code capabilities.vision} when present, otherwise its
+     * {@code type} ({@code vlm} yes, any other type no); null when the entry says neither.
+     */
+    private static Boolean lmStudioVision(JsonObject entry) {
+        JsonObject capabilities = object(entry, CAPABILITIES);
+        if (capabilities != null && has(capabilities, VISION)) {
+            Boolean flagged = bool(capabilities, VISION);
+            if (flagged != null) {
+                return flagged;
+            }
+        }
+        String type = string(entry, TYPE);
+        if (type == null || type.isBlank()) {
+            return null;
+        }
+        return VLM.key().equalsIgnoreCase(type.strip());
     }
 
     private static Integer loadedInstanceContext(JsonObject entry) {

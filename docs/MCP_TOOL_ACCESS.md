@@ -12,6 +12,7 @@ Each session decides which MCP (Model Context Protocol) tools — the plugin's I
 |---|---|---|
 | Always on | Always on | `GetInstructions` (no switch) |
 | Files | File reading | `GetFileContent`, `GetFileInfo`, `FilterFileContent` |
+| Files | Binary and image files | `GetFileBinary` |
 | Files | File editing | `ApplyEdit`, `WriteFile`, `SaveFile` |
 | Files | File management | `CopyFile`, `MoveFile`, `DeleteFile`, `CreateDirectory`, `DeleteDirectory` |
 | Files | Text search | `SearchInFiles`, `FindFile`, `GetProjectStructure` |

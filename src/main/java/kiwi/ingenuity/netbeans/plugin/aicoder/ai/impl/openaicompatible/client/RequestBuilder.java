@@ -6,6 +6,7 @@ import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
 import java.util.List;
 import java.util.Locale;
+import kiwi.ingenuity.netbeans.plugin.aicoder.ai.http.ChatImage;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.http.ChatMessage;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.http.ChatToolCall;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.ToolSchemaKeyEnum;
@@ -45,6 +46,9 @@ public final class RequestBuilder {
     private static final String KEY_INPUT_SCHEMA = "input_schema";
 
     private static final String TYPE_FUNCTION = "function";
+    private static final String TYPE_TEXT = "text";
+    private static final String TYPE_IMAGE_URL = "image_url";
+    private static final String KEY_URL = "url";
 
     private RequestBuilder() {
     }
@@ -96,7 +100,10 @@ public final class RequestBuilder {
     private static JsonObject toApiMessage(ChatMessage message) {
         JsonObject out = new JsonObject();
         out.addProperty(KEY_ROLE, message.role().name().toLowerCase(Locale.ROOT));
-        if (message.content() == null) {
+        if (message.hasImages()) {
+            out.add(KEY_CONTENT, contentParts(message));
+        }
+        else if (message.content() == null) {
             out.add(KEY_CONTENT, null);
         }
         else {
@@ -122,6 +129,29 @@ public final class RequestBuilder {
             out.add(KEY_TOOL_CALLS, toolCalls);
         }
         return out;
+    }
+
+    /**
+     * The content array of a message with images: the text part first (when there is text), then one {@code image_url}
+     * part per image, each a {@code data:} URI.
+     */
+    private static JsonArray contentParts(ChatMessage message) {
+        JsonArray parts = new JsonArray();
+        if (message.content() != null && !message.content().isEmpty()) {
+            JsonObject text = new JsonObject();
+            text.addProperty(KEY_TYPE, TYPE_TEXT);
+            text.addProperty(TYPE_TEXT, message.content());
+            parts.add(text);
+        }
+        for (ChatImage image : message.images()) {
+            JsonObject url = new JsonObject();
+            url.addProperty(KEY_URL, image.dataUri());
+            JsonObject part = new JsonObject();
+            part.addProperty(KEY_TYPE, TYPE_IMAGE_URL);
+            part.add(TYPE_IMAGE_URL, url);
+            parts.add(part);
+        }
+        return parts;
     }
 
     private static JsonArray toApiTools(JsonArray toolSchemas) {

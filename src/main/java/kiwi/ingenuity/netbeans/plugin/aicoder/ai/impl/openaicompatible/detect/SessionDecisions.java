@@ -24,6 +24,7 @@ public final class SessionDecisions {
     private DetectedFacts accepted;
     private Integer learnedWindow;
     private boolean nonStreaming;
+    private String noImageInputGeneration;
 
     public SessionDecisions(String generation) {
         this.generation = generation;
@@ -100,6 +101,39 @@ public final class SessionDecisions {
     }
 
     /**
+     * Records that the server rejected a request because it carried images, so later images are dropped without another
+     * attempt. Tied to the current generation: a different URL, model or key may take images, so the decision lapses
+     * when the generation changes.
+     *
+     * @return true the first time for this generation
+     */
+    public synchronized boolean recordNoImageInput() {
+        boolean first = !noImageInput();
+        noImageInputGeneration = generation;
+        return first;
+    }
+
+    /**
+     * As {@link #recordNoImageInput()}, but only while {@code expectedGeneration} is still the current one: a refusal
+     * from a request sent before the URL, model or key changed belongs to the old server and is ignored.
+     *
+     * @return true the first time for this generation; false when it is already recorded or the generation moved on
+     */
+    public synchronized boolean recordNoImageInput(String expectedGeneration) {
+        if (expectedGeneration == null || !expectedGeneration.equals(generation)) {
+            return false;
+        }
+        return recordNoImageInput();
+    }
+
+    /**
+     * True when the server rejected images for the current generation.
+     */
+    public synchronized boolean noImageInput() {
+        return noImageInputGeneration != null && noImageInputGeneration.equals(generation);
+    }
+
+    /**
      * @return {@code FALSE} once the server was seen not to stream; otherwise what detection says, or null when unknown
      */
     public synchronized Boolean streaming() {
@@ -136,12 +170,14 @@ public final class SessionDecisions {
     }
 
     /**
-     * Clears flags, the learned window and the non-streaming note. Does not clear the generation or the accepted facts.
+     * Clears flags, the learned window, the non-streaming note and the no-image-input decision. Does not clear the
+     * generation or the accepted facts.
      */
     public synchronized void reset() {
         flags.reset();
         learnedWindow = null;
         nonStreaming = false;
+        noImageInputGeneration = null;
     }
 
     /**

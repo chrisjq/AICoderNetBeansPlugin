@@ -45,6 +45,7 @@ import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.TimeoutEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.exposure.HiddenToolTextFilter;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.exposure.McpToolAccess;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.McpToolInterface;
+import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.McpToolResult;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.providers.netbeans.FileUtils;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.providers.netbeans.RefactoringProvider;
 import org.openide.util.Exceptions;
@@ -1093,8 +1094,8 @@ public class McpHookServer {
         }
         try {
             // McpToolInvoker logs the call — see the note there on why it moved.
-            String result = McpToolInvoker.invoke(tool, handler, argsObj, session, duplicateCounts);
-            McpHookServerUtil.sendJson(ex, 200, McpHookServerUtil.mcpTextResult(id, result));
+            McpToolResult result = McpToolInvoker.invokeResult(tool, handler, argsObj, session, duplicateCounts);
+            McpHookServerUtil.sendJson(ex, 200, McpHookServerUtil.mcpResult(id, result));
         }
         catch (McpArgumentException e) {
             McpHookServerUtil.sendJson(ex, 200,

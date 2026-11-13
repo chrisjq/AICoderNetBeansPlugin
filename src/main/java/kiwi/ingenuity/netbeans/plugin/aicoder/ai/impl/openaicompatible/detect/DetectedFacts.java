@@ -19,12 +19,18 @@ public record DetectedFacts(String generation, ServerKind kind, String apiBase, 
                             List<String> models, Instant timestamp, boolean probesUnauthorized) implements WindowSources {
 
     /**
-     * Tools and thinking support. {@code null} means the probe has not said.
+     * Tools, thinking and image-input support. {@code null} means the probe has not said.
+     *
+     * @param vision whether the model takes images (Ollama capability {@code vision}, LM Studio type {@code vlm})
      */
-    public record Capabilities(Boolean tools, Boolean thinking, List<String> reasoningLevels) {
+    public record Capabilities(Boolean tools, Boolean thinking, List<String> reasoningLevels, Boolean vision) {
 
         public Capabilities(Boolean tools, Boolean thinking) {
-            this(tools, thinking, null);
+            this(tools, thinking, null, null);
+        }
+
+        public Capabilities(Boolean tools, Boolean thinking, List<String> reasoningLevels) {
+            this(tools, thinking, reasoningLevels, null);
         }
 
         public Capabilities {
@@ -32,7 +38,11 @@ public record DetectedFacts(String generation, ServerKind kind, String apiBase, 
         }
 
         public static Capabilities unknown() {
-            return new Capabilities(null, null, null);
+            return new Capabilities(null, null, null, null);
+        }
+
+        public Capabilities withVision(Boolean value) {
+            return new Capabilities(tools, thinking, reasoningLevels, value);
         }
     }
 

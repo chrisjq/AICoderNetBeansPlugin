@@ -16,7 +16,9 @@ import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 import java.util.function.Supplier;
+import kiwi.ingenuity.netbeans.plugin.aicoder.ai.http.ChatImage;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.http.ChatToolCall;
+import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.McpToolResult;
 
 /**
  * Runs a reply's tool calls one at a time on the session's tool executor (spec §4.2, §7.2). The turn thread waits on
@@ -36,6 +38,15 @@ public final class ToolRunner {
     }
 
     /**
+     * Runs one tool synchronously and returns its text and any images (the MCP bridge's {@code invokeToolResult}).
+     */
+    @FunctionalInterface
+    public interface ResultInvoker {
+
+        McpToolResult invoke(String toolName, JsonObject arguments);
+    }
+
+    /**
      * Told when each call starts, for the {@code ToolUseEvent}.
      */
     @FunctionalInterface
@@ -46,12 +57,22 @@ public final class ToolRunner {
 
     /**
      * The result of one call. {@code completed} is false when the turn stopped waiting for it (Cancel) or never ran it;
-     * {@code invalidArguments} is true when the call was not run because its arguments failed validation.
+     * {@code invalidArguments} is true when the call was not run because its arguments failed validation;
+     * {@code images} are the pictures the tool returned with its text (empty for almost every tool).
      */
-    public record ToolOutcome(ChatToolCall call, String result, boolean completed, boolean invalidArguments) {
+    public record ToolOutcome(ChatToolCall call, String result, boolean completed, boolean invalidArguments,
+                              List<ChatImage> images) {
 
         public ToolOutcome(ChatToolCall call, String result, boolean completed) {
-            this(call, result, completed, false);
+            this(call, result, completed, false, List.of());
+        }
+
+        public ToolOutcome(ChatToolCall call, String result, boolean completed, boolean invalidArguments) {
+            this(call, result, completed, invalidArguments, List.of());
+        }
+
+        public ToolOutcome {
+            images = images == null ? List.of() : List.copyOf(images);
         }
     }
 
@@ -64,19 +85,35 @@ public final class ToolRunner {
 
     static final String NOT_RUN_NOTE = "Not run: the user cancelled before this call started.";
 
-    private final Invoker invoker;
+    private final ResultInvoker invoker;
     private final Supplier<ExecutorService> executor;
     private final Listener listener;
 
     private final Object lock = new Object();
-    private Future<String> inFlight;
+    private Future<McpToolResult> inFlight;
     private String inFlightName;
 
+    /**
+     * A runner for tools that return text only.
+     */
     public ToolRunner(Invoker invoker, Supplier<ExecutorService> executor, Listener listener) {
+        this((ResultInvoker) (name, arguments) -> McpToolResult.text(invoker.invoke(name, arguments)), executor,
+             listener);
+    }
+
+    private ToolRunner(ResultInvoker invoker, Supplier<ExecutorService> executor, Listener listener) {
         this.invoker = invoker;
         this.executor = executor;
         this.listener = listener == null ? call -> {
         } : listener;
+    }
+
+    /**
+     * A runner whose tools may return images with their text. A factory rather than a constructor, so a lambda passed
+     * to the text-only constructor is never ambiguous.
+     */
+    public static ToolRunner withResults(ResultInvoker invoker, Supplier<ExecutorService> executor, Listener listener) {
+        return new ToolRunner(invoker, executor, listener);
     }
 
     /**
@@ -137,7 +174,7 @@ public final class ToolRunner {
             if (onStart != null) {
                 onStart.toolStarted(call);
             }
-            Future<String> future;
+            Future<McpToolResult> future;
             try {
                 future = executor.get().submit(() -> invoker.invoke(call.name(), arguments));
             }
@@ -151,7 +188,13 @@ public final class ToolRunner {
                 inFlightName = call.name();
             }
             try {
-                outcomes.add(new ToolOutcome(call, future.get(), true));
+                McpToolResult result = future.get();
+                if (result == null) {
+                    outcomes.add(new ToolOutcome(call, "", true));
+                }
+                else {
+                    outcomes.add(new ToolOutcome(call, result.text(), true, false, chatImages(result)));
+                }
             }
             catch (InterruptedException ex) {
                 Thread.currentThread().interrupt();
@@ -196,7 +239,7 @@ public final class ToolRunner {
      * @throws InterruptedException when the waiting thread is interrupted (Cancel)
      */
     public boolean awaitIdle(Duration max) throws InterruptedException {
-        Future<String> running;
+        Future<McpToolResult> running;
         synchronized (lock) {
             running = inFlight;
         }
@@ -227,6 +270,16 @@ public final class ToolRunner {
             throw new IllegalArgumentException("expected a JSON object, got " + json.strip());
         }
         return parsed.getAsJsonObject();
+    }
+
+    private static List<ChatImage> chatImages(McpToolResult result) {
+        List<ChatImage> images = new ArrayList<>(result.images().size());
+        for (McpToolResult.ImagePart part : result.images()) {
+            if (part != null && part.base64() != null && !part.base64().isEmpty()) {
+                images.add(new ChatImage(part.mimeType(), part.base64(), part.width(), part.height()));
+            }
+        }
+        return images;
     }
 
     private static String describe(Throwable failure) {

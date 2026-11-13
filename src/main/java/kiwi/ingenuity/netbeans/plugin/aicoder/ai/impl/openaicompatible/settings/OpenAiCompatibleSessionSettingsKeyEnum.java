@@ -28,6 +28,7 @@ public enum OpenAiCompatibleSessionSettingsKeyEnum {
     SUMMARY_MODEL("summaryModel"),
     SUMMARISE_THRESHOLD("summariseThreshold"),
     SHOW_REASONING("showReasoning"),
+    IMAGE_INPUT_MODE("imageInputMode"),
     RESERVE_PERCENT("reservePercent"),
     RESERVE_MINIMUM("reserveMinimum"),
     RESERVE_MAX_SHARE_PERCENT("reserveMaxSharePercent"),

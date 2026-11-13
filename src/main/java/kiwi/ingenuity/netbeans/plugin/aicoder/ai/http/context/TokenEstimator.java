@@ -1,5 +1,6 @@
 package kiwi.ingenuity.netbeans.plugin.aicoder.ai.http.context;
 
+import kiwi.ingenuity.netbeans.plugin.aicoder.ai.http.ChatImage;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.http.ChatMessage;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.http.ChatToolCall;
 
@@ -14,6 +15,12 @@ public class TokenEstimator {
     private static final double MIN_RATIO = 0.5d;
     private static final double MAX_RATIO = 2.0d;
     private static final double SMOOTHING = 0.3d;
+    private static final double PIXELS_PER_IMAGE_TOKEN = 750d;
+    static final int MIN_IMAGE_TOKENS = 85;
+    /**
+     * The estimate for an image of unknown size: a 1568-pixel square, the largest GetFileBinary sends.
+     */
+    static final int UNKNOWN_IMAGE_TOKENS = 3_279;
 
     private final double charsPerToken;
     private final int perMessageOverhead;
@@ -51,7 +58,28 @@ public class TokenEstimator {
             }
         }
         int raw = (int) Math.ceil(chars / charsPerToken) + perMessageOverhead;
-        return (int) Math.ceil(raw * ratio);
+        int images = 0;
+        for (ChatImage image : message.images()) {
+            images += imageTokens(image);
+        }
+        return (int) Math.ceil(raw * ratio) + images;
+    }
+
+    /**
+     * Tokens for one image: about one per 750 pixels (the common vision-model rule), never less than
+     * {@link #MIN_IMAGE_TOKENS}; {@link #UNKNOWN_IMAGE_TOKENS} when the size is unknown. Never derived from the base64
+     * length, which says nothing about what the model is charged. Not scaled by the calibration ratio, which is learned
+     * from text.
+     */
+    public static int imageTokens(ChatImage image) {
+        if (image == null) {
+            return 0;
+        }
+        if (image.width() <= 0 || image.height() <= 0) {
+            return UNKNOWN_IMAGE_TOKENS;
+        }
+        long pixels = (long) image.width() * image.height();
+        return (int) Math.max(MIN_IMAGE_TOKENS, Math.ceil(pixels / PIXELS_PER_IMAGE_TOKEN));
     }
 
     /**

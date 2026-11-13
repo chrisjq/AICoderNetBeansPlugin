@@ -34,6 +34,7 @@ import kiwi.ingenuity.netbeans.plugin.aicoder.process.SessionRegistry;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.session.AbstractAiSession;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.exposure.McpToolGroupEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.McpToolInterface;
+import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.McpToolResult;
 import kiwi.ingenuity.netbeans.plugin.aicoder.utils.OperatingSystemEnum;
 
 public final class McpHookServerUtil {
@@ -568,12 +569,27 @@ public final class McpHookServerUtil {
     }
 
     public static String mcpTextResult(JsonElement id, String text) {
+        return mcpResult(id, McpToolResult.text(text));
+    }
+
+    /**
+     * A {@code tools/call} result: the text item first, then one {@code image} item per image. The images are never
+     * logged anywhere; this string goes straight to the response body.
+     */
+    public static String mcpResult(JsonElement id, McpToolResult toolResult) {
         JsonObject result = new JsonObject();
         JsonArray content = new JsonArray();
         JsonObject textObj = new JsonObject();
         textObj.addProperty("type", "text");
-        textObj.addProperty("text", text);
+        textObj.addProperty("text", toolResult.text());
         content.add(textObj);
+        for (McpToolResult.ImagePart image : toolResult.images()) {
+            JsonObject imageObj = new JsonObject();
+            imageObj.addProperty("type", "image");
+            imageObj.addProperty("data", image.base64());
+            imageObj.addProperty("mimeType", image.mimeType());
+            content.add(imageObj);
+        }
         result.add("content", content);
         return mcpOk(id, result);
     }

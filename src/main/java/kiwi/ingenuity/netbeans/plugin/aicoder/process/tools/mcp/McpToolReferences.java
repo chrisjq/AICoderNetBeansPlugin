@@ -28,6 +28,7 @@ public final class McpToolReferences {
         put(references, McpToolEnum.GET_CLASS_MEMBERS, McpToolEnum.SEARCH_TYPES);
         put(references, McpToolEnum.GET_TYPE_HIERARCHY, McpToolEnum.SEARCH_TYPES);
         put(references, McpToolEnum.GET_FILE_CONTENT, McpToolEnum.GET_PROJECT_STRUCTURE, McpToolEnum.SEARCH_IN_FILES, McpToolEnum.SEARCH_SYMBOLS);
+        put(references, McpToolEnum.GET_FILE_BINARY, McpToolEnum.GET_FILE_CONTENT);
         put(references, McpToolEnum.GET_FILE_INFO, McpToolEnum.GET_FILE_CONTENT);
         put(references, McpToolEnum.WEB_REQUEST, McpToolEnum.FILTER_FILE_CONTENT, McpToolEnum.GET_FILE_CONTENT);
         put(references, McpToolEnum.BUILD_MAVEN_PROJECT, McpToolEnum.LIST_BUILDS, McpToolEnum.STOP_ASYNC_BUILD);

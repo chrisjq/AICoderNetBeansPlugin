@@ -98,6 +98,17 @@ class McpTemplateMinimalTest {
 
     @Test
     @Timeout(10)
+    void fileBinaryIsOnByDefaultInTheDefaultTemplateButOffInMinimal() {
+        assertFalse(McpTemplate.createDefault(McpToolConfig.ALL_ENABLED).config()
+                .isDisabled(McpToolGroupEnum.FILE_BINARY), "the Default template must enable GetFileBinary");
+        assertFalse(McpToolConfig.ALL_ENABLED.isDisabled(McpToolGroupEnum.FILE_BINARY),
+                    "a session with no saved switches must enable GetFileBinary");
+        assertTrue(McpTemplate.createMinimal().config().isDisabled(McpToolGroupEnum.FILE_BINARY),
+                   "the Minimal template must leave GetFileBinary off");
+    }
+
+    @Test
+    @Timeout(10)
     void minimalIsMinimalNotDefault() {
         McpTemplate minimal = McpTemplate.createMinimal();
 

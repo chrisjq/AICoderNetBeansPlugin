@@ -17,6 +17,7 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutionException;
 import java.util.function.BooleanSupplier;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.events.TurnEndReason;
+import kiwi.ingenuity.netbeans.plugin.aicoder.ai.http.ChatImage;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.http.ChatMessage;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.http.ChatRole;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.http.ChatToolCall;
@@ -26,7 +27,9 @@ import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.openaicompatible.client.As
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.openaicompatible.client.ChatRequestSpec;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.openaicompatible.client.ClientResult;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.openaicompatible.client.CompatibilityFlags;
+import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.openaicompatible.client.DataUriElider;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.openaicompatible.client.ErrorMapper;
+import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.openaicompatible.client.ImageRejection;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.openaicompatible.client.MappedError;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.openaicompatible.client.OpenAiCompatibleHttpClient.DebugSink;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.openaicompatible.client.RequestHandle;
@@ -106,6 +109,25 @@ public final class TurnLoop {
     }
 
     /**
+     * What a turn does with images that tools return.
+     */
+    public enum ImagePolicy {
+        /**
+         * Send each image once, in a user message after the tool results; if the server rejects it, resend without the
+         * images and drop any later ones this turn.
+         */
+        SEND,
+        /**
+         * Never send images: the user set "Model can view images" to Off.
+         */
+        DROP_SETTING_OFF,
+        /**
+         * Never send images: detection, or an earlier rejection, says the model cannot view them.
+         */
+        DROP_NO_VISION
+    }
+
+    /**
      * The per-session loop limits (spec §8.2). {@code maxToolRounds} 0 means unlimited.
      */
     public record Counts(int maxToolRounds, int maxLengthContinuations, int maxMalformedRounds,
@@ -145,6 +167,21 @@ public final class TurnLoop {
             + "next message. To answer, set tool_name to \"\" and put the whole answer in message.\n\n"
             + "Available tools:\n";
     static final String SCHEMA_RESULT_PREFIX = "Result of ";
+    static final String IMAGE_MESSAGE_PREFIX = ImageRejection.IMAGE_MESSAGE_PREFIX;
+    /**
+     * The chat notice when the server refuses images and the request is resent without them.
+     */
+    public static final String IMAGES_REJECTED_NOTICE = "This model can't view images, so they are left out. Set "
+            + "'Model can view images' to On in the session settings if it can.";
+    static final String IMAGE_SETTING_OFF_NOTE = ImageRejection.IMAGE_SETTING_OFF_NOTE;
+    static final String IMAGE_NO_VISION_NOTE = ImageRejection.IMAGE_NO_VISION_NOTE;
+
+    /**
+     * The note a tool result carries when its image is attached to the next message.
+     */
+    static String imageAttachedNote(String toolName) {
+        return ImageRejection.attachedNote(toolName);
+    }
 
     /**
      * The chat message when a Cancel lands while {@code toolName} runs.
@@ -220,6 +257,9 @@ public final class TurnLoop {
      * The Ollama {@code keep_alive} value; null when not sent (spec §8.2).
      */
     private String keepAlive;
+    private ImagePolicy imagePolicy = ImagePolicy.SEND;
+    private Runnable onImagesRejected = () -> {
+    };
 
     private volatile Phase phase = Phase.WAITING;
     private volatile long phaseStartNanos = System.nanoTime();
@@ -251,6 +291,18 @@ public final class TurnLoop {
     private int toolRounds;
     private int lengthContinuations;
     private int malformedRounds;
+    /**
+     * True once the server rejected images this turn; later images are dropped.
+     */
+    private boolean imagesRejected;
+    /**
+     * Tool results whose images wait in the wire tail for the next request.
+     */
+    private final List<ImagePlaceholder> pendingImagePlaceholders = new ArrayList<>();
+    /**
+     * Tool results whose images went out in the request now in flight; reworded if the server rejects them.
+     */
+    private List<ImagePlaceholder> inFlightImagePlaceholders = List.of();
 
     // ---- Per-request streaming state ----
     private ThinkTagStripper streamStripper = new ThinkTagStripper();
@@ -371,6 +423,17 @@ public final class TurnLoop {
     }
 
     /**
+     * Sets what this turn does with images tools return (default {@link ImagePolicy#SEND}) and what runs when the
+     * server rejects a request because it carried images (recording the session's no-vision decision).
+     */
+    public TurnLoop withImagePolicy(ImagePolicy policy, Runnable onRejected) {
+        this.imagePolicy = policy == null ? ImagePolicy.SEND : policy;
+        this.onImagesRejected = onRejected == null ? () -> {
+        } : onRejected;
+        return this;
+    }
+
+    /**
      * The mode the turn is in now; SCHEMA after an immediate switch.
      */
     public ToolCallingModeEnum mode() {
@@ -415,6 +478,8 @@ public final class TurnLoop {
                 compactBeforeNext = false;
                 List<ChatMessage> wire = wireMessages();
                 wireTail.clear();
+                inFlightImagePlaceholders = List.copyOf(pendingImagePlaceholders);
+                pendingImagePlaceholders.clear();
                 lastEstimate = contextManager == null ? 0 : contextManager.estimate(wire);
                 boolean offerNativeTools = !last && mode == ToolCallingModeEnum.NATIVE;
                 ClientResult result = sendAndWait(wire, offerNativeTools ? context.tools() : null, schemaResponseFormat(last));
@@ -468,6 +533,10 @@ public final class TurnLoop {
                 claim(TurnEndReason.SIZE_LIMIT,
                       TurnEndReason.SIZE_LIMIT.message(Math.max(1L, limits.transcriptCapBytes() >> 20)));
             case HTTP_ERROR, ERROR -> {
+                if (!inFlightImagePlaceholders.isEmpty() && isImageRejection(result.error())) {
+                    resendWithoutImages(result.error());
+                    return;
+                }
                 if (canSwitchImmediately(result.error())) {
                     switchToSchemaNow();
                     return;
@@ -789,6 +858,13 @@ public final class TurnLoop {
                 claim(TurnEndReason.STEP_LIMIT, message);
             }
             default -> {
+                if (!inFlightImagePlaceholders.isEmpty() && isImageRejection(result.error())) {
+                    // The round that returned the image also reached the round cap: resend the final request
+                    // without the image. The wire tail that carried the step-limit prompt is spent, so add it again.
+                    resendWithoutImages(result.error());
+                    wireTail.add(new ChatMessage(ChatRole.USER, STEP_LIMIT_PROMPT, List.of(), null));
+                    return;
+                }
                 keepPartialText(result.reply());
                 claim(TurnEndReason.STEP_LIMIT, message + STEP_LIMIT_REJECTED_NOTE);
             }
@@ -834,6 +910,7 @@ public final class TurnLoop {
         boolean anyNewResult = false;
         String lastToolName = null;
         Set<String> invalidCalls = new HashSet<>();
+        List<ImageAttachment> attachments = new ArrayList<>();
         for (ToolRunner.ToolOutcome toolOutcome : run.outcomes()) {
             ChatToolCall call = toolOutcome.call();
             String result = toolOutcome.result();
@@ -863,14 +940,30 @@ public final class TurnLoop {
                     result = ToolResultCap.cap(call.name(), result, toolResultCapChars);
                 }
             }
-            if (schema) {
-                history.add(new ChatMessage(ChatRole.USER, SCHEMA_RESULT_PREFIX + call.name() + ":\n" + result,
-                                            List.of(), null));
+            List<ChatImage> images = toolOutcome.completed() && !toolOutcome.invalidArguments()
+                                     ? toolOutcome.images() : List.of();
+            boolean attach = !images.isEmpty() && imagesSendable();
+            String note = images.isEmpty() ? null : attach ? imageAttachedNote(call.name()) : imageDroppedNote();
+            if (note != null) {
+                result = (result == null || result.isEmpty() ? "" : result + "\n") + note;
             }
-            else {
-                history.add(new ChatMessage(ChatRole.TOOL, result, List.of(), call.id()));
+            ChatMessage stored = schema
+                                 ? new ChatMessage(ChatRole.USER, SCHEMA_RESULT_PREFIX + call.name() + ":\n" + result,
+                                                   List.of(), null)
+                                 : new ChatMessage(ChatRole.TOOL, result, List.of(), call.id());
+            history.add(stored);
+            if (attach) {
+                attachments.add(new ImageAttachment(call, images));
+                pendingImagePlaceholders.add(new ImagePlaceholder(stored, note));
             }
-            debug.event("Tool " + call.name() + (toolOutcome.completed() ? " finished" : " not finished"));
+            debug.event("Tool " + call.name() + (toolOutcome.completed() ? " finished" : " not finished")
+                    + (images.isEmpty() ? "" : attach ? " (" + images.size() + " image(s) attached)"
+                                               : " (" + images.size() + " image(s) not shown)"));
+        }
+        if (!attachments.isEmpty()) {
+            // After every result, so the TOOL messages still follow the assistant's tool calls directly. The wire
+            // tail is sent with the next request only: the image never enters the history, persistence or compaction.
+            wireTail.add(imageMessage(attachments));
         }
         if (run.cancelled() || handle.isCancelled()) {
             String message = run.cancelledTool() != null
@@ -912,6 +1005,74 @@ public final class TurnLoop {
             return call;
         }
         return new ChatToolCall(call.id(), call.name(), ArgumentCoercion.coerce(arguments, schema).toString());
+    }
+
+    /**
+     * The images one tool call returned, waiting for the next request.
+     */
+    private record ImageAttachment(ChatToolCall call, List<ChatImage> images) {
+
+    }
+
+    /**
+     * A stored tool result whose image was attached, and the note it carries saying so.
+     */
+    private record ImagePlaceholder(ChatMessage message, String note) {
+
+    }
+
+    private boolean imagesSendable() {
+        return imagePolicy == ImagePolicy.SEND && !imagesRejected;
+    }
+
+    private String imageDroppedNote() {
+        return imagePolicy == ImagePolicy.DROP_SETTING_OFF ? IMAGE_SETTING_OFF_NOTE : IMAGE_NO_VISION_NOTE;
+    }
+
+    /**
+     * One user message carrying every image of a round, each named by the call it came from, in order.
+     */
+    private static ChatMessage imageMessage(List<ImageAttachment> attachments) {
+        StringBuilder text = new StringBuilder();
+        List<ChatImage> images = new ArrayList<>();
+        for (ImageAttachment attachment : attachments) {
+            if (text.length() > 0) {
+                text.append('\n');
+            }
+            text.append(IMAGE_MESSAGE_PREFIX).append(attachment.call().name())
+                    .append(" (call ").append(attachment.call().id()).append(')')
+                    .append(ImageRejection.countSuffix(attachment.images().size()));
+            images.addAll(attachment.images());
+        }
+        return new ChatMessage(ChatRole.USER, text.toString(), List.of(), null, images);
+    }
+
+    /**
+     * Whether a failed request was refused because it carried images; see {@link ImageRejection#isImageRejection},
+     * which the HTTP client shares so it never blind-retries such a request with the images still in it.
+     */
+    static boolean isImageRejection(MappedError error) {
+        return ImageRejection.isImageRejection(error);
+    }
+
+    /**
+     * The server refused the request because of its images: reword the stored results that promised an image, record
+     * the decision, and let the loop resend without them (the wire tail that carried them is already spent).
+     */
+    private void resendWithoutImages(MappedError error) {
+        imagesRejected = true;
+        for (ImagePlaceholder placeholder : inFlightImagePlaceholders) {
+            String content = placeholder.message().content();
+            if (content != null) {
+                placeholder.message().setContent(content.replace(placeholder.note(), IMAGE_NO_VISION_NOTE));
+            }
+        }
+        inFlightImagePlaceholders = List.of();
+        onImagesRejected.run();
+        // The server may echo the request, data URIs included, in its error text.
+        debug.event("The server rejected the image(s) (" + DataUriElider.elide(errorText(error))
+                + "); resending without them.");
+        listener.notice(IMAGES_REJECTED_NOTICE);
     }
 
     private static List<ChatToolCall> toCalls(List<ToolJsonRescue.RescuedCall> rescued) {
@@ -1290,8 +1451,9 @@ public final class TurnLoop {
         }
         for (ChatMessage message : source) {
             int last = wire.size() - 1;
+            // A message with images is never merged: the join below keeps text only and would drop them.
             if (last >= 0 && message.role() == ChatRole.USER && wire.get(last).role() == ChatRole.USER
-                    && wire.get(last).toolCalls().isEmpty()) {
+                    && wire.get(last).toolCalls().isEmpty() && !message.hasImages() && !wire.get(last).hasImages()) {
                 ChatMessage previous = wire.get(last);
                 wire.set(last, new ChatMessage(ChatRole.USER, join(previous.content(), message.content()),
                                                List.of(), null));

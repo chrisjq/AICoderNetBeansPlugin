@@ -28,7 +28,10 @@ public enum ServerFieldEnum {
     META("meta"),
     N_CTX_TRAIN("n_ctx_train"),
     TOOLS("tools"),
-    THINKING("thinking");
+    THINKING("thinking"),
+    VISION("vision"),
+    TYPE("type"),
+    VLM("vlm");
 
     private final String key;
 

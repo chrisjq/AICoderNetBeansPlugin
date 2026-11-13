@@ -12,14 +12,14 @@ import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.pi.settings.PiPluginSettin
 public final class PiVersionCheck {
 
     /**
-     * The major.minor this plugin was tested against (pi 1.4.0).
+     * The major.minor this plugin was tested against (pi 1.5.2).
      *
      * <p>
      * Tests must derive their "a tested version" / "the tested major.minor" fixtures from this constant rather than
      * spelling the current number out — hard-coded copies turned eight tests red the last time it was bumped, none of
      * them about the change.
      */
-    public static final String TESTED_MAJOR_MINOR = "1.4";
+    public static final String TESTED_MAJOR_MINOR = "1.5";
 
     /**
      * Versions the user answered "No" to for this IDE session only — never persisted, so the warning returns on the

@@ -9,9 +9,11 @@ import kiwi.ingenuity.netbeans.plugin.aicoder.process.server.McpToolInvoker;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.session.AbstractAiSession;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.exposure.McpToolAccess;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.McpToolInterface;
+import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.McpToolResult;
 
 /**
- * MCP bridge used by the OpenAI-compatible backend.
+ * MCP bridge used by the OpenAI-compatible backend. Tool results keep their images, which the turn loop sends to the
+ * model when it can view them.
  */
 public final class OpenAiCompatibleMcpBridge extends AbstractMcpBridge {
 
@@ -24,25 +26,30 @@ public final class OpenAiCompatibleMcpBridge extends AbstractMcpBridge {
 
     @Override
     protected String executeTool(String toolName, JsonObject argsWithAuth) {
+        return executeToolResult(toolName, argsWithAuth).text();
+    }
+
+    @Override
+    protected McpToolResult executeToolResult(String toolName, JsonObject argsWithAuth) {
         McpToolEnum tool = McpToolEnum.of(toolName);
         if (tool == null) {
-            return "Error: unknown tool: " + toolName;
+            return McpToolResult.text("Error: unknown tool: " + toolName);
         }
         if (session == null) {
-            return "Error: OpenAI Compatible session not bound";
+            return McpToolResult.text("Error: OpenAI Compatible session not bound");
         }
         McpToolInterface handler = session.getMcpToolHandlers().get(tool);
         if (handler == null) {
-            return "Error: unhandled tool: " + toolName;
+            return McpToolResult.text("Error: unhandled tool: " + toolName);
         }
         if (!McpToolAccess.isToolEnabled(session.getSettings(), tool, handler)) {
-            return "Error: " + McpToolAccess.unavailableMessage(session.getSettings(), tool, handler);
+            return McpToolResult.text("Error: " + McpToolAccess.unavailableMessage(session.getSettings(), tool, handler));
         }
         try {
-            return McpToolInvoker.invoke(tool, handler, argsWithAuth, session);
+            return McpToolInvoker.invokeResult(tool, handler, argsWithAuth, session);
         }
         catch (McpArgumentException ex) {
-            return "Error: " + ex.getMessage();
+            return McpToolResult.text("Error: " + ex.getMessage());
         }
     }
 }

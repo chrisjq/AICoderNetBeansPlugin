@@ -82,6 +82,8 @@ public class OpenAiCompatibleSettingsCreator
         setInt(cfgObj, OpenAiCompatibleSessionSettingsKeyEnum.SUMMARISE_THRESHOLD.key(),
                settings::setSummariseThreshold);
         setBoolean(cfgObj, OpenAiCompatibleSessionSettingsKeyEnum.SHOW_REASONING.key(), settings::setShowReasoning);
+        setString(cfgObj, OpenAiCompatibleSessionSettingsKeyEnum.IMAGE_INPUT_MODE.key(),
+                  value -> settings.setImageInputMode(ImageInputModeEnum.parse(value)));
         setInt(cfgObj, OpenAiCompatibleSessionSettingsKeyEnum.RESERVE_PERCENT.key(), settings::setReservePercent);
         setInt(cfgObj, OpenAiCompatibleSessionSettingsKeyEnum.RESERVE_MINIMUM.key(), settings::setReserveMinimum);
         setInt(cfgObj, OpenAiCompatibleSessionSettingsKeyEnum.RESERVE_MAX_SHARE_PERCENT.key(),
