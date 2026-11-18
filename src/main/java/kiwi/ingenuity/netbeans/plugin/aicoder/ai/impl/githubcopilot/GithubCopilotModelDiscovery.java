@@ -1,20 +1,13 @@
 package kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.githubcopilot;
 
-import com.github.copilot.CopilotClient;
-import com.github.copilot.rpc.CopilotClientOptions;
-import com.github.copilot.rpc.ModelInfo;
 import com.google.gson.Gson;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
-import java.io.ByteArrayOutputStream;
-import java.io.InputStream;
-import java.io.OutputStream;
-import java.nio.charset.StandardCharsets;
+import java.time.Duration;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
-import java.util.Locale;
 import java.util.Map;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -22,6 +15,11 @@ import java.util.function.Consumer;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.githubcopilot.events.GithubCopilotReasoningEffortsEvent;
+import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.githubcopilot.sdk.CopilotLaunch;
+import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.githubcopilot.sdk.CopilotModel;
+import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.githubcopilot.sdk.CopilotRawRpc;
+import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.githubcopilot.sdk.CopilotSdkClient;
+import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.githubcopilot.sdk.CopilotSdkSelector;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.githubcopilot.settings.GithubCopilotPluginSettings;
 
 /**
@@ -29,8 +27,8 @@ import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.githubcopilot.settings.Git
  * {@code CopilotClient.listModels()}, and feeds it into the model dropdown. The {@code copilot -p} runtime is
  * unchanged; this only refreshes the model list.
  * <p>
- * Discovery is best-effort and fully isolated: any failure (CLI missing, RPC error, timeout) is swallowed and
- * the hardcoded fallback list remains in use.
+ * Discovery is best-effort and fully isolated: any failure (CLI missing, RPC error, timeout) is swallowed and the
+ * hardcoded fallback list remains in use.
  */
 public final class GithubCopilotModelDiscovery {
 
@@ -42,8 +40,8 @@ public final class GithubCopilotModelDiscovery {
     private static volatile int retryCount = 0;
 
     /**
-     * Builds the dropdown list from discovered model ids: "auto" first (it always works), then the discovered
-     * ids in order, de-duplicated and trimmed, blanks dropped. Pure and side-effect free.
+     * Builds the dropdown list from discovered model ids: "auto" first (it always works), then the discovered ids in
+     * order, de-duplicated and trimmed, blanks dropped. Pure and side-effect free.
      */
     static String[] assembleModelList(List<String> discoveredIds) {
         LinkedHashSet<String> out = new LinkedHashSet<>();
@@ -59,9 +57,8 @@ public final class GithubCopilotModelDiscovery {
     }
 
     /**
-     * Starts a fresh discovery cycle: resets the retry counter and submits a background fetch. Does nothing
-     * if a discovery is already in progress. On failure, retries up to {@value #MAX_RETRIES} times within the
-     * cycle.
+     * Starts a fresh discovery cycle: resets the retry counter and submits a background fetch. Does nothing if a
+     * discovery is already in progress. On failure, retries up to {@value #MAX_RETRIES} times within the cycle.
      *
      * @param cliPath the located copilot CLI path, or null to use PATH
      */
@@ -133,35 +130,31 @@ public final class GithubCopilotModelDiscovery {
     /**
      * Tier 1: official Copilot SDK ({@code CopilotClient.listModels()}). Also populates
      * {@code GithubCopilotPluginSettings}'s per-model reasoning-effort cache from each {@code ModelInfo}'s
-     * {@code getSupportedReasoningEfforts()}/{@code getDefaultReasoningEffort()} — the live discovery, so
-     * nothing about effort levels is hardcoded. The direct-RPC fallback tier does not carry this (its
-     * response shape is not verified to include these fields), so a model discovered only via that tier is
-     * treated as "no support" until SDK-tier discovery succeeds — the fail-safe default.
+     * {@code getSupportedReasoningEfforts()}/{@code getDefaultReasoningEffort()} — the live discovery, so nothing about
+     * effort levels is hardcoded. The direct-RPC fallback tier does not carry this (its response shape is not verified
+     * to include these fields), so a model discovered only via that tier is treated as "no support" until SDK-tier
+     * discovery succeeds — the fail-safe default.
      */
     private static String[] discoverViaSdk(String cliPath) throws Exception {
-        CopilotClientOptions opts = new CopilotClientOptions();
-        if (cliPath != null && !cliPath.isBlank()) {
-            opts.setCliPath(cliPath);
-        }
-        try (CopilotClient client = new CopilotClient(opts)) {
-            client.start().get(GithubCopilotTimeoutEnum.COPILOT_MODEL_DISCOVERY_MILLIS.millis(), TimeUnit.MILLISECONDS);
-            List<ModelInfo> models = client.listModels().get(GithubCopilotTimeoutEnum.COPILOT_MODEL_DISCOVERY_MILLIS.millis(), TimeUnit.MILLISECONDS);
+        long timeout = GithubCopilotTimeoutEnum.COPILOT_MODEL_DISCOVERY_MILLIS.millis();
+        CopilotSdkClient client = CopilotSdkSelector.sdkFor(cliPath).start(
+                new CopilotLaunch(cliPath, List.of(), null, Duration.ofMillis(timeout)));
+        try {
+            List<CopilotModel> models = client.listModels().get(timeout, TimeUnit.MILLISECONDS);
             List<String> ids = new ArrayList<>();
             Map<String, List<String>> supportedByModel = new LinkedHashMap<>();
             Map<String, String> defaultByModel = new LinkedHashMap<>();
             if (models != null) {
-                for (ModelInfo m : models) {
-                    if (m == null || m.getId() == null) {
+                for (CopilotModel model : models) {
+                    if (model == null || model.id() == null) {
                         continue;
                     }
-                    ids.add(m.getId());
-                    List<String> supported = m.getSupportedReasoningEfforts();
-                    if (supported != null && !supported.isEmpty()) {
-                        supportedByModel.put(m.getId(), List.copyOf(supported));
+                    ids.add(model.id());
+                    if (model.supportedEfforts() != null && !model.supportedEfforts().isEmpty()) {
+                        supportedByModel.put(model.id(), List.copyOf(model.supportedEfforts()));
                     }
-                    String defaultEffort = m.getDefaultReasoningEffort();
-                    if (defaultEffort != null && !defaultEffort.isBlank()) {
-                        defaultByModel.put(m.getId(), defaultEffort);
+                    if (model.defaultEffort() != null && !model.defaultEffort().isBlank()) {
+                        defaultByModel.put(model.id(), model.defaultEffort());
                     }
                 }
             }
@@ -169,72 +162,25 @@ public final class GithubCopilotModelDiscovery {
                     new GithubCopilotReasoningEffortsEvent(supportedByModel, defaultByModel));
             return assembleModelList(ids);
         }
+        finally {
+            try {
+                client.close();
+            }
+            catch (Throwable closeEx) {
+                LOG.log(Level.FINE, "Ignoring benign error while closing Copilot client after model discovery", closeEx);
+            }
+        }
     }
 
     /**
-     * Tier 2: drive the CLI's JSON-RPC server directly — spawn {@code copilot --server --stdio}, do a
-     * {@code ping} handshake, then call {@code models.list}. Uses only gson; no SDK classes. Mirrors exactly
-     * what the SDK does on the wire (LSP-framed JSON-RPC 2.0).
+     * Tier 2: drive the CLI's JSON-RPC server directly — spawn {@code copilot --server --stdio}, do a {@code ping}
+     * handshake, then call {@code models.list}. Uses only gson; no SDK classes. Mirrors exactly what the SDK does on
+     * the wire (LSP-framed JSON-RPC 2.0).
      */
     private static String[] discoverViaRpc(String cliPath) throws Exception {
-        Process proc = new ProcessBuilder(buildServerCommand(cliPath)).start();
-        Thread watchdog = new Thread(() -> {
-            try {
-                Thread.sleep(GithubCopilotTimeoutEnum.COPILOT_MODEL_DISCOVERY_MILLIS.millis());
-                proc.destroyForcibly();
-            }
-            catch (InterruptedException ignored) {
-            }
-        }, "copilot-rpc-watchdog");
-        watchdog.setDaemon(true);
-        watchdog.start();
-        try {
-            OutputStream out = proc.getOutputStream();
-            InputStream in = proc.getInputStream();
-            writeFramed(out, "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"ping\",\"params\":{}}");
-            writeFramed(out, "{\"jsonrpc\":\"2.0\",\"id\":2,\"method\":\"models.list\",\"params\":{}}");
-            out.flush();
-            String body;
-            while ((body = readFramed(in)) != null) {
-                JsonObject msg = GSON.fromJson(body, JsonObject.class);
-                if (msg != null && msg.has(GithubCopilotJsonKeyEnum.ID.key()) && msg.get(GithubCopilotJsonKeyEnum.ID.key()).isJsonPrimitive()
-                    && msg.get(GithubCopilotJsonKeyEnum.ID.key()).getAsInt() == 2) {
-                    return assembleModelList(parseModelIds(body));
-                }
-            }
-            throw new java.io.IOException("RPC stream closed before models.list response");
-        }
-        finally {
-            watchdog.interrupt();
-            proc.destroyForcibly();
-        }
-    }
-
-    /**
-     * Per-OS command to start the CLI as a stdio JSON-RPC server (mirrors the SDK).
-     */
-    private static List<String> buildServerCommand(String cliPath) {
-        String path = (cliPath != null && !cliPath.isBlank()) ? cliPath : "copilot";
-        List<String> cmd = new ArrayList<>();
-        String os = System.getProperty("os.name", "").toLowerCase(Locale.ROOT);
-        if (path.endsWith(".js")) {
-            cmd.add("node");
-            cmd.add(path);
-        }
-        else if (os.contains("win")) {
-            cmd.add("cmd");
-            cmd.add("/c");
-            cmd.add(path);
-        }
-        else {
-            cmd.add(path);
-        }
-        cmd.add("--server");
-        cmd.add("--no-auto-update");
-        cmd.add("--log-level");
-        cmd.add("error");
-        cmd.add("--stdio");
-        return cmd;
+        CopilotRawRpc.Response response = CopilotRawRpc.call(cliPath, "models.list",
+                                                             new JsonObject(), GithubCopilotTimeoutEnum.COPILOT_MODEL_DISCOVERY_MILLIS.millis());
+        return assembleModelList(parseModelIds("{\"result\":" + GSON.toJson(response.result()) + "}"));
     }
 
     /**
@@ -259,51 +205,6 @@ public final class GithubCopilotModelDiscovery {
             }
         }
         return ids;
-    }
-
-    static void writeFramed(OutputStream out, String json) throws java.io.IOException {
-        byte[] body = json.getBytes(StandardCharsets.UTF_8);
-        out.write(("Content-Length: " + body.length + "\r\n\r\n").getBytes(StandardCharsets.UTF_8));
-        out.write(body);
-    }
-
-    /**
-     * Reads one LSP-framed message (Content-Length header + body). Returns the body as a UTF-8 string, or
-     * null at end of stream.
-     */
-    static String readFramed(InputStream in) throws java.io.IOException {
-        ByteArrayOutputStream header = new ByteArrayOutputStream();
-        int b;
-        while ((b = in.read()) != -1) {
-            header.write(b);
-            byte[] h = header.toByteArray();
-            int s = h.length;
-            if (s >= 4 && h[s - 4] == '\r' && h[s - 3] == '\n' && h[s - 2] == '\r' && h[s - 1] == '\n') {
-                break;
-            }
-        }
-        if (header.size() == 0) {
-            return null; // clean EOF, no message
-        }
-        int contentLength = -1;
-        for (String line : header.toString(StandardCharsets.UTF_8).split("\r\n")) {
-            if (line.toLowerCase(Locale.ROOT).startsWith("content-length:")) {
-                contentLength = Integer.parseInt(line.substring(line.indexOf(':') + 1).trim());
-            }
-        }
-        if (contentLength < 0) {
-            return null;
-        }
-        byte[] body = new byte[contentLength];
-        int read = 0;
-        while (read < contentLength) {
-            int n = in.read(body, read, contentLength - read);
-            if (n == -1) {
-                return null;
-            }
-            read += n;
-        }
-        return new String(body, StandardCharsets.UTF_8);
     }
 
     private GithubCopilotModelDiscovery() {

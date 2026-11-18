@@ -1,6 +1,5 @@
 package kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.githubcopilot;
 
-import com.github.copilot.generated.rpc.SessionHistoryCompactResult;
 import java.io.File;
 import java.time.Instant;
 import java.util.ArrayList;
@@ -26,6 +25,7 @@ import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.githubcopilot.events.Githu
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.githubcopilot.events.GithubCopilotQuotaEvent;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.githubcopilot.events.GithubCopilotReasoningEffortClearedEvent;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.githubcopilot.events.GithubCopilotReasoningEffortsEvent;
+import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.githubcopilot.sdk.CopilotCompaction;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.githubcopilot.settings.GithubCopilotPluginSettings;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.githubcopilot.settings.GithubCopilotSessionSettings;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.githubcopilot.ui.GithubCopilotAiInfoBarExtension;
@@ -43,9 +43,8 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import org.junit.jupiter.api.Test;
 
 /**
- * Mirrors CodexAiImplementationTest and OpenCodeAiImplementationTest — the same bug class those two were
- * fixed for: a session's chosen model must be used at startup rather than silently falling back to the global
- * default.
+ * Mirrors CodexAiImplementationTest and OpenCodeAiImplementationTest — the same bug class those two were fixed for: a
+ * session's chosen model must be used at startup rather than silently falling back to the global default.
  */
 class GithubCopilotAiImplementationTest {
 
@@ -64,12 +63,12 @@ class GithubCopilotAiImplementationTest {
 
     private static final class CompactManager extends GithubCopilotProcessManager {
 
-        private final CompletableFuture<SessionHistoryCompactResult> compactResult;
+        private final CompletableFuture<CopilotCompaction> compactResult;
         private int compactCalls;
-        private final java.util.concurrent.atomic.AtomicInteger aborts = new java.util.concurrent.atomic.AtomicInteger();
+        private final AtomicInteger aborts = new AtomicInteger();
         private final List<String> prompts = new ArrayList<>();
 
-        CompactManager(AiProcessEventListener listener, CompletableFuture<SessionHistoryCompactResult> compactResult) {
+        CompactManager(AiProcessEventListener listener, CompletableFuture<CopilotCompaction> compactResult) {
             super(listener);
             this.compactResult = compactResult;
         }
@@ -80,7 +79,7 @@ class GithubCopilotAiImplementationTest {
         }
 
         @Override
-        CompletableFuture<SessionHistoryCompactResult> compactHistory(String customInstructions) {
+        CompletableFuture<CopilotCompaction> compactHistory(String customInstructions) {
             compactCalls++;
             return compactResult;
         }
@@ -124,8 +123,8 @@ class GithubCopilotAiImplementationTest {
                 .filter(StatusEvent.class::isInstance)
                 .map(StatusEvent.class::cast)
                 .filter(event -> event.type() == StatusEventTypeEnum.READY
-                                 || event.type() == StatusEventTypeEnum.FAILED
-                                 || event.type() == StatusEventTypeEnum.EXITED)
+                        || event.type() == StatusEventTypeEnum.FAILED
+                        || event.type() == StatusEventTypeEnum.EXITED)
                 .count();
     }
 
@@ -175,11 +174,10 @@ class GithubCopilotAiImplementationTest {
     }
 
     /**
-     * Quota and reasoning-effort capabilities are account-wide facts, cached in
-     * {@link GithubCopilotAiImplementation} and replayed to a tab opened AFTER the fact was published — the
-     * same "late tab" guarantee
-     * {@code CodexAiImplementationTest.publishRateLimit_updatesEveryOpenBarAndLateCreatedBar} proves for
-     * Codex's rate limit. Both caches must replay, not just one.
+     * Quota and reasoning-effort capabilities are account-wide facts, cached in {@link GithubCopilotAiImplementation}
+     * and replayed to a tab opened AFTER the fact was published — the same "late tab" guarantee
+     * {@code CodexAiImplementationTest.publishRateLimit_updatesEveryOpenBarAndLateCreatedBar} proves for Codex's rate
+     * limit. Both caches must replay, not just one.
      */
     @Test
     void createInfoBarExtensionReplaysBothCachedQuotaAndCachedReasoningEffortsForALateTab() throws Exception {
@@ -204,7 +202,7 @@ class GithubCopilotAiImplementationTest {
         JProgressBar quotaBar = (JProgressBar) lateBar.get().createComponents().get(3);
         assertTrue(quotaBar.isVisible(), "a late tab must replay the cached quota");
         assertEquals("4%", quotaBar.getString(),
-                "the cached quota's remaining percentage (96%) must reach the late bar as 4% used");
+                     "the cached quota's remaining percentage (96%) must reach the late bar as 4% used");
 
         JComboBox<?> effortCombo = (JComboBox<?>) lateBar.get().createComponents().get(1);
         List<Object> items = new ArrayList<>();
@@ -212,13 +210,13 @@ class GithubCopilotAiImplementationTest {
             items.add(effortCombo.getItemAt(i));
         }
         assertTrue(items.contains("high"),
-                "a late tab must ALSO replay the cached reasoning-effort options: " + items);
+                   "a late tab must ALSO replay the cached reasoning-effort options: " + items);
     }
 
     /**
-     * {@link GithubCopilotReasoningEffortsEvent}'s compact constructor must deep-copy: {@code Map.copyOf}
-     * alone is shallow, so the caller's own mutable inner lists would otherwise still be reachable — a later
-     * mutation of one would silently corrupt an already-published, supposedly-immutable cached event.
+     * {@link GithubCopilotReasoningEffortsEvent}'s compact constructor must deep-copy: {@code Map.copyOf} alone is
+     * shallow, so the caller's own mutable inner lists would otherwise still be reachable — a later mutation of one
+     * would silently corrupt an already-published, supposedly-immutable cached event.
      */
     @Test
     void reasoningEffortsEventDeepCopiesInnerListsSoLaterMutationOfTheCallersListHasNoEffect() {
@@ -232,9 +230,9 @@ class GithubCopilotAiImplementationTest {
         supportedByModel.put("new-model", List.of("low"));
 
         assertEquals(List.of("low", "high"), event.supportedFor("gpt-5"),
-                "mutating the caller's inner list after construction must not change the cached event");
+                     "mutating the caller's inner list after construction must not change the cached event");
         assertTrue(event.supportedFor("new-model").isEmpty(),
-                "mutating the caller's outer map after construction must not change the cached event");
+                   "mutating the caller's outer map after construction must not change the cached event");
     }
 
     // Tests the extracted helper directly rather than startWithDiscovery(), whose
@@ -247,8 +245,8 @@ class GithubCopilotAiImplementationTest {
         GithubCopilotAiImplementation impl = implFor(newSession("gh-swd-1", settings));
 
         assertEquals("claude-sonnet-4.5", impl.resolveStartupModel(null),
-                "startWithDiscovery(null) must fall back to the session's chosen model, not "
-                + "GithubCopilotPluginSettings.getModel() — this is the per-session-model bug");
+                     "startWithDiscovery(null) must fall back to the session's chosen model, not "
+                     + "GithubCopilotPluginSettings.getModel() — this is the per-session-model bug");
     }
 
     @Test
@@ -258,7 +256,7 @@ class GithubCopilotAiImplementationTest {
         GithubCopilotAiImplementation impl = implFor(newSession("gh-swd-2", settings));
 
         assertEquals("gpt-5.4", impl.resolveStartupModel("gpt-5.4"),
-                "an explicit model argument must still win over the session setting");
+                     "an explicit model argument must still win over the session setting");
     }
 
     @Test
@@ -268,7 +266,7 @@ class GithubCopilotAiImplementationTest {
         GithubCopilotAiImplementation impl = implFor(newSession("gh-swd-3", settings));
 
         assertEquals(GithubCopilotPluginSettings.getModel(), impl.resolveStartupModel(null),
-                "with no session model and no explicit argument, the global default is still correct");
+                     "with no session model and no explicit argument, the global default is still correct");
     }
 
     @Test
@@ -278,7 +276,7 @@ class GithubCopilotAiImplementationTest {
         GithubCopilotAiImplementation impl = implFor(newSession("gh-swd-4", settings));
 
         assertEquals(GithubCopilotPluginSettings.getModel(), impl.resolveStartupModel(null),
-                "a blank (not null) session model must not be treated as a real choice");
+                     "a blank (not null) session model must not be treated as a real choice");
     }
 
     @Test
@@ -287,7 +285,7 @@ class GithubCopilotAiImplementationTest {
         }, null);
 
         assertEquals(GithubCopilotPluginSettings.getModel(), impl.resolveStartupModel(null),
-                "no session at all must not throw — the global default applies");
+                     "no session at all must not throw — the global default applies");
     }
 
     @Test
@@ -300,7 +298,7 @@ class GithubCopilotAiImplementationTest {
             GithubCopilotAiImplementation impl = implFor(newSession("gh-effort-1", settings));
 
             assertEquals("high", impl.resolveEffectiveReasoningEffort(),
-                    "the session's own reasoning effort must win over the global default");
+                         "the session's own reasoning effort must win over the global default");
         }
         finally {
             GithubCopilotPluginSettings.setReasoningEffort(globalBefore);
@@ -333,7 +331,7 @@ class GithubCopilotAiImplementationTest {
             GithubCopilotAiImplementation impl = implFor(newSession("gh-effort-3", settings));
 
             assertEquals("medium", impl.resolveEffectiveReasoningEffort(),
-                    "a blank (not null) session effort must not be treated as a real choice");
+                         "a blank (not null) session effort must not be treated as a real choice");
         }
         finally {
             GithubCopilotPluginSettings.setReasoningEffort(globalBefore);
@@ -349,7 +347,7 @@ class GithubCopilotAiImplementationTest {
             GithubCopilotAiImplementation impl = implFor(newSession("gh-effort-4", settings));
 
             assertNull(impl.resolveEffectiveReasoningEffort(),
-                    "with nothing set anywhere, the effort must be omitted entirely (null), never a default level");
+                       "with nothing set anywhere, the effort must be omitted entirely (null), never a default level");
         }
         finally {
             GithubCopilotPluginSettings.setReasoningEffort(globalBefore);
@@ -363,7 +361,7 @@ class GithubCopilotAiImplementationTest {
         GithubCopilotAiImplementation impl = implFor(newSession("gh-proven-1", settings));
 
         assertEquals("high", impl.resolveEffectiveReasoningEffortFromSession(),
-                "provenance must report the session value when the session pinned one");
+                     "provenance must report the session value when the session pinned one");
     }
 
     @Test
@@ -376,7 +374,7 @@ class GithubCopilotAiImplementationTest {
         GithubCopilotAiImplementation impl = implFor(newSession("gh-proven-2", settings));
 
         assertNull(impl.resolveEffectiveReasoningEffortFromSession(),
-                "with no session-pinned effort, provenance must report null (effective value is global-sourced)");
+                   "with no session-pinned effort, provenance must report null (effective value is global-sourced)");
     }
 
     @Test
@@ -386,7 +384,7 @@ class GithubCopilotAiImplementationTest {
         GithubCopilotAiImplementation impl = implFor(newSession("gh-proven-3", settings));
 
         assertNull(impl.resolveEffectiveReasoningEffortFromSession(),
-                "a blank session effort is not a pin — provenance must report the global default as the source");
+                   "a blank session effort is not a pin — provenance must report the global default as the source");
     }
 
     @Test
@@ -395,7 +393,7 @@ class GithubCopilotAiImplementationTest {
         }, null);
 
         assertNull(impl.resolveEffectiveReasoningEffortFromSession(),
-                "no session at all must not throw and must report null provenance");
+                   "no session at all must not throw and must report null provenance");
     }
 
     @Test
@@ -415,7 +413,7 @@ class GithubCopilotAiImplementationTest {
         implFor(newSession("gh-seteffort-2", settings)).setReasoningEffort("max");
 
         assertEquals(globalBefore, GithubCopilotPluginSettings.getReasoningEffort(),
-                "setReasoningEffort must NOT write the global plugin default");
+                     "setReasoningEffort must NOT write the global plugin default");
     }
 
     @Test
@@ -435,7 +433,7 @@ class GithubCopilotAiImplementationTest {
         implFor(newSession("gh-setmodel-2", settings)).setModel("claude-opus-4.6");
 
         assertEquals(globalBefore, GithubCopilotPluginSettings.getModel(),
-                "setModel must NOT write the global plugin default");
+                     "setModel must NOT write the global plugin default");
     }
 
     @Test
@@ -467,7 +465,7 @@ class GithubCopilotAiImplementationTest {
         assertEquals("copilot-fallback-event", settings.model(), "fallback must persist the session model before the UI event");
         assertEquals(settings, updated.get(), "fallback must persist through the session host");
         assertEquals("copilot-fallback-event", bar.getSelectedModel(),
-                "the info bar must receive the fallback through AiProcessImplEvent, not a direct implementation call");
+                     "the info bar must receive the fallback through AiProcessImplEvent, not a direct implementation call");
     }
 
     @Test
@@ -566,8 +564,8 @@ class GithubCopilotAiImplementationTest {
             });
 
             assertEquals("medium", ext.getSelectedReasoningEffort(),
-                    "the info bar must reflect the clear immediately, falling back to the global default for "
-                    + "display rather than keeping the just-cleared value visible");
+                         "the info bar must reflect the clear immediately, falling back to the global default for "
+                         + "display rather than keeping the just-cleared value visible");
         }
         finally {
             GithubCopilotPluginSettings.setReasoningEffort(globalBefore);
@@ -596,7 +594,7 @@ class GithubCopilotAiImplementationTest {
             AtomicReference<GithubCopilotAiInfoBarExtension> built = new AtomicReference<>();
             SwingUtilities.invokeAndWait(() -> {
                 GithubCopilotAiInfoBarExtension created = impl.createInfoBarExtension(session,
-                        stubHost(settings, new AtomicReference<>()));
+                                                                                      stubHost(settings, new AtomicReference<>()));
                 created.onPropertyEvent(efforts);
                 built.set(created);
             });
@@ -632,9 +630,9 @@ class GithubCopilotAiImplementationTest {
             });
 
             assertEquals("medium", bar.getSelectedReasoningEffort(),
-                    "manager clear event must reach the bar and display the global default");
+                         "manager clear event must reach the bar and display the global default");
             assertEquals(0, userChanges.get(),
-                    "event-driven bar updates must not invoke the user/RPC reasoning listener");
+                         "event-driven bar updates must not invoke the user/RPC reasoning listener");
         }
         finally {
             GithubCopilotPluginSettings.setReasoningEffort(globalBefore);
@@ -646,7 +644,7 @@ class GithubCopilotAiImplementationTest {
     void compact_callsRpcExactlyOnceAndNeverSendsPrompt() {
         List<AiProcessEvent> events = new ArrayList<>();
         CompactManager manager = new CompactManager(events::add, CompletableFuture.completedFuture(
-                new SessionHistoryCompactResult(true, 40L, 2L, null, null)));
+                                                    new CopilotCompaction(true, 40L, 2L)));
         manager.setState(true, false);
         GithubCopilotSessionSettings settings = new GithubCopilotSessionSettings();
         GithubCopilotAiImplementation impl = new GithubCopilotAiImplementation(events::add, null, manager);
@@ -657,11 +655,11 @@ class GithubCopilotAiImplementationTest {
         assertEquals(1, manager.compactCalls);
         assertTrue(manager.prompts.isEmpty(), "real compaction must not send a prompt turn");
         assertEquals(1, countStatuses(events, StatusEventTypeEnum.BUSY),
-                "a compact must report exactly one BUSY while it runs");
+                     "a compact must report exactly one BUSY while it runs");
         assertEquals(1, closingStatusCount(events), "a finished compact must close exactly once");
         assertEquals("Conversation compacted — removed 40 tokens, 2 messages",
-                status(events, StatusEventTypeEnum.READY).text(),
-                "a successful compact must close with READY, not INFO");
+                     status(events, StatusEventTypeEnum.READY).text(),
+                     "a successful compact must close with READY, not INFO");
     }
 
     @Test
@@ -684,11 +682,11 @@ class GithubCopilotAiImplementationTest {
 
         assertEquals(1, manager.compactCalls, "the second press must not reach the RPC while the first is in flight");
         assertEquals("Wait for GitHub Copilot to finish before compacting",
-                status(events, StatusEventTypeEnum.INFO).text());
+                     status(events, StatusEventTypeEnum.INFO).text());
         assertTrue(events.stream().noneMatch(e -> e instanceof StatusEvent se && se.type() == StatusEventTypeEnum.FAILED),
-                "a refused re-entry is not a failure and must not report one");
+                   "a refused re-entry is not a failure and must not report one");
         assertEquals(1, countStatuses(events, StatusEventTypeEnum.BUSY),
-                "the refused press must not open a second BUSY");
+                     "the refused press must not open a second BUSY");
     }
 
     @Test
@@ -698,7 +696,7 @@ class GithubCopilotAiImplementationTest {
         // is still running is locked (isBusy()) against input and further compacts. The never-completed future
         // holds the compact open while the assertions on the in-flight state run.
         List<AiProcessEvent> events = new ArrayList<>();
-        CompletableFuture<SessionHistoryCompactResult> pending = new CompletableFuture<>();
+        CompletableFuture<CopilotCompaction> pending = new CompletableFuture<>();
         CompactManager manager = new CompactManager(events::add, pending);
         manager.setState(true, false);
         GithubCopilotSessionSettings settings = new GithubCopilotSessionSettings();
@@ -706,13 +704,13 @@ class GithubCopilotAiImplementationTest {
 
         clickCompact(impl, newSession("gh-compact-busy", settings), stubHost(settings, new AtomicReference<>()));
         assertEquals(1, countStatuses(events, StatusEventTypeEnum.BUSY),
-                "a running compact must report exactly one BUSY");
+                     "a running compact must report exactly one BUSY");
         assertEquals(0, closingStatusCount(events), "a running compact must not report a closing status yet");
 
-        pending.complete(new SessionHistoryCompactResult(true, 10L, 1L, null, null));
+        pending.complete(new CopilotCompaction(true, 10L, 1L));
         assertEquals(1, closingStatusCount(events), "a completed compact must close with exactly one status");
         assertEquals("Conversation compacted — removed 10 tokens, 1 messages",
-                status(events, StatusEventTypeEnum.READY).text());
+                     status(events, StatusEventTypeEnum.READY).text());
     }
 
     @Test
@@ -720,7 +718,7 @@ class GithubCopilotAiImplementationTest {
         // The case that matters most: a compact that errors must still close its BUSY — never leave the session
         // holding an open BUSY (an un-closable state once the RPC is gone) — and report FAILED with the detail.
         List<AiProcessEvent> events = new ArrayList<>();
-        CompletableFuture<SessionHistoryCompactResult> pending = new CompletableFuture<>();
+        CompletableFuture<CopilotCompaction> pending = new CompletableFuture<>();
         CompactManager manager = new CompactManager(events::add, pending);
         manager.setState(true, false);
         GithubCopilotSessionSettings settings = new GithubCopilotSessionSettings();
@@ -730,7 +728,7 @@ class GithubCopilotAiImplementationTest {
         pending.completeExceptionally(new IllegalStateException("rpc exploded"));
 
         assertEquals(1, countStatuses(events, StatusEventTypeEnum.BUSY),
-                "a compact that errored must still have opened its BUSY");
+                     "a compact that errored must still have opened its BUSY");
         assertEquals(1, closingStatusCount(events), "a failed compaction must close its BUSY exactly once");
         assertEquals("Compact failed: rpc exploded", status(events, StatusEventTypeEnum.FAILED).text());
     }
@@ -749,7 +747,7 @@ class GithubCopilotAiImplementationTest {
 
         assertEquals(0, manager.compactCalls);
         assertEquals(0, countStatuses(events, StatusEventTypeEnum.BUSY),
-                "a refused compact must not open a BUSY that nothing would ever close");
+                     "a refused compact must not open a BUSY that nothing would ever close");
         assertEquals(0, closingStatusCount(events));
     }
 
@@ -757,7 +755,7 @@ class GithubCopilotAiImplementationTest {
     void compact_falseSuccessReportsFailedAndNotCompacted() {
         List<AiProcessEvent> events = new ArrayList<>();
         CompactManager manager = new CompactManager(events::add, CompletableFuture.completedFuture(
-                new SessionHistoryCompactResult(false, null, null, null, null)));
+                                                    new CopilotCompaction(false, null, null)));
         manager.setState(true, false);
         GithubCopilotSessionSettings settings = new GithubCopilotSessionSettings();
         GithubCopilotAiImplementation impl = new GithubCopilotAiImplementation(events::add, null, manager);
@@ -766,7 +764,7 @@ class GithubCopilotAiImplementationTest {
 
         assertEquals(1, manager.compactCalls);
         assertEquals("Compact failed: Copilot did not compact the conversation",
-                status(events, StatusEventTypeEnum.FAILED).text());
+                     status(events, StatusEventTypeEnum.FAILED).text());
         assertTrue(events.stream().noneMatch(e -> e instanceof StatusEvent se && se.text().contains("Conversation compacted")));
         assertEquals(1, closingStatusCount(events));
     }
@@ -790,7 +788,7 @@ class GithubCopilotAiImplementationTest {
         // (never FAILED), and the BUSY it opened must still close exactly once: no FAILED, no stuck BUSY.
         List<AiProcessEvent> events = new ArrayList<>();
         CompactManager manager = new CompactManager(events::add,
-                CompletableFuture.failedFuture(new IllegalStateException("Nothing to compact.")));
+                                                    CompletableFuture.failedFuture(new IllegalStateException("Nothing to compact.")));
         manager.setState(true, false);
         GithubCopilotSessionSettings settings = new GithubCopilotSessionSettings();
         GithubCopilotAiImplementation impl = new GithubCopilotAiImplementation(events::add, null, manager);
@@ -798,10 +796,10 @@ class GithubCopilotAiImplementationTest {
         clickCompact(impl, newSession("gh-compact-nothing", settings), stubHost(settings, new AtomicReference<>()));
 
         assertEquals(1, closingStatusCount(events),
-                "a 'Nothing to compact.' result must close its BUSY exactly once");
+                     "a 'Nothing to compact.' result must close its BUSY exactly once");
         assertEquals("Nothing to compact.", status(events, StatusEventTypeEnum.READY).text());
         assertTrue(events.stream().noneMatch(e -> e instanceof StatusEvent se && se.type() == StatusEventTypeEnum.FAILED),
-                "a harmless 'Nothing to compact.' must not be reported as FAILED");
+                   "a harmless 'Nothing to compact.' must not be reported as FAILED");
     }
 
     @Test
@@ -819,7 +817,7 @@ class GithubCopilotAiImplementationTest {
         assertEquals(1, manager.compactCalls);
         assertEquals(1, closingStatusCount(events));
         assertEquals("Compact failed: Copilot did not compact the conversation",
-                status(events, StatusEventTypeEnum.FAILED).text());
+                     status(events, StatusEventTypeEnum.FAILED).text());
     }
 
     @Test
@@ -834,7 +832,7 @@ class GithubCopilotAiImplementationTest {
         AiProcessEventListener listener = event -> {
             events.add(event);
             if (event instanceof StatusEvent s && (s.type() == StatusEventTypeEnum.READY
-                                                   || s.type() == StatusEventTypeEnum.FAILED || s.type() == StatusEventTypeEnum.EXITED)) {
+                    || s.type() == StatusEventTypeEnum.FAILED || s.type() == StatusEventTypeEnum.EXITED)) {
                 closing.set(s);
                 closed.countDown();
             }
@@ -863,7 +861,7 @@ class GithubCopilotAiImplementationTest {
         // Fix #4: the stop path is proven against compact() itself, not a generic runWork lambda, so the real
         // non-turn work the plugin starts is the work being closed.
         List<AiProcessEvent> events = new ArrayList<>();
-        CompletableFuture<SessionHistoryCompactResult> pending = new CompletableFuture<>();
+        CompletableFuture<CopilotCompaction> pending = new CompletableFuture<>();
         CompactManager manager = new CompactManager(events::add, pending);
         manager.setState(true, false);
         GithubCopilotSessionSettings settings = new GithubCopilotSessionSettings();
@@ -878,7 +876,7 @@ class GithubCopilotAiImplementationTest {
         assertEquals(1, countStatuses(events, StatusEventTypeEnum.FAILED));
         assertEquals(1, closingStatusCount(events));
 
-        pending.complete(new SessionHistoryCompactResult(true, 1L, 1L, null, null));
+        pending.complete(new CopilotCompaction(true, 1L, 1L));
         assertEquals(1, closingStatusCount(events), "a late completion must not close the compaction a second time");
     }
 
@@ -898,22 +896,22 @@ class GithubCopilotAiImplementationTest {
                 clickCompact(impl, newSession("gh-compact-guard", settings), stubHost(settings, new AtomicReference<>()));
 
                 assertEquals(0, manager.compactCalls, "guard must prevent the RPC: running=" + running
-                                                      + ", processing=" + processing);
+                             + ", processing=" + processing);
                 assertEquals("Wait for GitHub Copilot to finish before compacting",
-                        status(events, StatusEventTypeEnum.INFO).text());
+                             status(events, StatusEventTypeEnum.INFO).text());
             }
         }
     }
 
     @Test
     void compactCompletionMessage_reportsOnlyCountsReturnedByTheRpc() {
-        SessionHistoryCompactResult withCounts = new SessionHistoryCompactResult(true, 123L, 4L, null, null);
+        CopilotCompaction withCounts = new CopilotCompaction(true, 123L, 4L);
         assertEquals("Conversation compacted — removed 123 tokens, 4 messages",
-                GithubCopilotAiImplementation.compactCompletionMessage(withCounts));
+                     GithubCopilotAiImplementation.compactCompletionMessage(withCounts));
 
-        SessionHistoryCompactResult withoutCounts = new SessionHistoryCompactResult(true, null, null, "summary", null);
+        CopilotCompaction withoutCounts = new CopilotCompaction(true, null, null);
         assertEquals("Conversation compacted",
-                GithubCopilotAiImplementation.compactCompletionMessage(withoutCounts));
+                     GithubCopilotAiImplementation.compactCompletionMessage(withoutCounts));
     }
 
     @Test
@@ -941,8 +939,8 @@ class GithubCopilotAiImplementationTest {
             });
 
             assertNull(ext.getSelectedReasoningEffort(),
-                    "with no live discovery data for the current model, the combo must show \"(model default)\" "
-                    + "— never the global default, even though one is configured");
+                       "with no live discovery data for the current model, the combo must show \"(model default)\" "
+                       + "— never the global default, even though one is configured");
         }
         finally {
             GithubCopilotPluginSettings.setReasoningEffort(globalBefore);

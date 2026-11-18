@@ -1,21 +1,19 @@
 package kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.githubcopilot;
 
-import com.github.copilot.CopilotClient;
-import com.github.copilot.generated.rpc.AccountGetQuotaResult;
-import com.github.copilot.generated.rpc.AccountQuotaSnapshot;
-import com.github.copilot.rpc.CopilotClientOptions;
 import com.google.gson.Gson;
 import com.google.gson.JsonObject;
-import java.io.InputStream;
-import java.io.OutputStream;
-import java.util.ArrayList;
+import java.time.Duration;
 import java.util.List;
-import java.util.Locale;
 import java.util.Map;
 import java.util.concurrent.TimeUnit;
 import java.util.function.Consumer;
 import java.util.logging.Level;
 import java.util.logging.Logger;
+import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.githubcopilot.sdk.CopilotLaunch;
+import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.githubcopilot.sdk.CopilotQuotaSnapshot;
+import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.githubcopilot.sdk.CopilotRawRpc;
+import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.githubcopilot.sdk.CopilotSdkClient;
+import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.githubcopilot.sdk.CopilotSdkSelector;
 
 public final class GithubCopilotQuotaService {
 
@@ -61,38 +59,30 @@ public final class GithubCopilotQuotaService {
     }
 
     private static QuotaInfo getQuotaViaSdk(String cliPath) throws Exception {
-        CopilotClientOptions opts = new CopilotClientOptions();
-        if (cliPath != null && !cliPath.isBlank()) {
-            opts.setCliPath(cliPath);
-        }
-        // Note: CopilotClient is deliberately NOT closed via try-with-resources here.
-        // The SDK's close() can race with in-flight RPC teardown and throw a benign
-        // "Client closed" CompletionException; with try-with-resources that exception
-        // would replace an already-successful return value. Instead we close in a
-        // finally block and swallow any close-time failure so it can never clobber
-        // a valid result or be mistaken for a fetch failure.
-        CopilotClient client = new CopilotClient(opts);
+        long timeout = GithubCopilotTimeoutEnum.COPILOT_QUOTA_SERVICE_MILLIS.millis();
+        CopilotSdkClient client = CopilotSdkSelector.sdkFor(cliPath).start(
+                new CopilotLaunch(cliPath, List.of(), null, Duration.ofMillis(timeout)));
         try {
-            client.start().get(GithubCopilotTimeoutEnum.COPILOT_QUOTA_SERVICE_MILLIS.millis(), TimeUnit.MILLISECONDS);
-            AccountGetQuotaResult result = client.getRpc().account.getQuota().get(GithubCopilotTimeoutEnum.COPILOT_QUOTA_SERVICE_MILLIS.millis(), TimeUnit.MILLISECONDS);
-            if (result != null) {
-                Map<String, AccountQuotaSnapshot> snapshots = result.quotaSnapshots();
-                if (snapshots != null) {
-                    LOG.log(Level.INFO, "Copilot quota snapshots: {0}", snapshots);
-                    AccountQuotaSnapshot premiumSnapshot = snapshots.get(GithubCopilotJsonKeyEnum.PREMIUM_INTERACTIONS.key());
-                    if (premiumSnapshot != null) {
-                        java.time.OffsetDateTime resetDateTime = premiumSnapshot.resetDate();
-                        String resetDate = resetDateTime != null ? resetDateTime.toString() : null;
-                        return new QuotaInfo(
-                                premiumSnapshot.isUnlimitedEntitlement(),
-                                premiumSnapshot.usedRequests(),
-                                premiumSnapshot.entitlementRequests(),
-                                premiumSnapshot.remainingPercentage(),
-                                resetDate
-                        );
-                    }
-                }
+            Map<String, CopilotQuotaSnapshot> snapshots = client.quotaSnapshots().get(timeout, TimeUnit.MILLISECONDS);
+            if (snapshots == null) {
+                return null;
             }
+            LOG.log(Level.INFO, "Copilot quota snapshots: {0}", snapshots);
+            CopilotQuotaSnapshot premium = snapshots.get(GithubCopilotJsonKeyEnum.PREMIUM_INTERACTIONS.key());
+            if (premium == null) {
+                return null;
+            }
+            if (premium.usedRequests() == null || premium.entitlementRequests() == null
+                    || premium.remainingPercentage() == null) {
+                // A partial snapshot is unusable. Failing here sends the caller to the raw RPC tier rather than showing 0 of 0.
+                throw new IllegalStateException("SDK quota snapshot is missing its usage or entitlement fields");
+            }
+            return new QuotaInfo(
+                    Boolean.TRUE.equals(premium.unlimited()),
+                    premium.usedRequests(),
+                    premium.entitlementRequests(),
+                    premium.remainingPercentage(),
+                    premium.resetDate());
         }
         finally {
             try {
@@ -102,41 +92,12 @@ public final class GithubCopilotQuotaService {
                 LOG.log(Level.FINE, "Ignoring benign error while closing Copilot client after quota fetch", closeEx);
             }
         }
-        return null;
     }
 
     private static QuotaInfo getQuotaViaRpc(String cliPath) throws Exception {
-        Process proc = new ProcessBuilder(buildServerCommand(cliPath)).start();
-        Thread watchdog = new Thread(() -> {
-            try {
-                Thread.sleep(GithubCopilotTimeoutEnum.COPILOT_QUOTA_SERVICE_MILLIS.millis());
-                proc.destroyForcibly();
-            }
-            catch (InterruptedException ignored) {
-            }
-        }, "copilot-rpc-watchdog");
-        watchdog.setDaemon(true);
-        watchdog.start();
-        try {
-            OutputStream out = proc.getOutputStream();
-            InputStream in = proc.getInputStream();
-            GithubCopilotModelDiscovery.writeFramed(out, "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"ping\",\"params\":{}}");
-            GithubCopilotModelDiscovery.writeFramed(out, "{\"jsonrpc\":\"2.0\",\"id\":2,\"method\":\"account.getQuota\",\"params\":{}}");
-            out.flush();
-            String body;
-            while ((body = GithubCopilotModelDiscovery.readFramed(in)) != null) {
-                JsonObject msg = GSON.fromJson(body, JsonObject.class);
-                if (msg != null && msg.has(GithubCopilotJsonKeyEnum.ID.key()) && msg.get(GithubCopilotJsonKeyEnum.ID.key()).isJsonPrimitive()
-                        && msg.get(GithubCopilotJsonKeyEnum.ID.key()).getAsInt() == 2) {
-                    return parseQuotaResponse(body);
-                }
-            }
-            throw new java.io.IOException("RPC stream closed before account.getQuota response");
-        }
-        finally {
-            watchdog.interrupt();
-            proc.destroyForcibly();
-        }
+        CopilotRawRpc.Response response = CopilotRawRpc.call(cliPath, "account.getQuota",
+                                                             new JsonObject(), GithubCopilotTimeoutEnum.COPILOT_QUOTA_SERVICE_MILLIS.millis());
+        return parseQuotaResponse("{\"result\":" + GSON.toJson(response.result()) + "}");
     }
 
     private static QuotaInfo parseQuotaResponse(String responseBody) {
@@ -169,30 +130,6 @@ public final class GithubCopilotQuotaService {
         double remainingPercentage = premiumSnapshot.has(remainingKey) ? premiumSnapshot.get(remainingKey).getAsDouble() : 0;
         String resetDate = premiumSnapshot.has(resetKey) ? premiumSnapshot.get(resetKey).getAsString() : null;
         return new QuotaInfo(unlimited, usedRequests, entitlementRequests, remainingPercentage, resetDate);
-    }
-
-    private static List<String> buildServerCommand(String cliPath) {
-        String path = (cliPath != null && !cliPath.isBlank()) ? cliPath : "copilot";
-        List<String> cmd = new ArrayList<>();
-        String os = System.getProperty("os.name", "").toLowerCase(Locale.ROOT);
-        if (path.endsWith(".js")) {
-            cmd.add("node");
-            cmd.add(path);
-        }
-        else if (os.contains("win")) {
-            cmd.add("cmd");
-            cmd.add("/c");
-            cmd.add(path);
-        }
-        else {
-            cmd.add(path);
-        }
-        cmd.add("--server");
-        cmd.add("--no-auto-update");
-        cmd.add("--log-level");
-        cmd.add("error");
-        cmd.add("--stdio");
-        return cmd;
     }
 
     private GithubCopilotQuotaService() {

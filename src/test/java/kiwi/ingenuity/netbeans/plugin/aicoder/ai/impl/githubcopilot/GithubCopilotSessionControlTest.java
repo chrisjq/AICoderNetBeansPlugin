@@ -1,15 +1,9 @@
 package kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.githubcopilot;
 
-import com.github.copilot.CopilotClient;
-import com.github.copilot.CopilotSession;
-import com.github.copilot.generated.rpc.SessionHistoryCompactResult;
-import com.github.copilot.rpc.SessionConfig;
 import java.io.File;
-import java.lang.reflect.Constructor;
 import java.lang.reflect.Field;
 import java.time.Instant;
 import java.util.ArrayDeque;
-import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
@@ -22,6 +16,13 @@ import java.util.concurrent.atomic.AtomicInteger;
 import javax.swing.JButton;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.AiSessionHost;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.AiTypeEnum;
+import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.githubcopilot.sdk.CopilotCompaction;
+import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.githubcopilot.sdk.CopilotEventSink;
+import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.githubcopilot.sdk.CopilotModel;
+import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.githubcopilot.sdk.CopilotQuotaSnapshot;
+import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.githubcopilot.sdk.CopilotSdkClient;
+import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.githubcopilot.sdk.CopilotSdkSession;
+import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.githubcopilot.sdk.CopilotSessionSpec;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.githubcopilot.settings.GithubCopilotPluginSettings;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.githubcopilot.settings.GithubCopilotSessionSettings;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.githubcopilot.ui.GithubCopilotAiInfoBarExtension;
@@ -39,10 +40,10 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
 /**
- * A Copilot session binds its model and reasoning effort when it is opened. A change updates the plain fields
- * on the caller and queues the recycle on a background executor, because the recycle takes the manager
- * monitor that {@code start()} holds across its MCP wait; a send that gets in before the recycle replaces the
- * stale session itself. Recycles are held in a queue the test releases, so no assertion depends on timing.
+ * A Copilot session binds its model and reasoning effort when it is opened. A change updates the plain fields on the
+ * caller and queues the recycle on a background executor, because the recycle takes the manager monitor that
+ * {@code start()} holds across its MCP wait; a send that gets in before the recycle replaces the stale session itself.
+ * Recycles are held in a queue the test releases, so no assertion depends on timing.
  */
 class GithubCopilotSessionControlTest {
 
@@ -68,7 +69,7 @@ class GithubCopilotSessionControlTest {
 
     @Test
     void setModelUpdatesTheModelOnTheCallerAndQueuesTheRecycle() throws Exception {
-        CopilotSession live = liveSession();
+        CopilotSdkSession live = liveSession();
 
         impl.setModel("gpt-b");
 
@@ -125,7 +126,7 @@ class GithubCopilotSessionControlTest {
         GithubCopilotPluginSettings.setModelReasoningEffortInfo(Map.of("gpt-a", List.of("low", "medium")), Map.of());
 
         assertFalse(manager.liveSessionIsStale(),
-                "a global-sourced effort the model omits is unchanged, so the live session stays");
+                    "a global-sourced effort the model omits is unchanged, so the live session stays");
     }
 
     @Test
@@ -168,28 +169,15 @@ class GithubCopilotSessionControlTest {
 
     @Test
     void stopDuringTheReestablishDiscardsTheNewSession() throws Exception {
-        CountDownLatch inHook = new CountDownLatch(1);
+        CountDownLatch inCreate = new CountDownLatch(1);
         CountDownLatch release = new CountDownLatch(1);
-        ScriptedManager slow = new ScriptedManager(created) {
-            @Override
-            CompletableFuture<CopilotSession> createSessionHook(CopilotClient client, SessionConfig config) {
-                inHook.countDown();
-                try {
-                    if (!release.await(30, TimeUnit.SECONDS)) {
-                        throw new IllegalStateException("test never released the create");
-                    }
-                }
-                catch (InterruptedException e) {
-                    Thread.currentThread().interrupt();
-                }
-                return super.createSessionHook(client, config);
-            }
-        };
+        ScriptedManager slow = new ScriptedManager(created, event -> {
+                                           }, inCreate, release);
         slow.seedLiveSession("gpt-a", null);
         slow.setModelForTest("gpt-b");
         try {
             slow.sendPrompt("hello", null, List.of());
-            assertTrue(inHook.await(30, TimeUnit.SECONDS));
+            assertTrue(inCreate.await(30, TimeUnit.SECONDS));
 
             slow.stop();
             release.countDown();
@@ -205,11 +193,11 @@ class GithubCopilotSessionControlTest {
 
     @Test
     void compactDoesNotWaitForTheManagerMonitor() throws Exception {
-        CompletableFuture<SessionHistoryCompactResult> pending = new CompletableFuture<>();
+        CompletableFuture<CopilotCompaction> pending = new CompletableFuture<>();
         AtomicInteger compactCalls = new AtomicInteger();
         ScriptedManager compactable = new ScriptedManager(created) {
             @Override
-            CompletableFuture<SessionHistoryCompactResult> compactHistory(String customInstructions) {
+            CompletableFuture<CopilotCompaction> compactHistory(String customInstructions) {
                 compactCalls.incrementAndGet();
                 return pending;
             }
@@ -217,7 +205,7 @@ class GithubCopilotSessionControlTest {
         compactable.seedLiveSession("gpt-a", null);
         GithubCopilotSessionSettings settings = new GithubCopilotSessionSettings();
         AiSession session = new AiSession("gh-control-compact", "Test", null, AiTypeEnum.GitHubCoPilot, null,
-                settings, Instant.now(), Instant.now());
+                                          settings, Instant.now(), Instant.now());
         GithubCopilotAiImplementation compactImpl = new GithubCopilotAiImplementation(event -> {
         }, null, compactable) {
             {
@@ -282,8 +270,8 @@ class GithubCopilotSessionControlTest {
         }
     }
 
-    private CopilotSession liveSession() throws Exception {
-        return (CopilotSession) get(manager, "copilotSession");
+    private CopilotSdkSession liveSession() throws Exception {
+        return (CopilotSdkSession) get(manager, "copilotSession");
     }
 
     private static Object get(Object target, String fieldName) throws Exception {
@@ -298,39 +286,33 @@ class GithubCopilotSessionControlTest {
         f.set(target, value);
     }
 
-    private static CopilotSession newDetachedSession() throws Exception {
-        @SuppressWarnings("unchecked")
-        Constructor<CopilotSession> ctor = (Constructor<CopilotSession>) Arrays
-                .stream(CopilotSession.class.getDeclaredConstructors())
-                .filter(c -> c.getParameterCount() == 3 && c.getParameterTypes()[0] == String.class)
-                .findFirst().orElseThrow();
-        ctor.setAccessible(true);
-        return ctor.newInstance("test-session", null, null);
-    }
-
     /**
-     * Opens "sessions" through the manager's create hook, recording the model and effort each was opened
+     * Drives session creation through a protocol-neutral client, recording the model and effort each session was opened
      * with, and reports when a background re-establish has finished its trailing send.
      */
     private static class ScriptedManager extends GithubCopilotProcessManager {
 
         private final List<String> created;
+        private final FakeClient client;
         private final CountDownLatch reestablished = new CountDownLatch(1);
 
         ScriptedManager(List<String> created) {
             this(created, event -> {
-            });
+         }, null, null);
         }
 
-        ScriptedManager(List<String> created, AiProcessEventListener listener) {
+        ScriptedManager(List<String> created, AiProcessEventListener listener,
+                        CountDownLatch inCreate, CountDownLatch release) {
             super(listener);
             this.created = created;
+            this.client = new FakeClient(created, inCreate, release);
         }
 
         void seedLiveSession(String liveModel, String liveEffort) throws Exception {
             running = true;
             model = liveModel;
-            set(this, "copilotSession", newDetachedSession());
+            set(this, "client", client);
+            set(this, "copilotSession", new FakeSession("test-session"));
             set(this, "launchedModel", liveModel);
             set(this, "launchedEffort", liveEffort);
             set(this, "launchRecorded", true);
@@ -342,17 +324,6 @@ class GithubCopilotSessionControlTest {
 
         void awaitReestablished() throws InterruptedException {
             assertTrue(reestablished.await(30, TimeUnit.SECONDS), "the background re-establish did not finish");
-        }
-
-        @Override
-        CompletableFuture<CopilotSession> createSessionHook(CopilotClient client, SessionConfig config) {
-            created.add(config.getModel() + "|" + config.getReasoningEffort());
-            try {
-                return CompletableFuture.completedFuture(newDetachedSession());
-            }
-            catch (Exception e) {
-                return CompletableFuture.failedFuture(e);
-            }
         }
 
         @Override
@@ -371,6 +342,114 @@ class GithubCopilotSessionControlTest {
                     reestablished.countDown();
                 }
             }
+        }
+    }
+
+    /**
+     * A small in-memory {@link CopilotSdkClient}: creates sessions with the requested spec and records each one.
+     */
+    private static final class FakeClient implements CopilotSdkClient {
+
+        private final List<String> created;
+        private final CountDownLatch inCreate;
+        private final CountDownLatch release;
+
+        FakeClient(List<String> created, CountDownLatch inCreate, CountDownLatch release) {
+            this.created = created;
+            this.inCreate = inCreate;
+            this.release = release;
+        }
+
+        @Override
+        public CompletableFuture<List<String>> listSessionIds() {
+            return CompletableFuture.completedFuture(List.of());
+        }
+
+        @Override
+        public CompletableFuture<CopilotSdkSession> create(CopilotSessionSpec spec) {
+            created.add(spec.model() + "|" + spec.reasoningEffort());
+            if (inCreate != null) {
+                inCreate.countDown();
+                try {
+                    if (!release.await(30, TimeUnit.SECONDS)) {
+                        throw new IllegalStateException("test never released the create");
+                    }
+                }
+                catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                }
+            }
+            return CompletableFuture.completedFuture(new FakeSession("test-session"));
+        }
+
+        @Override
+        public CompletableFuture<CopilotSdkSession> resume(String sessionId, CopilotSessionSpec spec) {
+            return create(spec);
+        }
+
+        @Override
+        public CompletableFuture<List<CopilotModel>> listModels() {
+            return CompletableFuture.completedFuture(List.of());
+        }
+
+        @Override
+        public CompletableFuture<Map<String, CopilotQuotaSnapshot>> quotaSnapshots() {
+            return CompletableFuture.completedFuture(Map.of());
+        }
+
+        @Override
+        public void close() {
+        }
+    }
+
+    /**
+     * A detached session that accepts all calls the manager makes without touching a CLI or the SDK.
+     */
+    private static final class FakeSession implements CopilotSdkSession {
+
+        private final String sessionId;
+
+        FakeSession(String sessionId) {
+            this.sessionId = sessionId;
+        }
+
+        @Override
+        public String sessionId() {
+            return sessionId;
+        }
+
+        @Override
+        public CompletableFuture<String> send(String prompt) {
+            return CompletableFuture.completedFuture("queued");
+        }
+
+        @Override
+        public CompletableFuture<String> sendImmediate(String prompt) {
+            return CompletableFuture.completedFuture("queued");
+        }
+
+        @Override
+        public CompletableFuture<Void> abort() {
+            return CompletableFuture.completedFuture(null);
+        }
+
+        @Override
+        public CompletableFuture<CopilotCompaction> compact(String customInstructions) {
+            return CompletableFuture.completedFuture(new CopilotCompaction(true, 0L, 0L));
+        }
+
+        @Override
+        public void abortManualCompaction() {
+        }
+
+        @Override
+        public AutoCloseable subscribe(CopilotEventSink sink) {
+            return () -> {
+            };
+        }
+
+        @Override
+        public void close() {
         }
     }
 

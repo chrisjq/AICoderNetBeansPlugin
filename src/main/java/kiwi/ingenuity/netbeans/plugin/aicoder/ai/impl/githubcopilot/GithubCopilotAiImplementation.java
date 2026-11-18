@@ -1,6 +1,5 @@
 package kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.githubcopilot;
 
-import com.github.copilot.generated.rpc.SessionHistoryCompactResult;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
@@ -25,6 +24,7 @@ import kiwi.ingenuity.netbeans.plugin.aicoder.ai.events.StatusEvent;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.events.StatusEventTypeEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.githubcopilot.events.GithubCopilotQuotaEvent;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.githubcopilot.events.GithubCopilotReasoningEffortsEvent;
+import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.githubcopilot.sdk.CopilotCompaction;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.githubcopilot.settings.GithubCopilotPluginSettings;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.githubcopilot.settings.GithubCopilotSessionSettings;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.githubcopilot.ui.GithubCopilotAiInfoBarExtension;
@@ -441,7 +441,7 @@ public class GithubCopilotAiImplementation extends AiImplementation {
         return AiProcessManager.DEFAULT_WORK_TIMEOUT_MILLIS;
     }
 
-    static String compactCompletionMessage(SessionHistoryCompactResult result) {
+    static String compactCompletionMessage(CopilotCompaction result) {
         StringBuilder message = new StringBuilder("Conversation compacted");
         if (result.tokensRemoved() != null || result.messagesRemoved() != null) {
             message.append(" — removed ");

@@ -1,8 +1,5 @@
 package kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.githubcopilot;
 
-import com.github.copilot.rpc.PermissionInvocation;
-import com.github.copilot.rpc.PermissionRequest;
-import com.github.copilot.rpc.PermissionRequestResult;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
@@ -17,10 +14,13 @@ import kiwi.ingenuity.netbeans.plugin.aicoder.ai.McpSteeringPolicy;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.events.ConfirmEvent;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.events.PermissionDecision;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.events.ToolUseEvent;
+import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.githubcopilot.sdk.CopilotPermissionDecision;
+import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.githubcopilot.sdk.CopilotPermissionRequest;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.session.AiSession;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.McpToolEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.SessionRegistry;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.events.AiProcessEvent;
+import kiwi.ingenuity.netbeans.plugin.aicoder.process.events.AiProcessEventListener;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.server.McpHookServerUtil;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.session.AbstractAiSession;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.tools.mcp.McpToolInterface;
@@ -35,37 +35,30 @@ import org.junit.jupiter.api.Test;
 
 class GithubCopilotPermissionHandlerTest {
 
-    private static PermissionRequest request(String kind) {
-        PermissionRequest r = new PermissionRequest();
-        r.setKind(kind);
-        r.setToolCallId("call-1");
-        return r;
-    }
-
-    private static PermissionInvocation invocation() {
-        return new PermissionInvocation().setSessionId("session-1");
+    private static CopilotPermissionRequest request(String kind) {
+        return new CopilotPermissionRequest(kind, "call-1", null);
     }
 
     /**
-     * Our own MCP calls must never prompt — but they do announce themselves with a ToolUseEvent, which is
-     * what sets AiTopComponent's pendingNewlineBeforeText and so separates the model's narration either side
-     * of the call. Copilot emitted no such event at all, and the two text blocks were appended to one bubble
-     * verbatim, rendering as "...classes:Let me try...".
+     * Our own MCP calls must never prompt — but they do announce themselves with a ToolUseEvent, which is what sets
+     * AiTopComponent's pendingNewlineBeforeText and so separates the model's narration either side of the call. Copilot
+     * emitted no such event at all, and the two text blocks were appended to one bubble verbatim, rendering as
+     * "...classes:Let me try...".
      */
     @Test
     void ourMcpServerKindApprovesAndAnnouncesWithoutPrompting() throws Exception {
         AtomicReference<AiProcessEvent> raised = new AtomicReference<>();
         GithubCopilotPermissionHandler handler = new GithubCopilotPermissionHandler(raised::set, "session-1");
 
-        CompletableFuture<PermissionRequestResult> future
-                                                   = handler.handle(request("aicoder-nb-ki-plugin(GetFileContent)"), invocation());
+        CompletableFuture<CopilotPermissionDecision> future
+                = handler.decide(request("aicoder-nb-ki-plugin(GetFileContent)"));
 
         assertTrue(future.isDone());
-        assertEquals("approve-once", future.get().getKind());
+        assertInstanceOf(CopilotPermissionDecision.ApproveOnce.class, future.get());
         assertFalse(raised.get() instanceof ConfirmEvent,
-                "our own MCP server calls must not raise a ConfirmEvent");
+                    "our own MCP server calls must not raise a ConfirmEvent");
         ToolUseEvent tu = assertInstanceOf(ToolUseEvent.class, raised.get(),
-                "the call must still be announced so the narration around it stays separated");
+                                           "the call must still be announced so the narration around it stays separated");
         assertEquals(ToolUseEvent.Kind.OTHER, tu.kind());
         assertFalse(tu.isFileModification(), "an MCP call must not trigger the diff panel");
     }
@@ -75,7 +68,7 @@ class GithubCopilotPermissionHandlerTest {
         AtomicReference<AiProcessEvent> raised = new AtomicReference<>();
         GithubCopilotPermissionHandler handler = new GithubCopilotPermissionHandler(raised::set, "session-1");
 
-        CompletableFuture<PermissionRequestResult> future = handler.handle(request("commands(echo)"), invocation());
+        CompletableFuture<CopilotPermissionDecision> future = handler.decide(request("commands(echo)"));
 
         assertFalse(future.isDone(), "must wait on the user rather than auto-resolving");
         ConfirmEvent ce = (ConfirmEvent) raised.get();
@@ -83,7 +76,7 @@ class GithubCopilotPermissionHandlerTest {
         assertTrue(ce.requireExplicitApproval());
         ce.response().complete(PermissionDecision.allowed());
 
-        assertEquals("approve-once", future.get().getKind());
+        assertInstanceOf(CopilotPermissionDecision.ApproveOnce.class, future.get());
     }
 
     @Test
@@ -91,14 +84,13 @@ class GithubCopilotPermissionHandlerTest {
         AtomicReference<AiProcessEvent> raised = new AtomicReference<>();
         GithubCopilotPermissionHandler handler = new GithubCopilotPermissionHandler(raised::set, "session-1");
 
-        CompletableFuture<PermissionRequestResult> future = handler.handle(request("commands(rm -rf /)"), invocation());
+        CompletableFuture<CopilotPermissionDecision> future = handler.decide(request("commands(rm -rf /)"));
 
         ConfirmEvent ce = (ConfirmEvent) raised.get();
         ce.response().complete(PermissionDecision.denied("no"));
 
-        PermissionRequestResult result = future.get();
-        assertEquals("reject", result.getKind());
-        assertEquals("no", result.getFeedback());
+        CopilotPermissionDecision.Reject result = assertInstanceOf(CopilotPermissionDecision.Reject.class, future.get());
+        assertEquals("no", result.feedback());
     }
 
     @Test
@@ -106,7 +98,7 @@ class GithubCopilotPermissionHandlerTest {
         AtomicReference<AiProcessEvent> raised = new AtomicReference<>();
         GithubCopilotPermissionHandler handler = new GithubCopilotPermissionHandler(raised::set, "session-1");
 
-        handler.handle(request("commands"), invocation());
+        handler.decide(request("commands"));
 
         assertTrue(raised.get() instanceof ConfirmEvent);
         assertEquals("Shell", ((ConfirmEvent) raised.get()).toolName());
@@ -118,9 +110,9 @@ class GithubCopilotPermissionHandlerTest {
             AtomicReference<AiProcessEvent> raised = new AtomicReference<>();
             GithubCopilotPermissionHandler handler = new GithubCopilotPermissionHandler(raised::set, "session-1");
 
-            PermissionRequestResult result = handler.handle(request(kind), invocation()).get();
+            CopilotPermissionDecision.Reject result = assertInstanceOf(CopilotPermissionDecision.Reject.class,
+                                                                       handler.decide(request(kind)).get());
 
-            assertEquals("reject", result.getKind());
             String expectedTool = switch (kind) {
                 case "read" ->
                     "GetFileContent";
@@ -129,9 +121,9 @@ class GithubCopilotPermissionHandlerTest {
                 default ->
                     "WebRequest";
             };
-            assertTrue(result.getFeedback().contains(expectedTool));
+            assertTrue(result.feedback().contains(expectedTool));
             assertNull(raised.get(),
-                    "a steering refusal is kept in the tool-use log, not announced in the chat transcript");
+                       "a steering refusal is kept in the tool-use log, not announced in the chat transcript");
         }
     }
 
@@ -140,12 +132,12 @@ class GithubCopilotPermissionHandlerTest {
         AtomicReference<AiProcessEvent> raised = new AtomicReference<>();
         GithubCopilotPermissionHandler handler = new GithubCopilotPermissionHandler(raised::set, "session-1");
 
-        PermissionRequestResult result = handler.handle(request("some-future-kind(thing)"), invocation()).get();
+        CopilotPermissionDecision.Reject result = assertInstanceOf(CopilotPermissionDecision.Reject.class,
+                                                                   handler.decide(request("some-future-kind(thing)")).get());
 
-        assertEquals("reject", result.getKind());
-        assertTrue(result.getFeedback().contains("GetInstructions"));
+        assertTrue(result.feedback().contains("GetInstructions"));
         assertNull(raised.get(),
-                "a steering refusal is kept in the tool-use log, not announced in the chat transcript");
+                   "a steering refusal is kept in the tool-use log, not announced in the chat transcript");
     }
 
     // ---- cancelPendingPermissions ----
@@ -165,18 +157,18 @@ class GithubCopilotPermissionHandlerTest {
         AtomicReference<AiProcessEvent> raised = new AtomicReference<>();
         GithubCopilotPermissionHandler handler = new GithubCopilotPermissionHandler(raised::set, "session-1");
 
-        CompletableFuture<PermissionRequestResult> future = handler.handle(request("commands(rm -rf /)"), invocation());
+        CompletableFuture<CopilotPermissionDecision> future = handler.decide(request("commands(rm -rf /)"));
         assertFalse(future.isDone());
 
         handler.cancelPendingPermissions();
 
-        PermissionRequestResult result = future.get();
+        CopilotPermissionDecision result = future.get();
         // userNotAvailable(), NOT reject(): reject() reads to the SDK as a deliberate
         // "no" the agent may retry or explain around, and NOT noResult(): that means
         // "let another connected client answer", which does not apply here and throws
         // outright against a v2 (non-broadcast) server per the SDK's own javadoc.
-        assertEquals("user-not-available", result.getKind(),
-                "cancelPendingPermissions must reply userNotAvailable(), not reject() or noResult()");
+        assertInstanceOf(CopilotPermissionDecision.UserNotAvailable.class, result,
+                         "cancelPendingPermissions must reply userNotAvailable(), not reject() or noResult()");
     }
 
     @Test
@@ -184,7 +176,7 @@ class GithubCopilotPermissionHandlerTest {
         AtomicReference<AiProcessEvent> raised = new AtomicReference<>();
         GithubCopilotPermissionHandler handler = new GithubCopilotPermissionHandler(raised::set, "session-1");
 
-        CompletableFuture<PermissionRequestResult> future = handler.handle(request("commands(/tmp/x)"), invocation());
+        CompletableFuture<CopilotPermissionDecision> future = handler.decide(request("commands(/tmp/x)"));
 
         handler.cancelPendingPermissions();
 
@@ -196,19 +188,19 @@ class GithubCopilotPermissionHandlerTest {
         AtomicReference<AiProcessEvent> raised = new AtomicReference<>();
         GithubCopilotPermissionHandler handler = new GithubCopilotPermissionHandler(raised::set, "session-1");
 
-        CompletableFuture<PermissionRequestResult> future = handler.handle(request("commands(example.com)"), invocation());
+        CompletableFuture<CopilotPermissionDecision> future = handler.decide(request("commands(example.com)"));
         ConfirmEvent ce = (ConfirmEvent) raised.get();
 
         handler.cancelPendingPermissions();
-        assertEquals("user-not-available", future.get().getKind());
+        assertInstanceOf(CopilotPermissionDecision.UserNotAvailable.class, future.get());
 
         // The dialog is stale by the time the user answers it late — completing it now
         // must be a no-op (the future is already resolved) rather than calling back
         // into the SDK for a turn that has already been torn down.
         boolean changed = ce.response().complete(PermissionDecision.allowed());
         assertFalse(changed, "a stale confirm dialog must not be able to resolve after cancellation");
-        assertEquals("user-not-available", future.get().getKind(),
-                "the already-resolved outcome must not change after a late answer");
+        assertInstanceOf(CopilotPermissionDecision.UserNotAvailable.class, future.get(),
+                         "the already-resolved outcome must not change after a late answer");
     }
 
     @Test
@@ -216,16 +208,16 @@ class GithubCopilotPermissionHandlerTest {
         AtomicReference<AiProcessEvent> raised = new AtomicReference<>();
         GithubCopilotPermissionHandler handler = new GithubCopilotPermissionHandler(raised::set, "session-1");
 
-        CompletableFuture<PermissionRequestResult> future = handler.handle(request("commands(echo)"), invocation());
+        CompletableFuture<CopilotPermissionDecision> future = handler.decide(request("commands(echo)"));
         ConfirmEvent ce = (ConfirmEvent) raised.get();
         ce.response().complete(PermissionDecision.allowed());
-        assertEquals("approve-once", future.get().getKind());
+        assertInstanceOf(CopilotPermissionDecision.ApproveOnce.class, future.get());
 
-        // pendingPermission was already cleared by handle()'s own .handle() continuation
+        // pendingPermission was already cleared by decide()'s own .handle() continuation
         // — nothing left to cancel, and the already-resolved outcome must be untouched.
         handler.cancelPendingPermissions();
 
-        assertEquals("approve-once", future.get().getKind());
+        assertInstanceOf(CopilotPermissionDecision.ApproveOnce.class, future.get());
     }
 
     // ---- MCP Steering ----
@@ -243,7 +235,7 @@ class GithubCopilotPermissionHandlerTest {
             }
 
             @Override
-            public kiwi.ingenuity.netbeans.plugin.aicoder.process.events.AiProcessEventListener
+            public AiProcessEventListener
                     getAiProcessEventListener() {
                 return null;
             }
@@ -270,22 +262,21 @@ class GithubCopilotPermissionHandlerTest {
         AtomicReference<AiProcessEvent> raised = new AtomicReference<>();
         GithubCopilotPermissionHandler handler = new GithubCopilotPermissionHandler(raised::set, testSessionId);
 
-        CompletableFuture<PermissionRequestResult> future = handler.handle(request("commands(echo)"), invocation());
+        CompletableFuture<CopilotPermissionDecision> future = handler.decide(request("commands(echo)"));
 
         // Should be resolved immediately, not waiting for user input
         assertTrue(future.isDone(), "steering ON should auto-deny without waiting for user");
 
         // No event at all: the refusal is a tool-use log line, not a chat announcement.
         assertNull(raised.get(),
-                "steering ON must not announce refusals in chat (they go to the tool-use log)");
+                   "steering ON must not announce refusals in chat (they go to the tool-use log)");
 
         // Reject with steering feedback
-        PermissionRequestResult result = future.get();
-        assertEquals("reject", result.getKind());
-        String feedback = result.getFeedback();
+        CopilotPermissionDecision.Reject result = assertInstanceOf(CopilotPermissionDecision.Reject.class, future.get());
+        String feedback = result.feedback();
         assertTrue(feedback.contains("Refused automatically"), "feedback must state refusal is automatic");
         assertTrue(feedback.contains(McpSteeringPolicy.steeringFeedbackFor(McpSteeringPolicy.Category.SHELL)),
-                "feedback must contain steering text for SHELL");
+                   "feedback must contain steering text for SHELL");
     }
 
     @Test
@@ -295,11 +286,11 @@ class GithubCopilotPermissionHandlerTest {
         AtomicReference<AiProcessEvent> raised = new AtomicReference<>();
         GithubCopilotPermissionHandler handler = new GithubCopilotPermissionHandler(raised::set, "unregistered-session");
 
-        CompletableFuture<PermissionRequestResult> future = handler.handle(request("commands(echo)"), invocation());
+        CompletableFuture<CopilotPermissionDecision> future = handler.decide(request("commands(echo)"));
 
         assertFalse(future.isDone(), "must wait on the user rather than auto-resolving when steering is off");
         assertTrue(raised.get() instanceof ConfirmEvent,
-                "shell requests must raise ConfirmEvent when steering is off (no session registered)");
+                   "shell requests must raise ConfirmEvent when steering is off (no session registered)");
         assertEquals("Shell", ((ConfirmEvent) raised.get()).toolName());
     }
 
@@ -309,14 +300,14 @@ class GithubCopilotPermissionHandlerTest {
         AtomicReference<AiProcessEvent> raised = new AtomicReference<>();
         GithubCopilotPermissionHandler handler = new GithubCopilotPermissionHandler(raised::set, testSessionId);
 
-        CompletableFuture<PermissionRequestResult> future
-                                                   = handler.handle(request("aicoder-nb-ki-plugin(GetFileContent)"), invocation());
+        CompletableFuture<CopilotPermissionDecision> future
+                = handler.decide(request("aicoder-nb-ki-plugin(GetFileContent)"));
 
         assertTrue(future.isDone());
-        assertEquals("approve-once", future.get().getKind(),
-                "MCP_OUR_SERVER must approve without checking steering status");
+        assertInstanceOf(CopilotPermissionDecision.ApproveOnce.class, future.get(),
+                         "MCP_OUR_SERVER must approve without checking steering status");
         assertFalse(raised.get() instanceof ConfirmEvent,
-                "MCP_OUR_SERVER must never raise a ConfirmEvent");
+                    "MCP_OUR_SERVER must never raise a ConfirmEvent");
     }
 
     @Test
@@ -329,18 +320,18 @@ class GithubCopilotPermissionHandlerTest {
             AtomicReference<AiProcessEvent> raised = new AtomicReference<>();
             GithubCopilotPermissionHandler handler = new GithubCopilotPermissionHandler(raised::set, testSessionId);
 
-            PermissionRequestResult result = handler.handle(request(kind), invocation()).get();
+            CopilotPermissionDecision.Reject result = assertInstanceOf(CopilotPermissionDecision.Reject.class,
+                                                                       handler.decide(request(kind)).get());
 
-            assertEquals("reject", result.getKind());
-            String feedback = result.getFeedback();
+            String feedback = result.feedback();
             // INTERNAL must state refusal is automatic (not user's doing)
             assertTrue(feedback.contains("Refused automatically by this IDE"),
-                    "INTERNAL must state refusal is automatic and not user decision");
+                       "INTERNAL must state refusal is automatic and not user decision");
             // INTERNAL must NOT mention the steering policy specifically
             assertFalse(feedback.contains("steering policy"),
-                    "INTERNAL rejection is unconditional, not from the steering policy");
+                        "INTERNAL rejection is unconditional, not from the steering policy");
             assertNull(raised.get(),
-                    "a steering refusal is kept in the tool-use log, not announced in the chat transcript");
+                       "a steering refusal is kept in the tool-use log, not announced in the chat transcript");
         }
     }
 
@@ -373,19 +364,19 @@ class GithubCopilotPermissionHandlerTest {
             AtomicReference<AiProcessEvent> raised = new AtomicReference<>();
             GithubCopilotPermissionHandler handler = new GithubCopilotPermissionHandler(raised::set, testSessionId);
 
-            CompletableFuture<PermissionRequestResult> future = handler.handle(request("write"), invocation());
+            CompletableFuture<CopilotPermissionDecision> future = handler.decide(request("write"));
 
             assertTrue(future.isDone(), "steering ON must auto-deny a write without waiting for user");
-            PermissionRequestResult result = future.get();
-            assertEquals("reject", result.getKind());
-            assertTrue(result.getFeedback().contains(McpSteeringPolicy.steeringFeedbackFor(
+            CopilotPermissionDecision.Reject result = assertInstanceOf(CopilotPermissionDecision.Reject.class,
+                                                                       future.get());
+            assertTrue(result.feedback().contains(McpSteeringPolicy.steeringFeedbackFor(
                     McpSteeringPolicy.Category.WRITE)),
-                    "a steered write must carry the WRITE steer text, not the generic GetInstructions one");
+                       "a steered write must carry the WRITE steer text, not the generic GetInstructions one");
             assertNull(raised.get(),
-                    "the refusal is only a tool-use log line, never a chat event");
+                       "the refusal is only a tool-use log line, never a chat event");
             assertEquals("MCP Steering refusal: backend=copilot, category=WRITE: "
-                         + GithubCopilotPermissionPolicy.describeRequest("write", null),
-                    captured.get(0), "the write refusal must log under category=WRITE");
+                    + GithubCopilotPermissionPolicy.describeRequest("write", null),
+                         captured.get(0), "the write refusal must log under category=WRITE");
         }
         finally {
             logger.removeHandler(capture);
@@ -401,16 +392,17 @@ class GithubCopilotPermissionHandlerTest {
         AtomicReference<AiProcessEvent> raised = new AtomicReference<>();
         GithubCopilotPermissionHandler handler = new GithubCopilotPermissionHandler(raised::set, "unregistered-session");
 
-        CompletableFuture<PermissionRequestResult> future = handler.handle(request("write"), invocation());
+        CompletableFuture<CopilotPermissionDecision> future = handler.decide(request("write"));
 
         assertFalse(future.isDone(), "steering OFF must not auto-resolve a write; the user must be asked");
         ConfirmEvent ce = assertInstanceOf(ConfirmEvent.class, raised.get(),
-                "with steering off a write must raise the user confirm prompt, not an auto-denial");
+                                           "with steering off a write must raise the user confirm prompt, not an auto-denial");
         assertEquals("Write", ce.toolName());
         assertTrue(ce.requireExplicitApproval());
         ce.response().complete(PermissionDecision.denied("no"));
-        assertEquals("reject", future.get().getKind());
-        assertEquals("no", future.get().getFeedback());
+        CopilotPermissionDecision.Reject rejected = assertInstanceOf(CopilotPermissionDecision.Reject.class,
+                                                                     future.get());
+        assertEquals("no", rejected.feedback());
     }
 
     @Test
@@ -449,27 +441,27 @@ class GithubCopilotPermissionHandlerTest {
                 AtomicReference<AiProcessEvent> raised = new AtomicReference<>();
                 GithubCopilotPermissionHandler handler = new GithubCopilotPermissionHandler(raised::set, "session-1");
 
-                PermissionRequestResult result = handler.handle(request(kind), invocation()).get();
+                CopilotPermissionDecision result = handler.decide(request(kind)).get();
 
-                assertEquals("reject", result.getKind());
+                assertInstanceOf(CopilotPermissionDecision.Reject.class, result);
                 assertNull(raised.get(),
-                        "the refusal is only a log line, never an event");
+                           "the refusal is only a log line, never an event");
                 assertEquals("MCP Steering refusal: backend=copilot, category=" + categories[i] + ": "
-                             + GithubCopilotPermissionPolicy.describeRequest(kind, null),
-                        captured.get(i), "one line per refusal, naming its category and what was refused");
+                        + GithubCopilotPermissionPolicy.describeRequest(kind, null),
+                             captured.get(i), "one line per refusal, naming its category and what was refused");
             }
             assertEquals(4, captured.size(),
-                    "exactly one line per refusal — the old SystemNotificationEvent is not additionally logged");
+                         "exactly one line per refusal — the old SystemNotificationEvent is not additionally logged");
 
             // SHELL steering refusal (needs an active steering session, registered in @BeforeEach).
             AtomicReference<AiProcessEvent> raised = new AtomicReference<>();
             GithubCopilotPermissionHandler handler = new GithubCopilotPermissionHandler(raised::set, testSessionId);
-            PermissionRequestResult result = handler.handle(request("commands(echo)"), invocation()).get();
-            assertEquals("reject", result.getKind());
+            CopilotPermissionDecision result = handler.decide(request("commands(echo)")).get();
+            assertInstanceOf(CopilotPermissionDecision.Reject.class, result);
             assertNull(raised.get(), "the shell refusal is only a log line, never an event");
             assertEquals("MCP Steering refusal: backend=copilot, category=SHELL: "
-                         + GithubCopilotPermissionPolicy.describeRequest("commands(echo)", null),
-                    captured.get(4), "the shell refusal logs one line, not a chat notification");
+                    + GithubCopilotPermissionPolicy.describeRequest("commands(echo)", null),
+                         captured.get(4), "the shell refusal logs one line, not a chat notification");
             assertEquals(5, captured.size());
         }
         finally {
@@ -503,18 +495,58 @@ class GithubCopilotPermissionHandlerTest {
 
             AtomicReference<AiProcessEvent> raised = new AtomicReference<>();
             GithubCopilotPermissionHandler handler = new GithubCopilotPermissionHandler(raised::set, testSessionId);
-            handler.handle(request("read"), invocation()).get();
-            PermissionRequestResult shell = handler.handle(request("commands(echo)"), invocation()).get();
-            assertEquals("reject", shell.getKind());
+            handler.decide(request("read")).get();
+            CopilotPermissionDecision shell = handler.decide(request("commands(echo)")).get();
+            assertInstanceOf(CopilotPermissionDecision.Reject.class, shell);
             assertNull(raised.get(),
-                    "a steering refusal must not raise any event whether or not tool-use logging is on");
+                       "a steering refusal must not raise any event whether or not tool-use logging is on");
 
             assertTrue(captured.isEmpty(),
-                    "with tool-use logging off, a steering refusal must keep out of the log");
+                       "with tool-use logging off, a steering refusal must keep out of the log");
         }
         finally {
             logger.removeHandler(capture);
             PluginSettings.setLogToolUse(previous);
         }
+    }
+
+    /**
+     * A handler retired with its session cancels the dialog still open and answers every later request "user not
+     * available" at once, raising nothing: a request the old reader thread delivers after the teardown must not show a
+     * dialog for a dead session in the next run.
+     */
+    @Test
+    void aClosedHandlerCancelsItsDialogAndAnswersLaterRequestsWithoutAnEvent() throws Exception {
+        List<AiProcessEvent> raised = new ArrayList<>();
+        GithubCopilotPermissionHandler handler = new GithubCopilotPermissionHandler(raised::add, "session-1");
+        CompletableFuture<CopilotPermissionDecision> open = handler.decide(request("commands(echo)"));
+        assertEquals(1, raised.size(), "the open request raised its dialog");
+
+        handler.close();
+
+        assertInstanceOf(CopilotPermissionDecision.UserNotAvailable.class, open.get(),
+                         "the dialog still open is answered when the handler closes");
+        for (String kind : new String[]{"commands(ls)", "write", "aicoder-nb-ki-plugin(GetFileContent)"}) {
+            CompletableFuture<CopilotPermissionDecision> late = handler.decide(request(kind));
+            assertTrue(late.isDone(), kind + " must be answered at once");
+            assertInstanceOf(CopilotPermissionDecision.UserNotAvailable.class, late.get(), kind);
+        }
+        assertEquals(1, raised.size(), () -> "a closed handler must raise nothing: " + raised);
+    }
+
+    /**
+     * A Stop only cancels the open dialog: the session and its handler stay, so the next turn can still ask.
+     */
+    @Test
+    void cancellingPendingPermissionsDoesNotCloseTheHandler() {
+        List<AiProcessEvent> raised = new ArrayList<>();
+        GithubCopilotPermissionHandler handler = new GithubCopilotPermissionHandler(raised::add, "session-1");
+        handler.decide(request("commands(echo)"));
+
+        handler.cancelPendingPermissions();
+        CompletableFuture<CopilotPermissionDecision> next = handler.decide(request("commands(ls)"));
+
+        assertFalse(next.isDone(), "the next request must wait on the user again");
+        assertInstanceOf(ConfirmEvent.class, raised.get(raised.size() - 1));
     }
 }

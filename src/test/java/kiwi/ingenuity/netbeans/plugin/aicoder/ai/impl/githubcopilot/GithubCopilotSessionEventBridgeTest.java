@@ -1,69 +1,143 @@
 package kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.githubcopilot;
 
-import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.githubcopilot.GithubCopilotSessionEventBridge;
-import com.github.copilot.CopilotSession;
-import com.github.copilot.generated.AssistantTurnEndEvent;
-import com.github.copilot.generated.SessionEvent;
-import com.github.copilot.generated.SessionIdleEvent;
-import java.lang.reflect.Constructor;
-import java.lang.reflect.Method;
 import java.util.ArrayList;
-import java.util.Arrays;
 import java.util.List;
+import java.util.concurrent.CompletableFuture;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.events.TurnCompleteEvent;
+import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.githubcopilot.sdk.CopilotCompaction;
+import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.githubcopilot.sdk.CopilotEventSink;
+import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.githubcopilot.sdk.CopilotSdkSession;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.events.AiProcessEventListener;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertSame;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.Timeout;
 
-/**
- * The Copilot CLI's agentic loop emits one assistant.turn_end per internal step
- * (e.g. a tool-only step with no text output), not one per user-visible
- * response. The SDK's own sendAndWait() treats only session.idle as "the
- * response is actually finished" (see CopilotSession#sendAndWait). The bridge
- * must match that: AssistantTurnEndEvent alone must not surface
- * TurnCompleteEvent, or the send button re-enables mid-response.
- */
 class GithubCopilotSessionEventBridgeTest {
 
-    @SuppressWarnings("unchecked")
-    private static CopilotSession newDetachedSession() throws Exception {
-        // JsonRpcClient is package-private, so it can't be named in this test's
-        // source; find the (String, JsonRpcClient, String) constructor by shape.
-        Constructor<CopilotSession> ctor = (Constructor<CopilotSession>) Arrays
-                .stream(CopilotSession.class.getDeclaredConstructors())
-                .filter(c -> c.getParameterCount() == 3 && c.getParameterTypes()[0] == String.class)
-                .findFirst().orElseThrow();
-        ctor.setAccessible(true);
-        return ctor.newInstance("test-session", null, null);
-    }
+    @Test
+    @Timeout(10)
+    void assistantTurnEndAlone_doesNotFireTurnComplete() {
+        List<Object> events = new ArrayList<>();
+        AiProcessEventListener listener = events::add;
+        GithubCopilotSessionEventBridge bridge = new GithubCopilotSessionEventBridge(listener);
 
-    private static void dispatch(CopilotSession session, SessionEvent event) throws Exception {
-        Method m = CopilotSession.class.getDeclaredMethod("dispatchEvent", SessionEvent.class);
-        m.setAccessible(true);
-        m.invoke(session, event);
+        bridge.onTurnEnd();
+
+        assertEquals(0, events.stream().filter(TurnCompleteEvent.class::isInstance).count());
     }
 
     @Test
-    void assistantTurnEndAlone_doesNotFireTurnComplete() throws Exception {
-        CopilotSession session = newDetachedSession();
+    @Timeout(10)
+    void sessionIdle_firesTurnComplete() {
         List<Object> events = new ArrayList<>();
         AiProcessEventListener listener = events::add;
-        new GithubCopilotSessionEventBridge(listener).attach(session);
+        GithubCopilotSessionEventBridge bridge = new GithubCopilotSessionEventBridge(listener);
 
-        dispatch(session, new AssistantTurnEndEvent());
-
-        assertEquals(List.of(), events.stream().filter(TurnCompleteEvent.class::isInstance).toList());
-    }
-
-    @Test
-    void sessionIdle_firesTurnComplete() throws Exception {
-        CopilotSession session = newDetachedSession();
-        List<Object> events = new ArrayList<>();
-        AiProcessEventListener listener = events::add;
-        new GithubCopilotSessionEventBridge(listener).attach(session);
-
-        dispatch(session, new SessionIdleEvent());
+        bridge.onIdle();
 
         assertEquals(1, events.stream().filter(TurnCompleteEvent.class::isInstance).count());
+    }
+
+    @Test
+    @Timeout(10)
+    void reattachingClosesThePreviousSubscriptionFirst() {
+        List<String> log = new ArrayList<>();
+        GithubCopilotSessionEventBridge bridge = new GithubCopilotSessionEventBridge(event -> {
+        });
+        RecordingSession first = new RecordingSession("first", log);
+        RecordingSession second = new RecordingSession("second", log);
+
+        bridge.attach(first);
+        bridge.attach(second);
+
+        assertEquals(List.of("first:subscribe", "first:unsubscribe", "second:subscribe"), log,
+                     "a model change re-attaches; the replaced session's events must stop reaching the bridge");
+        assertSame(bridge, second.sink);
+        assertNull(first.sink);
+    }
+
+    @Test
+    @Timeout(10)
+    void detachClosesTheSubscriptionOnceAndIsSafeToRepeat() {
+        List<String> log = new ArrayList<>();
+        GithubCopilotSessionEventBridge bridge = new GithubCopilotSessionEventBridge(event -> {
+        });
+        RecordingSession session = new RecordingSession("only", log);
+        bridge.attach(session);
+
+        bridge.detach();
+        bridge.detach();
+
+        assertEquals(List.of("only:subscribe", "only:unsubscribe"), log);
+        assertNull(session.sink);
+    }
+
+    @Test
+    @Timeout(10)
+    void detachWithoutAnAttachDoesNothing() {
+        GithubCopilotSessionEventBridge bridge = new GithubCopilotSessionEventBridge(event -> {
+        });
+
+        bridge.detach();
+    }
+
+    /**
+     * Records subscribe and unsubscribe calls, in order, into a shared log.
+     */
+    private static final class RecordingSession implements CopilotSdkSession {
+
+        private final String name;
+        private final List<String> log;
+        private CopilotEventSink sink;
+
+        RecordingSession(String name, List<String> log) {
+            this.name = name;
+            this.log = log;
+        }
+
+        @Override
+        public String sessionId() {
+            return name;
+        }
+
+        @Override
+        public CompletableFuture<String> send(String prompt) {
+            return CompletableFuture.completedFuture("message");
+        }
+
+        @Override
+        public CompletableFuture<String> sendImmediate(String prompt) {
+            return CompletableFuture.completedFuture("message");
+        }
+
+        @Override
+        public CompletableFuture<Void> abort() {
+            return CompletableFuture.completedFuture(null);
+        }
+
+        @Override
+        public CompletableFuture<CopilotCompaction> compact(String customInstructions) {
+            return CompletableFuture.completedFuture(new CopilotCompaction(Boolean.TRUE, 0L, 0L));
+        }
+
+        @Override
+        public void abortManualCompaction() {
+        }
+
+        @Override
+        public AutoCloseable subscribe(CopilotEventSink eventSink) {
+            log.add(name + ":subscribe");
+            sink = eventSink;
+            return () -> {
+                log.add(name + ":unsubscribe");
+                sink = null;
+            };
+        }
+
+        @Override
+        public void close() {
+        }
     }
 }

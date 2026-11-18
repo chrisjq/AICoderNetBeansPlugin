@@ -5,7 +5,7 @@
     <modelVersion>4.0.0</modelVersion>
     <groupId>kiwi.ingenuity.aicoder</groupId>
     <artifactId>AiCoderNetbeansPlugin</artifactId>
-    <version>1.6.6</version>
+    <version>1.6.7</version>
     <packaging>nbm</packaging>
 
     <name>AI Coder for NetBeans</name>
@@ -352,20 +352,24 @@
             <version>2.15.0</version>
         </dependency>
 
-        <!-- Official GitHub Copilot SDK for Java — used (Phase 1) only to query
-        the available model list (CopilotClient.listModels). checkstyle is
-        a build tool mistakenly scoped compile in the SDK pom; exclude it to
-        avoid dragging its (guava/antlr/commons) tree into the NBM. -->
+        <!-- v1 SDK (protocol 3) for Copilot CLI 1.0.112 and older; the plugin picks an SDK per CLI. -->
         <dependency>
             <groupId>com.github</groupId>
             <artifactId>copilot-sdk-java</artifactId>
-            <version>1.0.31</version>
+            <version>1.0.34</version>
             <exclusions>
+                <!-- Checkstyle is mis-scoped compile in the SDK POM; exclude its transitive tree. -->
                 <exclusion>
                     <groupId>com.puppycrawl.tools</groupId>
                     <artifactId>checkstyle</artifactId>
                 </exclusion>
             </exclusions>
+        </dependency>
+        <!-- v2 SDK (protocol 4) for Copilot CLI 1.0.113 and newer; the plugin picks one per CLI. -->
+        <dependency>
+            <groupId>com.microsoft</groupId>
+            <artifactId>copilot-sdk</artifactId>
+            <version>2.0.1</version>
         </dependency>
 
         <!-- Test -->

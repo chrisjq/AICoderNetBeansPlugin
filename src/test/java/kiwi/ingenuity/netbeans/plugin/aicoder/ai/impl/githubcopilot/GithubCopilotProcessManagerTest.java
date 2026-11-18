@@ -1,28 +1,29 @@
 package kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.githubcopilot;
 
-import com.github.copilot.CopilotClient;
-import com.github.copilot.CopilotSession;
-import com.github.copilot.generated.SessionErrorEvent;
-import com.github.copilot.generated.SessionEvent;
-import com.github.copilot.rpc.ResumeSessionConfig;
-import com.github.copilot.rpc.SessionConfig;
-import com.github.copilot.rpc.SessionMetadata;
-import java.lang.reflect.Constructor;
 import java.lang.reflect.Field;
 import java.lang.reflect.Method;
 import java.util.ArrayList;
-import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CompletionException;
 import java.util.concurrent.ExecutionException;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.AiTypeEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.events.StatusEvent;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.events.StatusEventTypeEnum;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.events.TurnCompleteEvent;
+import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.githubcopilot.events.GithubCopilotFatalErrorEvent;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.githubcopilot.events.GithubCopilotReasoningEffortClearedEvent;
+import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.githubcopilot.sdk.CopilotCompaction;
+import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.githubcopilot.sdk.CopilotEventSink;
+import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.githubcopilot.sdk.CopilotMcpServer;
+import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.githubcopilot.sdk.CopilotModel;
+import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.githubcopilot.sdk.CopilotQuotaSnapshot;
+import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.githubcopilot.sdk.CopilotSdkClient;
+import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.githubcopilot.sdk.CopilotSdkSession;
+import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.githubcopilot.sdk.CopilotSessionSpec;
 import kiwi.ingenuity.netbeans.plugin.aicoder.ai.impl.githubcopilot.settings.GithubCopilotPluginSettings;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.events.AiProcessEvent;
 import kiwi.ingenuity.netbeans.plugin.aicoder.process.events.AiProcessEventListener;
@@ -32,15 +33,18 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import org.junit.jupiter.api.Test;
 
 class GithubCopilotProcessManagerTest {
 
+    private static final String SESSION_ID = "plugin-session-123";
+
     @Test
     void sessionMcpUrlUsesRoutingIdForCopilot() throws Exception {
         McpServerRegistry.portOverride = 0;
-        assertTrue(McpServerRegistry.register(new GithubCopilotMcpRegistrar("copilot-url-test")).get(5, java.util.concurrent.TimeUnit.SECONDS));
+        assertTrue(McpServerRegistry.register(new GithubCopilotMcpRegistrar("copilot-url-test")).get(5, TimeUnit.SECONDS));
         try {
             String endpoint = McpServerRegistry.endpointUrlFor(AiTypeEnum.GitHubCoPilot, "route-1234");
             assertNotNull(endpoint);
@@ -53,58 +57,76 @@ class GithubCopilotProcessManagerTest {
     }
 
     @Test
-    void buildCreateConfigPinsStableSessionId() {
-        SessionConfig config = GithubCopilotProcessManager.buildCreateConfig(
-                "plugin-session-123", "gpt-5.4", Map.of(), new GithubCopilotPermissionHandler(event -> {
-        }, "plugin-session-123"), null);
+    void buildSessionSpecPinsStableSessionId() {
+        CopilotSessionSpec spec = GithubCopilotProcessManager.buildSessionSpec(
+                SESSION_ID, "gpt-5.4", Map.of(), new GithubCopilotPermissionHandler(event -> {
+        }, SESSION_ID), null);
 
-        assertEquals("plugin-session-123", config.getSessionId());
-        assertEquals("gpt-5.4", config.getModel());
-        assertTrue(config.getExcludedTools().contains("edit"));
-        assertTrue(config.getExcludedTools().contains("create"));
+        assertEquals(SESSION_ID, spec.sessionId());
+        assertEquals("gpt-5.4", spec.model());
+        assertTrue(spec.excludedTools().contains("edit"));
+        assertTrue(spec.excludedTools().contains("create"));
         // Withheld so Copilot never reaches for them: the permission gate would
         // refuse each one and post a system message, which a single survey turned
         // into six. bash stays available — running commands has no plugin
         // equivalent, so it is gated by confirmation rather than withheld.
-        assertTrue(config.getExcludedTools().contains("glob"));
-        assertTrue(config.getExcludedTools().contains("view"));
-        assertFalse(config.getExcludedTools().contains("bash"));
+        assertTrue(spec.excludedTools().contains("glob"));
+        assertTrue(spec.excludedTools().contains("view"));
+        assertFalse(spec.excludedTools().contains("bash"));
     }
 
     @Test
-    void buildCreateConfigOmitsReasoningEffortWhenNull() {
-        SessionConfig config = GithubCopilotProcessManager.buildCreateConfig(
-                "plugin-session-123", "gpt-5.4", Map.of(), new GithubCopilotPermissionHandler(event -> {
-        }, "plugin-session-123"), null);
+    void buildSessionSpecPassesTheMcpServersTheGateAndTheAuthCancelThrough() {
+        GithubCopilotPermissionHandler gate = new GithubCopilotPermissionHandler(event -> {
+        }, SESSION_ID);
+        CopilotMcpServer server = new CopilotMcpServer("http://127.0.0.1:1234/mcp/github_copilot/route-1", List.of("*"), 4321);
 
-        assertNull(config.getReasoningEffort());
+        CopilotSessionSpec spec = GithubCopilotProcessManager.buildSessionSpec(
+                SESSION_ID, "gpt-5.4", Map.of("plugin", server), gate, null);
+
+        assertEquals(Map.of("plugin", server), spec.mcpServers());
+        CopilotMcpServer passed = spec.mcpServers().get("plugin");
+        assertEquals("http://127.0.0.1:1234/mcp/github_copilot/route-1", passed.url());
+        assertEquals(List.of("*"), passed.tools());
+        assertEquals(4321, passed.timeoutMillis());
+        assertSame(gate, spec.gate());
+        assertTrue(spec.cancelMcpAuth(), "an MCP OAuth request cannot be serviced here, so it is always cancelled");
     }
 
     @Test
-    void buildCreateConfigSendsExactReasoningEffortWhenSet() {
-        SessionConfig config = GithubCopilotProcessManager.buildCreateConfig(
-                "plugin-session-123", "gpt-5.4", Map.of(), new GithubCopilotPermissionHandler(event -> {
-        }, "plugin-session-123"), "high");
+    void buildSessionSpecOmitsReasoningEffortWhenNull() {
+        CopilotSessionSpec spec = GithubCopilotProcessManager.buildSessionSpec(
+                SESSION_ID, "gpt-5.4", Map.of(), new GithubCopilotPermissionHandler(event -> {
+        }, SESSION_ID), null);
 
-        assertEquals("high", config.getReasoningEffort());
+        assertNull(spec.reasoningEffort());
     }
 
     @Test
-    void buildResumeConfigOmitsReasoningEffortWhenNull() {
-        ResumeSessionConfig config = GithubCopilotProcessManager.buildResumeConfig(
-                "gpt-5.4", Map.of(), new GithubCopilotPermissionHandler(event -> {
-        }, "plugin-session-123"), null);
+    void buildSessionSpecOmitsReasoningEffortWhenBlank() {
+        CopilotSessionSpec spec = GithubCopilotProcessManager.buildSessionSpec(
+                SESSION_ID, "gpt-5.4", Map.of(), new GithubCopilotPermissionHandler(event -> {
+        }, SESSION_ID), "  ");
 
-        assertNull(config.getReasoningEffort());
+        assertNull(spec.reasoningEffort(), "a blank effort is omitted, never sent as an empty string");
     }
 
     @Test
-    void buildResumeConfigSendsExactReasoningEffortWhenSet() {
-        ResumeSessionConfig config = GithubCopilotProcessManager.buildResumeConfig(
-                "gpt-5.4", Map.of(), new GithubCopilotPermissionHandler(event -> {
-        }, "plugin-session-123"), "xhigh");
+    void buildSessionSpecSendsExactReasoningEffortWhenSet() {
+        CopilotSessionSpec spec = GithubCopilotProcessManager.buildSessionSpec(
+                SESSION_ID, "gpt-5.4", Map.of(), new GithubCopilotPermissionHandler(event -> {
+        }, SESSION_ID), "high");
 
-        assertEquals("xhigh", config.getReasoningEffort());
+        assertEquals("high", spec.reasoningEffort());
+    }
+
+    @Test
+    void buildSessionSpecSendsXhighReasoningEffortUnchanged() {
+        CopilotSessionSpec spec = GithubCopilotProcessManager.buildSessionSpec(
+                SESSION_ID, "gpt-5.4", Map.of(), new GithubCopilotPermissionHandler(event -> {
+        }, SESSION_ID), "xhigh");
+
+        assertEquals("xhigh", spec.reasoningEffort());
     }
 
     @Test
@@ -263,26 +285,21 @@ class GithubCopilotProcessManagerTest {
     }
 
     @Test
-    void createOrResumeSession_resumeFailureFallsThroughToCreate_firesExactlyOneInfo() throws Exception {
+    void openSession_resumeFailureFallsThroughToCreate_firesExactlyOneInfo() throws Exception {
         // The exactly-one-INFO guarantee must hold end to end, not just in the unit method: a stored-but-unsupported
-        // session-pinned value is validated ONCE per createOrResumeSession call (hoisted out of the builders), so when
-        // the resume attempt fails and the call falls through to createSession — each builder running once — the INFO
-        // fires once, and neither the resume config nor the create config may carry the unsupported value.
+        // session-pinned value is validated ONCE per session open (in its plan), so when the resume attempt fails and
+        // the call falls through to create, the INFO fires once, and neither spec may carry the unsupported value.
         List<AiProcessEvent> events = new ArrayList<>();
-        GithubCopilotProcessManager mgr = new ScriptedGithubCopilotProcessManager("plugin-session-123", events::add);
+        GithubCopilotProcessManager mgr = new GithubCopilotProcessManager(events::add);
         mgr.setReasoningEffort("high");
         GithubCopilotPluginSettings.setModelReasoningEffortInfo(Map.of("gpt-5.4", List.of("low", "medium")), Map.of());
         AtomicInteger clearedCount = new AtomicInteger();
         mgr.setOnReasoningEffortCleared(clearedCount::incrementAndGet);
-        set(mgr, "copilotSessionId", "plugin-session-123");
+        set(mgr, "copilotSessionId", SESSION_ID);
+        FakeClient client = new FakeClient(List.of(SESSION_ID), true);
 
         try {
-            Method createOrResume = GithubCopilotProcessManager.class.getDeclaredMethod(
-                    "createOrResumeSession", CopilotClient.class, String.class);
-            createOrResume.setAccessible(true);
-            // The scripted manager's hooks never touch the (null) client — CopilotClient is final, so the test stubs
-            // the manager, not the SDK class.
-            createOrResume.invoke(mgr, null, "gpt-5.4");
+            createOrResume(mgr, client, "gpt-5.4");
 
             // This manager has no session and no MCP server running, so buildMcpServers also reports that the plugin
             // tools are unavailable. That notice is about something else; the guarantee under test is about the
@@ -296,15 +313,13 @@ class GithubCopilotProcessManagerTest {
             assertEquals(1, events.stream()
                          .filter(e -> e instanceof StatusEvent && mcpUnavailable.equals(((StatusEvent) e).text()))
                          .count(),
-                         () -> "the MCP-unavailable notice is emitted once per createOrResumeSession: " + events);
+                         () -> "the MCP-unavailable notice is emitted once per session open: " + events);
             assertEquals(1, clearedCount.get());
-            ScriptedGithubCopilotProcessManager scripted = (ScriptedGithubCopilotProcessManager) mgr;
-            assertNotNull(scripted.resumeConfig, "resume attempt must have been made");
-            assertNotNull(scripted.createConfig, "fall-through must have created after the resume failure");
-            assertNull(scripted.resumeConfig.getReasoningEffort(),
-                       "cleared session-pinned value must not be sent on resume");
-            assertNull(scripted.createConfig.getReasoningEffort(),
-                       "cleared session-pinned value must not be sent on create");
+            assertEquals(List.of("resume", "create"), client.calls, "resume is tried first, then the fall-through create");
+            assertNotNull(client.resumeSpec, "resume attempt must have been made");
+            assertNotNull(client.createSpec, "fall-through must have created after the resume failure");
+            assertNull(client.resumeSpec.reasoningEffort(), "cleared session-pinned value must not be sent on resume");
+            assertNull(client.createSpec.reasoningEffort(), "cleared session-pinned value must not be sent on create");
         }
         finally {
             GithubCopilotPluginSettings.setModelReasoningEffortInfo(Map.of(), Map.of());
@@ -312,15 +327,74 @@ class GithubCopilotProcessManagerTest {
     }
 
     @Test
-    void sessionListContainsMatchesOnlyKnownSessionIds() {
-        SessionMetadata kept = new SessionMetadata();
-        kept.setSessionId("keep-me");
-        SessionMetadata other = new SessionMetadata();
-        other.setSessionId("other");
+    void createAndResumeSpecsBothCarryTheModelExcludedToolsGateAndAuthCancel() throws Exception {
+        // Resume used to omit the MCP-auth cancel handler; one spec now serves both calls, so both must carry it.
+        GithubCopilotProcessManager mgr = new GithubCopilotProcessManager(event -> {
+        });
+        set(mgr, "copilotSessionId", SESSION_ID);
+        FakeClient client = new FakeClient(List.of(SESSION_ID), true);
 
-        assertTrue(GithubCopilotProcessManager.sessionListContains(List.of(kept, other), "keep-me"));
-        assertFalse(GithubCopilotProcessManager.sessionListContains(List.of(kept, other), "missing"));
-        assertFalse(GithubCopilotProcessManager.sessionListContains(List.of(kept, other), " "));
+        createOrResume(mgr, client, "gpt-5.4");
+
+        for (CopilotSessionSpec spec : List.of(client.resumeSpec, client.createSpec)) {
+            assertNotNull(spec);
+            assertEquals(SESSION_ID, spec.sessionId());
+            assertEquals("gpt-5.4", spec.model());
+            assertTrue(spec.excludedTools().containsAll(List.of("edit", "create", "glob", "view")));
+            assertFalse(spec.excludedTools().contains("bash"));
+            assertNotNull(spec.gate(), "the permission gate must be attached");
+            assertTrue(spec.cancelMcpAuth(), "the MCP-auth cancel must be set on create AND resume");
+        }
+        assertSame(client.resumeSpec.gate(), client.createSpec.gate(),
+                   "the fall-through create reuses the same permission gate as the resume attempt");
+    }
+
+    @Test
+    void aStoredSessionIsResumedWithTheSupportedEffortAndNoCreate() throws Exception {
+        GithubCopilotProcessManager mgr = new GithubCopilotProcessManager(event -> {
+        });
+        mgr.setReasoningEffort("high");
+        GithubCopilotPluginSettings.setModelReasoningEffortInfo(Map.of("gpt-5.4", List.of("low", "high")), Map.of());
+        set(mgr, "copilotSessionId", SESSION_ID);
+        FakeClient client = new FakeClient(List.of(SESSION_ID), false);
+
+        try {
+            createOrResume(mgr, client, "gpt-5.4");
+
+            assertEquals(List.of("resume"), client.calls, "a stored session that resumes is never also created");
+            assertEquals("high", client.resumeSpec.reasoningEffort());
+            assertTrue(client.resumeSpec.cancelMcpAuth());
+            assertNull(client.createSpec);
+        }
+        finally {
+            GithubCopilotPluginSettings.setModelReasoningEffortInfo(Map.of(), Map.of());
+        }
+    }
+
+    @Test
+    void aSessionThatIsNotStoredIsCreatedWithoutAResumeAttempt() throws Exception {
+        GithubCopilotProcessManager mgr = new GithubCopilotProcessManager(event -> {
+        });
+        set(mgr, "copilotSessionId", SESSION_ID);
+        FakeClient client = new FakeClient(List.of("some-other-session"), false);
+
+        createOrResume(mgr, client, "gpt-5.4");
+
+        assertEquals(List.of("create"), client.calls, "an id the store does not list is created, not resumed");
+        assertNull(client.resumeSpec);
+        assertEquals(SESSION_ID, client.createSpec.sessionId());
+        assertTrue(client.createSpec.cancelMcpAuth());
+    }
+
+    @Test
+    void sessionListContainsMatchesOnlyKnownSessionIds() {
+        List<String> sessions = List.of("keep-me", "other");
+
+        assertTrue(GithubCopilotProcessManager.sessionListContains(sessions, "keep-me"));
+        assertFalse(GithubCopilotProcessManager.sessionListContains(sessions, "missing"));
+        assertFalse(GithubCopilotProcessManager.sessionListContains(sessions, " "));
+        assertFalse(GithubCopilotProcessManager.sessionListContains(null, "keep-me"));
+        assertFalse(GithubCopilotProcessManager.sessionListContains(sessions, null));
     }
 
     @Test
@@ -336,8 +410,8 @@ class GithubCopilotProcessManagerTest {
     @Test
     void runtimeErrorThroughTheSessionBridge_surfacesAsFailedNotExited() throws Exception {
         // Drives the failure through the real wiring the bridge uses (onError -> handleRuntimeError) instead of
-        // calling handleRuntimeError directly, so reverting that wiring breaks this test. The session is detached
-        // from any transport (JsonRpcClient null), so dispatchEvent delivers straight to the bridge's listeners.
+        // calling handleRuntimeError directly, so reverting that wiring breaks this test. The fake session hands the
+        // sink the bridge subscribed with back to the test, which then reports a session error as the SDK would.
         // A mid-turn runtime failure (quota, rate limit, network) must surface as exactly one FAILED — never
         // EXITED, which is reserved for the process actually dying (this SDK-based backend owns none) — and
         // must clear processing so the next turn can start.
@@ -346,9 +420,10 @@ class GithubCopilotProcessManagerTest {
         set(mgr, "processing", true);
         assertTrue(mgr.isBusy(), "a turn in flight makes the manager busy");
 
-        CopilotSession session = newDetachedSession();
+        FakeSession session = new FakeSession(SESSION_ID);
         mgr.createEventBridge(events::add).attach(session);
-        dispatch(session, sessionError("rate limited"));
+        assertNotNull(session.sink, "the bridge must subscribe to the session");
+        session.sink.onSessionError("rate limited");
 
         assertFalse(mgr.isBusy(), "a runtime failure must clear the in-flight turn");
         assertEquals(1, events.size(), "a runtime failure must report exactly one status");
@@ -356,6 +431,42 @@ class GithubCopilotProcessManagerTest {
         assertEquals(StatusEventTypeEnum.FAILED, status.type(),
                      "a runtime failure must be FAILED, never EXITED");
         assertEquals("GitHub Copilot: rate limited", status.text());
+    }
+
+    @Test
+    void runtimeErrorFromABridgeOfAnEarlierGeneration_isIgnored() throws Exception {
+        // A late session error from a client already torn down must not close the next run's turn or post a stale
+        // FAILED: the bridge's error path belongs to the generation it was built in.
+        List<AiProcessEvent> events = new ArrayList<>();
+        GithubCopilotProcessManager mgr = new GithubCopilotProcessManager(events::add);
+        FakeSession session = new FakeSession(SESSION_ID);
+        mgr.createEventBridge(events::add).attach(session);
+
+        mgr.stop();
+        set(mgr, "processing", true);
+        events.clear();
+        session.sink.onSessionError("late error from the old client");
+
+        assertTrue(mgr.isBusy(), "the current turn must not be cleared by an earlier generation's error");
+        assertTrue(events.isEmpty(), () -> "an earlier generation's error must report nothing: " + events);
+    }
+
+    @Test
+    void startWithAMissingExecutable_raisesExecutableNotFound() {
+        List<AiProcessEvent> events = new ArrayList<>();
+        GithubCopilotProcessManager mgr = new GithubCopilotProcessManager(events::add);
+
+        mgr.start("/no/such/dir/copilot", "gpt-5.4");
+
+        GithubCopilotFatalErrorEvent fatal = events.stream()
+                .filter(GithubCopilotFatalErrorEvent.class::isInstance)
+                .map(GithubCopilotFatalErrorEvent.class::cast)
+                .findFirst()
+                .orElseThrow(() -> new AssertionError("no fatal error event: " + events));
+        assertEquals("EXECUTABLE_NOT_FOUND", fatal.errorType());
+        assertEquals("GitHub Copilot CLI not found", fatal.errorMessage());
+        assertEquals(1, countStatuses(events, StatusEventTypeEnum.FAILED), () -> "events were: " + events);
+        assertFalse(mgr.isRunning());
     }
 
     @Test
@@ -499,31 +610,6 @@ class GithubCopilotProcessManagerTest {
         assertTrue(mgr.isBusy(), "the in-flight turn must not be released by a refused second send");
     }
 
-    private static CopilotSession newDetachedSession() throws Exception {
-        // JsonRpcClient is package-private, so it can't be named in this test's source; find the (String,
-        // JsonRpcClient, String) constructor by shape. A null transport means dispatchEvent delivers straight to
-        // the bridge's listeners with no server involved.
-        Constructor<CopilotSession> ctor = (Constructor<CopilotSession>) Arrays
-                .stream(CopilotSession.class.getDeclaredConstructors())
-                .filter(c -> c.getParameterCount() == 3 && c.getParameterTypes()[0] == String.class)
-                .findFirst().orElseThrow();
-        ctor.setAccessible(true);
-        return ctor.newInstance("test-session", null, null);
-    }
-
-    private static void dispatch(CopilotSession session, SessionEvent event) throws Exception {
-        Method m = CopilotSession.class.getDeclaredMethod("dispatchEvent", SessionEvent.class);
-        m.setAccessible(true);
-        m.invoke(session, event);
-    }
-
-    private static SessionErrorEvent sessionError(String message) {
-        SessionErrorEvent event = new SessionErrorEvent();
-        event.setData(new SessionErrorEvent.SessionErrorEventData(
-                null, null, null, null, null, null, message, null, null, null, null, null, null));
-        return event;
-    }
-
     private static StatusEvent status(List<AiProcessEvent> events, StatusEventTypeEnum type) {
         return events.stream()
                 .filter(StatusEvent.class::isInstance)
@@ -591,6 +677,21 @@ class GithubCopilotProcessManagerTest {
                      .count(), "a late completion must not emit a second closing status");
     }
 
+    /**
+     * Plans and opens a session against a fake client, the way {@code start()} does: the manager's private
+     * {@code planSession} and then {@code openSession}.
+     */
+    private static void createOrResume(GithubCopilotProcessManager mgr, CopilotSdkClient client, String model)
+            throws Exception {
+        Method plan = GithubCopilotProcessManager.class.getDeclaredMethod("planSession", String.class);
+        plan.setAccessible(true);
+        Object sessionPlan = plan.invoke(mgr, model);
+        Method open = GithubCopilotProcessManager.class.getDeclaredMethod(
+                "openSession", CopilotSdkClient.class, sessionPlan.getClass());
+        open.setAccessible(true);
+        open.invoke(mgr, client, sessionPlan);
+    }
+
     private static void set(Object target, String fieldName, Object value) throws Exception {
         for (Class<?> c = target.getClass(); c != null; c = c.getSuperclass()) {
             try {
@@ -607,45 +708,114 @@ class GithubCopilotProcessManagerTest {
     }
 
     /**
-     * A {@link GithubCopilotProcessManager} that never touches a real CLI process: its {@code listSessionsHook} reports
-     * the one session id the test drives, and its {@code resumeSessionHook}/{@code createSessionHook} capture the
-     * config they received (so the test can assert nothing unsupported was ever sent) and script the exact outcome the
-     * scenario needs. Subclassing the manager instead of mocking {@link CopilotClient} because that SDK class is final
-     * and the plugin's test classpath has no mocking library — the manager's three delegation hooks exist precisely for
-     * this.
+     * A {@link CopilotSdkClient} that never starts a CLI. It lists the session ids it was given, records the spec each
+     * {@code create} and {@code resume} received (and the order of the calls) so a test can assert exactly what would
+     * have been sent, and either fails the resume with a "session not found" error or lets it succeed.
      */
-    private static final class ScriptedGithubCopilotProcessManager extends GithubCopilotProcessManager {
+    private static final class FakeClient implements CopilotSdkClient {
 
-        private final String knownSessionId;
-        private ResumeSessionConfig resumeConfig;
-        private SessionConfig createConfig;
+        private final List<String> storedSessionIds;
+        private final boolean resumeFails;
+        private final List<String> calls = new ArrayList<>();
+        private CopilotSessionSpec resumeSpec;
+        private CopilotSessionSpec createSpec;
 
-        ScriptedGithubCopilotProcessManager(String knownSessionId, AiProcessEventListener listener) {
-            super(listener);
-            this.knownSessionId = knownSessionId;
+        FakeClient(List<String> storedSessionIds, boolean resumeFails) {
+            this.storedSessionIds = storedSessionIds;
+            this.resumeFails = resumeFails;
         }
 
         @Override
-        CompletableFuture<List<SessionMetadata>> listSessionsHook(CopilotClient client) {
-            SessionMetadata metadata = new SessionMetadata();
-            metadata.setSessionId(knownSessionId);
-            return CompletableFuture.completedFuture(List.of(metadata));
+        public CompletableFuture<List<String>> listSessionIds() {
+            return CompletableFuture.completedFuture(storedSessionIds);
         }
 
         @Override
-        CompletableFuture<CopilotSession> resumeSessionHook(CopilotClient client, String sessionId, ResumeSessionConfig config) {
-            resumeConfig = config;
-            // A genuine ExecutionException whose deepest message marks it a "session not found" — the real failure the
-            // fall-through guard was written for.
-            return CompletableFuture.failedFuture(new ExecutionException(
-                    new IllegalStateException("Request session.resume failed with message: Session not found: "
-                            + knownSessionId)));
+        public CompletableFuture<CopilotSdkSession> create(CopilotSessionSpec spec) {
+            calls.add("create");
+            createSpec = spec;
+            return CompletableFuture.completedFuture(new FakeSession(spec.sessionId()));
         }
 
         @Override
-        CompletableFuture<CopilotSession> createSessionHook(CopilotClient client, SessionConfig config) {
-            createConfig = config;
+        public CompletableFuture<CopilotSdkSession> resume(String sessionId, CopilotSessionSpec spec) {
+            calls.add("resume");
+            resumeSpec = spec;
+            if (resumeFails) {
+                // A genuine ExecutionException whose deepest message marks it a "session not found" — the real failure
+                // the fall-through guard was written for.
+                return CompletableFuture.failedFuture(new ExecutionException(
+                        new IllegalStateException("Request session.resume failed with message: Session not found: "
+                                + sessionId)));
+            }
+            return CompletableFuture.completedFuture(new FakeSession(sessionId));
+        }
+
+        @Override
+        public CompletableFuture<List<CopilotModel>> listModels() {
+            return CompletableFuture.completedFuture(List.of());
+        }
+
+        @Override
+        public CompletableFuture<Map<String, CopilotQuotaSnapshot>> quotaSnapshots() {
+            return CompletableFuture.completedFuture(Map.of());
+        }
+
+        @Override
+        public void close() {
+        }
+    }
+
+    /**
+     * A {@link CopilotSdkSession} that does nothing but remember the sink it was subscribed with, so a test can raise
+     * events on it as the SDK adapter would.
+     */
+    private static final class FakeSession implements CopilotSdkSession {
+
+        private final String sessionId;
+        private CopilotEventSink sink;
+
+        FakeSession(String sessionId) {
+            this.sessionId = sessionId;
+        }
+
+        @Override
+        public String sessionId() {
+            return sessionId;
+        }
+
+        @Override
+        public CompletableFuture<String> send(String prompt) {
+            return CompletableFuture.completedFuture("message-1");
+        }
+
+        @Override
+        public CompletableFuture<String> sendImmediate(String prompt) {
+            return CompletableFuture.completedFuture("message-1");
+        }
+
+        @Override
+        public CompletableFuture<Void> abort() {
             return CompletableFuture.completedFuture(null);
+        }
+
+        @Override
+        public CompletableFuture<CopilotCompaction> compact(String customInstructions) {
+            return CompletableFuture.completedFuture(new CopilotCompaction(Boolean.TRUE, 0L, 0L));
+        }
+
+        @Override
+        public void abortManualCompaction() {
+        }
+
+        @Override
+        public AutoCloseable subscribe(CopilotEventSink eventSink) {
+            this.sink = eventSink;
+            return () -> this.sink = null;
+        }
+
+        @Override
+        public void close() {
         }
     }
 }
