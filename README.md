@@ -10,6 +10,8 @@ Please consult the readme that applies to your version of the plugin you are run
 
 **Ollama (Deprecated)** is switched off at every IDE start. Use OpenAI Compatible with server type Ollama instead.
 
+**Copilot CLI** 1.0.113 changed its protocol. Plugin 1.6.7 and later support both: they detect the CLI's version when a session starts and use the matching Copilot SDK, so older and newer CLIs both work without any setting. Earlier plugin versions need Copilot CLI 1.0.112 or older.
+
 ## What it provides
 
 - Streaming Markdown chat with syntax-highlighted code, tool activity and status, in dockable chat tabs.

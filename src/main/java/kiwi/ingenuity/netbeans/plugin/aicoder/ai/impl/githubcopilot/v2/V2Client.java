@@ -6,6 +6,7 @@ import com.microsoft.copilot.rpc.McpAuthResult;
 import com.microsoft.copilot.rpc.McpHttpServerConfig;
 import com.microsoft.copilot.rpc.McpServerConfig;
 import com.microsoft.copilot.rpc.ResumeSessionOptions;
+import com.microsoft.copilot.rpc.SessionEventOptions;
 import com.microsoft.copilot.rpc.SessionInferenceOptions;
 import com.microsoft.copilot.rpc.SessionMcpOptions;
 import com.microsoft.copilot.rpc.SessionPermissionOptions;
@@ -60,7 +61,7 @@ final class V2Client implements CopilotSdkClient {
 
     private static void configure(CreateSessionOptions config, CopilotSessionSpec spec) {
         config.setTools(new SessionToolOptions().setExcludedTools(spec.excludedTools()))
-                .setMcp(mcpOptions(spec)).setPermissions(permissionOptions(spec));
+                .setMcp(mcpOptions(spec)).setPermissions(permissionOptions(spec)).setEvents(streamingEvents());
         if (spec.reasoningEffort() != null && !spec.reasoningEffort().isBlank()) {
             config.setInference(new SessionInferenceOptions().setReasoningEffort(spec.reasoningEffort()));
         }
@@ -68,7 +69,7 @@ final class V2Client implements CopilotSdkClient {
 
     private static void configure(ResumeSessionOptions config, CopilotSessionSpec spec) {
         config.setTools(new SessionToolOptions().setExcludedTools(spec.excludedTools()))
-                .setMcp(mcpOptions(spec)).setPermissions(permissionOptions(spec));
+                .setMcp(mcpOptions(spec)).setPermissions(permissionOptions(spec)).setEvents(streamingEvents());
         if (spec.reasoningEffort() != null && !spec.reasoningEffort().isBlank()) {
             config.setInference(new SessionInferenceOptions().setReasoningEffort(spec.reasoningEffort()));
         }
@@ -81,6 +82,13 @@ final class V2Client implements CopilotSdkClient {
                     -> CompletableFuture.completedFuture(McpAuthResult.cancelled()));
         }
         return options;
+    }
+
+    /**
+     * Streams the reply in pieces, so the delta events reach the chat as the model writes them.
+     */
+    private static SessionEventOptions streamingEvents() {
+        return new SessionEventOptions().setStreaming(true);
     }
 
     private static SessionPermissionOptions permissionOptions(CopilotSessionSpec spec) {

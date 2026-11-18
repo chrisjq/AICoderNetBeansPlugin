@@ -42,7 +42,7 @@ final class V1Client implements CopilotSdkClient {
     }
 
     static SessionConfig createConfig(CopilotSessionSpec spec) {
-        SessionConfig config = new SessionConfig().setSessionId(spec.sessionId()).setModel(spec.model())
+        SessionConfig config = new SessionConfig().setSessionId(spec.sessionId()).setModel(spec.model()).setStreaming(true)
                 .setExcludedTools(spec.excludedTools()).setMcpServers(servers(spec))
                 .setOnPermissionRequest(new V1Permissions(spec.gate()));
         if (spec.reasoningEffort() != null && !spec.reasoningEffort().isBlank()) {
@@ -56,7 +56,7 @@ final class V1Client implements CopilotSdkClient {
     }
 
     static ResumeSessionConfig resumeConfig(CopilotSessionSpec spec) {
-        ResumeSessionConfig config = new ResumeSessionConfig().setModel(spec.model())
+        ResumeSessionConfig config = new ResumeSessionConfig().setModel(spec.model()).setStreaming(true)
                 .setExcludedTools(spec.excludedTools()).setMcpServers(servers(spec))
                 .setOnPermissionRequest(new V1Permissions(spec.gate()));
         if (spec.reasoningEffort() != null && !spec.reasoningEffort().isBlank()) {

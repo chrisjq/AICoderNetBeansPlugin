@@ -4,12 +4,16 @@
 
 See also: [Backends](../../BACKENDS.md) · [Change review](../../CHANGE_REVIEW.md) · [Collaboration](../../COLLABORATION.md)
 
-GitHub Copilot runs the `copilot` CLI and SDK for each session.
+GitHub Copilot runs the `copilot` CLI for each session through the Copilot SDK that matches the CLI's version.
 
 ## Setup
 
 - Install the [GitHub Copilot CLI](https://github.com/features/copilot/cli), have a Copilot-enabled GitHub account, and sign in in a terminal with `copilot login`.
 - The **GitHub Copilot** tab of the AI Coder options holds the [standard backend fields](../../BACKENDS.md#where-a-backends-settings-are).
+
+## CLI versions
+
+Copilot CLI 1.0.113 changed its protocol. Plugin 1.6.7 and later support both: they detect the CLI's version when a session starts and use the matching Copilot SDK, so older and newer CLIs both work without any setting. Earlier plugin versions need Copilot CLI 1.0.112 or older.
 
 ## Model and effort
 
